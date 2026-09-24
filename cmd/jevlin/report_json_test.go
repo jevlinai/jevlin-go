@@ -138,7 +138,7 @@ func TestDoctorJSONMakesNoMoreASCallsThanTheTextReport(t *testing.T) {
 	defer as.Close()
 
 	root := t.TempDir()
-	cfgPath := filepath.Join(root, "tokendrop.toml")
+	cfgPath := filepath.Join(root, "jevlin.toml")
 	toml := `[mining]
 enabled = true
 as_url = "` + as.URL + `"
@@ -178,7 +178,7 @@ spool_dir = "` + filepath.ToSlash(filepath.Join(root, "spool")) + `"
 func statusFixture(t *testing.T) (cfgPath, root string, store *auth.Store) {
 	t.Helper()
 	root = t.TempDir()
-	cfgPath = filepath.Join(root, "tokendrop.toml")
+	cfgPath = filepath.Join(root, "jevlin.toml")
 	toml := `[mining]
 state_dir = "` + filepath.ToSlash(filepath.Join(root, "state")) + `"
 spool_dir = "` + filepath.ToSlash(filepath.Join(root, "spool")) + `"

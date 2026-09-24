@@ -3,7 +3,7 @@ package main
 // H5's subject: which installation an agent integration belongs to.
 //
 // dropin-miner#73, soak row S20. Two installations on one machine share a binary whenever
-// the second was made by running the first's copy — `~/.tokendrop/bin/
+// the second was made by running the first's copy — `~/.jevlin/bin/
 // jevlin setup -home ~/dm-disposable` is the documented way. Matching
 // an integration by its binary path alone makes the disposable installation's
 // `uninstall -purge-state` plan the removal of the other installation's Claude
@@ -26,9 +26,9 @@ import (
 // ── the rule, in isolation ──────────────────────────────────────────────
 
 func TestAnIntegrationIsOursOnlyWhenItNamesOurBinaryAndOurConfig(t *testing.T) {
-	const bin = "/home/u/.tokendrop/bin/jevlin"
-	const ours = "/home/u/.tokendrop/tokendrop.toml"
-	const theirs = "/home/u/dm-disposable/tokendrop.toml"
+	const bin = "/home/u/.jevlin/bin/jevlin"
+	const ours = "/home/u/.jevlin/jevlin.toml"
+	const theirs = "/home/u/dm-disposable/jevlin.toml"
 	ref := installationRef{bins: []string{bin}, cfg: ours}
 
 	for _, tc := range []struct {
@@ -70,12 +70,12 @@ func TestAnIntegrationIsOursOnlyWhenItNamesOurBinaryAndOurConfig(t *testing.T) {
 // An installation running on discovery wrote no -config, so for it the
 // absence of the flag is the match and its presence is somebody else's.
 func TestADiscoveryInstallationOwnsOnlyCommandsWithNoConfig(t *testing.T) {
-	const bin = "/home/u/.tokendrop/bin/jevlin"
+	const bin = "/home/u/.jevlin/bin/jevlin"
 	ref := installationRef{bins: []string{bin}, cfg: ""}
 	if !ref.commandIsOurs(posixQuoteArg(bin) + " hook lineage") {
 		t.Error("a discovery installation must own the command it actually writes")
 	}
-	if ref.commandIsOurs(posixQuoteArg(bin) + " hook -config " + posixQuoteArg("/home/u/.tokendrop/tokendrop.toml") + " lineage") {
+	if ref.commandIsOurs(posixQuoteArg(bin) + " hook -config " + posixQuoteArg("/home/u/.jevlin/jevlin.toml") + " lineage") {
 		t.Error("a command naming a config belongs to the installation that config configures, not to a discovery one")
 	}
 }
@@ -83,8 +83,8 @@ func TestADiscoveryInstallationOwnsOnlyCommandsWithNoConfig(t *testing.T) {
 // The config is compared as a PATH, not as bytes: %q hands Windows a
 // path whose separators are doubled, naming the same file in other bytes.
 func TestTheConfigIsComparedAsAPathNotAsBytes(t *testing.T) {
-	const bin = `C:\Users\u\.tokendrop\bin\jevlin.exe`
-	const cfg = `C:\Users\u\.tokendrop\tokendrop.toml`
+	const bin = `C:\Users\u\.jevlin\bin\jevlin.exe`
+	const cfg = `C:\Users\u\.jevlin\jevlin.toml`
 	ref := installationRef{bins: []string{bin}, cfg: cfg}
 	// A %q-quoted command, doubled separators and all.
 	command := strconv.Quote(bin) + " hook -config " + strconv.Quote(cfg) + " lineage"
@@ -121,7 +121,7 @@ func TestRenderedWordsKeepsAQuotedPathWhole(t *testing.T) {
 //
 // For the machine's own installation setup does both. For any other home it
 // no longer does (dropin-miner#84): setup -home <elsewhere> leaves the agents alone, and
-// its closing line names `agents install -config <home>/tokendrop.toml` as
+// its closing line names `agents install -config <home>/jevlin.toml` as
 // the way to configure them. So that is the path this takes, which keeps the
 // scenario below — two installations, one binary, both with integrations —
 // reachable the way a participant now reaches it.
@@ -323,8 +323,8 @@ func binaryNameFor() string {
 // Written as a unit case over literal strings so it needs no Windows runner:
 // a Windows path is only ever a string here, and nothing executes it.
 func TestARenderedPathIsReadBackWhicheverShellQuotedIt(t *testing.T) {
-	const winBin = `C:\Users\u\.tokendrop\bin\jevlin.exe`
-	const winCfg = `C:\Users\u\.tokendrop\tokendrop.toml`
+	const winBin = `C:\Users\u\.jevlin\bin\jevlin.exe`
+	const winCfg = `C:\Users\u\.jevlin\jevlin.toml`
 	e := binEntry{command: winBin, cfg: winCfg}
 
 	// One row per renderer that has ever written one of these files.
@@ -367,7 +367,7 @@ func TestARenderedPathIsReadBackWhicheverShellQuotedIt(t *testing.T) {
 // one last, and describeOther used to print the FIRST. For a JSON-quoted
 // path -- opencode's and Pi's INSTALL_CONFIG line -- the first reading is the
 // literal one, so on Windows the message named
-// C:\\Users\\...\\tokendrop.toml with every separator doubled while the file
+// C:\\Users\\...\\jevlin.toml with every separator doubled while the file
 // itself was correctly left alone. Both Windows runners found it on dropin-miner#123's
 // first CI run; every other runner was green, because on POSIX nothing in a
 // path needs escaping and a word's two readings are the same string.
@@ -375,7 +375,7 @@ func TestARenderedPathIsReadBackWhicheverShellQuotedIt(t *testing.T) {
 // A unit case over literal strings, so it needs no Windows runner: a Windows
 // path is only ever a string here and nothing executes it.
 func TestTheInstallationNamedInAMessageIsTheDecodedReading(t *testing.T) {
-	const ours = "/home/u/.tokendrop/tokendrop.toml"
+	const ours = "/home/u/.jevlin/jevlin.toml"
 	for _, tc := range []struct {
 		name     string
 		artifact string
@@ -386,15 +386,15 @@ func TestTheInstallationNamedInAMessageIsTheDecodedReading(t *testing.T) {
 			// path JSON-quoted, which doubles every backslash. This is the
 			// row that was red on both Windows runners.
 			name:     "a JSON-quoted Windows path (opencode's INSTALL_CONFIG)",
-			artifact: `const INSTALL_CONFIG = "C:\\Users\\u\\dm-disposable\\tokendrop.toml";`,
-			want:     `C:\Users\u\dm-disposable\tokendrop.toml`,
+			artifact: `const INSTALL_CONFIG = "C:\\Users\\u\\dm-disposable\\jevlin.toml";`,
+			want:     `C:\Users\u\dm-disposable\jevlin.toml`,
 		},
 		{
 			// Go's %q, the spelling of Claude Code's double-quoted allow
 			// rule.
 			name:     "a %q-quoted Windows path",
-			artifact: strconv.Quote(`C:\Users\u\dm-disposable\jevlin.exe`) + " search -config " + strconv.Quote(`C:\Users\u\dm-disposable\tokendrop.toml`),
-			want:     `C:\Users\u\dm-disposable\tokendrop.toml`,
+			artifact: strconv.Quote(`C:\Users\u\dm-disposable\jevlin.exe`) + " search -config " + strconv.Quote(`C:\Users\u\dm-disposable\jevlin.toml`),
+			want:     `C:\Users\u\dm-disposable\jevlin.toml`,
 		},
 		{
 			// The POSIX half: a single-quoted path carrying a space, which is
@@ -406,8 +406,8 @@ func TestTheInstallationNamedInAMessageIsTheDecodedReading(t *testing.T) {
 			// thing it is here for: that the quotes came off and the space
 			// survived.
 			name:     "a POSIX single-quoted path with a space",
-			artifact: "'/home/u/my configs/dm-disposable/jevlin' search -config '/home/u/my configs/dm-disposable/tokendrop.toml'",
-			want:     filepath.Clean("/home/u/my configs/dm-disposable/tokendrop.toml"),
+			artifact: "'/home/u/my configs/dm-disposable/jevlin' search -config '/home/u/my configs/dm-disposable/jevlin.toml'",
+			want:     filepath.Clean("/home/u/my configs/dm-disposable/jevlin.toml"),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -441,8 +441,8 @@ func TestTheInstallationNamedInAMessageIsTheDecodedReading(t *testing.T) {
 // reader was right, because nothing in those paths needs escaping — which is
 // why every occurrence of this mistake has been found by the Windows runners.
 func TestAJSONArtifactIsDecodedNotScanned(t *testing.T) {
-	const winBin = `C:\Users\u\.tokendrop\bin\jevlin.exe`
-	const winCfg = `C:\Users\u\.tokendrop\tokendrop.toml`
+	const winBin = `C:\Users\u\.jevlin\bin\jevlin.exe`
+	const winCfg = `C:\Users\u\.jevlin\jevlin.toml`
 	e := binEntry{command: winBin, cfg: winCfg}
 
 	command, err := e.hookCommandForShell(shellCmd, "cursor", "sessionStart")
@@ -734,7 +734,7 @@ func TestTheCodexSandboxBlockIsAttributedByTheDirectoriesItsConfigNames(t *testi
 }
 
 func TestPathUnderIsContainmentNotAPrefixTest(t *testing.T) {
-	dir := filepath.Join("/home", "u", ".tokendrop")
+	dir := filepath.Join("/home", "u", ".jevlin")
 	for _, tc := range []struct {
 		p    string
 		want bool
@@ -744,7 +744,7 @@ func TestPathUnderIsContainmentNotAPrefixTest(t *testing.T) {
 		{filepath.Join(dir, "a", "b"), true},
 		// The prefix test this replaces would have said true: the string
 		// starts with the directory's own bytes.
-		{"/home/u/.tokendrop-other/state", false},
+		{"/home/u/.jevlin-other/state", false},
 		{"/home/u", false},
 		{"/elsewhere", false},
 	} {
@@ -757,7 +757,7 @@ func TestPathUnderIsContainmentNotAPrefixTest(t *testing.T) {
 // ── the adapters carry their installation ───────────────────────────────
 
 func TestAJavaScriptAdapterCarriesTheConfigItWasInstalledWith(t *testing.T) {
-	cfg := filepath.Join(string(filepath.Separator)+"home", "u", ".tokendrop", "tokendrop.toml")
+	cfg := filepath.Join(string(filepath.Separator)+"home", "u", ".jevlin", "jevlin.toml")
 	for name, template := range map[string]string{
 		"opencode plugin": opencodePluginJS,
 		"pi extension":    piExtensionTS,
@@ -785,9 +785,9 @@ func TestAJavaScriptAdapterCarriesTheConfigItWasInstalledWith(t *testing.T) {
 // JavaScript string literal: rendered without escaping, the adapter would not
 // parse and its own path would come back wrong.
 func TestTheAdaptersConfigSurvivesAWindowsPath(t *testing.T) {
-	const cfg = `C:\Users\u\.tokendrop\tokendrop.toml`
+	const cfg = `C:\Users\u\.jevlin\jevlin.toml`
 	rendered := renderAgentScript(opencodePluginJS, shellPOSIX, cfg)
-	if !strings.Contains(rendered, `"C:\\Users\\u\\.tokendrop\\tokendrop.toml"`) {
+	if !strings.Contains(rendered, `"C:\\Users\\u\\.jevlin\\jevlin.toml"`) {
 		t.Fatalf("the config was not escaped for a JavaScript string literal:\n%s", firstLineNaming(rendered, "INSTALL_CONFIG"))
 	}
 	for _, c := range namedConfigs(rendered) {

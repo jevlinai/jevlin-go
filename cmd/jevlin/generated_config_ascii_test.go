@@ -5,7 +5,7 @@ package main
 //
 // Windows PowerShell 5.1 reads a file with no byte-order mark in the
 // system's ANSI code page, so a UTF-8 em dash arrives as three cp1252
-// characters and `Get-Content ~\.tokendrop\tokendrop.toml` showed the
+// characters and `Get-Content ~\.jevlin\jevlin.toml` showed the
 // participant `# target_epoch deliberately unset â€” flush asks…`. Nothing
 // behaved differently; it just looked broken to the one person who had
 // gone looking at the file.
@@ -80,10 +80,10 @@ func asciiSetupValues(home string) setupValues {
 }
 
 func TestEveryGeneratedConfigIsASCII(t *testing.T) {
-	home := filepath.Join(t.TempDir(), "tokendrop")
+	home := filepath.Join(t.TempDir(), "jevlin")
 	v := asciiSetupValues(home)
 
-	t.Run("tokendrop.toml, fresh", func(t *testing.T) {
+	t.Run("jevlin.toml, fresh", func(t *testing.T) {
 		b, err := renderFreshConfig(v)
 		if err != nil {
 			t.Fatal(err)
@@ -97,7 +97,7 @@ func TestEveryGeneratedConfigIsASCII(t *testing.T) {
 		asciiOrFail(t, "renderFreshConfig", b)
 	})
 
-	t.Run("tokendrop.toml, fresh with the scripted mining answer", func(t *testing.T) {
+	t.Run("jevlin.toml, fresh with the scripted mining answer", func(t *testing.T) {
 		sv := v
 		sv.scriptedMine = true
 		sv.payoutAddress = "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn"
@@ -108,7 +108,7 @@ func TestEveryGeneratedConfigIsASCII(t *testing.T) {
 		asciiOrFail(t, "renderFreshConfig (scripted)", b)
 	})
 
-	t.Run("tokendrop.toml, migrated", func(t *testing.T) {
+	t.Run("jevlin.toml, migrated", func(t *testing.T) {
 		// A proxy-era config with neither table: setup appends both, with a
 		// comment of its own.
 		existing := []byte("[[provider]]\nname = \"search-router\"\nupstream = \"https://router-api.nyks.dev\"\n")

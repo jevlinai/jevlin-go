@@ -400,7 +400,7 @@ func TestOurHermesEntryIsRecognizedInEverySpelling(t *testing.T) {
 func TestAnotherInstallationsHermesEntryIsNotOurs(t *testing.T) {
 	entry, _ := ourHermesEntry(t)
 	other := entry
-	other.cfg = "/home/u/dm-disposable/tokendrop.toml"
+	other.cfg = "/home/u/dm-disposable/jevlin.toml"
 	cmd, ok := hermesHookCommand(other, false)
 	if !ok {
 		t.Fatal("cannot render the other installation's command")

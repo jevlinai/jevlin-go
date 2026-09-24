@@ -110,7 +110,7 @@ sessions_dir = %q
 flush_interval = "1s"
 `, as.srv.URL, testChainID, testSlotID, stateDir, filepath.Join(root, "spool"),
 		router.srv.URL, filepath.Join(root, "intake"), filepath.Join(root, "sessions"))
-	cfgPath := filepath.Join(root, "tokendrop.toml")
+	cfgPath := filepath.Join(root, "jevlin.toml")
 	if err := os.WriteFile(cfgPath, []byte(doc), 0o600); err != nil {
 		t.Fatal(err)
 	}

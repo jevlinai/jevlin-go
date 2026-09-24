@@ -84,8 +84,8 @@ var (
 // (describeConfigSource) found no config file at all, not even the
 // installation's own, so there is nothing here connect may register
 // against.
-var errConnectNoConfig = errors.New("no config file found — looked at -config, TOKENDROP_CONFIG, " +
-	"./tokendrop.toml and the installation's own config; run `jevlin setup` first")
+var errConnectNoConfig = errors.New("no config file found — looked at -config, JEVLIN_CONFIG, " +
+	"./jevlin.toml and the installation's own config; run `jevlin setup` first")
 
 func connectLockPath(stateDir string) string { return filepath.Join(stateDir, "connect.lock") }
 func resumeStampPath(stateDir string) string { return filepath.Join(stateDir, "connect_resume.json") }

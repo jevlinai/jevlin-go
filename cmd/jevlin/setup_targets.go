@@ -66,7 +66,7 @@ or extension that threads each search into the agent's session (an agent with
 no skill directory gets a plugin and a line to paste into its rules instead).
 These are written into the agent's own config directory. For %s it also
 widens the sandbox in its config.toml:
-network access on, and the tokendrop state directory — plus the intake,
+network access on, and the jevlin state directory — plus the intake,
 sessions and spool directories — made writable, never the config, the stored
 key or the wallet, so a search can record itself and the claim can resolve.
 Answering yes here accepts all of that.

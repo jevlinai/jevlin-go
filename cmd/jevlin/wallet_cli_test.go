@@ -264,10 +264,10 @@ func TestWalletRegisterWithoutAWalletSaysHowToMakeOne(t *testing.T) {
 // always meaning the first.
 func TestWalletRegisterSaysNoConfigWasFound(t *testing.T) {
 	dir := walletScratchDir(t)
-	// A directory with no tokendrop.toml, so the cwd leg of the search
+	// A directory with no jevlin.toml, so the cwd leg of the search
 	// finds nothing either. t.Chdir keeps a developer's real one out.
 	t.Chdir(t.TempDir())
-	t.Setenv("TOKENDROP_CONFIG", "")
+	t.Setenv("JEVLIN_CONFIG", "")
 
 	var out, errOut bytes.Buffer
 	if code := cmdWallet([]string{"init", "-dir", dir, "-print-anyway"},
@@ -278,7 +278,7 @@ func TestWalletRegisterSaysNoConfigWasFound(t *testing.T) {
 	errText := captureStderr(t, func() {
 		_ = cmdWallet([]string{"register", "-dir", dir}, strings.NewReader(""), &out, &errOut, noEnv)
 	})
-	for _, want := range []string{"no config file found", "TOKENDROP_CONFIG", "-config"} {
+	for _, want := range []string{"no config file found", "JEVLIN_CONFIG", "-config"} {
 		if !strings.Contains(errText, want) {
 			t.Errorf("the refusal should mention %q: %q", want, errText)
 		}
@@ -287,8 +287,8 @@ func TestWalletRegisterSaysNoConfigWasFound(t *testing.T) {
 
 // The environment is a first-class way to name the config, exactly as it is
 // for the daemon and the agent commands. Before this, these six commands
-// were the only ones that ignored TOKENDROP_CONFIG and demanded the flag.
-func TestOperatorCommandsHonorTokendropConfigFromTheEnvironment(t *testing.T) {
+// were the only ones that ignored JEVLIN_CONFIG and demanded the flag.
+func TestOperatorCommandsHonorJevlinConfigFromTheEnvironment(t *testing.T) {
 	dir := walletScratchDir(t)
 	var out, errOut bytes.Buffer
 	if code := cmdWallet([]string{"init", "-dir", dir, "-print-anyway"},
@@ -300,20 +300,20 @@ func TestOperatorCommandsHonorTokendropConfigFromTheEnvironment(t *testing.T) {
 	// A config with [mining] enabled but an AS that does not exist: getting
 	// PAST config resolution is the whole point, so the failure we want is
 	// a network/discovery one, never "no config".
-	cfg := filepath.Join(t.TempDir(), "tokendrop.toml")
+	cfg := filepath.Join(t.TempDir(), "jevlin.toml")
 	body := "[[provider]]\nname = \"search-router\"\nupstream = \"https://upstream.invalid\"\n\n" +
 		"[mining]\nenabled = true\nas_url = \"https://as.invalid\"\nchain_id = \"c\"\nslot_id = 1\n" +
 		"state_dir = \"" + dir + "\"\n"
 	if err := os.WriteFile(cfg, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("TOKENDROP_CONFIG", cfg)
+	t.Setenv("JEVLIN_CONFIG", cfg)
 
 	errText := captureStderr(t, func() {
 		_ = cmdWallet([]string{"register", "-dir", dir}, strings.NewReader(""), &out, &errOut, noEnv)
 	})
 	if strings.Contains(errText, "no config file found") || strings.Contains(errText, "-config is required") {
-		t.Errorf("TOKENDROP_CONFIG was ignored: %q", errText)
+		t.Errorf("JEVLIN_CONFIG was ignored: %q", errText)
 	}
 	if strings.Contains(errText, "no [mining] block") {
 		t.Errorf("the config from the environment was not read: %q", errText)

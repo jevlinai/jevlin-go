@@ -376,7 +376,7 @@ func TestInstallKeepsATableWhoseHeaderHoldsABracket(t *testing.T) {
 // to build it, which is the point — the net must not depend on knowing which
 // header the scan will miss next.
 func TestTheNetRefusesASectionThatIsNotOnlyOurs(t *testing.T) {
-	ours := sandboxSettings([]string{"/home/u/.tokendrop/state"})
+	ours := sandboxSettings([]string{"/home/u/.jevlin/state"})
 	for _, tc := range []struct {
 		name string
 		text string

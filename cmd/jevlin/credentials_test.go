@@ -38,7 +38,7 @@ func TestResolveAPIKeyOrderIsEnvThenFile(t *testing.T) {
 		}
 	}
 
-	k, src, err := resolveAPIKey(envOf(map[string]string{"TOKENDROP_API_KEY": "sr-canary-env", "OPENAI_API_KEY": "sk-canary"}), m) // #nosec G101 -- synthetic canaries, not credentials
+	k, src, err := resolveAPIKey(envOf(map[string]string{"JEVLIN_API_KEY": "sr-canary-env", "OPENAI_API_KEY": "sk-canary"}), m) // #nosec G101 -- synthetic canaries, not credentials
 	if err != nil || k != "sr-canary-env" || src != keyFromEnv {
 		t.Errorf("env should win: %q %q %v", k, src, err)
 	}
@@ -200,7 +200,7 @@ func TestLoginVerifiesWithoutSpendingThenStoresAndSearchUsesIt(t *testing.T) {
 		t.Errorf("search did not send the stored key: %q", req.Header.Get("Authorization"))
 	}
 	// And the environment still wins over the file.
-	runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "sr-canary-env"}, "-config", cfg, "q") // #nosec G101 -- synthetic canary, not a credential
+	runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "sr-canary-env"}, "-config", cfg, "q") // #nosec G101 -- synthetic canary, not a credential
 	if req, _ := fr.last(t); req.Header.Get("Authorization") != "Bearer sr-canary-env" {
 		t.Errorf("env did not override the file: %q", req.Header.Get("Authorization"))
 	}
@@ -274,8 +274,8 @@ func TestLoginShowAndForget(t *testing.T) {
 	if code != exitOK || !strings.Contains(out, "sr-…good from credentials file") || strings.Contains(out, "sr-canary-good") {
 		t.Errorf("show: %d %q", code, out)
 	}
-	code, out, _ = runLogin(t, "", map[string]string{"TOKENDROP_API_KEY": "sr-canary-envkey"}, "-config", cfg, "-show") // #nosec G101 -- synthetic canary, not a credential
-	if code != exitOK || !strings.Contains(out, "from TOKENDROP_API_KEY") || !strings.Contains(out, "shadowed by the environment") {
+	code, out, _ = runLogin(t, "", map[string]string{"JEVLIN_API_KEY": "sr-canary-envkey"}, "-config", cfg, "-show") // #nosec G101 -- synthetic canary, not a credential
+	if code != exitOK || !strings.Contains(out, "from JEVLIN_API_KEY") || !strings.Contains(out, "shadowed by the environment") {
 		t.Errorf("show with env set: %d %q", code, out)
 	}
 
@@ -311,8 +311,8 @@ func TestSearchWithoutAnyKeyNamesLogin(t *testing.T) {
 func TestSearch401NamesTheKeySourceAndLogin(t *testing.T) {
 	_, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusUnauthorized) })
 	h := fixedSearchOps(root)
-	code, _, errOut := runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "sr-canary-env"}, "-config", cfg, "q") // #nosec G101 -- synthetic canary, not a credential
-	if code != exitClientErr || !strings.Contains(errOut, "from TOKENDROP_API_KEY") || !strings.Contains(errOut, "jevlin login") {
+	code, _, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "sr-canary-env"}, "-config", cfg, "q") // #nosec G101 -- synthetic canary, not a credential
+	if code != exitClientErr || !strings.Contains(errOut, "from JEVLIN_API_KEY") || !strings.Contains(errOut, "jevlin login") {
 		t.Errorf("exit %d err %q", code, errOut)
 	}
 }

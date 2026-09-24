@@ -150,7 +150,7 @@ func TestStatusDoesNotCallAMissingHalfOrAForeignSkillStale(t *testing.T) {
 	}
 
 	// The same machine, asked about by an installation the skill does not name.
-	_, out, _ = runAgents(t, ops, nil, "status", "-config", "/home/u/dm-disposable/tokendrop.toml")
+	_, out, _ = runAgents(t, ops, nil, "status", "-config", "/home/u/dm-disposable/jevlin.toml")
 	if got := staleLines(out); len(got) != 0 {
 		t.Errorf("another installation's skill was reported as this one's stale rendering: %q", got)
 	}

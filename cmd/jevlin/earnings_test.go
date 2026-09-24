@@ -477,12 +477,12 @@ func TestHittingThePageCeilingIsReportedAsAFloor(t *testing.T) {
 // ---- the whole command ----
 
 // earningsRun runs the command in an empty working directory, so nothing on
-// the developer's machine — a stray tokendrop.toml, a wallet — can be found.
+// the developer's machine — a stray jevlin.toml, a wallet — can be found.
 func earningsRun(t *testing.T, args ...string) (string, string, int) {
 	t.Helper()
 	t.Chdir(t.TempDir())
-	t.Setenv("TOKENDROP_CONFIG", "")
-	t.Setenv("TOKENDROP_WALLET_DIR", "")
+	t.Setenv("JEVLIN_CONFIG", "")
+	t.Setenv("JEVLIN_WALLET_DIR", "")
 	var out, errOut bytes.Buffer
 	code := cmdEarnings(args, &out, &errOut, noEnv)
 	return out.String(), errOut.String(), code

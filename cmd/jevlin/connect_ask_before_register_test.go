@@ -223,7 +223,7 @@ func TestConnectScriptedOptInHintsMiningAtRegistration(t *testing.T) {
 }
 
 // The opt-out mirror: no [mining] block at all (the default scripted
-// shape when TOKENDROP_MINING is unset) means the answer is "no" before
+// shape when JEVLIN_MINING is unset) means the answer is "no" before
 // register ever runs, and register must receive no hint at all — not an
 // explicit empty list, which §5.1 treats as a field the client had an
 // opinion about (see the "empty requested_scopes was sent as a field

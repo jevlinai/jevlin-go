@@ -185,7 +185,7 @@ func TestAnInterruptAtThePayoutAddressCreatesNoWallet(t *testing.T) {
 			t.Fatal(err)
 		}
 		walletDir := filepath.Join(t.TempDir(), "wallet")
-		t.Setenv("TOKENDROP_WALLET_DIR", walletDir)
+		t.Setenv("JEVLIN_WALLET_DIR", walletDir)
 		t.Setenv(walletPassphraseEnv, "correct horse battery staple")
 
 		in := stdin("y")

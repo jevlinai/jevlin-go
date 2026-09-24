@@ -34,10 +34,10 @@ package main
 //
 // Who is keyed where. connect and flush key the gate on the directory of the
 // config file they are about to load — chosen exactly as loadConfig chooses
-// it (-config, then TOKENDROP_CONFIG, then ./tokendrop.toml, then the
+// it (-config, then JEVLIN_CONFIG, then ./jevlin.toml, then the
 // installation's own config when that file exists) — and they know that
 // path before loading anything. setup keys it on the installation
-// directory it writes, whose config is H/tokendrop.toml; on the installer
+// directory it writes, whose config is H/jevlin.toml; on the installer
 // layout the two keys are the same path. Every path that names a gate goes
 // through lifecycleIdentity, one lexical canonicalization, so two spellings
 // of the same directory do not give two gates. Symlinks are not resolved:
@@ -70,7 +70,7 @@ const (
 	// detachedChildEnv is set by spawnDetached, the single choke point for
 	// every detached child, so a child can tell it was not started by a
 	// person without a flag a person could also type.
-	detachedChildEnv = "TOKENDROP_DETACHED"
+	detachedChildEnv = "JEVLIN_DETACHED"
 	// lifecycleBusyRetryAfter is the retry hint a machine caller gets.
 	lifecycleBusyRetryAfter = 5 * time.Second
 )
@@ -123,7 +123,7 @@ func configGatePath(cfgFlag string, getenv func(string) string) (string, error) 
 		}
 		return lifecycleGatePath(filepath.Dir(abs)), nil
 	}
-	home := defaultTokendropHome(getenv)
+	home := defaultJevlinHome(getenv)
 	if home == "" {
 		return "", nil
 	}
@@ -135,19 +135,19 @@ func configGatePath(cfgFlag string, getenv func(string) string) (string, error) 
 }
 
 // resolveInstallationHome is H for the commands that act on an installation
-// as a whole (uninstall, upgrade): -home, then TOKENDROP_HOME, then the
-// directory of TOKENDROP_CONFIG when that file is named tokendrop.toml, then
+// as a whole (uninstall, upgrade): -home, then JEVLIN_HOME, then the
+// directory of JEVLIN_CONFIG when that file is named jevlin.toml, then
 // the native installer layout — the executable's directory is named bin and
-// its parent holds tokendrop.toml — then ~/.tokendrop. A config with any
+// its parent holds jevlin.toml — then ~/.jevlin. A config with any
 // other name says nothing about which directory is an installation: taking
 // its parent would point destructive commands at an arbitrary directory.
 func resolveInstallationHome(homeFlag string, getenv func(string) string, userHome, executable string) (string, error) {
 	candidate := homeFlag
 	if candidate == "" {
-		candidate = getenv("TOKENDROP_HOME")
+		candidate = getenv("JEVLIN_HOME")
 	}
 	if candidate == "" {
-		if cfg := getenv("TOKENDROP_CONFIG"); cfg != "" {
+		if cfg := getenv("JEVLIN_CONFIG"); cfg != "" {
 			abs, err := lifecycleIdentity(cfg)
 			if err != nil {
 				return "", err
@@ -167,7 +167,7 @@ func resolveInstallationHome(homeFlag string, getenv func(string) string, userHo
 		if userHome == "" {
 			return "", errors.New("no installation directory: pass -home")
 		}
-		candidate = filepath.Join(userHome, ".tokendrop")
+		candidate = filepath.Join(userHome, ".jevlin")
 	}
 	return lifecycleIdentity(candidate)
 }

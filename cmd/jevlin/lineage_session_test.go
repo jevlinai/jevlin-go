@@ -9,7 +9,7 @@ package main
 // exports the hashed session id it already writes into the lineage file, and
 // the walk requires it when it is there.
 //
-// The walk is only reached when TOKENDROP_LINEAGE is absent, so every search
+// The walk is only reached when JEVLIN_LINEAGE is absent, so every search
 // here arrives without it: that is the case being fixed.
 
 import (
@@ -27,7 +27,7 @@ var (
 )
 
 func walkEnv(session string) map[string]string {
-	env := map[string]string{"TOKENDROP_HARNESS": "cursor"}
+	env := map[string]string{"JEVLIN_HARNESS": "cursor"}
 	if session != "" {
 		env[sessionEnv] = session
 	}

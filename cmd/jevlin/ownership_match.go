@@ -3,7 +3,7 @@ package main
 // Which installation an agent integration belongs to.
 //
 // Two installations on one machine share a binary whenever the second was set
-// up by running the first's copy — `~/.tokendrop/bin/jevlin setup -home
+// up by running the first's copy — `~/.jevlin/bin/jevlin setup -home
 // ~/dm-disposable` is the documented way to make one. Deciding that a hook
 // entry, an allow rule or a skill is "ours" by its BINARY PATH alone would
 // make uninstalling either installation plan the removal of both
@@ -206,7 +206,7 @@ func (ref installationRef) commandIsOurs(command string) bool {
 // They are config keys, not a layout, and that is the whole correction here.
 // The first version of this asked whether every root lay under the directory
 // holding the config, which is true of the default layout and of nothing
-// else: a participant whose state_dir points outside their tokendrop home has
+// else: a participant whose state_dir points outside their jevlin home has
 // a block their own install wrote and could then no longer recognize, so the
 // refresh their config change had just made necessary printed "it belongs to
 // another installation" and did nothing, and their uninstall left it. The
@@ -275,7 +275,7 @@ func dirsInclude(dirs []string, dir string) bool {
 //
 // The home is the deepest directory every root lies under, and it is called
 // an installation only when a config is actually there: the block names
-// directories, and a directory holding no tokendrop.toml is a place, not an
+// directories, and a directory holding no jevlin.toml is a place, not an
 // installation. Roots with no common home short of the filesystem root name
 // nobody, and the sentence says that rather than pointing at "/".
 func describeSandboxOwner(roots []string) string {

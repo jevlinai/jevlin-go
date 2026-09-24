@@ -3,7 +3,7 @@
   "removes": [
     {
       "surface": "Claude Code",
-      "path": "/home/u/.claude/skills/dropin-miner"
+      "path": "/home/u/.claude/skills/jevlin"
     },
     {
       "surface": "Claude Code",

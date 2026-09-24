@@ -29,7 +29,7 @@ const (
 
 // DefaultWalletNodes is keyed by chain id: the CometBFT RPC node the
 // wallet uses when nothing overrides it (-node, then
-// TOKENDROP_WALLET_NODE, then this table). One row per chain we know; a
+// JEVLIN_WALLET_NODE, then this table). One row per chain we know; a
 // chain with no row has no default — the wallet refuses before any
 // network call rather than guessing. Adding a network is adding a row
 // here.

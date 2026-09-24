@@ -57,7 +57,7 @@ func newFakeMachine(onPath ...string) (*fakeMachine, agentOps) {
 			}
 			return "", errors.New("not found")
 		},
-		executable: func() (string, error) { return "/home/u/.tokendrop/bin/jevlin", nil },
+		executable: func() (string, error) { return "/home/u/.jevlin/bin/jevlin", nil },
 		readFile: func(p string) ([]byte, error) {
 			b, ok := m.files[slash(p)]
 			if !ok {
@@ -101,7 +101,7 @@ func runAgents(t *testing.T, ops agentOps, env map[string]string, args ...string
 	return code, out.String(), errOut.String()
 }
 
-const testCfg = "/home/u/.tokendrop/tokendrop.toml"
+const testCfg = "/home/u/.jevlin/jevlin.toml"
 
 func hooksOf(t *testing.T, m *fakeMachine, path string) map[string]any {
 	t.Helper()
@@ -135,7 +135,7 @@ func TestAgentsDryRunDetectsAgentsAndWritesNothing(t *testing.T) {
 		t.Fatalf("exit %d\n%s", code, out)
 	}
 	out = filepath.ToSlash(out)
-	for _, want := range []string{"agents: Claude Code, Cursor", "skills/dropin-miner/SKILL.md", "settings.json", "hooks.json", "(dry run"} {
+	for _, want := range []string{"agents: Claude Code, Cursor", "skills/jevlin/SKILL.md", "settings.json", "hooks.json", "(dry run"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
 		}
@@ -153,10 +153,10 @@ func TestAgentsInstallWritesClaudeSkillAndMergesHooksIntoSettings(t *testing.T) 
 	if code != exitOK {
 		t.Fatalf("exit %d\n%s%s", code, out, errOut)
 	}
-	skill := string(m.files["/home/u/.claude/skills/dropin-miner/SKILL.md"])
+	skill := string(m.files["/home/u/.claude/skills/jevlin/SKILL.md"])
 	// The paths are single-quoted from H2 on: that is POSIX quoting, where
 	// nothing expands, rather than Go's %q, where $ and ` still do.
-	if !strings.Contains(skill, `'/home/u/.tokendrop/bin/jevlin' search -config '`) || !strings.Contains(skill, `tokendrop.toml' -format model`) || !strings.Contains(skill, "name: dropin-miner") {
+	if !strings.Contains(skill, `'/home/u/.jevlin/bin/jevlin' search -config '`) || !strings.Contains(skill, `jevlin.toml' -format model`) || !strings.Contains(skill, "name: jevlin") {
 		t.Errorf("skill:\n%s", skill)
 	}
 	var doc map[string]any
@@ -174,7 +174,7 @@ func TestAgentsInstallWritesClaudeSkillAndMergesHooksIntoSettings(t *testing.T) 
 	// sends through Claude Code's PowerShell tool reaches this hook too. The
 	// value is written out rather than compared with the constant — a test
 	// that reads the constant agrees with whatever the constant becomes.
-	if ours["matcher"] != "Bash|PowerShell" || !strings.Contains(ours["hooks"].([]any)[0].(map[string]any)["command"].(string), `tokendrop.toml' lineage`) {
+	if ours["matcher"] != "Bash|PowerShell" || !strings.Contains(ours["hooks"].([]any)[0].(map[string]any)["command"].(string), `jevlin.toml' lineage`) {
 		t.Errorf("our PreToolUse group: %v", ours)
 	}
 	for _, ev := range []string{"SessionStart", "PreCompact", "PostCompact", "Stop"} {
@@ -182,7 +182,7 @@ func TestAgentsInstallWritesClaudeSkillAndMergesHooksIntoSettings(t *testing.T) 
 			t.Errorf("no %s hook", ev)
 		}
 	}
-	if bytes.Contains(m.files[settings], []byte("sr-")) || bytes.Contains(m.files[settings], []byte("TOKENDROP_API_KEY")) {
+	if bytes.Contains(m.files[settings], []byte("sr-")) || bytes.Contains(m.files[settings], []byte("JEVLIN_API_KEY")) {
 		t.Error("a key reached settings.json")
 	}
 	allow := allowOf(t, m, settings)
@@ -192,9 +192,9 @@ func TestAgentsInstallWritesClaudeSkillAndMergesHooksIntoSettings(t *testing.T) 
 	// The config path is absolutized by the host (a drive letter on Windows),
 	// so match around it rather than on it.
 	for i, want := range []struct{ prefix, suffix string }{
-		{`Bash('/home/u/.tokendrop/bin/jevlin' search -config '`, `tokendrop.toml':*)`},
-		{`Bash("/home/u/.tokendrop/bin/jevlin" search -config "`, `tokendrop.toml":*)`},
-		{`Bash(/home/u/.tokendrop/bin/jevlin search -config "`, `tokendrop.toml":*)`},
+		{`Bash('/home/u/.jevlin/bin/jevlin' search -config '`, `jevlin.toml':*)`},
+		{`Bash("/home/u/.jevlin/bin/jevlin" search -config "`, `jevlin.toml":*)`},
+		{`Bash(/home/u/.jevlin/bin/jevlin search -config "`, `jevlin.toml":*)`},
 	} {
 		r := allow[i+1]
 		if !strings.HasPrefix(r, want.prefix) || !strings.HasSuffix(r, want.suffix) {
@@ -221,7 +221,7 @@ func TestAgentsInstallWritesCursorSkillAndHooksFileWithVersion(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("exit %d\n%s", code, out)
 	}
-	if _, ok := m.files["/home/u/.cursor/skills/dropin-miner/SKILL.md"]; !ok {
+	if _, ok := m.files["/home/u/.cursor/skills/jevlin/SKILL.md"]; !ok {
 		t.Error("no cursor skill")
 	}
 	hooksPath := "/home/u/.cursor/hooks.json"
@@ -256,7 +256,7 @@ func TestAgentsInstallRefusesAHooksFileItCannotParse(t *testing.T) {
 	if !bytes.Contains(m.files["/home/u/.cursor/hooks.json"], []byte("// a comment")) {
 		t.Error("the file was rewritten")
 	}
-	if _, ok := m.files["/home/u/.cursor/skills/dropin-miner/SKILL.md"]; !ok {
+	if _, ok := m.files["/home/u/.cursor/skills/jevlin/SKILL.md"]; !ok {
 		t.Error("the skill, which needed no merge, was withheld")
 	}
 }
@@ -273,10 +273,10 @@ func TestAgentsUninstallRemovesOnlyWhatInstallWrote(t *testing.T) {
 		t.Fatalf("uninstall: %d\n%s", code, out)
 	}
 	for _, gone := range []string{
-		"/home/u/.claude/skills/dropin-miner/SKILL.md",
-		"/home/u/.cursor/skills/dropin-miner/SKILL.md",
-		"/home/u/.codex/skills/dropin-miner/SKILL.md",
-		"/home/u/.config/opencode/plugins/dropin-miner.js",
+		"/home/u/.claude/skills/jevlin/SKILL.md",
+		"/home/u/.cursor/skills/jevlin/SKILL.md",
+		"/home/u/.codex/skills/jevlin/SKILL.md",
+		"/home/u/.config/opencode/plugins/jevlin.js",
 	} {
 		if _, ok := m.files[gone]; ok {
 			t.Errorf("still present: %s", gone)
@@ -313,15 +313,15 @@ func TestAgentsUninstallRemovesOnlyWhatInstallWrote(t *testing.T) {
 
 func TestAgentsPreferOffRewritesSkillsAndInstallKeepsIt(t *testing.T) {
 	m, ops := newFakeMachine("claude", "codex")
-	claudeSkill := "/home/u/.claude/skills/dropin-miner/SKILL.md"
-	codexSkill := "/home/u/.codex/skills/dropin-miner/SKILL.md"
+	claudeSkill := "/home/u/.claude/skills/jevlin/SKILL.md"
+	codexSkill := "/home/u/.codex/skills/jevlin/SKILL.md"
 	if code, out, _ := runAgents(t, ops, nil, "install", "-config", testCfg, "-yes"); code != exitOK {
 		t.Fatalf("install: %d\n%s", code, out)
 	}
 	on := string(m.files[claudeSkill])
 	// The config path is host-absolutized (a drive letter on Windows), so
 	// match around it.
-	if !strings.Contains(on, "Prefer it over a built-in web search") || !strings.Contains(on, `' agents prefer -config '`) || !strings.Contains(on, `tokendrop.toml' <argument>`) {
+	if !strings.Contains(on, "Prefer it over a built-in web search") || !strings.Contains(on, `' agents prefer -config '`) || !strings.Contains(on, `jevlin.toml' <argument>`) {
 		t.Fatalf("shipped skill should prefer the router and name the prefer command:\n%s", on)
 	}
 	if code, out, _ := runAgents(t, ops, nil, "status", "-config", testCfg); code != exitOK || !strings.Contains(out, "search default: on") {
@@ -334,7 +334,7 @@ func TestAgentsPreferOffRewritesSkillsAndInstallKeepsIt(t *testing.T) {
 	}
 	prefFiles := 0
 	for p, b := range m.files {
-		if strings.HasSuffix(p, "/.tokendrop/search-default") {
+		if strings.HasSuffix(p, "/.jevlin/search-default") {
 			prefFiles++
 			if got := strings.TrimSpace(string(b)); got != "builtin" {
 				t.Errorf("preference file: %q", got)
@@ -349,11 +349,11 @@ func TestAgentsPreferOffRewritesSkillsAndInstallKeepsIt(t *testing.T) {
 		if strings.Contains(off, "Prefer it over a built-in web search") || !strings.Contains(off, "turned OFF as the default") || !strings.Contains(off, "Use the agent's built-in web") {
 			t.Errorf("%s not rewritten for off:\n%s", p, off)
 		}
-		if !strings.Contains(off, `'/home/u/.tokendrop/bin/jevlin' search -config '`) {
+		if !strings.Contains(off, `'/home/u/.jevlin/bin/jevlin' search -config '`) {
 			t.Errorf("%s lost the search command", p)
 		}
 	}
-	if _, ok := m.files["/home/u/.cursor/skills/dropin-miner/SKILL.md"]; ok {
+	if _, ok := m.files["/home/u/.cursor/skills/jevlin/SKILL.md"]; ok {
 		t.Error("prefer created a skill for an agent that had none")
 	}
 
@@ -398,7 +398,7 @@ func TestAgentsPrintsRulesWhenNoAgentIsFoundAndClientOverridesDetection(t *testi
 	if code != exitOK {
 		t.Fatalf("exit %d\n%s", code, out)
 	}
-	if _, ok := m.files["/home/u/.codex/skills/dropin-miner/SKILL.md"]; !ok {
+	if _, ok := m.files["/home/u/.codex/skills/jevlin/SKILL.md"]; !ok {
 		t.Error("-client codex did not install the codex skill")
 	}
 	if !strings.Contains(out, "sandboxed") {
@@ -425,8 +425,8 @@ func TestAgentsOpencodePluginRewritesOurCommandOnly(t *testing.T) {
 	if code, out, _ := runAgents(t, ops, nil, "install", "-config", testCfg, "-yes"); code != exitOK {
 		t.Fatalf("exit %d\n%s", code, out)
 	}
-	js := string(m.files["/home/u/.config/opencode/plugins/dropin-miner.js"])
-	for _, want := range []string{`input.tool !== "bash"`, "TOKENDROP_TRACE_BRIDGE=", "tokendrop-trace-v1|", "export const JevlinLineage"} {
+	js := string(m.files["/home/u/.config/opencode/plugins/jevlin.js"])
+	for _, want := range []string{`input.tool !== "bash"`, "JEVLIN_TRACE_BRIDGE=", "tokendrop-trace-v1|", "export const JevlinLineage"} {
 		if !strings.Contains(js, want) {
 			t.Errorf("plugin lacks %q", want)
 		}
@@ -492,7 +492,7 @@ func TestAgentsUninstallSparesAHookEntryForADifferentInstallationOfTheSameName(t
 // executes it.
 func TestAgentsHookAndAllowRuleMatchingSurvivesAWindowsStyleBinaryPath(t *testing.T) {
 	m, ops := newFakeMachine("claude", "cursor")
-	ops.executable = func() (string, error) { return `C:\Users\u\.tokendrop\bin\jevlin.exe`, nil }
+	ops.executable = func() (string, error) { return `C:\Users\u\.jevlin\bin\jevlin.exe`, nil }
 
 	for i := 1; i <= 2; i++ {
 		if code, out, errOut := runAgents(t, ops, nil, "install", "-config", testCfg, "-yes"); code != exitOK {
@@ -577,7 +577,7 @@ func wantHookCommand(t *testing.T, tg installTarget, e binEntry, sub ...string) 
 // double-quoted form are the same string and would not be two spellings.
 // Nothing here executes the path; it is a string inside JSON on every OS.
 func TestEveryHookSpellingIsReplacedOnInstallAndRemovedOnUninstall(t *testing.T) {
-	const bin = `C:\Users\u\.tokendrop\bin\jevlin.exe`
+	const bin = `C:\Users\u\.jevlin\bin\jevlin.exe`
 	// The installer resolves -config with filepath.Abs before it renders
 	// anything, so on Windows the path it writes is rooted on the runner's
 	// current drive (D:\home\u\... on the CI image) and is spelled with
@@ -712,7 +712,7 @@ func cursorEntryCommand(e any) string {
 // current rendering on every runner: %q doubles the backslashes, and no
 // shell's quoting does.
 func TestInstallReplacesOneStaleEntryPerEventInPlace(t *testing.T) {
-	const bin = `C:\Users\u\.tokendrop\bin\jevlin.exe`
+	const bin = `C:\Users\u\.jevlin\bin\jevlin.exe`
 	cfg, err := filepath.Abs(testCfg)
 	if err != nil {
 		t.Fatal(err)

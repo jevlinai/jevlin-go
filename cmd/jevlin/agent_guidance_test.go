@@ -29,7 +29,7 @@ func instructionTextFor(t *testing.T, surfaceID string, entry binEntry) string {
 }
 
 func guidanceEntry() binEntry {
-	return binEntry{command: "/usr/local/bin/jevlin", cfg: "/home/u/tokendrop.toml"}
+	return binEntry{command: "/usr/local/bin/jevlin", cfg: "/home/u/jevlin.toml"}
 }
 
 func TestEverySupportedHostIsToldTheStructuredProtocol(t *testing.T) {
@@ -221,7 +221,7 @@ func TestOnlyHermesCarriesTheHookApprovalNote(t *testing.T) {
 // The skill teaches a command; the lineage adapters have to keep
 // recognizing it. This is the join between §16 and the frozen recognizer.
 func TestTheTaughtInvocationIsStillRecognizedAsOurSearch(t *testing.T) {
-	entry := binEntry{command: "/usr/local/bin/jevlin", cfg: "/home/u/tokendrop.toml"}
+	entry := binEntry{command: "/usr/local/bin/jevlin", cfg: "/home/u/jevlin.toml"}
 	invocations := []string{
 		entry.stdinCommand(),
 		entry.searchCommand() + ` "a query"`,

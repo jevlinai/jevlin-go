@@ -33,8 +33,8 @@ func TestPiExtensionRegexMatchesTheCanonicalRecognizer(t *testing.T) {
 }
 
 const (
-	piSkillPath     = "/home/u/.pi/agent/skills/dropin-miner/SKILL.md"
-	piExtensionPath = "/home/u/.pi/agent/extensions/dropin-miner.ts"
+	piSkillPath     = "/home/u/.pi/agent/skills/jevlin/SKILL.md"
+	piExtensionPath = "/home/u/.pi/agent/extensions/jevlin.ts"
 )
 
 // Hermes' home is platform-dependent (%LOCALAPPDATA%\hermes on Windows,
@@ -60,13 +60,13 @@ func TestPiAndHermesInstallWriteSkillsAndUninstallRemovesThem(t *testing.T) {
 			continue
 		}
 		s := string(b)
-		if !strings.Contains(s, "name: dropin-miner") {
+		if !strings.Contains(s, "name: jevlin") {
 			t.Errorf("%s: not our skill:\n%s", p, s)
 		}
 		// It teaches the CLI-as-tool invocation, pointed at this config. The
 		// config path is made absolute (drive-lettered on Windows), so match
 		// the basename, not the literal testCfg.
-		if !strings.Contains(s, "search") || !strings.Contains(s, "tokendrop.toml") {
+		if !strings.Contains(s, "search") || !strings.Contains(s, "jevlin.toml") {
 			t.Errorf("%s: skill does not name the search command with the config", p)
 		}
 	}
@@ -75,7 +75,7 @@ func TestPiAndHermesInstallWriteSkillsAndUninstallRemovesThem(t *testing.T) {
 	ext, ok := m.files[piExtensionPath]
 	if !ok {
 		t.Errorf("Pi lineage extension not written: %s", piExtensionPath)
-	} else if s := string(ext); !strings.Contains(s, `harness: "pi"`) || !strings.Contains(s, "tokendrop-trace-v1|") || !strings.Contains(s, "TOKENDROP_TRACE_BRIDGE") {
+	} else if s := string(ext); !strings.Contains(s, `harness: "pi"`) || !strings.Contains(s, "tokendrop-trace-v1|") || !strings.Contains(s, "JEVLIN_TRACE_BRIDGE") {
 		t.Errorf("Pi extension is not the lineage bridge:\n%s", s)
 	}
 
@@ -229,7 +229,7 @@ func TestHermesInstallHonorsHermesHome(t *testing.T) {
 	if code, out, _ := runAgents(t, ops, env, "install", "-config", testCfg, "-yes"); code != exitOK {
 		t.Fatalf("install: %d\n%s", code, out)
 	}
-	want := "/data/profiles/work/skills/dropin-miner/SKILL.md"
+	want := "/data/profiles/work/skills/jevlin/SKILL.md"
 	if _, ok := m.files[want]; !ok {
 		t.Errorf("HERMES_HOME not honored; skill not at %s\nfiles: %v", want, keysOf(m.files))
 	}

@@ -97,10 +97,10 @@ func healthyFacts() doctorFacts {
 		// wrong reason and would keep the all-OK test green however the
 		// checks behaved.
 		MinerEnabled:       true,
-		IntakeDir:          "/fictional/tokendrop/intake",
+		IntakeDir:          "/fictional/jevlin/intake",
 		LocalStateKnown:    true,
 		MiningDecision:     auth.MiningDecision{State: auth.MiningEnabled, Present: true},
-		IntakeProbe:        intakeProbeResult{Ran: true, Dir: "/fictional/tokendrop/intake"},
+		IntakeProbe:        intakeProbeResult{Ran: true, Dir: "/fictional/jevlin/intake"},
 		Now:                healthyNow,
 		Stamp:              flushStamp{V: 1, LastFlush: healthyNow.Add(-time.Hour), TargetEpoch: 1042},
 		StampPresent:       true,

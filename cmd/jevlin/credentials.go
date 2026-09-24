@@ -4,7 +4,7 @@ package main
 //
 // `search` sends the participant's sr- key in Authorization; the router
 // meters against it and that is what makes a search payable. Until now
-// the key lived only in TOKENDROP_API_KEY, which works for an agent
+// the key lived only in JEVLIN_API_KEY, which works for an agent
 // started from a shell that exports it and fails for one launched from a
 // Dock icon, a service, or a fresh terminal that never sourced the
 // profile. `jevlin login` stores the key once, owner-only, beside
@@ -13,10 +13,10 @@ package main
 //
 // Resolution order, and why:
 //
-//	TOKENDROP_API_KEY        the environment wins so a shell can override
+//	JEVLIN_API_KEY        the environment wins so a shell can override
 //	                         the stored key for one session (a second
 //	                         account, a CI runner) without touching disk
-//	credentials.json         what login wrote: ~/.tokendrop/credentials.json,
+//	credentials.json         what login wrote: ~/.jevlin/credentials.json,
 //	                         0600, refused if a symlink or readable by
 //	                         anyone else — the same posture as the auth
 //	                         store's refresh token
@@ -54,7 +54,7 @@ const (
 	credentialsFile    = "credentials.json"
 	credentialsVersion = 1
 
-	apiKeyEnv = "TOKENDROP_API_KEY" // #nosec G101 -- an env var NAME, not a credential value
+	apiKeyEnv = "JEVLIN_API_KEY" // #nosec G101 -- an env var NAME, not a credential value
 
 	// loginProbeTimeout bounds the verification round trip; a router that
 	// does not answer in this long is reported, not waited on.
@@ -81,7 +81,7 @@ var loginProbeTransport = cloneDefaultTransport(loginProbeDialer)
 type keySource string
 
 const (
-	keyFromEnv  keySource = "TOKENDROP_API_KEY"
+	keyFromEnv  keySource = "JEVLIN_API_KEY"
 	keyFromFile keySource = "credentials file"
 	keyFromNone keySource = ""
 )
@@ -96,7 +96,7 @@ type credentials struct {
 }
 
 // credentialsPath is the file beside the intake directory: with the
-// standard layout that is ~/.tokendrop/credentials.json.
+// standard layout that is ~/.jevlin/credentials.json.
 func credentialsPath(m config.Miner) string {
 	return filepath.Join(minerRoot(m), credentialsFile)
 }
@@ -182,7 +182,7 @@ func writeCredentials(path string, c credentials) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(c, "", "  ") // #nosec G117 -- this IS the credential's one legitimate persisted home: ~/.tokendrop/credentials.json, written 0600 below
+	data, err := json.MarshalIndent(c, "", "  ") // #nosec G117 -- this IS the credential's one legitimate persisted home: ~/.jevlin/credentials.json, written 0600 below
 	if err != nil {
 		return err
 	}
@@ -322,7 +322,7 @@ func cmdLogin(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv f
 		}
 		fmt.Fprintf(stdout, "removed %s\n", path)
 		if getenv(apiKeyEnv) != "" {
-			fmt.Fprintln(stdout, "note: TOKENDROP_API_KEY is still set in this shell, so searches here keep working")
+			fmt.Fprintln(stdout, "note: JEVLIN_API_KEY is still set in this shell, so searches here keep working")
 		}
 		return exitOK
 	}
@@ -379,7 +379,7 @@ func cmdLogin(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv f
 	}
 	fmt.Fprintf(stdout, "key %s %sstored in %s (owner-only)\n", maskKey(key), verb, path)
 	if env := getenv(apiKeyEnv); env != "" && env != key {
-		fmt.Fprintln(stdout, "note: TOKENDROP_API_KEY is set in this shell to a different key, and the environment wins here")
+		fmt.Fprintln(stdout, "note: JEVLIN_API_KEY is set in this shell to a different key, and the environment wins here")
 	}
 	return exitOK
 }
@@ -393,7 +393,7 @@ func loginShow(stdout, stderr io.Writer, getenv func(string) string, m config.Mi
 		return exitClientErr
 	}
 	if key == "" {
-		fmt.Fprintf(stdout, "no key: TOKENDROP_API_KEY is unset, %s does not exist\n  store one with: jevlin login\n", path)
+		fmt.Fprintf(stdout, "no key: JEVLIN_API_KEY is unset, %s does not exist\n  store one with: jevlin login\n", path)
 		return exitOK
 	}
 	fmt.Fprintf(stdout, "key %s from %s\n", maskKey(key), source)

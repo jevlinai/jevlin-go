@@ -35,7 +35,7 @@ func newRecognizerFixture(t *testing.T, shells ...shellKind) recognizerFixture {
 	return recognizerFixture{
 		// The config lives under the installation directory a participant
 		// has, which is also what the skill-block helpers look for.
-		entry:  binEntry{command: self, cfg: filepath.Join(t.TempDir(), installMarker, "tokendrop.toml")},
+		entry:  binEntry{command: self, cfg: filepath.Join(t.TempDir(), installMarker, "jevlin.toml")},
 		shells: shells,
 		exe:    func() (string, error) { return self, nil },
 	}
@@ -157,7 +157,7 @@ func TestRecognizerFollowsTheBinaryNotItsSpelling(t *testing.T) {
 		t.Skip("this environment does not allow symlinks: " + err.Error())
 	}
 	f := recognizerFixture{
-		entry:  binEntry{command: link, cfg: filepath.Join(t.TempDir(), "tokendrop.toml")},
+		entry:  binEntry{command: link, cfg: filepath.Join(t.TempDir(), "jevlin.toml")},
 		shells: []shellKind{shellPOSIX},
 		exe:    func() (string, error) { return self, nil },
 	}

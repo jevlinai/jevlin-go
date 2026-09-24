@@ -3,7 +3,7 @@ package main
 // The import-boundary tests: the package graph IS the argument for
 // AGENTS.md's import-boundary invariants, so a test fails loudly when
 // someone adds the wrong import. Ported from tokendrop-proxy's
-// cmd/tokendrop/boundary_test.go (goList/moduleRoot, the machinery),
+// cmd/jevlin/boundary_test.go (goList/moduleRoot, the machinery),
 // stating this repo's own boundaries rather than the proxy's — this
 // module has no internal/forward, internal/observe, or
 // internal/mining/sign to guard.
@@ -35,7 +35,7 @@ func goList(t *testing.T, patterns ...string) []string {
 }
 
 // moduleRoot: this file lives at cmd/jevlin/, same depth as the
-// proxy's cmd/tokendrop/, so the relative path back to the repo root is
+// proxy's cmd/jevlin/, so the relative path back to the repo root is
 // unchanged.
 func moduleRoot(t *testing.T) string {
 	t.Helper()
@@ -79,7 +79,7 @@ func TestSelfupdateImportsNoWrapperAndNoCredential(t *testing.T) {
 }
 
 // TestNoChainImportsAnywhere is AGENTS.md invariant 9. Ported from the
-// proxy's cmd/tokendrop/boundary_test.go rule 1, adapted to this module:
+// proxy's cmd/jevlin/boundary_test.go rule 1, adapted to this module:
 // twilight-core is the same forbidden chain application, and the
 // Cosmos/CometBFT graph is banned for the same reason it is there — a
 // lean binary shipped to users must not pull the SDK's module tree.

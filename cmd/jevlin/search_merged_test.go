@@ -306,7 +306,7 @@ func TestViewMergedOmitsCandidates(t *testing.T) {
 	})
 	h := fixedSearchOps(root)
 
-	_, fullOut, _ := runSearchStdin(t, h, map[string]string{"TOKENDROP_API_KEY": "k"},
+	_, fullOut, _ := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"},
 		`{"version":1,"query":"q","view":"full"}`, "-config", cfg)
 	fullEnv := decodeEnvelope(t, fullOut)
 	fullResult, _ := fullEnv["result"].(map[string]any)
@@ -314,7 +314,7 @@ func TestViewMergedOmitsCandidates(t *testing.T) {
 		t.Fatalf("view:full has no candidates key: %s", fullOut)
 	}
 
-	_, mergedOut, _ := runSearchStdin(t, h, map[string]string{"TOKENDROP_API_KEY": "k"},
+	_, mergedOut, _ := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"},
 		`{"version":1,"query":"q","view":"merged"}`, "-config", cfg)
 	mergedEnv := decodeEnvelope(t, mergedOut)
 	mergedResult, _ := mergedEnv["result"].(map[string]any)
@@ -350,7 +350,7 @@ func TestViewAbsentIsFull(t *testing.T) {
 		_, _ = w.Write([]byte(routerBody))
 	})
 	h := fixedSearchOps(root)
-	code, out, _ := runSearchStdin(t, h, map[string]string{"TOKENDROP_API_KEY": "k"},
+	code, out, _ := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"},
 		`{"version":1,"query":"q"}`, "-config", cfg)
 	if code != exitOK {
 		t.Fatalf("exit %d: %s", code, out)
@@ -380,7 +380,7 @@ func TestViewInvalidValueRefusedBeforeRouterCall(t *testing.T) {
 				_, _ = w.Write([]byte(routerBody))
 			})
 			h := fixedSearchOps(root)
-			code, out, errOut := runSearchStdin(t, h, map[string]string{"TOKENDROP_API_KEY": "k"}, tc.stdin, "-config", cfg)
+			code, out, errOut := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, tc.stdin, "-config", cfg)
 			if code != exitUsage {
 				t.Fatalf("exit %d, want %d (%s)", code, exitUsage, out)
 			}

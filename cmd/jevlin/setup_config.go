@@ -35,7 +35,7 @@ import (
 	"github.com/jevlinai/jevlin-go/pkg/fsx"
 )
 
-const setupConfigFile = "tokendrop.toml"
+const setupConfigFile = "jevlin.toml"
 
 // tomlString renders s as a TOML basic string. It is the one place setup
 // turns a value into TOML text. TOML documents are UTF-8, so a value that is
@@ -75,7 +75,7 @@ func tomlString(s string) (string, error) {
 }
 
 // setupValues is everything the config is written from: pkg/config's
-// defaults, overridden by the TOKENDROP_* setup-time overrides.
+// defaults, overridden by the JEVLIN_* setup-time overrides.
 type setupValues struct {
 	home          string
 	router        string
@@ -84,7 +84,7 @@ type setupValues struct {
 	asURL         string
 	chainID       string
 	slotID        uint64
-	scriptedMine  bool   // no terminal and TOKENDROP_MINING=1
+	scriptedMine  bool   // no terminal and JEVLIN_MINING=1
 	payoutAddress string // only with scriptedMine
 }
 
@@ -97,26 +97,26 @@ func resolveSetupValues(home string, getenv func(string) string, interactive boo
 	}
 	v := setupValues{
 		home:         home,
-		router:       pick("TOKENDROP_ROUTER_URL", config.DefaultRouterURL),
-		platformURL:  pick("TOKENDROP_PLATFORM_URL", config.DefaultPlatformBaseURL),
-		agentsAPIURL: pick("TOKENDROP_AGENTS_API_URL", config.DefaultAgentsAPIURL),
-		asURL:        pick("TOKENDROP_AS_URL", config.DefaultASBaseURL),
-		chainID:      pick("TOKENDROP_CHAIN", config.DefaultChainID),
+		router:       pick("JEVLIN_ROUTER_URL", config.DefaultRouterURL),
+		platformURL:  pick("JEVLIN_PLATFORM_URL", config.DefaultPlatformBaseURL),
+		agentsAPIURL: pick("JEVLIN_AGENTS_API_URL", config.DefaultAgentsAPIURL),
+		asURL:        pick("JEVLIN_AS_URL", config.DefaultASBaseURL),
+		chainID:      pick("JEVLIN_CHAIN", config.DefaultChainID),
 		slotID:       config.DefaultSlotID,
 	}
-	if raw := getenv("TOKENDROP_SLOT"); raw != "" {
+	if raw := getenv("JEVLIN_SLOT"); raw != "" {
 		slot, err := strconv.ParseUint(raw, 10, 64)
 		if err != nil {
-			return setupValues{}, fmt.Errorf("TOKENDROP_SLOT=%q is not a slot number", raw)
+			return setupValues{}, fmt.Errorf("JEVLIN_SLOT=%q is not a slot number", raw)
 		}
 		v.slotID = slot
 	}
 	// [mining] enabled = true is a scripted first answer, and only a run
 	// with nobody to ask may give it. At a terminal the answer is connect's
 	// question, never this file.
-	if !interactive && getenv("TOKENDROP_MINING") == "1" {
+	if !interactive && getenv("JEVLIN_MINING") == "1" {
 		v.scriptedMine = true
-		v.payoutAddress = getenv("TOKENDROP_PAYOUT_ADDRESS")
+		v.payoutAddress = getenv("JEVLIN_PAYOUT_ADDRESS")
 	}
 	return v, nil
 }
@@ -222,7 +222,7 @@ func renderFreshConfig(v setupValues) ([]byte, error) {
 	// ASCII, and every comment this client generates into a config is
 	// (asciiGeneratedConfig guards it). This line used to carry an em dash;
 	// Windows PowerShell 5.1 reads a file with no byte-order mark in the
-	// system's ANSI code page, so `Get-Content tokendrop.toml` showed the
+	// system's ANSI code page, so `Get-Content jevlin.toml` showed the
 	// participant `\u00e2\u20ac\u201d` where the dash should be (dropin-miner#88). The
 	// rule is ASCII rather than "not that character": the next non-ASCII
 	// punctuation would read exactly as badly.
@@ -331,7 +331,7 @@ func planSetupConfig(path string, existing []byte, v setupValues, validate func(
 // environment (so only the file's own bytes are judged), and removed.
 func validateConfigFile(dir string) func([]byte) error {
 	return func(data []byte) error {
-		f, err := os.CreateTemp(dir, ".tokendrop-validate-*.toml")
+		f, err := os.CreateTemp(dir, ".jevlin-validate-*.toml")
 		if err != nil {
 			return err
 		}

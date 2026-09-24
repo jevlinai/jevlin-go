@@ -35,7 +35,7 @@ func sectionNames(sections []tomlSection) []string {
 }
 
 func TestSplitMarkedBlockFindsOurOwnTableAndNothingElse(t *testing.T) {
-	preamble, sections, ok := splitMarkedBlock(ourBlockRegion(t, "/home/u/.tokendrop/state"))
+	preamble, sections, ok := splitMarkedBlock(ourBlockRegion(t, "/home/u/.jevlin/state"))
 	if !ok {
 		t.Fatal("our own block did not split")
 	}
@@ -55,7 +55,7 @@ func TestSplitMarkedBlockFindsOurOwnTableAndNothingElse(t *testing.T) {
 
 // The shape dropin-miner#82 reports: Codex's own tables inside our markers.
 func TestSplitMarkedBlockSeparatesCodexsOwnTables(t *testing.T) {
-	region := ourBlockRegion(t, "/home/u/.tokendrop/state") +
+	region := ourBlockRegion(t, "/home/u/.jevlin/state") +
 		"[projects.'/home/u/work']\ntrust_level = \"trusted\"\n" +
 		"[windows]\nsandbox = \"unelevated\"\n"
 
@@ -89,7 +89,7 @@ func TestSplitMarkedBlockSeparatesCodexsOwnTables(t *testing.T) {
 // A comment above a foreign table is that table's, not ours. Removing our
 // section must not take a participant's note about their own setting.
 func TestSplitMarkedBlockGivesACommentToTheTableBelowIt(t *testing.T) {
-	region := ourBlockRegion(t, "/home/u/.tokendrop/state") +
+	region := ourBlockRegion(t, "/home/u/.jevlin/state") +
 		"\n# I set this by hand so the non-admin sandbox works.\n[windows]\nsandbox = \"unelevated\"\n"
 
 	_, sections, ok := splitMarkedBlock(region)
@@ -112,7 +112,7 @@ func TestSplitMarkedBlockGivesACommentToTheTableBelowIt(t *testing.T) {
 // sides, which is what the decode check is for. ok=false means the caller
 // leaves the whole block alone rather than act on a bad reading.
 func TestSplitMarkedBlockRefusesWhatItCannotCutCleanly(t *testing.T) {
-	region := ourBlockRegion(t, "/home/u/.tokendrop/state") +
+	region := ourBlockRegion(t, "/home/u/.jevlin/state") +
 		"[notes]\ntext = \"\"\"\n[windows]\nnot a table at all\n\"\"\"\n"
 
 	if _, _, ok := splitMarkedBlock(region); ok {
@@ -179,7 +179,7 @@ func TestSplitMarkedBlockReadsAHeaderByTheKeyGrammar(t *testing.T) {
 		`'only]quoted'`,
 	} {
 		t.Run(header, func(t *testing.T) {
-			region := ourBlockRegion(t, "/home/u/.tokendrop/state") + "[" + header + "]\nk = 1\n"
+			region := ourBlockRegion(t, "/home/u/.jevlin/state") + "[" + header + "]\nk = 1\n"
 			_, sections, ok := splitMarkedBlock(region)
 			if !ok {
 				t.Fatal("did not split")

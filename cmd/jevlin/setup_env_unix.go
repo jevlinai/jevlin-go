@@ -57,11 +57,11 @@ func (r *setupRun) environmentStep() int {
 	lines := profileEnvLines(binDir, r.cfgPath, walletDir)
 
 	r.say("Shell environment")
-	if r.leftForOtherInstallation("shell profile", "Your shell profile belongs to that one", "pointing PATH and TOKENDROP_CONFIG here would repoint your real environment at this installation") {
+	if r.leftForOtherInstallation("shell profile", "Your shell profile belongs to that one", "pointing PATH and JEVLIN_CONFIG here would repoint your real environment at this installation") {
 		return exitOK
 	}
 	r.printf("These lines make the other commands short. Your key is not among them: a\n" +
-		"search reads it from the stored credentials file (or TOKENDROP_API_KEY, if a\n" +
+		"search reads it from the stored credentials file (or JEVLIN_API_KEY, if a\n" +
 		"shell exports one, which then wins):\n\n")
 	for _, l := range lines {
 		r.printf("    %s\n", l)
@@ -128,10 +128,10 @@ func profileEnvLines(binDir, cfgPath, walletDir string) []string {
 	q := shellQuote(binDir)
 	lines := []string{
 		`case ":$PATH:" in *:` + q + `:*) ;; *) export PATH="$PATH:"` + q + ` ;; esac`,
-		"export TOKENDROP_CONFIG=" + shellQuote(cfgPath),
+		"export JEVLIN_CONFIG=" + shellQuote(cfgPath),
 	}
 	if walletDir != "" {
-		lines = append(lines, "export TOKENDROP_WALLET_DIR="+shellQuote(walletDir))
+		lines = append(lines, "export JEVLIN_WALLET_DIR="+shellQuote(walletDir))
 	}
 	return lines
 }

@@ -2,7 +2,7 @@
   "writes": [
     {
       "surface": "Codex",
-      "path": "/home/u/.codex/skills/dropin-miner/SKILL.md",
+      "path": "/home/u/.codex/skills/jevlin/SKILL.md",
       "mode": 384,
       "why": "skill",
       "content": "\u003cSKILL.md, rendered for this OS; see testdata/hosts/*.golden\u003e"
@@ -12,7 +12,7 @@
       "path": "/home/u/.codex/config.toml",
       "mode": 384,
       "why": "sandbox: network + writable_roots so searches can record",
-      "content": "# \u003e\u003e\u003e jevlin agents install \u003e\u003e\u003e\n# Lets jevlin's search reach the router and record its mining\n# observation under your tokendrop home. Without this, Codex's default\n# sandbox blocks the write and searches earn nothing.\n[sandbox_workspace_write]\nnetwork_access = true\nwritable_roots = [\"TESTHOME/intake\", \"TESTHOME/sessions\", \"TESTHOME/spool\", \"TESTHOME/state\"]\n# \u003c\u003c\u003c jevlin agents install \u003c\u003c\u003c\n"
+      "content": "# \u003e\u003e\u003e jevlin agents install \u003e\u003e\u003e\n# Lets jevlin's search reach the router and record its mining\n# observation under your jevlin home. Without this, Codex's default\n# sandbox blocks the write and searches earn nothing.\n[sandbox_workspace_write]\nnetwork_access = true\nwritable_roots = [\"TESTHOME/intake\", \"TESTHOME/sessions\", \"TESTHOME/spool\", \"TESTHOME/state\"]\n# \u003c\u003c\u003c jevlin agents install \u003c\u003c\u003c\n"
     }
   ]
 }

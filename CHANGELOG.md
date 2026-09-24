@@ -27,3 +27,11 @@ The first release replaces this heading with its own.
   archives are `jevlin_<version>_<os>_<arch>`, and `jevlin upgrade` fetches only from
   `jevlinai/jevlin-go`'s releases. The npm wrapper's own knobs are `JEVLIN_BINARY`
   and `JEVLIN_SKIP_DOWNLOAD`.
+- **A new home, config and environment.** The installation lives in `~/.jevlin`
+  with its config in `jevlin.toml`, the lifecycle lock is `~/.jevlin.lifecycle.lock`,
+  and every variable the client reads, exports or documents is `JEVLIN_*`
+  (`JEVLIN_HOME`, `JEVLIN_CONFIG`, `JEVLIN_API_KEY`, the trace channel's
+  `JEVLIN_TRACE_BRIDGE`, `JEVLIN_LINEAGE`, `JEVLIN_SESSION` and `JEVLIN_HARNESS`, the
+  wallet's and setup's overrides). The skill is `/jevlin`, in a `jevlin/` directory
+  under each host, and opencode's and Pi's adapters are `jevlin.js` and
+  `jevlin.ts`. The word *mining* stays wherever it was.

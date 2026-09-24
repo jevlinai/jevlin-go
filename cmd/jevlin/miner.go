@@ -59,7 +59,7 @@ const (
 )
 
 // loadConfig resolves the config exactly as describeConfigSource does
-// (ruling D-R1: -config, TOKENDROP_CONFIG, ./tokendrop.toml, the
+// (ruling D-R1: -config, JEVLIN_CONFIG, ./jevlin.toml, the
 // installation's own config, then defaults) and returns the full config so
 // the miner can read [miner] and [mining]. pkg/config is not changed: the
 // resolved path, once found, is handed to config.Load as an explicit
@@ -218,7 +218,7 @@ func lineagePath(dir, workspace string) string {
 // conversations open on one project — two chat tabs, a chat beside a
 // background agent — shared one file, took turns overwriting its session and
 // advanced one counter between them. Cursor's sessionStart exports this path
-// as the session's TOKENDROP_LINEAGE, and since dropin-miner#118 a Cursor search carries
+// as the session's JEVLIN_LINEAGE, and since dropin-miner#118 a Cursor search carries
 // that variable on its own command, so the file is always found by its path
 // and never by the walk: lineageForCwd keys by directory alone and is left as
 // it is for the hosts that need it. The name has lineagePath's shape, so the
@@ -388,7 +388,7 @@ func updateLineage(ops hookOps, path string, now time.Time, apply func(*lineageF
 // The vocabulary is closed and lowercase — claude-code, cursor, opencode, pi,
 // hermes, cli — and every value is written by this client's own hooks, so no
 // case or spacing variant arises from anything this client produces. One
-// could only come from a participant setting TOKENDROP_HARNESS by hand, and
+// could only come from a participant setting JEVLIN_HARNESS by hand, and
 // that same value is what the search then sends to the router as its label:
 // treating "Cursor" as "cursor" here would adopt the session and relabel it,
 // putting one session under two harness spellings downstream. That is the
@@ -411,10 +411,10 @@ func sameHarness(a, b string) bool {
 //
 // It answers nothing unless the search can say WHOSE session it is making
 // and the sidecar agrees (dropin-miner#97). harness is the searching host's own name, as
-// TOKENDROP_HARNESS gives it.
+// JEVLIN_HARNESS gives it.
 //
 // Both halves of that follow from what this walk is for. Every host that
-// carries its lineage in a variable — the bridge, or TOKENDROP_LINEAGE
+// carries its lineage in a variable — the bridge, or JEVLIN_LINEAGE
 // naming the file outright — is already served before this is reached; the
 // walk exists only to find a session's own sidecar again when that variable
 // was lost, which is what happens when the search runs from a subshell. So a
@@ -434,7 +434,7 @@ func sameHarness(a, b string) bool {
 // one. Stopping is also what a stale sidecar already does.
 //
 // session is the hashed id of the session the shell was started in, as
-// TOKENDROP_SESSION gives it, and it may be empty (dropin-miner#104). The harness tells
+// JEVLIN_SESSION gives it, and it may be empty (dropin-miner#104). The harness tells
 // hosts apart and nothing more: two sessions of ONE host in nested
 // workspaces — a monorepo open at its root and again at a package — are the
 // same name, and the nearest file won whichever of them was searching.

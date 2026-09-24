@@ -14,11 +14,11 @@ package main
 //     directory the moment the answer arrives, and a detached flush is
 //     started to join the open epoch and submit it;
 //   - the trace envelope rides in the body so the router can group one
-//     task's searches. It comes from, in order: the TOKENDROP_TRACE_BRIDGE
+//     task's searches. It comes from, in order: the JEVLIN_TRACE_BRIDGE
 //     variable a hook put in front of this command; the workspace lineage
-//     file a hook wrote (named by TOKENDROP_LINEAGE, or found by walking
+//     file a hook wrote (named by JEVLIN_LINEAGE, or found by walking
 //     up from the working directory); or, with no hook at all, a hashed
-//     per-shell session identity. TOKENDROP_TRACE=off sends none.
+//     per-shell session identity. JEVLIN_TRACE=off sends none.
 //
 // Two knowing trade-offs, documented rather than hidden: an argv query
 // rides in process arguments (visible in `ps` and shell history on the
@@ -290,7 +290,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 			return failSearchSetup(stdout, exitClientErr, string(faultNoCredential), actionConnect,
 				errors.New("this installation holds no search credential; run jevlin connect"))
 		}
-		fmt.Fprintln(stderr, "jevlin: no API key; the router needs your sr- key to meter the search. Store it once with: jevlin login   (or export TOKENDROP_API_KEY)")
+		fmt.Fprintln(stderr, "jevlin: no API key; the router needs your sr- key to meter the search. Store it once with: jevlin login   (or export JEVLIN_API_KEY)")
 		return exitClientErr
 	}
 
@@ -653,8 +653,8 @@ func postSearch(ctx context.Context, client *http.Client, call searchCall, body 
 //
 // A search believes its host's channel, not whatever variable it finds (dropin-miner#91).
 // A host has one channel. Those that can rewrite a command hand the envelope
-// over in TOKENDROP_TRACE_BRIDGE; Cursor cannot, so its session-start hook
-// exports TOKENDROP_LINEAGE, and by that declaration says it writes no
+// over in JEVLIN_TRACE_BRIDGE; Cursor cannot, so its session-start hook
+// exports JEVLIN_LINEAGE, and by that declaration says it writes no
 // bridge. For such a search a bridge variable is somebody else's — another
 // host's hook run by this one (dropin-miner#87), a model that read this repository's
 // documentation — and it is dropped unread: not
@@ -669,11 +669,11 @@ func postSearch(ctx context.Context, client *http.Client, call searchCall, body 
 // than the one its host declared. H-R4 (an adapter replaces a bridge it did
 // not write) is untouched: it governs hosts whose channel IS the bridge.
 func searchTrace(ops searchOps, m config.Miner, getenv func(string) string) (env *traceEnvelope, foreignBridge bool) {
-	switch strings.ToLower(getenv("TOKENDROP_TRACE")) {
+	switch strings.ToLower(getenv("JEVLIN_TRACE")) {
 	case "off", "0", "false":
 		return nil, false
 	}
-	harness := getenv("TOKENDROP_HARNESS")
+	harness := getenv("JEVLIN_HARNESS")
 	lineageDeclared := getenv(lineageEnv) != ""
 
 	if bridge := getenv(bridgeEnv); bridge != "" {

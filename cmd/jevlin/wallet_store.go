@@ -23,10 +23,10 @@ const (
 
 	// walletDirEnv names the wallet directory without repeating -dir on
 	// every command. The setup script puts the wallet beside the rest of
-	// a participant's files (~/.tokendrop/wallet) rather than in the OS
+	// a participant's files (~/.jevlin/wallet) rather than in the OS
 	// config dir, and without this every documented example would have to
 	// carry the path — or, worse, silently look in the wrong place.
-	walletDirEnv = "TOKENDROP_WALLET_DIR"
+	walletDirEnv = "JEVLIN_WALLET_DIR"
 
 	// walletLockFile is the sibling wallet.key/wallet.pub creation locks
 	// on — never a lock on wallet.key itself, for the same
@@ -106,7 +106,7 @@ func defaultWalletDir() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("wallet: resolve config dir: %w", err)
 	}
-	return filepath.Join(base, "tokendrop", "wallet"), nil
+	return filepath.Join(base, "jevlin", "wallet"), nil
 }
 
 // openWalletDir creates (0700) and validates the wallet directory with

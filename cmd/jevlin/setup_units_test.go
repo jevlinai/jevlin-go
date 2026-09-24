@@ -22,7 +22,7 @@ import (
 func TestTOMLStringRoundTripsEveryCharacterClass(t *testing.T) {
 	for _, in := range []string{
 		"plain",
-		`C:\Users\me\.tokendrop`,
+		`C:\Users\me\.jevlin`,
 		`a "quoted" path`,
 		`back\slash and \"both\"`,
 		"tab\tnew\nline\rcarriage\bbell\fform",
@@ -52,7 +52,7 @@ func TestTOMLStringRoundTripsEveryCharacterClass(t *testing.T) {
 // backslash still produces a config pkg/config loads, with the path intact.
 func TestFreshConfigQuotesEveryPath(t *testing.T) {
 	dir := t.TempDir()
-	home := `/tmp/we ird"q\b$;&'x/.tokendrop`
+	home := `/tmp/we ird"q\b$;&'x/.jevlin`
 	v, err := resolveSetupValues(home, func(string) string { return "" }, false)
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +78,7 @@ func TestMigrationPolicyUnits(t *testing.T) {
 	dir := t.TempDir()
 	validate := validateConfigFile(dir)
 	v, _ := resolveSetupValues(filepath.Join(dir, "home"), func(string) string { return "" }, false)
-	path := filepath.Join(dir, "tokendrop.toml")
+	path := filepath.Join(dir, "jevlin.toml")
 	mining := "[mining]\nas_url = \"https://as.example\"\nchain_id = \"c\"\nslot_id = 1\nstate_dir = \"/s\"\n"
 
 	// [miner] present, even as a dotted key at the root: left.
@@ -105,8 +105,8 @@ func TestMigrationPolicyUnits(t *testing.T) {
 }
 
 func TestRewriteProfileEditsExactlyOneWellFormedBlock(t *testing.T) {
-	block := profileBlock([]string{"export TOKENDROP_CONFIG='/x'"})
-	old := profileBlock([]string{"export TOKENDROP_CONFIG='/old'"})
+	block := profileBlock([]string{"export JEVLIN_CONFIG='/x'"})
+	old := profileBlock([]string{"export JEVLIN_CONFIG='/old'"})
 
 	got, err := rewriteProfile(nil, block)
 	if err != nil || string(got) != block {
@@ -158,25 +158,25 @@ func TestShellQuoteRoundTripsThroughSh(t *testing.T) {
 }
 
 func TestUserEnvironmentJournalRecordsDeltas(t *testing.T) {
-	const bin = `C:\Users\me\.tokendrop\bin`
-	const cfg = `C:\Users\me\.tokendrop\tokendrop.toml`
+	const bin = `C:\Users\me\.jevlin\bin`
+	const cfg = `C:\Users\me\.jevlin\jevlin.toml`
 	dir := t.TempDir()
 	journal := filepath.Join(dir, setupEnvJournalFile)
 
-	// Absent PATH entry, absent TOKENDROP_CONFIG: setup adds both and says so.
+	// Absent PATH entry, absent JEVLIN_CONFIG: setup adds both and says so.
 	env := newFakeUserEnv()
 	env.values["Path"] = `C:\Windows`
 	c, err := planUserEnvironment(env, nil, bin, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !c.journal.Path.AddedBySetup || c.journal.TokendropConfig.PreviousPresent || !c.addPath || !c.setConfig {
+	if !c.journal.Path.AddedBySetup || c.journal.JevlinConfig.PreviousPresent || !c.addPath || !c.setConfig {
 		t.Fatalf("fresh plan: %+v", c)
 	}
 	if err := applyUserEnvironment(env, journal, c); err != nil {
 		t.Fatal(err)
 	}
-	if env.values["Path"] != `C:\Windows;`+bin || env.values["TOKENDROP_CONFIG"] != cfg || env.broadcasts != 1 {
+	if env.values["Path"] != `C:\Windows;`+bin || env.values["JEVLIN_CONFIG"] != cfg || env.broadcasts != 1 {
 		t.Fatalf("environment after apply: %v broadcasts=%d", env.values, env.broadcasts)
 	}
 	written, _ := os.ReadFile(journal) // #nosec G304 -- this test's own temp file
@@ -201,27 +201,27 @@ func TestUserEnvironmentJournalRecordsDeltas(t *testing.T) {
 	}
 
 	// A PATH entry already present — case and a trailing separator aside —
-	// and a TOKENDROP_CONFIG of the participant's own.
+	// and a JEVLIN_CONFIG of the participant's own.
 	env = newFakeUserEnv()
-	env.values["Path"] = `C:\Windows;c:\users\ME\.tokendrop\bin\`
-	env.values["TOKENDROP_CONFIG"] = `D:\mine.toml`
+	env.values["Path"] = `C:\Windows;c:\users\ME\.jevlin\bin\`
+	env.values["JEVLIN_CONFIG"] = `D:\mine.toml`
 	c, _ = planUserEnvironment(env, nil, bin, cfg)
 	if c.journal.Path.AddedBySetup || c.addPath {
 		t.Errorf("pre-existing PATH entry recorded as setup's: %+v", c.journal.Path)
 	}
-	if !c.journal.TokendropConfig.PreviousPresent || c.journal.TokendropConfig.PreviousValue != `D:\mine.toml` {
-		t.Errorf("previous TOKENDROP_CONFIG not recorded: %+v", c.journal.TokendropConfig)
+	if !c.journal.JevlinConfig.PreviousPresent || c.journal.JevlinConfig.PreviousValue != `D:\mine.toml` {
+		t.Errorf("previous JEVLIN_CONFIG not recorded: %+v", c.journal.JevlinConfig)
 	}
 	journal2 := filepath.Join(dir, "second.json")
 	if err := applyUserEnvironment(env, journal2, c); err != nil {
 		t.Fatal(err)
 	}
-	// On the rerun TOKENDROP_CONFIG holds setup's own value; the journal must
+	// On the rerun JEVLIN_CONFIG holds setup's own value; the journal must
 	// still name the participant's.
 	prior, _ = readEnvJournal(journal2)
 	c, _ = planUserEnvironment(env, prior, bin, cfg)
-	if c.journal.TokendropConfig.PreviousValue != `D:\mine.toml` || !c.journal.TokendropConfig.PreviousPresent {
-		t.Errorf("rerun replaced the original with setup's own value: %+v", c.journal.TokendropConfig)
+	if c.journal.JevlinConfig.PreviousValue != `D:\mine.toml` || !c.journal.JevlinConfig.PreviousPresent {
+		t.Errorf("rerun replaced the original with setup's own value: %+v", c.journal.JevlinConfig)
 	}
 	if c.journal.Path.AddedBySetup {
 		t.Error("rerun turned a pre-existing PATH entry into setup's")

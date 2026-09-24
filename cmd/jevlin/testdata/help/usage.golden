@@ -20,9 +20,9 @@ the tool (what an agent runs):
              cursor, opencode, pi, hermes).
              agents prefer on|off — whether this search or the agent's own
              is the default (off keeps this one for when you name it);
-             in the agent, /dropin-miner off and /dropin-miner on do the same
+             in the agent, /jevlin off and /jevlin on do the same
   hook       internal: the hook runner the agents call around a search;
-             TOKENDROP_TRACE=off turns traces off entirely
+             JEVLIN_TRACE=off turns traces off entirely
   flush      the mining plane, once: join the open epoch, promote recorded
              searches into the spool, submit. Started by search and by the
              session hooks; run it by hand to see what is pending
@@ -34,9 +34,9 @@ before the claim; mining (if granted) enrolls and declares a payout
 unattended once claimed.
   setup      everything after the binary, asked as it goes — reuse a
              previous installation, write or migrate the config, connect,
-             the shell profile (PATH, TOKENDROP_CONFIG and, when a wallet
-             was made here, TOKENDROP_WALLET_DIR; Windows: the user PATH and
-             TOKENDROP_CONFIG only) and the coding agents found here.
+             the shell profile (PATH, JEVLIN_CONFIG and, when a wallet
+             was made here, JEVLIN_WALLET_DIR; Windows: the user PATH and
+             JEVLIN_CONFIG only) and the coding agents found here.
              -yes answers the profile and agents questions, terminal or not
              -yes may come from automated callers
              -yes never answers the mining question or adopts without a terminal
@@ -50,7 +50,7 @@ unattended once claimed.
   uninstall  take out what setup put here for one installation (-home dir):
              the agents' skills, hooks and plugins that run its binary, and
              the shell-profile block (Windows: the user PATH entry and
-             TOKENDROP_CONFIG). The wallet, registration, stored key,
+             JEVLIN_CONFIG). The wallet, registration, stored key,
              recorded searches and config stay; nothing is revoked.
              -binary also removes the installation's own binary and its
              .previous (an npm copy is npm's to remove; on Windows the
@@ -85,7 +85,7 @@ manual enrollment (the portal's older path; still works, coexists with
 connect): enroll -> payout -> join -> login
   login      store your sr- key for searches: reads it from stdin (or
              -key-env VAR), checks it against the router without spending,
-             writes ~/.tokendrop/credentials.json owner-only. -show says
+             writes ~/.jevlin/credentials.json owner-only. -show says
              where a search would get its key; -forget removes the file
   enroll     obtain an authorization grant. Default is the device flow (a
              person approves in a browser); -assertion redeems an
@@ -122,9 +122,9 @@ wallet (a reward address this installation controls):
   wallet balance   what the chain says this address holds
   wallet send      move funds to another twilight address: -to and -amount
 
-Every command takes -config <file>, falling back to TOKENDROP_CONFIG, then
-./tokendrop.toml, then the installation's own config ($TOKENDROP_HOME/
-tokendrop.toml, else ~/.tokendrop/tokendrop.toml, when that file exists).
+Every command takes -config <file>, falling back to JEVLIN_CONFIG, then
+./jevlin.toml, then the installation's own config ($JEVLIN_HOME/
+jevlin.toml, else ~/.jevlin/jevlin.toml, when that file exists).
 status and doctor name the file they resolved, or say plainly that none was
 found and built-in defaults are in use; connect refuses outright when
 resolution finds no config file at all, and says to run jevlin setup.
@@ -134,5 +134,5 @@ persisted decision, not a config key); [platform] names two hosts — base_url,
 the portal a printed claim URL is checked against and nothing dials
 (platform.nyks.dev), and agents_api_url, where connect and mining enable
 actually send register/status/enroll (agents-v1.nyks.dev). Searches take
-your sr- key from TOKENDROP_API_KEY if it is set, else from the file
+your sr- key from JEVLIN_API_KEY if it is set, else from the file
 login (or connect) wrote. Otherwise run connect or login to set up search.

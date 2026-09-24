@@ -37,11 +37,11 @@ func newTwoInstallations(t *testing.T) *twoInstallations {
 	ops := realAgentOps()
 	ops.home = filepath.Join(root, "user")
 	ops.lookPath = func(string) (string, error) { return "", errors.New("not found") }
-	ops.executable = func() (string, error) { return filepath.Join(root, "user", ".tokendrop", "bin", "jevlin"), nil }
+	ops.executable = func() (string, error) { return filepath.Join(root, "user", ".jevlin", "bin", "jevlin"), nil }
 	ops.isTerminal = func() bool { return false }
 	m := &twoInstallations{
 		t: t, ops: ops, paths: ops.paths(noEnv),
-		first:  filepath.Join(root, "user", ".tokendrop", setupConfigFile),
+		first:  filepath.Join(root, "user", ".jevlin", setupConfigFile),
 		second: filepath.Join(root, "dm-disposable", setupConfigFile),
 	}
 	writeFileT(t, m.first, "")

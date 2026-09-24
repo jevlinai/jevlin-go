@@ -34,9 +34,9 @@ var hermesResavedEntries = map[string]struct {
 	// final newline, so that install's note is inside the block Hermes saves.
 	above string
 }{
-	"posix":       {binEntry{command: "/home/u/.tokendrop/bin/jevlin", cfg: "/home/u/.tokendrop/tokendrop.toml"}, false, "model: gpt\n"},
-	"posix-noeol": {binEntry{command: "/home/u/.tokendrop/bin/jevlin", cfg: "/home/u/.tokendrop/tokendrop.toml"}, false, "model: gpt"},
-	"windows":     {binEntry{command: `C:\Users\u\.tokendrop\bin\jevlin.exe`, cfg: `C:\Users\u\.tokendrop\tokendrop.toml`}, true, "model: gpt\n"},
+	"posix":       {binEntry{command: "/home/u/.jevlin/bin/jevlin", cfg: "/home/u/.jevlin/jevlin.toml"}, false, "model: gpt\n"},
+	"posix-noeol": {binEntry{command: "/home/u/.jevlin/bin/jevlin", cfg: "/home/u/.jevlin/jevlin.toml"}, false, "model: gpt"},
+	"windows":     {binEntry{command: `C:\Users\u\.jevlin\bin\jevlin.exe`, cfg: `C:\Users\u\.jevlin\jevlin.toml`}, true, "model: gpt\n"},
 }
 
 // hermesRoundtripFixtures are what Hermes' ruamel writer makes of each input:

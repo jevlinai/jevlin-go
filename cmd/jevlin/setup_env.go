@@ -13,7 +13,7 @@ package main
 // Windows: no profile. Setup owns two values in the User environment, and
 // $HOME_DIR/setup-env.json is the journal of what it changed there — a delta,
 // not a snapshot. It is written before the environment is touched, and it
-// records whether setup itself added the PATH entry and what TOKENDROP_CONFIG
+// records whether setup itself added the PATH entry and what JEVLIN_CONFIG
 // held before setup set it, so an uninstall can take out exactly what setup
 // put in and put back exactly what was there. A rerun reconciles against the
 // journal and never mistakes setup's own earlier value for the original.
@@ -173,10 +173,10 @@ func removeProfileBlock(existing []byte) (next []byte, block []string, found boo
 	}
 }
 
-// profileBlockConfig is the TOKENDROP_CONFIG a block exports, as written:
+// profileBlockConfig is the JEVLIN_CONFIG a block exports, as written:
 // shell-quoted, the way setup writes it.
 func profileBlockConfig(block []string) (string, bool) {
-	const prefix = "export TOKENDROP_CONFIG="
+	const prefix = "export JEVLIN_CONFIG="
 	for _, l := range block {
 		if strings.HasPrefix(l, prefix) {
 			return strings.TrimPrefix(l, prefix), true
@@ -218,9 +218,9 @@ type envJournalConfig struct {
 }
 
 type envJournal struct {
-	Version         int              `json:"version"`
-	Path            envJournalPath   `json:"path"`
-	TokendropConfig envJournalConfig `json:"tokendrop_config"`
+	Version      int              `json:"version"`
+	Path         envJournalPath   `json:"path"`
+	JevlinConfig envJournalConfig `json:"jevlin_config"`
 }
 
 // readEnvJournal returns (nil, nil) when there is no journal. One that exists
@@ -278,15 +278,15 @@ type envChange struct {
 }
 
 // planUserEnvironment reconciles the desired state (binDir on the user PATH,
-// TOKENDROP_CONFIG = cfgPath) against the store and any earlier journal.
+// JEVLIN_CONFIG = cfgPath) against the store and any earlier journal.
 func planUserEnvironment(env userEnvironment, prior *envJournal, binDir, cfgPath string) (envChange, error) {
 	pathValue, _, err := env.Get("Path")
 	if err != nil {
 		return envChange{}, fmt.Errorf("read the user Path: %w", err)
 	}
-	cfgValue, cfgPresent, err := env.Get("TOKENDROP_CONFIG")
+	cfgValue, cfgPresent, err := env.Get("JEVLIN_CONFIG")
 	if err != nil {
-		return envChange{}, fmt.Errorf("read the user TOKENDROP_CONFIG: %w", err)
+		return envChange{}, fmt.Errorf("read the user JEVLIN_CONFIG: %w", err)
 	}
 
 	var c envChange
@@ -315,11 +315,11 @@ func planUserEnvironment(env userEnvironment, prior *envJournal, binDir, cfgPath
 	if prior != nil {
 		// The original is whatever the first run found. A rerun sees setup's
 		// own value there and must not record that as the thing to restore.
-		c.journal.TokendropConfig = prior.TokendropConfig
+		c.journal.JevlinConfig = prior.JevlinConfig
 	} else {
-		c.journal.TokendropConfig = envJournalConfig{PreviousPresent: cfgPresent, PreviousValue: cfgValue}
+		c.journal.JevlinConfig = envJournalConfig{PreviousPresent: cfgPresent, PreviousValue: cfgValue}
 	}
-	c.journal.TokendropConfig.ValueSet = cfgPath
+	c.journal.JevlinConfig.ValueSet = cfgPath
 	c.setConfig = !cfgPresent || cfgValue != cfgPath
 
 	c.writeJournal = prior == nil || *prior != c.journal
@@ -348,8 +348,8 @@ func applyUserEnvironment(env userEnvironment, journalPath string, c envChange) 
 		changed = true
 	}
 	if c.setConfig {
-		if err := env.Set("TOKENDROP_CONFIG", c.journal.TokendropConfig.ValueSet); err != nil {
-			return fmt.Errorf("set the user TOKENDROP_CONFIG: %w", err)
+		if err := env.Set("JEVLIN_CONFIG", c.journal.JevlinConfig.ValueSet); err != nil {
+			return fmt.Errorf("set the user JEVLIN_CONFIG: %w", err)
 		}
 		changed = true
 	}
@@ -361,7 +361,7 @@ func applyUserEnvironment(env userEnvironment, journalPath string, c envChange) 
 
 // ── uninstall: compare and revert ──────────────────────────────────────────
 
-// configRevert is what an uninstall does with TOKENDROP_CONFIG.
+// configRevert is what an uninstall does with JEVLIN_CONFIG.
 type configRevert int
 
 const (
@@ -386,7 +386,7 @@ func (r envRevert) changes() bool {
 }
 
 // planUserEnvironmentRevert takes out one entry equivalent to the journal's
-// PATH entry only if setup added it, and reverts TOKENDROP_CONFIG only while
+// PATH entry only if setup added it, and reverts JEVLIN_CONFIG only while
 // it still holds the value setup set.
 func planUserEnvironmentRevert(env userEnvironment, j envJournal) (envRevert, error) {
 	var r envRevert
@@ -404,17 +404,17 @@ func planUserEnvironmentRevert(env userEnvironment, j envJournal) (envRevert, er
 			}
 		}
 	}
-	cfgValue, present, err := env.Get("TOKENDROP_CONFIG")
+	cfgValue, present, err := env.Get("JEVLIN_CONFIG")
 	if err != nil {
-		return envRevert{}, fmt.Errorf("read the user TOKENDROP_CONFIG: %w", err)
+		return envRevert{}, fmt.Errorf("read the user JEVLIN_CONFIG: %w", err)
 	}
 	switch {
 	case !present:
 		r.config = configUntouched
-	case cfgValue != j.TokendropConfig.ValueSet:
+	case cfgValue != j.JevlinConfig.ValueSet:
 		r.config = configCeded
-	case j.TokendropConfig.PreviousPresent:
-		r.config, r.restore = configRestore, j.TokendropConfig.PreviousValue
+	case j.JevlinConfig.PreviousPresent:
+		r.config, r.restore = configRestore, j.JevlinConfig.PreviousValue
 	default:
 		r.config = configDelete
 	}
@@ -432,12 +432,12 @@ func applyUserEnvironmentRevert(env userEnvironment, journalPath string, r envRe
 	}
 	switch r.config {
 	case configRestore:
-		if err := env.Set("TOKENDROP_CONFIG", r.restore); err != nil {
-			return fmt.Errorf("restore the user TOKENDROP_CONFIG: %w", err)
+		if err := env.Set("JEVLIN_CONFIG", r.restore); err != nil {
+			return fmt.Errorf("restore the user JEVLIN_CONFIG: %w", err)
 		}
 	case configDelete:
-		if err := env.Delete("TOKENDROP_CONFIG"); err != nil {
-			return fmt.Errorf("remove the user TOKENDROP_CONFIG: %w", err)
+		if err := env.Delete("JEVLIN_CONFIG"); err != nil {
+			return fmt.Errorf("remove the user JEVLIN_CONFIG: %w", err)
 		}
 	}
 	if r.changes() {

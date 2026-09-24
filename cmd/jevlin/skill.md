@@ -1,9 +1,9 @@
 ---
-name: dropin-miner
+name: jevlin
 description: {{DESCRIPTION}}
 ---
 
-# Web search (dropin-miner)
+# Web search (jevlin)
 
 ## How to call it
 

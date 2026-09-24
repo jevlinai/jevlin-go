@@ -6,7 +6,7 @@ package main
 // By default it takes out what Jevlin put outside the participant's
 // state: every registered target's skills, hooks and plugins that run this
 // installation's binary, the shell-profile block that names this
-// installation's config (Windows: the user PATH entry and TOKENDROP_CONFIG,
+// installation's config (Windows: the user PATH entry and JEVLIN_CONFIG,
 // reverted against setup's journal, compare-and-revert). The wallet, the
 // identity, the stored key, recorded searches and the config all stay, and
 // nothing remote is revoked.
@@ -53,12 +53,12 @@ const uninstallUsage = `usage: jevlin uninstall [-home dir] [-binary] [-purge-st
 Takes out what setup put on this machine for one installation: the coding
 agents' skills, hooks and plugins that run its binary, and the shell-profile
 block that names its config (on Windows, the user PATH entry and
-TOKENDROP_CONFIG setup set). The wallet, registration, stored key, recorded
+JEVLIN_CONFIG setup set). The wallet, registration, stored key, recorded
 searches and config stay, and nothing is revoked.
 
-  -home dir      the installation (default $TOKENDROP_HOME, else the directory of a
-                 TOKENDROP_CONFIG named tokendrop.toml, else the installation this
-                 binary runs from, else ~/.tokendrop)
+  -home dir      the installation (default $JEVLIN_HOME, else the directory of a
+                 JEVLIN_CONFIG named jevlin.toml, else the installation this
+                 binary runs from, else ~/.jevlin)
   -binary        also remove this installation's own copy of the binary; a copy npm
                  installed is npm's to remove
   -purge-state   also destroy this installation's participant state: the wallet,
@@ -374,7 +374,7 @@ func checkPurgeTarget(home, userHome string) error {
 		return fmt.Errorf("%s is not a directory", home)
 	}
 	if !hasInstallation(home) && !lexists(filepath.Join(home, setupConfigFile)) {
-		return fmt.Errorf("%s holds no installation: no wallet key, registration, stored key or tokendrop.toml", home)
+		return fmt.Errorf("%s holds no installation: no wallet key, registration, stored key or jevlin.toml", home)
 	}
 	return nil
 }
@@ -962,7 +962,7 @@ func (r *uninstallRun) profilePlan() (edits []profileEdit, notes []string) {
 		}
 		if !profileBlockNamesConfig(block, r.cfgPath) {
 			value, _ := profileBlockConfig(block)
-			notes = append(notes, fmt.Sprintf("left the jevlin block in %s: it sets TOKENDROP_CONFIG=%s, not this installation's %s",
+			notes = append(notes, fmt.Sprintf("left the jevlin block in %s: it sets JEVLIN_CONFIG=%s, not this installation's %s",
 				tilde(r.d.userHome, candidate), value, r.cfgPath))
 			continue
 		}
@@ -978,7 +978,7 @@ func (r *uninstallRun) environmentWindows(apply bool) {
 	binDir := filepath.Join(r.home, "bin")
 	manual := func(why string) {
 		r.printf("  %s; nothing in your user environment is changed.\n", why)
-		r.printf("  If it still holds them: remove %s from your user Path, and TOKENDROP_CONFIG if it is %s\n", binDir, r.cfgPath)
+		r.printf("  If it still holds them: remove %s from your user Path, and JEVLIN_CONFIG if it is %s\n", binDir, r.cfgPath)
 	}
 	env := r.d.userEnv
 	if env == nil {
@@ -993,7 +993,7 @@ func (r *uninstallRun) environmentWindows(apply bool) {
 	}
 	if j == nil {
 		pathValue, _, perr := env.Get("Path")
-		cfgValue, _, cerr := env.Get("TOKENDROP_CONFIG")
+		cfgValue, _, cerr := env.Get("JEVLIN_CONFIG")
 		if perr == nil && cerr == nil && (pathHasEntry(pathValue, binDir) || strings.EqualFold(cfgValue, r.cfgPath)) {
 			manual(fmt.Sprintf("%s is missing, so nothing records what setup changed and nothing is guessed", journalPath))
 		} else if !apply {
@@ -1017,11 +1017,11 @@ func (r *uninstallRun) environmentWindows(apply bool) {
 		}
 		switch plan.config {
 		case configRestore:
-			r.printf("  put TOKENDROP_CONFIG back to %s, its value before setup\n", plan.restore)
+			r.printf("  put JEVLIN_CONFIG back to %s, its value before setup\n", plan.restore)
 		case configDelete:
-			r.printf("  remove TOKENDROP_CONFIG, which setup created\n")
+			r.printf("  remove JEVLIN_CONFIG, which setup created\n")
 		case configCeded:
-			r.printf("  leave TOKENDROP_CONFIG: it was changed after setup, so it is yours now\n")
+			r.printf("  leave JEVLIN_CONFIG: it was changed after setup, so it is yours now\n")
 		}
 		r.printf("  remove %s\n", journalPath)
 		return
@@ -1033,7 +1033,7 @@ func (r *uninstallRun) environmentWindows(apply bool) {
 	}
 	r.printf("reverted what setup changed in your user environment\n")
 	if plan.config == configCeded {
-		r.printf("left TOKENDROP_CONFIG as it is: it was changed after setup\n")
+		r.printf("left JEVLIN_CONFIG as it is: it was changed after setup\n")
 	}
 }
 
@@ -1366,16 +1366,16 @@ func (r *uninstallRun) applyEnvironment() {
 // and the coding agents alone for such a home (dropin-miner#84) — they belong to the
 // default one — so "run setup -home" on its own would promise a restore it
 // no longer performs. It says what does, both ways: the agents command for an
-// installation that really is a separate one, and TOKENDROP_HOME for one that
+// installation that really is a separate one, and JEVLIN_HOME for one that
 // is this machine's own, kept somewhere else.
 func (r *uninstallRun) otherInstallationHint() string {
-	def, other := otherInstallation(r.home, r.home, r.d.getenv("TOKENDROP_HOME"), r.d.userHome)
+	def, other := otherInstallation(r.home, r.home, r.d.getenv("JEVLIN_HOME"), r.d.userHome)
 	if !other {
 		return ""
 	}
 	return fmt.Sprintf("%s is not this machine's default installation (%s), so that leaves the shell profile and\n"+
 		"the coding agents alone; configure agents for it with: jevlin agents install -config %s\n"+
-		"If it IS this machine's installation, kept somewhere else, run setup with TOKENDROP_HOME set to it\n"+
+		"If it IS this machine's installation, kept somewhere else, run setup with JEVLIN_HOME set to it\n"+
 		"instead of -home, which sets up the profile and the agents too.\n", r.home, def, r.cfgPath)
 }
 

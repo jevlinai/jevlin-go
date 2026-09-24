@@ -56,11 +56,11 @@ func newTwoCodexInstallations(t *testing.T) *twoCodexInstallations {
 		return "", errors.New("not found")
 	}
 	ops.executable = func() (string, error) {
-		return filepath.Join(root, "user", ".tokendrop", "bin", "jevlin"), nil
+		return filepath.Join(root, "user", ".jevlin", "bin", "jevlin"), nil
 	}
 	ops.isTerminal = func() bool { return false }
 	m := &twoCodexInstallations{t: t, ops: ops, paths: ops.paths(noEnv)}
-	m.first = writeMiningHomeConfig(t, filepath.Join(root, "user", ".tokendrop"))
+	m.first = writeMiningHomeConfig(t, filepath.Join(root, "user", ".jevlin"))
 	m.second = writeMiningHomeConfig(t, filepath.Join(root, "dm-disposable"))
 	return m
 }
@@ -289,7 +289,7 @@ func TestAnInstallationWhoseStateDirIsElsewhereStillOwnsItsBlock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	home := filepath.Join(root, "user", ".tokendrop")
+	home := filepath.Join(root, "user", ".jevlin")
 	state := filepath.Join(root, "elsewhere", "state")
 	cfg := writeRelocatedStateConfig(t, home, state)
 

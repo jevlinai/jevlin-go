@@ -25,16 +25,16 @@ PATH, and run `jevlin setup`.
 
 Nothing needs removing first. Update the binary — npm:
 `npm install -g jevlin@latest` — then run `jevlin setup`. If the
-installation uses a non-default home (`TOKENDROP_HOME` was set for it), run
-`jevlin setup` with `TOKENDROP_HOME` set to the same one; setup has no
-other way to find it. `TOKENDROP_HOME` is what
+installation uses a non-default home (`JEVLIN_HOME` was set for it), run
+`jevlin setup` with `JEVLIN_HOME` set to the same one; setup has no
+other way to find it. `JEVLIN_HOME` is what
 names a directory as this machine's installation. `setup -home <dir>` on its
 own, for a directory other than that, sets up a *separate* installation there
 and leaves your shell profile (Windows: user environment) and your coding
 agents alone, `-yes` or not — they belong to the machine's own installation,
 and the documented way to make a disposable installation must not repoint your
 real agents at it. It names `jevlin agents install -config
-<dir>/tokendrop.toml` as the way to configure agents for that one. That command
+<dir>/jevlin.toml` as the way to configure agents for that one. That command
 adds the second installation's hook entries beside the first's, but a host has
 one skill directory (and opencode and Pi one adapter file), and it belongs to
 the installation that wrote it: `agents install` leaves it, says whose it is,
@@ -42,7 +42,7 @@ and goes on with the rest of the host, and `agents uninstall` and `agents prefer
 leave it the same way. So on a host the machine installation already set up,
 searches keep running under the machine installation's config.
 
-The installation in `~/.tokendrop` is used as it is: a directory holding an
+The installation in `~/.jevlin` is used as it is: a directory holding an
 identity is the installation, and nothing set aside is offered. Your wallet,
 identity, search credential and recorded searches are preserved — setup
 creates no replacement for a healthy installation; `connect` still runs and
@@ -60,9 +60,9 @@ for byte.
 
 On macOS and Linux there is never a second profile block: setup replaces its
 one block in place. On Windows, the existing user PATH entry and
-`TOKENDROP_CONFIG` are reused, not duplicated: setup records in
+`JEVLIN_CONFIG` are reused, not duplicated: setup records in
 `setup-env.json` whether an already-present PATH entry was added by it, and
-what `TOKENDROP_CONFIG` held before, so a later `uninstall` removes only what
+what `JEVLIN_CONFIG` held before, so a later `uninstall` removes only what
 setup itself added and prints what to remove by hand for the rest.
 
 Agent integrations are reconciled to the current plan: one already correct
@@ -73,13 +73,13 @@ it owns — its written files, the profile or environment, and the agent
 integrations — and keeps the same healthy participant identity;
 connect-managed authorization state may still advance.
 
-Want a clean start instead? Move `~/.tokendrop` aside and take it back at
+Want a clean start instead? Move `~/.jevlin` aside and take it back at
 the **Use it?** question below.
 
 `jevlin setup` asks as it goes, in this order:
 
 1. **Use it?** — only if one is set aside beside
-   `~/.tokendrop` (see "Removing it, and coming back" below).
+   `~/.jevlin` (see "Removing it, and coming back" below).
 2. The config is written, or an existing one is kept (see Config). Then
    `connect` registers with the search platform and stores the key it mints —
    nothing to copy, nothing to paste — and asks **Enable mining rewards?**
@@ -87,9 +87,9 @@ the **Use it?** question below.
    keyfile passphrase, twice, before it prints the 24-word recovery phrase),
    then prints a claim link.
 3. **Add them to your shell profile?** — the binary's directory on PATH,
-   `TOKENDROP_CONFIG`, and — when a wallet was made here — `TOKENDROP_WALLET_DIR`.
+   `JEVLIN_CONFIG`, and — when a wallet was made here — `JEVLIN_WALLET_DIR`.
    On Windows there is no profile: the question is whether to set PATH and
-   `TOKENDROP_CONFIG` (only) in your user environment.
+   `JEVLIN_CONFIG` (only) in your user environment.
 4. **Set up the coding agents found on this machine now?** — shown with
    exactly what would be written first, and with what made each agent count as
    present, so a host you expected and do not see is something you can argue
@@ -112,7 +112,7 @@ already answered; it never turns an interrupt into an answer.
 
 Search itself works before you ever visit the claim link — the claim only
 gates the reward, once you say yes to mining. The key never goes into a
-command line or an agent's config; `TOKENDROP_API_KEY` in the environment
+command line or an agent's config; `JEVLIN_API_KEY` in the environment
 overrides the stored one.
 
 ## How it works
@@ -153,21 +153,21 @@ second agent working in a subdirectory is an ordinary arrangement, and the
 alternative is one agent's session id, narration and sequence number being
 sent as another's. The
 assignment is written in the syntax of the shell that will run the command —
-`TOKENDROP_TRACE_BRIDGE=<envelope> <command>` in a POSIX shell, and in
+`JEVLIN_TRACE_BRIDGE=<envelope> <command>` in a POSIX shell, and in
 PowerShell an assignment the same command removes again when it finishes, so
 the next command in a reused shell does not inherit it. Every
 identifier is hashed before it leaves the machine; the assistant text just
 before a search travels only inside that search's request, capped at 32 KB.
 Recent agent context accompanies search to the Twilight search router as part
-of the trajectory/search product. `TOKENDROP_TRACE=off` disables trace
+of the trajectory/search product. `JEVLIN_TRACE=off` disables trace
 transmission. Mining/AS receives metadata observations only.
 
 A host has one channel, and a search believes that one rather than whatever
-variable it finds. Cursor's session-start hook exports `TOKENDROP_HARNESS`,
-the path of its lineage file as `TOKENDROP_LINEAGE`, and the hashed id of its
-session as `TOKENDROP_SESSION`. A host that declared the file as its channel
-writes no bridge, so a search that finds `TOKENDROP_LINEAGE` set drops a
-`TOKENDROP_TRACE_BRIDGE` beside it as somebody else's, and says so on stderr.
+variable it finds. Cursor's session-start hook exports `JEVLIN_HARNESS`,
+the path of its lineage file as `JEVLIN_LINEAGE`, and the hashed id of its
+session as `JEVLIN_SESSION`. A host that declared the file as its channel
+writes no bridge, so a search that finds `JEVLIN_LINEAGE` set drops a
+`JEVLIN_TRACE_BRIDGE` beside it as somebody else's, and says so on stderr.
 With a session id exported, a lineage file — the declared one, or one found by
 walking up from the working directory — is used only when it holds that
 session; a shell that exports no session id is served exactly as before. Each
@@ -228,12 +228,12 @@ is executed to find out whether it exists.
 
 | host | tool | found by | shell it is taught for | lineage | files written by `agents install` |
 |---|---|---|---|---|---|
-| Claude Code | skill | `claude` on PATH | Bash on macOS and Linux; on Windows both Git Bash and PowerShell | full: PreToolUse on its Bash **and** PowerShell tools rewrites the command, in the syntax of whichever one the call used; window hooks; Stop flushes | `~/.claude/skills/dropin-miner/`, five hook entries and three `permissions.allow` rules — the single-quoted spelling the skill renders, plus the quoted and bare ones an agent may repeat from an older skill — in `~/.claude/settings.json`. Those rules are Bash rules, and they stop matching the moment the hook adds the trace envelope, because an allow rule matches on how a command begins — so the hook answers the permission question itself, `allow` for exactly the search the skill renders and silence for everything else. That covers the PowerShell tool too, which no installed rule ever did; what a PowerShell-tool permission *rule* must look like is still unestablished (dropin-miner#77), and a rule guessed at would never match, so none is written |
-| Cursor | skill | `cursor` or `cursor-agent` on PATH, or `~/.cursor` | Bash on macOS and Linux; on Windows both PowerShell and Git Bash, labelled by which one your terminal is — Cursor runs commands in the terminal `terminal.integrated.defaultProfile.windows` names, and v0.2.10 taught the PowerShell form alone, which a Git Bash terminal wrapped in `powershell.exe -Command` and expanded the encoding line out of, delivering `café 東京` as `caf? ??` (dropin-miner#96) | full, and the same seven `hooks.json` entries serve the editor and the Agent CLI: both load the file. `sessionStart` exports the harness and a per-conversation lineage path to the later hooks; `preToolUse` puts that identity in front of the exact search the skill renders, in that shell's own syntax, and rewrites nothing else; the shell hook allows exactly that form, and nothing looser | `~/.cursor/skills/dropin-miner/`, seven entries in `~/.cursor/hooks.json` |
-| Codex | skill | `codex` on PATH | Bash on macOS and Linux; PowerShell on Windows | per-shell | `~/.codex/skills/dropin-miner/`; install also widens `~/.codex/config.toml`'s sandbox (network, plus writable roots: the state directory always, and the intake, sessions and spool directories when `[miner] enabled` — never the config, key or wallet) so searches record and the claim resumes; the flush a search starts runs inside that sandbox too, taking the flush lock read-only (setup and every flush outside the sandbox make sure the lock file exists) and writing its stamp in the state directory. A command inside the sandbox can read `credentials.json` (a search needs the key) and the state directory (a flush needs it); on Windows it cannot read the wallet, whose directory keeps its own owner-only access |
-| opencode | AGENTS.md line | `opencode` on PATH | Bash on macOS and Linux; PowerShell on Windows | full: in-process plugin rewrites the bash command | `~/.config/opencode/plugins/dropin-miner.js` |
-| Pi | skill | `pi` on PATH | Bash everywhere (Git Bash on Windows) | full: an auto-discovered extension rewrites the bash command; history is bound to the tool call that asked for it, and the window generation is read back from the session's own compaction entries | `~/.pi/agent/skills/dropin-miner/`, `~/.pi/agent/extensions/dropin-miner.ts` |
-| Hermes | skill | `hermes` on PATH | Bash everywhere (Git Bash on Windows) | session, call and turn only: a `pre_tool_call` hook rewrites the command. Its hook payload carries no assistant text and no compaction state, so neither is sent | `<HERMES_HOME or ~/.hermes>/skills/dropin-miner/`, a `hooks:` block in `config.yaml` (loads next session; approve the hook once). A `hooks:` section of your own is never edited on install: the entry is printed for you to paste, and once it is there install reports it already set up. Uninstall removes that entry when it names this installation and is written either as jevlin writes it or as Hermes' own dumper rewrites it when it saves `config.yaml` — folded command and all, whichever of its two writers saved last; every other line of the file is kept as it is, and an entry it cannot be that sure of is left and reported with its line numbers |
+| Claude Code | skill | `claude` on PATH | Bash on macOS and Linux; on Windows both Git Bash and PowerShell | full: PreToolUse on its Bash **and** PowerShell tools rewrites the command, in the syntax of whichever one the call used; window hooks; Stop flushes | `~/.claude/skills/jevlin/`, five hook entries and three `permissions.allow` rules — the single-quoted spelling the skill renders, plus the quoted and bare ones an agent may repeat from an older skill — in `~/.claude/settings.json`. Those rules are Bash rules, and they stop matching the moment the hook adds the trace envelope, because an allow rule matches on how a command begins — so the hook answers the permission question itself, `allow` for exactly the search the skill renders and silence for everything else. That covers the PowerShell tool too, which no installed rule ever did; what a PowerShell-tool permission *rule* must look like is still unestablished (dropin-miner#77), and a rule guessed at would never match, so none is written |
+| Cursor | skill | `cursor` or `cursor-agent` on PATH, or `~/.cursor` | Bash on macOS and Linux; on Windows both PowerShell and Git Bash, labelled by which one your terminal is — Cursor runs commands in the terminal `terminal.integrated.defaultProfile.windows` names, and v0.2.10 taught the PowerShell form alone, which a Git Bash terminal wrapped in `powershell.exe -Command` and expanded the encoding line out of, delivering `café 東京` as `caf? ??` (dropin-miner#96) | full, and the same seven `hooks.json` entries serve the editor and the Agent CLI: both load the file. `sessionStart` exports the harness and a per-conversation lineage path to the later hooks; `preToolUse` puts that identity in front of the exact search the skill renders, in that shell's own syntax, and rewrites nothing else; the shell hook allows exactly that form, and nothing looser | `~/.cursor/skills/jevlin/`, seven entries in `~/.cursor/hooks.json` |
+| Codex | skill | `codex` on PATH | Bash on macOS and Linux; PowerShell on Windows | per-shell | `~/.codex/skills/jevlin/`; install also widens `~/.codex/config.toml`'s sandbox (network, plus writable roots: the state directory always, and the intake, sessions and spool directories when `[miner] enabled` — never the config, key or wallet) so searches record and the claim resumes; the flush a search starts runs inside that sandbox too, taking the flush lock read-only (setup and every flush outside the sandbox make sure the lock file exists) and writing its stamp in the state directory. A command inside the sandbox can read `credentials.json` (a search needs the key) and the state directory (a flush needs it); on Windows it cannot read the wallet, whose directory keeps its own owner-only access |
+| opencode | AGENTS.md line | `opencode` on PATH | Bash on macOS and Linux; PowerShell on Windows | full: in-process plugin rewrites the bash command | `~/.config/opencode/plugins/jevlin.js` |
+| Pi | skill | `pi` on PATH | Bash everywhere (Git Bash on Windows) | full: an auto-discovered extension rewrites the bash command; history is bound to the tool call that asked for it, and the window generation is read back from the session's own compaction entries | `~/.pi/agent/skills/jevlin/`, `~/.pi/agent/extensions/jevlin.ts` |
+| Hermes | skill | `hermes` on PATH | Bash everywhere (Git Bash on Windows) | session, call and turn only: a `pre_tool_call` hook rewrites the command. Its hook payload carries no assistant text and no compaction state, so neither is sent | `<HERMES_HOME or ~/.hermes>/skills/jevlin/`, a `hooks:` block in `config.yaml` (loads next session; approve the hook once). A `hooks:` section of your own is never edited on install: the entry is printed for you to paste, and once it is there install reports it already set up. Uninstall removes that entry when it names this installation and is written either as jevlin writes it or as Hermes' own dumper rewrites it when it saves `config.yaml` — folded command and all, whichever of its two writers saved last; every other line of the file is kept as it is, and an entry it cannot be that sure of is left and reported with its line numbers |
 | anything else | rules line | not detected; `setup -with <id>` names one | Bash | per-shell | printed for you to paste |
 
 Uninstall removes exactly those, and only what belongs to the installation
@@ -413,17 +413,17 @@ never registers, rebuilds or replaces — a new identity is never decided in
 the background.
 
 `jevlin help` describes each. Every command takes `-config <file>`,
-falling back to `TOKENDROP_CONFIG`, then `./tokendrop.toml`, then the
-installation's own config (`$TOKENDROP_HOME/tokendrop.toml`, else
-`~/.tokendrop/tokendrop.toml`, when that file exists) — and only then
+falling back to `JEVLIN_CONFIG`, then `./jevlin.toml`, then the
+installation's own config (`$JEVLIN_HOME/jevlin.toml`, else
+`~/.jevlin/jevlin.toml`, when that file exists) — and only then
 built-in defaults. `status` and `doctor` name the file they resolved, or say
 plainly that none was found; `connect` refuses outright when resolution
 finds no config file at all, rather than register against built-in-default
 state, and says to run `jevlin setup`.
 
 `login` reads your sr- key from stdin (never an argument), verifies it with a
-zero-spend probe against the router, and writes `~/.tokendrop/credentials.json`
-as `0600`. A search takes its key from `TOKENDROP_API_KEY` if set, else that
+zero-spend probe against the router, and writes `~/.jevlin/credentials.json`
+as `0600`. A search takes its key from `JEVLIN_API_KEY` if set, else that
 file (refused if it is a symlink or readable by others). Otherwise, run
 `jevlin connect` or `jevlin login` to set up a search credential.
 
@@ -451,7 +451,7 @@ non-zero, distinct exit code, and the next `wallet send` or `wallet balance`
 resolves it — asks the node whether it landed, and either reports the real
 outcome or re-sends the exact same signed bytes, never a fresh signature.
 `-abandon-pending` discards an unresolved record without resolving it.
-`-node`/`TOKENDROP_WALLET_NODE` override the default RPC node per chain
+`-node`/`JEVLIN_WALLET_NODE` override the default RPC node per chain
 (`pkg/config.DefaultWalletNodes`); the node must be https, or http only on
 loopback, unless `-insecure-node` is passed. The client trusts this node for
 confirmations and balances — no light-client verification.
@@ -468,7 +468,7 @@ is the other place an unresolved transaction gets noticed.
 
 `agents prefer off` makes the agent's own web search the default and keeps
 this one for when you name it; `on` makes this one the default again. Inside
-the agent, `/dropin-miner off` and `/dropin-miner on` do the same. The choice
+the agent, `/jevlin off` and `/jevlin on` do the same. The choice
 is one file beside the config, the installed skills are rewritten from it,
 and a reinstall keeps it. While it is off, searches you do not route here
 earn nothing.
@@ -487,8 +487,8 @@ enabled        = true                            # only a scripted first answer 
 as_url         = "https://rewards.nyks.dev"      # unset: no AS, so no mining work at all
 chain_id       = "twilight-testnet-1"            # required once as_url is set
 slot_id        = 3                               # required once as_url is set
-state_dir      = "/home/you/.tokendrop/state"    # default: <user config dir>/tokendrop/state
-spool_dir      = "/home/you/.tokendrop/spool"    # default: <state_dir>/spool
+state_dir      = "/home/you/.jevlin/state"    # default: <user config dir>/jevlin/state
+spool_dir      = "/home/you/.jevlin/spool"    # default: <state_dir>/spool
 # payout_address = "twilight1..."   scripted `connect`/`mining enable` answer;
 #                                   leave unset to be asked at a terminal instead
 # platform_slot  = "twilight-slot-3"  required only if the platform ever offers
@@ -503,8 +503,8 @@ agents_api_url = "https://agents-v1.nyks.dev"    # register/status/enroll — a 
 
 [miner]
 enabled        = true                              # default false
-intake_dir     = "/home/you/.tokendrop/intake"     # served request ids, until flushed
-sessions_dir   = "/home/you/.tokendrop/sessions"   # per-workspace lineage files
+intake_dir     = "/home/you/.jevlin/intake"     # served request ids, until flushed
+sessions_dir   = "/home/you/.jevlin/sessions"   # per-workspace lineage files
 flush_interval = "3m"                              # default 3m: how often a flush re-asks the AS
 # router_url = "..."   defaults to the [[provider]] upstream
 ```
@@ -544,7 +544,7 @@ whatever the file says. One with a `[miner]` table is left byte for byte. One
 without — a `tokendrop-proxy` config, say — gains only the tables it lacks,
 `[platform]` and `[miner]`, appended after its own lines, and the result has
 to load before it is saved. `[mining] enabled = true` is written only by a
-setup with no terminal and `TOKENDROP_MINING=1`; at a terminal the answer is
+setup with no terminal and `JEVLIN_MINING=1`; at a terminal the answer is
 connect's question.
 
 `[miner] enabled` means only that router intake is configured — it is not
@@ -748,25 +748,25 @@ npm uninstall -g jevlin                    # an npm install is npm's to remove
 ```
 
 `uninstall` takes out what setup put on this machine for one installation
-(`-home`, default `~/.tokendrop`): the coding agents' skills, hooks and plugins
+(`-home`, default `~/.jevlin`): the coding agents' skills, hooks and plugins
 that run its binary, and the shell-profile block that names its config. On
-Windows it reverts the user `PATH` entry and `TOKENDROP_CONFIG` against
-`~/.tokendrop/setup-env.json`, the record of what setup changed: the `PATH`
-entry goes only if setup added it, and `TOKENDROP_CONFIG` goes back to what it
+Windows it reverts the user `PATH` entry and `JEVLIN_CONFIG` against
+`~/.jevlin/setup-env.json`, the record of what setup changed: the `PATH`
+entry goes only if setup added it, and `JEVLIN_CONFIG` goes back to what it
 held only while it still holds setup's value — one you changed since is yours
 and is left. Without that record nothing in the environment is guessed at; it
 prints what to remove by hand. Anything that runs another installation's
 binary, or a profile block naming another config, is left and reported. Your
 wallet, registration, stored key, recorded searches and config stay, and
 nothing is revoked; it ends by saying how to keep using them. That is
-`jevlin setup -home ~/.tokendrop`, which finds this state and reuses it —
+`jevlin setup -home ~/.jevlin`, which finds this state and reuses it —
 the same agent, the same wallet, no new registration — or `-config
-~/.tokendrop/tokendrop.toml` passed to each command. Not a bare `jevlin
+~/.jevlin/jevlin.toml` passed to each command. Not a bare `jevlin
 connect`: uninstall has just removed the profile block (on Windows, the user
 environment) that named this installation, so with nothing naming it, connect
 would register this machine anew.
 
-`-binary` also removes `~/.tokendrop/bin/jevlin`, only when that is the
+`-binary` also removes `~/.jevlin/bin/jevlin`, only when that is the
 binary running and no package manager owns it, together with the
 the lock files Jevlin commands coordinate through — the lifecycle gate beside the
 installation, `setup.lock`, `state/connect.lock`, `flush.lock` and `bin/<binary>.update.lock`.
@@ -790,7 +790,7 @@ terminal. Before removing anything it tries, for at most eight seconds, to
 revoke this installation's authorization at the rewards service; a purge still
 completes if that fails, and says so. The platform's grant is revoked only at
 the console. Directories your config points at outside the installation are
-left and listed. `~/.tokendrop.lifecycle.lock`, which only coordinates
+left and listed. `~/.jevlin.lifecycle.lock`, which only coordinates
 Jevlin commands, is left behind and safe to delete. Close any open agent
 sessions first: searches and hooks are not paused, and one that runs
 afterwards can recreate an empty `intake/` or `sessions/`.
@@ -804,29 +804,29 @@ before it changes anything — a confirmation answered wrong, a refusal — remo
 exactly the lock files it made itself, and never one that was already there.
 "Nothing was changed" means the installation is as it was found.
 
-The wallet in `~/.tokendrop` is the only copy unless you kept the 24 words.
+The wallet in `~/.jevlin` is the only copy unless you kept the 24 words.
 Instead of purging, you can set the directory aside as
-`~/.tokendrop.bak-<date>` (any `~/.tokendrop.<something>` or
-`~/.tokendrop-<something>`). The next setup finds it and says what it holds.
+`~/.jevlin.bak-<date>` (any `~/.jevlin.<something>` or
+`~/.jevlin-<something>`). The next setup finds it and says what it holds.
 One left in place is simply used. One set aside is offered, newest first, and
 moved back only when you say yes at a terminal, so you are not enrolled twice
 or paid to a second address:
 
 - **Your identity** — the `state/` directory and the stored key — moves as one
-  piece or not at all. If `~/.tokendrop` already holds an identity of its own,
+  piece or not at all. If `~/.jevlin` already holds an identity of its own,
   setup stops before anything moves and before `connect` runs: it names both
   places, and you choose one installation, move the other out of the way, and
   run setup again. A `state/` that only holds the key of an
   enrollment that never finished is renamed aside as `state.unenrolled-<time>`,
   never deleted.
-- **Your wallet** moves as a whole. A `~/.tokendrop` that already holds a
+- **Your wallet** moves as a whole. A `~/.jevlin` that already holds a
   wallet is an installation in its own right: it is used as it is, and nothing
   set aside is offered. A `wallet/` there with no wallet key in it — left by a
   wallet that was never finished — is renamed aside as
   `wallet.incomplete-<time>`, never deleted, and yours moves in.
 - **Unsent searches and session files** (`spool/`, `intake/`, `sessions/`) are
   merged file by file, never overwriting one that is already there.
-- **The config** moves only if `~/.tokendrop` has none, and is then updated the
+- **The config** moves only if `~/.jevlin` has none, and is then updated the
   way any existing config is.
 
 Anything that is a symlink rather than a plain file or directory is not moved.

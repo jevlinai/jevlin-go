@@ -22,13 +22,13 @@ func TestRegistryUserEnvironmentBackend(t *testing.T) {
 	t.Cleanup(func() { _ = registry.DeleteKey(registry.CURRENT_USER, key) })
 	env := registryUserEnvironment{key: key}
 
-	if _, present, err := env.Get("TOKENDROP_CONFIG"); err != nil || present {
+	if _, present, err := env.Get("JEVLIN_CONFIG"); err != nil || present {
 		t.Fatalf("missing key: present=%v err=%v", present, err)
 	}
 	if err := env.Set("Path", `%USERPROFILE%\bin;C:\x`); err != nil {
 		t.Fatal(err)
 	}
-	if err := env.Set("TOKENDROP_CONFIG", `C:\a b\tokendrop.toml`); err != nil {
+	if err := env.Set("JEVLIN_CONFIG", `C:\a b\jevlin.toml`); err != nil {
 		t.Fatal(err)
 	}
 	if v, present, err := env.Get("Path"); err != nil || !present || v != `%USERPROFILE%\bin;C:\x` {
@@ -42,8 +42,8 @@ func TestRegistryUserEnvironmentBackend(t *testing.T) {
 	if _, typ, _ := k.GetStringValue("Path"); typ != registry.EXPAND_SZ {
 		t.Errorf("Path type = %d, want REG_EXPAND_SZ", typ)
 	}
-	if _, typ, _ := k.GetStringValue("TOKENDROP_CONFIG"); typ != registry.SZ {
-		t.Errorf("TOKENDROP_CONFIG type = %d, want REG_SZ", typ)
+	if _, typ, _ := k.GetStringValue("JEVLIN_CONFIG"); typ != registry.SZ {
+		t.Errorf("JEVLIN_CONFIG type = %d, want REG_SZ", typ)
 	}
 }
 

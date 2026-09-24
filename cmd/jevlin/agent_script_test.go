@@ -66,8 +66,8 @@ func (powerShellDeclaringHost) Shells(string) hostShells {
 func TestTheInstallerWritesTheDeclaredShellIntoEveryJavaScriptAdapter(t *testing.T) {
 	entry := goldenEntry()
 	for _, tc := range []struct{ id, path string }{
-		{"opencode", "/home/u/.config/opencode/plugins/dropin-miner.js"},
-		{"pi", "/home/u/.pi/agent/extensions/dropin-miner.ts"},
+		{"opencode", "/home/u/.config/opencode/plugins/jevlin.js"},
+		{"pi", "/home/u/.pi/agent/extensions/jevlin.ts"},
 	} {
 		t.Run(tc.id, func(t *testing.T) {
 			tg, ok := surfaceByID(tc.id)

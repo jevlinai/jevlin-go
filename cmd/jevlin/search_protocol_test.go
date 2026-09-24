@@ -205,7 +205,7 @@ func TestANonPositiveTimeoutIsRefusedRatherThanUnbounded(t *testing.T) {
 	_, cfg, root := newFakeRouter(t, nil)
 	h := fixedSearchOps(root)
 	for _, v := range []string{"0", "-1s"} {
-		code, _, errOut := runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k"}, "-config", cfg, "-timeout", v, "q")
+		code, _, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "-timeout", v, "q")
 		if code != exitUsage {
 			t.Errorf("-timeout %s: exit %d, want %d", v, code, exitUsage)
 		}
@@ -225,7 +225,7 @@ func TestASearchTimeoutRecordsNoMiningEvidenceAndNoHealthFailure(t *testing.T) {
 	useTransport(t, rt)
 	_, cfg, root := newFakeRouter(t, nil)
 	h := fixedSearchOps(root)
-	code, out, _ := runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k"},
+	code, out, _ := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"},
 		"-config", cfg, "-timeout", "150ms", "q")
 	if code != exitTransport {
 		t.Fatalf("exit %d, want %d", code, exitTransport)
@@ -383,7 +383,7 @@ func TestAnInvalidSuccessRecordsNoMiningEvidence(t *testing.T) {
 				_, _ = w.Write([]byte(tc.body))
 			})
 			h := fixedSearchOps(root)
-			code, out, errOut := runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k"}, "-config", cfg, "q")
+			code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "q")
 			if code != exitServerErr {
 				t.Fatalf("exit %d, want %d (err %q)", code, exitServerErr, errOut)
 			}

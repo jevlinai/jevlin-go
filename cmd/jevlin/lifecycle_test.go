@@ -147,7 +147,7 @@ func TestLifecycleGateIsASiblingOutsideTheInstallation(t *testing.T) {
 	root := t.TempDir()
 	sep := string(filepath.Separator)
 	for _, spelled := range []string{
-		filepath.Join(root, ".tokendrop"),
+		filepath.Join(root, ".jevlin"),
 		filepath.Join(root, "opt", "me", "jevlin"),
 		filepath.Join(root, "opt", "me", "jevlin") + sep,
 		filepath.Join(root, "opt", "me", "x") + sep + ".." + sep + "jevlin",
@@ -199,15 +199,15 @@ func TestResolveInstallationHomeOrder(t *testing.T) {
 		exe  string
 		want string
 	}{
-		{"-home wins over everything", flagHome, map[string]string{"TOKENDROP_HOME": envHome, "TOKENDROP_CONFIG": filepath.Join(cfgDir, "x.toml")}, layoutExe, flagHome},
-		{"TOKENDROP_HOME over TOKENDROP_CONFIG and layout", "", map[string]string{"TOKENDROP_HOME": envHome, "TOKENDROP_CONFIG": filepath.Join(cfgDir, "x.toml")}, layoutExe, envHome},
-		{"the directory of TOKENDROP_CONFIG named tokendrop.toml over layout", "", map[string]string{"TOKENDROP_CONFIG": filepath.Join(cfgDir, setupConfigFile)}, layoutExe, cfgDir},
-		{"TOKENDROP_CONFIG with another name falls through to the layout", "", map[string]string{"TOKENDROP_CONFIG": filepath.Join(cfgDir, "custom.toml")}, layoutExe, layout},
-		{"TOKENDROP_CONFIG with another name falls through to the default", "", map[string]string{"TOKENDROP_CONFIG": filepath.Join(cfgDir, "tokendrop.toml.bak")}, "", filepath.Join(user, ".tokendrop")},
+		{"-home wins over everything", flagHome, map[string]string{"JEVLIN_HOME": envHome, "JEVLIN_CONFIG": filepath.Join(cfgDir, "x.toml")}, layoutExe, flagHome},
+		{"JEVLIN_HOME over JEVLIN_CONFIG and layout", "", map[string]string{"JEVLIN_HOME": envHome, "JEVLIN_CONFIG": filepath.Join(cfgDir, "x.toml")}, layoutExe, envHome},
+		{"the directory of JEVLIN_CONFIG named jevlin.toml over layout", "", map[string]string{"JEVLIN_CONFIG": filepath.Join(cfgDir, setupConfigFile)}, layoutExe, cfgDir},
+		{"JEVLIN_CONFIG with another name falls through to the layout", "", map[string]string{"JEVLIN_CONFIG": filepath.Join(cfgDir, "custom.toml")}, layoutExe, layout},
+		{"JEVLIN_CONFIG with another name falls through to the default", "", map[string]string{"JEVLIN_CONFIG": filepath.Join(cfgDir, "jevlin.toml.bak")}, "", filepath.Join(user, ".jevlin")},
 		{"native layout", "", nil, layoutExe, layout},
-		{"bin without tokendrop.toml beside it is not a layout", "", nil, noToml, filepath.Join(user, ".tokendrop")},
-		{"tokendrop.toml beside a directory not named bin is not a layout", "", nil, notBin, filepath.Join(user, ".tokendrop")},
-		{"default", "", nil, "", filepath.Join(user, ".tokendrop")},
+		{"bin without jevlin.toml beside it is not a layout", "", nil, noToml, filepath.Join(user, ".jevlin")},
+		{"jevlin.toml beside a directory not named bin is not a layout", "", nil, notBin, filepath.Join(user, ".jevlin")},
+		{"default", "", nil, "", filepath.Join(user, ".jevlin")},
 	}
 	for _, tc := range cases {
 		got, err := resolveInstallationHome(tc.flag, envOf(tc.env), user, tc.exe)
@@ -239,30 +239,30 @@ func TestConfigGatePathFollowsTheConfigLoadConfigWouldChoose(t *testing.T) {
 	a := filepath.Join(root, "a", setupConfigFile)
 	b := filepath.Join(root, "b", setupConfigFile)
 	c := filepath.Join(root, "c")
-	env := map[string]string{"TOKENDROP_CONFIG": b, "TOKENDROP_HOME": c}
+	env := map[string]string{"JEVLIN_CONFIG": b, "JEVLIN_HOME": c}
 
 	if got, _ := configGatePath(a, envOf(env)); got != lifecycleGatePath(filepath.Dir(a)) {
-		t.Errorf("-config must key the gate even with TOKENDROP_CONFIG and TOKENDROP_HOME set: got %s", got)
+		t.Errorf("-config must key the gate even with JEVLIN_CONFIG and JEVLIN_HOME set: got %s", got)
 	}
 	if got, _ := configGatePath("", envOf(env)); got != lifecycleGatePath(filepath.Dir(b)) {
-		t.Errorf("TOKENDROP_CONFIG must key the gate over TOKENDROP_HOME: got %s", got)
+		t.Errorf("JEVLIN_CONFIG must key the gate over JEVLIN_HOME: got %s", got)
 	}
 
 	cwd := filepath.Join(root, "cwd")
 	writeFileT(t, filepath.Join(cwd, setupConfigFile), "")
 	t.Chdir(cwd)
 	wd, _ := os.Getwd() // the platform's own spelling of cwd (macOS /private)
-	if got, _ := configGatePath("", envOf(map[string]string{"TOKENDROP_HOME": c})); got != lifecycleGatePath(wd) {
-		t.Errorf("./tokendrop.toml must key the gate like loadConfig picks it up: got %s, want %s", got, lifecycleGatePath(wd))
+	if got, _ := configGatePath("", envOf(map[string]string{"JEVLIN_HOME": c})); got != lifecycleGatePath(wd) {
+		t.Errorf("./jevlin.toml must key the gate like loadConfig picks it up: got %s, want %s", got, lifecycleGatePath(wd))
 	}
 
 	t.Chdir(root)
-	if got, _ := configGatePath("", envOf(map[string]string{"TOKENDROP_HOME": c})); got != lifecycleGatePath(c) {
-		t.Errorf("with no config file, TOKENDROP_HOME keys the gate: got %s", got)
+	if got, _ := configGatePath("", envOf(map[string]string{"JEVLIN_HOME": c})); got != lifecycleGatePath(c) {
+		t.Errorf("with no config file, JEVLIN_HOME keys the gate: got %s", got)
 	}
 	userHome, _ := os.UserHomeDir()
-	if got, _ := configGatePath("", noEnv); got != lifecycleGatePath(filepath.Join(userHome, ".tokendrop")) {
-		t.Errorf("with no config file and no TOKENDROP_HOME, the default installation keys the gate: got %s", got)
+	if got, _ := configGatePath("", noEnv); got != lifecycleGatePath(filepath.Join(userHome, ".jevlin")) {
+		t.Errorf("with no config file and no JEVLIN_HOME, the default installation keys the gate: got %s", got)
 	}
 }
 
@@ -708,14 +708,14 @@ func TestSetupConnectsUnderItsOwnAdmission(t *testing.T) {
 
 func TestTheSetAsideScanNeverOffersTheLifecycleGate(t *testing.T) {
 	root := t.TempDir()
-	home := filepath.Join(root, ".tokendrop")
+	home := filepath.Join(root, ".jevlin")
 	// The gate is a file in practice; a directory holding a marker is what it
 	// would take for the scan to mistake it for an installation.
 	writeFileT(t, filepath.Join(lifecycleGatePath(home), credentialsFile), "{}")
 	if got := setAsideInstallation(home); got != "" {
 		t.Errorf("the lifecycle gate must never be offered as a set-aside installation, got %q", got)
 	}
-	aside := filepath.Join(root, ".tokendrop.bak-1")
+	aside := filepath.Join(root, ".jevlin.bak-1")
 	writeFileT(t, filepath.Join(aside, credentialsFile), "{}")
 	if got := setAsideInstallation(home); got != aside {
 		t.Errorf("a real set-aside installation is still found: got %q, want %q", got, aside)

@@ -382,7 +382,7 @@ func TestDefaultUninstallPreservesEveryParticipantByte(t *testing.T) {
 		t.Errorf("the closing message must offer setup -home before it warns off connect (at %d and %d):\n%s", i, j, out)
 	}
 	if runtime.GOOS == "windows" {
-		if pathHasEntry(s.userEnv.values["Path"], filepath.Join(s.home, "bin")) || s.userEnv.values["TOKENDROP_CONFIG"] != "" {
+		if pathHasEntry(s.userEnv.values["Path"], filepath.Join(s.home, "bin")) || s.userEnv.values["JEVLIN_CONFIG"] != "" {
 			t.Errorf("the user environment setup set was not reverted: %v", s.userEnv.values)
 		}
 	} else if fileContains(t, s.profilePath(), profileMarkerStart) {
@@ -431,7 +431,7 @@ func TestUninstallLeavesAnotherInstallationsIntegrations(t *testing.T) {
 // ── the shell profile ───────────────────────────────────────────────────
 
 func TestRemoveProfileBlock(t *testing.T) {
-	block := profileBlock([]string{"export TOKENDROP_CONFIG='/h/tokendrop.toml'"})
+	block := profileBlock([]string{"export JEVLIN_CONFIG='/h/jevlin.toml'"})
 	for name, tc := range map[string]struct {
 		in, want string
 		found    bool
@@ -453,7 +453,7 @@ func TestRemoveProfileBlock(t *testing.T) {
 			}
 		case err != nil || found != tc.found || string(next) != tc.want:
 			t.Errorf("%s: got %q found=%v err=%v, want %q found=%v", name, next, found, err, tc.want, tc.found)
-		case found && !profileBlockNamesConfig(lines, "/h/tokendrop.toml"):
+		case found && !profileBlockNamesConfig(lines, "/h/jevlin.toml"):
 			t.Errorf("%s: the removed block's lines must be returned", name)
 		}
 	}
@@ -470,9 +470,9 @@ func TestUninstallProfileBlocks(t *testing.T) {
 	posixOnly(t)
 	s := newSetupSandbox(t)
 	writeFileT(t, s.cfgPath(), "")
-	ours := profileBlock([]string{"export TOKENDROP_CONFIG=" + shellQuote(s.cfgPath())})
-	unquoted := profileBlock([]string{"export TOKENDROP_CONFIG=" + s.cfgPath()})
-	theirs := profileBlock([]string{"export TOKENDROP_CONFIG=" + shellQuote("/some/other/tokendrop.toml")})
+	ours := profileBlock([]string{"export JEVLIN_CONFIG=" + shellQuote(s.cfgPath())})
+	unquoted := profileBlock([]string{"export JEVLIN_CONFIG=" + s.cfgPath()})
+	theirs := profileBlock([]string{"export JEVLIN_CONFIG=" + shellQuote("/some/other/jevlin.toml")})
 
 	cases := []struct {
 		name, zshrc, bashrc string
@@ -522,7 +522,7 @@ func TestUninstallEditsASymlinkedProfileThroughTheLink(t *testing.T) {
 	posixOnly(t)
 	s := newSetupSandbox(t)
 	target := filepath.Join(s.userHome, "dotfiles", "zshrc")
-	writeFileT(t, target, "keep\n"+profileBlock([]string{"export TOKENDROP_CONFIG=" + shellQuote(s.cfgPath())}))
+	writeFileT(t, target, "keep\n"+profileBlock([]string{"export JEVLIN_CONFIG=" + shellQuote(s.cfgPath())}))
 	link := filepath.Join(s.userHome, ".zshrc")
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
@@ -574,12 +574,12 @@ func TestWindowsUninstallRevertsOnlyWhatSetupStillOwns(t *testing.T) {
 		wantCeded bool
 	}{
 		{
-			name: "setup added Path and created TOKENDROP_CONFIG: both reverted, other entries kept in order",
+			name: "setup added Path and created JEVLIN_CONFIG: both reverted, other entries kept in order",
 			journal: func(s *setupSandbox) envJournal {
-				return envJournal{Version: 1, Path: envJournalPath{Entry: binDir(s), AddedBySetup: true}, TokendropConfig: envJournalConfig{ValueSet: s.cfgPath()}}
+				return envJournal{Version: 1, Path: envJournalPath{Entry: binDir(s), AddedBySetup: true}, JevlinConfig: envJournalConfig{ValueSet: s.cfgPath()}}
 			},
 			env: func(s *setupSandbox) map[string]string {
-				return map[string]string{"Path": `C:\a;` + strings.ToUpper(binDir(s)) + `\;C:\b`, "TOKENDROP_CONFIG": s.cfgPath()}
+				return map[string]string{"Path": `C:\a;` + strings.ToUpper(binDir(s)) + `\;C:\b`, "JEVLIN_CONFIG": s.cfgPath()}
 			},
 			want:     func(s *setupSandbox) map[string]string { return map[string]string{"Path": `C:\a;C:\b`} },
 			wantGone: true,
@@ -587,33 +587,33 @@ func TestWindowsUninstallRevertsOnlyWhatSetupStillOwns(t *testing.T) {
 		{
 			name: "the Path entry was there before setup: it stays",
 			journal: func(s *setupSandbox) envJournal {
-				return envJournal{Version: 1, Path: envJournalPath{Entry: binDir(s), AddedBySetup: false}, TokendropConfig: envJournalConfig{ValueSet: s.cfgPath()}}
+				return envJournal{Version: 1, Path: envJournalPath{Entry: binDir(s), AddedBySetup: false}, JevlinConfig: envJournalConfig{ValueSet: s.cfgPath()}}
 			},
 			env: func(s *setupSandbox) map[string]string {
-				return map[string]string{"Path": binDir(s), "TOKENDROP_CONFIG": s.cfgPath()}
+				return map[string]string{"Path": binDir(s), "JEVLIN_CONFIG": s.cfgPath()}
 			},
 			want:     func(s *setupSandbox) map[string]string { return map[string]string{"Path": binDir(s)} },
 			wantGone: true,
 		},
 		{
-			name: "TOKENDROP_CONFIG still setup's: the previous value is restored",
+			name: "JEVLIN_CONFIG still setup's: the previous value is restored",
 			journal: func(s *setupSandbox) envJournal {
-				return envJournal{Version: 1, Path: envJournalPath{Entry: binDir(s)}, TokendropConfig: envJournalConfig{ValueSet: s.cfgPath(), PreviousPresent: true, PreviousValue: `D:\mine.toml`}}
+				return envJournal{Version: 1, Path: envJournalPath{Entry: binDir(s)}, JevlinConfig: envJournalConfig{ValueSet: s.cfgPath(), PreviousPresent: true, PreviousValue: `D:\mine.toml`}}
 			},
-			env:      func(s *setupSandbox) map[string]string { return map[string]string{"TOKENDROP_CONFIG": s.cfgPath()} },
-			want:     func(s *setupSandbox) map[string]string { return map[string]string{"TOKENDROP_CONFIG": `D:\mine.toml`} }, // #nosec G101 -- an environment variable name and a fixture path, no credential
+			env:      func(s *setupSandbox) map[string]string { return map[string]string{"JEVLIN_CONFIG": s.cfgPath()} },
+			want:     func(s *setupSandbox) map[string]string { return map[string]string{"JEVLIN_CONFIG": `D:\mine.toml`} }, // #nosec G101 -- an environment variable name and a fixture path, no credential
 			wantGone: true,
 		},
 		{
-			name: "TOKENDROP_CONFIG changed by the participant after setup: left, reported",
+			name: "JEVLIN_CONFIG changed by the participant after setup: left, reported",
 			journal: func(s *setupSandbox) envJournal {
-				return envJournal{Version: 1, Path: envJournalPath{Entry: binDir(s)}, TokendropConfig: envJournalConfig{ValueSet: s.cfgPath(), PreviousPresent: true, PreviousValue: `D:\old.toml`}}
+				return envJournal{Version: 1, Path: envJournalPath{Entry: binDir(s)}, JevlinConfig: envJournalConfig{ValueSet: s.cfgPath(), PreviousPresent: true, PreviousValue: `D:\old.toml`}}
 			},
 			env: func(s *setupSandbox) map[string]string {
-				return map[string]string{"TOKENDROP_CONFIG": `E:\chosen-later.toml`} // #nosec G101 -- an environment variable name and a fixture path, no credential
+				return map[string]string{"JEVLIN_CONFIG": `E:\chosen-later.toml`} // #nosec G101 -- an environment variable name and a fixture path, no credential
 			},
 			want: func(s *setupSandbox) map[string]string {
-				return map[string]string{"TOKENDROP_CONFIG": `E:\chosen-later.toml`} // #nosec G101 -- an environment variable name and a fixture path, no credential
+				return map[string]string{"JEVLIN_CONFIG": `E:\chosen-later.toml`} // #nosec G101 -- an environment variable name and a fixture path, no credential
 			},
 			wantGone:  true,
 			wantCeded: true,
@@ -637,7 +637,7 @@ func TestWindowsUninstallRevertsOnlyWhatSetupStillOwns(t *testing.T) {
 			t.Errorf("%s: journal present=%v after a completed revert", tc.name, lexists(journal))
 		}
 		if tc.wantCeded && !strings.Contains(out, "it was changed after setup") {
-			t.Errorf("%s: a participant-owned TOKENDROP_CONFIG must be reported:\n%s", tc.name, out)
+			t.Errorf("%s: a participant-owned JEVLIN_CONFIG must be reported:\n%s", tc.name, out)
 		}
 	}
 }
@@ -653,8 +653,8 @@ func TestWindowsUninstallGuessesNothingWithoutATrustedJournal(t *testing.T) {
 		}
 		env := newFakeUserEnv()
 		env.values["Path"] = `C:\a;` + filepath.Join(s.home, "bin")
-		env.values["TOKENDROP_CONFIG"] = s.cfgPath()
-		want := map[string]string{"Path": env.values["Path"], "TOKENDROP_CONFIG": env.values["TOKENDROP_CONFIG"]}
+		env.values["JEVLIN_CONFIG"] = s.cfgPath()
+		want := map[string]string{"Path": env.values["Path"], "JEVLIN_CONFIG": env.values["JEVLIN_CONFIG"]}
 		code, out, errOut := windowsUninstall(t, s, env)
 		if code != exitOK {
 			t.Fatalf("corrupt=%v: exit %d\n%s\n%s", corrupt, code, out, errOut)
@@ -678,8 +678,8 @@ func (failingUserEnv) Set(string, string) error { return errors.New("registry wr
 func TestWindowsUninstallKeepsTheJournalWhenARevertFails(t *testing.T) {
 	s := newSetupSandbox(t)
 	journal := writeEnvJournalT(t, s.home, envJournal{Version: 1,
-		Path:            envJournalPath{Entry: filepath.Join(s.home, "bin"), AddedBySetup: true},
-		TokendropConfig: envJournalConfig{ValueSet: s.cfgPath()}})
+		Path:         envJournalPath{Entry: filepath.Join(s.home, "bin"), AddedBySetup: true},
+		JevlinConfig: envJournalConfig{ValueSet: s.cfgPath()}})
 	env := failingUserEnv{newFakeUserEnv()}
 	env.values["Path"] = filepath.Join(s.home, "bin")
 	code, _, errOut := windowsUninstall(t, s, env)
@@ -1050,8 +1050,8 @@ func TestPurgeRefusesConfiguredStateInsideBinaryTree(t *testing.T) {
 func TestPurgeCannotReintroduceAProtectedEnvironmentJournal(t *testing.T) {
 	s := installed(t)
 	journal := writeEnvJournalT(t, s.home, envJournal{Version: 1,
-		Path:            envJournalPath{Entry: filepath.Join(s.home, "bin"), AddedBySetup: true},
-		TokendropConfig: envJournalConfig{ValueSet: s.cfgPath()}})
+		Path:         envJournalPath{Entry: filepath.Join(s.home, "bin"), AddedBySetup: true},
+		JevlinConfig: envJournalConfig{ValueSet: s.cfgPath()}})
 	setConfigKey(t, s, "spool_dir", journal)
 	env := failingUserEnv{newFakeUserEnv()}
 	env.values["Path"] = filepath.Join(s.home, "bin")
@@ -1479,8 +1479,8 @@ func TestPurgeTargetGuard(t *testing.T) {
 func TestPurgeKeepsTheEnvironmentJournalWhenItsRevertFails(t *testing.T) {
 	s := installed(t)
 	journal := writeEnvJournalT(t, s.home, envJournal{Version: 1,
-		Path:            envJournalPath{Entry: filepath.Join(s.home, "bin"), AddedBySetup: true},
-		TokendropConfig: envJournalConfig{ValueSet: s.cfgPath()}})
+		Path:         envJournalPath{Entry: filepath.Join(s.home, "bin"), AddedBySetup: true},
+		JevlinConfig: envJournalConfig{ValueSet: s.cfgPath()}})
 	env := failingUserEnv{newFakeUserEnv()}
 	env.values["Path"] = filepath.Join(s.home, "bin")
 	d, out, errOut := s.uninstallDeps(tty(walletFixtureAddress(t)), true, &revokeRecorder{})
@@ -1516,7 +1516,7 @@ func TestUninstallCustomHome(t *testing.T) {
 	s := newSetupSandbox(t)
 	custom := filepath.Join(s.root, "opt", "me", "jevlin")
 	s.home = custom
-	s.env["TOKENDROP_HOME"] = ""
+	s.env["JEVLIN_HOME"] = ""
 	if code, out, errOut := s.run(nil, false, "-yes", "-home", custom); code != exitOK {
 		t.Fatalf("setup -home exited %d\n%s\n%s", code, out, errOut)
 	}

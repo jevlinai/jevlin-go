@@ -80,7 +80,7 @@ func newSetupSandbox(t *testing.T) *setupSandbox {
 		onPath:   map[string]bool{},
 		userEnv:  newFakeUserEnv(),
 	}
-	s.home = filepath.Join(s.userHome, ".tokendrop")
+	s.home = filepath.Join(s.userHome, ".jevlin")
 	// Every default that reads the real environment — os.UserHomeDir,
 	// os.UserConfigDir (pkg/config's default state_dir, the default wallet
 	// directory) — resolves inside the sandbox, so a config that leaves a
@@ -99,12 +99,12 @@ func newSetupSandbox(t *testing.T) *setupSandbox {
 		t.Fatal(err)
 	}
 	s.env = map[string]string{ // #nosec G101 -- env var names and stub URLs, no credential
-		"TOKENDROP_HOME":           s.home,
-		"TOKENDROP_AS_URL":         s.as.srv.URL,
-		"TOKENDROP_ROUTER_URL":     "https://router.invalid.test",
-		"TOKENDROP_PLATFORM_URL":   s.platform.srv.URL,
-		"TOKENDROP_AGENTS_API_URL": s.platform.srv.URL,
-		"SHELL":                    "/bin/zsh",
+		"JEVLIN_HOME":           s.home,
+		"JEVLIN_AS_URL":         s.as.srv.URL,
+		"JEVLIN_ROUTER_URL":     "https://router.invalid.test",
+		"JEVLIN_PLATFORM_URL":   s.platform.srv.URL,
+		"JEVLIN_AGENTS_API_URL": s.platform.srv.URL,
+		"SHELL":                 "/bin/zsh",
 	}
 	return s
 }
@@ -370,7 +370,7 @@ func profileBlockCount(b []byte) int { return bytes.Count(b, []byte(profileMarke
 
 // ── the cases ─────────────────────────────────────────────────────────────
 
-// A fresh install with no terminal and no TOKENDROP_MINING: connect runs and
+// A fresh install with no terminal and no JEVLIN_MINING: connect runs and
 // persists "off" from the file's silence, [mining] carries no enabled key,
 // and neither a profile nor an agent is touched.
 func TestSetupFreshNonInteractiveWritesNoEnabledAndEndsStopped(t *testing.T) {
@@ -385,7 +385,7 @@ func TestSetupFreshNonInteractiveWritesNoEnabledAndEndsStopped(t *testing.T) {
 	}
 	cfg := loadSetupConfig(t, s.cfgPath())
 	if cfg.MiningEnabledExplicit {
-		t.Errorf("[mining] enabled was written with no TOKENDROP_MINING opt-in:\n%s", s.readFile(s.cfgPath()))
+		t.Errorf("[mining] enabled was written with no JEVLIN_MINING opt-in:\n%s", s.readFile(s.cfgPath()))
 	}
 	if !cfg.Miner.Enabled || cfg.Platform.BaseURL != s.platform.srv.URL {
 		t.Errorf("config is missing [miner] or [platform]: %+v %+v", cfg.Miner, cfg.Platform)
@@ -426,15 +426,15 @@ func TestSetupFreshNonInteractiveWritesNoEnabledAndEndsStopped(t *testing.T) {
 	assertOwnership(t, before, after, s.home)
 }
 
-// The scripted opt-in: no terminal and TOKENDROP_MINING=1 with a payout
+// The scripted opt-in: no terminal and JEVLIN_MINING=1 with a payout
 // address writes enabled = true and the address, and connect enrolls and
 // declares with nobody present.
 func TestSetupScriptedMiningOptInEnrollsAndDeclares(t *testing.T) {
 	s := newSetupSandbox(t)
 	s.platform.claim("mining")
 	const addr = "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn"
-	s.env["TOKENDROP_MINING"] = "1"
-	s.env["TOKENDROP_PAYOUT_ADDRESS"] = addr
+	s.env["JEVLIN_MINING"] = "1"
+	s.env["JEVLIN_PAYOUT_ADDRESS"] = addr
 	before := snapshotTree(t, s.root)
 
 	code, out, errOut := s.run(nil, false)
@@ -457,12 +457,12 @@ func TestSetupScriptedMiningOptInEnrollsAndDeclares(t *testing.T) {
 	assertOwnership(t, before, snapshotTree(t, s.root), s.home)
 }
 
-// TOKENDROP_MINING=1 at a terminal is ignored: the answer is connect's
+// JEVLIN_MINING=1 at a terminal is ignored: the answer is connect's
 // question, and enabled = true is never written by an interactive run.
 func TestSetupNeverWritesEnabledAtATerminal(t *testing.T) {
 	s := newSetupSandbox(t)
 	s.platform.claim("credits")
-	s.env["TOKENDROP_MINING"] = "1"
+	s.env["JEVLIN_MINING"] = "1"
 	code, out, errOut := s.run(tty("n"), true, "-yes", "-no-agents", "-no-profile")
 	if code != exitOK {
 		t.Fatalf("setup exited %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
@@ -502,7 +502,7 @@ func TestSetupInteractiveYesToEverything(t *testing.T) {
 		t.Error("an undetected agent was set up")
 	}
 	if runtime.GOOS == "windows" {
-		if !pathHasEntry(s.userEnv.values["Path"], filepath.Join(s.home, "bin")) || s.userEnv.values["TOKENDROP_CONFIG"] != s.cfgPath() {
+		if !pathHasEntry(s.userEnv.values["Path"], filepath.Join(s.home, "bin")) || s.userEnv.values["JEVLIN_CONFIG"] != s.cfgPath() {
 			t.Errorf("user environment not set: %v", s.userEnv.values)
 		}
 	} else if n := profileBlockCount(s.readFile(s.profilePath())); n != 1 {
@@ -535,7 +535,7 @@ func TestSetupYesAnswersEnvironmentAndAgentsWithoutATerminal(t *testing.T) {
 		t.Errorf("-yes without a terminal did not set up the detected agent:\n%s", out)
 	}
 	if runtime.GOOS == "windows" {
-		if !pathHasEntry(s.userEnv.values["Path"], filepath.Join(s.home, "bin")) || s.userEnv.values["TOKENDROP_CONFIG"] != s.cfgPath() {
+		if !pathHasEntry(s.userEnv.values["Path"], filepath.Join(s.home, "bin")) || s.userEnv.values["JEVLIN_CONFIG"] != s.cfgPath() {
 			t.Errorf("-yes without a terminal did not set the user environment: %v", s.userEnv.values)
 		}
 	} else if b, err := os.ReadFile(s.profilePath()); err != nil || profileBlockCount(b) != 1 { // #nosec G304 -- the sandbox's profile
@@ -773,8 +773,8 @@ func TestSetupHomePathWithSpecialCharactersRoundTrips(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		weird = `we ird"q\b$;&'x`
 	}
-	s.home = filepath.Join(s.userHome, weird, ".tokendrop")
-	s.env["TOKENDROP_HOME"] = s.home
+	s.home = filepath.Join(s.userHome, weird, ".jevlin")
+	s.env["JEVLIN_HOME"] = s.home
 	s.exe = filepath.Join(s.root, weird+"bin", "jevlin")
 	if err := os.MkdirAll(filepath.Dir(s.exe), 0o700); err != nil {
 		t.Fatal(err)
@@ -798,7 +798,7 @@ func TestSetupHomePathWithSpecialCharactersRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatal("sh is required to source the profile block")
 	}
-	cmd := exec.Command(sh, "-c", `. "$1"; printf '%s\n%s\n' "$TOKENDROP_CONFIG" "$PATH"`, "sh", s.profilePath()) // #nosec G204 -- sh from PATH sourcing this test's own profile
+	cmd := exec.Command(sh, "-c", `. "$1"; printf '%s\n%s\n' "$JEVLIN_CONFIG" "$PATH"`, "sh", s.profilePath()) // #nosec G204 -- sh from PATH sourcing this test's own profile
 	cmd.Env = []string{"PATH=/usr/bin:/bin", "HOME=" + s.userHome}
 	got, err := cmd.Output()
 	if err != nil {
@@ -806,7 +806,7 @@ func TestSetupHomePathWithSpecialCharactersRoundTrips(t *testing.T) {
 	}
 	lines := strings.Split(strings.TrimRight(string(got), "\n"), "\n")
 	if len(lines) != 2 || lines[0] != s.cfgPath() {
-		t.Fatalf("TOKENDROP_CONFIG after sourcing = %q, want %q", lines, s.cfgPath())
+		t.Fatalf("JEVLIN_CONFIG after sourcing = %q, want %q", lines, s.cfgPath())
 	}
 	if !strings.HasSuffix(lines[1], ":"+filepath.Dir(s.exe)) {
 		t.Fatalf("PATH after sourcing = %q, want it to end with %q", lines[1], filepath.Dir(s.exe))
@@ -1754,7 +1754,7 @@ func TestNormalizeAgentPlanRootsHandlesWindowsStyleEscaping(t *testing.T) {
 		// %q-quoted command segment escaped once for the quoting and
 		// again for JSON — the case the first version of this fix missed.
 		contents: []byte(`{"allow":["Bash(` + once + `\\bin\\jevlin search:*)",` +
-			`"Bash(\"` + twice + `\\\\bin\\\\jevlin\" search -config \"` + twice + `\\\\user\\\\.tokendrop\\\\tokendrop.toml\":*)"]}`),
+			`"Bash(\"` + twice + `\\\\bin\\\\jevlin\" search -config \"` + twice + `\\\\user\\\\.jevlin\\\\jevlin.toml\":*)"]}`),
 	}}}
 	got := normalizeAgentPlanRoots(plan, root)
 	w := got.writes[0]
@@ -1990,7 +1990,7 @@ func TestSetupRefusesMalformedProfileMarkers(t *testing.T) {
 	if got := s.readFile(s.profilePath()); string(got) != body {
 		t.Fatalf("malformed profile was edited:\n%s", got)
 	}
-	if !strings.Contains(out, "Not touching "+s.profilePath()) || !strings.Contains(out, "export TOKENDROP_CONFIG=") {
+	if !strings.Contains(out, "Not touching "+s.profilePath()) || !strings.Contains(out, "export JEVLIN_CONFIG=") {
 		t.Errorf("refusal or lines to add by hand not printed:\n%s", out)
 	}
 	if !strings.Contains(out, "Setup complete") {
@@ -2023,7 +2023,7 @@ func TestSetupWindowsJournalRecordsDeltas(t *testing.T) {
 	s.platform.claim("credits")
 	binDir := filepath.Join(s.home, "bin")
 	s.userEnv.values["Path"] = `C:\Windows;` + strings.ToUpper(binDir) + `\`
-	s.userEnv.values["TOKENDROP_CONFIG"] = `C:\old\tokendrop.toml`
+	s.userEnv.values["JEVLIN_CONFIG"] = `C:\old\jevlin.toml`
 
 	if code, out, errOut := s.run(tty("n"), true, "-yes", "-no-agents"); code != exitOK {
 		t.Fatalf("setup exited %d\n%s\n%s", code, out, errOut)
@@ -2036,11 +2036,11 @@ func TestSetupWindowsJournalRecordsDeltas(t *testing.T) {
 	if first.Path.AddedBySetup {
 		t.Error("added_by_setup = true for a PATH entry that was already there")
 	}
-	if !first.TokendropConfig.PreviousPresent || first.TokendropConfig.PreviousValue != `C:\old\tokendrop.toml` {
-		t.Errorf("previous TOKENDROP_CONFIG not recorded: %+v", first.TokendropConfig)
+	if !first.JevlinConfig.PreviousPresent || first.JevlinConfig.PreviousValue != `C:\old\jevlin.toml` {
+		t.Errorf("previous JEVLIN_CONFIG not recorded: %+v", first.JevlinConfig)
 	}
-	if s.userEnv.values["TOKENDROP_CONFIG"] != s.cfgPath() {
-		t.Errorf("TOKENDROP_CONFIG = %q", s.userEnv.values["TOKENDROP_CONFIG"])
+	if s.userEnv.values["JEVLIN_CONFIG"] != s.cfgPath() {
+		t.Errorf("JEVLIN_CONFIG = %q", s.userEnv.values["JEVLIN_CONFIG"])
 	}
 	journalBytes := s.readFile(journalPath)
 
@@ -2051,8 +2051,8 @@ func TestSetupWindowsJournalRecordsDeltas(t *testing.T) {
 		t.Errorf("journal changed on a rerun:\n%s\n->\n%s", journalBytes, got)
 	}
 	second, _ := readEnvJournal(journalPath)
-	if second.TokendropConfig.PreviousValue != `C:\old\tokendrop.toml` {
-		t.Errorf("rerun overwrote previous_value with %q", second.TokendropConfig.PreviousValue)
+	if second.JevlinConfig.PreviousValue != `C:\old\jevlin.toml` {
+		t.Errorf("rerun overwrote previous_value with %q", second.JevlinConfig.PreviousValue)
 	}
 }
 

@@ -3,6 +3,6 @@ model: gpt
 # >>> jevlin agents install >>>
 hooks:
   pre_tool_call:
-    - command: '/home/u/.tokendrop/bin/jevlin hook -config /home/u/.tokendrop/tokendrop.toml hermes pre_tool_call'
+    - command: '/home/u/.jevlin/bin/jevlin hook -config /home/u/.jevlin/jevlin.toml hermes pre_tool_call'
       matcher: "terminal"
 # <<< jevlin agents install <<<

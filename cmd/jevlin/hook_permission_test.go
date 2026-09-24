@@ -28,7 +28,7 @@ import (
 )
 
 // newHookFixture is an installation laid out the way a participant's is: the
-// binary is a real regular file named jevlin under .tokendrop/bin, and
+// binary is a real regular file named jevlin under .jevlin/bin, and
 // the config sits beside it.
 //
 // It cannot reuse newRecognizerFixture, whose binary is the test's own
@@ -117,7 +117,7 @@ func toolFor(sh shellKind) string {
 func TestTheRenderedSearchIsAllowedAndBridgedInOneAnswer(t *testing.T) {
 	for _, sh := range []shellKind{shellPOSIX, shellPowerShell} {
 		t.Run(string(sh), func(t *testing.T) {
-			f := newHookFixture(t, sh, "tokendrop.toml")
+			f := newHookFixture(t, sh, "jevlin.toml")
 			search := f.renderedSearch(t, sh, `{"version":1,"query":"probe query text"}`)
 			got := askHook(t, f, toolFor(sh), search)
 
@@ -139,7 +139,7 @@ func TestTheRenderedSearchIsAllowedAndBridgedInOneAnswer(t *testing.T) {
 // recognizer that rebuilds the string, never from isSearchCommand, which is
 // a pattern and matches any spelling of any search.
 func TestACommandThatIsNotTheRenderedSearchIsNeverAllowed(t *testing.T) {
-	f := newHookFixture(t, shellPOSIX, "tokendrop.toml")
+	f := newHookFixture(t, shellPOSIX, "jevlin.toml")
 	rendered := f.renderedSearch(t, shellPOSIX, `{"version":1,"query":"probe query text"}`)
 
 	cases := []struct {
@@ -170,7 +170,7 @@ func TestACommandThatIsNotTheRenderedSearchIsNeverAllowed(t *testing.T) {
 // not remove its integrations (dropin-miner#73). Two installations share a binary
 // whenever the second was made by running the first.
 func TestAnotherInstallationsSearchIsNotAllowed(t *testing.T) {
-	f := newHookFixture(t, shellPOSIX, "tokendrop.toml")
+	f := newHookFixture(t, shellPOSIX, "jevlin.toml")
 	// The SAME binary, another installation's config — which is exactly what
 	// `setup -home <dir>` run from an existing installation produces.
 	other := f
@@ -185,7 +185,7 @@ func TestAnotherInstallationsSearchIsNotAllowed(t *testing.T) {
 // A Bash command that is not a search at all is untouched: no answer, so no
 // rewrite and no decision. The hook stays out of everything it did not cause.
 func TestANonSearchCommandIsUntouched(t *testing.T) {
-	f := newHookFixture(t, shellPOSIX, "tokendrop.toml")
+	f := newHookFixture(t, shellPOSIX, "jevlin.toml")
 	got := askHook(t, f, "Bash", "git status")
 	if strings.TrimSpace(got.raw) != "" {
 		t.Errorf("the hook answered for a command that is not ours: %s", got.raw)

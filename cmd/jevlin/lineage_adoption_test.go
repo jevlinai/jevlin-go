@@ -101,7 +101,7 @@ func TestASearchDoesNotAdoptAnotherHostsLineage(t *testing.T) {
 	p := newLineageProbe(t, filepath.Join(adoptRoot, "ws-cursor"), nil)
 	claude := p.write(t, adoptRoot, "claude-code", "claude-session")
 
-	env := p.trace(map[string]string{"TOKENDROP_HARNESS": "cursor"})
+	env := p.trace(map[string]string{"JEVLIN_HARNESS": "cursor"})
 
 	if env == nil {
 		t.Fatal("a search that can adopt nothing must still send a usable trace")
@@ -154,7 +154,7 @@ func TestASearchStillAdoptsItsOwnHostsLineageFromASubdirectory(t *testing.T) {
 	p := newLineageProbe(t, filepath.Join(adoptRoot, "src", "deep"), nil)
 	mine := p.write(t, adoptRoot, "cursor", "cursor-session")
 
-	env := p.trace(map[string]string{"TOKENDROP_HARNESS": "cursor"})
+	env := p.trace(map[string]string{"JEVLIN_HARNESS": "cursor"})
 
 	if env == nil || env.SessionID != "cursor-session" {
 		t.Fatalf("a host did not find its own sidecar from a subdirectory: %+v", env)
@@ -178,7 +178,7 @@ func TestAForeignSidecarStopsTheWalkRatherThanBeingClimbedPast(t *testing.T) {
 	mine := p.write(t, adoptRoot, "cursor", "cursor-session")
 	theirs := p.write(t, sub, "claude-code", "claude-session")
 
-	env := p.trace(map[string]string{"TOKENDROP_HARNESS": "cursor"})
+	env := p.trace(map[string]string{"JEVLIN_HARNESS": "cursor"})
 
 	// Nothing is adopted, so the identity is this shell's own. The harness is
 	// still cursor — that much the search does know about itself; what it
@@ -201,13 +201,13 @@ func TestAForeignSidecarStopsTheWalkRatherThanBeingClimbedPast(t *testing.T) {
 }
 
 // The exact-path channel is unchanged: a host whose hook exported
-// TOKENDROP_LINEAGE named its own file outright, and that is a declaration,
+// JEVLIN_LINEAGE named its own file outright, and that is a declaration,
 // not a guess.
 func TestTheExactLineagePathIsStillHonoured(t *testing.T) {
 	p := newLineageProbe(t, filepath.Join(adoptRoot, "ws-cursor"), nil)
 	mine := p.write(t, adoptRoot, "cursor", "cursor-session")
 
-	env := p.trace(map[string]string{lineageEnv: mine, "TOKENDROP_HARNESS": "cursor"})
+	env := p.trace(map[string]string{lineageEnv: mine, "JEVLIN_HARNESS": "cursor"})
 
 	if env == nil || env.SessionID != "cursor-session" || env.Seq != 8 {
 		t.Fatalf("the sidecar named outright was not used: %+v", env)
@@ -242,7 +242,7 @@ func TestASearchThatNamesNoHostReadsNoOtherSessionsFile(t *testing.T) {
 //
 // The vocabulary is closed and lowercase and this client's hooks write both
 // sides of the comparison, so a case variant can only come from a participant
-// setting TOKENDROP_HARNESS by hand — and that same value is what the search
+// setting JEVLIN_HARNESS by hand — and that same value is what the search
 // sends to the router as its label. Adopting the session and relabelling it
 // would put one session under two spellings downstream, which is dropin-miner#91's hazard
 // arriving by a third route. Refusing costs that participant a threaded
@@ -253,7 +253,7 @@ func TestHarnessNamesMustMatchExactly(t *testing.T) {
 			p := newLineageProbe(t, filepath.Join(adoptRoot, "src"), nil)
 			mine := p.write(t, adoptRoot, "cursor", "cursor-session")
 
-			env := p.trace(map[string]string{"TOKENDROP_HARNESS": declared})
+			env := p.trace(map[string]string{"JEVLIN_HARNESS": declared})
 
 			if env == nil {
 				t.Fatal("no trace at all")
@@ -269,7 +269,7 @@ func TestHarnessNamesMustMatchExactly(t *testing.T) {
 	// And the rule is not vacuous: the exact name is adopted.
 	p := newLineageProbe(t, filepath.Join(adoptRoot, "src"), nil)
 	p.write(t, adoptRoot, "cursor", "cursor-session")
-	if env := p.trace(map[string]string{"TOKENDROP_HARNESS": "cursor"}); env == nil || env.SessionID != "cursor-session" {
+	if env := p.trace(map[string]string{"JEVLIN_HARNESS": "cursor"}); env == nil || env.SessionID != "cursor-session" {
 		t.Fatalf("the exactly-matching name was not adopted: %+v", env)
 	}
 }
@@ -286,7 +286,7 @@ func TestASidecarWithNoHarnessIsNotAdoptedByTheWalk(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	env := p.trace(map[string]string{"TOKENDROP_HARNESS": "cursor"})
+	env := p.trace(map[string]string{"JEVLIN_HARNESS": "cursor"})
 
 	if env == nil || env.SessionID == "nameless-session" {
 		t.Fatalf("a sidecar naming no harness was adopted: %+v", env)

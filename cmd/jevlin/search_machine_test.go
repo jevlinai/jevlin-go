@@ -109,7 +109,7 @@ func TestMachineQueriesSurviveExactlyWhateverIsInThem(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			code, out, errOut := runSearchStdin(t, h, map[string]string{"TOKENDROP_API_KEY": "k"},
+			code, out, errOut := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"},
 				string(request), "-config", cfg)
 			if code != exitOK {
 				t.Fatalf("exit %d: %s %s", code, out, errOut)
@@ -161,7 +161,7 @@ func TestMachineInputContractRefusals(t *testing.T) {
 				_, _ = w.Write([]byte(routerBody))
 			})
 			h := fixedSearchOps(root)
-			code, out, errOut := runSearchStdin(t, h, map[string]string{"TOKENDROP_API_KEY": "k"}, tc.stdin, "-config", cfg)
+			code, out, errOut := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, tc.stdin, "-config", cfg)
 			if code != exitUsage {
 				t.Fatalf("exit %d, want %d (%s)", code, exitUsage, out)
 			}
@@ -189,7 +189,7 @@ func TestMachineInputContractRefusals(t *testing.T) {
 func TestMachineModeRefusesAPositionalQuery(t *testing.T) {
 	fr, cfg, root := newFakeRouter(t, nil)
 	h := fixedSearchOps(root)
-	code, out, _ := runSearchStdin(t, h, map[string]string{"TOKENDROP_API_KEY": "k"},
+	code, out, _ := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"},
 		`{"version":1,"query":"from stdin"}`, "-config", cfg, "from", "argv")
 	if code != exitUsage {
 		t.Fatalf("exit %d, want %d", code, exitUsage)
@@ -212,7 +212,7 @@ func TestMachineModeIgnoresFormatModel(t *testing.T) {
 		_, _ = w.Write([]byte(routerBody))
 	})
 	h := fixedSearchOps(root)
-	code, out, _ := runSearchStdin(t, h, map[string]string{"TOKENDROP_API_KEY": "k"},
+	code, out, _ := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"},
 		`{"version":1,"query":"q"}`, "-config", cfg, "-format", "model")
 	if code != exitOK {
 		t.Fatalf("exit %d", code)
@@ -228,7 +228,7 @@ func TestMachineTierComesFromTheRequest(t *testing.T) {
 		_, _ = w.Write([]byte(routerBody))
 	})
 	h := fixedSearchOps(root)
-	code, _, _ := runSearchStdin(t, h, map[string]string{"TOKENDROP_API_KEY": "k"},
+	code, _, _ := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"},
 		`{"version":1,"query":"q","tier":"fast"}`, "-config", cfg)
 	if code != exitOK {
 		t.Fatalf("exit %d", code)
@@ -324,7 +324,7 @@ func TestMachineOptionsRoundTripIntoTheBody(t *testing.T) {
 				_, _ = w.Write([]byte(routerBody))
 			})
 			h := fixedSearchOps(root)
-			code, out, errOut := runSearchStdin(t, h, map[string]string{"TOKENDROP_API_KEY": "k"}, tc.stdin, "-config", cfg)
+			code, out, errOut := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, tc.stdin, "-config", cfg)
 			if code != exitOK {
 				t.Fatalf("exit %d: %s %s", code, out, errOut)
 			}
@@ -383,7 +383,7 @@ func TestMachineOptionsRefusedBeforeRouterCall(t *testing.T) {
 				_, _ = w.Write([]byte(routerBody))
 			})
 			h := fixedSearchOps(root)
-			code, out, errOut := runSearchStdin(t, h, map[string]string{"TOKENDROP_API_KEY": "k"}, tc.stdin, "-config", cfg)
+			code, out, errOut := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, tc.stdin, "-config", cfg)
 			if code != exitUsage {
 				t.Fatalf("exit %d, want %d (%s)", code, exitUsage, out)
 			}
@@ -470,7 +470,7 @@ func TestEveryProcessClassEmitsACompleteEnvelope(t *testing.T) {
 			if stdin == "" {
 				stdin = `{"version":1,"query":"q"}`
 			}
-			code, out, errOut := runSearchStdin(t, h, map[string]string{"TOKENDROP_API_KEY": "k"}, stdin, "-config", cfg)
+			code, out, errOut := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, stdin, "-config", cfg)
 			env := decodeEnvelope(t, out)
 			if code != tc.wantExit {
 				t.Fatalf("exit %d, want %d: %s", code, tc.wantExit, out)
@@ -502,7 +502,7 @@ func TestMachineSuccessCarriesTheClientOwnedResult(t *testing.T) {
 		_, _ = w.Write([]byte(routerBody))
 	})
 	h := fixedSearchOps(root)
-	code, out, _ := runSearchStdin(t, h, map[string]string{"TOKENDROP_API_KEY": "k"},
+	code, out, _ := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"},
 		`{"version":1,"query":"how do ports work"}`, "-config", cfg)
 	if code != exitOK {
 		t.Fatalf("exit %d", code)
@@ -686,7 +686,7 @@ func TestRetryAfterReachesTheEnvelopeWhenTheRouterSuppliesIt(t *testing.T) {
 				_, _ = w.Write([]byte(`{"code":"rate_limited","error":"slow down"}`))
 			})
 			h := fixedSearchOps(root)
-			_, out, _ := runSearchStdin(t, h, map[string]string{"TOKENDROP_API_KEY": "k"},
+			_, out, _ := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"},
 				`{"version":1,"query":"q"}`, "-config", cfg)
 			env := decodeEnvelope(t, out)
 			if got := env["retry_after_ms"]; got != tc.want {
@@ -720,7 +720,7 @@ func TestMiningStateIsReportedWithoutChangingSearchSuccess(t *testing.T) {
 				t.Fatal(err)
 			}
 			h := fixedSearchOps(root)
-			code, out, _ := runSearchStdin(t, h, map[string]string{"TOKENDROP_API_KEY": "k"},
+			code, out, _ := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"},
 				`{"version":1,"query":"q"}`, "-config", cfg)
 			// A successful search is successful whatever mining is doing.
 			if code != exitOK {
@@ -759,7 +759,7 @@ func TestACaptureFailureDegradesMiningButNotTheSearch(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := fixedSearchOps(root)
-	code, out, _ := runSearchStdin(t, h, map[string]string{"TOKENDROP_API_KEY": "k"},
+	code, out, _ := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"},
 		`{"version":1,"query":"q"}`, "-config", cfg)
 	if code != exitOK {
 		t.Fatalf("a mining capture failure changed the search exit: %d %s", code, out)
@@ -793,10 +793,10 @@ func TestNoSeededSecretReachesTheEnvelopeOrTheHumanError(t *testing.T) {
 	})
 	h := fixedSearchOps(root)
 	env := map[string]string{
-		"TOKENDROP_API_KEY":   routerKey,
-		"TOKENDROP_REFRESH":   refreshShape,
-		"TOKENDROP_DPOP":      dpopCanary,
-		"TOKENDROP_UNRELATED": otherCanary,
+		"JEVLIN_API_KEY":   routerKey,
+		"JEVLIN_REFRESH":   refreshShape,
+		"JEVLIN_DPOP":      dpopCanary,
+		"JEVLIN_UNRELATED": otherCanary,
 	}
 	_, machineOut, machineErr := runSearchStdin(t, h, env, `{"version":1,"query":"q"}`, "-config", cfg)
 	_, humanOut, humanErr := runSearch(t, h, env, "-config", cfg, "q")

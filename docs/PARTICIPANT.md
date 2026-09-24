@@ -30,11 +30,11 @@ this machine only ever receives; spending needs the passphrase you chose.
 If you would rather be paid into a wallet you already control, paste that
 address when asked. Nothing else changes.
 
-The wallet setup makes lives in `~/.tokendrop/wallet`. Nothing but you needs to
+The wallet setup makes lives in `~/.jevlin/wallet`. Nothing but you needs to
 read it: a search uses the stored key in `credentials.json` and a flush uses the
 state folder, and neither touches the wallet. On Windows, setup gives the wallet
 folder and every file in it an access list of their own with only you on it, so
-access another program adds to `~/.tokendrop` — a coding agent's sandbox, for
+access another program adds to `~/.jevlin` — a coding agent's sandbox, for
 instance — reaches the rest of the installation and not the wallet. Running
 `jevlin setup` again puts that right for a wallet whose access list is not
 owner-only (and stops, saying why, if something in the wallet folder cannot be secured, such
@@ -66,8 +66,8 @@ PATH, and run `jevlin setup`.
 
 Nothing needs removing first. Update the binary (npm: `npm install -g
 jevlin@latest`), then run `jevlin setup`. If your installation uses a
-non-default home (you had `TOKENDROP_HOME` set for it), run `jevlin setup` with
-`TOKENDROP_HOME` set to that same one — setup has no other way to find it. `TOKENDROP_HOME` is how you say "this directory is this
+non-default home (you had `JEVLIN_HOME` set for it), run `jevlin setup` with
+`JEVLIN_HOME` set to that same one — setup has no other way to find it. `JEVLIN_HOME` is how you say "this directory is this
 machine's installation". `setup -home <dir>` by itself, for any other directory, makes
 a separate installation there: it leaves your shell profile and your coding agents
 alone, even with `-yes`, because those belong to the machine's own installation, and
@@ -78,7 +78,7 @@ that put it there. If your main installation already set an agent up, the second
 one's `agents install` leaves that skill alone and tells you whose it is, so that
 agent keeps searching through your main installation.
 
-The installation in `~/.tokendrop` is used as it is: a directory holding an identity
+The installation in `~/.jevlin` is used as it is: a directory holding an identity
 is the installation, and nothing set aside is offered. Your wallet,
 identity, search credential and recorded searches are kept; setup creates no
 replacement for a healthy installation. `connect` still runs and resumes or repairs
@@ -95,9 +95,9 @@ A config that already has the `[platform]` and `[miner]` tables is left byte for
 byte.
 
 On macOS and Linux you never get a second profile block: setup replaces its one
-block in place. On Windows, your existing user PATH entry and `TOKENDROP_CONFIG`
+block in place. On Windows, your existing user PATH entry and `JEVLIN_CONFIG`
 are reused, not duplicated: setup records in `setup-env.json` whether an already-present PATH entry was added by it,
-and what `TOKENDROP_CONFIG` held before, so a later `uninstall` only removes what
+and what `JEVLIN_CONFIG` held before, so a later `uninstall` only removes what
 setup itself added and prints the rest for you to remove by hand.
 
 Your agent integrations are reconciled to the current plan: one already correct is
@@ -108,7 +108,7 @@ it owns — the files it writes, your profile or environment, and your agent
 integrations — and keeps the same healthy identity; your connect-managed
 authorization state may still advance.
 
-Want a clean start instead? Move `~/.tokendrop` aside and take it back at the
+Want a clean start instead? Move `~/.jevlin` aside and take it back at the
 **Use it?** question below.
 
 Globally, not with `npx`: setup writes this binary's location into your agents'
@@ -120,10 +120,10 @@ Setup asks, in order:
 
 | it asks | what to know |
 |---|---|
-| **Use it? [Y/n]** | Only if a previous installation is set aside beside `~/.tokendrop` (one inside `~/.tokendrop` is simply used). Setup first says where it is and what it holds. Yes brings back your wallet, registration and key; the questions below that they answer are then skipped. |
+| **Use it? [Y/n]** | Only if a previous installation is set aside beside `~/.jevlin` (one inside `~/.jevlin` is simply used). Setup first says where it is and what it holds. Yes brings back your wallet, registration and key; the questions below that they answer are then skipped. |
 | **Enable mining rewards? [y/N]** | A bare Enter answers no — search still works either way. Yes asks the next question now; changing your mind later is `jevlin mining enable` (or `mining disable` to stop). |
 | **Payout address (leave empty to create a wallet here):** | Only asked after yes above. Paste a `twilight1…` address you control, or leave it empty for a wallet: it asks for a keyfile passphrase (**keyfile passphrase:**, then **again:** to confirm) before it prints the 24 words once. Have paper ready. |
-| **Add them to ~/.zshrc? [Y/n]** | (or `~/.bashrc`, whichever your shell reads). Puts the binary on PATH, sets `TOKENDROP_CONFIG`, and — when a wallet was made here — `TOKENDROP_WALLET_DIR`, in one marked block. Saying no just means longer commands. On Windows the question is **Set them for your user? [Y/n]**: PATH and `TOKENDROP_CONFIG` only, in your user environment. |
+| **Add them to ~/.zshrc? [Y/n]** | (or `~/.bashrc`, whichever your shell reads). Puts the binary on PATH, sets `JEVLIN_CONFIG`, and — when a wallet was made here — `JEVLIN_WALLET_DIR`, in one marked block. Saying no just means longer commands. On Windows the question is **Set them for your user? [Y/n]**: PATH and `JEVLIN_CONFIG` only, in your user environment. |
 | **Set up the coding agents found on this machine now? [Y/n]** | Writes a skill and, where the agent supports them, hook entries into its own config. Shown before anything is written, with each agent named beside what made it count as present — the command it is launched by, or its own config directory. An agent you have but do not see listed is one neither signal found; `setup -with <id>` sets it up anyway. |
 
 Each of these counts only an answer you typed. If you interrupt one, or its
@@ -210,7 +210,7 @@ first line that sets the output encoding:
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 @'
 {"version":1,"query":"what is proof of authority consensus"}
-'@ | & 'C:\Users\you\.tokendrop\bin\jevlin.exe' search --stdin
+'@ | & 'C:\Users\you\.jevlin\bin\jevlin.exe' search --stdin
 ```
 
 That first line is what makes a query with an apostrophe, a quotation mark
@@ -271,7 +271,7 @@ earn nothing.
 
 Recent agent context travels to the Twilight search router as part of the
 trajectory/search product. Mining/AS receives metadata observations only.
-`TOKENDROP_TRACE=off` disables trace transmission.
+`JEVLIN_TRACE=off` disables trace transmission.
 
 Each search carries a small `trace` beside the query so the router can group
 one task's searches: hashed session and turn identifiers (your agent's real
@@ -279,7 +279,7 @@ ids never leave the machine), a call counter, and the assistant text just
 before the search, capped at 32 KB. That text is conversation content leaving
 your machine; it goes only inside the search request, to the router, and the
 miner stores none of it beyond the lineage files under
-`~/.tokendrop/sessions` that the hooks maintain, one per workspace, or for
+`~/.jevlin/sessions` that the hooks maintain, one per workspace, or for
 Cursor one per conversation.
 
 One of those files is only ever read back by the agent that wrote it. If you
@@ -304,7 +304,7 @@ deliberate: the inner agent's search is work the outer session asked for.
 To send no trace at all:
 
 ```bash
-export TOKENDROP_TRACE=off
+export JEVLIN_TRACE=off
 ```
 
 Searches are metered and earn exactly the same either way.
@@ -369,7 +369,7 @@ on that list, because the detached claim resume writes there after every
 search whether you mine or not; the intake, sessions and spool directories
 join it when `[miner] enabled` is set, which is where the mining observation
 is recorded. Deliberately those directories and
-never the home itself: `tokendrop.toml`, `credentials.json` and `wallet/`
+never the home itself: `jevlin.toml`, `credentials.json` and `wallet/`
 stay read-only to sandboxed commands, so a command that goes wrong inside
 Codex cannot rewrite where your credentials are sent. Reading is a different
 matter: a sandboxed command can read `credentials.json`, because a search needs
@@ -385,7 +385,7 @@ it alone and prints the settings to add by hand.
 **opencode** gets an in-process plugin that threads the search, plus a line to
 paste into `AGENTS.md`.
 
-**Pi** gets a skill in `~/.pi/agent/skills/dropin-miner/` and an
+**Pi** gets a skill in `~/.pi/agent/skills/jevlin/` and an
 auto-discovered extension in `~/.pi/agent/extensions/`. The extension rewrites
 the bash command that runs the search with the trace bridge, the way the Claude
 Code hook and the opencode plugin do: the session, the call, the assistant text
@@ -554,7 +554,7 @@ one is a change, and a Slot operator has to approve it: you keep being paid
 at the old address until they do. To request a change, contact the Slot
 operator at <https://platform.nyks.dev/contact-us> and say which address you
 want to change *to*. Nobody needs your API key, your recovery phrase, or the
-contents of `~/.tokendrop/` to approve a payout address, and no operator will
+contents of `~/.jevlin/` to approve a payout address, and no operator will
 ask you for them.
 
 ## Sending funds with `wallet send`
@@ -575,7 +575,7 @@ record without finding out what happened to it, if you are certain it never
 matters.
 
 The client trusts whichever RPC node it talks to (`-node`, or
-`TOKENDROP_WALLET_NODE`, or the one built-in default for the testnet) for
+`JEVLIN_WALLET_NODE`, or the one built-in default for the testnet) for
 balances and confirmations; it does not independently verify the chain the
 way a light client would. That node must be `https`, or plain `http` only on
 your own machine (loopback) — pass `-insecure-node` to override this and
@@ -649,14 +649,14 @@ reporting a failure.
 
 `jevlin uninstall` takes out what setup put on this machine: the skills,
 hooks and plugin in your agents that run this installation's binary, and the
-shell-profile block (on Windows, the user PATH entry and `TOKENDROP_CONFIG`,
+shell-profile block (on Windows, the user PATH entry and `JEVLIN_CONFIG`,
 put back exactly as setup's record says, and only where they still hold what
 setup set). Your wallet, registration, stored key, unsent searches and config
 stay, nothing is revoked, and it tells you how to keep using them. Run it with
 `-dry-run` first to see the list. Installed with npm? `npm uninstall -g
 jevlin` removes the binary.
 
-`-binary` also deletes `~/.tokendrop/bin/jevlin`, its
+`-binary` also deletes `~/.jevlin/bin/jevlin`, its
 `jevlin.previous`, and anything an interrupted upgrade left beside it. You will also find
 small `.lock` files — beside the installation, in it, and next to the binary. They are how
 Jevlin's commands avoid running over each other, they hold nothing once a command has
@@ -685,26 +685,26 @@ environment entries) that named this installation, so connect would look at the
 default location instead, find nothing, and register this machine anew.
 
 Setup looks
-for `~/.tokendrop`, or a set-aside copy beside it (`~/.tokendrop.bak-<date>`,
-`~/.tokendrop.old`), tells you what it holds — the wallet's address, whether it
+for `~/.jevlin`, or a set-aside copy beside it (`~/.jevlin.bak-<date>`,
+`~/.jevlin.old`), tells you what it holds — the wallet's address, whether it
 is enrolled, whether a key is stored, any unsent searches — and asks before
 using a set-aside one. Saying no starts fresh beside it. Saying yes moves it
 back in pieces that belong together:
 
-- **Your registration and your stored key** travel as one. If `~/.tokendrop`
+- **Your registration and your stored key** travel as one. If `~/.jevlin`
   already has a registration of its own, setup stops right there — nothing is
   moved and no new registration is made. It names both places; choose the one
   you mean to keep, move the other out of the folder they share, and run setup
   again. If
-  `~/.tokendrop` only has the half-made key of a setup that stopped early, that
+  `~/.jevlin` only has the half-made key of a setup that stopped early, that
   is renamed aside (`state.unenrolled-<time>`), not deleted.
-- **Your wallet** moves whole. If `~/.tokendrop` already has a wallet, it is an
+- **Your wallet** moves whole. If `~/.jevlin` already has a wallet, it is an
   installation already and is simply used; nothing set aside is offered. A
   wallet folder there with no key in it, from a wallet that was never finished,
   is renamed aside (`wallet.incomplete-<time>`), not deleted, and yours moves in.
 - **Unsent searches and session files** are merged in, one file at a time,
   never replacing a file already there.
-- **Your config** moves only if `~/.tokendrop` has none.
+- **Your config** moves only if `~/.jevlin` has none.
 
 Nothing that is a symlink is moved. The set-aside folder is deleted afterwards
 only if it is empty; otherwise setup lists what it left in it.

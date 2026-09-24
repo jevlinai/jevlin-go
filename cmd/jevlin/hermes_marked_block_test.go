@@ -47,7 +47,7 @@ func TestAnotherInstallationsHermesBlockIsLeftAndNamed(t *testing.T) {
 	for name, tc := range hermesResavedEntries {
 		owner := tc.entry
 		others := map[string]binEntry{
-			"sharing the binary":   {command: owner.command, cfg: "/tmp/disposable/tokendrop.toml"},
+			"sharing the binary":   {command: owner.command, cfg: "/tmp/disposable/jevlin.toml"},
 			"another binary":       {command: "/somewhere/else/bin/jevlin", cfg: owner.cfg},
 			"running on no config": {command: owner.command},
 		}

@@ -217,7 +217,7 @@ func TestAMultiRunnerHookCellKeepsTheFormItCanProve(t *testing.T) {
 	if err != nil || len(shells) < 2 {
 		t.Fatalf("cursor windows hook declares %v (%v); this test exists for a cell naming more than one runner", shells, err)
 	}
-	e := binEntry{command: `C:\Program Files\tokendrop\jevlin.exe`, cfg: `C:\Users\u\tokendrop.toml`}
+	e := binEntry{command: `C:\Program Files\jevlin\jevlin.exe`, cfg: `C:\Users\u\jevlin.toml`}
 	cmd, note, err := e.hookCommandForRunners(shells, "cursor", "stop")
 	if err != nil {
 		t.Fatalf("rendering for %v: %v", shells, err)

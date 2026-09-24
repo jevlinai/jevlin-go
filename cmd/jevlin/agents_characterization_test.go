@@ -33,7 +33,7 @@ var (
 	goldenHostLabels = []string{"Claude Code", "Codex", "Cursor", "opencode", "Pi", "Hermes"}
 )
 
-const goldenBin = "/home/u/.tokendrop/bin/jevlin"
+const goldenBin = "/home/u/.jevlin/bin/jevlin"
 
 func goldenEntry() binEntry { return binEntry{command: goldenBin, cfg: testCfg} }
 
@@ -276,7 +276,7 @@ func withSkillPlaceholder(g goldenPlan) goldenPlan {
 // replaced rather than dropped.
 func TestPlanGoldenCaptureDropsWhatDiffersByOS(t *testing.T) {
 	got := withSkillPlaceholder(goldenPlan{
-		Writes: []goldenWrite{{Path: "/h/skills/dropin-miner/SKILL.md", Content: "rendered for whichever OS this is"}},
+		Writes: []goldenWrite{{Path: "/h/skills/jevlin/SKILL.md", Content: "rendered for whichever OS this is"}},
 		Notes: []string{
 			"Codex: which shell runs its tool calls on windows is not established, so the skill keeps the Bash form",
 			"opencode: has no skill directory — add to AGENTS.md:\n  '/h/bin/jevlin' search --stdin",
@@ -300,18 +300,18 @@ func TestPlanGoldenCaptureDropsWhatDiffersByOS(t *testing.T) {
 	// can produce has to reach the same placeholder, or the golden is only
 	// ever right on the OS that produced it — which is how both Windows jobs
 	// failed on 4dcf156.
-	e := binEntry{command: "/h/bin/jevlin", cfg: "/h/tokendrop.toml"}
+	e := binEntry{command: "/h/bin/jevlin", cfg: "/h/jevlin.toml"}
 	for _, spelling := range []string{
-		`'/h/bin/jevlin' hook -config '/h/tokendrop.toml' cursor stop`,     // POSIX
-		`& '/h/bin/jevlin' hook -config '/h/tokendrop.toml' cursor stop`,   // PowerShell, call operator and all
-		`"/h/bin/jevlin" hook -config "/h/tokendrop.toml" cursor stop`,     // cmd, and %q
-		`\"/h/bin/jevlin\" hook -config \"/h/tokendrop.toml\" cursor stop`, // the same, inside a JSON hook file
+		`'/h/bin/jevlin' hook -config '/h/jevlin.toml' cursor stop`,     // POSIX
+		`& '/h/bin/jevlin' hook -config '/h/jevlin.toml' cursor stop`,   // PowerShell, call operator and all
+		`"/h/bin/jevlin" hook -config "/h/jevlin.toml" cursor stop`,     // cmd, and %q
+		`\"/h/bin/jevlin\" hook -config \"/h/jevlin.toml\" cursor stop`, // the same, inside a JSON hook file
 	} {
 		out := withRenderedPerOSStrings(goldenPlan{
 			Writes: []goldenWrite{{Path: "/h/.cursor/hooks.json", Content: spelling}},
 		}, e)
 		if strings.Contains(out.Writes[0].Content, "/h/bin/jevlin") ||
-			strings.Contains(out.Writes[0].Content, "/h/tokendrop.toml") {
+			strings.Contains(out.Writes[0].Content, "/h/jevlin.toml") {
 			t.Errorf("a per-OS quoting survived into the golden: %q -> %q", spelling, out.Writes[0].Content)
 		}
 	}
@@ -319,7 +319,7 @@ func TestPlanGoldenCaptureDropsWhatDiffersByOS(t *testing.T) {
 	// And the one line the installer writes into a JavaScript adapter.
 	for _, sh := range []shellKind{shellPOSIX, shellPowerShell} {
 		out := withRenderedPerOSStrings(goldenPlan{
-			Writes: []goldenWrite{{Path: "/h/plugins/dropin-miner.js", Content: `const HOST_SHELL = "` + string(sh) + `"`}},
+			Writes: []goldenWrite{{Path: "/h/plugins/jevlin.js", Content: `const HOST_SHELL = "` + string(sh) + `"`}},
 		}, e)
 		if !strings.Contains(out.Writes[0].Content, `HOST_SHELL = "<declared for this OS>"`) {
 			t.Errorf("the adapter kept the shell declared for %s: %q", runtime.GOOS, out.Writes[0].Content)
@@ -412,7 +412,7 @@ router_url = "https://router.example.invalid"
 intake_dir = %q
 sessions_dir = %q
 `, home+"/state", home+"/spool", home+"/intake", home+"/sessions")
-	cfgPath = home + "/tokendrop.toml"
+	cfgPath = home + "/jevlin.toml"
 	if err := os.WriteFile(cfgPath, []byte(doc), 0o600); err != nil {
 		t.Fatal(err)
 	}

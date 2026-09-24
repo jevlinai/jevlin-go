@@ -2,7 +2,7 @@
   "writes": [
     {
       "surface": "Cursor",
-      "path": "/home/u/.cursor/skills/dropin-miner/SKILL.md",
+      "path": "/home/u/.cursor/skills/jevlin/SKILL.md",
       "mode": 384,
       "why": "skill",
       "content": "\u003cSKILL.md, rendered for this OS; see testdata/hosts/*.golden\u003e"

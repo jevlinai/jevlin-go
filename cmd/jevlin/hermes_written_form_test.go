@@ -152,7 +152,7 @@ func TestAnotherInstallationsEntryInTheFormHermesWritesIsUntouched(t *testing.T)
 	raw, _ := hermesWrittenFixture(t, "posix")
 
 	for name, other := range map[string]binEntry{
-		"sharing the binary":   {command: ours.command, cfg: "/tmp/disposable/tokendrop.toml"},
+		"sharing the binary":   {command: ours.command, cfg: "/tmp/disposable/jevlin.toml"},
 		"another binary":       {command: "/somewhere/else/bin/jevlin", cfg: ours.cfg},
 		"running on no config": {command: ours.command},
 	} {
@@ -196,7 +196,7 @@ func TestTheHermesNetOnTheWidenedPathRefusesAnotherInstallationsCommand(t *testi
 		if !ok {
 			t.Fatalf("%s: could not render the command", name)
 		}
-		other, ok := hermesHookCommand(binEntry{command: tc.entry.command, cfg: "/tmp/disposable/tokendrop.toml"}, tc.windows)
+		other, ok := hermesHookCommand(binEntry{command: tc.entry.command, cfg: "/tmp/disposable/jevlin.toml"}, tc.windows)
 		if !ok || hermesCommandIsOurHook(other, refFor(tc.entry)) {
 			t.Fatalf("%s: the other installation's command is still ours under H5: %q", name, other)
 		}

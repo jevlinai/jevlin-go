@@ -9,7 +9,7 @@
 design_plan.md
 master_plan.md
 open_questions.md
-tokendrop-*-spec.md
+jevlin-*-spec.md
 docs/architecture/adr/
 docs/private/
 *.private.md
@@ -44,10 +44,10 @@ testdata/fuzz/
 # ─── Local state — may contain keys, spooled records, or a socket ──────────────
 *.key
 *.pem
-.tokendrop/
+.jevlin/
 *.sock
 /spool/
-tokendrop.toml
+jevlin.toml
 config.local.toml
 
 # ─── Editor / OS ───────────────────────────────────────────────────────────────

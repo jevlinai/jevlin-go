@@ -102,7 +102,7 @@ func connectFixture(t *testing.T, explicitMining string) (cfgPath, stateDir stri
 	t.Helper()
 	root := t.TempDir()
 	stateDir = filepath.Join(root, "state")
-	cfgPath = filepath.Join(root, "tokendrop.toml")
+	cfgPath = filepath.Join(root, "jevlin.toml")
 
 	// The platform host is pinned at a local stub that refuses everything.
 	//
@@ -380,7 +380,7 @@ func TestConnectJSONRefusesOnACorruptRegistrationBeforeRegistering(t *testing.T)
 	root := t.TempDir()
 	stateDir := filepath.Join(root, "state")
 	platformURL, calls := countingPlatformStub(t)
-	cfgPath := filepath.Join(root, "tokendrop.toml")
+	cfgPath := filepath.Join(root, "jevlin.toml")
 	// No explicit mining.enabled, and no credential to block a fresh
 	// registration: exactly the state that could reach Register.
 	toml := `[mining]
@@ -505,7 +505,7 @@ func TestOrdinaryConnectKeepsItsCorruptRegistrationRecovery(t *testing.T) {
 	stateDir := filepath.Join(root, "state")
 	minerDir := filepath.Join(root, "miner")
 	platformURL, _ := countingPlatformStub(t)
-	cfgPath := filepath.Join(root, "tokendrop.toml")
+	cfgPath := filepath.Join(root, "jevlin.toml")
 	toml := `[mining]
 state_dir = "` + filepath.ToSlash(stateDir) + `"
 spool_dir = "` + filepath.ToSlash(filepath.Join(root, "spool")) + `"

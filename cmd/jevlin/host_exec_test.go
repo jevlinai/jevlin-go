@@ -253,7 +253,7 @@ var execBinary struct {
 }
 
 // execInstallation is one temporary installation: the binary under
-// <home>/.tokendrop/bin, a config naming loopback stubs only, and the
+// <home>/.jevlin/bin, a config naming loopback stubs only, and the
 // directories it writes to.
 type execInstallation struct {
 	root, bin, cfg, sessions string
@@ -324,7 +324,7 @@ func newExecInstallationIn(t *testing.T, dirName string) *execInstallation {
 	in := &execInstallation{
 		root:     root,
 		bin:      filepath.Join(home, "bin", exeName("jevlin")),
-		cfg:      filepath.Join(home, "tokendrop.toml"),
+		cfg:      filepath.Join(home, "jevlin.toml"),
 		sessions: filepath.Join(home, "sessions"),
 		router:   &execRouter{},
 	}
@@ -389,7 +389,7 @@ agents_api_url = %q
 }
 
 // execEnv is this process's environment without anything that could steer
-// the binary from outside the test — no TOKENDROP_* variable, no host
+// the binary from outside the test — no JEVLIN_* variable, no host
 // harness — plus a search key the stub router accepts and a closed loopback
 // proxy, so a request meant for anywhere but the loopback stubs fails
 // instead of leaving the machine.
@@ -398,14 +398,14 @@ func execEnv() []string {
 	for _, kv := range os.Environ() {
 		key, _, _ := strings.Cut(kv, "=")
 		switch upper := strings.ToUpper(key); {
-		case strings.HasPrefix(upper, "TOKENDROP_"),
+		case strings.HasPrefix(upper, "JEVLIN_"),
 			upper == "HTTP_PROXY", upper == "HTTPS_PROXY", upper == "NO_PROXY", upper == "ALL_PROXY":
 			continue
 		}
 		env = append(env, kv)
 	}
 	return append(env,
-		"TOKENDROP_API_KEY=sr-execution-harness-0000000000000000", // #nosec G101 -- a synthetic key only the stub router sees
+		"JEVLIN_API_KEY=sr-execution-harness-0000000000000000", // #nosec G101 -- a synthetic key only the stub router sees
 		"HTTP_PROXY=http://127.0.0.1:9",
 		"HTTPS_PROXY=http://127.0.0.1:9",
 		"NO_PROXY=127.0.0.1,localhost",

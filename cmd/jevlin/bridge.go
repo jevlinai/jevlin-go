@@ -4,7 +4,7 @@ package main
 //
 // A lineage adapter hands the host back the same command with one thing
 // added: the envelope, in an environment variable the binary reads. v0.2.9
-// wrote one syntax for every host — `TOKENDROP_TRACE_BRIDGE=<b> <cmd>`, which
+// wrote one syntax for every host — `JEVLIN_TRACE_BRIDGE=<b> <cmd>`, which
 // is POSIX — so on Windows, where opencode runs PowerShell, the prefix was
 // looked up as a program name and the search did not run at all (dropin-miner#68). The
 // syntax now comes from the host's declared tool shell, and for Claude Code

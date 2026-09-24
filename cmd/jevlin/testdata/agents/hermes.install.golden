@@ -2,7 +2,7 @@
   "writes": [
     {
       "surface": "Hermes",
-      "path": "\u003cHERMES_HOME\u003e/skills/dropin-miner/SKILL.md",
+      "path": "\u003cHERMES_HOME\u003e/skills/jevlin/SKILL.md",
       "mode": 384,
       "why": "skill",
       "content": "\u003cSKILL.md, rendered for this OS; see testdata/hosts/*.golden\u003e"

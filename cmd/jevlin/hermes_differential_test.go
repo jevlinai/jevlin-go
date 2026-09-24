@@ -86,7 +86,7 @@ func TestHermesDifferential(t *testing.T) {
 	// entry with another config: this installation's binary, somebody else's
 	// installation, which is exactly the pair dropin-miner#73 is about.
 	otherEntry, _ := ourHermesEntry(t)
-	otherEntry.cfg = "/tmp/disposable/tokendrop.toml"
+	otherEntry.cfg = "/tmp/disposable/jevlin.toml"
 	otherInstallCmd, ok := hermesHookCommand(otherEntry, runtime.GOOS == "windows")
 	if !ok {
 		t.Fatal("could not render another installation's command")

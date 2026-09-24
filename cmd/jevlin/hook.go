@@ -9,7 +9,7 @@ package main
 //	    Claude Code PreToolUse. Reads the payload on stdin. When the tool is
 //	    the shell and the command is our own search, builds the trace
 //	    envelope, writes it to the workspace's lineage file, and re-emits
-//	    the command prefixed with TOKENDROP_TRACE_BRIDGE=<envelope> so the
+//	    the command prefixed with JEVLIN_TRACE_BRIDGE=<envelope> so the
 //	    search carries exact turn and call identity. Any other command:
 //	    silence.
 //	hook [-config file] window <session-start|pre-compact|post-compact>
@@ -62,17 +62,17 @@ const (
 	hookStateFile     = "window.json"
 	// bridgeEnv is how a rewritten shell command hands `search` its
 	// envelope: one environment assignment in front of the command.
-	bridgeEnv = "TOKENDROP_TRACE_BRIDGE"
+	bridgeEnv = "JEVLIN_TRACE_BRIDGE"
 	// lineageEnv names the workspace lineage file for a whole session,
 	// set by hosts that can export environment at session start (Cursor).
-	lineageEnv = "TOKENDROP_LINEAGE"
+	lineageEnv = "JEVLIN_LINEAGE"
 	// sessionEnv carries the hashed session id of the session a shell was
 	// started in — the same value that session's hook writes into its lineage
 	// file, so it is nothing the file does not already hold and nothing the
 	// envelope does not already send. It exists for the walk: when the
 	// lineage variable is lost, this says WHICH session of a host the search
 	// belongs to, which the host's name alone cannot (dropin-miner#104).
-	sessionEnv = "TOKENDROP_SESSION"
+	sessionEnv = "JEVLIN_SESSION"
 )
 
 // hookOps: the machine, injected.
@@ -349,7 +349,7 @@ func hookLineage(ops hookOps, hc hookContext, payload []byte, stdout io.Writer) 
 
 	env := &traceEnvelope{
 		V:         traceVersion,
-		Harness:   orString(ops.getenv("TOKENDROP_HARNESS"), "claude-code"),
+		Harness:   orString(ops.getenv("JEVLIN_HARNESS"), "claude-code"),
 		SessionID: traceHash(p.SessionID),
 		Window:    hookWindowID(ops, hc, p.SessionID),
 	}
@@ -754,7 +754,7 @@ func hookCursor(ops hookOps, hc hookContext, event string, payload []byte, stdou
 			}
 		})
 		flush()
-		env := map[string]string{"TOKENDROP_HARNESS": "cursor"}
+		env := map[string]string{"JEVLIN_HARNESS": "cursor"}
 		if path != "" {
 			env[lineageEnv] = path
 		}
@@ -926,7 +926,7 @@ var hashedIDRe = regexp.MustCompile(`^[0-9a-f]{32}$`)
 // cursorIdentityFromEnv reads the identity from the hook's own environment,
 // and only when it is exactly the shape sessionStart exports.
 func cursorIdentityFromEnv(getenv func(string) string, sessionsDir string) (cursorIdentity, bool) {
-	if getenv("TOKENDROP_HARNESS") != "cursor" {
+	if getenv("JEVLIN_HARNESS") != "cursor" {
 		return cursorIdentity{}, false
 	}
 	id := cursorIdentity{lineage: getenv(lineageEnv), session: getenv(sessionEnv)}
@@ -968,7 +968,7 @@ func quotableFor(sh shellKind, value string) bool {
 // quoted for sh, and then nothing is rendered: never a partial prefix.
 func cursorIdentityPrefix(sh shellKind, id cursorIdentity) (string, bool) {
 	var b strings.Builder
-	for _, kv := range [][2]string{{"TOKENDROP_HARNESS", "cursor"}, {lineageEnv, id.lineage}, {sessionEnv, id.session}} {
+	for _, kv := range [][2]string{{"JEVLIN_HARNESS", "cursor"}, {lineageEnv, id.lineage}, {sessionEnv, id.session}} {
 		if !quotableFor(sh, kv[1]) {
 			return "", false
 		}

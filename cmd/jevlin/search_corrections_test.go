@@ -45,7 +45,7 @@ func TestModelModeNeverDumpsARouterErrorBodyRaw(t *testing.T) {
 				_, _ = w.Write([]byte(body))
 			})
 			h := fixedSearchOps(root)
-			code, out, _ := runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k"},
+			code, out, _ := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"},
 				"-config", cfg, "-format", "model", "q")
 			if code != exitClientErr {
 				t.Fatalf("exit %d, want %d", code, exitClientErr)
@@ -79,7 +79,7 @@ func TestAMalformedRouterErrorBodyIsNotEchoedInModelMode(t *testing.T) {
 		_, _ = w.Write([]byte(hostile))
 	})
 	h := fixedSearchOps(root)
-	code, out, _ := runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k"},
+	code, out, _ := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"},
 		"-config", cfg, "-format", "model", "q")
 	if code != exitClientErr {
 		t.Fatalf("exit %d", code)
@@ -102,7 +102,7 @@ func TestJSONFormatKeepsTheRawRouterCompatibilityOutput(t *testing.T) {
 		_, _ = w.Write([]byte(body))
 	})
 	h := fixedSearchOps(root)
-	code, out, _ := runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k"},
+	code, out, _ := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"},
 		"-config", cfg, "-format", "json", "q")
 	if code != exitClientErr || out != body {
 		t.Errorf("-format json changed: exit %d out %q", code, out)
@@ -194,7 +194,7 @@ func TestOnlyACompletedResponseMakesTheDetachedResumeEligible(t *testing.T) {
 			if tc.transport != nil {
 				args = append([]string{"-timeout", "150ms"}, args...)
 			}
-			runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k"}, args...)
+			runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, args...)
 			if got := *resumes > 0; got != tc.wantResum {
 				t.Errorf("connect -resume spawned=%v (%d times), want %v", got, *resumes, tc.wantResum)
 			}

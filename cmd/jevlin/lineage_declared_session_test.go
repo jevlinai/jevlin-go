@@ -5,7 +5,7 @@ package main
 // Cursor keyed the lineage file by workspace alone until dropin-miner#109's fix, and every
 // hook event wrote the current conversation's id into it. Two conversations
 // open on one workspace shared one file, and both shells named it in
-// TOKENDROP_LINEAGE. No nesting and no lost variable: two chat tabs on a
+// JEVLIN_LINEAGE. No nesting and no lost variable: two chat tabs on a
 // project. Cursor's files are now per conversation (cursor_conversation_test.go);
 // this guard stays for any file a session did not name for itself — the
 // workspace file a conversation started on 0.2.12 still declares, above all.
@@ -24,7 +24,7 @@ import (
 func otherConversationOwnsTheFile(t *testing.T) (*channelProbe, map[string]string) {
 	t.Helper()
 	p := newChannelProbe(t) // the file holds session "cursor-conv", seq 3, text "Let me check."
-	return p, map[string]string{"TOKENDROP_API_KEY": "k", "TOKENDROP_HARNESS": "cursor", lineageEnv: p.lineage}
+	return p, map[string]string{"JEVLIN_API_KEY": "k", "JEVLIN_HARNESS": "cursor", lineageEnv: p.lineage}
 }
 
 func TestTheDeclaredFileOfAnotherConversationIsNotAdopted(t *testing.T) {

@@ -54,7 +54,7 @@ const TRACE_ENVELOPE_CAP = 48 * 1024
 // run. It is not an authorization decision and must never become one.
 const SEARCH_RE = /(?:^|[\s;&|(]|\$\()\s*(?:&\s*)?(?:[A-Za-z]:)?["']?(?:[^\s"']*[\\/])?jevlin(?:\.exe)?["']?\s+search(?:\s|$)/
 
-const TRACE_BRIDGE_ENV = "TOKENDROP_TRACE_BRIDGE"
+const TRACE_BRIDGE_ENV = "JEVLIN_TRACE_BRIDGE"
 
 const traceHash = (raw) => createHash("sha256").update(TRACE_PREFIX + raw).digest("hex").slice(0, 32)
 

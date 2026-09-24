@@ -40,7 +40,7 @@ func testBinEntry(t *testing.T, bin string) binEntry {
 // tests that need a config that already carries ours.
 func mustHermesYAML(t *testing.T) string {
 	t.Helper()
-	body, ok := hermesHookYAML(testBinEntry(t, "/home/u/.tokendrop/bin/jevlin"))
+	body, ok := hermesHookYAML(testBinEntry(t, "/home/u/.jevlin/bin/jevlin"))
 	if !ok {
 		t.Fatal("could not render the Hermes hook YAML")
 	}
@@ -213,7 +213,7 @@ func TestHermesInstallUninstallRoundTripsExactly(t *testing.T) {
 				t.Fatalf("the original bytes were not preserved verbatim:\n%q", installed)
 			}
 			// Idempotent: a second install of the same config is a no-op.
-			cut := removeOurHermesBlock(installed, refFor(testBinEntry(t, "/home/u/.tokendrop/bin/jevlin")))
+			cut := removeOurHermesBlock(installed, refFor(testBinEntry(t, "/home/u/.jevlin/bin/jevlin")))
 			if !cut.had || cut.why != "" {
 				t.Fatalf("our own block was not found for removal: had %v, left because %q", cut.had, cut.why)
 			}
@@ -285,18 +285,18 @@ func TestHermesHookCommandSurvivesYAMLAndTheArgvSplitter(t *testing.T) {
 		bin, cfg string
 		windows  bool
 	}{
-		"ordinary":         {"/home/u/.tokendrop/bin/jevlin", "/home/u/.tokendrop/tokendrop.toml", false},
-		"spaces":           {"/home/u/My Tools/jevlin", "/home/u/My Tools/tokendrop.toml", false},
-		"apostrophe":       {"/Users/O'Neil/bin/jevlin", "/Users/O'Neil/tokendrop.toml", false},
-		"double quote":     {`/home/u/say "hi"/jevlin`, "/home/u/tokendrop.toml", false},
-		"backslash":        {`/home/u/odd\path/jevlin`, "/home/u/tokendrop.toml", false},
-		"non-ascii":        {"/home/ユーザー/bin/jevlin", "/home/ユーザー/tokendrop.toml", false},
-		"dollar and tick":  {"/home/u/$HOME`x`/jevlin", "/home/u/tokendrop.toml", false},
-		"hash":             {"/home/u/#1/jevlin", "/home/u/tokendrop.toml", false},
+		"ordinary":         {"/home/u/.jevlin/bin/jevlin", "/home/u/.jevlin/jevlin.toml", false},
+		"spaces":           {"/home/u/My Tools/jevlin", "/home/u/My Tools/jevlin.toml", false},
+		"apostrophe":       {"/Users/O'Neil/bin/jevlin", "/Users/O'Neil/jevlin.toml", false},
+		"double quote":     {`/home/u/say "hi"/jevlin`, "/home/u/jevlin.toml", false},
+		"backslash":        {`/home/u/odd\path/jevlin`, "/home/u/jevlin.toml", false},
+		"non-ascii":        {"/home/ユーザー/bin/jevlin", "/home/ユーザー/jevlin.toml", false},
+		"dollar and tick":  {"/home/u/$HOME`x`/jevlin", "/home/u/jevlin.toml", false},
+		"hash":             {"/home/u/#1/jevlin", "/home/u/jevlin.toml", false},
 		"no config":        {"/home/u/bin/jevlin", "", false},
-		"windows":          {`C:\Program Files\Jevlin\jevlin.exe`, `C:\Users\u\tokendrop.toml`, true},
-		"windows apostro":  {`C:\Users\O'Neil\jevlin.exe`, `C:\Users\O'Neil\tokendrop.toml`, true},
-		"windows non-asci": {`C:\Users\ユーザー\jevlin.exe`, `C:\Users\ユーザー\tokendrop.toml`, true},
+		"windows":          {`C:\Program Files\Jevlin\jevlin.exe`, `C:\Users\u\jevlin.toml`, true},
+		"windows apostro":  {`C:\Users\O'Neil\jevlin.exe`, `C:\Users\O'Neil\jevlin.toml`, true},
+		"windows non-asci": {`C:\Users\ユーザー\jevlin.exe`, `C:\Users\ユーザー\jevlin.toml`, true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			cmd, ok := hermesHookCommand(hermesEntry(tc.bin, tc.cfg), tc.windows)
@@ -373,7 +373,7 @@ func TestHermesStatusRecognizesOurHookForAnyBinaryPath(t *testing.T) {
 		// i.e. this case is exactly the one a substring test fails on.
 		broken bool
 	}{
-		"ordinary":   {"/home/u/.tokendrop/bin/jevlin", false},
+		"ordinary":   {"/home/u/.jevlin/bin/jevlin", false},
 		"apostrophe": {"/Users/O'Neil/bin/jevlin", true},
 		"spaces":     {"/home/u/My Tools/jevlin", false},
 		"non-ascii":  {"/home/ユーザー/bin/jevlin", false},
@@ -410,8 +410,8 @@ func TestHermesStatusDoesNotClaimAnotherInstallsHook(t *testing.T) {
 	// so a pass cannot come from some unrelated mismatch.
 	for name, stale := range map[string]binEntry{
 		"another binary": testBinEntry(t, "/somewhere/else/bin/jevlin"),
-		"another config": {command: "/home/u/.tokendrop/bin/jevlin", cfg: "/somewhere/else/tokendrop.toml"},
-		"no config":      {command: "/home/u/.tokendrop/bin/jevlin"},
+		"another config": {command: "/home/u/.jevlin/bin/jevlin", cfg: "/somewhere/else/jevlin.toml"},
+		"no config":      {command: "/home/u/.jevlin/bin/jevlin"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			m, ops := newFakeMachine("hermes")

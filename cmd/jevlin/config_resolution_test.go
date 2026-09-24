@@ -1,16 +1,16 @@
 package main
 
 // Ruling D-R1 (issue dropin-miner#58): the config a command reads is resolved
-// -config, then TOKENDROP_CONFIG, then ./tokendrop.toml, then the
-// installation's own config ($TOKENDROP_HOME/tokendrop.toml, else
-// ~/.tokendrop/tokendrop.toml, when that file exists), then built-in
+// -config, then JEVLIN_CONFIG, then ./jevlin.toml, then the
+// installation's own config ($JEVLIN_HOME/jevlin.toml, else
+// ~/.jevlin/jevlin.toml, when that file exists), then built-in
 // defaults — through the one function (describeConfigSource) that
 // loadConfig, configGatePath and every command naming its source all call,
 // so the gate always keys on exactly the file that gets loaded.
 //
 // The soak that found dropin-miner#58 read a stale, unclaimed installation under the
 // compiled-in default state directory while a claimed, mining installation
-// sat at ~/.tokendrop, because no step of the old order ever looked there.
+// sat at ~/.jevlin, because no step of the old order ever looked there.
 // The tests below drive that exact shape, not just the function in
 // isolation.
 
@@ -25,7 +25,7 @@ import (
 	"github.com/jevlinai/jevlin-go/pkg/auth"
 )
 
-// writeInstallationConfig writes home/tokendrop.toml naming stateDir (under
+// writeInstallationConfig writes home/jevlin.toml naming stateDir (under
 // home, so cleanup is one RemoveAll) and returns the config path.
 func writeInstallationConfig(t *testing.T, home string) (cfgPath, stateDir string) {
 	t.Helper()
@@ -57,27 +57,27 @@ func TestConfigResolutionOrderEachStepWinsOverTheNext(t *testing.T) {
 	// Step 4: the installation's own config.
 	home := filepath.Join(dir, "home")
 	installPath, _ := writeInstallationConfig(t, home)
-	homeEnv := envOf(map[string]string{"TOKENDROP_HOME": home})
+	homeEnv := envOf(map[string]string{"JEVLIN_HOME": home})
 	if src := describeConfigSource("", homeEnv); src != installPath {
 		t.Fatalf("step 4 (installation config): got %q, want %q", src, installPath)
 	}
 
-	// Step 3: ./tokendrop.toml beats the installation config.
-	if err := os.WriteFile(filepath.Join(dir, "tokendrop.toml"), []byte("[mining]\n"), 0o600); err != nil {
+	// Step 3: ./jevlin.toml beats the installation config.
+	if err := os.WriteFile(filepath.Join(dir, "jevlin.toml"), []byte("[mining]\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if src := describeConfigSource("", homeEnv); src != "tokendrop.toml" {
-		t.Fatalf("step 3 (cwd config): got %q, want tokendrop.toml", src)
+	if src := describeConfigSource("", homeEnv); src != "jevlin.toml" {
+		t.Fatalf("step 3 (cwd config): got %q, want jevlin.toml", src)
 	}
 
-	// Step 2: TOKENDROP_CONFIG beats ./tokendrop.toml — named even though
+	// Step 2: JEVLIN_CONFIG beats ./jevlin.toml — named even though
 	// the path itself does not exist, matching config.Load's own "explicit
 	// sources are required to exist and error on their own" rule rather
 	// than silently falling through to a weaker source.
 	envPath := filepath.Join(dir, "env-named.toml")
-	bothEnv := envOf(map[string]string{"TOKENDROP_HOME": home, "TOKENDROP_CONFIG": envPath})
+	bothEnv := envOf(map[string]string{"JEVLIN_HOME": home, "JEVLIN_CONFIG": envPath})
 	if src := describeConfigSource("", bothEnv); src != envPath {
-		t.Fatalf("step 2 (TOKENDROP_CONFIG): got %q, want %q", src, envPath)
+		t.Fatalf("step 2 (JEVLIN_CONFIG): got %q, want %q", src, envPath)
 	}
 
 	// Step 1: -config beats everything else, named the same way.
@@ -93,11 +93,11 @@ func TestConfigResolutionOrderEachStepWinsOverTheNext(t *testing.T) {
 // including the defaults case (the installation home itself).
 func TestConfigGatePathKeysOnExactlyWhatLoadConfigWouldLoad(t *testing.T) {
 	dir := t.TempDir()
-	t.Chdir(dir) // empty: no ./tokendrop.toml here to shadow the cases below
+	t.Chdir(dir) // empty: no ./jevlin.toml here to shadow the cases below
 	home := filepath.Join(dir, "home")
 	writeInstallationConfig(t, home)
 
-	installEnv := envOf(map[string]string{"TOKENDROP_HOME": home})
+	installEnv := envOf(map[string]string{"JEVLIN_HOME": home})
 	cases := []struct {
 		name    string
 		cfgFlag string
@@ -112,7 +112,7 @@ func TestConfigGatePathKeysOnExactlyWhatLoadConfigWouldLoad(t *testing.T) {
 			src := describeConfigSource(c.cfgFlag, c.getenv)
 			wantDir := filepath.Dir(src)
 			if src == "" {
-				wantDir = defaultTokendropHome(c.getenv) // configGatePath's own default-installation fallback
+				wantDir = defaultJevlinHome(c.getenv) // configGatePath's own default-installation fallback
 			}
 			wantAbs, err := filepath.Abs(wantDir)
 			if err != nil {
@@ -132,15 +132,15 @@ func TestConfigGatePathKeysOnExactlyWhatLoadConfigWouldLoad(t *testing.T) {
 }
 
 // TestStatusReadsTheInstallationConfigWhenNothingElseResolves reproduces
-// the soak's exact finding: an installation at ~/.tokendrop, no
-// TOKENDROP_CONFIG in the environment, and a cwd with no tokendrop.toml.
+// the soak's exact finding: an installation at ~/.jevlin, no
+// JEVLIN_CONFIG in the environment, and a cwd with no jevlin.toml.
 // Before D1, status silently read the compiled-in default state directory
 // instead and reported an unrelated (here: absent) installation.
 func TestStatusReadsTheInstallationConfigWhenNothingElseResolves(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
-	installHome := filepath.Join(home, ".tokendrop")
+	installHome := filepath.Join(home, ".jevlin")
 	_, stateDir := writeInstallationConfig(t, installHome)
 
 	store, err := auth.OpenStore(stateDir)
@@ -151,11 +151,11 @@ func TestStatusReadsTheInstallationConfigWhenNothingElseResolves(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cwd := t.TempDir() // deliberately no tokendrop.toml here
+	cwd := t.TempDir() // deliberately no jevlin.toml here
 	t.Chdir(cwd)
 
 	var out, errOut bytes.Buffer
-	// No -config flag and an env with no TOKENDROP_CONFIG/TOKENDROP_HOME:
+	// No -config flag and an env with no JEVLIN_CONFIG/JEVLIN_HOME:
 	// exactly the "shell opened before the profile block loads" case dropin-miner#58
 	// named. Resolution falls all the way to step 4.
 	if code := statusMain(nil, &out, &errOut, noEnv); code != exitOK {
@@ -199,14 +199,14 @@ func TestDoctorNamesDefaultsWhenNoConfigFileExistsAnywhere(t *testing.T) {
 	t.Setenv("USERPROFILE", home)
 	// cmdDoctor (unlike statusMain/connectRun) has no injectable getenv —
 	// it reads os.Getenv directly — so, unlike every other test in this
-	// file, it is exposed to whatever TOKENDROP_* the developer's own
+	// file, it is exposed to whatever JEVLIN_* the developer's own
 	// shell profile happens to export. Blank the three explicitly rather
-	// than relying on HOME alone: a real TOKENDROP_CONFIG in this
+	// than relying on HOME alone: a real JEVLIN_CONFIG in this
 	// process's environment would otherwise make this "nothing resolves"
 	// test dial that developer's live installation.
-	t.Setenv("TOKENDROP_CONFIG", "")
-	t.Setenv("TOKENDROP_HOME", "")
-	t.Setenv("TOKENDROP_WALLET_DIR", "")
+	t.Setenv("JEVLIN_CONFIG", "")
+	t.Setenv("JEVLIN_HOME", "")
+	t.Setenv("JEVLIN_WALLET_DIR", "")
 	cwd := t.TempDir()
 	t.Chdir(cwd)
 
@@ -248,7 +248,7 @@ func TestConnectRefusesWithNoConfigFileAnywhere(t *testing.T) {
 	if !strings.Contains(errOut.String(), "setup") {
 		t.Fatalf("refusal did not name setup: %s", errOut.String())
 	}
-	if _, err := os.Stat(filepath.Join(home, ".tokendrop")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(home, ".jevlin")); !os.IsNotExist(err) {
 		t.Fatalf("connect wrote to the default installation with no config resolved: stat err = %v", err)
 	}
 
@@ -269,7 +269,7 @@ func TestConnectRefusesWithNoConfigFileAnywhere(t *testing.T) {
 	if env["action"] != actionFixInput {
 		t.Fatalf("json action = %v, want %q", env["action"], actionFixInput)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".tokendrop")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(home, ".jevlin")); !os.IsNotExist(err) {
 		t.Fatalf("connect -json wrote to the default installation with no config resolved: stat err = %v", err)
 	}
 }
@@ -283,7 +283,7 @@ func TestConnectStopsWithTheFileNamedWhenTheInstallationConfigCannotBeParsed(t *
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
-	installHome := filepath.Join(home, ".tokendrop")
+	installHome := filepath.Join(home, ".jevlin")
 	if err := os.MkdirAll(installHome, 0o700); err != nil {
 		t.Fatal(err)
 	}

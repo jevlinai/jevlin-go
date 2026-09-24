@@ -40,7 +40,7 @@ import (
 // walletPassphraseEnv lets non-interactive callers (setup scripts, agents
 // the user has delegated to) supply the keyfile passphrase without a
 // prompt. Never a flag: argv is visible to every process on the machine.
-const walletPassphraseEnv = "TOKENDROP_WALLET_PASSPHRASE"
+const walletPassphraseEnv = "JEVLIN_WALLET_PASSPHRASE" // #nosec G101 -- the name of an environment variable, not a credential
 
 func cmdWallet(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
 	if len(args) == 0 {
@@ -67,7 +67,7 @@ func cmdWallet(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv 
 
 func walletInit(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
 	fs2 := newFlagSet("wallet init", stderr)
-	dir := fs2.String("dir", "", "wallet directory (default: $TOKENDROP_WALLET_DIR, else the user config dir)")
+	dir := fs2.String("dir", "", "wallet directory (default: $JEVLIN_WALLET_DIR, else the user config dir)")
 	printAnyway := fs2.Bool("print-anyway", false,
 		"print the mnemonic even when stdout is not a terminal (it will land in whatever captures the output)")
 	if err := fs2.Parse(args); err != nil {
@@ -337,7 +337,7 @@ func printMnemonic(stdout io.Writer, dir, address, mnemonic string) {
 
 func walletAddress(args []string, stdout, stderr io.Writer, getenv func(string) string) int {
 	fs2 := newFlagSet("wallet address", stderr)
-	dir := fs2.String("dir", "", "wallet directory (default: $TOKENDROP_WALLET_DIR, else the user config dir)")
+	dir := fs2.String("dir", "", "wallet directory (default: $JEVLIN_WALLET_DIR, else the user config dir)")
 	if err := fs2.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -362,7 +362,7 @@ func walletAddress(args []string, stdout, stderr io.Writer, getenv func(string) 
 // server side would catch it.
 func walletRegister(args []string, stdout, stderr io.Writer, getenv func(string) string) int {
 	fs2 := newFlagSet("wallet register", stderr)
-	dir := fs2.String("dir", "", "wallet directory (default: $TOKENDROP_WALLET_DIR, else the user config dir)")
+	dir := fs2.String("dir", "", "wallet directory (default: $JEVLIN_WALLET_DIR, else the user config dir)")
 	cfgPath := fs2.String("config", "", "path to TOML config file")
 	if err := fs2.Parse(args); err != nil {
 		return exitUsage
@@ -479,7 +479,7 @@ func isTerminal(w io.Writer) bool {
 // walletBalance reports what the chain says this address holds.
 func walletBalance(args []string, stdout, stderr io.Writer, getenv func(string) string) int {
 	fs2 := newFlagSet("wallet balance", stderr)
-	dir := fs2.String("dir", "", "wallet directory (default: $TOKENDROP_WALLET_DIR, else the user config dir)")
+	dir := fs2.String("dir", "", "wallet directory (default: $JEVLIN_WALLET_DIR, else the user config dir)")
 	cfgPath := fs2.String("config", "", "path to TOML config file (for the default RPC node's chain)")
 	chainIDFlag := fs2.String("chain-id", "", "chain id, when no config names one")
 	node := fs2.String("node", "", "CometBFT RPC endpoint (default: "+walletNodeEnv+", else the per-chain default)")
@@ -563,7 +563,7 @@ func walletBalance(args []string, stdout, stderr io.Writer, getenv func(string) 
 // than a guess — is checked whether or not anyone is watching.
 func walletSend(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
 	fs2 := newFlagSet("wallet send", stderr)
-	dir := fs2.String("dir", "", "wallet directory (default: $TOKENDROP_WALLET_DIR, else the user config dir)")
+	dir := fs2.String("dir", "", "wallet directory (default: $JEVLIN_WALLET_DIR, else the user config dir)")
 	cfgPath := fs2.String("config", "", "path to TOML config file (for [mining] chain_id)")
 	chainIDFlag := fs2.String("chain-id", "", "chain id, when no config names one")
 	node := fs2.String("node", "", "CometBFT RPC endpoint (default: "+walletNodeEnv+", else the per-chain default)")
@@ -874,10 +874,10 @@ func walletSend(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 
 // walletNodeEnv names the node endpoint without a flag, for agents and
 // scripts that should not carry it in every invocation.
-const walletNodeEnv = "TOKENDROP_WALLET_NODE"
+const walletNodeEnv = "JEVLIN_WALLET_NODE"
 
 // walletNode resolves the CometBFT RPC endpoint, in order, stopping at
-// the first hit: the -node flag, TOKENDROP_WALLET_NODE, then
+// the first hit: the -node flag, JEVLIN_WALLET_NODE, then
 // config.DefaultWalletNodes[chainID]. A chain with no row in that table
 // gets no silent guess — the caller is told exactly what to pass rather
 // than being handed a node for a chain it never asked for. There is no

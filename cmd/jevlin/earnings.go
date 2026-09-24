@@ -59,7 +59,7 @@ const (
 
 	// escrowAddressEnv names the escrow address without a flag, for a
 	// deployment that would rather pin it than have it read per invocation.
-	escrowAddressEnv = "TOKENDROP_REWARD_ESCROW"
+	escrowAddressEnv = "JEVLIN_REWARD_ESCROW"
 
 	// defaultEarningsLimit is how many receipts are listed by default.
 	// Every receipt found is counted in the totals; this only bounds the

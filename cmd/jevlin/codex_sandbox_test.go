@@ -1,7 +1,7 @@
 package main
 
 // The Codex sandbox fix: a search's mining observation is written under the
-// tokendrop home, which Codex's default workspace-write sandbox denies. The
+// jevlin home, which Codex's default workspace-write sandbox denies. The
 // installer now widens that sandbox, and a blocked write is reported loudly
 // instead of silently. All identifiers here are synthetic.
 
@@ -57,7 +57,7 @@ func TestWriteIntakeToUnwritableDirIsClassifiedBlocked(t *testing.T) {
 }
 
 // sandboxTestConfig writes a real config (loadConfig reads the real fs) whose
-// mining/miner dirs all sit under one tokendrop home, and returns that home.
+// mining/miner dirs all sit under one jevlin home, and returns that home.
 func sandboxTestConfig(t *testing.T) (cfgPath, home string) {
 	t.Helper()
 	home = t.TempDir()
@@ -82,7 +82,7 @@ intake_dir = %q
 sessions_dir = %q
 `, filepath.ToSlash(filepath.Join(home, "state")), filepath.ToSlash(filepath.Join(home, "spool")),
 		filepath.ToSlash(filepath.Join(home, "intake")), filepath.ToSlash(filepath.Join(home, "sessions")))
-	cfgPath = filepath.Join(home, "tokendrop.toml")
+	cfgPath = filepath.Join(home, "jevlin.toml")
 	if err := os.WriteFile(cfgPath, []byte(doc), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -118,12 +118,12 @@ func TestCodexInstallConfiguresSandboxAndUninstallRemovesIt(t *testing.T) {
 		}
 	}
 	// The home itself must never be a writable root: it holds
-	// tokendrop.toml, credentials.json and wallet/, and a sandboxed command
+	// jevlin.toml, credentials.json and wallet/, and a sandboxed command
 	// that can rewrite the config can redirect the credentials to any https
 	// host on the next run. Asserted on its own line so the guard has a
 	// test that goes red by itself, not only via the exact-string check.
 	if strings.Contains(got, fmt.Sprintf("%q", home)+"]") || strings.Contains(got, fmt.Sprintf("%q", home)+",") {
-		t.Errorf("the tokendrop home itself is a writable root:\n%s", got)
+		t.Errorf("the jevlin home itself is a writable root:\n%s", got)
 	}
 
 	// Idempotent: a second install changes nothing.
@@ -178,7 +178,7 @@ func TestCodexInstallWithMinerOffStillWritesStateDirRoot(t *testing.T) {
 	}
 	doc := fmt.Sprintf("[mining]\nstate_dir = %q\n\n[miner]\nenabled = false\n",
 		filepath.ToSlash(filepath.Join(home, "state")))
-	cfgPath := filepath.Join(home, "tokendrop.toml")
+	cfgPath := filepath.Join(home, "jevlin.toml")
 	if err := os.WriteFile(cfgPath, []byte(doc), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func TestCodexInstallWithMinerOffStillWritesStateDirRoot(t *testing.T) {
 		}
 	}
 	if strings.Contains(got, fmt.Sprintf("%q", home)+"]") || strings.Contains(got, fmt.Sprintf("%q", home)+",") {
-		t.Errorf("the tokendrop home itself is a writable root:\n%s", got)
+		t.Errorf("the jevlin home itself is a writable root:\n%s", got)
 	}
 }
 

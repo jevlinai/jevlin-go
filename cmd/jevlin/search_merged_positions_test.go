@@ -109,7 +109,7 @@ func TestViewMergedCarriesFoundInWithoutCandidates(t *testing.T) {
 	})
 	h := fixedSearchOps(root)
 
-	_, out, _ := runSearchStdin(t, h, map[string]string{"TOKENDROP_API_KEY": "k"},
+	_, out, _ := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"},
 		`{"version":1,"query":"q","view":"merged"}`, "-config", cfg)
 	env := decodeEnvelope(t, out)
 	result, _ := env["result"].(map[string]any)
@@ -146,7 +146,7 @@ func TestViewMergedCarriesFoundInWithoutCandidates(t *testing.T) {
 
 	// And the merged list is the same list the full view carries: the
 	// field is additive, not a second shape for the merged-only view.
-	_, fullOut, _ := runSearchStdin(t, h, map[string]string{"TOKENDROP_API_KEY": "k"},
+	_, fullOut, _ := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"},
 		`{"version":1,"query":"q","view":"full"}`, "-config", cfg)
 	fullEnv := decodeEnvelope(t, fullOut)
 	fullResult, _ := fullEnv["result"].(map[string]any)

@@ -151,7 +151,7 @@ func TestPiExtensionNeverAuthorizesOrBlocksAToolCall(t *testing.T) {
 	cases := map[string][]piCall{
 		"our search":      {{Session: "s", Command: piSearchCommand, ToolCallID: "c1", Entries: []any{}}},
 		"foreign command": {{Session: "s", Command: "rm -rf /", ToolCallID: "c1", Entries: []any{}}},
-		"already bridged": {{Session: "s", Command: "TOKENDROP_TRACE_BRIDGE=x " + piSearchCommand, ToolCallID: "c1", Entries: []any{}}},
+		"already bridged": {{Session: "s", Command: "JEVLIN_TRACE_BRIDGE=x " + piSearchCommand, ToolCallID: "c1", Entries: []any{}}},
 		"other tool":      {{Session: "s", ToolName: "read", Command: piSearchCommand, ToolCallID: "c1", Entries: []any{}}},
 		"no session":      {{NoSession: true, Command: piSearchCommand, ToolCallID: "c1", Entries: []any{}}},
 		"branch throws":   {{Session: "s", Command: piSearchCommand, ToolCallID: "c1", BranchThrows: true}},
@@ -189,7 +189,7 @@ func TestPiExtensionRewritesOurSearchAndNothingElse(t *testing.T) {
 		"another tool":      "grep -rn jevlinsearch .",
 		"another verb":      "jevlin status",
 		"our name in prose": "echo 'run jevlin to search'",
-		"already bridged":   "TOKENDROP_TRACE_BRIDGE=stale " + piSearchCommand,
+		"already bridged":   "JEVLIN_TRACE_BRIDGE=stale " + piSearchCommand,
 	}
 	cases := map[string][]piCall{}
 	for name, cmd := range commands {

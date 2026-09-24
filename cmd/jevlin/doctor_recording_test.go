@@ -406,7 +406,7 @@ const recordingEpoch = 900
 // worked, nothing in intake, nothing in the spool or its quarantine, no
 // capture health, and an AS reporting nothing at all for the epoch.
 func suspiciousFacts() doctorFacts {
-	f := minerFacts("/fictional/tokendrop/intake")
+	f := minerFacts("/fictional/jevlin/intake")
 	f.Now = recordingNow
 	f.IntakeProbe = intakeProbeResult{Ran: true, Dir: f.IntakeDir}
 	f.Stamp = flushStamp{V: 1, LastFlush: recordingNow.Add(-time.Hour), TargetEpoch: recordingEpoch}
@@ -426,7 +426,7 @@ func TestTheAdviceAppearsOnlyInTheSuspiciousState(t *testing.T) {
 		"recent miner activity",
 		"nothing is queued locally or verified at the AS",
 		"the mining intake directory used by the agent's `jevlin search` command",
-		"/fictional/tokendrop/intake",
+		"/fictional/jevlin/intake",
 	} {
 		if !strings.Contains(c.Detail, want) {
 			t.Errorf("detail is missing %q:\n%s", want, c.Detail)
@@ -622,7 +622,7 @@ func TestEachConditionAloneChangesTheRecordingVerdict(t *testing.T) {
 // actually been recorded there.
 func TestRecordingDistinguishesASearchInTheCurrentEpochFromAHookFlush(t *testing.T) {
 	base := func() doctorFacts {
-		f := minerFacts("/fictional/tokendrop/intake")
+		f := minerFacts("/fictional/jevlin/intake")
 		f.Now = recordingNow
 		f.IntakeProbe = intakeProbeResult{Ran: true, Dir: f.IntakeDir}
 		f.Epoch, f.EpochKnown = recordingEpoch, true

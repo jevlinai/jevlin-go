@@ -10,7 +10,7 @@ package main
 // chooses to send upstream in its own request body — the same category as
 // the query itself. The proxy forwards it byte-for-byte, never logs it, and
 // the observer reads response metadata only. The participant's controls:
-// TOKENDROP_TRACE=off disables it entirely, and raw host session ids are
+// JEVLIN_TRACE=off disables it entirely, and raw host session ids are
 // hashed before they leave the machine — the router sees stable identifiers,
 // never the host's own ids.
 

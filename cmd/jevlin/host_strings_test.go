@@ -33,11 +33,11 @@ import (
 func hostStringsEntry(goos string) binEntry {
 	switch goos {
 	case "windows":
-		return binEntry{command: `C:\Users\u\.tokendrop\bin\jevlin.exe`, cfg: `C:\Users\u\.tokendrop\tokendrop.toml`}
+		return binEntry{command: `C:\Users\u\.jevlin\bin\jevlin.exe`, cfg: `C:\Users\u\.jevlin\jevlin.toml`}
 	case "darwin":
-		return binEntry{command: "/Users/u/.tokendrop/bin/jevlin", cfg: "/Users/u/.tokendrop/tokendrop.toml"}
+		return binEntry{command: "/Users/u/.jevlin/bin/jevlin", cfg: "/Users/u/.jevlin/jevlin.toml"}
 	}
-	return binEntry{command: "/home/u/.tokendrop/bin/jevlin", cfg: "/home/u/.tokendrop/tokendrop.toml"}
+	return binEntry{command: "/home/u/.jevlin/bin/jevlin", cfg: "/home/u/.jevlin/jevlin.toml"}
 }
 
 // renderedSkillFor is the SKILL.md the host's own install writes on goos:
@@ -70,7 +70,7 @@ type skillBlock struct {
 // path's spelling, because how a path is quoted is exactly what H2 and H3
 // change, and the skill's prose names `jevlin` in places that run
 // nothing.
-const installMarker = ".tokendrop"
+const installMarker = ".jevlin"
 
 // skillCommandBlocks are the fenced blocks of a rendered skill that run this
 // binary, in order: the search, then the preference command.

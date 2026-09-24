@@ -35,7 +35,7 @@ func skillSection(skill, heading, nextHeading string) (string, bool) {
 }
 
 func TestSkillTeachesTiersOptionsAndMergedList(t *testing.T) {
-	entry := binEntry{command: "/home/u/.tokendrop/bin/jevlin", cfg: "/home/u/.tokendrop/tokendrop.toml"}
+	entry := binEntry{command: "/home/u/.jevlin/bin/jevlin", cfg: "/home/u/.jevlin/jevlin.toml"}
 	for _, id := range goldenHostIDs {
 		for _, goos := range hostShellOSes {
 			t.Run(id+"/"+goos, func(t *testing.T) {
@@ -133,7 +133,7 @@ func TestSkillTeachesTiersOptionsAndMergedList(t *testing.T) {
 // what to do with the question itself. Asserted inside "What comes back",
 // where the envelope is described, for every host on every OS.
 func TestSkillSaysASearchThatDidNotRunIsReported(t *testing.T) {
-	entry := binEntry{command: "/home/u/.tokendrop/bin/jevlin", cfg: "/home/u/.tokendrop/tokendrop.toml"}
+	entry := binEntry{command: "/home/u/.jevlin/bin/jevlin", cfg: "/home/u/.jevlin/jevlin.toml"}
 	for _, id := range goldenHostIDs {
 		for _, goos := range hostShellOSes {
 			t.Run(id+"/"+goos, func(t *testing.T) {

@@ -38,7 +38,7 @@ func skillFrontmatter(skill string) (string, bool) {
 // parsers with the same rule that decides this: an unescaped `"` inside a
 // double-quoted scalar ends the scalar right there).
 func TestSkillFrontmatterIsValidYAML(t *testing.T) {
-	entry := binEntry{command: "/home/u/.tokendrop/bin/jevlin", cfg: "/home/u/.tokendrop/tokendrop.toml"}
+	entry := binEntry{command: "/home/u/.jevlin/bin/jevlin", cfg: "/home/u/.jevlin/jevlin.toml"}
 	for _, id := range goldenHostIDs {
 		for _, goos := range hostShellOSes {
 			t.Run(id+"/"+goos, func(t *testing.T) {
@@ -83,7 +83,7 @@ func TestSkillFrontmatterIsValidYAMLWhenOff(t *testing.T) {
 		t.Fatal("no claude target")
 	}
 	shells, _ := toolShellsForSkill(tg, "linux")
-	skill, err := renderSkill(binEntry{command: "/home/u/.tokendrop/bin/jevlin", cfg: "/home/u/.tokendrop/tokendrop.toml"}, preferOff, "", shells)
+	skill, err := renderSkill(binEntry{command: "/home/u/.jevlin/bin/jevlin", cfg: "/home/u/.jevlin/jevlin.toml"}, preferOff, "", shells)
 	if err != nil {
 		t.Fatal(err)
 	}

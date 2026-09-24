@@ -3,11 +3,11 @@
   "removes": [
     {
       "surface": "Pi",
-      "path": "/home/u/.pi/agent/skills/dropin-miner"
+      "path": "/home/u/.pi/agent/skills/jevlin"
     },
     {
       "surface": "Pi",
-      "path": "/home/u/.pi/agent/extensions/dropin-miner.ts"
+      "path": "/home/u/.pi/agent/extensions/jevlin.ts"
     }
   ]
 }

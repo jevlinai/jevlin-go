@@ -549,7 +549,7 @@ func (t codexTarget) PlanInstall(ops agentOps, paths agentPaths, entry binEntry,
 	if roots := codexSandboxRoots(entry, getenv); len(roots) > 0 {
 		blockChanged, blockLeft = planCodexSandbox(ops, t.Label(), paths.codexConfig, roots, entry, getenv, p)
 	} else {
-		p.notes = append(p.notes, t.Label()+": shell commands run sandboxed; if searches record nothing, allow this command network access and let it write to your tokendrop home")
+		p.notes = append(p.notes, t.Label()+": shell commands run sandboxed; if searches record nothing, allow this command network access and let it write to your jevlin home")
 	}
 	if !skillChanged && !skillLeft && !blockChanged && !blockLeft {
 		p.skipped = append(p.skipped, t.Label()+": already installed")

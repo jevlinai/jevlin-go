@@ -44,7 +44,7 @@ func newFakeRouter(t *testing.T, handler http.HandlerFunc) (*fakeRouter, string,
 	}))
 	t.Cleanup(f.srv.Close)
 	root := t.TempDir()
-	cfg := filepath.Join(root, "tokendrop.toml")
+	cfg := filepath.Join(root, "jevlin.toml")
 	toml := `[[provider]]
 name = "search-router"
 upstream = "https://router.fictional.test"
@@ -136,7 +136,7 @@ func TestSearchPostsToTheRouterPrintsVerbatimAndRecordsIntake(t *testing.T) {
 		_, _ = w.Write([]byte(routerBody))
 	})
 	h := fixedSearchOps(root)
-	code, out, errOut := runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "sr-fictional"},
+	code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "sr-fictional"},
 		"-config", cfg, "-tier", "fast", "how", "do", "ports", "work")
 	if code != exitOK || out != routerBody {
 		t.Fatalf("exit %d out %q err %q", code, out, errOut)
@@ -187,7 +187,7 @@ func TestSearchRecordsTheEpochItsOwnFlushStampHeld(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := fixedSearchOps(root)
-	code, _, errOut := runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "sr-fictional"},
+	code, _, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "sr-fictional"},
 		"-config", cfg, "how", "do", "ports", "work")
 	if code != exitOK {
 		t.Fatalf("exit %d err %q", code, errOut)
@@ -220,7 +220,7 @@ func TestSearchStopsIntakeAndFlushSpawnAfterMiningDisabled(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := fixedSearchOps(root)
-	code, _, errOut := runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "sr-fictional"},
+	code, _, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "sr-fictional"},
 		"-config", cfg, "how", "do", "ports", "work")
 	if code != exitOK {
 		t.Fatalf("exit %d err %q", code, errOut)
@@ -241,7 +241,7 @@ func TestSearchNeedsAKeyAndDoesNotCallTheRouterWithoutOne(t *testing.T) {
 	fr, cfg, root := newFakeRouter(t, nil)
 	h := fixedSearchOps(root)
 	code, _, errOut := runSearch(t, h, nil, "-config", cfg, "q")
-	if code != exitClientErr || !strings.Contains(errOut, "TOKENDROP_API_KEY") {
+	if code != exitClientErr || !strings.Contains(errOut, "JEVLIN_API_KEY") {
 		t.Fatalf("exit %d err %q", code, errOut)
 	}
 	fr.mu.Lock()
@@ -256,7 +256,7 @@ func TestSearchUsesTheBridgeFromTheEnvironmentFirst(t *testing.T) {
 	h := fixedSearchOps(root)
 	bridge, _ := encodeTraceBridge(&traceEnvelope{V: traceVersion, Harness: "claude-code", SessionID: "abc", TurnID: "t", CallID: "c",
 		History: []traceHistory{{Role: "assistant", Text: "looking"}}})
-	runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k", bridgeEnv: bridge}, "-config", cfg, "q")
+	runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k", bridgeEnv: bridge}, "-config", cfg, "q")
 	_, sent := fr.last(t)
 	var m map[string]any
 	_ = json.Unmarshal(sent, &m)
@@ -278,12 +278,12 @@ func TestSearchFallsBackToTheWorkspaceLineageFileAndBumpsSeq(t *testing.T) {
 		History: []traceHistory{{Role: "assistant", Text: "Let me check."}}}, h.ops.now())
 
 	// The search says whose it is, the way Cursor's own sessionStart hook
-	// makes it say: TOKENDROP_HARNESS beside the sidecar that hook wrote.
+	// makes it say: JEVLIN_HARNESS beside the sidecar that hook wrote.
 	// Without it the walk adopts nothing, because a search naming no host
 	// cannot be shown to own anything it finds up the tree — dropin-miner#97, and
 	// TestASearchDoesNotAdoptAnotherHostsLineage. Through 0.2.10 this case
 	// passed with no harness set at all, which is exactly the defect.
-	runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k", "TOKENDROP_HARNESS": "cursor"}, "-config", cfg, "q")
+	runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k", "JEVLIN_HARNESS": "cursor"}, "-config", cfg, "q")
 	_, sent := fr.last(t)
 	var m map[string]any
 	_ = json.Unmarshal(sent, &m)
@@ -295,10 +295,10 @@ func TestSearchFallsBackToTheWorkspaceLineageFileAndBumpsSeq(t *testing.T) {
 		t.Errorf("seq not persisted: %+v", l)
 	}
 
-	// TOKENDROP_LINEAGE names the file directly, wherever the cwd is.
+	// JEVLIN_LINEAGE names the file directly, wherever the cwd is.
 	other := lineagePath(sessions, "/elsewhere")
 	_ = saveLineage(h.ops.hook, other, &lineageFile{Harness: "cursor", SessionID: "named", Window: "2"}, h.ops.now())
-	runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k", lineageEnv: other}, "-config", cfg, "q")
+	runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k", lineageEnv: other}, "-config", cfg, "q")
 	_, sent = fr.last(t)
 	_ = json.Unmarshal(sent, &m)
 	if tr := m["trace"].(map[string]any); tr["session_id"] != "named" || tr["window"] != "2" {
@@ -312,7 +312,7 @@ func TestSearchKillSwitchSendsNoTraceAndStillMines(t *testing.T) {
 		_, _ = w.Write([]byte(routerBody))
 	})
 	h := fixedSearchOps(root)
-	runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k", "TOKENDROP_TRACE": "off"}, "-config", cfg, "q")
+	runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k", "JEVLIN_TRACE": "off"}, "-config", cfg, "q")
 	_, sent := fr.last(t)
 	if bytes.Contains(sent, []byte(`"trace"`)) {
 		t.Errorf("trace sent despite the kill switch: %s", sent)
@@ -345,7 +345,7 @@ func TestSearchRetriesOnceBareOnAnExactTraceUnsupportedCode(t *testing.T) {
 		_, _ = w.Write([]byte(routerBody))
 	})
 	h := fixedSearchOps(root)
-	code, out, errOut := runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k"}, "-config", cfg, "q")
+	code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "q")
 	if code != exitOK || out != routerBody || !strings.Contains(errOut, "retrying once without the trace") {
 		t.Fatalf("exit %d out %q err %q", code, out, errOut)
 	}
@@ -368,7 +368,7 @@ func TestSearchDoesNotRetryAnOrdinaryRejectionThroughTheCommand(t *testing.T) {
 		_, _ = w.Write([]byte(`{"error":"unknown field trace"}`))
 	})
 	h := fixedSearchOps(root)
-	code, _, _ := runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k"}, "-config", cfg, "q")
+	code, _, _ := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "q")
 	if code != exitClientErr {
 		t.Fatalf("exit %d, want %d", code, exitClientErr)
 	}
@@ -380,7 +380,7 @@ func TestSearchDoesNotRetryAnOrdinaryRejectionThroughTheCommand(t *testing.T) {
 func TestSearchModelFormatIsCompactAndChosenFirst(t *testing.T) {
 	_, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(routerBody)) })
 	h := fixedSearchOps(root)
-	code, out, _ := runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k"}, "-config", cfg, "-format", "model", "q")
+	code, out, _ := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "-format", "model", "q")
 	if code != exitOK {
 		t.Fatalf("exit %d", code)
 	}
@@ -416,7 +416,7 @@ func TestSearchMapsRouterErrorsToExitCodesAndRecordsNothing(t *testing.T) {
 		})
 		h := fixedSearchOps(root)
 
-		code, out, _ := runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k"}, "-config", cfg, "-format", "model", "q")
+		code, out, _ := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "-format", "model", "q")
 		if code != tc.exit {
 			t.Errorf("HTTP %d: exit %d", tc.status, code)
 		}
@@ -427,7 +427,7 @@ func TestSearchMapsRouterErrorsToExitCodesAndRecordsNothing(t *testing.T) {
 			t.Errorf("HTTP %d: -format model did not summarize the failure: %q", tc.status, out)
 		}
 
-		codeJSON, outJSON, _ := runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k"}, "-config", cfg, "-format", "json", "q")
+		codeJSON, outJSON, _ := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "-format", "json", "q")
 		if codeJSON != tc.exit || outJSON != body {
 			t.Errorf("HTTP %d: -format json no longer passes the router's bytes through: exit %d out %q",
 				tc.status, codeJSON, outJSON)

@@ -91,7 +91,7 @@ func TestSearchUndecidedIsSilentAndDoesNotCapture(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := fixedSearchOps(root)
-	code, _, stderr := runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k"}, "-config", cfg, "q")
+	code, _, stderr := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "q")
 	if code != exitOK || stderr != "" {
 		t.Fatalf("undecided search = exit %d stderr %q", code, stderr)
 	}
@@ -116,7 +116,7 @@ func TestSearchDecisionInspectionFailureFailsClosedButRouterWins(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := fixedSearchOps(root)
-	code, out, stderr := runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k"}, "-config", cfg, "q")
+	code, out, stderr := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "q")
 	if code != exitOK || out != routerBody {
 		t.Fatalf("degraded search changed router result: exit=%d out=%q", code, out)
 	}
@@ -144,7 +144,7 @@ func TestSearchCaptureHealthMarksAndLaterClearsOnlyCapture(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := fixedSearchOps(root)
-	code, _, stderr := runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k"}, "-config", cfg, "q")
+	code, _, stderr := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "q")
 	if code != exitOK || !strings.Contains(stderr, "could not record") {
 		t.Fatalf("capture failure = exit %d stderr %q", code, stderr)
 	}
@@ -165,7 +165,7 @@ func TestSearchCaptureHealthMarksAndLaterClearsOnlyCapture(t *testing.T) {
 	if err := os.Remove(intakeDir); err != nil {
 		t.Fatal(err)
 	}
-	code, _, stderr = runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k"}, "-config", cfg, "q")
+	code, _, stderr = runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "q")
 	if code != exitOK || stderr != "" {
 		t.Fatalf("recovered capture = exit %d stderr %q", code, stderr)
 	}
@@ -187,7 +187,7 @@ func TestSearchFlushSpawnFailurePersistsFlushHealth(t *testing.T) {
 	})
 	h := fixedSearchOps(root)
 	h.ops.spawnFlush = func(string) error { return os.ErrPermission }
-	code, _, stderr := runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k"}, "-config", cfg, "q")
+	code, _, stderr := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "q")
 	if code != exitOK || !strings.Contains(stderr, "could not start mining flush") {
 		t.Fatalf("spawn failure = exit %d stderr %q", code, stderr)
 	}
@@ -211,7 +211,7 @@ func TestSearchMalformedDecisionPersistsDecisionHealthAndFailsOpen(t *testing.T)
 		t.Fatal(err)
 	}
 	h := fixedSearchOps(root)
-	code, out, stderr := runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k"}, "-config", cfg, "q")
+	code, out, stderr := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "q")
 	if code != exitOK || out != routerBody || !strings.Contains(stderr, "cannot be safely trusted") {
 		t.Fatalf("malformed-decision search = exit %d out=%q stderr=%q", code, out, stderr)
 	}
@@ -240,7 +240,7 @@ func TestSearchHealthPersistenceFailureCannotReplaceRouterSuccess(t *testing.T) 
 		t.Fatal(err)
 	}
 	h := fixedSearchOps(root)
-	code, out, stderr := runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k"}, "-config", cfg, "q")
+	code, out, stderr := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "q")
 	if code != exitOK || out != routerBody || !strings.Contains(stderr, "cannot be safely trusted") {
 		t.Fatalf("health-write-failure search = exit %d out=%q stderr=%q", code, out, stderr)
 	}
@@ -267,7 +267,7 @@ func TestSearchPersistedOnOverridesConfigEnabledFalse(t *testing.T) {
 	}
 
 	h := fixedSearchOps(root)
-	code, out, stderr := runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k"}, "-config", cfg, "q")
+	code, out, stderr := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "q")
 	if code != exitOK || out != routerBody || stderr != "" {
 		t.Fatalf("persisted ON with config false = exit %d out=%q stderr=%q", code, out, stderr)
 	}
@@ -344,7 +344,7 @@ func TestInteractiveConnectDecisionAuthorizesSearchAndFlushWithoutConfigEnabled(
 	}
 
 	h := fixedSearchOps(filepath.Dir(stateDir))
-	code, out, stderr := runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k"}, "-config", cfgPath, "q")
+	code, out, stderr := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfgPath, "q")
 	if code != exitOK || out != routerBody || stderr != "" {
 		t.Fatalf("lifecycle search = exit %d out=%q stderr=%q", code, out, stderr)
 	}

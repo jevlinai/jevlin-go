@@ -127,7 +127,7 @@ func TestACursorConversationStartedOn0212KeepsItsWorkspaceFile(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	env := map[string]string{"TOKENDROP_HARNESS": "cursor", lineageEnv: declared, sessionEnv: traceHash("conversation-old")}
+	env := map[string]string{"JEVLIN_HARNESS": "cursor", lineageEnv: declared, sessionEnv: traceHash("conversation-old")}
 	ops := cursorSession(p, env)
 
 	cursorEvent(t, ops, hc, "afterAgentThought", "conversation-old", adoptRoot, map[string]any{"text": "thinking before the search"})
@@ -167,7 +167,7 @@ func TestACursorEventDoesNotAdoptAnotherConversationsDeclaredFile(t *testing.T) 
 		t.Fatalf("B's event did not reach B's own file: %+v", b)
 	}
 
-	outside := map[string]string{"TOKENDROP_HARNESS": "cursor", lineageEnv: "/elsewhere/" + filepath.Base(envA[lineageEnv]), sessionEnv: traceHash("conversation-a")}
+	outside := map[string]string{"JEVLIN_HARNESS": "cursor", lineageEnv: "/elsewhere/" + filepath.Base(envA[lineageEnv]), sessionEnv: traceHash("conversation-a")}
 	cursorEvent(t, cursorSession(p, outside), hc, "afterAgentResponse", "conversation-a", adoptRoot, map[string]any{"text": "A's text"})
 	if _, wrote := p.fs.files[outside[lineageEnv]]; wrote {
 		t.Fatal("a declared path outside the sessions directory was written")

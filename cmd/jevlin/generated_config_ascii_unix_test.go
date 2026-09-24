@@ -15,7 +15,7 @@ import (
 )
 
 func TestTheGeneratedShellProfileBlockIsASCII(t *testing.T) {
-	home := filepath.Join(t.TempDir(), "tokendrop")
+	home := filepath.Join(t.TempDir(), "jevlin")
 	lines := profileEnvLines(
 		filepath.Join(home, "bin"),
 		filepath.Join(home, setupConfigFile),

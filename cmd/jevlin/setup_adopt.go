@@ -558,7 +558,7 @@ func (a *adoption) mergeDir(src, dst string, moved, kept, refused *int) {
 	}
 }
 
-// config adopts tokendrop.toml when the destination has none. The migration
+// config adopts jevlin.toml when the destination has none. The migration
 // policy then applies to it exactly as to any existing config.
 func (a *adoption) config() {
 	src, dst := filepath.Join(a.src, setupConfigFile), filepath.Join(a.dst, setupConfigFile)

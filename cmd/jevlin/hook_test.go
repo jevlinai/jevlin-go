@@ -155,7 +155,7 @@ func decodeBridgeFromCommand(t *testing.T, cmd string) *traceEnvelope {
 func TestIsSearchCommandRecognizesOursAndNothingElse(t *testing.T) {
 	yes := []string{
 		`jevlin search "how do ports work"`,
-		`"/Users/x y/.tokendrop/bin/jevlin" search -config "/a b/c.toml" -format model "q"`,
+		`"/Users/x y/.jevlin/bin/jevlin" search -config "/a b/c.toml" -format model "q"`,
 		`/usr/local/bin/jevlin search q`,
 		`cd /tmp && jevlin search q`,
 		`C:\Users\x\bin\jevlin.exe search q`,
@@ -505,7 +505,7 @@ func TestHookCursorEventsBuildTheLineageFileAndAnswerTheHost(t *testing.T) {
 	var start struct {
 		Env map[string]string `json:"env"`
 	}
-	if err := json.Unmarshal([]byte(out), &start); err != nil || start.Env["TOKENDROP_HARNESS"] != "cursor" || start.Env[lineageEnv] != path {
+	if err := json.Unmarshal([]byte(out), &start); err != nil || start.Env["JEVLIN_HARNESS"] != "cursor" || start.Env[lineageEnv] != path {
 		t.Fatalf("sessionStart output: %s", out)
 	}
 	if len(fs.flushes) != 1 {
@@ -566,7 +566,7 @@ func TestHookCursorWithoutAConversationDoesNothingButAllow(t *testing.T) {
 // path they mean to inject faults into would never run.
 func writeHookConfig(t *testing.T) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "tokendrop.toml")
+	path := filepath.Join(t.TempDir(), "jevlin.toml")
 	if err := os.WriteFile(path, []byte("[miner]\nsessions_dir = \"/sessions\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}

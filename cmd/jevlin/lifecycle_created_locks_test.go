@@ -184,7 +184,7 @@ func TestAPurgeThatProceedsIsUnchanged(t *testing.T) {
 // copied the excludeLifecycle line.
 func TestTheUpgradeExclusionDoesNotRemoveTheLocksItCreated(t *testing.T) {
 	root := t.TempDir()
-	home := filepath.Join(root, ".tokendrop")
+	home := filepath.Join(root, ".jevlin")
 	exe := filepath.Join(home, "bin", "jevlin")
 	writeFileT(t, exe, "binary")
 

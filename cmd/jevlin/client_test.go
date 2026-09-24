@@ -1,7 +1,7 @@
 package main
 
 // The agent-command helpers. Every test injects getenv — a developer's
-// real TOKENDROP_LISTEN or TOKENDROP_CONFIG must never leak into a test,
+// real TOKENDROP_LISTEN or JEVLIN_CONFIG must never leak into a test,
 // because env beats the config file in config.Load's precedence.
 
 import (
@@ -21,8 +21,8 @@ func envOf(m map[string]string) func(string) string {
 func TestAPIKeyUsesOnlySearchEnvironment(t *testing.T) {
 	m := emptyMiner(t)
 	got, src, err := resolveAPIKey(envOf(map[string]string{ // #nosec G101 -- env-var names and synthetic canaries, not credentials
-		"TOKENDROP_API_KEY": "canary-tenant-key",
-		"OPENAI_API_KEY":    "canary-personal-key",
+		"JEVLIN_API_KEY": "canary-tenant-key",
+		"OPENAI_API_KEY": "canary-personal-key",
 	}), m)
 	if err != nil || got != "canary-tenant-key" || src != keyFromEnv {
 		t.Errorf("a personal OpenAI key must not shadow the tenant key: got %q from %q (%v)", got, src, err)

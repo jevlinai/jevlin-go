@@ -20,7 +20,7 @@ package main
 //
 // The mining question is connect's, and nothing here answers it: -yes
 // answers setup's own questions only, and `[mining] enabled = true` is
-// written only by a run with no terminal and TOKENDROP_MINING=1. Setup runs
+// written only by a run with no terminal and JEVLIN_MINING=1. Setup runs
 // no process other than itself.
 
 import (
@@ -42,11 +42,11 @@ const setupUsage = `usage: jevlin setup [-home dir] [-yes] [-no-profile] [-no-ag
 
 Everything after the binary, asked as it goes: a previous installation to
 reuse, the config, connect (registration, the mining question and the claim
-link), the shell profile (PATH, TOKENDROP_CONFIG and, when a wallet was made
-here, TOKENDROP_WALLET_DIR; on Windows, the user PATH and TOKENDROP_CONFIG
+link), the shell profile (PATH, JEVLIN_CONFIG and, when a wallet was made
+here, JEVLIN_WALLET_DIR; on Windows, the user PATH and JEVLIN_CONFIG
 only) and the coding agents found on this machine.
 
-  -home dir     the installation directory (default $TOKENDROP_HOME, else ~/.tokendrop).
+  -home dir     the installation directory (default $JEVLIN_HOME, else ~/.jevlin).
                 A directory other than that default is a separate installation:
                 setup leaves the shell profile (Windows: user environment) and the
                 coding agents alone, -yes or not, because they belong to the
@@ -149,7 +149,7 @@ type setupRun struct {
 	adoptFrom     string // the accepted adoption source, if any
 	foundInPlace  bool   // an installation was already in home when setup started
 	changed       bool   // setup wrote or moved something it owns
-	shortCommands bool   // the profile or user environment carries PATH and TOKENDROP_CONFIG
+	shortCommands bool   // the profile or user environment carries PATH and JEVLIN_CONFIG
 
 	// otherHome: -home names a directory that is not this machine's
 	// installation, defaultHome. The profile and the agents belong to that
@@ -310,14 +310,14 @@ func (r *setupRun) run(homeFlag string, with []string) int {
 
 	home := homeFlag
 	if home == "" {
-		home = d.getenv("TOKENDROP_HOME")
+		home = d.getenv("JEVLIN_HOME")
 	}
 	if home == "" {
 		if d.userHome == "" {
 			fmt.Fprintln(d.stderr, "jevlin setup: no home directory to install under; pass -home")
 			return exitUsage
 		}
-		home = filepath.Join(d.userHome, ".tokendrop")
+		home = filepath.Join(d.userHome, ".jevlin")
 	}
 	if home, err = filepath.Abs(home); err != nil {
 		fmt.Fprintln(d.stderr, "jevlin setup:", err)
@@ -325,7 +325,7 @@ func (r *setupRun) run(homeFlag string, with []string) int {
 	}
 	r.home = home
 	r.cfgPath = filepath.Join(home, setupConfigFile)
-	r.defaultHome, r.otherHome = otherInstallation(homeFlag, home, d.getenv("TOKENDROP_HOME"), d.userHome)
+	r.defaultHome, r.otherHome = otherInstallation(homeFlag, home, d.getenv("JEVLIN_HOME"), d.userHome)
 	if r.values, err = resolveSetupValues(home, d.getenv, d.interactive); err != nil {
 		fmt.Fprintln(d.stderr, "jevlin setup:", err)
 		return exitUsage
@@ -383,7 +383,7 @@ func (r *setupRun) run(homeFlag string, with []string) int {
 	// ── 5. connect ──
 	r.say("Search context")
 	r.printf("Recent agent context may accompany search to the Twilight search router as part of the trajectory/search product.\n")
-	r.printf("TOKENDROP_TRACE=off disables trace transmission. Mining/AS receives metadata observations only.\n")
+	r.printf("JEVLIN_TRACE=off disables trace transmission. Mining/AS receives metadata observations only.\n")
 	r.say("Connecting")
 	if r.dry {
 		r.printf("(dry run) would run: %s connect -config %s\n", r.displayPath(exe), r.displayPath(r.cfgPath))
@@ -419,16 +419,16 @@ func (r *setupRun) run(homeFlag string, with []string) int {
 }
 
 // otherInstallation: does -home name a directory other than this machine's
-// installation — $TOKENDROP_HOME, else ~/.tokendrop — and if so, which is
+// installation — $JEVLIN_HOME, else ~/.jevlin — and if so, which is
 // that? Only an explicit -home can: with no flag, home IS the default by
-// construction, and `TOKENDROP_HOME=<dir>` stays the way to put the
+// construction, and `JEVLIN_HOME=<dir>` stays the way to put the
 // machine's installation somewhere else. When no default can be named at
 // all there is nothing to compare against, and nothing is withheld.
 //
 // dropin-miner#84: `setup -home <scratch>` is the documented way to make a disposable
 // installation for a destructive test, and it planned the real user's
 // ~/.claude, ~/.codex, ~/.cursor, Pi and Hermes files and the user PATH and
-// TOKENDROP_CONFIG all the same — repointing the participant's real agents
+// JEVLIN_CONFIG all the same — repointing the participant's real agents
 // and environment at the scratch config. The Windows tester avoided it only
 // by reading the dry run first.
 func otherInstallation(homeFlag, home, envHome, userHome string) (defaultHome string, other bool) {
@@ -437,7 +437,7 @@ func otherInstallation(homeFlag, home, envHome, userHome string) (defaultHome st
 	}
 	def := envHome
 	if def == "" && userHome != "" {
-		def = filepath.Join(userHome, ".tokendrop")
+		def = filepath.Join(userHome, ".jevlin")
 	}
 	if def == "" {
 		return "", false
@@ -772,7 +772,7 @@ func (r *setupRun) closing() {
 		r.printf("Setup complete for the installation at %s.\nIt skipped the %s: -home names a directory that is not this machine's installation (%s),\n"+
 			"and those belong to that one. To configure coding agents for this installation:\n\n    %s agents install -config %s\n\n"+
 			"If %s is in fact this machine's installation, kept somewhere other than the default, run\n"+
-			"setup with TOKENDROP_HOME set to it instead of -home: that names it as the default, and setup\n"+
+			"setup with JEVLIN_HOME set to it instead of -home: that names it as the default, and setup\n"+
 			"then looks after the profile and the agents too.\n",
 			r.home, joinLabels(r.skipped), r.defaultHome, r.displayPath(r.exe), r.displayPath(r.cfgPath), r.home)
 	case len(r.skipped) > 0:

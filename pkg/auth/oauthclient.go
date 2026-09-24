@@ -713,7 +713,7 @@ func (e *AuthorizationRefusedError) Error() string {
 // PendingProviderAuthorization is a started provider authorization: show the
 // participant Host and URL, then Redeem the code they bring back.
 //
-// The verifier is unexported and never leaves this package. cmd/tokendrop is
+// The verifier is unexported and never leaves this package. cmd/jevlin is
 // forbidden from importing a security library directly (ADR-0010, asserted by
 // TestSecurityDependenciesConfinedToAuth), so PKCE generation has to live
 // here anyway — but the confinement is worth more than the boundary test: a

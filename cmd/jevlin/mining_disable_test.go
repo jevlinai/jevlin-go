@@ -460,7 +460,7 @@ func TestDisablePersistsOffBeforeFailedRevokeAndSearchStaysUnmined(t *testing.T)
 		t.Fatal(err)
 	}
 	h := fixedSearchOps(filepath.Dir(stateDir))
-	code, out, errOut := runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "k"}, "-config", cfgPath, "q")
+	code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfgPath, "q")
 	if code != exitOK || out != routerBody || errOut != "" {
 		t.Fatalf("post-disable search = exit %d out=%q stderr=%q", code, out, errOut)
 	}

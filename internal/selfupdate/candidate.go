@@ -203,7 +203,7 @@ func candidateFailure(kind Kind, err error) error {
 
 // validationEnvironment is what a candidate runs with: a fixed locale and,
 // on Windows, only the variables a process needs to start. Nothing of the
-// participant's — no TOKENDROP_*, no key, no proxy — reaches it.
+// participant's — no JEVLIN_*, no key, no proxy — reaches it.
 func validationEnvironment(source []string) []string {
 	out := []string{"LANG=C", "LC_ALL=C"}
 	if runtime.GOOS != "windows" {

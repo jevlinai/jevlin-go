@@ -306,7 +306,7 @@ func TestCursorsOwnHooksAreNotGated(t *testing.T) {
 	cfg := writeHookConfig(t)
 	fs, ops := newFakeHookOps(nil)
 	got := runRealHookMain(t, fs, ops, cfg, []string{"cursor", "sessionStart"}, cursorPayloadFixture(t, "cursor-3.20.21-sessionStart-runs-claude-window-session-start.json"))
-	if !strings.Contains(got.stdout, `"TOKENDROP_HARNESS":"cursor"`) || got.flushes != 1 {
+	if !strings.Contains(got.stdout, `"JEVLIN_HARNESS":"cursor"`) || got.flushes != 1 {
 		t.Fatalf("Cursor's sessionStart: stdout=%q flushes=%d", got.stdout, got.flushes)
 	}
 	if _, gated := claudeEntryEvent([]string{"cursor", "stop"}); gated {
@@ -322,7 +322,7 @@ func TestCursorsOwnHooksAreNotGated(t *testing.T) {
 // writes runs an entry point this table maps back to exactly that event, and
 // the table names no entry point the install does not write.
 func TestTheCallerGateNamesExactlyTheEventsTheInstallWrites(t *testing.T) {
-	entry := binEntry{command: "/opt/x/jevlin", cfg: "/opt/x/tokendrop.toml"}
+	entry := binEntry{command: "/opt/x/jevlin", cfg: "/opt/x/jevlin.toml"}
 	spec, err := claudeHooks(entry, shellPOSIX)
 	if err != nil {
 		t.Fatal(err)

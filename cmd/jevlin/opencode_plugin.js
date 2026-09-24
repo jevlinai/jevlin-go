@@ -2,7 +2,7 @@
 //
 // Runs INSIDE opencode's own runtime (nothing extra to install). Before each
 // bash call that runs our search, it prefixes the command with
-// TOKENDROP_TRACE_BRIDGE=<envelope> carrying opencode's REAL session
+// JEVLIN_TRACE_BRIDGE=<envelope> carrying opencode's REAL session
 // identity — hashed with the same domain-separated SHA-256 as the Go binary, so the raw
 // id never leaves the machine — plus a compaction generation and the
 // assistant text before the call. The same shape the Claude Code hook
@@ -17,7 +17,7 @@
 //
 // FAIL-OPEN: any error leaves the tool call untouched and the search runs
 // with its per-shell trace instead. Delete this file (or `jevlin agents
-// uninstall`) to remove it; TOKENDROP_TRACE=off disables tracing entirely.
+// uninstall`) to remove it; JEVLIN_TRACE=off disables tracing entirely.
 
 // {{TRACE_COMMON}}
 

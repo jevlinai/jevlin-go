@@ -559,7 +559,7 @@ func withShortConnectTimings(t *testing.T) {
 
 func writeTOML(t *testing.T, body string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "tokendrop.toml")
+	path := filepath.Join(t.TempDir(), "jevlin.toml")
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil { // #nosec G703 -- fixed filename in the test's own t.TempDir()
 		t.Fatal(err)
 	}
@@ -584,7 +584,7 @@ func connectConfig(t *testing.T, platformURL, asURL string) (cfgPath, stateDir s
 	} else {
 		// No [mining] at all: state_dir still needs somewhere to land
 		// (StateDir defaults regardless of whether [mining] is present),
-		// but the default (os.UserConfigDir()/tokendrop/state) is not
+		// but the default (os.UserConfigDir()/jevlin/state) is not
 		// test-isolated, so this exercises the same field via the one
 		// TOML key that does not require enabled = true.
 		fmt.Fprintf(&b, "\n[mining]\nstate_dir = %q\n", stateDir)
@@ -1261,7 +1261,7 @@ func TestInstallerMiningQuestionAllThreeAnswers(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Setenv(walletPassphraseEnv, "correct horse battery staple")
-		t.Setenv("TOKENDROP_WALLET_DIR", filepath.Join(t.TempDir(), "wallet"))
+		t.Setenv("JEVLIN_WALLET_DIR", filepath.Join(t.TempDir(), "wallet"))
 		stdin := bytes.NewBufferString("y\n\n")
 		br := bufio.NewReader(stdin)
 		var out bytes.Buffer
@@ -1483,7 +1483,7 @@ func TestNoWalletOnNonTerminalPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	walletDir := filepath.Join(stateDir, "..", "wallet")
-	t.Setenv("TOKENDROP_WALLET_DIR", walletDir)
+	t.Setenv("JEVLIN_WALLET_DIR", walletDir)
 	if _, code := askMiningQuestion(&bytes.Buffer{}, bufio.NewReader(&bytes.Buffer{}), &bytes.Buffer{}, &bytes.Buffer{}, noEnv, cfg, store, false, false); code != exitOK {
 		t.Fatalf("code=%d", code)
 	}

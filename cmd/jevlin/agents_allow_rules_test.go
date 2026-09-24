@@ -32,7 +32,7 @@ func seedAllow(t *testing.T, m *fakeMachine, rules ...string) {
 // installedEntry is the binary and config the command itself will resolve
 // for this machine. Taken from resolveEntry rather than typed, because
 // resolveEntry puts the config through filepath.Abs: on Windows the typed
-// /home/u/.tokendrop/tokendrop.toml resolves to C:\home\u\... and a rule
+// /home/u/.jevlin/jevlin.toml resolves to C:\home\u\... and a rule
 // naming the typed one is then, correctly, a rule for a different
 // installation. Both Windows runners read the first version of this file
 // that way and were right to.

@@ -77,9 +77,9 @@ func TestABridgeIsForeignToAHostWhoseChannelIsTheLineageFile(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			p := newChannelProbe(t)
-			env := map[string]string{"TOKENDROP_API_KEY": "k", lineageEnv: p.lineage, bridgeEnv: someoneElsesBridge(t, c.bridgeHarness)}
+			env := map[string]string{"JEVLIN_API_KEY": "k", lineageEnv: p.lineage, bridgeEnv: someoneElsesBridge(t, c.bridgeHarness)}
 			if c.harnessVar != "" {
-				env["TOKENDROP_HARNESS"] = c.harnessVar
+				env["JEVLIN_HARNESS"] = c.harnessVar
 			}
 			code, _, stderr := runSearch(t, p.h, env, "-config", p.cfg, "q")
 			if code != exitOK {
@@ -115,7 +115,7 @@ func TestABridgeIsForeignToAHostWhoseChannelIsTheLineageFile(t *testing.T) {
 func TestAForeignBridgeIsNotAFallbackWhenTheDeclaredLineageIsMissing(t *testing.T) {
 	p := newChannelProbe(t)
 	missing := filepath.Join(filepath.Dir(p.lineage), "gone.json")
-	_, _, stderr := runSearch(t, p.h, map[string]string{"TOKENDROP_API_KEY": "k", "TOKENDROP_HARNESS": "cursor", lineageEnv: missing, bridgeEnv: someoneElsesBridge(t, "claude-code")},
+	_, _, stderr := runSearch(t, p.h, map[string]string{"JEVLIN_API_KEY": "k", "JEVLIN_HARNESS": "cursor", lineageEnv: missing, bridgeEnv: someoneElsesBridge(t, "claude-code")},
 		"-config", p.cfg, "q")
 	tr, sent := p.sentTrace(t)
 	if tr["harness"] != "cursor" || bytes.Contains(sent, []byte("foreign")) {
@@ -130,7 +130,7 @@ func TestAForeignBridgeIsNotAFallbackWhenTheDeclaredLineageIsMissing(t *testing.
 // (Claude Code, OpenCode, Pi, Hermes), and H-R4 is not touched.
 func TestABridgeAloneIsBelievedAsBefore(t *testing.T) {
 	p := newChannelProbe(t)
-	_, _, stderr := runSearch(t, p.h, map[string]string{"TOKENDROP_API_KEY": "k", bridgeEnv: someoneElsesBridge(t, "claude-code")}, "-config", p.cfg, "q")
+	_, _, stderr := runSearch(t, p.h, map[string]string{"JEVLIN_API_KEY": "k", bridgeEnv: someoneElsesBridge(t, "claude-code")}, "-config", p.cfg, "q")
 	tr, _ := p.sentTrace(t)
 	if tr["harness"] != "claude-code" || tr["session_id"] != "foreign-session" || tr["turn_id"] != "foreign-turn" {
 		t.Errorf("a bridge with no lineage channel declared was not used: %v", tr)
@@ -149,7 +149,7 @@ func TestABridgeAloneIsBelievedAsBefore(t *testing.T) {
 // bridge arrives.
 func TestTheMachineFormDropsAForeignBridgeAndDoesNotTeachIt(t *testing.T) {
 	p := newChannelProbe(t)
-	env := map[string]string{"TOKENDROP_API_KEY": "k", "TOKENDROP_HARNESS": "cursor", lineageEnv: p.lineage, bridgeEnv: someoneElsesBridge(t, "claude-code")}
+	env := map[string]string{"JEVLIN_API_KEY": "k", "JEVLIN_HARNESS": "cursor", lineageEnv: p.lineage, bridgeEnv: someoneElsesBridge(t, "claude-code")}
 	getenv := envOf(env)
 	p.h.ops.hook.getenv = getenv
 	var stdout, stderr bytes.Buffer
@@ -161,7 +161,7 @@ func TestTheMachineFormDropsAForeignBridgeAndDoesNotTeachIt(t *testing.T) {
 	if tr["harness"] != "cursor" || tr["session_id"] != "cursor-conv" || bytes.Contains(sent, []byte("foreign")) {
 		t.Errorf("machine form: %s", sent)
 	}
-	if strings.Contains(stdout.String(), "TOKENDROP") || stderr.Len() != 0 {
+	if strings.Contains(stdout.String(), "JEVLIN") || stderr.Len() != 0 {
 		t.Errorf("the machine form explained the variable to its reader: stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
 }

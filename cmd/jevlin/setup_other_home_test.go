@@ -5,7 +5,7 @@ package main
 // It is the documented way to make a disposable installation for a
 // destructive test, and in v0.2.9 it still planned the real user's ~/.claude,
 // ~/.codex, ~/.cursor, Pi and Hermes files and the user PATH and
-// TOKENDROP_CONFIG — repointing the participant's real agents and environment
+// JEVLIN_CONFIG — repointing the participant's real agents and environment
 // at the scratch config. The Windows tester avoided it only by reading the
 // dry run first, which also listed <dir>\bin for PATH while planning no
 // binary there.
@@ -43,7 +43,7 @@ func defaultInstallationPresent(t *testing.T) *setupSandbox {
 
 func userEnvSnapshot(s *setupSandbox) string {
 	var b strings.Builder
-	for _, k := range []string{"Path", "TOKENDROP_CONFIG"} {
+	for _, k := range []string{"Path", "JEVLIN_CONFIG"} {
 		b.WriteString(k + "=" + s.userEnv.values[k] + "\n")
 	}
 	return b.String()
@@ -187,7 +187,7 @@ func TestSetupWithTheDefaultHomeNamedIsTheSameAsWithoutIt(t *testing.T) {
 	}
 }
 
-// The default is $TOKENDROP_HOME when that is set: `TOKENDROP_HOME=<dir>`
+// The default is $JEVLIN_HOME when that is set: `JEVLIN_HOME=<dir>`
 // stays the way to put the machine's installation somewhere else, and naming
 // that same directory with -home is still the default.
 func TestOtherInstallationIsDecidedAgainstTheDefault(t *testing.T) {
@@ -202,7 +202,7 @@ func TestOtherInstallationIsDecidedAgainstTheDefault(t *testing.T) {
 		return p
 	}
 	user := abs(string(filepath.Separator)+"home", "u")
-	dot := filepath.Join(user, ".tokendrop")
+	dot := filepath.Join(user, ".jevlin")
 	elsewhere := abs(string(filepath.Separator)+"srv", "td")
 	for _, tc := range []struct {
 		name                    string
@@ -211,10 +211,10 @@ func TestOtherInstallationIsDecidedAgainstTheDefault(t *testing.T) {
 		wantOther               bool
 	}{
 		{"no -home: never another installation", "", elsewhere, elsewhere, user, "", false},
-		{"-home is ~/.tokendrop", dot, dot, "", user, dot, false},
+		{"-home is ~/.jevlin", dot, dot, "", user, dot, false},
 		{"-home is somewhere else", elsewhere, elsewhere, "", user, dot, true},
-		{"-home is what TOKENDROP_HOME names", elsewhere, elsewhere, elsewhere, user, elsewhere, false},
-		{"TOKENDROP_HOME names one place and -home another", dot, dot, elsewhere, user, elsewhere, true},
+		{"-home is what JEVLIN_HOME names", elsewhere, elsewhere, elsewhere, user, elsewhere, false},
+		{"JEVLIN_HOME names one place and -home another", dot, dot, elsewhere, user, elsewhere, true},
 		{"no default can be named: nothing is withheld", elsewhere, elsewhere, "", "", "", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -265,7 +265,7 @@ func TestUninstallsRestoreHintIsCompleteForAnotherHome(t *testing.T) {
 		"setup -home " + scratch,
 		"is not this machine's default installation (" + s.home + ")",
 		"agents install -config " + filepath.Join(scratch, setupConfigFile),
-		"TOKENDROP_HOME set to it",
+		"JEVLIN_HOME set to it",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the restore hint for another home did not say %q:\n%s", want, out)
@@ -283,14 +283,14 @@ func TestUninstallsRestoreHintIsCompleteForAnotherHome(t *testing.T) {
 
 // And setup's own closing line says how to name a directory elsewhere as the
 // machine's installation, since -home alone now deliberately does not.
-func TestSetupsClosingForAnotherHomeNamesTokendropHome(t *testing.T) {
+func TestSetupsClosingForAnotherHomeNamesJevlinHome(t *testing.T) {
 	s := defaultInstallationPresent(t)
 	scratch := filepath.Join(s.root, "dm-scratch")
 	code, out, errOut := s.run(nil, false, "-yes", "-home", scratch)
 	if code != exitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
 	}
-	if !strings.Contains(out, "run\nsetup with TOKENDROP_HOME set to it instead of -home") {
+	if !strings.Contains(out, "run\nsetup with JEVLIN_HOME set to it instead of -home") {
 		t.Errorf("the closing line did not say how to name this directory as the machine's installation:\n%s", out)
 	}
 }

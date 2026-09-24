@@ -25,7 +25,7 @@ func outputs(stdout, stderr string) CommandRunner {
 }
 
 func TestValidateCandidateRunsOnlyVersionWithAScrubbedEnvironment(t *testing.T) {
-	t.Setenv("TOKENDROP_API_KEY", "sr-secret")
+	t.Setenv("JEVLIN_API_KEY", "sr-secret")
 	t.Setenv("HTTPS_PROXY", "http://proxy.invalid")
 	v, _ := ParseVersion("0.3.0")
 	runner := runnerFunc(func(_ context.Context, path string, args, env []string) ([]byte, []byte, error) {
@@ -33,7 +33,7 @@ func TestValidateCandidateRunsOnlyVersionWithAScrubbedEnvironment(t *testing.T) 
 			t.Fatalf("unexpected invocation %q %v", path, args)
 		}
 		for _, item := range env {
-			if strings.HasPrefix(item, "TOKENDROP_") || strings.Contains(item, "PROXY") || strings.HasPrefix(item, "HOME=") {
+			if strings.HasPrefix(item, "JEVLIN_") || strings.Contains(item, "PROXY") || strings.HasPrefix(item, "HOME=") {
 				t.Errorf("the participant's environment reached the candidate: %q", item)
 			}
 		}
@@ -160,9 +160,9 @@ func TestStageCandidateFailsWhereItCannotWrite(t *testing.T) {
 }
 
 func TestValidationEnvironmentIsFixed(t *testing.T) {
-	env := validationEnvironment([]string{"HOME=/home/me", "TOKENDROP_CONFIG=/x", "SystemRoot=C:\\Windows", "PATH=/bin"})
+	env := validationEnvironment([]string{"HOME=/home/me", "JEVLIN_CONFIG=/x", "SystemRoot=C:\\Windows", "PATH=/bin"})
 	joined := strings.Join(env, "\n")
-	if !strings.Contains(joined, "LANG=C") || strings.Contains(joined, "HOME=") || strings.Contains(joined, "TOKENDROP_") || strings.Contains(joined, "PATH=/bin") {
+	if !strings.Contains(joined, "LANG=C") || strings.Contains(joined, "HOME=") || strings.Contains(joined, "JEVLIN_") || strings.Contains(joined, "PATH=/bin") {
 		t.Errorf("validation environment %v", env)
 	}
 	if (runtime.GOOS == "windows") != strings.Contains(joined, "SystemRoot=") {

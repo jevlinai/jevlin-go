@@ -54,16 +54,16 @@ func TestPayoutSetRequiresAnAddressAndNotAFlag(t *testing.T) {
 // from the dispatch table entirely. What distinguishes them is what reaches
 // stderr, so that is what this reads.
 //
-// t.Setenv clears TOKENDROP_CONFIG for the test's duration (coverage gap B,
+// t.Setenv clears JEVLIN_CONFIG for the test's duration (coverage gap B,
 // WP2 review): dispatch reads it through the real os.Getenv, not an injected
 // one (only search/agents/hook/flush/login take that as a parameter), so a
-// developer's own TOKENDROP_CONFIG pointing at a real, mining-enabled config
+// developer's own JEVLIN_CONFIG pointing at a real, mining-enabled config
 // used to leak straight through config.Load's env fallback and let
 // dispatch("enroll", nil) reach a real OAuth device-flow poll — the same
 // class of bug independently found and fixed on an unmerged branch off
 // main (PR dropin-miner#4); fixed here directly rather than waiting on that to merge.
 func TestEveryAdvertisedCommandIsRouted(t *testing.T) {
-	t.Setenv("TOKENDROP_CONFIG", "")
+	t.Setenv("JEVLIN_CONFIG", "")
 	for _, name := range []string{"enroll", "join", "provider", "payout", "status", "doctor", "earnings", "connect", "mining"} {
 		t.Run(name, func(t *testing.T) {
 			// No -config, so each command refuses early and none of them

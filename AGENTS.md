@@ -1,6 +1,6 @@
 # AGENTS.md — jevlin
 
-Agent instructions for the TokenDrop drop-in mining client. Loaded every session.
+Agent instructions for the Jevlin drop-in mining client. Loaded every session.
 
 ## What this is
 jevlin is the **launch client** for Twilight MINIS: a **no-daemon** Go CLI a coding agent
@@ -138,11 +138,11 @@ govulncheck.
     own, and leaves a command carrying one it cannot remove exactly as it found it. The trace is unauthenticated metadata either way:
     the binary cannot prove where an environment variable came from, and nothing treats a harness
     value as evidence of origin. **A search believes its host's channel, not whatever variable it
-    finds** (`searchTrace`): a host that exported `TOKENDROP_LINEAGE` has declared the lineage file
+    finds** (`searchTrace`): a host that exported `JEVLIN_LINEAGE` has declared the lineage file
     as its channel and writes no bridge, so a bridge beside it is dropped unread — never decoded,
     never a fallback when the declared file is missing — and reported on stderr only, because the
     machine envelope is what the model reads and a model that knows the variable is one of the ways
-    a foreign bridge arrives. With `TOKENDROP_SESSION` exported, a lineage file — declared, or
+    a foreign bridge arrives. With `JEVLIN_SESSION` exported, a lineage file — declared, or
     found by the walk — is used only when it holds that session; a shell that exports none is
     served exactly as before, and Cursor keys its lineage file by conversation as well, so two
     conversations sharing one workspace do not share a file. **A host started by another host as a
@@ -228,13 +228,13 @@ each line names the file that owns the rule and the test that proves it.
   uncontacted platform — and, in the same file, that a typed refusal still declines and exits 0.
 - **Which installation the profile and the agents belong to** — `cmd/jevlin/setup.go` owns it
   (`otherInstallation`, `leftForOtherInstallation`). This machine's installation is
-  `$TOKENDROP_HOME`, else `~/.tokendrop`; an explicit `-home` naming any other directory is a
+  `$JEVLIN_HOME`, else `~/.jevlin`; an explicit `-home` naming any other directory is a
   separate installation, and for it the profile step and the agents step are skipped — named as
   skipped, asked before `-yes`, `-with` or the terminal are, because none of them changes whose
   profile and whose agents these are: the documented way to make a disposable installation must
   not repoint the participant's real agents at it. The closing line and
   uninstall's restore hint both name what does configure such an installation, and
-  `TOKENDROP_HOME` as the way to say a directory elsewhere IS the machine's own.
+  `JEVLIN_HOME` as the way to say a directory elsewhere IS the machine's own.
   `setup_other_home_test.go` snapshots the whole sandbox, since the claim is about what is not
   touched.
 - **Whose content is inside our marked block** — `cmd/jevlin/agents.go` owns the split
@@ -293,7 +293,7 @@ each line names the file that owns the rule and the test that proves it.
   `testdata/hermes/oracle.py` to ask PyYAML what each meant before and after — the only judge of
   a by-line YAML edit that is not the code that made it.
 - **What the client writes into a participant's files** — `cmd/jevlin/setup_config.go`
-  renders `tokendrop.toml`, fresh and migrated; `agents.go`, `setup_env.go` and
+  renders `jevlin.toml`, fresh and migrated; `agents.go`, `setup_env.go` and
   `hermes_install.go` render the blocks that go into a host's own config. Every byte any of them
   contributes is ASCII: Windows PowerShell 5.1 reads a file with no byte-order mark in the ANSI
   code page, so an em dash reaches a participant as `â€”`, and in a PowerShell
@@ -374,7 +374,7 @@ each line names the file that owns the rule and the test that proves it.
 - **Setup** — `setup.go` owns the order (binary, previous
   installation, owner-only directories, adoption, config, connect, environment, agents) and
   the rule that the mining question stays connect's: `-yes` never answers it, and
-  `[mining] enabled = true` is written only with no terminal and `TOKENDROP_MINING=1`.
+  `[mining] enabled = true` is written only with no terminal and `JEVLIN_MINING=1`.
   `setup_adopt.go` owns what counts as an installation and adoption by bundle — the
   identity (`state/` and `credentials.json`) moves whole or not at all, and a destination
   identity is a typed conflict that stops setup non-zero before anything moves and before

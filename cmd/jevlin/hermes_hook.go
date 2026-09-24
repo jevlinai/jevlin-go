@@ -5,7 +5,7 @@ package main
 // Hermes runs a declared hook as a subprocess, writes the tool call to its
 // stdin as JSON, and reads one JSON directive back from its stdout. On a
 // terminal command that runs our search we answer with a modify directive
-// prefixing the command with TOKENDROP_TRACE_BRIDGE=<envelope>; on anything
+// prefixing the command with JEVLIN_TRACE_BRIDGE=<envelope>; on anything
 // else we print nothing at all and exit 0, which Hermes treats as a clean
 // no-op and the search runs with its per-shell trace instead.
 //

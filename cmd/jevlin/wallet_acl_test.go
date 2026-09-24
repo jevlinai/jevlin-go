@@ -554,7 +554,7 @@ func TestDoctorWalletDirIsTheInstallationsWallet(t *testing.T) {
 	}
 	home := filepath.Join(root, "elsewhere")
 	env := func(k string) string {
-		if k == "TOKENDROP_HOME" {
+		if k == "JEVLIN_HOME" {
 			return home
 		}
 		return ""

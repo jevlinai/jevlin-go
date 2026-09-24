@@ -140,11 +140,11 @@ func (registryUserEnvironment) Broadcast() {
 func (r *setupRun) environmentStep() int {
 	binDir := filepath.Join(r.home, "bin")
 	r.say("User environment")
-	if r.leftForOtherInstallation("user environment", "Your user PATH and TOKENDROP_CONFIG belong to that one", "setting them here would repoint your real environment at this installation") {
+	if r.leftForOtherInstallation("user environment", "Your user PATH and JEVLIN_CONFIG belong to that one", "setting them here would repoint your real environment at this installation") {
 		return exitOK
 	}
 	r.printf("These make the other commands short: %s on your user PATH, and\n"+
-		"TOKENDROP_CONFIG=%s. Your key is not among them: a search reads it from the\n"+
+		"JEVLIN_CONFIG=%s. Your key is not among them: a search reads it from the\n"+
 		"stored credentials file. Windows and agents started afterwards see them.\n", binDir, r.cfgPath)
 	if r.noProfile {
 		r.printf("Left your user environment alone (-no-profile).\n")
@@ -153,7 +153,7 @@ func (r *setupRun) environmentStep() int {
 	}
 	env := r.d.userEnv
 	if env == nil {
-		r.printf("No user environment to change. Add %s to PATH and set TOKENDROP_CONFIG by hand.\n", binDir)
+		r.printf("No user environment to change. Add %s to PATH and set JEVLIN_CONFIG by hand.\n", binDir)
 		return exitOK
 	}
 	journalPath := filepath.Join(r.home, setupEnvJournalFile)

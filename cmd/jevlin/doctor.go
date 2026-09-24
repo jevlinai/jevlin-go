@@ -522,7 +522,7 @@ func cmdDoctor(args []string, stdout, stderr io.Writer) int {
 // doctorWalletDir is the wallet setup looks after, and so the one whose repair
 // is `jevlin setup`: the wallet directory of the installation. That is the
 // loaded config's directory when the config is an installation's
-// tokendrop.toml, and otherwise the installation uninstall and upgrade resolve.
+// jevlin.toml, and otherwise the installation uninstall and upgrade resolve.
 func doctorWalletDir(cfgSource string, getenv func(string) string) string {
 	if cfgSource != "" && filepath.Base(cfgSource) == setupConfigFile {
 		if abs, err := filepath.Abs(cfgSource); err == nil {

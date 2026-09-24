@@ -49,9 +49,9 @@ func cursorPreToolUsePayload(t *testing.T, command string) []byte {
 // cursorIdentityEnv is what sessionStart exported for conversation conv.
 func cursorIdentityEnv(sessionsDir, conv string) map[string]string {
 	return map[string]string{
-		"TOKENDROP_HARNESS": "cursor",
-		lineageEnv:          lineagePath(sessionsDir, "/w/proj"),
-		sessionEnv:          traceHash(conv),
+		"JEVLIN_HARNESS": "cursor",
+		lineageEnv:       lineagePath(sessionsDir, "/w/proj"),
+		sessionEnv:       traceHash(conv),
 	}
 }
 
@@ -79,14 +79,14 @@ func expectedCursorCommand(t *testing.T, sh shellKind, env map[string]string, re
 	switch sh {
 	case shellPOSIX:
 		q := func(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
-		return "TOKENDROP_HARNESS='cursor' TOKENDROP_LINEAGE=" + q(env[lineageEnv]) + " TOKENDROP_SESSION=" + q(env[sessionEnv]) + " " + rendered
+		return "JEVLIN_HARNESS='cursor' JEVLIN_LINEAGE=" + q(env[lineageEnv]) + " JEVLIN_SESSION=" + q(env[sessionEnv]) + " " + rendered
 	case shellPowerShell:
 		q := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 		head := "$OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n"
 		if !strings.HasPrefix(rendered, head) {
 			t.Fatalf("the PowerShell search no longer begins with its encoding line:\n%s", rendered)
 		}
-		return head + "$env:TOKENDROP_HARNESS='cursor'; $env:TOKENDROP_LINEAGE=" + q(env[lineageEnv]) + "; $env:TOKENDROP_SESSION=" + q(env[sessionEnv]) + "; " + rendered[len(head):]
+		return head + "$env:JEVLIN_HARNESS='cursor'; $env:JEVLIN_LINEAGE=" + q(env[lineageEnv]) + "; $env:JEVLIN_SESSION=" + q(env[sessionEnv]) + "; " + rendered[len(head):]
 	}
 	t.Fatalf("no expected form for %s", sh)
 	return ""
@@ -204,10 +204,10 @@ func TestCursorPreToolUseLeavesEverythingElseAlone(t *testing.T) {
 				{"the search with a second command after it", good, fixture(rendered + "\necho appended")},
 				{"the search with a request that is not one version-1 object", good, fixture(strings.Replace(rendered, `{"version":1,`, `{"version":2,`, 1))},
 				{"already carrying the identity", good, fixture(expectedCursorCommand(t, sh, good, rendered))},
-				{"no harness", without("TOKENDROP_HARNESS"), fixture(rendered)},
+				{"no harness", without("JEVLIN_HARNESS"), fixture(rendered)},
 				{"no lineage", without(lineageEnv), fixture(rendered)},
 				{"no session", without(sessionEnv), fixture(rendered)},
-				{"another harness", with("TOKENDROP_HARNESS", "claude-code"), fixture(rendered)},
+				{"another harness", with("JEVLIN_HARNESS", "claude-code"), fixture(rendered)},
 				{"a session that is not a hashed id", with(sessionEnv, "conv-1"), fixture(rendered)},
 				{"a lineage path outside the sessions directory", with(lineageEnv, filepath.Join("/elsewhere", filepath.Base(good[lineageEnv]))), fixture(rendered)},
 				{"a lineage path that is not a lineage file", with(lineageEnv, filepath.Join(hc.sessionsDir, "window.json")), fixture(rendered)},
@@ -273,14 +273,14 @@ func TestCursorIdentityQuotingRoundTrips(t *testing.T) {
 	lineage := env[lineageEnv]
 	session := env[sessionEnv]
 	want := map[shellKind]string{
-		shellPOSIX:      "TOKENDROP_HARNESS='cursor' TOKENDROP_LINEAGE='/tmp/it'\\''s a dir/sessions/" + filepath.Base(lineage) + "' TOKENDROP_SESSION='" + session + "' ",
-		shellPowerShell: "$env:TOKENDROP_HARNESS='cursor'; $env:TOKENDROP_LINEAGE='/tmp/it''s a dir/sessions/" + filepath.Base(lineage) + "'; $env:TOKENDROP_SESSION='" + session + "'; ",
+		shellPOSIX:      "JEVLIN_HARNESS='cursor' JEVLIN_LINEAGE='/tmp/it'\\''s a dir/sessions/" + filepath.Base(lineage) + "' JEVLIN_SESSION='" + session + "' ",
+		shellPowerShell: "$env:JEVLIN_HARNESS='cursor'; $env:JEVLIN_LINEAGE='/tmp/it''s a dir/sessions/" + filepath.Base(lineage) + "'; $env:JEVLIN_SESSION='" + session + "'; ",
 	}
 	if runtime.GOOS == "windows" {
 		// lineagePath joins with the runner's separator; the quoting is what
 		// is under test, so the expectation follows the value.
-		want[shellPOSIX] = "TOKENDROP_HARNESS='cursor' TOKENDROP_LINEAGE='" + strings.ReplaceAll(lineage, "'", `'\''`) + "' TOKENDROP_SESSION='" + session + "' "
-		want[shellPowerShell] = "$env:TOKENDROP_HARNESS='cursor'; $env:TOKENDROP_LINEAGE='" + strings.ReplaceAll(lineage, "'", "''") + "'; $env:TOKENDROP_SESSION='" + session + "'; "
+		want[shellPOSIX] = "JEVLIN_HARNESS='cursor' JEVLIN_LINEAGE='" + strings.ReplaceAll(lineage, "'", `'\''`) + "' JEVLIN_SESSION='" + session + "' "
+		want[shellPowerShell] = "$env:JEVLIN_HARNESS='cursor'; $env:JEVLIN_LINEAGE='" + strings.ReplaceAll(lineage, "'", "''") + "'; $env:JEVLIN_SESSION='" + session + "'; "
 	}
 	for sh, w := range want {
 		got, ok := cursorIdentityPrefix(sh, cursorIdentity{lineage: lineage, session: session})
@@ -335,15 +335,15 @@ func TestCursorShellHookAllowsTheSearchCarryingItsIdentity(t *testing.T) {
 				other := cursorIdentityEnv(hc.sessionsDir, "conv-2")
 				foreign := map[string]string{
 					"another session's values":        expectedCursorCommand(t, sh, other, rendered),
-					"an assignment of any other name": strings.Replace(prefixed, "TOKENDROP_HARNESS=", "TOKENDROP_HARNES=", 1),
-					"a fourth assignment":             strings.Replace(prefixed, "TOKENDROP_SESSION=", "X='1' TOKENDROP_SESSION=", 1),
+					"an assignment of any other name": strings.Replace(prefixed, "JEVLIN_HARNESS=", "JEVLIN_HARNES=", 1),
+					"a fourth assignment":             strings.Replace(prefixed, "JEVLIN_SESSION=", "X='1' JEVLIN_SESSION=", 1),
 					"the prefix twice":                expectedCursorCommand(t, sh, env, prefixed),
 					"the prefix on a foreign command": strings.Replace(prefixed, rendered[strings.Index(rendered, "'"):], "'/bin/echo' hi", 1),
 				}
 				if sh == shellPowerShell {
-					foreign["an assignment of any other name"] = strings.Replace(prefixed, "$env:TOKENDROP_HARNESS=", "$env:TOKENDROP_HARNES=", 1)
-					foreign["a fourth assignment"] = strings.Replace(prefixed, "$env:TOKENDROP_SESSION=", "$env:X='1'; $env:TOKENDROP_SESSION=", 1)
-					foreign["the prefix before the encoding line"] = strings.Replace(prefixed, "$OutputEncoding", "$env:TOKENDROP_HARNESS='cursor'; $OutputEncoding", 1)
+					foreign["an assignment of any other name"] = strings.Replace(prefixed, "$env:JEVLIN_HARNESS=", "$env:JEVLIN_HARNES=", 1)
+					foreign["a fourth assignment"] = strings.Replace(prefixed, "$env:JEVLIN_SESSION=", "$env:X='1'; $env:JEVLIN_SESSION=", 1)
+					foreign["the prefix before the encoding line"] = strings.Replace(prefixed, "$OutputEncoding", "$env:JEVLIN_HARNESS='cursor'; $OutputEncoding", 1)
 				}
 				for name, cmd := range foreign {
 					if cmd == prefixed || cmd == rendered {

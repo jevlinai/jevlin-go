@@ -113,7 +113,7 @@ func TestCompletionSecretsAreRedactedBeforeTheWire(t *testing.T) {
 	// The wire: feed that bridge to `search` and capture the body sent.
 	fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(routerBody)) })
 	h := fixedSearchOps(root)
-	runSearch(t, h, map[string]string{"TOKENDROP_API_KEY": "sr-fictional", bridgeEnv: bridge},
+	runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "sr-fictional", bridgeEnv: bridge},
 		"-config", cfg, "how", "do", "I", "rotate")
 	_, sent := fr.last(t)
 	body := string(sent)
@@ -135,7 +135,7 @@ func TestCompletionSecretsAreRedactedBeforeTheWire(t *testing.T) {
 // traceEnvelope is ever built, so capTrace never runs. The sidecar file
 // itself is read back off "disk" (the fake filesystem) and checked, not
 // the lineageFile struct in memory, so this proves what a participant's
-// ~/.tokendrop/sessions/<hash>.json actually contains.
+// ~/.jevlin/sessions/<hash>.json actually contains.
 func TestCursorDiskWriteIsRedactedWithoutEverTouchingCapTrace(t *testing.T) {
 	fs, ops := newFakeHookOps(nil)
 	hc := hookContext{sessionsDir: "/sessions"}
@@ -168,13 +168,13 @@ func TestCursorDiskWriteIsRedactedWithoutEverTouchingCapTrace(t *testing.T) {
 	}
 }
 
-// TestOptOutStillCapturesButNowRedacted is A6-2 inverted. TOKENDROP_TRACE=off
+// TestOptOutStillCapturesButNowRedacted is A6-2 inverted. JEVLIN_TRACE=off
 // not stopping disk capture is unchanged — the brief scoped this task to
 // redaction, not to the opt-out gap, which is a separate, deferred question
 // about the channel itself. What changes: whatever DOES land on disk is no
 // longer plaintext.
 func TestOptOutStillCapturesButNowRedacted(t *testing.T) {
-	fs, hops := newFakeHookOps(map[string]string{"TOKENDROP_TRACE": "off"})
+	fs, hops := newFakeHookOps(map[string]string{"JEVLIN_TRACE": "off"})
 	secret := "my private prose containing " + traceReviewKey
 	transcript := strings.Join([]string{
 		`{"type":"user","message":{"role":"user","content":"help"}}`,
