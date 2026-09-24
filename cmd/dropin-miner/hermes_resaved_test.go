@@ -7,7 +7,7 @@ package main
 // and our entry is a plain or single-quoted scalar folded at 80 columns. At
 // 1f18c02 exactly that file gave: status "not installed"; install exit 1
 // with the paste advice, which would add a duplicate; uninstall "Hermes: not
-// installed", hook left running. Every symptom of #83, one save later.
+// installed", hook left running. Every symptom of dropin-miner#83, one save later.
 //
 // The fixtures under testdata/hermes are the dumper's real output, produced
 // by testdata/hermes/resave.py from Hermes' own dumper class and dump
@@ -40,7 +40,7 @@ var hermesResavedEntries = map[string]struct {
 }
 
 // hermesRoundtripFixtures are what Hermes' ruamel writer makes of each input:
-// a key of its own after our block, and #125's two additions to the hooks:
+// a key of its own after our block, and dropin-miner#125's two additions to the hooks:
 // mapping our block opened.
 var hermesRoundtripFixtures = []string{".roundtrip.yaml", ".roundtrip-sibling.yaml", ".roundtrip-item.yaml"}
 
@@ -95,7 +95,7 @@ func TestTheHermesResavedFixturesAreNotStale(t *testing.T) {
 			t.Errorf("%s.resaved.yaml holds the command on one line; this fixture no longer tests a folded scalar:\n%s", name, resaved)
 		}
 
-		// #105's fixture is the OTHER writer's output, and what makes it that
+		// dropin-miner#105's fixture is the OTHER writer's output, and what makes it that
 		// is exactly what the one above must not have: ruamel keeps comments
 		// and quotes, so both markers and our quoted matcher are still there,
 		// and the command is folded all the same.
@@ -109,7 +109,7 @@ func TestTheHermesResavedFixturesAreNotStale(t *testing.T) {
 			if strings.Contains(roundtrip, rendered) {
 				t.Errorf("%s%s holds the command on one line; this fixture no longer tests a folded scalar:\n%s", name, suffix, roundtrip)
 			}
-			// #125's point: what Hermes added is after our end marker, and its
+			// dropin-miner#125's point: what Hermes added is after our end marker, and its
 			// two additions to OUR mapping are indented under it.
 			after := roundtrip[strings.Index(roundtrip, agentsMarkerEnd+"\n")+len(agentsMarkerEnd)+1:]
 			if continues := strings.HasPrefix(after, " "); continues != (suffix != ".roundtrip.yaml") {
@@ -154,7 +154,7 @@ func hermesAroundOurBlock(t *testing.T, fixture string) string {
 	return strings.Join(lines[:begin-1], "") + strings.Join(lines[end+1:], "")
 }
 
-// #105. After a model switch, an in-session setting or a personality change,
+// dropin-miner#105. After a model switch, an in-session setting or a personality change,
 // Hermes' ruamel writer has kept our markers and folded the command inside
 // them. It is the same YAML: status counts it, install leaves it, uninstall
 // takes the block out and nothing else.
@@ -196,7 +196,7 @@ func TestOurMarkedBlockIsReadAfterHermesFoldsIt(t *testing.T) {
 // the renderer no longer writes is not "installed", and is still refreshed.
 //
 // (A block that is ANOTHER installation's was refreshed too when this was
-// written, and this test pinned it. That was #73's defect at install time, and
+// written, and this test pinned it. That was dropin-miner#73's defect at install time, and
 // hermes_marked_block_test.go now holds those three cases to the opposite.)
 func TestOurMarkedBlockInAStaleSpellingIsStillRefreshed(t *testing.T) {
 	ours := hermesResavedEntries["posix"].entry
@@ -299,10 +299,10 @@ func TestOurHookIsFoundInTheFormHermesWrites(t *testing.T) {
 			if !own.found {
 				t.Fatalf("not found in the form Hermes writes:\n%s", resaved)
 			}
-			// #108: removal is no longer limited to the renderer's own form.
+			// dropin-miner#108: removal is no longer limited to the renderer's own form.
 			// Until this commit the two lines below read "removal by line is
 			// limited to the renderer's own form; this is Hermes'" and
-			// required own.why to name that, which is the deferral #108 was
+			// required own.why to name that, which is the deferral dropin-miner#108 was
 			// filed against: for every participant whose Hermes has saved once
 			// — all of them, eventually — uninstall ended in a manual step.
 			if !own.removable() {
@@ -359,7 +359,7 @@ func TestOurHookIsFoundInTheFormHermesWrites(t *testing.T) {
 				t.Errorf("uninstall left\n%q\nwant the participant's file\n%q", got, want)
 			}
 			if notes := strings.Join(uninstall.notes, "\n"); strings.Contains(notes, "remove that entry by hand") {
-				t.Errorf("uninstall still asks for the manual step #108 is about:\n%s", notes)
+				t.Errorf("uninstall still asks for the manual step dropin-miner#108 is about:\n%s", notes)
 			}
 			if got := strings.Join(uninstall.skipped, "\n"); strings.Contains(got, "not installed") {
 				t.Errorf("uninstall says both that our hook is there and that Hermes is not installed:\n%s", got)
@@ -454,7 +454,7 @@ func TestTheRealCommandsFindOurHookInTheFormHermesWrites(t *testing.T) {
 	if !strings.Contains(status, "installed (skill+hook)") {
 		t.Errorf("status:\n%s", status)
 	}
-	// #108: uninstall takes it out, where it used to name lines 4-6 and ask
+	// dropin-miner#108: uninstall takes it out, where it used to name lines 4-6 and ask
 	// the participant to delete them.
 	code, out, errOut = runAgents(t, ops, nil, "uninstall", "-config", testCfg, "-yes")
 	if code != exitOK || strings.Contains(out, "remove that entry by hand") {

@@ -1,6 +1,6 @@
 package main
 
-// #99: our block is written where it is found, and no byte outside our
+// dropin-miner#99: our block is written where it is found, and no byte outside our
 // markers moves.
 //
 // The block used to be stripped and appended on every write, so a file's
@@ -107,7 +107,7 @@ func TestReinstallingWritesTheCodexBlockWhereItWas(t *testing.T) {
 //
 // Their table is put BELOW our block on purpose. With our block last this
 // case would pass against an implementation that stripped and appended --
-// the review found exactly that, since the mutation for #99 left this test
+// the review found exactly that, since the mutation for dropin-miner#99 left this test
 // green -- so the CRLF fixture now carries position as well as bytes.
 func TestReinstallingKeepsACRLFCodexConfigsOwnBytes(t *testing.T) {
 	cfgPath, _ := sandboxTestConfig(t)
@@ -165,7 +165,7 @@ func TestUninstallThenInstallRestoresTheCodexConfigByteForByte(t *testing.T) {
 //
 // Uninstall removes the block and with it the only record of where it
 // stood, so an install afterwards has nothing to read and appends. What
-// must still hold -- and what #99 is really about -- is that no line of the
+// must still hold -- and what dropin-miner#99 is really about -- is that no line of the
 // participant's own moves relative to any other.
 func TestUninstallThenInstallMovesNoParticipantLine(t *testing.T) {
 	m, ops, cfgPath, before := installedCodexConfig(t, afterOurBlock)

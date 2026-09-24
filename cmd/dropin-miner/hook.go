@@ -20,7 +20,7 @@ package main
 //	    `search` reads it:
 //	    sessionStart (seed, flush, export the identity to the session's
 //	    later hooks), preToolUse (put that identity on our exact rendered
-//	    search, #118), beforeShellExecution (allow our command; stamp
+//	    search, dropin-miner#118), beforeShellExecution (allow our command; stamp
 //	    turn/call),
 //	    afterAgentThought / afterAgentResponse (the text before a search),
 //	    preCompact (bump the window), stop (flush).
@@ -29,7 +29,7 @@ package main
 //
 // The lineage, window and flush entry points are installed for Claude Code
 // and for nobody else. Another host that loads Claude Code's settings and
-// runs them with its own payload (Cursor does, #87) gets nothing from them:
+// runs them with its own payload (Cursor does, dropin-miner#87) gets nothing from them:
 // see runByAnotherHost.
 //
 // FAIL-OPEN, ALWAYS. Any error, malformed payload, unreadable transcript:
@@ -71,7 +71,7 @@ const (
 	// file, so it is nothing the file does not already hold and nothing the
 	// envelope does not already send. It exists for the walk: when the
 	// lineage variable is lost, this says WHICH session of a host the search
-	// belongs to, which the host's name alone cannot (#104).
+	// belongs to, which the host's name alone cannot (dropin-miner#104).
 	sessionEnv = "TOKENDROP_SESSION"
 )
 
@@ -171,7 +171,7 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 	payload, _ := io.ReadAll(io.LimitReader(stdin, 4<<20))
 	payload = trimUTF8BOM(payload)
 	// A hook installed for Claude Code stands down when another host runs it
-	// (#87): nothing written, nothing spawned, nothing printed, exit 0.
+	// (dropin-miner#87): nothing written, nothing spawned, nothing printed, exit 0.
 	if event, claudeFormat := claudeEntryEvent(args); claudeFormat && runByAnotherHost(payload, event) {
 		return exitOK
 	}
@@ -205,7 +205,7 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 	return exitOK
 }
 
-// ── who is calling (#87) ────────────────────────────────────────────────
+// ── who is calling (dropin-miner#87) ────────────────────────────────────────────────
 //
 // Cursor loads Claude Code's hooks from ~/.claude/settings.json ("Include
 // Third-Party Plugins, Skills, and Other Configs", on by default) and runs
@@ -213,7 +213,7 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 // log on macOS and Windows: `window session-start` at sessionStart,
 // `lineage` at preToolUse, `flush` at stop — three extra processes and a
 // second flush every turn, and with v0.2.9 a `lineage` answer Cursor honored,
-// which sent a Cursor search to the router labeled claude-code (#91).
+// which sent a Cursor search to the router labeled claude-code (dropin-miner#91).
 //
 // The decision is taken from the payload, never from the environment: the
 // environment is whatever the calling host's process happened to inherit,
@@ -320,7 +320,7 @@ func hookLineage(ops hookOps, hc hookContext, payload []byte, stdout io.Writer) 
 	// Which shell will run this command is not a property of the host but of
 	// the TOOL: Claude Code runs the Bash tool through Git Bash and the
 	// PowerShell tool through PowerShell, and its payload names which one
-	// (#77, H-R5). A tool this client does not know gets no rewrite — the
+	// (dropin-miner#77, H-R5). A tool this client does not know gets no rewrite — the
 	// syntax of its shell is exactly what is not known.
 	bridgeShell := shellPOSIX
 	// ours is true when the command is EXACTLY the search this installation's
@@ -407,7 +407,7 @@ func hookLineage(ops hookOps, hc hookContext, payload []byte, stdout io.Writer) 
 		"hookEventName": "PreToolUse",
 		"updatedInput":  updated,
 	}
-	// The permission question this hook caused, answered by this hook (#98).
+	// The permission question this hook caused, answered by this hook (dropin-miner#98).
 	//
 	// `agents install` writes permissions.allow PREFIX rules naming the binary
 	// first. The rewrite above puts the bridge in front of it, so the command
@@ -462,7 +462,7 @@ func orString(v, fallback string) string {
 //     is the case that reaches every search made through this skill, and it
 //     always carries this field; without the exclusion that entry floors
 //     the scan one step too late and the assistant's sentence right before
-//     the Skill call is never found (#65). `isMeta` alone is NOT the signal:
+//     the Skill call is never found (dropin-miner#65). `isMeta` alone is NOT the signal:
 //     it also marks entries that START a turn or sit between turns with no
 //     tool call behind them at all — "Continue from where you left off.",
 //     an autonomous-loop tick, a scheduled wake-up — and those are exactly
@@ -519,7 +519,7 @@ func currentAssistantText(ops hookOps, p hookPayload) string {
 	// RESPONSE TO A TOOL CALL: the tool-result the host also writes
 	// (toolUseResult, or only tool_result blocks) or an entry carrying a
 	// non-empty sourceToolUseID, such as the Skill tool's injected skill
-	// body (#65). isMeta on its own is not the signal — it also marks
+	// body (dropin-miner#65). isMeta on its own is not the signal — it also marks
 	// entries that start a turn with no tool call behind them at all
 	// ("Continue from where you left off.", an autonomous-loop tick), and
 	// those must still floor the scan.
@@ -672,7 +672,7 @@ func hookWindow(ops hookOps, hc hookContext, phase string, payload []byte) {
 	}
 	// The error is still discarded — a state-file problem never blocks a
 	// session start or a compaction — but a failed rename no longer leaves
-	// its temporary file behind (#100). Only this file's own leftovers are
+	// its temporary file behind (dropin-miner#100). Only this file's own leftovers are
 	// swept: with no sessions directory configured the state file lives in
 	// the plugin root or TMPDIR, which are not this client's to tidy.
 	_ = replaceViaTemp(ops, path, b, ops.now(), false)
@@ -713,7 +713,7 @@ func hookCursor(ops hookOps, hc hookContext, event string, payload []byte, stdou
 	if len(p.WorkspaceRoots) > 0 && p.WorkspaceRoots[0] != "" {
 		workspace = p.WorkspaceRoots[0]
 	}
-	// One file per conversation (#109). sessionStart names it and exports it;
+	// One file per conversation (dropin-miner#109). sessionStart names it and exports it;
 	// every later event writes to the file the session DECLARED, when its
 	// environment holds one for this very conversation, and computes the same
 	// name otherwise. Declared first is what serves a conversation whose
@@ -819,7 +819,7 @@ func hookCursor(ops hookOps, hc hookContext, event string, payload []byte, stdou
 	}
 }
 
-// ── a payload Cursor's wrapper double-encoded (#113) ────────────────────
+// ── a payload Cursor's wrapper double-encoded (dropin-miner#113) ────────────────────
 //
 // On Windows Cursor runs a hook as
 //
@@ -843,7 +843,7 @@ func hookCursor(ops hookOps, hc hookContext, event string, payload []byte, stdou
 // cp1252 leaves undefined, as the measurement showed for 0x9d) and cp1252's
 // 27 characters for 0x80–0x9F. The second half is what reaches this hook for
 // the text a model writes most: `—` (e2 80 94) arrives as `â€”`, `’` as `â€™`
-// — #88's shape — and a Latin-1-only reading would leave every one of them.
+// — dropin-miner#88's shape — and a Latin-1-only reading would leave every one of them.
 
 // cp1252High is cp1252's mapping of 0x80–0x9F, reversed.
 var cp1252High = map[rune]byte{
@@ -885,12 +885,12 @@ func undoDoubleEncoding(s string) (string, bool) {
 func repairStoredText(s string, stderr io.Writer) string {
 	fixed, ok := undoDoubleEncoding(s)
 	if ok {
-		fmt.Fprintln(stderr, "dropin-miner hook: 1 double-encoded text repaired before storing (#113)")
+		fmt.Fprintln(stderr, "dropin-miner hook: 1 double-encoded text repaired before storing")
 	}
 	return fixed
 }
 
-// ── Cursor's identity, carried on the command (#118) ────────────────────
+// ── Cursor's identity, carried on the command (dropin-miner#118) ────────────────────
 //
 // A `sessionStart` hook's `env` does not reach the shell Cursor's agent runs,
 // and Cursor never said it would: its documentation promises that
@@ -1027,7 +1027,7 @@ func withoutCursorIdentity(sh shellKind, prefix, command string) (string, bool) 
 // the prefix rebuilt here from this hook's own environment, the same values
 // preToolUse wrote, and compared byte for byte. Any other prefix, one
 // carrying other values, or this prefix on anything but the search, is not a
-// command this client wrote (#91's discipline, for a prefix we write
+// command this client wrote (dropin-miner#91's discipline, for a prefix we write
 // ourselves), and Cursor asks about it as about any other.
 func recognizeCursorCommand(ops hookOps, hc hookContext, command string, shells []shellKind) *recognizedForm {
 	if f := recognizeRenderedForm(command, ops.executable, hc.cfgPath, shells); f != nil {
@@ -1061,7 +1061,7 @@ func isSearchForm(f *recognizedForm) bool {
 // hand this hook the payload's bytes unchanged. POSIX alone does. On Windows
 // Cursor wraps a hook in PowerShell that reads the payload file in the ANSI
 // code page and re-encodes it, so every non-ASCII character arrives changed
-// (#113) — in whatever code page that machine has, so the change cannot be
+// (dropin-miner#113) — in whatever code page that machine has, so the change cannot be
 // undone with certainty.
 func hookInputIntact(runners []shellKind) bool {
 	if len(runners) == 0 {
@@ -1112,7 +1112,7 @@ func cursorPreToolUse(ops hookOps, hc hookContext, payload []byte, shells, runne
 		// them would change the search itself — the query is in the command —
 		// and a lost label is the only acceptable cost of that doubt.
 		if !isASCII(command) && !hookInputIntact(runners) {
-			fmt.Fprintln(stderr, "dropin-miner hook: search not labeled: its command carries non-ASCII text, and Cursor's hook runner on this OS re-encodes it (#113)")
+			fmt.Fprintln(stderr, "dropin-miner hook: search not labeled: its command carries non-ASCII text, and Cursor's hook runner on this OS re-encodes it")
 			return
 		}
 		prefix, ok := cursorIdentityPrefix(sh, id)

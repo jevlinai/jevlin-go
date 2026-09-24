@@ -1,7 +1,7 @@
 package main
 
 // After a replacement commits, the host integrations this installation owns
-// are rendered again by the binary that is now installed (#111).
+// are rendered again by the binary that is now installed (dropin-miner#111).
 //
 // `upgrade` used to replace the binary and touch no host file. The skill text
 // and the hook entries are rendered from the binary's own tables when

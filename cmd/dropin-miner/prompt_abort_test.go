@@ -1,6 +1,6 @@
 package main
 
-// #81, one case per prompt this binary asks.
+// dropin-miner#81, one case per prompt this binary asks.
 //
 // The defect the Windows tester met was not "an interrupt is mishandled at
 // one prompt": it was that a prompt which discards its read error cannot
@@ -105,7 +105,7 @@ func assertUnchanged(t *testing.T, before, after map[string]fileSig) {
 	}
 }
 
-// ── the mining question (#81 as filed) ──────────────────────────────────
+// ── the mining question (dropin-miner#81 as filed) ──────────────────────────────────
 
 // The decision file is invariant 10's only runtime authority on whether
 // mining is on. An unanswered question must not write it.
@@ -142,7 +142,7 @@ func TestAnInterruptAtTheMiningQuestionRecordsNoDecision(t *testing.T) {
 	})
 }
 
-// The whole of #81: the decision, and the registration that followed it.
+// The whole of dropin-miner#81: the decision, and the registration that followed it.
 // Counting the stub platform's register calls is the assertion — connect
 // reaching Register at all is the half that left an agent the tester never
 // claimed.
@@ -352,7 +352,7 @@ func TestAnInterruptAtUninstallsConfirmationRemovesNothing(t *testing.T) {
 	})
 }
 
-// The purge confirmation already had this guard before #81 — it is the one
+// The purge confirmation already had this guard before dropin-miner#81 — it is the one
 // prompt in the binary that did. It is pinned here so the shared rule
 // cannot quietly regress the prompt it was generalized from.
 func TestAnInterruptAtThePurgeConfirmationPurgesNothing(t *testing.T) {

@@ -3,7 +3,7 @@ package main
 // H4's subject: which machines count as having a host on them, and what the
 // participant is told made them count.
 //
-// #61 is the whole argument for this file existing. v0.2.9 detected Cursor by
+// dropin-miner#61 is the whole argument for this file existing. v0.2.9 detected Cursor by
 // `lookPath("cursor")` alone, which is true in exactly one of the three ways
 // Cursor is installed: the editor's shell shim, added only by running
 // "Install 'cursor' command in PATH" from the palette. The soak machine had
@@ -69,7 +69,7 @@ func TestEveryHostIsDetectedByItsOwnCommand(t *testing.T) {
 	}
 }
 
-// TestCursorIsDetectedInEveryConfigurationItShipsIn is #61's unit case. Each
+// TestCursorIsDetectedInEveryConfigurationItShipsIn is dropin-miner#61's unit case. Each
 // row is a machine a participant actually has.
 func TestCursorIsDetectedInEveryConfigurationItShipsIn(t *testing.T) {
 	for _, tc := range []struct {
@@ -179,7 +179,7 @@ func TestCursorSurvivesAnUninstallSetupRoundTrip(t *testing.T) {
 				}
 			}
 
-			// -with cursor is the workaround #61 documents: it installs
+			// -with cursor is the workaround dropin-miner#61 documents: it installs
 			// whether or not detection would have found the host.
 			if code, out, errOut := s.run(nil, false, "-yes", "-with", "cursor"); code != exitOK {
 				t.Fatalf("setup -with cursor exited %d\n%s\n%s", code, out, errOut)

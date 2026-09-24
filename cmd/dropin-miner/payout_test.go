@@ -61,7 +61,7 @@ func TestPayoutSetRequiresAnAddressAndNotAFlag(t *testing.T) {
 // used to leak straight through config.Load's env fallback and let
 // dispatch("enroll", nil) reach a real OAuth device-flow poll — the same
 // class of bug independently found and fixed on an unmerged branch off
-// main (PR #4); fixed here directly rather than waiting on that to merge.
+// main (PR dropin-miner#4); fixed here directly rather than waiting on that to merge.
 func TestEveryAdvertisedCommandIsRouted(t *testing.T) {
 	t.Setenv("TOKENDROP_CONFIG", "")
 	for _, name := range []string{"enroll", "join", "provider", "payout", "status", "doctor", "earnings", "connect", "mining"} {

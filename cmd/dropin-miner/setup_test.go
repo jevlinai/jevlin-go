@@ -399,7 +399,7 @@ func TestSetupFreshNonInteractiveWritesNoEnabledAndEndsStopped(t *testing.T) {
 	if !strings.Contains(out, "Not an interactive shell — not touching any agent") {
 		t.Errorf("agents step did not refuse without a terminal:\n%s", out)
 	}
-	// #75 (soak S19): the profile and the agents step were both declined
+	// dropin-miner#75 (soak S19): the profile and the agents step were both declined
 	// for lack of a terminal, so the closing line must name them as
 	// skipped and give the command to finish them, never claim everything
 	// was already in place.
@@ -1506,7 +1506,7 @@ func TestSetupNoAgentsWithCodexInstallsExactlyCodex(t *testing.T) {
 	s.onPath["cursor"] = true
 	before := snapshotTree(t, s.root)
 	// "n" answers the mining question, which -yes deliberately does not
-	// (S6). Before #81 an empty tty answered it by accident: the read
+	// (S6). Before dropin-miner#81 an empty tty answered it by accident: the read
 	// error was discarded and the resulting empty line counted as "no".
 	code, out, errOut := s.run(tty("n"), true, "-yes", "-no-profile", "-no-agents", "-with", "codex")
 	if code != exitOK {
@@ -1519,7 +1519,7 @@ func TestSetupNoAgentsWithCodexInstallsExactlyCodex(t *testing.T) {
 	assertOwnership(t, before, snapshotTree(t, s.root), append([]string{s.home}, targetOwnedPaths(paths, "codex")...)...)
 }
 
-// ── D2 (#59): a dry run's agent plan matches the real run's ─────────────
+// ── D2 (dropin-miner#59): a dry run's agent plan matches the real run's ─────────────
 
 // configFixtureOutcome names which of the three outcomes planSetupConfig
 // can reach a test wants set up on disk before setup ever runs.
@@ -1569,7 +1569,7 @@ func seedConfigFixture(t *testing.T, s *setupSandbox, outcome configFixtureOutco
 // both a dry run and the real run print for the plan, before the real run
 // goes on to commit it. Comparing this set between the two, for a fresh
 // installation, an existing one, and one being migrated, is the literal
-// test D.2 (#59) asks for.
+// test D.2 (dropin-miner#59) asks for.
 func agentPlanWriteLines(t *testing.T, id string, dry bool, outcome configFixtureOutcome) map[string]bool {
 	t.Helper()
 	s := newSetupSandbox(t)
@@ -1616,7 +1616,7 @@ func assertSameStringSet(t *testing.T, label string, dry, real map[string]bool) 
 	}
 }
 
-// TestDryRunAgentPlanPathsMatchTheRealRunAcrossAllHosts guards D.2 (#59):
+// TestDryRunAgentPlanPathsMatchTheRealRunAcrossAllHosts guards D.2 (dropin-miner#59):
 // on a fresh installation or one being migrated, the Codex plan a dry run
 // prints used to list only the skill plus an advisory note (fresh) or the
 // pre-migration roots (migrated), because codexSandboxRoots read the
@@ -1801,7 +1801,7 @@ func agentObservedPlan(t *testing.T, id string, dry bool, outcome configFixtureO
 }
 
 // TestDryRunAgentPlanContentMatchesTheRealRunAcrossAllHostsAndOutcomes is
-// D.2 (#59)'s content half: the path-set test above can agree on WHICH
+// D.2 (dropin-miner#59)'s content half: the path-set test above can agree on WHICH
 // paths a dry run and the real run write while still disagreeing on WHAT
 // they write there — a fresh or migrated config that renders with the
 // wrong number of Codex sandbox roots (Miner.Enabled reads false until

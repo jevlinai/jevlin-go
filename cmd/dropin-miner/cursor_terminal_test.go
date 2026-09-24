@@ -8,7 +8,7 @@ package main
 // powershell.exe -Command "…", bash expanded $OutputEncoding out of it before
 // PowerShell ever saw it, the encoding line failed, and Windows PowerShell
 // 5.1 delivered `café 東京` as `caf? ??` — a search that succeeded and
-// answered a different question (#96). 0.2.9's Bash heredoc ran byte-exact on
+// answered a different question (dropin-miner#96). 0.2.9's Bash heredoc ran byte-exact on
 // the same machine, so this is a regression 0.2.10 shipped.
 //
 // The tests here hold the two halves of the fix: the skill teaches a form for
@@ -36,7 +36,7 @@ func cursorSkillOn(t *testing.T, goos string) (string, skillShells) {
 }
 
 // On Windows the skill carries both forms, and each is introduced by the
-// terminal it belongs to. The heredoc is the one #96's machine could run; the
+// terminal it belongs to. The heredoc is the one dropin-miner#96's machine could run; the
 // here-string is the one a default install runs.
 func TestCursorOnWindowsTeachesAFormForEachTerminal(t *testing.T) {
 	skill, shells := cursorSkillOn(t, "windows")
@@ -111,7 +111,7 @@ func TestCursorTeachesOneFormWhereItRunsOneShell(t *testing.T) {
 
 // The recognizer accepts a search rendered for either declared shell. It
 // iterates the declared set already — this runs it, because "it iterates the
-// set" is the assumption #96 makes load-bearing: a form the skill teaches and
+// set" is the assumption dropin-miner#96 makes load-bearing: a form the skill teaches and
 // the hook refuses is a permission prompt on every search.
 func TestTheRecognizerAcceptsASearchRenderedForEitherTerminal(t *testing.T) {
 	const goos = "windows"

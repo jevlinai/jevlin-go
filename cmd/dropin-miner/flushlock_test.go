@@ -1,7 +1,7 @@
 package main
 
 // The flush lock and stamp under a sandbox that denies writes to the miner
-// root (#64), proven against the real permission condition: POSIX modes or a
+// root (dropin-miner#64), proven against the real permission condition: POSIX modes or a
 // Windows deny-write ACE, applied in the test and checked before any flush
 // runs. The one lock is shared by every flush; an unsandboxed flush is stood
 // in for by a read-write flush paused on its lock, since the lock is the only
@@ -293,7 +293,7 @@ func writeStampT(t *testing.T, path string, st flushStamp) {
 
 // ── the sandbox ─────────────────────────────────────────────────────────
 
-// TestSandboxedFlushTakesTheLockReadOnlyAndDelivers is #64's fix under the
+// TestSandboxedFlushTakesTheLockReadOnlyAndDelivers is dropin-miner#64's fix under the
 // condition Codex's workspace-write sandbox creates: the miner root and the
 // lock readable but not writable; state, intake and spool writable.
 func TestSandboxedFlushTakesTheLockReadOnlyAndDelivers(t *testing.T) {

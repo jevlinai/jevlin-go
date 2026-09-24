@@ -1,6 +1,6 @@
 package main
 
-// #83: this installation's pre_tool_call entry under a hooks: block the
+// dropin-miner#83: this installation's pre_tool_call entry under a hooks: block the
 // client did not write — recognized by install and status, removed by
 // uninstall, and removed as exactly the lines the renderer writes or not at
 // all.
@@ -179,7 +179,7 @@ var hermesLeftAlone = []hermesCase{
 		note: "does not have the matcher line",
 	},
 	{
-		// Still left after #108 widened removal to the form Hermes writes:
+		// Still left after dropin-miner#108 widened removal to the form Hermes writes:
 		// that form is a plain or single-quoted scalar, which is what its
 		// dumper produces. A double-quoted one decodes to the same command and
 		// is written by neither, so deleting on its say-so would go past the

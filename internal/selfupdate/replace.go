@@ -48,7 +48,7 @@ const (
 // moveAside renames the installed binary to its displaced name, which is the
 // first change the Windows sequence makes.
 //
-// Seen once on main's Windows runner (#78): this rename failed with a sharing
+// Seen once on main's Windows runner (dropin-miner#78): this rename failed with a sharing
 // violation while nothing of ours held the file — the only child ran from
 // .previous, and Windows lets a running image be renamed. What was left, by
 // elimination, was a scanner or indexer reading a binary the step before had

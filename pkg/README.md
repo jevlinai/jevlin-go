@@ -18,7 +18,9 @@ change here is a change that must be mirrored there, and the vectors are
 what catch a drift.
 
 Two packages are exceptions to all of the above, and `PROVENANCE` covers
-neither: `pkg/platform` and `pkg/fsx` were both written here.
+neither: `pkg/platform` and `pkg/fsx` were both written in
+`twilight-project/dropin-miner`, whose tree this repository was imported from
+at `9c547ab`.
 
 `pkg/platform` implements a second, separately-owned contract — the search
 platform's agent-onboarding control plane, authored in `search-router`'s own
@@ -29,7 +31,7 @@ human portal a claim_url/console_url points at) — found by live testing, not
 in the design doc's original text. See `AGENTS.md`'s authority section.
 
 `pkg/fsx` is this repository's own, and its contract is ours to change. It
-was extracted in #31 from the atomic-write code that had been living inside
+was extracted in dropin-miner#31 from the atomic-write code that had been living inside
 `pkg/auth/store.go`, so that the spool, the collector and the wallet could
 all write through one durable writer with Windows write-through rather than
 three near-copies. The package boundary and its API — `WriteFileAtomic`,
@@ -39,24 +41,25 @@ write logic inside descends from the imported code it replaced.
 ## Where each package came from
 
 `PROVENANCE` names one proxy commit and nothing per package, so the origin
-below is the commit in *this* repository that first added the package, read
-off `git log --follow --diff-filter=A`. Note what `PROVENANCE` actually
+below is the commit in `twilight-project/dropin-miner` that first added the
+package, read off `git log --follow --diff-filter=A` there; this repository's
+history starts at the import of that tree. Note what `PROVENANCE` actually
 records: the copied packages were imported at proxy commit `1949ff62` and
 later re-synced to `86265b6`, which is the commit the file now names — the
 resync target, not the original copy source.
 
 | package | origin | owner of its contract |
 |---|---|---|
-| `pkg/auth` | copied from the proxy; added by `7b05458` (the repo's root commit) | AS wire contract, owned in `tokendrop-auth-server-design` |
+| `pkg/auth` | copied from the proxy; added by `7b05458` (dropin-miner's root commit) | AS wire contract, owned in `tokendrop-auth-server-design` |
 | `pkg/config` | copied from the proxy; added by `7b05458` | shared with the proxy; the `[platform]` block is ours |
-| `pkg/fsx` | written here; added by `07d20b8` (#31) | this repository |
+| `pkg/fsx` | written in dropin-miner; added by `07d20b8` (dropin-miner#31) | this repository |
 | `pkg/mining/collector` | copied from the proxy; added by `7b05458` | AS wire contract (delivery, PART X) |
 | `pkg/mining/draw` | copied from the proxy; added by `7b05458` | AS wire contract; golden vectors travel with it |
 | `pkg/mining/promote` | copied from the proxy; added by `7b05458` | AS wire contract (source profiles) |
 | `pkg/mining/scope` | copied from the proxy; added by `7b05458` | AS wire contract |
 | `pkg/mining/spool` | copied from the proxy; added by `7b05458` | AS wire contract (durable queue) |
 | `pkg/observe` | copied from the proxy; added by `7b05458` | AS wire contract (the observation shape) |
-| `pkg/platform` | written here; added by `5fab3dd` (#6) | `search-router`'s agent-onboarding design |
+| `pkg/platform` | written in dropin-miner; added by `5fab3dd` (dropin-miner#6) | `search-router`'s agent-onboarding design |
 | `pkg/redact` | copied from the proxy; added by `7b05458` | this repository; the proxy is expected to import it back |
 | `pkg/wire` | copied from the proxy; added by `7b05458` | AS wire contract, checksum-verified against the fixtures |
 

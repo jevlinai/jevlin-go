@@ -371,7 +371,7 @@ type machineMergedPage struct {
 	// FoundIn is where those providers cited the page in the result the
 	// router stores under request_id: one entry per FoundBy provider, in
 	// the same order. It is what keeps a merged-only envelope joinable
-	// (#126). With "view":"merged" the candidates list is omitted, so
+	// (dropin-miner#126). With "view":"merged" the candidates list is omitted, so
 	// without these positions nothing maps a page back into the stored
 	// result — and the router's own feedback events (result.fetched,
 	// result.cited) name a candidate and a citation, not a URL. The merge
@@ -550,7 +550,7 @@ func normalizeMergeKey(raw string) (key string, ok bool) {
 // It also records, for each page, where every provider that found it cited
 // it. The candidate index is this walk's own, over r.Candidates entire, so
 // it names the position in the result the router stores rather than a
-// position in the "ok" subsequence the merge happens to read (#126).
+// position in the "ok" subsequence the merge happens to read (dropin-miner#126).
 func mergedPagesOf(r routerResponse) []machineMergedPage {
 	byKey := make(map[string]*mergePage)
 	var accs []*mergePage

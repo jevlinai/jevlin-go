@@ -1,10 +1,10 @@
 package main
 
-// One lineage file per Cursor conversation (#109).
+// One lineage file per Cursor conversation (dropin-miner#109).
 //
 // Keyed by workspace alone, two conversations open on one project shared one
 // file: each hook event overwrote its session, and both advanced one counter.
-// Since #118 a Cursor search carries the path its session declared on its own
+// Since dropin-miner#118 a Cursor search carries the path its session declared on its own
 // command, so the file can be the conversation's own. Everything here runs the
 // real hooks and the real searchTrace over one in-memory machine; nothing
 // between the two halves is written by hand.
@@ -51,7 +51,7 @@ func cursorEvent(t *testing.T, ops hookOps, hc hookContext, event, conversation,
 	return out.String()
 }
 
-// TestTwoCursorConversationsOnOneWorkspaceKeepTwoFiles is #109's case: two
+// TestTwoCursorConversationsOnOneWorkspaceKeepTwoFiles is dropin-miner#109's case: two
 // chat tabs on one project, their hook events interleaved, each search under
 // its own session with its own text and its own counter.
 func TestTwoCursorConversationsOnOneWorkspaceKeepTwoFiles(t *testing.T) {

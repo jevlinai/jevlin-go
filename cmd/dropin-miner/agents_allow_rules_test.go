@@ -1,6 +1,6 @@
 package main
 
-// #114: an allow rule for this installation's binary and config has one
+// dropin-miner#114: an allow rule for this installation's binary and config has one
 // current spelling. A superseded one is replaced, not added beside.
 //
 // The fixtures below are spellings ruleIsOurs recognizes that the current
@@ -127,7 +127,7 @@ func TestASupersededAllowRuleIsReplacedRatherThanAddedBeside(t *testing.T) {
 // deduplicated `ours` before the comparison survived the whole package, which
 // is the review's finding and this test's reason to exist.
 //
-// A duplicate is a state #114 leaves behind -- the defect added a rule
+// A duplicate is a state dropin-miner#114 leaves behind -- the defect added a rule
 // whenever its exact text was absent, and two installs of two renderers that
 // happened to agree on one form would write it twice -- so it collapses like
 // any other superseded spelling.
@@ -166,7 +166,7 @@ func TestADuplicatedAllowRuleOfOursCollapsesToOne(t *testing.T) {
 }
 
 // The other half, which needed no change: planHooksRemove already asks
-// ruleIsOurs, so uninstall took out every spelling before #114 and this
+// ruleIsOurs, so uninstall took out every spelling before dropin-miner#114 and this
 // records it rather than claiming it as new.
 func TestUninstallRemovesASupersededAllowRuleToo(t *testing.T) {
 	m, ops := newFakeMachine("claude")

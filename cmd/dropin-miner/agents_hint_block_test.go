@@ -1,6 +1,6 @@
 package main
 
-// #122: the snippet a participant pastes is the block the skill teaches.
+// dropin-miner#122: the snippet a participant pastes is the block the skill teaches.
 //
 // A host with no skill directory — opencode, and the generic "any other
 // agent" line — receives its instructions as text in the install plan,
@@ -8,7 +8,7 @@ package main
 // commit that text was a bare command with the request on the line below
 // it: no heredoc, no here-string, no pipe, so nothing carried the second
 // line to stdin, and on Windows nothing set the output encoding the
-// rendered skills have set since 0.2.11 — #96's mechanism reaching the one
+// rendered skills have set since 0.2.11 — dropin-miner#96's mechanism reaching the one
 // host whose instructions a model composes the wrapper for itself.
 //
 // Every case here renders for a named OS rather than for the runner, so a
@@ -70,7 +70,7 @@ func TestTheAGENTSHintCarriesTheSkillsOwnSearchBlock(t *testing.T) {
 // calls in PowerShell on Windows, and the line that makes a query carrying
 // an apostrophe or any non-ASCII character survive Windows PowerShell 5.1
 // has to be in the block a participant pastes — first, where the renderer
-// puts it — rather than left for a model to invent (#96, #122).
+// puts it — rather than left for a model to invent (dropin-miner#96, dropin-miner#122).
 func TestTheWindowsHintCarriesTheOutputEncodingLine(t *testing.T) {
 	entry := hostStringsEntry("windows")
 	hint, shells := hintForHost(t, "opencode", entry, "windows")
@@ -115,7 +115,7 @@ func TestTheGenericRulesSnippetIsThePOSIXForm(t *testing.T) {
 // TestTheHintsBlockIsPasteable: no line inside the block carries the hint's
 // indentation. A quoted heredoc ends only at a line that is exactly its
 // delimiter, and a PowerShell here-string only at a line that begins with
-// '@, so an indented block is the unrunnable snippet #122 is about wearing
+// '@, so an indented block is the unrunnable snippet dropin-miner#122 is about wearing
 // a fence — a failure that would read as a formatting nicety in review.
 func TestTheHintsBlockIsPasteable(t *testing.T) {
 	for _, goos := range hostShellOSes {

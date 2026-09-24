@@ -153,12 +153,12 @@ type setupRun struct {
 
 	// otherHome: -home names a directory that is not this machine's
 	// installation, defaultHome. The profile and the agents belong to that
-	// one, so both steps are skipped whatever else was passed (#84).
+	// one, so both steps are skipped whatever else was passed (dropin-miner#84).
 	otherHome   bool
 	defaultHome string
 
 	// skipped names steps this run declined to touch — no terminal without
-	// -yes, or -no-profile/-no-agents (#75) — as distinct from a step that
+	// -yes, or -no-profile/-no-agents (dropin-miner#75) — as distinct from a step that
 	// found nothing to do (already in place, or no agent to configure).
 	// closing() uses it: "already in place" is true only when this stays
 	// empty, never when a step was merely never attempted.
@@ -425,7 +425,7 @@ func (r *setupRun) run(homeFlag string, with []string) int {
 // machine's installation somewhere else. When no default can be named at
 // all there is nothing to compare against, and nothing is withheld.
 //
-// #84: `setup -home <scratch>` is the documented way to make a disposable
+// dropin-miner#84: `setup -home <scratch>` is the documented way to make a disposable
 // installation for a destructive test, and it planned the real user's
 // ~/.claude, ~/.codex, ~/.cursor, Pi and Hermes files and the user PATH and
 // TOKENDROP_CONFIG all the same — repointing the participant's real agents
@@ -462,7 +462,7 @@ func sameInstallationDir(a, b string) bool {
 }
 
 // leftForOtherInstallation is the first thing the profile step and the agents
-// step ask. It uses the mechanism D4 added for #75 — the step is named as
+// step ask. It uses the mechanism D4 added for dropin-miner#75 — the step is named as
 // skipped, so the closing line cannot claim everything is in place — and it
 // is asked before -yes, -with, -no-profile or the terminal are, because none
 // of them changes whose profile and whose agents these are.

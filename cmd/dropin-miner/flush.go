@@ -82,7 +82,7 @@ func clearCurrentTargetHealth(store *auth.Store) {
 }
 
 // clearAuthUnavailableHealth clears a stale flush health record left by an
-// earlier run that had no refresh authorization at all (#62), once THIS
+// earlier run that had no refresh authorization at all (dropin-miner#62), once THIS
 // flush has proven authorization is available: it holds a live
 // participation capability for the target epoch, which requires exactly
 // the refresh authorization the earlier failure was missing. Reached only

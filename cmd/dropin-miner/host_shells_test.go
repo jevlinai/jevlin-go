@@ -28,7 +28,7 @@ type declaredRow struct {
 	// toolChoice is who picks among toolShells, and is part of the declared
 	// fact wherever there is more than one: it decides what the skill says
 	// above each block, and a wrong answer there sends the participant to the
-	// form their shell cannot run (#96).
+	// form their shell cannot run (dropin-miner#96).
 	toolChoice shellChoice
 }
 
@@ -126,7 +126,7 @@ func TestShellDeclarationIsTheEvidenceTable(t *testing.T) {
 // session. A cell that named two shells and left the choice empty would take
 // the per-call wording by default, which is the wrong half for a host like
 // Cursor and would point a Git Bash participant at the form that mangled
-// their query (#96).
+// their query (dropin-miner#96).
 func TestEveryMultiShellToolCellSaysWhoChooses(t *testing.T) {
 	for _, tg := range targetsByKind(targetHost) {
 		d := shellDeclarer(t, tg.ID())
@@ -206,7 +206,7 @@ func TestDeclaredShellsRefusesWhatIsNotEstablished(t *testing.T) {
 // to run a Cursor hook — and the install plan says why. Rendering a
 // form proven nowhere would be worse than the status quo; declaring the cell
 // unknown would install no hooks at all, because a hook command has no
-// fallback: written for the wrong runner it fails silently, which is #69.
+// fallback: written for the wrong runner it fails silently, which is dropin-miner#69.
 //
 // The execution side of the same ruling is asserted on a Windows runner by
 // TestInstalledHookCommandsRunInTheirRunner, which requires the command to

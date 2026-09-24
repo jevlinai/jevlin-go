@@ -329,7 +329,7 @@ func TestHookLineageReadsTheSubagentsOwnTranscript(t *testing.T) {
 
 // The four fixtures below are derived from a real Claude Code transcript
 // (record types and field layout byte-faithful, prose and ids scrubbed) of
-// exactly #65's shape: assistant text -> Skill tool_use -> tool_result ->
+// exactly dropin-miner#65's shape: assistant text -> Skill tool_use -> tool_result ->
 // isMeta user text (the skill body Claude Code injects) -> attachments ->
 // Bash tool_use. Before the fix, `isUserTurn` took the isMeta entry as the
 // floor and the assistant's sentence was never found.

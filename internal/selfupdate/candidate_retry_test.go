@@ -1,6 +1,6 @@
 package selfupdate
 
-// A candidate that has not answered is not a bad candidate (#95).
+// A candidate that has not answered is not a bad candidate (dropin-miner#95).
 //
 // Every timeout here is a real one: the runner blocks until the context the
 // package handed it expires, so the package's own detection is what decides.

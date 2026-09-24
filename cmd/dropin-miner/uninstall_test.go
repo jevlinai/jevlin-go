@@ -112,7 +112,7 @@ func installed(t *testing.T) *setupSandbox {
 	return s
 }
 
-// TestDryRunGroupsEveryHostsLinesUnderItsOwnHeading is #88, item 1, from the
+// TestDryRunGroupsEveryHostsLinesUnderItsOwnHeading is dropin-miner#88, item 1, from the
 // Windows soak: the dry run printed opencode's, Pi's and Hermes' removals
 // under the "Cursor" heading. The cause was that a removal carried only a
 // path while a write carried its host, and the printer emitted a heading only
@@ -375,7 +375,7 @@ func TestDefaultUninstallPreservesEveryParticipantByte(t *testing.T) {
 			t.Errorf("the closing message must say %q:\n%s", want, out)
 		}
 	}
-	// #88: the order of those two is the whole point. setup -home is the way
+	// dropin-miner#88: the order of those two is the whole point. setup -home is the way
 	// back; connect on its own is the thing not to do. The old wording put
 	// the warning last, where it read as the next step.
 	if i, j := strings.Index(out, "To keep using this installation"), strings.Index(out, "Do not run `dropin-miner connect` on its own"); i < 0 || j < 0 || j < i {
@@ -964,8 +964,8 @@ func TestPurgeRemovesStateAfterTheExactTypedConfirmation(t *testing.T) {
 	if !lexists(filepath.Join(outside, "keep.json")) || !strings.Contains(out, outside) {
 		t.Error("a configured directory outside the installation must survive and be reported")
 	}
-	// The gate survives a purge and the closing output names it. Since #103
-	// and #115 it is named in the same list as every other lock still there,
+	// The gate survives a purge and the closing output names it. Since dropin-miner#103
+	// and dropin-miner#115 it is named in the same list as every other lock still there,
 	// so the search is scoped to that section rather than to the whole
 	// output, which also prints the full path of everything removed.
 	gateIdx := strings.Index(out, leftoverHeading)
@@ -1139,7 +1139,7 @@ func TestPurgeDryRunNeitherAsksNorContactsNorChanges(t *testing.T) {
 }
 
 // TestPurgeDryRunListsTheFlushLockARealRunsOwnLockingWouldCreate guards
-// D.2's uninstall half (#59 comment, soak S20, macOS arm64): a real
+// D.2's uninstall half (dropin-miner#59 comment, soak S20, macOS arm64): a real
 // -purge-state run always takes the flush lock as part of its lifecycle
 // exclusion (excludeLifecycle, lifecycle.go) before this plan is ever
 // computed, and that lock is opened with O_CREATE (tryLockFile), so an

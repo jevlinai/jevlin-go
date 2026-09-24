@@ -7,13 +7,13 @@ body:
       value: |
         **Do not report security vulnerabilities here** — contact the maintainer privately rather than filing a public issue.
 
-        These fields are the shape every issue in this tracker uses (#64 is a worked example), so a report filed here reads like the rest of them. "Likely cause", "Why it matters" and "Logs" are optional — a report without them is still worth filing.
+        These fields are the shape every issue in this tracker uses, so a report filed here reads like the rest of them. "Likely cause", "Why it matters" and "Logs" are optional — a report without them is still worth filing.
   - type: input
     id: provenance
     attributes:
       label: Where it was seen (platform, version, run)
       description: The machine and the build, so the report can be placed later. Include `dropin-miner version` or the commit, your OS, and the agent and its version where one is involved; for a CI failure, the run id and head.
-      placeholder: "macOS arm64, v0.2.9, Codex CLI 0.154.0, native install — or: main, run 35018806007 (test (windows-latest), head bc9534c)"
+      placeholder: "macOS arm64, v0.1.0, Codex CLI 0.154.0, native install — or: main, run 12345678901 (test (windows-latest), head 1a2b3c4)"
     validations:
       required: true
   - type: textarea

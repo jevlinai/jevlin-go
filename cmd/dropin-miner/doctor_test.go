@@ -425,7 +425,7 @@ func TestThePayoutStandingIsAskedEvenWithNoOpenTarget(t *testing.T) {
 	}
 }
 
-// TestAHeldPayoutBindingIsNotOK is #57's Windows-comment finding: connect
+// TestAHeldPayoutBindingIsNotOK is dropin-miner#57's Windows-comment finding: connect
 // declined to declare because the AS already has a different address
 // active for this participant (store.LoadPayoutBindingHeld), the same
 // local note status already prints as "payout: HELD (...)". Before this,

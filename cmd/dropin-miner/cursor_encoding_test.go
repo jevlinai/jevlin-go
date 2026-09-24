@@ -1,13 +1,13 @@
 package main
 
 // A payload Cursor's Windows wrapper double-encoded is stored as the text it
-// was (#113), and only the stored text: never the command.
+// was (dropin-miner#113), and only the stored text: never the command.
 //
 // The fixtures are the bytes the issues record. The 19-byte intact form is
-// the dump in #117's 2026-09-21 comment, verbatim, taken from Cursor's own
+// the dump in dropin-miner#117's 2026-09-21 comment, verbatim, taken from Cursor's own
 // hook log. The 29-byte double-encoded form is assembled from the
-// per-character bytes #113's body states for the lineage record (`é` c3 83 c2
-// a9, `東京` c3 a6 c2 9d c2 b1 c3 a4 c2 ba c2 ac, `ï` c3 83 c2 af); #113's
+// per-character bytes dropin-miner#113's body states for the lineage record (`é` c3 83 c2
+// a9, `東京` c3 a6 c2 9d c2 b1 c3 a4 c2 ba c2 ac, `ï` c3 83 c2 af); dropin-miner#113's
 // 2026-09-21 comment gives its length and its first seven bytes, and both are
 // checked here, since the comment elides the rest.
 
@@ -45,7 +45,7 @@ func issue113Fixtures(t *testing.T) (intact, doubled string) {
 		t.Fatalf("the intact fixture reads %q", intact)
 	}
 	if !strings.HasPrefix(doubled, "\x63\x61\x66\xc3\x83\xc2\xa9") {
-		t.Fatalf("the double-encoded fixture does not begin as #113's comment records: % x", doubled[:7])
+		t.Fatalf("the double-encoded fixture does not begin as dropin-miner#113's comment records: % x", doubled[:7])
 	}
 	return intact, doubled
 }
@@ -113,7 +113,7 @@ func TestTextThatIsNotDoubleEncodedIsStoredAsItCame(t *testing.T) {
 
 // TestCP1252DoubleEncodingIsRepaired: the characters models write most — the
 // em dash and the typographic quotes — pass through cp1252's 0x80–0x9F range,
-// which reads as characters above U+00FF (#88's `â€”`).
+// which reads as characters above U+00FF (dropin-miner#88's `â€”`).
 func TestCP1252DoubleEncodingIsRepaired(t *testing.T) {
 	for doubled, want := range map[string]string{
 		"itâ€™s":            "it’s",

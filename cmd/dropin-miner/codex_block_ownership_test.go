@@ -1,9 +1,9 @@
 package main
 
-// #82 and #88 item 4, driven through `agents install` and `agents uninstall`
+// dropin-miner#82 and dropin-miner#88 item 4, driven through `agents install` and `agents uninstall`
 // against the shapes Codex actually leaves behind.
 //
-// The damage #82 reports is the reason these cases exist rather than a unit
+// The damage dropin-miner#82 reports is the reason these cases exist rather than a unit
 // test of the split alone: the tester's uninstall left a 0-byte
 // ~/.codex/config.toml, destroying Codex's folder trust and its `[windows]
 // sandbox = "unelevated"` choice, and the setup that followed restored only
@@ -27,7 +27,7 @@ type codexPlacement int
 
 const (
 	insideOurBlock codexPlacement = iota // what Codex does: append to the end of the file
-	afterOurBlock                        // #88 item 4: restored by hand below the end marker
+	afterOurBlock                        // dropin-miner#88 item 4: restored by hand below the end marker
 	beforeOurBlock                       // our block is not the last thing in the file
 )
 
@@ -53,7 +53,7 @@ func installedCodexConfig(t *testing.T, where codexPlacement) (m *fakeMachine, o
 	case insideOurBlock:
 		// Codex appends to the end of the file. Our block is last, so its
 		// end marker is the last line and the append lands between the
-		// markers — which is the whole of #82.
+		// markers — which is the whole of dropin-miner#82.
 		i := strings.LastIndex(installed, agentsMarkerEnd)
 		if i < 0 {
 			t.Fatalf("no end marker in the installed config:\n%s", installed)
@@ -72,7 +72,7 @@ func installedCodexConfig(t *testing.T, where codexPlacement) (m *fakeMachine, o
 	return m, ops, cfgPath, installed
 }
 
-// keptVerbatim is the assertion #82 is about: the host's tables are still
+// keptVerbatim is the assertion dropin-miner#82 is about: the host's tables are still
 // there, byte for byte, and our own is not.
 func keptVerbatim(t *testing.T, got string) {
 	t.Helper()
@@ -144,7 +144,7 @@ func TestUninstallWithNothingOfCodexsInTheBlockIsUnchanged(t *testing.T) {
 	}
 }
 
-// #88 item 4: the idempotence check compares our block's content, not the
+// dropin-miner#88 item 4: the idempotence check compares our block's content, not the
 // file's tail. With Codex's tables restored below the end marker, the block
 // is unchanged and there is nothing to do.
 func TestASecondInstallHasNothingToDoWhateverFollowsOurBlock(t *testing.T) {
@@ -238,7 +238,7 @@ func TestInstallMovesCodexsTablesOutOfOurBlockRatherThanDeletingThem(t *testing.
 // A block whose tables cannot be read is left exactly as it is, and said so
 // — the refuse-rather-than-guess rule the installer uses everywhere else.
 // Deleting a region this client cannot parse is how a participant's config
-// gets destroyed, which is the whole of #82.
+// gets destroyed, which is the whole of dropin-miner#82.
 func TestABlockThatCannotBeReadIsLeftAloneAndReported(t *testing.T) {
 	cfgPath, _ := sandboxTestConfig(t)
 	m, ops := newFakeMachine("codex")
@@ -285,7 +285,7 @@ func TestAnotherInstallationsBlockIsStillLeftAloneWithHostTablesInIt(t *testing.
 		t.Errorf("another installation's block was touched:\n--- before ---\n%s\n--- after ---\n%s", seeded, got)
 	}
 	// The reason names the owner, in the words a left skill is named in
-	// (#128). Taken from the production reading rather than typed: the
+	// (dropin-miner#128). Taken from the production reading rather than typed: the
 	// sentence spells the home the roots lie under, and a typed copy of it
 	// would pass while production named something else.
 	if want := belongsTo(describeSandboxOwner(otherRoots)); !strings.Contains(out, want) {

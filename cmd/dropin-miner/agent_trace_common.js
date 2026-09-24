@@ -114,7 +114,7 @@ const traceBridge = (env) => {
 //
 // H-R4: only a bridge THIS adapter generated for THIS call may carry this
 // adapter's harness. So an adapter never stands down because a bridge is
-// already there — a model can write one itself, and #68 is what that looks
+// already there — a model can write one itself, and dropin-miner#68 is what that looks
 // like at the router: a trace the model assembled, attributed to us. It
 // removes every assignment it RECOGNIZES and prepends its own.
 //

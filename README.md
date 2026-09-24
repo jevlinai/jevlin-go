@@ -21,11 +21,11 @@ Without Node: download the archive for your OS and architecture from the
 it against that release's `checksums.txt`, put the `dropin-miner` binary on your
 PATH, and run `dropin-miner setup`.
 
-## Coming from an earlier version
+## Running setup again
 
 Nothing needs removing first. Update the binary — npm:
-`npm install -g dropin-miner@latest` — then run `dropin-miner setup`. If the old
-installation used a non-default home (`TOKENDROP_HOME` was set for it), run
+`npm install -g dropin-miner@latest` — then run `dropin-miner setup`. If the
+installation uses a non-default home (`TOKENDROP_HOME` was set for it), run
 `dropin-miner setup` with `TOKENDROP_HOME` set to the same one; setup has no
 other way to find it. `TOKENDROP_HOME` is what
 names a directory as this machine's installation. `setup -home <dir>` on its
@@ -49,24 +49,21 @@ creates no replacement for a healthy installation; `connect` still runs and
 resumes or repairs its own onboarding state under its normal rules (an
 unfinished registration is finished, a lost or unreadable record beside a
 working key is rebuilt from the platform, an expired unclaimed registration
-is replaced). Byte-identical auth state across the upgrade is not promised.
+is replaced). Byte-identical auth state across a second run is not promised.
 
-The mining question is not asked again when the old installation already
-holds a decision: setup says whether mining is on or off for it; an
-interrupted old installation with no decision yet is asked.
+The mining question is not asked again when the installation already holds a
+decision: setup says whether mining is on or off for it; an interrupted
+installation with no decision yet is asked.
 
-The config is parsed and, since the script's already has the `[platform]`
-and `[miner]` tables, left byte for byte.
+A config that already has the `[platform]` and `[miner]` tables is left byte
+for byte.
 
-On macOS and Linux, the profile block uses the markers the script wrote, so
-there is never a second block; setup's block quotes its paths where the
-script's were bare, so the bytes can differ and the profile question may be
-asked again — yes replaces the one block in place. On Windows, the existing
-user PATH entry and `TOKENDROP_CONFIG` are reused, not duplicated: the first
-new setup records in `setup-env.json` that an already-present PATH entry
-was not added by setup, and what `TOKENDROP_CONFIG` held before, so a later
-`uninstall` removes only what setup itself added and prints what to remove
-by hand for the rest.
+On macOS and Linux there is never a second profile block: setup replaces its
+one block in place. On Windows, the existing user PATH entry and
+`TOKENDROP_CONFIG` are reused, not duplicated: setup records in
+`setup-env.json` whether an already-present PATH entry was added by it, and
+what `TOKENDROP_CONFIG` held before, so a later `uninstall` removes only what
+setup itself added and prints what to remove by hand for the rest.
 
 Agent integrations are reconciled to the current plan: one already correct
 is left alone ("nothing to write: already set up"); stale files and hook
@@ -175,11 +172,11 @@ With a session id exported, a lineage file — the declared one, or one found by
 walking up from the working directory — is used only when it holds that
 session; a shell that exports no session id is served exactly as before. Each
 Cursor conversation has its own lineage file, so two conversations open on one
-workspace no longer relabel each other's searches (#109). Cursor passes what
+workspace no longer relabel each other's searches (dropin-miner#109). Cursor passes what
 its session-start hook exports to its later hooks, not to the shell its agent
 runs, so Cursor's `preToolUse` hook puts those three variables in front of the
 exact search the skill renders, in that shell's own syntax, and rewrites
-nothing else (#118).
+nothing else (dropin-miner#118).
 
 A host started by another host as a shell command inherits the outer host's
 declared channel, and so carries the outer session and label: Claude Code
@@ -231,8 +228,8 @@ is executed to find out whether it exists.
 
 | host | tool | found by | shell it is taught for | lineage | files written by `agents install` |
 |---|---|---|---|---|---|
-| Claude Code | skill | `claude` on PATH | Bash on macOS and Linux; on Windows both Git Bash and PowerShell | full: PreToolUse on its Bash **and** PowerShell tools rewrites the command, in the syntax of whichever one the call used; window hooks; Stop flushes | `~/.claude/skills/dropin-miner/`, five hook entries and three `permissions.allow` rules — the single-quoted spelling the skill renders, plus the quoted and bare ones an agent may repeat from an older skill — in `~/.claude/settings.json`. Those rules are Bash rules, and they stop matching the moment the hook adds the trace envelope, because an allow rule matches on how a command begins — so the hook answers the permission question itself, `allow` for exactly the search the skill renders and silence for everything else. That covers the PowerShell tool too, which no installed rule ever did; what a PowerShell-tool permission *rule* must look like is still unestablished (#77), and a rule guessed at would never match, so none is written |
-| Cursor | skill | `cursor` or `cursor-agent` on PATH, or `~/.cursor` | Bash on macOS and Linux; on Windows both PowerShell and Git Bash, labelled by which one your terminal is — Cursor runs commands in the terminal `terminal.integrated.defaultProfile.windows` names, and v0.2.10 taught the PowerShell form alone, which a Git Bash terminal wrapped in `powershell.exe -Command` and expanded the encoding line out of, delivering `café 東京` as `caf? ??` (#96) | full, and the same seven `hooks.json` entries serve the editor and the Agent CLI: both load the file. `sessionStart` exports the harness and a per-conversation lineage path to the later hooks; `preToolUse` puts that identity in front of the exact search the skill renders, in that shell's own syntax, and rewrites nothing else; the shell hook allows exactly that form, and nothing looser | `~/.cursor/skills/dropin-miner/`, seven entries in `~/.cursor/hooks.json` |
+| Claude Code | skill | `claude` on PATH | Bash on macOS and Linux; on Windows both Git Bash and PowerShell | full: PreToolUse on its Bash **and** PowerShell tools rewrites the command, in the syntax of whichever one the call used; window hooks; Stop flushes | `~/.claude/skills/dropin-miner/`, five hook entries and three `permissions.allow` rules — the single-quoted spelling the skill renders, plus the quoted and bare ones an agent may repeat from an older skill — in `~/.claude/settings.json`. Those rules are Bash rules, and they stop matching the moment the hook adds the trace envelope, because an allow rule matches on how a command begins — so the hook answers the permission question itself, `allow` for exactly the search the skill renders and silence for everything else. That covers the PowerShell tool too, which no installed rule ever did; what a PowerShell-tool permission *rule* must look like is still unestablished (dropin-miner#77), and a rule guessed at would never match, so none is written |
+| Cursor | skill | `cursor` or `cursor-agent` on PATH, or `~/.cursor` | Bash on macOS and Linux; on Windows both PowerShell and Git Bash, labelled by which one your terminal is — Cursor runs commands in the terminal `terminal.integrated.defaultProfile.windows` names, and v0.2.10 taught the PowerShell form alone, which a Git Bash terminal wrapped in `powershell.exe -Command` and expanded the encoding line out of, delivering `café 東京` as `caf? ??` (dropin-miner#96) | full, and the same seven `hooks.json` entries serve the editor and the Agent CLI: both load the file. `sessionStart` exports the harness and a per-conversation lineage path to the later hooks; `preToolUse` puts that identity in front of the exact search the skill renders, in that shell's own syntax, and rewrites nothing else; the shell hook allows exactly that form, and nothing looser | `~/.cursor/skills/dropin-miner/`, seven entries in `~/.cursor/hooks.json` |
 | Codex | skill | `codex` on PATH | Bash on macOS and Linux; PowerShell on Windows | per-shell | `~/.codex/skills/dropin-miner/`; install also widens `~/.codex/config.toml`'s sandbox (network, plus writable roots: the state directory always, and the intake, sessions and spool directories when `[miner] enabled` — never the config, key or wallet) so searches record and the claim resumes; the flush a search starts runs inside that sandbox too, taking the flush lock read-only (setup and every flush outside the sandbox make sure the lock file exists) and writing its stamp in the state directory. A command inside the sandbox can read `credentials.json` (a search needs the key) and the state directory (a flush needs it); on Windows it cannot read the wallet, whose directory keeps its own owner-only access |
 | opencode | AGENTS.md line | `opencode` on PATH | Bash on macOS and Linux; PowerShell on Windows | full: in-process plugin rewrites the bash command | `~/.config/opencode/plugins/dropin-miner.js` |
 | Pi | skill | `pi` on PATH | Bash everywhere (Git Bash on Windows) | full: an auto-discovered extension rewrites the bash command; history is bound to the tool call that asked for it, and the window generation is read back from the session's own compaction entries | `~/.pi/agent/skills/dropin-miner/`, `~/.pi/agent/extensions/dropin-miner.ts` |
@@ -284,11 +281,11 @@ the plan names that key before it goes and tells you to move it to a table of
 your own first. For the same reason "already installed"
 compares our own table against what the renderer would write, not the file's
 last bytes against a rebuilt file: with anything at all after our block the
-latter differed every time and planned a write on every run. In practice only the opencode plugin and the Pi extension can be in
-that state, and only if they were written before this version — every skill and
-hook command has named its config since v0.2.9 — so uninstall names the file
-and tells you that one `agents install` would stamp it, after which a later
-uninstall removes it unaided. A hook file left holding nothing but the entries
+latter differed every time and planned a write on every run. Every skill, hook
+command and adapter install writes names its config, so a file naming none was
+not written by it as it stands; uninstall names the file and tells you that one
+`agents install` would stamp it, after which a later uninstall removes it
+unaided. A hook file left holding nothing but the entries
 just removed is removed with them.
 
 ## Commands
@@ -434,8 +431,8 @@ The wallet is the one part of an installation that neither a search nor a
 flush reads, so on Windows it is kept owner-only even when another program
 adds inherited access to the installation directory: the wallet directory and
 every file in it carry their own owner-only access list, set when the wallet is
-created and on every write. `setup` repairs a wallet an earlier version made,
-the directory and each file in it, and stops on a wallet object it cannot
+created and on every write. `setup` repairs a wallet whose access list is not
+that, the directory and each file in it, and stops on a wallet object it cannot
 secure (a link or junction inside the directory, say); `doctor` reports anyone
 else who can read it. A coding agent's sandboxed commands can therefore still
 use `credentials.json` and the state directory, which a search and a flush
@@ -632,7 +629,8 @@ and the pot splits equally among everyone eligible.
 Four things to know because you will meet them and looking for a setting to
 change would waste your time. The first two are limits of Claude Code itself
 and the last is one of Cursor's command-line agent; this client has no
-workaround for any of the three.
+workaround for any of those three. The third is what has been measured of
+Cursor's PowerShell terminal profile on Windows.
 
 **Claude Code: the sentence written just before a search does not travel.**
 The trace carries the assistant text of the turn a search belongs to, and
@@ -642,7 +640,7 @@ in the same message — the common shape — the hook reads a transcript that do
 not hold that text yet, and the envelope goes out identity-only. Narration in
 an earlier message of the same turn does travel. The lineage itself, the
 session, turn and call ids, is correct either way; it is the text that is one
-message stale or absent (#93). Nothing here can read a line the host has not
+message stale or absent (dropin-miner#93). Nothing here can read a line the host has not
 written yet.
 
 **Claude Code's PowerShell tool asks for approval every time.** The skill
@@ -654,20 +652,19 @@ nothing says whether the assignment in it needs a rule of its own, nor how the
 call operator's invocation is canonicalized before matching. A rule written
 from a guess would very likely never match, which is worse than none — it
 would look installed while every search still prompted. So none is written
-(#77). Where Git for Windows is present, a search Claude Code sends through
+(dropin-miner#77). Where Git for Windows is present, a search Claude Code sends through
 its Bash tool is covered by the rules that are written; which tool it uses is
 the model's choice per call, not something this client can set.
 
-**Windows, in the Cursor editor with a PowerShell terminal profile: a
-non-ASCII query was once corrupted on its way to the router.** It was observed
-once, on Cursor 3.20.21 on 2026-09-18: the router stored the query
-double-encoded, so the search quietly answered a different question rather
-than failing. On Cursor 3.21.9 on 2026-09-21, with the current skill, the same
-query reached the router intact under both terminal profiles (two request ids
-checked in the router console). A Git Bash terminal profile was never affected
-(#117). To rule it out today, set Cursor's
-`terminal.integrated.defaultProfile.windows` to Git Bash, or keep queries to
-ASCII.
+**Windows, in the Cursor editor with a PowerShell terminal profile:
+non-ASCII queries, as measured.** On Cursor 3.21.9 on 2026-09-21, with the
+current skill, a non-ASCII query reached the router intact under both terminal
+profiles (two request ids checked in the router console). Once, on Cursor
+3.20.21 on 2026-09-18 under a PowerShell profile, the router stored such a
+query double-encoded, so the search quietly answered a different question
+rather than failing. A Git Bash terminal profile was never affected (dropin-miner#117). To
+rule it out, set Cursor's `terminal.integrated.defaultProfile.windows` to Git
+Bash, or keep queries to ASCII.
 
 **Windows: Cursor's command-line agent launched from Git Bash cannot run any
 hook, and so no search through the skill.** Cursor wraps each hook command in
@@ -677,13 +674,13 @@ a PowerShell script of its own, which pipes the hook's payload in through
 this client's own command makes Cursor's wrapper valid bash. The Cursor editor
 is unaffected, and so is the command-line agent launched from PowerShell,
 which is the workaround. Reported to Cursor (forum thread 172789); tracked in
-#101.
+dropin-miner#101.
 
 ## Upgrading
 
 ```
 dropin-miner upgrade                    # the latest release
-dropin-miner upgrade -version 0.3.1     # exactly that release, never an older one
+dropin-miner upgrade -version 0.1.1     # exactly that release, never an older one
 dropin-miner upgrade -rollback          # put back the binary the last upgrade replaced
 npm install -g dropin-miner@latest      # an npm install is updated with npm
 ```
@@ -713,9 +710,7 @@ not set up, and leaves, by name, anything that belongs to another installation
 or names none. If it fails, the upgrade has still succeeded: the line says so
 and gives the one command that finishes the job. `-rollback` does the same with
 the binary it restores. `dropin-miner agents status` names any file an earlier
-version rendered that this one would write differently. An upgrade *from* 0.2.11
-or earlier is run by that older binary, which does none of this: after it, run
-`dropin-miner agents install` once.
+version rendered that this one would write differently.
 
 A new binary that has not answered its `version` check within five seconds is
 asked once more, and only on a timeout — a wrong version, or anything on

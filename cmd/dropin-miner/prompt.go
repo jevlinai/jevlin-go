@@ -14,7 +14,7 @@ import (
 // the absence of an answer, and the operation stops there having
 // recorded, written and sent nothing.
 //
-// #81 is what a prompt that guesses instead costs. At
+// dropin-miner#81 is what a prompt that guesses instead costs. At
 // `Enable mining rewards? [y/N]` the read error was discarded, so an
 // interrupt produced an empty line, an empty line is not "y", and
 // state/mining_decision.json was written {"version":1,"enabled":false} —

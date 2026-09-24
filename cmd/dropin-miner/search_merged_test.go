@@ -95,7 +95,7 @@ func TestMergedListNormalizesURLs(t *testing.T) {
 		t.Errorf("url should come from the first candidate that found the page: %q", merged.URL)
 	}
 	// found_in follows found_by entry for entry: alpha cited it as
-	// candidate 0's rank 0, beta as candidate 1's (#126).
+	// candidate 0's rank 0, beta as candidate 1's (dropin-miner#126).
 	if got := positionsOf(merged); !samePositions(got, [2]int{0, 0}, [2]int{1, 0}) {
 		t.Errorf("found_in: got %v, want [[0 0] [1 0]]", got)
 	}
@@ -181,7 +181,7 @@ func TestMergedListDoesNotDoubleCountOneProvidersRepeat(t *testing.T) {
 		t.Errorf("found_by: got %v, want exactly one entry for the repeating provider", got)
 	}
 	// And found_in names the FIRST of those two citations — the same
-	// occurrence found_by counted (#126). The second one, rank 1, is the
+	// occurrence found_by counted (dropin-miner#126). The second one, rank 1, is the
 	// same page under a trailing slash.
 	if got := positionsOf(pages[0]); !samePositions(got, [2]int{0, 0}) {
 		t.Errorf("found_in: got %v, want [[0 0]], the first of the provider's two citations", got)
@@ -222,7 +222,7 @@ func TestMergedListOrdering(t *testing.T) {
 	// found_in is the positions each page was merged from, which the
 	// ordering rules move around but never rewrite: D keeps p2's rank-1
 	// citation as well as p3's rank-0 one even though only the smaller
-	// became its best_rank (#126).
+	// became its best_rank (dropin-miner#126).
 	want := []struct {
 		url      string
 		bestRank int

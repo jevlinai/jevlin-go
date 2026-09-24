@@ -2,7 +2,7 @@ package main
 
 // splitMarkedBlock on its own, before anything is wired to it.
 //
-// This is the function #82 turns on: which tables inside our marked block
+// This is the function dropin-miner#82 turns on: which tables inside our marked block
 // did this client write, and which did Codex append into it. Getting it
 // wrong in the keeping direction leaves our block behind; getting it wrong
 // in the removing direction destroys a participant's Codex folder trust and
@@ -53,7 +53,7 @@ func TestSplitMarkedBlockFindsOurOwnTableAndNothingElse(t *testing.T) {
 	}
 }
 
-// The shape #82 reports: Codex's own tables inside our markers.
+// The shape dropin-miner#82 reports: Codex's own tables inside our markers.
 func TestSplitMarkedBlockSeparatesCodexsOwnTables(t *testing.T) {
 	region := ourBlockRegion(t, "/home/u/.tokendrop/state") +
 		"[projects.'/home/u/work']\ntrust_level = \"trusted\"\n" +

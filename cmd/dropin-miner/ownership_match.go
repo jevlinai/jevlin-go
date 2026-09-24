@@ -8,7 +8,7 @@ package main
 // entry, an allow rule or a skill is "ours" by its BINARY PATH alone would
 // make uninstalling either installation plan the removal of both
 // installations' integrations: every entry runs the same binary, so every
-// entry would match (#73, soak row S20). The shell-profile block is matched
+// entry would match (dropin-miner#73, soak row S20). The shell-profile block is matched
 // by the config it names, and that is the rule.
 //
 // So the rule is the profile block's, applied everywhere: an integration is
@@ -45,7 +45,7 @@ func refFor(entry binEntry) installationRef {
 // binaryPrefixes is every spelling of `<bin> ` this client writes: the three
 // shells' quoting, %q, and the bare path.
 // PowerShell's carries the call operator, because that is what the renderer
-// emits and a command without it is an expression, not a call (#69).
+// emits and a command without it is an expression, not a call (dropin-miner#69).
 func binaryPrefixes(bin string) []string {
 	return []string{
 		posixQuoteArg(bin) + " ",
@@ -218,7 +218,7 @@ func (ref installationRef) commandIsOurs(command string) bool {
 // installation's is not one this installation wrote, and rewriting it would
 // replace roots another installation's searches depend on. Left and named is
 // recoverable by hand; replaced is a Codex that earns nothing and says
-// nothing (#128).
+// nothing (dropin-miner#128).
 //
 // Two cases answer "not ours" without naming an owner, because neither can be
 // attributed at all: a block with no readable roots, and an installation

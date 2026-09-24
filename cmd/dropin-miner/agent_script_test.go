@@ -5,7 +5,7 @@ package main
 // The adapter is the only place the bridge syntax is decided. A plugin
 // running inside opencode cannot ask the declaration — it is a JavaScript
 // file, not this binary — so renderAgentScript splices the answer in at
-// install time, and a wrong value there is #68 again on every traced
+// install time, and a wrong value there is dropin-miner#68 again on every traced
 // search: a POSIX prefix handed to PowerShell is looked up as a program
 // name and the search does not run at all.
 //

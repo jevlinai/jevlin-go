@@ -24,7 +24,7 @@
 // The shell opencode runs its bash tool in on THIS machine, written in by
 // the installer from the host's declaration. The bridge is an environment
 // assignment, and its syntax is the shell's: a POSIX prefix handed to
-// PowerShell is looked up as a program name and the search never runs (#68).
+// PowerShell is looked up as a program name and the search never runs (dropin-miner#68).
 const HOST_SHELL = "{{HOST_SHELL}}"
 
 // The installation this file belongs to: the config `dropin-miner agents
@@ -33,7 +33,7 @@ const HOST_SHELL = "{{HOST_SHELL}}"
 // whose file this is. Every other artifact names its installation in a
 // command it teaches; this one teaches none, so before this line existed an
 // uninstall had nothing to match and removed another installation's plugin
-// (#73). Two installations share this one path, so it names the one that ran
+// (dropin-miner#73). Two installations share this one path, so it names the one that ran
 // `agents install` last, and the other leaves it alone.
 const INSTALL_CONFIG = "{{INSTALL_CONFIG}}"
 

@@ -2,7 +2,7 @@ package main
 
 // H5's subject: which installation an agent integration belongs to.
 //
-// #73, soak row S20. Two installations on one machine share a binary whenever
+// dropin-miner#73, soak row S20. Two installations on one machine share a binary whenever
 // the second was made by running the first's copy — `~/.tokendrop/bin/
 // dropin-miner setup -home ~/dm-disposable` is the documented way. Matching
 // an integration by its binary path alone makes the disposable installation's
@@ -44,7 +44,7 @@ func TestAnIntegrationIsOursOnlyWhenItNamesOurBinaryAndOurConfig(t *testing.T) {
 		{"bare", bin + " hook -config " + ours + " lineage", true},
 
 		// The same binary, the other installation's config. This is the whole
-		// of #73: every one of these was "ours" before H5.
+		// of dropin-miner#73: every one of these was "ours" before H5.
 		{"POSIX, their config", posixQuoteArg(bin) + " hook -config " + posixQuoteArg(theirs) + " lineage", false},
 		{"PowerShell, their config", "& " + powerShellQuoteArg(bin) + " hook -config " + powerShellQuoteArg(theirs) + " lineage", false},
 		{"cmd, their config", `"` + bin + `" hook -config "` + theirs + `" lineage`, false},
@@ -120,7 +120,7 @@ func TestRenderedWordsKeepsAQuotedPathWhole(t *testing.T) {
 // agent integrations.
 //
 // For the machine's own installation setup does both. For any other home it
-// no longer does (#84): setup -home <elsewhere> leaves the agents alone, and
+// no longer does (dropin-miner#84): setup -home <elsewhere> leaves the agents alone, and
 // its closing line names `agents install -config <home>/tokendrop.toml` as
 // the way to configure them. So that is the path this takes, which keeps the
 // scenario below — two installations, one binary, both with integrations —
@@ -153,7 +153,7 @@ func installationWithAgents(t *testing.T, s *setupSandbox, home string, with ...
 //
 // Both installations run the SAME binary, which is what made every match
 // succeed before H5. The machine installation sets its hosts up first and the
-// disposable one second. Until #112 the second install overwrote every
+// disposable one second. Until dropin-miner#112 the second install overwrote every
 // single-copy file, so this test uninstalled the FIRST and watched the
 // second's files survive; that premise was the defect. Now the second install
 // leaves them to their owner, so the files on disk name the first — and it is
@@ -179,7 +179,7 @@ func TestUninstallingOneInstallationLeavesAnothersIntegrations(t *testing.T) {
 
 			// The single-copy artifacts — a skill, the plugin, the extension —
 			// belong wholly to the installation that wrote them, which since
-			// #112 is the one that got there first: the machine installation.
+			// dropin-miner#112 is the one that got there first: the machine installation.
 			// They must come through the OTHER installation's uninstall
 			// untouched. The premise is checked rather than assumed, because
 			// it is exactly what changed: a file naming the disposable's
@@ -368,7 +368,7 @@ func TestARenderedPathIsReadBackWhicheverShellQuotedIt(t *testing.T) {
 // path -- opencode's and Pi's INSTALL_CONFIG line -- the first reading is the
 // literal one, so on Windows the message named
 // C:\\Users\\...\\tokendrop.toml with every separator doubled while the file
-// itself was correctly left alone. Both Windows runners found it on #123's
+// itself was correctly left alone. Both Windows runners found it on dropin-miner#123's
 // first CI run; every other runner was green, because on POSIX nothing in a
 // path needs escaping and a word's two readings are the same string.
 //
@@ -495,7 +495,7 @@ func containsPath(got []string, want string) bool {
 //
 // opencode's plugin is why this exists: it rewrites commands and runs none, so
 // it named no binary and no config at all, and a disposable installation's
-// purge removed the main installation's copy (#73's last comment).
+// purge removed the main installation's copy (dropin-miner#73's last comment).
 func TestEveryArtifactNamesTheInstallationThatWroteIt(t *testing.T) {
 	entry := goldenEntry()
 	for _, id := range goldenHostIDs {
@@ -549,7 +549,7 @@ func TestEveryArtifactNamesTheInstallationThatWroteIt(t *testing.T) {
 // beginning with a NUL byte, which no rendered command starts with — so
 // `entryIsOurs` matches nothing, `planHooksRemove` never sets changed, and it
 // returns before reaching either the write or the removal it would otherwise
-// plan. Break either half and the failure is the #69 family again: a hook file
+// plan. Break either half and the failure is the dropin-miner#69 family again: a hook file
 // that IS ours, unreadable as bytes on Windows, judged unattributable and left
 // behind running a binary that has been deleted.
 //

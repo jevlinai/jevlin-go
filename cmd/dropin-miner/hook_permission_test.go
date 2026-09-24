@@ -1,6 +1,6 @@
 package main
 
-// The hook answers the permission question its own rewrite caused (#98).
+// The hook answers the permission question its own rewrite caused (dropin-miner#98).
 //
 // `agents install` writes permissions.allow PREFIX rules naming the binary
 // first. The PreToolUse hook then rewrites the command to carry the trace
@@ -122,7 +122,7 @@ func TestTheRenderedSearchIsAllowedAndBridgedInOneAnswer(t *testing.T) {
 			got := askHook(t, f, toolFor(sh), search)
 
 			if got.decision() != "allow" {
-				t.Errorf("the search this skill renders is answered %q, want allow; without it every search prompts, or is refused outright in a headless session (#98)\nanswer: %s", got.decision(), got.raw)
+				t.Errorf("the search this skill renders is answered %q, want allow; without it every search prompts, or is refused outright in a headless session (dropin-miner#98)\nanswer: %s", got.decision(), got.raw)
 			}
 			if !got.rewritten() {
 				t.Errorf("the command carries no trace bridge, so the search would run with no lineage\nanswer: %s", got.raw)
@@ -152,7 +152,7 @@ func TestACommandThatIsNotTheRenderedSearchIsNeverAllowed(t *testing.T) {
 		{"the human argv form, a search by any pattern", f.entry.searchCommand() + ` "probe query text"`},
 		{"our binary, a different subcommand", f.entry.command + " search-nothing"},
 		// The shell comes from the tool, so the form rendered for the other
-		// shell is not the form this call will run (#77, H-R5).
+		// shell is not the form this call will run (dropin-miner#77, H-R5).
 		{"the PowerShell form arriving through the Bash tool", f.renderedSearch(t, shellPowerShell, `{"version":1,"query":"probe query text"}`)},
 	}
 	for _, tc := range cases {
@@ -167,7 +167,7 @@ func TestACommandThatIsNotTheRenderedSearchIsNeverAllowed(t *testing.T) {
 
 // The search of a DIFFERENT installation — our binary, another installation's
 // config — is not this hook's to allow, for the same reason uninstall will
-// not remove its integrations (#73). Two installations share a binary
+// not remove its integrations (dropin-miner#73). Two installations share a binary
 // whenever the second was made by running the first.
 func TestAnotherInstallationsSearchIsNotAllowed(t *testing.T) {
 	f := newHookFixture(t, shellPOSIX, "tokendrop.toml")

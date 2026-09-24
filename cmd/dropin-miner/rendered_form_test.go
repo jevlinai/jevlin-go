@@ -4,7 +4,7 @@ package main
 //
 // Every input here is built FROM the rendered skill — the same text the
 // participant's Cursor is taught — rather than written out by hand, so the
-// recognizer and the skill cannot drift apart again. That drift is #66: the
+// recognizer and the skill cannot drift apart again. That drift is dropin-miner#66: the
 // skill taught a heredoc, the recognizer parsed only single-line commands,
 // and every Cursor search waited for a human and lost its lineage.
 
@@ -170,7 +170,7 @@ func TestRecognizerFollowsTheBinaryNotItsSpelling(t *testing.T) {
 // command may spell it differently from the skill's: a `%q`-quoted hook
 // command on Windows hands the process doubled separators. Same file, other
 // bytes — and an exact-match recognizer that compared the spelling would
-// refuse the very command its own skill teaches, which is #66 again by
+// refuse the very command its own skill teaches, which is dropin-miner#66 again by
 // another route. This is what the Windows runner caught.
 func TestRecognizerComparesTheConfigAsAPathNotASpelling(t *testing.T) {
 	f := newRecognizerFixture(t, shellPOSIX)

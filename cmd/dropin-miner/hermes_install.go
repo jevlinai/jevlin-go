@@ -82,14 +82,14 @@ func planHermesHookFor(ops agentOps, label, path string, entry binEntry, windows
 	}
 	body := strings.Join(hermesHookLines(cmd), "\n") + "\n"
 	if hermesMarkedBlockIsCurrent(existing, cmd) {
-		// #105: our block, holding today's entry in whatever bytes Hermes'
+		// dropin-miner#105: our block, holding today's entry in whatever bytes Hermes'
 		// round-trip writer left it in. Writing it back would be undone by
 		// Hermes' next save, and would make install report a change on every
 		// run of a host where nothing is wrong.
 		return false
 	}
 	// A refresh is a removal followed by an append, so it answers to the rule
-	// removal answers to (#106, #125). It used not to, and that was #73's
+	// removal answers to (dropin-miner#106, dropin-miner#125). It used not to, and that was dropin-miner#73's
 	// defect at install time: `agents install` from one installation cut
 	// another's block out of the config and wrote its own in its place.
 	// A block that cannot be vouched for is left, and install says so and goes
@@ -122,7 +122,7 @@ func planHermesHookFor(ops agentOps, label, path string, entry binEntry, windows
 		own = findHermesOwnEntry(existing, refFor(entry))
 	}
 	if own.found {
-		// #83: a hooks: block this client did not write, already holding this
+		// dropin-miner#83: a hooks: block this client did not write, already holding this
 		// installation's entry. That is not a refusal — the hook is there and
 		// will fire — and it is not something to rewrite into a marked block
 		// either, since the block around it is the participant's.
@@ -184,7 +184,7 @@ func hermesHookInstalledFor(ops agentOps, path string, entry binEntry, windows b
 	m := hermesFindMarkers(lines)
 	if !m.present {
 		// No block of ours: the hook may still be there under a hooks: block
-		// the participant wrote (#83), and then this installation is complete.
+		// the participant wrote (dropin-miner#83), and then this installation is complete.
 		return findHermesOwnEntry(b, refFor(entry)).found
 	}
 	if !m.ok {
@@ -192,8 +192,8 @@ func hermesHookInstalledFor(ops agentOps, path string, entry binEntry, windows b
 	}
 	// The renderer's own bytes, as before — a block that has come to hold
 	// something more beside them still runs our hook, and what that something
-	// is belongs to removal (#106), not to status. Or the same entry in the
-	// bytes Hermes' round-trip writer leaves it in (#105).
+	// is belongs to removal (dropin-miner#106), not to status. Or the same entry in the
+	// bytes Hermes' round-trip writer leaves it in (dropin-miner#105).
 	var block strings.Builder
 	for _, l := range lines[m.begin+1 : m.end] {
 		block.WriteString(l.raw)
@@ -204,7 +204,7 @@ func hermesHookInstalledFor(ops agentOps, path string, entry binEntry, windows b
 
 // ── our own block, after Hermes has been at it ──────────────────────────
 //
-// #105. Hermes has more than one writer for config.yaml, and they do
+// dropin-miner#105. Hermes has more than one writer for config.yaml, and they do
 // different things to us (utils.py at NousResearch/hermes-agent d150fc202463,
 // each caller read there rather than assumed):
 //
@@ -227,7 +227,7 @@ func hermesHookInstalledFor(ops agentOps, path string, entry binEntry, windows b
 // was missing while Hermes ran it on every terminal call, and install wrote
 // the block back on every run until Hermes folded it again.
 //
-// So the block is read, with the reader #83 built for the unmarked form. What
+// So the block is read, with the reader dropin-miner#83 built for the unmarked form. What
 // it is compared with is deliberately NOT H5's rule, which answers whose an
 // entry is and accepts every spelling this client writes anywhere — %q among
 // them, which neither of Hermes' splitters undoes. The block is ours to
@@ -533,15 +533,15 @@ func hermesAppendBlock(existing []byte, body string) []byte {
 
 // ── taking our block out ────────────────────────────────────────────────
 //
-// #106 and #125. This used to be a byte range: everything from our begin
-// marker to our end marker, deleted without a question. It predated #73's
-// rule about whose an integration is and #82's about proving what is about to
+// dropin-miner#106 and dropin-miner#125. This used to be a byte range: everything from our begin
+// marker to our end marker, deleted without a question. It predated dropin-miner#73's
+// rule about whose an integration is and dropin-miner#82's about proving what is about to
 // go, and every other removal in this client had been brought under both.
 // Three things were wrong with it, and the markers vouch for none of them:
 //
 //   - Whose it is. Two installations sharing a binary share this one block in
 //     this one file, so uninstalling a disposable installation removed the
-//     hook the real one relies on: #73, on the one host it was never fixed
+//     hook the real one relies on: dropin-miner#73, on the one host it was never fixed
 //     for. Install's refresh is the same cut followed by an append, so
 //     `agents install` did it too.
 //   - What is in it. Anything a participant typed between the markers went
@@ -720,7 +720,7 @@ func planHermesUnhook(ops agentOps, label, path string, entry binEntry, p *agent
 	own := findHermesOwnEntry(existing, ref)
 	switch {
 	case own.removable():
-		// #83: our entry under a hooks: block this client did not write.
+		// dropin-miner#83: our entry under a hooks: block this client did not write.
 		// Exactly the lines the renderer writes go; every other line of
 		// the file is copied as it was read.
 		planWrite(ops, label, path, removeHermesOwnEntry(existing, own), mode,
@@ -872,7 +872,7 @@ func hermesHookBlock(body string, noEOL bool) []byte {
 
 // ── our entry under a hooks: block this client did not write ────────────
 //
-// #83. hermesConfigRefusal refuses any file with a top-level hooks: key, so
+// dropin-miner#83. hermesConfigRefusal refuses any file with a top-level hooks: key, so
 // a machine whose hooks: block already held our pre_tool_call entry — with
 // no markers around it — got "Some agent could not be set up" on every run.
 // And because setup had not written it, nothing tracked it: uninstall
@@ -955,7 +955,7 @@ func hermesLines(b []byte) []hermesLine {
 //     config.yaml as data and dumps it with PyYAML, so after Hermes' first
 //     save our marker comments are gone and our entry is a plain or
 //     single-quoted scalar folded at 80 columns. Without this tier every
-//     symptom of #83 came straight back after one save: status "not
+//     symptom of dropin-miner#83 came straight back after one save: status "not
 //     installed", install refusing with a second copy to paste, uninstall
 //     leaving the hook without a word.
 //   - mention: the command is named somewhere this scan cannot vouch for.
@@ -1079,7 +1079,7 @@ func hermesFindStructured(b []byte, ref installationRef) hermesOwnEntry {
 	// Ours, and from here on the question is only whether it can be taken
 	// out. An entry that cannot be still runs our binary on every terminal
 	// call, so it is reported and left rather than not seen at all: silence
-	// about a hook that outlives the installation is what #83 was.
+	// about a hook that outlives the installation is what dropin-miner#83 was.
 	entry := hermesOwnEntry{found: true, first: at + 1, last: at + 1}
 	for k := at + 1; k < listEnd; k++ {
 		if lines[k].indent >= 0 && lines[k].indent <= 4 {
@@ -1095,7 +1095,7 @@ func hermesFindStructured(b []byte, ref installationRef) hermesOwnEntry {
 		return leave("appears there more than once")
 	}
 	// Where our entry ends. One line and its matcher when we wrote it; the
-	// command's folded continuation lines in between once Hermes has (#108).
+	// command's folded continuation lines in between once Hermes has (dropin-miner#108).
 	// The matcher must be the next content line either way: a comment or a
 	// blank line between the two is the participant's and stops the run.
 	end, ok := hermesEntrySpan(lines, at, listEnd)
@@ -1346,7 +1346,7 @@ func hermesCommandIsOurHook(cmd string, ref installationRef) bool {
 // If they are not, the scan was wrong about something, and the only safe
 // reading of that is to touch nothing.
 //
-// Two forms qualify, and the difference between them is #108. What this
+// Two forms qualify, and the difference between them is dropin-miner#108. What this
 // client renders is compared byte for byte against the renderer's own output,
 // as it always was. What HERMES leaves when it re-dumps config.yaml cannot be
 // — its emitter decides where an 80-column scalar folds, and reproducing that
@@ -1476,7 +1476,7 @@ func hermesEntryLinesAreOurs(lines []hermesLine, e hermesOwnEntry, at int, ref i
 	if hermesRunIsRenderedExactly(lines, e, at) {
 		return true
 	}
-	// The form Hermes leaves (#108). The span is already exactly the command
+	// The form Hermes leaves (dropin-miner#108). The span is already exactly the command
 	// line, that one scalar's continuations and the matcher; what is left to
 	// establish is that each of those lines is what it is claimed to be.
 	//
@@ -1502,7 +1502,7 @@ func hermesEntryLinesAreOurs(lines []hermesLine, e hermesOwnEntry, at int, ref i
 	// decodes to the same command and is written by neither this renderer nor
 	// that dumper, so removing on its say-so would widen deletion past the
 	// evidence for it — the one thing this file may not do. It is left and
-	// reported, as it was before #108.
+	// reported, as it was before dropin-miner#108.
 	if v := strings.TrimSpace(strings.TrimPrefix(lines[at].text, hermesCommandPrefix)); v == "" || v[0] == '"' {
 		return false
 	}

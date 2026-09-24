@@ -1,6 +1,6 @@
 package main
 
-// #108: uninstall removes our entry in the form Hermes leaves when it
+// dropin-miner#108: uninstall removes our entry in the form Hermes leaves when it
 // re-dumps config.yaml, under the same net and not a weaker one.
 //
 // The four cases the plan names, on the dumper's real output: our entry alone

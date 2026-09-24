@@ -43,7 +43,7 @@ const HOST_SHELL = "{{HOST_SHELL}}"
 // this line. Pi's skill names the installation in the command it teaches, so
 // this extension is attributable through its sibling; it carries the line
 // anyway, because the two halves are removed independently and a machine can
-// have the extension with no skill (#73).
+// have the extension with no skill (dropin-miner#73).
 const INSTALL_CONFIG = "{{INSTALL_CONFIG}}"
 
 // The text parts of one Pi session entry, in the shape the shared

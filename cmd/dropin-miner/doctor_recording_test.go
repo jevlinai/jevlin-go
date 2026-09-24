@@ -1,6 +1,6 @@
 package main
 
-// The two checks added for #21: can this process write where a search
+// The two checks added for dropin-miner#21: can this process write where a search
 // records, and does recent mining-plane activity have anything to show for
 // itself.
 //
@@ -615,7 +615,7 @@ func TestEachConditionAloneChangesTheRecordingVerdict(t *testing.T) {
 	}
 }
 
-// TestRecordingDistinguishesASearchInTheCurrentEpochFromAHookFlush is #63's
+// TestRecordingDistinguishesASearchInTheCurrentEpochFromAHookFlush is dropin-miner#63's
 // literal test list: bounding "recent" by the epoch the AS reports as
 // current, not a fixed span of wall-clock time, and by a search — never a
 // bare hook flush, which updates F's flush stamp identically — having

@@ -380,7 +380,7 @@ func TestNothingOpensAClaimURL(t *testing.T) {
 	}
 }
 
-// The two checks added for #21 render through the existing check shape —
+// The two checks added for dropin-miner#21 render through the existing check shape —
 // no new top-level field, so an SDK that already walks `checks` sees them
 // without changing.
 func TestDoctorJSONCarriesTheIntakeAndRecordingChecks(t *testing.T) {

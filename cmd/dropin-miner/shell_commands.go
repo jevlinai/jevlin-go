@@ -63,7 +63,7 @@ func cmdQuoteArg(s string) (string, bool) {
 // renderShellCommand writes one command for sh: every path quoted its way,
 // and — in PowerShell — the call operator in front, because a command
 // beginning with a quoted string is otherwise an expression that prints the
-// string instead of running it (#69).
+// string instead of running it (dropin-miner#69).
 func renderShellCommand(sh shellKind, tokens []cmdToken) (string, error) {
 	if len(tokens) == 0 {
 		return "", fmt.Errorf("no command to render")
@@ -178,7 +178,7 @@ func searchBlockForShell(sh shellKind, e binEntry, body string) (lang, script st
 //
 // This is what retires %q from the hook files. A hook command built with Go's
 // quoting arrives with doubled backslashes on Windows, which is the fifth
-// symptom in #67's family, and made the config path the hook process received
+// symptom in dropin-miner#67's family, and made the config path the hook process received
 // differ from the one the skill rendered.
 func (e binEntry) hookCommandForShell(sh shellKind, sub ...string) (string, error) {
 	tokens := append([]cmdToken{pathToken(e.command), literalToken("hook")}, e.configTokens()...)

@@ -55,7 +55,7 @@ func extractBridge(t *testing.T, cmd string) string {
 // redact.TraceText.
 //
 // traceReviewBearer is deliberately NOT in the "must be absent" lists
-// below, and is instead asserted present: PR #1 review measured
+// below, and is instead asserted present: PR dropin-miner#1 review measured
 // "bearer tokens expire" (ordinary prose, not a credential) getting
 // redacted, and the fix was to drop bearerPattern from the trace path
 // specifically (redact.TraceText), keeping it only for redact.String's

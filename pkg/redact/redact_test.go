@@ -159,7 +159,7 @@ func TestErrorAttrScrubbed(t *testing.T) {
 	}
 }
 
-// PR #1 review: six false positives measured against realistic assistant
+// PR dropin-miner#1 review: six false positives measured against realistic assistant
 // text. Each of these must now survive String() (and, except the bearer
 // case, TraceText()) byte-for-byte — this is corpus damage, not a secret.
 func TestFalsePositivesMeasuredInReviewSurvive(t *testing.T) {

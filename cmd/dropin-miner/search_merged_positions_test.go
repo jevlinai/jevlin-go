@@ -1,6 +1,6 @@
 package main
 
-// #126: a merged page names the (candidate, citation) positions it was
+// dropin-miner#126: a merged page names the (candidate, citation) positions it was
 // merged from.
 //
 // With "view":"merged" the candidates list is omitted, so found_in is the

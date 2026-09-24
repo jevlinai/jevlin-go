@@ -1,6 +1,6 @@
 package main
 
-// #111's diagnosis: a participant on the fixed binary whose host still
+// dropin-miner#111's diagnosis: a participant on the fixed binary whose host still
 // misbehaves needs `agents status` to say the host is not on it.
 
 import (
@@ -36,7 +36,7 @@ func TestStatusReportsAStaleRenderingUntilAnInstallRefreshesIt(t *testing.T) {
 	}
 
 	// An earlier version's skill, and an earlier version's hook matcher — the
-	// one #111's Windows comment found, `"Bash"` for `"Bash|PowerShell"`.
+	// one dropin-miner#111's Windows comment found, `"Bash"` for `"Bash|PowerShell"`.
 	// Taken from ops.paths, not typed: paths joins with the host separator,
 	// so on Windows the file production names is \home\u\.claude\... and a
 	// typed forward-slash literal is a different string -- which is what was
@@ -58,7 +58,7 @@ func TestStatusReportsAStaleRenderingUntilAnInstallRefreshesIt(t *testing.T) {
 	// literal /home/u while ops.paths joins with the host separator, so on
 	// Windows there is no prefix for tilde to shorten and the line reads
 	// \home\u\.claude\... -- which is what both Windows runners reported
-	// on #123's first CI run. How a path is abbreviated is printPlan's
+	// on dropin-miner#123's first CI run. How a path is abbreviated is printPlan's
 	// subject and is pinned there; what this test guards is WHICH files are
 	// called stale, and how many.
 	want := []string{
@@ -83,7 +83,7 @@ func TestStatusReportsAStaleRenderingUntilAnInstallRefreshesIt(t *testing.T) {
 	}
 }
 
-// #130: a skill naming this installation's config and a binary somewhere else
+// dropin-miner#130: a skill naming this installation's config and a binary somewhere else
 // is this installation's, and out of date. It is the moved-binary case U2 was
 // written for — npm to native, a reinstall elsewhere, or, as the release check
 // produced it, the candidate run from a worktree against files the installed

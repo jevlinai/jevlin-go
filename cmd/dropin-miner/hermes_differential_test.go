@@ -84,7 +84,7 @@ func TestHermesDifferential(t *testing.T) {
 	post := foreignPostTool
 	// Another installation's hook, made by the same renderer from the same
 	// entry with another config: this installation's binary, somebody else's
-	// installation, which is exactly the pair #73 is about.
+	// installation, which is exactly the pair dropin-miner#73 is about.
 	otherEntry, _ := ourHermesEntry(t)
 	otherEntry.cfg = "/tmp/disposable/tokendrop.toml"
 	otherInstallCmd, ok := hermesHookCommand(otherEntry, runtime.GOOS == "windows")
@@ -95,7 +95,7 @@ func TestHermesDifferential(t *testing.T) {
 	head := "hooks:\n  pre_tool_call:\n"
 	plain := hermesCommandPrefix + hermesWrittenScalar(cmd) + "\n      matcher: terminal\n"
 
-	// #106 and #125: the same generator, with our own markers around the body.
+	// dropin-miner#106 and dropin-miner#125: the same generator, with our own markers around the body.
 	// A marked block is removed only when it is provably ours and provably
 	// only ours, and only when nothing after the end marker continues the
 	// mapping it opened — so for every shape here the config must come back
@@ -173,7 +173,7 @@ func TestHermesDifferential(t *testing.T) {
 
 		// L3d: the plain form Hermes writes, and shapes whose command is ours
 		// but whose place is not one the structured find reads.
-		// #108: the form Hermes leaves, now removed like any other.
+		// dropin-miner#108: the form Hermes leaves, now removed like any other.
 		"plain-only":             {head + plain, edited},
 		"literal-plain":          {head + "    |\n" + plain, left},
 		"folded-plain":           {head + "    >-\n" + plain, left},
@@ -206,8 +206,8 @@ func TestHermesDifferential(t *testing.T) {
 		// A marked block is ours to rewrite, so install has one job here and
 		// it is to leave the file alone: the block either holds today's entry
 		// (nothing to do) or cannot be vouched for (nothing that may be cut).
-		// Before #106 install cut every one of these out and wrote its own
-		// block in its place, which is #73's defect at install time.
+		// Before dropin-miner#106 install cut every one of these out and wrote its own
+		// block in its place, which is dropin-miner#73's defect at install time.
 		if isMarked && installChanged {
 			t.Errorf("%s: install rewrote a marked block:\n%s", name, installOut)
 		}
@@ -226,7 +226,7 @@ func TestHermesDifferential(t *testing.T) {
 			}
 		}
 		// The same rule for the unmarked form, where install's way of saying
-		// it is the #83 note. Our OWN block does not get that note: install's
+		// it is the dropin-miner#83 note. Our OWN block does not get that note: install's
 		// answer to a block of ours it will not rewrite is either silence —
 		// there is nothing to do, and the plan's "already installed" says so —
 		// or the one sentence naming what it left, which is asserted above by
@@ -256,7 +256,7 @@ func TestHermesDifferential(t *testing.T) {
 			}
 		}
 	}
-	// #108: every shape above, again with our entry in the form Hermes leaves
+	// dropin-miner#108: every shape above, again with our entry in the form Hermes leaves
 	// when it re-dumps config.yaml — a plain scalar folded at 80 columns and an
 	// unquoted matcher. The structural rules do not care which form the entry
 	// is in, so each shape keeps its outcome; what changes is which of the two

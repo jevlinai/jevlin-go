@@ -16,7 +16,7 @@ package main
 // the platform are loopback stubs, a closed loopback proxy catches anything
 // that would dial out, and the platform stub fails the test if it is called.
 //
-// A case named for a defect names the issue it guards (#66, #67, #68, #69).
+// A case named for a defect names the issue it guards (dropin-miner#66, dropin-miner#67, dropin-miner#68, dropin-miner#69).
 
 import (
 	"bytes"
@@ -834,7 +834,7 @@ func requireOneRequest(t *testing.T, in *execInstallation, out execOutcome, quer
 // every host's skill renders — the search, the preference command and the
 // human form — in the shell each was rendered for, on this runner.
 //
-// This is #67's guard. v0.2.9 rendered one Bash form for every host and OS,
+// This is dropin-miner#67's guard. v0.2.9 rendered one Bash form for every host and OS,
 // so on Windows two of the three main hosts could not search at all; each of
 // these rows was a failure then and runs now. A host whose shell is not
 // established keeps the Bash form, and its row is
@@ -926,7 +926,7 @@ func TestUnknownToolCellKeepsTheBashForm(t *testing.T) {
 // TestRulesLineCommandRunsInOpencodesShell runs the command opencode's
 // AGENTS.md line renders, with the JSON request on stdin, in the shell
 // opencode runs its bash tool in on this OS. v0.2.9 rendered a POSIX string
-// for every OS, which PowerShell could not parse (#67).
+// for every OS, which PowerShell could not parse (dropin-miner#67).
 func TestRulesLineCommandRunsInOpencodesShell(t *testing.T) {
 	for _, sh := range renderedShellsOnThisOS(t, "opencode") {
 		t.Run(sh.name, func(t *testing.T) {
@@ -963,7 +963,7 @@ func lineageFileExists(in *execInstallation) bool {
 }
 
 // cursorLineageFileExists: Cursor keys its file by conversation as well
-// (#109), and every Cursor case here speaks for "exec-conversation".
+// (dropin-miner#109), and every Cursor case here speaks for "exec-conversation".
 func cursorLineageFileExists(in *execInstallation) bool {
 	_, err := os.Stat(conversationLineagePath(in.sessions, in.root, "exec-conversation"))
 	return err == nil
@@ -1057,7 +1057,7 @@ var hookCases = map[string][]hookCase{
 // the file the install writes and runs it, with a real payload, through the
 // runner that host's hook cell names on this OS.
 //
-// This is #69's guard. v0.2.9 wrote every hook command with a %q-quoted path,
+// This is dropin-miner#69's guard. v0.2.9 wrote every hook command with a %q-quoted path,
 // which cmd and a POSIX shell accept and PowerShell reads as an expression
 // whose next word is a parse error — so on Windows no Cursor hook ever ran,
 // nothing recorded the failure, and the binary never started.
@@ -1105,13 +1105,13 @@ func TestInstalledHookCommandsRunInTheirRunner(t *testing.T) {
 // through Cursor's hook runner on this OS, and requires the answer Cursor
 // waits for: allow, with the turn and call stamped into the lineage file.
 //
-// This is #66's guard, end to end through the real binary: v0.2.9 answered
+// This is dropin-miner#66's guard, end to end through the real binary: v0.2.9 answered
 // nothing here, so every Cursor search waited for a human and none carried
 // per-call lineage.
 //
 // EVERY declared tool shell is fed through, not the first: Cursor on Windows
 // now teaches a form for each terminal the participant may have configured
-// (#96), and a form we teach and the hook then refuses is #66 again for that
+// (dropin-miner#96), and a form we teach and the hook then refuses is dropin-miner#66 again for that
 // terminal. Taking shells[0] alone would have left the Git Bash form
 // unexercised on the one runner that could catch it.
 func TestCursorShellHookRecognizesTheSkillsOwnSearch(t *testing.T) {
@@ -1188,7 +1188,7 @@ var harnessFor = map[string]string{"claude": "claude-code", "hermes": "hermes", 
 // runs it in the shell that host runs tool calls in, and reads the trace the
 // router received.
 //
-// This is #68's guard. v0.2.9 wrote one POSIX assignment for every host, so
+// This is dropin-miner#68's guard. v0.2.9 wrote one POSIX assignment for every host, so
 // on Windows opencode's prefix was looked up as a program name: the first
 // searches failed outright, and the one that ran reached the router with the
 // binary's own `cli` fallback harness — a search with no lineage at all. The

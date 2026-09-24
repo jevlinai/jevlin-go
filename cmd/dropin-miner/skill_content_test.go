@@ -70,7 +70,7 @@ func TestSkillTeachesTiersOptionsAndMergedList(t *testing.T) {
 					}
 				}
 
-				// Options: what the router actually promises (#131). An
+				// Options: what the router actually promises (dropin-miner#131). An
 				// agent that reads domain_filter as a restriction presents
 				// off-host results as the named site's, or reports a
 				// failure that is not one — which is what the 0.2.12
@@ -126,7 +126,7 @@ func TestSkillTeachesTiersOptionsAndMergedList(t *testing.T) {
 	}
 }
 
-// TestSkillSaysASearchThatDidNotRunIsReported: #135. Cursor 3.21 sandboxed
+// TestSkillSaysASearchThatDidNotRunIsReported: dropin-miner#135. Cursor 3.21 sandboxed
 // the first search and refused the second, and the agent then answered the
 // user's question with no search having reached the router. The skill's error
 // discipline said to decide from ok, retryable and action; it did not say

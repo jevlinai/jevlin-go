@@ -1,6 +1,6 @@
 package main
 
-// Ruling D-R1 (issue #58): the config a command reads is resolved
+// Ruling D-R1 (issue dropin-miner#58): the config a command reads is resolved
 // -config, then TOKENDROP_CONFIG, then ./tokendrop.toml, then the
 // installation's own config ($TOKENDROP_HOME/tokendrop.toml, else
 // ~/.tokendrop/tokendrop.toml, when that file exists), then built-in
@@ -8,7 +8,7 @@ package main
 // loadConfig, configGatePath and every command naming its source all call,
 // so the gate always keys on exactly the file that gets loaded.
 //
-// The soak that found #58 read a stale, unclaimed installation under the
+// The soak that found dropin-miner#58 read a stale, unclaimed installation under the
 // compiled-in default state directory while a claimed, mining installation
 // sat at ~/.tokendrop, because no step of the old order ever looked there.
 // The tests below drive that exact shape, not just the function in
@@ -156,7 +156,7 @@ func TestStatusReadsTheInstallationConfigWhenNothingElseResolves(t *testing.T) {
 
 	var out, errOut bytes.Buffer
 	// No -config flag and an env with no TOKENDROP_CONFIG/TOKENDROP_HOME:
-	// exactly the "shell opened before the profile block loads" case #58
+	// exactly the "shell opened before the profile block loads" case dropin-miner#58
 	// named. Resolution falls all the way to step 4.
 	if code := statusMain(nil, &out, &errOut, noEnv); code != exitOK {
 		t.Fatalf("status exited %d: %s", code, errOut.String())

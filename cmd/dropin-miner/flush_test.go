@@ -280,7 +280,7 @@ func TestSuccessfulCurrentTargetClearsOnlyTargetResolutionHealth(t *testing.T) {
 	}
 }
 
-// TestSuccessfulJoinClearsAStaleAuthUnavailableHealthRecord is #62: a
+// TestSuccessfulJoinClearsAStaleAuthUnavailableHealthRecord is dropin-miner#62: a
 // flush run before enrollment finished recorded auth_state_unavailable;
 // a later flush obtains authorization and joins, with nothing queued to
 // deliver, and the stale record must not survive it.
@@ -312,7 +312,7 @@ func TestSuccessfulJoinClearsAStaleAuthUnavailableHealthRecord(t *testing.T) {
 }
 
 // TestAFlushThatFindsItselfAlreadyJoinedAlsoClearsStaleAuthHealth covers
-// the "or finds itself joined" half of #62: the epoch is already held
+// the "or finds itself joined" half of dropin-miner#62: the epoch is already held
 // (join_status ALREADY_ACCEPTED, joinable false), so this flush never
 // calls JoinEpoch, only confirms it and takes a capability.
 func TestAFlushThatFindsItselfAlreadyJoinedAlsoClearsStaleAuthHealth(t *testing.T) {

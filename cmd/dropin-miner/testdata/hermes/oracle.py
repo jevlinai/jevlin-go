@@ -17,7 +17,7 @@ before/after pair TestHermesDifferential writes:
               warning that the file already names the command; and nothing is
               ever written beside a live hook
 
-  marked      a file carrying our own marked block (#106, #125): install never
+  marked      a file carrying our own marked block (dropin-miner#106, dropin-miner#125): install never
               rewrites one, and a removal never leaves a file that no longer
               parses. Our end marker is a comment, so Hermes' round-trip writer
               keeps it attached to our matcher line and adds to the mapping our
@@ -93,13 +93,13 @@ for p in pairs:
     if MARKER in b:
         tally["marked: our own block"] += 1
         # Ours to rewrite, and two installations share one: a rewrite is
-        # either pointless or another installation's hook replaced (#73).
+        # either pointless or another installation's hook replaced (dropin-miner#73).
         if p.get("install_changed"):
             findings.append(("install rewrote our marked block", p["name"]))
     if a != b:
         oka_early, da_early = load(a)
         if okb and not oka_early:
-            # The #125 shape, and the reason this check is not left to the
+            # The dropin-miner#125 shape, and the reason this check is not left to the
             # chain below: it is the outcome, not a symptom of one.
             findings.append(("a removal left a file PyYAML cannot parse: " + str(da_early), p["name"]))
     if "already set up \u2014 the pre_tool_call hook is in" in io:

@@ -53,7 +53,7 @@ type skillShells struct {
 // Cursor runs one shell that the participant configured once, so a condition
 // about "the tool you are calling" would be unanswerable — there is only one
 // tool — and the participant has to be asked about their terminal instead
-// (#96).
+// (dropin-miner#96).
 func (s skillShells) condition(sh shellKind) string {
 	if s.choice == chosenByParticipant {
 		return "If your terminal is " + s.terminalLabel(sh)

@@ -170,7 +170,7 @@ func TestAgentsInstallWritesClaudeSkillAndMergesHooksIntoSettings(t *testing.T) 
 		t.Fatalf("existing PreToolUse group not preserved first: %v", pre)
 	}
 	ours := pre[1].(map[string]any)
-	// The matcher covers both shell tools from H3 on (#77): a search the model
+	// The matcher covers both shell tools from H3 on (dropin-miner#77): a search the model
 	// sends through Claude Code's PowerShell tool reaches this hook too. The
 	// value is written out rather than compared with the constant — a test
 	// that reads the constant agrees with whatever the constant becomes.
@@ -480,7 +480,7 @@ func TestAgentsUninstallSparesAHookEntryForADifferentInstallationOfTheSameName(t
 }
 
 // TestAgentsHookAndAllowRuleMatchingSurvivesAWindowsStyleBinaryPath guards
-// entryIsOurs and ruleIsOurs against the defect found on PR #51's Windows
+// entryIsOurs and ruleIsOurs against the defect found on PR dropin-miner#51's Windows
 // run: both used strings.Contains(command, bin), but binEntry's commands
 // and claudeAllowRules' quoted rule are written with %q, which doubles
 // every backslash. On a Windows path like the one used here, bin's own
@@ -570,7 +570,7 @@ func wantHookCommand(t *testing.T, tg installTarget, e binEntry, sub ...string) 
 // Every other test installs into a file this client wrote itself, so the
 // recognizer is only ever fed the current spelling. A %q entry is the one
 // that matters: it is ours by the recognizer, and it does not parse in
-// PowerShell (#69), so an install that saw its own binary in it and decided
+// PowerShell (dropin-miner#69), so an install that saw its own binary in it and decided
 // there was nothing to do would leave a hook that never runs.
 //
 // The Windows-style path is deliberate: with a POSIX path, %q and the cmd
@@ -705,7 +705,7 @@ func cursorEntryCommand(e any) string {
 // because it counted more than one entry of ours — never because it compared
 // the one it found against what it would write now. A sameJSONValue that
 // answered "the same" for any two entries leaves that test green and leaves
-// a stale entry that does not parse in PowerShell (#69). Here there is exactly one entry and it is stale, so the
+// a stale entry that does not parse in PowerShell (dropin-miner#69). Here there is exactly one entry and it is stale, so the
 // replacement happens only if the comparison is real.
 //
 // The Windows-style binary path makes the stale spelling differ from the
@@ -811,7 +811,7 @@ func TestInstallReplacesOneStaleEntryPerEventInPlace(t *testing.T) {
 		}
 	}
 	// The replaced PreToolUse group carries the matcher this version writes,
-	// not the stale Bash-only one (#77).
+	// not the stale Bash-only one (dropin-miner#77).
 	for _, e := range claudeAfter["PreToolUse"].([]any) {
 		g, _ := e.(map[string]any)
 		if claudeGroupCommand(e) == wantHookCommand(t, claude, entry, "lineage") && g["matcher"] != claudeToolMatcher {

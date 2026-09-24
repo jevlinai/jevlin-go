@@ -382,7 +382,7 @@ func askMiningQuestion(stdin io.Reader, br *bufio.Reader, stdout, stderr io.Writ
 				"participant draw one share, so enabling it here earns nothing extra and mostly adds conflict noise "+
 				"during epochs where both are live.")
 		}
-		// #81: this is the prompt prompt.go's rule was written for. An
+		// dropin-miner#81: this is the prompt prompt.go's rule was written for. An
 		// interrupt here used to be an empty line, an empty line is not
 		// "y", and SaveMiningEnabled(false) below then wrote a decision
 		// nobody made onto invariant 10's runtime authority — with

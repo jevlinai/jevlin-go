@@ -321,7 +321,7 @@ func TestSetupSecuresAnExistingWalletBeforeConnect(t *testing.T) {
 		}
 	}
 	// Every run here passes -no-profile -no-agents, so the closing line
-	// reports them as skipped (#75) rather than "already in place" — that
+	// reports them as skipped (dropin-miner#75) rather than "already in place" — that
 	// wording is reserved for a run where every step was actually
 	// attempted and found nothing to do.
 	if strings.Contains(out, "already in place") {

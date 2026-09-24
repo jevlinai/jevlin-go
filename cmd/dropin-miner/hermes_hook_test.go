@@ -175,7 +175,7 @@ func TestHermesHookFailsOpenWithoutASession(t *testing.T) {
 
 // H-R4: a bridge already on the command is not a reason to stand down. One a
 // model wrote itself would otherwise reach the router carrying our harness —
-// a trace attributed to this client that this client did not build (#68).
+// a trace attributed to this client that this client did not build (dropin-miner#68).
 func TestHermesHookReplacesABridgeItDidNotWrite(t *testing.T) {
 	out, d := hermesRun(t, hermesPayload("s", "TOKENDROP_TRACE_BRIDGE=notours "+hermesSearch, map[string]any{"tool_call_id": "c"}))
 	if d == nil {

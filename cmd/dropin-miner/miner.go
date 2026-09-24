@@ -214,11 +214,11 @@ func lineagePath(dir, workspace string) string {
 }
 
 // conversationLineagePath keys a Cursor conversation's sidecar on its
-// workspace AND its conversation (#109). Keyed by workspace alone, two
+// workspace AND its conversation (dropin-miner#109). Keyed by workspace alone, two
 // conversations open on one project — two chat tabs, a chat beside a
 // background agent — shared one file, took turns overwriting its session and
 // advanced one counter between them. Cursor's sessionStart exports this path
-// as the session's TOKENDROP_LINEAGE, and since #118 a Cursor search carries
+// as the session's TOKENDROP_LINEAGE, and since dropin-miner#118 a Cursor search carries
 // that variable on its own command, so the file is always found by its path
 // and never by the walk: lineageForCwd keys by directory alone and is left as
 // it is for the hosts that need it. The name has lineagePath's shape, so the
@@ -295,7 +295,7 @@ var (
 // so a reader never sees a half-written file. It is the one writer behind the
 // lineage files, the window state and the flush stamp.
 //
-// A failed write or rename removes the temporary file before returning (#100).
+// A failed write or rename removes the temporary file before returning (dropin-miner#100).
 // On Windows a rename fails while the target is momentarily held — seen on
 // the 0.2.10 release check — and each failure used to leave one
 // "<hash>.json.<pid>.tmp" in the sessions directory for good. What was at
@@ -392,7 +392,7 @@ func updateLineage(ops hookOps, path string, now time.Time, apply func(*lineageF
 // that same value is what the search then sends to the router as its label:
 // treating "Cursor" as "cursor" here would adopt the session and relabel it,
 // putting one session under two harness spellings downstream. That is the
-// hazard #91 describes, not a tolerance worth having.
+// hazard dropin-miner#91 describes, not a tolerance worth having.
 //
 // samePath's case-insensitive branch is not a precedent for this one. It has
 // an authority behind it — on Windows the filesystem itself says two
@@ -410,7 +410,7 @@ func sameHarness(a, b string) bool {
 // treated as absent.
 //
 // It answers nothing unless the search can say WHOSE session it is making
-// and the sidecar agrees (#97). harness is the searching host's own name, as
+// and the sidecar agrees (dropin-miner#97). harness is the searching host's own name, as
 // TOKENDROP_HARNESS gives it.
 //
 // Both halves of that follow from what this walk is for. Every host that
@@ -434,7 +434,7 @@ func sameHarness(a, b string) bool {
 // one. Stopping is also what a stale sidecar already does.
 //
 // session is the hashed id of the session the shell was started in, as
-// TOKENDROP_SESSION gives it, and it may be empty (#104). The harness tells
+// TOKENDROP_SESSION gives it, and it may be empty (dropin-miner#104). The harness tells
 // hosts apart and nothing more: two sessions of ONE host in nested
 // workspaces — a monorepo open at its root and again at a package — are the
 // same name, and the nearest file won whichever of them was searching.

@@ -16,7 +16,7 @@ package main
 //
 // Only then, and never as a condition of success, are the host integrations
 // this installation owns rendered again by the binary now installed
-// (upgrade_rerender.go, #111).
+// (upgrade_rerender.go, dropin-miner#111).
 //
 // Failures print one class token — retry, release_invalid, ownership,
 // filesystem, lifecycle_busy, refused or manual_intervention — chosen from

@@ -100,7 +100,7 @@ func TestCapTraceRedactsHistoryText(t *testing.T) {
 }
 
 // TestCapTraceRedactsBeforeTruncatingSoABoundaryStraddleDoesNotSurvive is
-// PR #1 review: a secret positioned so a truncate-THEN-redact order would
+// PR dropin-miner#1 review: a secret positioned so a truncate-THEN-redact order would
 // cut off its identifying prefix (sk-/sr-) at the traceHistoryCap
 // boundary, leaving an unmatchable, unredacted bare tail. Constructed so
 // the cut point (the number of leading bytes truncation removes) falls

@@ -114,7 +114,7 @@ const traceShellMarker = "{{HOST_SHELL}}"
 // An adapter runs no command of ours, so it names no binary and no config of
 // its own accord — and an artifact that names no installation is one uninstall
 // cannot attribute, which is how a disposable installation's purge removed the
-// main installation's opencode plugin (#73).
+// main installation's opencode plugin (dropin-miner#73).
 const traceConfigMarker = "{{INSTALL_CONFIG}}"
 
 func renderAgentScript(template string, sh shellKind, cfg string) string {
@@ -333,7 +333,7 @@ const (
 
 // The %q-quoted hook command is gone: a hook command comes from
 // hookCommandForShell, rendered for the runner the host's declaration names.
-// %q is Go's quoting, and every #69 symptom had it in common — doubled
+// %q is Go's quoting, and every dropin-miner#69 symptom had it in common — doubled
 // backslashes on Windows, a quoted first token PowerShell reads as an
 // expression, and a config path the hook process received in bytes the skill
 // never wrote.
@@ -357,7 +357,7 @@ type agentWrite struct {
 // paths they printed under whichever host wrote last — in the Windows soak,
 // opencode's, Pi's and Hermes' removals all appeared under "Cursor", the last
 // host in the registry with a file to rewrite rather than only files to
-// delete (#88, item 1).
+// delete (dropin-miner#88, item 1).
 type agentRemove struct {
 	surface string
 	path    string
@@ -491,7 +491,7 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 			return exitUsage
 		}
 		// The opposite default to the mining question, and so the worse
-		// half of #81's shape: an empty line here means yes, which made
+		// half of dropin-miner#81's shape: an empty line here means yes, which made
 		// an interrupt at this prompt write every agent file. Only a
 		// typed line decides now.
 		line, err := promptBufio(stdout, "\nProceed? [Y/n]: ", bufio.NewReader(stdin))
@@ -644,7 +644,7 @@ func selectSurfaces(ops agentOps, paths agentPaths, getenv func(string) string, 
 
 // labelsWithSignals is how a detected host is named to the participant: its
 // label and what made it count. "Found on this machine: Cursor" was the line
-// #61 argued with; "Cursor (~/.cursor)" can be argued with precisely.
+// dropin-miner#61 argued with; "Cursor (~/.cursor)" can be argued with precisely.
 func labelsWithSignals(ts []installTarget, signals map[string]string) []string {
 	out := make([]string, 0, len(ts))
 	for _, t := range ts {
@@ -697,7 +697,7 @@ const hintIndent = "  "
 // its delimiter, and a PowerShell here-string only at a line beginning with
 // '@ — the skill's own quoting note says so. Two spaces in front of either
 // turns the block this hint exists to supply back into something that does
-// not run, which is the half of #122 that would be easiest to reintroduce.
+// not run, which is the half of dropin-miner#122 that would be easiest to reintroduce.
 func indentHintProse(s string) string {
 	lines := strings.Split(s, "\n")
 	inBlock := false
@@ -722,12 +722,12 @@ func indentHintProse(s string) string {
 // The command block is the skill's own — callSection, the same function
 // renderSkill calls, with the same body — so the hint has no command text of
 // its own and cannot drift from what a host WITH a skill directory is handed
-// (#122). What it printed before was a bare command with the request on the
+// (dropin-miner#122). What it printed before was a bare command with the request on the
 // line below it: no heredoc, no here-string, no pipe, so nothing carried that
 // line to stdin and a participant pasting the two lines got no search at all.
 // On Windows it also lacked the $OutputEncoding line the rendered skills have
 // carried since 0.2.11, so a model composing the wrapper itself mangles a
-// non-ASCII query — #96's mechanism, reaching the one host whose instructions
+// non-ASCII query — dropin-miner#96's mechanism, reaching the one host whose instructions
 // a participant copies by hand rather than receiving as a file.
 func rulesSnippetFor(entry binEntry, shells skillShells) string {
 	call, err := callSection(entry, shells)
@@ -864,7 +864,7 @@ func planSkill(ops agentOps, t installTarget, path string, entry binEntry, prefe
 // -home` names in its own closing line — used to overwrite the machine
 // installation's skill with its own, silently; the later `agents uninstall`
 // then removed a skill that did by then name its config, so the removal was
-// correct and the damage had been done here, at install time (#112). Hook
+// correct and the damage had been done here, at install time (dropin-miner#112). Hook
 // entries never had the problem, because a hook file holds a list and each
 // installation's entries sit beside the other's. This is the same ownership
 // rule applied to the files that cannot sit beside each other: the skill, and
@@ -872,7 +872,7 @@ func planSkill(ops agentOps, t installTarget, path string, entry binEntry, prefe
 // attribution and were clobbered the same way.
 //
 // The CONFIG decides, not the binary, and deliberately. Two installations are
-// told apart by the config each names (#73); one installation whose binary
+// told apart by the config each names (dropin-miner#73); one installation whose binary
 // moved — npm to native, a reinstall somewhere else — still names the same
 // config, and its reinstall must be able to refresh its own skill. A file that
 // names no config at all is not refused either: it is a discovery
@@ -955,7 +955,7 @@ type hooksSpec struct {
 // Console accounts, and the only one where Git for Windows is absent. The
 // matcher is a regular expression over the tool name, and ours named `Bash`
 // alone, so a search the model sent through the PowerShell tool was never
-// offered to this hook and carried no lineage at all (#77). Claude Code's own
+// offered to this hook and carried no lineage at all (dropin-miner#77). Claude Code's own
 // documentation says to "Match `Bash|PowerShell` in hooks that inspect shell
 // commands"; this is that.
 const claudeToolMatcher = "Bash|PowerShell"
@@ -1053,7 +1053,7 @@ func cursorHooks(entry binEntry, shells []shellKind) (hooksSpec, string, error) 
 		entries[ev] = map[string]any{"command": cmd}
 	}
 	// preToolUse fires before every tool — Read, Grep, Write — and only a
-	// Shell call can be our search (#118), so the matcher keeps it from
+	// Shell call can be our search (dropin-miner#118), so the matcher keeps it from
 	// starting a process in front of every other one.
 	entries["preToolUse"]["matcher"] = "Shell"
 	return hooksSpec{root: "hooks", version: 1, entries: entries, order: events}, note, nil
@@ -1062,7 +1062,7 @@ func cursorHooks(entry binEntry, shells []shellKind) (hooksSpec, string, error) 
 // claudeHooksFor and cursorHooksFor render a host's hook entries for the
 // runner its declaration names on this OS. An unknown cell has no fallback
 // here: a hook command is not a skill, and one written for a shell nobody
-// has shown runs it installs a hook that fails silently — which is #69.
+// has shown runs it installs a hook that fails silently — which is dropin-miner#69.
 func claudeHooksFor(t installTarget, entry binEntry, goos string) (hooksSpec, error) {
 	shells, err := declaredShells(t, goos, channelHook)
 	if err != nil {
@@ -1121,7 +1121,7 @@ func entryIsOurs(e any, ref installationRef) bool {
 // question that decides ownership: does it name THIS installation's config?
 // An uninstall that did not recognize an entry of ours would leave a hook
 // running a binary that is gone; an entry that names another installation's
-// config runs a binary we share and is not ours to touch (#73).
+// config runs a binary we share and is not ours to touch (dropin-miner#73).
 func hookCommandIsOurs(command string, ref installationRef) bool {
 	return ref.commandIsOurs(command)
 }
@@ -1167,7 +1167,7 @@ func planHooksMerge(ops agentOps, label, path string, p *agentPlan, entry binEnt
 		// not left alone. Asking only whether one is present would keep a
 		// stale entry for good: `agents install` would see its own binary,
 		// decide there was nothing to do, and leave a hook that does not
-		// parse where it runs (#69) exactly as it was. Recognizing every
+		// parse where it runs (dropin-miner#69) exactly as it was. Recognizing every
 		// spelling (hookCommandIsOurs) is what makes the replacement
 		// possible.
 		kept := make([]any, 0, len(list))
@@ -1209,9 +1209,9 @@ func planHooksMerge(ops agentOps, label, path string, p *agentPlan, entry binEnt
 // its replacement, for good. On the Windows machine of the 0.2.11 release
 // check that file held two rules for this binary and this config before the
 // check and three after one uninstall-and-install cycle, differing only in
-// quoting (#114). The defect is that nothing MAKES the count settle, and the next
+// quoting (dropin-miner#114). The defect is that nothing MAKES the count settle, and the next
 // renderer change -- a spelling dropped, a quote changed, the PowerShell rule
-// #77 is waiting on -- adds one per host for ever, with nothing in the file
+// dropin-miner#77 is waiting on -- adds one per host for ever, with nothing in the file
 // to say which is current.
 //
 // So a rule for this installation's binary and config, in any spelling this
@@ -1257,7 +1257,7 @@ func mergeAllowRules(m map[string]any, entry binEntry, want []string) bool {
 // sameRuleSet: do these name the same rules, whatever their order? A rule
 // appearing twice is not the same set as one appearing once, so this counts
 // rather than just testing membership -- a duplicate is one of the states
-// #114 leaves behind, and it has to be collapsed like any other.
+// dropin-miner#114 leaves behind, and it has to be collapsed like any other.
 func sameRuleSet(got []string, want []string) bool {
 	if len(got) != len(want) {
 		return false
@@ -1381,7 +1381,7 @@ func hooksFileIsNowOnlyOurs(m map[string]any, root string) bool {
 
 // buildUninstallPlan plans each host's removal and then takes out of it any
 // file that is another installation's, saying whose it is in the words
-// `uninstall` already uses for the same situation (#112). A host's
+// `uninstall` already uses for the same situation (dropin-miner#112). A host's
 // PlanUninstall removes its skill directory because it is there; whether it is
 // THIS installation's is decided here, once, for every host, by the reading
 // install's refusal uses (foreignOwner). Hook entries need none of this: they
@@ -1418,7 +1418,7 @@ func buildUninstallPlan(ops agentOps, paths agentPaths, selected []installTarget
 // only renders what it returns.
 // printAgentStatus names the detection signal per host rather than the old
 // "on PATH" / "not on PATH", which was a lie for any host detected by its
-// config directory and was the line #61 was filed against.
+// config directory and was the line dropin-miner#61 was filed against.
 func printAgentStatus(ops agentOps, paths agentPaths, entry binEntry, signals map[string]string, getenv func(string) string, stdout io.Writer) {
 	fmt.Fprintln(stdout, "dropin-miner agents status")
 	fmt.Fprintf(stdout, "  search default: %s\n", preferLabel(readPrefer(ops, entry)))
@@ -1430,7 +1430,7 @@ func printAgentStatus(ops agentOps, paths agentPaths, entry binEntry, signals ma
 			// A host has one skill directory whoever wrote into it, and
 			// Status answers from the file existing. So a host set up by
 			// another installation read as this one's "installed (skill)",
-			// which is the reading #112 fixed at the writing end and left
+			// which is the reading dropin-miner#112 fixed at the writing end and left
 			// standing here: the participant whose searches all go through
 			// the other installation was told this one was installed.
 			if other := foreignHost(ops, paths, t, entry, getenv); other != "" {
@@ -1453,7 +1453,7 @@ func printAgentStatus(ops agentOps, paths agentPaths, entry binEntry, signals ma
 
 // staleSentence is what status says about a file of ours that is not what
 // this binary would write now. It names both reasons it can be that, because
-// after #130 both reach it: an earlier version rendered it, or a binary at
+// after dropin-miner#130 both reach it: an earlier version rendered it, or a binary at
 // another path did — the moved-binary case, where the file is still this
 // installation's because its config says so.
 const staleSentence = "rendered by an earlier version or by a binary at another path; `agents install` refreshes it"
@@ -1478,7 +1478,7 @@ func foreignHost(ops agentOps, paths agentPaths, t installTarget, entry binEntry
 // staleRenderings is the files of an installed host that are this
 // installation's and are not what this binary would write now.
 //
-// It is the diagnosis #111 had no command for. A skill and a hook entry are
+// It is the diagnosis dropin-miner#111 had no command for. A skill and a hook entry are
 // rendered from the binary's own tables when `agents install` runs, so a fix
 // that lives in a rendered file ships in a release and reaches a host only
 // when something renders it again. A participant on the fixed binary whose
@@ -1493,7 +1493,7 @@ func foreignHost(ops agentOps, paths agentPaths, t installTarget, entry binEntry
 // own — a settings.json our hooks were never merged into — or an artifact
 // from before this version, which is not this one's to call out of date.
 //
-// Whose a file is, is asked at the grain the file has (#130). For a file the
+// Whose a file is, is asked at the grain the file has (dropin-miner#130). For a file the
 // host has exactly one of, U2's reading decides, as it does at install: the
 // CONFIG says whose it is, and the binary does not, so a skill this
 // installation's config names is this installation's even when it names a
@@ -1543,11 +1543,11 @@ func staleRenderings(ops agentOps, paths agentPaths, t installTarget, entry binE
 // and a sentence for each host found installed and left because it is not.
 //
 // It exists for the one caller that writes into host files nobody asked it to
-// by name: an upgrade re-rendering what it finds (#111). "Installed" alone is
+// by name: an upgrade re-rendering what it finds (dropin-miner#111). "Installed" alone is
 // not enough of an answer there. Status says a skill is installed when the
 // file exists, and a host has one skill directory whichever installation
 // wrote into it, so a second installation upgrading would re-render the
-// machine installation's skill as its own — #112's clobber, arrived at by a
+// machine installation's skill as its own — dropin-miner#112's clobber, arrived at by a
 // command the participant did not even run against that host. So what is
 // there is read and H5's rule applied to it, through the same attribution
 // uninstall uses: this installation's binary AND this installation's config.
@@ -1748,7 +1748,7 @@ func cleanDirs(dirs []string) []string {
 // untouched and reported with a snippet, mirroring the refuse-rather-than-
 // guess rule the installer uses everywhere else.
 //
-// Two things here are #82 and #88 item 4, and they are the same answer:
+// Two things here are dropin-miner#82 and dropin-miner#88 item 4, and they are the same answer:
 //
 //   - The refresh used to strip the marker-to-marker byte range and append a
 //     fresh block, so a table Codex had appended INTO our block was deleted
@@ -1764,7 +1764,7 @@ func cleanDirs(dirs []string) []string {
 //     says — our own table already reads as the renderer would write it —
 //     and the rest of the file is none of its business.
 //
-// And #128 is leaveToItsOwner's rule reaching the one single-slot file it had
+// And dropin-miner#128 is leaveToItsOwner's rule reaching the one single-slot file it had
 // not reached. Codex has one config.toml and our block in it is one slot, so
 // a second installation's `agents install` rewrote the machine installation's
 // writable_roots with its own and the machine's Codex searches then wrote
@@ -1860,7 +1860,7 @@ func tables(n int) string {
 // codexSandboxTable is the one table this client writes into Codex's
 // config.toml. Named once and used by the renderer, by install's
 // refuse-a-foreign-one check and by the ownership split on the way out, so
-// no two of them can come to disagree about which table is ours (#82).
+// no two of them can come to disagree about which table is ours (dropin-miner#82).
 const codexSandboxTable = "sandbox_workspace_write"
 
 func sandboxSettings(roots []string) string {
@@ -1884,10 +1884,10 @@ func codexSandboxBlock(roots []string) []byte {
 // reports whether it removed anything, leaving surrounding content intact.
 // A caller that has to read what the block says before taking it out uses
 // markedRegion, which hands back the surrounding text as well — markedBlock,
-// which returned only the middle, had no callers left once #82 made every
+// which returned only the middle, had no callers left once dropin-miner#82 made every
 // one of them need the other two pieces too.
 // replaceBlockInPlace writes want where the block already is, keeping every
-// byte around it exactly as it was read (#99).
+// byte around it exactly as it was read (dropin-miner#99).
 //
 // The block used to be taken out and appended: strip, append, and -- when
 // Codex had put tables inside our markers -- append those after it. That
@@ -1904,7 +1904,7 @@ func codexSandboxBlock(roots []string) []byte {
 // "nothing else changed" is a claim about their bytes, not about ours.
 //
 // Tables Codex appended inside our markers still come out and go BELOW the
-// block, which is L2's rule (#82) and unchanged: below it now means directly
+// block, which is L2's rule (dropin-miner#82) and unchanged: below it now means directly
 // below it rather than at the end of the file, and that serves the same
 // purpose better, since a block that is no longer last cannot collect
 // Codex's next append at all.
@@ -1959,7 +1959,7 @@ func removeMarkedBlock(b []byte) ([]byte, bool) {
 // marker. ok is false when the file has no well-formed block.
 //
 // removeMarkedBlock answers "take the block out"; this answers "let me look
-// at what is in it first", which is what #82 needs — a third party's tables
+// at what is in it first", which is what dropin-miner#82 needs — a third party's tables
 // ended up inside our markers and the byte-range delete took them with it.
 func markedRegion(b []byte) (pre, region, post string, ok bool) {
 	s := string(b)
@@ -2090,7 +2090,7 @@ func decodesAsTOML(s string) bool {
 
 // codexBlockContents is what is inside our markers, split by who wrote it.
 //
-// #82: Codex appends its own tables to config.toml, and whenever our block
+// dropin-miner#82: Codex appends its own tables to config.toml, and whenever our block
 // is last in the file — which install made it — they land INSIDE our
 // markers. v0.2.9 removed the marker-to-marker byte range, so uninstall
 // deleted the participant's folder trust and their `[windows] sandbox =
@@ -2344,7 +2344,7 @@ func printPlan(p *agentPlan, home string, w io.Writer) {
 	}
 	// One heading per host, with everything that host does under it. Printing
 	// every write and then every removal put one host's files under another
-	// host's heading whenever the plan held more than one (#88, item 1): a
+	// host's heading whenever the plan held more than one (dropin-miner#88, item 1): a
 	// host with only files to delete, like opencode, had no heading of its
 	// own at all.
 	//

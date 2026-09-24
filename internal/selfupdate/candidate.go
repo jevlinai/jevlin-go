@@ -111,7 +111,7 @@ var ErrCandidateTimeout = errors.New("the candidate's version command timed out"
 // environment and accepts only the release output contract: exactly
 // "dropin-miner X.Y.Z\n" with X.Y.Z canonical, and nothing on stderr.
 //
-// A candidate that has not answered is not a bad candidate (#95). The check is
+// A candidate that has not answered is not a bad candidate (dropin-miner#95). The check is
 // the first execution of a freshly written binary, which is exactly when a
 // real-time scanner inspects it, and under load a process that prints one
 // line has missed five seconds twice on a development machine. A timeout is

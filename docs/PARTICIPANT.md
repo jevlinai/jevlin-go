@@ -36,8 +36,8 @@ state folder, and neither touches the wallet. On Windows, setup gives the wallet
 folder and every file in it an access list of their own with only you on it, so
 access another program adds to `~/.tokendrop` — a coding agent's sandbox, for
 instance — reaches the rest of the installation and not the wallet. Running
-`dropin-miner setup` again puts that right for a wallet an earlier version made
-(and stops, saying why, if something in the wallet folder cannot be secured, such
+`dropin-miner setup` again puts that right for a wallet whose access list is not
+owner-only (and stops, saying why, if something in the wallet folder cannot be secured, such
 as a link to somewhere else); `doctor`'s `wallet access` line says whether anyone
 else can read it. On macOS and Linux an agent's sandbox runs as you, and file
 permissions cannot tell the two apart, so a sandboxed command can read the
@@ -62,10 +62,10 @@ Without Node: download the archive for your OS and architecture from the
 it against that release's `checksums.txt`, put the `dropin-miner` binary on your
 PATH, and run `dropin-miner setup`.
 
-### Coming from an earlier version
+### Running setup again
 
 Nothing needs removing first. Update the binary (npm: `npm install -g
-dropin-miner@latest`), then run `dropin-miner setup`. If your old installation used a
+dropin-miner@latest`), then run `dropin-miner setup`. If your installation uses a
 non-default home (you had `TOKENDROP_HOME` set for it), run `dropin-miner setup` with
 `TOKENDROP_HOME` set to that same one — setup has no other way to find it. `TOKENDROP_HOME` is how you say "this directory is this
 machine's installation". `setup -home <dir>` by itself, for any other directory, makes
@@ -79,7 +79,7 @@ one's `agents install` leaves that skill alone and tells you whose it is, so tha
 agent keeps searching through your main installation.
 
 The installation in `~/.tokendrop` is used as it is: a directory holding an identity
-is the installation, and nothing set aside is offered. Your existing wallet,
+is the installation, and nothing set aside is offered. Your wallet,
 identity, search credential and recorded searches are kept; setup creates no
 replacement for a healthy installation. `connect` still runs and resumes or repairs
 its own onboarding under its normal rules: an unfinished registration is finished,
@@ -87,19 +87,16 @@ a lost or unreadable record beside a working key is rebuilt from the platform, a
 an expired unclaimed registration is replaced. Your auth state afterward is not
 promised to be byte-identical to what it was.
 
-The mining question is not asked again if your old installation already holds a
+The mining question is not asked again if your installation already holds a
 decision: setup tells you whether mining is on or off for it. If it was interrupted
 before that decision was made, you are asked.
 
-Your config is parsed and, since the script's already has the `[platform]` and
-`[miner]` tables, left byte for byte.
+A config that already has the `[platform]` and `[miner]` tables is left byte for
+byte.
 
-On macOS and Linux, the profile block uses the markers the script wrote, so you
-never get a second block; setup's block quotes its paths where the script's were
-bare, so the bytes can differ and you may be asked the profile question again —
-saying yes replaces the one block in place. On Windows, your existing user PATH
-entry and `TOKENDROP_CONFIG` are reused, not duplicated: the first new setup
-records in `setup-env.json` whether an already-present PATH entry was added by it,
+On macOS and Linux you never get a second profile block: setup replaces its one
+block in place. On Windows, your existing user PATH entry and `TOKENDROP_CONFIG`
+are reused, not duplicated: setup records in `setup-env.json` whether an already-present PATH entry was added by it,
 and what `TOKENDROP_CONFIG` held before, so a later `uninstall` only removes what
 setup itself added and prints the rest for you to remove by hand.
 
@@ -225,10 +222,9 @@ Cursor on Windows is the one host that gets both forms, because it runs
 commands in whatever terminal `terminal.integrated.defaultProfile.windows`
 names and that is your setting, not something this client can read. Its skill
 labels the two blocks "If your terminal is PowerShell" and "If your terminal
-is Git Bash"; use the one that matches yours. v0.2.10 taught the PowerShell
-form alone, and on a Git Bash terminal the encoding line was expanded away
-before PowerShell saw it, so a query went out mangled and the search
-succeeded anyway.
+is Git Bash"; use the one that matches yours. The PowerShell form run from a
+Git Bash terminal loses its encoding line before PowerShell sees it, so a
+query would go out mangled and the search succeed anyway.
 
 That prints exactly one JSON object. Eight fields are always there —
 `version`, `command`, `ok`, `exit_code`, `status`, `code`, `retryable` and
@@ -290,9 +286,8 @@ One of those files is only ever read back by the agent that wrote it. If you
 have an editor open at a repository root and another agent working in a
 subdirectory, the second one's searches carry its own identity, not the
 first's — a search that cannot say which agent it belongs to gets a plain
-per-shell identity instead of borrowing the nearest session above it. Before
-0.2.11 it borrowed, which meant one agent's narration could be sent as
-another's.
+per-shell identity instead of borrowing the nearest session above it, which
+would send one agent's narration as another's.
 
 Cursor's hooks also tell the search which session it belongs to, by putting
 the session id on the search command itself. When that session id is there, a
@@ -469,30 +464,31 @@ hand submits whatever is pending.
 
 Four things worth knowing before you go looking for a setting that is not
 there. The first two are limits of Claude Code itself and the last is one of
-Cursor's command-line agent; DropinMiner cannot work around any of the three.
+Cursor's command-line agent; DropinMiner cannot work around any of those three.
+The third is what has been measured of Cursor's PowerShell terminal profile.
 
 **In Claude Code, the sentence right before a search does not reach the
 trace.** If the model writes something and searches in the same message — the
 usual shape — Claude Code only records that message after the search hook has
 already run, so the hook cannot see the text. Narration in an earlier message
 of the same turn does travel. Your search, your session and your rewards are
-unaffected; it is only the text that goes with the trace (#93).
+unaffected; it is only the text that goes with the trace (dropin-miner#93).
 
 **In Claude Code on Windows, a search through its PowerShell tool asks for
 approval each time.** The search itself works. The permission rules setup
 writes only cover its Bash tool, and Claude Code's documentation does not
 establish what a PowerShell rule would have to look like — a guessed one would
-look installed and never match, which is worse — so none is written (#77). If
+look installed and never match, which is worse — so none is written (dropin-miner#77). If
 you have Git for Windows, the searches Claude Code sends through its Bash tool
 are approved automatically; which tool it picks is up to the model.
 
-**In the Cursor editor on Windows with a PowerShell terminal profile, a query
-with accented or non-Latin characters once reached the router corrupted.** It
-was seen once, on Cursor 3.20 on 2026-09-18: the router stored the query
-double-encoded, so the search quietly answered a different question instead of
-failing. On Cursor 3.21 on 2026-09-21, with the current skill, the same query
-reached the router intact under both terminal profiles. A Git Bash terminal
-profile was never affected (#117). If you want to rule it out, set Cursor's
+**In the Cursor editor on Windows with a PowerShell terminal profile, queries
+with accented or non-Latin characters, as measured.** On Cursor 3.21 on
+2026-09-21, with the current skill, such a query reached the router intact under
+both terminal profiles. Once, on Cursor 3.20 on 2026-09-18 under a PowerShell
+profile, the router stored it double-encoded, so the search quietly answered a
+different question instead of failing. A Git Bash terminal profile was never
+affected (dropin-miner#117). If you want to rule it out, set Cursor's
 terminal profile to Git Bash, or keep the query ASCII.
 
 **On Windows, Cursor's command-line agent started from Git Bash cannot run a
@@ -501,7 +497,7 @@ script of its own and then runs that script with bash, which cannot parse it,
 so every hook is rejected and every search with it. The Cursor editor is
 unaffected, and so is the command-line agent started from PowerShell: start it
 from PowerShell instead. The fix is Cursor's, and it has been reported to them
-(#101; Cursor forum thread 172789).
+(dropin-miner#101; Cursor forum thread 172789).
 
 ## When `doctor` says `recording UNKNOWN`
 
@@ -636,9 +632,7 @@ upgrade has still succeeded, and the message gives the one command to finish
 it. Restart any agent that was open. If an agent still behaves like the old
 version, `dropin-miner agents status` names any file an earlier version wrote
 that this one would write differently, and `dropin-miner agents install`
-refreshes it. One exception: an upgrade *from* 0.2.11 or earlier is carried out
-by that older binary, which does not do this — run `dropin-miner agents
-install` once afterwards.
+refreshes it.
 
 If the new program is slow to answer the first time it is run — a virus
 scanner inspecting a file it has never seen — the upgrade asks it once more

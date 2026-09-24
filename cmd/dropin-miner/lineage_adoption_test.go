@@ -1,6 +1,6 @@
 package main
 
-// Whose session a search threads into (#97).
+// Whose session a search threads into (dropin-miner#97).
 //
 // The lineage sidecar is keyed on a workspace root, and `search` used to walk
 // up to eight parent directories and take ANY sidecar less than twelve hours
@@ -96,7 +96,7 @@ func (p *lineageProbe) trace(env map[string]string) *traceEnvelope {
 
 // A sidecar written by host A is not adopted by a search from host B running
 // in a subdirectory, and B's search does not touch A's sequence. This is
-// #97's measured case.
+// dropin-miner#97's measured case.
 func TestASearchDoesNotAdoptAnotherHostsLineage(t *testing.T) {
 	p := newLineageProbe(t, filepath.Join(adoptRoot, "ws-cursor"), nil)
 	claude := p.write(t, adoptRoot, "claude-code", "claude-session")
@@ -121,7 +121,7 @@ func TestASearchDoesNotAdoptAnotherHostsLineage(t *testing.T) {
 }
 
 // A search that can say nothing about whose it is adopts nothing — the plain
-// terminal search from #97, which had no host and no channel. It still gets a
+// terminal search from dropin-miner#97, which had no host and no channel. It still gets a
 // usable trace: its own per-shell identity, which is what harness=cli means.
 func TestASearchThatNamesNoHostAdoptsNothingAndStillTraces(t *testing.T) {
 	p := newLineageProbe(t, filepath.Join(adoptRoot, "ws-cursor"), nil)
@@ -244,7 +244,7 @@ func TestASearchThatNamesNoHostReadsNoOtherSessionsFile(t *testing.T) {
 // sides of the comparison, so a case variant can only come from a participant
 // setting TOKENDROP_HARNESS by hand — and that same value is what the search
 // sends to the router as its label. Adopting the session and relabelling it
-// would put one session under two spellings downstream, which is #91's hazard
+// would put one session under two spellings downstream, which is dropin-miner#91's hazard
 // arriving by a third route. Refusing costs that participant a threaded
 // trace; accepting costs the router a split session.
 func TestHarnessNamesMustMatchExactly(t *testing.T) {

@@ -1,6 +1,6 @@
 package main
 
-// #111: an upgrade re-renders the host integrations this installation owns —
+// dropin-miner#111: an upgrade re-renders the host integrations this installation owns —
 // after the replacement commits, without ever failing the upgrade, and
 // without touching a host that is another installation's.
 //
@@ -113,7 +113,7 @@ func newRerenderMachine(t *testing.T, latest string, bodies map[string]string) *
 
 	// What an earlier version rendered. Each edit keeps the command the file
 	// teaches — binary and config — because that is what it is attributed by;
-	// the hook matcher is the real one, #111's Windows comment: `"Bash"` where
+	// the hook matcher is the real one, dropin-miner#111's Windows comment: `"Bash"` where
 	// the current renderer writes `"Bash|PowerShell"`.
 	for _, p := range []string{m.paths.claudeSkill, m.paths.claudeSettings, m.paths.cursorSkill, m.paths.piSkill, m.paths.piExtension} {
 		b, err := os.ReadFile(p) // #nosec G304 -- this test's own sandbox

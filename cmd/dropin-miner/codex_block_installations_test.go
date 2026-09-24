@@ -1,7 +1,7 @@
 package main
 
-// #128: Codex's config.toml is one file, and our marked block in it is one
-// slot, so it is #112's rule again — the rule PR #123 applied to the skill
+// dropin-miner#128: Codex's config.toml is one file, and our marked block in it is one
+// slot, so it is dropin-miner#112's rule again — the rule PR dropin-miner#123 applied to the skill
 // and the two JavaScript adapters and did not apply here.
 //
 // Measured on macOS in the 0.2.12 release check: a second installation's
@@ -166,7 +166,7 @@ func (m *twoCodexInstallations) unchangedSince(before, what string) {
 	}
 }
 
-// leftSentence is the skill's own sentence, which #128 asks the block to be
+// leftSentence is the skill's own sentence, which dropin-miner#128 asks the block to be
 // named in too. The installation is named by its config because the block's
 // roots lie under a home that holds one.
 func (m *twoCodexInstallations) leftSentence() string {

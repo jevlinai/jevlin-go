@@ -1,11 +1,11 @@
 package main
 
-// A search believes its host's channel, not whatever variable it finds (#91).
+// A search believes its host's channel, not whatever variable it finds (dropin-miner#91).
 //
 // THE INVARIANT, stated once: a search never reaches the router labeled with
 // a harness other than the one its host declared. Every assertion here is on
 // the bytes the router received, because "the right function was called" is
-// not what #91 reported — a request under the wrong harness was.
+// not what dropin-miner#91 reported — a request under the wrong harness was.
 
 import (
 	"bytes"
@@ -17,7 +17,7 @@ import (
 )
 
 // someoneElsesBridge is a well-formed envelope from somewhere else: the shape
-// #91 recorded, a real-looking identity under another host's label.
+// dropin-miner#91 recorded, a real-looking identity under another host's label.
 func someoneElsesBridge(t *testing.T, harness string) string {
 	t.Helper()
 	b, err := encodeTraceBridge(&traceEnvelope{V: traceVersion, Harness: harness, SessionID: "foreign-session", TurnID: "foreign-turn", CallID: "foreign-call",

@@ -1,6 +1,6 @@
 package main
 
-// #86: an aborted destructive run leaves the installation as it found it,
+// dropin-miner#86: an aborted destructive run leaves the installation as it found it,
 // including the lock files its own exclusion had to create.
 //
 // Taking an operation lock opens its file with O_CREATE (tryLockFile), so

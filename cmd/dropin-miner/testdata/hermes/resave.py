@@ -24,7 +24,7 @@ change made here is hermes_cli/personality.py's, `display.personality`, which
 also puts a key of Hermes' own after our block.
 
 <name>.roundtrip-sibling.yaml and <name>.roundtrip-item.yaml - the same writer
-adding to the hooks: mapping OUR block opened (#125): a second event under
+adding to the hooks: mapping OUR block opened (dropin-miner#125): a second event under
 hooks:, and an entry appended to our own pre_tool_call list. ruamel keeps our
 end marker attached to the line above it, our matcher, so both land AFTER the
 end marker and are still inside our mapping: a line at depth two, a line at

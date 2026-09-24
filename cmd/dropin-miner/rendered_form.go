@@ -7,7 +7,7 @@ package main
 // generic tokenizer and checking the first one — which refused any command
 // carrying a control character, and therefore refused the multi-line heredoc
 // our own skill teaches: every Cursor search waited for a human, and none
-// carried turn or call lineage (#66).
+// carried turn or call lineage (dropin-miner#66).
 //
 // The replacement is not a looser parser. It is the strictest thing
 // available: this binary knows what the skill renders, because it renders
@@ -76,7 +76,7 @@ type renderedFormMatch struct {
 // the identity half — it renders Windows and macOS paths that do not exist on
 // the runner — so before T1b it rebuilt the loop for itself, and a recognizer
 // that stopped after the first declared shell left the whole package green
-// while every search in Cursor's second terminal would have prompted (#66
+// while every search in Cursor's second terminal would have prompted (dropin-miner#66
 // again, for the second terminal).
 func matchedRenderedForms(command, cfg string, shells []shellKind) []renderedFormMatch {
 	if command == "" {

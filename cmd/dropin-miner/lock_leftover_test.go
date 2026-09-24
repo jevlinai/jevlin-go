@@ -1,6 +1,6 @@
 package main
 
-// #103 and #115: a lock file a finished operation created and did not remove
+// dropin-miner#103 and dropin-miner#115: a lock file a finished operation created and did not remove
 // is a file a person auditing a machine finds and cannot place. The gate
 // always named itself as safe to delete; these are the rest of them.
 
@@ -26,11 +26,11 @@ func updateLockFor(s *setupSandbox) string {
 // allSevenLocks puts every lock file a DropinMiner command leaves on disk and
 // returns them in the order the summary names them. The gate, setup.lock,
 // connect.lock and flush.lock are there from the real setup this sandbox ran;
-// the update lock is written because no upgrade runs in a test sandbox (#103,
-// #115); the wallet's creation lock is taken and released through
+// the update lock is written because no upgrade runs in a test sandbox (dropin-miner#103,
+// dropin-miner#115); the wallet's creation lock is taken and released through
 // lockWalletDir itself; and the refresh-token lock, which only an OAuth
 // refresh takes, is written in the state directory operationLockPaths puts
-// connect.lock in, under the name TestTheRefreshLockNameIsPkgAuths pins (#136).
+// connect.lock in, under the name TestTheRefreshLockNameIsPkgAuths pins (dropin-miner#136).
 func allSevenLocks(t *testing.T, s *setupSandbox) []string {
 	t.Helper()
 	update := updateLockFor(s)
@@ -119,7 +119,7 @@ func TestUninstallNamesEveryLockItLeavesAsSafeToDelete(t *testing.T) {
 	}
 }
 
-// #129: the dry run is the form a participant reads before deciding, so it
+// dropin-miner#129: the dry run is the form a participant reads before deciding, so it
 // says what the real run says about what will still be there. It listed
 // nothing, in both modes, because sayLeftoverLocks was reached only from
 // closing(), which a dry run does not reach.
@@ -247,7 +247,7 @@ func timesListed(sec, p string) int {
 	return n
 }
 
-// #134: a default uninstall prints the purge set as what REMAINS, and named
+// dropin-miner#134: a default uninstall prints the purge set as what REMAINS, and named
 // flush.lock there whenever its path could be predicted -- a prediction that
 // is -purge-state's, whose exclusion is the only one that creates the file.
 // The "safe to delete" summary in the same output only ever named it when it
@@ -324,7 +324,7 @@ func TestThePurgePlanStillNamesAnAbsentFlushLock(t *testing.T) {
 	}
 }
 
-// #136: pkg/auth does not export the refresh-token lock's name, so
+// dropin-miner#136: pkg/auth does not export the refresh-token lock's name, so
 // uninstall.go spells it; this holds that spelling to the one the lock is
 // actually taken under. A source read, because the constant is unexported.
 func TestTheRefreshLockNameIsPkgAuths(t *testing.T) {

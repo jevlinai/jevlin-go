@@ -1,6 +1,6 @@
 package main
 
-// #88 item 3: every byte this client writes into a configuration file is
+// dropin-miner#88 item 3: every byte this client writes into a configuration file is
 // ASCII.
 //
 // Windows PowerShell 5.1 reads a file with no byte-order mark in the
@@ -88,7 +88,7 @@ func TestEveryGeneratedConfigIsASCII(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// The line #88 was filed about, still present and still saying what
+		// The line dropin-miner#88 was filed about, still present and still saying what
 		// it said: the case would pass just as well on a file that had lost
 		// the comment altogether.
 		if !strings.Contains(string(b), "# target_epoch deliberately unset") {
@@ -142,11 +142,11 @@ func TestTheASCIIScanFindsTheByteItIsLookingFor(t *testing.T) {
 	if i := firstNonASCII([]byte("# target_epoch deliberately unset - flush asks the AS.\n")); i != -1 {
 		t.Fatalf("firstNonASCII = %d on an ASCII line, want -1", i)
 	}
-	// The exact line #88 was filed about, before the fix.
+	// The exact line dropin-miner#88 was filed about, before the fix.
 	before := []byte("# target_epoch deliberately unset \u2014 flush asks the AS.\n")
 	i := firstNonASCII(before)
 	if i < 0 {
-		t.Fatal("firstNonASCII missed the em dash that #88 was filed about")
+		t.Fatal("firstNonASCII missed the em dash that dropin-miner#88 was filed about")
 	}
 	if want := strings.Index(string(before), "\u2014"); i != want {
 		t.Fatalf("firstNonASCII = %d, want %d (the em dash's first byte)", i, want)

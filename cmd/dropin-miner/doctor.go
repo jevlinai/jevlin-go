@@ -829,7 +829,7 @@ var _ asClient = (*auth.MiningClient)(nil)
 
 // ── intake writability, and whether anything is being recorded ──────────
 //
-// These two checks answer #21: "searches are running but nothing is being
+// These two checks answer dropin-miner#21: "searches are running but nothing is being
 // recorded" had no line of its own, because every other check reads the AS
 // or the store and neither can see the one thing that breaks — the intake
 // intake directory the `search` command writes into not being the one the

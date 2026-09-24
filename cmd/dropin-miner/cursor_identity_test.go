@@ -1,6 +1,6 @@
 package main
 
-// Cursor's identity, carried on the command by its preToolUse hook (#118).
+// Cursor's identity, carried on the command by its preToolUse hook (dropin-miner#118).
 //
 // Cursor applies a sessionStart hook's `env` to the session's later hooks and
 // to nothing its agent's shell inherits — measured on macOS and Windows, and
@@ -228,7 +228,7 @@ func TestCursorPreToolUseLeavesEverythingElseAlone(t *testing.T) {
 
 // TestCursorPreToolUseNeverEchoesTextItsRunnerReencoded: on an OS where
 // Cursor's hook runner re-encodes non-ASCII text before this hook reads it
-// (#113), a command carrying any is not rewritten — the rewrite would hand
+// (dropin-miner#113), a command carrying any is not rewritten — the rewrite would hand
 // Cursor back a different query. Where the runner is POSIX, the bytes are the
 // agent's own and the search is labeled like any other.
 func TestCursorPreToolUseNeverEchoesTextItsRunnerReencoded(t *testing.T) {
@@ -256,7 +256,7 @@ func TestCursorPreToolUseNeverEchoesTextItsRunnerReencoded(t *testing.T) {
 				if out != "" {
 					t.Fatalf("a command this hook may have received re-encoded was echoed back: %q", out)
 				}
-				if !strings.Contains(errOut, "#113") {
+				if !strings.Contains(errOut, "search not labeled") {
 					t.Errorf("no note on stderr: %q", errOut)
 				}
 			})
