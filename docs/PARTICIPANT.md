@@ -50,32 +50,24 @@ tells you they are trying.
 
 ## Setup
 
-macOS and Linux:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/twilight-project/dropin-miner/main/scripts/install.sh | sh
-```
-
-Windows, in PowerShell:
-
-```powershell
-irm https://raw.githubusercontent.com/twilight-project/dropin-miner/main/scripts/install.ps1 | iex
-```
-
-Or, if you use npm, install it globally and run setup yourself:
+With npm, install it globally and run setup:
 
 ```bash
 npm install -g dropin-miner
 dropin-miner setup
 ```
 
+Without Node: download the archive for your OS and architecture from the
+[releases page](https://github.com/twilight-project/dropin-miner/releases), verify
+it against that release's `checksums.txt`, put the `dropin-miner` binary on your
+PATH, and run `dropin-miner setup`.
+
 ### Coming from an earlier version
 
-Nothing needs removing first. Run the installer again (npm: `npm install -g
-dropin-miner@latest`, then `dropin-miner setup`). If your old installation used a
-non-default home (you had `TOKENDROP_HOME` set for the old installer), run the
-installer, or `dropin-miner setup`, with `TOKENDROP_HOME` set to that same one — setup
-has no other way to find it. `TOKENDROP_HOME` is how you say "this directory is this
+Nothing needs removing first. Update the binary (npm: `npm install -g
+dropin-miner@latest`), then run `dropin-miner setup`. If your old installation used a
+non-default home (you had `TOKENDROP_HOME` set for it), run `dropin-miner setup` with
+`TOKENDROP_HOME` set to that same one — setup has no other way to find it. `TOKENDROP_HOME` is how you say "this directory is this
 machine's installation". `setup -home <dir>` by itself, for any other directory, makes
 a separate installation there: it leaves your shell profile and your coding agents
 alone, even with `-yes`, because those belong to the machine's own installation, and
@@ -113,9 +105,8 @@ setup itself added and prints the rest for you to remove by hand.
 
 Your agent integrations are reconciled to the current plan: one already correct is
 left alone ("nothing to write: already set up"); stale files and hook entries are
-updated, never duplicated; a host you never set up before is offered normally —
-the usual case if you installed on Windows before v0.2.9, since that installer
-only told you to run `agents install`. A second setup is idempotent for what
+updated, never duplicated; a host you never set up before is offered normally.
+A second setup is idempotent for what
 it owns — the files it writes, your profile or environment, and your agent
 integrations — and keeps the same healthy identity; your connect-managed
 authorization state may still advance.
@@ -151,8 +142,7 @@ question aborts and exits non-zero, and the two are never the same thing.
 `dropin-miner setup -yes` answers yes to **Add them to ~/.zshrc?** (on Windows,
 **Set them for your user?**) and **Set up the coding agents found on this
 machine now?**, whether or not there is a terminal, so a script or CI job that
-runs setup itself may pass it to set those up. The installers never add it:
-run through them, you answer at the terminal. Without `-yes` and without
+runs setup itself may pass it to set those up. Without `-yes` and without
 a terminal, setup leaves your profile and your agents alone and prints the
 command for each. `-yes` answers **Use it?** only at a terminal: a set-aside
 installation is never reused by a script. And it never answers **Enable mining
@@ -692,7 +682,7 @@ uninstall — the installation is left exactly as it was found. That includes th
 lock files uninstall has to take to be sure nothing else is running: one it had
 to create is removed again, one that was already there is left alone.
 
-Coming back later, run the installer again, or `dropin-miner setup` — with
+Coming back later, run `dropin-miner setup` — with
 `-home <dir>` if this installation is not the default one. Setup is the way
 back: it finds the state uninstall left and reuses it, the same agent and the
 same wallet, with no new registration. Do not run `dropin-miner connect` on its

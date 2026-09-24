@@ -49,22 +49,21 @@ does.
    when, which a lightweight tag does not — and the workflow now enforces it. The
    earlier tags are mixed (v0.1.1 through v0.1.6 and v0.2.6 annotated; v0.1.7 through
    v0.2.5 and v0.2.7 lightweight) and are left exactly as they are: retagging a
-   published release would move refs that `install.sh`, `install.ps1`, `npm/install.js`
-   and an already-published `checksums.txt` resolve against, for a cosmetic gain.
+   published release would move refs that `npm/install.js`, the self-updater and an
+   already-published `checksums.txt` resolve against, for a cosmetic gain.
 
    The tag carries the `v` prefix always: `release.yml` matches `v*`, and
    `npm/install.js` downloads from `releases/download/v${version}`, so a tag named
    `0.2.0` builds nothing and the npm package of that version can never install.
 
    The tag goes to `twilight-project/dropin-miner` (the `upstream` remote), where the
-   releases live and `install.sh`/`install.ps1`/`npm/install.js` look for them — never
+   releases live and `npm/install.js` and the self-updater look for them — never
    to `origin`, a fork: a tag pushed only there publishes a release nobody's installer
    can find.
 5. **Watch the run**, and read the preflight job's diagnostics even when it passes —
    it prints the tagged commit, canonical main, and the asset names it expects.
-6. **Run the `install.ps1` check** below. It and the upgrade acceptance in step 7 are
-   the acceptance steps still done by hand; the workflow attempts neither.
-7. **From the first release after v0.2.9, accept the upgrade by hand.** A real native
+6. **From the first release after v0.2.9, accept the upgrade by hand.** It is the
+   acceptance step still done by hand; the workflow does not attempt it. A real native
    installation of v0.2.9 must run `dropin-miner upgrade` and land on the release just
    published: `dropin-miner version` afterwards reports it, and `dropin-miner upgrade
    -rollback` puts the previous one back. At least one of those upgrades is on a
@@ -236,11 +235,6 @@ propagation, not a failed release, so a single immediate lookup is the wrong che
 answer that never arrives *is* a failure, so the wait is bounded — ten minutes, polled
 every ten seconds — and says so when it expires.
 
-**This Windows job does not run `scripts/install.ps1`.** It exercises the npm path on
-Windows: ZIP selection, checksum, unpack, and the `.exe` reporting its version. The
-`install.ps1` download check below remains manual and separate; its setup hand-off and
-legacy branch run offline in `ci.yml`.
-
 ## When something fails
 
 npm publication is irreversible and a tag is awkward to move, so each failure state has
@@ -256,8 +250,8 @@ the "release tag immutability" ruleset carries `deletion`, `update` and
 `non_fast_forward` with no bypass actors at all, so the deletion is refused for everyone,
 an administrator included — and it should not be. A ruleset cannot tell a published tag
 from an unpublished one, and the guarantee it buys is the one this document argues for
-fifty lines above: a published tag never moves, because `install.sh`, `install.ps1`,
-`npm/install.js` and an already-published `checksums.txt` all resolve against it. A
+fifty lines above: a published tag never moves, because `npm/install.js`, the
+self-updater and an already-published `checksums.txt` all resolve against it. A
 version number is cheap. That guarantee is not, and it is worth strictly more than the
 number, because it is what makes every already-published tag trustworthy rather than
 merely usually-trustworthy.
@@ -391,55 +385,6 @@ Miss the bump and the GitHub Release still builds fine — goreleaser doesn't lo
 is silent on the side that gets watched, and shows up later in the npm package, where it
 stays stale until someone notices.
 
-## Manually verifying install.ps1
-
-Half of `install.ps1` is now covered by CI and half is not, and the line between them
-is the network.
-
-**Covered by CI.** `ci.yml`'s Windows runner runs the script itself, offline, through
-`TOKENDROP_INSTALL_BIN` (`cmd/dropin-miner/installer_bridge_test.go`). With the binary
-built from the tree it proves the script probes `setup -h`, hands off to
-`dropin-miner.exe setup`, and never runs its legacy config, PATH and connect blocks.
-With a stand-in whose `setup -h` exits 2 — what v0.2.8 and older answer — it proves the
-legacy blocks run instead. `install.sh` gets the same two runs on the POSIX runners,
-its legacy branch being the `setup.sh` shipped beside the binary. What setup itself
-writes is covered in-process by `cmd/dropin-miner/installer_test.go` on all three
-runners.
-
-**Not covered.** The part `TOKENDROP_INSTALL_BIN` skips: asking `api.github.com` for the
-latest release, downloading the ZIP and `checksums.txt`, verifying the checksum, and
-unpacking. That needs a real release over a real network, and `release.yml`'s Windows
-smoke job installs the npm package, which is a different path.
-
-**Until v0.2.9, the first release with `setup`, is the latest release**, `install.ps1`
-on `main` downloads a binary with no `setup`, so what a participant actually runs is
-the legacy branch. The manual check
-therefore covers both: the download and the branch it lands in. After cutting a release,
-run it once by hand (a real Windows machine, or `pwsh` elsewhere — the CIM
-processor-architecture query is its only genuinely Windows-only line):
-
-1. `irm https://raw.githubusercontent.com/twilight-project/dropin-miner/main/scripts/install.ps1 | iex`
-   against a scratch `$env:TOKENDROP_HOME`.
-2. Confirm the download, verify and unpack ran: `==> Latest release: vX.Y.Z -
-   downloading …` printed, and a deliberately wrong `checksums.txt` throws rather than
-   passing silently.
-3. Confirm which branch it took, and that it was the right one for that release. A
-   release with `setup`: setup's own narration (`Using binary:`, `Search context`,
-   `Setup complete.`) and none of `==> Wrote`, `==> Connecting` or `Installed and
-   connected.`. A release without it: those three legacy lines, a `tokendrop.toml` with
-   `[platform]`/`[mining]`/`[miner]` blocks, and no unconditional `enabled = true`
-   under `[mining]` unless `TOKENDROP_MINING=1` was set with input redirected.
-4. Either way, confirm `connect` actually ran: a claim URL printed, and
-   `dropin-miner status` afterward showing the registration it made.
-
-The legacy branches of both installers, and `scripts/setup.sh` itself, are kept
-through v0.2.10 and v0.3.0, so those releases carry no installer-code delta over
-what was validated on v0.2.9; they are not removed in this repository — the
-search client continues in a successor repository, and the cleanup happens at
-the import there. Once v0.2.9 is the latest release, though, step 3 above lands
-on the setup branch regardless — every release from here on ships a binary with
-`setup`.
-
 ## What this doesn't cover
 
 `npm/package.json`'s version tracking the GitHub release tag 1:1 is the release
@@ -458,7 +403,6 @@ Still outside the automation, deliberately:
 - **The version bump itself.** CI does not commit to this repository. The number belongs
   in a reviewed commit.
 - **Which commit gets released.** The whole design boundary.
-- **`install.ps1`'s download, verify and unpack**, above.
 - **Pi and Hermes live-host smokes**, which need real hosts and are not release
   engineering.
 

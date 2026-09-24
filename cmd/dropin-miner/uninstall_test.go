@@ -471,7 +471,7 @@ func TestUninstallProfileBlocks(t *testing.T) {
 	s := newSetupSandbox(t)
 	writeFileT(t, s.cfgPath(), "")
 	ours := profileBlock([]string{"export TOKENDROP_CONFIG=" + shellQuote(s.cfgPath())})
-	legacy := profileBlock([]string{"export TOKENDROP_CONFIG=" + s.cfgPath()})
+	unquoted := profileBlock([]string{"export TOKENDROP_CONFIG=" + s.cfgPath()})
 	theirs := profileBlock([]string{"export TOKENDROP_CONFIG=" + shellQuote("/some/other/tokendrop.toml")})
 
 	cases := []struct {
@@ -479,7 +479,7 @@ func TestUninstallProfileBlocks(t *testing.T) {
 		wantZ, wantB        string
 	}{
 		{"ours, unrelated bytes kept", "export A=1\n" + ours + "# tail\n", "", "export A=1\n# tail\n", ""},
-		{"setup.sh's unquoted block", legacy, "", "", ""},
+		{"an unquoted block is not one setup wrote, and is left", unquoted, "", unquoted, ""},
 		{"the shell changed since setup: .bashrc too", "", "x\n" + ours, "", "x\n"},
 		{"another installation's block is left", theirs, "", theirs, ""},
 		{"malformed markers are left untouched", ours + ours, "", ours + ours, ""},
@@ -701,8 +701,6 @@ func TestUninstallBinaryRemovesOnlyTheInstallationsOwnCopy(t *testing.T) {
 	if code, out, errOut := s.run(nil, false, "-yes"); code != exitOK {
 		t.Fatalf("setup exited %d\n%s\n%s", code, out, errOut)
 	}
-	writeFileT(t, filepath.Join(s.home, "bin", "dropin-miner-setup.sh"), "#!/bin/sh\n")
-	writeFileT(t, filepath.Join(s.home, "src", "go.mod"), "module x\n")
 	writeWalletFixture(t, filepath.Join(s.home, "wallet"))
 	walletBefore := snapshotTree(t, filepath.Join(s.home, "wallet"))
 
@@ -710,7 +708,7 @@ func TestUninstallBinaryRemovesOnlyTheInstallationsOwnCopy(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("uninstall -binary exited %d\n%s\n%s", code, out, errOut)
 	}
-	for _, p := range []string{s.exe, filepath.Join(s.home, "bin"), filepath.Join(s.home, "src")} {
+	for _, p := range []string{s.exe, filepath.Join(s.home, "bin")} {
 		if lexists(p) {
 			t.Errorf("uninstall -binary left %s", p)
 		}
@@ -1046,9 +1044,7 @@ func TestPurgeRefusesConfiguredStateInsideBinaryTree(t *testing.T) {
 	s := installedWithOwnBinary(t)
 	purgeRefusedForConfig(t, s, "state_dir", filepath.Join(s.home, "bin"))
 	s2 := installedWithOwnBinary(t)
-	purgeRefusedForConfig(t, s2, "sessions_dir", filepath.Join(s2.home, "src", "sessions"))
-	s3 := installedWithOwnBinary(t)
-	purgeRefusedForConfig(t, s3, "spool_dir", filepath.Dir(s3.home))
+	purgeRefusedForConfig(t, s2, "spool_dir", filepath.Dir(s2.home))
 }
 
 func TestPurgeCannotReintroduceAProtectedEnvironmentJournal(t *testing.T) {

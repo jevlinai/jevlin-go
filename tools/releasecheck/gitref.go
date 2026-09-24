@@ -101,8 +101,8 @@ func (g Git) IsAncestor(ancestor, descendant string) (bool, error) {
 // A lightweight tag is a bare pointer, so that record survives only in
 // the push event, which expires. Older tags are mixed and are left
 // exactly as they are — retagging a published release would move refs
-// that install.sh, install.ps1, npm/install.js and a published
-// checksums.txt already resolve against. This applies to the tag being
+// that npm/install.js, the self-updater and a published checksums.txt
+// already resolve against. This applies to the tag being
 // released now, which is the only one anybody can still choose.
 func CheckAnnotatedTag(objectType, tag string) error {
 	switch objectType {

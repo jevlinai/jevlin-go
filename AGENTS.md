@@ -303,7 +303,7 @@ each line names the file that owns the rule and the test that proves it.
   script a mis-decoded quotation mark ends a string early and the file stops parsing.
   `generated_config_ascii_test.go` renders each artifact from ASCII inputs and refuses a byte
   above 0x7F — from ASCII inputs, because a participant whose home is `C:\Users\José` is not
-  this client's doing. `installer_bridge_test.go` holds the same rule for `scripts/install.ps1`.
+  this client's doing.
 - **What a destructive run may leave behind** — `cmd/dropin-miner/lifecycle.go` owns the
   exclusion: which operation locks it takes, which of those files it created, and the rule that
   `release` removes exactly those and only when the operation never proceeded (`proceeded()`).
@@ -321,13 +321,8 @@ each line names the file that owns the rule and the test that proves it.
   the binary's update lock that still exist, as safe to delete, in both modes (#103, #115).
   `lock_leftover_test.go` holds it to the invariant either way round — a lock still on disk is
   named, one the run removed is not — and scopes its search to that section, because a purge plan
-  prints the full path of everything it removes. `install.sh`'s EXIT
-  trap and `install.ps1`'s try/finally are the same rule for the download: the temporary directory
-  goes on every exit path, because a checksum failure is the one case where what is left behind is
-  the file just called untrustworthy. `lifecycle_created_locks_test.go` and
-  `installer_tempdir_test.go` guard them; the second names where the temporary directory was
-  before it claims it is gone, because asserting an empty scratch directory passes just as well
-  when nothing was ever created there.
+  prints the full path of everything it removes. `lifecycle_created_locks_test.go` guards the
+  created-lock rule.
 - **Wallet custody and the send journal** — `wallet_store.go` owns the creation lock and the
   wallet directory's layout; `wallet_journal.go` owns `pending_tx.json` and its resolution;
   `wallet_tx.go` hand-encodes the signed bytes. `wallet_lock_test.go` proves creation is exclusive
@@ -392,10 +387,8 @@ each line names the file that owns the rule and the test that proves it.
   only the missing tables and parse again). `setup_env.go` owns the one-well-formed-block
   profile rule and the Windows `setup-env.json` delta journal, over backends in
   `setup_env_unix.go` and `setup_env_windows.go`; `setup_targets.go` owns `-with`, which
-  reaches every target kind. `installer_test.go` drives setup in-process against a sandbox
+  reaches every target kind. `setup_test.go` drives setup in-process against a sandbox
   and asserts the ownership set on every case, `TestSetupSecondRunIsANoOp` byte for byte;
-  `installer_bridge_test.go` runs `install.sh` and `install.ps1` down both branches of the
-  `setup -h` probe offline through `TOKENDROP_INSTALL_BIN`;
   `TestSetupFilesNeverImportOSExec` keeps setup from running a process. The package's
   `TestMain` (`testmain_test.go`) refuses to run any test unless `os.UserConfigDir()` and
   the home directory resolve under a temporary test root.

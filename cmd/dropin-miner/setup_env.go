@@ -174,7 +174,7 @@ func removeProfileBlock(existing []byte) (next []byte, block []string, found boo
 }
 
 // profileBlockConfig is the TOKENDROP_CONFIG a block exports, as written:
-// shell-quoted by setup, bare by the setup.sh that preceded it.
+// shell-quoted, the way setup writes it.
 func profileBlockConfig(block []string) (string, bool) {
 	const prefix = "export TOKENDROP_CONFIG="
 	for _, l := range block {
@@ -186,10 +186,10 @@ func profileBlockConfig(block []string) (string, bool) {
 }
 
 // profileBlockNamesConfig reports whether a block exports exactly cfgPath,
-// in either form setup has written it.
+// in the form setup writes it.
 func profileBlockNamesConfig(block []string, cfgPath string) bool {
 	value, ok := profileBlockConfig(block)
-	return ok && (value == shellQuote(cfgPath) || value == cfgPath)
+	return ok && value == shellQuote(cfgPath)
 }
 
 // ── Windows: the User environment and its journal ─────────────────────────

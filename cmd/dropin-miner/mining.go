@@ -207,7 +207,7 @@ func cmdMiningDisable(args []string, stdout, stderr io.Writer, getenv func(strin
 		regOK = false
 	}
 	// The refresh token, not the agent-onboarding registration, is what
-	// "something here can be disabled" actually means: a setup.sh-shape
+	// "something here can be disabled" actually means: a manually enrolled
 	// installation (enroll/join/login, no connect ever run) has a live
 	// AS family and no agent.json at all. Keying only on LastEnrollmentSlot
 	// left that installation's family untouched forever — "nothing to
@@ -229,7 +229,7 @@ func cmdMiningDisable(args []string, stdout, stderr io.Writer, getenv func(strin
 	}
 
 	// Only clear an agent-onboarding record that actually exists — a
-	// setup.sh-shape installation has none, and writing a fresh all-zero
+	// manually enrolled installation has none, and writing a fresh all-zero
 	// agent.json where there was never one would invent a registration
 	// this installation never had (status would then read its empty
 	// Status as "unrecognized", a confusing regression for a
@@ -362,8 +362,8 @@ func askMiningQuestion(stdin io.Reader, br *bufio.Reader, stdout, stderr io.Writ
 
 	// Interactive from here on. WP2-adversarial-review finding 4: the
 	// terminal answer is the decision (design rule 5), not the config
-	// file — even when the file already wrote enabled = true (what
-	// setup.sh writes), the human at the terminal right now is who this
+	// file — even when the file already wrote enabled = true (a scripted
+	// first answer), the human at the terminal right now is who this
 	// question is actually for. An EXPLICIT false, though, is a
 	// deliberate operator opt-out and is not re-litigated by asking
 	// again — that half of the old gate stays.

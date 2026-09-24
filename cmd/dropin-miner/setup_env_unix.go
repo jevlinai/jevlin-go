@@ -32,7 +32,7 @@ func restrictToOwner(path string, dir bool) error {
 // environment setup leaves.
 func systemUserEnvironment() userEnvironment { return nil }
 
-// profileCandidate is setup.sh's choice: the profile of the shell $SHELL
+// profileCandidate is the profile setup writes to: the one of the shell $SHELL
 // names, else ~/.bashrc when there is one.
 func profileCandidate(userHome string, getenv func(string) string) string {
 	shell := getenv("SHELL")
@@ -121,7 +121,7 @@ func (r *setupRun) environmentStep() int {
 	return exitOK
 }
 
-// profileEnvLines are the lines setup.sh put in the profile, quoted. The
+// profileEnvLines are the lines setup puts in the profile, quoted. The
 // PATH test compares the quoted directory literally inside a case pattern,
 // so a directory holding a glob character is matched as itself.
 func profileEnvLines(binDir, cfgPath, walletDir string) []string {

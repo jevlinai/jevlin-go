@@ -2,8 +2,8 @@ package main
 
 // setup: everything after the binary, asked as it goes.
 //
-// It is scripts/setup.sh's flow, in order, in the binary — so it runs the
-// same on Windows, needs no POSIX shell, and can be tested in-process:
+// It runs in the binary, in this order — the same on Windows, with no POSIX
+// shell needed, and testable in-process:
 //
 //  1. the binary it is running as (refusing an npm copy that is not a
 //     global install: hooks written from it would point at a directory npm
@@ -20,8 +20,8 @@ package main
 //
 // The mining question is connect's, and nothing here answers it: -yes
 // answers setup's own questions only, and `[mining] enabled = true` is
-// written only by a run with no terminal and TOKENDROP_MINING=1, exactly as
-// the script did. Setup runs no process other than itself.
+// written only by a run with no terminal and TOKENDROP_MINING=1. Setup runs
+// no process other than itself.
 
 import (
 	"errors"
@@ -53,9 +53,9 @@ only) and the coding agents found on this machine.
                 default one, and names the agents command for this one instead
   -yes          answer yes to setup's shell-profile (Windows: user environment) and
                 coding-agents questions, with or without a terminal; automated
-                callers may pass it, and the installers never add it. Also yes to
-                reusing a set-aside installation, at a terminal only. Never
-                answers connect's mining question
+                callers may pass it. Also yes to reusing a set-aside
+                installation, at a terminal only. Never answers connect's
+                mining question
   -no-profile   leave the shell profile (on Windows, the user environment) alone
   -no-agents    do not look for coding agents; -with still sets up what it names
   -with id      set up this target whether or not it was found; repeatable
@@ -183,8 +183,7 @@ func (r *setupRun) skip(step string)                  { r.skipped = append(r.ski
 // ask is a yes/no question, [Y/n], answered yes by -yes. Without -yes it is
 // only reached with a terminal: every caller decides that case first. The
 // environment and agents questions take -yes with or without a terminal, so
-// an automated caller may pass it (the installers never add it: a person
-// running one answers at the terminal); adopting a set-aside installation is never
+// an automated caller may pass it; adopting a set-aside installation is never
 // asked without a terminal, -yes or not.
 //
 // The error is errPromptAborted and nothing else: a read that ended
@@ -272,8 +271,8 @@ func setupMain(d setupDeps, args []string) int {
 	fs.BoolVar(&r.dry, "dry-run", false, "print what would change, change nothing")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			// The installers' capability probe: `setup -h` exiting 0 is how
-			// they know this binary has setup at all.
+			// Help asked for is not a usage error: it goes to stdout and
+			// exits 0.
 			fmt.Fprint(d.stdout, renderSetupUsage())
 			return exitOK
 		}
@@ -422,8 +421,8 @@ func (r *setupRun) run(homeFlag string, with []string) int {
 // otherInstallation: does -home name a directory other than this machine's
 // installation — $TOKENDROP_HOME, else ~/.tokendrop — and if so, which is
 // that? Only an explicit -home can: with no flag, home IS the default by
-// construction, and `TOKENDROP_HOME=<dir> install.sh` stays the way to put
-// the machine's installation somewhere else. When no default can be named at
+// construction, and `TOKENDROP_HOME=<dir>` stays the way to put the
+// machine's installation somewhere else. When no default can be named at
 // all there is nothing to compare against, and nothing is withheld.
 //
 // #84: `setup -home <scratch>` is the documented way to make a disposable

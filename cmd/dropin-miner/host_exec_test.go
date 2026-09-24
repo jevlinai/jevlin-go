@@ -288,6 +288,14 @@ func newExecInstallation(t *testing.T) *execInstallation {
 	return newExecInstallationIn(t, "")
 }
 
+// exeName is name as an executable file on this OS.
+func exeName(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
+}
+
 // newExecInstallationIn puts the installation under a directory of the given
 // name, so a rendered command can be run against a path a participant might
 // actually have rather than only against a tame one.

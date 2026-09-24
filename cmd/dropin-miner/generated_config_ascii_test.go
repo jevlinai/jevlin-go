@@ -15,10 +15,9 @@ package main
 // cases render every configuration artifact the client produces and refuse
 // any byte above 0x7F, naming the offset and what it decodes to.
 //
-// installer_bridge_test.go already holds the same rule for scripts/install.ps1,
-// where the consequence is worse than cosmetic: a mis-decoded quotation mark
-// ends a string early and the file stops parsing. This file is the config
-// side of that one rule.
+// In a PowerShell script the consequence is worse than cosmetic: a
+// mis-decoded quotation mark ends a string early and the file stops
+// parsing.
 //
 // Every fixture below is built from ASCII inputs on purpose. A participant
 // whose home directory is C:\Users\José would make the rendered output

@@ -1168,7 +1168,7 @@ func configuredStatePaths(cfg *config.Config) []configuredPath {
 
 // purgeConflict says why a configured participant path cannot be purged as
 // state without destroying what is not state — the installation directory
-// itself, the software under bin/ or src/, or the lifecycle gate — and ""
+// itself, the software under bin/, or the lifecycle gate — and ""
 // when it can. Only a path strictly below the installation and clear of
 // those roots is purgeable.
 func (r *uninstallRun) purgeConflict(p string) string {
@@ -1176,14 +1176,12 @@ func (r *uninstallRun) purgeConflict(p string) string {
 	if err != nil {
 		return "not a path uninstall can resolve"
 	}
-	bin, src, gate := filepath.Join(r.home, "bin"), filepath.Join(r.home, "src"), lifecycleGatePath(r.home)
+	bin, gate := filepath.Join(r.home, "bin"), lifecycleGatePath(r.home)
 	switch {
 	case pathWithin(abs, r.home) && pathWithin(r.home, abs):
 		return "the installation directory itself"
 	case pathsOverlap(abs, bin):
 		return "inside or around the binary directory " + bin
-	case pathsOverlap(abs, src):
-		return "inside or around the installer's source directory " + src
 	case pathsOverlap(abs, gate):
 		return "inside or around the lifecycle lock " + gate
 	}
@@ -1224,17 +1222,14 @@ func pathWithin(path, dir string) bool {
 
 // binarySet is what -binary removes, in order: the self-updater's own staging
 // leftovers beside the binary, the one-level .previous, the executable's
-// update lock, the setup script the installer put beside an old binary, the
-// installer's source checkout, and last the binary itself. Nothing else in
-// the directory is touched.
+// update lock, and last the binary itself. Nothing else in the directory is
+// touched.
 func (r *uninstallRun) binarySet() []string {
 	owned := r.ownedBinary()
 	leftovers, _ := selfupdate.StagingLeftovers(filepath.Dir(owned))
 	var out []string
 	for _, p := range append(leftovers,
 		selfupdate.PreviousPath(owned),
-		filepath.Join(r.home, "bin", "dropin-miner-setup.sh"),
-		filepath.Join(r.home, "src"),
 		owned) {
 		if lexists(p) {
 			out = append(out, p)

@@ -10,7 +10,7 @@ package main
 // dry run first, which also listed <dir>\bin for PATH while planning no
 // binary there.
 //
-// Every case snapshots the whole sandbox, as installer_test.go does, because
+// Every case snapshots the whole sandbox, as setup_test.go does, because
 // the claim is about what is NOT touched: the agents' own directories and the
 // shell profile are inside the fake home too.
 
@@ -187,9 +187,9 @@ func TestSetupWithTheDefaultHomeNamedIsTheSameAsWithoutIt(t *testing.T) {
 	}
 }
 
-// The default is $TOKENDROP_HOME when that is set: `TOKENDROP_HOME=<dir>
-// install.sh` stays the way to put the machine's installation somewhere else,
-// and naming that same directory with -home is still the default.
+// The default is $TOKENDROP_HOME when that is set: `TOKENDROP_HOME=<dir>`
+// stays the way to put the machine's installation somewhere else, and naming
+// that same directory with -home is still the default.
 func TestOtherInstallationIsDecidedAgainstTheDefault(t *testing.T) {
 	// Absolute, as production passes them: run() makes home absolute before
 	// it asks, and on Windows a rooted path with no drive is not absolute —

@@ -8,31 +8,26 @@ trajectory, and earn Twilight Slot rewards to an address you control. No
 daemon, no proxy, no MCP server: between tool calls nothing is running.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/twilight-project/dropin-miner/main/scripts/install.sh | sh
-```
-
-Windows, in PowerShell:
-
-```powershell
-irm https://raw.githubusercontent.com/twilight-project/dropin-miner/main/scripts/install.ps1 | iex
-```
-
-Or through npm — installed globally, because every hook and skill setup
-writes points at the binary it ran from, and an `npx` cache or a project's
-own `node_modules` is a directory npm will discard:
-
-```bash
 npm install -g dropin-miner
 dropin-miner setup
 ```
 
+Installed globally, because every hook and skill setup writes points at the
+binary it ran from, and an `npx` cache or a project's own `node_modules` is a
+directory npm will discard.
+
+Without Node: download the archive for your OS and architecture from the
+[releases page](https://github.com/twilight-project/dropin-miner/releases), verify
+it against that release's `checksums.txt`, put the `dropin-miner` binary on your
+PATH, and run `dropin-miner setup`.
+
 ## Coming from an earlier version
 
-Nothing needs removing first. Run the installer again — npm:
-`npm install -g dropin-miner@latest`, then `dropin-miner setup`. If the old
-installation used a non-default home (`TOKENDROP_HOME` was set for the old
-installer), run the installer, or `dropin-miner setup`, with `TOKENDROP_HOME` set
-to the same one; setup has no other way to find it. `TOKENDROP_HOME` is what
+Nothing needs removing first. Update the binary — npm:
+`npm install -g dropin-miner@latest` — then run `dropin-miner setup`. If the old
+installation used a non-default home (`TOKENDROP_HOME` was set for it), run
+`dropin-miner setup` with `TOKENDROP_HOME` set to the same one; setup has no
+other way to find it. `TOKENDROP_HOME` is what
 names a directory as this machine's installation. `setup -home <dir>` on its
 own, for a directory other than that, sets up a *separate* installation there
 and leaves your shell profile (Windows: user environment) and your coding
@@ -76,8 +71,7 @@ by hand for the rest.
 Agent integrations are reconciled to the current plan: one already correct
 is left alone ("nothing to write: already set up"); stale files and hook
 entries are updated, not duplicated; a host never set up before is offered
-normally, which is the usual case for a Windows 0.2.x installation, whose
-installer only advised `agents install`. A second setup is idempotent for what
+normally. A second setup is idempotent for what
 it owns — its written files, the profile or environment, and the agent
 integrations — and keeps the same healthy participant identity;
 connect-managed authorization state may still advance.
@@ -85,8 +79,7 @@ connect-managed authorization state may still advance.
 Want a clean start instead? Move `~/.tokendrop` aside and take it back at
 the **Use it?** question below.
 
-The installer fetches a checksummed release and hands off to `dropin-miner
-setup`, which asks as it goes, in this order:
+`dropin-miner setup` asks as it goes, in this order:
 
 1. **Use it?** — only if one is set aside beside
    `~/.tokendrop` (see "Removing it, and coming back" below).
@@ -106,9 +99,8 @@ setup`, which asks as it goes, in this order:
    with rather than guess at.
 
 `setup -yes` answers the shell-profile and coding-agents questions, with or
-without a terminal, so an automated caller may invoke `setup -yes`; the
-installers never add it. Without a terminal and
-without `-yes`, setup leaves your profile and your agents alone and prints
+without a terminal, so an automated caller may invoke `setup -yes`. Without a
+terminal and without `-yes`, setup leaves your profile and your agents alone and prints
 the command for each. A set-aside installation is reused only when a person
 says yes at a terminal, `-yes` or not, and the mining question is always
 connect's.
@@ -381,15 +373,15 @@ reasons. A mining failure never turns a successful search into a failed one.
 Search and provider result text is untrusted web content, not instructions.
 
 `connect` and `mining enable` are the search platform's agent-onboarding path —
-register, get claimed at a printed URL, then mine unattended. `setup`, which
-both installers hand off to, runs `connect` itself; run it directly yourself for
+register, get claimed at a printed URL, then mine unattended. `setup` runs
+`connect` itself; run it directly yourself for
 a second agent, a re-run, or a scripted install (see Config below). `mining
 disable` stops mining for this installation's agent — a best-effort
 self-service revocation at the AS, distinct from the platform's own granted
 scope, which only a human at the console can revoke; `status` says so plainly
 whenever this state holds. `enroll`, `login`, `join`, `wallet register` and
 `payout set` are the portal's older, manual path — still work, coexist with
-`connect`, and are not part of what the installers run.
+`connect`, and are not part of what setup runs.
 
 `provider` belongs to that older path and only to some Slots. It reads a
 zero-spend provider verification key from stdin (never an argument) and
@@ -697,8 +689,8 @@ dropin-miner upgrade -rollback          # put back the binary the last upgrade r
 npm install -g dropin-miner@latest      # an npm install is updated with npm
 ```
 
-`upgrade` replaces a native binary — the one the installer put in
-`~/.tokendrop/bin` — with a release from the canonical
+`upgrade` replaces a native binary — one installed from a release archive, not
+through npm — with a release from the canonical
 `twilight-project/dropin-miner` GitHub repository and nowhere else. It checks the
 download against the release's `checksums.txt`, takes only the `dropin-miner`
 executable out of the archive, runs the new binary's `version` before installing

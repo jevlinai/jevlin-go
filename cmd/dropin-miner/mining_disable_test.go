@@ -57,10 +57,10 @@ func fullyEnrolledInstall(t *testing.T) (cfgPath, stateDir string, platform *stu
 	return cfgPath, stateDir, platform, as
 }
 
-// setupSHShapeConfig builds a config the way setup.sh does: a [mining]
-// block naming a real AS and no [platform] block at all — connect/mining
+// manualEnrollConfig builds a manually enrolled installation's config: a
+// [mining] block naming a real AS and no [platform] block at all — connect/mining
 // enable are never involved, so there is no agent.json, ever.
-func setupSHShapeConfig(t *testing.T, asURL string) (cfgPath, stateDir string) {
+func manualEnrollConfig(t *testing.T, asURL string) (cfgPath, stateDir string) {
 	t.Helper()
 	dir := t.TempDir()
 	stateDir = filepath.Join(dir, "state")
@@ -83,7 +83,7 @@ func runMiningEnable(t *testing.T, cfgPath string) (code int, stdout, stderr str
 	return code, out.String(), errOut.String()
 }
 
-// A setup.sh-shape installation (enroll/join/login — no connect ever
+// A manually enrolled installation (enroll/join/login — no connect ever
 // run) has a refresh token and NO agent.json at all. Disable used to
 // key only on LastEnrollmentSlot/agent.json and call this "nothing to
 // disable, never registered" — true of the registration, never of the
@@ -91,7 +91,7 @@ func runMiningEnable(t *testing.T, cfgPath string) (code int, stdout, stderr str
 // the refresh token directly.
 func TestMiningDisableActsOnARefreshTokenWithNoAgentRegistration(t *testing.T) {
 	as := newStubAS(t)
-	cfgPath, stateDir := setupSHShapeConfig(t, as.srv.URL)
+	cfgPath, stateDir := manualEnrollConfig(t, as.srv.URL)
 	store, err := auth.OpenStore(stateDir)
 	if err != nil {
 		t.Fatal(err)
@@ -157,7 +157,7 @@ func TestMiningDisablePersistsOffForRegisteredUnclaimedAgent(t *testing.T) {
 }
 
 func TestMiningDisablePersistsOffDespiteCorruptRegistration(t *testing.T) {
-	cfgPath, stateDir := setupSHShapeConfig(t, "https://as.example.invalid")
+	cfgPath, stateDir := manualEnrollConfig(t, "https://as.example.invalid")
 	store, err := auth.OpenStore(stateDir)
 	if err != nil {
 		t.Fatal(err)
@@ -181,7 +181,7 @@ func TestMiningDisablePersistsOffDespiteCorruptRegistration(t *testing.T) {
 }
 
 func TestMiningDisableRetainsHealthAndReportsItBelowOff(t *testing.T) {
-	cfgPath, stateDir := setupSHShapeConfig(t, "https://as.example.invalid")
+	cfgPath, stateDir := manualEnrollConfig(t, "https://as.example.invalid")
 	store, err := auth.OpenStore(stateDir)
 	if err != nil {
 		t.Fatal(err)

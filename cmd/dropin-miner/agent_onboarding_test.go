@@ -1444,10 +1444,7 @@ func TestAFreshInstallAlwaysHasADecisionOnFile(t *testing.T) {
 // The other half of "never in a no-decision state": a state directory
 // nothing has ever decided anything about — no connect, no mining
 // enable, no scripted config ever ran askMiningQuestion against it —
-// reads as stopped, not active. This used to default active for the
-// legacy installers' sake (setup.sh/install.ps1 wrote [mining] enabled
-// = true and enrolled without ever running connect); now that both
-// installers run connect first, an absent file means only "never
+// reads as stopped, not active. An absent file means only "never
 // decided," and that is not the same as "on."
 func TestAnInstallationWithNoDecisionFileAtAllIsStopped(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "state")
@@ -2001,8 +1998,8 @@ func TestTerminalYesIsFollowedThroughToAnActualEnrollment(t *testing.T) {
 	}
 	platform.claim("mining")
 
-	// connectConfig writes `enabled = true` explicitly (setup.sh's own
-	// shape) — finding 4's exact regression: with that already in the
+	// connectConfig writes `enabled = true` explicitly (a scripted first
+	// answer) — finding 4's exact regression: with that already in the
 	// file, the "enable mining?" question must NOT run again (the file
 	// already answered it), but the ADDRESS question must still reach the
 	// terminal. One line of stdin, not two: an "n"/"y" here would be

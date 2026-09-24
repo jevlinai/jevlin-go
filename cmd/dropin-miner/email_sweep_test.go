@@ -8,7 +8,7 @@ package main
 // a credential, and a rewrite would detach every release tag and break the
 // open PRs), so nothing but this guard stops the same mistake from
 // returning beside the fix. It walks every non-vendored .go file, every
-// *.md, and everything under scripts/ and .github/, and fails on an
+// *.md, and everything under .github/, and fails on an
 // email-shaped literal whose domain is not one of those RFC 2606 reserves
 // for exactly this purpose.
 //
@@ -196,7 +196,7 @@ func foldConstString(expr ast.Expr) (string, bool) {
 // the maintainer's own address (D.4) asked for: nothing here stops that
 // exact mistake — a real personal address used as an "email to redact"
 // sample — from returning, split across "+" or not, in any .go file,
-// *.md, scripts/ or .github/ this module ships.
+// *.md or .github/ file this module ships.
 func TestNoRealEmailAddressIsUsedAsATestSample(t *testing.T) {
 	root := moduleRoot(t)
 	fset := token.NewFileSet()
@@ -319,7 +319,7 @@ func TestNoRealEmailAddressIsUsedAsATestSample(t *testing.T) {
 			checkGoFile(t, path)
 		case strings.HasSuffix(path, ".md"):
 			checkTextFile(t, path)
-		case strings.HasPrefix(rel, "scripts"+sep) || strings.HasPrefix(rel, ".github"+sep):
+		case strings.HasPrefix(rel, ".github"+sep):
 			checkTextFile(t, path)
 		}
 		return nil

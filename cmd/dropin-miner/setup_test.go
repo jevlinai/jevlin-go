@@ -1998,11 +1998,8 @@ func TestSetupRefusesMalformedProfileMarkers(t *testing.T) {
 	}
 }
 
-// `setup -h` and `setup --help` print setup's usage and exit 0: the
-// installers' capability probe. On the base commit — before setup existed —
-// the same probe exits non-zero as an unknown command, which is what the
-// bridge's legacy branch relies on.
-func TestSetupHelpIsTheCapabilityProbe(t *testing.T) {
+// `setup -h` and `setup --help` print setup's usage and exit 0.
+func TestSetupHelpPrintsUsageAndExitsZero(t *testing.T) {
 	for _, flag := range []string{"-h", "--help", "-help"} {
 		var out, errOut bytes.Buffer
 		d := setupDeps{stdout: &out, stderr: &errOut}
@@ -2012,47 +2009,6 @@ func TestSetupHelpIsTheCapabilityProbe(t *testing.T) {
 		if !strings.Contains(out.String(), "usage: dropin-miner setup") || !strings.Contains(out.String(), allTargetIDs()) {
 			t.Errorf("setup %s did not print setup's usage:\n%s", flag, out.String())
 		}
-	}
-
-	const base = "37906ec85b6f41da66b9125c74db9cd0963599dd"
-	root := moduleRoot(t)
-	if err := exec.Command("git", "-C", root, "cat-file", "-e", base+"^{commit}").Run(); err != nil { // #nosec G204 -- fixed git arguments
-		t.Logf("base commit %s is not in this clone (a shallow checkout); the pre-setup half of this test runs where it is", base)
-		return
-	}
-	src := t.TempDir()
-	archive := exec.Command("git", "-C", root, "archive", "--format=tar", base, "go.mod", "go.sum", "cmd", "pkg") // #nosec G204 -- fixed git arguments
-	untar := exec.Command("tar", "-x", "-C", src)                                                                 // #nosec G204 -- tar from PATH into this test's own temp dir
-	pipe, err := archive.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	untar.Stdin = pipe
-	if err := untar.Start(); err != nil {
-		t.Fatal(err)
-	}
-	if err := archive.Run(); err != nil {
-		t.Fatal(err)
-	}
-	if err := untar.Wait(); err != nil {
-		t.Fatal(err)
-	}
-	bin := filepath.Join(t.TempDir(), "dropin-miner-base")
-	if runtime.GOOS == "windows" {
-		bin += ".exe"
-	}
-	build := exec.Command("go", "build", "-o", bin, "./cmd/dropin-miner") // #nosec G204 -- this test's own temp paths
-	build.Dir = src
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build base commit: %v\n%s", err, out)
-	}
-	var errOut bytes.Buffer
-	probe := exec.Command(bin, "setup", "-h") // #nosec G204 -- the binary this test just built
-	probe.Stderr = &errOut
-	err = probe.Run()
-	var exitErr *exec.ExitError
-	if !errors.As(err, &exitErr) || exitErr.ExitCode() == 0 || !strings.Contains(errOut.String(), `unknown command "setup"`) {
-		t.Fatalf("base commit's `setup -h`: err=%v stderr=%q, want a non-zero unknown-command exit", err, errOut.String())
 	}
 }
 
@@ -2097,70 +2053,6 @@ func TestSetupWindowsJournalRecordsDeltas(t *testing.T) {
 	second, _ := readEnvJournal(journalPath)
 	if second.TokendropConfig.PreviousValue != `C:\old\tokendrop.toml` {
 		t.Errorf("rerun overwrote previous_value with %q", second.TokendropConfig.PreviousValue)
-	}
-}
-
-// The config setup writes is the config setup.sh wrote. The fixtures were
-// captured by running scripts/setup.sh on the base commit (37906ec) with a
-// stub binary, TOKENDROP_HOME set to a scratch directory and stdin from
-// /dev/null — once plain, once with TOKENDROP_MINING=1 and a payout address
-// — and that directory replaced by {{HOME}}. The two are compared as loaded
-// Configs, with the home's directories normalized, because setup.sh spelled
-// them with a forward slash on every platform.
-func TestSetupConfigEqualsSetupShFixture(t *testing.T) {
-	for _, c := range []struct {
-		fixture string
-		mining  bool
-	}{
-		{"setup_sh_default.toml", false},
-		{"setup_sh_mining.toml", true},
-	} {
-		t.Run(c.fixture, func(t *testing.T) {
-			dir := t.TempDir()
-			home := filepath.Join(dir, "home")
-			raw, err := os.ReadFile(filepath.Join("testdata", "setup", c.fixture)) // #nosec G304 -- fixed testdata path
-			if err != nil {
-				t.Fatal(err)
-			}
-			// The script wrote the home raw between quotes; TOML-escape it
-			// for the substitution (the script itself could not, which is
-			// half of why this command exists).
-			escaped := strings.Trim(mustTOML(t, home), `"`)
-			script := filepath.Join(dir, "script.toml")
-			if err := os.WriteFile(script, bytes.ReplaceAll(raw, []byte("{{HOME}}"), []byte(escaped)), 0o600); err != nil { // #nosec G703 -- this test's own temp dir
-				t.Fatal(err)
-			}
-
-			env := map[string]string{}
-			if c.mining {
-				env["TOKENDROP_MINING"] = "1"
-				env["TOKENDROP_PAYOUT_ADDRESS"] = "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn"
-			}
-			v, err := resolveSetupValues(home, func(k string) string { return env[k] }, false)
-			if err != nil {
-				t.Fatal(err)
-			}
-			data, err := renderFreshConfig(v)
-			if err != nil {
-				t.Fatal(err)
-			}
-			ours := filepath.Join(dir, "setup.toml")
-			if err := os.WriteFile(ours, data, 0o600); err != nil {
-				t.Fatal(err)
-			}
-
-			normalize := func(c *config.Config) *config.Config {
-				c.Mining.StateDir = filepath.Clean(c.Mining.StateDir)
-				c.Mining.SpoolDir = filepath.Clean(c.Mining.SpoolDir)
-				c.Miner.IntakeDir = filepath.Clean(c.Miner.IntakeDir)
-				c.Miner.SessionsDir = filepath.Clean(c.Miner.SessionsDir)
-				return c
-			}
-			want, got := normalize(loadSetupConfig(t, script)), normalize(loadSetupConfig(t, ours))
-			if !reflect.DeepEqual(want, got) {
-				t.Fatalf("setup's config differs from setup.sh's:\n--- setup.sh ---\n%+v\n--- setup ---\n%+v\n--- setup's bytes ---\n%s", want, got, data)
-			}
-		})
 	}
 }
 

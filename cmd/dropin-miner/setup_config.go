@@ -75,7 +75,7 @@ func tomlString(s string) (string, error) {
 }
 
 // setupValues is everything the config is written from: pkg/config's
-// defaults, overridden by the TOKENDROP_* knobs setup.sh honored.
+// defaults, overridden by the TOKENDROP_* setup-time overrides.
 type setupValues struct {
 	home          string
 	router        string
@@ -121,8 +121,8 @@ func resolveSetupValues(home string, getenv func(string) string, interactive boo
 	return v, nil
 }
 
-// tomlLines renders `key = value` pairs with the values quoted, aligned the
-// way setup.sh's heredocs were.
+// tomlLines renders `key = value` pairs with the values quoted and the
+// equals signs aligned.
 type tomlLine struct {
 	key   string
 	value string // already TOML
@@ -176,7 +176,7 @@ func minerTable(v setupValues) (string, error) {
 	return b.String(), nil
 }
 
-// renderFreshConfig is setup.sh's config, with every value quoted.
+// renderFreshConfig is a fresh installation's config, with every value quoted.
 func renderFreshConfig(v setupValues) ([]byte, error) {
 	var b strings.Builder
 	provider, err := quoteAll("name", "search-router", "upstream", v.router)

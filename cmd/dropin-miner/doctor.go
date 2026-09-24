@@ -279,8 +279,7 @@ func doctorEnrolledCheck(f doctorFacts) doctorCheck {
 // — agent.json exists), since there is no enrollment token to redeem by
 // hand there; the old manual `enroll -assertion` path otherwise, for an
 // installation that enrolled without ever registering with the search
-// platform (setup.sh/install.ps1 before they ran connect, or the portal's
-// still-supported manual flow).
+// platform (the portal's manual flow).
 func doctorEnrollFix(f doctorFacts, connectFix string) string {
 	if f.HasRegistration {
 		return connectFix
