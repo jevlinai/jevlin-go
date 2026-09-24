@@ -229,8 +229,8 @@ func hermesHookInstalledFor(ops agentOps, path string, entry binEntry, windows b
 //
 // So the block is read, with the reader #83 built for the unmarked form. What
 // it is compared with is deliberately NOT H5's rule, which answers whose an
-// entry is and accepts every spelling this client ever wrote — v0.2.9's %q
-// among them, which neither of Hermes' splitters undoes. The block is ours to
+// entry is and accepts every spelling this client writes anywhere — %q among
+// them, which neither of Hermes' splitters undoes. The block is ours to
 // rewrite, so the question here is narrower and costs nothing to keep narrow:
 // does it decode to exactly the command the renderer writes today. A block
 // that is this installation's in a spelling that is not is still refreshed.

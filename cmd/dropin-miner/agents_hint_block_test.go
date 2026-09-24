@@ -90,9 +90,8 @@ func TestTheWindowsHintCarriesTheOutputEncodingLine(t *testing.T) {
 }
 
 // TestTheGenericRulesSnippetIsThePOSIXForm: the "for any other agent" line
-// knows nothing about the agent reading it, so it keeps v0.2.9's POSIX
-// form on every OS — the same command it always printed, now inside the
-// block that makes it run.
+// knows nothing about the agent reading it, so it is the POSIX form on
+// every OS, inside the block that makes it run.
 func TestTheGenericRulesSnippetIsThePOSIXForm(t *testing.T) {
 	for _, goos := range hostShellOSes {
 		t.Run(goos, func(t *testing.T) {

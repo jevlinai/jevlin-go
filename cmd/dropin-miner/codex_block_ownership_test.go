@@ -126,8 +126,8 @@ func TestTheUninstallDryRunNamesTheTablesItKeeps(t *testing.T) {
 	}
 }
 
-// A file holding nothing but our block is unchanged from v0.2.9: the block
-// goes and what is left is what was left before. This is the case the
+// A file holding nothing but our block: the block goes and what is left is
+// what was left before. This is the case the
 // existing golden covers, pinned here so the keeping path cannot quietly
 // change it.
 func TestUninstallWithNothingOfCodexsInTheBlockIsUnchanged(t *testing.T) {

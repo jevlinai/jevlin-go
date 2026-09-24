@@ -673,7 +673,7 @@ func gatherDoctorFactsFor(ctx context.Context, as asClient, m config.Mining, min
 	if f.MinerEnabled && f.MiningDecision.State == auth.MiningEnabled {
 		f.IntakeProbe = probeIntakeWritable(probe, miner.IntakeDir)
 		f.IntakeCount, f.IntakeErr = countIntakeJSON(miner.IntakeDir)
-		f.Stamp, f.StampPresent, f.StampErr = doctorFlushStamp(flushStampPath(m), legacyFlushStampPath(miner))
+		f.Stamp, f.StampPresent, f.StampErr = doctorFlushStamp(flushStampPath(m))
 		f.SpoolCount, f.QuarantineCount, f.SpoolErr = countSpool(m.SpoolDir)
 		f.SearchEpoch, f.SearchEpochPresent, f.SearchEpochErr = readSearchEpoch(miner.IntakeDir)
 	}
@@ -1016,18 +1016,13 @@ func doctorIntakeCheck(f doctorFacts) doctorCheck {
 	return c
 }
 
-// doctorFlushStamp reads the stamp the way a flush chooses it: the stamp under
-// the state directory, or, only while that one does not exist, the legacy
-// stamp beside the intake directory. An unreadable new stamp is reported as
-// unreadable, not replaced by an older one.
-func doctorFlushStamp(path, legacy string) (flushStamp, bool, error) {
-	if path != "" {
-		st, present, err := readFlushStampForDoctor(path)
-		if present || err != nil {
-			return st, present, err
-		}
+// doctorFlushStamp reads the stamp under the state directory; with no state
+// directory there is none. An unreadable stamp is reported as unreadable.
+func doctorFlushStamp(path string) (flushStamp, bool, error) {
+	if path == "" {
+		return flushStamp{}, false, nil
 	}
-	return readFlushStampForDoctor(legacy)
+	return readFlushStampForDoctor(path)
 }
 
 // readFlushStampForDoctor is readFlushStamp's opposite number.

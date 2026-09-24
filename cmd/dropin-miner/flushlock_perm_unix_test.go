@@ -13,7 +13,6 @@ import (
 	"sync"
 	"syscall"
 	"testing"
-	"time"
 )
 
 // sandboxEmulationUnavailable says why this process cannot emulate a sandbox
@@ -119,8 +118,8 @@ func proveReadWriteOpenIsEPERM(lock string) error {
 
 // TestSandboxedFlushFallsBackOnEPERM is the sandbox emulation with the errno
 // Codex's real macOS sandbox produces. The miner root is 0500, but the lock
-// and the legacy stamp keep 0600 and are made immutable instead, so a
-// read-write open of the lock fails with EPERM, never EACCES.
+// keeps 0600 and is made immutable instead, so a read-write open of the lock
+// fails with EPERM, never EACCES.
 func TestSandboxedFlushFallsBackOnEPERM(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skipf("EPERM is emulated with macOS `chflags uchg`; %s is covered by the EACCES emulation and the decision table", runtime.GOOS)
@@ -130,13 +129,8 @@ func TestSandboxedFlushFallsBackOnEPERM(t *testing.T) {
 	if _, err := ensureFlushLockFile(x.lock); err != nil {
 		t.Fatal(err)
 	}
-	writeStampT(t, x.legacy, flushStamp{SlotID: testSlotID, TargetEpoch: 7, LastAS: time.Now().Add(-time.Hour)})
-	legacyBefore, err := os.ReadFile(x.legacy)
-	if err != nil {
-		t.Fatal(err)
-	}
 	denyWritesKeepReads(t, x.root)
-	setUserImmutable(t, x.lock, x.legacy)
+	setUserImmutable(t, x.lock)
 	if err := proveWriteDeniedMinerRoot(x.root, x.lock, x.state); err != nil {
 		t.Fatalf("the fixture does not emulate the sandbox: %v", err)
 	}
@@ -154,8 +148,5 @@ func TestSandboxedFlushFallsBackOnEPERM(t *testing.T) {
 	}
 	if st := readFlushStamp(x.stamp); st.TargetEpoch != 10 {
 		t.Errorf("new stamp %+v, want target 10", st)
-	}
-	if after, err := os.ReadFile(x.legacy); err != nil || !bytes.Equal(after, legacyBefore) {
-		t.Errorf("the legacy stamp changed (err %v)", err)
 	}
 }

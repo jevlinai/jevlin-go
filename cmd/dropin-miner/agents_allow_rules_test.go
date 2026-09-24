@@ -7,10 +7,7 @@ package main
 // renderer does not write -- a fully bare one, and the PowerShell
 // call-operator one. They stand in for "a spelling this client has written
 // that is no longer current", which is a state the file reaches on any
-// renderer change; today's three forms happen to be a superset of v0.2.9's
-// two, so the Windows machine of the 0.2.11 release check settled at three
-// rather than growing without bound, and the defect there was that nothing
-// makes it settle.
+// renderer change; the defect is that nothing would make the count settle.
 
 import (
 	"encoding/json"

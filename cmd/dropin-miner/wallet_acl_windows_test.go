@@ -286,10 +286,10 @@ func assertOwnerOnlyProtected(t *testing.T, paths ...string) {
 	}
 }
 
-// v029Wallet lays out a wallet the way the previous release left one: a
+// unprotectedWallet lays out a wallet with no access list of its own: a
 // directory and two files that inherit whatever the installation directory
-// holds, with no access list of their own.
-func v029Wallet(t *testing.T, home string) (wallet, key, pub string) {
+// holds.
+func unprotectedWallet(t *testing.T, home string) (wallet, key, pub string) {
 	t.Helper()
 	wallet = filepath.Join(home, "wallet")
 	key, pub = filepath.Join(wallet, walletKeyFile), filepath.Join(wallet, walletSidecarFile)
@@ -327,7 +327,7 @@ func firstSetup(t *testing.T, s *setupSandbox) {
 func TestSetupRepairsAWalletAnotherPrincipalCouldRead(t *testing.T) {
 	s := newSetupSandbox(t)
 	firstSetup(t, s)
-	wallet, key, pub := v029Wallet(t, s.home)
+	wallet, key, pub := unprotectedWallet(t, s.home)
 	creds := filepath.Join(s.home, credentialsFile)
 	sid := logonSessionSID(t)
 	grantRead(t, s.home, sid, true)
@@ -441,7 +441,7 @@ func TestAWalletCreatedWhereAnotherPrincipalCanReadIsOwnerOnly(t *testing.T) {
 func TestSetupRefusesAReparsePointInTheWallet(t *testing.T) {
 	s := newSetupSandbox(t)
 	firstSetup(t, s)
-	wallet, key, _ := v029Wallet(t, s.home)
+	wallet, key, _ := unprotectedWallet(t, s.home)
 	target := filepath.Join(s.root, "elsewhere")
 	if err := os.Mkdir(target, 0o700); err != nil {
 		t.Fatal(err)
@@ -482,7 +482,7 @@ func TestSetupRefusesAReparsePointInTheWallet(t *testing.T) {
 func TestSetupFailsWhenAWalletFileCannotBeSecured(t *testing.T) {
 	s := newSetupSandbox(t)
 	firstSetup(t, s)
-	_, key, pub := v029Wallet(t, s.home)
+	_, key, pub := unprotectedWallet(t, s.home)
 	s.restrict = func(path string, dir bool) error {
 		if path == key {
 			return windows.ERROR_ACCESS_DENIED
@@ -509,7 +509,7 @@ func TestSetupFailsWhenAWalletFileCannotBeSecured(t *testing.T) {
 func TestDoctorReportsAnotherReaderOfTheWalletUntilSetupRepairsIt(t *testing.T) {
 	s := newSetupSandbox(t)
 	firstSetup(t, s)
-	_, key, _ := v029Wallet(t, s.home)
+	_, key, _ := unprotectedWallet(t, s.home)
 	sid := logonSessionSID(t)
 	grantRead(t, s.home, sid, true)
 	if found, inherited := entryFor(t, key, sid); !found || !inherited {

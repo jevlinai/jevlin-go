@@ -1,11 +1,10 @@
 package main
 
 // The flush lock is one file, <miner root>/flush.lock, for every binary that
-// can run a flush — 0.2.9 and later, inside or outside an agent's sandbox.
-// Two flushes over the same intake and spool must never overlap: a 0.2.9
-// flush that overlaps another re-spools records it already read and damages
-// them in code no later binary can patch, so the lock is the only safety and
-// it cannot be split across paths or generations.
+// can run a flush, inside or outside an agent's sandbox. Two flushes over the
+// same intake and spool must never overlap: a flush that overlapped another
+// would re-spool records the other had already read, so the lock is the only
+// safety and it cannot be split across paths or versions.
 //
 // A sandbox that denies writes to the miner root (Codex's workspace-write
 // block never grants it) denies a read-write open of flush.lock too. The
@@ -15,8 +14,8 @@ package main
 // handle in both directions. Only a permission denial falls back; any other
 // open error is a failure. A read-only open cannot create the file, so an
 // absent, uncreatable lock is its own error: that flush does not run. It
-// hides no overlap, because every flush that can write — 0.2.9's included —
-// creates the file before it promotes anything.
+// hides no overlap, because every flush that can write creates the file
+// before it promotes anything.
 //
 // Only the flush uses the fallback. Setup, connect, the lifecycle gate and
 // the destructive exclusion keep tryLockFile: they run outside any sandbox,

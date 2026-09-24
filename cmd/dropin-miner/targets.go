@@ -93,7 +93,7 @@ type preferenceTarget interface {
 // valid in, because the host picks and we never learn which.
 //
 // An unknown cell answers an *undeclaredShellError. What a caller does with
-// it also differs by channel: a skill keeps v0.2.9's POSIX form and the
+// it also differs by channel: a skill gets the POSIX form and the
 // install plan says the shell is not established (toolShellsForSkill),
 // because refusing would take away a host that works today. A hook command
 // has no such fallback; H3 owns that.
@@ -725,8 +725,8 @@ func (cursorTarget) Shells(goos string) hostShells {
 			// cell: no host was run live on Linux, macOS's hook runner was
 			// proven POSIX live, PowerShell is not a Linux default and cmd
 			// does not exist there. Left unknown, a hook command — which has
-			// no v0.2.9 fallback, since one written for the wrong runner
-			// fails silently — would mean Cursor on Linux losing the hooks it
+			// no fallback, since one written for the wrong runner fails
+			// silently — would mean Cursor on Linux losing the hooks it
 			// has today, which is the regression H-R5 forbids.
 			hook: shellCell{
 				evidence: evidenceRuled,

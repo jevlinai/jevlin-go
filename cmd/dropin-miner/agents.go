@@ -717,8 +717,7 @@ func indentHintProse(s string) string {
 // rulesSnippet is what a host without a skill directory is given —
 // opencode's AGENTS.md note, and the "for any other agent" text. It renders
 // for the shell that host runs tool calls in; a host with no established
-// shell, and the generic "any other agent" case, get the POSIX form, which
-// is what v0.2.9 printed for everyone.
+// shell, and the generic "any other agent" case, get the POSIX form.
 //
 // The command block is the skill's own — callSection, the same function
 // renderSkill calls, with the same body — so the hint has no command text of
@@ -754,7 +753,7 @@ func rulesSnippetFor(entry binEntry, shells skillShells) string {
 }
 
 // rulesSnippet is the generic form, for an agent this client knows nothing
-// about: the POSIX command, which is what v0.2.9 printed for everyone.
+// about: the POSIX command.
 func rulesSnippet(entry binEntry) string {
 	return rulesSnippetFor(entry, skillShells{kinds: []shellKind{shellPOSIX}})
 }
@@ -1004,11 +1003,10 @@ func claudeAllowRules(entry binEntry) []string {
 	if entry.cfg != "" {
 		suffix += fmt.Sprintf(" -config %q", entry.cfg)
 	}
-	// The single-quoted spelling is what the skill renders from H2 on; the
-	// %q-quoted and bare ones are v0.2.9's, kept because an installation that
-	// upgrades keeps whichever skill text it already had until the next
-	// `agents install`, and because a participant may have typed either.
-	// Every spelling is a prefix rule ending where the query begins.
+	// The single-quoted spelling is what the skill renders; the %q-quoted and
+	// bare ones cover the same command typed with the path double-quoted or
+	// unquoted, because a participant or a model may type either. Every
+	// spelling is a prefix rule ending where the query begins.
 	rules := []string{fmt.Sprintf("Bash(%q%s:*)", entry.command, suffix), fmt.Sprintf("Bash(%s%s:*)", entry.command, suffix)}
 	posixSuffix := " search"
 	if entry.cfg != "" {
@@ -1093,11 +1091,11 @@ func cursorHooksFor(t installTarget, entry binEntry, goos string) (hooksSpec, st
 // contiguous run inside the quoted text, and a second install or an
 // uninstall never recognizes its own entry.
 //
-// The prefix set is plural because the spelling changed: v0.2.9 wrote %q
-// for every host and OS, and from H3 a hook command is quoted for the
-// runner its host declares. Both have to be recognized — the old one so an
-// upgraded installation's entries can be replaced and removed, the new one
-// so this installation's can.
+// The prefix set is plural because a hook command is quoted for the runner
+// its host declares, and one binary is spelled a different way in each
+// (binaryPrefixes). An entry of ours in a spelling install does not write
+// for that host now is still recognized, so it is replaced and removed
+// rather than left beside the current one.
 func entryIsOurs(e any, ref installationRef) bool {
 	m, ok := e.(map[string]any)
 	if !ok {
@@ -1118,14 +1116,12 @@ func entryIsOurs(e any, ref installationRef) bool {
 	return false
 }
 
-// hookCommandIsOurs recognizes every spelling this client has written a hook
-// command in — the shell quoting it renders from H3 and v0.2.9's %q — and
-// then asks the question that decides ownership: does it name THIS
-// installation's config? An installation upgraded from v0.2.9 still has the
-// old spelling until the next `agents install`, and an uninstall that did not
-// recognize it would leave a hook running a binary that is gone; an entry
-// that names another installation's config runs a binary we share and is not
-// ours to touch (#73).
+// hookCommandIsOurs recognizes every spelling this client writes a command
+// in — each shell's quoting, %q and the bare path — and then asks the
+// question that decides ownership: does it name THIS installation's config?
+// An uninstall that did not recognize an entry of ours would leave a hook
+// running a binary that is gone; an entry that names another installation's
+// config runs a binary we share and is not ours to touch (#73).
 func hookCommandIsOurs(command string, ref installationRef) bool {
 	return ref.commandIsOurs(command)
 }
@@ -1168,13 +1164,12 @@ func planHooksMerge(ops agentOps, label, path string, p *agentPlan, entry binEnt
 	for _, ev := range spec.order {
 		list, _ := hooks[ev].([]any)
 		// An entry of ours that is not what we would write now is REPLACED,
-		// not left alone. Until H3 this loop only asked whether one was
-		// present, so an installation upgraded from v0.2.9 kept its %q
-		// entries for good: `agents install` saw its own binary, decided
-		// there was nothing to do, and the hook that never parsed in
-		// PowerShell (#69) stayed exactly as it was. Recognizing the old
+		// not left alone. Asking only whether one is present would keep a
+		// stale entry for good: `agents install` would see its own binary,
+		// decide there was nothing to do, and leave a hook that does not
+		// parse where it runs (#69) exactly as it was. Recognizing every
 		// spelling (hookCommandIsOurs) is what makes the replacement
-		// possible; skipping on it is what made the fix unreachable.
+		// possible.
 		kept := make([]any, 0, len(list))
 		ours, current := 0, false
 		for _, e := range list {
@@ -1214,8 +1209,7 @@ func planHooksMerge(ops agentOps, label, path string, p *agentPlan, entry binEnt
 // its replacement, for good. On the Windows machine of the 0.2.11 release
 // check that file held two rules for this binary and this config before the
 // check and three after one uninstall-and-install cycle, differing only in
-// quoting (#114). Today's three happen to be a superset of v0.2.9's two, so
-// the count settles; the defect is that nothing MAKES it settle, and the next
+// quoting (#114). The defect is that nothing MAKES the count settle, and the next
 // renderer change -- a spelling dropped, a quote changed, the PowerShell rule
 // #77 is waiting on -- adds one per host for ever, with nothing in the file
 // to say which is current.

@@ -8,9 +8,9 @@ package main
 // ours (H-R5). So the skill teaches one runnable form per declared shell,
 // labeled, rather than one form that is wrong for half the calls.
 //
-// A host whose shell is not established keeps v0.2.9's POSIX form and the
-// install says so in its plan: refusing would take away a host that works
-// today (Codex on Windows), which is a regression 0.2.10 must not ship.
+// A host whose shell is not established gets the POSIX form and the install
+// says so in its plan: refusing would take away a host that works today
+// (Codex on Windows).
 
 import (
 	"fmt"
@@ -87,8 +87,8 @@ func (s skillShells) lead() string {
 // toolShellsForSkill is the shells a host's skill renders for on this OS,
 // and the note the install plan prints when nothing established them.
 //
-// The fallback is v0.2.9's POSIX form, deliberately: a host nobody has
-// watched keeps working exactly as it does today, and the participant is
+// The fallback is the POSIX form, deliberately: a host nobody has watched
+// keeps working exactly as it does today, and the participant is
 // told which host and OS that applies to instead of finding out from a
 // search that never runs.
 func toolShellsForSkill(t installTarget, goos string) (shells skillShells, note string) {

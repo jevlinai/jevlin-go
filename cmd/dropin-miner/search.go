@@ -478,7 +478,7 @@ func recordSearchForMining(ops searchOps, cfg *config.Config, out searchOutcome,
 	// Never on the path above, which runs only when the search itself, or
 	// its own intake write, has already failed — this never turns a
 	// successful search into anything the participant sees fail.
-	recordSearchEpoch(cfg.Miner.IntakeDir, loadFlushStamp(flushStampPath(cfg.Mining), legacyFlushStampPath(cfg.Miner)).TargetEpoch)
+	recordSearchEpoch(cfg.Miner.IntakeDir, loadFlushStamp(flushStampPath(cfg.Mining)).TargetEpoch)
 	if mstore != nil {
 		_ = mstore.ClearHealth(auth.HealthCapture)
 	}
@@ -655,9 +655,9 @@ func postSearch(ctx context.Context, client *http.Client, call searchCall, body 
 // A host has one channel. Those that can rewrite a command hand the envelope
 // over in TOKENDROP_TRACE_BRIDGE; Cursor cannot, so its session-start hook
 // exports TOKENDROP_LINEAGE, and by that declaration says it writes no
-// bridge. For such a search a bridge variable is somebody else's — a stale
-// v0.2.9 hook entry, another host's hook run by this one (#87), a model that
-// read this repository's documentation — and it is dropped unread: not
+// bridge. For such a search a bridge variable is somebody else's — another
+// host's hook run by this one (#87), a model that read this repository's
+// documentation — and it is dropped unread: not
 // decoded, not compared, not used as a fallback when the lineage file turns
 // out to be missing. foreignBridge reports that this happened, so the caller
 // can say so.

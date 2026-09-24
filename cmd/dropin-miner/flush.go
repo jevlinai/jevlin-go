@@ -353,7 +353,7 @@ func runFlushAdmitted(ctx context.Context, cfg *config.Config, cfgPath string, f
 
 	// 1. target, join, capability — or the stamp's answer when fresh.
 	stampPath := flushStampPath(m)
-	stamp := loadFlushStamp(stampPath, legacyFlushStampPath(mn))
+	stamp := loadFlushStamp(stampPath)
 	now := time.Now()
 	fresh := !force && stamp.TargetEpoch != 0 && stamp.SlotID == m.SlotID && now.Sub(stamp.LastAS) < mn.FlushInterval
 	var epoch uint64

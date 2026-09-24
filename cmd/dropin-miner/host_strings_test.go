@@ -11,9 +11,8 @@ package main
 // on every runner: nothing in them depends on the OS the test runs on, only
 // on the OS it renders for.
 //
-// H1 characterizes: the goldens hold what v0.2.9 renders, doubled Windows
-// backslashes, Bash heredocs for PowerShell hosts and all. H2 and H3 change
-// them deliberately, as reviewed diffs. There is no flag that rewrites them.
+// The goldens hold what the renderers produce; a change to one is a reviewed
+// diff. There is no flag that rewrites them.
 
 import (
 	"bytes"

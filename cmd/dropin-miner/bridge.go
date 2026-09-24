@@ -119,10 +119,10 @@ func withTraceBridge(sh shellKind, bridge, cmd string) (string, bool) {
 func bridgeShellForTool(toolName string) (shellKind, bool) {
 	switch strings.ToLower(strings.TrimSpace(toolName)) {
 	case "bash", "":
-		// Absent means the payload predates the field or comes from a host
-		// that does not send it. That is v0.2.9's case, where the only tool
-		// this hook ever matched was Bash, so it keeps the POSIX prefix: a
-		// refusal here would cost lineage for every such call.
+		// Absent means the payload comes from a host that does not send the
+		// field. The Bash tool is the one this hook has always matched, so
+		// it keeps the POSIX prefix: a refusal here would cost lineage for
+		// every such call.
 		return shellPOSIX, true
 	case "powershell":
 		return shellPowerShell, true

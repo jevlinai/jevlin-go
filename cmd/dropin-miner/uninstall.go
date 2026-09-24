@@ -564,10 +564,10 @@ func (r *uninstallRun) uninstallTargets(ops agentOps, apply func(p *agentPlan)) 
 			hold(leftForeign(other))
 		case attributionUnknown:
 			// #73: an uninstall that cannot attribute a file leaves it and
-			// says so. The case is narrow — every skill and hook command has
-			// named its config since v0.2.9, so the only artifacts naming none
-			// are the JavaScript adapters from before they carried
-			// INSTALL_CONFIG — and claiming those by their binary alone is
+			// says so. The case is narrow — every skill, hook command and
+			// JavaScript adapter install writes names its config, so an
+			// artifact naming none was not written by this client's install
+			// as it stands — and claiming one by its binary alone is
 			// precisely the opencode-plugin complaint. So the message names
 			// the files and gives the participant the instruction that makes
 			// the problem go away by itself: one `agents install` stamps them,
@@ -607,7 +607,7 @@ func planWithout(p agentPlan, skip map[string]bool) agentPlan {
 }
 
 // A rendered word, as any of this client's renderers may have written it: a
-// double-quoted one (cmd's literal, and v0.2.9's %q), or a single-quoted one
+// double-quoted one (cmd's literal, %q or JSON), or a single-quoted one
 // (POSIX and PowerShell). Both regexes below capture the WHOLE word, quotes
 // included, because reading it back is unquoteRenderedPath's job and there
 // must be exactly one function that does it.
@@ -616,11 +616,10 @@ const renderedWordRe = `"(?:[^"\\\n]|\\.)*"|'[^'\n]*(?:(?:'\\''|'')[^'\n]*)*'`
 // installedCommand finds the binaries a rendered skill runs: the quoted path
 // before " search", " hook" or " agents prefer".
 //
-// Several spellings, because several renderers have written this file. v0.2.9
-// quoted every path with Go's %q; from H2 a skill is rendered for its host's
-// shell, which single-quotes the path (POSIX and PowerShell) or double-quotes
-// it literally (cmd). Matching only some of them would make a file written by
-// a current install look like one that names no binary at all.
+// Several spellings, because a skill is rendered for its host's shell, which
+// single-quotes the path (POSIX and PowerShell) or double-quotes it literally
+// (cmd). Matching only some of them would make a file written by a current
+// install look like one that names no binary at all.
 var installedCommand = regexp.MustCompile(`(` + renderedWordRe + `) (?:search|hook|agents prefer)\b`)
 
 // installedConfig finds the installation a rendered artifact declares: the
@@ -672,9 +671,8 @@ const (
 // share a binary are told apart only by the config each names, and matching
 // on the binary alone made every uninstall plan the removal of both. A file
 // that names an installation other than this one is foreign; a file that
-// names none — a v0.2.9 artifact, or an adapter written before this version —
-// is UNKNOWN, and unknown is left alone and reported rather than assumed to
-// be ours.
+// names none is UNKNOWN, and unknown is left alone and reported rather than
+// assumed to be ours.
 func attributeRemoved(ops agentOps, removes []string, ref installationRef, windows bool) (attribution, string) {
 	other := ""
 	sawAny := false
@@ -1047,7 +1045,7 @@ func (r *uninstallRun) purgeSet() (inside, outside []string) {
 	join := func(name string) string { return filepath.Join(r.home, name) }
 	first := []string{
 		join("wallet"), join("sessions"), join("intake"), join("spool"),
-		join(credentialsFile), join(setupConfigFile), join(preferFile), join("flush.json"),
+		join(credentialsFile), join(setupConfigFile), join(preferFile),
 	}
 	if entries, err := os.ReadDir(r.home); err == nil {
 		for _, e := range entries {
@@ -1142,8 +1140,8 @@ type configuredPath struct {
 
 // configuredStatePaths is every participant path a config names — state,
 // spool, intake, sessions — and the ones derived from them: the flush stamp
-// in the state directory, and beside the intake the stored credentials, the
-// earlier flush stamp and the flush lock.
+// in the state directory, and beside the intake the stored credentials and
+// the flush lock.
 func configuredStatePaths(cfg *config.Config) []configuredPath {
 	m, mn := cfg.Mining, cfg.Miner
 	out := []configuredPath{
@@ -1154,7 +1152,6 @@ func configuredStatePaths(cfg *config.Config) []configuredPath {
 	if mn.IntakeDir != "" {
 		out = append(out,
 			configuredPath{"the stored credentials beside miner.intake_dir", filepath.Join(minerRoot(mn), credentialsFile)},
-			configuredPath{"the earlier flush stamp beside miner.intake_dir", legacyFlushStampPath(mn)},
 			configuredPath{"the flush lock beside miner.intake_dir", flushLockPath(mn)})
 	}
 	var named []configuredPath

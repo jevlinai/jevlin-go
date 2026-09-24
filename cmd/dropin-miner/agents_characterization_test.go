@@ -1,18 +1,9 @@
 package main
 
-// The pre-registry characterization: what agents.go's three host switches
-// (install, uninstall, status), its selection rule, `agents prefer` and
-// the top-level help text did before the registry, captured so the
-// refactor onto targets.go can be checked against it byte-for-byte.
-//
-// This file's assertions, literals and expected values are frozen exactly
-// as they were characterized against the pre-registry code: the only
-// adaptation applied after the refactor is mechanical — agentSurfaces (a
-// struct with id/label fields) replaced by targetsByKind(targetHost)
-// ([]installTarget, ID()/Label() methods), surfaceByID replaced by a
-// local helper of the same shape over the registry, and the two
-// selectSurfaces call sites widened to pass the paths/getenv its Detect
-// calls now need. Nothing this file checks for changed.
+// The install and uninstall plan of every host, the selection rule, `agents
+// prefer` and the top-level help text, held byte for byte against goldens:
+// they are guards, so a change to what any host is handed is a reviewed diff
+// rather than a side effect.
 //
 // The goldens under testdata/ are read-only inputs to this file. There is
 // no flag that regenerates them: a future intentional behavior change
@@ -313,7 +304,7 @@ func TestPlanGoldenCaptureDropsWhatDiffersByOS(t *testing.T) {
 	for _, spelling := range []string{
 		`'/h/bin/dropin-miner' hook -config '/h/tokendrop.toml' cursor stop`,     // POSIX
 		`& '/h/bin/dropin-miner' hook -config '/h/tokendrop.toml' cursor stop`,   // PowerShell, call operator and all
-		`"/h/bin/dropin-miner" hook -config "/h/tokendrop.toml" cursor stop`,     // cmd, and v0.2.9's %q
+		`"/h/bin/dropin-miner" hook -config "/h/tokendrop.toml" cursor stop`,     // cmd, and %q
 		`\"/h/bin/dropin-miner\" hook -config \"/h/tokendrop.toml\" cursor stop`, // the same, inside a JSON hook file
 	} {
 		out := withRenderedPerOSStrings(goldenPlan{
@@ -853,9 +844,8 @@ func TestAgentsPreferAcrossAllSixHosts(t *testing.T) {
 
 // ── the rendered help, byte for byte ─────────────────────────────────────
 
-// TestHelpTextGolden captures usageText — exactly what the `help` command
-// prints — before it becomes a template rendered from the registry. A.4
-// requires the post-refactor render to reproduce this byte for byte.
+// TestHelpTextGolden holds usageText — exactly what the `help` command
+// prints, rendered from the registry — byte for byte.
 func TestHelpTextGolden(t *testing.T) {
 	path := filepath.Join("testdata", "help", "usage.golden")
 	want, err := os.ReadFile(path) // #nosec G304 -- a fixed testdata path this file builds, not an external one
@@ -867,10 +857,8 @@ func TestHelpTextGolden(t *testing.T) {
 	}
 }
 
-// TestAgentsUsageGolden captures agentsUsage byte for byte: commit 2
-// changes how its -client list is derived (from targetIDs(targetHost)
-// instead of surfaceIDs()), and this is the baseline that derivation must
-// still reproduce exactly.
+// TestAgentsUsageGolden holds agentsUsage byte for byte, its -client list
+// derived from targetIDs(targetHost).
 func TestAgentsUsageGolden(t *testing.T) {
 	path := filepath.Join("testdata", "help", "agents-usage.golden")
 	want, err := os.ReadFile(path) // #nosec G304 -- a fixed testdata path this file builds, not an external one

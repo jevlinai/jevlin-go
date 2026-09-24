@@ -16,10 +16,7 @@ package main
 // the platform are loopback stubs, a closed loopback proxy catches anything
 // that would dial out, and the platform stub fails the test if it is called.
 //
-// H1 recorded v0.2.9's results here, failures included, under names that said
-// so. H2 and H3 flipped those rows as they fixed them, and renamed them: a
-// test that asserts the fix is not characterization any more. What is still
-// named for a defect names the issue it guards (#66, #67, #68, #69).
+// A case named for a defect names the issue it guards (#66, #67, #68, #69).
 
 import (
 	"bytes"
@@ -443,7 +440,7 @@ func knownGoodSearch(sh execShell, in *execInstallation) (script string, stdin [
 }
 
 // TestExecHarnessRunsAKnownGoodSearchInEveryShell is what keeps every
-// "does not run here" row below from being vacuous. Each v0.2.9 failure is
+// "does not run here" row below from being vacuous. Each such failure is
 // asserted as nothing arriving and a non-zero exit — which a runner that
 // never starts its shell, or starts it with the wrong input, would also
 // produce. So every real shell this runner offers must first carry a search
@@ -569,7 +566,7 @@ func stdinBytesDelivered(t *testing.T, sh execShell, delivery stdinDelivery, req
 	return nil
 }
 
-// ── v0.2.9, characterized ────────────────────────────────────────────────
+// ── what each shell delivers ─────────────────────────────────────────────
 
 // deliveredBytes is what each shell delivers to a native program's stdin,
 // hex-dumped on the CI runners.
@@ -722,8 +719,8 @@ func TestTheQueryArrivesExactlyInEveryShell(t *testing.T) {
 // TestAdversarialPathsRunInEveryShell renders the search with an executable
 // and a config whose directories carry everything a participant's home might
 // — a space, an apostrophe, &, $, parentheses, and on Windows %, ^ and ! —
-// and runs it. v0.2.9 quoted every path with Go's %q, which leaves $ and `
-// live inside the double quotes it writes.
+// and runs it. Go's %q, which is no shell's quoting, leaves $ and ` live
+// inside the double quotes it writes.
 func TestAdversarialPathsRunInEveryShell(t *testing.T) {
 	names := []string{"we ird & $tuff (x)'q"}
 	if runtime.GOOS == "windows" {
@@ -891,7 +888,7 @@ func renderedShellsOnThisOS(t *testing.T, host string) []execShell {
 }
 
 // TestUnknownToolCellKeepsTheBashForm is H-R5's fallback: a host × OS nobody
-// has established keeps v0.2.9's Bash form and the install plan says which
+// has established gets the Bash form and the install plan says which
 // host and OS that applies to. Refusing to render would take the host away
 // entirely, which is the regression H-R5 forbids.
 //
@@ -976,7 +973,7 @@ func cursorLineageFileExists(in *execInstallation) bool {
 // and Stop, Cursor's sessionStart and stop) are not run here: a flush that
 // outlives its test holds files in the test's temporary directory. H3's hook
 // execution test runs every installed hook.
-var v029HookCases = map[string][]hookCase{
+var hookCases = map[string][]hookCase{
 	"claude": {
 		{
 			event: "PreToolUse",
@@ -1067,7 +1064,7 @@ var v029HookCases = map[string][]hookCase{
 func TestInstalledHookCommandsRunInTheirRunner(t *testing.T) {
 	for _, host := range []string{"claude", "cursor"} {
 		for _, sh := range hostShellsOnThisOS(t, host, channelHook) {
-			for _, hc := range v029HookCases[host] {
+			for _, hc := range hookCases[host] {
 				t.Run(host+"/"+sh.name+"/"+hc.event, func(t *testing.T) {
 					in := newExecInstallation(t)
 					spec := hookSpecFor(t, host, in.entry)
@@ -1143,7 +1140,7 @@ func TestCursorShellHookRecognizesTheSkillsOwnSearch(t *testing.T) {
 					// names more. Where it cannot run there is no recognizer to
 					// exercise, and saying so is the honest assertion.
 					if out.exit == 0 {
-						t.Fatalf("Cursor's hook now runs under %s as well; the ruling that kept v0.2.9's form is stale\ncommand: %s\n%s", sh.name, command, out)
+						t.Fatalf("Cursor's hook now runs under %s as well; the ruling that kept the cmd form is stale\ncommand: %s\n%s", sh.name, command, out)
 					}
 					t.Logf("as ruled, not served under %s: %s", sh.name, note)
 					return

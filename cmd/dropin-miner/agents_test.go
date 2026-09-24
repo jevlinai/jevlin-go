@@ -509,9 +509,8 @@ func TestAgentsHookAndAllowRuleMatchingSurvivesAWindowsStyleBinaryPath(t *testin
 		}
 	}
 	// Three spellings of the same prefix rule, and still three after a
-	// second install: the single-quoted path the skill now renders, and
-	// v0.2.9's %q-quoted and bare ones, which an agent may still be
-	// repeating from a skill it read before the upgrade.
+	// second install: the single-quoted path the skill renders, and the
+	// %q-quoted and bare ones an agent may type instead.
 	if allow := allowOf(t, m, settings); len(allow) != 3 {
 		t.Fatalf("Claude allow rules after two installs: want 3, got %d: %v", len(allow), allow)
 	}
@@ -564,17 +563,15 @@ func wantHookCommand(t *testing.T, tg installTarget, e binEntry, sub ...string) 
 }
 
 // TestEveryHookSpellingIsReplacedOnInstallAndRemovedOnUninstall seeds both
-// hook files with an entry in every spelling this client has ever written a
-// hook command in, then requires install to leave exactly one — the current
-// rendering — and uninstall to leave none.
+// hook files with an entry in every spelling the recognizer accepts as ours,
+// then requires install to leave exactly one — the current rendering — and
+// uninstall to leave none.
 //
-// No other test covered this. Every other one installs into a file this
-// client wrote itself, so the recognizer was only ever fed the spelling of
-// the version under test. The spelling that matters is the one already on
-// disk: an installation upgraded from v0.2.9 carries %q entries, and those
-// are exactly the ones that do not parse in PowerShell (#69). Until this
-// commit install saw its own binary in them, decided there was nothing to
-// do, and the fix never reached an upgraded machine.
+// Every other test installs into a file this client wrote itself, so the
+// recognizer is only ever fed the current spelling. A %q entry is the one
+// that matters: it is ours by the recognizer, and it does not parse in
+// PowerShell (#69), so an install that saw its own binary in it and decided
+// there was nothing to do would leave a hook that never runs.
 //
 // The Windows-style path is deliberate: with a POSIX path, %q and the cmd
 // double-quoted form are the same string and would not be two spellings.
@@ -699,30 +696,29 @@ func cursorEntryCommand(e any) string {
 	return s
 }
 
-// TestInstallUpgradesAV029InstallationInPlace is the upgrade a real machine
-// actually performs: exactly ONE v0.2.9 entry per event, in v0.2.9's %q
-// spelling, plus v0.2.9's two allow rules.
+// TestInstallReplacesOneStaleEntryPerEventInPlace: exactly ONE entry of ours
+// per event, in the %q spelling no hook is rendered in, plus two of the allow
+// rules install writes.
 //
 // TestEveryHookSpellingIsReplacedOnInstallAndRemovedOnUninstall cannot see
 // what this sees. It seeds every spelling at once, so the merge loop replaces
 // because it counted more than one entry of ours — never because it compared
 // the one it found against what it would write now. A sameJSONValue that
 // answered "the same" for any two entries leaves that test green and leaves
-// every upgraded installation with the hook that does not parse in
-// PowerShell (#69). Here there is exactly one entry and it is stale, so the
+// a stale entry that does not parse in PowerShell (#69). Here there is exactly one entry and it is stale, so the
 // replacement happens only if the comparison is real.
 //
 // The Windows-style binary path makes the stale spelling differ from the
 // current rendering on every runner: %q doubles the backslashes, and no
 // shell's quoting does.
-func TestInstallUpgradesAV029InstallationInPlace(t *testing.T) {
+func TestInstallReplacesOneStaleEntryPerEventInPlace(t *testing.T) {
 	const bin = `C:\Users\u\.tokendrop\bin\dropin-miner.exe`
 	cfg, err := filepath.Abs(testCfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	entry := binEntry{command: bin, cfg: cfg}
-	v029 := func(sub ...string) string {
+	stale := func(sub ...string) string {
 		return strconv.Quote(bin) + " hook -config " + strconv.Quote(cfg) + " " + strings.Join(sub, " ")
 	}
 
@@ -741,11 +737,11 @@ func TestInstallUpgradesAV029InstallationInPlace(t *testing.T) {
 	m, ops := newFakeMachine("claude", "cursor")
 	ops.executable = func() (string, error) { return bin, nil }
 
-	// v0.2.9's settings.json: one group per event, PreToolUse still matching
-	// Bash alone, and one hook of the participant's own on two events.
+	// A stale settings.json: one group per event, PreToolUse matching Bash
+	// alone, and one hook of the participant's own on two events.
 	claudeHooksSeed := map[string]any{}
 	for _, ce := range claudeEvents {
-		group := map[string]any{"hooks": []any{map[string]any{"type": "command", "command": v029(ce.sub...)}}}
+		group := map[string]any{"hooks": []any{map[string]any{"type": "command", "command": stale(ce.sub...)}}}
 		if ce.event == "PreToolUse" {
 			group["matcher"] = "Bash"
 		}
@@ -757,7 +753,7 @@ func TestInstallUpgradesAV029InstallationInPlace(t *testing.T) {
 	}
 	cursorHooksSeed := map[string]any{}
 	for _, ev := range cursorEvents {
-		list := []any{map[string]any{"command": v029("cursor", ev)}}
+		list := []any{map[string]any{"command": stale("cursor", ev)}}
 		if ev == "stop" {
 			list = append(list, map[string]any{"command": "./hooks/mine.sh"})
 		}
@@ -797,8 +793,8 @@ func TestInstallUpgradesAV029InstallationInPlace(t *testing.T) {
 			switch got := claudeGroupCommand(e); {
 			case got == want:
 				ours++
-			case got == v029(ce.sub...):
-				t.Errorf("Claude %s: the v0.2.9 entry was left exactly as it was: %q", ce.event, got)
+			case got == stale(ce.sub...):
+				t.Errorf("Claude %s: the stale entry was left exactly as it was: %q", ce.event, got)
 			default:
 				foreign++
 			}
@@ -815,7 +811,7 @@ func TestInstallUpgradesAV029InstallationInPlace(t *testing.T) {
 		}
 	}
 	// The replaced PreToolUse group carries the matcher this version writes,
-	// not v0.2.9's Bash-only one (#77).
+	// not the stale Bash-only one (#77).
 	for _, e := range claudeAfter["PreToolUse"].([]any) {
 		g, _ := e.(map[string]any)
 		if claudeGroupCommand(e) == wantHookCommand(t, claude, entry, "lineage") && g["matcher"] != claudeToolMatcher {
@@ -832,8 +828,8 @@ func TestInstallUpgradesAV029InstallationInPlace(t *testing.T) {
 			switch got := cursorEntryCommand(e); {
 			case got == want:
 				ours++
-			case got == v029("cursor", ev):
-				t.Errorf("Cursor %s: the v0.2.9 entry was left exactly as it was: %q", ev, got)
+			case got == stale("cursor", ev):
+				t.Errorf("Cursor %s: the stale entry was left exactly as it was: %q", ev, got)
 			default:
 				foreign++
 			}

@@ -11,6 +11,9 @@
 *.toml text eol=lf
 *.sh text eol=lf
 *.ps1 text eol=crlf
+# CRLF bytes are this fixture's subject, and its checksum and test depend on
+# them; text=auto would normalize them to LF on the next `git add`.
+testdata/fixtures/sse/crlf_endings.sse -text
 *.png binary
 *.tar.gz binary
 *.zip binary

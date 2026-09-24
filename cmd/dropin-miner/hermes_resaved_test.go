@@ -201,11 +201,11 @@ func TestOurMarkedBlockIsReadAfterHermesFoldsIt(t *testing.T) {
 func TestOurMarkedBlockInAStaleSpellingIsStillRefreshed(t *testing.T) {
 	ours := hermesResavedEntries["posix"].entry
 
-	// v0.2.9's %q spelling: this installation's under H5, and not a command
+	// The %q spelling: this installation's under H5, and not a command
 	// either of Hermes' splitters reads the way it was meant.
 	stale := strconv.Quote(ours.command) + " hook -config " + strconv.Quote(ours.cfg) + " hermes pre_tool_call"
 	if !hermesCommandIsOurHook(stale, refFor(ours)) {
-		t.Fatal("v0.2.9's spelling is no longer this installation's under H5, so this case tests nothing")
+		t.Fatal("the Go-quoted spelling is no longer this installation's under H5, so this case tests nothing")
 	}
 	m, ops := newFakeMachine("hermes")
 	m.files[hermesConfigPath] = hermesAppendBlock([]byte("model: gpt\n"), strings.Join(hermesHookLines(stale), "\n")+"\n")

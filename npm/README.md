@@ -515,9 +515,8 @@ flush_interval = "3m"                              # default 3m: how often a flu
 `[miner]`'s two directories default beside the state directory —
 `<parent of state_dir>/intake` and `.../sessions` — and `intake_dir`'s
 parent is also where `credentials.json` and the flush lock are looked for,
-so moving it moves those too. The flush stamp lives in the state directory;
-a `flush.json` beside the intake directory, from before 0.2.10, is read
-once as a starting value and otherwise left alone until a purge. `[mining] enabled` has no default worth
+so moving it moves those too. The flush stamp lives in the state directory.
+`[mining] enabled` has no default worth
 printing, because absence and an explicit `false` are different answers:
 the config records which of the two you gave (`MiningEnabledExplicit`), and
 an explicit `false` at a terminal is a deliberate opt-out that `connect`

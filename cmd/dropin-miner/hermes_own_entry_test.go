@@ -375,7 +375,7 @@ func TestOurHermesEntryIsRecognizedInEverySpelling(t *testing.T) {
 		"what install writes here today": current,
 		"Hermes on POSIX":                posix,
 		"POSIX quotes":                   tail(posixQuoteArg(entry.command), posixQuoteArg(entry.cfg)),
-		"v0.2.9's %q":                    tail(strconv.Quote(entry.command), strconv.Quote(entry.cfg)),
+		"%q":                             tail(strconv.Quote(entry.command), strconv.Quote(entry.cfg)),
 	}
 	if windows, ok := hermesHookCommand(entry, true); ok {
 		spellings["Hermes on Windows"] = windows

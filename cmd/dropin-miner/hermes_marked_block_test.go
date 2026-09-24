@@ -227,8 +227,8 @@ func TestWhatContinuesOurMappingAfterTheEndMarkerKeepsTheBlock(t *testing.T) {
 }
 
 // The same guard runs before install's refresh cut. The block here is this
-// installation's in v0.2.9's spelling, so install wants to rewrite it; the
-// lines after it are the real writer's.
+// installation's in a spelling install does not write, so install wants to
+// rewrite it; the lines after it are the real writer's.
 func TestInstallDoesNotRefreshABlockWhoseMappingHermesContinued(t *testing.T) {
 	entry := hermesResavedEntries["posix"].entry
 	stale := `"` + entry.command + `" hook -config "` + entry.cfg + `" hermes pre_tool_call`

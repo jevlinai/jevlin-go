@@ -525,22 +525,14 @@ func flushStampPath(m config.Mining) string {
 	return filepath.Join(m.StateDir, "flush.json")
 }
 
-// legacyFlushStampPath is where 0.2.9 and earlier kept the stamp. It is read
-// only as a starting value while the new stamp is absent, never written, and
-// removed only by a purge.
-func legacyFlushStampPath(m config.Miner) string { return filepath.Join(minerRoot(m), "flush.json") }
-
 func flushLockPath(m config.Miner) string { return filepath.Join(minerRoot(m), "flush.lock") }
 
-// loadFlushStamp reads the stamp, falling back to the legacy one only when the
-// new one does not exist.
-func loadFlushStamp(path, legacy string) flushStamp {
-	if path != "" {
-		if _, err := os.Lstat(path); !errors.Is(err, fs.ErrNotExist) {
-			return readFlushStamp(path)
-		}
+// loadFlushStamp reads the stamp; with no state directory there is none.
+func loadFlushStamp(path string) flushStamp {
+	if path == "" {
+		return flushStamp{}
 	}
-	return readFlushStamp(legacy)
+	return readFlushStamp(path)
 }
 
 func readFlushStamp(path string) flushStamp {

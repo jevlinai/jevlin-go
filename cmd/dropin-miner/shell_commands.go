@@ -202,7 +202,7 @@ func (e binEntry) hookCommandForShell(sh shellKind, sub ...string) (string, erro
 // a bare path breaks on a space.
 //
 // So a multi-runner cell keeps the form that the one observed runner accepts
-// — v0.2.9's — and answers a reason the install plan prints. Rendering a
+// and answers a reason the install plan prints. Rendering a
 // form proven nowhere would be worse than the status quo; removing the hooks
 // would take away the lineage Cursor does have on that OS.
 func (e binEntry) hookCommandForRunners(shells []shellKind, sub ...string) (cmd, note string, err error) {

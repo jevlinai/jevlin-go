@@ -4,12 +4,11 @@ package main
 //
 // #73, soak row S20. Two installations on one machine share a binary whenever
 // the second was made by running the first's copy — `~/.tokendrop/bin/
-// dropin-miner setup -home ~/dm-disposable` is the documented way. v0.2.9
-// matched an integration by its binary path alone, so the disposable
-// installation's `uninstall -purge-state` planned the removal of the soak
-// installation's Claude Code hooks, Codex sandbox block and Cursor hooks. The
-// shell-profile block was already right: it is matched by the config it
-// names, and it was correctly left with a line saying why.
+// dropin-miner setup -home ~/dm-disposable` is the documented way. Matching
+// an integration by its binary path alone makes the disposable installation's
+// `uninstall -purge-state` plan the removal of the other installation's Claude
+// Code hooks, Codex sandbox block and Cursor hooks. The shell-profile block
+// is matched by the config it names, and every integration follows it.
 
 import (
 	"bytes"
@@ -41,7 +40,7 @@ func TestAnIntegrationIsOursOnlyWhenItNamesOurBinaryAndOurConfig(t *testing.T) {
 		{"POSIX", posixQuoteArg(bin) + " hook -config " + posixQuoteArg(ours) + " lineage", true},
 		{"PowerShell", "& " + powerShellQuoteArg(bin) + " hook -config " + powerShellQuoteArg(ours) + " lineage", true},
 		{"cmd", `"` + bin + `" hook -config "` + ours + `" lineage`, true},
-		{"v0.2.9 %q", strconv.Quote(bin) + " hook -config " + strconv.Quote(ours) + " lineage", true},
+		{"%q", strconv.Quote(bin) + " hook -config " + strconv.Quote(ours) + " lineage", true},
 		{"bare", bin + " hook -config " + ours + " lineage", true},
 
 		// The same binary, the other installation's config. This is the whole
@@ -49,7 +48,7 @@ func TestAnIntegrationIsOursOnlyWhenItNamesOurBinaryAndOurConfig(t *testing.T) {
 		{"POSIX, their config", posixQuoteArg(bin) + " hook -config " + posixQuoteArg(theirs) + " lineage", false},
 		{"PowerShell, their config", "& " + powerShellQuoteArg(bin) + " hook -config " + powerShellQuoteArg(theirs) + " lineage", false},
 		{"cmd, their config", `"` + bin + `" hook -config "` + theirs + `" lineage`, false},
-		{"v0.2.9 %q, their config", strconv.Quote(bin) + " hook -config " + strconv.Quote(theirs) + " lineage", false},
+		{"%q, their config", strconv.Quote(bin) + " hook -config " + strconv.Quote(theirs) + " lineage", false},
 
 		// A different binary is not ours whatever config it names.
 		{"another binary, our config", posixQuoteArg("/opt/other/dropin-miner") + " hook -config " + posixQuoteArg(ours) + " lineage", false},
@@ -81,19 +80,19 @@ func TestADiscoveryInstallationOwnsOnlyCommandsWithNoConfig(t *testing.T) {
 	}
 }
 
-// The config is compared as a PATH, not as bytes: v0.2.9's %q hands Windows a
+// The config is compared as a PATH, not as bytes: %q hands Windows a
 // path whose separators are doubled, naming the same file in other bytes.
 func TestTheConfigIsComparedAsAPathNotAsBytes(t *testing.T) {
 	const bin = `C:\Users\u\.tokendrop\bin\dropin-miner.exe`
 	const cfg = `C:\Users\u\.tokendrop\tokendrop.toml`
 	ref := installationRef{bins: []string{bin}, cfg: cfg}
-	// Exactly what a v0.2.9 hooks.json holds, doubled separators and all.
+	// A %q-quoted command, doubled separators and all.
 	command := strconv.Quote(bin) + " hook -config " + strconv.Quote(cfg) + " lineage"
 	if !strings.Contains(command, `\\`) {
 		t.Fatal("this fixture is meant to carry doubled separators; it does not, so it proves nothing")
 	}
 	if !ref.commandIsOurs(command) {
-		t.Errorf("a v0.2.9 entry for this installation was not recognized: %s", command)
+		t.Errorf("a %%q entry for this installation was not recognized: %s", command)
 	}
 }
 
@@ -354,10 +353,10 @@ func TestARenderedPathIsReadBackWhicheverShellQuotedIt(t *testing.T) {
 		})
 	}
 
-	// v0.2.9's %q, which an upgraded installation still carries.
+	// %q, the spelling of Claude Code's double-quoted allow rule.
 	legacy := strconv.Quote(winBin) + " hook -config " + strconv.Quote(winCfg) + " cursor sessionStart"
 	if !containsPath(namedConfigs(legacy), winCfg) || !containsPath(namedBinaries(legacy), winBin) {
-		t.Errorf("a v0.2.9 entry is unreadable:\n  %s\n  configs %q\n  binaries %q", legacy, namedConfigs(legacy), namedBinaries(legacy))
+		t.Errorf("a %%q entry is unreadable:\n  %s\n  configs %q\n  binaries %q", legacy, namedConfigs(legacy), namedBinaries(legacy))
 	}
 }
 
@@ -391,9 +390,9 @@ func TestTheInstallationNamedInAMessageIsTheDecodedReading(t *testing.T) {
 			want:     `C:\Users\u\dm-disposable\tokendrop.toml`,
 		},
 		{
-			// v0.2.9 quoted every path with Go's %q, and an installation that
-			// upgraded still carries it until its next agents install.
-			name:     "a %q-quoted Windows path (v0.2.9)",
+			// Go's %q, the spelling of Claude Code's double-quoted allow
+			// rule.
+			name:     "a %q-quoted Windows path",
 			artifact: strconv.Quote(`C:\Users\u\dm-disposable\dropin-miner.exe`) + " search -config " + strconv.Quote(`C:\Users\u\dm-disposable\tokendrop.toml`),
 			want:     `C:\Users\u\dm-disposable\tokendrop.toml`,
 		},

@@ -202,8 +202,8 @@ func TestDeclaredShellsRefusesWhatIsNotEstablished(t *testing.T) {
 // Cursor's Windows hook cell names two runners and no single string serves
 // both: six candidate forms were measured against four paths on a Windows
 // runner, and the best of them stops at a path containing a $ or a %. So the
-// command is the one form proven under cmd — v0.2.9's, the only runner ever
-// observed to run a Cursor hook — and the install plan says why. Rendering a
+// command is the one form proven under cmd — the only runner ever observed
+// to run a Cursor hook — and the install plan says why. Rendering a
 // form proven nowhere would be worse than the status quo; declaring the cell
 // unknown would install no hooks at all, because a hook command has no
 // fallback: written for the wrong runner it fails silently, which is #69.
