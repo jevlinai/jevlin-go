@@ -1,0 +1,14 @@
+{
+  "writes": [
+    {
+      "surface": "Codex",
+      "path": "/home/u/.codex/skills/jevlin/SKILL.md",
+      "mode": 384,
+      "why": "skill",
+      "content": "\u003cSKILL.md, rendered for this OS; see testdata/hosts/*.golden\u003e"
+    }
+  ],
+  "notes": [
+    "Codex: shell commands run sandboxed; if searches record nothing, allow this command network access and let it write to your jevlin home"
+  ]
+}

@@ -7,12 +7,12 @@ func TestArtifactForReleaseMatrix(t *testing.T) {
 	for _, tc := range []struct {
 		goos, arch, want string
 	}{
-		{"linux", "amd64", "dropin-miner_0.3.0_linux_amd64.tar.gz"},
-		{"linux", "arm64", "dropin-miner_0.3.0_linux_arm64.tar.gz"},
-		{"darwin", "amd64", "dropin-miner_0.3.0_darwin_amd64.tar.gz"},
-		{"darwin", "arm64", "dropin-miner_0.3.0_darwin_arm64.tar.gz"},
-		{"windows", "amd64", "dropin-miner_0.3.0_windows_amd64.zip"},
-		{"windows", "arm64", "dropin-miner_0.3.0_windows_arm64.zip"},
+		{"linux", "amd64", "jevlin_0.3.0_linux_amd64.tar.gz"},
+		{"linux", "arm64", "jevlin_0.3.0_linux_arm64.tar.gz"},
+		{"darwin", "amd64", "jevlin_0.3.0_darwin_amd64.tar.gz"},
+		{"darwin", "arm64", "jevlin_0.3.0_darwin_arm64.tar.gz"},
+		{"windows", "amd64", "jevlin_0.3.0_windows_amd64.zip"},
+		{"windows", "arm64", "jevlin_0.3.0_windows_arm64.zip"},
 	} {
 		a, err := ArtifactFor(v, tc.goos, tc.arch)
 		if err != nil {

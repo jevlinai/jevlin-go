@@ -156,7 +156,7 @@ func TestPollReportsUnclaimedThenClaimed(t *testing.T) {
 	}
 }
 
-// WP4b (design f0ddb69 §5.5): the wire field cmd/dropin-miner's
+// WP4b (design f0ddb69 §5.5): the wire field cmd/jevlin's
 // askMiningQuestion reads to default the mining question to "no" on a
 // participant's later agents — an assumption about §5.2's shape pending
 // WP1 confirmation (client.go's own doc comment on the field). This

@@ -1,0 +1,13 @@
+{
+  "writes": null,
+  "removes": [
+    {
+      "surface": "Pi",
+      "path": "/home/u/.pi/agent/skills/jevlin"
+    },
+    {
+      "surface": "Pi",
+      "path": "/home/u/.pi/agent/extensions/jevlin.ts"
+    }
+  ]
+}

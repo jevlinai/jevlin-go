@@ -1,4 +1,4 @@
-module github.com/twilight-project/dropin-miner
+module github.com/jevlinai/jevlin-go
 
 go 1.25.0
 

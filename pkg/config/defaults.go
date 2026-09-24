@@ -1,15 +1,11 @@
 package config
 
-// Every network default the binary carries, in one place. Two hosts of
-// truth are worse than one: before this file the same six literals
-// (chain, AS, router, platform, agents API, and the wallet's node) were
-// duplicated across this package and cmd/dropin-miner, plus a seventh
-// copy in each of scripts/setup.sh and scripts/install.ps1 for the
-// installers' generated config — five places a network cutover had to
-// change in lockstep, with nothing that noticed a miss.
-// TestInstallerDefaultsMatchGo reads the two scripts off disk and
-// asserts their literals equal these; TestDefaultsAreTestnet asserts
-// every value here is still the testnet one and every URL is https.
+// Every network default the binary carries, in one place: the chain, the
+// AS, the router, the platform, the agents API and the wallet's node. A
+// network cutover changes these literals and nothing else, because two
+// hosts of truth drift apart and nothing notices a miss.
+// TestDefaultsAreTestnet asserts every value here is still the testnet
+// one and every URL is https.
 const (
 	DefaultChainID   = "twilight-testnet-1"
 	DefaultSlotID    = 3
@@ -33,7 +29,7 @@ const (
 
 // DefaultWalletNodes is keyed by chain id: the CometBFT RPC node the
 // wallet uses when nothing overrides it (-node, then
-// TOKENDROP_WALLET_NODE, then this table). One row per chain we know; a
+// JEVLIN_WALLET_NODE, then this table). One row per chain we know; a
 // chain with no row has no default — the wallet refuses before any
 // network call rather than guessing. Adding a network is adding a row
 // here.

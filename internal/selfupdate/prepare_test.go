@@ -38,7 +38,7 @@ func markerRunner() CommandRunner {
 		if err != nil {
 			return nil, nil, err
 		}
-		return []byte("dropin-miner " + strings.TrimSpace(string(body)) + "\n"), nil, nil
+		return []byte("jevlin " + strings.TrimSpace(string(body)) + "\n"), nil, nil
 	})
 }
 
@@ -47,7 +47,7 @@ func release030(t *testing.T, body string) *fakeReleaseSource {
 	t.Helper()
 	v, _ := ParseVersion("0.3.0")
 	artifact, _ := ArtifactFor(v, "linux", "amd64")
-	archive := makeTarGz(t, archiveEntry{name: "dropin-miner", body: body})
+	archive := makeTarGz(t, archiveEntry{name: "jevlin", body: body})
 	sum := sha256.Sum256(archive)
 	return &fakeReleaseSource{
 		release: ReleaseInfo{Version: v, Assets: map[string]ReleaseAsset{
@@ -63,7 +63,7 @@ func release030(t *testing.T, body string) *fakeReleaseSource {
 
 func installedBinary(t *testing.T) string {
 	t.Helper()
-	exe := filepath.Join(t.TempDir(), "bin", "dropin-miner")
+	exe := filepath.Join(t.TempDir(), "bin", "jevlin")
 	if err := os.MkdirAll(filepath.Dir(exe), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestPrepareStagesAVerifiedCandidateAndReplacesNothing(t *testing.T) {
 		t.Error("the candidate must hold the archive's executable")
 	}
 	names := dirNames(t, filepath.Dir(exe))
-	if len(names) != 2 || names[1] != "dropin-miner" || !strings.HasPrefix(names[0], ".dropin-miner.candidate-") {
+	if len(names) != 2 || names[1] != "jevlin" || !strings.HasPrefix(names[0], ".jevlin.candidate-") {
 		t.Errorf("after Prepare the directory holds %v: only the installed binary and the candidate, no previous and no rename", names)
 	}
 	p.Discard()
@@ -192,7 +192,7 @@ func TestPrepareRefusesAnUnsupportedPlatform(t *testing.T) {
 
 func TestPrepareStagesBesideTheResolvedBinaryNotTheLink(t *testing.T) {
 	exe := installedBinary(t)
-	link := filepath.Join(t.TempDir(), "dropin-miner")
+	link := filepath.Join(t.TempDir(), "jevlin")
 	if err := os.Symlink(exe, link); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestPrepareStagesBesideTheResolvedBinaryNotTheLink(t *testing.T) {
 	}
 	defer p.Discard()
 	realDir, _ := filepath.EvalSymlinks(filepath.Dir(exe))
-	if filepath.Dir(p.Candidate) != realDir || p.Executable != filepath.Join(realDir, "dropin-miner") {
+	if filepath.Dir(p.Candidate) != realDir || p.Executable != filepath.Join(realDir, "jevlin") {
 		t.Errorf("candidate %s / executable %s: both belong beside the resolved %s", p.Candidate, p.Executable, realDir)
 	}
 	if names := dirNames(t, filepath.Dir(link)); len(names) != 1 {

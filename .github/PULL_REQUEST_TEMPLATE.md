@@ -1,4 +1,4 @@
-<!-- Thanks for contributing to dropin-miner. Keep PRs focused and explain the WHY. -->
+<!-- Thanks for contributing to jevlin. Keep PRs focused and explain the WHY. -->
 
 ## Summary
 
@@ -20,9 +20,9 @@
 - [ ] `pkg/wire` / `testdata/fixtures` — the frozen AS wire contract (**conform upward, see AGENTS.md — never edit a mirrored fixture**)
 - [ ] `pkg/redact` — trace redaction
 - [ ] `pkg/fsx` — the durable writer (atomic rename, fsync, Windows write-through)
-- [ ] `cmd/dropin-miner` — CLI commands (search, hook, flush, connect, setup, uninstall, upgrade, mining enable/disable, wallet, agents, doctor, status)
+- [ ] `cmd/jevlin` — CLI commands (search, hook, flush, connect, setup, uninstall, upgrade, mining enable/disable, wallet, agents, doctor, status)
 - [ ] machine protocol (`search --stdin` / `-json` envelope) — a change to the mandatory header or to what `ok`, `status`, `code`, `retryable`, `action` or `exit_code` mean is a protocol version change (`machineVersion`); a command-specific payload addition that preserves the header is not
-- [ ] `pkg/config` / installers (`install.sh`, `install.ps1`; `scripts/setup.sh` is the legacy bridge for binaries older than v0.2.9)
+- [ ] `pkg/config`
 - [ ] lifecycle: `setup` / `uninstall` / `upgrade`, `internal/selfupdate`, the lifecycle locks — a destructive or replacing operation; see invariant 17
 - [ ] docs / CHANGELOG
 
@@ -33,7 +33,7 @@
 - [ ] Commit messages carry the reasoning (what was rejected and why), no `Co-Authored-By`/`Claude-Session` trailers (AGENTS.md convention)
 - [ ] Docs updated where the behavior is described, each ticked or marked N/A:
       `README.md` · `npm/README.md` (byte-mirrors the top-level README — `TestNPMReadmeMirrorsRootREADME`) ·
-      `docs/PARTICIPANT.md` · `cmd/dropin-miner/skill.md` · `usageText` (`main.go`) ·
+      `docs/PARTICIPANT.md` · `cmd/jevlin/skill.md` · `usageText` (`main.go`) ·
       `AGENTS.md` · `CHANGELOG.md`
 - [ ] State-directory change, if any (a new or changed file under a participant's state dir): named below with its writer and its reader — N/A otherwise
 

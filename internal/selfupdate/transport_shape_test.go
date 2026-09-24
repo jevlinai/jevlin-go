@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twilight-project/dropin-miner/internal/networkfence"
+	"github.com/jevlinai/jevlin-go/internal/networkfence"
 )
 
 func TestProductionTransportMatchesItsPreD1cShapeExactly(t *testing.T) {

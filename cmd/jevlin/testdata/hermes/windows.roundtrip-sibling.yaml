@@ -1,0 +1,12 @@
+model: gpt
+
+# >>> jevlin agents install >>>
+hooks:
+  pre_tool_call:
+    - command: '"C:\Users\u\.jevlin\bin\jevlin.exe" hook -config "C:\Users\u\.jevlin\jevlin.toml"
+        hermes pre_tool_call'
+      matcher: "terminal"
+# <<< jevlin agents install <<<
+  post_tool_call:
+    - command: echo hi
+      matcher: terminal

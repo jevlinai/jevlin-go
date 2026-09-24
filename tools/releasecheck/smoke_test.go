@@ -16,10 +16,10 @@ import (
 func TestCheckVersionOutputAcceptsExactlyWhatTheBinaryPrints(t *testing.T) {
 	v := mustParseTag(t, "v0.2.8")
 	for _, out := range []string{
-		"dropin-miner 0.2.8",
-		"dropin-miner 0.2.8\n",
-		"dropin-miner 0.2.8\r\n",
-		"  dropin-miner 0.2.8  \n",
+		"jevlin 0.2.8",
+		"jevlin 0.2.8\n",
+		"jevlin 0.2.8\r\n",
+		"  jevlin 0.2.8  \n",
 	} {
 		if err := CheckVersionOutput([]byte(out), v); err != nil {
 			t.Errorf("%q was rejected: %v", out, err)
@@ -33,15 +33,15 @@ func TestCheckVersionOutputRejectsEverythingElse(t *testing.T) {
 		out, why string
 	}{
 		{"", "nothing ran, or nothing was captured"},
-		{"dropin-miner 0.2.7", "the previous release's binary — the failure the whole pipeline exists to catch"},
-		{"dropin-miner v0.2.8", "goreleaser strips the v from -X main.version; expecting it here fails a correct release"},
-		{"dropin-miner dev", "an un-stamped build"},
-		{"dropin-miner dev (abc1234)", "an un-stamped build with a revision"},
+		{"jevlin 0.2.7", "the previous release's binary — the failure the whole pipeline exists to catch"},
+		{"jevlin v0.2.8", "goreleaser strips the v from -X main.version; expecting it here fails a correct release"},
+		{"jevlin dev", "an un-stamped build"},
+		{"jevlin dev (abc1234)", "an un-stamped build with a revision"},
 		{"0.2.8", "a version with no binary name is not this binary"},
-		{"dropin-miner 0.2.80", "a longer version must not satisfy a shorter one"},
-		{"dropin-miner", "a name with no version"},
-		{"dropin-miner 0.2.8 extra", "anything after the version means something else printed too"},
-		{"dropin-miner installed for linux/amd64\ndropin-miner 0.2.8", "the postinstall's own output captured along with the version"},
+		{"jevlin 0.2.80", "a longer version must not satisfy a shorter one"},
+		{"jevlin", "a name with no version"},
+		{"jevlin 0.2.8 extra", "anything after the version means something else printed too"},
+		{"jevlin installed for linux/amd64\njevlin 0.2.8", "the postinstall's own output captured along with the version"},
 	} {
 		if err := CheckVersionOutput([]byte(tc.out), v); err == nil {
 			t.Errorf("%q was accepted: %s", tc.out, tc.why)
@@ -53,7 +53,7 @@ func TestCheckVersionOutputRejectsEverythingElse(t *testing.T) {
 // message has to say which version was found as well as which was
 // wanted — a bare "smoke failed" sends a human to three logs.
 func TestCheckVersionOutputNamesBothVersions(t *testing.T) {
-	err := CheckVersionOutput([]byte("dropin-miner 0.2.7"), mustParseTag(t, "v0.2.8"))
+	err := CheckVersionOutput([]byte("jevlin 0.2.7"), mustParseTag(t, "v0.2.8"))
 	if err == nil {
 		t.Fatal("the previous release's version was accepted")
 	}
@@ -67,7 +67,7 @@ func TestCheckVersionOutputNamesBothVersions(t *testing.T) {
 func TestSmokeSubcommandReadsTheCapturedOutput(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "version.txt")
-	if err := os.WriteFile(path, []byte("dropin-miner 0.2.8\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("jevlin 0.2.8\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("GITHUB_OUTPUT", "")

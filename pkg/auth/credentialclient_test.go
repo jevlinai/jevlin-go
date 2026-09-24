@@ -2,7 +2,7 @@ package auth
 
 // The structural guarantee, and the reproductions underneath it.
 //
-// The acceptance bar itself now lives in cmd/tokendrop/boundary_test.go as
+// The acceptance bar itself now lives in cmd/jevlin/boundary_test.go as
 // TestEveryHTTPClientInTheModuleSetsARedirectPolicy, alongside the other
 // module-wide structural invariants. It was package-scoped here first, and
 // that scope was itself the defect: it could not see the two clients in

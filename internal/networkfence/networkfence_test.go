@@ -69,7 +69,7 @@ func TestExpectDrainsAndRemainingPeeks(t *testing.T) {
 // cannot, by itself, prove the ordering guarantee that actually matters —
 // that this runs before Go's own ProxyFromEnvironment caches a value for
 // the rest of the process, which is a once-per-process fact this package's
-// own test binary cannot reset — cmd/dropin-miner's subprocess test proves
+// own test binary cannot reset — cmd/jevlin's subprocess test proves
 // that half, by re-executing a whole fresh process with the environment
 // already poisoned before its own TestMain ever runs.
 func TestClearProxyEnvUnsetsEveryVariable(t *testing.T) {

@@ -4,7 +4,7 @@ import "fmt"
 
 const (
 	// ProjectName is the GoReleaser project and the executable's base name.
-	ProjectName = "dropin-miner"
+	ProjectName = "jevlin"
 	// ChecksumAssetName is GoReleaser's checksum.name_template.
 	ChecksumAssetName = "checksums.txt"
 )

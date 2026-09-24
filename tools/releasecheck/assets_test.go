@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/twilight-project/dropin-miner/internal/selfupdate"
+	"github.com/jevlinai/jevlin-go/internal/selfupdate"
 )
 
 // goreleaserFixture is the repository's current naming contract, written
@@ -17,10 +17,10 @@ import (
 // fixture quietly describing a config that no longer exists.
 const goreleaserFixture = `
 version: 2
-project_name: dropin-miner
+project_name: jevlin
 builds:
-  - main: ./cmd/dropin-miner
-    binary: dropin-miner
+  - main: ./cmd/jevlin
+    binary: jevlin
     env: [CGO_ENABLED=0]
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
@@ -38,12 +38,12 @@ release:
 
 var wantAssets028 = []string{
 	"checksums.txt",
-	"dropin-miner_0.2.8_darwin_amd64.tar.gz",
-	"dropin-miner_0.2.8_darwin_arm64.tar.gz",
-	"dropin-miner_0.2.8_linux_amd64.tar.gz",
-	"dropin-miner_0.2.8_linux_arm64.tar.gz",
-	"dropin-miner_0.2.8_windows_amd64.zip",
-	"dropin-miner_0.2.8_windows_arm64.zip",
+	"jevlin_0.2.8_darwin_amd64.tar.gz",
+	"jevlin_0.2.8_darwin_arm64.tar.gz",
+	"jevlin_0.2.8_linux_amd64.tar.gz",
+	"jevlin_0.2.8_linux_arm64.tar.gz",
+	"jevlin_0.2.8_windows_amd64.zip",
+	"jevlin_0.2.8_windows_arm64.zip",
 }
 
 // TestSelfUpdaterAssetNamesMatchGoReleaser is the coupling between the
@@ -179,7 +179,7 @@ func TestParseNamingContractFailsClosedOnShapesItDoesNotModel(t *testing.T) {
 		},
 		{
 			name:   "no project_name",
-			yaml:   strings.Replace(goreleaserFixture, "project_name: dropin-miner", "", 1),
+			yaml:   strings.Replace(goreleaserFixture, "project_name: jevlin", "", 1),
 			wantIn: "project_name",
 		},
 	} {
@@ -250,7 +250,7 @@ func TestDiffAssetsNamesBothDirections(t *testing.T) {
 // grew an artifact kind this check cannot name, and a verifier that
 // ignores files it does not understand is not verifying the release.
 func TestDiffAssetsTreatsAnUnexpectedAssetAsIncomplete(t *testing.T) {
-	d := DiffAssets(wantAssets028, append(append([]string(nil), wantAssets028...), "dropin-miner_0.2.8_linux_amd64.deb"))
+	d := DiffAssets(wantAssets028, append(append([]string(nil), wantAssets028...), "jevlin_0.2.8_linux_amd64.deb"))
 	if d.Complete() {
 		t.Error("an unexpected asset was accepted; the set comparison is one-directional")
 	}

@@ -13,8 +13,8 @@ import (
 	"errors"
 	"strconv"
 
-	"github.com/twilight-project/dropin-miner/pkg/observe"
-	"github.com/twilight-project/dropin-miner/pkg/wire"
+	"github.com/jevlinai/jevlin-go/pkg/observe"
+	"github.com/jevlinai/jevlin-go/pkg/wire"
 )
 
 // ErrNotPromotable means the observation is not structurally eligible
@@ -105,7 +105,7 @@ func Build(obs *observe.Observation, clientRecordID string) (*wire.ProviderObser
 // shape.
 //
 // The mapping is by ROUTE, decided upstream by the caller — in
-// cmd/dropin-miner, intakeRecord.observation() hardcodes
+// cmd/jevlin, intakeRecord.observation() hardcodes
 // observe.ProfileSearchRouter, because the search command only ever calls
 // /v1/search, a search-router exchange by definition. It is deliberately
 // not inferred from the response body: a

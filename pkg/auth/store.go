@@ -25,11 +25,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/twilight-project/dropin-miner/pkg/fsx"
+	"github.com/jevlinai/jevlin-go/pkg/fsx"
 
 	jose "github.com/go-jose/go-jose/v4"
 
-	"github.com/twilight-project/dropin-miner/pkg/mining/draw"
+	"github.com/jevlinai/jevlin-go/pkg/mining/draw"
 )
 
 const (

@@ -1,6 +1,6 @@
 // Package networkfence is test-only infrastructure: no production code
 // anywhere in this module imports it. Every package whose tests build a
-// network client (cmd/dropin-miner, pkg/auth, pkg/platform,
+// network client (cmd/jevlin, pkg/auth, pkg/platform,
 // internal/selfupdate) calls Guard from its own TestMain instead of calling
 // m.Run() directly, and every such client is wired (in its own package's
 // production code) to internal/netdial's shared DialContext seam — this
@@ -30,7 +30,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/twilight-project/dropin-miner/internal/netdial"
+	"github.com/jevlinai/jevlin-go/internal/netdial"
 )
 
 // RefusedError is the fence's own typed refusal. A guard test asserts

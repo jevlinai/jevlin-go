@@ -1,7 +1,7 @@
 // Package config resolves the proxy configuration exactly once at startup —
-// defaults, then a TOML file, then TOKENDROP_* environment variables, then
-// flags — into an immutable struct. Nothing re-reads configuration at request
-// time. Unsafe states are rejected here rather than warned about: a
+// defaults, then a TOML file (JEVLIN_CONFIG names it), then the proxy-era
+// TOKENDROP_* listener variables, then flags — into an immutable struct.
+// Nothing re-reads configuration at request time. Unsafe states are rejected here rather than warned about: a
 // non-loopback TCP listener (no override flag exists), content logging
 // (the key is accepted only in order to be rejected), and a non-https or
 // credential-carrying upstream.
@@ -94,7 +94,7 @@ type Mining struct {
 	MetadataTTL time.Duration
 	// StateDir holds the installation's secret material (ADR-0008:
 	// owner-only files — DPoP key, refresh authorization,
-	// participation_secret). Defaults to os.UserConfigDir()/tokendrop/state.
+	// participation_secret). Defaults to os.UserConfigDir()/jevlin/state.
 	StateDir string
 	// SpoolDir holds durably-written observations awaiting delivery.
 	// Separate from StateDir because its contents are evidence, not
@@ -207,7 +207,7 @@ type Config struct {
 	// MiningEnabledExplicit is true when the config file itself wrote
 	// `[mining] enabled` (true or false) — distinct from Mining.Enabled
 	// being false because the file said nothing about it at all. There
-	// is no TOKENDROP_* env override or flag for mining.enabled, so the
+	// is no environment override or flag for mining.enabled, so the
 	// file is the only source this can come from. connect and mining
 	// enable need the distinction: they ask their one interactive
 	// question only when this is false (nobody has decided yet); when
@@ -323,15 +323,15 @@ func Load(args []string, getenv func(string) string) (cfg *Config, showVersion b
 	raw := newRawConfigDefaults()
 
 	// TOML file: explicit path (flag or env) is required to exist; the
-	// conventional ./tokendrop.toml is picked up when present.
+	// conventional ./jevlin.toml is picked up when present.
 	path := *flagConfig
 	if path == "" {
-		path = getenv("TOKENDROP_CONFIG")
+		path = getenv("JEVLIN_CONFIG")
 	}
 	explicit := path != ""
 	if path == "" {
-		if _, statErr := os.Stat("tokendrop.toml"); statErr == nil {
-			path = "tokendrop.toml"
+		if _, statErr := os.Stat("jevlin.toml"); statErr == nil {
+			path = "jevlin.toml"
 		}
 	}
 	if path != "" {
@@ -405,7 +405,8 @@ func newRawConfigDefaults() rawConfig {
 	}
 }
 
-// applyEnv is Load's TOKENDROP_* environment overlay, the same for a config
+// applyEnv is Load's environment overlay — the proxy-era listener
+// variables, which keep their TOKENDROP_ names — the same for a config
 // read from a path (Load) or from bytes already in hand (LoadBytes).
 func applyEnv(r *rawConfig, getenv func(string) string) {
 	if v := getenv("TOKENDROP_LISTEN"); v != "" {
@@ -863,7 +864,7 @@ func (r *rawConfig) finishMining() (Mining, error) {
 	m.StateDir = r.miningStateDir
 	if m.StateDir == "" {
 		if base, err := os.UserConfigDir(); err == nil {
-			m.StateDir = filepath.Join(base, "tokendrop", "state")
+			m.StateDir = filepath.Join(base, "jevlin", "state")
 		}
 	}
 	m.SpoolDir = r.miningSpoolDir

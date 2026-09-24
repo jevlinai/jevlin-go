@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/twilight-project/dropin-miner/pkg/mining/scope"
+	"github.com/jevlinai/jevlin-go/pkg/mining/scope"
 )
 
 // ErrProxyBindingMismatch is the capability exchange's refusal when this

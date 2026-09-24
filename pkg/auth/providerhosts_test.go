@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/twilight-project/dropin-miner/pkg/wire"
+	"github.com/jevlinai/jevlin-go/pkg/wire"
 )
 
 const goodTemplate = "https://openrouter.ai/auth?code_challenge={code_challenge}&code_challenge_method=S256"

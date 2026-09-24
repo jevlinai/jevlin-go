@@ -1,0 +1,17 @@
+{
+  "writes": [
+    {
+      "surface": "Hermes",
+      "path": "\u003cHERMES_HOME\u003e/config.yaml",
+      "mode": 384,
+      "why": "remove lineage hook",
+      "content": ""
+    }
+  ],
+  "removes": [
+    {
+      "surface": "Hermes",
+      "path": "\u003cHERMES_HOME\u003e/skills/jevlin"
+    }
+  ]
+}

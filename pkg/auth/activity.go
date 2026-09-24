@@ -23,7 +23,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/twilight-project/dropin-miner/pkg/wire"
+	"github.com/jevlinai/jevlin-go/pkg/wire"
 )
 
 // MinVerifiedObservations is the POC-1 trusted-eligibility threshold: one

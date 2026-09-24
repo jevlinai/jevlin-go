@@ -45,7 +45,7 @@ func TestInstallerAssetNamesMatchesTheGoreleaserDerivation(t *testing.T) {
 
 // The failure this coupling exists to catch: .goreleaser.yaml renames
 // every archive, the release builds and uploads perfectly, and every
-// `npm install dropin-miner` 404s on a URL install.js assembled from a
+// `npm install jevlin` 404s on a URL install.js assembled from a
 // rule nobody changed.
 func TestARenameOnTheGoreleaserSideIsCaught(t *testing.T) {
 	renamed := strings.Replace(string(realGoreleaser(t)),
@@ -95,8 +95,8 @@ func TestARewrittenInstallerRuleStopsTheCheck(t *testing.T) {
 	}{
 		{
 			name: "the archive name template",
-			from: "const name = `dropin-miner_${pkg.version}_${osName}_${arch}.${ext}`",
-			to:   "const name = `dropin-miner-${pkg.version}-${osName}-${arch}.${ext}`",
+			from: "const name = `jevlin_${pkg.version}_${osName}_${arch}.${ext}`",
+			to:   "const name = `jevlin-${pkg.version}-${osName}-${arch}.${ext}`",
 		},
 		{
 			name: "the extension rule",

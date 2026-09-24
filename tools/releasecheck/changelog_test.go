@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -67,13 +68,18 @@ func TestHasReleaseHeadingRejectsWhatIsNotAHeading(t *testing.T) {
 
 // The convention this reads is stated by CHANGELOG.md itself, so it is
 // worth proving the reader agrees with the file rather than only with
-// the fixtures above.
+// the fixtures above: every release heading the file carries is found.
 func TestHasReleaseHeadingAgreesWithTheRealChangelog(t *testing.T) {
 	body, err := os.ReadFile(filepath.Join("..", "..", "CHANGELOG.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, tag := range []string{"v0.2.7", "v0.2.6", "v0.2.0", "v0.1.7"} {
+	for _, line := range strings.Split(string(body), "\n") {
+		rest, ok := strings.CutPrefix(line, "## v")
+		if !ok {
+			continue
+		}
+		tag := "v" + strings.Fields(rest)[0]
 		if !HasReleaseHeading(body, mustParseTag(t, tag)) {
 			t.Errorf("CHANGELOG.md has a heading for %s, but the reader did not find it", tag)
 		}
@@ -82,5 +88,9 @@ func TestHasReleaseHeadingAgreesWithTheRealChangelog(t *testing.T) {
 	// would pass for every future release without anyone writing an entry.
 	if HasReleaseHeading(body, mustParseTag(t, "v9.9.9")) {
 		t.Error("CHANGELOG.md appears to have a v9.9.9 heading, which means this reader matches too loosely")
+	}
+	// Nor does the Unreleased section stand in for the first release.
+	if !strings.Contains(string(body), "## v") && HasReleaseHeading(body, mustParseTag(t, "v0.1.0")) {
+		t.Error("CHANGELOG.md's Unreleased section was read as a v0.1.0 heading")
 	}
 }

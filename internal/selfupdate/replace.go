@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/twilight-project/dropin-miner/pkg/fsx"
+	"github.com/jevlinai/jevlin-go/pkg/fsx"
 )
 
 // PreviousPath is the one-level rollback slot beside executable. It is the
@@ -48,7 +48,7 @@ const (
 // moveAside renames the installed binary to its displaced name, which is the
 // first change the Windows sequence makes.
 //
-// Seen once on main's Windows runner (#78): this rename failed with a sharing
+// Seen once on main's Windows runner (dropin-miner#78): this rename failed with a sharing
 // violation while nothing of ours held the file — the only child ran from
 // .previous, and Windows lets a running image be renamed. What was left, by
 // elimination, was a scanner or indexer reading a binary the step before had
@@ -249,7 +249,7 @@ func durableSnapshot(source string) (string, error) {
 	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > MaxExecutableBytes {
 		return "", fmt.Errorf("the installed binary's size %d is outside 1..%d bytes", info.Size(), MaxExecutableBytes)
 	}
-	out, err := os.CreateTemp(filepath.Dir(source), ".dropin-miner.snapshot-*")
+	out, err := os.CreateTemp(filepath.Dir(source), ".jevlin.snapshot-*")
 	if err != nil {
 		return "", err
 	}
@@ -286,7 +286,7 @@ func durableSnapshot(source string) (string, error) {
 
 // reservePath returns a unique name in dir that does not exist.
 func reservePath(dir string) (string, error) {
-	f, err := os.CreateTemp(dir, ".dropin-miner.displaced-*")
+	f, err := os.CreateTemp(dir, ".jevlin.displaced-*")
 	if err != nil {
 		return "", err
 	}
@@ -303,7 +303,7 @@ func reservePath(dir string) (string, error) {
 // stagingPrefixes are the only names this package creates beside an
 // executable: staged candidates, POSIX snapshots and Windows displaced
 // binaries.
-var stagingPrefixes = []string{".dropin-miner.candidate-", ".dropin-miner.snapshot-", ".dropin-miner.displaced-"}
+var stagingPrefixes = []string{".jevlin.candidate-", ".jevlin.snapshot-", ".jevlin.displaced-"}
 
 // StagingLeftovers lists the regular files in dir that this package named and
 // an interrupted operation may have left, and nothing else in dir.

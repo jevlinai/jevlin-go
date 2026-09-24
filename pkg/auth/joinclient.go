@@ -38,7 +38,7 @@ func NewMiningClient(d *Discoverer, oc *OAuthClient, store *Store) *MiningClient
 
 // SlotID is the configured slot this client operates on — the same value
 // every endpoint template it expands already carries. Exported so a
-// caller that needs to key its OWN state by slot (cmd/dropin-miner's
+// caller that needs to key its OWN state by slot (cmd/jevlin's
 // epoch driver, persisting epoch conflicts — WP4b) does not have to be
 // handed the value separately at every call site.
 func (m *MiningClient) SlotID() uint64 { return m.discoverer.cfg.SlotID }

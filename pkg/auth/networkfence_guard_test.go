@@ -6,7 +6,7 @@ package auth
 // fail-safe can reach — only naming internal/netdial's shared seam
 // explicitly, as discovery.go and transport.go now do, closes it. This file
 // is the guard-side proof: TestMain installs the same test fence
-// cmd/dropin-miner uses, and each test below drives the real, unexported
+// cmd/jevlin uses, and each test below drives the real, unexported
 // production client at an address that can never resolve or route
 // (fence-probe.invalid, RFC 6761; 192.0.2.1, TEST-NET-1 under RFC 5737) —
 // never a real AS hostname, so a regression in the fence fails on a DNS or
@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twilight-project/dropin-miner/internal/networkfence"
+	"github.com/jevlinai/jevlin-go/internal/networkfence"
 )
 
 func TestMain(m *testing.M) {

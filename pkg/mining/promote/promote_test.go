@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twilight-project/dropin-miner/pkg/observe"
-	"github.com/twilight-project/dropin-miner/pkg/wire"
+	"github.com/jevlinai/jevlin-go/pkg/observe"
+	"github.com/jevlinai/jevlin-go/pkg/wire"
 )
 
 // searchObservation mirrors what internal/observe's search profile emits for

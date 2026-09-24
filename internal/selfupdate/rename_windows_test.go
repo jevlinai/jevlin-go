@@ -2,7 +2,7 @@
 
 package selfupdate
 
-// #78 on the operating system it happens on. These tests do not inject an
+// dropin-miner#78 on the operating system it happens on. These tests do not inject an
 // error: they make Windows produce it, by holding the installed binary open
 // the way a scanner does — for reading, WITHOUT delete sharing — and then run
 // the real operations (MoveFileEx, transientlyHeld, time.Sleep).
@@ -81,7 +81,7 @@ func TestOnWindowsARealSharingViolationIsRetriedUntilTheHolderLetsGo(t *testing.
 		t.Fatalf("the upgrade failed although the holder let go: %v (move-aside errors: %v)", err, asideErrs)
 	}
 	if len(asideErrs) != 2 || !errors.Is(asideErrs[0], windows.ERROR_SHARING_VIOLATION) || asideErrs[1] != nil {
-		t.Fatalf("move-aside errors %v; want one ERROR_SHARING_VIOLATION and then success — if the first is nil, the hold did not reproduce #78 and this test proved nothing", asideErrs)
+		t.Fatalf("move-aside errors %v; want one ERROR_SHARING_VIOLATION and then success — if the first is nil, the hold did not reproduce dropin-miner#78 and this test proved nothing", asideErrs)
 	}
 	if pauses != 1 {
 		t.Errorf("%d pauses, want 1", pauses)
@@ -167,7 +167,7 @@ func TestOnWindowsOnlyAHeldFileIsTransient(t *testing.T) {
 		t.Error("no error is not a held file")
 	}
 	// fileInUse keeps reading the same two codes for the .previous step,
-	// where they mean previous_in_use (#78's own requirement).
+	// where they mean previous_in_use (dropin-miner#78's own requirement).
 	if !fileInUse(windows.ERROR_SHARING_VIOLATION) || !fileInUse(windows.ERROR_ACCESS_DENIED) || fileInUse(windows.ERROR_FILE_NOT_FOUND) {
 		t.Error("fileInUse changed")
 	}

@@ -1,8 +1,8 @@
 package platform
 
-// D1c: the same test fence cmd/dropin-miner and pkg/auth install, so this
+// D1c: the same test fence cmd/jevlin and pkg/auth install, so this
 // package's own tests are walled off from the network the same way. See
-// cmd/dropin-miner/network_fence_test.go's D1b history and
+// cmd/jevlin/network_fence_test.go's D1b history and
 // internal/networkfence's package doc for the mechanism and why it exists.
 
 import (
@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twilight-project/dropin-miner/internal/networkfence"
+	"github.com/jevlinai/jevlin-go/internal/networkfence"
 )
 
 func TestMain(m *testing.M) {

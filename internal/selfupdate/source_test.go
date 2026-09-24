@@ -74,8 +74,8 @@ func TestReleaseSelectsLatestOrTheExactTagFromTheFixedOrigin(t *testing.T) {
 			}
 		}
 	}
-	if NewHTTPSource(nil).apiBase != "https://api.github.com/repos/twilight-project/dropin-miner/releases" ||
-		NewHTTPSource(nil).downloadBase != "https://github.com/twilight-project/dropin-miner/releases/download" {
+	if NewHTTPSource(nil).apiBase != "https://api.github.com/repos/jevlinai/jevlin-go/releases" ||
+		NewHTTPSource(nil).downloadBase != "https://github.com/jevlinai/jevlin-go/releases/download" {
 		t.Error("the release origin is compiled in and must be the canonical repository")
 	}
 }
@@ -211,7 +211,7 @@ func TestRedirectPolicyIsHTTPSHostBoundedAndHopBounded(t *testing.T) {
 func TestARefusedRedirectIsReleaseInvalidAndSaysReinstall(t *testing.T) {
 	src, seen := fakeGitHub(t, func(r *http.Request) *http.Response {
 		resp := response(http.StatusFound, "")
-		resp.Header.Set("Location", "https://evil.example/dropin-miner.tar.gz")
+		resp.Header.Set("Location", "https://evil.example/jevlin.tar.gz")
 		return resp
 	})
 	_, err := src.Release(context.Background(), nil)

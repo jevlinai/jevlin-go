@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twilight-project/dropin-miner/pkg/mining/spool"
+	"github.com/jevlinai/jevlin-go/pkg/mining/spool"
 )
 
 func openQueue(t *testing.T, dir string) *spool.Spool {

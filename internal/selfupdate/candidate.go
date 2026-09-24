@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/twilight-project/dropin-miner/pkg/fsx"
+	"github.com/jevlinai/jevlin-go/pkg/fsx"
 )
 
 // ResolveExecutable is the file an upgrade acts on: path with every symlink
@@ -47,7 +47,7 @@ func StageCandidate(executable string, binary []byte) (string, error) {
 	if info, err := os.Stat(executable); err == nil && info.Mode().Perm()&0o100 != 0 { // #nosec G703 -- the resolved installed binary
 		mode = info.Mode().Perm()
 	}
-	f, err := os.CreateTemp(dir, ".dropin-miner.candidate-*"+filepath.Ext(executable))
+	f, err := os.CreateTemp(dir, ".jevlin.candidate-*"+filepath.Ext(executable))
 	if err != nil {
 		return "", fmt.Errorf("stage the candidate beside %s: %w", executable, err)
 	}
@@ -109,9 +109,9 @@ var ErrCandidateTimeout = errors.New("the candidate's version command timed out"
 
 // CandidateVersion runs `path version` under CandidateTimeout with a stripped
 // environment and accepts only the release output contract: exactly
-// "dropin-miner X.Y.Z\n" with X.Y.Z canonical, and nothing on stderr.
+// "jevlin X.Y.Z\n" with X.Y.Z canonical, and nothing on stderr.
 //
-// A candidate that has not answered is not a bad candidate (#95). The check is
+// A candidate that has not answered is not a bad candidate (dropin-miner#95). The check is
 // the first execution of a freshly written binary, which is exactly when a
 // real-time scanner inspects it, and under load a process that prints one
 // line has missed five seconds twice on a development machine. A timeout is
@@ -203,7 +203,7 @@ func candidateFailure(kind Kind, err error) error {
 
 // validationEnvironment is what a candidate runs with: a fixed locale and,
 // on Windows, only the variables a process needs to start. Nothing of the
-// participant's — no TOKENDROP_*, no key, no proxy — reaches it.
+// participant's — no JEVLIN_*, no key, no proxy — reaches it.
 func validationEnvironment(source []string) []string {
 	out := []string{"LANG=C", "LC_ALL=C"}
 	if runtime.GOOS != "windows" {

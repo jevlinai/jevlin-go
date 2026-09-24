@@ -22,8 +22,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/twilight-project/dropin-miner/internal/netdial"
-	"github.com/twilight-project/dropin-miner/pkg/wire"
+	"github.com/jevlinai/jevlin-go/internal/netdial"
+	"github.com/jevlinai/jevlin-go/pkg/wire"
 )
 
 // WellKnownPath is the fixed discovery location (§19).

@@ -8,7 +8,7 @@ import (
 )
 
 func TestCheckNPMPackageVersionAcceptsTheAlignedManifest(t *testing.T) {
-	manifest := []byte(`{"name":"dropin-miner","version":"0.2.8","bin":{"dropin-miner":"bin/dropin-miner.js"}}`)
+	manifest := []byte(`{"name":"jevlin","version":"0.2.8","bin":{"jevlin":"bin/jevlin.js"}}`)
 	if err := CheckNPMPackageVersion(manifest, mustParseTag(t, "v0.2.8")); err != nil {
 		t.Errorf("an aligned manifest was rejected: %v", err)
 	}
@@ -17,7 +17,7 @@ func TestCheckNPMPackageVersionAcceptsTheAlignedManifest(t *testing.T) {
 // This is v0.2.1 and v0.2.2 reproduced: the bump landed one commit late,
 // so the tagged commit still carried the previous version. Both shipped.
 func TestCheckNPMPackageVersionRejectsTheBumpThatLandedLate(t *testing.T) {
-	manifest := []byte(`{"name":"dropin-miner","version":"0.2.7"}`)
+	manifest := []byte(`{"name":"jevlin","version":"0.2.7"}`)
 	err := CheckNPMPackageVersion(manifest, mustParseTag(t, "v0.2.8"))
 	if err == nil {
 		t.Fatal("a manifest one version behind the tag was accepted; this is exactly how v0.2.1 and v0.2.2 shipped")
@@ -32,8 +32,8 @@ func TestCheckNPMPackageVersionRejectsAManifestItCannotRead(t *testing.T) {
 		name, manifest string
 	}{
 		{"not JSON", "{"},
-		{"no version field", `{"name":"dropin-miner"}`},
-		{"an empty version", `{"name":"dropin-miner","version":""}`},
+		{"no version field", `{"name":"jevlin"}`},
+		{"an empty version", `{"name":"jevlin","version":""}`},
 		{"a v-prefixed version, which npm would not resolve", `{"version":"v0.2.8"}`},
 		{"a version with a leading space", `{"version":" 0.2.8"}`},
 	} {

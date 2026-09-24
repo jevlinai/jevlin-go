@@ -491,7 +491,7 @@ func (c *OAuthClient) Refresh(ctx context.Context) (*oauth2.Token, error) {
 
 // Revoke revokes the stored refresh authorization at the AS (RFC 7009) and,
 // on success, deletes it locally. Its first production caller is
-// `dropin-miner mining disable` (design §5.5): "stop mining here" for
+// `jevlin mining disable` (design §5.5): "stop mining here" for
 // THIS installation's own agent, never "decommission this machine" —
 // the two settled questions the comment below used to leave open. It
 // takes lockRefreshToken for its whole cycle, same as Refresh and for
@@ -713,7 +713,7 @@ func (e *AuthorizationRefusedError) Error() string {
 // PendingProviderAuthorization is a started provider authorization: show the
 // participant Host and URL, then Redeem the code they bring back.
 //
-// The verifier is unexported and never leaves this package. cmd/tokendrop is
+// The verifier is unexported and never leaves this package. cmd/jevlin is
 // forbidden from importing a security library directly (ADR-0010, asserted by
 // TestSecurityDependenciesConfinedToAuth), so PKCE generation has to live
 // here anyway — but the confinement is worth more than the boundary test: a

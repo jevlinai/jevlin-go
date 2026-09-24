@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twilight-project/dropin-miner/pkg/wire"
+	"github.com/jevlinai/jevlin-go/pkg/wire"
 )
 
 // fixtureDocument loads the shared L3 discovery fixture and repoints its

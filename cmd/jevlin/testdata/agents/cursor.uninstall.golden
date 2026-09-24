@@ -1,0 +1,13 @@
+{
+  "writes": null,
+  "removes": [
+    {
+      "surface": "Cursor",
+      "path": "/home/u/.cursor/skills/jevlin"
+    },
+    {
+      "surface": "Cursor",
+      "path": "/home/u/.cursor/hooks.json"
+    }
+  ]
+}

@@ -4,7 +4,7 @@ VERSION ?= dev
 .PHONY: build test race vet fmt lint vuln cross tidy verify
 
 build:
-	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "-X main.version=$(VERSION)" -o bin/dropin-miner ./cmd/dropin-miner
+	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "-X main.version=$(VERSION)" -o bin/jevlin ./cmd/jevlin
 
 test:
 	$(GO) test -count=1 ./...
@@ -18,7 +18,7 @@ vet:
 	GOOS=windows GOARCH=amd64 $(GO) vet ./...
 
 fmt:
-	$(GO) run golang.org/x/tools/cmd/goimports@v0.30.0 -local github.com/twilight-project/dropin-miner -w .
+	$(GO) run golang.org/x/tools/cmd/goimports@v0.30.0 -local github.com/jevlinai/jevlin-go -w .
 
 # Matches the CI golangci-lint job (config in .golangci.yml; version pinned in ci.yml).
 lint:

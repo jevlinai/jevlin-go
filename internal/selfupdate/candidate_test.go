@@ -25,7 +25,7 @@ func outputs(stdout, stderr string) CommandRunner {
 }
 
 func TestValidateCandidateRunsOnlyVersionWithAScrubbedEnvironment(t *testing.T) {
-	t.Setenv("TOKENDROP_API_KEY", "sr-secret")
+	t.Setenv("JEVLIN_API_KEY", "sr-secret")
 	t.Setenv("HTTPS_PROXY", "http://proxy.invalid")
 	v, _ := ParseVersion("0.3.0")
 	runner := runnerFunc(func(_ context.Context, path string, args, env []string) ([]byte, []byte, error) {
@@ -33,11 +33,11 @@ func TestValidateCandidateRunsOnlyVersionWithAScrubbedEnvironment(t *testing.T) 
 			t.Fatalf("unexpected invocation %q %v", path, args)
 		}
 		for _, item := range env {
-			if strings.HasPrefix(item, "TOKENDROP_") || strings.Contains(item, "PROXY") || strings.HasPrefix(item, "HOME=") {
+			if strings.HasPrefix(item, "JEVLIN_") || strings.Contains(item, "PROXY") || strings.HasPrefix(item, "HOME=") {
 				t.Errorf("the participant's environment reached the candidate: %q", item)
 			}
 		}
-		return []byte("dropin-miner 0.3.0\n"), nil, nil
+		return []byte("jevlin 0.3.0\n"), nil, nil
 	})
 	if err := ValidateCandidate(context.Background(), runner, "/candidate", v); err != nil {
 		t.Fatal(err)
@@ -47,15 +47,15 @@ func TestValidateCandidateRunsOnlyVersionWithAScrubbedEnvironment(t *testing.T) 
 func TestValidateCandidateAcceptsOnlyTheExactOutputContract(t *testing.T) {
 	v, _ := ParseVersion("0.3.0")
 	for _, out := range []string{
-		"dropin-miner v0.3.0\n", "dropin-miner 0.3.1\n", "dropin-miner 0.3.0", "dropin-miner 0.3.0\r\n",
-		"extra\ndropin-miner 0.3.0\n", "dropin-miner 0.3.0\n\n", "dropin-miner  0.3.0\n",
-		"dropin-miner dev (abc)\n", "Dropin-miner 0.3.0\n", "dropin-miner 00.3.0\n", "",
+		"jevlin v0.3.0\n", "jevlin 0.3.1\n", "jevlin 0.3.0", "jevlin 0.3.0\r\n",
+		"extra\njevlin 0.3.0\n", "jevlin 0.3.0\n\n", "jevlin  0.3.0\n",
+		"jevlin dev (abc)\n", "Jevlin 0.3.0\n", "jevlin 00.3.0\n", "",
 	} {
 		if err := ValidateCandidate(context.Background(), outputs(out, ""), "/candidate", v); err == nil {
 			t.Errorf("accepted candidate output %q", out)
 		}
 	}
-	if err := ValidateCandidate(context.Background(), outputs("dropin-miner 0.3.0\n", "warning\n"), "/candidate", v); err == nil ||
+	if err := ValidateCandidate(context.Background(), outputs("jevlin 0.3.0\n", "warning\n"), "/candidate", v); err == nil ||
 		!strings.Contains(err.Error(), "stderr") {
 		t.Errorf("a candidate writing to stderr must be refused: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestValidateCandidateReportsExecutionFailureAndTimeout(t *testing.T) {
 	_ = ValidateCandidate(parent, runnerFunc(func(ctx context.Context, _ string, _ []string, _ []string) ([]byte, []byte, error) {
 		dl, _ := ctx.Deadline()
 		limit = time.Until(dl)
-		return []byte("dropin-miner 0.3.0\n"), nil, nil
+		return []byte("jevlin 0.3.0\n"), nil, nil
 	}), "/candidate", v)
 	if limit <= 0 || limit > CandidateTimeout {
 		t.Errorf("the candidate runs under its own %s deadline even inside a longer operation, got %s", CandidateTimeout, limit)
@@ -92,14 +92,14 @@ func TestValidateCandidateReportsExecutionFailureAndTimeout(t *testing.T) {
 }
 
 func TestResolveExecutableAndStageBesideTheResolvedFile(t *testing.T) {
-	real := filepath.Join(t.TempDir(), "install", "bin", "dropin-miner")
+	real := filepath.Join(t.TempDir(), "install", "bin", "jevlin")
 	if err := os.MkdirAll(filepath.Dir(real), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(real, []byte("installed"), 0o750); err != nil { // #nosec G306 -- an executable fixture
 		t.Fatal(err)
 	}
-	link := filepath.Join(t.TempDir(), "dropin-miner")
+	link := filepath.Join(t.TempDir(), "jevlin")
 	if err := os.Symlink(real, link); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestStageCandidateFailsWhereItCannotWrite(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	exe := filepath.Join(dir, "dropin-miner")
+	exe := filepath.Join(dir, "jevlin")
 	if err := os.WriteFile(exe, []byte("x"), 0o700); err != nil { // #nosec G306 -- fixture
 		t.Fatal(err)
 	}
@@ -160,9 +160,9 @@ func TestStageCandidateFailsWhereItCannotWrite(t *testing.T) {
 }
 
 func TestValidationEnvironmentIsFixed(t *testing.T) {
-	env := validationEnvironment([]string{"HOME=/home/me", "TOKENDROP_CONFIG=/x", "SystemRoot=C:\\Windows", "PATH=/bin"})
+	env := validationEnvironment([]string{"HOME=/home/me", "JEVLIN_CONFIG=/x", "SystemRoot=C:\\Windows", "PATH=/bin"})
 	joined := strings.Join(env, "\n")
-	if !strings.Contains(joined, "LANG=C") || strings.Contains(joined, "HOME=") || strings.Contains(joined, "TOKENDROP_") || strings.Contains(joined, "PATH=/bin") {
+	if !strings.Contains(joined, "LANG=C") || strings.Contains(joined, "HOME=") || strings.Contains(joined, "JEVLIN_") || strings.Contains(joined, "PATH=/bin") {
 		t.Errorf("validation environment %v", env)
 	}
 	if (runtime.GOOS == "windows") != strings.Contains(joined, "SystemRoot=") {

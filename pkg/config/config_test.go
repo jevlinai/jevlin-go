@@ -450,13 +450,11 @@ func TestMinerAllowsPlainHTTPRouterURLOnLoopback(t *testing.T) {
 	}
 }
 
-// [miner] enabled = true used to require [mining] enabled = true too — a
-// real bug the installer rewrite's own end-to-end test found: setup.sh
+// [miner] enabled = true does not require [mining] enabled = true: setup
 // always writes [miner] enabled = true (router intake is configured
-// unconditionally) but no longer writes [mining] enabled = true
-// unconditionally — that is the mining decision now, made by connect, not
-// the installer. What [miner] actually needs is an AS to eventually talk
-// to, not that mining is currently on.
+// unconditionally) but not [mining] enabled = true — that is the mining
+// decision, made by connect, not by setup. What [miner] actually needs is
+// an AS to eventually talk to, not that mining is currently on.
 func TestMinerEnabledDoesNotRequireMiningEnabled(t *testing.T) {
 	// filepath.ToSlash: a raw t.TempDir() on Windows is C:\Users\..., and
 	// TOML's basic-string escaping reads an un-slashed backslash as the
@@ -471,7 +469,7 @@ func TestMinerEnabledDoesNotRequireMiningEnabled(t *testing.T) {
 
 // The genuine gap [miner] enabled = true still refuses: no [mining] block
 // worth anything at all (no AS named) — a hand-edited config could reach
-// this; the installer, which always names an AS, cannot.
+// this; setup, which always names an AS, cannot.
 func TestMinerEnabledStillRequiresAnASNamed(t *testing.T) {
 	body := "[miner]\nenabled = true\nintake_dir = \"" + filepath.ToSlash(t.TempDir()) + "\"\nsessions_dir = \"" + filepath.ToSlash(t.TempDir()) + "\"\n"
 	err := loadErr(t, []string{"-config", writeTOML(t, body)}, noEnv)

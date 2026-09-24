@@ -14,7 +14,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/twilight-project/dropin-miner/internal/netdial"
+	"github.com/jevlinai/jevlin-go/internal/netdial"
 )
 
 type dpopTransport struct {
