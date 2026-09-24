@@ -1,0 +1,9 @@
+{
+  "writes": null,
+  "removes": [
+    {
+      "surface": "Codex",
+      "path": "/home/u/.codex/skills/dropin-miner"
+    }
+  ]
+}

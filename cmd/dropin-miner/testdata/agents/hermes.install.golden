@@ -1,0 +1,21 @@
+{
+  "writes": [
+    {
+      "surface": "Hermes",
+      "path": "\u003cHERMES_HOME\u003e/skills/dropin-miner/SKILL.md",
+      "mode": 384,
+      "why": "skill",
+      "content": "\u003cSKILL.md, rendered for this OS; see testdata/hosts/*.golden\u003e"
+    },
+    {
+      "surface": "Hermes",
+      "path": "\u003cHERMES_HOME\u003e/config.yaml",
+      "mode": 384,
+      "why": "pre_tool_call lineage hook",
+      "content": "# \u003e\u003e\u003e dropin-miner agents install \u003e\u003e\u003e\nhooks:\n  pre_tool_call:\n    - command: \u003cHERMES_HOOK_COMMAND\u003e\n      matcher: \"terminal\"\n# \u003c\u003c\u003c dropin-miner agents install \u003c\u003c\u003c\n"
+    }
+  ],
+  "notes": [
+    "Hermes: takes effect next session; Hermes asks once to approve the hook the first time it fires — approve it, or launch with --accept-hooks. Its shell tool is in the terminal/coding toolsets."
+  ]
+}
