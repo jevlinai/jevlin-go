@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twilight-project/dropin-miner/pkg/mining/collector"
-	"github.com/twilight-project/dropin-miner/pkg/mining/scope"
-	"github.com/twilight-project/dropin-miner/pkg/mining/spool"
-	"github.com/twilight-project/dropin-miner/pkg/wire"
+	"github.com/jevlinai/jevlin-go/pkg/mining/collector"
+	"github.com/jevlinai/jevlin-go/pkg/mining/scope"
+	"github.com/jevlinai/jevlin-go/pkg/mining/spool"
+	"github.com/jevlinai/jevlin-go/pkg/wire"
 )
 
 const testAckRecordID = "019c7a8e-1b2d-7c3e-8f40-5a6b7c8d9e0f"

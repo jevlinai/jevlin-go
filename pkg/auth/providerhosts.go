@@ -27,7 +27,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/twilight-project/dropin-miner/pkg/wire"
+	"github.com/jevlinai/jevlin-go/pkg/wire"
 )
 
 // providerAuthorizationHosts is the allowlist itself: source profile to the

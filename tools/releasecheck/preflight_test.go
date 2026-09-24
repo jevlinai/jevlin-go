@@ -37,7 +37,7 @@ func newReleaseRepo(t *testing.T, version string) *releaseRepo {
 	dir := newRepo(t)
 	copyFromRepo(t, dir, ".goreleaser.yaml")
 	copyFromRepo(t, dir, "npm/install.js")
-	write(t, dir, "npm/package.json", `{"name":"dropin-miner","version":"`+version+`"}`+"\n")
+	write(t, dir, "npm/package.json", `{"name":"jevlin","version":"`+version+`"}`+"\n")
 	write(t, dir, "CHANGELOG.md", "# Changelog\n\n## v"+version+" — 2026-09-20\n\n- something a participant should know\n")
 	commit(t, dir, "release "+version)
 	return &releaseRepo{t: t, dir: dir}
@@ -192,7 +192,7 @@ func TestPreflightJudgesTheTagsBytesAndNotTheWorktrees(t *testing.T) {
 	t.Run("main moving on does not make a correct tag wrong", func(t *testing.T) {
 		r := newReleaseRepo(t, "0.2.8")
 		r.annotate("v0.2.8")
-		write(t, r.dir, "npm/package.json", `{"name":"dropin-miner","version":"0.9.9"}`+"\n")
+		write(t, r.dir, "npm/package.json", `{"name":"jevlin","version":"0.9.9"}`+"\n")
 		commit(t, r.dir, "post-release work on main")
 
 		if _, err := r.preflight("v0.2.8"); err != nil {
@@ -205,7 +205,7 @@ func TestPreflightJudgesTheTagsBytesAndNotTheWorktrees(t *testing.T) {
 		write(t, r.dir, "CHANGELOG.md", "# Changelog\n\n## v0.2.8 — 2026-09-20\n\n- a thing\n")
 		commit(t, r.dir, "changelog only")
 		r.annotate("v0.2.8")
-		write(t, r.dir, "npm/package.json", `{"name":"dropin-miner","version":"0.2.8"}`+"\n")
+		write(t, r.dir, "npm/package.json", `{"name":"jevlin","version":"0.2.8"}`+"\n")
 		commit(t, r.dir, "the bump, one commit too late")
 
 		if _, err := r.preflight("v0.2.8"); err == nil {

@@ -1,4 +1,4 @@
-// Package selfupdate finds, verifies and stages a canonical DropinMiner
+// Package selfupdate finds, verifies and stages a canonical Jevlin
 // release for a native self-upgrade.
 //
 // Prepare is the half of an upgrade that happens before anything is replaced:
@@ -16,7 +16,7 @@
 // its one HTTP client follows redirects only over HTTPS, at most five times,
 // and only to the four GitHub hosts a release download uses. Ownership of the
 // running binary (npm or native) is decided by the command, through the one
-// classifier in cmd/dropin-miner, before this package is used.
+// classifier in cmd/jevlin, before this package is used.
 package selfupdate
 
 import (
@@ -69,7 +69,7 @@ const (
 	KindReplacementFailed Kind = "replacement_failed"
 	// KindPreviousInUse: on Windows, a process still runs from the
 	// .previous image, so it cannot be replaced. The displaced binary was
-	// restored and .previous is untouched; close old DropinMiner or agent
+	// restored and .previous is untouched; close old Jevlin or agent
 	// processes and retry.
 	KindPreviousInUse Kind = "previous_in_use"
 	// KindIncomplete: the replacement neither finished cleanly nor was
@@ -88,7 +88,7 @@ const (
 )
 
 // PreviousInUseMessage is what a participant is told for KindPreviousInUse.
-const PreviousInUseMessage = "an older DropinMiner process is still using the previous executable; close old DropinMiner or agent processes and retry"
+const PreviousInUseMessage = "an older Jevlin process is still using the previous executable; close old Jevlin or agent processes and retry"
 
 // Error carries a Kind; its message is diagnostic only. Paths, when set,
 // names every file a participant may need to find after a replacement did

@@ -1,9 +1,9 @@
 # Releases: one static binary per platform, checksummed, from a tag.
 version: 2
-project_name: dropin-miner
+project_name: jevlin
 builds:
-  - main: ./cmd/dropin-miner
-    binary: dropin-miner
+  - main: ./cmd/jevlin
+    binary: jevlin
     env: [CGO_ENABLED=0]
     flags: [-trimpath]
     ldflags: ["-X main.version={{.Version}}"]
@@ -34,6 +34,6 @@ release:
   # the date baked in) and rots silently the moment a heading is reworded; the
   # blob URL pins the file as it stood at that tag, with the entry at the top.
   header: |
-    What changed, in plain language: https://github.com/twilight-project/dropin-miner/blob/{{ .Tag }}/CHANGELOG.md
+    What changed, in plain language: https://github.com/jevlinai/jevlin-go/blob/{{ .Tag }}/CHANGELOG.md
 changelog:
   use: git

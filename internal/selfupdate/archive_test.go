@@ -79,8 +79,8 @@ func makeZip(t *testing.T, entries ...archiveEntry) []byte {
 }
 
 var (
-	tarTarget = Artifact{ArchiveFormat: "tar.gz", ExecutableName: "dropin-miner"}
-	zipTarget = Artifact{ArchiveFormat: "zip", ExecutableName: "dropin-miner.exe"}
+	tarTarget = Artifact{ArchiveFormat: "tar.gz", ExecutableName: "jevlin"}
+	zipTarget = Artifact{ArchiveFormat: "zip", ExecutableName: "jevlin.exe"}
 )
 
 func TestArchiveExecutableReadsOnlyTheRootExecutable(t *testing.T) {
@@ -91,11 +91,11 @@ func TestArchiveExecutableReadsOnlyTheRootExecutable(t *testing.T) {
 		"tar": {makeTarGz(t,
 			archiveEntry{name: "docs", typeflag: tar.TypeDir},
 			archiveEntry{name: "README.md", body: "readme"},
-			archiveEntry{name: "docs/dropin-miner", body: "not the root one"},
-			archiveEntry{name: "dropin-miner", body: "binary"}), tarTarget},
+			archiveEntry{name: "docs/jevlin", body: "not the root one"},
+			archiveEntry{name: "jevlin", body: "binary"}), tarTarget},
 		"zip": {makeZip(t,
 			archiveEntry{name: "README.md", body: "readme"},
-			archiveEntry{name: "dropin-miner.exe", body: "binary"}), zipTarget},
+			archiveEntry{name: "jevlin.exe", body: "binary"}), zipTarget},
 	} {
 		got, err := ArchiveExecutable(tc.raw, tc.art)
 		if err != nil || string(got) != "binary" {
@@ -105,8 +105,8 @@ func TestArchiveExecutableReadsOnlyTheRootExecutable(t *testing.T) {
 }
 
 func TestArchiveExecutableRejectsUnsafeEntries(t *testing.T) {
-	root := archiveEntry{name: "dropin-miner", body: "x"}
-	rootExe := archiveEntry{name: "dropin-miner.exe", body: "x"}
+	root := archiveEntry{name: "jevlin", body: "x"}
+	rootExe := archiveEntry{name: "jevlin.exe", body: "x"}
 	// Every unsafe archive also holds a valid root executable, so the only
 	// reason left to refuse it is the entry under test.
 	for name, tc := range map[string]struct {
@@ -120,15 +120,15 @@ func TestArchiveExecutableRejectsUnsafeEntries(t *testing.T) {
 		"tar drive":              {makeTarGz(t, archiveEntry{name: "C:y", body: "x"}, root), tarTarget, "unsafe archive path"},
 		"tar symlink":            {makeTarGz(t, archiveEntry{name: "link", typeflag: tar.TypeSymlink}, root), tarTarget, "unsafe type"},
 		"tar hardlink":           {makeTarGz(t, archiveEntry{name: "link", typeflag: tar.TypeLink}, root), tarTarget, "unsafe type"},
-		"tar executable link":    {makeTarGz(t, archiveEntry{name: "dropin-miner", typeflag: tar.TypeSymlink}), tarTarget, "unsafe type"},
+		"tar executable link":    {makeTarGz(t, archiveEntry{name: "jevlin", typeflag: tar.TypeSymlink}), tarTarget, "unsafe type"},
 		"tar character device":   {makeTarGz(t, archiveEntry{name: "tty", typeflag: tar.TypeChar}, root), tarTarget, "unsafe type"},
 		"tar fifo":               {makeTarGz(t, archiveEntry{name: "pipe", typeflag: tar.TypeFifo}, root), tarTarget, "unsafe type"},
-		"tar no root executable": {makeTarGz(t, archiveEntry{name: "bin/dropin-miner", body: "x"}), tarTarget, "no root executable"},
+		"tar no root executable": {makeTarGz(t, archiveEntry{name: "bin/jevlin", body: "x"}), tarTarget, "no root executable"},
 		"zip traversal":          {makeZip(t, archiveEntry{name: "../x", body: "x"}, rootExe), zipTarget, "unsafe archive path"},
 		"zip backslash":          {makeZip(t, archiveEntry{name: `..\x`, body: "x"}, rootExe), zipTarget, "unsafe archive path"},
 		"zip drive":              {makeZip(t, archiveEntry{name: "C:x", body: "x"}, rootExe), zipTarget, "unsafe archive path"},
 		"zip symlink":            {makeZip(t, archiveEntry{name: "link", body: "target", mode: fs.ModeSymlink | 0o777}, rootExe), zipTarget, "unsafe type"},
-		"zip empty executable":   {makeZip(t, archiveEntry{name: "dropin-miner.exe"}), zipTarget, "outside 1.."},
+		"zip empty executable":   {makeZip(t, archiveEntry{name: "jevlin.exe"}), zipTarget, "outside 1.."},
 		"not an archive":         {[]byte("plain bytes"), tarTarget, "gzip"},
 	} {
 		_, err := ArchiveExecutable(tc.raw, tc.art)
@@ -140,38 +140,38 @@ func TestArchiveExecutableRejectsUnsafeEntries(t *testing.T) {
 
 func TestArchiveExecutableRejectsADuplicateExecutable(t *testing.T) {
 	if _, err := ArchiveExecutable(makeTarGz(t,
-		archiveEntry{name: "dropin-miner", body: "one"},
-		archiveEntry{name: "dropin-miner", body: "two"}), tarTarget); err == nil {
+		archiveEntry{name: "jevlin", body: "one"},
+		archiveEntry{name: "jevlin", body: "two"}), tarTarget); err == nil {
 		t.Error("tar: duplicate executable accepted")
 	}
 	if _, err := ArchiveExecutable(makeZip(t,
-		archiveEntry{name: "dropin-miner.exe", body: "one"},
-		archiveEntry{name: "dropin-miner.exe", body: "two"}), zipTarget); err == nil {
+		archiveEntry{name: "jevlin.exe", body: "one"},
+		archiveEntry{name: "jevlin.exe", body: "two"}), zipTarget); err == nil {
 		t.Error("zip: duplicate executable accepted")
 	}
 }
 
 func TestArchiveExecutableBounds(t *testing.T) {
 	small := archiveLimits{executable: 16, expanded: 32}
-	if _, err := executableFromTarGz(makeTarGz(t, archiveEntry{name: "dropin-miner", body: strings.Repeat("x", 17)}), "dropin-miner", small); err == nil {
+	if _, err := executableFromTarGz(makeTarGz(t, archiveEntry{name: "jevlin", body: strings.Repeat("x", 17)}), "jevlin", small); err == nil {
 		t.Error("an executable over its limit was accepted")
 	}
-	if _, err := executableFromTarGz(makeTarGz(t, archiveEntry{name: "dropin-miner", body: strings.Repeat("x", 16)}), "dropin-miner", small); err != nil {
+	if _, err := executableFromTarGz(makeTarGz(t, archiveEntry{name: "jevlin", body: strings.Repeat("x", 16)}), "jevlin", small); err != nil {
 		t.Errorf("an executable at its limit must be accepted: %v", err)
 	}
 	bomb := makeTarGz(t,
 		archiveEntry{name: "a", body: strings.Repeat("x", 16)},
 		archiveEntry{name: "b", body: strings.Repeat("x", 16)},
 		archiveEntry{name: "c", body: "x"},
-		archiveEntry{name: "dropin-miner", body: "x"})
-	if _, err := executableFromTarGz(bomb, "dropin-miner", small); err == nil {
+		archiveEntry{name: "jevlin", body: "x"})
+	if _, err := executableFromTarGz(bomb, "jevlin", small); err == nil {
 		t.Error("tar: total declared expansion over its limit was accepted")
 	}
 	zipBomb := makeZip(t,
 		archiveEntry{name: "a", body: strings.Repeat("x", 16)},
 		archiveEntry{name: "b", body: strings.Repeat("x", 17)},
-		archiveEntry{name: "dropin-miner.exe", body: "x"})
-	if _, err := executableFromZip(zipBomb, "dropin-miner.exe", small); err == nil {
+		archiveEntry{name: "jevlin.exe", body: "x"})
+	if _, err := executableFromZip(zipBomb, "jevlin.exe", small); err == nil {
 		t.Error("zip: total declared expansion over its limit was accepted")
 	}
 	if _, err := ArchiveExecutable(make([]byte, MaxArchiveBytes+1), tarTarget); err == nil {
@@ -186,7 +186,7 @@ func TestArchiveExecutableEnforcesTheBoundOnWhatIsRead(t *testing.T) {
 	var out bytes.Buffer
 	zw := zip.NewWriter(&out)
 	w, err := zw.CreateRaw(&zip.FileHeader{
-		Name: "dropin-miner.exe", Method: zip.Store,
+		Name: "jevlin.exe", Method: zip.Store,
 		CRC32: crc32.ChecksumIEEE(body), CompressedSize64: uint64(len(body)), UncompressedSize64: 10,
 	})
 	if err != nil {
@@ -198,7 +198,7 @@ func TestArchiveExecutableEnforcesTheBoundOnWhatIsRead(t *testing.T) {
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := executableFromZip(out.Bytes(), "dropin-miner.exe", archiveLimits{executable: 16, expanded: 1 << 20}); err == nil {
+	if got, err := executableFromZip(out.Bytes(), "jevlin.exe", archiveLimits{executable: 16, expanded: 1 << 20}); err == nil {
 		t.Errorf("an entry that reads past its declared size was accepted: %d bytes", len(got))
 	}
 }

@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/twilight-project/dropin-miner/internal/networkfence"
+	"github.com/jevlinai/jevlin-go/internal/networkfence"
 )
 
 func TestProductionTransportsMatchTheirPreD1cShapeExactly(t *testing.T) {

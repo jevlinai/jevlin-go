@@ -18,7 +18,7 @@ docs/private/
 /.email-sweep-denylist
 
 # ─── Go ────────────────────────────────────────────────────────────────────────
-/dropin-miner
+/jevlin
 # `go build ./tools/...` from the root drops this here, same as the line above.
 /releasecheck
 /bin/

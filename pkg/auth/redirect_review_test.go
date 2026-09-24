@@ -4,7 +4,7 @@ package auth
 // tests and run against the high-level methods.
 //
 // PROVENANCE. These are the reviewers' encoding of the attacks, handed over
-// from the dropin review (angles a1/a2) as five files in handover-proxy/
+// from the client's security review (angles a1/a2) as five files in handover-proxy/
 // internal_auth. credentialclient_test.go proves the POLICY at the
 // constructor; these prove the CALL PATHS — that Refresh, the assertion
 // redemption and RegisterProviderCredential are actually wired through it, so

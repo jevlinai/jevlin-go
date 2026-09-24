@@ -35,7 +35,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/twilight-project/dropin-miner/pkg/wire"
+	"github.com/jevlinai/jevlin-go/pkg/wire"
 )
 
 // corpusTemplate reads enrollment_authorization_template from the shared L3

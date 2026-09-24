@@ -28,7 +28,7 @@ func newTxn(t *testing.T, current, previous, candidate string) *txn {
 	if err != nil {
 		t.Fatal(err)
 	}
-	x := &txn{t: t, dir: dir, exe: filepath.Join(dir, "dropin-miner"), can: filepath.Join(dir, ".dropin-miner.candidate-1")}
+	x := &txn{t: t, dir: dir, exe: filepath.Join(dir, "jevlin"), can: filepath.Join(dir, ".jevlin.candidate-1")}
 	x.prev = PreviousPath(x.exe)
 	x.write(x.exe, current)
 	if previous != "" {
@@ -462,7 +462,7 @@ func TestRollbackPreservesEveryNamedRecoveryPathWhenRestorationFails(t *testing.
 
 func TestDiscardAfterInstallKeepsWhatAnErrorNames(t *testing.T) {
 	dir := t.TempDir()
-	candidate := filepath.Join(dir, ".dropin-miner.candidate-1")
+	candidate := filepath.Join(dir, ".jevlin.candidate-1")
 	write := func() {
 		if err := os.WriteFile(candidate, []byte("x"), 0o600); err != nil {
 			t.Fatal(err)

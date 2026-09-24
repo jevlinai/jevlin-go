@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// postinstall: fetch the dropin-miner release binary for this platform.
+// postinstall: fetch the jevlin release binary for this platform.
 //
 // The npm package carries no binary of its own. Its version is the release
 // tag; this script downloads exactly that tag's archive from GitHub
@@ -7,8 +7,8 @@
 // beside this file. Nothing is executed from the download, and no
 // credential is involved: the release assets are public.
 //
-// Set DROPIN_MINER_SKIP_DOWNLOAD=1 to install the wrapper without fetching
-// (CI images that mount their own binary), or DROPIN_MINER_BINARY=/path to
+// Set JEVLIN_SKIP_DOWNLOAD=1 to install the wrapper without fetching
+// (CI images that mount their own binary), or JEVLIN_BINARY=/path to
 // point the wrapper at one already on the machine.
 "use strict"
 const fs = require("node:fs")
@@ -19,7 +19,7 @@ const crypto = require("node:crypto")
 const { execFileSync } = require("node:child_process")
 
 const pkg = require("./package.json")
-const REPO = "twilight-project/dropin-miner"
+const REPO = "jevlinai/jevlin-go"
 
 function platform() {
   const osName = { darwin: "darwin", linux: "linux", win32: "windows" }[process.platform]
@@ -31,7 +31,7 @@ function platform() {
 function get(url, redirects = 5) {
   return new Promise((resolve, reject) => {
     https
-      .get(url, { headers: { "user-agent": "dropin-miner-npm" } }, (res) => {
+      .get(url, { headers: { "user-agent": "jevlin-npm" } }, (res) => {
         if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location && redirects > 0) {
           res.resume()
           return resolve(get(res.headers.location, redirects - 1))
@@ -50,14 +50,14 @@ function get(url, redirects = 5) {
 }
 
 async function main() {
-  if (process.env.DROPIN_MINER_SKIP_DOWNLOAD === "1" || process.env.DROPIN_MINER_BINARY) return
+  if (process.env.JEVLIN_SKIP_DOWNLOAD === "1" || process.env.JEVLIN_BINARY) return
   if (pkg.version === "0.0.0") {
-    console.log("dropin-miner: development package, no release to download; set DROPIN_MINER_BINARY")
+    console.log("jevlin: development package, no release to download; set JEVLIN_BINARY")
     return
   }
   const { osName, arch } = platform()
   const ext = osName === "windows" ? "zip" : "tar.gz"
-  const name = `dropin-miner_${pkg.version}_${osName}_${arch}.${ext}`
+  const name = `jevlin_${pkg.version}_${osName}_${arch}.${ext}`
   const base = `https://github.com/${REPO}/releases/download/v${pkg.version}`
 
   const [archive, sums] = await Promise.all([get(`${base}/${name}`), get(`${base}/checksums.txt`)])
@@ -67,7 +67,7 @@ async function main() {
   const actual = crypto.createHash("sha256").update(archive).digest("hex")
   if (expected !== actual) throw new Error(`checksum FAILED for ${name} — refusing to unpack`)
 
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "dropin-miner-"))
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jevlin-"))
   const archivePath = path.join(tmp, name)
   fs.writeFileSync(archivePath, archive)
   if (ext === "zip") {
@@ -75,16 +75,16 @@ async function main() {
   } else {
     execFileSync("tar", ["-xzf", archivePath, "-C", tmp], { stdio: "inherit" })
   }
-  const bin = osName === "windows" ? "dropin-miner.exe" : "dropin-miner"
+  const bin = osName === "windows" ? "jevlin.exe" : "jevlin"
   const dest = path.join(__dirname, "bin", bin)
   fs.copyFileSync(path.join(tmp, bin), dest)
   if (osName !== "windows") fs.chmodSync(dest, 0o755)
   fs.rmSync(tmp, { recursive: true, force: true })
-  console.log(`dropin-miner ${pkg.version} installed for ${osName}/${arch}`)
+  console.log(`jevlin ${pkg.version} installed for ${osName}/${arch}`)
 }
 
 main().catch((err) => {
-  console.error(`dropin-miner: ${err.message}`)
-  console.error("You can install the binary another way and set DROPIN_MINER_BINARY to its path.")
+  console.error(`jevlin: ${err.message}`)
+  console.error("You can install the binary another way and set JEVLIN_BINARY to its path.")
   process.exit(1)
 })

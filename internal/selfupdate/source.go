@@ -11,13 +11,13 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/twilight-project/dropin-miner/internal/netdial"
+	"github.com/jevlinai/jevlin-go/internal/netdial"
 )
 
 // The one release origin, compiled in. No environment variable, flag or
 // config redirects it; tests reach it only through the package's own seams.
 const (
-	releaseRepository  = "twilight-project/dropin-miner"
+	releaseRepository  = "jevlinai/jevlin-go"
 	githubAPIBase      = "https://api.github.com/repos/" + releaseRepository + "/releases"
 	githubDownloadBase = "https://github.com/" + releaseRepository + "/releases/download"
 	maxRedirects       = 5
@@ -195,7 +195,7 @@ func (s *HTTPSource) get(ctx context.Context, endpoint, accept string, max int64
 		return nil, failure(KindReleaseInvalid, err)
 	}
 	req.Header.Set("Accept", accept)
-	req.Header.Set("User-Agent", "dropin-miner-upgrade")
+	req.Header.Set("User-Agent", "jevlin-upgrade")
 	resp, err := s.client.Do(req)
 	if err != nil {
 		if errors.Is(err, errRefusedRedirect) {

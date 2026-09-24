@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twilight-project/dropin-miner/pkg/observe"
-	"github.com/twilight-project/dropin-miner/pkg/wire"
+	"github.com/jevlinai/jevlin-go/pkg/observe"
+	"github.com/jevlinai/jevlin-go/pkg/wire"
 )
 
 func completed(profile observe.Profile, id string) *observe.Observation {

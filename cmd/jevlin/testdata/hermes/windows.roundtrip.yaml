@@ -1,0 +1,11 @@
+model: gpt
+
+# >>> jevlin agents install >>>
+hooks:
+  pre_tool_call:
+    - command: '"C:\Users\u\.tokendrop\bin\jevlin.exe" hook -config "C:\Users\u\.tokendrop\tokendrop.toml"
+        hermes pre_tool_call'
+      matcher: "terminal"
+# <<< jevlin agents install <<<
+display:
+  personality: kawaii

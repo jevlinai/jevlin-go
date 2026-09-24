@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/twilight-project/dropin-miner/pkg/fsx"
+	"github.com/jevlinai/jevlin-go/pkg/fsx"
 )
 
 // PreviousPath is the one-level rollback slot beside executable. It is the
@@ -249,7 +249,7 @@ func durableSnapshot(source string) (string, error) {
 	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > MaxExecutableBytes {
 		return "", fmt.Errorf("the installed binary's size %d is outside 1..%d bytes", info.Size(), MaxExecutableBytes)
 	}
-	out, err := os.CreateTemp(filepath.Dir(source), ".dropin-miner.snapshot-*")
+	out, err := os.CreateTemp(filepath.Dir(source), ".jevlin.snapshot-*")
 	if err != nil {
 		return "", err
 	}
@@ -286,7 +286,7 @@ func durableSnapshot(source string) (string, error) {
 
 // reservePath returns a unique name in dir that does not exist.
 func reservePath(dir string) (string, error) {
-	f, err := os.CreateTemp(dir, ".dropin-miner.displaced-*")
+	f, err := os.CreateTemp(dir, ".jevlin.displaced-*")
 	if err != nil {
 		return "", err
 	}
@@ -303,7 +303,7 @@ func reservePath(dir string) (string, error) {
 // stagingPrefixes are the only names this package creates beside an
 // executable: staged candidates, POSIX snapshots and Windows displaced
 // binaries.
-var stagingPrefixes = []string{".dropin-miner.candidate-", ".dropin-miner.snapshot-", ".dropin-miner.displaced-"}
+var stagingPrefixes = []string{".jevlin.candidate-", ".jevlin.snapshot-", ".jevlin.displaced-"}
 
 // StagingLeftovers lists the regular files in dir that this package named and
 // an interrupted operation may have left, and nothing else in dir.

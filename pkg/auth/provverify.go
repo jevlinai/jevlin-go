@@ -14,7 +14,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/twilight-project/dropin-miner/pkg/wire"
+	"github.com/jevlinai/jevlin-go/pkg/wire"
 )
 
 // Provider verification states as seen by the proxy (§43).
@@ -122,7 +122,7 @@ func (m *MiningClient) ProviderStatus(ctx context.Context) (*ProviderBinding, er
 // surface RevokeAtProviderNotice to the participant so the key is dealt
 // with on the provider side too.
 //
-// It has no caller (cmd/dropin-miner's `provider` command only registers
+// It has no caller (cmd/jevlin's `provider` command only registers
 // a key, never unregisters one) — `provider` can bind an OpenRouter
 // credential and has no way to unbind it again, mining disable or not.
 // Logged rather than fixed here: mining disable's own scope is the

@@ -1,14 +1,14 @@
 {
-  "name": "dropin-miner",
-  "version": "0.3.0",
-  "description": "Web search for coding agents that pays the person running the agent. npm wrapper around the dropin-miner Go binary.",
+  "name": "jevlin",
+  "version": "0.0.0",
+  "description": "Web search for coding agents that pays the person running the agent. npm wrapper around the jevlin Go binary.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/twilight-project/dropin-miner.git"
+    "url": "git+https://github.com/jevlinai/jevlin-go.git"
   },
   "bin": {
-    "dropin-miner": "bin/dropin-miner.js"
+    "jevlin": "bin/jevlin.js"
   },
   "scripts": {
     "postinstall": "node install.js"

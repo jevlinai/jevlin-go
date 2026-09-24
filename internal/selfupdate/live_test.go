@@ -14,10 +14,10 @@ import (
 // "installed binary" is a placeholder in a temporary directory. It is opt-in,
 // because ordinary tests must not depend on GitHub:
 //
-//	DROPIN_MINER_LIVE_RELEASE=1 go test ./internal/selfupdate -run TestLiveReleaseVerification -count=1 -v
+//	JEVLIN_LIVE_RELEASE=1 go test ./internal/selfupdate -run TestLiveReleaseVerification -count=1 -v
 func TestLiveReleaseVerification(t *testing.T) {
-	if os.Getenv("DROPIN_MINER_LIVE_RELEASE") != "1" {
-		t.Skip("set DROPIN_MINER_LIVE_RELEASE=1 to verify against the published release")
+	if os.Getenv("JEVLIN_LIVE_RELEASE") != "1" {
+		t.Skip("set JEVLIN_LIVE_RELEASE=1 to verify against the published release")
 	}
 	v, err := ParseVersion("0.2.8")
 	if err != nil {

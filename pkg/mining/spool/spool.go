@@ -31,7 +31,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/twilight-project/dropin-miner/pkg/fsx"
+	"github.com/jevlinai/jevlin-go/pkg/fsx"
 )
 
 // Record is one spooled observation plus the delivery context needed to

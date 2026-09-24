@@ -18,8 +18,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/twilight-project/dropin-miner/pkg/mining/spool"
-	"github.com/twilight-project/dropin-miner/pkg/redact"
+	"github.com/jevlinai/jevlin-go/pkg/mining/spool"
+	"github.com/jevlinai/jevlin-go/pkg/redact"
 )
 
 // Submitter delivers one record and reports the AS's answer. The real

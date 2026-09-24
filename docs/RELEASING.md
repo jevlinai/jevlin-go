@@ -42,34 +42,31 @@ does.
 
    ```
    git tag -a vX.Y.Z -m "vX.Y.Z" <commit>
-   git push upstream vX.Y.Z
+   git push origin vX.Y.Z
    ```
 
-   Annotated (`-a`) is the rule from v0.2.8 on — it records who cut the release and
-   when, which a lightweight tag does not — and the workflow now enforces it. The
-   earlier tags are mixed (v0.1.1 through v0.1.6 and v0.2.6 annotated; v0.1.7 through
-   v0.2.5 and v0.2.7 lightweight) and are left exactly as they are: retagging a
-   published release would move refs that `npm/install.js`, the self-updater and an
-   already-published `checksums.txt` resolve against, for a cosmetic gain.
+   Annotated (`-a`) is the rule — it records who cut the release and when, which a
+   lightweight tag does not — and the workflow enforces it. A published tag is never
+   retagged: that would move a ref `npm/install.js`, the self-updater and an
+   already-published `checksums.txt` resolve against.
 
    The tag carries the `v` prefix always: `release.yml` matches `v*`, and
    `npm/install.js` downloads from `releases/download/v${version}`, so a tag named
    `0.2.0` builds nothing and the npm package of that version can never install.
 
-   The tag goes to `twilight-project/dropin-miner` (the `upstream` remote), where the
-   releases live and `npm/install.js` and the self-updater look for them — never
-   to `origin`, a fork: a tag pushed only there publishes a release nobody's installer
-   can find.
+   The tag goes to `jevlinai/jevlin-go`, where the releases live and
+   `npm/install.js` and the self-updater look for them. There is no fork: `origin`
+   is that repository.
 5. **Watch the run**, and read the preflight job's diagnostics even when it passes —
    it prints the tagged commit, canonical main, and the asset names it expects.
-6. **From the first release after v0.2.9, accept the upgrade by hand.** It is the
-   acceptance step still done by hand; the workflow does not attempt it. A real native
-   installation of v0.2.9 must run `dropin-miner upgrade` and land on the release just
-   published: `dropin-miner version` afterwards reports it, and `dropin-miner upgrade
+6. **From the second release on, accept the upgrade by hand.** It is the acceptance
+   step still done by hand; the workflow does not attempt it. A real native
+   installation of the previous release must run `jevlin upgrade` and land on the
+   release just published: `jevlin version` afterwards reports it, and `jevlin upgrade
    -rollback` puts the previous one back. At least one of those upgrades is on a
    Windows desktop, because CI's Windows runners do not represent the antivirus and
-   endpoint software a participant's machine runs. v0.2.9 itself cannot be accepted
-   this way: no earlier release has `upgrade`.
+   endpoint software a participant's machine runs. The first release cannot be
+   accepted this way: there is nothing earlier to upgrade from.
 
 ## Before you tag
 
@@ -85,18 +82,18 @@ that fails preflight is a tag already pushed, and a pushed tag is awkward to tak
 - **`npm/package.json`'s `"version"` already says `X.Y.Z`** in the commit you're about
   to tag, or an ancestor of it.
 - **The usage text and the installed skill match the flags actually shipped.** A flag
-  named in `usageText` or `cmd/dropin-miner/skill.md` that the binary does not accept,
+  named in `usageText` or `cmd/jevlin/skill.md` that the binary does not accept,
   or a flag it accepts that neither mentions, is the 0.2.6 finding repeating itself:
   the help surface is the contract an agent reads.
 - **Any adapter that has never had a live smoke gets one, or the changelog states the
   exception.** Saying "not live-smoked" in the entry is an acceptable answer; saying
   nothing is not. As of v0.2.6 the Pi and Hermes adapters carried that exception.
 - **`make verify` is green on that exact commit**, and `ci.yml` is green on `main`.
-- **For a release whose updater has never run under antivirus** (v0.2.9 is the first
-  such release; step 7's real acceptance only starts with the release after it): an
+- **For a release whose updater has never run under antivirus** (the first release is
+  such a release; step 6's real acceptance only starts with the release after it): an
   optional substitute is available. On a Windows desktop with real-time antivirus
   protection **on**, at the commit to be tagged, run
-  `go test ./internal/selfupdate ./cmd/dropin-miner -run 'Replace|Rollback|Upgrade|Uninstall' -count=1`
+  `go test ./internal/selfupdate ./cmd/jevlin -run 'Replace|Rollback|Upgrade|Uninstall' -count=1`
   — the acceptance test performs the replacement transaction inside the process
   started from the pathname being moved, which is the running-image case CI's runners
   cover with Defender off. If no such machine is available before the tag, the
@@ -115,7 +112,7 @@ The substantive checks live in `tools/releasecheck`, a small Go program with its
 tests, rather than in shell embedded in the workflow. A release gate nobody can run
 except by cutting a release is a gate nobody has tested; every rejection below has a
 test that drives it. `tools/releasecheck` is release tooling and not part of the client:
-`.goreleaser.yaml` builds `./cmd/dropin-miner` and nothing else, so none of it ships in
+`.goreleaser.yaml` builds `./cmd/jevlin` and nothing else, so none of it ships in
 the binary, and nothing in `cmd/` or `pkg/` imports it.
 
 Every `uses:` in both workflows, `release.yml` and `ci.yml`, is pinned to a full commit
@@ -212,12 +209,12 @@ one version string to another, and all of those can pass on a release whose publ
 wrapper downloads the wrong archive.
 
 On Ubuntu, macOS and Windows, each in a genuinely fresh temporary directory:
-`npm install dropin-miner@X.Y.Z`, let the package's own postinstall pick the platform
+`npm install jevlin@X.Y.Z`, let the package's own postinstall pick the platform
 archive, download it from the GitHub Release, verify it against `checksums.txt` and
-unpack it, then `npx --no-install dropin-miner version` and require exactly:
+unpack it, then `npx --no-install jevlin version` and require exactly:
 
 ```
-dropin-miner X.Y.Z
+jevlin X.Y.Z
 ```
 
 The binary name, then the version **without** the `v`. The tag carries the `v`;
@@ -277,7 +274,7 @@ depends on whether anything has fetched it yet. Look at the release, delete it a
 re-run or repair it by hand, then re-run the workflow.
 
 **npm publish failed.** Re-run. The publish job asks the registry whether
-`dropin-miner@X.Y.Z` already exists before attempting anything. If it does not, it
+`jevlin@X.Y.Z` already exists before attempting anything. If it does not, it
 publishes. If it does, it does **not** treat "the version exists" as proof the release
 is correct: it downloads the published tarball and compares its contents against `npm/`
 at this tag, and only then moves on to the smoke test. A published version whose
@@ -296,23 +293,23 @@ whether one operating system is broken or all three.
 
 ## What installed updaters depend on
 
-From v0.2.9 a native installation can upgrade itself, and every copy that can do so
+A native installation can upgrade itself, and every copy that can do so
 carries its expectations of a release compiled in. A release that breaks one of them
 cannot be upgraded into by any installed updater, and no later release can fix that for
 the copies already out there. So these are contracts, and each has a test that fails in
 CI before a tag can break it.
 
-**The version command.** A release binary's `dropin-miner version` prints exactly
-`dropin-miner X.Y.Z` and a newline — the bare version, no `v`, nothing else — and writes
+**The version command.** A release binary's `jevlin version` prints exactly
+`jevlin X.Y.Z` and a newline — the bare version, no `v`, nothing else — and writes
 nothing to stderr, under an environment with nothing of the participant's in it. The
 updater runs it on the downloaded candidate before installing anything, and it accepts
 nothing else. GoReleaser stamps it with `-X main.version={{.Version}}`, which is the bare
-version. `cmd/dropin-miner`'s `TestVersionOutputIsAReleaseCompatibilityContract` builds
+version. `cmd/jevlin`'s `TestVersionOutputIsAReleaseCompatibilityContract` builds
 the binary that way and runs it through the updater's own validator, and checks
 `.goreleaser.yaml` still stamps the bare version.
 
 **The asset names.** The updater computes the archive name from the version and platform
-(`dropin-miner_X.Y.Z_<os>_<arch>.tar.gz`, `.zip` on Windows) and expects `checksums.txt`
+(`jevlin_X.Y.Z_<os>_<arch>.tar.gz`, `.zip` on Windows) and expects `checksums.txt`
 beside it, with a small checked-in function rather than GoReleaser's templates.
 `tools/releasecheck`'s `TestSelfUpdaterAssetNamesMatchGoReleaser` derives the whole matrix
 from `.goreleaser.yaml` and requires the two to agree, so changing the naming, the
@@ -350,10 +347,10 @@ Publication authenticates with npm's **Trusted Publishing**: `publish-npm` decla
 `id-token: write` and exchanges the resulting OIDC token for a short-lived npm publish
 token, so no npm secret exists in this repository or its environments, and none is read
 by the job. Authorization instead comes from a trusted-publisher record configured on the
-`dropin-miner` package on npmjs.com, naming this workflow exactly:
+`jevlin` package on npmjs.com, naming this workflow exactly:
 
-- **Owner:** `twilight-project`
-- **Repository:** `dropin-miner`
+- **Owner:** `jevlinai`
+- **Repository:** `jevlin-go`
 - **Workflow file:** `release.yml`
 - **Environment:** `release`
 

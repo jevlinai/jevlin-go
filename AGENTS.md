@@ -1,10 +1,10 @@
-# AGENTS.md — dropin-miner
+# AGENTS.md — jevlin
 
 Agent instructions for the TokenDrop drop-in mining client. Loaded every session.
 
 ## What this is
-dropin-miner is the **launch client** for Twilight MINIS: a **no-daemon** Go CLI a coding agent
-shells out to (`dropin-miner search …`) plus a lifecycle hook. Between calls nothing runs — no
+jevlin is the **launch client** for Twilight MINIS: a **no-daemon** Go CLI a coding agent
+shells out to (`jevlin search …`) plus a lifecycle hook. Between calls nothing runs — no
 reverse proxy, no resident process. It earns by capturing each provider call's **event id**
 (`request_id` for search, `generation_id` for OpenRouter) and submitting it to the Authorization
 Server (AS), which **reconciles against the provider** — the client never self-reports volume. It
@@ -20,7 +20,7 @@ The AS↔client wire contract, source profiles, and fixture corpus are owned in
 `testdata/fixtures/`). **Conform upward.** A frozen requirement that looks wrong is a **spec
 escalation** to the design side — never a local reading chosen because it's easier to build, never
 an edit to a mirrored fixture. `pkg/` is the **shared protocol implementation, owned by this repo**
-and consumed elsewhere by import; `cmd/dropin-miner/` is this client's wrapper. Client-specific
+and consumed elsewhere by import; `cmd/jevlin/` is this client's wrapper. Client-specific
 decisions (retry shapes, the trace envelope, install/agent behaviour) have no upstream home —
 record them in `docs/` here.
 
@@ -68,7 +68,7 @@ govulncheck.
    `platform.base_url` carries no credential — nothing is ever dialed there — it is the portal
    origin a printed `claim_url` is checked against (invariant 12); the human portal and the machine
    API are separate hosts. The sole exception is the self-updater: `internal/selfupdate`
-   contacts only the compiled-in canonical `twilight-project/dropin-miner` GitHub release origin,
+   contacts only the compiled-in canonical `jevlinai/jevlin-go` GitHub release origin,
    carries no participant credential, follows only its bounded HTTPS GitHub redirect allowlist, and
    no environment variable, config or flag may redirect that origin.
 6. **Strict for the AS wire, permissive for the provider response.** AS-facing types conform to the
@@ -150,8 +150,8 @@ govulncheck.
     label.** That is chosen, not a
     gap: the exported environment is the declaration, and the inner search is work the outer
     session asked for.
-17. **Verified replacement and explicit destruction.** `dropin-miner upgrade` fetches only from the
-    compiled-in canonical `twilight-project/dropin-miner` GitHub release origin — the one exception
+17. **Verified replacement and explicit destruction.** `jevlin upgrade` fetches only from the
+    compiled-in canonical `jevlinai/jevlin-go` GitHub release origin — the one exception
     to invariant 5 — over HTTPS, with no participant credential, following only its bounded GitHub
     redirect allowlist, under the frozen size bounds and one three-minute operation deadline that
     also bounds replacement. Every asset the verifier requires is verified before the archive is
@@ -189,9 +189,9 @@ each line names the file that owns the rule and the test that proves it.
   and what makes one degraded; `pkg/auth/health.go` owns the three components and the closed reason
   vocabulary (`decision_unreadable`, `intake_unwritable`, `sandbox_restricted`, `flush_spawn_failed`,
   `flush_state_unavailable`, `auth_state_unavailable`, `submission_failed`, `spool_backlog`).
-  `cmd/dropin-miner/mining_state_health_test.go` drives search and flush through every decision and
+  `cmd/jevlin/mining_state_health_test.go` drives search and flush through every decision and
   every reason.
-- **The flush lock and stamp** — `cmd/dropin-miner/flushlock.go` owns the rule: one `flush.lock`
+- **The flush lock and stamp** — `cmd/jevlin/flushlock.go` owns the rule: one `flush.lock`
   beside the intake directory for every flush of every version, because a flush that overlapped
   another would re-spool records the other had already read, so the lock cannot be split across
   paths or versions. Where a sandbox denies writing it (Codex's
@@ -211,7 +211,7 @@ each line names the file that owns the rule and the test that proves it.
   cannot establish its condition leaves through `skipPermissionTest`, which fails instead of
   skipping under `CI=true`: CI runs `go test` without `-v`, so only that makes a green job mean the
   test ran.
-- **The registration journal and the rebuild** — `cmd/dropin-miner/connect.go` owns the order
+- **The registration journal and the rebuild** — `cmd/jevlin/connect.go` owns the order
   (journal, publish, clear); `pkg/auth/store.go` owns the journal and the agent record;
   `pkg/platform/client.go` owns `Register`, `Status` and `Me`. Its guards, in
   `agent_onboarding_test.go`, named exactly because a trailing ellipsis is not a test:
@@ -221,12 +221,12 @@ each line names the file that owns the rule and the test that proves it.
   no-flag replacement of a positively-verified expired identity) and
   `TestConnectRefusesCorruptRegistrationWithExistingPlatformCredential` (the refusal that
   `-force` exists to override).
-- **The prompt rule** — `cmd/dropin-miner/prompt.go` owns what counts as an answer and the two
+- **The prompt rule** — `cmd/jevlin/prompt.go` owns what counts as an answer and the two
   readers that ask; every prompt in the binary goes through one of them.
   `prompt_abort_test.go` drives each real command to each real question, under both an interrupted
   read and a closed stdin, and asserts the non-zero exit, the unwritten decision and the
   uncontacted platform — and, in the same file, that a typed refusal still declines and exits 0.
-- **Which installation the profile and the agents belong to** — `cmd/dropin-miner/setup.go` owns it
+- **Which installation the profile and the agents belong to** — `cmd/jevlin/setup.go` owns it
   (`otherInstallation`, `leftForOtherInstallation`). This machine's installation is
   `$TOKENDROP_HOME`, else `~/.tokendrop`; an explicit `-home` naming any other directory is a
   separate installation, and for it the profile step and the agents step are skipped — named as
@@ -237,7 +237,7 @@ each line names the file that owns the rule and the test that proves it.
   `TOKENDROP_HOME` as the way to say a directory elsewhere IS the machine's own.
   `setup_other_home_test.go` snapshots the whole sandbox, since the claim is about what is not
   touched.
-- **Whose content is inside our marked block** — `cmd/dropin-miner/agents.go` owns the split
+- **Whose content is inside our marked block** — `cmd/jevlin/agents.go` owns the split
   (`markedRegion`, `splitMarkedBlock`, `splitCodexBlock`) and `targets.go` owns what uninstall
   does with it (`removeOurSandboxBlock`). It is `ownership_match.go`'s rule one level finer: that
   rule decides whether a block is *this installation's* by what the renderer wrote into it rather
@@ -266,7 +266,7 @@ each line names the file that owns the rule and the test that proves it.
   our own writes put it, at the end. `codex_block_position_test.go` asserts that case by bytes
   and the other by the guarantee that does hold there — not one line of the participant's own
   moves relative to any other.
-- **Our entry in a Hermes `hooks:` block we did not write** — `cmd/dropin-miner/hermes_install.go`
+- **Our entry in a Hermes `hooks:` block we did not write** — `cmd/jevlin/hermes_install.go`
   owns it (`findHermesOwnEntry`, `hermesRunIsRendered`), in the file that already owns the rule it
   follows: there is no YAML parser, so a false-positive refusal is cheap and an ambiguous mutation
   is not. An entry is ours only when the file's structure can be vouched for by the same scan
@@ -292,7 +292,7 @@ each line names the file that owns the rule and the test that proves it.
   and `hermes_differential_test.go` runs 2,875 generated files through the real uninstall, with
   `testdata/hermes/oracle.py` to ask PyYAML what each meant before and after — the only judge of
   a by-line YAML edit that is not the code that made it.
-- **What the client writes into a participant's files** — `cmd/dropin-miner/setup_config.go`
+- **What the client writes into a participant's files** — `cmd/jevlin/setup_config.go`
   renders `tokendrop.toml`, fresh and migrated; `agents.go`, `setup_env.go` and
   `hermes_install.go` render the blocks that go into a host's own config. Every byte any of them
   contributes is ASCII: Windows PowerShell 5.1 reads a file with no byte-order mark in the ANSI
@@ -301,7 +301,7 @@ each line names the file that owns the rule and the test that proves it.
   `generated_config_ascii_test.go` renders each artifact from ASCII inputs and refuses a byte
   above 0x7F — from ASCII inputs, because a participant whose home is `C:\Users\José` is not
   this client's doing.
-- **What a destructive run may leave behind** — `cmd/dropin-miner/lifecycle.go` owns the
+- **What a destructive run may leave behind** — `cmd/jevlin/lifecycle.go` owns the
   exclusion: which operation locks it takes, which of those files it created, and the rule that
   `release` removes exactly those and only when the operation never proceeded (`proceeded()`).
   `excludeForUpgrade` opts out, in its own words, at its own construction, because **an ordinary
@@ -336,7 +336,7 @@ each line names the file that owns the rule and the test that proves it.
 - **Durable evidence delivery** — `pkg/fsx` owns the atomic, fsync'd write (Windows included);
   `pkg/mining/spool` owns the queue and its quarantine; `pkg/mining/collector` owns attempts and
   the next-attempt time; `pkg/auth/submit.go` owns the AS exchange and what counts as an ack.
-  `cmd/dropin-miner/delivery_health_test.go` proves a quarantine cannot be cleared by an unrelated
+  `cmd/jevlin/delivery_health_test.go` proves a quarantine cannot be cleared by an unrelated
   success.
 - **The search protocol** — `search.go` owns the request and the fail-open intake;
   `search_protocol.go` owns the deadline, the bounded read and the one exact-code retry;
@@ -421,7 +421,7 @@ each line names the file that owns the rule and the test that proves it.
   editions through `-EncodedCommand`, `cmd`, and Hermes' own splitter — against a test build
   with loopback-only stubs, and compares the query the router received with the one that was
   sent.
-- **Lifecycle coordination** — `cmd/dropin-miner/lifecycle.go` owns the gate `H.lifecycle.lock`
+- **Lifecycle coordination** — `cmd/jevlin/lifecycle.go` owns the gate `H.lifecycle.lock`
   (a sibling of the installation, never inside it and never deleted), the one lock order
   (gate → `setup.lock` → `connect.lock` → `flush.lock`; for `uninstall -binary` the same sequence
   then `<resolved binary>.update.lock`, the same update-lock identity an upgrade holds after
@@ -434,7 +434,7 @@ each line names the file that owns the rule and the test that proves it.
   gate before it reads or writes anything; `TestSetupHoldsSetupLockThroughItsWholeRun` proves setup
   excludes a destructive operation until its closing message.
 
-- **Uninstall** — `cmd/dropin-miner/uninstall.go` owns the order (plan everything, confirm,
+- **Uninstall** — `cmd/jevlin/uninstall.go` owns the order (plan everything, confirm,
   then integrations, environment, revocation, state, binary), what "this installation's" means
   for a skill, hook or profile block, the purge set and its target guard, and the typed
   confirmation `-yes` cannot supply; `setup_env.go` owns the profile-block removal and the
@@ -514,14 +514,14 @@ each line names the file that owns the rule and the test that proves it.
   validated, and only then the copy committed as `.previous`; on Windows the probed sequence
   (binary aside, candidate in, validate, aside replaces `.previous`) with `previous_in_use` when a
   process still runs `.previous`. `rollback.go` owns restoring a validated copy of `.previous`
-  with no network. `cmd/dropin-miner/upgrade_locks.go` owns the gate, `setup.lock` and
-  `<binary>.update.lock` an upgrade holds, and `cmd/dropin-miner/upgrade.go` owns the command:
+  with no network. `cmd/jevlin/upgrade_locks.go` owns the gate, `setup.lock` and
+  `<binary>.update.lock` an upgrade holds, and `cmd/jevlin/upgrade.go` owns the command:
   the launch classifier first, one operation deadline over everything after it, success only
   after the transaction commits, `Prepared.DiscardAfterInstall` as the only cleanup, and failure
   classes from typed kinds. `upgrade_test.go`'s
   `TestUpgradeCarriesOneOperationDeadlineThroughEveryStage` and
   `TestUpgradeCommandPrintsSuccessOnlyAfterTheCanonicalPathValidates` guard the command.
-  `cmd/dropin-miner/upgrade_rerender.go` owns what follows a committed replacement: the
+  `cmd/jevlin/upgrade_rerender.go` owns what follows a committed replacement: the
   host integrations **this installation owns** — `ownedHosts`, which is `ownership_match.go`'s
   rule read off the files through uninstall's own attribution, because `Status` calls a skill
   installed when the file merely exists — are rendered again by a **child process, the binary now
@@ -580,7 +580,7 @@ each line names the file that owns the rule and the test that proves it.
   `pkg/` code imports the wrapper.
 - The mining path (`flush`, `driver`, `collector`) never dials the router and is never on the search
   response path (invariant 1) — proven, not assumed, by
-  `cmd/dropin-miner/flush_test.go`'s `TestFlushNeverDialsTheRouterEvenOnFailure`
+  `cmd/jevlin/flush_test.go`'s `TestFlushNeverDialsTheRouterEvenOnFailure`
   (connection-counted, not request-counted). Not import-expressible — `flush.go`/`driver.go`
   legitimately import `net/http` to reach the AS, so there is no package to deny — which is why it
   lives as a behavioral test rather than a second depguard rule.
@@ -618,7 +618,7 @@ each line names the file that owns the rule and the test that proves it.
   matrix on Linux, macOS, Windows and Windows arm64, plus `race`, `cross`, `lint` and `vuln`);
   merge through GitHub, which produces a merge commit; and tag only when cutting a release, per
   `docs/RELEASING.md`.
-- `unsafe` is admitted in exactly one file, `cmd/dropin-miner/setup_env_windows.go`, where the
+- `unsafe` is admitted in exactly one file, `cmd/jevlin/setup_env_windows.go`, where the
   Windows environment broadcast must hand `SendMessageTimeoutW` a string's address;
   `TestOnlyTheEnvironmentBroadcastImportsUnsafe` fails on any other import, so a second use is an
   exception argued in review, never a quiet import.

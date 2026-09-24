@@ -35,7 +35,7 @@ func (r *silentThen) Run(ctx context.Context, path string, args, env []string) (
 }
 
 func TestACandidateThatTimesOutOnceIsAskedOnceMoreAndAccepted(t *testing.T) {
-	r := &silentThen{silent: 1, then: outputs("dropin-miner 0.3.0\n", "")}
+	r := &silentThen{silent: 1, then: outputs("jevlin 0.3.0\n", "")}
 	if err := validateCandidate(context.Background(), r, "/candidate", mustVersion(t, "0.3.0"), retryTestBudget); err != nil {
 		t.Fatalf("a candidate that answered on the second attempt was refused: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestACandidateThatTimesOutOnceIsAskedOnceMoreAndAccepted(t *testing.T) {
 
 func TestTwoTimeoutsAreATimeoutAndThereIsNoThirdAttempt(t *testing.T) {
 	// It WOULD answer on a third call. Bounded means it is never asked.
-	r := &silentThen{silent: 2, then: outputs("dropin-miner 0.3.0\n", "")}
+	r := &silentThen{silent: 2, then: outputs("jevlin 0.3.0\n", "")}
 	err := validateCandidate(context.Background(), r, "/candidate", mustVersion(t, "0.3.0"), retryTestBudget)
 	if !errors.Is(err, ErrCandidateTimeout) {
 		t.Fatalf("two timeouts reported as %v, want ErrCandidateTimeout", err)
@@ -60,12 +60,12 @@ func TestTwoTimeoutsAreATimeoutAndThereIsNoThirdAttempt(t *testing.T) {
 // SECOND call, so a retry would not merely waste time: it would accept a
 // binary that had just shown itself to be wrong.
 func TestAnythingTheCandidateActuallySaidIsRefusedWithOneCall(t *testing.T) {
-	good := outputs("dropin-miner 0.3.0\n", "")
+	good := outputs("jevlin 0.3.0\n", "")
 	for name, first := range map[string]CommandRunner{
-		"the wrong version":       outputs("dropin-miner 0.2.9\n", ""),
-		"a byte on stderr":        outputs("dropin-miner 0.3.0\n", "!"),
-		"a malformed line":        outputs("dropin-miner 0.3.0", ""),
-		"a non-canonical version": outputs("dropin-miner v0.3.0\n", ""),
+		"the wrong version":       outputs("jevlin 0.2.9\n", ""),
+		"a byte on stderr":        outputs("jevlin 0.3.0\n", "!"),
+		"a malformed line":        outputs("jevlin 0.3.0", ""),
+		"a non-canonical version": outputs("jevlin v0.3.0\n", ""),
 		"nothing at all":          outputs("", ""),
 		"a failure to start": runnerFunc(func(context.Context, string, []string, []string) ([]byte, []byte, error) {
 			return nil, nil, errors.New("exec format error")
@@ -104,7 +104,7 @@ func TestAnythingTheCandidateActuallySaidIsRefusedWithOneCall(t *testing.T) {
 func TestNoSecondAttemptOnceTheOperationItselfIsOutOfTime(t *testing.T) {
 	parent, cancel := context.WithTimeout(context.Background(), retryTestBudget)
 	defer cancel()
-	r := &silentThen{silent: 5, then: outputs("dropin-miner 0.3.0\n", "")}
+	r := &silentThen{silent: 5, then: outputs("jevlin 0.3.0\n", "")}
 	if err := validateCandidate(parent, r, "/candidate", mustVersion(t, "0.3.0"), time.Hour); err == nil {
 		t.Fatal("accepted a candidate that never answered")
 	}

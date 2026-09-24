@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twilight-project/dropin-miner/pkg/mining/spool"
+	"github.com/jevlinai/jevlin-go/pkg/mining/spool"
 )
 
 // scriptedSubmitter answers per client_record_id, recording attempts.

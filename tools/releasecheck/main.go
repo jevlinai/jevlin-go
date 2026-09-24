@@ -3,8 +3,8 @@
 // published release, and whether what was published is what was meant.
 //
 // It is release tooling and not part of the client. Nothing here is
-// compiled into the dropin-miner binary — .goreleaser.yaml builds
-// ./cmd/dropin-miner and nothing else — and nothing in cmd/ or pkg/
+// compiled into the jevlin binary — .goreleaser.yaml builds
+// ./cmd/jevlin and nothing else — and nothing in cmd/ or pkg/
 // imports it.
 //
 // It does no network I/O and publishes nothing. Everything it judges
@@ -82,7 +82,7 @@ func usage(w io.Writer) {
 
   smoke          -tag vX.Y.Z -file FILE
                  FILE holds what the installed binary printed for "version".
-                 Requires exactly "dropin-miner X.Y.Z".
+                 Requires exactly "jevlin X.Y.Z".
 `)
 }
 
@@ -433,6 +433,6 @@ func runSmoke(args []string, out io.Writer) error {
 	if err := CheckVersionOutput(got, v); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "ok  the installed binary reports %q\n", "dropin-miner "+v.String())
+	fmt.Fprintf(out, "ok  the installed binary reports %q\n", "jevlin "+v.String())
 	return nil
 }

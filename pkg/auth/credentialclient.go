@@ -72,7 +72,7 @@ func newCredentialClient(rt http.RoundTripper) *http.Client {
 // module-wide; this is the thing to install.
 //
 // Exported because the clients that need it are not all in this package.
-// cmd/dropin-miner has two of its own that carry a credential outside
+// cmd/jevlin has two of its own that carry a credential outside
 // pkg/auth entirely — search.go's router client and credentials.go's login
 // probe, both bearing the participant's sr- key — plus wallet_tx.go's chain
 // RPC client, which carries no bearer credential but still relays a signed

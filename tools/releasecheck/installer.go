@@ -30,7 +30,7 @@ var installerFragments = []string{
 	`const osName = { darwin: "darwin", linux: "linux", win32: "windows" }[process.platform]`,
 	`const arch = { x64: "amd64", arm64: "arm64" }[process.arch]`,
 	`const ext = osName === "windows" ? "zip" : "tar.gz"`,
-	"const name = `dropin-miner_${pkg.version}_${osName}_${arch}.${ext}`",
+	"const name = `jevlin_${pkg.version}_${osName}_${arch}.${ext}`",
 	"const base = `https://github.com/${REPO}/releases/download/v${pkg.version}`",
 	"get(`${base}/checksums.txt`)",
 }
@@ -63,7 +63,7 @@ func InstallerAssetNames(installJS []byte, v ReleaseVersion) ([]string, error) {
 			ext = ".zip"
 		}
 		for _, goarch := range installerArches {
-			names = append(names, fmt.Sprintf("dropin-miner_%s_%s_%s%s", v.String(), goos, goarch, ext))
+			names = append(names, fmt.Sprintf("jevlin_%s_%s_%s%s", v.String(), goos, goarch, ext))
 		}
 	}
 	names = append(names, "checksums.txt")
@@ -78,7 +78,7 @@ func InstallerAssetNames(installJS []byte, v ReleaseVersion) ([]string, error) {
 // Without this, .goreleaser.yaml could rename every archive, the release
 // would build and upload cleanly, the asset check would pass against the
 // renamed expectation, npm would publish — and every `npm install
-// dropin-miner` would fail on a 404 from a URL install.js assembled from
+// jevlin` would fail on a 404 from a URL install.js assembled from
 // a rule nobody changed.
 func CheckNamingContractsAgree(goreleaserYAML, installJS []byte, v ReleaseVersion) error {
 	contract, err := ParseNamingContract(goreleaserYAML)

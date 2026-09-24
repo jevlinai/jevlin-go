@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twilight-project/dropin-miner/internal/networkfence"
+	"github.com/jevlinai/jevlin-go/internal/networkfence"
 )
 
 const (
@@ -40,7 +40,7 @@ func TestMain(m *testing.M) {
 	if len(os.Args) >= 2 && os.Args[1] == acceptanceHelper {
 		os.Exit(runAcceptanceHelper(os.Args[2:]))
 	}
-	if os.Getenv("DROPIN_MINER_LIVE_RELEASE") == "1" {
+	if os.Getenv("JEVLIN_LIVE_RELEASE") == "1" {
 		// TestLiveReleaseVerification (live_test.go) is the one test in this
 		// package deliberately opted into reaching the real GitHub release
 		// API; the fence would refuse it exactly as it would any other real
@@ -76,7 +76,7 @@ func printTrailerVersion() int {
 	if err == nil {
 		var v string
 		if v, err = trailerVersion(exe); err == nil {
-			fmt.Printf("dropin-miner %s\n", v)
+			fmt.Printf("jevlin %s\n", v)
 			return 0
 		}
 	}
@@ -170,9 +170,9 @@ type acceptance struct {
 
 func exeName() string {
 	if runtime.GOOS == "windows" {
-		return "dropin-miner.exe"
+		return "jevlin.exe"
 	}
-	return "dropin-miner"
+	return "jevlin"
 }
 
 func (a *acceptance) copyAs(path, version string) {
@@ -186,7 +186,7 @@ func (a *acceptance) copyAs(path, version string) {
 
 func (a *acceptance) candidate(version string) string {
 	a.serial++
-	path := filepath.Join(a.dir, fmt.Sprintf(".dropin-miner.candidate-%d%s", a.serial, filepath.Ext(a.exe)))
+	path := filepath.Join(a.dir, fmt.Sprintf(".jevlin.candidate-%d%s", a.serial, filepath.Ext(a.exe)))
 	a.copyAs(path, version)
 	return path
 }

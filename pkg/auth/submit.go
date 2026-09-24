@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/twilight-project/dropin-miner/pkg/mining/spool"
+	"github.com/jevlinai/jevlin-go/pkg/mining/spool"
 )
 
 const maxSubmissionAckBytes = 1 << 20

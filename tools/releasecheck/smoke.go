@@ -16,9 +16,9 @@ import (
 // published package, lets its postinstall fetch and checksum the real
 // archive, and asks the binary that came out what it is.
 //
-// The expected form is `dropin-miner X.Y.Z` — the binary name, then the
+// The expected form is `jevlin X.Y.Z` — the binary name, then the
 // version with no v. main.go prints `fmt.Fprintln(os.Stdout,
-// "dropin-miner", buildVersion())`, and goreleaser injects
+// "jevlin", buildVersion())`, and goreleaser injects
 // -X main.version={{.Version}}, which resolves to the tag with the
 // prefix stripped. Expecting vX.Y.Z here fails a release that is in fact
 // correct, which is why the shape is pinned rather than pattern-matched.
@@ -29,7 +29,7 @@ import (
 // the release.
 func CheckVersionOutput(out []byte, v ReleaseVersion) error {
 	got := strings.TrimSpace(string(out))
-	want := "dropin-miner " + v.String()
+	want := "jevlin " + v.String()
 	if got == want {
 		return nil
 	}
@@ -37,7 +37,7 @@ func CheckVersionOutput(out []byte, v ReleaseVersion) error {
 	switch {
 	case got == "":
 		detail = "\n  Nothing was printed: the wrapper found no binary to run, or it ran and printed nothing."
-	case got == "dropin-miner "+v.Tag():
+	case got == "jevlin "+v.Tag():
 		detail = "\n  The v belongs to the tag, not to the binary: goreleaser strips it from -X main.version."
 	case strings.Contains(got, "("):
 		detail = "\n  The parenthetical form is what an un-stamped build prints, so this binary did not come from the release."

@@ -11,7 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/twilight-project/dropin-miner/pkg/redact"
+	"github.com/jevlinai/jevlin-go/pkg/redact"
 )
 
 const (

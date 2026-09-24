@@ -106,7 +106,7 @@ func TestReleaseStateStopsOnAPartialRelease(t *testing.T) {
 
 func TestReleaseStateStopsOnAReleaseCarryingSomethingUnexpected(t *testing.T) {
 	r := taggedRepo(t)
-	extra := append(append([]string(nil), wantAssets028...), "dropin-miner_0.2.8_linux_amd64.deb")
+	extra := append(append([]string(nil), wantAssets028...), "jevlin_0.2.8_linux_amd64.deb")
 	outputs, err := r.releaseState("v0.2.8", r.haveFile(ghAssetsJSON(t, extra...)))
 	if err == nil {
 		t.Fatal("a release carrying an artifact kind this check cannot name was treated as complete")

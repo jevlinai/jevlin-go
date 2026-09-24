@@ -1,6 +1,6 @@
 # Earn on Twilight Slot 3 with your coding agent's searches
 
-`dropin-miner` gives your coding agent a web search that goes through the
+`jevlin` gives your coding agent a web search that goes through the
 Twilight search router. The router meters every search against your key, and
 one verified search per epoch makes you eligible for that epoch's reward.
 Rewards go to a Twilight address you control.
@@ -36,7 +36,7 @@ state folder, and neither touches the wallet. On Windows, setup gives the wallet
 folder and every file in it an access list of their own with only you on it, so
 access another program adds to `~/.tokendrop` — a coding agent's sandbox, for
 instance — reaches the rest of the installation and not the wallet. Running
-`dropin-miner setup` again puts that right for a wallet whose access list is not
+`jevlin setup` again puts that right for a wallet whose access list is not
 owner-only (and stops, saying why, if something in the wallet folder cannot be secured, such
 as a link to somewhere else); `doctor`'s `wallet access` line says whether anyone
 else can read it. On macOS and Linux an agent's sandbox runs as you, and file
@@ -53,27 +53,27 @@ tells you they are trying.
 With npm, install it globally and run setup:
 
 ```bash
-npm install -g dropin-miner
-dropin-miner setup
+npm install -g jevlin
+jevlin setup
 ```
 
 Without Node: download the archive for your OS and architecture from the
-[releases page](https://github.com/twilight-project/dropin-miner/releases), verify
-it against that release's `checksums.txt`, put the `dropin-miner` binary on your
-PATH, and run `dropin-miner setup`.
+[releases page](https://github.com/jevlinai/jevlin-go/releases), verify
+it against that release's `checksums.txt`, put the `jevlin` binary on your
+PATH, and run `jevlin setup`.
 
 ### Running setup again
 
 Nothing needs removing first. Update the binary (npm: `npm install -g
-dropin-miner@latest`), then run `dropin-miner setup`. If your installation uses a
-non-default home (you had `TOKENDROP_HOME` set for it), run `dropin-miner setup` with
+jevlin@latest`), then run `jevlin setup`. If your installation uses a
+non-default home (you had `TOKENDROP_HOME` set for it), run `jevlin setup` with
 `TOKENDROP_HOME` set to that same one — setup has no other way to find it. `TOKENDROP_HOME` is how you say "this directory is this
 machine's installation". `setup -home <dir>` by itself, for any other directory, makes
 a separate installation there: it leaves your shell profile and your coding agents
 alone, even with `-yes`, because those belong to the machine's own installation, and
 tells you the `agents install -config` command that sets agents up for the new one.
 That is what makes `-home` safe for a disposable installation. One limit to know:
-an agent has room for one dropin-miner skill, and it stays with the installation
+an agent has room for one jevlin skill, and it stays with the installation
 that put it there. If your main installation already set an agent up, the second
 one's `agents install` leaves that skill alone and tells you whose it is, so that
 agent keeps searching through your main installation.
@@ -121,7 +121,7 @@ Setup asks, in order:
 | it asks | what to know |
 |---|---|
 | **Use it? [Y/n]** | Only if a previous installation is set aside beside `~/.tokendrop` (one inside `~/.tokendrop` is simply used). Setup first says where it is and what it holds. Yes brings back your wallet, registration and key; the questions below that they answer are then skipped. |
-| **Enable mining rewards? [y/N]** | A bare Enter answers no — search still works either way. Yes asks the next question now; changing your mind later is `dropin-miner mining enable` (or `mining disable` to stop). |
+| **Enable mining rewards? [y/N]** | A bare Enter answers no — search still works either way. Yes asks the next question now; changing your mind later is `jevlin mining enable` (or `mining disable` to stop). |
 | **Payout address (leave empty to create a wallet here):** | Only asked after yes above. Paste a `twilight1…` address you control, or leave it empty for a wallet: it asks for a keyfile passphrase (**keyfile passphrase:**, then **again:** to confirm) before it prints the 24 words once. Have paper ready. |
 | **Add them to ~/.zshrc? [Y/n]** | (or `~/.bashrc`, whichever your shell reads). Puts the binary on PATH, sets `TOKENDROP_CONFIG`, and — when a wallet was made here — `TOKENDROP_WALLET_DIR`, in one marked block. Saying no just means longer commands. On Windows the question is **Set them for your user? [Y/n]**: PATH and `TOKENDROP_CONFIG` only, in your user environment. |
 | **Set up the coding agents found on this machine now? [Y/n]** | Writes a skill and, where the agent supports them, hook entries into its own config. Shown before anything is written, with each agent named beside what made it count as present — the command it is launched by, or its own config directory. An agent you have but do not see listed is one neither signal found; `setup -with <id>` sets it up anyway. |
@@ -132,11 +132,11 @@ recorded, nothing further is written, and it exits non-zero saying so. That
 matters most at **Enable mining rewards?**, where a bare Enter means no — an
 interrupt is not a bare Enter, and leaves no decision on file, so the next run
 asks again instead of reusing one you never made. The same rule holds for
-`dropin-miner agents install`'s **Proceed?**, for uninstall's confirmations and
+`jevlin agents install`'s **Proceed?**, for uninstall's confirmations and
 for `wallet send`'s: a typed refusal declines and exits 0, an unanswered
 question aborts and exits non-zero, and the two are never the same thing.
 
-`dropin-miner setup -yes` answers yes to **Add them to ~/.zshrc?** (on Windows,
+`jevlin setup -yes` answers yes to **Add them to ~/.zshrc?** (on Windows,
 **Set them for your user?**) and **Set up the coding agents found on this
 machine now?**, whether or not there is a terminal, so a script or CI job that
 runs setup itself may pass it to set those up. Without `-yes` and without
@@ -145,7 +145,7 @@ command for each. `-yes` answers **Use it?** only at a terminal: a set-aside
 installation is never reused by a script. And it never answers **Enable mining
 rewards?**, which is always yours. `-no-profile` leaves the shell profile (Windows: the
 user environment) alone, and `-no-agents` skips coding-agent detection (`-with <id>` still
-sets up a named agent even so) — `-yes` does not override either one. `dropin-miner setup
+sets up a named agent even so) — `-yes` does not override either one. `jevlin setup
 -dry-run` lists every file it would write or move and changes nothing.
 
 Then it prints a claim link and waits a few minutes for you to visit it. Not
@@ -154,7 +154,7 @@ later (or just using an agent — it resumes on its own) finishes the rest.
 
 Registration is recoverable if the command is interrupted while it is saving
 the new platform identity. An unclaimed registration that expires is replaced
-by a foreground `dropin-miner connect`; the replacement changes only the
+by a foreground `jevlin connect`; the replacement changes only the
 platform agent and its key, preserving the wallet, payout choice, auth state
 and mining evidence. A detached `connect -resume` records the expiry but does
 not create a new identity. If local registration metadata is lost or
@@ -162,7 +162,7 @@ unreadable while a platform key still exists, connect rebuilds it from the
 platform itself rather than minting a new agent — nothing local changes until
 that lookup answers. If the platform no longer recognizes the key (revoked,
 or genuinely unknown), connect stops with a local-state conflict instead; use
-`dropin-miner connect -force` only when you mean to replace that credential.
+`jevlin connect -force` only when you mean to replace that credential.
 A rebuilt registration that is still unclaimed but whose claim link the
 platform did not return prints a one-line notice instead of a link — wait for
 it to be claimed or expire, or `connect -force` to start over. `-resume`
@@ -172,10 +172,10 @@ background poll, not the place a new identity gets decided.
 ## Then check
 
 ```bash
-dropin-miner status          # what this installation has and has not completed
-dropin-miner payout show     # ACTIVE, and the address as the chain renders it
-dropin-miner agents status   # which agents are set up
-dropin-miner doctor          # authorization server, enrolled, joined this
+jevlin status          # what this installation has and has not completed
+jevlin payout show     # ACTIVE, and the address as the chain renders it
+jevlin agents status   # which agents are set up
+jevlin doctor          # authorization server, enrolled, joined this
                              # epoch, payout address, earning, intake
                              # writable, recording (on Windows, also
                              # wallet access)
@@ -185,8 +185,8 @@ Restart any agent that was already open, and search as you normally would.
 To try it by hand:
 
 ```bash
-dropin-miner search -format model "what is proof of authority consensus"
-dropin-miner flush
+jevlin search -format model "what is proof of authority consensus"
+jevlin flush
 ```
 
 Your agent does not use that form. It uses the machine path, which takes the
@@ -194,7 +194,7 @@ query as JSON on stdin so nothing has to escape it and it never reaches the
 process list:
 
 ```bash
-dropin-miner search --stdin <<'JSON'
+jevlin search --stdin <<'JSON'
 {"version":1,"query":"what is proof of authority consensus"}
 JSON
 ```
@@ -210,7 +210,7 @@ first line that sets the output encoding:
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 @'
 {"version":1,"query":"what is proof of authority consensus"}
-'@ | & 'C:\Users\you\.tokendrop\bin\dropin-miner.exe' search --stdin
+'@ | & 'C:\Users\you\.tokendrop\bin\jevlin.exe' search --stdin
 ```
 
 That first line is what makes a query with an apostrophe, a quotation mark
@@ -252,18 +252,18 @@ built-in one. If you would rather your agent use its own search unless you
 ask for this one, say so once:
 
 ```
-/dropin-miner off      # in any agent that got a skill: Claude Code, Codex,
+/jevlin off      # in any agent that got a skill: Claude Code, Codex,
                        # Cursor, Pi or Hermes
-/dropin-miner on       # back to this search as the default
-/dropin-miner status
+/jevlin on       # back to this search as the default
+/jevlin status
 ```
 
-or, from a shell, `dropin-miner agents prefer off|on|status`. Either way the
+or, from a shell, `jevlin agents prefer off|on|status`. Either way the
 choice is recorded beside your config and every installed skill is rewritten
 from it, so it holds in each of those agents from its next start, and across
 reinstalls. opencode is the exception: it has no skill directory, so its
 AGENTS.md line carries no preference and the choice does not reach it.
-While it is off, "search through dropin-miner" or "use the router" in a
+While it is off, "search through jevlin" or "use the router" in a
 request still routes that one search here. Searches that do not come here
 earn nothing.
 
@@ -310,7 +310,7 @@ export TOKENDROP_TRACE=off
 Searches are metered and earn exactly the same either way.
 
 The query itself travels differently in the two forms. Typed by hand,
-`dropin-miner search "<query>"` puts it in the command's arguments, so it is
+`jevlin search "<query>"` puts it in the command's arguments, so it is
 visible in `ps` and your shell history on your own machine. Your agent does
 not use that form: `search --stdin`, which every installed skill teaches,
 takes the query as JSON on stdin, and it never reaches the process list. It
@@ -361,8 +361,8 @@ when it rewrites that block later, leaves it exactly where it already sits, so
 nothing else in the file moves): network
 on, and a short list of writable directories. Codex writes its own tables into
 that file too — a project's folder trust, a `[windows] sandbox` choice — and
-because it appends them at the end they can land between dropin-miner's
-markers. Only the one table dropin-miner writes is ever removed from there:
+because it appends them at the end they can land between jevlin's
+markers. Only the one table jevlin writes is ever removed from there:
 anything else inside the markers is yours, is kept exactly as you left it, and
 is named in the plan before anything is written. The state directory is always
 on that list, because the detached claim resume writes there after every
@@ -415,7 +415,7 @@ could lose the hooks you wrote, with no error to tell you.
 Once those lines are under your own `hooks:` section, install sees them: it
 says the hook is already set up and leaves your file alone, and `agents status`
 counts it. Uninstall removes them again — those lines and no others. It takes
-an entry out only when it is written exactly as dropin-miner writes it, names
+an entry out only when it is written exactly as jevlin writes it, names
 this installation's binary and config, and sits under `pre_tool_call:` where
 the four lines put it; if that entry was the only one there, the `pre_tool_call:`
 line goes with it, and `hooks:` too if nothing else is left under it, so no
@@ -426,7 +426,7 @@ for you to delete is a smaller mistake than somebody else's hook deleted.
 
 Hermes rewrites `config.yaml` in its own style when it saves it, and which
 style depends on which save. `hermes config set`, the setup wizard and its own
-`save_config` re-dump the whole file: comments go, so dropin-miner's markers go
+`save_config` re-dump the whole file: comments go, so jevlin's markers go
 with them, and the long command becomes a plain scalar folded over two lines.
 A model switch, a setting changed in session and a personality change keep the
 comments — markers and all — and fold the command inside them. The hook fires
@@ -435,14 +435,14 @@ removes it either way: it recognizes both forms, undoes the folding, and takes
 out the same lines it would have taken out before Hermes touched the file.
 
 What it still will not do is edit a third form. The lines have to be the ones
-dropin-miner writes, or the ones Hermes' own dumper writes, and to name this
+jevlin writes, or the ones Hermes' own dumper writes, and to name this
 installation; anything else — an entry you added a `timeout:` to, a command
 written in a quoting style neither produces, the same entry twice — is left
 where it is and reported with its line numbers. If your file names the hook
 command somewhere uninstall cannot make sense of at all, it says so, with the
 line, rather than reporting that Hermes is not installed.
 
-`dropin-miner agents uninstall` removes exactly those files and entries.
+`jevlin agents uninstall` removes exactly those files and entries.
 
 ## Four things worth knowing
 
@@ -457,14 +457,14 @@ people join. That is the design.
 
 **A long idle gap can miss an epoch.** Recorded searches are submitted by the
 next search or the next agent session. If neither happens before the epoch's
-verification deadline, that epoch's evidence is late. `dropin-miner flush` by
+verification deadline, that epoch's evidence is late. `jevlin flush` by
 hand submits whatever is pending.
 
 ## Known limits
 
 Four things worth knowing before you go looking for a setting that is not
 there. The first two are limits of Claude Code itself and the last is one of
-Cursor's command-line agent; DropinMiner cannot work around any of those three.
+Cursor's command-line agent; Jevlin cannot work around any of those three.
 The third is what has been measured of Cursor's PowerShell terminal profile.
 
 **In Claude Code, the sentence right before a search does not reach the
@@ -510,11 +510,11 @@ locally or verified at the AS" means the mining plane ran recently — a search,
 a session hook, or a manual flush — and yet nothing is waiting in your intake
 directory, nothing is in the spool, and the AS has nothing for this epoch.
 There is one thing to check: that `miner.intake_dir` is the mining intake
-directory the agent's own `dropin-miner search` command writes into. The record
+directory the agent's own `jevlin search` command writes into. The record
 is written by `search` itself; the session hooks maintain lineage and start
 flushes, they do not write it. So the usual cause is an agent running with a
 different config — or, under a sandbox, one that cannot write there at all.
-`dropin-miner agents status` shows what is installed; re-run `dropin-miner
+`jevlin agents status` shows what is installed; re-run `jevlin
 agents install` if the agent is using another config or lacks sandbox access.
 This check is a heuristic and says so — it never reports a failure, because
 none of the evidence it reads can prove one.
@@ -544,7 +544,7 @@ anyway.
 **`intake writable`** speaks only for the process that ran `doctor` — usually
 you, at a terminal. A search runs inside your agent's sandbox, which may have
 different permissions, so `OK` here does not prove a search can write there.
-If it says `NO` and you use Codex, re-run `dropin-miner agents install`: it
+If it says `NO` and you use Codex, re-run `jevlin agents install`: it
 configures the sandbox to allow that directory.
 
 ## Changing the payout address later
@@ -559,7 +559,7 @@ ask you for them.
 
 ## Sending funds with `wallet send`
 
-`dropin-miner wallet send -to <address> -amount <n>` moves funds out of this
+`jevlin wallet send -to <address> -amount <n>` moves funds out of this
 wallet. Before it broadcasts anything it writes a small record —
 `wallet/pending_tx.json` — naming the transaction it is about to send; that
 record is what lets a lost network response be resolved instead of guessed
@@ -592,13 +592,13 @@ it too, for as long as it spends resolving a pending send.
 
 ## Manual enrollment
 
-The portal's older path — `dropin-miner enroll -assertion`, `login`, `join`,
+The portal's older path — `jevlin enroll -assertion`, `login`, `join`,
 `wallet register`, `payout set` — still works and coexists with `connect`,
 for the rare case scripting against those specific commands directly is what
-you want. `dropin-miner help` describes each. Everything above this line is
+you want. `jevlin help` describes each. Everything above this line is
 the path setup actually takes; this one it does not.
 
-One command on that path depends on which Slot you are on. `dropin-miner
+One command on that path depends on which Slot you are on. `jevlin
 provider` reads a zero-spend provider verification key from stdin and
 registers it with the authorization server, and `provider -status` reports
 what is bound. **It applies only when the Slot's profile is
@@ -612,16 +612,16 @@ next step is nothing.
 
 ## Upgrading
 
-Run `dropin-miner upgrade`. It downloads the newest DropinMiner release from the
+Run `jevlin upgrade`. It downloads the newest Jevlin release from the
 project's own GitHub repository, checks it, runs it once before installing it
-and once after, and keeps the binary it replaced as `dropin-miner.previous`. If
+and once after, and keeps the binary it replaced as `jevlin.previous`. If
 something goes wrong before that, it puts the binary you had back and leaves
-`dropin-miner.previous` as it was. In the rare case that putting it back fails as
+`jevlin.previous` as it was. In the rare case that putting it back fails as
 well, it stops with `manual_intervention` and lists every copy that still
-exists, and it deletes none of them. `dropin-miner upgrade
+exists, and it deletes none of them. `jevlin upgrade
 -rollback` puts the previous one back, without downloading anything, and running
 it again swaps back. `-version X.Y.Z` picks an exact release, but never an older
-one than you have. Installed with npm? Use `npm install -g dropin-miner@latest`
+one than you have. Installed with npm? Use `npm install -g jevlin@latest`
 instead; `upgrade` will tell you so.
 
 When the new binary is in place, `upgrade` has it write again the skills and
@@ -630,8 +630,8 @@ a second command. It adds no agent you had not set up, and it leaves alone, and
 names, anything that belongs to another installation. If that step fails your
 upgrade has still succeeded, and the message gives the one command to finish
 it. Restart any agent that was open. If an agent still behaves like the old
-version, `dropin-miner agents status` names any file an earlier version wrote
-that this one would write differently, and `dropin-miner agents install`
+version, `jevlin agents status` names any file an earlier version wrote
+that this one would write differently, and `jevlin agents install`
 refreshes it.
 
 If the new program is slow to answer the first time it is run — a virus
@@ -639,7 +639,7 @@ scanner inspecting a file it has never seen — the upgrade asks it once more
 before giving up, and then says `retry` rather than calling the release bad.
 It never asks twice about a wrong answer.
 
-On Windows, if an older DropinMiner or agent process is still running, the
+On Windows, if an older Jevlin or agent process is still running, the
 upgrade may stop with `previous_in_use` and put the binary you had back; close
 those programs and run it again. If something only briefly holds the program
 file — a scanner, an indexer — the upgrade waits about a second for it before
@@ -647,19 +647,19 @@ reporting a failure.
 
 ## Removing it, and coming back
 
-`dropin-miner uninstall` takes out what setup put on this machine: the skills,
+`jevlin uninstall` takes out what setup put on this machine: the skills,
 hooks and plugin in your agents that run this installation's binary, and the
 shell-profile block (on Windows, the user PATH entry and `TOKENDROP_CONFIG`,
 put back exactly as setup's record says, and only where they still hold what
 setup set). Your wallet, registration, stored key, unsent searches and config
 stay, nothing is revoked, and it tells you how to keep using them. Run it with
 `-dry-run` first to see the list. Installed with npm? `npm uninstall -g
-dropin-miner` removes the binary.
+jevlin` removes the binary.
 
-`-binary` also deletes `~/.tokendrop/bin/dropin-miner`, its
-`dropin-miner.previous`, and anything an interrupted upgrade left beside it. You will also find
+`-binary` also deletes `~/.tokendrop/bin/jevlin`, its
+`jevlin.previous`, and anything an interrupted upgrade left beside it. You will also find
 small `.lock` files — beside the installation, in it, and next to the binary. They are how
-DropinMiner's commands avoid running over each other, they hold nothing once a command has
+Jevlin's commands avoid running over each other, they hold nothing once a command has
 finished, and `uninstall` lists the ones still there and says they are safe to delete. On
 Windows, which cannot delete a running program, it moves the binary out of the
 way instead and tells you the file to delete later. `-purge-state` is the one that
@@ -676,10 +676,10 @@ uninstall — the installation is left exactly as it was found. That includes th
 lock files uninstall has to take to be sure nothing else is running: one it had
 to create is removed again, one that was already there is left alone.
 
-Coming back later, run `dropin-miner setup` — with
+Coming back later, run `jevlin setup` — with
 `-home <dir>` if this installation is not the default one. Setup is the way
 back: it finds the state uninstall left and reuses it, the same agent and the
-same wallet, with no new registration. Do not run `dropin-miner connect` on its
+same wallet, with no new registration. Do not run `jevlin connect` on its
 own to come back. Uninstall removed the profile block (on Windows, the user
 environment entries) that named this installation, so connect would look at the
 default location instead, find nothing, and register this machine anew.
@@ -709,7 +709,7 @@ back in pieces that belong together:
 Nothing that is a symlink is moved. The set-aside folder is deleted afterwards
 only if it is empty; otherwise setup lists what it left in it.
 
-Setup's shell-profile lines are one block between `# >>> dropin-miner >>>` and
-`# <<< dropin-miner <<<` — delete the block to undo them. If the block has been
+Setup's shell-profile lines are one block between `# >>> jevlin >>>` and
+`# <<< jevlin <<<` — delete the block to undo them. If the block has been
 edited so that it no longer has exactly one start and one end line, setup will
 not touch the file; it prints the lines to add by hand instead.

@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twilight-project/dropin-miner/pkg/wire"
+	"github.com/jevlinai/jevlin-go/pkg/wire"
 )
 
 // activityAS is an AS complete enough for one EpochActivity call.

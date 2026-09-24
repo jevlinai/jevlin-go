@@ -22,8 +22,8 @@ func verify(target Artifact, archive []byte, sums string) error {
 
 func TestChecksumVerifierAcceptsTheExactAsset(t *testing.T) {
 	archive := []byte("archive")
-	target := Artifact{ArchiveName: "dropin-miner_0.3.0_linux_amd64.tar.gz"}
-	other := fmt.Sprintf("%x  dropin-miner_0.3.0_darwin_arm64.tar.gz\n", sha256.Sum256([]byte("other")))
+	target := Artifact{ArchiveName: "jevlin_0.3.0_linux_amd64.tar.gz"}
+	other := fmt.Sprintf("%x  jevlin_0.3.0_darwin_arm64.tar.gz\n", sha256.Sum256([]byte("other")))
 	upper := strings.ToUpper(fmt.Sprintf("%x", sha256.Sum256(archive))) + "\t" + target.ArchiveName + "\r\n"
 	for name, sums := range map[string]string{
 		"goreleaser form":       other + sumsFor(t, archive, target.ArchiveName),
@@ -65,7 +65,7 @@ func TestChecksumVerifierRejectsMalformedDuplicateMissingAndMismatch(t *testing.
 }
 
 func TestChecksumVerifierDeclaresBoundedAssets(t *testing.T) {
-	target := Artifact{ArchiveName: "dropin-miner_0.3.0_linux_amd64.tar.gz"}
+	target := Artifact{ArchiveName: "jevlin_0.3.0_linux_amd64.tar.gz"}
 	got, err := SHA256Verifier{}.RequiredAssets(ReleaseInfo{}, target)
 	if err != nil {
 		t.Fatal(err)

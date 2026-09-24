@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/twilight-project/dropin-miner/pkg/fsx"
+	"github.com/jevlinai/jevlin-go/pkg/fsx"
 )
 
 func TestQuarantineCustodySurvivesRestart(t *testing.T) {

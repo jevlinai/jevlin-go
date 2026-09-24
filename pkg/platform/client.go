@@ -25,8 +25,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/twilight-project/dropin-miner/internal/netdial"
-	"github.com/twilight-project/dropin-miner/pkg/auth"
+	"github.com/jevlinai/jevlin-go/internal/netdial"
+	"github.com/jevlinai/jevlin-go/pkg/auth"
 )
 
 const (
@@ -49,7 +49,7 @@ const (
 )
 
 // Known refusal codes from §5.3's enroll route and §6's threat list. A
-// caller (cmd/dropin-miner/connect.go) branches on these rather than
+// caller (cmd/jevlin/connect.go) branches on these rather than
 // parsing prose — e.g. re-printing the claim URL specifically on
 // CodeNotClaimed.
 const (
@@ -92,7 +92,7 @@ var platformTransport = func() *http.Transport {
 // carry the participant's freshly-minted sr- key in Authorization, even
 // though Register itself carries no credential yet.
 // TestNoBareHTTPClientInThisPackage enforces this module-wide, the same
-// sweep cmd/dropin-miner/boundary_test.go runs.
+// sweep cmd/jevlin/boundary_test.go runs.
 func newPlatformClient() *http.Client {
 	return &http.Client{
 		Timeout:       clientTimeout,
@@ -301,7 +301,7 @@ type AgentStatus struct {
 	// under the participant's org, which no single installation does —
 	// so this field does not exist in §5.2's literal spec text and is an
 	// assumption pending WP1 confirmation, flagged where it is consumed
-	// (cmd/dropin-miner/mining.go's askMiningQuestion).
+	// (cmd/jevlin/mining.go's askMiningQuestion).
 	ParticipantHasOtherMiningAgent bool
 	// ConsoleURL is the agent's project page on the platform, once
 	// claimed — search-router added this specifically so a re-approval
@@ -522,7 +522,7 @@ func (c *Client) Me(ctx context.Context, key string) (*AgentIdentity, error) {
 
 // Enroll calls POST /v1/agents/enroll, returning the enrollment token
 // exactly as the AS receives it (§5.3, §7) — the caller
-// (cmd/dropin-miner/connect.go) redeems it via
+// (cmd/jevlin/connect.go) redeems it via
 // auth.OAuthClient.RedeemEnrollmentAssertion, unchanged.
 //
 // The response's token field name is not given literally in §5.3 (only

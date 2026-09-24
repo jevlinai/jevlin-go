@@ -240,15 +240,15 @@ jobs:
         id: registry
         run: |
           set +e
-          npm view "dropin-miner@${VERSION}" version > npm-view.txt 2> npm-view-err.txt
+          npm view "jevlin@${VERSION}" version > npm-view.txt 2> npm-view-err.txt
           code=$?
           set -e
           if [ "$code" -eq 0 ]; then
             echo "published=true" >> "$GITHUB_OUTPUT"
-            echo "dropin-miner@${VERSION} is already on the registry."
+            echo "jevlin@${VERSION} is already on the registry."
           elif grep -q "E404" npm-view-err.txt; then
             echo "published=false" >> "$GITHUB_OUTPUT"
-            echo "dropin-miner@${VERSION} is not on the registry yet."
+            echo "jevlin@${VERSION} is not on the registry yet."
           else
             echo "npm could not tell us whether this version exists:" >&2
             cat npm-view-err.txt >&2
@@ -264,11 +264,11 @@ jobs:
         if: steps.registry.outputs.published == 'true'
         run: |
           tmp="$(mktemp -d)"
-          npm pack "dropin-miner@${VERSION}" --pack-destination "$tmp" > /dev/null
-          tar -xzf "$tmp/dropin-miner-${VERSION}.tgz" -C "$tmp"
+          npm pack "jevlin@${VERSION}" --pack-destination "$tmp" > /dev/null
+          tar -xzf "$tmp/jevlin-${VERSION}.tgz" -C "$tmp"
           if ! diff -r "$tmp/package" npm; then
             echo "" >&2
-            echo "dropin-miner@${VERSION} is already on npm but is not what this tag would publish." >&2
+            echo "jevlin@${VERSION} is already on npm but is not what this tag would publish." >&2
             echo "Nothing is republished: an npm version is immutable. Diagnose before re-running." >&2
             rm -rf "$tmp"
             exit 1
@@ -344,19 +344,19 @@ jobs:
         run: |
           deadline=$(( $(date +%s) + 600 ))
           attempt=0
-          until [ "$(npm view "dropin-miner@${VERSION}" version 2>/dev/null)" = "${VERSION}" ]; do
+          until [ "$(npm view "jevlin@${VERSION}" version 2>/dev/null)" = "${VERSION}" ]; do
             attempt=$(( attempt + 1 ))
             if [ "$(date +%s)" -ge "$deadline" ]; then
-              echo "dropin-miner@${VERSION} was not observable on the registry within 600s ($attempt attempts)." >&2
+              echo "jevlin@${VERSION} was not observable on the registry within 600s ($attempt attempts)." >&2
               echo "The publish step reported success, so this is a registry or a package-state problem," >&2
               echo "not something to fix by publishing again: the version is immutable." >&2
-              npm view dropin-miner versions --json >&2 || true
+              npm view jevlin versions --json >&2 || true
               exit 1
             fi
             echo "attempt ${attempt}: not visible yet, waiting"
             sleep 10
           done
-          echo "dropin-miner@${VERSION} is visible after ${attempt} retries"
+          echo "jevlin@${VERSION} is visible after ${attempt} retries"
 
       # The whole path, end to end, on a machine that has never seen this
       # package: npm install, the package's own postinstall choosing the
@@ -380,8 +380,8 @@ jobs:
           echo "installing into $tmp"
           cd "$tmp"
           npm init -y > /dev/null
-          npm install "dropin-miner@${VERSION}"
-          version_line="$(npx --no-install dropin-miner version)"
+          npm install "jevlin@${VERSION}"
+          version_line="$(npx --no-install jevlin version)"
           cd "$workspace"
           printf '%s\n' "$version_line" > npm-smoke-version.txt
           cat npm-smoke-version.txt

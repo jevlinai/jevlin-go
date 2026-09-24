@@ -22,3 +22,8 @@ The first release replaces this heading with its own.
   `install.ps1` and `setup.sh` scripts are gone. Without Node, download the archive
   for your OS from the releases page, verify it against `checksums.txt`, put the
   binary on PATH and run `setup`.
+- **Renamed to jevlin.** The binary and the npm package are `jevlin`
+  (`npm install -g jevlin`), `jevlin version` prints `jevlin X.Y.Z`, the release
+  archives are `jevlin_<version>_<os>_<arch>`, and `jevlin upgrade` fetches only from
+  `jevlinai/jevlin-go`'s releases. The npm wrapper's own knobs are `JEVLIN_BINARY`
+  and `JEVLIN_SKIP_DOWNLOAD`.

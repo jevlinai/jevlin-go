@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a defect in dropin-miner (not a security vulnerability)
+description: Report a defect in jevlin (not a security vulnerability)
 labels: ["bug"]
 body:
   - type: markdown
@@ -12,7 +12,7 @@ body:
     id: provenance
     attributes:
       label: Where it was seen (platform, version, run)
-      description: The machine and the build, so the report can be placed later. Include `dropin-miner version` or the commit, your OS, and the agent and its version where one is involved; for a CI failure, the run id and head.
+      description: The machine and the build, so the report can be placed later. Include `jevlin version` or the commit, your OS, and the agent and its version where one is involved; for a CI failure, the run id and head.
       placeholder: "macOS arm64, v0.1.0, Codex CLI 0.154.0, native install — or: main, run 12345678901 (test (windows-latest), head 1a2b3c4)"
     validations:
       required: true
