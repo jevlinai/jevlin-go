@@ -272,7 +272,7 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   and the other by the guarantee that does hold there — not one line of the participant's own
   moves relative to any other.
 - **Our entry in a Hermes `hooks:` block we did not write** — `cmd/jevlin/hermes_install.go`
-  owns it (`findHermesOwnEntry`, `hermesRunIsRendered`), in the file that already owns the rule it
+  owns it (`findHermesOwnEntry`, `hermesRunIsRenderedExactly`), in the file that already owns the rule it
   follows: there is no YAML parser, so a false-positive refusal is cheap and an ambiguous mutation
   is not. An entry is ours only when the file's structure can be vouched for by the same scan
   install trusts, the entry sits exactly where the renderer puts one, its command is this
