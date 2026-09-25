@@ -132,6 +132,18 @@ func TestPreflightRefusesATagThatIsNotOnCanonicalMain(t *testing.T) {
 			t.Errorf("the refusal does not report %q, which a human needs to diagnose it: %v", want, err)
 		}
 	}
+	// The ruleset refuses deleting or moving a v* tag, so the one thing
+	// the maintainer can do is fix main and tag the next patch on origin.
+	for _, want := range []string{"leave the tag", "next patch", "push it to origin", "When something fails"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not say %q: %v", want, err)
+		}
+	}
+	for _, refused := range []string{"elete", "upstream"} {
+		if strings.Contains(err.Error(), refused) {
+			t.Errorf("the refusal says %q, which the repository cannot carry out: %v", refused, err)
+		}
+	}
 	// The diagnostics are still owed even on a refusal, but nothing
 	// downstream may act on them.
 	if outputs["version"] != "" {
@@ -152,7 +164,7 @@ func TestPreflightRefusesALightweightTag(t *testing.T) {
 	r := newReleaseRepo(t, "0.2.8")
 	r.lightweight("v0.2.8")
 	if _, err := r.preflight("v0.2.8"); err == nil {
-		t.Fatal("a lightweight tag was accepted; annotated is the convention from v0.2.8 on")
+		t.Fatal("a lightweight tag was accepted; a release tag is annotated")
 	}
 }
 

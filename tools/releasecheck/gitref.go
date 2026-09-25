@@ -95,8 +95,8 @@ func (g Git) IsAncestor(ancestor, descendant string) (bool, error) {
 		ancestor, descendant, err, strings.TrimSpace(stderr.String()))
 }
 
-// CheckAnnotatedTag is the convention docs/RELEASING.md starts at
-// v0.2.8: a release tag records who cut it and when.
+// CheckAnnotatedTag is docs/RELEASING.md's rule that a release tag is
+// annotated: it records who cut the release and when.
 //
 // A lightweight tag is a bare pointer, so that record survives only in
 // the push event, which expires. Older tags are mixed and are left
@@ -109,11 +109,13 @@ func CheckAnnotatedTag(objectType, tag string) error {
 	case "tag":
 		return nil
 	case "commit":
-		return fmt.Errorf("%s is a lightweight tag; releases from v0.2.8 on are annotated.\n"+
-			"  Delete it and re-cut: git tag -a %s -m %q <commit> && git push upstream %s\n"+
-			"  (If you believe the tag was created annotated, check that the checkout preserved it: "+
-			"`git ls-remote --tags` shows a ^{} dereference line for an annotated tag.)",
-			tag, tag, tag, tag)
+		return fmt.Errorf("%s is a lightweight tag; a release tag is annotated.\n"+
+			"  Nothing is built and nothing is published, and %s is burned: leave the tag where it is, "+
+			"since the release tag immutability ruleset refuses deleting or moving it.\n"+
+			"  Tag the next patch version, annotated: git tag -a <next> -m \"<next>\" <merge commit> && git push origin <next>\n"+
+			"  (docs/RELEASING.md, \"When something fails\". If you believe the tag was created annotated, "+
+			"check that the checkout preserved it: `git ls-remote --tags` shows a ^{} dereference line for an annotated tag.)",
+			tag, tag)
 	default:
 		return fmt.Errorf("refs/tags/%s is a %q object, which is neither a tag nor a commit", tag, objectType)
 	}

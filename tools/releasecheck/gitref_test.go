@@ -100,10 +100,19 @@ func TestCheckAnnotatedTag(t *testing.T) {
 	}
 	err := CheckAnnotatedTag("commit", "v0.2.8")
 	if err == nil {
-		t.Fatal("a lightweight tag was accepted; annotated is the convention from v0.2.8 on")
+		t.Fatal("a lightweight tag was accepted; a release tag is annotated")
 	}
-	if !strings.Contains(err.Error(), "git tag -a") {
-		t.Errorf("the error does not say how to fix it: %v", err)
+	// The ruleset refuses deleting or moving a v* tag, so the one thing
+	// the maintainer can do is tag the next patch, pushed to origin.
+	for _, want := range []string{"leave the tag", "next patch", "git tag -a", "git push origin", "When something fails", "git ls-remote --tags"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not say %q: %v", want, err)
+		}
+	}
+	for _, refused := range []string{"elete", "upstream"} {
+		if strings.Contains(err.Error(), refused) {
+			t.Errorf("the refusal says %q, which the repository cannot carry out: %v", refused, err)
+		}
 	}
 	if err := CheckAnnotatedTag("blob", "v0.2.8"); err == nil {
 		t.Error("a ref that is neither a tag nor a commit was accepted")

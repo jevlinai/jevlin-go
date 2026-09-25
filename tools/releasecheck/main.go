@@ -236,7 +236,9 @@ func CheckCanonicalAncestry(onMain bool, tag, commit, canonical string) error {
 	}
 	return fmt.Errorf("%s points at %s, which is not an ancestor of canonical main (%s).\n"+
 		"  A release is cut from a commit that is already on main. Nothing is built and nothing is published.\n"+
-		"  If this tag was a mistake: delete it (git push upstream :refs/tags/%s) and tag the merge commit instead",
+		"  %s is burned: leave the tag where it is, since the release tag immutability ruleset refuses deleting or moving it.\n"+
+		"  Fix main, then tag the next patch version on its merge commit and push it to origin "+
+		"(docs/RELEASING.md, \"When something fails\")",
 		tag, commit, canonical, tag)
 }
 
