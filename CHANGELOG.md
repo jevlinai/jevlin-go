@@ -35,3 +35,7 @@ The first release replaces this heading with its own.
   wallet's and setup's overrides). The skill is `/jevlin`, in a `jevlin/` directory
   under each host, and opencode's and Pi's adapters are `jevlin.js` and
   `jevlin.ts`. The word *mining* stays wherever it was.
+- **A security policy and a NOTICE.** `SECURITY.md` says how to report a vulnerability
+  privately and what happens next. `NOTICE` carries the copyright line and credits the
+  packages derived from `tokendrop-proxy`, and ships in every release archive and in the
+  npm package.

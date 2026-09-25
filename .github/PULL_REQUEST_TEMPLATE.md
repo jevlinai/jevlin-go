@@ -28,7 +28,7 @@
 
 ## Checklist
 
-- [ ] `make verify` passes locally (build, test, race, vet, lint, vuln, tidy, cross-compile)
+- [ ] `make verify` passes locally (build, test, race, vet, lint, lint-windows, vuln, tidy, cross-compile)
 - [ ] Tests added/updated for the change
 - [ ] Commit messages carry the reasoning (what was rejected and why), no `Co-Authored-By`/`Claude-Session` trailers (AGENTS.md convention)
 - [ ] Docs updated where the behavior is described, each ticked or marked N/A:

@@ -1,76 +1,46 @@
-# ─── Design documents must never enter this repository's history ───────────────
-# This repo is private today and intended to go public. Git history is forever:
-# committing a file and deleting it later does NOT remove it — anyone can recover
-# it with `git log -p`. Removing it afterwards requires rewriting history and
-# force-pushing, which breaks every existing clone and fork.
-#
-# The design plan, ADRs, and originating specs live in a separate private repo.
-# These patterns are a guard against them being copied in by accident.
-design_plan.md
-master_plan.md
-open_questions.md
-jevlin-*-spec.md
-docs/architecture/adr/
+# Private documents. Git history is permanent: a file committed once and deleted later can
+# still be read with `git log -p`, so these must never be committed at all.
 docs/private/
 *.private.md
-# email_sweep_test.go's optional raw denylist names in plain text what the test
-# otherwise carries only as hashes; it lives on the maintainer's machine alone.
+# email_sweep_test.go's optional plain-text denylist; it lives on the maintainer's machine.
 /.email-sweep-denylist
 
-# ─── Go ────────────────────────────────────────────────────────────────────────
+# Build output.
 /jevlin
-# `go build ./tools/...` from the root drops this here, same as the line above.
 /releasecheck
 /bin/
 /dist/
 /build/
 *.exe
-*.exe~
-*.dll
-*.so
-*.dylib
 *.test
 *.out
 coverage.*
 *.coverprofile
 profile.cov
-go.work
-go.work.sum
+go.work*
 
-# Fuzzing corpora can capture whatever was fed to the parser. Seed corpora belong
-# in testdata/fixtures/ and are reviewed; generated corpora are never committed.
-testdata/fuzz/
-
-# ─── Local state — may contain keys, spooled records, or a socket ──────────────
+# Local state and secrets: keys, tokens, spooled records, logs and profiles can all hold them.
+.jevlin/
+jevlin.toml
 *.key
 *.pem
-.jevlin/
+.env
+.env.*
+*.log
+*.db
+*.sqlite*
+*.jwt
+*.jwk
+*.jwks
+*.prof
+*.pprof
 *.sock
 /spool/
-jevlin.toml
-config.local.toml
+# Generated fuzz corpora can hold whatever was fed to the parser; reviewed seeds live in testdata/.
+**/testdata/fuzz/
 
-# ─── Editor / OS ───────────────────────────────────────────────────────────────
+# Editor and OS.
 .DS_Store
 .idea/
 .vscode/
 *.swp
-
-# ─── Additions after review: things that can carry keys, prompts, or heap ──────
-# Go fuzz corpora land under any package's testdata/, not just the root one.
-**/testdata/fuzz/
-.env
-.env.*
-*.prof
-*.pprof
-*.trace
-*.log
-*.db
-*.sqlite
-*.sqlite3
-*.jwt
-*.jwk
-*.jwks
-
-# go build ./scripts/e2e/fixture drops its binary in the repo root
-/fixture

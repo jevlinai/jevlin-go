@@ -1,5 +1,5 @@
-# golangci-lint v2 config. All issues gate once verify/CI depend on this (see the commit that
-# flips that on) — this is a launch client that carries a bearer credential and a payout wallet,
+# golangci-lint v2 config. Every issue gates: `make verify` and CI's golangci-lint job run it for
+# the host and for GOOS=windows. This client carries a bearer credential and a payout wallet,
 # and gosec is enabled for the same reason tokendrop-proxy enables it.
 version: "2"
 run:

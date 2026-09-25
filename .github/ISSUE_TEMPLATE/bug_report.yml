@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        **Do not report security vulnerabilities here** — contact the maintainer privately rather than filing a public issue.
+        **Do not report security vulnerabilities here** — use private vulnerability reporting; see [SECURITY.md](https://github.com/jevlinai/jevlin-go/blob/main/SECURITY.md).
 
         These fields are the shape every issue in this tracker uses, so a report filed here reads like the rest of them. "Likely cause", "Why it matters" and "Logs" are optional — a report without them is still worth filing.
   - type: input

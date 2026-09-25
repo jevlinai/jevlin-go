@@ -16,6 +16,7 @@
   "files": [
     "bin/",
     "install.js",
+    "NOTICE",
     "README.md"
   ],
   "engines": {

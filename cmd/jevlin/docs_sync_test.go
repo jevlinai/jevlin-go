@@ -69,6 +69,34 @@ func TestNPMReadmeMirrorsRootREADME(t *testing.T) {
 		line, col, gotCtx, wantCtx, len(npm), len(want))
 }
 
+// npm/NOTICE is the root NOTICE, byte for byte. npm packs only what lies
+// inside npm/, so the package cannot reach the root file and carries a copy;
+// the Apache License asks that a redistribution carry the NOTICE, and a copy
+// that has drifted carries the wrong one. Same argument as the README above:
+// byte equality, not a rule to remember.
+func TestNPMNoticeMirrorsRootNOTICE(t *testing.T) {
+	root := moduleRoot(t)
+
+	top, err := os.ReadFile(filepath.Join(root, "NOTICE")) // #nosec G304 -- a fixed path under this module's own root
+	if err != nil {
+		t.Fatalf("read NOTICE: %v", err)
+	}
+	npm, err := os.ReadFile(filepath.Join(root, "npm", "NOTICE")) // #nosec G304 -- a fixed path under this module's own root
+	if err != nil {
+		t.Fatalf("read npm/NOTICE: %v", err)
+	}
+	if bytes.Equal(npm, top) {
+		return
+	}
+	line, col, gotCtx, wantCtx := firstDifference(npm, top)
+	t.Fatalf("npm/NOTICE is not a copy of NOTICE.\n"+
+		"first difference at line %d, column %d:\n"+
+		"  npm/NOTICE:  %q\n"+
+		"  NOTICE:      %q\n"+
+		"Fix by copying NOTICE over npm/NOTICE.",
+		line, col, gotCtx, wantCtx)
+}
+
 // firstDifference locates the first byte at which got and want diverge and
 // returns its 1-based line and column plus a bounded excerpt of each side
 // from that point.

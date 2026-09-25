@@ -1,7 +1,7 @@
 GO ?= go
 VERSION ?= dev
 
-.PHONY: build test race vet fmt lint vuln cross tidy verify
+.PHONY: build test race vet fmt lint lint-windows vuln cross tidy verify
 
 build:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "-X main.version=$(VERSION)" -o bin/jevlin ./cmd/jevlin
@@ -24,6 +24,11 @@ fmt:
 lint:
 	golangci-lint run
 
+# The same lint for the Windows build. CI runs on Linux, so a finding in a file built only for
+# Windows (//go:build windows, *_windows.go) is invisible to `lint`; this is what sees it.
+lint-windows:
+	GOOS=windows GOARCH=amd64 golangci-lint run ./...
+
 # Dependency vulnerability scan (matches CI; pinned there).
 vuln:
 	$(GO) run golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...
@@ -38,4 +43,4 @@ cross:
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath -o /dev/null ./... || exit 1; \
 	done; done
 
-verify: build test race vet lint vuln tidy cross
+verify: build test race vet lint lint-windows vuln tidy cross
