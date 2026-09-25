@@ -39,3 +39,8 @@ The first release replaces this heading with its own.
   privately and what happens next. `NOTICE` carries the copyright line and credits the
   packages derived from `tokendrop-proxy`, and ships in every release archive and in the
   npm package.
+- **The documentation is four documents, each fact in one of them.** `README.md` is a
+  short introduction, and the npm page with it. `docs/guide.md` walks through setup,
+  earning, upgrading and removing; `docs/agents.md` covers each coding agent and its
+  known limits; `docs/reference.md` holds the envelope, config, environment, files and
+  `doctor`'s checks. `docs/PARTICIPANT.md` is gone, replaced by the guide.
