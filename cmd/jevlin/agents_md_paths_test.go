@@ -1,27 +1,38 @@
 package main
 
-// Every path AGENTS.md names exists where it says.
+// Every path and Go identifier AGENTS.md names exists where it says.
 //
-// AGENTS.md sends a contributor to the file that owns a rule and the test
-// that proves it, by name. A file renamed or moved leaves that sentence
-// pointing at nothing, and the reader who follows it is the one about to
-// change the rule. Nothing else notices: the file is prose, the compiler
-// never reads it, and the link test checks links, while AGENTS.md names its
-// files in backticks. So a backticked path is checked the way a link is.
+// AGENTS.md sends a contributor to the file that owns a rule, the function
+// that applies it and the test that proves it, by name. A file renamed or
+// moved, or a function renamed, leaves that sentence pointing at nothing,
+// and the reader who follows it is the one about to change the rule.
+// Nothing else notices: the file is prose, the compiler never reads it, and
+// the link test checks links, while AGENTS.md names its files and symbols
+// in backticks. So a backticked name is checked the way a link is.
 //
-// Two kinds of backticked token are paths in this repository, and only
-// those two are checked. A token whose first segment is one of the
-// repository's top-level entries (`cmd/jevlin/setup.go`, `pkg/auth`,
-// `CHANGELOG.md`) is resolved against the module root. A bare Go file name
-// (`connect.go`), which is how most of the document names a file, is looked
-// for in the whole tree and must name exactly one file. Everything else in
-// backticks is something the document is talking about rather than a place
-// in this tree — a file in the participant's state directory, an import
-// path, a URL path, a prompt — and matches neither kind, so no list of
-// exceptions is needed. A path in another repository is written with that
+// Three kinds of backticked token are checked, and only those three. A
+// token whose first segment is one of the repository's top-level entries
+// (`cmd/jevlin/setup.go`, `pkg/auth`, `CHANGELOG.md`) is a path resolved
+// against the module root. A bare Go file name (`connect.go`), which is how
+// most of the document names a file, is looked for in the whole tree and
+// must name exactly one file. A camelCase word (`searchTrace`) or a test
+// name (`TestMain`) is a Go identifier, and must be declared somewhere in
+// the module, tests included: a func or method, a type, a const or var
+// (grouped or not), or a struct field. Everything else in backticks is
+// something the document is talking about rather than a place in this tree
+// — a file in the participant's state directory, an import path, a URL
+// path, a prompt, a wire field like `as_url`, a status word like
+// `degraded` — and matches none of the three, so no list of exceptions is
+// needed. A lowercase word is left alone on purpose: in this document it is
+// far more often a config key, a protocol code or plain English than a Go
+// name, and checking it would need exactly the exception list this test
+// exists to avoid. A path in another repository is written with that
 // repository's name in front, and is skipped and counted.
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -48,6 +59,10 @@ var (
 	spanLineBreak = regexp.MustCompile(`\n[ \t]*`)
 	// A `file.go:NNN` suffix names a line; only the file is checked.
 	lineSuffix = regexp.MustCompile(`:\d+$`)
+	// A Go identifier as AGENTS.md writes one: camelCase, which starts
+	// lowercase and has an uppercase letter in it, or a test name. No
+	// underscore, so a wire field or a protocol code is never one.
+	goIdentifierToken = regexp.MustCompile(`^(?:[a-z][a-z0-9]*[A-Z][A-Za-z0-9]*|Test[A-Z][A-Za-z0-9]*)$`)
 )
 
 // fileExtensions are the endings that say a token names a file rather than
@@ -61,11 +76,12 @@ const (
 	otherRepoPath                   // a path in another repository; skipped and counted
 	rootPath                        // resolved against the module root
 	bareGoFileName                  // looked for in the whole tree
+	goIdentifier                    // declared somewhere in the module
 )
 
-// classifyAgentsToken says which kind of path a backticked token is, given
-// the names at the module root, and returns the token with any line suffix
-// removed.
+// classifyAgentsToken says which kind of path, if any, a backticked token
+// is, or that it is a Go identifier, given the names at the module root,
+// and returns the token with any line suffix removed.
 func classifyAgentsToken(token string, rootEntries map[string]bool) (pathClass, string) {
 	token = lineSuffix.ReplaceAllString(token, "")
 	first, _, hasSlash := strings.Cut(token, "/")
@@ -77,6 +93,8 @@ func classifyAgentsToken(token string, rootEntries map[string]bool) (pathClass, 
 	case !hasSlash && !strings.ContainsAny(token, " \t") &&
 		(strings.HasSuffix(token, ".go") || strings.HasSuffix(token, ".golden")):
 		return bareGoFileName, token
+	case goIdentifierToken.MatchString(token):
+		return goIdentifier, token
 	}
 	return notAPath, token
 }
@@ -157,7 +175,7 @@ func TestAgentsMDPathsExist(t *testing.T) {
 	for _, span := range agentsCodeSpans(t, body) {
 		class, token := classifyAgentsToken(span.target, rootEntries)
 		switch class {
-		case notAPath:
+		case notAPath, goIdentifier:
 			continue
 		case otherRepoPath:
 			skipped++
@@ -204,6 +222,145 @@ func TestAgentsMDPathsExist(t *testing.T) {
 	}
 }
 
+// goDeclarations is every name declared in a .go file under root, tests
+// included: funcs and methods, types, consts and vars wherever they are
+// declared, grouped or not, and struct fields. The parser rather than a
+// grep, because a grouped const (`lineageMaxAge`) or a struct field
+// (`reserve`) is declared without its keyword in front of it.
+func goDeclarations(t *testing.T, root string) map[string]bool {
+	t.Helper()
+	declared := map[string]bool{}
+	fset := token.NewFileSet()
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), ".go") {
+			return nil
+		}
+		f, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
+		if err != nil {
+			return err
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			switch n := n.(type) {
+			case *ast.FuncDecl:
+				declared[n.Name.Name] = true
+			case *ast.TypeSpec:
+				declared[n.Name.Name] = true
+			case *ast.ValueSpec:
+				for _, name := range n.Names {
+					declared[name.Name] = true
+				}
+			case *ast.StructType:
+				for _, field := range n.Fields.List {
+					for _, name := range field.Names {
+						declared[name.Name] = true
+					}
+				}
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return declared
+}
+
+// Every kind of declaration the identifier class accepts is pinned on a
+// fixture, because AGENTS.md need not cite each kind: it names no struct
+// field in camelCase today, and one it names tomorrow must still be found.
+func TestGoDeclarationsCollectsEveryKind(t *testing.T) {
+	dir := t.TempDir()
+	src := `package p
+
+func topFunc() {}
+
+type recvType struct {
+	fieldName  int
+	a, bOther  string
+	embeddedNoName
+}
+
+func (recvType) methodName() {}
+
+const (
+	groupedConst = 1
+	groupedIota  = iota
+)
+
+var (
+	groupedVar int
+)
+
+const plainConst = 1
+
+var plainVar int
+
+func inner() {
+	const localConst = 1
+	var localVar int
+	shortDecl := localVar
+	_ = shortDecl
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "p.go"), []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	declared := goDeclarations(t, dir)
+	for _, name := range []string{"topFunc", "recvType", "fieldName", "a", "bOther", "methodName",
+		"groupedConst", "groupedIota", "groupedVar", "plainConst", "plainVar", "localConst", "localVar"} {
+		if !declared[name] {
+			t.Errorf("%s is declared in the fixture but was not collected", name)
+		}
+	}
+	// A short variable declaration is an assignment, not one of the kinds
+	// named; neither it nor a name only used is collected.
+	for _, name := range []string{"shortDecl", "embeddedNoName"} {
+		if declared[name] {
+			t.Errorf("%s was collected, but it is not declared as a func, type, const, var or named field", name)
+		}
+	}
+}
+
+func TestAgentsMDIdentifiersAreDeclared(t *testing.T) {
+	root := moduleRoot(t)
+	body, err := os.ReadFile(filepath.Join(root, "AGENTS.md")) // #nosec G304 -- a fixed document under this module's own root
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared := goDeclarations(t, root)
+
+	checked := 0
+	for _, span := range agentsCodeSpans(t, body) {
+		class, name := classifyAgentsToken(span.target, nil)
+		if class != goIdentifier {
+			continue
+		}
+		checked++
+		if !declared[name] {
+			t.Errorf("AGENTS.md:%d: `%s`: no func, method, type, const, var or struct field of that name anywhere in the module", span.line, name)
+		}
+	}
+
+	// A scanner that finds nothing passes everything. AGENTS.md names 110
+	// Go identifiers as this test was written, so a count below three
+	// quarters of that means the scan broke, not that the document stopped
+	// naming code.
+	t.Logf("checked %d identifiers", checked)
+	if checked < 82 {
+		t.Fatalf("checked %d identifiers: the scan found too few to mean anything", checked)
+	}
+}
+
 func namesAFile(token string) bool {
 	for _, ext := range fileExtensions {
 		if strings.HasSuffix(token, ext) {
@@ -238,6 +395,17 @@ func TestAgentsMDTokensAreClassified(t *testing.T) {
 		"/tx":                                     notAPath,
 		"Enable mining rewards? [y/N]":            notAPath,
 		"jevlinai/jevlin-go":                      notAPath,
+		"searchTrace":                             goIdentifier,
+		"hermesRunIsRenderedExactly":              goIdentifier,
+		"TestMain":                                goIdentifier,
+		"TestNoChainImportsAnywhere":              goIdentifier,
+		"as_url":                                  notAPath,
+		"decision_unreadable":                     notAPath,
+		"degraded":                                notAPath,
+		"y":                                       notAPath,
+		"Testing":                                 notAPath,
+		"Prepared.DiscardAfterInstall":            notAPath,
+		"proceeded()":                             notAPath,
 	} {
 		if got, _ := classifyAgentsToken(token, rootEntries); got != want {
 			t.Errorf("classifyAgentsToken(%q) = %d, want %d", token, got, want)

@@ -272,7 +272,7 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   and the other by the guarantee that does hold there — not one line of the participant's own
   moves relative to any other.
 - **Our entry in a Hermes `hooks:` block we did not write** — `cmd/jevlin/hermes_install.go`
-  owns it (`findHermesOwnEntry`, `hermesRunIsRendered`), in the file that already owns the rule it
+  owns it (`findHermesOwnEntry`, `hermesRunIsRenderedExactly`), in the file that already owns the rule it
   follows: there is no YAML parser, so a false-positive refusal is cheap and an ambiguous mutation
   is not. An entry is ours only when the file's structure can be vouched for by the same scan
   install trusts, the entry sits exactly where the renderer puts one, its command is this
@@ -618,13 +618,16 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
 - **An issue body has a shape**, because a defect is read by
   whoever fixes it months later: provenance first (where it was seen — the soak and its condition,
   the platform, the version or the CI run and head), then `**What happened.**` with the evidence in
-  a fenced block and the code named (`flushStampPath`, `miner.go`), `**Likely cause.**` where there
-  is one, `**Why it matters.**` in the participant's terms, and `**Expected.**`, which is what the
-  fixer implements against. It closes with `Severity:` — `cosmetic`, `minor` or `must-fix` — and the
-  path it is on, because that is what triage sorts by. Someone filing from a browser uses one of
-  the two forms under `.github/ISSUE_TEMPLATE/`: `bug_report.yml` asks for the same things, adds
-  steps to reproduce and asks for the expected behavior before the likely cause, and applies
-  `bug`; `feature_request.yml` has its own shape (motivation, proposal, alternatives) and applies
+  a fenced block and the code named (`flushStampPath`, `miner.go`) — the reproduction in it, or a
+  `**Steps to reproduce.**` list when there is one — then `**Expected.**`, which is what the fixer
+  implements against, `**Likely cause.**` where there is one, and `**Why it matters.**` in the
+  participant's terms. It closes with `Severity:` — `cosmetic`, `minor` or `must-fix` — and the
+  path it is on, because that is what triage sorts by. The order is the bug form's, so a triager
+  reads every issue in one order: outside reporters use the form, its order matches GitHub's
+  default template, and a terminal filer can follow any order. Someone filing from a browser uses
+  one of the two forms under `.github/ISSUE_TEMPLATE/`: `bug_report.yml` asks for the same things
+  in the same order, with the affected area and logs as fields of their own, and applies `bug`;
+  `feature_request.yml` has its own shape (motivation, proposal, alternatives) and applies
   `enhancement`. `gh issue create` renders neither form, so an issue filed that way carries the
   shape by hand and passes `--label bug` or `--label enhancement`, the label the form would have
   applied.
