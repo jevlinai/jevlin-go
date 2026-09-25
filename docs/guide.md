@@ -223,8 +223,8 @@ files, which are safe to delete.
 
 `-purge-state` destroys the participant state. At a terminal, you type the wallet's address
 (with no wallet, the installation path); `-yes` cannot answer it. It first tries, for up to
-eight seconds, to revoke access at the rewards service. Close agent sessions first, or a search
-may recreate empty folders. If you made the wallet here, keep the 24 words or move the funds
+eight seconds, to revoke access at the rewards service. Folders your config names outside the
+installation are left and listed. Close agent sessions first, or a search may recreate folders. If you made the wallet here, keep the 24 words or move the funds
 before you purge. A run stopped at its confirmation leaves the installation exactly as it was.
 
 To come back, run `jevlin setup`, with `-home <dir>` for a non-default installation: the same
