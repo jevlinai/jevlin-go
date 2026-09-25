@@ -33,7 +33,7 @@ func linkedDocs(t *testing.T, root string) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"README.md", "CONTRIBUTING.md", "SECURITY.md"} {
+	for _, name := range []string{"README.md", "CONTRIBUTING.md", "SECURITY.md", "AGENTS.md"} {
 		docs = append(docs, filepath.Join(root, name))
 	}
 	return docs
