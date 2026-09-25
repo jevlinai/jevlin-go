@@ -1,409 +1,266 @@
 # Releasing
 
-A release has two halves, and the line between them is the point of this document.
+A release has two halves. Choosing what to release is a human decision, recorded by an
+annotated `vX.Y.Z` tag that a person pushes to `origin`. Everything after that tag is
+`.github/workflows/release.yml`, which runs on a pushed `v*` tag and on nothing else. Nothing
+in CI creates, moves or deletes a tag, and merging to `main` releases nothing.
 
-**Choosing what to release is a human decision.** Which commit becomes `vX.Y.Z` is
-decided by a person, recorded by an annotated tag, and pushed deliberately. Nothing
-in CI creates, moves or deletes a tag, and nothing merges a release for you.
+## The invariant
 
-**Everything after that tag is mechanical, and is now done by `release.yml`.** Building
-six binaries, publishing the GitHub Release, checking that the release actually carries
-what the npm wrapper will ask for, publishing the wrapper, waiting out the registry, and
-installing the published package on three operating systems to watch the binary say its
-own version — all of it used to be a checklist, and a checklist is a thing a person
-performs correctly right up until the day they don't. `v0.2.1` and `v0.2.2` are what
-that looks like: the npm version bump landed a commit late twice running, and nothing
-noticed either time.
+The tagged commit carries `npm/package.json` at the tagged version and a `## vX.Y.Z` heading
+in `CHANGELOG.md`, and the tag is `vX.Y.Z` exactly: always the `v`, three plain numbers, no
+leading zeros, no pre-release or build suffix.
 
-This process was originally reconstructed from release history rather than documented
-prospectively; this file now records the release invariant, the known historical
-exceptions, and the automation that enforces the invariant going forward.
-
-## What CI does and does not do
-
-`ci.yml` runs on every push to `main` and every PR: build, test, vet, race,
-cross-compile, lint, vuln. It is verification. **It does not release anything, and
-merging to `main` does not trigger a release.**
-
-`release.yml` triggers on exactly one thing: pushing a tag matching `v*`. Nothing else
-does.
+The npm package carries no binary. Its postinstall, `npm/install.js`, downloads the archive
+for its platform from `releases/download/v<version>`, where the version is the package's own,
+and checks it against that release's `checksums.txt`. So the wrapper's version *is* the
+release tag it fetches, and a mismatch is a package that can never install. The failure is
+silent on the side that gets watched — goreleaser never reads `npm/package.json`, so the
+GitHub Release is perfect — and surfaces at a participant's `npm install`, in a version that
+cannot be withdrawn. That is why it is checked before anything is built. Each check in
+preflight exists because a release of the predecessor project shipped without it.
 
 ## The human half
 
-1. **Confirm `main` is green.** `ci.yml` passing on `main` is a precondition, not a
-   step — if it isn't green, fix that first, don't tag through it.
-2. **Merge a dedicated `release/x.y.z` PR** that bumps `npm/package.json`'s `"version"`
-   to the target `X.Y.Z` and writes `CHANGELOG.md`'s entry for the release. Its merge
-   commit is what gets tagged. The bump is deliberately *not* automated: CI does not
-   commit to this repository, and the number belongs in the commit under review rather
-   than in a machine's afterthought.
-3. **Run the checks under "Before you tag"** on the exact commit you are about to tag.
-4. **Tag and push:**
+1. **`main` is green.** `ci.yml` passing on `main` is a precondition; do not tag through a
+   red `main`.
+2. **A dedicated `release/x.y.z` PR** bumps `npm/package.json`'s `"version"` to `X.Y.Z` and
+   turns `## Unreleased` in `CHANGELOG.md` into `## vX.Y.Z — YYYY-MM-DD`. Its merge commit is
+   what gets tagged.
+3. **The checks under "Before you tag" run on that exact commit.**
+4. **Tag it and push the tag:**
 
    ```
-   git tag -a vX.Y.Z -m "vX.Y.Z" <commit>
+   git tag -a vX.Y.Z -m "vX.Y.Z" <merge commit>
    git push origin vX.Y.Z
    ```
 
-   Annotated (`-a`) is the rule — it records who cut the release and when, which a
-   lightweight tag does not — and the workflow enforces it. A published tag is never
-   retagged: that would move a ref `npm/install.js`, the self-updater and an
-   already-published `checksums.txt` resolve against.
-
-   The tag carries the `v` prefix always: `release.yml` matches `v*`, and
-   `npm/install.js` downloads from `releases/download/v${version}`, so a tag named
-   `0.2.0` builds nothing and the npm package of that version can never install.
-
-   The tag goes to `jevlinai/jevlin-go`, where the releases live and
-   `npm/install.js` and the self-updater look for them. There is no fork: `origin`
-   is that repository.
-5. **Watch the run**, and read the preflight job's diagnostics even when it passes —
-   it prints the tagged commit, canonical main, and the asset names it expects.
-6. **From the second release on, accept the upgrade by hand.** It is the acceptance
-   step still done by hand; the workflow does not attempt it. A real native
-   installation of the previous release must run `jevlin upgrade` and land on the
-   release just published: `jevlin version` afterwards reports it, and `jevlin upgrade
-   -rollback` puts the previous one back. At least one of those upgrades is on a
-   Windows desktop, because CI's Windows runners do not represent the antivirus and
-   endpoint software a participant's machine runs. The first release cannot be
-   accepted this way: there is nothing earlier to upgrade from.
+   Annotated, because it records who cut the release and when. `origin` is
+   `jevlinai/jevlin-go`, where `npm/install.js` and the self-updater look for releases.
+5. **Watch the run.** Read preflight's output even when it passes: it prints the tagged
+   commit, canonical `main` and the asset names it expects. `publish-npm` waits for one of
+   the `release` environment's reviewers to approve it.
+6. **Accept the upgrade by hand.** On real native installations of the previous release,
+   `jevlin upgrade` lands on the new one (`jevlin version` says so) and
+   `jevlin upgrade -rollback` puts the previous one back. One of them is a Windows desktop
+   with real-time antivirus protection on, because CI's Windows runners do not carry the
+   antivirus and endpoint software a participant's machine runs. This is not possible for
+   the first release, which has nothing to upgrade from, and its changelog entry says so.
 
 ## Before you tag
 
-These are the checks that have each been bought by a release that shipped without them.
-Run them on the commit you are about to tag, not on a branch that resembles it. The
-first two are now also enforced by the workflow, which is the point — but a release
-that fails preflight is a tag already pushed, and a pushed tag is awkward to take back.
+- **`CHANGELOG.md` has the heading for this version, with its date**, and an entry that says
+  what changed for a participant. goreleaser's release notes are the commit list.
+- **`npm/package.json` says `X.Y.Z`** in the commit being tagged.
+- **The help text and the skill match the flags shipped.** A flag `usageText` or
+  `cmd/jevlin/skill.md` names that the binary does not accept, or one it accepts that
+  neither mentions, breaks the contract an agent reads.
+- **Any adapter that has never had a live smoke is named in the changelog entry.** "Not
+  live-smoked" is an acceptable answer; silence is not.
+- **`make verify` is green on that exact commit.**
 
-- **`CHANGELOG.md` has a heading for this version**, with its date, and the entry says
-  what changed for a participant — not a list of commit subjects. `goreleaser`'s
-  auto-generated release notes are the commit-by-commit record; this file is the other
-  thing.
-- **`npm/package.json`'s `"version"` already says `X.Y.Z`** in the commit you're about
-  to tag, or an ancestor of it.
-- **The usage text and the installed skill match the flags actually shipped.** A flag
-  named in `usageText` or `cmd/jevlin/skill.md` that the binary does not accept,
-  or a flag it accepts that neither mentions, is the 0.2.6 finding repeating itself:
-  the help surface is the contract an agent reads.
-- **Any adapter that has never had a live smoke gets one, or the changelog states the
-  exception.** Saying "not live-smoked" in the entry is an acceptable answer; saying
-  nothing is not. As of v0.2.6 the Pi and Hermes adapters carried that exception.
-- **`make verify` is green on that exact commit**, and `ci.yml` is green on `main`.
-- **For a release whose updater has never run under antivirus** (the first release is
-  such a release; step 6's real acceptance only starts with the release after it): an
-  optional substitute is available. On a Windows desktop with real-time antivirus
-  protection **on**, at the commit to be tagged, run
-  `go test ./internal/selfupdate ./cmd/jevlin -run 'Replace|Rollback|Upgrade|Uninstall' -count=1`
-  — the acceptance test performs the replacement transaction inside the process
-  started from the pathname being moved, which is the running-image case CI's runners
-  cover with Defender off. If no such machine is available before the tag, the
-  changelog entry says so in one sentence, and the check is not claimed to have run.
+Preflight can run before anything is pushed. With the annotated tag created locally:
+
+```
+git fetch origin main
+go run ./tools/releasecheck preflight -tag vX.Y.Z -repo . -canonical-ref refs/remotes/origin/main
+npm pack ./npm --dry-run
+```
+
+A local tag that fails is removed with `git tag -d` and costs nothing; the same failure after
+the push costs a version number.
+
+For a release whose updater has never run under antivirus, the first among them, step 6 has a
+substitute: on a Windows desktop with real-time protection **on**, at the commit to be tagged,
+`go test ./internal/selfupdate ./cmd/jevlin -run 'Replace|Rollback|Upgrade|Uninstall' -count=1`
+performs the replacement from inside the process being replaced, which CI runs only without a
+participant's antivirus. Without such a machine, the changelog entry says so in one sentence.
 
 ## The automated half
 
-`release.yml` is five jobs, each depending on the last. The ordering is a dependency
-chain rather than a preference: **the npm wrapper carries no binary of its own.** Its
-postinstall downloads the GitHub Release's archive for the running platform and verifies
-it against `checksums.txt`. So the release must exist, and be complete, before the
-wrapper pointing at it is published — and an npm version, once published, cannot be
-taken back.
+`release.yml` is five jobs, each depending on the last, because the npm package downloads its
+binary from the GitHub Release: the release must exist and be complete before the package
+pointing at it is published, and a published npm version cannot be taken back. The checks
+with a right answer live in `tools/releasecheck`, a Go program with its own tests, so every
+rejection has a test that drives it. It is release tooling, not part of the client:
+`.goreleaser.yaml` builds `./cmd/jevlin` and nothing else.
 
-The substantive checks live in `tools/releasecheck`, a small Go program with its own
-tests, rather than in shell embedded in the workflow. A release gate nobody can run
-except by cutting a release is a gate nobody has tested; every rejection below has a
-test that drives it. `tools/releasecheck` is release tooling and not part of the client:
-`.goreleaser.yaml` builds `./cmd/jevlin` and nothing else, so none of it ships in
-the binary, and nothing in `cmd/` or `pkg/` imports it.
+Every `uses:` in `release.yml` and `ci.yml` is pinned to a full commit SHA, with the action's
+release in a trailing comment. A tag like `@v4` is a pointer its owner can move, and
+"whatever `@v4` means today" is no answer for what runs beside a publishing credential;
+`ci.yml` holds none and is pinned anyway, because a CI that changes without a diff is the
+other thing pins prevent. A bump is a deliberate PR, and the comment names each SHA's release.
 
-Every `uses:` in both workflows, `release.yml` and `ci.yml`, is pinned to a full commit
-SHA, with the release it corresponds to in a trailing comment. A tag like `@v4` is a
-moving pointer the action's owner can repoint at any time, and `release.yml` holds a
-publishing credential — "whatever `@v4` means today" is not an acceptable answer for
-what runs beside it. `ci.yml` holds no credential and publishes nothing, and is pinned
-anyway, because a CI that changes under you without a diff is the other thing pins
-prevent: floating tags would have picked up the node24 releases of `actions/checkout`
-and `actions/setup-go` on their own and hidden the deprecation that made them due. The
-cost is that pins do not update themselves: bumping them is a deliberate PR, and the
-comment is there so a reader can see at a glance which release each SHA is. The CI
-hygiene PR that moved both workflows to node24 was the first such bump.
+### `preflight` — may this tag become a release?
 
-### 1. `preflight` — may this tag become a release?
+Nothing is built until all of these hold. Every file is read out of the tag with `git show`,
+never from the worktree, because "`npm/package.json` at the tag" means the bytes the tag
+carries; a later fix on `main` does not make a wrong tag right.
 
-Nothing is built until all of this holds. Every file is read out of the tag with
-`git show`, never out of the worktree beside it, because "npm/package.json at the tag"
-has to mean the bytes the tag actually carries — a later fix on `main` does not make a
-wrong tag right.
+1. **The tag is `vX.Y.Z` exactly.** A pre-release tag would build and publish to npm's
+   `latest`, and nothing downstream has been exercised against one.
+2. **The tag is annotated.**
+3. **The tagged commit is an ancestor of canonical `main`**, fetched fresh into its own ref
+   and named on the command line, never inferred from the checkout, which on a tag push *is*
+   the tag. This is the security-relevant check: a well-formed tag on some commit in the
+   repository is not a release, and the ability to create a tag must not by itself publish a
+   package built from a commit nobody reviewed.
+4. **`npm/package.json` at the tag says `X.Y.Z`.**
+5. **`CHANGELOG.md` at the tag has a `## vX.Y.Z` heading.**
+6. **`.goreleaser.yaml` and `npm/install.js` name the same assets.** They are independent
+   statements of what a release file is called. The expected names are derived from
+   `.goreleaser.yaml` at the tag, not hard-coded, and a shape the tool does not model — a
+   second build, `targets:`, `ignore:`, a template field it cannot resolve — stops the release.
+7. **`npm pack ./npm --dry-run` succeeds.** Not `npm --prefix npm pack`: `--prefix` sets the
+   install prefix, not the pack target, and that form fails on the root's missing
+   `package.json`.
 
-- **The ref is `vX.Y.Z`**, exactly. Pre-release and build-metadata suffixes are refused:
-  they would sail through goreleaser and publish to npm's `latest` dist-tag, and nothing
-  downstream has ever been exercised against one.
-- **The tag is annotated**, per the v0.2.8 convention above.
-- **The tagged commit is an ancestor of canonical `main`.** Canonical main is fetched
-  explicitly into its own ref and named on the command line — never inferred from the
-  checkout branch, which on a tag push *is* the tag. This is the security-relevant one:
-  a syntactically valid `v*` tag pointing at some commit in the repository is not a
-  release, and write access enough to create a tag must not by itself be enough to
-  publish a package under this project's name. See "What this assumes about the
-  repository" below for the other half of that argument.
-- **`npm/package.json` at the tag says `X.Y.Z`.** This is v0.2.1 and v0.2.2, caught.
-- **`CHANGELOG.md` at the tag has a `## vX.Y.Z` heading.**
-- **`.goreleaser.yaml` and `npm/install.js` name the same assets.** The two are
-  independent statements of what a release file is called — goreleaser's
-  `name_template` and the wrapper's own string interpolation — and a release is only
-  installable while they agree. The expected asset names are *derived from
-  `.goreleaser.yaml` at the tag* rather than hard-coded, so a change to the project
-  name, the OS or architecture matrix, the archive format overrides or the checksum
-  filename changes what is expected; a change the tool does not model (a second build,
-  `targets:`, `ignore:`, a template field it cannot resolve) stops the release rather
-  than being guessed at.
-- **`npm pack ./npm --dry-run` succeeds.** Note the form: `npm --prefix npm pack
-  --dry-run` is *not* the same command — `--prefix` sets the install prefix, not the
-  pack target, so it reads `package.json` from the repository root and fails with
-  ENOENT.
+Last, it classifies the GitHub Release for the tag `absent`, `complete` or `partial`, which
+is what makes a rerun safe.
 
-It then asks GitHub whether a release for this tag already exists, and classifies it
-`absent`, `complete` or `partial`. That is what makes a rerun safe; see "When something
-fails" below.
+### `release-binaries` — goreleaser
 
-### 2. `release-binaries` — goreleaser
+Six static binaries (linux, darwin and windows, each amd64 and arm64), each archived with
+`LICENSE`, `NOTICE` and `README.md` — `tar.gz`, `zip` on Windows — and checksummed into
+`checksums.txt`, published as a non-draft GitHub Release whose body is the commit log since
+the last tag, opened by a link to `CHANGELOG.md` at this one. It is the only job with
+`contents: write`, and goreleaser runs only when the release is `absent`.
 
-Unchanged in substance from what this repo has always done: six static binaries
-(linux/darwin/windows × amd64/arm64), each packaged with the binary, `LICENSE` and
-`README.md`, checksummed into `checksums.txt`, published as a non-draft GitHub
-Release whose body is generated from `git log` between tags and opens with a link to
-`CHANGELOG.md` at this tag.
+### `verify-release` — read it back
 
-This is the only job with `contents: write`, and it is skipped entirely when preflight
-classified the release `complete`.
+The release is read back from the API and must carry **exactly** the six archives and
+`checksums.txt`, no more and no fewer. An unexpected asset fails as a missing one does: it
+means the configuration grew an artifact the check cannot name, and a verifier that shrugs at
+files it does not understand is not verifying. goreleaser exiting zero is not proof it
+published.
 
-### 3. `verify-release` — read it back
+### `publish-npm` — the package
 
-A separate job reads the release from the API and requires it to carry **exactly** the
-expected assets: the six archives and `checksums.txt`, no more and no fewer. Missing is
-the obvious failure. An *unexpected* asset fails too — it means the release config grew
-an artifact kind this check cannot name, and a verifier that shrugs at files it does not
-understand is not verifying the release.
+Publishes `./npm` at the version committed at the tag; nothing bumps, commits or pushes. It is
+the only job that names the `release` environment and the only one with `id-token: write`, and
+its checkout keeps no repository credential. `--ignore-scripts` keeps publication from running
+any of the package's lifecycle scripts while the credential is live; the `postinstall` still
+ships and runs for whoever installs it. `--provenance` attests the package to this run. When
+the version is already on the registry, that is not taken as proof it is right: the published
+tarball is fetched and compared file by file with `npm/` at the tag, and a difference stops
+the workflow without republishing.
 
-Goreleaser exiting zero is not accepted as the answer to "did the release publish", for
-the same reason a test asserts on an observable rather than on the fact that a function
-was called.
+### `smoke-npm` — install it for real
 
-### 4. `publish-npm` — the wrapper
-
-Publishes `npm/` at the version already committed at the tag. Nothing here bumps a
-version, commits, or pushes.
-
-`--ignore-scripts` is passed so publication never executes a lifecycle script from the
-package while the OIDC-issued publish credential is live. The package's own `postinstall`
-still ships and still runs for whoever installs it; only the publish-time hooks are
-suppressed.
-
-This is the only job that references the `release` environment and the only one that
-declares `id-token: write` — the permission npm's trusted-publishing exchange needs to
-mint a short-lived publish token, and the only credential this job ever holds.
-
-### 5. `smoke-npm` — install it for real, on three operating systems
-
-The only release check that has run the released binary. Everything before it compares
-one version string to another, and all of those can pass on a release whose published
-wrapper downloads the wrong archive.
-
-On Ubuntu, macOS and Windows, each in a genuinely fresh temporary directory:
-`npm install jevlin@X.Y.Z`, let the package's own postinstall pick the platform
-archive, download it from the GitHub Release, verify it against `checksums.txt` and
-unpack it, then `npx --no-install jevlin version` and require exactly:
+On Ubuntu, macOS and Windows, without failing fast, so the result says which systems are
+broken. A bounded wait comes first — the registry polled every ten seconds for at most ten
+minutes — because a stale first answer after a publish is propagation, and one that never
+arrives is a failure. Then, in a fresh temporary directory, `npm install` of the package at
+`X.Y.Z`, whose postinstall fetches, verifies and unpacks the archive, and
+`npx --no-install jevlin version`, which must print exactly:
 
 ```
 jevlin X.Y.Z
 ```
 
-The binary name, then the version **without** the `v`. The tag carries the `v`;
-`.goreleaser.yaml` injects `-X main.version={{.Version}}`, which goreleaser resolves to
-the tag with the prefix stripped. Expecting `vX.Y.Z` here fails a release that is in
-fact correct.
-
-`--no-install` is load-bearing: without it `npx` would happily fetch the package itself
-and report a version even if the install had produced nothing.
-
-Between the publish and the install there is a **bounded wait** for the registry to
-serve the exact version. `v0.2.7` is why: for about twenty seconds after a successful
-publish, `npm view` still reported the previous version. A stale first answer is
-propagation, not a failed release, so a single immediate lookup is the wrong check. An
-answer that never arrives *is* a failure, so the wait is bounded — ten minutes, polled
-every ten seconds — and says so when it expires.
+No `v`: goreleaser stamps `-X main.version={{.Version}}`, the tag with its prefix stripped.
+`--no-install` is load-bearing: without it `npx` would fetch the package itself and report a
+version even if the install had produced nothing. This is the only check that runs the
+released binary; everything before it compares strings.
 
 ## When something fails
 
-npm publication is irreversible and a tag is awkward to move, so each failure state has
-one right answer. A rerun of the workflow never moves the tag, never builds a different
-commit, and never invents a version to escape a failure.
+Each state has one right answer. A rerun never moves the tag, never builds a different commit
+and never invents a version.
 
-**Preflight failed.** Nothing was built and nothing was published. The tag is wrong, or
-the commit is. **The failed version number is burned: leave the tag where it is, fix the
-problem on `main`, and tag the next patch version.**
+**Preflight refused the tag.** Nothing was built or published, and the version number is
+burned: leave the tag, fix `main`, and tag the next patch. The `release tag immutability`
+ruleset refuses deleting or moving a `v*` tag for everyone and cannot tell a published tag
+from an unpublished one; what it buys is that a published tag never moves under
+`npm/install.js`, the self-updater or a published `checksums.txt`, which is worth more than a
+number. The dead tag is inert: nothing resolves to it.
 
-This document used to say to delete the tag and reuse the number. That cannot be done —
-the "release tag immutability" ruleset carries `deletion`, `update` and
-`non_fast_forward` with no bypass actors at all, so the deletion is refused for everyone,
-an administrator included — and it should not be. A ruleset cannot tell a published tag
-from an unpublished one, and the guarantee it buys is the one this document argues for
-fifty lines above: a published tag never moves, because `npm/install.js`, the
-self-updater and an already-published `checksums.txt` all resolve against it. A
-version number is cheap. That guarantee is not, and it is worth strictly more than the
-number, because it is what makes every already-published tag trustworthy rather than
-merely usually-trustworthy.
+**The release is complete and a later job failed.** Rerun. Preflight classifies the release
+`complete` and goreleaser is skipped, because rebuilding would replace assets a published
+package may already be downloading.
 
-A tag that failed preflight is inert, not dangerous: nothing was built against it and
-nothing resolves to it. It sits in the tag list as a version that never shipped, which is
-what the CHANGELOG will also say.
+**The release is partial.** Preflight stops and names what is missing. Stop too: whether it
+is safe to replace what did upload depends on whether anything has fetched it. Repair the
+release by hand, or delete the release (not the tag), and rerun.
 
-The mitigation is to not get here. **Every preflight check can be run locally, on the
-commit you are about to tag, before the tag exists** — that is what "Before you tag"
-above is for. Run them there and the failure costs you a minute instead of a version
-number.
+**npm publish failed.** Rerun; the compare decides. Absent, it publishes; present and
+identical, it moves on; present and different, it stops.
 
-**The GitHub Release succeeded and something after it failed.** Re-run the workflow.
-Preflight will classify the release `complete` and goreleaser is skipped — it is not
-re-run, because that would replace assets a published npm package may already be
-downloading. The run resumes at verification and proceeds to npm.
+**The registry never served the version.** The publish reported success, so this is a
+registry or package-state problem. Do not publish again; the version is immutable.
 
-**The GitHub Release is partial** — some assets uploaded, some did not. The workflow
-stops and says which are missing. This one is *not* resumed automatically: re-running
-goreleaser over a partial release replaces what did upload, and whether that is safe
-depends on whether anything has fetched it yet. Look at the release, delete it and
-re-run or repair it by hand, then re-run the workflow.
-
-**npm publish failed.** Re-run. The publish job asks the registry whether
-`jevlin@X.Y.Z` already exists before attempting anything. If it does not, it
-publishes. If it does, it does **not** treat "the version exists" as proof the release
-is correct: it downloads the published tarball and compares its contents against `npm/`
-at this tag, and only then moves on to the smoke test. A published version whose
-contents differ from the tag stops the workflow — nothing is republished, because an npm
-version is immutable, and the mismatch is a thing to diagnose rather than paper over.
-
-**The registry never served the version.** The publish step reported success, so this is
-a registry or package-state problem. Do not publish again; the version is immutable.
-
-**A smoke install failed.** This is the asymmetric one. **The npm publish has already
-happened and cannot be undone**, so the workflow fails loudly and stops, and deliberately
-does nothing else: it does not move, delete or recreate the tag, and it does not attempt
-to republish. A released package that does not install is a defect to diagnose, and the
-next release is the fix. The per-platform matrix does not fail fast, so the run tells you
-whether one operating system is broken or all three.
+**A smoke install failed.** The publish cannot be undone, so the workflow stops and does
+nothing else. A released package that does not install is a defect to diagnose, and the next
+release is the fix.
 
 ## What installed updaters depend on
 
-A native installation can upgrade itself, and every copy that can do so
-carries its expectations of a release compiled in. A release that breaks one of them
-cannot be upgraded into by any installed updater, and no later release can fix that for
-the copies already out there. So these are contracts, and each has a test that fails in
-CI before a tag can break it.
+Every native installation carries its expectations of a release compiled in. A release that
+breaks one cannot be upgraded into by any installed updater, and no later release fixes that
+for copies already out there, so each is a contract with a test that fails in CI first.
 
-**The version command.** A release binary's `jevlin version` prints exactly
-`jevlin X.Y.Z` and a newline — the bare version, no `v`, nothing else — and writes
-nothing to stderr, under an environment with nothing of the participant's in it. The
-updater runs it on the downloaded candidate before installing anything, and it accepts
-nothing else. GoReleaser stamps it with `-X main.version={{.Version}}`, which is the bare
-version. `cmd/jevlin`'s `TestVersionOutputIsAReleaseCompatibilityContract` builds
-the binary that way and runs it through the updater's own validator, and checks
-`.goreleaser.yaml` still stamps the bare version.
+- **The `version` line**: exactly `jevlin X.Y.Z` and a newline, nothing on stderr, under a
+  stripped environment. `cmd/jevlin`'s `TestVersionOutputIsAReleaseCompatibilityContract`
+  builds the binary as the release does, runs it through the updater's own validator, and
+  checks that `.goreleaser.yaml` stamps the bare version.
+- **The asset names**: `jevlin_X.Y.Z_<os>_<arch>.tar.gz` (`.zip` on Windows) and
+  `checksums.txt`, computed by a small checked-in function rather than goreleaser's templates.
+  `tools/releasecheck`'s `TestSelfUpdaterAssetNamesMatchGoReleaser` derives the matrix from
+  `.goreleaser.yaml` and requires the two to agree.
+- **A stable, published release from the canonical origin, under the frozen bounds**: GitHub's
+  latest release, or exactly `vX.Y.Z` when asked, from the compiled-in `jevlinai/jevlin-go`;
+  no drafts, pre-releases or non-canonical tags; redirects only to GitHub's own hosts; at most
+  1 MiB of release metadata, 64 KiB of checksums, a 64 MiB archive, a 64 MiB executable and
+  128 MiB of declared expansion. `internal/selfupdate`'s
+  `TestReleaseSelectsLatestOrTheExactTagFromTheFixedOrigin`,
+  `TestReleaseRejectsWhatIsNotAStableCanonicalRelease`,
+  `TestRedirectPolicyIsHTTPSHostBoundedAndHopBounded` and `TestFrozenBounds` guard it. A
+  release approaching half a bound is a question for review, not a reason to raise it.
 
-**The asset names.** The updater computes the archive name from the version and platform
-(`jevlin_X.Y.Z_<os>_<arch>.tar.gz`, `.zip` on Windows) and expects `checksums.txt`
-beside it, with a small checked-in function rather than GoReleaser's templates.
-`tools/releasecheck`'s `TestSelfUpdaterAssetNamesMatchGoReleaser` derives the whole matrix
-from `.goreleaser.yaml` and requires the two to agree, so changing the naming, the
-platforms, the archive format or the checksum file's name fails here first.
+## Repository settings this relies on
 
-**A stable, published release.** The updater takes GitHub's latest release, or exactly
-`vX.Y.Z` when asked, and refuses drafts, pre-releases and any tag that is not canonical
-`vX.Y.Z`. It downloads only from the canonical repository, following redirects only to
-GitHub's own hosts, under frozen bounds: 1 MiB of release metadata, 64 KiB of checksums,
-a 64 MiB archive, a 64 MiB executable and 128 MiB of total declared expansion. The v0.2.8
-archives are 7–8 MB. A release that approaches half of a bound is a question for review
-before it ships, not a reason to raise the bound.
+- **`main` ruleset**: a pull request is required, the eight CI checks must pass on a branch up
+  to date with `main`, merge commits are the only method, deletion and force-push are
+  refused, and nobody can bypass it.
+- **`release tags` ruleset** on `refs/tags/v*`: only the maintain and admin roles may create
+  a release tag.
+- **`release tag immutability` ruleset** on `refs/tags/v*`: deletion, update and force-push
+  are refused, and nobody can bypass it.
+- **`release` environment**: deployments need a required reviewer's approval and are allowed
+  only from `main` and `v*` tags.
+- **No secrets**, in the repository or the environment; npm authenticates by OIDC.
 
-## What this assumes about the repository
+Three controls, because each covers a case the others do not. A tag push runs the workflow as
+it exists at the tagged commit, so a crafted commit could carry a `release.yml` without the
+ancestry check. The `release tags` ruleset constrains **who** may create a release tag; the
+ancestry check constrains **what commit** an honest tag may release; the `release`
+environment, which gates the only job npm accepts a publish from, constrains **what any
+workflow can reach** — the one control a workflow file cannot remove.
 
-Two settings live in GitHub's configuration, not in this repository's files. **This PR
-does not configure either of them**; both should be set by a repository administrator.
+## npm trusted publishing
 
-**A tag-protection ruleset on `v*`,** restricting who may create a release tag to the
-authorized release maintainers. This is the other half of the ancestry check, and the
-halves are not interchangeable. A tag push runs the workflow file *as it exists at the
-tagged commit*, so a crafted commit could carry a `release.yml` with the ancestry check
-removed. What such a workflow cannot do is obtain the npm credential — that requires
-declaring the `release` environment and satisfying its protection rules. So: the ruleset
-constrains **who** may create a release tag, the preflight ancestry check constrains
-**what commit** an honest tag may release, and the environment boundary constrains
-**what any workflow can reach**. Each covers a case the others do not.
-
-**A GitHub Environment named `release`,** with required reviewers configured on it. There
-is no npm secret to hold any more — see below.
-
-## npm authentication — trusted publishing (OIDC)
-
-Publication authenticates with npm's **Trusted Publishing**: `publish-npm` declares
-`id-token: write` and exchanges the resulting OIDC token for a short-lived npm publish
-token, so no npm secret exists in this repository or its environments, and none is read
-by the job. Authorization instead comes from a trusted-publisher record configured on the
-`jevlin` package on npmjs.com, naming this workflow exactly:
+`publish-npm` declares `id-token: write`, so the npm CLI can ask GitHub for an OIDC token whose
+claims name the run's repository, workflow file and environment. npm compares them with the
+trusted-publisher record configured on the package on npmjs.com and, only on a match, mints a
+short-lived token for that one publish. The record has four fields:
 
 - **Owner:** `jevlinai`
 - **Repository:** `jevlin-go`
 - **Workflow file:** `release.yml`
 - **Environment:** `release`
 
-npm checks the OIDC token's claims against that record before minting a publish token, so
-a fork or a differently-named workflow cannot authenticate even with `id-token: write` —
-the record is npm-side, not something this repository's files can widen. The `release`
-environment's required reviewers remain the boundary that decides which run can reach the
-token exchange at all: `id-token: write` is granted to the job, but only a run that also
-passes the environment's protection rules gets to use it — the one control a workflow
-file cannot route around.
+The record lives on npmjs.com, so nothing in this repository can widen it: a fork or a
+differently named workflow cannot authenticate even with `id-token: write`, and renaming the
+workflow file or the environment breaks publishing until the record is changed to match.
+Trusted publishing needs npm 11.5.1 or later, so the job installs a pinned npm.
 
-## The npm version, and the two releases that got it wrong
+## Outside the automation, deliberately
 
-The rule is that the tagged commit already carries `npm/package.json` at the version
-being tagged. The run of tags that actually holds it is v0.1.1 through v0.2.0, then
-v0.2.3 through v0.2.7 — v0.2.1 and v0.2.2 are the two that broke it, and they are why
-preflight checks it. `v0.2.1`'s commit still said `0.2.0`; `v0.2.2`'s still said
-`0.2.1`. The bump landed a commit late twice running, and nothing in CI noticed either
-time.
-
-Before v0.2.7 the bump was done by hand, sometimes as its own commit (e.g. "npm 0.1.4"),
-sometimes folded into whatever feature commit happened to be the release point.
-**Beginning with v0.2.7 it gets a dedicated `release/x.y.z` PR of its own**, so the
-version is never a line buried in a feature diff and the commit to tag is unambiguous.
-The earlier shape is history, not a mistake to rewrite.
-
-Miss the bump and the GitHub Release still builds fine — goreleaser doesn't look at
-`npm/package.json` at all. That is precisely why the check is where it is: the failure
-is silent on the side that gets watched, and shows up later in the npm package, where it
-stays stale until someone notices.
-
-## What this doesn't cover
-
-`npm/package.json`'s version tracking the GitHub release tag 1:1 is the release
-invariant this document asserts, not merely a pattern it noticed. That is a change from
-how this section used to read: it recorded "six-for-six is the pattern that exists" and
-declined to call it a rule, and the history has since stopped being six-for-six.
-v0.2.1's tagged commit shipped `0.2.0` and v0.2.2's shipped `0.2.1` — two misses, both
-documented above, neither caught by anything. An invariant nobody stated is one nobody
-checks, which is exactly how it was broken twice running. It is now checked before
-anything is built. If 1:1 tracking is not actually the intent — if the wrapper should
-version independently — then this document is wrong and should change, and the check
-should go with it.
-
-Still outside the automation, deliberately:
-
-- **The version bump itself.** CI does not commit to this repository. The number belongs
-  in a reviewed commit.
-- **Which commit gets released.** The whole design boundary.
-- **Pi and Hermes live-host smokes**, which need real hosts and are not release
-  engineering.
-
-And one thing the workflow cannot prove about itself: a tag-triggered workflow only ever
-runs the version of itself that exists at the tagged commit, so changes to `release.yml`
-are exercised for the first time by the next real release. There is no way to rehearse a
-tag push without pushing a tag.
+- **The version bump.** CI does not commit to this repository; the number belongs in a
+  reviewed commit.
+- **Which commit gets released.** That is the human half.
+- **Live host smokes and the upgrade acceptance**, which need real hosts and a real previous
+  installation.
+- **The workflow's own changes.** A tag-triggered workflow runs the version of itself at the
+  tagged commit, so a change to `release.yml` first runs on the next real release. There is
+  no way to rehearse a tag push without pushing a tag.
