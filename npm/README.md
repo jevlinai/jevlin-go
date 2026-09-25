@@ -835,6 +835,7 @@ otherwise setup says what it left.
 ## License
 
 Apache-2.0. To report a security vulnerability, see [SECURITY.md](SECURITY.md).
+To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## The npm wrapper
 
