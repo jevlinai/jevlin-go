@@ -172,11 +172,11 @@ With a session id exported, a lineage file — the declared one, or one found by
 walking up from the working directory — is used only when it holds that
 session; a shell that exports no session id is served exactly as before. Each
 Cursor conversation has its own lineage file, so two conversations open on one
-workspace no longer relabel each other's searches (dropin-miner#109). Cursor passes what
+workspace no longer relabel each other's searches. Cursor passes what
 its session-start hook exports to its later hooks, not to the shell its agent
 runs, so Cursor's `preToolUse` hook puts those three variables in front of the
 exact search the skill renders, in that shell's own syntax, and rewrites
-nothing else (dropin-miner#118).
+nothing else.
 
 A host started by another host as a shell command inherits the outer host's
 declared channel, and so carries the outer session and label: Claude Code
@@ -228,8 +228,8 @@ is executed to find out whether it exists.
 
 | host | tool | found by | shell it is taught for | lineage | files written by `agents install` |
 |---|---|---|---|---|---|
-| Claude Code | skill | `claude` on PATH | Bash on macOS and Linux; on Windows both Git Bash and PowerShell | full: PreToolUse on its Bash **and** PowerShell tools rewrites the command, in the syntax of whichever one the call used; window hooks; Stop flushes | `~/.claude/skills/jevlin/`, five hook entries and three `permissions.allow` rules — the single-quoted spelling the skill renders, plus the quoted and bare ones an agent may repeat from an older skill — in `~/.claude/settings.json`. Those rules are Bash rules, and they stop matching the moment the hook adds the trace envelope, because an allow rule matches on how a command begins — so the hook answers the permission question itself, `allow` for exactly the search the skill renders and silence for everything else. That covers the PowerShell tool too, which no installed rule ever did; what a PowerShell-tool permission *rule* must look like is still unestablished (dropin-miner#77), and a rule guessed at would never match, so none is written |
-| Cursor | skill | `cursor` or `cursor-agent` on PATH, or `~/.cursor` | Bash on macOS and Linux; on Windows both PowerShell and Git Bash, labelled by which one your terminal is — Cursor runs commands in the terminal `terminal.integrated.defaultProfile.windows` names, and v0.2.10 taught the PowerShell form alone, which a Git Bash terminal wrapped in `powershell.exe -Command` and expanded the encoding line out of, delivering `café 東京` as `caf? ??` (dropin-miner#96) | full, and the same seven `hooks.json` entries serve the editor and the Agent CLI: both load the file. `sessionStart` exports the harness and a per-conversation lineage path to the later hooks; `preToolUse` puts that identity in front of the exact search the skill renders, in that shell's own syntax, and rewrites nothing else; the shell hook allows exactly that form, and nothing looser | `~/.cursor/skills/jevlin/`, seven entries in `~/.cursor/hooks.json` |
+| Claude Code | skill | `claude` on PATH | Bash on macOS and Linux; on Windows both Git Bash and PowerShell | full: PreToolUse on its Bash **and** PowerShell tools rewrites the command, in the syntax of whichever one the call used; window hooks; Stop flushes | `~/.claude/skills/jevlin/`, five hook entries and three `permissions.allow` rules — the single-quoted spelling the skill renders, plus the quoted and bare ones an agent may repeat from an older skill — in `~/.claude/settings.json`. Those rules are Bash rules, and they stop matching the moment the hook adds the trace envelope, because an allow rule matches on how a command begins — so the hook answers the permission question itself, `allow` for exactly the search the skill renders and silence for everything else. That covers the PowerShell tool too, which no installed rule ever did; what a PowerShell-tool permission *rule* must look like is still unestablished, and a rule guessed at would never match, so none is written |
+| Cursor | skill | `cursor` or `cursor-agent` on PATH, or `~/.cursor` | Bash on macOS and Linux; on Windows both PowerShell and Git Bash, labelled by which one your terminal is — Cursor runs commands in the terminal `terminal.integrated.defaultProfile.windows` names, and each terminal gets its own shell's form: the PowerShell form alone, in a Git Bash terminal, is wrapped in `powershell.exe -Command`, which expands the encoding line out of it and delivers `café 東京` as `caf? ??` | full, and the same seven `hooks.json` entries serve the editor and the Agent CLI: both load the file. `sessionStart` exports the harness and a per-conversation lineage path to the later hooks; `preToolUse` puts that identity in front of the exact search the skill renders, in that shell's own syntax, and rewrites nothing else; the shell hook allows exactly that form, and nothing looser | `~/.cursor/skills/jevlin/`, seven entries in `~/.cursor/hooks.json` |
 | Codex | skill | `codex` on PATH | Bash on macOS and Linux; PowerShell on Windows | per-shell | `~/.codex/skills/jevlin/`; install also widens `~/.codex/config.toml`'s sandbox (network, plus writable roots: the state directory always, and the intake, sessions and spool directories when `[miner] enabled` — never the config, key or wallet) so searches record and the claim resumes; the flush a search starts runs inside that sandbox too, taking the flush lock read-only (setup and every flush outside the sandbox make sure the lock file exists) and writing its stamp in the state directory. A command inside the sandbox can read `credentials.json` (a search needs the key) and the state directory (a flush needs it); on Windows it cannot read the wallet, whose directory keeps its own owner-only access |
 | opencode | AGENTS.md line | `opencode` on PATH | Bash on macOS and Linux; PowerShell on Windows | full: in-process plugin rewrites the bash command | `~/.config/opencode/plugins/jevlin.js` |
 | Pi | skill | `pi` on PATH | Bash everywhere (Git Bash on Windows) | full: an auto-discovered extension rewrites the bash command; history is bound to the tool call that asked for it, and the window generation is read back from the session's own compaction entries | `~/.pi/agent/skills/jevlin/`, `~/.pi/agent/extensions/jevlin.ts` |
@@ -640,7 +640,7 @@ in the same message — the common shape — the hook reads a transcript that do
 not hold that text yet, and the envelope goes out identity-only. Narration in
 an earlier message of the same turn does travel. The lineage itself, the
 session, turn and call ids, is correct either way; it is the text that is one
-message stale or absent (dropin-miner#93). Nothing here can read a line the host has not
+message stale or absent. Nothing here can read a line the host has not
 written yet.
 
 **Claude Code's PowerShell tool asks for approval every time.** The skill
@@ -651,8 +651,8 @@ Code's own documentation: the rendered command is a compound statement, and
 nothing says whether the assignment in it needs a rule of its own, nor how the
 call operator's invocation is canonicalized before matching. A rule written
 from a guess would very likely never match, which is worse than none — it
-would look installed while every search still prompted. So none is written
-(dropin-miner#77). Where Git for Windows is present, a search Claude Code sends through
+would look installed while every search still prompted. So none is written.
+Where Git for Windows is present, a search Claude Code sends through
 its Bash tool is covered by the rules that are written; which tool it uses is
 the model's choice per call, not something this client can set.
 
@@ -662,7 +662,7 @@ current skill, a non-ASCII query reached the router intact under both terminal
 profiles (two request ids checked in the router console). Once, on Cursor
 3.20.21 on 2026-09-18 under a PowerShell profile, the router stored such a
 query double-encoded, so the search quietly answered a different question
-rather than failing. A Git Bash terminal profile was never affected (dropin-miner#117). To
+rather than failing. A Git Bash terminal profile was never affected. To
 rule it out, set Cursor's `terminal.integrated.defaultProfile.windows` to Git
 Bash, or keep queries to ASCII.
 
@@ -673,8 +673,7 @@ a PowerShell script of its own, which pipes the hook's payload in through
 `& {`; the agent reports the hook as blocked and rejects the tool call. No form of
 this client's own command makes Cursor's wrapper valid bash. The Cursor editor
 is unaffected, and so is the command-line agent launched from PowerShell,
-which is the workaround. Reported to Cursor (forum thread 172789); tracked in
-dropin-miner#101.
+which is the workaround. Reported to Cursor (forum thread 172789).
 
 ## Upgrading
 
@@ -835,7 +834,7 @@ otherwise setup says what it left.
 
 ## License
 
-Apache-2.0.
+Apache-2.0. To report a security vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## The npm wrapper
 
