@@ -1,11 +1,13 @@
 # AGENTS.md — jevlin
 
-Agent instructions for the Jevlin drop-in mining client. Loaded every session.
+Agent instructions for jevlin: web search for coding agents, with mining rewards for a
+participant who opts in. Loaded every session.
 
 ## What this is
-jevlin is the **launch client** for Twilight MINIS: a **no-daemon** Go CLI a coding agent
-shells out to (`jevlin search …`) plus a lifecycle hook. Between calls nothing runs — no
-reverse proxy, no resident process. It earns by capturing each provider call's **event id**
+jevlin is **web search for coding agents**: a **no-daemon** Go CLI a coding agent shells out
+to (`jevlin search …`) plus a lifecycle hook. Between calls nothing runs — no reverse proxy,
+no resident process. Mining is opt-in: for a participant who turns it on, it is the client for
+Twilight MINIS, and it earns by capturing each provider call's **event id**
 (`request_id` for search, `generation_id` for OpenRouter) and submitting it to the Authorization
 Server (AS), which **reconciles against the provider** — the client never self-reports volume. It
 holds participant secrets on the participant's own machine: OAuth refresh tokens + a DPoP key, a
@@ -622,5 +624,23 @@ each line names the file that owns the rule and the test that proves it.
   Windows environment broadcast must hand `SendMessageTimeoutW` a string's address;
   `TestOnlyTheEnvironmentBroadcastImportsUnsafe` fails on any other import, so a second use is an
   exception argued in review, never a quiet import.
+- **Tests never contact a real host.** The router, the platform and the AS are `httptest`
+  stubs on loopback, in every test. A test that reaches a real service passes or fails with
+  that service's state rather than the code's, and sends whatever it carries to a host that
+  keeps it. The PR template asks about it; `internal/networkfence`'s `Guard`, called from the
+  `TestMain` of every package whose tests build a network client, refuses any non-loopback
+  dial, so a test that tries fails rather than connects.
+- **A reviewed commit is never amended or rebased.** A correction is a new commit that says
+  what it corrects, so a review always has a fixed object: the head a reviewer examined is
+  still in the history, and what changed since is exactly the commits after it.
+- **Human documents carry no issue or version numbers from the predecessor project.** A reader
+  of a README, a guide or a template cannot open an issue in the repository this one was
+  imported from, or place one of its release numbers, so the document states the rule on its
+  own. Code comments may keep such an issue reference where the history explains the code,
+  because the reader of a comment is the one who can follow it.
+- **`npm/package.json`'s version and `CHANGELOG.md`'s release headings move only in a release
+  PR**, so the commit to tag is unambiguous: the one where the version, the heading and the
+  tag agree. Between releases a change a participant should hear about may add a bullet under
+  `## Unreleased`, which the release PR turns into its own heading.
 - Keep diffs scoped. **Don't copy a rule you can't explain** — an inherited rule without its argument is
   one the next person deletes.
