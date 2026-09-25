@@ -18,7 +18,8 @@ all; the AS verifies with its own operator credential.
 
 ## Authority — the protocol is owned upstream, not here
 The AS↔client wire contract, source profiles, and fixture corpus are owned in
-`tokendrop-auth-server-design` (`docs/spec/`, `docs/wire-fixtures/`, checksum-mirrored here under
+`tokendrop-auth-server-design` (`tokendrop-auth-server-design/docs/spec/`,
+`tokendrop-auth-server-design/docs/wire-fixtures/`, checksum-mirrored here under
 `testdata/fixtures/`). **Conform upward.** A frozen requirement that looks wrong is a **spec
 escalation** to the design side — never a local reading chosen because it's easier to build, never
 an edit to a mirrored fixture. `pkg/` is the **shared protocol implementation, owned by this repo**
@@ -54,7 +55,7 @@ govulncheck.
 3. **Every credential- or key-bearing `http.Client` has an explicit redirect policy.** No bare
    client on `net/http`'s default (follow-10, body replayed on 307/308). Same-origin bounded
    (`auth.SameOriginRedirects`) or refuse (`http.ErrUseLastResponse`) — per client; the forbidden
-   state is *not choosing*. Enforced module-wide by `boundary_test.go`, which walks every
+   state is *not choosing*. Enforced module-wide by `cmd/jevlin/boundary_test.go`, which walks every
    `http.Client{}` construction rather than trusting a package-scoped review: `credentials.go`'s
    login probe sends the participant's sr- key as a bearer credential to the router, outside the
    scope a review of "the clients that carry a credential to the AS" would enumerate.
@@ -83,7 +84,7 @@ govulncheck.
    regenerated on retry.
 8. **`pkg/` MUST NOT import `cmd/`.** Keeping `pkg/` wrapper-agnostic is what makes it importable and
    is why this repo owns it and can hand it back to the proxy by import, not copy. Enforced by
-   `boundary_test.go`.
+   `cmd/jevlin/boundary_test.go`.
 9. **The chain SDK module tree is banned.** The client hand-builds the protobuf messages a payout
    needs rather than importing the Cosmos SDK — a lean binary shipped to users must not pull the
    SDK's module tree. `go.mod` carries no cosmos-sdk/cometbft dependency. Enforced by
@@ -185,7 +186,9 @@ govulncheck.
 
 ## Subsystems and where their rules live
 A subsystem's authority is one file, and a subsystem nobody has watched fail is a hypothesis — so
-each line names the file that owns the rule and the test that proves it.
+each line names the file that owns the rule and the test that proves it. Where a participant can
+read about the behaviour, the line ends with a pointer to that section of `docs/guide.md`,
+`docs/agents.md` or `docs/reference.md`, and a change to the behaviour updates that section too.
 
 - **The mining decision and the health records** — `pkg/auth/mining_state.go` owns the four states
   and what makes one degraded; `pkg/auth/health.go` owns the three components and the closed reason
@@ -290,9 +293,9 @@ each line names the file that owns the rule and the test that proves it.
   already names the command, so the paste advice never lands silently beside a live hook.
   `hermes_own_entry_test.go` pairs each removed shape with neighbors one step away that must come
   back byte-identical, and takes its command from a real install rather than a typed string;
-  `testdata/hermes/*.resaved.yaml` is the real output of Hermes' dumper (`resave.py`), never typed;
+  `cmd/jevlin/testdata/hermes/*.resaved.yaml` is the real output of Hermes' dumper (`resave.py`), never typed;
   and `hermes_differential_test.go` runs 2,875 generated files through the real uninstall, with
-  `testdata/hermes/oracle.py` to ask PyYAML what each meant before and after — the only judge of
+  `cmd/jevlin/testdata/hermes/oracle.py` to ask PyYAML what each meant before and after — the only judge of
   a by-line YAML edit that is not the code that made it.
 - **What the client writes into a participant's files** — `cmd/jevlin/setup_config.go`
   renders `jevlin.toml`, fresh and migrated; `agents.go`, `setup_env.go` and
@@ -303,6 +306,7 @@ each line names the file that owns the rule and the test that proves it.
   `generated_config_ascii_test.go` renders each artifact from ASCII inputs and refuses a byte
   above 0x7F — from ASCII inputs, because a participant whose home is `C:\Users\José` is not
   this client's doing.
+  For participants: [reference, Config](docs/reference.md#config).
 - **What a destructive run may leave behind** — `cmd/jevlin/lifecycle.go` owns the
   exclusion: which operation locks it takes, which of those files it created, and the rule that
   `release` removes exactly those and only when the operation never proceeded (`proceeded()`).
@@ -345,11 +349,13 @@ each line names the file that owns the rule and the test that proves it.
   `search_machine.go` owns search's classification; `machine.go` owns the header, the action set
   and the exit/status correspondence; `report_json.go` owns `status`/`doctor`/`connect` JSON.
   `search_protocol_test.go` and `report_json_test.go` guard them.
+  For participants: [reference, The envelope](docs/reference.md#the-envelope).
 - **The trace bridge** — `agent_trace_common.js` owns the pipeline and is spliced into both
   JavaScript hosts (`opencode_plugin.js`, `pi_extension.ts`) by `renderAgentScript`;
   `hermes_hook.go` is Hermes' own, and sends less because its host payload carries less.
   `trace_boundaries_test.go`'s `TestEveryJSHostRendersTheSharedTraceSource` keeps the splice
   honest; `pi_extension_test.go` and `hermes_hook_test.go` guard the two adapters.
+  For participants: [reference, The trace](docs/reference.md#the-trace).
 - **Who is calling a Claude-format hook** — `hook.go` owns it: `claudeEntryEvent` names the five
   entry points `agents install` writes for Claude Code and the event each is installed under, and
   `runByAnotherHost` decides from the **payload**, never the environment. Cursor loads
@@ -358,7 +364,7 @@ each line names the file that owns the rule and the test that proves it.
   nothing written, nothing spawned, nothing printed and exit 0 — one flush per Cursor turn
   instead of two, and no Cursor command rewritten with a `claude-code` bridge. A payload that
   names no event is not evidence and is served as before. The three real Cursor payloads are in
-  `testdata/hook/`. `hook_caller_test.go`'s
+  `cmd/jevlin/testdata/hook/`. `hook_caller_test.go`'s
   `TestOneCursorEventStartsOneFlushWithBothHostsInstalled` is the double flush,
   `TestLineageStandsDownForCursorWhateverTheToolName` holds the gate to the payload rather than
   the tool name, and `TestTheCallerGateNamesExactlyTheEventsTheInstallWrites` holds the event table to
@@ -390,6 +396,7 @@ each line names the file that owns the rule and the test that proves it.
   `TestSetupFilesNeverImportOSExec` keeps setup from running a process. The package's
   `TestMain` (`testmain_test.go`) refuses to run any test unless `os.UserConfigDir()` and
   the home directory resolve under a temporary test root.
+  For participants: [guide, Setup](docs/guide.md#setup).
 - **`doctor`'s probe** — `doctor.go` owns the one bounded local probe operation (it may create
   the intake directory, publishes at most one inert non-`.json` file there, then attempts
   cleanup — three filesystem operations, each reported separately, not "one write") and the
@@ -397,6 +404,7 @@ each line names the file that owns the rule and the test that proves it.
   creates no state it was only asked to diagnose; `doctor_recording_test.go` proves the probe's
   every failure stage is reported and that `recording` never turns a heuristic into a verdict
   of NO.
+  For participants: [reference, Doctor's checks](docs/reference.md#doctors-checks).
 - **The install registry** — `targets.go` owns the interface, the kinds, the views and the
   slice; `agents.go` owns plan execution; the goldens prove a target's plan cannot drift
   silently, and the structural test proves the public ID set. `Detect` answers with **the
@@ -423,6 +431,7 @@ each line names the file that owns the rule and the test that proves it.
   editions through `-EncodedCommand`, `cmd`, and Hermes' own splitter — against a test build
   with loopback-only stubs, and compares the query the router received with the one that was
   sent.
+  For participants: [agents, one section per host](docs/agents.md).
 - **Lifecycle coordination** — `cmd/jevlin/lifecycle.go` owns the gate `H.lifecycle.lock`
   (a sibling of the installation, never inside it and never deleted), the one lock order
   (gate → `setup.lock` → `connect.lock` → `flush.lock`; for `uninstall -binary` the same sequence
@@ -510,6 +519,7 @@ each line names the file that owns the rule and the test that proves it.
   never reaches its removal. Both halves are asserted, because either alone passes while the
   invariant is broken — and breaking it leaves a hook file of ours behind running a binary that
   is gone.
+  For participants: [guide, Removing it and coming back](docs/guide.md#removing-it-and-coming-back).
 
 - **Replacement and rollback** — `internal/selfupdate/replace.go` owns both transactions: on POSIX
   a durable same-directory copy, the candidate renamed over the binary, the canonical path run and
@@ -549,6 +559,7 @@ each line names the file that owns the rule and the test that proves it.
   `rename_windows_test.go` for a real forced hold on the Windows runners, which CI runs without
   `-v` — to see them run, push a throwaway branch with a verbose step as a draft PR and close it
   unmerged).
+  For participants: [guide, Upgrading](docs/guide.md#upgrading).
 
 ## Testing discipline — learned the hard way; hold them
 - **A test's name is not its assertion.** A green test can encode the bug.
@@ -573,11 +584,11 @@ each line names the file that owns the rule and the test that proves it.
 - **Scope the search wide before trusting a targeted fix.** `credentials.go`'s bare client (invariant
   3) survived a redirect-guard review aimed at the AS-facing clients because that review's scope was
   "the clients that carry a credential to the AS" — true, but too narrow; the login probe carries a
-  credential to the *router*. The module-wide `boundary_test.go` sweep found it where the targeted
+  credential to the *router*. The module-wide `cmd/jevlin/boundary_test.go` sweep found it where the targeted
   review could not, on the first run. Prefer a structural, scope-agnostic guard over a review's
   enumerated list whenever the two disagree about where the boundary is.
 
-## Import boundaries (`boundary_test.go`)
+## Import boundaries (`cmd/jevlin/boundary_test.go`)
 - `pkg/` ⊄ `cmd/` (invariant 8): the `cmd/` root may reach a `pkg/` package's dependency graph, but no
   `pkg/` code imports the wrapper.
 - The mining path (`flush`, `driver`, `collector`) never dials the router and is never on the search
@@ -610,10 +621,13 @@ each line names the file that owns the rule and the test that proves it.
   a fenced block and the code named (`flushStampPath`, `miner.go`), `**Likely cause.**` where there
   is one, `**Why it matters.**` in the participant's terms, and `**Expected.**`, which is what the
   fixer implements against. It closes with `Severity:` — `cosmetic`, `minor` or `must-fix` — and the
-  path it is on, because that is what triage sorts by. The GitHub forms ask for the same things in
-  the same order for someone filing from a browser; `gh issue create` renders no form, so an issue
-  filed that way carries the shape by hand and passes `--label bug` or `--label enhancement`, which
-  the form would otherwise have applied.
+  path it is on, because that is what triage sorts by. Someone filing from a browser uses one of
+  the two forms under `.github/ISSUE_TEMPLATE/`: `bug_report.yml` asks for the same things, adds
+  steps to reproduce and asks for the expected behavior before the likely cause, and applies
+  `bug`; `feature_request.yml` has its own shape (motivation, proposal, alternatives) and applies
+  `enhancement`. `gh issue create` renders neither form, so an issue filed that way carries the
+  shape by hand and passes `--label bug` or `--label enhancement`, the label the form would have
+  applied.
 - The flow: bug and feature work starts from an issue where one applies — release-only work and
   documentation maintenance need not invent one; branch from `main` as it stands, never from an
   unmerged branch; open a PR with the template filled in; all eight CI checks green (the `test`
