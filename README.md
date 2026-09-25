@@ -600,7 +600,7 @@ normal cross-process refresh lock.
 
 ```bash
 make build      # bin/jevlin
-make verify     # build, test, race, vet (incl. Windows), lint, vuln, tidy, cross-compile
+make verify     # build, test, race, vet and lint (each incl. Windows), vuln, tidy, cross-compile
 ```
 
 Go 1.25 or newer; tests require a modern Node.js runtime capable of executing

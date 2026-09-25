@@ -61,6 +61,18 @@ jobs:
         with:
           # v2.x is required for Go 1.25; .golangci.yml is v2 format.
           version: v2.12.2
+      # The same lint for the Windows build, as a second step of this job so the required check
+      # names do not change. The runner is Linux, so without it a finding in a file built only
+      # for Windows is never linted. The action again rather than `make lint-windows`: the
+      # action installs golangci-lint into its tool cache and does not put it on PATH.
+      - name: golangci-lint (GOOS=windows)
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        env:
+          GOOS: windows
+          GOARCH: amd64
+        with:
+          version: v2.12.2
+          args: ./...
   vuln:
     name: govulncheck
     runs-on: ubuntu-latest

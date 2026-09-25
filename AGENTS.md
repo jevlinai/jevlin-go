@@ -32,7 +32,7 @@ mirrored there — not owned here either). `pkg/platform` conforms to it the sam
 conforms to the AS contract: implementer here, authority elsewhere.
 
 ## The verify loop
-`make verify` = `build test race vet lint vuln tidy cross`. **Green before every commit.** `lint`
+`make verify` = `build test race vet lint lint-windows vuln tidy cross`. **Green before every commit.** `lint`
 is golangci-lint v2 (gosec, misspell locale US, unconvert, depguard, gofmt, goimports); `vuln` is
 govulncheck.
 
