@@ -267,8 +267,11 @@ The text is scrubbed before it is cut, and an entry too large to scrub whole is 
 Over 48 KiB, `history` is dropped; an envelope still too large is not sent. It travels
 base64url-encoded in `JEVLIN_TRACE_BRIDGE`, written in the syntax of the shell that runs the
 command, and only inside the search request. With no hook, a search carries a hashed per-shell
-identity. The trace is unauthenticated metadata: nothing treats it as proof of origin.
-`JEVLIN_TRACE=off` sends none.
+identity. The hashed `session_id` is also mirrored as the request's own top-level `session_id`
+and `X-Session-Id` header — the router groups quick reformulations by it there, and reads the
+trajectory from the envelope; the same identifier in both places, sent only while an envelope
+rides, and dropped with the envelope on the one compatibility retry. The trace is
+unauthenticated metadata: nothing treats it as proof of origin. `JEVLIN_TRACE=off` sends none.
 
 ## Security notes
 

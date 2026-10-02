@@ -513,6 +513,17 @@ func performSearch(ctx context.Context, now func() time.Time, call searchCall) s
 	out := searchOutcome{Traced: call.Trace != nil}
 	if out.Traced {
 		body["trace"] = call.Trace
+		// The router reads session identity in two places: trace.session_id
+		// threads the console's Trajectories view, and a top-level
+		// session_id (mirrored into X-Session-Id by postSearch) feeds its
+		// live reformulation tracker — "put the same id in both to get
+		// both" (the router's skill file). The mirror is the same hashed id
+		// the envelope already carries, so nothing new leaves the machine,
+		// and it exists only while an envelope rides: JEVLIN_TRACE=off
+		// stops both together.
+		if call.Trace.SessionID != "" {
+			body["session_id"] = call.Trace.SessionID
+		}
 	}
 
 	// CheckRedirect: this request carries the participant's sr- key in
@@ -540,7 +551,11 @@ func performSearch(ctx context.Context, now func() time.Time, call searchCall) s
 		// accept the field. One retry without it, on the SAME ctx, so the
 		// fallback gets only what is left of the original budget. Never
 		// recursive: this is the only place a second POST is issued.
+		// The session mirror goes with the trace: a router old enough to
+		// refuse the trace field predates the top-level session_id too,
+		// and this retry exists exactly for those routers.
 		delete(body, "trace")
+		delete(body, "session_id")
 		out.Retried = true
 		attempt, err = postSearch(ctx, client, call, body)
 		out.Attempts++
@@ -630,6 +645,12 @@ func postSearch(ctx context.Context, client *http.Client, call searchCall, body 
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", searchUserAgent+"/"+strings.TrimPrefix(buildVersion(), "v"))
 	req.Header.Set("Authorization", "Bearer "+call.Key)
+	if sid, ok := body["session_id"].(string); ok && sid != "" {
+		// Read off the body, not off call.Trace, so the header cannot
+		// outlive the field: the trace-compatibility retry deletes the
+		// key, and the header must disappear with it.
+		req.Header.Set("X-Session-Id", sid)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return routerAttempt{}, err
