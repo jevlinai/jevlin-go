@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"os/exec"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -115,6 +116,73 @@ func TestBridgeLeavesWhatItCannotProveStandalone(t *testing.T) {
 	}
 }
 
+// The POSIX prefix is grammar: it binds to the first simple command and the
+// shell rejects it before a compound one. A bridge is therefore written only
+// when that first simple command is provably the search; every other shape
+// is left byte-identical, because a search that loses its bridge still runs
+// while a command broken by a prefix does not (observed live: a for-loop
+// died on `V=x for`, and `cd … && jevlin search` handed the bridge to cd).
+func TestThePOSIXPrefixBindsToTheSearchOrStandsDown(t *testing.T) {
+	const search = "jevlin search --stdin"
+	for name, cmd := range map[string]string{
+		"plain":                   search,
+		"leading spaces":          "   " + search,
+		"quoted path":             `'/opt/tool/bin/jevlin' search -config '/tmp/a.toml' --stdin < q.json`,
+		"leads a pipeline":        search + " | head -c 100",
+		"leads a list":            search + " && echo done",
+		"leading assignment":      "FOO=1 " + search,
+		"two leading assignments": "FOO=1 BAR=x2 " + search,
+	} {
+		t.Run("rewritten/"+name, func(t *testing.T) {
+			got, ok := withTraceBridge(shellPOSIX, "OURS", cmd)
+			if !ok {
+				t.Fatalf("stood down for %q", cmd)
+			}
+			if !strings.HasPrefix(got, bridgeEnv+"=OURS ") {
+				t.Fatalf("no leading bridge: %q", got)
+			}
+		})
+	}
+	for name, cmd := range map[string]string{
+		"for loop":                `for q in a b; do ` + search + `; done`,
+		"while loop":              `while read -r q; do ` + search + `; done < qs.txt`,
+		"if statement":            `if true; then ` + search + `; fi`,
+		"subshell":                `(` + search + `)`,
+		"brace group":             `{ ` + search + `; }`,
+		"after cd":                `cd /tmp && ` + search,
+		"second in a pipeline":    `echo '{"version":1}' | ` + search,
+		"after a semicolon":       `true; ` + search,
+		"quoted assignment value": `FOO='a b' ` + search,
+	} {
+		t.Run("left/"+name, func(t *testing.T) {
+			got, ok := withTraceBridge(shellPOSIX, "OURS", cmd)
+			if ok {
+				t.Fatalf("rewrote a command the prefix cannot reach the search in:\n%s", got)
+			}
+			if got != cmd {
+				t.Fatalf("the command was changed anyway:\n got %q\nwant %q", got, cmd)
+			}
+		})
+	}
+	// The PowerShell form is a statement sequence and $env: is process-wide,
+	// so a compound statement keeps its bridge there.
+	if _, ok := withTraceBridge(shellPowerShell, "OURS", "foreach ($q in 1,2) { "+search+" }"); !ok {
+		t.Fatal("the PowerShell arm stood down for a compound statement it can carry")
+	}
+}
+
+// The two leads guards are one regex, byte for byte, so the Go hook and the
+// JS adapters cannot drift on WHERE a prefix is allowed to land.
+func TestTheLeadsGuardsAreOneRegex(t *testing.T) {
+	m := regexp.MustCompile(`SEARCH_LEADS_RE\s*=\s*/(.*?)/\n`).FindStringSubmatch(agentTraceCommonJS)
+	if len(m) != 2 {
+		t.Fatal("could not find SEARCH_LEADS_RE in the shared trace source")
+	}
+	if m[1] != posixSearchLeadsRe.String() {
+		t.Fatalf("the leads guards disagree:\n  js %s\n  go %s", m[1], posixSearchLeadsRe.String())
+	}
+}
+
 // Claude Code's payload names the tool, and the tool decides the syntax.
 func TestBridgeShellFollowsTheToolName(t *testing.T) {
 	for name, want := range map[string]shellKind{"Bash": shellPOSIX, "bash": shellPOSIX, "PowerShell": shellPowerShell, "": shellPOSIX} {
@@ -150,6 +218,12 @@ func TestBridgeGuardsAgree(t *testing.T) {
 		"two foreign bridges":    {bridgeEnv + "=a " + bridgeEnv + "=b " + search, shellPOSIX},
 		"bridge inside the body": {search + " <<'JSON'\n{\"q\":\"" + bridgeEnv + "=x\"}\nJSON", shellPOSIX},
 		"bridge mid-command":     {search + " ; " + bridgeEnv + "=x", shellPOSIX},
+		"compound command":       {"for q in a b; do " + search + "; done", shellPOSIX},
+		"search after cd":        {"cd /tmp && " + search, shellPOSIX},
+		"search second in pipe":  {"echo x | " + search, shellPOSIX},
+		"search leads a pipe":    {search + " | head", shellPOSIX},
+		"leading assignment":     {"FOO=1 " + search, shellPOSIX},
+		"powershell compound":    {"foreach ($q in 1,2) { " + search + " }", shellPowerShell},
 	}
 	input := map[string]map[string]string{}
 	for name, c := range cases {
