@@ -51,6 +51,7 @@ const (
 	codeInvalidDomainFilter = "invalid_domain_filter"
 	codeInvalidMaxResults   = "invalid_max_results"
 	codeInvalidView         = "invalid_view"
+	codeInvalidProviders    = "invalid_providers"
 )
 
 // inputError is a local refusal with a stable machine code. It is a type
@@ -74,6 +75,7 @@ type machineSearchRequest struct {
 	recency      *string
 	domainFilter []string
 	maxResults   *int
+	providers    []string
 	// view is "" (absent, meaning "full") or the caller's validated
 	// choice of "full" or "merged" — never any other string, since
 	// validateView refuses anything else before this is ever set.
@@ -94,6 +96,7 @@ type wireSearchRequest struct {
 	Recency      json.RawMessage `json:"recency"`
 	DomainFilter json.RawMessage `json:"domain_filter"`
 	MaxResults   json.RawMessage `json:"max_results"`
+	Providers    json.RawMessage `json:"providers"`
 	View         json.RawMessage `json:"view"`
 }
 
@@ -180,6 +183,13 @@ func decodeMachineSearchRequest(r io.Reader) (machineSearchRequest, error) {
 		}
 		req.maxResults = &maxResults
 	}
+	if len(wire.Providers) > 0 {
+		providers, err := validateProviders(wire.Providers)
+		if err != nil {
+			return machineSearchRequest{}, err
+		}
+		req.providers = providers
+	}
 	if len(wire.View) > 0 {
 		view, err := validateView(wire.View)
 		if err != nil {
@@ -227,6 +237,42 @@ func validateRecency(raw json.RawMessage) (string, *inputError) {
 // domainFilterMax is the router's own cap on the "domain_filter" array,
 // mirrored here so an oversized list costs the caller no router call.
 const domainFilterMax = 16
+
+// providersMax matches domainFilterMax: the router's own skill file names
+// about fifteen arms, and a list longer than every arm that exists is a
+// caller mistake, not a fan-out.
+const providersMax = 16
+
+// validateProviders mirrors validateDomainFilter's shape rules: an
+// explicit null or [] is refused rather than guessed at, and each entry
+// must look like a provider name — the code-like charset the router's own
+// arm names use (exa, parallel-search, pplx-agent), never whitespace or a
+// control character. An unknown name is deliberately NOT refused here:
+// the router owns its provider list, and a name this build predates must
+// reach it rather than be vetoed by a stale local copy.
+func validateProviders(raw json.RawMessage) ([]string, *inputError) {
+	if isJSONNull(raw) {
+		return nil, inputErrorf(codeInvalidProviders, `"providers" must not be null`)
+	}
+	var names []string
+	if err := json.Unmarshal(raw, &names); err != nil {
+		return nil, inputErrorf(codeInvalidProviders, `"providers" must be an array of strings`)
+	}
+	if len(names) == 0 {
+		return nil, inputErrorf(codeInvalidProviders, `"providers" must not be empty`)
+	}
+	if len(names) > providersMax {
+		return nil, inputErrorf(codeInvalidProviders,
+			fmt.Sprintf(`"providers" accepts at most %d names`, providersMax))
+	}
+	for _, n := range names {
+		if _, ok := machineCodeLike(n); !ok {
+			return nil, inputErrorf(codeInvalidProviders,
+				fmt.Sprintf(`"providers" entry %q must be a provider name: letters, digits, '.', '_' or '-'`, n))
+		}
+	}
+	return names, nil
+}
 
 func validateDomainFilter(raw json.RawMessage) ([]string, *inputError) {
 	if isJSONNull(raw) {

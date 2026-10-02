@@ -41,6 +41,7 @@ list and needs no shell escaping. A malformed field answers `fix_input` before a
 | `recency` | `"day"`, `"week"`, `"month"` or `"year"`. A preference the router passes to its providers; check each citation if it must hold. |
 | `domain_filter` | Up to 16 bare hostnames. A preference, like `recency`. |
 | `max_results` | 1 to 25. A cap. |
+| `providers` | Up to 16 provider names: restrict the fan-out, or reach an extended arm that fires only when named. The router owns the list; an unknown name is its call. |
 | `view` | `"full"` (default) or `"merged"`, which drops the per-provider `candidates`. |
 
 ### The envelope

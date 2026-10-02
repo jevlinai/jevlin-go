@@ -130,11 +130,11 @@ type routerAttempt struct {
 	BodyErr error
 }
 
-// searchCall is everything one search sends. Recency, DomainFilter and
-// MaxResults are absent (nil) unless the --stdin caller supplied them:
-// the router accepts their absence as "use your default", and sending a
-// zeroed value instead would silently override that default with one
-// this client chose, not one the caller or the router asked for.
+// searchCall is everything one search sends. Recency, DomainFilter,
+// MaxResults and Providers are absent (nil) unless the --stdin caller
+// supplied them: the router accepts their absence as "use your default",
+// and sending a zeroed value instead would silently override that default
+// with one this client chose, not one the caller or the router asked for.
 type searchCall struct {
 	Endpoint     string
 	Key          string
@@ -143,6 +143,7 @@ type searchCall struct {
 	Recency      *string
 	DomainFilter []string
 	MaxResults   *int
+	Providers    []string
 	Trace        *traceEnvelope
 }
 
@@ -212,6 +213,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	var recency *string
 	var domainFilter []string
 	var maxResults *int
+	var providers []string
 	var view string
 	if machine {
 		// No positional query in machine mode: two sources for the same
@@ -236,6 +238,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		recency = req.recency
 		domainFilter = req.domainFilter
 		maxResults = req.maxResults
+		providers = req.providers
 		view = req.view
 	} else {
 		query = strings.TrimSpace(strings.Join(fs.Args(), " "))
@@ -317,6 +320,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		Recency:      recency,
 		DomainFilter: domainFilter,
 		MaxResults:   maxResults,
+		Providers:    providers,
 		Trace:        trace,
 	})
 	if out.Retried {
@@ -509,6 +513,9 @@ func performSearch(ctx context.Context, now func() time.Time, call searchCall) s
 	}
 	if call.MaxResults != nil {
 		body["max_results"] = *call.MaxResults
+	}
+	if call.Providers != nil {
+		body["providers"] = call.Providers
 	}
 	out := searchOutcome{Traced: call.Trace != nil}
 	if out.Traced {
