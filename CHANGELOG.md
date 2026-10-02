@@ -18,6 +18,13 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **A traced search names its session twice.** The hashed session id the trace
+  envelope already carried is now also sent as the request's top-level
+  `session_id` and `X-Session-Id` header, so the router can group quick
+  reformulations of one conversation's queries. Same identifier, no new content:
+  it is sent only while a trace envelope rides, and `JEVLIN_TRACE=off` still
+  sends none of it. `connect` also names the build (`jevlin/<version>`) when it
+  registers an agent.
 - **Installed through npm, or from a release archive.** The `install.sh`,
   `install.ps1` and `setup.sh` scripts are gone. Without Node, download the archive
   for your OS from the releases page, verify it against `checksums.txt`, put the
