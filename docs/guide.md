@@ -59,8 +59,12 @@ it then: search already works, and using an agent later resumes the claim on its
 record is rebuilt from the platform. If the platform no longer recognizes the key, `connect`
 stops, and `jevlin connect -force` replaces the credential: run it only on purpose. An
 unclaimed registration that expires is replaced by the next `jevlin connect` you run, changing
-only the platform agent and its key; a background resume never replaces one. A rebuilt
-registration with no link prints a one-line notice: wait for the claim or expiry, or `-force`.
+only the platform agent and its key; a background resume never replaces one. A lost claim link
+is replaced too: for a rebuilt registration that is still unclaimed, a foreground
+`jevlin connect` asks the platform for a fresh link and prints it — the old code is dead the
+moment a new one is minted, which is why only a connect you run does this, never a background
+resume. Where the platform cannot mint one, the old one-line notice remains: wait for the claim
+or expiry, or `-force`.
 
 `jevlin connect` also re-runs onboarding by hand. `jevlin mining disable` stops mining and
 revokes access at the rewards service; your approval on the platform is revoked only at its console.

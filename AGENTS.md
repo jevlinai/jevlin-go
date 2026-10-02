@@ -218,14 +218,18 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   test ran.
 - **The registration journal and the rebuild** — `cmd/jevlin/connect.go` owns the order
   (journal, publish, clear); `pkg/auth/store.go` owns the journal and the agent record;
-  `pkg/platform/client.go` owns `Register`, `Status` and `Me`. Its guards, in
+  `pkg/platform/client.go` owns `Register`, `Status`, `Me` and `ClaimCode`. Its guards, in
   `agent_onboarding_test.go`, named exactly because a trailing ellipsis is not a test:
   `TestPendingRegistrationRecoveryPublishesWithoutRegister` (the journal is finished, never
   re-registered), `TestConnectRebuildsClaimedRegistrationFromThePlatform` (the `/v1/agents/me`
   rebuild), `TestForegroundConnectReplacesExpiredRegistrationAndPropagatesNewIdentity` (the
-  no-flag replacement of a positively-verified expired identity) and
+  no-flag replacement of a positively-verified expired identity),
   `TestConnectRefusesCorruptRegistrationWithExistingPlatformCredential` (the refusal that
-  `-force` exists to override).
+  `-force` exists to override), and the claim-code re-mint pair —
+  `TestForegroundConnectMintsAFreshClaimLinkForALostOne` and `TestResumeNeverMintsAClaimLink`
+  (`remintClaimLink`: minting kills the old code, so only a deliberate foreground connect asks,
+  the fresh link is persisted before it is printed, and every failure is exactly the old
+  no-link dead end). For participants: [guide, The claim link](docs/guide.md#the-claim-link).
 - **The prompt rule** — `cmd/jevlin/prompt.go` owns what counts as an answer and the two
   readers that ask; every prompt in the binary goes through one of them.
   `prompt_abort_test.go` drives each real command to each real question, under both an interrupted
