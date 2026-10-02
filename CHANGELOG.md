@@ -18,6 +18,18 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **A lost claim link is replaced, not mourned.** For a registration rebuilt from
+  the platform that is still unclaimed with no claim link, a foreground
+  `jevlin connect` now asks the platform for a fresh link and prints it. The old
+  code is dead the moment a new one is minted, so only a connect you run does
+  this — never a background resume — and where the platform cannot mint one, the
+  old one-line notice remains.
+- **The search request reaches more of the router.** The `--stdin` request
+  accepts `providers` (up to 16 names, to trim the fan-out or reach an extended
+  arm that fires only when named), and `view: "merged"` now also travels to the
+  router, which adds its own `merged` and `indexes` to its raw answer. The
+  envelope's `merged` stays this client's own merge; the human form's
+  `-view merged` with `-format json` shows the router's.
 - **Installed through npm, or from a release archive.** The `install.sh`,
   `install.ps1` and `setup.sh` scripts are gone. Without Node, download the archive
   for your OS from the releases page, verify it against `checksums.txt`, put the
