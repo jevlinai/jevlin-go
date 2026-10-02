@@ -303,10 +303,12 @@ type AgentStatus struct {
 	// participant draw one share; only one holds a given epoch, so
 	// enabling mining on more than one is wasteful and noisy, not
 	// forbidden). Only the platform can know this — it sees every agent
-	// under the participant's org, which no single installation does —
-	// so this field does not exist in §5.2's literal spec text and is an
-	// assumption pending WP1 confirmation, flagged where it is consumed
-	// (cmd/jevlin/mining.go's askMiningQuestion).
+	// under the participant's org, which no single installation does.
+	// Originally assumed beyond §5.2's literal spec text; the router's
+	// published skill file (read 2026-10-02) documents
+	// participant_has_other_agent on the poll response with exactly this
+	// meaning — "the participant earns one share no matter how many of
+	// their agents enroll" — so the shape is confirmed.
 	ParticipantHasOtherMiningAgent bool
 	// ConsoleURL is the agent's project page on the platform, once
 	// claimed — search-router added this specifically so a re-approval
@@ -532,9 +534,11 @@ func (c *Client) Me(ctx context.Context, key string) (*AgentIdentity, error) {
 //
 // The response's token field name is not given literally in §5.3 (only
 // "the enrollment token exactly as the /mining page mints it today" is
-// specified); {"token": "..."} is assumed as the minimal natural shape,
-// matching how §5.1's response IS given literally. Confirm against WP1
-// once it lands.
+// specified); {"token": "..."} was assumed as the minimal natural shape,
+// and the router's published skill file (read 2026-10-02) confirms it
+// literally: {"token": "…", "slot": "…", "expires_at": "…"}. The two
+// extra fields are not read — the token is handed on whole, and slot is
+// what this client already asked for.
 func (c *Client) Enroll(ctx context.Context, agentID, key, slot string) (string, error) {
 	raw, err := json.Marshal(map[string]string{"slot": slot})
 	if err != nil {
@@ -581,10 +585,11 @@ func (c *Client) Enroll(ctx context.Context, agentID, key, slot string) (string,
 // RefusalError is a structured refusal from the platform's public
 // routes: a machine-readable code plus the message, so a caller can act
 // on WHICH refusal this is rather than parsing prose. The envelope
-// shape ({"error":{"code","message"}}) is assumed to match the AS's own
-// (pkg/auth's joinRefusal) since the design doc does not specify a
-// different one and this client already borrows an AS convention
-// elsewhere (auth.SameOriginRedirects).
+// shape ({"error":{"code","message"}}) was assumed to match the AS's
+// own (pkg/auth's joinRefusal); the router's published skill file (read
+// 2026-10-02) confirms it, and states the rule refusal() below already
+// applies: the same code is mirrored top-level, and a client branches
+// on the top-level code, never on the message.
 type RefusalError struct {
 	Status  int
 	Code    string
