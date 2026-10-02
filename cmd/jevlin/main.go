@@ -256,6 +256,14 @@ func dispatch(name string, args []string) int {
 	}
 }
 
+// clientIdentifier is the one spelling of "which build is speaking" sent
+// upstream: the User-Agent on every router call, and register's client
+// field. "jevlin/0.1.0" for a release, "jevlin/dev (abc123def456)" for a
+// local build — inside the router's 128-byte bound either way.
+func clientIdentifier() string {
+	return searchUserAgent + "/" + strings.TrimPrefix(buildVersion(), "v")
+}
+
 func buildVersion() string {
 	if version != "dev" {
 		return version

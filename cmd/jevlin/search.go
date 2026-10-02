@@ -643,7 +643,7 @@ func postSearch(ctx context.Context, client *http.Client, call searchCall, body 
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", searchUserAgent+"/"+strings.TrimPrefix(buildVersion(), "v"))
+	req.Header.Set("User-Agent", clientIdentifier())
 	req.Header.Set("Authorization", "Bearer "+call.Key)
 	if sid, ok := body["session_id"].(string); ok && sid != "" {
 		// Read off the body, not off call.Trace, so the header cannot

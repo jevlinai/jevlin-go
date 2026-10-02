@@ -151,16 +151,21 @@ type registerWireResponse struct {
 	Tier string `json:"tier"`
 }
 
-// Register calls POST /v1/agents/register. name and requestedScopes are
-// both optional; per §5.1, "a client that has nothing to say omits the
-// fields rather than inventing values" — so both are left out of the
-// request body entirely when empty, not sent as "" / [].
-// requestedScopes is a hint only (the claim page's pre-tick); it grants
-// nothing on its own.
-func (c *Client) Register(ctx context.Context, name string, requestedScopes []string) (*Registration, error) {
+// Register calls POST /v1/agents/register. name, client and
+// requestedScopes are all optional; per §5.1, "a client that has nothing
+// to say omits the fields rather than inventing values" — so each is
+// left out of the request body entirely when empty, not sent as "" / [].
+// client names the tool build speaking ("my-tool/1.0" in the router's
+// skill file, bounded there at 128 characters; the caller sends its
+// User-Agent spelling). requestedScopes is a hint only (the claim page's
+// pre-tick); it grants nothing on its own.
+func (c *Client) Register(ctx context.Context, name, client string, requestedScopes []string) (*Registration, error) {
 	body := map[string]any{}
 	if name != "" {
 		body["name"] = name
+	}
+	if client != "" {
+		body["client"] = client
 	}
 	if len(requestedScopes) > 0 {
 		body["requested_scopes"] = requestedScopes

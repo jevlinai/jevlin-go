@@ -2230,7 +2230,7 @@ func TestConnectRefusesCorruptRegistrationWithExistingPlatformCredential(t *test
 func registerAgent(t *testing.T, platform *stubPlatform) (agentID, key string) {
 	t.Helper()
 	c := platformapi.New(platform.srv.URL, platform.srv.URL)
-	reg, err := c.Register(context.Background(), "", nil)
+	reg, err := c.Register(context.Background(), "", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2912,7 +2912,7 @@ func TestPendingRegistrationRecoveryPublishesWithoutRegister(t *testing.T) {
 		t.Fatal(err)
 	}
 	client := platformapi.New(cfg.Platform.AgentsAPIURL, cfg.Platform.BaseURL)
-	fresh, err := client.Register(context.Background(), "journal-crash", nil)
+	fresh, err := client.Register(context.Background(), "journal-crash", "", nil)
 	if err != nil {
 		t.Fatalf("completed Register response: %v", err)
 	}
@@ -2963,7 +2963,7 @@ func TestPendingJournalRecoveryNeverCallsMeEvenWithACorruptRegistrationAndCreden
 	}
 
 	client := platformapi.New(cfg.Platform.AgentsAPIURL, cfg.Platform.BaseURL)
-	fresh, err := client.Register(context.Background(), "journal-plus-corrupt", nil)
+	fresh, err := client.Register(context.Background(), "journal-plus-corrupt", "", nil)
 	if err != nil {
 		t.Fatalf("completed Register response: %v", err)
 	}

@@ -94,7 +94,7 @@ func TestNetworkFenceCoversThePlatformClient(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), fencedCallTimeout)
 	defer cancel()
 	client := platform.New("https://"+fenceProbeHost, "https://"+fenceProbeHost)
-	_, err := client.Register(ctx, "network-fence-guard", []string{"credits"})
+	_, err := client.Register(ctx, "network-fence-guard", "", []string{"credits"})
 	assertRefused(t, err, fenceProbeHost+":443")
 }
 
