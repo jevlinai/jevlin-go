@@ -305,6 +305,24 @@ func TestMachineOptionsRoundTripIntoTheBody(t *testing.T) {
 			},
 		},
 		{
+			name:  "view merged travels to the router",
+			stdin: `{"version":1,"query":"q","view":"merged"}`,
+			check: func(t *testing.T, body map[string]any) {
+				if body["view"] != "merged" {
+					t.Errorf("view: %v", body)
+				}
+			},
+		},
+		{
+			name:  "view full is the client's own and never travels",
+			stdin: `{"version":1,"query":"q","view":"full"}`,
+			check: func(t *testing.T, body map[string]any) {
+				if _, ok := body["view"]; ok {
+					t.Errorf("view sent for the local default: %v", body)
+				}
+			},
+		},
+		{
 			name:  "every option together",
 			stdin: `{"version":1,"query":"q","tier":"balanced","recency":"day","domain_filter":["a.test"],"max_results":25,"providers":["exa"]}`,
 			check: func(t *testing.T, body map[string]any) {
@@ -325,7 +343,7 @@ func TestMachineOptionsRoundTripIntoTheBody(t *testing.T) {
 			name:  "none of the options: unchanged from today",
 			stdin: `{"version":1,"query":"q"}`,
 			check: func(t *testing.T, body map[string]any) {
-				for _, k := range []string{"tier", "recency", "domain_filter", "max_results", "providers"} {
+				for _, k := range []string{"tier", "recency", "domain_filter", "max_results", "providers", "view"} {
 					if _, ok := body[k]; ok {
 						t.Errorf("%s present in a version-1 request that only sent query: %v", k, body)
 					}

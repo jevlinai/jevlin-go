@@ -144,7 +144,12 @@ type searchCall struct {
 	DomainFilter []string
 	MaxResults   *int
 	Providers    []string
-	Trace        *traceEnvelope
+	// View is "" or "merged" — never "full". "full" is this client's own
+	// rendering default and not a value the router accepts; "merged" asks
+	// the router to add its own merged list and per-arm indexes to the
+	// response, and changes nothing else about how the search runs.
+	View  string
+	Trace *traceEnvelope
 }
 
 // searchOutcome is the structured result of running a search. Both
@@ -199,6 +204,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	cfgPath := fs.String("config", "", "path to TOML config file")
 	tier := fs.String("tier", "", "search tier accepted by the router, e.g. fast; empty = the router's default")
 	format := fs.String("format", "json", "output: json (the router's bytes, verbatim) or model (compact text for an agent)")
+	viewFlag := fs.String("view", "", `router view: "merged" adds the router's own cross-provider merged list and per-arm indexes to the raw response; empty or "full" asks for none`)
 	noFlush := fs.Bool("no-flush", false, "do not start a flush after this search")
 	timeout := fs.Duration("timeout", defaultSearchTimeout, "whole-search deadline, covering connect, headers, body and the one trace-compatibility retry")
 	fs.Bool("stdin", false, "read one version-1 JSON search request from stdin and answer with the machine envelope")
@@ -250,6 +256,11 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 			fmt.Fprintf(stderr, "jevlin search: -format must be json or model, not %q\n", *format)
 			return exitUsage
 		}
+		if *viewFlag != "" && *viewFlag != "full" && *viewFlag != "merged" {
+			fmt.Fprintf(stderr, "jevlin search: -view must be full or merged, not %q\n", *viewFlag)
+			return exitUsage
+		}
+		view = *viewFlag
 	}
 	// Refused rather than treated as "no limit": a zero or negative budget
 	// used to be the only state this command had, and restoring it by
@@ -312,6 +323,13 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		// same place the trace_unsupported retry below is reported.
 		fmt.Fprintln(stderr, "jevlin search: ignoring "+bridgeEnv+": this session's host declared the lineage file ("+lineageEnv+") as its trace channel, so a bridge here was written by something else")
 	}
+	// Only "merged" travels: it is the one view the router accepts, while
+	// "full" (explicit or defaulted) is this client's own rendering choice
+	// and would be refused upstream with a 400.
+	forwardView := ""
+	if view == "merged" {
+		forwardView = "merged"
+	}
 	out := performSearch(ctx, ops.now, searchCall{
 		Endpoint:     strings.TrimRight(cfg.Miner.RouterURL.String(), "/") + "/v1/search",
 		Key:          key,
@@ -321,6 +339,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		DomainFilter: domainFilter,
 		MaxResults:   maxResults,
 		Providers:    providers,
+		View:         forwardView,
 		Trace:        trace,
 	})
 	if out.Retried {
@@ -516,6 +535,9 @@ func performSearch(ctx context.Context, now func() time.Time, call searchCall) s
 	}
 	if call.Providers != nil {
 		body["providers"] = call.Providers
+	}
+	if call.View != "" {
+		body["view"] = call.View
 	}
 	out := searchOutcome{Traced: call.Trace != nil}
 	if out.Traced {
