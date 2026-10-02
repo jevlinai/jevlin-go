@@ -2526,6 +2526,39 @@ func TestForegroundConnectMintsAFreshClaimLinkForALostOne(t *testing.T) {
 	}
 }
 
+// The durable no-link state self-heals on a LATER foreground run too: the
+// dead end is re-tried at the print site, not only during the rebuild, so
+// a platform that gains the route after the loss still hands the
+// participant a working link without -force.
+func TestALaterForegroundConnectMintsWhenThePlatformGainsTheRoute(t *testing.T) {
+	withShortConnectTimings(t)
+	platform := newStubPlatform(t)
+	platform.setMeOmitsClaimFields(true)
+	platform.setClaimCodeRouteDisabled(true)
+	cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
+	cfg := mustLoadConfig(t, cfgPath)
+
+	agentID, key := registerAgent(t, platform)
+	setupLostRegistration(t, cfg, key, true)
+	if code, out, errOut := runConnect(t, cfgPath, nil); code != exitOK || !strings.Contains(out, "not retrievable") {
+		t.Fatalf("setup run: code=%d stdout=%q stderr=%s", code, out, errOut)
+	}
+
+	platform.setClaimCodeRouteDisabled(false)
+	code, out, errOut := runConnect(t, cfgPath, nil)
+	if code != exitOK {
+		t.Fatalf("connect exited %d, stderr=%s", code, errOut)
+	}
+	freshURL := platform.srv.URL + "/claim/MINT-01"
+	if !strings.Contains(out, "claim this agent:") || !strings.Contains(out, freshURL) {
+		t.Fatalf("the later run did not mint and print a fresh link: stdout=%q", out)
+	}
+	reg, ok := loadAgent(t, stateDir)
+	if !ok || reg.AgentID != agentID || reg.ClaimURL != freshURL {
+		t.Fatalf("the fresh link was not persisted: %+v ok=%v", reg, ok)
+	}
+}
+
 // Minting kills the old code, so only a deliberate foreground connect may
 // do it. A detached -resume against the same durable no-link state leaves
 // the route untouched even on a platform that has it.
