@@ -134,6 +134,41 @@ func TestLimitsRefusalsClassifyByStatusAndCode(t *testing.T) {
 	})
 }
 
+// A search's 402 names the one remedy that clears it, branched on the
+// router's own code; an unrecognized code keeps the bare status line.
+// The raw-router compatibility output and the exit class are untouched
+// either way.
+func TestASearch402NamesItsRemedy(t *testing.T) {
+	for _, tc := range []struct {
+		name, code, wantFragment string
+	}{
+		{"credits exhausted", "credits_exhausted", "out of credit"},
+		{"spend ceiling", "spend_ceiling", "jevlin limits"},
+		{"budget exceeded", "budget_exceeded", "cheaper -tier"},
+		{"unknown code keeps the bare line", "mystery_402", "HTTP 402\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := `{"error":"no","code":"` + tc.code + `"}`
+			_, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusPaymentRequired)
+				_, _ = w.Write([]byte(body))
+			})
+			h := fixedSearchOps(root)
+			code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "sr-fictional"},
+				"-config", cfg, "q")
+			if code != exitClientErr {
+				t.Fatalf("exit %d, want %d", code, exitClientErr)
+			}
+			if out != body {
+				t.Errorf("-format json no longer prints the router's bytes: %q", out)
+			}
+			if !strings.Contains(errOut, tc.wantFragment) {
+				t.Errorf("stderr %q missing %q", errOut, tc.wantFragment)
+			}
+		})
+	}
+}
+
 // dollars is exact integer arithmetic: never a float, at least two
 // decimals, trailing zeros beyond them trimmed.
 func TestDollarsRendersMicrosExactly(t *testing.T) {
