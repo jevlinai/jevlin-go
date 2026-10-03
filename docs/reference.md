@@ -18,6 +18,7 @@ Values to look up. Every flag is in `jevlin help` and `jevlin <command> -h`.
 | `status` | What this installation has and has not completed. `-json` for one envelope. |
 | `doctor` | Whether searches are recorded and earning, check by check. `-json` for one envelope. |
 | `earnings` | What the chain has paid to your payout address. |
+| `limits` | This key's spend caps and today's spend against the effective ceiling, read from the router. Reading spends nothing; setting caps is not built yet. `-json` for one envelope. |
 | `wallet init\|address\|register\|balance\|send` | The wallet setup made, or one you make here. |
 | `login`, `enroll`, `payout`, `join`, `provider` | The portal's older manual path. |
 | `version`, `help` | The version, and the full usage text. |
