@@ -450,6 +450,24 @@ func TestMinerAllowsPlainHTTPRouterURLOnLoopback(t *testing.T) {
 	}
 }
 
+// [miner] turn_end is off unless the config says otherwise: it sends
+// model-written text off the machine, and a default must not.
+func TestMinerTurnEndIsOffByDefault(t *testing.T) {
+	for body, want := range map[string]bool{
+		"[miner]\nrouter_url = \"http://127.0.0.1:8080\"\n":                   false,
+		"[miner]\nrouter_url = \"http://127.0.0.1:8080\"\nturn_end = false\n": false,
+		"[miner]\nrouter_url = \"http://127.0.0.1:8080\"\nturn_end = true\n":  true,
+	} {
+		cfg, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv)
+		if err != nil {
+			t.Fatalf("%q: %v", body, err)
+		}
+		if cfg.Miner.TurnEnd != want {
+			t.Errorf("%q: turn_end = %v, want %v", body, cfg.Miner.TurnEnd, want)
+		}
+	}
+}
+
 // [miner] enabled = true does not require [mining] enabled = true: setup
 // always writes [miner] enabled = true (router intake is configured
 // unconditionally) but not [mining] enabled = true — that is the mining

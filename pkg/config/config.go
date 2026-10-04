@@ -176,6 +176,10 @@ type Miner struct {
 	// (target, join, capability). Intake promotion and spool delivery run
 	// on every flush regardless.
 	FlushInterval time.Duration
+	// TurnEnd opts this installation in to reporting, when a turn that
+	// searched ends, the assistant's final message to the router. Off by
+	// default: it is model-written text leaving the machine.
+	TurnEnd bool
 }
 
 type Config struct {
@@ -279,6 +283,7 @@ type fileConfig struct {
 		IntakeDir     string   `toml:"intake_dir"`
 		SessionsDir   string   `toml:"sessions_dir"`
 		FlushInterval duration `toml:"flush_interval"`
+		TurnEnd       bool     `toml:"turn_end"`
 	} `toml:"miner"`
 	Platform struct {
 		BaseURL      string `toml:"base_url"`
@@ -462,6 +467,7 @@ type rawConfig struct {
 	minerIntakeDir     string
 	minerSessionsDir   string
 	minerFlushInterval time.Duration
+	minerTurnEnd       bool
 
 	platformBaseURL string
 	agentsAPIURL    string
@@ -606,6 +612,7 @@ func (r *rawConfig) applyBytes(source string, data []byte) error {
 		r.miningStateDir = f.Mining.StateDir
 	}
 	r.minerEnabled = f.Miner.Enabled
+	r.minerTurnEnd = f.Miner.TurnEnd
 	if f.Miner.RouterURL != "" {
 		r.minerRouterURL = f.Miner.RouterURL
 	}
@@ -779,6 +786,7 @@ func (r *rawConfig) finishMiner(upstream *url.URL, mining Mining) (Miner, error)
 		IntakeDir:     r.minerIntakeDir,
 		SessionsDir:   r.minerSessionsDir,
 		FlushInterval: r.minerFlushInterval,
+		TurnEnd:       r.minerTurnEnd,
 	}
 	if m.FlushInterval == 0 {
 		m.FlushInterval = 3 * time.Minute

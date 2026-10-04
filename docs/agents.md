@@ -38,6 +38,9 @@ skill renders. Otherwise every search waits for approval, and a headless session
 
 ### Known limits
 
+**The turn end needs Claude Code 2.1.196 or later.** Earlier versions give the hook no prompt id,
+so with `turn_end` on they send no final answer; searches are unaffected.
+
 **The sentence written just before a search does not travel.** Claude Code records a message
 after the hook runs, so narration in the same message as the search is not in the trace. An
 earlier message of the turn does travel, and the ids are correct either way.
