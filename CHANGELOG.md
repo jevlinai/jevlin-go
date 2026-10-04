@@ -18,6 +18,11 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **A subagent's searches name their parent.** Under Claude Code, a search made
+  by a subagent now carries `parent_session_id` in its trace: the hashed id of
+  the session that started it. The router could already tell that two sessions
+  searched during the same turn, but not which one delegated to the other. It is
+  an id, hashed like the rest; no agent name or task text is added.
 - **`jevlin limits` reads your spend caps.** The three caps and today's spend
   against the effective ceiling, straight from the router; reading spends
   nothing and works even at the ceiling. Setting caps is not built yet. A

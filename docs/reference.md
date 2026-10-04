@@ -258,7 +258,8 @@ degradation.
 |---|---|
 | `v` | `1`. |
 | `harness` | Which agent: `claude-code`, `cursor`, and so on. |
-| `session_id`, `turn_id`, `call_id` | The agent's ids, hashed with SHA-256 before they leave the machine. |
+| `session_id`, `turn_id`, `call_id` | The agent's ids, hashed with SHA-256 before they leave the machine. A subagent has a `session_id` of its own. |
+| `parent_session_id` | On a subagent's search only: the hashed `session_id` of the agent that started it. Claude Code only. |
 | `window` | Which context window of the session, after compactions. |
 | `seq` | A call counter. |
 | `history` | The assistant text before the search, scrubbed of secrets, last 32 KiB. |
