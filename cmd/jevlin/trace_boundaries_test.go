@@ -107,10 +107,17 @@ func TestOpencodeSubagentNamesItsParent(t *testing.T) {
  const input = JSON.parse(fs.readFileSync(0,'utf8'));
  const plugin = await import('data:text/javascript;base64,'+Buffer.from(input.plugin).toString('base64'));
  const sessions = {root:{id:'root'}, child:{id:'child', parentID:'root'}, self:{id:'self', parentID:'self'}};
- let gets = 0;
+ let gets = 0; let flaky = 0;
  const client = {session:{
   messages: async()=>({data:[]}),
-  get: async({path})=>{ gets++; if (path.id==='broken') throw new Error('unreadable'); return {data:sessions[path.id]}; },
+  get: async({path})=>{
+   gets++;
+   if (path.id==='broken') throw new Error('unreadable');
+   // opencode answers an HTTP error with {error} and no data, without throwing.
+   if (path.id==='flaky' && flaky++ === 0) return {error:{name:'UnknownError'}};
+   if (path.id==='flaky') return {data:{id:'flaky', parentID:'root'}};
+   return {data:sessions[path.id]};
+  },
  }};
  const hooks = await plugin.JevlinLineage({client});
  const search = async (sid) => {
@@ -125,6 +132,8 @@ func TestOpencodeSubagentNamesItsParent(t *testing.T) {
  result.gets_after_two_children = gets;
  result.self = await search('self');
  result.broken = await search('broken');
+ result.flaky_first = await search('flaky');
+ result.flaky_second = await search('flaky');
  await hooks.event({event:{type:'session.created', properties:{info:{id:'seen', parentID:'root'}}}});
  const before = gets;
  result.seen = await search('seen');
@@ -141,6 +150,7 @@ func TestOpencodeSubagentNamesItsParent(t *testing.T) {
 	}
 	var got struct {
 		Root, Child, ChildAgain, Self, Broken, Seen traceEnvelope
+		FlakyFirst, FlakySecond                     traceEnvelope
 		Gets                                        int `json:"gets_after_two_children"`
 		AskedForSeen                                int `json:"asked_for_seen"`
 	}
@@ -150,7 +160,7 @@ func TestOpencodeSubagentNamesItsParent(t *testing.T) {
 	}
 	for name, dst := range map[string]any{
 		"root": &got.Root, "child": &got.Child, "child_again": &got.ChildAgain, "self": &got.Self,
-		"broken": &got.Broken, "seen": &got.Seen, "gets_after_two_children": &got.Gets, "asked_for_seen": &got.AskedForSeen,
+		"broken": &got.Broken, "seen": &got.Seen, "flaky_first": &got.FlakyFirst, "flaky_second": &got.FlakySecond, "gets_after_two_children": &got.Gets, "asked_for_seen": &got.AskedForSeen,
 	} {
 		if err := json.Unmarshal(raw[name], dst); err != nil {
 			t.Fatalf("%s: %v", name, err)
@@ -174,6 +184,11 @@ func TestOpencodeSubagentNamesItsParent(t *testing.T) {
 	// Unreadable: the search still carries its trace, with no parent.
 	if got.Broken.SessionID != traceHash("broken") || got.Broken.ParentSessionID != "" {
 		t.Errorf("unreadable session: session=%q parent=%q", got.Broken.SessionID, got.Broken.ParentSessionID)
+	}
+	// An error answered without throwing is not "this session has no parent":
+	// that search goes out without one, and the next asks again and finds it.
+	if got.FlakyFirst.SessionID != traceHash("flaky") || got.FlakyFirst.ParentSessionID != "" || got.FlakySecond.ParentSessionID != parent {
+		t.Errorf("error response: first parent=%q, second parent=%q", got.FlakyFirst.ParentSessionID, got.FlakySecond.ParentSessionID)
 	}
 	if got.Seen.ParentSessionID != parent || got.AskedForSeen != 0 {
 		t.Errorf("session seen at creation: parent=%q, asked %d times", got.Seen.ParentSessionID, got.AskedForSeen)
