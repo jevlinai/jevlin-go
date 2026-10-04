@@ -323,6 +323,10 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		fmt.Fprintln(stderr, "jevlin search: the router answered "+traceUnsupportedCode+"; retrying once without the trace")
 	}
 
+	if out.ok() {
+		// The turn end is sent only for a turn in which a search was SERVED.
+		markTurnSearched(ops.hook, cfg.Miner, trace)
+	}
 	mining := recordSearchForMining(ops, cfg, out, *cfgPath, *noFlush, stderr)
 
 	// Independent of cfg.Miner.Enabled/-no-flush above: a search-only

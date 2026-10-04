@@ -214,7 +214,7 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | `state/` | Identity, authorization, the mining decision, health records, the flush stamp. | connect, flush | No: it is your registration. |
 | `intake/` | Served request ids, until a flush takes them. | search | No: unsent evidence. |
 | `spool/` | Evidence waiting for the rewards service to acknowledge it. | flush | No: unsent evidence. |
-| `sessions/` | Lineage files, one per workspace or Cursor conversation; with `turn_end` on, a turn's final answer for the moment before it is sent. | hooks | Yes, with no agent running; the hooks write them again. |
+| `sessions/` | Lineage files, one per workspace or Cursor conversation; with `turn_end` on, an empty mark per searched turn and a turn's final answer for the moment before it is sent. | hooks | Yes, with no agent running; the hooks write them again. |
 | `wallet/` | `wallet.key` (sealed), `wallet.pub`, `pending_tx.json` during a send. | wallet, setup | Never without the 24 words. |
 | `setup-env.json` | Windows only: what setup changed in your user environment. | setup | No; uninstall reverts from it. |
 
@@ -287,8 +287,10 @@ this carries what it concluded. When a turn ends, the agent's end-of-turn hook s
 | `final_text` | The assistant's last message of the turn, scrubbed of secrets, last 32 KiB. Only on a completed turn. |
 | `final_chars`, `truncated` | Its length before the cut, and whether it was cut. |
 
-Only for a turn in which jevlin searched; a turn with no search sends nothing. Never your prompt,
-and never a tool's input or output. The hook writes the record to an owner-only file in
+Only for a turn in which a jevlin search was served: `search` marks the turn after the router
+answers, so a search you refused, or one that failed, does not count, and a turn with no served
+search sends nothing. Only to the router `miner.router_url` names; without that line nothing is
+sent. Never your prompt, and never a tool's input or output. The hook writes the record to an owner-only file in
 `sessions/` and a detached `jevlin turn-end` sends it once and deletes the file, sent or not.
 `JEVLIN_TRACE=off` turns it off too. Claude Code (2.1.196 or later) and Cursor; other agents send
 none. A project set to retain no content keeps the status and not the text.

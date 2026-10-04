@@ -468,6 +468,25 @@ func TestMinerTurnEndIsOffByDefault(t *testing.T) {
 	}
 }
 
+// RouterConfigured tells a router the config names from the provider
+// upstream standing in for one.
+func TestMinerRouterConfigured(t *testing.T) {
+	named, _, err := Load([]string{"-config", writeTOML(t, "[miner]\nrouter_url = \"http://127.0.0.1:8080\"\n")}, noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !named.Miner.RouterConfigured || named.Miner.RouterURL == nil {
+		t.Errorf("a named router: configured=%v url=%v", named.Miner.RouterConfigured, named.Miner.RouterURL)
+	}
+	fallback, _, err := Load([]string{"-config", writeTOML(t, "[miner]\nturn_end = true\n")}, noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fallback.Miner.RouterConfigured {
+		t.Errorf("no miner.router_url, yet RouterConfigured; RouterURL = %v", fallback.Miner.RouterURL)
+	}
+}
+
 // [miner] enabled = true does not require [mining] enabled = true: setup
 // always writes [miner] enabled = true (router intake is configured
 // unconditionally) but not [mining] enabled = true — that is the mining

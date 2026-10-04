@@ -22,7 +22,8 @@ The first release replaces this heading with its own.
   in which jevlin searched ends, the assistant's last message is sent to the
   router so a session can be read from its searches to what they were for. Off
   by default. Scrubbed and capped like the trace; never your prompt, never a
-  tool's output; nothing for a turn with no search. Claude Code and Cursor.
+  tool's output; nothing for a turn with no served search, and nothing unless
+  `miner.router_url` names the router. Claude Code and Cursor.
 - **A subagent's searches name their parent.** Under Claude Code and opencode, a
   search made by a subagent now carries `parent_session_id` in its trace: the hashed id of
   the session that started it. The router could already tell that two sessions

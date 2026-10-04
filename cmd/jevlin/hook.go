@@ -819,13 +819,22 @@ func hookCursor(ops hookOps, hc hookContext, event string, payload []byte, stdou
 			return
 		}
 		p.Text = repairStoredText(p.Text, stderr)
-		update(func(l *lineageFile) { l.History = []traceHistory{{Role: "reasoning", Text: p.Text}} })
+		update(func(l *lineageFile) {
+			l.History = []traceHistory{{Role: "reasoning", Text: p.Text}}
+			l.AnswerTurnID = ""
+		})
 	case "afterAgentResponse":
 		if p.Text == "" {
 			return
 		}
 		p.Text = repairStoredText(p.Text, stderr)
-		update(func(l *lineageFile) { l.History = []traceHistory{{Role: "assistant", Text: p.Text}} })
+		update(func(l *lineageFile) {
+			l.History = []traceHistory{{Role: "assistant", Text: p.Text}}
+			l.AnswerTurnID = ""
+			if p.GenerationID != "" {
+				l.AnswerTurnID = traceHash(p.ConversationID + "|" + p.GenerationID)
+			}
+		})
 	case "preCompact":
 		update(func(l *lineageFile) {
 			n, _ := strconv.Atoi(l.Window)

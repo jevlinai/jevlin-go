@@ -14,8 +14,12 @@ package main
 // narrower than it sounds:
 //
 //   - opt-in, per installation; JEVLIN_TRACE=off also turns it off;
-//   - only for a turn that SEARCHED: a turn with no search of ours has
-//     nothing on the router to attach an answer to, and sends nothing;
+//   - only for a turn in which a search was SERVED: `jevlin search` marks the
+//     turn after the router answers. A search the model proposed and the
+//     user refused, or one that failed, marks nothing, and a turn with no
+//     mark sends nothing;
+//   - only to a router the config NAMES (miner.router_url). The provider
+//     upstream that stands in for it when it is absent is never sent this;
 //   - the same scrub and the same 32 KiB tail cap as trace history, applied
 //     before anything is written or sent;
 //   - only the assistant's last message — never the prompt, never a tool's
@@ -39,12 +43,19 @@ import (
 	"unicode/utf8"
 
 	"github.com/jevlinai/jevlin-go/pkg/auth"
+	"github.com/jevlinai/jevlin-go/pkg/config"
 	"github.com/jevlinai/jevlin-go/pkg/redact"
 )
 
 const (
 	turnEndTimeout = 10 * time.Second
 	turnEndSuffix  = ".turn-end.json"
+	// A mark that a search was served in a turn: an empty file named after
+	// the hashed turn id. Written by `search`, taken by the turn end.
+	turnSearchedSuffix = ".searched"
+	// A turn that is interrupted never ends, and its mark is never taken.
+	// Marks older than this are swept when the next one is written.
+	turnSearchedMaxAge = 24 * time.Hour
 	// The router's own vocabulary (POST /v1/turns).
 	turnCompleted   = "completed"
 	turnInterrupted = "interrupted"
@@ -88,6 +99,53 @@ func turnEndEnabled(ops hookOps, hc hookContext) bool {
 	return true
 }
 
+func turnSearchedPath(dir, turnID string) string {
+	return filepath.Join(dir, traceHash("turn-searched|"+turnID)+turnSearchedSuffix)
+}
+
+// markTurnSearched records that a search was served in the trace's turn. It
+// is the evidence the turn end asks for, and it is written only AFTER the
+// router answered: the lineage hook stamps a turn before the command runs,
+// which says a search was proposed, not that one happened. Best effort, and
+// nothing at all unless the installation opted in.
+func markTurnSearched(ops hookOps, m config.Miner, trace *traceEnvelope) {
+	if !m.TurnEnd || m.SessionsDir == "" || trace == nil || trace.TurnID == "" {
+		return
+	}
+	if err := ops.mkdirAll(m.SessionsDir, 0o700); err != nil {
+		return
+	}
+	_ = ops.writeFile(turnSearchedPath(m.SessionsDir, trace.TurnID), nil, 0o600)
+	sweepTurnMarks(m.SessionsDir, ops.now())
+}
+
+// sweepTurnMarks removes marks no turn end came for.
+func sweepTurnMarks(dir string, now time.Time) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), turnSearchedSuffix) {
+			continue
+		}
+		if info, err := e.Info(); err == nil && now.Sub(info.ModTime()) > turnSearchedMaxAge {
+			_ = os.Remove(filepath.Join(dir, e.Name()))
+		}
+	}
+}
+
+// takeTurnSearched reports whether a search was served in the turn, and
+// removes the mark: a turn ends once.
+func takeTurnSearched(ops hookOps, dir, turnID string) bool {
+	path := turnSearchedPath(dir, turnID)
+	if _, err := ops.readFile(path); err != nil {
+		return false
+	}
+	_ = ops.remove(path)
+	return true
+}
+
 // queueTurnEnd writes the record where the detached sender will find it and
 // starts the sender. Any failure is silence: the hook has a turn to end.
 func queueTurnEnd(ops hookOps, hc hookContext, rec turnEndRecord) {
@@ -118,7 +176,6 @@ type claudeStopPayload struct {
 	HookEventName        string `json:"hook_event_name"`
 	StopHookActive       bool   `json:"stop_hook_active"`
 	LastAssistantMessage string `json:"last_assistant_message"`
-	Cwd                  string `json:"cwd"`
 }
 
 // claudeTurnEnd reports a Claude Code turn that searched. The final message
@@ -131,8 +188,9 @@ type claudeStopPayload struct {
 //   - the payload names no prompt (`prompt_id`, Claude Code 2.1.196+): there
 //     is no turn id to join on, and a guessed one would attach the answer to
 //     another turn's searches;
-//   - no search of ours was made in this turn: the workspace's lineage file
-//     holds the turn of the last search, and it is not this one.
+//   - no search of ours was served in this turn: `search` left no mark for it;
+//   - the turn has no final message to send. Its mark is taken all the same:
+//     the turn has ended.
 func claudeTurnEnd(ops hookOps, hc hookContext, payload []byte) {
 	if !turnEndEnabled(ops, hc) {
 		return
@@ -141,12 +199,11 @@ func claudeTurnEnd(ops hookOps, hc hookContext, payload []byte) {
 	if err := json.Unmarshal(payload, &p); err != nil {
 		return
 	}
-	if p.HookEventName != "Stop" || p.StopHookActive || p.SessionID == "" || p.PromptID == "" || p.Cwd == "" {
+	if p.HookEventName != "Stop" || p.StopHookActive || p.SessionID == "" || p.PromptID == "" {
 		return
 	}
 	turn := traceHash(p.SessionID + "|" + p.PromptID)
-	l, ok := loadLineage(ops, lineagePath(hc.sessionsDir, p.Cwd))
-	if !ok || l.TurnID != turn {
+	if !takeTurnSearched(ops, hc.sessionsDir, turn) {
 		return
 	}
 	text, chars, truncated := prepareFinalText(p.LastAssistantMessage)
@@ -168,22 +225,24 @@ func claudeTurnEnd(ops hookOps, hc hookContext, payload []byte) {
 
 // cursorTurnEnd reports a Cursor turn that searched. Cursor's `stop` carries
 // a status and no text; the text is what `afterAgentResponse` last left in
-// the conversation's lineage file, which is the assistant's reply when the
-// reply is the last thing it wrote. A turn that was aborted or failed is
-// reported without text: what the file holds then is not an answer.
+// the conversation's lineage file — and only when that hook stamped it with
+// THIS turn. Without the stamp, a turn whose reply never reached the file
+// would be reported with the previous turn's answer. A turn that was aborted
+// or failed is reported without text: what the file holds then is not an
+// answer.
 func cursorTurnEnd(ops hookOps, hc hookContext, p cursorPayload, l *lineageFile) {
 	if !turnEndEnabled(ops, hc) || l == nil || p.ConversationID == "" || p.GenerationID == "" {
 		return
 	}
 	turn := traceHash(p.ConversationID + "|" + p.GenerationID)
-	if l.TurnID != turn {
-		return // no search of ours in this turn
+	if !takeTurnSearched(ops, hc.sessionsDir, turn) {
+		return // no search of ours was served in this turn
 	}
 	rec := turnEndRecord{SessionID: traceHash(p.ConversationID), TurnID: turn, Harness: "cursor"}
 	switch p.Status {
 	case "", "completed":
 		rec.Status = turnCompleted
-		if len(l.History) != 1 || l.History[0].Role != "assistant" {
+		if l.AnswerTurnID != turn || len(l.History) != 1 || l.History[0].Role != "assistant" {
 			return
 		}
 		rec.FinalText, rec.FinalChars, rec.Truncated = prepareFinalText(l.History[0].Text)
@@ -238,7 +297,10 @@ func cmdTurnEnd(args []string, getenv func(string) string) int {
 	// Deleted before the send, whatever comes next: one attempt, and no file
 	// of assistant text left behind by a send that hung.
 	_ = os.Remove(path)
-	if err != nil || !cfg.Miner.TurnEnd || cfg.Miner.RouterURL == nil {
+	// Only to a router the config names. With no miner.router_url, RouterURL
+	// is the provider upstream standing in for it, and the assistant's answer
+	// is not that provider's to receive.
+	if err != nil || !cfg.Miner.TurnEnd || !cfg.Miner.RouterConfigured || cfg.Miner.RouterURL == nil {
 		return exitOK
 	}
 	var rec turnEndRecord

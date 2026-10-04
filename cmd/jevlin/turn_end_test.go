@@ -5,9 +5,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
 // turnEndHarness is a fake hook environment that records what was queued.
@@ -41,11 +44,18 @@ func (h *turnEndHarness) record(t *testing.T) turnEndRecord {
 	return rec
 }
 
-// searched makes the workspace's lineage file say a search was made in the
-// given turn, as the lineage hook leaves it.
-func (h *turnEndHarness) searched(t *testing.T, path, session, turn string) {
+// served leaves the mark `jevlin search` leaves after the router answers a
+// search made in the given turn.
+func (h *turnEndHarness) served(turn string) {
+	markTurnSearched(h.ops, config.Miner{TurnEnd: true, SessionsDir: h.hc.sessionsDir}, &traceEnvelope{TurnID: turn})
+}
+
+// proposed leaves what the lineage hook leaves BEFORE a search runs: the
+// workspace's lineage file stamped with the turn. It is not evidence that a
+// search happened.
+func (h *turnEndHarness) proposed(t *testing.T, session, turn string) {
 	t.Helper()
-	if err := updateLineage(h.ops, path, time.Now(), func(l *lineageFile) {
+	if err := updateLineage(h.ops, lineagePath(h.hc.sessionsDir, "/work"), time.Now(), func(l *lineageFile) {
 		l.SessionID, l.TurnID = session, turn
 	}); err != nil {
 		t.Fatal(err)
@@ -66,7 +76,7 @@ func claudeStop(over map[string]any) map[string]any {
 func TestClaudeTurnEndIsQueuedForATurnThatSearched(t *testing.T) {
 	h := newTurnEndHarness(nil, true)
 	turn := traceHash("sess|p1")
-	h.searched(t, lineagePath("/home/sessions", "/work"), traceHash("sess"), turn)
+	h.served(turn)
 
 	runHook(t, h.ops, h.hc, "flush", claudeStop(nil))
 	rec := h.record(t)
@@ -77,19 +87,68 @@ func TestClaudeTurnEndIsQueuedForATurnThatSearched(t *testing.T) {
 		t.Errorf("record text = %+v", rec)
 	}
 	// The file is where the sender will accept it from, and nowhere else.
-	if !strings.HasPrefix(h.queued[0], "/home/sessions/") || !strings.HasSuffix(h.queued[0], turnEndSuffix) {
+	if filepath.Dir(h.queued[0]) != filepath.Clean(h.hc.sessionsDir) || !strings.HasSuffix(h.queued[0], turnEndSuffix) {
 		t.Errorf("queued at %q", h.queued[0])
+	}
+	// The mark is taken: the same turn ending again reports nothing.
+	h.queued = nil
+	runHook(t, h.ops, h.hc, "flush", claudeStop(nil))
+	if len(h.queued) != 0 {
+		t.Errorf("a turn ended twice: %v", h.queued)
 	}
 }
 
-// A subagent's search leaves the lineage file under the subagent's session
-// id and the orchestrator's turn. The turn end is the orchestrator's.
+// A subagent's search carries the orchestrator's turn id, so it marks the
+// orchestrator's turn; the turn end is reported under the orchestrator's
+// session.
 func TestClaudeTurnEndAfterASubagentSearch(t *testing.T) {
 	h := newTurnEndHarness(nil, true)
-	h.searched(t, lineagePath("/home/sessions", "/work"), traceHash("sess|agent-1"), traceHash("sess|p1"))
+	h.served(traceHash("sess|p1"))
 	runHook(t, h.ops, h.hc, "flush", claudeStop(nil))
 	if rec := h.record(t); rec.SessionID != traceHash("sess") {
 		t.Errorf("session = %q, want the orchestrator's", rec.SessionID)
+	}
+}
+
+// The lineage hook stamps a turn when a search is PROPOSED, before the
+// permission decision and before the command runs. A search the user refused,
+// or one that failed, leaves that stamp and no mark, and the turn's answer
+// stays on the machine.
+func TestClaudeTurnEndNeedsAServedSearch(t *testing.T) {
+	h := newTurnEndHarness(nil, true)
+	h.proposed(t, traceHash("sess"), traceHash("sess|p1"))
+	runHook(t, h.ops, h.hc, "flush", claudeStop(nil))
+	if len(h.queued) != 0 {
+		t.Errorf("a proposed search was taken for a served one: %v", h.queued)
+	}
+}
+
+// `search` marks a turn only when the installation opted in and the search
+// carried a turn id.
+func TestMarkTurnSearched(t *testing.T) {
+	turn := traceHash("sess|p1")
+	for name, tc := range map[string]struct {
+		m     config.Miner
+		trace *traceEnvelope
+		want  bool
+	}{
+		"opted in":        {config.Miner{TurnEnd: true, SessionsDir: "/home/sessions"}, &traceEnvelope{TurnID: turn}, true},
+		"not opted in":    {config.Miner{SessionsDir: "/home/sessions"}, &traceEnvelope{TurnID: turn}, false},
+		"no sessions dir": {config.Miner{TurnEnd: true}, &traceEnvelope{TurnID: turn}, false},
+		"no turn id":      {config.Miner{TurnEnd: true, SessionsDir: "/home/sessions"}, &traceEnvelope{SessionID: "s"}, false},
+		"no trace":        {config.Miner{TurnEnd: true, SessionsDir: "/home/sessions"}, nil, false},
+	} {
+		fs, ops := newFakeHookOps(nil)
+		markTurnSearched(ops, tc.m, tc.trace)
+		if got := len(fs.files) == 1; got != tc.want {
+			t.Errorf("%s: marked=%v, want %v (%d files)", name, got, tc.want, len(fs.files))
+		}
+		if tc.want && !takeTurnSearched(ops, "/home/sessions", turn) {
+			t.Errorf("%s: the mark was not found by the turn that left it", name)
+		}
+		if tc.want && (takeTurnSearched(ops, "/home/sessions", turn) || len(fs.files) != 0) {
+			t.Errorf("%s: the mark outlived being taken", name)
+		}
 	}
 }
 
@@ -114,12 +173,17 @@ func TestClaudeTurnEndSendsNothing(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			h := newTurnEndHarness(tc.env, tc.enabled)
 			if tc.searched != "" {
-				h.searched(t, lineagePath("/home/sessions", "/work"), traceHash("sess"), tc.searched)
+				h.served(tc.searched)
 			}
-			before := len(h.fs.files)
 			runHook(t, h.ops, h.hc, "flush", claudeStop(tc.over))
-			if len(h.queued) != 0 || len(h.fs.files) != before {
-				t.Errorf("queued %v, files %d -> %d", h.queued, before, len(h.fs.files))
+			// Nothing handed to the sender, and no record written for it.
+			for path := range h.fs.files {
+				if strings.HasSuffix(path, turnEndSuffix) {
+					t.Errorf("a record was written: %s", path)
+				}
+			}
+			if len(h.queued) != 0 {
+				t.Errorf("queued %v", h.queued)
 			}
 		})
 	}
@@ -129,7 +193,7 @@ func TestClaudeTurnEndSendsNothing(t *testing.T) {
 // history, and nothing unscrubbed reaches the file.
 func TestTurnEndTextIsScrubbedThenCapped(t *testing.T) {
 	h := newTurnEndHarness(nil, true)
-	h.searched(t, lineagePath("/home/sessions", "/work"), traceHash("sess"), traceHash("sess|p1"))
+	h.served(traceHash("sess|p1"))
 	secret := "sk-" + strings.Repeat("A", 40)
 	long := strings.Repeat("word ", traceHistoryCap/5+100) + "the key is " + secret + " and that is the end"
 	runHook(t, h.ops, h.hc, "flush", claudeStop(map[string]any{"last_assistant_message": long}))
@@ -148,16 +212,22 @@ func TestTurnEndTextIsScrubbedThenCapped(t *testing.T) {
 func TestCursorTurnEnd(t *testing.T) {
 	path := conversationLineagePath("/home/sessions", "/work", "conv")
 	turn := traceHash("conv|gen1")
-	setup := func(role, text string) *turnEndHarness {
+	// What Cursor's hooks leave by the time `stop` fires in a turn that
+	// searched: the reply, stamped with its turn by afterAgentResponse, and
+	// the mark `search` left.
+	setupFor := func(role, text, answerTurn string) *turnEndHarness {
 		h := newTurnEndHarness(nil, true)
 		if err := updateLineage(h.ops, path, time.Now(), func(l *lineageFile) {
 			l.Harness, l.SessionID, l.TurnID = "cursor", traceHash("conv"), turn
 			l.History = []traceHistory{{Role: role, Text: text}}
+			l.AnswerTurnID = answerTurn
 		}); err != nil {
 			t.Fatal(err)
 		}
+		h.served(turn)
 		return h
 	}
+	setup := func(role, text string) *turnEndHarness { return setupFor(role, text, turn) }
 	stop := func(status, gen string) map[string]any {
 		return map[string]any{"conversation_id": "conv", "generation_id": gen, "cwd": "/work", "status": status}
 	}
@@ -184,6 +254,18 @@ func TestCursorTurnEnd(t *testing.T) {
 			runHook(t, h.ops, h.hc, "cursor stop", stop("completed", "gen1"))
 			return h
 		},
+		// The reply for this turn never reached the file, which still holds
+		// the previous turn's. It must not be sent under this turn.
+		"the saved reply is another turn's": func() *turnEndHarness {
+			h := setupFor("assistant", "the previous turn's answer", traceHash("conv|gen0"))
+			runHook(t, h.ops, h.hc, "cursor stop", stop("completed", "gen1"))
+			return h
+		},
+		"the saved reply names no turn": func() *turnEndHarness {
+			h := setupFor("assistant", "an answer from before the stamp existed", "")
+			runHook(t, h.ops, h.hc, "cursor stop", stop("completed", "gen1"))
+			return h
+		},
 		"no search in this turn": func() *turnEndHarness {
 			h := setup("assistant", "an answer to something else")
 			runHook(t, h.ops, h.hc, "cursor stop", stop("completed", "gen2"))
@@ -204,6 +286,32 @@ func TestCursorTurnEnd(t *testing.T) {
 		if h := run(); len(h.queued) != 0 {
 			t.Errorf("%s: queued %v", name, h.queued)
 		}
+	}
+}
+
+// afterAgentResponse stamps the reply with the turn it was written in, and a
+// later thought clears the stamp with the reply.
+func TestCursorReplyIsStampedWithItsTurn(t *testing.T) {
+	_, ops := newFakeHookOps(nil)
+	hc := hookContext{sessionsDir: "/home/sessions"}
+	path := conversationLineagePath("/home/sessions", "/work", "conv")
+	event := func(name, gen, text string) *lineageFile {
+		t.Helper()
+		runHook(t, ops, hc, "cursor "+name, map[string]any{"conversation_id": "conv", "generation_id": gen, "cwd": "/work", "text": text})
+		l, ok := loadLineage(ops, path)
+		if !ok {
+			t.Fatal("no lineage file")
+		}
+		return l
+	}
+	if l := event("afterAgentResponse", "gen1", "the answer"); l.AnswerTurnID != traceHash("conv|gen1") {
+		t.Errorf("reply stamp = %q", l.AnswerTurnID)
+	}
+	if l := event("afterAgentThought", "gen2", "thinking"); l.AnswerTurnID != "" {
+		t.Errorf("a thought kept the reply's stamp: %q", l.AnswerTurnID)
+	}
+	if l := event("afterAgentResponse", "", "an answer with no generation"); l.AnswerTurnID != "" {
+		t.Errorf("a reply with no generation was stamped: %q", l.AnswerTurnID)
 	}
 }
 

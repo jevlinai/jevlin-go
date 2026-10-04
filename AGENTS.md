@@ -54,7 +54,10 @@ govulncheck.
    privacy surface, not a default. The **turn end** (`turn_end.go`) is the only other one: the
    assistant's final message of a turn that searched, under the same scrub and cap, sent only when
    the installation set `[miner] turn_end = true`. It MUST stay off by default, MUST send nothing
-   for a turn with no search, and MUST never carry a prompt or a tool payload.
+   for a turn in which no search was SERVED (a proposed, refused or failed search is not one —
+   `search` marks the turn after the router answers), MUST go only to a router the config names
+   (`Miner.RouterConfigured`, never the provider upstream standing in), and MUST never carry a
+   prompt or a tool payload.
 3. **Every credential- or key-bearing `http.Client` has an explicit redirect policy.** No bare
    client on `net/http`'s default (follow-10, body replayed on 307/308). Same-origin bounded
    (`auth.SameOriginRedirects`) or refuse (`http.ErrUseLastResponse`) — per client; the forbidden

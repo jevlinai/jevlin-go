@@ -176,6 +176,11 @@ type Miner struct {
 	// (target, join, capability). Intake promotion and spool delivery run
 	// on every flush regardless.
 	FlushInterval time.Duration
+	// RouterConfigured is true when miner.router_url was written in the
+	// config, false when RouterURL is the provider upstream standing in for
+	// it. Searches go to either. Anything that must only ever reach the
+	// search router — the turn end — requires this.
+	RouterConfigured bool
 	// TurnEnd opts this installation in to reporting, when a turn that
 	// searched ends, the assistant's final message to the router. Off by
 	// default: it is model-written text leaving the machine.
@@ -802,6 +807,7 @@ func (r *rawConfig) finishMiner(upstream *url.URL, mining Mining) (Miner, error)
 		m.SessionsDir = filepath.Join(base, "sessions")
 	}
 	if r.minerRouterURL != "" {
+		m.RouterConfigured = true
 		u, err := url.Parse(r.minerRouterURL)
 		if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
 			return Miner{}, errors.New("miner.router_url: must be an absolute http(s) URL")
