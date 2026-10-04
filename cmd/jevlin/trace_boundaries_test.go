@@ -93,6 +93,93 @@ func TestTraceRedactionBoundaries(t *testing.T) {
 	}
 }
 
+// opencode runs a subagent as a child session. The plugin names the parent
+// from the session's creation event when it saw one, asks opencode once when
+// it did not, and sends a search without a parent — never without a trace —
+// when it cannot find out.
+func TestOpencodeSubagentNamesItsParent(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatal("node is required to verify the embedded opencode plugin")
+	}
+	script := `
+ const fs = await import('node:fs');
+ const input = JSON.parse(fs.readFileSync(0,'utf8'));
+ const plugin = await import('data:text/javascript;base64,'+Buffer.from(input.plugin).toString('base64'));
+ const sessions = {root:{id:'root'}, child:{id:'child', parentID:'root'}, self:{id:'self', parentID:'self'}};
+ let gets = 0;
+ const client = {session:{
+  messages: async()=>({data:[]}),
+  get: async({path})=>{ gets++; if (path.id==='broken') throw new Error('unreadable'); return {data:sessions[path.id]}; },
+ }};
+ const hooks = await plugin.JevlinLineage({client});
+ const search = async (sid) => {
+  const output={args:{command:'jevlin search query'}};
+  await hooks['tool.execute.before']({tool:'bash',sessionID:sid,callID:'call'},output);
+  return JSON.parse(Buffer.from(output.args.command.split(' ')[0].split('=')[1],'base64url').toString('utf8'));
+ };
+ const result = {};
+ result.root = await search('root');
+ result.child = await search('child');
+ result.child_again = await search('child');
+ result.gets_after_two_children = gets;
+ result.self = await search('self');
+ result.broken = await search('broken');
+ await hooks.event({event:{type:'session.created', properties:{info:{id:'seen', parentID:'root'}}}});
+ const before = gets;
+ result.seen = await search('seen');
+ result.asked_for_seen = gets - before;
+ process.stdout.write(JSON.stringify(result));`
+	input, _ := json.Marshal(map[string]any{"plugin": renderAgentScript(opencodePluginJS, shellPOSIX, testCfg)})
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, node, "--input-type=module", "-e", script) // #nosec G204 -- fixed test script and local Node runtime; synthetic input on stdin
+	cmd.Stdin = strings.NewReader(string(input))
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("plugin: %v %s", err, output)
+	}
+	var got struct {
+		Root, Child, ChildAgain, Self, Broken, Seen traceEnvelope
+		Gets                                        int `json:"gets_after_two_children"`
+		AskedForSeen                                int `json:"asked_for_seen"`
+	}
+	raw := map[string]json.RawMessage{}
+	if err := json.Unmarshal(output, &raw); err != nil {
+		t.Fatalf("%v: %s", err, output)
+	}
+	for name, dst := range map[string]any{
+		"root": &got.Root, "child": &got.Child, "child_again": &got.ChildAgain, "self": &got.Self,
+		"broken": &got.Broken, "seen": &got.Seen, "gets_after_two_children": &got.Gets, "asked_for_seen": &got.AskedForSeen,
+	} {
+		if err := json.Unmarshal(raw[name], dst); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	parent := traceHash("root")
+	if got.Root.SessionID != parent || got.Root.ParentSessionID != "" {
+		t.Errorf("root: session=%q parent=%q", got.Root.SessionID, got.Root.ParentSessionID)
+	}
+	// The child's parent is the id the root's own searches carry.
+	if got.Child.SessionID != traceHash("child") || got.Child.ParentSessionID != parent || got.ChildAgain.ParentSessionID != parent {
+		t.Errorf("child: session=%q parent=%q, again parent=%q", got.Child.SessionID, got.Child.ParentSessionID, got.ChildAgain.ParentSessionID)
+	}
+	// root once, child once: the second child search asked nothing.
+	if got.Gets != 2 {
+		t.Errorf("opencode was asked %d times for two sessions", got.Gets)
+	}
+	if got.Self.ParentSessionID != "" {
+		t.Errorf("a session named itself as parent: %q", got.Self.ParentSessionID)
+	}
+	// Unreadable: the search still carries its trace, with no parent.
+	if got.Broken.SessionID != traceHash("broken") || got.Broken.ParentSessionID != "" {
+		t.Errorf("unreadable session: session=%q parent=%q", got.Broken.SessionID, got.Broken.ParentSessionID)
+	}
+	if got.Seen.ParentSessionID != parent || got.AskedForSeen != 0 {
+		t.Errorf("session seen at creation: parent=%q, asked %d times", got.Seen.ParentSessionID, got.AskedForSeen)
+	}
+}
+
 func TestOpencodeRedactionBoundaries(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
