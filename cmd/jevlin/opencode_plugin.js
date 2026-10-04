@@ -50,9 +50,15 @@ export const JevlinLineage = async ({ client }) => {
     if (parents.has(sid)) return parents.get(sid)
     let parent = ""
     try {
+      // opencode's client does not throw on an HTTP error: it answers with
+      // `error` and no `data`. Only a session it actually returned — one that
+      // carries this id — says anything about a parent, so only that is
+      // cached. Anything else is asked again at the next search.
       const info = (await client.session.get({ path: { id: sid } }))?.data
-      if (typeof info?.parentID === "string") parent = info.parentID
-      parents.set(sid, parent)
+      if (info?.id === sid) {
+        if (typeof info.parentID === "string") parent = info.parentID
+        parents.set(sid, parent)
+      }
     } catch {
       // Not cached: a session that could not be read now may be readable at
       // the next search. This one goes out without a parent.
