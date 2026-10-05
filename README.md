@@ -53,7 +53,7 @@ installed. Restart any agent that was already open.
 |---|---|---|
 | [Claude Code](docs/agents.md#claude-code) | a skill; hooks and allow rules in `~/.claude/settings.json` | On Windows, a search through its PowerShell tool asks for approval. |
 | [Cursor](docs/agents.md#cursor) | a skill; hooks in `~/.cursor/hooks.json` | Cursor also runs Claude Code's hooks, which stand aside for it. |
-| [Codex](docs/agents.md#codex) | a skill; a sandbox block in `~/.codex/config.toml` | Without the block, searches work but earn nothing. |
+| [Codex](docs/agents.md#codex) | a skill; hooks in `~/.codex/hooks.json` (not on Windows); a sandbox block in `~/.codex/config.toml` | Its hooks run only once you approve them in Codex. |
 | [opencode](docs/agents.md#opencode) | a plugin, and a line for you to paste into `AGENTS.md` | `/jevlin off` does not reach it. |
 | [Pi](docs/agents.md#pi) | a skill and an extension under `~/.pi/agent/` | A resumed session keeps its place in the trace. |
 | [Hermes](docs/agents.md#hermes) | a skill; a hook in `config.yaml` | Approve the hook once; it loads next session. |
