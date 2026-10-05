@@ -344,7 +344,7 @@ const traceRunEnd = (s, i) => {
 // Hand back a trailing , and any trailing ) ] } or quote the value has
 // more of than it opened: they close something the value sits inside.
 const traceTrimValueTail = (s, from, to) => {
-  let paren = 0, bracket = 0, brace = 0, dquote = 0, squote = 0
+  let paren = 0, bracket = 0, brace = 0, dquote = 0, squote = 0, backtick = 0
   for (let i = from; i < to; i++) {
     switch (s.charCodeAt(i)) {
       case 40: paren--; break
@@ -355,6 +355,7 @@ const traceTrimValueTail = (s, from, to) => {
       case 125: brace++; break
       case 34: dquote++; break
       case 39: squote++; break
+      case 96: backtick++; break
     }
   }
   while (to > from) {
@@ -365,6 +366,7 @@ const traceTrimValueTail = (s, from, to) => {
     else if (c === 125 && brace > 0) brace--
     else if (c === 34 && dquote % 2 === 1) dquote--
     else if (c === 39 && squote % 2 === 1) squote--
+    else if (c === 96 && backtick % 2 === 1) backtick--
     else return to
     to--
   }
@@ -667,6 +669,20 @@ const traceSecretKeyValueAt = (s, floor, c) => {
 // What stands before -- is not asked, as a later step can remove it. The
 // flag rule runs first, then the key rule, then the assignment rule, so no
 // removal changes what an earlier rule read.
+// A flag's name counts by its last segment (or that segment's last camelCase
+// word): --api-key takes a secret, --key-name, --secret-id, --token-ttl and
+// --passphrase-file do not. A --with- or --no- flag takes no value.
+const traceSecretFlagName = (name) => {
+  const lower = name.toLowerCase()
+  if (lower.startsWith('with-') || lower.startsWith('no-')) return false
+  const upper = name.toUpperCase()
+  if (TRACE_SECRET_NAMES.has(upper)) return true
+  const parts = name.split(/[_.-]/).filter((part) => part !== '')
+  const last = parts[parts.length - 1]
+  const hump = traceLastHump(last)
+  const qualified = name === upper || parts.length >= 2 || hump !== last
+  return [last.toUpperCase(), hump.toUpperCase()].some((seg) => TRACE_SECRET_SEGMENTS.has(seg) || (qualified && TRACE_SECRET_SEGMENTS_QUALIFIED.has(seg)))
+}
 const traceSecretFlagValueAt = (s, i) => {
   const n = i + 2
   if (n >= s.length || !traceIsNameStart(s.charCodeAt(n))) return null
@@ -674,17 +690,21 @@ const traceSecretFlagValueAt = (s, i) => {
   while (j < s.length && traceIsName(s.charCodeAt(j))) j++
   const none = { nameEnd: j }
   if (!traceIsWord(s.charCodeAt(j - 1)) || j >= s.length || !traceIsBlank(s.charCodeAt(j))) return none
-  if (!traceSecretName(s.slice(n, j))) return none
+  const name = s.slice(n, j)
+  if (!traceSecretFlagName(name)) return none
   let v = j
   while (v < s.length && traceIsBlank(s.charCodeAt(v))) v++
   const c = s.charCodeAt(v)
-  if (v >= s.length || traceIsSpace(c) || c === 45 || c === 61) return none
+  if (v >= s.length || traceIsSpace(c) || '-=<>|'.includes(s[v]) || s.startsWith('$(', v)) return none
   let end
   if (c === 34 || c === 39) {
     end = traceQuotedWordEnd(s, v)
   } else {
     end = traceTrimValueTail(s, v, traceRunEnd(s, v))
-    if (/^[a-z]*$/.test(s.slice(v, end))) return none
+    const word = s.slice(v, end)
+    if (/^[a-z]*$/.test(word)) return none
+    // A help text's metavar: the flag's own name in capitals (--token TOKEN).
+    if (word === word.toUpperCase() && word.replaceAll('-', '_') === name.toUpperCase().replaceAll('-', '_')) return none
   }
   if (end === v || s.slice(v, end) === TRACE_REDACTED) return none
   return { start: v, end, nameEnd: j }

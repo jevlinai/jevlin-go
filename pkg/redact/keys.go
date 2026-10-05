@@ -220,10 +220,12 @@ func quotedStringEnd(s string, v int) int {
 
 // redactSecretFlags replaces the value of a long flag whose name is a
 // secret's when the value is the next word: curl --api-key VALUE,
-// mysql --password VALUE. The flag is `--` and a name; the value is the
-// next word after blanks on the same line, read as an assignment's is, and
-// is not one when it starts with `-` (the next flag) or `=` (the
-// assignment rule's). A value of lowercase letters only is kept: "use the --password
+// mysql --password VALUE. The flag is `--` and a name whose last segment
+// is a secret's word (secretFlagName); the value is the next word after
+// blanks on the same line, read as an assignment's is, and is not one when
+// it starts with `-` (the next flag), `=` (the assignment rule's), `<`, `>`
+// or `|` (a redirection or a pipe) or `$(` (a command's output), or when it
+// is the flag's own name in capitals (a help text's metavar). A value of lowercase letters only is kept: "use the --password
 // flag" and "pass --token to the command" are prose, and the cost is a
 // password of lowercase letters only, which keeps its value written this
 // way. A single-dash flag (-p) is not read: what follows it is a password
@@ -278,21 +280,22 @@ func secretFlagValueAt(s string, i int) (start, end, nameEnd int, ok bool) {
 	if !isWordChar(s[j-1]) || j >= len(s) || !isBlank(s[j]) {
 		return 0, 0, j, false
 	}
-	if !secretName(s[n:j]) {
+	name := s[n:j]
+	if !secretFlagName(name) {
 		return 0, 0, j, false
 	}
 	v := j
 	for v < len(s) && isBlank(s[v]) {
 		v++
 	}
-	if v >= len(s) || isSpace(s[v]) || s[v] == '-' || s[v] == '=' {
+	if v >= len(s) || isSpace(s[v]) || strings.IndexByte("-=<>|", s[v]) >= 0 || strings.HasPrefix(s[v:], "$(") {
 		return 0, 0, j, false
 	}
 	if s[v] == '"' || s[v] == '\'' {
 		end = quotedWordEnd(s, v)
 	} else {
 		end = trimValueTail(s, v, unquotedRunEnd(s, v))
-		if lowercaseWord(s[v:end]) {
+		if lowercaseWord(s[v:end]) || metavar(s[v:end], name) {
 			return 0, 0, j, false
 		}
 	}
@@ -300,6 +303,49 @@ func secretFlagValueAt(s string, i int) (start, end, nameEnd int, ok bool) {
 		return 0, 0, j, false
 	}
 	return v, end, j, true
+}
+
+// secretFlagName reports whether a long flag's name says its value is a
+// secret: the assignment rule's words, read in the flag's LAST segment only
+// (or that segment's last camelCase word), because a flag's last word names
+// what it takes: --password and --api-key take a secret, while --key-name,
+// --secret-id, --target-key-id, --passphrase-file, --api-key-file,
+// --token-ttl and --password-stdin take a name, an id, a path, a duration
+// or nothing. A --with- or --no- flag is a switch and takes no value.
+// KEY and PASS count as in secretName: in a name of capitals or of two or
+// more segments or words.
+func secretFlagName(name string) bool {
+	if hasPrefixFold(name, "with-") || hasPrefixFold(name, "no-") {
+		return false
+	}
+	upper := strings.ToUpper(name)
+	if secretWholeNames[upper] {
+		return true
+	}
+	parts := strings.FieldsFunc(name, func(r rune) bool { return r == '_' || r == '-' || r == '.' })
+	last := parts[len(parts)-1]
+	hump := lastHump(last)
+	qualified := name == upper || len(parts) >= 2 || hump != last
+	for _, seg := range []string{strings.ToUpper(last), strings.ToUpper(hump)} {
+		if secretNameSegments[seg] || (qualified && secretNameSegmentsQualified[seg]) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasPrefixFold(s, prefix string) bool {
+	return len(s) >= len(prefix) && asciiEqualFold(s[:len(prefix)], prefix)
+}
+
+// metavar reports whether value is the flag's own name in capitals, as help
+// text writes the value a flag takes: --token TOKEN, --api-key API_KEY.
+func metavar(value, name string) bool {
+	if value != strings.ToUpper(value) {
+		return false
+	}
+	norm := func(x string) string { return strings.ReplaceAll(strings.ToUpper(x), "-", "_") }
+	return norm(value) == norm(name)
 }
 
 func lowercaseWord(w string) bool {

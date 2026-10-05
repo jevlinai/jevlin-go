@@ -589,10 +589,10 @@ func unquotedRunEnd(s string, i int) int {
 }
 
 // trimValueTail hands back the trailing characters of s[from:to] that close
-// something opened before the value: a `,`, and a `)` `]` `}` or quote the
-// value has more of than it opened.
+// something opened before the value: a `,`, and a `)` `]` `}`, quote or
+// backtick (a Markdown code span) the value has more of than it opened.
 func trimValueTail(s string, from, to int) int {
-	var paren, bracket, brace, dquote, squote int
+	var paren, bracket, brace, dquote, squote, backtick int
 	for i := from; i < to; i++ {
 		switch s[i] {
 		case '(':
@@ -611,6 +611,8 @@ func trimValueTail(s string, from, to int) int {
 			dquote++
 		case '\'':
 			squote++
+		case '`':
+			backtick++
 		}
 	}
 	for to > from {
@@ -626,6 +628,8 @@ func trimValueTail(s string, from, to int) int {
 			dquote--
 		case c == '\'' && squote%2 == 1:
 			squote--
+		case c == '`' && backtick%2 == 1:
+			backtick--
 		default:
 			return to
 		}

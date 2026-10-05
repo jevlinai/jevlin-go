@@ -2105,5 +2105,40 @@
   "account": "",
   "in": "let d = [\"password\": \"x y\"]",
   "want": "let d = [\"password\": [REDACTED]]"
+ },
+ {
+  "name": "survives/a flag whose last word is not a secret's",
+  "host": "",
+  "account": "",
+  "in": "aws ec2 create-key-pair --key-name MyKeyPair\naws secretsmanager get-secret-value --secret-id MyTestSecret\naws kms encrypt --target-key-id 1234abcd-12ab-34cd-56ef-1234567890ab\ngpg --passphrase-file ./pp.txt; x --api-key-file ~/.k; y --secret-file /run/s\nnpm test -- --token-ttl 30",
+  "want": "aws ec2 create-key-pair --key-name MyKeyPair\naws secretsmanager get-secret-value --secret-id MyTestSecret\naws kms encrypt --target-key-id 1234abcd-12ab-34cd-56ef-1234567890ab\ngpg --passphrase-file ./pp.txt; x --api-key-file ~/.k; y --secret-file /run/s\nnpm test -- --token-ttl 30"
+ },
+ {
+  "name": "survives/a flag's metavar, a redirection, a switch and a substitution",
+  "host": "",
+  "account": "",
+  "in": "usage: cli --token TOKEN --api-key API_KEY\ngh auth login --with-token < token.txt\nx --no-password y1\nx --token $(cat tok) --password <password> --token | tee",
+  "want": "usage: cli --token TOKEN --api-key API_KEY\ngh auth login --with-token < token.txt\nx --no-password y1\nx --token $(cat tok) --password <password> --token | tee"
+ },
+ {
+  "name": "flags/a code span's closing backtick stays",
+  "host": "",
+  "account": "",
+  "in": "Run `gh --token abc1` then `npm test -- --token-ttl 30` passes",
+  "want": "Run `gh --token [REDACTED]` then `npm test -- --token-ttl 30` passes"
+ },
+ {
+  "name": "flags/the last word decides",
+  "host": "",
+  "account": "",
+  "in": "x --password Hunter2x --apiKey abc1 --client-secret 's e' --db-pass P4ss",
+  "want": "x --password [REDACTED] --apiKey [REDACTED] --client-secret [REDACTED] --db-pass [REDACTED]"
+ },
+ {
+  "name": "value/a code span's closing backtick stays after an assignment",
+  "host": "",
+  "account": "",
+  "in": "Set `API_TOKEN=abc1` first",
+  "want": "Set `API_TOKEN=[REDACTED]` first"
  }
 ]
