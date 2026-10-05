@@ -100,14 +100,16 @@ var (
 var (
 	envTableHeader = regexp.MustCompile(`^[\t ]*Name[\t ]+Value[\t ]*$`)
 	envTableRule   = regexp.MustCompile(`^[\t ]*-+[\t ]+-+[\t ]*$`)
-	envTableRow    = regexp.MustCompile(`^([\t ]*[^\t\n\f\r ]+[\t ]+)([^\t\n\f\r ].*)$`)
-	envTableName   = regexp.MustCompile(`^[\t ]*[^\t\n\f\r ]+[\t ]*$`)
+	envTableRow    = regexp.MustCompile(`^([\t ]*[^\t\n\f\r ]+(?:\t|  )[\t ]*)([^\t\n\f\r ].*)$`)
 )
 
 // redactEnvTables replaces every value in a table under a Name/Value
 // header and its rule of dashes, each row's value being the rest of its
-// line after the name and blanks, until a line that is not a row: an empty
-// one, or one with no name. A row of a name alone has nothing to remove.
+// line after the name and two or more blanks (or a tab), until a line that
+// is not such a row: an empty line, a code fence, a sentence, a numbered
+// list item (1. one blank), or a name with no value. A table ends at the
+// first line that does not continue it, so the text after it keeps its
+// words.
 // The names stay, as in redactEnvDumps. The cost: any hashtable PowerShell
 // prints has the same header, and loses its values too.
 func redactEnvTables(s string) string {
@@ -126,15 +128,13 @@ func redactEnvTables(s string) string {
 			if line != lines[k] {
 				cr = "\r"
 			}
-			if m := envTableRow.FindStringSubmatch(line); m != nil {
-				if m[2] != placeholder {
-					lines[k] = m[1] + placeholder + cr
-					changed = true
-				}
-				continue
-			}
-			if !envTableName.MatchString(line) {
+			m := envTableRow.FindStringSubmatch(line)
+			if m == nil {
 				break
+			}
+			if m[2] != placeholder {
+				lines[k] = m[1] + placeholder + cr
+				changed = true
 			}
 		}
 		i = k - 1

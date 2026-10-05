@@ -805,11 +805,11 @@ const redactTraceEnvDumps = (text) => {
 
 // redactEnvTables: PowerShell's Get-ChildItem Env: table (and any hashtable
 // it prints): under a Name/Value header and a rule of dashes, each row's
-// value is the rest of its line, until a line that is empty or holds no name.
+// value is the rest of its line after the name and two blanks or a tab,
+// until the first line that is not such a row (an empty line, a fence, prose).
 const TRACE_ENV_TABLE_HEADER = /^[\t ]*Name[\t ]+Value[\t ]*$/
 const TRACE_ENV_TABLE_RULE = /^[\t ]*-+[\t ]+-+[\t ]*$/
-const TRACE_ENV_TABLE_ROW = /^([\t ]*[^\t\n\f\r ]+[\t ]+)([^\t\n\f\r ][^\n]*)$/
-const TRACE_ENV_TABLE_NAME = /^[\t ]*[^\t\n\f\r ]+[\t ]*$/
+const TRACE_ENV_TABLE_ROW = /^([\t ]*[^\t\n\f\r ]+(?:\t|  )[\t ]*)([^\t\n\f\r ][^\n]*)$/
 const redactTraceEnvTables = (text) => {
   if (!text.includes('Value')) return text
   const lines = text.split('\n')
@@ -822,11 +822,8 @@ const redactTraceEnvTables = (text) => {
       const line = bare(k)
       const cr = line === lines[k] ? '' : '\r'
       const m = TRACE_ENV_TABLE_ROW.exec(line)
-      if (m) {
-        if (m[2] !== TRACE_REDACTED) { lines[k] = m[1] + TRACE_REDACTED + cr; changed = true }
-        continue
-      }
-      if (!TRACE_ENV_TABLE_NAME.test(line)) break
+      if (!m) break
+      if (m[2] !== TRACE_REDACTED) { lines[k] = m[1] + TRACE_REDACTED + cr; changed = true }
     }
     i = k - 1
   }

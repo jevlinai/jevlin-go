@@ -2030,11 +2030,11 @@
   "want": "Key    Value\n----   -----\nA      1"
  },
  {
-  "name": "pstable/a row of a name alone does not end the table",
+  "name": "pstable/a name with no value ends the table",
   "host": "",
   "account": "",
   "in": "Name  Value\n----  -----\nEMPTY\nB     2",
-  "want": "Name  Value\n----  -----\nEMPTY\nB     [REDACTED]"
+  "want": "Name  Value\n----  -----\nEMPTY\nB     2"
  },
  {
   "name": "keys/a prompt string does not reach the next line",
@@ -2140,5 +2140,33 @@
   "account": "",
   "in": "Set `API_TOKEN=abc1` first",
   "want": "Set `API_TOKEN=[REDACTED]` first"
+ },
+ {
+  "name": "pstable/a code fence ends the table and the sentence after it stays",
+  "host": "",
+  "account": "",
+  "in": "```\nName    Value\n----    -----\nPSVersion    7.4.1\n```\nSo you are on PowerShell 7.4.\n",
+  "want": "```\nName    Value\n----    -----\nPSVersion    [REDACTED]\n```\nSo you are on PowerShell 7.4.\n"
+ },
+ {
+  "name": "pstable/a numbered list after a table keeps its items",
+  "host": "",
+  "account": "",
+  "in": "Name   Value\n----   -----\nA_ONE  1\n1. restart the shell\n2. run it again",
+  "want": "Name   Value\n----   -----\nA_ONE  [REDACTED]\n1. restart the shell\n2. run it again"
+ },
+ {
+  "name": "pstable/a tab separates a row",
+  "host": "",
+  "account": "",
+  "in": "Name\tValue\n----\t-----\nAPI_TOKEN\tx y",
+  "want": "Name\tValue\n----\t-----\nAPI_TOKEN\t[REDACTED]"
+ },
+ {
+  "name": "flags/a camelCase flag counts by its last word",
+  "host": "",
+  "account": "",
+  "in": "x --clientSecret Sx1 --secretName Sx2",
+  "want": "x --clientSecret [REDACTED] --secretName Sx2"
  }
 ]
