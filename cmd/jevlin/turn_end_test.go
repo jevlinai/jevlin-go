@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -343,7 +344,7 @@ func TestSendTurnEnd(t *testing.T) {
 	if code := sendTurnEnd(srv.Client(), srv.URL, "sr-test", rec); code != http.StatusAccepted {
 		t.Fatalf("status %d", code)
 	}
-	if got.path != "POST /v1/turns" || got.auth != "Bearer sr-test" || got.contentType != "application/json" || got.body != rec {
+	if got.path != "POST /v1/turns" || got.auth != "Bearer sr-test" || got.contentType != "application/json" || !reflect.DeepEqual(got.body, rec) {
 		t.Errorf("request = %+v", got)
 	}
 

@@ -51,13 +51,17 @@ govulncheck.
    nothing to redact here because nothing is captured. The search-router **trace** is the one
    channel that carries model-influenceable text off the machine (the assistant text just before a
    search, capped and hashed per `trace.go`); it MUST be redacted before egress and is a conscious
-   privacy surface, not a default. The **turn end** (`turn_end.go`) is the only other one: the
-   assistant's final message of a turn that searched, under the same scrub and cap, sent only when
-   the installation set `[miner] turn_end = true`. It MUST stay off by default, MUST send nothing
-   for a turn in which no search was SERVED (a proposed, refused or failed search is not one —
-   `search` marks the turn after the router answers), MUST go only to a router the config names
-   (`Miner.RouterConfigured`, never the provider upstream standing in), and MUST never carry a
-   prompt or a tool payload.
+   privacy surface, not a default. The **turn end** (`turn_end.go`, `turn_detail.go`) is the only other one: for
+   a turn that searched, the user's message, the assistant's visible text, and its final message,
+   all under the same scrub and caps, with a skeleton of the turn's other tool calls. It is sent
+   only when the installation set `[miner] turn_end = true`. It MUST stay off by default; MUST
+   send nothing for a turn in which no search was SERVED (a proposed, refused or failed search is
+   not one — `search` marks the turn after the router answers); MUST go only to a router the
+   config names (`Miner.RouterConfigured`, never the provider upstream standing in); and MUST
+   NEVER carry a tool's input or output. Of a tool call it sends the name, the duration and the
+   outcome — `turnStep` has no field for more, and one must not be added. A command is read for
+   one purpose, to recognize our own search, and is not kept. Thinking blocks and a subagent's own
+   records are not sent.
 3. **Every credential- or key-bearing `http.Client` has an explicit redirect policy.** No bare
    client on `net/http`'s default (follow-10, body replayed on 307/308). Same-origin bounded
    (`auth.SameOriginRedirects`) or refuse (`http.ErrUseLastResponse`) — per client; the forbidden
