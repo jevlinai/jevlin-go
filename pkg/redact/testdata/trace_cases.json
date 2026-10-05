@@ -978,5 +978,26 @@
   "account": "jos\u00e9",
   "in": "on h\u00e9llo-box as jos\u00e9: ssh jos\u00e9@db1, USER=jos\u00e9",
   "want": "on h\u00e9llo-box as jos\u00e9: ssh jos\u00e9@db1, USER=jos\u00e9"
+ },
+ {
+  "name": "bridge/as the last part of a dotted name",
+  "host": "",
+  "account": "",
+  "in": "ssh7bob@example.com.JEVLIN_TRACE_BRIDGE=eyJCanary0123 x",
+  "want": "[REDACTED].JEVLIN_TRACE_BRIDGE=[REDACTED] x"
+ },
+ {
+  "name": "survives/a bridge-like name that is not the bridge's",
+  "host": "",
+  "account": "",
+  "in": "MY_JEVLIN_TRACE_BRIDGE=value",
+  "want": "MY_JEVLIN_TRACE_BRIDGE=value"
+ },
+ {
+  "name": "survives/a host named after the placeholder",
+  "host": "redacted.lan",
+  "account": "redacted",
+  "in": "API_TOKEN=x on redacted, and USER=redacted",
+  "want": "API_TOKEN=[REDACTED] on redacted, and USER=redacted"
  }
 ]

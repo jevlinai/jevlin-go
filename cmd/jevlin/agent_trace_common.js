@@ -212,7 +212,11 @@ const traceSecretValueAt = (s, floor, e) => {
   if (p < 0) return null
   const name = s.slice(p, k)
   const psEnv = p >= 5 && /^\$[Ee][Nn][Vv]:$/.test(s.slice(p - 5, p))
-  const bridge = name.toUpperCase() === TRACE_BRIDGE_ENV
+  // The bridge's name alone or as the last part of a dotted or hyphenated
+  // name: a later step can remove what stands before it (an email's domain),
+  // and a second pass must not then find what the first did not.
+  const upperName = name.toUpperCase()
+  const bridge = upperName === TRACE_BRIDGE_ENV || upperName.endsWith('.' + TRACE_BRIDGE_ENV) || upperName.endsWith('-' + TRACE_BRIDGE_ENV)
   if (k < e && !psEnv && !bridge) return null
   if (!bridge && !traceSecretName(name)) return null
   let v = e + 1
@@ -320,7 +324,7 @@ const TRACE_GENERIC_IDENTITY = new Set(['root', 'user', 'users', 'admin', 'admin
   'vscode', 'core', 'codespace', 'coder', 'gitpod', 'jovyan', 'ec2-user', 'azureuser', 'jenkins', 'circleci',
   'gitlab-runner', 'runneradmin', 'bun', 'deno', 'owner', 'raspberrypi', 'kali', 'nixos', 'penguin', 'fedora',
   'archlinux', 'api', 'web', 'prod', 'staging', 'worker',
-  'macbook-pro', 'macbook-air', 'mac-mini', 'imac', 'mac-studio'])
+  'macbook-pro', 'macbook-air', 'mac-mini', 'imac', 'mac-studio', 'redacted'])
 const TRACE_ACCOUNT_VARIABLES = new Set(['user', 'username', 'logname', 'sudo_user'])
 const traceIdentityPatterns = (host, account) => {
   host = String(host || '')

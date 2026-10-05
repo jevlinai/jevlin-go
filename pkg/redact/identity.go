@@ -46,6 +46,9 @@ var genericIdentityNames = map[string]bool{
 	"raspberrypi": true, "kali": true, "nixos": true, "penguin": true, "fedora": true,
 	"archlinux": true, "api": true, "web": true, "prod": true, "staging": true, "worker": true,
 	"macbook-pro": true, "macbook-air": true, "mac-mini": true, "imac": true, "mac-studio": true,
+	// The placeholder's own word: searching for it would find every
+	// [REDACTED] and wrap it again on each pass.
+	"redacted": true,
 }
 
 // accountVariables are the variables whose value is an account name, in

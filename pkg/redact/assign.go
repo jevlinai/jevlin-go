@@ -136,7 +136,7 @@ func secretValueAt(s string, floor, e int) (start, end int, ok bool) {
 	}
 	name := s[p:k]
 	psEnv := p >= 5 && asciiEqualFold(s[p-5:p], "$env:")
-	bridge := asciiEqualFold(name, traceBridgeEnvName)
+	bridge := isBridgeName(name)
 	if k < e && !psEnv && !bridge {
 		return 0, 0, false
 	}
@@ -261,6 +261,21 @@ func trimValueTail(s string, from, to int) int {
 		to--
 	}
 	return to
+}
+
+// isBridgeName reports whether name is the trace bridge's, alone or as the
+// last part of a dotted or hyphenated name. The suffix counts because a
+// later step can remove what stands before it: in
+// bob@example.com.JEVLIN_TRACE_BRIDGE=… the name is read whole, the email
+// step then removes bob@example.com, and a second pass would find the
+// bridge's name standing alone. Every secret word already has that
+// property, being a segment; this gives it to the bridge's exact name.
+func isBridgeName(name string) bool {
+	n := len(traceBridgeEnvName)
+	if len(name) < n || !asciiEqualFold(name[len(name)-n:], traceBridgeEnvName) {
+		return false
+	}
+	return len(name) == n || name[len(name)-n-1] == '.' || name[len(name)-n-1] == '-'
 }
 
 func asciiEqualFold(a, b string) bool {
