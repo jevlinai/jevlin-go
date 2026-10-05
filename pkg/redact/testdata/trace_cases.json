@@ -1888,5 +1888,82 @@
   "account": "",
   "in": "---token abc1",
   "want": "---token abc1"
+ },
+ {
+  "name": "pem/a key on its own",
+  "host": "",
+  "account": "",
+  "in": "here:\n-----BEGIN PRIVATE KEY-----\nMIIEvQSyntheticCanary\nSyntheticCanaryLine2\n-----END PRIVATE KEY-----\nthat is it",
+  "want": "here:\n[REDACTED]\nthat is it"
+ },
+ {
+  "name": "pem/an encrypted key longer than the line cap",
+  "host": "",
+  "account": "",
+  "in": "PRIVATE_KEY=\"-----BEGIN ENCRYPTED PRIVATE KEY-----\nMIIJSyntheticCanaryLine000SyntheticCanaryLine000AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine001SyntheticCanaryLine001AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine002SyntheticCanaryLine002AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine003SyntheticCanaryLine003AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine004SyntheticCanaryLine004AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine005SyntheticCanaryLine005AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine006SyntheticCanaryLine006AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine007SyntheticCanaryLine007AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine008SyntheticCanaryLine008AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine009SyntheticCanaryLine009AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine010SyntheticCanaryLine010AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine011SyntheticCanaryLine011AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine012SyntheticCanaryLine012AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine013SyntheticCanaryLine013AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine014SyntheticCanaryLine014AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine015SyntheticCanaryLine015AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine016SyntheticCanaryLine016AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine017SyntheticCanaryLine017AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine018SyntheticCanaryLine018AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine019SyntheticCanaryLine019AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine020SyntheticCanaryLine020AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine021SyntheticCanaryLine021AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine022SyntheticCanaryLine022AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine023SyntheticCanaryLine023AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine024SyntheticCanaryLine024AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine025SyntheticCanaryLine025AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine026SyntheticCanaryLine026AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine027SyntheticCanaryLine027AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine028SyntheticCanaryLine028AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine029SyntheticCanaryLine029AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine030SyntheticCanaryLine030AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine031SyntheticCanaryLine031AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine032SyntheticCanaryLine032AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine033SyntheticCanaryLine033AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine034SyntheticCanaryLine034AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine035SyntheticCanaryLine035AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine036SyntheticCanaryLine036AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine037SyntheticCanaryLine037AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine038SyntheticCanaryLine038AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine039SyntheticCanaryLine039AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine040SyntheticCanaryLine040AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine041SyntheticCanaryLine041AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine042SyntheticCanaryLine042AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine043SyntheticCanaryLine043AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine044SyntheticCanaryLine044AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine045SyntheticCanaryLine045AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine046SyntheticCanaryLine046AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine047SyntheticCanaryLine047AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine048SyntheticCanaryLine048AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine049SyntheticCanaryLine049AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine050SyntheticCanaryLine050AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine051SyntheticCanaryLine051AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine052SyntheticCanaryLine052AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine053SyntheticCanaryLine053AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine054SyntheticCanaryLine054AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine055SyntheticCanaryLine055AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine056SyntheticCanaryLine056AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine057SyntheticCanaryLine057AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine058SyntheticCanaryLine058AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine059SyntheticCanaryLine059AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine060SyntheticCanaryLine060AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine061SyntheticCanaryLine061AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine062SyntheticCanaryLine062AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine063SyntheticCanaryLine063AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine064SyntheticCanaryLine064AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine065SyntheticCanaryLine065AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine066SyntheticCanaryLine066AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine067SyntheticCanaryLine067AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine068SyntheticCanaryLine068AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine069SyntheticCanaryLine069AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine070SyntheticCanaryLine070AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine071SyntheticCanaryLine071AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine072SyntheticCanaryLine072AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine073SyntheticCanaryLine073AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine074SyntheticCanaryLine074AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine075SyntheticCanaryLine075AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine076SyntheticCanaryLine076AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine077SyntheticCanaryLine077AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine078SyntheticCanaryLine078AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine079SyntheticCanaryLine079AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine080SyntheticCanaryLine080AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine081SyntheticCanaryLine081AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine082SyntheticCanaryLine082AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine083SyntheticCanaryLine083AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine084SyntheticCanaryLine084AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine085SyntheticCanaryLine085AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine086SyntheticCanaryLine086AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine087SyntheticCanaryLine087AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine088SyntheticCanaryLine088AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine089SyntheticCanaryLine089AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine090SyntheticCanaryLine090AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine091SyntheticCanaryLine091AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine092SyntheticCanaryLine092AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine093SyntheticCanaryLine093AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine094SyntheticCanaryLine094AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine095SyntheticCanaryLine095AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine096SyntheticCanaryLine096AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine097SyntheticCanaryLine097AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine098SyntheticCanaryLine098AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine099SyntheticCanaryLine099AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine100SyntheticCanaryLine100AAAAAAAAAAAAAAAAAA\nMIIJSyntheticCanaryLine101SyntheticCanaryLine101AAAAAAAAAAAAAAAAAA\n-----END ENCRYPTED PRIVATE KEY-----\" next",
+  "want": "PRIVATE_KEY=[REDACTED] next"
+ },
+ {
+  "name": "pem/a key in triple quotes",
+  "host": "",
+  "account": "",
+  "in": "private_key=\"\"\"-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----\n\"\"\" next",
+  "want": "private_key=[REDACTED] next"
+ },
+ {
+  "name": "pem/a cut-off key with headers",
+  "host": "",
+  "account": "",
+  "in": "-----BEGIN RSA PRIVATE KEY-----\r\nProc-Type: 4,ENCRYPTED\r\nDEK-Info: AES-128-CBC,0A1B\r\n\r\nMIIBSyntheticCanary\r\nQUJD\r\nand then prose",
+  "want": "[REDACTED]\r\nand then prose"
+ },
+ {
+  "name": "pem/escaped on one line",
+  "host": "",
+  "account": "",
+  "in": "{\"pem\": \"-----BEGIN EC PRIVATE KEY-----\\nMHcCAQEEISynthetic\\n-----END EC PRIVATE KEY-----\\n\"}",
+  "want": "{\"pem\": \"[REDACTED]\\n\"}"
+ },
+ {
+  "name": "pem/a pgp key block",
+  "host": "",
+  "account": "",
+  "in": "-----BEGIN PGP PRIVATE KEY BLOCK-----\n\nlQOYBSynthetic\n=abcd\n-----END PGP PRIVATE KEY BLOCK-----",
+  "want": "[REDACTED]"
+ },
+ {
+  "name": "pem/another BEGIN before the END",
+  "host": "",
+  "account": "",
+  "in": "-----BEGIN PRIVATE KEY-----\nMIIB\nprose here\n-----BEGIN CERTIFICATE-----\nMIIC\n-----END PRIVATE KEY-----",
+  "want": "[REDACTED]\nprose here\n-----BEGIN CERTIFICATE-----\nMIIC\n-----END PRIVATE KEY-----"
+ },
+ {
+  "name": "pem/an END that is not a key's",
+  "host": "",
+  "account": "",
+  "in": "-----BEGIN PRIVATE KEY-----\nMIIB\n-----END CERTIFICATE-----\nnext",
+  "want": "[REDACTED]\n-----END CERTIFICATE-----\nnext"
+ },
+ {
+  "name": "survives/a certificate and a public key",
+  "host": "",
+  "account": "",
+  "in": "-----BEGIN CERTIFICATE-----\nMIIBSynthetic\n-----END CERTIFICATE-----\n-----BEGIN PUBLIC KEY-----\nMFkwSynthetic\n-----END PUBLIC KEY-----",
+  "want": "-----BEGIN CERTIFICATE-----\nMIIBSynthetic\n-----END CERTIFICATE-----\n-----BEGIN PUBLIC KEY-----\nMFkwSynthetic\n-----END PUBLIC KEY-----"
+ },
+ {
+  "name": "survives/a marker without its dashes",
+  "host": "",
+  "account": "",
+  "in": "-----BEGIN PRIVATE KEY and then prose",
+  "want": "-----BEGIN PRIVATE KEY and then prose"
+ },
+ {
+  "name": "pem/cost: prose quoting both markers",
+  "host": "",
+  "account": "",
+  "in": "a file that starts -----BEGIN PRIVATE KEY----- and ends -----END PRIVATE KEY----- is one",
+  "want": "a file that starts [REDACTED] is one"
  }
 ]

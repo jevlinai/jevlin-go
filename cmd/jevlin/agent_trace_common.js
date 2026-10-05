@@ -152,6 +152,75 @@ const scrubTraceCommon = (text) => redactTraceJwts(text
   .replace(/\bgh[opsur]_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, TRACE_REDACTED)
   .replace(/\bAKIA[0-9A-Z]{16}\b/g, TRACE_REDACTED))
 
+// A PEM private key block, markers included, as pkg/redact/pem.go removes
+// it, before every other step: from a BEGIN marker whose label ends PRIVATE
+// KEY (or PRIVATE KEY BLOCK) to the next private-key END marker, when no
+// other BEGIN comes first; with none, to its line's end and on through the
+// lines a body holds (base64, Proc-Type:/DEK-Info: headers and the empty
+// line after one).
+const TRACE_PEM_BEGIN = '-----BEGIN '
+const TRACE_PEM_END = '-----END '
+const tracePemMarkerEnd = (s, i) => {
+  let j = i
+  while (j < s.length && j - i < 64) {
+    const c = s.charCodeAt(j)
+    if (!((c >= 65 && c <= 90) || (c >= 48 && c <= 57) || c === 32)) break
+    j++
+  }
+  if (!s.startsWith('-----', j)) return [-1, false]
+  const label = s.slice(i, j)
+  return [j + 5, label.endsWith('PRIVATE KEY') || label.endsWith('PRIVATE KEY BLOCK')]
+}
+const traceIsBase64Line = (line) => /^[A-Za-z0-9+\/=]*$/.test(line)
+const tracePemBodyEnd = (s, h) => {
+  let end = traceLineEnd(s, h)
+  let afterHeader = false
+  while (end < s.length) {
+    let start = end
+    if (s.charCodeAt(start) === 13) start++
+    if (start >= s.length || s.charCodeAt(start) !== 10) break
+    start++
+    const line = s.slice(start, traceLineEnd(s, start))
+    if (line === '' && afterHeader) afterHeader = false
+    else if (line.startsWith('Proc-Type:') || line.startsWith('DEK-Info:')) afterHeader = true
+    else if (line !== '' && traceIsBase64Line(line)) afterHeader = false
+    else return end
+    end = start + line.length
+  }
+  return end
+}
+const redactTracePrivateKeyBlocks = (text) => {
+  let i = text.indexOf(TRACE_PEM_BEGIN)
+  if (i < 0) return text
+  let out = ''
+  let last = 0
+  let changed = false
+  let nextEnd = -1
+  let searched = false
+  while (i >= 0) {
+    let next = i + TRACE_PEM_BEGIN.length
+    const [h, isPrivate] = tracePemMarkerEnd(text, next)
+    if (h >= 0 && isPrivate) {
+      if (!searched || (nextEnd >= 0 && nextEnd < h)) {
+        nextEnd = text.indexOf(TRACE_PEM_END, h)
+        searched = true
+      }
+      const nextBegin = text.indexOf(TRACE_PEM_BEGIN, h)
+      let end = -1
+      if (nextEnd >= 0 && (nextBegin < 0 || nextEnd < nextBegin)) {
+        const [e, endPrivate] = tracePemMarkerEnd(text, nextEnd + TRACE_PEM_END.length)
+        if (e >= 0 && endPrivate) end = e
+      }
+      if (end < 0) end = tracePemBodyEnd(text, h)
+      out += text.slice(last, i) + TRACE_REDACTED
+      last = next = end
+      changed = true
+    }
+    i = text.indexOf(TRACE_PEM_BEGIN, next)
+  }
+  return changed ? out + text.slice(last) : text
+}
+
 // redactSecretAssignments: the value of NAME=value when a whole segment of
 // NAME (split on _ - ., and a camelCase part by its last hump) is a secret word, or NAME is our own trace bridge,
 // whose value is an envelope no pattern can see into. KEY and PASS count
@@ -786,7 +855,7 @@ const redactTraceLocalIdentity = (text, identity) => {
 }
 
 const scrubTraceText = (text, identity = TRACE_LOCAL_IDENTITY) =>
-  redactTraceLocalIdentity(redactTraceHomePaths(redactTraceAccountHomes(redactTraceEmails(redactTraceEnvDumps(redactTraceSecretAssignments(redactTraceSecretKeys(redactTraceSecretFlags(scrubTraceCommon(text)))))), identity)), identity)
+  redactTraceLocalIdentity(redactTraceHomePaths(redactTraceAccountHomes(redactTraceEmails(redactTraceEnvDumps(redactTraceSecretAssignments(redactTraceSecretKeys(redactTraceSecretFlags(scrubTraceCommon(redactTracePrivateKeyBlocks(text))))))), identity)), identity)
 
 // prepareTraceHistory takes the COMPLETE text parts of one assistant
 // message — `{type: 'text', text}` entries, the shape opencode's message

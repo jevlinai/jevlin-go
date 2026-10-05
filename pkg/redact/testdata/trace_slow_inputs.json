@@ -40,5 +40,11 @@
   "prefix": "",
   "unit": "--a",
   "suffix": " x1"
+ },
+ {
+  "name": "private key BEGIN markers with one END at the very end",
+  "prefix": "",
+  "unit": "-----BEGIN PRIVATE KEY-----x\n",
+  "suffix": "-----END PRIVATE KEY-----"
  }
 ]
