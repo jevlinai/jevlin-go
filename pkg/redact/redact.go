@@ -73,9 +73,17 @@ var (
 	// The Windows sibling: C:\Users\<name>\... . This repo ships Windows
 	// binaries; the Unix-only pattern above missed this entirely.
 	windowsHomePathPattern = regexp.MustCompile(`(?i)([A-Z]:\\Users\\)[^\\\s]+`)
-	// One line of an environment listing: optional `export `, a name, `=`,
-	// and the rest of the line. Applied via redactEnvDumps, to runs only.
-	envLinePattern = regexp.MustCompile(`^(\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*=)(.*)$`)
+	// One line of an environment listing: an optional list marker (- * + >)
+	// or line number (cat -n, a numbered list), an optional `export`,
+	// `declare -x` or `typeset -x`, a name, `=`, and the rest of the line.
+	// Applied via redactEnvDumps, to runs only.
+	envLinePattern = regexp.MustCompile(`^([\t\n\f\r ]*` + envLineMarker + `(?:(?:export|(?:declare|typeset)[\t ]+-[A-Za-z]+)[\t ]+)?([A-Za-z_][A-Za-z0-9_]*)=)(.*)$`)
+	// bash's `declare -x NAME` for a variable exported with no value: part
+	// of the listing, with nothing to remove.
+	envBareDeclarePattern = regexp.MustCompile(`^[\t\n\f\r ]*` + envLineMarker + `(?:declare|typeset)[\t ]+-[A-Za-z]+[\t ]+([A-Za-z_][A-Za-z0-9_]*)[\t\n\f\r ]*$`)
+	// A second NAME= after whitespace: a logfmt record or a command line,
+	// not one variable's value.
+	envPairAfterSpacePattern = regexp.MustCompile(`[\t\n\f\r ][A-Za-z_][A-Za-z0-9_]*=`)
 )
 
 // envDumpRun is how many consecutive NAME=value lines make an environment
@@ -83,6 +91,10 @@ var (
 // a row is the output of env or printenv quoted back, and nothing in it
 // has a shape a pattern could pick the secrets out by.
 const envDumpRun = 5
+
+// envLineMarker is what may stand before an environment line when it is
+// quoted in a list, a blockquote or `cat -n` output.
+const envLineMarker = `(?:(?:[-*+>]|[0-9]+[.)]?)[\t ]+)?`
 
 // remoteAccessVerbs precede an ssh/scp/rsync/sftp destination that is
 // shaped exactly like an email address (user@host) but is not one —
@@ -127,33 +139,54 @@ func TraceText(s string) string {
 	return s
 }
 
-// redactEnvDumps replaces every value in a run of envDumpRun or more
-// consecutive NAME=value lines. The names stay: they say what kind of
-// output this was, and they identify nobody.
+// redactEnvDumps replaces every value in a run of consecutive environment
+// lines that names at least envDumpRun distinct variables. The names stay:
+// they say what kind of output this was, and they identify nobody.
+//
+// A line does not count, and breaks a run, when its value starts with `=`
+// (a pinned requirement, name==1.2), ends with `,` (a keyword argument or
+// a diff of one), or carries another NAME= after whitespace (a logfmt
+// record). That is what keeps code and logs that are only shaped like a
+// listing; the cost is that an environment variable whose own value holds
+// " NAME=" splits a real listing there and that one line is kept. A run
+// of fewer distinct names is a loop's output (i=0, i=1, ...), not a dump.
 func redactEnvDumps(s string) string {
-	if strings.Count(s, "=") < envDumpRun {
+	if !strings.Contains(s, "=") {
 		return s
 	}
 	lines := strings.Split(s, "\n")
-	isEnv := func(i int) bool { return envLinePattern.MatchString(strings.TrimSuffix(lines[i], "\r")) }
+	names := make([]string, len(lines))
+	isEnv := make([]bool, len(lines))
+	for i, raw := range lines {
+		line := strings.TrimSuffix(raw, "\r")
+		if m := envLinePattern.FindStringSubmatch(line); m != nil {
+			v := m[3]
+			isEnv[i] = !strings.HasPrefix(v, "=") && !strings.HasSuffix(strings.TrimRight(v, " \t"), ",") && !envPairAfterSpacePattern.MatchString(v)
+			names[i] = m[2]
+		} else if m := envBareDeclarePattern.FindStringSubmatch(line); m != nil {
+			isEnv[i], names[i] = true, m[1]
+		}
+	}
 	changed := false
 	for i := 0; i < len(lines); {
-		if !isEnv(i) {
+		if !isEnv[i] {
 			i++
 			continue
 		}
 		j := i
-		for j < len(lines) && isEnv(j) {
+		distinct := map[string]bool{}
+		for j < len(lines) && isEnv[j] {
+			distinct[names[j]] = true
 			j++
 		}
-		if j-i >= envDumpRun {
+		if len(distinct) >= envDumpRun {
 			for k := i; k < j; k++ {
 				line, cr := strings.TrimSuffix(lines[k], "\r"), ""
 				if line != lines[k] {
 					cr = "\r"
 				}
 				m := envLinePattern.FindStringSubmatch(line)
-				if m[2] != "" && m[2] != placeholder {
+				if m != nil && m[3] != "" && m[3] != placeholder {
 					lines[k] = m[1] + placeholder + cr
 					changed = true
 				}

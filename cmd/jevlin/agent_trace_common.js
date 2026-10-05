@@ -239,27 +239,48 @@ const redactTraceSecretAssignments = (text) => {
   return changed ? out + text.slice(last) : text
 }
 
-// redactEnvDumps: every value in a run of five or more consecutive
-// NAME=value lines. Five in a row is the output of env or printenv quoted
-// back, and nothing in it has a shape a pattern could pick secrets out by.
+// redactEnvDumps: every value in a run of consecutive environment lines
+// naming at least five distinct variables: the output of env, printenv or
+// `declare -x`, quoted back, where nothing has a shape a pattern could pick
+// secrets out by. A line may carry a list marker or a line number. A line
+// whose value starts with `=`, ends with `,` or carries another NAME= after
+// whitespace is code or a log record, and breaks the run.
 const TRACE_ENV_DUMP_RUN = 5
-const TRACE_ENV_LINE = /^([\t\n\f\r ]*(?:export[\t\n\f\r ]+)?[A-Za-z_][A-Za-z0-9_]*=)([^\n]*)$/
+const TRACE_ENV_MARKER = '(?:(?:[-*+>]|[0-9]+[.)]?)[\\t ]+)?'
+const TRACE_ENV_LINE = new RegExp('^([\\t\\n\\f\\r ]*' + TRACE_ENV_MARKER + '(?:(?:export|(?:declare|typeset)[\\t ]+-[A-Za-z]+)[\\t ]+)?([A-Za-z_][A-Za-z0-9_]*)=)([^\\n]*)$')
+const TRACE_ENV_BARE_DECLARE = new RegExp('^[\\t\\n\\f\\r ]*' + TRACE_ENV_MARKER + '(?:declare|typeset)[\\t ]+-[A-Za-z]+[\\t ]+([A-Za-z_][A-Za-z0-9_]*)[\\t\\n\\f\\r ]*$')
+const TRACE_ENV_PAIR_AFTER_SPACE = /[\t\n\f\r ][A-Za-z_][A-Za-z0-9_]*=/
 const redactTraceEnvDumps = (text) => {
-  if (text.split('=').length - 1 < TRACE_ENV_DUMP_RUN) return text
+  if (!text.includes('=')) return text
   const lines = text.split('\n')
   const bare = (i) => lines[i].endsWith('\r') ? lines[i].slice(0, -1) : lines[i]
-  const isEnv = (i) => TRACE_ENV_LINE.test(bare(i))
+  const names = []
+  const isEnv = []
+  for (let i = 0; i < lines.length; i++) {
+    const line = bare(i)
+    const m = TRACE_ENV_LINE.exec(line)
+    if (m) {
+      const v = m[3]
+      isEnv[i] = !v.startsWith('=') && !v.replace(/[ \t]+$/, '').endsWith(',') && !TRACE_ENV_PAIR_AFTER_SPACE.test(v)
+      names[i] = m[2]
+      continue
+    }
+    const d = TRACE_ENV_BARE_DECLARE.exec(line)
+    isEnv[i] = d !== null
+    names[i] = d ? d[1] : ''
+  }
   let changed = false
   for (let i = 0; i < lines.length;) {
-    if (!isEnv(i)) { i++; continue }
+    if (!isEnv[i]) { i++; continue }
     let j = i
-    while (j < lines.length && isEnv(j)) j++
-    if (j - i >= TRACE_ENV_DUMP_RUN) {
+    const distinct = new Set()
+    while (j < lines.length && isEnv[j]) distinct.add(names[j++])
+    if (distinct.size >= TRACE_ENV_DUMP_RUN) {
       for (let k = i; k < j; k++) {
         const line = bare(k)
         const cr = line === lines[k] ? '' : '\r'
         const m = TRACE_ENV_LINE.exec(line)
-        if (m[2] !== '' && m[2] !== TRACE_REDACTED) { lines[k] = m[1] + TRACE_REDACTED + cr; changed = true }
+        if (m && m[3] !== '' && m[3] !== TRACE_REDACTED) { lines[k] = m[1] + TRACE_REDACTED + cr; changed = true }
       }
     }
     i = j
