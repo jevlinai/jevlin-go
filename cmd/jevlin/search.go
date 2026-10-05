@@ -417,6 +417,29 @@ func renderSearchForHuman(out searchOutcome, format string, keySrc keySource, st
 	case out.HTTPStatus == http.StatusUnauthorized:
 		fmt.Fprintf(stderr, "\njevlin: HTTP %d — the router refused the key (from %s); store a valid one with: jevlin login\n", out.HTTPStatus, keySrc)
 		return exitClientErr
+	case out.HTTPStatus == http.StatusPaymentRequired:
+		// Each 402 names the one remedy that clears it, branched on the
+		// router's own machine code — never its message — and only for
+		// codes this client knows. A 402 with an unrecognized code keeps
+		// the bare status line rather than guessing at advice. No portal
+		// URL is printed here: the portal's origin is configuration
+		// (platform.base_url), not something search resolves, and a
+		// hardcoded address would be wrong for every other deployment.
+		code := ""
+		if out.HasRouterErr {
+			code = out.RouterErr.Code
+		}
+		switch code {
+		case "credits_exhausted":
+			fmt.Fprintf(stderr, "\njevlin: HTTP %d — the account is out of credit; retrying will not fix it. Top up at the platform console.\n", out.HTTPStatus)
+		case "spend_ceiling":
+			fmt.Fprintf(stderr, "\njevlin: HTTP %d — a spend cap is reached. `jevlin limits` shows the caps and today's spend; the day resets at UTC midnight, the week on Monday, the month on the 1st.\n", out.HTTPStatus)
+		case "budget_exceeded":
+			fmt.Fprintf(stderr, "\njevlin: HTTP %d — no provider set fits this tier's per-query ceiling; retry with a cheaper -tier, not as-is.\n", out.HTTPStatus)
+		default:
+			fmt.Fprintf(stderr, "\njevlin: HTTP %d\n", out.HTTPStatus)
+		}
+		return exitClientErr
 	default:
 		fmt.Fprintf(stderr, "\njevlin: HTTP %d\n", out.HTTPStatus)
 		return exitClientErr
@@ -542,6 +565,17 @@ func performSearch(ctx context.Context, now func() time.Time, call searchCall) s
 	out := searchOutcome{Traced: call.Trace != nil}
 	if out.Traced {
 		body["trace"] = call.Trace
+		// The router reads session identity in two places: trace.session_id
+		// threads the console's Trajectories view, and a top-level
+		// session_id (mirrored into X-Session-Id by postSearch) feeds its
+		// live reformulation tracker — "put the same id in both to get
+		// both" (the router's skill file). The mirror is the same hashed id
+		// the envelope already carries, so nothing new leaves the machine,
+		// and it exists only while an envelope rides: JEVLIN_TRACE=off
+		// stops both together.
+		if call.Trace.SessionID != "" {
+			body["session_id"] = call.Trace.SessionID
+		}
 	}
 
 	// CheckRedirect: this request carries the participant's sr- key in
@@ -569,7 +603,11 @@ func performSearch(ctx context.Context, now func() time.Time, call searchCall) s
 		// accept the field. One retry without it, on the SAME ctx, so the
 		// fallback gets only what is left of the original budget. Never
 		// recursive: this is the only place a second POST is issued.
+		// The session mirror goes with the trace: a router old enough to
+		// refuse the trace field predates the top-level session_id too,
+		// and this retry exists exactly for those routers.
 		delete(body, "trace")
+		delete(body, "session_id")
 		out.Retried = true
 		attempt, err = postSearch(ctx, client, call, body)
 		out.Attempts++
@@ -657,8 +695,14 @@ func postSearch(ctx context.Context, client *http.Client, call searchCall, body 
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", searchUserAgent+"/"+strings.TrimPrefix(buildVersion(), "v"))
+	req.Header.Set("User-Agent", clientIdentifier())
 	req.Header.Set("Authorization", "Bearer "+call.Key)
+	if sid, ok := body["session_id"].(string); ok && sid != "" {
+		// Read off the body, not off call.Trace, so the header cannot
+		// outlive the field: the trace-compatibility retry deletes the
+		// key, and the header must disappear with it.
+		req.Header.Set("X-Session-Id", sid)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return routerAttempt{}, err

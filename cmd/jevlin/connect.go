@@ -868,7 +868,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 				if code != exitOK {
 					return code
 				}
-				fresh, registerErr := client.Register(ctx, *name, registrationHint(outcome))
+				fresh, registerErr := client.Register(ctx, *name, clientIdentifier(), registrationHint(outcome))
 				if registerErr != nil {
 					fmt.Fprintln(stderr, "jevlin: register:", registerErr)
 					return exitTransport
@@ -916,7 +916,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 			if code != exitOK {
 				return code
 			}
-			fresh, err := client.Register(ctx, *name, registrationHint(outcome))
+			fresh, err := client.Register(ctx, *name, clientIdentifier(), registrationHint(outcome))
 			if err != nil {
 				fmt.Fprintln(stderr, "jevlin: register:", err)
 				return exitTransport

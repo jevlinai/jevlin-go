@@ -91,7 +91,7 @@ func TestRegisterReturnsAgentIdentity(t *testing.T) {
 		})
 	}
 	c := New(stub.srv.URL, stub.srv.URL)
-	reg, err := c.Register(context.Background(), "", nil)
+	reg, err := c.Register(context.Background(), "", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,22 +105,29 @@ func TestRegisterReturnsAgentIdentity(t *testing.T) {
 	if _, ok := sawBody["name"]; ok {
 		t.Error("empty name was sent as a field instead of omitted")
 	}
+	if _, ok := sawBody["client"]; ok {
+		t.Error("empty client was sent as a field instead of omitted")
+	}
 	if _, ok := sawBody["requested_scopes"]; ok {
 		t.Error("empty requested_scopes was sent as a field instead of omitted")
 	}
 
-	// A non-empty requested_scopes is sent as a hint.
+	// Non-empty fields are sent: requested_scopes as a hint, client as
+	// the build identifier.
 	stub.register = func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&sawBody)
 		writeJSON(w, http.StatusCreated, map[string]any{
 			"agent_id": "agent-2", "key": "sr-def456", "claim_url": stub.srv.URL + "/claim/X",
 		})
 	}
-	if _, err := c.Register(context.Background(), "my-agent", []string{"mining"}); err != nil {
+	if _, err := c.Register(context.Background(), "my-agent", "my-tool/1.0", []string{"mining"}); err != nil {
 		t.Fatal(err)
 	}
 	if sawBody["name"] != "my-agent" {
 		t.Errorf("name not sent: %+v", sawBody)
+	}
+	if sawBody["client"] != "my-tool/1.0" {
+		t.Errorf("client not sent: %+v", sawBody)
 	}
 	scopes, _ := sawBody["requested_scopes"].([]any)
 	if len(scopes) != 1 || scopes[0] != "mining" {
@@ -298,7 +305,7 @@ func TestPollIntervalIsFloorClamped(t *testing.T) {
 		})
 	}
 	c := New(stub.srv.URL, stub.srv.URL)
-	reg, err := c.Register(context.Background(), "", nil)
+	reg, err := c.Register(context.Background(), "", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,7 +327,7 @@ func TestPollIntervalIsCeilingClamped(t *testing.T) {
 		})
 	}
 	c := New(stub.srv.URL, stub.srv.URL)
-	reg, err := c.Register(context.Background(), "", nil)
+	reg, err := c.Register(context.Background(), "", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -353,7 +360,7 @@ func TestClientRefusesACrossOriginRedirect(t *testing.T) {
 	defer good.Close()
 
 	c := New(good.URL, good.URL)
-	if _, err := c.Register(context.Background(), "", nil); err == nil {
+	if _, err := c.Register(context.Background(), "", "", nil); err == nil {
 		t.Fatal("Register followed a cross-origin redirect instead of refusing it")
 	}
 	if evilHits != 0 {
@@ -374,7 +381,7 @@ func TestClientFollowsASameOriginRedirect(t *testing.T) {
 	})
 	srv = httptest.NewServer(mux)
 	defer srv.Close()
-	if _, err := New(srv.URL, srv.URL).Register(context.Background(), "", nil); err != nil {
+	if _, err := New(srv.URL, srv.URL).Register(context.Background(), "", "", nil); err != nil {
 		t.Fatalf("same-origin redirect refused: %v", err)
 	}
 }
@@ -388,7 +395,7 @@ func TestClaimURLOffOriginIsRefused(t *testing.T) {
 			"agent_id": "a", "key": "sr-1", "claim_url": "https://not-the-platform.example/claim/X",
 		})
 	}
-	if _, err := New(stub.srv.URL, stub.srv.URL).Register(context.Background(), "", nil); err == nil {
+	if _, err := New(stub.srv.URL, stub.srv.URL).Register(context.Background(), "", "", nil); err == nil {
 		t.Fatal("an off-origin claim_url was accepted")
 	}
 }
@@ -411,7 +418,7 @@ func TestClaimURLValidatesAgainstThePortalOriginNotTheAPIOrigin(t *testing.T) {
 			"agent_id": "a", "key": "sr-1", "claim_url": portal.URL + "/claim/X",
 		})
 	}
-	reg, err := New(api.srv.URL, portal.URL).Register(context.Background(), "", nil)
+	reg, err := New(api.srv.URL, portal.URL).Register(context.Background(), "", "", nil)
 	if err != nil {
 		t.Fatalf("a claim_url on the configured portal origin (different from the API origin) was refused: %v", err)
 	}
@@ -441,7 +448,7 @@ func TestClaimURLOnTheAgentsAPIOriginIsRejectedNotJustAnyMismatch(t *testing.T) 
 			"agent_id": "a", "key": "sr-1", "claim_url": api.srv.URL + "/claim/X",
 		})
 	}
-	if _, err := New(api.srv.URL, portal.URL).Register(context.Background(), "", nil); err == nil {
+	if _, err := New(api.srv.URL, portal.URL).Register(context.Background(), "", "", nil); err == nil {
 		t.Fatal("a claim_url on the agents API's own origin was accepted; " +
 			"a compromised API host could point a human at a page it controls")
 	}
@@ -456,7 +463,7 @@ func TestClaimURLControlCharacterIsRefused(t *testing.T) {
 			"agent_id": "a", "key": "sr-1", "claim_url": stub.srv.URL + "/claim/X\nfake line",
 		})
 	}
-	if _, err := New(stub.srv.URL, stub.srv.URL).Register(context.Background(), "", nil); err == nil {
+	if _, err := New(stub.srv.URL, stub.srv.URL).Register(context.Background(), "", "", nil); err == nil {
 		t.Fatal("a claim_url with a control character was accepted")
 	}
 }
@@ -469,7 +476,7 @@ func TestClaimCodeControlCharacterIsRefused(t *testing.T) {
 			"claim_code": "AB12\r\nCD34",
 		})
 	}
-	if _, err := New(stub.srv.URL, stub.srv.URL).Register(context.Background(), "", nil); err == nil {
+	if _, err := New(stub.srv.URL, stub.srv.URL).Register(context.Background(), "", "", nil); err == nil {
 		t.Fatal("a claim_code with a control character was accepted")
 	}
 }

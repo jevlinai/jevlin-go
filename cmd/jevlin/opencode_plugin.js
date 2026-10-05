@@ -40,9 +40,38 @@ const INSTALL_CONFIG = "{{INSTALL_CONFIG}}"
 export const JevlinLineage = async ({ client }) => {
   // sessionID -> how many times this session's context window has compacted.
   const compactions = new Map()
+  // sessionID -> the session that started it, or "" for one nothing started.
+  // opencode's task tool runs a subagent as a child session whose `parentID`
+  // is the session that called it; a tool call names only its own session,
+  // so the parent is learned from the session's creation event when this
+  // plugin saw it and asked for once when it did not.
+  const parents = new Map()
+  const parentOf = async (sid) => {
+    if (parents.has(sid)) return parents.get(sid)
+    let parent = ""
+    try {
+      // opencode's client does not throw on an HTTP error: it answers with
+      // `error` and no `data`. Only a session it actually returned — one that
+      // carries this id — says anything about a parent, so only that is
+      // cached. Anything else is asked again at the next search.
+      const info = (await client.session.get({ path: { id: sid } }))?.data
+      if (info?.id === sid) {
+        if (typeof info.parentID === "string") parent = info.parentID
+        parents.set(sid, parent)
+      }
+    } catch {
+      // Not cached: a session that could not be read now may be readable at
+      // the next search. This one goes out without a parent.
+    }
+    return parent
+  }
   return {
     event: async ({ event }) => {
       try {
+        if (event?.type === "session.created" || event?.type === "session.updated") {
+          const info = event?.properties?.info
+          if (typeof info?.id === "string" && info.id) parents.set(info.id, typeof info.parentID === "string" ? info.parentID : "")
+        }
         if (event?.type === "session.compacted") {
           const sid = event?.properties?.sessionID ?? event?.properties?.info?.id
           if (typeof sid === "string" && sid) compactions.set(sid, (compactions.get(sid) ?? 0) + 1)
@@ -61,6 +90,10 @@ export const JevlinLineage = async ({ client }) => {
         const gen = compactions.get(sid) ?? 0
         const env = { v: 1, harness: "opencode", session_id: traceHash(sid), window: gen > 0 ? String(gen) : "none" }
         if (typeof input.callID === "string" && input.callID !== "") env.call_id = traceHash(sid + "|" + input.callID)
+        // A subagent names the session that started it, by the id that
+        // session's own searches carry.
+        const parent = await parentOf(sid)
+        if (parent && parent !== sid) env.parent_session_id = traceHash(parent)
         // The assistant text before this call, from the session's messages.
         try {
           const messages = (await client.session.messages({ path: { id: sid } }))?.data ?? []

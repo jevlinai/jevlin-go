@@ -116,6 +116,10 @@ is it working, was I paid:
              installation's wallet. -json reports as one JSON object
              instead of text
   earnings   what the chain has paid to your payout address
+  limits     this key's spend caps and today's spend against the
+             effective ceiling, read from the router; reading spends
+             nothing and works even at the ceiling. Setting caps is not
+             built yet. -json emits one machine envelope
 
 wallet (a reward address this installation controls):
   wallet init      generate a key: prints the recovery mnemonic ONCE, seals

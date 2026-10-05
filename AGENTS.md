@@ -116,7 +116,7 @@ govulncheck.
     explicit code) or an explicit `-abandon-pending`. The same signed bytes are re-sent, never a
     second signature. `wallet.lock` spans the pending check through first-broadcast classification.
 15. **The machine protocol is versioned, closed and typed.** `search --stdin`, `status -json`,
-    `doctor -json` and `connect -json` emit one envelope with the mandatory header (`version`,
+    `doctor -json`, `connect -json` and `limits -json` emit one envelope with the mandatory header (`version`,
     `command`, `ok`, `exit_code`, `status`, `code`, `retryable`, `action`), a closed action set
     (`none`, `retry`, `fix_input`, `connect`, `login`, `check_access`, `report`) and exit classes
     0 through 4. Classification is by typed errors and exact codes, never by message text
@@ -136,6 +136,11 @@ govulncheck.
     `agent_trace_common.js` and pinned by `TestBridgeGuardsAgree`), taken from the host's
     declaration — or, for Claude Code, from the tool its payload names, since that host runs two.
     A POSIX prefix handed to PowerShell is looked up as a program name, and the search does not run.
+    **And only onto a command that syntax can carry it to**: the POSIX assignment prefix binds to
+    the first simple command and is a syntax error before a compound one, so it is written only
+    when that first command is provably the search (`posixSearchLeadsRe`, one regex with the JS
+    copy); a loop, a list or a pipeline with the search elsewhere is left byte-identical, and that
+    search runs on its local fallback identity instead of not running at all.
     **Provenance: only a bridge an adapter wrote for this call may carry that adapter's harness** —
     it removes every assignment it can prove standalone in a declared shell's syntax and writes its
     own, and leaves a command carrying one it cannot remove exactly as it found it. The trace is unauthenticated metadata either way:

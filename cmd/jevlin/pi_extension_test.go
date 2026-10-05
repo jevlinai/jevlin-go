@@ -184,7 +184,6 @@ func TestPiExtensionRewritesOurSearchAndNothingElse(t *testing.T) {
 		"absolute path":     `/opt/bin/jevlin search "q"`,
 		"quoted path":       `"/opt/bin/jevlin" search "q"`,
 		"windows exe":       `C:\bin\jevlin.exe search "q"`,
-		"after a pipe":      `echo hi | jevlin search "q"`,
 		"lookalike binary":  "jevlin-helper search q",
 		"another tool":      "grep -rn jevlinsearch .",
 		"another verb":      "jevlin status",
@@ -197,6 +196,13 @@ func TestPiExtensionRewritesOurSearchAndNothingElse(t *testing.T) {
 	}
 	// A tool that is not the shell is never rewritten, whatever it carries.
 	cases["other tool"] = []piCall{{Session: "s", ToolName: "read", Command: piSearchCommand, ToolCallID: "c1", Entries: entries}}
+	// Recognized, but the prefix cannot reach it: in `echo hi | jevlin
+	// search`, a POSIX assignment binds to echo, so the adapter stands
+	// down and the command runs exactly as written. This case used to
+	// expect a rewrite — a green test encoding the defect where one
+	// conversation's searches split across unrelated fallback sessions.
+	const afterPipe = `echo hi | jevlin search "q"`
+	cases["after a pipe"] = []piCall{{Session: "s", Command: afterPipe, ToolCallID: "c1", Entries: entries}}
 
 	got := runPiExtension(t, cases)
 	for name, cmd := range commands {
@@ -217,6 +223,7 @@ func TestPiExtensionRewritesOurSearchAndNothingElse(t *testing.T) {
 			}
 		})
 	}
+	piNoBridge(t, got["after a pipe"][0], afterPipe)
 	piNoBridge(t, got["other tool"][0], piSearchCommand)
 }
 

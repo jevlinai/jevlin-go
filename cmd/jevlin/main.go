@@ -176,6 +176,10 @@ is it working, was I paid:
              installation's wallet. -json reports as one JSON object
              instead of text
   earnings   what the chain has paid to your payout address
+  limits     this key's spend caps and today's spend against the
+             effective ceiling, read from the router; reading spends
+             nothing and works even at the ceiling. Setting caps is not
+             built yet. -json emits one machine envelope
 
 wallet (a reward address this installation controls):
   wallet init      generate a key: prints the recovery mnemonic ONCE, seals
@@ -247,6 +251,8 @@ func dispatch(name string, args []string) int {
 		return cmdDoctor(args, os.Stdout, os.Stderr)
 	case "earnings":
 		return cmdEarnings(args, os.Stdout, os.Stderr, os.Getenv)
+	case "limits":
+		return cmdLimits(args, os.Stdout, os.Stderr, os.Getenv)
 	case "version", "-version", "--version":
 		fmt.Fprintln(os.Stdout, "jevlin", buildVersion())
 		return 0
@@ -257,6 +263,14 @@ func dispatch(name string, args []string) int {
 		fmt.Fprintf(os.Stderr, "jevlin: unknown command %q\n\n%s", name, usageText)
 		return 2
 	}
+}
+
+// clientIdentifier is the one spelling of "which build is speaking" sent
+// upstream: the User-Agent on every router call, and register's client
+// field. "jevlin/0.1.0" for a release, "jevlin/dev (abc123def456)" for a
+// local build — inside the router's 128-byte bound either way.
+func clientIdentifier() string {
+	return searchUserAgent + "/" + strings.TrimPrefix(buildVersion(), "v")
 }
 
 func buildVersion() string {

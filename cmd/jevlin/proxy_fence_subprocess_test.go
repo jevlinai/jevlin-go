@@ -100,7 +100,7 @@ func probePlatformClient() proxyFenceProbe {
 	ctx, cancel := context.WithTimeout(context.Background(), fencedCallTimeout)
 	defer cancel()
 	client := platform.New("https://"+fenceProbeHost, "https://"+fenceProbeHost)
-	_, err := client.Register(ctx, "proxy-fence-subprocess-probe", []string{"credits"})
+	_, err := client.Register(ctx, "proxy-fence-subprocess-probe", "", []string{"credits"})
 	return classifyProbe("platform", err)
 }
 
