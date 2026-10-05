@@ -18,7 +18,9 @@ import "strings"
 // secret when they are a whole segment of its name, in any letter case. A
 // name's segments are what `_`, `-` and `.` separate: DATABASE_PASSWORD,
 // api-token, db.password, PGPASSWORD. A segment, not a substring, so MONKEY
-// and TOKENIZER_PATH are left alone.
+// and TOKENIZER_PATH are left alone. A segment written in camelCase also
+// counts by its last hump (lastHump): accessToken, clientSecret, dbPassword,
+// .npmrc's _authToken, apiKey.
 var secretNameSegments = map[string]bool{
 	"PASSWORD": true, "PASSWD": true, "PASSPHRASE": true, "PGPASSWORD": true,
 	"SECRET": true, "SECRETS": true, "TOKEN": true,
@@ -54,15 +56,52 @@ func secretName(name string) bool {
 	if secretWholeNames[upper] {
 		return true
 	}
-	segs := strings.FieldsFunc(upper, func(r rune) bool { return r == '_' || r == '-' || r == '.' })
-	qualified := name == upper || len(segs) >= 2
-	for _, seg := range segs {
+	parts := strings.FieldsFunc(name, func(r rune) bool { return r == '_' || r == '-' || r == '.' })
+	qualified := name == upper || len(parts) >= 2
+	for _, part := range parts {
+		seg := strings.ToUpper(part)
 		if secretNameSegments[seg] || (qualified && secretNameSegmentsQualified[seg]) {
 			return true
+		}
+		if hump := lastHump(part); hump != part {
+			seg = strings.ToUpper(hump)
+			if secretNameSegments[seg] || secretNameSegmentsQualified[seg] {
+				return true
+			}
 		}
 	}
 	return false
 }
+
+// lastHump is the last camelCase word of part: from the last capital that
+// follows a lowercase letter or a digit (authToken, oauth2Token, dbPASSWORD),
+// or that ends a run of capitals and starts a word (APIKey), to the end. A
+// part with no such capital is its own last hump.
+//
+// The last hump only, because in camelCase the last word names what the
+// value is and a word before it says which: accessToken and clientSecret
+// hold a token and a secret, while tokenCount, keyName, passThrough and
+// secretName hold a count, a name, a flag and a name. Being a hump of a
+// name of two or more, KEY and PASS count here as they do in a name of two
+// or more segments: apiKey, dbPass, and also primaryKey and sortKey, which
+// lose a value that is rarely a secret, as primary_key and sort_key already
+// did.
+func lastHump(part string) string {
+	for i := len(part) - 1; i > 0; i-- {
+		c, prev := part[i], part[i-1]
+		if !isUpper(c) {
+			continue
+		}
+		if isLower(prev) || isDigit(prev) || (isUpper(prev) && i+1 < len(part) && isLower(part[i+1])) {
+			return part[i:]
+		}
+	}
+	return part
+}
+
+func isUpper(c byte) bool { return c >= 'A' && c <= 'Z' }
+func isLower(c byte) bool { return c >= 'a' && c <= 'z' }
+func isDigit(c byte) bool { return c >= '0' && c <= '9' }
 
 // redactSecretAssignments replaces the value of every assignment whose name
 // says it is a secret (secretName) or is this client's own trace bridge.

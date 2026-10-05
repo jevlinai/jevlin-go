@@ -153,7 +153,7 @@ const scrubTraceCommon = (text) => redactTraceJwts(text
   .replace(/\bAKIA[0-9A-Z]{16}\b/g, TRACE_REDACTED))
 
 // redactSecretAssignments: the value of NAME=value when a whole segment of
-// NAME (split on _ - .) is a secret word, or NAME is our own trace bridge,
+// NAME (split on _ - ., and a camelCase part by its last hump) is a secret word, or NAME is our own trace bridge,
 // whose value is an envelope no pattern can see into. KEY and PASS count
 // only in a name with no lowercase letter or of two or more segments:
 // `key=value` and `pass=2` are prose. A scanner, not one regular
@@ -165,12 +165,34 @@ const TRACE_SECRET_SEGMENTS = new Set(['PASSWORD', 'PASSWD', 'PASSPHRASE', 'PGPA
 const TRACE_SECRET_SEGMENTS_QUALIFIED = new Set(['KEY', 'PASS'])
 const TRACE_SECRET_NAMES = new Set(['MYSQL_PWD'])
 const TRACE_QUOTED_VALUE_MAX_LINES = 100
+// A camelCase part also counts by its last hump: the last capital after a
+// lowercase letter or digit, or ending a run of capitals before a lowercase
+// letter, to the end (accessToken, APIKey). The last word names what the
+// value is; tokenCount and keyName hold a count and a name.
+const traceIsUpper = (c) => c >= 65 && c <= 90
+const traceIsLower = (c) => c >= 97 && c <= 122
+const traceLastHump = (part) => {
+  for (let i = part.length - 1; i > 0; i--) {
+    const c = part.charCodeAt(i)
+    const prev = part.charCodeAt(i - 1)
+    if (!traceIsUpper(c)) continue
+    if (traceIsLower(prev) || (prev >= 48 && prev <= 57) || (traceIsUpper(prev) && i + 1 < part.length && traceIsLower(part.charCodeAt(i + 1)))) return part.slice(i)
+  }
+  return part
+}
 const traceSecretName = (name) => {
   const upper = name.toUpperCase()
   if (TRACE_SECRET_NAMES.has(upper)) return true
-  const segs = upper.split(/[_.-]/).filter((seg) => seg !== '')
-  const qualified = name === upper || segs.length >= 2
-  return segs.some((seg) => TRACE_SECRET_SEGMENTS.has(seg) || (qualified && TRACE_SECRET_SEGMENTS_QUALIFIED.has(seg)))
+  const parts = name.split(/[_.-]/).filter((part) => part !== '')
+  const qualified = name === upper || parts.length >= 2
+  return parts.some((part) => {
+    const seg = part.toUpperCase()
+    if (TRACE_SECRET_SEGMENTS.has(seg) || (qualified && TRACE_SECRET_SEGMENTS_QUALIFIED.has(seg))) return true
+    const hump = traceLastHump(part)
+    if (hump === part) return false
+    const h = hump.toUpperCase()
+    return TRACE_SECRET_SEGMENTS.has(h) || TRACE_SECRET_SEGMENTS_QUALIFIED.has(h)
+  })
 }
 const traceIsWord = (c) => c === 95 || (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122)
 const traceIsNameStart = (c) => c === 95 || (c >= 65 && c <= 90) || (c >= 97 && c <= 122)

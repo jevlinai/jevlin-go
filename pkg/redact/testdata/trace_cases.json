@@ -1580,5 +1580,96 @@
   "account": "",
   "in": "#{env:API_TOKEN}=y and %{env:API_TOKEN} = y",
   "want": "#{env:API_TOKEN}=y and %{env:API_TOKEN} = y"
+ },
+ {
+  "name": "camel/.npmrc _authToken",
+  "host": "",
+  "account": "",
+  "in": "//registry.npmjs.org/:_authToken=npm_TokenCanary0123",
+  "want": "//registry.npmjs.org/:_authToken=[REDACTED]"
+ },
+ {
+  "name": "camel/clientSecret accessToken dbPassword",
+  "host": "",
+  "account": "",
+  "in": "clientSecret=a accessToken=b dbPassword=c",
+  "want": "clientSecret=[REDACTED] accessToken=[REDACTED] dbPassword=[REDACTED]"
+ },
+ {
+  "name": "camel/a run of capitals before a word",
+  "host": "",
+  "account": "",
+  "in": "APIKey=a and myAPIKey=b",
+  "want": "APIKey=[REDACTED] and myAPIKey=[REDACTED]"
+ },
+ {
+  "name": "camel/capitals after a lowercase letter",
+  "host": "",
+  "account": "",
+  "in": "dbPASSWORD=a",
+  "want": "dbPASSWORD=[REDACTED]"
+ },
+ {
+  "name": "camel/a hump after a digit",
+  "host": "",
+  "account": "",
+  "in": "oauth2Token=a",
+  "want": "oauth2Token=[REDACTED]"
+ },
+ {
+  "name": "camel/KEY and PASS as the last hump",
+  "host": "",
+  "account": "",
+  "in": "apiKey=a dbPass=b",
+  "want": "apiKey=[REDACTED] dbPass=[REDACTED]"
+ },
+ {
+  "name": "camel/cost: primaryKey goes too",
+  "host": "",
+  "account": "",
+  "in": "primaryKey=userId",
+  "want": "primaryKey=[REDACTED]"
+ },
+ {
+  "name": "camel/a hump inside a segmented name",
+  "host": "",
+  "account": "",
+  "in": "app.clientSecret=a",
+  "want": "app.clientSecret=[REDACTED]"
+ },
+ {
+  "name": "survives/a secret word before the last hump",
+  "host": "",
+  "account": "",
+  "in": "keyName=x tokenCount=5 passThrough=true secretName=db-creds passwordHash=x tokenizerPath=x",
+  "want": "keyName=x tokenCount=5 passThrough=true secretName=db-creds passwordHash=x tokenizerPath=x"
+ },
+ {
+  "name": "camel/monkeyPatch and maxTokens stay, turnKey goes",
+  "host": "",
+  "account": "",
+  "in": "monkeyPatch=1 maxTokens=4096 turnKey=1x",
+  "want": "monkeyPatch=1 maxTokens=4096 turnKey=[REDACTED]"
+ },
+ {
+  "name": "camel/a capitalized word alone is not a hump",
+  "host": "",
+  "account": "",
+  "in": "Token=x Key=1 Pass=2",
+  "want": "Token=[REDACTED] Key=1 Pass=2"
+ },
+ {
+  "name": "camel/the last hump of three",
+  "host": "",
+  "account": "",
+  "in": "getAccessToken=a",
+  "want": "getAccessToken=[REDACTED]"
+ },
+ {
+  "name": "camel/a word after a run of capitals",
+  "host": "",
+  "account": "",
+  "in": "JWTToken=a",
+  "want": "JWTToken=[REDACTED]"
  }
 ]
