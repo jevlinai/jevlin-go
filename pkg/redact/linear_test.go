@@ -19,6 +19,13 @@ type traceSlowInput struct {
 	Prefix string `json:"prefix"`
 	Unit   string `json:"unit"`
 	Suffix string `json:"suffix"`
+	// Bytes, when set, builds the text to that size instead of
+	// traceSourceCap: a row whose quadratic form Go's vectorized
+	// strings.Index runs fast enough to pass the bound at 256 KiB (a
+	// search for one marker from every other, 0.4 s) is built larger, so
+	// that losing its linear step shows. Larger than any entry a scrubber
+	// is given; it is a test's magnifier, not a size that occurs.
+	Bytes int `json:"bytes"`
 }
 
 // traceSourceCap is the largest entry either scrubber is given whole: an
@@ -36,7 +43,11 @@ const traceSourceCap = 256 * 1024
 const traceLinearBound = 800 * time.Millisecond
 
 func (in traceSlowInput) build() string {
-	n := (traceSourceCap - len(in.Prefix) - len(in.Suffix)) / len(in.Unit)
+	size := traceSourceCap
+	if in.Bytes > 0 {
+		size = in.Bytes
+	}
+	n := (size - len(in.Prefix) - len(in.Suffix)) / len(in.Unit)
 	return in.Prefix + strings.Repeat(in.Unit, n) + in.Suffix
 }
 

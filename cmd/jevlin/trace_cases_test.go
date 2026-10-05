@@ -275,7 +275,10 @@ func TestTheSharedSourceScrubsAdversarialInputsInLinearTime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var inputs []struct{ Name, Prefix, Unit, Suffix string }
+	var inputs []struct {
+		Name, Prefix, Unit, Suffix string
+		Bytes                      int
+	}
 	if err := json.Unmarshal(raw, &inputs); err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +295,7 @@ func TestTheSharedSourceScrubsAdversarialInputsInLinearTime(t *testing.T) {
  const src = input.shared + "\nexport { scrubTraceText, traceIdentityPatterns, TRACE_SOURCE_CAP };";
  const m = await import('data:text/javascript;base64,'+Buffer.from(src).toString('base64'));
  const c = input.input;
- const n = Math.floor((m.TRACE_SOURCE_CAP - Buffer.byteLength(c.Prefix) - Buffer.byteLength(c.Suffix)) / Buffer.byteLength(c.Unit));
+ const n = Math.floor(((c.Bytes || m.TRACE_SOURCE_CAP) - Buffer.byteLength(c.Prefix) - Buffer.byteLength(c.Suffix)) / Buffer.byteLength(c.Unit));
  const text = c.Prefix + c.Unit.repeat(n) + c.Suffix;
  const id = m.traceIdentityPatterns('', '');
  let best = Infinity;
