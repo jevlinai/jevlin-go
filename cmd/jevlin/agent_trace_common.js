@@ -68,8 +68,9 @@ const traceHash = (raw) => createHash("sha256").update(TRACE_PREFIX + raw).diges
 
 // Mirror pkg/redact.TraceText for complete source entries before the bridge
 // is capped. The Go consumer applies its own preparation again. Every step
-// below is one function in pkg/redact/redact.go, in the same order, and
-// TestSharedTraceSourceRedactionBoundaries holds the two to the same bytes.
+// below is one function in pkg/redact, in the same order, and the shared
+// table in pkg/redact/testdata/trace_cases.json and
+// TestSharedTraceSourceRedactionBoundaries hold the two to the same bytes.
 //
 // The character classes are written out ([\t\n\f\r ] rather than \s, [^\n]
 // rather than .) because JavaScript's shorthands are wider than Go's, and a
@@ -99,6 +100,145 @@ const scrubTraceCommon = (text) => text
   .replace(/\bAKIA[0-9A-Z]{16}\b/g, TRACE_REDACTED)
   .replace(/\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\b/g, TRACE_REDACTED)
 
+// redactSecretAssignments: the value of NAME=value when a whole segment of
+// NAME (split on _ - .) is a secret word, or NAME is our own trace bridge,
+// whose value is an envelope no pattern can see into. KEY and PASS count
+// only in a name with no lowercase letter or of two or more segments:
+// `key=value` and `pass=2` are prose. A scanner, not one regular
+// expression, so a name that is not a secret's consumes nothing and a
+// secret chained after it is still read: every rule here is the one in
+// pkg/redact/assign.go, decided over ASCII code units.
+const TRACE_SECRET_SEGMENTS = new Set(['PASSWORD', 'PASSWD', 'PASSPHRASE', 'PGPASSWORD',
+  'SECRET', 'SECRETS', 'TOKEN', 'CREDENTIAL', 'CREDENTIALS', 'APIKEY'])
+const TRACE_SECRET_SEGMENTS_QUALIFIED = new Set(['KEY', 'PASS'])
+const TRACE_SECRET_NAMES = new Set(['MYSQL_PWD'])
+const TRACE_QUOTED_VALUE_MAX_LINES = 100
+const traceSecretName = (name) => {
+  const upper = name.toUpperCase()
+  if (TRACE_SECRET_NAMES.has(upper)) return true
+  const segs = upper.split(/[_.-]/).filter((seg) => seg !== '')
+  const qualified = name === upper || segs.length >= 2
+  return segs.some((seg) => TRACE_SECRET_SEGMENTS.has(seg) || (qualified && TRACE_SECRET_SEGMENTS_QUALIFIED.has(seg)))
+}
+const traceIsWord = (c) => c === 95 || (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122)
+const traceIsNameStart = (c) => c === 95 || (c >= 65 && c <= 90) || (c >= 97 && c <= 122)
+const traceIsName = (c) => traceIsWord(c) || c === 45 || c === 46
+const traceIsBlank = (c) => c === 32 || c === 9
+const traceIsSpace = (c) => c === 32 || c === 9 || c === 10 || c === 12 || c === 13
+// The quote at v closes at the returned index's left, or -1: not within
+// TRACE_QUOTED_VALUE_MAX_LINES line breaks. A backslash escapes one unit.
+const traceClosingQuote = (s, v) => {
+  const q = s.charCodeAt(v)
+  let lines = 0
+  for (let i = v + 1; i < s.length; i++) {
+    let c = s.charCodeAt(i)
+    if (c === 92) {
+      i++
+      if (i >= s.length) break
+      c = s.charCodeAt(i)
+    } else if (c === q) {
+      return i + 1
+    }
+    if (c === 10 && ++lines > TRACE_QUOTED_VALUE_MAX_LINES) return -1
+  }
+  return -1
+}
+const traceLineEnd = (s, v) => {
+  const i = s.indexOf('\n', v)
+  if (i < 0) return s.length
+  return i > v && s.charCodeAt(i - 1) === 13 ? i - 1 : i
+}
+const traceRunEnd = (s, i) => {
+  while (i < s.length) {
+    const c = s.charCodeAt(i)
+    if (traceIsSpace(c) || c === 38 || c === 59) break
+    i++
+  }
+  return i
+}
+// Hand back a trailing , and any trailing ) ] } or quote the value has
+// more of than it opened: they close something the value sits inside.
+const traceTrimValueTail = (s, from, to) => {
+  let paren = 0, bracket = 0, brace = 0, dquote = 0, squote = 0
+  for (let i = from; i < to; i++) {
+    switch (s.charCodeAt(i)) {
+      case 40: paren--; break
+      case 41: paren++; break
+      case 91: bracket--; break
+      case 93: bracket++; break
+      case 123: brace--; break
+      case 125: brace++; break
+      case 34: dquote++; break
+      case 39: squote++; break
+    }
+  }
+  while (to > from) {
+    const c = s.charCodeAt(to - 1)
+    if (c === 44) { /* , */ }
+    else if (c === 41 && paren > 0) paren--
+    else if (c === 93 && bracket > 0) bracket--
+    else if (c === 125 && brace > 0) brace--
+    else if (c === 34 && dquote % 2 === 1) dquote--
+    else if (c === 39 && squote % 2 === 1) squote--
+    else return to
+    to--
+  }
+  return to
+}
+const traceSecretValueEnd = (s, v) => {
+  if (v >= s.length) return v
+  const c = s.charCodeAt(v)
+  if (c === 34 || c === 39) {
+    const closed = traceClosingQuote(s, v)
+    return closed < 0 ? traceLineEnd(s, v) : traceTrimValueTail(s, closed, traceRunEnd(s, closed))
+  }
+  if (c === 61) return v
+  return traceTrimValueTail(s, v, traceRunEnd(s, v))
+}
+// The secret value behind the = at e, as [start, end], or null. The name is
+// read backwards from e and never past floor, the end of the last value
+// removed.
+const traceSecretValueAt = (s, floor, e) => {
+  let k = e
+  while (k > floor && traceIsBlank(s.charCodeAt(k - 1))) k--
+  let r = k
+  while (r > floor && traceIsName(s.charCodeAt(r - 1))) r--
+  if (r === k || !traceIsWord(s.charCodeAt(k - 1))) return null
+  let p = -1
+  for (let q = r; q < k; q++) {
+    if (traceIsNameStart(s.charCodeAt(q)) && (q === 0 || !traceIsWord(s.charCodeAt(q - 1)))) { p = q; break }
+  }
+  if (p < 0) return null
+  const name = s.slice(p, k)
+  const psEnv = p >= 5 && /^\$[Ee][Nn][Vv]:$/.test(s.slice(p - 5, p))
+  const bridge = name.toUpperCase() === TRACE_BRIDGE_ENV
+  if (k < e && !psEnv && !bridge) return null
+  if (!bridge && !traceSecretName(name)) return null
+  let v = e + 1
+  if (psEnv || bridge) while (v < s.length && traceIsBlank(s.charCodeAt(v))) v++
+  const end = traceSecretValueEnd(s, v)
+  if (end === v || s.slice(v, end) === TRACE_REDACTED) return null
+  return [v, end]
+}
+const redactTraceSecretAssignments = (text) => {
+  let e = text.indexOf('=')
+  if (e < 0) return text
+  let out = ''
+  let last = 0
+  let changed = false
+  while (e >= 0) {
+    let next = e + 1
+    const found = traceSecretValueAt(text, last, e)
+    if (found) {
+      out += text.slice(last, found[0]) + TRACE_REDACTED
+      last = next = found[1]
+      changed = true
+    }
+    e = text.indexOf('=', next)
+  }
+  return changed ? out + text.slice(last) : text
+}
+
 // redactEnvDumps: every value in a run of five or more consecutive
 // NAME=value lines. Five in a row is the output of env or printenv quoted
 // back, and nothing in it has a shape a pattern could pick secrets out by.
@@ -126,21 +266,6 @@ const redactTraceEnvDumps = (text) => {
   }
   return changed ? lines.join('\n') : text
 }
-
-// redactSecretAssignments: the value of NAME=value when a whole
-// `_`-separated segment of NAME says it is a secret, or NAME is our own
-// trace bridge, whose value is an envelope no pattern can see into. KEY and
-// PASS count only in a name with no lowercase letter: `key=value` is prose.
-const TRACE_SECRET_SEGMENTS = new Set(['PASSWORD', 'PASSWD', 'SECRET', 'SECRETS', 'TOKEN', 'CREDENTIAL', 'CREDENTIALS', 'APIKEY'])
-const TRACE_SECRET_SEGMENTS_UPPER_ONLY = new Set(['KEY', 'PASS'])
-const traceSecretName = (name) => {
-  const upper = name.toUpperCase()
-  const upperOnly = name === upper
-  return upper.split('_').some((seg) => TRACE_SECRET_SEGMENTS.has(seg) || (upperOnly && TRACE_SECRET_SEGMENTS_UPPER_ONLY.has(seg)))
-}
-const redactTraceSecretAssignments = (text) => text
-  .replace(/(^|[^A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)=("[^"\n]*"|'[^'\n]*'|[^\t\n\f\r "']+)/g, (match, lead, name, value) =>
-    value === TRACE_REDACTED || !(name === TRACE_BRIDGE_ENV || traceSecretName(name)) ? match : lead + name + '=' + TRACE_REDACTED)
 
 // One known difference from Go, left as it is: an address directly followed
 // by one of . % + - and a second address ("bob@example.com.a1@example.org").
@@ -194,7 +319,7 @@ const redactTraceLocalIdentity = (text, patterns) =>
   patterns.reduce((out, re) => out.replace(re, TRACE_REDACTED), text)
 
 const scrubTraceText = (text, identity = TRACE_LOCAL_IDENTITY) =>
-  redactTraceLocalIdentity(redactTraceHomePaths(redactTraceEmails(redactTraceSecretAssignments(redactTraceEnvDumps(scrubTraceCommon(text))))), identity)
+  redactTraceLocalIdentity(redactTraceHomePaths(redactTraceEmails(redactTraceEnvDumps(redactTraceSecretAssignments(scrubTraceCommon(text))))), identity)
 
 // prepareTraceHistory takes the COMPLETE text parts of one assistant
 // message — `{type: 'text', text}` entries, the shape opencode's message

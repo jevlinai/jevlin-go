@@ -73,12 +73,6 @@ var (
 	// The Windows sibling: C:\Users\<name>\... . This repo ships Windows
 	// binaries; the Unix-only pattern above missed this entirely.
 	windowsHomePathPattern = regexp.MustCompile(`(?i)([A-Z]:\\Users\\)[^\\\s]+`)
-	// NAME=value, where NAME is an identifier that starts at a non-identifier
-	// character and the value is one quoted string or one unbroken run. The
-	// leading group is kept and written back, so the match cannot begin in
-	// the middle of a longer name. Applied via redactSecretAssignments,
-	// which decides from the NAME whether the value goes.
-	assignmentPattern = regexp.MustCompile(`(^|[^A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)=("[^"\n]*"|'[^'\n]*'|[^\s"']+)`)
 	// One line of an environment listing: optional `export `, a name, `=`,
 	// and the rest of the line. Applied via redactEnvDumps, to runs only.
 	envLinePattern = regexp.MustCompile(`^(\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*=)(.*)$`)
@@ -89,27 +83,6 @@ var (
 // a row is the output of env or printenv quoted back, and nothing in it
 // has a shape a pattern could pick the secrets out by.
 const envDumpRun = 5
-
-// secretNameSegments are the words that make an assignment's value a
-// secret when they are a whole `_`-separated segment of its name, in any
-// letter case: DATABASE_PASSWORD, api_token, ClientSecret is not one (no
-// segment), client_secret is. A segment, not a substring, so MONKEY and
-// TOKENIZER_PATH are left alone.
-var secretNameSegments = map[string]bool{
-	"PASSWORD": true, "PASSWD": true, "SECRET": true, "SECRETS": true, "TOKEN": true,
-	"CREDENTIAL": true, "CREDENTIALS": true, "APIKEY": true,
-}
-
-// secretNameSegmentsUpperOnly count only in a name with no lowercase
-// letter, the way an environment variable is written. `key=value` and
-// `pass=2` are everyday prose and flag syntax; API_KEY and DB_PASS are not.
-var secretNameSegmentsUpperOnly = map[string]bool{"KEY": true, "PASS": true}
-
-// traceBridgeEnvName is this client's own trace bridge variable. Its value
-// is an encoded envelope that can itself hold earlier assistant text, and
-// no pattern can see into it, so a quoted command line that carries it has
-// the value removed whatever it looks like.
-const traceBridgeEnvName = "JEVLIN_TRACE_BRIDGE"
 
 // remoteAccessVerbs precede an ssh/scp/rsync/sftp destination that is
 // shaped exactly like an email address (user@host) but is not one —
@@ -146,8 +119,8 @@ func String(s string) string {
 // is this client's own words, not a model's account of what it just read.
 func TraceText(s string) string {
 	s = scrubCommon(s)
-	s = redactEnvDumps(s)
 	s = redactSecretAssignments(s)
+	s = redactEnvDumps(s)
 	s = redactEmails(s)
 	s = redactHomePaths(s)
 	s = redactLocalIdentity(s)
@@ -192,33 +165,6 @@ func redactEnvDumps(s string) string {
 		return s
 	}
 	return strings.Join(lines, "\n")
-}
-
-// redactSecretAssignments replaces the value of an assignment whose NAME
-// says it is a secret (secretNameSegments) or is this client's own trace
-// bridge. It reads the name, not the value: a password has no shape.
-func redactSecretAssignments(s string) string {
-	if !strings.Contains(s, "=") {
-		return s
-	}
-	return assignmentPattern.ReplaceAllStringFunc(s, func(match string) string {
-		m := assignmentPattern.FindStringSubmatch(match)
-		lead, name, value := m[1], m[2], m[3]
-		if value == placeholder || (name != traceBridgeEnvName && !secretName(name)) {
-			return match
-		}
-		return lead + name + "=" + placeholder
-	})
-}
-
-func secretName(name string) bool {
-	upperOnly := name == strings.ToUpper(name)
-	for _, seg := range strings.Split(strings.ToUpper(name), "_") {
-		if secretNameSegments[seg] || (upperOnly && secretNameSegmentsUpperOnly[seg]) {
-			return true
-		}
-	}
-	return false
 }
 
 // genericIdentityNames are account and host names that identify nobody

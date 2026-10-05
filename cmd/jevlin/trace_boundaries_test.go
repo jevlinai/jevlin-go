@@ -33,6 +33,13 @@ func traceBoundaryInputs() map[string]string {
 		"quoted_assignment": `API_TOKEN="HunterCanary0123456789 two words"`,
 		"env_dump":          "\nA_ONE=DumpCanary1\nB_TWO=DumpCanary2\nexport C_THREE=DumpCanary3\nD_FOUR=DumpCanary4\nE_FIVE=DumpCanary5\nF_SIX=DumpCanary6",
 		"bridge":            "JEVLIN_TRACE_BRIDGE=BridgeCanary0123456789 jevlin search --stdin",
+		// A secret chained behind a name that is not one, PowerShell's
+		// spaced assignment, a hyphenated flag, and a quoted value across
+		// lines: each is removed whole before the cut, wherever it falls.
+		"chained_assignment":    "jdbc:postgresql://db/app?user=fred&password=HunterCanary0123456789&ssl=true",
+		"powershell_assignment": `$env:API_TOKEN = "HunterCanary0123456789"`,
+		"hyphenated_flag":       "curl --api-key=HunterCanary0123456789 https://example.test",
+		"quoted_across_lines":   "PRIVATE_KEY=\"HunterCanary0123456789\nHunterCanary0123456789\n\" next",
 		// A carriage return or U+2028 inside a line ends the line for
 		// JavaScript's `.` and not for Go's: with `.` those two lines would
 		// not count, the run would fall under five, and nothing would go.

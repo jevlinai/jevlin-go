@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -316,5 +317,34 @@ func TestTheLogPathIsUnchangedByTheTraceRules(t *testing.T) {
 	text := "DATABASE_PASSWORD=hunter2 as mwhitlock on Build-Box7"
 	if got := String(text); got != text {
 		t.Errorf("String applied a trace-only rule: %q", got)
+	}
+}
+
+// TraceText removes what it removes once: its own output, scrubbed again,
+// comes back unchanged. A rule whose match could swallow the start of the
+// next one, or whose placeholder could read as a value of its own, fails
+// this on the second pass. Every row of the shared table is an input, with
+// its identity, and so are the rows run together, so that a value removed
+// on one row meets the text of the next.
+func TestTraceTextIsIdempotent(t *testing.T) {
+	cases := loadTraceCases(t)
+	check := func(name, host, account, text string) {
+		t.Helper()
+		restore := SetLocalIdentity(host, account)
+		defer restore()
+		once := TraceText(text)
+		if twice := TraceText(once); twice != once {
+			t.Errorf("%s: a second pass changed the text\n  once:  %q\n  twice: %q", name, once, twice)
+		}
+	}
+	var plain []string
+	for _, c := range cases {
+		check(c.Name, c.Host, c.Account, c.In)
+		if c.Host == "" && c.Account == "" {
+			plain = append(plain, c.In)
+		}
+	}
+	for _, sep := range []string{"\n", "", ",", "&", " "} {
+		check(fmt.Sprintf("the rows joined by %q", sep), "", "", strings.Join(plain, sep))
 	}
 }

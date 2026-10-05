@@ -488,5 +488,292 @@
   "account": "",
   "in": "C:\\Users\\\u000balice",
   "want": "C:\\Users\\[REDACTED]"
+ },
+ {
+  "name": "chain/url query",
+  "host": "",
+  "account": "",
+  "in": "jdbc:postgresql://localhost:5432/mydb?user=fred&password=HunterCanary&ssl=true",
+  "want": "jdbc:postgresql://localhost:5432/mydb?user=fred&password=[REDACTED]&ssl=true"
+ },
+ {
+  "name": "chain/docker --env",
+  "host": "",
+  "account": "",
+  "in": "docker run --env=POSTGRES_PASSWORD=HunterCanary postgres:16",
+  "want": "docker run --env=POSTGRES_PASSWORD=[REDACTED] postgres:16"
+ },
+ {
+  "name": "chain/kubectl --from-literal",
+  "host": "",
+  "account": "",
+  "in": "kubectl create secret generic db --from-literal=password=HunterCanary",
+  "want": "kubectl create secret generic db --from-literal=password=[REDACTED]"
+ },
+ {
+  "name": "chain/connection string",
+  "host": "",
+  "account": "",
+  "in": "Server=localhost;User Id=sa;Password=HunterCanary;Trust=True",
+  "want": "Server=localhost;User Id=sa;Password=[REDACTED];Trust=True"
+ },
+ {
+  "name": "chain/--set-env-vars",
+  "host": "",
+  "account": "",
+  "in": "gcloud run deploy --set-env-vars=DB_PASSWORD=HunterCanary,API_TOKEN=TokenCanary",
+  "want": "gcloud run deploy --set-env-vars=DB_PASSWORD=[REDACTED]"
+ },
+ {
+  "name": "chain/printf with literal escapes",
+  "host": "",
+  "account": "",
+  "in": "printf 'DB_HOST=localhost\\nDB_PASSWORD=HunterCanary\\n' > .env",
+  "want": "printf 'DB_HOST=localhost\\nDB_PASSWORD=[REDACTED]' > .env"
+ },
+ {
+  "name": "chain/bridge behind two names",
+  "host": "",
+  "account": "",
+  "in": "FOO=bar=JEVLIN_TRACE_BRIDGE=eyJCanary0123",
+  "want": "FOO=bar=JEVLIN_TRACE_BRIDGE=[REDACTED]"
+ },
+ {
+  "name": "chain/form body",
+  "host": "",
+  "account": "",
+  "in": "-d \"grant_type=client_credentials&client_id=app&client_secret=HunterCanary\"",
+  "want": "-d \"grant_type=client_credentials&client_id=app&client_secret=[REDACTED]\""
+ },
+ {
+  "name": "powershell/spaces around =",
+  "host": "",
+  "account": "",
+  "in": "$env:API_TOKEN = \"TokenCanary\"",
+  "want": "$env:API_TOKEN = [REDACTED]"
+ },
+ {
+  "name": "powershell/tabs and case",
+  "host": "",
+  "account": "",
+  "in": "$Env:DB_PASSWORD\t=\t'HunterCanary'; next",
+  "want": "$Env:DB_PASSWORD\t=\t[REDACTED]; next"
+ },
+ {
+  "name": "bridge/spaces in any syntax",
+  "host": "",
+  "account": "",
+  "in": "JEVLIN_TRACE_BRIDGE = eyJCanary0123 jevlin search",
+  "want": "JEVLIN_TRACE_BRIDGE = [REDACTED] jevlin search"
+ },
+ {
+  "name": "bridge/any letter case",
+  "host": "",
+  "account": "",
+  "in": "jevlin_trace_bridge=eyJCanary0123 jevlin search",
+  "want": "jevlin_trace_bridge=[REDACTED] jevlin search"
+ },
+ {
+  "name": "survives/spaces around = need $env:",
+  "host": "",
+  "account": "",
+  "in": "the API_TOKEN = value line in prose",
+  "want": "the API_TOKEN = value line in prose"
+ },
+ {
+  "name": "names/--api-key",
+  "host": "",
+  "account": "",
+  "in": "curl --api-key=KeyCanary0123 https://example.test",
+  "want": "curl --api-key=[REDACTED] https://example.test"
+ },
+ {
+  "name": "names/--secret-key",
+  "host": "",
+  "account": "",
+  "in": "aws configure --secret-key=KeyCanary0123",
+  "want": "aws configure --secret-key=[REDACTED]"
+ },
+ {
+  "name": "names/--access-key",
+  "host": "",
+  "account": "",
+  "in": "s3cmd --access-key=KeyCanary0123",
+  "want": "s3cmd --access-key=[REDACTED]"
+ },
+ {
+  "name": "names/api_key lowercase",
+  "host": "",
+  "account": "",
+  "in": "api_key=KeyCanary0123",
+  "want": "api_key=[REDACTED]"
+ },
+ {
+  "name": "names/client-secret",
+  "host": "",
+  "account": "",
+  "in": "--client-secret=SecretCanary",
+  "want": "--client-secret=[REDACTED]"
+ },
+ {
+  "name": "names/dotted",
+  "host": "",
+  "account": "",
+  "in": "spring.datasource.password=HunterCanary",
+  "want": "spring.datasource.password=[REDACTED]"
+ },
+ {
+  "name": "names/db_pass lowercase",
+  "host": "",
+  "account": "",
+  "in": "db_pass=HunterCanary",
+  "want": "db_pass=[REDACTED]"
+ },
+ {
+  "name": "names/PGPASSWORD",
+  "host": "",
+  "account": "",
+  "in": "PGPASSWORD=HunterCanary psql -h db",
+  "want": "PGPASSWORD=[REDACTED] psql -h db"
+ },
+ {
+  "name": "names/MYSQL_PWD",
+  "host": "",
+  "account": "",
+  "in": "MYSQL_PWD=HunterCanary mysql",
+  "want": "MYSQL_PWD=[REDACTED] mysql"
+ },
+ {
+  "name": "names/PASSPHRASE",
+  "host": "",
+  "account": "",
+  "in": "GPG_PASSPHRASE=HunterCanary and passphrase=HunterCanary",
+  "want": "GPG_PASSPHRASE=[REDACTED] and passphrase=[REDACTED]"
+ },
+ {
+  "name": "survives/a name ending in a dash is no name",
+  "host": "",
+  "account": "",
+  "in": "the foo-=bar operator",
+  "want": "the foo-=bar operator"
+ },
+ {
+  "name": "value/a quoted key across lines",
+  "host": "",
+  "account": "",
+  "in": "PRIVATE_KEY=\"-----BEGIN PRIVATE KEY-----\nMIIEvQSyntheticCanary\nSyntheticCanaryLine2\n-----END PRIVATE KEY-----\"\nnext line",
+  "want": "PRIVATE_KEY=[REDACTED]\nnext line"
+ },
+ {
+  "name": "value/an unclosed quote runs to the end of its line",
+  "host": "",
+  "account": "",
+  "in": "API_TOKEN=\"TokenCanary and the rest\nnext line",
+  "want": "API_TOKEN=[REDACTED]\nnext line"
+ },
+ {
+  "name": "value/an unclosed quote keeps the carriage return",
+  "host": "",
+  "account": "",
+  "in": "API_TOKEN='TokenCanary\r\nnext line",
+  "want": "API_TOKEN=[REDACTED]\r\nnext line"
+ },
+ {
+  "name": "value/a quote closing at the line cap",
+  "host": "",
+  "account": "",
+  "in": "API_TOKEN=\"TokenCanary\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\" after",
+  "want": "API_TOKEN=[REDACTED] after"
+ },
+ {
+  "name": "value/a quote closing past the line cap",
+  "host": "",
+  "account": "",
+  "in": "API_TOKEN=\"TokenCanary\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\" after",
+  "want": "API_TOKEN=[REDACTED]\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\" after"
+ },
+ {
+  "name": "value/a quote inside an unquoted value",
+  "host": "",
+  "account": "",
+  "in": "DB_PASSWORD=O'HunterCanary! next",
+  "want": "DB_PASSWORD=[REDACTED] next"
+ },
+ {
+  "name": "value/an escaped quote inside a quoted value",
+  "host": "",
+  "account": "",
+  "in": "export API_TOKEN=\"abc\\\"TokenCanary\" next",
+  "want": "export API_TOKEN=[REDACTED] next"
+ },
+ {
+  "name": "value/a quoted value joined to an unquoted one",
+  "host": "",
+  "account": "",
+  "in": "PASSWORD=\"abc\"HunterCanary next",
+  "want": "PASSWORD=[REDACTED] next"
+ },
+ {
+  "name": "value/a closing paren stays",
+  "host": "",
+  "account": "",
+  "in": "f(password=pw)",
+  "want": "f(password=[REDACTED])"
+ },
+ {
+  "name": "value/a closing paren after a quoted value stays",
+  "host": "",
+  "account": "",
+  "in": "f(password=\"pw\")",
+  "want": "f(password=[REDACTED])"
+ },
+ {
+  "name": "value/a semicolon ends it",
+  "host": "",
+  "account": "",
+  "in": "DATABASE_PASSWORD=hunter2; echo ok",
+  "want": "DATABASE_PASSWORD=[REDACTED]; echo ok"
+ },
+ {
+  "name": "value/the rest of the query stays",
+  "host": "",
+  "account": "",
+  "in": "?access_token=abc&page=2",
+  "want": "?access_token=[REDACTED]&page=2"
+ },
+ {
+  "name": "value/an expression is one value",
+  "host": "",
+  "account": "",
+  "in": "password=os.environ[\"PGPASSWORD\"] next",
+  "want": "password=[REDACTED] next"
+ },
+ {
+  "name": "value/an expression inside a call",
+  "host": "",
+  "account": "",
+  "in": "f(password=os.environ[\"PGPASSWORD\"]), x",
+  "want": "f(password=[REDACTED]), x"
+ },
+ {
+  "name": "value/a keyword argument list",
+  "host": "",
+  "account": "",
+  "in": "connect(user, password=pw, port=5432)",
+  "want": "connect(user, password=[REDACTED], port=5432)"
+ },
+ {
+  "name": "value/a quoted assignment keeps its quotes",
+  "host": "",
+  "account": "",
+  "in": "\"API_TOKEN=TokenCanary\" and [API_TOKEN=TokenCanary]",
+  "want": "\"API_TOKEN=[REDACTED]\" and [API_TOKEN=[REDACTED]]"
+ },
+ {
+  "name": "survives/a comparison is not a value",
+  "host": "",
+  "account": "",
+  "in": "if password==expected:",
+  "want": "if password==expected:"
  }
 ]

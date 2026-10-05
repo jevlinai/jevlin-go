@@ -103,3 +103,39 @@ func TestSharedTraceSourceAgreesOnEveryTraceCase(t *testing.T) {
 		}
 	}
 }
+
+// The bridge this client writes, in each shell's syntax, loses its value in
+// both scrubbers. The commands come from the renderers themselves (Go's
+// withTraceBridge and the shared source's), never typed here, so the test
+// follows what the client actually writes: PowerShell's form has spaces
+// around `=`, which a rule that wanted NAME=value would let through.
+func TestTheRenderedBridgeLosesItsValue(t *testing.T) {
+	const bridge = "eyJCanaryBridgeValue0123"
+	const search = "jevlin search --stdin"
+	shells := map[string]shellKind{"powershell": shellPowerShell, "posix": shellPOSIX}
+	var js map[string]struct{ Rendered, Scrubbed string }
+	runSharedTraceSource(t, `
+ const out = {};
+ for (const shell of ['powershell', 'posix']) {
+  const rendered = m.withTraceBridge(input.input.search, input.input.bridge, shell);
+  out[shell] = { rendered, scrubbed: m.scrubTraceText(rendered, []) };
+ }
+ process.stdout.write(JSON.stringify(out));`, map[string]string{"bridge": bridge, "search": search}, &js)
+	defer redact.SetLocalIdentity("", "")()
+	for name, sh := range shells {
+		rendered, ok := withTraceBridge(sh, bridge, search)
+		if !ok || !strings.Contains(rendered, bridge) {
+			t.Fatalf("%s: the Go renderer wrote no bridge: %q", name, rendered)
+		}
+		if js[name].Rendered != rendered {
+			t.Fatalf("%s: the two renderers disagree:\n  go: %q\n  js: %q", name, rendered, js[name].Rendered)
+		}
+		scrubbed := redact.TraceText(rendered)
+		if strings.Contains(scrubbed, bridge) || !strings.Contains(scrubbed, search) {
+			t.Errorf("%s: the bridge value survived, or more than it went: %q -> %q", name, rendered, scrubbed)
+		}
+		if js[name].Scrubbed != scrubbed {
+			t.Errorf("%s: the scrubbers disagree on the rendered bridge\n%s", name, traceDifference(js[name].Scrubbed, scrubbed))
+		}
+	}
+}
