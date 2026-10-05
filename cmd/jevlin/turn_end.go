@@ -82,9 +82,17 @@ func prepareFinalText(text string) (prepared string, chars int, truncated bool) 
 	if len(text) > hookTailBytes {
 		return "", chars, true
 	}
-	scrubbed := redact.TraceText(text)
-	prepared = prepareTraceText(text)
-	return prepared, chars, len(prepared) < len(scrubbed)
+	// Scrubbed once, then cut: the tail, on a rune boundary, as
+	// prepareTraceText does for history.
+	prepared = redact.TraceText(text)
+	if len(prepared) > traceHistoryCap {
+		start := len(prepared) - traceHistoryCap
+		for start < len(prepared) && !utf8.RuneStart(prepared[start]) {
+			start++
+		}
+		return prepared[start:], chars, true
+	}
+	return prepared, chars, false
 }
 
 // turnEndEnabled: the installation opted in, and tracing is not switched off.
@@ -189,8 +197,10 @@ type claudeStopPayload struct {
 //     is no turn id to join on, and a guessed one would attach the answer to
 //     another turn's searches;
 //   - no search of ours was served in this turn: `search` left no mark for it;
-//   - the turn has no final message to send. Its mark is taken all the same:
-//     the turn has ended.
+//
+// A turn that searched and has no message to send — none in the payload, or
+// one too large to scrub whole — is still reported, as completed and without
+// text: the router keeps how a turn ended either way.
 func claudeTurnEnd(ops hookOps, hc hookContext, payload []byte) {
 	if !turnEndEnabled(ops, hc) {
 		return
@@ -206,19 +216,16 @@ func claudeTurnEnd(ops hookOps, hc hookContext, payload []byte) {
 	if !takeTurnSearched(ops, hc.sessionsDir, turn) {
 		return
 	}
-	text, chars, truncated := prepareFinalText(p.LastAssistantMessage)
-	if text == "" {
-		return
+	rec := turnEndRecord{
+		SessionID: traceHash(p.SessionID),
+		TurnID:    turn,
+		Harness:   orString(ops.getenv("JEVLIN_HARNESS"), "claude-code"),
+		Status:    turnCompleted,
 	}
-	queueTurnEnd(ops, hc, turnEndRecord{
-		SessionID:  traceHash(p.SessionID),
-		TurnID:     turn,
-		Harness:    orString(ops.getenv("JEVLIN_HARNESS"), "claude-code"),
-		Status:     turnCompleted,
-		FinalText:  text,
-		FinalChars: chars,
-		Truncated:  truncated,
-	})
+	if text, chars, truncated := prepareFinalText(p.LastAssistantMessage); text != "" {
+		rec.FinalText, rec.FinalChars, rec.Truncated = text, chars, truncated
+	}
+	queueTurnEnd(ops, hc, rec)
 }
 
 // ── Cursor: the stop hook ───────────────────────────────────────────────
@@ -242,12 +249,12 @@ func cursorTurnEnd(ops hookOps, hc hookContext, p cursorPayload, l *lineageFile)
 	switch p.Status {
 	case "", "completed":
 		rec.Status = turnCompleted
-		if l.AnswerTurnID != turn || len(l.History) != 1 || l.History[0].Role != "assistant" {
-			return
-		}
-		rec.FinalText, rec.FinalChars, rec.Truncated = prepareFinalText(l.History[0].Text)
-		if rec.FinalText == "" {
-			return
+		// The reply is sent only when it is this turn's. Without one the
+		// turn is still reported, as completed and without text.
+		if l.AnswerTurnID == turn && len(l.History) == 1 && l.History[0].Role == "assistant" {
+			if text, chars, truncated := prepareFinalText(l.History[0].Text); text != "" {
+				rec.FinalText, rec.FinalChars, rec.Truncated = text, chars, truncated
+			}
 		}
 	case "aborted":
 		rec.Status = turnInterrupted

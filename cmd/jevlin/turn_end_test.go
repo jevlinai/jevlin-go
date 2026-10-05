@@ -167,8 +167,6 @@ func TestClaudeTurnEndSendsNothing(t *testing.T) {
 		"a stop hook is continuing it": {true, nil, turn, map[string]any{"stop_hook_active": true}},
 		"no prompt id":                 {true, nil, turn, map[string]any{"prompt_id": ""}},
 		"another event":                {true, nil, turn, map[string]any{"hook_event_name": "SubagentStop"}},
-		"no message":                   {true, nil, turn, map[string]any{"last_assistant_message": ""}},
-		"a message too large to scrub": {true, nil, turn, map[string]any{"last_assistant_message": strings.Repeat("x", hookTailBytes+1)}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			h := newTurnEndHarness(tc.env, tc.enabled)
@@ -186,6 +184,22 @@ func TestClaudeTurnEndSendsNothing(t *testing.T) {
 				t.Errorf("queued %v", h.queued)
 			}
 		})
+	}
+}
+
+// A turn that searched and ends with nothing to send is still reported:
+// completed, without text.
+func TestClaudeTurnEndWithoutAMessageIsStatusOnly(t *testing.T) {
+	for name, msg := range map[string]string{
+		"no message":                   "",
+		"a message too large to scrub": strings.Repeat("x", hookTailBytes+1),
+	} {
+		h := newTurnEndHarness(nil, true)
+		h.served(traceHash("sess|p1"))
+		runHook(t, h.ops, h.hc, "flush", claudeStop(map[string]any{"last_assistant_message": msg}))
+		if rec := h.record(t); rec.Status != turnCompleted || rec.FinalText != "" || rec.FinalChars != 0 || rec.Truncated {
+			t.Errorf("%s: %+v", name, rec)
+		}
 	}
 }
 
@@ -248,24 +262,21 @@ func TestCursorTurnEnd(t *testing.T) {
 		}
 	}
 
+	// A completed turn whose reply is not this turn's to send — reasoning was
+	// written last, the saved reply is another turn's, or it names no turn —
+	// is reported as completed, without text. Never with the wrong text.
+	for name, h := range map[string]*turnEndHarness{
+		"the last thing written was reasoning": setup("reasoning", "thinking it over"),
+		"the saved reply is another turn's":    setupFor("assistant", "the previous turn's answer", traceHash("conv|gen0")),
+		"the saved reply names no turn":        setupFor("assistant", "an answer from before the stamp existed", ""),
+	} {
+		runHook(t, h.ops, h.hc, "cursor stop", stop("completed", "gen1"))
+		if rec := h.record(t); rec.Status != turnCompleted || rec.FinalText != "" {
+			t.Errorf("%s: %+v", name, rec)
+		}
+	}
+
 	for name, run := range map[string]func() *turnEndHarness{
-		"the last thing written was reasoning": func() *turnEndHarness {
-			h := setup("reasoning", "thinking it over")
-			runHook(t, h.ops, h.hc, "cursor stop", stop("completed", "gen1"))
-			return h
-		},
-		// The reply for this turn never reached the file, which still holds
-		// the previous turn's. It must not be sent under this turn.
-		"the saved reply is another turn's": func() *turnEndHarness {
-			h := setupFor("assistant", "the previous turn's answer", traceHash("conv|gen0"))
-			runHook(t, h.ops, h.hc, "cursor stop", stop("completed", "gen1"))
-			return h
-		},
-		"the saved reply names no turn": func() *turnEndHarness {
-			h := setupFor("assistant", "an answer from before the stamp existed", "")
-			runHook(t, h.ops, h.hc, "cursor stop", stop("completed", "gen1"))
-			return h
-		},
 		"no search in this turn": func() *turnEndHarness {
 			h := setup("assistant", "an answer to something else")
 			runHook(t, h.ops, h.hc, "cursor stop", stop("completed", "gen2"))
