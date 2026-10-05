@@ -18,6 +18,11 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **`jevlin limits` reads your spend caps.** The three caps and today's spend
+  against the effective ceiling, straight from the router; reading spends
+  nothing and works even at the ceiling. Setting caps is not built yet. A
+  search refused with a 402 now also says which money problem it is and the one
+  thing that clears it, instead of a bare status line.
 - **Installed through npm, or from a release archive.** The `install.sh`,
   `install.ps1` and `setup.sh` scripts are gone. Without Node, download the archive
   for your OS from the releases page, verify it against `checksums.txt`, put the
