@@ -1116,35 +1116,35 @@
   "name": "home/windows doubled backslashes",
   "host": "",
   "account": "",
-  "in": "open('C:\\\\Users\\\\mwhitlock\\\\data.csv')",
+  "in": "open('C:\\\\Users\\\\realname\\\\data.csv')",
   "want": "open('C:\\\\Users\\\\[REDACTED]\\\\data.csv')"
  },
  {
   "name": "home/windows separators escaped twice",
   "host": "",
   "account": "",
-  "in": "\"C:\\\\\\\\Users\\\\\\\\mwhitlock\\\\\\\\x\"",
+  "in": "\"C:\\\\\\\\Users\\\\\\\\realname\\\\\\\\x\"",
   "want": "\"C:\\\\\\\\Users\\\\\\\\[REDACTED]\\\\\\\\x\""
  },
  {
   "name": "home/windows a spaced name the path goes on past",
   "host": "",
   "account": "",
-  "in": "C:\\Users\\Jos\u00e9 Garc\u00eda\\Documents",
+  "in": "C:\\Users\\\u00c9quipe Donn\u00e9es\\Documents",
   "want": "C:\\Users\\[REDACTED]\\Documents"
  },
  {
   "name": "home/windows a spaced name with doubled separators",
   "host": "",
   "account": "",
-  "in": "C:\\\\Users\\\\Jos\u00e9 Garc\u00eda\\\\Documents",
+  "in": "C:\\\\Users\\\\\u00c9quipe Donn\u00e9es\\\\Documents",
   "want": "C:\\\\Users\\\\[REDACTED]\\\\Documents"
  },
  {
   "name": "home/windows four words",
   "host": "",
   "account": "",
-  "in": "C:\\Users\\Juan Carlos P\u00e9rez G\u00f3mez\\x",
+  "in": "C:\\Users\\\u00c9quipe de Donn\u00e9es Test\\x",
   "want": "C:\\Users\\[REDACTED]\\x"
  },
  {
@@ -1158,8 +1158,8 @@
   "name": "home/windows a spaced name ending the path keeps its tail",
   "host": "",
   "account": "",
-  "in": "C:\\Users\\Jos\u00e9 Garc\u00eda is the folder",
-  "want": "C:\\Users\\[REDACTED] Garc\u00eda is the folder"
+  "in": "C:\\Users\\\u00c9quipe Donn\u00e9es is the folder",
+  "want": "C:\\Users\\[REDACTED] Donn\u00e9es is the folder"
  },
  {
   "name": "home/windows the next path is not part of the name",

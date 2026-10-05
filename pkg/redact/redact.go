@@ -73,8 +73,8 @@ var (
 	// The Windows sibling: C:\Users\<name>\... . This repo ships Windows
 	// binaries; the Unix-only pattern above missed this entirely. A
 	// separator may be doubled (or more), as Python's repr and JSON print a
-	// path: C:\\Users\\<name>. A name with spaces in it (C:\Users\José
-	// García\Documents) is taken whole when the path goes on past it: up to
+	// path: C:\\Users\\<name>. A name with spaces in it (C:\Users\Équipe
+	// Données\Documents) is taken whole when the path goes on past it: up to
 	// three more words, none holding a quote, a colon, a slash or a
 	// backtick, and then a backslash. A word with any of those is the next
 	// path or the text around this one (C:\Users\bob and C:\Users\…), and
