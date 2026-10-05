@@ -130,6 +130,8 @@ func hookMainWith(ops hookOps, hc hookContext, args []string, stdin *bytes.Reade
 		hookCursor(ops, hc, args[1], payload, stdout, stderr)
 	case "hermes":
 		hookHermes(args[1], payload, stdout)
+	case "codex":
+		hookCodex(ops, hc, args[1], payload)
 	case "flush":
 		claudeTurnEnd(ops, hc, payload) // as hookMain does, before the flush
 		_ = ops.spawnFlush(hc.cfgPath)

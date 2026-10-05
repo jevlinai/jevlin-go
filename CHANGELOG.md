@@ -26,6 +26,12 @@ The first release replaces this heading with its own.
   and capped like the trace; nothing for a turn with no served search, and
   nothing unless `miner.router_url` names the router. The conversation is read
   under Claude Code; Cursor sends the final answer only.
+- **Codex searches carry their session and turn.** A search run by Codex reads
+  the session id Codex sets on every command, so a session's searches group
+  together instead of by shell. Two hooks in `~/.codex/hooks.json`
+  (`UserPromptSubmit`, `Stop`) add the turn; run `jevlin agents install` again,
+  then `/hooks` inside Codex to approve them. With `turn_end` on, a Codex turn
+  that searched is reported as Claude Code's is.
 - **A subagent's searches name their parent.** Under Claude Code and opencode, a
   search made by a subagent now carries `parent_session_id` in its trace: the hashed id of
   the session that started it. The router could already tell that two sessions

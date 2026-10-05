@@ -99,12 +99,27 @@ A skill in `~/.codex/skills/jevlin/` and, when `~/.codex/config.toml` exists, a 
 it that widens the sandbox: network on, and writable roots for the state directory always, plus
 the intake, sessions and spool directories when `[miner] enabled` is set.
 
+Two entries in `~/.codex/hooks.json`: `UserPromptSubmit` and `Stop`. Neither runs in front of a
+tool call.
+
 ### What to know
 
 Bash on macOS and Linux, PowerShell on Windows. Without the block, a search returns results but
 cannot record, so it earns nothing and the claim is never picked up. The config, key and wallet
 are never writable, so a command gone wrong cannot change where your credentials go. Sandboxed
 commands can read `credentials.json` and the state directory; on Windows, not the wallet.
+
+Codex sets `CODEX_THREAD_ID` on every command it runs, and a search reads it, so a session's
+searches share one session id with or without the hooks. The hooks add the turn:
+`UserPromptSubmit` records which turn is running (nothing of your prompt is kept), and `Stop`
+starts the flush. **Codex runs a hook only after you approve it**: open Codex and run `/hooks`
+once after installing, and again after an upgrade moves the binary. Until then searches carry a
+session and no turn.
+
+With `turn_end` on, `Stop` also reports a turn that searched. The turn is read from the session
+file Codex names: what you asked, what the assistant wrote, each tool by name, time and outcome,
+the model and the tokens. A tool's arguments and output are never sent; a command is looked at
+only to tell whether it is the search.
 
 Codex appends its own tables, such as folder trust or `[windows] sandbox`, to the end of
 `config.toml`, where they can land between jevlin's markers. Install and uninstall change only
@@ -116,7 +131,9 @@ jevlin's table goes with it, and the plan says so first. If you keep your own
 
 ### Known limits
 
-None known.
+A turn you interrupt runs no `Stop` hook, so it is not reported. A subagent's searches carry its
+own session and do not name the session that started it. The hooks were written against Codex
+0.132.0's source and session files and have not been run inside Codex.
 
 ## opencode
 

@@ -39,9 +39,9 @@ var declaredShellTable = []declaredRow{
 	{"claude", "darwin", evidenceEstablished, evidenceEstablished, []shellKind{shellPOSIX}, []shellKind{shellPOSIX}, ""},
 	{"claude", "linux", evidenceEstablished, evidenceEstablished, []shellKind{shellPOSIX}, []shellKind{shellPOSIX}, ""},
 	{"claude", "windows", evidenceEstablished, evidenceEstablished, []shellKind{shellPOSIX, shellPowerShell}, []shellKind{shellPOSIX}, chosenPerCall},
-	{"codex", "darwin", evidenceEstablished, evidenceNone, []shellKind{shellPOSIX}, nil, ""},
-	{"codex", "linux", evidenceEstablished, evidenceNone, []shellKind{shellPOSIX}, nil, ""},
-	{"codex", "windows", evidenceEstablished, evidenceNone, []shellKind{shellPowerShell}, nil, ""},
+	{"codex", "darwin", evidenceEstablished, evidenceEstablished, []shellKind{shellPOSIX}, []shellKind{shellPOSIX}, ""},
+	{"codex", "linux", evidenceEstablished, evidenceEstablished, []shellKind{shellPOSIX}, []shellKind{shellPOSIX}, ""},
+	{"codex", "windows", evidenceEstablished, evidenceEstablished, []shellKind{shellPowerShell}, []shellKind{shellCmd}, ""},
 	{"cursor", "darwin", evidenceEstablished, evidenceEstablished, []shellKind{shellPOSIX}, []shellKind{shellPOSIX}, ""},
 	{"cursor", "linux", evidenceEstablished, evidenceRuled, []shellKind{shellPOSIX}, []shellKind{shellPOSIX}, ""},
 	{"cursor", "windows", evidenceEstablished, evidenceRuled, []shellKind{shellPowerShell, shellPOSIX}, []shellKind{shellCmd, shellPowerShell}, chosenByParticipant},
@@ -163,7 +163,7 @@ func TestDeclaredShellsRefusesWhatIsNotEstablished(t *testing.T) {
 			t.Fatalf("refusal message %q does not name the host, the OS and the reason", msg)
 		}
 	}
-	codex, _ := targetByID(installTargets, "codex")
+	opencode, _ := targetByID(installTargets, "opencode")
 	cursor, _ := targetByID(installTargets, "cursor")
 	claude, _ := targetByID(installTargets, "claude")
 
@@ -181,7 +181,7 @@ func TestDeclaredShellsRefusesWhatIsNotEstablished(t *testing.T) {
 		refused(t, fakeIntegrationTarget{}, "linux", channelTool)
 	})
 	t.Run("no hook channel is nothing to render", func(t *testing.T) {
-		shells, err := declaredShells(codex, "linux", channelHook)
+		shells, err := declaredShells(opencode, "linux", channelHook)
 		if shells != nil || err != nil {
 			t.Fatalf("got %v, %v; want nil, nil", shells, err)
 		}

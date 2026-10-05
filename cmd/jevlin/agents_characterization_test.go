@@ -606,7 +606,8 @@ func TestAgentStatusExactStates(t *testing.T) {
 		{"claude", "Claude Code", "skill+hooks", true, nil, "installed (skill+hooks)"},
 
 		{"codex", "Codex", "absent", false, nil, "not installed"},
-		{"codex", "Codex", "installed", true, nil, "installed (skill)"},
+		{"codex", "Codex", "skill", true, func(p agentPaths) []string { return []string{p.codexHooks} }, "installed (skill)"},
+		{"codex", "Codex", "skill+hooks", true, nil, "installed (skill+hooks)"},
 
 		{"cursor", "Cursor", "absent", false, nil, "not installed"},
 		{"cursor", "Cursor", "skill only", true, func(p agentPaths) []string { return []string{p.cursorHooks} }, "installed (skill only)"},

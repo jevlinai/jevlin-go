@@ -209,7 +209,11 @@ type lineageFile struct {
 	// AnswerTurnID is the turn the assistant text in History was written in,
 	// when a host's hook knows it (Cursor's afterAgentResponse). The turn end
 	// sends that text only under this turn, never under a later one.
-	AnswerTurnID string    `json:"answer_turn_id,omitempty"`
+	AnswerTurnID string `json:"answer_turn_id,omitempty"`
+	// TurnSearches are the call ids of the searches made in TurnID, in
+	// order, for a host whose turn end cannot learn them any other way
+	// (Codex). Written only when the installation opted in to the turn end.
+	TurnSearches []string  `json:"turn_searches,omitempty"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 

@@ -6,9 +6,17 @@
       "mode": 384,
       "why": "skill",
       "content": "\u003cSKILL.md, rendered for this OS; see testdata/hosts/*.golden\u003e"
+    },
+    {
+      "surface": "Codex",
+      "path": "/home/u/.codex/hooks.json",
+      "mode": 384,
+      "why": "hooks",
+      "content": "{\n  \"hooks\": {\n    \"Stop\": [\n      {\n        \"hooks\": [\n          {\n            \"command\": \"\u003cBIN\u003e hook -config \u003cCFG\u003e codex Stop\",\n            \"type\": \"command\"\n          }\n        ]\n      }\n    ],\n    \"UserPromptSubmit\": [\n      {\n        \"hooks\": [\n          {\n            \"command\": \"\u003cBIN\u003e hook -config \u003cCFG\u003e codex UserPromptSubmit\",\n            \"type\": \"command\"\n          }\n        ]\n      }\n    ]\n  }\n}\n"
     }
   ],
   "notes": [
-    "Codex: shell commands run sandboxed; if searches record nothing, allow this command network access and let it write to your jevlin home"
+    "Codex: shell commands run sandboxed; if searches record nothing, allow this command network access and let it write to your jevlin home",
+    "Codex: Codex runs a hook only after you approve it. Open Codex and run /hooks to approve the two jevlin entries; until then its searches share a session but not a turn"
   ]
 }

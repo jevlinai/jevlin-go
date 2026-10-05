@@ -764,6 +764,13 @@ func searchTrace(ops searchOps, m config.Miner, getenv func(string) string) (env
 		}
 	}
 
+	// Codex names the session in the command's own environment (codex_hook.go).
+	// A search another host already claimed above is not reached here, and
+	// one that declares another harness is not Codex's.
+	if thread := getenv(codexThreadEnv); thread != "" && !lineageDeclared && (harness == "" || harness == "codex") {
+		return capTrace(codexTrace(ops.hook, m.SessionsDir, m.TurnEnd, thread, now)), foreignBridge
+	}
+
 	// No hook anywhere: the parent shell stands in for the session. One
 	// agent session keeps one shell, so its pid is stable across calls.
 	// Hashed like every other identifier — the raw pid/host never travel.

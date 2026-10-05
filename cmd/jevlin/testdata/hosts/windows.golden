@@ -9,7 +9,7 @@ config: C:\Users\u\.jevlin\jevlin.toml
 claude    tool established posix+powershell
 claude    hook established posix
 codex     tool established powershell
-codex     hook none
+codex     hook established cmd
 cursor    tool established powershell+posix
 cursor    hook ruled       cmd+powershell
 opencode  tool established powershell

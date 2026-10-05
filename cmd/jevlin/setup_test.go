@@ -314,7 +314,7 @@ func targetOwnedPaths(p agentPaths, id string) []string {
 	case "claude":
 		return []string{filepath.Dir(p.claudeSkill), p.claudeSettings}
 	case "codex":
-		return []string{filepath.Dir(p.codexSkill), p.codexConfig}
+		return []string{filepath.Dir(p.codexSkill), p.codexConfig, p.codexHooks}
 	case "cursor":
 		return []string{filepath.Dir(p.cursorSkill), p.cursorHooks}
 	case "opencode":

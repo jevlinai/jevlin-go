@@ -515,18 +515,23 @@ func (codexTarget) Kind() targetKind { return targetHost }
 // the WSL launcher, which fails — only because our fence said bash, and the
 // follow-up run settled it by fencing the other way. That is the cell's
 // whole content: what the host does with the block we actually render, not
-// what its source defaults to. Codex has no hooks.
+// what its source defaults to.
+//
+// A hook command is run by something else: `$SHELL -lc` on macOS and Linux,
+// `%COMSPEC% /C` on Windows, whatever the tool shell is. That is read from
+// the source and has not been run.
 func (codexTarget) Shells(goos string) hostShells {
+	const hookSource = "source codex-rs hooks/src/engine/command_runner.rs default_shell_command at rust-v0.132.0"
 	switch goos {
 	case "darwin", "linux":
 		return hostShells{
 			tool: established("source codex-rs shell_detect.rs default_user_shell (user's shell, else zsh/bash); live: soak dropin-miner#57 macOS", shellPOSIX),
-			hook: cellNoChannel,
+			hook: established(hookSource+" ($SHELL -lc, else /bin/sh)", shellPOSIX),
 		}
 	case "windows":
 		return hostShells{
 			tool: established("live: Windows soak follow-up 2026-09-16, codex-cli 0.154.0, both codex exec and the TUI", shellPowerShell),
-			hook: cellNoChannel,
+			hook: established(hookSource+" (%COMSPEC% /C, else cmd.exe)", shellCmd),
 		}
 	}
 	return hostShells{tool: cellUnknown, hook: cellNoChannel}
@@ -551,7 +556,16 @@ func (t codexTarget) PlanInstall(ops agentOps, paths agentPaths, entry binEntry,
 	} else {
 		p.notes = append(p.notes, t.Label()+": shell commands run sandboxed; if searches record nothing, allow this command network access and let it write to your jevlin home")
 	}
-	if !skillChanged && !skillLeft && !blockChanged && !blockLeft {
+	hooksChanged := false
+	if spec, err := codexHooksFor(t, entry, runtime.GOOS); err != nil {
+		p.refused = append(p.refused, fmt.Sprintf("%s: %v", t.Label(), err))
+	} else if planHooksMerge(ops, t.Label(), paths.codexHooks, p, entry, spec) {
+		hooksChanged = true
+		// Codex runs no hook its user has not approved, and approves a hook
+		// by its content: a changed command needs approving again.
+		p.notes = append(p.notes, t.Label()+": Codex runs a hook only after you approve it. Open Codex and run /hooks to approve the two jevlin entries; until then its searches share a session but not a turn")
+	}
+	if !skillChanged && !skillLeft && !blockChanged && !blockLeft && !hooksChanged {
 		p.skipped = append(p.skipped, t.Label()+": already installed")
 	}
 }
@@ -577,6 +591,9 @@ func (t codexTarget) PlanUninstall(ops agentOps, paths agentPaths, entry binEntr
 		case r.had:
 			p.notes = append(p.notes, t.Label()+": left the sandbox block in "+paths.codexConfig+": "+r.why)
 		}
+	}
+	if planHooksRemove(ops, t.Label(), paths.codexHooks, p, entry, "hooks") {
+		removed = true
 	}
 	if !removed {
 		p.skipped = append(p.skipped, t.Label()+": not installed")
@@ -679,8 +696,11 @@ func pathUnder(p, dir string) bool {
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-func (codexTarget) Status(ops agentOps, paths agentPaths, _ binEntry) targetStatus {
+func (codexTarget) Status(ops agentOps, paths agentPaths, entry binEntry) targetStatus {
 	if pathExists(ops, paths.codexSkill) {
+		if hooksHaveOurs(ops, paths.codexHooks, entry) {
+			return targetStatus{true, "skill+hooks"}
+		}
 		return targetStatus{true, "skill"}
 	}
 	return targetStatus{}

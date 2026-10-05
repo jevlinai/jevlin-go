@@ -28,7 +28,8 @@ package main
 //	              Bash (lineage), SessionStart / PreCompact / PostCompact
 //	              (window), Stop (flush); and a permissions.allow rule for
 //	              the search command, so it runs unprompted.
-//	Codex         ~/.codex/skills/jevlin/SKILL.md.
+//	Codex         ~/.codex/skills/jevlin/SKILL.md, and two entries merged
+//	              into ~/.codex/hooks.json: UserPromptSubmit, Stop.
 //	Cursor        ~/.cursor/skills/jevlin/SKILL.md, and six entries
 //	              merged into ~/.cursor/hooks.json: sessionStart,
 //	              beforeShellExecution, afterAgentThought,
@@ -190,6 +191,7 @@ type agentPaths struct {
 	claudeSettings string
 	codexSkill     string
 	codexConfig    string
+	codexHooks     string
 	cursorSkill    string
 	cursorHooks    string
 	opencodePlugin string
@@ -217,6 +219,7 @@ func (o agentOps) paths(getenv func(string) string) agentPaths {
 		claudeSettings: filepath.Join(claudeDir, "settings.json"),
 		codexSkill:     filepath.Join(codexHome, "skills", agentsName, "SKILL.md"),
 		codexConfig:    filepath.Join(codexHome, "config.toml"),
+		codexHooks:     filepath.Join(codexHome, "hooks.json"),
 		cursorSkill:    filepath.Join(o.home, ".cursor", "skills", agentsName, "SKILL.md"),
 		cursorHooks:    filepath.Join(o.home, ".cursor", "hooks.json"),
 		opencodePlugin: filepath.Join(xdg, "opencode", "plugins", agentsName+".js"),
@@ -1038,6 +1041,32 @@ func ruleIsOurs(e any, ref installationRef) bool {
 	inner, _ = strings.CutSuffix(inner, ")")
 	inner = strings.TrimSuffix(inner, ":*")
 	return ref.commandIsOurs(inner)
+}
+
+// codexHooks are the two entries Codex gets (codex_hook.go), in the shape it
+// shares with Claude Code. Neither sits in front of a tool call.
+func codexHooks(entry binEntry, sh shellKind) (hooksSpec, error) {
+	order := []string{"UserPromptSubmit", "Stop"}
+	entries := map[string]map[string]any{}
+	for _, ev := range order {
+		cmd, err := entry.hookCommandForShell(sh, "codex", ev)
+		if err != nil {
+			return hooksSpec{}, err
+		}
+		entries[ev] = map[string]any{"hooks": []any{map[string]any{"type": "command", "command": cmd}}}
+	}
+	return hooksSpec{root: "hooks", entries: entries, order: order}, nil
+}
+
+func codexHooksFor(t installTarget, entry binEntry, goos string) (hooksSpec, error) {
+	shells, err := declaredShells(t, goos, channelHook)
+	if err != nil {
+		return hooksSpec{}, err
+	}
+	if len(shells) != 1 {
+		return hooksSpec{}, fmt.Errorf("%d hook runners are declared, and a hook command is written for one", len(shells))
+	}
+	return codexHooks(entry, shells[0])
 }
 
 func cursorHooks(entry binEntry, shells []shellKind) (hooksSpec, string, error) {

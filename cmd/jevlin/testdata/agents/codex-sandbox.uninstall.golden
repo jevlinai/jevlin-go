@@ -12,6 +12,10 @@
     {
       "surface": "Codex",
       "path": "/home/u/.codex/skills/jevlin"
+    },
+    {
+      "surface": "Codex",
+      "path": "/home/u/.codex/hooks.json"
     }
   ]
 }

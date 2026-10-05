@@ -305,6 +305,11 @@ func TestAgentsUninstallRemovesOnlyWhatInstallWrote(t *testing.T) {
 		t.Error("Cursor sessionStart not removed")
 	}
 	for _, r := range m.removed {
+		// Codex's hooks.json held nothing but our two entries: install
+		// created it, and uninstall takes the emptied file away.
+		if r == "/home/u/.codex/hooks.json" {
+			continue
+		}
 		if !strings.Contains(r, agentsName) {
 			t.Errorf("removed something not ours: %s", r)
 		}

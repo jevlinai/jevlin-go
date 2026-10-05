@@ -161,7 +161,7 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 		cfgPath, args = args[1], args[2:]
 	}
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: jevlin hook [-config file] lineage | window <phase> | cursor <event> | flush")
+		fmt.Fprintln(stderr, "usage: jevlin hook [-config file] lineage | window <phase> | cursor <event> | codex <event> | flush")
 		return exitUsage
 	}
 	hc := hookContext{cfgPath: cfgPath}
@@ -199,6 +199,10 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 	case "hermes":
 		if len(args) > 1 {
 			hookHermes(args[1], payload, stdout)
+		}
+	case "codex":
+		if len(args) > 1 {
+			hookCodex(ops, hc, args[1], payload)
 		}
 	case "flush":
 		// Claude Code's Stop: the turn is over. Its final message is queued

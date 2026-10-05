@@ -51,7 +51,7 @@ govulncheck.
    nothing to redact here because nothing is captured. The search-router **trace** is the one
    channel that carries model-influenceable text off the machine (the assistant text just before a
    search, capped and hashed per `trace.go`); it MUST be redacted before egress and is a conscious
-   privacy surface, not a default. The **turn end** (`turn_end.go`, `turn_detail.go`) is the only other one: for
+   privacy surface, not a default. The **turn end** (`turn_end.go`, `turn_detail.go`, `codex_hook.go`) is the only other one: for
    a turn that searched, the user's message, the assistant's visible text, and its final message,
    all under the same scrub and caps, with a skeleton of the turn's other tool calls. It is sent
    only when the installation set `[miner] turn_end = true`. It MUST stay off by default; MUST
