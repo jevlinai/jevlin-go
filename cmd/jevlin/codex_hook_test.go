@@ -570,3 +570,37 @@ func TestWhatContradictsACodexEntry(t *testing.T) {
 		}
 	}
 }
+
+// A search this installation renders but the bridge cannot be put on gets
+// silence, and silence writes no file: one under a directory whose name holds
+// a space (the placement rule does not read past it), and one whose query
+// names the bridge variable (an assignment it cannot prove standalone).
+func TestCodexWritesNoLineageForASearchItCannotBridge(t *testing.T) {
+	for _, c := range []struct{ name, dir, body string }{
+		{"a binary under a directory with a space", "Jo Smith", `{"version":1,"query":"q"}`},
+		{"a query that names the bridge", "", `{"version":1,"query":"JEVLIN_TRACE_BRIDGE=x"}`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			bin := filepath.Join(t.TempDir(), c.dir, ".jevlin", "bin", exeName("jevlin"))
+			if err := os.MkdirAll(filepath.Dir(bin), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(bin, []byte("stand-in for the binary\n"), 0o700); err != nil { // #nosec G306 -- the test's own stand-in executable
+				t.Fatal(err)
+			}
+			in := codexTestInstall{bin: bin, cfg: "/home/u/.jevlin/jevlin.toml"}
+			_, search, err := searchBlockForShell(shellPOSIX, in.entry(), c.body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !isSearchForm(recognizeRenderedForm(search, func() (string, error) { return bin, nil }, in.cfg, []shellKind{shellPOSIX})) {
+				t.Fatal("this installation's own search is not recognized, so the silence below proves nothing")
+			}
+			fs, ops := in.ops(nil)
+			out := runCodexOn(t, ops, hcFor(in), "linux", "PreToolUse", withCommand(codexPayloadFixture(t, "codex-0.158.0-linux-PreToolUse-bash.json"), search))
+			if out != "" || len(fs.files) != 0 {
+				t.Errorf("answered %q and wrote %v; a search the bridge cannot carry gets silence and no file", out, keys(fs.files))
+			}
+		})
+	}
+}

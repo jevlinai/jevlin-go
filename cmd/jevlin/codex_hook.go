@@ -198,10 +198,23 @@ func codexLineage(ops hookOps, hc hookContext, goos string, payload []byte, stdo
 		return
 	}
 
-	// The lineage file, as Claude Code's hook writes it. A Codex search
-	// carrying no bridge never reads it (searchTrace's walk needs a harness
-	// in the environment), so it is kept for parity and claimed as nothing
-	// more.
+	bridge, err := encodeTraceBridge(env)
+	if err != nil {
+		return
+	}
+	// A search the bridge cannot be put on — a binary path the placement
+	// rule cannot read past, a query that names the bridge — gets silence,
+	// and silence means no file either.
+	rewritten, ok := withTraceBridge(sh, bridge, command)
+	if !ok {
+		return
+	}
+
+	// The lineage file, as Claude Code's hook writes it, and before the
+	// answer, so the two never disagree about which call is current. A Codex
+	// search carrying no bridge never reads it (searchTrace's walk needs a
+	// harness in the environment), so it is kept for parity and claimed as
+	// nothing more.
 	if hc.sessionsDir != "" && p.Cwd != "" {
 		_ = updateLineage(ops, lineagePath(hc.sessionsDir, p.Cwd), ops.now(), func(l *lineageFile) {
 			l.Harness, l.SessionID, l.TurnID, l.CallID, l.Window = env.Harness, env.SessionID, env.TurnID, env.CallID, env.Window
@@ -209,15 +222,6 @@ func codexLineage(ops hookOps, hc hookContext, goos string, payload []byte, stdo
 			l.Seq++
 			l.History = nil
 		})
-	}
-
-	bridge, err := encodeTraceBridge(env)
-	if err != nil {
-		return
-	}
-	rewritten, ok := withTraceBridge(sh, bridge, command)
-	if !ok {
-		return
 	}
 	updated := make(map[string]any, len(p.ToolInput))
 	for k, v := range p.ToolInput {
