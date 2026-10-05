@@ -115,7 +115,7 @@ func TestAReplacedCodexHookKeepsItsIndex(t *testing.T) {
 		return map[string]any{"hooks": []any{map[string]any{"type": "command", "command": cmd}}}
 	}
 	path := ops.paths(noEnv).codexHooks
-	m.files[path] = mustJSON(t, map[string]any{"hooks": map[string]any{
+	m.files[slash(path)] = mustJSON(t, map[string]any{"hooks": map[string]any{
 		"PreToolUse": []any{mine("audit-before"), map[string]any{"matcher": "*", "hooks": []any{map[string]any{"type": "command", "command": stale}}}, mine("audit-after")},
 		"Stop":       []any{mine("say done")},
 	}})
@@ -123,7 +123,7 @@ func TestAReplacedCodexHookKeepsItsIndex(t *testing.T) {
 	if len(p.writes) != 1 {
 		t.Fatalf("planned %d writes, want the one hooks.json rewrite", len(p.writes))
 	}
-	lists := codexEventLists(t, m.files[path])
+	lists := codexEventLists(t, m.files[slash(path)])
 	pre := lists["PreToolUse"]
 	if len(pre) != 3 || !entryIsOurs(pre[1], refFor(entry)) || !sameJSONValue(pre[1], codexWant(t, entry, "PreToolUse")) {
 		t.Fatalf("PreToolUse after the refresh: %v; want ours rewritten at index 1", pre)
@@ -167,9 +167,9 @@ func TestCodexUninstallLeavesTheApprovalsAndSaysWhatMoves(t *testing.T) {
 	entry := goldenEntry()
 	planCodexHooksFor(t, ops, entry, "linux")
 	path := ops.paths(noEnv).codexHooks
-	lists := codexEventLists(t, m.files[path])
+	lists := codexEventLists(t, m.files[slash(path)])
 	lists["Stop"] = append(lists["Stop"], map[string]any{"hooks": []any{map[string]any{"type": "command", "command": "say done"}}})
-	m.files[path] = mustJSON(t, map[string]any{"hooks": lists})
+	m.files[slash(path)] = mustJSON(t, map[string]any{"hooks": lists})
 
 	var p agentPlan
 	(codexTarget{}).PlanUninstall(ops, ops.paths(noEnv), entry, noEnv, &p)
@@ -182,7 +182,7 @@ func TestCodexUninstallLeavesTheApprovalsAndSaysWhatMoves(t *testing.T) {
 	if failures := commitPlan(ops, &p, io.Discard, io.Discard); failures != 0 {
 		t.Fatalf("uninstall: %d failures", failures)
 	}
-	left := codexEventLists(t, m.files[path])
+	left := codexEventLists(t, m.files[slash(path)])
 	if len(left) != 1 || len(left["Stop"]) != 1 || entryIsOurs(left["Stop"][0], refFor(entry)) {
 		t.Errorf("hooks.json after uninstall: %v, want only the participant's Stop hook", left)
 	}

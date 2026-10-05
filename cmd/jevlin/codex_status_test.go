@@ -12,6 +12,7 @@ package main
 import (
 	"bytes"
 	"io"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -76,21 +77,21 @@ func TestCodexStatusReportsApprovalOnRecordOnly(t *testing.T) {
 		{"a participant's hook listed before ours", func(p agentPaths) (string, bool) {
 			return codexConfigFixture(t, macosAfterTrustBlock), true
 		}, func(t *testing.T, m *fakeMachine, p agentPaths) {
-			lists := codexEventLists(t, m.files[p.codexHooks])
+			lists := codexEventLists(t, m.files[slash(p.codexHooks)])
 			lists["PreToolUse"] = append([]any{map[string]any{"hooks": []any{map[string]any{"type": "command", "command": "audit"}}}}, lists["PreToolUse"]...)
-			m.files[p.codexHooks] = mustJSON(t, map[string]any{"hooks": lists})
+			m.files[slash(p.codexHooks)] = mustJSON(t, map[string]any{"hooks": lists})
 		}, "hooks: approval unknown; jevlin's PreToolUse hook is not the first listed for that event, and how Codex numbers a later one is not established"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			m, ops, paths, entry := codexStatusMachine(t)
 			if text, ok := c.config(paths); ok {
-				m.files[paths.codexConfig] = []byte(text)
+				m.files[slash(paths.codexConfig)] = []byte(text)
 			}
 			if c.hooks != nil {
 				c.hooks(t, m, paths)
 			}
 			got := codexApprovalLines(ops, paths, entry)
-			if len(got) != 1 || slash(got[0]) != c.want {
+			if len(got) != 1 || filepath.ToSlash(got[0]) != c.want {
 				t.Fatalf("status says %q\nwant %q", got, c.want)
 			}
 			for _, word := range []string{"active", "trusted", "enabled"} {
@@ -137,14 +138,14 @@ func TestTheClientNeverWritesCodexHookTrust(t *testing.T) {
 			cfgPath, _ := sandboxTestConfig(t)
 			m, ops := newFakeMachine("codex")
 			paths := ops.paths(noEnv)
-			m.files[paths.codexConfig] = []byte(c.config)
+			m.files[slash(paths.codexConfig)] = []byte(c.config)
 			want := hookTrustOf(t, c.config)
 			check := func(step string) {
 				t.Helper()
-				if got := hookTrustOf(t, string(m.files[paths.codexConfig])); !reflect.DeepEqual(got, want) {
+				if got := hookTrustOf(t, string(m.files[slash(paths.codexConfig)])); !reflect.DeepEqual(got, want) {
 					t.Fatalf("after %s, Codex's record of approvals is\n%v\nwant\n%v", step, got, want)
 				}
-				if strings.Contains(string(m.files[paths.codexHooks]), "trusted_hash") {
+				if strings.Contains(string(m.files[slash(paths.codexHooks)]), "trusted_hash") {
 					t.Fatalf("after %s, hooks.json carries an approval", step)
 				}
 			}
@@ -154,15 +155,15 @@ func TestTheClientNeverWritesCodexHookTrust(t *testing.T) {
 				}
 				check(step)
 			}
-			if b, ok := m.files[paths.codexHooks]; ok {
+			if b, ok := m.files[slash(paths.codexHooks)]; ok {
 				// An entry of ours spelled as an earlier renderer might
 				// have, so the next install rewrites it.
 				stale := bytes.ReplaceAll(b, []byte("'"), []byte(`\"`))
-				m.files[paths.codexHooks] = stale
+				m.files[slash(paths.codexHooks)] = stale
 				if code, out, errOut := runAgents(t, ops, nil, "install", "-config", cfgPath, "-yes"); code != exitOK {
 					t.Fatalf("refresh: %d\n%s%s", code, out, errOut)
 				}
-				if bytes.Equal(m.files[paths.codexHooks], stale) || !bytes.Equal(m.files[paths.codexHooks], b) {
+				if bytes.Equal(m.files[slash(paths.codexHooks)], stale) || !bytes.Equal(m.files[slash(paths.codexHooks)], b) {
 					t.Fatal("the refresh did not rewrite the stale entries back to what install writes, so this step proves nothing")
 				}
 				check("a refresh of a stale entry")
