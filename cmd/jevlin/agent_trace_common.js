@@ -364,8 +364,12 @@ const redactTraceEmails = (text) => text
   .replace(/(?<![A-Za-z0-9._%+-])([.%+-]*)([A-Za-z0-9_][A-Za-z0-9._%+-]*@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b)/g, (match, leading, email, offset, source) =>
     source[offset + match.length] === ':' || traceLooksLikeRemoteTarget(source, offset + leading.length) ? match : leading + TRACE_REDACTED)
 
+// A Windows separator may be doubled, as Python's repr and JSON print a
+// path, and a name with spaces is taken whole when the path goes on past it:
+// up to three more words with no quote, colon, slash or backtick, then a
+// backslash. Otherwise only the first word goes.
 const redactTraceHomePaths = (text) => text
-  .replace(/([A-Za-z\u212A\u017F]:\\[Uu][Ss\u017F][Ee][Rr][Ss\u017F]\\)[^\\\t\n\f\r ]+/g, '$1' + TRACE_REDACTED)
+  .replace(/([A-Za-z\u212A\u017F]:\\+[Uu][Ss\u017F][Ee][Rr][Ss\u017F]\\+)[^\\\t\n\f\r ]+(?:(?: [^\\\t\n\f\r :"'`\/]+){1,3}(\\))?/g, '$1' + TRACE_REDACTED + '$2')
   .replace(/(\/Users\/|\/home\/)[^/\t\n\f\r ]+/g, (match, prefix, offset, source) =>
     offset > 0 && /[A-Za-z0-9.]/.test(source[offset - 1]) ? match : prefix + TRACE_REDACTED)
 
@@ -398,7 +402,7 @@ const traceIdentityPatterns = (host, account) => {
   }
   if (account.length >= 3 && /^[A-Za-z0-9._-]+(?: [A-Za-z0-9._-]+)*$/.test(account) && !TRACE_GENERIC_IDENTITY.has(account.toLowerCase())) {
     out.account = new RegExp('(?<![A-Za-z0-9_])' + traceFold(account) + '(?![A-Za-z0-9_])', 'g')
-    out.accountHome = new RegExp('(\\/Users\\/|\\/home\\/|[A-Za-z\\u212A\\u017F]:\\\\[Uu][Ss\\u017F][Ee][Rr][Ss\\u017F]\\\\)' +
+    out.accountHome = new RegExp('(\\/Users\\/|\\/home\\/|[A-Za-z\\u212A\\u017F]:\\\\+[Uu][Ss\\u017F][Ee][Rr][Ss\\u017F]\\\\+)' +
       traceFold(account) + '(?![A-Za-z0-9_.-])', 'g')
   }
   return out

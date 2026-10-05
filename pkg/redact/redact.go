@@ -68,8 +68,16 @@ var (
 	// redactHomePaths, not a bare ReplaceAll — see there for why.
 	homePathPattern = regexp.MustCompile(`(/Users/|/home/)[^/\s]+`)
 	// The Windows sibling: C:\Users\<name>\... . This repo ships Windows
-	// binaries; the Unix-only pattern above missed this entirely.
-	windowsHomePathPattern = regexp.MustCompile(`(?i)([A-Z]:\\Users\\)[^\\\s]+`)
+	// binaries; the Unix-only pattern above missed this entirely. A
+	// separator may be doubled (or more), as Python's repr and JSON print a
+	// path: C:\\Users\\<name>. A name with spaces in it (C:\Users\José
+	// García\Documents) is taken whole when the path goes on past it: up to
+	// three more words, none holding a quote, a colon, a slash or a
+	// backtick, and then a backslash. A word with any of those is the next
+	// path or the text around this one (C:\Users\bob and C:\Users\…), and
+	// without the backslash after it nothing marks where a name ends and
+	// prose begins, so there only the first word goes.
+	windowsHomePathPattern = regexp.MustCompile("(?i)([A-Z]:\\\\+Users\\\\+)[^\\\\\\s]+(?:(?: [^\\\\\\s:\"'`/]+){1,3}(\\\\))?")
 	// One line of an environment listing: an optional list marker (- * + >)
 	// or line number (cat -n, a numbered list), an optional `export`,
 	// `declare -x` or `typeset -x`, a name, `=`, and the rest of the line.
@@ -282,7 +290,7 @@ func looksLikeRemoteTarget(s string, start int) bool {
 // string). The Windows pattern needs no such check: "C:\Users\" does not
 // occur as a URL path segment.
 func redactHomePaths(s string) string {
-	s = windowsHomePathPattern.ReplaceAllString(s, "${1}"+placeholder)
+	s = windowsHomePathPattern.ReplaceAllString(s, "${1}"+placeholder+"${2}")
 
 	// Submatch indices, not just the whole-match indices: group 1 is
 	// "/Users/" or "/home/", which the replacement keeps verbatim while

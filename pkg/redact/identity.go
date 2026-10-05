@@ -108,7 +108,7 @@ func compileIdentity(host, account string) localNames {
 	if len(account) >= 3 && accountNamePattern.MatchString(account) && !genericIdentityNames[strings.ToLower(account)] {
 		quoted := regexp.QuoteMeta(account)
 		out.account = regexp.MustCompile(`(?i)` + quoted)
-		out.accountHome = regexp.MustCompile(`(/Users/|/home/|(?i:[A-Z]:\\Users\\))(?i:` + quoted + `)`)
+		out.accountHome = regexp.MustCompile(`(/Users/|/home/|(?i:[A-Z]:\\+Users\\+))(?i:` + quoted + `)`)
 	}
 	return out
 }

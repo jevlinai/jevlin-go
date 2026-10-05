@@ -1111,5 +1111,96 @@
   "account": "",
   "in": "eyJabc.efgh.ijkl",
   "want": "eyJabc.efgh.ijkl"
+ },
+ {
+  "name": "home/windows doubled backslashes",
+  "host": "",
+  "account": "",
+  "in": "open('C:\\\\Users\\\\mwhitlock\\\\data.csv')",
+  "want": "open('C:\\\\Users\\\\[REDACTED]\\\\data.csv')"
+ },
+ {
+  "name": "home/windows separators escaped twice",
+  "host": "",
+  "account": "",
+  "in": "\"C:\\\\\\\\Users\\\\\\\\mwhitlock\\\\\\\\x\"",
+  "want": "\"C:\\\\\\\\Users\\\\\\\\[REDACTED]\\\\\\\\x\""
+ },
+ {
+  "name": "home/windows a spaced name the path goes on past",
+  "host": "",
+  "account": "",
+  "in": "C:\\Users\\Jos\u00e9 Garc\u00eda\\Documents",
+  "want": "C:\\Users\\[REDACTED]\\Documents"
+ },
+ {
+  "name": "home/windows a spaced name with doubled separators",
+  "host": "",
+  "account": "",
+  "in": "C:\\\\Users\\\\Jos\u00e9 Garc\u00eda\\\\Documents",
+  "want": "C:\\\\Users\\\\[REDACTED]\\\\Documents"
+ },
+ {
+  "name": "home/windows four words",
+  "host": "",
+  "account": "",
+  "in": "C:\\Users\\Juan Carlos P\u00e9rez G\u00f3mez\\x",
+  "want": "C:\\Users\\[REDACTED]\\x"
+ },
+ {
+  "name": "home/windows five words keep all but the first",
+  "host": "",
+  "account": "",
+  "in": "C:\\Users\\a b c d e\\x",
+  "want": "C:\\Users\\[REDACTED] b c d e\\x"
+ },
+ {
+  "name": "home/windows a spaced name ending the path keeps its tail",
+  "host": "",
+  "account": "",
+  "in": "C:\\Users\\Jos\u00e9 Garc\u00eda is the folder",
+  "want": "C:\\Users\\[REDACTED] Garc\u00eda is the folder"
+ },
+ {
+  "name": "home/windows the next path is not part of the name",
+  "host": "",
+  "account": "",
+  "in": "C:\\Users\\bob and C:\\Users\\alice\\x",
+  "want": "C:\\Users\\[REDACTED] and C:\\Users\\[REDACTED]\\x"
+ },
+ {
+  "name": "home/windows a quoted path is not part of the name",
+  "host": "",
+  "account": "",
+  "in": "\"C:\\Users\\bob\" 'C:\\Users\\alice\\f'",
+  "want": "\"C:\\Users\\[REDACTED] 'C:\\Users\\[REDACTED]\\f'"
+ },
+ {
+  "name": "home/windows a slash or backtick word is not part of the name",
+  "host": "",
+  "account": "",
+  "in": "C:\\Users\\bob and/or\\x `C:\\Users\\bob x`\\y",
+  "want": "C:\\Users\\[REDACTED] and/or\\x `C:\\Users\\[REDACTED] x`\\y"
+ },
+ {
+  "name": "home/windows two blanks end the name",
+  "host": "",
+  "account": "",
+  "in": "C:\\Users\\bob  x\\y",
+  "want": "C:\\Users\\[REDACTED]  x\\y"
+ },
+ {
+  "name": "identity/the account after doubled separators",
+  "host": "",
+  "account": "DESKTOP-X\\John Smith",
+  "in": "C:\\\\Users\\\\John Smith and C:\\\\Users\\\\John Smith\\\\x",
+  "want": "C:\\\\Users\\\\[REDACTED] and C:\\\\Users\\\\[REDACTED]\\\\x"
+ },
+ {
+  "name": "home/windows a quoted word is not part of the name",
+  "host": "",
+  "account": "",
+  "in": "C:\\Users\\bob 'rel\\path' and C:\\Users\\bob \"rel\\path\"",
+  "want": "C:\\Users\\[REDACTED] 'rel\\path' and C:\\Users\\[REDACTED] \"rel\\path\""
  }
 ]
