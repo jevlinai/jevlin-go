@@ -5,12 +5,16 @@ package main
 // editing five places in agents.go's switches.
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/BurntSushi/toml"
 )
 
 // targetKind distinguishes a coding-agent host — something a participant
@@ -67,6 +71,14 @@ type installTarget interface {
 type preferenceTarget interface {
 	installTarget
 	PlanPreference(ops agentOps, paths agentPaths, entry binEntry, prefer string, p *agentPlan)
+}
+
+// statusNoter is the optional capability: lines a host adds under its own
+// row in `agents status`, about something only it can read. Codex is the one
+// host with any: whether it has an approval on record for the hooks.
+type statusNoter interface {
+	installTarget
+	StatusNotes(ops agentOps, paths agentPaths, entry binEntry) []string
 }
 
 // ── the shell each host runs ─────────────────────────────────────────────
@@ -795,6 +807,108 @@ func (t codexTarget) Status(ops agentOps, paths agentPaths, entry binEntry) targ
 		return targetStatus{true, "skill+hooks"}
 	}
 	return targetStatus{true, "skill only"}
+}
+
+// StatusNotes says how far Codex has approved this installation's hooks, on
+// an OS where they are written at all.
+func (t codexTarget) StatusNotes(ops agentOps, paths agentPaths, entry binEntry) []string {
+	if _, err := codexHooksFor(t, entry, runtime.GOOS); err != nil {
+		return nil
+	}
+	return codexApprovalLines(ops, paths, entry)
+}
+
+// codexApprovalEvent is an event as Codex spells it in an approval's key,
+// read off the keys Codex wrote on Linux and macOS.
+var codexApprovalEvent = map[string]string{
+	"PreToolUse":   "pre_tool_use",
+	"SessionStart": "session_start",
+	"PreCompact":   "pre_compact",
+	"PostCompact":  "post_compact",
+	"Stop":         "stop",
+}
+
+// codexApprovalLines reads, and only reads, Codex's record of approvals:
+// one [hooks.state."<hooks.json>:<event>:<i>:<j>"] table per approved hook in
+// config.toml. It answers as far as that record goes and no further. It never
+// says the hooks are active or trusted: an approval on record may be for a
+// command as it read before, and whether Codex still accepts it is Codex's
+// to decide. And where the key Codex would use cannot be known — a hook of
+// ours that is not the first of its event, when only first places were ever
+// seen numbered — it says so rather than guess an index.
+func codexApprovalLines(ops agentOps, paths agentPaths, entry binEntry) []string {
+	lists := codexHookLists(ops, paths.codexHooks)
+	ours := map[string]int{}
+	for _, ev := range codexEvents {
+		for i, e := range lists[ev] {
+			if entryIsOurs(e, refFor(entry)) {
+				ours[ev] = i
+				break
+			}
+		}
+	}
+	if len(ours) == 0 {
+		return nil
+	}
+	for _, ev := range codexEvents {
+		if i, ok := ours[ev]; ok && i != 0 {
+			return []string{"hooks: approval unknown; jevlin's " + ev + " hook is not the first listed for that event, and how Codex numbers a later one is not established"}
+		}
+	}
+	state := map[string]any{}
+	switch b, err := ops.readFile(paths.codexConfig); {
+	case errors.Is(err, fs.ErrNotExist):
+	case err != nil:
+		return []string{"hooks: approval unknown; " + paths.codexConfig + " cannot be read: " + err.Error()}
+	default:
+		var doc struct {
+			Hooks struct {
+				State map[string]any `toml:"state"`
+			} `toml:"hooks"`
+		}
+		if _, err := toml.Decode(string(b), &doc); err != nil {
+			return []string{"hooks: approval unknown; " + paths.codexConfig + " does not read as TOML"}
+		}
+		state = doc.Hooks.State
+	}
+	onRecord := 0
+	for ev := range ours {
+		if codexApprovalOnRecord(state, paths.codexHooks, codexApprovalEvent[ev]) {
+			onRecord++
+		}
+	}
+	switch {
+	case onRecord == 0:
+		return []string{"hooks: no approval on record; Codex runs them only after you approve them in Codex"}
+	case onRecord < len(ours):
+		return []string{fmt.Sprintf("hooks: an approval is on record for %d of %d; Codex runs the others only after you approve them in Codex", onRecord, len(ours))}
+	}
+	return []string{fmt.Sprintf("hooks: an approval is on record for %d of %d; whether it is for the commands as they read now is Codex's to decide", onRecord, len(ours))}
+}
+
+// codexApprovalOnRecord: does state hold an approval of the first hook of
+// the first group under event, in this hooks.json? The key is split from the
+// right, because the path in front of it may hold a colon of its own.
+func codexApprovalOnRecord(state map[string]any, hooksPath, event string) bool {
+	for key, v := range state {
+		parts := strings.Split(key, ":")
+		if len(parts) < 4 {
+			continue
+		}
+		n := len(parts)
+		if parts[n-1] != "0" || parts[n-2] != "0" || parts[n-3] != event {
+			continue
+		}
+		if !samePath(strings.Join(parts[:n-3], ":"), hooksPath) {
+			continue
+		}
+		if table, ok := v.(map[string]any); ok {
+			if hash, _ := table["trusted_hash"].(string); hash != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (t codexTarget) PlanPreference(ops agentOps, paths agentPaths, entry binEntry, prefer string, p *agentPlan) {

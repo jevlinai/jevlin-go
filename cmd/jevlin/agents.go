@@ -1505,6 +1505,7 @@ func printAgentStatus(ops agentOps, paths agentPaths, entry binEntry, signals ma
 	for _, t := range targetsByKind(targetHost) {
 		st := t.Status(ops, paths, entry)
 		state := "not installed"
+		foreign := false
 		if st.installed {
 			state = "installed (" + st.detail + ")"
 			// A host has one skill directory whoever wrote into it, and
@@ -1514,7 +1515,7 @@ func printAgentStatus(ops agentOps, paths agentPaths, entry binEntry, signals ma
 			// standing here: the participant whose searches all go through
 			// the other installation was told this one was installed.
 			if other := foreignHost(ops, paths, t, entry, getenv); other != "" {
-				state = belongsTo(other)
+				state, foreign = belongsTo(other), true
 			}
 		}
 		found := "not found"
@@ -1527,6 +1528,13 @@ func printAgentStatus(ops agentOps, paths agentPaths, entry binEntry, signals ma
 		}
 		for _, path := range staleRenderings(ops, paths, t, entry, getenv) {
 			fmt.Fprintf(stdout, "  %-12s %s: %s\n", "", tilde(ops.home, path), staleSentence)
+		}
+		// What only the host can say about its own install, for a host that
+		// is this installation's: Codex's approval of the hooks.
+		if n, ok := t.(statusNoter); ok && !foreign {
+			for _, line := range n.StatusNotes(ops, paths, entry) {
+				fmt.Fprintf(stdout, "  %-12s %s\n", "", line)
+			}
 		}
 	}
 }
