@@ -166,7 +166,12 @@ func TestTheSharedSourceFindsTheAccountAsGoDoes(t *testing.T) {
 	if err != nil {
 		t.Fatal("node is required to verify the shared trace-preparation source")
 	}
-	src := agentTraceCommonJS + "\nprocess.stdout.write(JSON.stringify(traceLocalAccount()));"
+	// The source goes to node as a file: it is longer than a Windows command
+	// line may be, so "-e <source>" fails to start there.
+	script := filepath.Join(t.TempDir(), "account.mjs")
+	if err := os.WriteFile(script, []byte(agentTraceCommonJS+"\nprocess.stdout.write(JSON.stringify(traceLocalAccount()));"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	for name, tc := range cases {
 		var env []string
 		for _, kv := range os.Environ() {
@@ -181,7 +186,7 @@ func TestTheSharedSourceFindsTheAccountAsGoDoes(t *testing.T) {
 			env = append(env, k+"="+v)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-		cmd := exec.CommandContext(ctx, node, "--input-type=module", "-e", src) // #nosec G204 -- fixed test script and local Node runtime
+		cmd := exec.CommandContext(ctx, node, script) // #nosec G204 -- fixed test script and local Node runtime
 		cmd.Env = env
 		out, err := cmd.Output()
 		cancel()
