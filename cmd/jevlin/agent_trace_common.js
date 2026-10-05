@@ -278,18 +278,28 @@ const traceEscapedClosingQuote = (s, v) => {
   const q = s.charCodeAt(v)
   for (let i = v + 1; i < s.length; i++) {
     const c = s.charCodeAt(i)
-    if (c === 10) return -1
+    if (c === 10) return [-1, i]
     if (c === 92 || (c === 96 && q === 34)) {
       if (i + 1 < s.length && s.charCodeAt(i + 1) !== 10) i++
     } else if (c === q) {
-      return i + 1
+      return [i + 1, 0]
     }
   }
-  return -1
+  return [-1, s.length]
 }
-const traceClosingQuote = (s, v, maxLines) => {
-  const escaped = traceEscapedClosingQuote(s, v)
-  if (escaped >= 0) return escaped
+// One closer per value: where the escaping reading failed for a kind of
+// quote, every quote of that kind on the rest of the line is escaped, and a
+// part that opens at one fails the same way, so it is not read again.
+const traceQuoteCloser = () => ({ failed: [false, false], from: [0, 0], stop: [0, 0] })
+const traceClosingQuote = (s, v, maxLines, closer = traceQuoteCloser()) => {
+  const k = s.charCodeAt(v) === 39 ? 1 : 0
+  if (!closer.failed[k] || v <= closer.from[k] || v > closer.stop[k]) {
+    const [escaped, stop] = traceEscapedClosingQuote(s, v)
+    if (escaped >= 0) return escaped
+    closer.failed[k] = true
+    closer.from[k] = v
+    closer.stop[k] = stop
+  }
   const q = s.charCodeAt(v)
   let lines = 0
   for (let i = v + 1; i < s.length; i++) {
@@ -367,13 +377,14 @@ const traceTrimValueTail = (s, from, to) => {
 // its line when it never closes; a later part must close on its own line, or
 // its quote is just a character.
 const traceQuotedWordEnd = (s, v) => {
-  let i = traceOpensThreeQuotes(s, v) ? traceTripleQuoteEnd(s, v) : traceClosingQuote(s, v, TRACE_QUOTED_VALUE_MAX_LINES)
+  const closer = traceQuoteCloser()
+  let i = traceOpensThreeQuotes(s, v) ? traceTripleQuoteEnd(s, v) : traceClosingQuote(s, v, TRACE_QUOTED_VALUE_MAX_LINES, closer)
   if (i < 0) return traceLineEnd(s, v)
   let last = i
   while (i < s.length) {
     const c = s.charCodeAt(i)
     if (c === 34 || c === 39) {
-      const closed = traceClosingQuote(s, i, 0)
+      const closed = traceClosingQuote(s, i, 0, closer)
       if (closed >= 0) { i = last = closed; continue }
       i++
     } else if (traceIsEscape(s, i)) {
@@ -579,10 +590,11 @@ const traceStartsLine = (s, floor, i) => {
   return i === 0 || (i > floor && s.charCodeAt(i - 1) === 10)
 }
 const traceQuotedStringEnd = (s, v) => {
-  let i = traceOpensThreeQuotes(s, v) ? traceTripleQuoteEnd(s, v) : traceClosingQuote(s, v, TRACE_QUOTED_VALUE_MAX_LINES)
+  const closer = traceQuoteCloser()
+  let i = traceOpensThreeQuotes(s, v) ? traceTripleQuoteEnd(s, v) : traceClosingQuote(s, v, TRACE_QUOTED_VALUE_MAX_LINES, closer)
   if (i < 0) return traceLineEnd(s, v)
   while (i < s.length && s.charCodeAt(i) === s.charCodeAt(v)) {
-    const j = traceClosingQuote(s, i, 0)
+    const j = traceClosingQuote(s, i, 0, closer)
     if (j < 0) break
     i = j
   }

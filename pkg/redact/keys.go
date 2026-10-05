@@ -154,17 +154,18 @@ func startsLine(s string, floor, i int) bool {
 // "user":"y"} the value ends at the quote. A string that does not close is
 // the rest of its line.
 func quotedStringEnd(s string, v int) int {
+	var closer quoteCloser
 	var i int
 	if opensThreeQuotes(s, v) {
 		i = tripleQuoteEnd(s, v)
 	} else {
-		i = closingQuote(s, v, quotedValueMaxLines)
+		i = closer.close(s, v, quotedValueMaxLines)
 	}
 	if i < 0 {
 		return lineEnd(s, v)
 	}
 	for i < len(s) && s[i] == s[v] {
-		j := closingQuote(s, i, 0)
+		j := closer.close(s, i, 0)
 		if j < 0 {
 			break
 		}

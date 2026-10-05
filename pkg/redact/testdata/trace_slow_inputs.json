@@ -46,5 +46,17 @@
   "prefix": "",
   "unit": "-----BEGIN PRIVATE KEY-----x\n",
   "suffix": "-----END PRIVATE KEY-----"
+ },
+ {
+  "name": "backtick-escaped double quotes in a quoted value",
+  "prefix": "TOKEN=\"",
+  "unit": "`\"",
+  "suffix": ""
+ },
+ {
+  "name": "backtick-escaped double quotes after a flag",
+  "prefix": "--token \"",
+  "unit": "`\"",
+  "suffix": ""
  }
 ]

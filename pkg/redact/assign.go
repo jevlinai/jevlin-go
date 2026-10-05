@@ -430,11 +430,12 @@ func (f *quoteSearch) find(s string, v int, q byte) int {
 // on its own line, or its quote is an ordinary character: a stray quote
 // after a value must not reach into the lines that follow it.
 func quotedWordEnd(s string, v int) int {
+	var closer quoteCloser
 	var i int
 	if opensThreeQuotes(s, v) {
 		i = tripleQuoteEnd(s, v)
 	} else {
-		i = closingQuote(s, v, quotedValueMaxLines)
+		i = closer.close(s, v, quotedValueMaxLines)
 	}
 	if i < 0 {
 		return lineEnd(s, v)
@@ -443,7 +444,7 @@ func quotedWordEnd(s string, v int) int {
 	for i < len(s) {
 		switch c := s[i]; {
 		case c == '"' || c == '\'':
-			if closed := closingQuote(s, i, 0); closed >= 0 {
+			if closed := closer.close(s, i, 0); closed >= 0 {
 				i, last = closed, closed
 				continue
 			}
@@ -483,8 +484,9 @@ func tripleQuoteEnd(s string, v int) int {
 	return -1
 }
 
-// closingQuote returns the index just past the quote that closes the one at
-// v, or -1 when there is none within maxLines line breaks.
+// closingQuote (quoteCloser's close) returns the index just past the quote
+// that closes the one at v, or -1 when there is none within maxLines line
+// breaks.
 //
 // Whether a backslash escapes depends on the language, and the text does not
 // say which it is: in Python, JSON and a POSIX double-quoted string it does,
@@ -495,9 +497,31 @@ func tripleQuoteEnd(s string, v int) int {
 // does not, the plain reading is: the next quote of the same kind. Taken the
 // other way round, SSH_KEY_DIR='C:\keys\' would run on into the next line
 // and stop inside the value assigned there, leaving that value's tail.
-func closingQuote(s string, v, maxLines int) int {
-	if i := escapedClosingQuote(s, v); i >= 0 {
-		return i
+//
+// A quoteCloser reads the parts of one value one after another,
+// remembering for each kind of quote where the escaping reading last
+// failed. It fails when no unescaped quote of that kind stands on the
+// rest of the line, so every such quote there is the second character of an
+// escape pair, and a part that opens at one of them reads the same pairs
+// after it and fails too: `"`" repeated is linear, not a search of the rest
+// of the line from every quote.
+type quoteCloser struct {
+	failed [2]bool
+	from   [2]int // where the failed reading's quote was
+	stop   [2]int // where it stopped: the end of that line
+}
+
+func (c *quoteCloser) close(s string, v, maxLines int) int {
+	k := 0
+	if s[v] == '\'' {
+		k = 1
+	}
+	if !c.failed[k] || v <= c.from[k] || v > c.stop[k] {
+		i, stop := escapedClosingQuote(s, v)
+		if i >= 0 {
+			return i
+		}
+		c.failed[k], c.from[k], c.stop[k] = true, v, stop
 	}
 	q, lines := s[v], 0
 	for i := v + 1; i < len(s); i++ {
@@ -513,22 +537,23 @@ func closingQuote(s string, v, maxLines int) int {
 	return -1
 }
 
-// escapedClosingQuote is closingQuote's escaping reading, on v's own line.
-func escapedClosingQuote(s string, v int) int {
+// escapedClosingQuote is closingQuote's escaping reading, on v's own line:
+// the index just past the closing quote, or -1 and where the line ends.
+func escapedClosingQuote(s string, v int) (int, int) {
 	q := s[v]
 	for i := v + 1; i < len(s); i++ {
 		switch c := s[i]; {
 		case c == '\n':
-			return -1
+			return -1, i
 		case c == '\\' || (c == '`' && q == '"'):
 			if i+1 < len(s) && s[i+1] != '\n' {
 				i++
 			}
 		case c == q:
-			return i + 1
+			return i + 1, 0
 		}
 	}
-	return -1
+	return -1, len(s)
 }
 
 // lineEnd is the end of the line v is on, before its "\r\n" or "\n".
