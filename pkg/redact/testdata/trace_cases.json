@@ -1858,8 +1858,8 @@
   "name": "order/a key's value removed before the word it opens is read",
   "host": "",
   "account": "",
-  "in": "next - PASS:\" \"key:MII--PASS=),\"\"\"\"",
-  "want": "next - PASS:[REDACTED]key:MII--PASS=[REDACTED]"
+  "in": "next {PASS:\" \"key:MII--PASS=),\"\"\"\"",
+  "want": "next {PASS:[REDACTED]key:MII--PASS=[REDACTED]"
  },
  {
   "name": "order/a flag's value removed before a set is read",
@@ -2035,5 +2035,61 @@
   "account": "",
   "in": "Name  Value\n----  -----\nEMPTY\nB     2",
   "want": "Name  Value\n----  -----\nEMPTY\nB     [REDACTED]"
+ },
+ {
+  "name": "keys/a prompt string does not reach the next line",
+  "host": "",
+  "account": "",
+  "in": "pw = input(\"Password: \")\nDB_PASSWORD=\"hunter2secret\"\n",
+  "want": "pw = input(\"Password: \")\nDB_PASSWORD=[REDACTED]\n"
+ },
+ {
+  "name": "keys/a single-quoted prompt does not reach the next line",
+  "host": "",
+  "account": "",
+  "in": "x = input('Password: ')\npassword = 'hunter2secret'\n",
+  "want": "x = input('Password: ')\npassword = [REDACTED]\n"
+ },
+ {
+  "name": "keys/an error message does not reach the next line",
+  "host": "",
+  "account": "",
+  "in": "throw new Error(\"invalid token: \" + t)\nconst password = \"hunter2secret\"\n",
+  "want": "throw new Error(\"invalid token: \" + t)\nconst password = [REDACTED]\n"
+ },
+ {
+  "name": "survives/a key and a colon inside a string",
+  "host": "",
+  "account": "",
+  "in": "getpass(\"Password: \")\nread -rsp \"Password: \" pw\nfmt.Errorf(\"invalid token: \"+err)\nSystem.out.println(\"Token: \" + t);\nConsole.Write(\"Password: \");\ncurl -u \"$STRIPE_SECRET_KEY:\" https://api.example.test",
+  "want": "getpass(\"Password: \")\nread -rsp \"Password: \" pw\nfmt.Errorf(\"invalid token: \"+err)\nSystem.out.println(\"Token: \" + t);\nConsole.Write(\"Password: \");\ncurl -u \"$STRIPE_SECRET_KEY:\" https://api.example.test"
+ },
+ {
+  "name": "survives/type fields and an opening block at a line's start",
+  "host": "",
+  "account": "",
+  "in": "interface Creds {\n  password: string;\n  token: String,\n  apiKey?: string\n  secret: {\n  secrets: [\n  password: Option<String>,\n}",
+  "want": "interface Creds {\n  password: string;\n  token: String,\n  apiKey?: string\n  secret: {\n  secrets: [\n  password: Option<String>,\n}"
+ },
+ {
+  "name": "survives/references and placeholders",
+  "host": "",
+  "account": "",
+  "in": "    password: ${{ secrets.DB_PASSWORD }}\n    token: $GITHUB_TOKEN\n  \"pad_token\": \"<pad>\",\n  api_key: {{ .Values.apiKey }}\n  secret: ${API_SECRET}\ntoken:      1234 bytes",
+  "want": "    password: ${{ secrets.DB_PASSWORD }}\n    token: $GITHUB_TOKEN\n  \"pad_token\": \"<pad>\",\n  api_key: {{ .Values.apiKey }}\n  secret: ${API_SECRET}\ntoken:      1234 bytes"
+ },
+ {
+  "name": "keys/a mid-line value that does not close on its line",
+  "host": "",
+  "account": "",
+  "in": "{\"password\": \"abc\ndef\"}",
+  "want": "{\"password\": \"abc\ndef\"}"
+ },
+ {
+  "name": "keys/cost: a call at a line's start goes",
+  "host": "",
+  "account": "",
+  "in": "  apiKey: getKey(),\n  token: process.env.TOKEN;",
+  "want": "  apiKey: [REDACTED],\n  token: [REDACTED]"
  }
 ]

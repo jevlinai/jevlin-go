@@ -1,6 +1,9 @@
 package redact
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 // Two more ways a secret's name gives its value away, which TraceText
 // applies after the assignment rule (assign.go) and the log path does not:
@@ -25,9 +28,17 @@ import "strings"
 //     quote: the value is the rest of the line, with trailing blanks and
 //     what trimValueTail hands back left outside. YAML's password: x y z,
 //     and a pretty-printed JSON or JS object's "password": "x",.
-//   - a key anywhere else, quoted or not, followed by a colon and a quoted
-//     value: the value is the quoted string (quotedStringEnd). Inline JSON
-//     {"client_secret": "x"} and a JS object {password: 'x'}.
+//   - a key anywhere else, quoted or not, where a member of an object, a
+//     map or an argument list starts (opensMember), followed by a colon and
+//     a quoted value that closes on its own line: the value is the quoted
+//     string (quotedStringEnd). Inline JSON {"client_secret": "x"} and a JS
+//     object {password: 'x'}.
+//
+// Neither takes a value that is a reference, a placeholder or a type name
+// (notASecret). Rejected: skipping a line-start value that ends as a line of
+// code does, with `,`, `;` or `{`: a later step can remove that last
+// character (an assignment, a home path's segment), and a second pass would
+// then remove what the first kept.
 //
 // The cost, stated: a line that begins "Password: use the vault" loses the
 // rest of the line, and "the password: hunter2" in the middle of a
@@ -121,16 +132,53 @@ func secretKeyValueAt(s string, floor, c int) (start, end int, ok bool) {
 			end--
 		}
 		end = trimValueTail(s, v, end)
-	case quoted:
-		end = quotedStringEnd(s, v)
+	case quoted && opensMember(s, floor, keyStart):
+		if end = quotedStringEnd(s, v); end < 0 {
+			return 0, 0, false
+		}
 	default:
 		return 0, 0, false
 	}
-	if end == v || s[v:end] == placeholder {
+	if end == v || s[v:end] == placeholder || notASecret(s[v:end]) {
 		return 0, 0, false
 	}
 	return v, end, true
 }
+
+// opensMember reports whether the key at i stands where an object, a map,
+// a list or an argument list opens a member: after `{`, `,`, `(` or `[`,
+// blanks aside. Anywhere else a key and a colon mid-line are text: prose,
+// or more often the inside of a string ("Password: " in input("Password: "),
+// "invalid token: " + t), whose closing quote would otherwise be read as
+// the value's opening one and run on to the next quote, which a review
+// found on the next line, inside the value of the assignment there.
+func opensMember(s string, floor, i int) bool {
+	for i > floor && isBlank(s[i-1]) {
+		i--
+	}
+	return i > floor && strings.IndexByte("{,([", s[i-1]) >= 0
+}
+
+// notASecret reports whether a key's value, quoted or not, with a trailing
+// `,` aside, is a reference to a secret or a placeholder for one rather
+// than the secret: a GitHub Actions or template expression (${{ secrets.X }},
+// {{ .Values.x }}), a variable ($TOKEN, ${TOKEN}), an angle-bracket token
+// (<pad>, <your-token>), a type name (string, String, Option<String>), or
+// kubectl describe's size of a secret (5 bytes).
+// Removing them hides nothing, and they are what code, CI files and
+// tokenizer configs hold. So is a value that only opens a block: {, [, a
+// YAML | or >-.
+func notASecret(v string) bool {
+	if strings.HasSuffix(v, ",") || strings.HasSuffix(v, ";") {
+		v = v[:len(v)-1]
+	}
+	if len(v) >= 2 && (v[0] == '"' || v[0] == '\'') && v[len(v)-1] == v[0] {
+		v = v[1 : len(v)-1]
+	}
+	return secretReferencePattern.MatchString(v)
+}
+
+var secretReferencePattern = regexp.MustCompile(`^(?:\$?\{\{[^\n]*\}\}|\$\{[^}\n]*\}|\$[A-Za-z_][A-Za-z0-9_]*|<[^<>\t\n ]+>|string|str|number|int|integer|bool|boolean|any|unknown|bytes|float|double|char|String|[A-Za-z_][A-Za-z0-9_:]*<[^\n]*>|[0-9]+ bytes|[{\[(|>+-]+)$`)
 
 // startsLine reports whether only blanks and an optional `-` list marker
 // stand between the start of a line and i, reading nothing before floor.
@@ -148,21 +196,17 @@ func startsLine(s string, floor, i int) bool {
 }
 
 // quotedStringEnd is the end of the quoted string at v, read as
-// closingQuote reads one, with any part that follows it directly in the
-// same quote (a quote written twice, as YAML and PowerShell escape one).
-// Unlike quotedWordEnd it takes nothing joined to it: in {"password":"x",
-// "user":"y"} the value ends at the quote. A string that does not close is
-// the rest of its line.
+// closingQuote reads one but on its own line only, with any part that
+// follows it directly in the same quote (a quote written twice, as YAML and
+// PowerShell escape one; three quotes read this way too). Unlike
+// quotedWordEnd it takes nothing joined to it: in {"password":"x",
+// "user":"y"} the value ends at the quote. A string that does not close on
+// its own line is no value, -1: a key's value never reaches the next line.
 func quotedStringEnd(s string, v int) int {
 	var closer quoteCloser
-	var i int
-	if opensThreeQuotes(s, v) {
-		i = tripleQuoteEnd(s, v)
-	} else {
-		i = closer.close(s, v, quotedValueMaxLines)
-	}
+	i := closer.close(s, v, 0)
 	if i < 0 {
-		return lineEnd(s, v)
+		return -1
 	}
 	for i < len(s) && s[i] == s[v] {
 		j := closer.close(s, i, 0)

@@ -579,8 +579,10 @@ const redactTraceSecretAssignments = (text) => {
 // redactSecretKeys: the value of a secret key written with a colon, as
 // pkg/redact/keys.go has it. A key at a line's start (after indentation and
 // an optional - marker), quoted or not, then a colon and a blank or a quote:
-// the rest of the line. A key anywhere else, then a colon and a quoted value:
-// that quoted string, with parts that follow it directly in the same quote.
+// the rest of the line.
+// A key where an object's or a call's member opens, then a colon and a quoted
+// value closing on its own line: that quoted string, with parts that follow
+// it directly in the same quote. Never a reference or a placeholder.
 const traceStartsLine = (s, floor, i) => {
   while (i > floor && traceIsBlank(s.charCodeAt(i - 1))) i--
   if (i > floor && s.charCodeAt(i - 1) === 45) {
@@ -589,16 +591,33 @@ const traceStartsLine = (s, floor, i) => {
   }
   return i === 0 || (i > floor && s.charCodeAt(i - 1) === 10)
 }
+// A mid-line key's quoted value closes on its own line or is no value.
 const traceQuotedStringEnd = (s, v) => {
   const closer = traceQuoteCloser()
-  let i = traceOpensThreeQuotes(s, v) ? traceTripleQuoteEnd(s, v) : traceClosingQuote(s, v, TRACE_QUOTED_VALUE_MAX_LINES, closer)
-  if (i < 0) return traceLineEnd(s, v)
+  let i = traceClosingQuote(s, v, 0, closer)
+  if (i < 0) return -1
   while (i < s.length && s.charCodeAt(i) === s.charCodeAt(v)) {
     const j = traceClosingQuote(s, i, 0, closer)
     if (j < 0) break
     i = j
   }
   return i
+}
+// A mid-line key counts only where a member opens: after { , ( or [. Anywhere
+// else it is prose or the inside of a string ("Password: " in input(...)),
+// whose closing quote must not be read as the value's opening one.
+const traceOpensMember = (s, floor, i) => {
+  while (i > floor && traceIsBlank(s.charCodeAt(i - 1))) i--
+  return i > floor && '{,(['.includes(s[i - 1])
+}
+// A reference or a placeholder is not the secret: a GitHub Actions or
+// template expression in double braces, ${TOKEN}, $TOKEN, <pad>, a type name,
+// a size (5 bytes), or a block that only opens ({, [, |, >-).
+const TRACE_SECRET_REFERENCE = /^(?:\$?\{\{[^\n]*\}\}|\$\{[^}\n]*\}|\$[A-Za-z_][A-Za-z0-9_]*|<[^<>\t\n ]+>|string|str|number|int|integer|bool|boolean|any|unknown|bytes|float|double|char|String|[A-Za-z_][A-Za-z0-9_:]*<[^\n]*>|[0-9]+ bytes|[{\[(|>+-]+)$/
+const traceNotASecret = (v) => {
+  if (v.endsWith(',') || v.endsWith(';')) v = v.slice(0, -1)
+  if (v.length >= 2 && (v[0] === '"' || v[0] === "'") && v[v.length - 1] === v[0]) v = v.slice(1, -1)
+  return TRACE_SECRET_REFERENCE.test(v)
 }
 const traceSecretKeyValueAt = (s, floor, c) => {
   let k = c
@@ -633,12 +652,13 @@ const traceSecretKeyValueAt = (s, floor, c) => {
   let end
   if (traceStartsLine(s, floor, keyStart) && (v > c + 1 || quoted)) {
     end = traceTrimValueTail(s, v, traceTrimBlanksEnd(s, v, traceLineEnd(s, v)))
-  } else if (quoted) {
+  } else if (quoted && traceOpensMember(s, floor, keyStart)) {
     end = traceQuotedStringEnd(s, v)
+    if (end < 0) return null
   } else {
     return null
   }
-  if (end === v || s.slice(v, end) === TRACE_REDACTED) return null
+  if (end === v || s.slice(v, end) === TRACE_REDACTED || traceNotASecret(s.slice(v, end))) return null
   return [v, end]
 }
 // redactSecretFlags: a long flag named as a secret's, then its value as the
