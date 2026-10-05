@@ -212,7 +212,7 @@ func secretValueAt(s string, floor, e int, words *wordScan) (start, end int, ok 
 		}
 		v = e + 1
 	}
-	if !bridge && !secretName(name) {
+	if !bridge && !secretName(name) && !sasSignature(s, p, name) {
 		return 0, 0, false
 	}
 	words.advance(s, p)
@@ -607,6 +607,14 @@ func trimValueTail(s string, from, to int) int {
 		to--
 	}
 	return to
+}
+
+// sasSignature reports whether name is a URL query's sig parameter, which
+// in an Azure shared access signature is the credential itself
+// (?sv=...&sig=...). Only after `?` or `&`: sig= elsewhere is anyone's
+// word for anything.
+func sasSignature(s string, p int, name string) bool {
+	return p > 0 && (s[p-1] == '?' || s[p-1] == '&') && asciiEqualFold(name, "sig")
 }
 
 // isBridgeName reports whether name is the trace bridge's, alone or as the

@@ -1965,5 +1965,75 @@
   "account": "",
   "in": "a file that starts -----BEGIN PRIVATE KEY----- and ends -----END PRIVATE KEY----- is one",
   "want": "a file that starts [REDACTED] is one"
+ },
+ {
+  "name": "stripe/secret and restricted keys",
+  "host": "",
+  "account": "",
+  "in": "key sk_live_51SyntheticCanary0123456789 and rk_test_SyntheticCanary0123456789.",
+  "want": "key [REDACTED] and [REDACTED]."
+ },
+ {
+  "name": "survives/a stripe publishable key and short shapes",
+  "host": "",
+  "account": "",
+  "in": "pk_live_51SyntheticCanary0123456789 and sk_live_short",
+  "want": "pk_live_51SyntheticCanary0123456789 and sk_live_short"
+ },
+ {
+  "name": "sas/an azure signature",
+  "host": "",
+  "account": "",
+  "in": "https://acct.blob.core.windows.net/c/b?sv=2022-11-02&ss=b&sig=Ab%2BCd%3D&se=2026",
+  "want": "https://acct.blob.core.windows.net/c/b?sv=2022-11-02&ss=b&sig=[REDACTED]&se=2026"
+ },
+ {
+  "name": "sas/first in the query, any case",
+  "host": "",
+  "account": "",
+  "in": "?SIG=abc&x=1",
+  "want": "?SIG=[REDACTED]&x=1"
+ },
+ {
+  "name": "survives/sig elsewhere",
+  "host": "",
+  "account": "",
+  "in": "sig=1 and the sig= field and x.sig=2",
+  "want": "sig=1 and the sig= field and x.sig=2"
+ },
+ {
+  "name": "pstable/get-childitem env",
+  "host": "",
+  "account": "",
+  "in": "PS> Get-ChildItem Env:\r\n\r\nName                           Value\r\n----                           -----\r\nALLUSERSPROFILE                C:\\ProgramData\r\nAPI_TOKEN                      Token Canary Tail\r\nEMPTY\r\n\r\nPS> next",
+  "want": "PS> Get-ChildItem Env:\r\n\r\nName                           Value\r\n----                           -----\r\nALLUSERSPROFILE                [REDACTED]\r\nAPI_TOKEN                      [REDACTED]\r\nEMPTY\r\n\r\nPS> next"
+ },
+ {
+  "name": "pstable/a table ends at a line with no name",
+  "host": "",
+  "account": "",
+  "in": "Name Value\n---- -----\nA    1\n\nB    2",
+  "want": "Name Value\n---- -----\nA    [REDACTED]\n\nB    2"
+ },
+ {
+  "name": "survives/a header with no rule",
+  "host": "",
+  "account": "",
+  "in": "Name   Value\nA      1\nB      2",
+  "want": "Name   Value\nA      1\nB      2"
+ },
+ {
+  "name": "survives/a rule with no header",
+  "host": "",
+  "account": "",
+  "in": "Key    Value\n----   -----\nA      1",
+  "want": "Key    Value\n----   -----\nA      1"
+ },
+ {
+  "name": "pstable/a row of a name alone does not end the table",
+  "host": "",
+  "account": "",
+  "in": "Name  Value\n----  -----\nEMPTY\nB     2",
+  "want": "Name  Value\n----  -----\nEMPTY\nB     [REDACTED]"
  }
 ]

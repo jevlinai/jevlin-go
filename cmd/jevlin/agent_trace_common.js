@@ -150,7 +150,8 @@ const scrubTraceCommon = (text) => redactTraceJwts(text
     /[a-zA-Z]/.test(prefix) ? prefix + TRACE_REDACTED : match)
   .replace(/\b(?:sk|sr)-[A-Za-z0-9_-]{16,}/g, TRACE_REDACTED)
   .replace(/\bgh[opsur]_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, TRACE_REDACTED)
-  .replace(/\bAKIA[0-9A-Z]{16}\b/g, TRACE_REDACTED))
+  .replace(/\bAKIA[0-9A-Z]{16}\b/g, TRACE_REDACTED)
+  .replace(/\b[rs]k_(?:live|test)_[A-Za-z0-9]{16,}/g, TRACE_REDACTED))
 
 // A PEM private key block, markers included, as pkg/redact/pem.go removes
 // it, before every other step: from a BEGIN marker whose label ends PRIVATE
@@ -531,7 +532,9 @@ const traceSecretValueAt = (s, floor, e, words) => {
     if (k < e) return null
     v = e + 1
   }
-  if (!bridge && !traceSecretName(name)) return null
+  // An Azure shared access signature's sig, only as a URL query parameter.
+  const sas = p > 0 && (s.charCodeAt(p - 1) === 63 || s.charCodeAt(p - 1) === 38) && name.toLowerCase() === 'sig'
+  if (!bridge && !traceSecretName(name) && !sas) return null
   traceWordAdvance(words, s, p)
   const c = s.charCodeAt(v)
   const end = v < s.length && !traceIsSpace(c) && c !== 61 && traceIsCmdSet(s, floor, p, name)
@@ -748,6 +751,36 @@ const redactTraceEnvDumps = (text) => {
   return changed ? lines.join('\n') : text
 }
 
+// redactEnvTables: PowerShell's Get-ChildItem Env: table (and any hashtable
+// it prints): under a Name/Value header and a rule of dashes, each row's
+// value is the rest of its line, until a line that is empty or holds no name.
+const TRACE_ENV_TABLE_HEADER = /^[\t ]*Name[\t ]+Value[\t ]*$/
+const TRACE_ENV_TABLE_RULE = /^[\t ]*-+[\t ]+-+[\t ]*$/
+const TRACE_ENV_TABLE_ROW = /^([\t ]*[^\t\n\f\r ]+[\t ]+)([^\t\n\f\r ][^\n]*)$/
+const TRACE_ENV_TABLE_NAME = /^[\t ]*[^\t\n\f\r ]+[\t ]*$/
+const redactTraceEnvTables = (text) => {
+  if (!text.includes('Value')) return text
+  const lines = text.split('\n')
+  const bare = (i) => lines[i].endsWith('\r') ? lines[i].slice(0, -1) : lines[i]
+  let changed = false
+  for (let i = 0; i + 1 < lines.length; i++) {
+    if (!TRACE_ENV_TABLE_HEADER.test(bare(i)) || !TRACE_ENV_TABLE_RULE.test(bare(i + 1))) continue
+    let k = i + 2
+    for (; k < lines.length; k++) {
+      const line = bare(k)
+      const cr = line === lines[k] ? '' : '\r'
+      const m = TRACE_ENV_TABLE_ROW.exec(line)
+      if (m) {
+        if (m[2] !== TRACE_REDACTED) { lines[k] = m[1] + TRACE_REDACTED + cr; changed = true }
+        continue
+      }
+      if (!TRACE_ENV_TABLE_NAME.test(line)) break
+    }
+    i = k - 1
+  }
+  return changed ? lines.join('\n') : text
+}
+
 // One known difference from Go, left as it is: an address directly followed
 // by one of . % + - and a second address ("bob@example.com.a1@example.org").
 // Go's \b lets the second local part start at that punctuation, right where
@@ -855,7 +888,7 @@ const redactTraceLocalIdentity = (text, identity) => {
 }
 
 const scrubTraceText = (text, identity = TRACE_LOCAL_IDENTITY) =>
-  redactTraceLocalIdentity(redactTraceHomePaths(redactTraceAccountHomes(redactTraceEmails(redactTraceEnvDumps(redactTraceSecretAssignments(redactTraceSecretKeys(redactTraceSecretFlags(scrubTraceCommon(redactTracePrivateKeyBlocks(text))))))), identity)), identity)
+  redactTraceLocalIdentity(redactTraceHomePaths(redactTraceAccountHomes(redactTraceEmails(redactTraceEnvTables(redactTraceEnvDumps(redactTraceSecretAssignments(redactTraceSecretKeys(redactTraceSecretFlags(scrubTraceCommon(redactTracePrivateKeyBlocks(text)))))))), identity)), identity)
 
 // prepareTraceHistory takes the COMPLETE text parts of one assistant
 // message — `{type: 'text', text}` entries, the shape opencode's message

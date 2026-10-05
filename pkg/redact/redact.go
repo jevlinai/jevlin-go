@@ -55,6 +55,9 @@ var (
 	githubTokenPattern = regexp.MustCompile(`\bgh[opsur]_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{20,}\b`)
 	// AWS access key ids: a fixed shape, AKIA + 16 uppercase alnums.
 	awsKeyPattern = regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`)
+	// Stripe's secret and restricted keys, live and test: sk_live_...,
+	// rk_test_.... The publishable pk_ key is public by design.
+	stripeKeyPattern = regexp.MustCompile(`\b[rs]k_(?:live|test)_[A-Za-z0-9]{16,}`)
 	// A bare JWT (three base64url segments): a token pasted into free
 	// text or logged directly, not only one riding after "Bearer ".
 	jwtPattern = regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\b`)
@@ -90,6 +93,57 @@ var (
 	// not one variable's value.
 	envPairAfterSpacePattern = regexp.MustCompile(`[\t\n\f\r ][A-Za-z_][A-Za-z0-9_]*=`)
 )
+
+// PowerShell's Get-ChildItem Env: (and any hashtable it prints) is a
+// table, not NAME=value lines: a Name/Value header, a rule of dashes, and
+// a row per variable. Applied via redactEnvTables.
+var (
+	envTableHeader = regexp.MustCompile(`^[\t ]*Name[\t ]+Value[\t ]*$`)
+	envTableRule   = regexp.MustCompile(`^[\t ]*-+[\t ]+-+[\t ]*$`)
+	envTableRow    = regexp.MustCompile(`^([\t ]*[^\t\n\f\r ]+[\t ]+)([^\t\n\f\r ].*)$`)
+	envTableName   = regexp.MustCompile(`^[\t ]*[^\t\n\f\r ]+[\t ]*$`)
+)
+
+// redactEnvTables replaces every value in a table under a Name/Value
+// header and its rule of dashes, each row's value being the rest of its
+// line after the name and blanks, until a line that is not a row: an empty
+// one, or one with no name. A row of a name alone has nothing to remove.
+// The names stay, as in redactEnvDumps. The cost: any hashtable PowerShell
+// prints has the same header, and loses its values too.
+func redactEnvTables(s string) string {
+	if !strings.Contains(s, "Value") {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	changed := false
+	for i := 0; i+1 < len(lines); i++ {
+		if !envTableHeader.MatchString(strings.TrimSuffix(lines[i], "\r")) || !envTableRule.MatchString(strings.TrimSuffix(lines[i+1], "\r")) {
+			continue
+		}
+		k := i + 2
+		for ; k < len(lines); k++ {
+			line, cr := strings.TrimSuffix(lines[k], "\r"), ""
+			if line != lines[k] {
+				cr = "\r"
+			}
+			if m := envTableRow.FindStringSubmatch(line); m != nil {
+				if m[2] != placeholder {
+					lines[k] = m[1] + placeholder + cr
+					changed = true
+				}
+				continue
+			}
+			if !envTableName.MatchString(line) {
+				break
+			}
+		}
+		i = k - 1
+	}
+	if !changed {
+		return s
+	}
+	return strings.Join(lines, "\n")
+}
 
 // envDumpRun is how many consecutive NAME=value lines make an environment
 // dump. One or two such lines are ordinary prose about a setting; five in
@@ -144,6 +198,7 @@ func TraceText(s string) string {
 	s = redactSecretKeys(s)
 	s = redactSecretAssignments(s)
 	s = redactEnvDumps(s)
+	s = redactEnvTables(s)
 	s = redactEmails(s)
 	s = redactAccountHomes(s)
 	s = redactHomePaths(s)
@@ -222,6 +277,7 @@ func scrubCommon(s string) string {
 	s = skPattern.ReplaceAllString(s, placeholder)
 	s = githubTokenPattern.ReplaceAllString(s, placeholder)
 	s = awsKeyPattern.ReplaceAllString(s, placeholder)
+	s = stripeKeyPattern.ReplaceAllString(s, placeholder)
 	s = jwtPattern.ReplaceAllString(s, placeholder)
 	return s
 }
