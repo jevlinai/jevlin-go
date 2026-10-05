@@ -1,0 +1,41 @@
+# >>> jevlin agents install >>>
+# Lets jevlin's search reach the router and record its mining
+# observation under your jevlin home. Without this, Codex's default
+# sandbox blocks the write and searches earn nothing.
+[sandbox_workspace_write]
+network_access = true
+writable_roots = ["/Users/u/.jevlin/intake", "/Users/u/.jevlin/sessions", "/Users/u/.jevlin/spool", "/Users/u/.jevlin/state"]
+
+[hooks.state."/Users/u/.codex/hooks.json:pre_tool_use:0:0"]
+trusted_hash = "sha256:4dec8e969f5df1b9dcb7186eaa477ca862461e22ac63fe482807bbde0e1f4e22"
+
+[hooks.state."/Users/u/.codex/hooks.json:permission_request:0:0"]
+trusted_hash = "sha256:c55c12b3d6f4d7a493e6e9c1863e0bc7978b4651093837ffe9a4eb7494924d7a"
+
+[hooks.state."/Users/u/.codex/hooks.json:post_tool_use:0:0"]
+trusted_hash = "sha256:e649ae868cd6a669972d33247bb0be2c2f21312fbd630e3ecfd4375797e0c704"
+
+[hooks.state."/Users/u/.codex/hooks.json:pre_compact:0:0"]
+trusted_hash = "sha256:9d2c9e657602e84e1dd6ef26cf88702e802e32fbf8ca63504c2e2a0f8acccc5f"
+
+[hooks.state."/Users/u/.codex/hooks.json:post_compact:0:0"]
+trusted_hash = "sha256:56360e884c8b723f0209d8c90cbdf91f9a31c2d991423f9eafc564cc245c35c0"
+
+[hooks.state."/Users/u/.codex/hooks.json:session_start:0:0"]
+trusted_hash = "sha256:2bc0c11b0dfd60d670a5b1d1db0e5c874f42c4b1ef9f24b28b6f0457f1427429"
+
+[hooks.state."/Users/u/.codex/hooks.json:session_end:0:0"]
+trusted_hash = "sha256:298efc863e1b666ab49ba5a16aaa16bf4a80c86867e3022a42d0ea2001144fc4"
+
+[hooks.state."/Users/u/.codex/hooks.json:user_prompt_submit:0:0"]
+trusted_hash = "sha256:7dc33ec031d9d8f418ed73a30f106ebc02b500f4c398ad66a219780f1cba4e25"
+
+[hooks.state."/Users/u/.codex/hooks.json:subagent_start:0:0"]
+trusted_hash = "sha256:1ced96f877c5e3ca3b0ca1cc47b6febef4c1303adadc60d2064101f52f8f048f"
+
+[hooks.state."/Users/u/.codex/hooks.json:subagent_stop:0:0"]
+trusted_hash = "sha256:55f3d885ceeacf812f1d5b12a5b14f89c751db53dfc9feb944bf4638b54a3a55"
+
+[hooks.state."/Users/u/.codex/hooks.json:stop:0:0"]
+trusted_hash = "sha256:61e8fcd19218c4e9e3fac8f44747a47370e4bc9eba2aebc3e3659b99d889cea0"
+# <<< jevlin agents install <<<
