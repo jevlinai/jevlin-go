@@ -25,7 +25,8 @@ The first release replaces this heading with its own.
   secret known by its name: `DATABASE_PASSWORD=…`, `--api-key=…`, a camelCase
   `accessToken=…` or `.npmrc`'s `_authToken=…`, `$env:API_TOKEN = '…'` and
   `${env:API_TOKEN}`, `password = "…"`, YAML's `password: …` at a line's start,
-  JSON's `"client_secret": "…"`, `curl --api-key …`, cmd's `set NAME=…` to the
+  JSON's `"client_secret": "…"` (never a key inside a string, such as a prompt's
+  `"Password: "`), `curl --api-key …`, cmd's `set NAME=…` to the
   end of the line, an Azure SAS `sig=`, and a password chained behind another
   setting in a URL or a connection string. A quoted value is read as a shell
   reads it, so a password with spaces, PowerShell's `'it''s'`, POSIX's
@@ -36,8 +37,9 @@ The first release replaces this heading with its own.
   where the text uses it as an account: `USER=…`, `name@host`, a home path, also
   with doubled separators and a Windows name with spaces. Your account name in
   ordinary prose is left, since it is often a word. The opencode and Pi
-  adapters scrub in time linear in the text, so no run of blanks or repeated
-  token holds up a search. A filter, not a guarantee: a secret with no telling
+  adapters scrub in time linear in the text on every input found slower, each
+  held to a bound by test, so no run of blanks or repeated token holds up a
+  search. A filter, not a guarantee: a secret with no telling
   name and no known shape still passes, and `docs/reference.md` names the forms
   it does not cover.
 - **Opt-in: the conversation around a search.** With `[miner] turn_end = true`,
