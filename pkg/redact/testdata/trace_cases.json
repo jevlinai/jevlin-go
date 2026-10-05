@@ -2091,5 +2091,19 @@
   "account": "",
   "in": "  apiKey: getKey(),\n  token: process.env.TOKEN;",
   "want": "  apiKey: [REDACTED],\n  token: [REDACTED]"
+ },
+ {
+  "name": "survives/a key inside a string with more quotes on its line",
+  "host": "",
+  "account": "",
+  "in": "log(\"token: \" + t + \" end\")\nfmt.Println(\"Password: \", pw, \"!\")",
+  "want": "log(\"token: \" + t + \" end\")\nfmt.Println(\"Password: \", pw, \"!\")"
+ },
+ {
+  "name": "keys/a swift dictionary",
+  "host": "",
+  "account": "",
+  "in": "let d = [\"password\": \"x y\"]",
+  "want": "let d = [\"password\": [REDACTED]]"
  }
 ]
