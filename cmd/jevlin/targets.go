@@ -140,8 +140,8 @@ const (
 type shellEvidence string
 
 const (
-	// evidenceNone: the host has no such channel on this OS (Codex has no
-	// hooks; opencode's and Pi's lineage run in-process, not as commands).
+	// evidenceNone: the host has no such channel on this OS (opencode's and
+	// Pi's lineage run in-process, not as commands).
 	evidenceNone shellEvidence = "none"
 	// evidenceEstablished: the host's documentation or source, or a live run.
 	evidenceEstablished shellEvidence = "established"
@@ -515,21 +515,30 @@ func (codexTarget) Kind() targetKind { return targetHost }
 // the WSL launcher, which fails — only because our fence said bash, and the
 // follow-up run settled it by fencing the other way. That is the cell's
 // whole content: what the host does with the block we actually render, not
-// what its source defaults to. Codex has no hooks.
+// what its source defaults to.
+//
+// Its hooks (issue #19) are commands in hooks.json, and every one captured
+// before this was an unquoted path and one word, so nothing showed that
+// Codex's runner honors the quoting this client writes. A live run on
+// macOS and on Linux did: the hook command the renderer produces — the
+// binary and the config each single-quoted, both under a path holding a
+// space — ran, and read the config it named; and a probe entry beside it
+// showed a POSIX shell interpreting the string, under Codex's own process.
+// On Windows no hook has run, so none is written there.
 func (codexTarget) Shells(goos string) hostShells {
 	switch goos {
 	case "darwin", "linux":
 		return hostShells{
 			tool: established("source codex-rs shell_detect.rs default_user_shell (user's shell, else zsh/bash); live: soak dropin-miner#57 macOS", shellPOSIX),
-			hook: cellNoChannel,
+			hook: established("live: 2026-10-05, codex exec, codex-cli 0.160.0 macOS and 0.158.0 Linux: the rendered hook command, binary and config single-quoted under a path with a space, ran and read its config; a probe entry's $0 was /bin/zsh on macOS and /bin/bash on Linux, its parent Codex", shellPOSIX),
 		}
 	case "windows":
 		return hostShells{
 			tool: established("live: Windows soak follow-up 2026-09-16, codex-cli 0.154.0, both codex exec and the TUI", shellPowerShell),
-			hook: cellNoChannel,
+			hook: cellUnknown,
 		}
 	}
-	return hostShells{tool: cellUnknown, hook: cellNoChannel}
+	return hostShells{tool: cellUnknown, hook: cellUnknown}
 }
 
 func (codexTarget) Detect(ops agentOps, _ agentPaths, _ func(string) string) string {

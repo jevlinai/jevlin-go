@@ -39,9 +39,9 @@ var declaredShellTable = []declaredRow{
 	{"claude", "darwin", evidenceEstablished, evidenceEstablished, []shellKind{shellPOSIX}, []shellKind{shellPOSIX}, ""},
 	{"claude", "linux", evidenceEstablished, evidenceEstablished, []shellKind{shellPOSIX}, []shellKind{shellPOSIX}, ""},
 	{"claude", "windows", evidenceEstablished, evidenceEstablished, []shellKind{shellPOSIX, shellPowerShell}, []shellKind{shellPOSIX}, chosenPerCall},
-	{"codex", "darwin", evidenceEstablished, evidenceNone, []shellKind{shellPOSIX}, nil, ""},
-	{"codex", "linux", evidenceEstablished, evidenceNone, []shellKind{shellPOSIX}, nil, ""},
-	{"codex", "windows", evidenceEstablished, evidenceNone, []shellKind{shellPowerShell}, nil, ""},
+	{"codex", "darwin", evidenceEstablished, evidenceEstablished, []shellKind{shellPOSIX}, []shellKind{shellPOSIX}, ""},
+	{"codex", "linux", evidenceEstablished, evidenceEstablished, []shellKind{shellPOSIX}, []shellKind{shellPOSIX}, ""},
+	{"codex", "windows", evidenceEstablished, evidenceUnknown, []shellKind{shellPowerShell}, nil, ""},
 	{"cursor", "darwin", evidenceEstablished, evidenceEstablished, []shellKind{shellPOSIX}, []shellKind{shellPOSIX}, ""},
 	{"cursor", "linux", evidenceEstablished, evidenceRuled, []shellKind{shellPOSIX}, []shellKind{shellPOSIX}, ""},
 	{"cursor", "windows", evidenceEstablished, evidenceRuled, []shellKind{shellPowerShell, shellPOSIX}, []shellKind{shellCmd, shellPowerShell}, chosenByParticipant},
@@ -165,6 +165,7 @@ func TestDeclaredShellsRefusesWhatIsNotEstablished(t *testing.T) {
 	}
 	codex, _ := targetByID(installTargets, "codex")
 	cursor, _ := targetByID(installTargets, "cursor")
+	opencode, _ := targetByID(installTargets, "opencode")
 	claude, _ := targetByID(installTargets, "claude")
 
 	// A fixture, because no real host has a declared-OS tool cell left
@@ -176,12 +177,14 @@ func TestDeclaredShellsRefusesWhatIsNotEstablished(t *testing.T) {
 		refused(t, unestablishedToolHost{}, "windows", channelTool)
 	})
 	t.Run("unknown hook cell", func(t *testing.T) { refused(t, claude, "freebsd", channelHook) })
+	// Codex's hooks run on macOS and Linux; on Windows nothing has run one.
+	t.Run("an unknown hook cell beside an established tool cell", func(t *testing.T) { refused(t, codex, "windows", channelHook) })
 	t.Run("an OS no host declares", func(t *testing.T) { refused(t, claude, "freebsd", channelTool) })
 	t.Run("a target that declares nothing", func(t *testing.T) {
 		refused(t, fakeIntegrationTarget{}, "linux", channelTool)
 	})
 	t.Run("no hook channel is nothing to render", func(t *testing.T) {
-		shells, err := declaredShells(codex, "linux", channelHook)
+		shells, err := declaredShells(opencode, "linux", channelHook)
 		if shells != nil || err != nil {
 			t.Fatalf("got %v, %v; want nil, nil", shells, err)
 		}

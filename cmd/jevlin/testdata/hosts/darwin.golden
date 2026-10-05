@@ -9,7 +9,7 @@ config: /Users/u/.jevlin/jevlin.toml
 claude    tool established posix
 claude    hook established posix
 codex     tool established posix
-codex     hook none
+codex     hook established posix
 cursor    tool established posix
 cursor    hook established posix
 opencode  tool established posix
