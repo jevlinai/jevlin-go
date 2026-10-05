@@ -54,6 +54,13 @@ const TRACE_ENVELOPE_CAP = 48 * 1024
 // run. It is not an authorization decision and must never become one.
 const SEARCH_RE = /(?:^|[\s;&|(]|\$\()\s*(?:&\s*)?(?:[A-Za-z]:)?["']?(?:[^\s"']*[\\/])?jevlin(?:\.exe)?["']?\s+search(?:\s|$)/
 
+// SEARCH_LEADS_RE anchors SEARCH_RE's invocation: the search is the first
+// simple command of the line, leading plain NAME=value assignments aside —
+// the only place a POSIX assignment prefix reaches. One rule with
+// posixSearchLeadsRe in bridge.go, pinned by TestBridgeGuardsAgree and
+// TestTheLeadsGuardsAreOneRegex.
+const SEARCH_LEADS_RE = /^\s*(?:[A-Za-z_][A-Za-z0-9_]*=[^\s"'\\]*\s+)*(?:[A-Za-z]:)?["']?(?:[^\s"']*[\\/])?jevlin(?:\.exe)?["']?\s+search(?:\s|$)/
+
 const TRACE_BRIDGE_ENV = "JEVLIN_TRACE_BRIDGE"
 
 const traceHash = (raw) => createHash("sha256").update(TRACE_PREFIX + raw).digest("hex").slice(0, 32)
@@ -199,5 +206,10 @@ const withTraceBridge = (cmd, bridge, shell) => {
       "\n} finally { Remove-Item Env:" + TRACE_BRIDGE_ENV + " -ErrorAction SilentlyContinue }"
     )
   }
+  // The POSIX prefix binds to the first simple command and is a syntax
+  // error before a compound one, so it is written only when that first
+  // command is provably the search; anything else is left exactly as the
+  // host wrote it, and that search runs on its local fallback identity.
+  if (!SEARCH_LEADS_RE.test(stripped)) return null
   return TRACE_BRIDGE_ENV + "=" + bridge + " " + stripped
 }

@@ -42,7 +42,8 @@ list and needs no shell escaping. A malformed field answers `fix_input` before a
 | `recency` | `"day"`, `"week"`, `"month"` or `"year"`. A preference the router passes to its providers; check each citation if it must hold. |
 | `domain_filter` | Up to 16 bare hostnames. A preference, like `recency`. |
 | `max_results` | 1 to 25. A cap. |
-| `view` | `"full"` (default) or `"merged"`, which drops the per-provider `candidates`. |
+| `providers` | Up to 16 provider names: restrict the fan-out, or reach an extended arm that fires only when named. The router owns the list; an unknown name is its call. |
+| `view` | `"full"` (default) or `"merged"`, which drops the per-provider `candidates`. `"merged"` is also sent to the router, which adds its own `merged` and `indexes` to its raw answer; the envelope's `merged` stays this client's own merge. The human form's `-view merged` with `-format json` shows that raw answer. |
 
 ### The envelope
 
@@ -269,9 +270,15 @@ degradation.
 The text is scrubbed before it is cut, and an entry too large to scrub whole is omitted whole.
 Over 48 KiB, `history` is dropped; an envelope still too large is not sent. It travels
 base64url-encoded in `JEVLIN_TRACE_BRIDGE`, written in the syntax of the shell that runs the
-command, and only inside the search request. With no hook, a search carries a hashed per-shell
-identity. The trace is unauthenticated metadata: nothing treats it as proof of origin.
-`JEVLIN_TRACE=off` sends none.
+command, and only inside the search request — and only onto a command where that syntax
+actually reaches the search. A loop, a list or a pipeline with the search anywhere but first is
+left exactly as written; the search still runs, carrying the hashed per-shell identity instead.
+With no hook, a search carries that same per-shell identity. The hashed `session_id` is also
+mirrored as the request's own top-level `session_id` and `X-Session-Id` header — the router
+groups quick reformulations by it there, and reads the trajectory from the envelope; the same
+identifier in both places, sent only while an envelope rides, and dropped with the envelope on
+the one compatibility retry. The trace is unauthenticated metadata: nothing treats it as proof
+of origin. `JEVLIN_TRACE=off` sends none.
 
 ## The turn end
 

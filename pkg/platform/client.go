@@ -151,16 +151,21 @@ type registerWireResponse struct {
 	Tier string `json:"tier"`
 }
 
-// Register calls POST /v1/agents/register. name and requestedScopes are
-// both optional; per §5.1, "a client that has nothing to say omits the
-// fields rather than inventing values" — so both are left out of the
-// request body entirely when empty, not sent as "" / [].
-// requestedScopes is a hint only (the claim page's pre-tick); it grants
-// nothing on its own.
-func (c *Client) Register(ctx context.Context, name string, requestedScopes []string) (*Registration, error) {
+// Register calls POST /v1/agents/register. name, client and
+// requestedScopes are all optional; per §5.1, "a client that has nothing
+// to say omits the fields rather than inventing values" — so each is
+// left out of the request body entirely when empty, not sent as "" / [].
+// client names the tool build speaking ("my-tool/1.0" in the router's
+// skill file, bounded there at 128 characters; the caller sends its
+// User-Agent spelling). requestedScopes is a hint only (the claim page's
+// pre-tick); it grants nothing on its own.
+func (c *Client) Register(ctx context.Context, name, client string, requestedScopes []string) (*Registration, error) {
 	body := map[string]any{}
 	if name != "" {
 		body["name"] = name
+	}
+	if client != "" {
+		body["client"] = client
 	}
 	if len(requestedScopes) > 0 {
 		body["requested_scopes"] = requestedScopes
@@ -298,10 +303,12 @@ type AgentStatus struct {
 	// participant draw one share; only one holds a given epoch, so
 	// enabling mining on more than one is wasteful and noisy, not
 	// forbidden). Only the platform can know this — it sees every agent
-	// under the participant's org, which no single installation does —
-	// so this field does not exist in §5.2's literal spec text and is an
-	// assumption pending WP1 confirmation, flagged where it is consumed
-	// (cmd/jevlin/mining.go's askMiningQuestion).
+	// under the participant's org, which no single installation does.
+	// Originally assumed beyond §5.2's literal spec text; the router's
+	// published skill file (read 2026-10-02) documents
+	// participant_has_other_agent on the poll response with exactly this
+	// meaning — "the participant earns one share no matter how many of
+	// their agents enroll" — so the shape is confirmed.
 	ParticipantHasOtherMiningAgent bool
 	// ConsoleURL is the agent's project page on the platform, once
 	// claimed — search-router added this specifically so a re-approval
@@ -520,6 +527,76 @@ func (c *Client) Me(ctx context.Context, key string) (*AgentIdentity, error) {
 	}, nil
 }
 
+// ClaimBootstrap is a fresh claim link for a still-unclaimed agent: what
+// ClaimCode returns, and the three fields register's response carries for
+// the same purpose.
+type ClaimBootstrap struct {
+	ClaimURL       string
+	ClaimCode      string
+	ClaimExpiresAt string
+}
+
+// ClaimCode calls POST /v1/agents/{agent_id}/claim-code with the key. The
+// platform mints a FRESH claim_url/claim_code and the old one dies — the
+// original code is never re-served (only its hash is stored), so this is
+// the one way back to a working human link for an agent whose link was
+// lost while still unclaimed (the router's skill file, "Lost the claim
+// link too"; it closes B.1's gap, where /v1/agents/me answers without the
+// claim bootstrap). The fresh code is short-lived (about an hour).
+//
+// Minting is a state change, not a read: the caller must want the old
+// code dead. A claimed agent has nothing to claim and answers 404, the
+// same no-oracle answer an unknown or revoked key gets — ErrAgentNotFound
+// either way, deliberately indistinguishable. The claim_url gets the same
+// origin-lock as register's (invariant 12): a registration link this
+// client will print must point at the configured portal.
+func (c *Client) ClaimCode(ctx context.Context, agentID, key string) (*ClaimBootstrap, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.apiBaseURL+"/v1/agents/"+url.PathEscape(agentID)+"/claim-code", nil)
+	if err != nil {
+		return nil, fmt.Errorf("platform: build claim-code request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("platform: claim-code request failed: %w", err)
+	}
+	defer drainAndClose(resp.Body)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("platform: read claim-code response: %w", err)
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrAgentNotFound
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, refusal(resp.StatusCode, data)
+	}
+	var wire struct {
+		ClaimURL       string `json:"claim_url"`
+		ClaimCode      string `json:"claim_code"`
+		ClaimExpiresAt string `json:"claim_expires_at"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return nil, fmt.Errorf("platform: parse claim-code response: %w", err)
+	}
+	if wire.ClaimURL == "" {
+		return nil, errors.New("platform: claim-code response carried no claim_url")
+	}
+	if err := validatePlatformURL(wire.ClaimURL, c.portalBaseURL); err != nil {
+		return nil, err
+	}
+	if hasControlChar(wire.ClaimCode) {
+		return nil, errors.New("platform: claim_code contains a control character; refusing")
+	}
+	return &ClaimBootstrap{
+		ClaimURL:       wire.ClaimURL,
+		ClaimCode:      wire.ClaimCode,
+		ClaimExpiresAt: wire.ClaimExpiresAt,
+	}, nil
+}
+
 // Enroll calls POST /v1/agents/enroll, returning the enrollment token
 // exactly as the AS receives it (§5.3, §7) — the caller
 // (cmd/jevlin/connect.go) redeems it via
@@ -527,9 +604,11 @@ func (c *Client) Me(ctx context.Context, key string) (*AgentIdentity, error) {
 //
 // The response's token field name is not given literally in §5.3 (only
 // "the enrollment token exactly as the /mining page mints it today" is
-// specified); {"token": "..."} is assumed as the minimal natural shape,
-// matching how §5.1's response IS given literally. Confirm against WP1
-// once it lands.
+// specified); {"token": "..."} was assumed as the minimal natural shape,
+// and the router's published skill file (read 2026-10-02) confirms it
+// literally: {"token": "…", "slot": "…", "expires_at": "…"}. The two
+// extra fields are not read — the token is handed on whole, and slot is
+// what this client already asked for.
 func (c *Client) Enroll(ctx context.Context, agentID, key, slot string) (string, error) {
 	raw, err := json.Marshal(map[string]string{"slot": slot})
 	if err != nil {
@@ -576,10 +655,11 @@ func (c *Client) Enroll(ctx context.Context, agentID, key, slot string) (string,
 // RefusalError is a structured refusal from the platform's public
 // routes: a machine-readable code plus the message, so a caller can act
 // on WHICH refusal this is rather than parsing prose. The envelope
-// shape ({"error":{"code","message"}}) is assumed to match the AS's own
-// (pkg/auth's joinRefusal) since the design doc does not specify a
-// different one and this client already borrows an AS convention
-// elsewhere (auth.SameOriginRedirects).
+// shape ({"error":{"code","message"}}) was assumed to match the AS's
+// own (pkg/auth's joinRefusal); the router's published skill file (read
+// 2026-10-02) confirms it, and states the rule refusal() below already
+// applies: the same code is mirrored top-level, and a client branches
+// on the top-level code, never on the message.
 type RefusalError struct {
 	Status  int
 	Code    string

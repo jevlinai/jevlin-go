@@ -24,6 +24,32 @@ The first release replaces this heading with its own.
   by default. Scrubbed and capped like the trace; never your prompt, never a
   tool's output; nothing for a turn with no served search, and nothing unless
   `miner.router_url` names the router. Claude Code and Cursor.
+- **A lost claim link is replaced, not mourned.** For a registration rebuilt from
+  the platform that is still unclaimed with no claim link, a foreground
+  `jevlin connect` now asks the platform for a fresh link and prints it. The old
+  code is dead the moment a new one is minted, so only a connect you run does
+  this — never a background resume — and where the platform cannot mint one, the
+  old one-line notice remains.
+- **The search request reaches more of the router.** The `--stdin` request
+  accepts `providers` (up to 16 names, to trim the fan-out or reach an extended
+  arm that fires only when named), and `view: "merged"` now also travels to the
+  router, which adds its own `merged` and `indexes` to its raw answer. The
+  envelope's `merged` stays this client's own merge; the human form's
+  `-view merged` with `-format json` shows the router's.
+- **A traced search names its session twice.** The hashed session id the trace
+  envelope already carried is now also sent as the request's top-level
+  `session_id` and `X-Session-Id` header, so the router can group quick
+  reformulations of one conversation's queries. Same identifier, no new content:
+  it is sent only while a trace envelope rides, and `JEVLIN_TRACE=off` still
+  sends none of it. `connect` also names the build (`jevlin/<version>`) when it
+  registers an agent.
+- **The trace prefix no longer edits a command it cannot carry.** The bridge's
+  POSIX prefix binds to the first command of a line, so the hooks now write it
+  only when that command is the search itself. Before, a loop around a search
+  was rewritten into a bash syntax error and the whole command failed, and a
+  `cd … && jevlin search …` sent the bridge to `cd`, splitting one
+  conversation's searches across unrelated sessions. Such commands are now left
+  exactly as written; the search still runs, with the per-shell identity.
 - **A subagent's searches name their parent.** Under Claude Code and opencode, a
   search made by a subagent now carries `parent_session_id` in its trace: the hashed id of
   the session that started it. The router could already tell that two sessions
