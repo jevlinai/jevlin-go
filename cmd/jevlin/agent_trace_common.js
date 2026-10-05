@@ -73,13 +73,26 @@ const traceHash = (raw) => createHash("sha256").update(TRACE_PREFIX + raw).diges
 //
 // The character classes are written out ([\t\n\f\r ] rather than \s, [^\n]
 // rather than .) because JavaScript's shorthands are wider than Go's, and a
-// rule that fires in one language and not the other is a parity bug.
+// rule that fires in one language and not the other is a parity bug. For
+// the same reason no pattern here uses the i flag: Go's (?i) folds k with
+// U+212A KELVIN SIGN and s with U+017F LONG S, JavaScript's i without u
+// folds neither, and with u its \w-style classes fold them too. Where Go
+// folds case, the class is written out letter by letter (traceFold).
 const TRACE_REDACTED = '[REDACTED]'
+
+// traceFold writes an ASCII name as a pattern that matches what Go's (?i)
+// matches for it: each letter in either case, plus the two non-ASCII
+// letters Go folds into ASCII ones, and a dot as a dot.
+const traceFold = (name) => name.replace(/[A-Za-z.]/g, (c) => {
+  if (c === '.') return '\\.'
+  const l = c.toLowerCase()
+  return '[' + l + c.toUpperCase() + (l === 'k' ? '\u212A' : l === 's' ? '\u017F' : '') + ']'
+})
 
 // scrubCommon: credentials with a recognizable shape.
 // Start URL/email scans at token boundaries to avoid rescanning long words.
 const scrubTraceCommon = (text) => text
-  .replace(/(?<![a-zA-Z0-9+.-])([a-zA-Z0-9+.-]*:\/\/)[^/@\s]+@/g, (match, prefix) =>
+  .replace(/(?<![a-zA-Z0-9+.-])([a-zA-Z0-9+.-]*:\/\/)[^/@\t\n\f\r ]+@/g, (match, prefix) =>
     /[a-zA-Z]/.test(prefix) ? prefix + TRACE_REDACTED : match)
   .replace(/\b(?:sk|sr)-[A-Za-z0-9_-]{16,}/g, TRACE_REDACTED)
   .replace(/\bgh[opsur]_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, TRACE_REDACTED)
@@ -129,13 +142,19 @@ const redactTraceSecretAssignments = (text) => text
   .replace(/(^|[^A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)=("[^"\n]*"|'[^'\n]*'|[^\t\n\f\r "']+)/g, (match, lead, name, value) =>
     value === TRACE_REDACTED || !(name === TRACE_BRIDGE_ENV || traceSecretName(name)) ? match : lead + name + '=' + TRACE_REDACTED)
 
+// One known difference from Go, left as it is: an address directly followed
+// by one of . % + - and a second address ("bob@example.com.a1@example.org").
+// Go's \b lets the second local part start at that punctuation, right where
+// the first match ended, and removes ".a1@example.org"; the lookbehind here,
+// which keeps this scan from restarting inside every long word, does not,
+// and keeps it. No byte-identical rewrite is known that stays linear.
 const redactTraceEmails = (text) => text
   .replace(/(?<![A-Za-z0-9._%+-])([.%+-]*)([A-Za-z0-9_][A-Za-z0-9._%+-]*@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b)/g, (match, leading, email, offset, source) =>
     source[offset + match.length] === ':' || /(?:ssh|scp|rsync|sftp)$/i.test(source.slice(0, offset + leading.length).replace(/[ \t]+$/, '')) ? match : leading + TRACE_REDACTED)
 
 const redactTraceHomePaths = (text) => text
-  .replace(/([A-Z]:\\Users\\)[^\\\s]+/gi, '$1' + TRACE_REDACTED)
-  .replace(/(\/Users\/|\/home\/)[^/\s]+/g, (match, prefix, offset, source) =>
+  .replace(/([A-Za-z\u212A\u017F]:\\[Uu][Ss\u017F][Ee][Rr][Ss\u017F]\\)[^\\\t\n\f\r ]+/g, '$1' + TRACE_REDACTED)
+  .replace(/(\/Users\/|\/home\/)[^/\t\n\f\r ]+/g, (match, prefix, offset, source) =>
     offset > 0 && /[A-Za-z0-9.]/.test(source[offset - 1]) ? match : prefix + TRACE_REDACTED)
 
 // The local identity: the hostname's first label and the account name, each
@@ -157,7 +176,7 @@ const traceIdentityPatterns = (host, account) => {
     const lower = name.toLowerCase()
     if (!/^[A-Za-z0-9._-]{3,}$/.test(name) || TRACE_GENERIC_IDENTITY.has(lower) || seen.has(lower)) continue
     seen.add(lower)
-    out.push(new RegExp('(?<![A-Za-z0-9_])' + name.replace(/\./g, '\\.') + '(?![A-Za-z0-9_])', 'giu'))
+    out.push(new RegExp('(?<![A-Za-z0-9_])' + traceFold(name) + '(?![A-Za-z0-9_])', 'g'))
   }
   return out
 }

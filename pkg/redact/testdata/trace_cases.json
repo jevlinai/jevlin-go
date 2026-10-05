@@ -446,5 +446,47 @@
   "account": "ab",
   "in": "ssh ab@ab; USER=ab; ab is on ab",
   "want": "ssh ab@ab; USER=ab; ab is on ab"
+ },
+ {
+  "name": "identity/a kelvin sign folds as Go folds it",
+  "host": "kessler-box.lan",
+  "account": "",
+  "in": "on \u212aessler-box, kessler-box\u017f and ke\u017f\u017fler-box",
+  "want": "on [REDACTED], [REDACTED]\u017f and [REDACTED]"
+ },
+ {
+  "name": "home/windows long s folds as Go folds it",
+  "host": "",
+  "account": "",
+  "in": "C:\\U\u017fers\\alice\\x",
+  "want": "C:\\U\u017fers\\[REDACTED]\\x"
+ },
+ {
+  "name": "home/windows kelvin drive letter",
+  "host": "",
+  "account": "",
+  "in": "\u212a:\\Users\\alice",
+  "want": "\u212a:\\Users\\[REDACTED]"
+ },
+ {
+  "name": "userinfo/vertical tab inside userinfo",
+  "host": "",
+  "account": "",
+  "in": "see https://us\u000ber:pw@example.com/x",
+  "want": "see https://[REDACTED]example.com/x"
+ },
+ {
+  "name": "home/unix no-break space inside the name",
+  "host": "",
+  "account": "",
+  "in": "/home/al\u00a0ice/x",
+  "want": "/home/[REDACTED]/x"
+ },
+ {
+  "name": "home/windows vertical tab inside the name",
+  "host": "",
+  "account": "",
+  "in": "C:\\Users\\\u000balice",
+  "want": "C:\\Users\\[REDACTED]"
  }
 ]
