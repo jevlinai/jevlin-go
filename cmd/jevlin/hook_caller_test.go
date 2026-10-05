@@ -263,6 +263,9 @@ func TestWhatCountsAsEvidenceOfAnotherHost(t *testing.T) {
 		{"Claude Code's event name and a Codex rollout transcript", func(m map[string]any) {
 			m["transcript_path"] = "/home/u/.codex/sessions/2026/10/05/rollout-2026-10-05T03-14-48-01a10a0e-8e3d-7171-8bbb-d28f7394059e.jsonl"
 		}, true},
+		{"a transcript named like a rollout that is not .jsonl", func(m map[string]any) {
+			m["transcript_path"] = "/home/u/.claude/projects/-home-u-project/rollout-1.json"
+		}, false},
 		{"a Codex rollout transcript spelled for Windows", func(m map[string]any) {
 			m["transcript_path"] = `C:\Users\u\.codex\sessions\2026\10\05\rollout-2026-10-05T03-14-48-01a10a0e.jsonl`
 		}, true},

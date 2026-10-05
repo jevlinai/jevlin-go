@@ -311,3 +311,37 @@ func TestAnUpgradeReRenderLeavesCodexHooksByteIdentical(t *testing.T) {
 		t.Errorf("the upgrade's re-render changed hooks.json\n got %s\nwant %s", after, compact)
 	}
 }
+
+// A `version` key is ours to remove only for a host whose install writes one
+// (Cursor's). Codex's install never does, so a hooks.json carrying one is
+// someone else's too, and uninstall keeps it with its version and without
+// our entries.
+func TestCodexUninstallKeepsAHooksFileWithAVersionItNeverWrote(t *testing.T) {
+	m, ops := newFakeMachine()
+	entry := goldenEntry()
+	planCodexHooksFor(t, ops, entry, "linux")
+	path := slash(ops.paths(noEnv).codexHooks)
+	var doc map[string]any
+	if err := json.Unmarshal(m.files[path], &doc); err != nil {
+		t.Fatal(err)
+	}
+	doc["version"] = 1
+	m.files[path] = mustJSON(t, doc)
+
+	var p agentPlan
+	(codexTarget{}).PlanUninstall(ops, ops.paths(noEnv), entry, noEnv, &p)
+	if failures := commitPlan(ops, &p, io.Discard, io.Discard); failures != 0 {
+		t.Fatalf("uninstall: %d failures", failures)
+	}
+	b, kept := m.files[path]
+	if !kept {
+		t.Fatalf("uninstall removed a hooks.json holding a version jevlin never writes for Codex (removes %v)", p.removedPaths())
+	}
+	var left map[string]any
+	if err := json.Unmarshal(b, &left); err != nil || left["version"] == nil {
+		t.Fatalf("the kept file lost its version: %s", b)
+	}
+	if lists := codexEventLists(t, b); len(lists) != 0 {
+		t.Errorf("entries left after uninstall: %v", lists)
+	}
+}

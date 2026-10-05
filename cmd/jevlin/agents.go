@@ -1367,7 +1367,11 @@ func sameRuleSet(got []string, want []string) bool {
 // put there, leave everything else. A file still holding a foreign hook, a
 // foreign allow rule or any other key is kept and rewritten, because then the
 // host or the participant owns it too.
-func planHooksRemove(ops agentOps, label, path string, p *agentPlan, entry binEntry, root string) bool {
+//
+// ownsVersion says whether this host's install writes a top-level `version`
+// (Cursor's does; Claude Code's and Codex's never do). Where it does not, a
+// `version` in the file is somebody else's, and keeps the file.
+func planHooksRemove(ops agentOps, label, path string, p *agentPlan, entry binEntry, root string, ownsVersion bool) bool {
 	existing, mode, err := readWithMode(ops, path)
 	if err != nil || existing == nil {
 		return false
@@ -1425,7 +1429,7 @@ func planHooksRemove(ops agentOps, label, path string, p *agentPlan, entry binEn
 	if !changed {
 		return false
 	}
-	if hooksFileIsNowOnlyOurs(m, root) {
+	if hooksFileIsNowOnlyOurs(m, root, ownsVersion) {
 		planRemove(p, label, path)
 		return true
 	}
@@ -1434,22 +1438,24 @@ func planHooksRemove(ops agentOps, label, path string, p *agentPlan, entry binEn
 }
 
 // hooksFileIsNowOnlyOurs: after the removal, does this object hold anything
-// the host or the participant would miss? An empty hooks object and the
-// `version` key are both ours — planHooksMerge writes the version when the
-// file has none, and creates the file when there is none — so an object with
-// nothing else left in it is one this client is wholly responsible for.
+// the host or the participant would miss? An empty hooks object is ours, and
+// so is the `version` key for a host whose install writes one — planHooksMerge
+// writes it when the file has none, and creates the file when there is none —
+// so an object with nothing else left in it is one this client is wholly
+// responsible for. For a host whose install never writes `version`, one found
+// in the file was put there by somebody else.
 //
 // Deliberately conservative: any other key, or a hooks object still holding
 // an event, keeps the file. It is better to leave a file that could have gone
 // than to delete one somebody else was using.
-func hooksFileIsNowOnlyOurs(m map[string]any, root string) bool {
+func hooksFileIsNowOnlyOurs(m map[string]any, root string, ownsVersion bool) bool {
 	for k, v := range m {
-		switch k {
-		case root:
+		switch {
+		case k == root:
 			if hooks, ok := v.(map[string]any); !ok || len(hooks) > 0 {
 				return false
 			}
-		case "version":
+		case k == "version" && ownsVersion:
 		default:
 			return false
 		}

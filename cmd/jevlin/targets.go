@@ -487,7 +487,7 @@ func (t claudeTarget) PlanUninstall(ops agentOps, paths agentPaths, entry binEnt
 		planRemove(p, t.Label(), filepath.Dir(paths.claudeSkill))
 		removed = true
 	}
-	if planHooksRemove(ops, t.Label(), paths.claudeSettings, p, entry, "hooks") {
+	if planHooksRemove(ops, t.Label(), paths.claudeSettings, p, entry, "hooks", false) {
 		removed = true
 	}
 	if !removed {
@@ -668,7 +668,7 @@ func (t codexTarget) PlanUninstall(ops agentOps, paths agentPaths, entry binEntr
 		removed = true
 	}
 	shifted := codexHooksAfterOurs(ops, paths.codexHooks, entry)
-	if planHooksRemove(ops, t.Label(), paths.codexHooks, p, entry, "hooks") {
+	if planHooksRemove(ops, t.Label(), paths.codexHooks, p, entry, "hooks", false) {
 		removed = true
 		p.notes = append(p.notes, t.Label()+": Codex's record of your approval of these hooks stays in "+paths.codexConfig+"; jevlin never writes it, and leaves it")
 		if shifted {
@@ -861,15 +861,15 @@ func codexApprovalLines(ops agentOps, paths agentPaths, entry binEntry) []string
 	case err != nil:
 		return []string{"hooks: approval unknown; " + paths.codexConfig + " cannot be read: " + err.Error()}
 	default:
-		var doc struct {
-			Hooks struct {
-				State map[string]any `toml:"state"`
-			} `toml:"hooks"`
-		}
+		// Into a map, not a struct: the decoder matches a struct's fields
+		// without regard to case, and Codex reads `hooks.state` exactly.
+		var doc map[string]any
 		if _, err := toml.Decode(string(b), &doc); err != nil {
 			return []string{"hooks: approval unknown; " + paths.codexConfig + " does not read as TOML"}
 		}
-		state = doc.Hooks.State
+		if hooks, ok := doc["hooks"].(map[string]any); ok {
+			state, _ = hooks["state"].(map[string]any)
+		}
 	}
 	onRecord := 0
 	for ev := range ours {
@@ -881,7 +881,7 @@ func codexApprovalLines(ops agentOps, paths agentPaths, entry binEntry) []string
 	case onRecord == 0:
 		return []string{"hooks: no approval on record; Codex runs them only after you approve them in Codex"}
 	case onRecord < len(ours):
-		return []string{fmt.Sprintf("hooks: an approval is on record for %d of %d; Codex runs the others only after you approve them in Codex", onRecord, len(ours))}
+		return []string{fmt.Sprintf("hooks: an approval is on record for %d of %d; Codex runs the others only after you approve them in Codex, and whether a recorded one is for the command as it reads now is Codex's to decide", onRecord, len(ours))}
 	}
 	return []string{fmt.Sprintf("hooks: an approval is on record for %d of %d; whether it is for the commands as they read now is Codex's to decide", onRecord, len(ours))}
 }
@@ -1035,7 +1035,7 @@ func (t cursorTarget) PlanUninstall(ops agentOps, paths agentPaths, entry binEnt
 		planRemove(p, t.Label(), filepath.Dir(paths.cursorSkill))
 		removed = true
 	}
-	if planHooksRemove(ops, t.Label(), paths.cursorHooks, p, entry, "hooks") {
+	if planHooksRemove(ops, t.Label(), paths.cursorHooks, p, entry, "hooks", true) {
 		removed = true
 	}
 	if !removed {

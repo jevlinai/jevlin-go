@@ -541,6 +541,11 @@ func TestWhatContradictsACodexEntry(t *testing.T) {
 			m["transcript_path"] = `C:\Users\u\codex-home\sessions\2026\10\05\rollout-2026-10-05T03-14-48-01a10a0e.jsonl`
 		}, false},
 		{"another tool_use_id naming", func(m map[string]any) { m["tool_use_id"] = "call_x" }, false},
+		// Both halves of the name: a file that begins like a rollout and is
+		// not one is not Codex's transcript.
+		{"a file named like a rollout that is not .jsonl", func(m map[string]any) {
+			m["transcript_path"] = "/home/u/.codex/sessions/2026/10/05/rollout-2026-10-05T03-14-48-01a10a0e.json"
+		}, true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			payload := codexPayloadFixture(t, "codex-0.158.0-linux-Stop.json")

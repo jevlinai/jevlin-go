@@ -49,6 +49,11 @@ func approvalTables(hooksPath, index string, events ...string) string {
 	return b.String()
 }
 
+// allFive is a record approving each of this installation's five hooks.
+func allFive(p agentPaths) string {
+	return approvalTables(p.codexHooks, "0", "pre_tool_use", "session_start", "pre_compact", "post_compact", "stop")
+}
+
 func TestCodexStatusReportsApprovalOnRecordOnly(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -63,14 +68,30 @@ func TestCodexStatusReportsApprovalOnRecordOnly(t *testing.T) {
 		{"the approvals Codex wrote on macOS, all five of ours among them", func(agentPaths) (string, bool) {
 			return codexConfigFixture(t, macosAfterTrustBlock), true
 		}, nil, "hooks: an approval is on record for 5 of 5; whether it is for the commands as they read now is Codex's to decide"},
+		{"all five, as approvalTables writes them", func(p agentPaths) (string, bool) { return allFive(p), true }, nil,
+			"hooks: an approval is on record for 5 of 5; whether it is for the commands as they read now is Codex's to decide"},
 		{"two of the five", func(p agentPaths) (string, bool) {
 			return approvalTables(p.codexHooks, "0", "pre_tool_use", "stop"), true
-		}, nil, "hooks: an approval is on record for 2 of 5; Codex runs the others only after you approve them in Codex"},
+		}, nil, "hooks: an approval is on record for 2 of 5; Codex runs the others only after you approve them in Codex, and whether a recorded one is for the command as it reads now is Codex's to decide"},
 		{"approvals for another hooks.json", func(agentPaths) (string, bool) {
 			return approvalTables("/Users/u/elsewhere/.codex/hooks.json", "0", "pre_tool_use", "session_start", "pre_compact", "post_compact", "stop"), true
 		}, nil, "hooks: no approval on record; Codex runs them only after you approve them in Codex"},
 		{"approvals for the second place in each event", func(p agentPaths) (string, bool) {
 			return approvalTables(p.codexHooks, "1", "pre_tool_use", "session_start", "pre_compact", "post_compact", "stop"), true
+		}, nil, "hooks: no approval on record; Codex runs them only after you approve them in Codex"},
+		{"approvals for the second handler of each group", func(p agentPaths) (string, bool) {
+			return strings.ReplaceAll(allFive(p), ":0:0\"]", ":0:1\"]"), true
+		}, nil, "hooks: no approval on record; Codex runs them only after you approve them in Codex"},
+		{"approvals with an empty trusted_hash", func(p agentPaths) (string, bool) {
+			return strings.ReplaceAll(allFive(p), `"sha256:00"`, `""`), true
+		}, nil, "hooks: no approval on record; Codex runs them only after you approve them in Codex"},
+		{"approvals whose trusted_hash is not a string", func(p agentPaths) (string, bool) {
+			return strings.ReplaceAll(allFive(p), `"sha256:00"`, `7`), true
+		}, nil, "hooks: no approval on record; Codex runs them only after you approve them in Codex"},
+		// Codex reads its keys as written; the decoder would match these
+		// to a struct field regardless of case.
+		{"approvals under [Hooks.State], which Codex does not read", func(p agentPaths) (string, bool) {
+			return strings.ReplaceAll(allFive(p), "[hooks.state.", "[Hooks.State."), true
 		}, nil, "hooks: no approval on record; Codex runs them only after you approve them in Codex"},
 		{"a config.toml that is not TOML", func(agentPaths) (string, bool) { return "= = =\n", true }, nil,
 			"hooks: approval unknown; /Users/u/.codex/config.toml does not read as TOML"},
