@@ -9,8 +9,9 @@ import (
 )
 
 // traceSlowInput is one row of testdata/trace_slow_inputs.json: a text that
-// once took a scrubber time quadratic in its length, built to traceSourceCap
-// bytes by repeating unit between prefix and suffix. cmd/jevlin's
+// took a scrubber, or would take it without the step that keeps it linear,
+// time quadratic in its length, built to traceSourceCap bytes by repeating
+// unit between prefix and suffix. cmd/jevlin's
 // TestTheSharedSourceScrubsAdversarialInputsInLinearTime builds the same
 // texts for the JavaScript scrubber.
 type traceSlowInput struct {
@@ -26,11 +27,11 @@ type traceSlowInput struct {
 const traceSourceCap = 256 * 1024
 
 // traceLinearBound is how long TraceText may take over traceSourceCap bytes
-// of any slow input. Every one of them took 8 s or more before it was made
-// linear (an address after an address: 8.2 s) and takes under 70 ms after,
-// so the bound fails the quadratic code by ten times and passes the linear
-// code by ten times on the machine that measured it, which leaves a slower
-// CI runner its own factor. The race detector slows this package about
+// of any slow input. Each that was found slow took 8 s or more before it
+// was made linear (an address after an address: 8.2 s), and each takes
+// under 100 ms now, so the bound fails the quadratic code by ten times and
+// passes the linear code by eight or more on the machine that measured it,
+// which leaves a slower CI runner its own factor. The race detector slows this package about
 // twenty times, and the bound with it.
 const traceLinearBound = 800 * time.Millisecond
 

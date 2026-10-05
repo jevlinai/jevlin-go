@@ -294,17 +294,92 @@ const traceQuotedWordEnd = (s, v) => {
   }
   return traceTrimValueTail(s, last, i)
 }
-const traceSecretValueEnd = (s, v) => {
+// A value inside the quote q that holds it ends at the quote that closes q
+// on its line, or at a ; or & before that; blanks and what the tail rule
+// hands back stay outside. from is past a quoted value's own quotes. The
+// close is the first q no backslash (for " no backtick) stands right before,
+// else the first q: only the character before is asked, so an answer holds
+// for any start and can be remembered. -1 when q does not close on its line.
+const traceEnclosedValueEnd = (s, from, q, words) => {
+  let end = traceQuoteSearch(words.escaped, s, from, q)
+  if (end < 0) {
+    end = traceQuoteSearch(words.plain, s, from, q)
+    if (end < 0) return -1
+  }
+  for (let i = from; i < end; i++) {
+    const c = s.charCodeAt(i)
+    if (c === 38 || c === 59) { end = i; break }
+  }
+  end = traceTrimBlanksEnd(s, from, end)
+  return traceTrimValueTail(s, from, end)
+}
+const traceQuoteSearch = (f, s, v, q) => {
+  if (f.used && f.q === q && v >= f.from && (f.at >= v || (f.at < 0 && v <= f.stop))) return f.at
+  f.used = true
+  f.q = q
+  f.from = v
+  f.at = -1
+  let i = v
+  for (; i < s.length && s.charCodeAt(i) !== 10; i++) {
+    if (s.charCodeAt(i) === q && !(f.escaped && i > 0 && (s.charCodeAt(i - 1) === 92 || (q === 34 && s.charCodeAt(i - 1) === 96)))) {
+      f.at = i
+      break
+    }
+  }
+  f.stop = i
+  return f.at
+}
+const traceSecretValueEnd = (s, v, words) => {
   if (v >= s.length) return v
+  let from = v
   const c = s.charCodeAt(v)
-  if (c === 34 || c === 39) return traceQuotedWordEnd(s, v)
-  if (c === 61) return v
+  if (c === 34 || c === 39) from = traceQuotedWordEnd(s, v)
+  else if (c === 61) return v
+  if (words.open) {
+    const end = traceEnclosedValueEnd(s, from, words.head, words)
+    if (end >= 0) return end
+  }
+  if (from > v) return from
   return traceTrimValueTail(s, v, traceRunEnd(s, v))
 }
+// The word that holds each name: what follows the last whitespace, a removed
+// value counting as part of it. A word that opens with a quote, after any
+// ( [ {, holds its names' values inside that quote while it stays open.
+// Only the word is read, and not what a removed value held, so a second
+// pass reads the same quote as open.
+const traceWordScan = () => ({
+  pos: 0, begun: false, head: 0, open: false,
+  escaped: { escaped: true, used: false, q: 0, from: 0, at: -1, stop: 0 },
+  plain: { escaped: false, used: false, q: 0, from: 0, at: -1, stop: 0 },
+})
+const traceWordAdvance = (w, s, to) => {
+  for (; w.pos < to; w.pos++) {
+    const c = s.charCodeAt(w.pos)
+    if (traceIsSpace(c)) {
+      w.begun = false
+      w.head = 0
+      w.open = false
+    } else if (!w.begun && (c === 40 || c === 91 || c === 123)) {
+      // still before the word's first character
+    } else if (!w.begun) {
+      w.begun = true
+      if (c === 34 || c === 39) { w.head = c; w.open = true }
+    } else if (c === w.head) {
+      w.open = !w.open
+    }
+  }
+}
+// Past a removed value: its placeholder begins a word if none has begun and
+// changes no quote.
+const traceWordSkip = (w, to) => {
+  if (to > w.pos) w.pos = to
+  w.begun = true
+}
+
 // The secret value behind the = at e, as [start, end], or null. The name is
 // read backwards from e and never past floor, the end of the last value
 // removed.
-const traceSecretValueAt = (s, floor, e) => {
+const traceSecretValueAt = (s, floor, e, words) => {
   let k = e
   while (k > floor && traceIsBlank(s.charCodeAt(k - 1))) k--
   let r = k
@@ -326,7 +401,8 @@ const traceSecretValueAt = (s, floor, e) => {
   if (!bridge && !traceSecretName(name)) return null
   let v = e + 1
   if (psEnv || bridge) while (v < s.length && traceIsBlank(s.charCodeAt(v))) v++
-  const end = traceSecretValueEnd(s, v)
+  traceWordAdvance(words, s, p)
+  const end = traceSecretValueEnd(s, v, words)
   if (end === v || s.slice(v, end) === TRACE_REDACTED) return null
   return [v, end]
 }
@@ -336,13 +412,16 @@ const redactTraceSecretAssignments = (text) => {
   let out = ''
   let last = 0
   let changed = false
+  const words = traceWordScan()
   while (e >= 0) {
     let next = e + 1
-    const found = traceSecretValueAt(text, last, e)
+    const found = traceSecretValueAt(text, last, e, words)
     if (found) {
       out += text.slice(last, found[0]) + TRACE_REDACTED
       last = next = found[1]
       changed = true
+      traceWordAdvance(words, text, found[0])
+      traceWordSkip(words, found[1])
     }
     e = text.indexOf('=', next)
   }

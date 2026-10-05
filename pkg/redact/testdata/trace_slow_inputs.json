@@ -22,5 +22,11 @@
   "prefix": "",
   "unit": "A@b.cc ",
   "suffix": ""
+ },
+ {
+  "name": "names in a quoted word whose quote never closes",
+  "prefix": "\"",
+  "unit": "PASSWORD=a;",
+  "suffix": ""
  }
 ]

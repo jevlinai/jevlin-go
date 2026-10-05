@@ -1321,5 +1321,145 @@
   "account": "",
   "in": "API_TOKEN=\"\" next",
   "want": "API_TOKEN=[REDACTED] next"
+ },
+ {
+  "name": "enclosed/a docker -e",
+  "host": "",
+  "account": "",
+  "in": "docker run -e \"DB_PASSWORD=correct horse battery\" postgres",
+  "want": "docker run -e \"DB_PASSWORD=[REDACTED]\" postgres"
+ },
+ {
+  "name": "enclosed/single quotes",
+  "host": "",
+  "account": "",
+  "in": "-e 'API_TOKEN=Token Canary Tail' x",
+  "want": "-e 'API_TOKEN=[REDACTED]' x"
+ },
+ {
+  "name": "enclosed/a connection string",
+  "host": "",
+  "account": "",
+  "in": "\"Server=db;Password=correct horse battery;Trusted=yes\"",
+  "want": "\"Server=db;Password=[REDACTED];Trusted=yes\""
+ },
+ {
+  "name": "enclosed/two names in one word",
+  "host": "",
+  "account": "",
+  "in": "\"A_TOKEN=a b;B_SECRET=c d\" next",
+  "want": "\"A_TOKEN=[REDACTED];B_SECRET=[REDACTED]\" next"
+ },
+ {
+  "name": "enclosed/a json array",
+  "host": "",
+  "account": "",
+  "in": "[\"DB_PASSWORD=correct horse battery\", \"X=1\"]",
+  "want": "[\"DB_PASSWORD=[REDACTED]\", \"X=1\"]"
+ },
+ {
+  "name": "enclosed/inside parentheses",
+  "host": "",
+  "account": "",
+  "in": "x = (\"API_TOKEN=a b\")",
+  "want": "x = (\"API_TOKEN=[REDACTED]\")"
+ },
+ {
+  "name": "enclosed/an escaped quote inside",
+  "host": "",
+  "account": "",
+  "in": "{\"cmd\": \"PASSWORD=a\\\" b c\"}",
+  "want": "{\"cmd\": \"PASSWORD=[REDACTED]\"}"
+ },
+ {
+  "name": "enclosed/a backslash before the closing quote",
+  "host": "",
+  "account": "",
+  "in": "\"PASSWORD=C:\\dir\\\" next",
+  "want": "\"PASSWORD=[REDACTED]\" next"
+ },
+ {
+  "name": "enclosed/a quote that does not close on the line",
+  "host": "",
+  "account": "",
+  "in": "\"PASSWORD=a b\nc\"",
+  "want": "\"PASSWORD=[REDACTED] b\nc\""
+ },
+ {
+  "name": "enclosed/blanks before the closing quote stay",
+  "host": "",
+  "account": "",
+  "in": "\"PASSWORD=a b \" next",
+  "want": "\"PASSWORD=[REDACTED] \" next"
+ },
+ {
+  "name": "enclosed/an ampersand ends it",
+  "host": "",
+  "account": "",
+  "in": "\"client_secret=a b&scope=read\"",
+  "want": "\"client_secret=[REDACTED]&scope=read\""
+ },
+ {
+  "name": "enclosed/a closing paren inside stays",
+  "host": "",
+  "account": "",
+  "in": "\"f(password=a b)\"",
+  "want": "\"f(password=[REDACTED])\""
+ },
+ {
+  "name": "enclosed/limit: a quote before another word",
+  "host": "",
+  "account": "",
+  "in": "echo \"export PASSWORD=a b\"",
+  "want": "echo \"export PASSWORD=[REDACTED] b\""
+ },
+ {
+  "name": "survives/a quoted word before a name",
+  "host": "",
+  "account": "",
+  "in": "\"x\" PASSWORD",
+  "want": "\"x\" PASSWORD"
+ },
+ {
+  "name": "enclosed/a quote closed before the name holds nothing",
+  "host": "",
+  "account": "",
+  "in": "\"x\"API_TOKEN=a b\"",
+  "want": "\"x\"API_TOKEN=[REDACTED] b\""
+ },
+ {
+  "name": "enclosed/a removed value's quote does not open a word",
+  "host": "",
+  "account": "",
+  "in": "MYSQL_PWD=\\';MYSQL_PWD=a\\ b' x",
+  "want": "MYSQL_PWD=[REDACTED]';MYSQL_PWD=[REDACTED]' x"
+ },
+ {
+  "name": "enclosed/a placeholder begins the word after a blank",
+  "host": "",
+  "account": "",
+  "in": "echo \"JEVLIN_TRACE_BRIDGE= C:\\k\\x' [\"API_TOKEN=b cb c\"\\|\"",
+  "want": "echo \"JEVLIN_TRACE_BRIDGE= [REDACTED]\"API_TOKEN=[REDACTED] cb c\"\\|\""
+ },
+ {
+  "name": "enclosed/a quoted value in an open quote runs to its close",
+  "host": "",
+  "account": "",
+  "in": "-e \"PASSWORD='a b' c\" next",
+  "want": "-e \"PASSWORD=[REDACTED]\" next"
+ },
+ {
+  "name": "enclosed/blanks around = end the word the quote opened",
+  "host": "",
+  "account": "",
+  "in": "\"$env:API_TOKEN = 'x';B_TOKEN=c d\" e",
+  "want": "\"$env:API_TOKEN = [REDACTED];B_TOKEN=[REDACTED] d\" e"
+ },
+ {
+  "name": "enclosed/a backtick before a double quote",
+  "host": "",
+  "account": "",
+  "in": "-e \"PASSWORD=a`\" b\" next",
+  "want": "-e \"PASSWORD=[REDACTED]\" next"
  }
 ]

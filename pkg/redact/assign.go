@@ -83,20 +83,26 @@ func secretName(name string) bool {
 // the value itself did not open, is handed back to the text around it,
 // because those close something the value sits inside: f(password=pw),
 // "TOKEN=x", ?access_token=x&page=2. A value that starts with `=` is a
-// comparison (a==b) and is not one.
+// comparison (a==b) and is not one. And when the word that holds the name
+// opened with a quote that is still open (wordScan), the value runs on to
+// where that quote closes on its line, or to a `;` or `&` before it
+// (enclosedValueEnd): -e "DB_PASSWORD=correct horse battery".
 func redactSecretAssignments(s string) string {
 	e := strings.IndexByte(s, '=')
 	if e < 0 {
 		return s
 	}
 	var b strings.Builder
+	words := wordScan{escaped: quoteSearch{escaped: true}}
 	last, changed := 0, false
 	for e >= 0 {
 		next := e + 1
-		if start, end, ok := secretValueAt(s, last, e); ok {
+		if start, end, ok := secretValueAt(s, last, e, &words); ok {
 			b.WriteString(s[last:start])
 			b.WriteString(placeholder)
 			last, next, changed = end, end, true
+			words.advance(s, start)
+			words.skip(end)
 		}
 		i := strings.IndexByte(s[next:], '=')
 		if i < 0 {
@@ -113,8 +119,9 @@ func redactSecretAssignments(s string) string {
 
 // secretValueAt reads the name in front of the `=` at e, never reaching
 // back past floor (the end of the last value removed), and returns where a
-// secret value starts and ends.
-func secretValueAt(s string, floor, e int) (start, end int, ok bool) {
+// secret value starts and ends. words has read the text before every name
+// an earlier call looked at, and is moved on to this one's.
+func secretValueAt(s string, floor, e int, words *wordScan) (start, end int, ok bool) {
 	k := e
 	for k > floor && isBlank(s[k-1]) {
 		k--
@@ -151,24 +158,152 @@ func secretValueAt(s string, floor, e int) (start, end int, ok bool) {
 			v++
 		}
 	}
-	end = secretValueEnd(s, v)
+	words.advance(s, p)
+	end = secretValueEnd(s, v, words)
 	if end == v || s[v:end] == placeholder {
 		return 0, 0, false
 	}
 	return v, end, true
 }
 
-func secretValueEnd(s string, v int) int {
+// wordScan follows, left to right, the word that holds each name: what
+// follows the last whitespace, with a removed value counted as part of the
+// word, since its placeholder has none. A word that opens with a quote,
+// after any ( [ or {, holds the values of the names in it inside that quote
+// for as long as the quote stays open (an even number of the same quote
+// since): -e "DB_PASSWORD=correct horse battery", "Server=db;Password=a b",
+// ["API_TOKEN=a b"]. Only the word is read, not the line before it, and
+// what a removed value held is not read at all: a count of the quotes
+// before a name reaches back over text a step removes, on this pass or a
+// later one, and a second pass would then read a different quote as open.
+type wordScan struct {
+	pos   int
+	begun bool // past the word's leading ( [ {
+	head  byte // the quote the word opens with, or 0
+	open  bool // that quote is open where the scan has reached
+
+	escaped, plain quoteSearch // enclosedValueEnd's two searches
+}
+
+func (w *wordScan) advance(s string, to int) {
+	for ; w.pos < to; w.pos++ {
+		switch c := s[w.pos]; {
+		case isSpace(c):
+			w.begun, w.head, w.open = false, 0, false
+		case !w.begun && (c == '(' || c == '[' || c == '{'):
+		case !w.begun:
+			w.begun = true
+			if c == '"' || c == '\'' {
+				w.head, w.open = c, true
+			}
+		case c == w.head:
+			w.open = !w.open
+		}
+	}
+}
+
+// skip moves past a removed value without reading it; the scan must have
+// advanced to the value's start. What stands there now is the placeholder,
+// which begins a word when none has begun (its [ is a bracket, its R is
+// not a quote) and changes no quote.
+func (w *wordScan) skip(to int) {
+	if to > w.pos {
+		w.pos = to
+	}
+	w.begun = true
+}
+
+// enclosing is the quote that holds the value of a name the scan has
+// reached, or 0.
+func (w *wordScan) enclosing() byte {
+	if w.open {
+		return w.head
+	}
+	return 0
+}
+
+func secretValueEnd(s string, v int, words *wordScan) int {
 	if v >= len(s) {
 		return v
 	}
+	from := v
 	switch s[v] {
 	case '"', '\'':
-		return quotedWordEnd(s, v)
+		from = quotedWordEnd(s, v)
 	case '=':
 		return v
 	}
+	if q := words.enclosing(); q != 0 {
+		if end := enclosedValueEnd(s, from, q, words); end >= 0 {
+			return end
+		}
+	}
+	if from > v {
+		return from
+	}
 	return trimValueTail(s, v, unquotedRunEnd(s, v))
+}
+
+// enclosedValueEnd is where a value ends inside the quote q that holds it
+// (wordScan): at the quote that closes q on its line, or at a `;` or `&`
+// before that, which separate the settings of a connection string or a
+// query; trailing blanks and what trimValueTail hands back stay outside. A
+// quoted value reads its own quotes first and from is where they end, so a
+// second pass over its placeholder finds the same end. The closing quote is
+// the first q on the line that no backslash (and, for a double quote, no
+// backtick) stands right before, else the first q: the character before is
+// all that is asked, because a search that kept track of escape pairs
+// would answer differently from different starts and could not remember
+// its answer. It returns -1 when q does not close on this line, and the
+// value is then read as it would be without it.
+func enclosedValueEnd(s string, from int, q byte, w *wordScan) int {
+	end := w.escaped.find(s, from, q)
+	if end < 0 {
+		if end = w.plain.find(s, from, q); end < 0 {
+			return -1
+		}
+	}
+	if i := strings.IndexAny(s[from:end], "&;"); i >= 0 {
+		end = from + i
+	}
+	for end > from && isBlank(s[end-1]) {
+		end--
+	}
+	return trimValueTail(s, from, end)
+}
+
+// escapedAt reports whether the quote at i has a backslash right before it,
+// or for a double quote a backtick.
+func escapedAt(s string, i int) bool {
+	return i > 0 && (s[i-1] == '\\' || (s[i] == '"' && s[i-1] == '`'))
+}
+
+// quoteSearch finds the first q at or after v on v's line, when escaped is
+// set one with no backslash (or for a double quote no backtick) right
+// before it, and remembers its last answer, which holds for any later start
+// up to it: the names of one long word would otherwise each search the
+// rest of the line.
+type quoteSearch struct {
+	escaped        bool
+	used           bool
+	q              byte
+	from, at, stop int
+}
+
+func (f *quoteSearch) find(s string, v int, q byte) int {
+	if f.used && f.q == q && v >= f.from && (f.at >= v || (f.at < 0 && v <= f.stop)) {
+		return f.at
+	}
+	f.used, f.q, f.from, f.at = true, q, v, -1
+	i := v
+	for ; i < len(s) && s[i] != '\n'; i++ {
+		if s[i] == q && (!f.escaped || !escapedAt(s, i)) {
+			f.at = i
+			break
+		}
+	}
+	f.stop = i
+	return f.at
 }
 
 // quotedWordEnd reads the value that starts with the quote at v the way a
