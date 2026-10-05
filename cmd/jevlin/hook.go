@@ -286,11 +286,20 @@ func runByAnotherHost(payload []byte, event string) bool {
 
 // ── our command, recognized ─────────────────────────────────────────────
 
+// searchInvocationPattern is the one spelling of "an invocation of this
+// binary's search command" the recognizers share: an optional drive letter,
+// an optionally quoted path whose last segment is jevlin(.exe), then the
+// search subcommand. searchCommandRe looks for it ANYWHERE, to decide
+// whether a command is worth looking at at all; bridge.go's
+// posixSearchLeadsRe anchors the same spelling, to decide whether a POSIX
+// assignment prefix written in front of the command would actually reach it.
+const searchInvocationPattern = `(?:[A-Za-z]:)?["']?(?:[^\s"']*[\\/])?jevlin(?:\.exe)?["']?\s+search(?:\s|$)`
+
 // searchCommandRe matches a shell command that runs OUR search: the binary
 // by bare name or any path, optionally quoted, optionally .exe, followed by
 // the search subcommand. Anything else is somebody else's command and the
 // hook stays out of it.
-var searchCommandRe = regexp.MustCompile(`(?:^|[\s;&|(]|\$\()\s*(?:&\s*)?(?:[A-Za-z]:)?["']?(?:[^\s"']*[\\/])?jevlin(?:\.exe)?["']?\s+search(?:\s|$)`)
+var searchCommandRe = regexp.MustCompile(`(?:^|[\s;&|(]|\$\()\s*(?:&\s*)?` + searchInvocationPattern)
 
 func isSearchCommand(cmd string) bool {
 	return cmd != "" && searchCommandRe.MatchString(cmd)
@@ -360,7 +369,9 @@ func hookLineage(ops hookOps, hc hookContext, payload []byte, stdout io.Writer) 
 		env.CallID = traceHash(p.SessionID + "|" + p.ToolUseID)
 	}
 	if p.AgentID != "" {
-		// A subagent threads as its own lane under the session.
+		// A subagent threads as its own lane under the session, and says
+		// whose lane it hangs off: the id the orchestrator's searches carry.
+		env.ParentSessionID = env.SessionID
 		env.SessionID = traceHash(p.SessionID + "|" + p.AgentID)
 	}
 	if text := currentAssistantText(ops, p); text != "" {
@@ -378,6 +389,8 @@ func hookLineage(ops hookOps, hc hookContext, payload []byte, stdout io.Writer) 
 	if hc.sessionsDir != "" && p.Cwd != "" {
 		_ = updateLineage(ops, lineagePath(hc.sessionsDir, p.Cwd), ops.now(), func(l *lineageFile) {
 			l.Harness, l.SessionID, l.TurnID, l.CallID, l.Window = env.Harness, env.SessionID, env.TurnID, env.CallID, env.Window
+			// Assigned every time, so the orchestrator's next call clears it.
+			l.ParentSessionID = env.ParentSessionID
 			l.Seq++
 			l.History = env.History
 		})

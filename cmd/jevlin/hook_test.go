@@ -242,6 +242,15 @@ func TestHookLineageStaysSilentWhenItShould(t *testing.T) {
 		// is a tool whose shell this client does not know, because the syntax
 		// of the prefix is exactly what it cannot guess.
 		{"a tool this client does not know", map[string]any{"session_id": "s", "tool_name": "SomeOtherShell", "tool_input": map[string]any{"command": "jevlin search q"}}},
+		// The POSIX prefix binds to the first simple command and is a syntax
+		// error before a compound one. Both shapes were hit live: the loop
+		// died on `V=x for`, and the cd-list handed the bridge to cd. The
+		// hook says nothing, the host runs the command exactly as written,
+		// and the search inside it falls back to its per-shell identity.
+		{"a compound command the prefix would break", map[string]any{"session_id": "s", "tool_name": "Bash",
+			"tool_input": map[string]any{"command": `for q in a b; do jevlin search "$q"; done`}}},
+		{"a search that is not the first command", map[string]any{"session_id": "s", "tool_name": "Bash",
+			"tool_input": map[string]any{"command": `cd /tmp && jevlin search q`}}},
 		{"no session id", map[string]any{"tool_input": map[string]any{"command": "jevlin search q"}}},
 		{"no tool input", map[string]any{"session_id": "s"}},
 		{"not json", "garbage"},
@@ -324,6 +333,67 @@ func TestHookLineageReadsTheSubagentsOwnTranscript(t *testing.T) {
 	top := traceHash("sess")
 	if env.SessionID == top {
 		t.Error("subagent did not get its own lane")
+	}
+	// The lane names its parent: the id the orchestrator's own searches carry.
+	if env.ParentSessionID != top {
+		t.Errorf("parent_session_id = %q, want the orchestrator's session id %q", env.ParentSessionID, top)
+	}
+}
+
+// The parent pointer is a subagent's alone. The orchestrator's envelope has
+// none, and the lineage file — the fallback a subshell reads when the bridge
+// variable was dropped — follows whichever lane wrote it last, so a
+// subagent's parent never rides on the orchestrator's next search.
+func TestHookLineageParentPointerIsTheSubagentsAlone(t *testing.T) {
+	_, ops := newFakeHookOps(nil)
+	hc := hookContext{sessionsDir: "/home/sessions"}
+	call := func(agentID string) *traceEnvelope {
+		t.Helper()
+		payload := map[string]any{
+			"session_id": "sess", "prompt_id": "p", "cwd": "/work",
+			"tool_input": map[string]any{"command": "jevlin search q"},
+		}
+		if agentID != "" {
+			payload["agent_id"] = agentID
+		}
+		out, _ := runHook(t, ops, hc, "lineage", payload)
+		var resp struct {
+			Out struct {
+				Input map[string]any `json:"updatedInput"`
+			} `json:"hookSpecificOutput"`
+		}
+		_ = json.Unmarshal([]byte(out), &resp)
+		return decodeBridgeFromCommand(t, resp.Out.Input["command"].(string))
+	}
+	file := func() *lineageFile {
+		t.Helper()
+		l, ok := loadLineage(ops, lineagePath("/home/sessions", "/work"))
+		if !ok {
+			t.Fatal("no lineage file was written")
+		}
+		return l
+	}
+	top := traceHash("sess")
+
+	if env := call(""); env.ParentSessionID != "" || env.SessionID != top {
+		t.Errorf("orchestrator envelope: session=%q parent=%q", env.SessionID, env.ParentSessionID)
+	}
+	if env := call("a1"); env.ParentSessionID != top {
+		t.Errorf("subagent envelope: parent=%q, want %q", env.ParentSessionID, top)
+	}
+	if l := file(); l.ParentSessionID != top || l.envelope().ParentSessionID != top {
+		t.Errorf("lineage file under the subagent: parent=%q", l.ParentSessionID)
+	}
+	// Two subagents of one session are siblings: different lanes, one parent.
+	a, b := call("a1"), call("b2")
+	if a.SessionID == b.SessionID || a.ParentSessionID != b.ParentSessionID {
+		t.Errorf("siblings: %q/%q under %q/%q", a.SessionID, b.SessionID, a.ParentSessionID, b.ParentSessionID)
+	}
+	if env := call(""); env.ParentSessionID != "" {
+		t.Errorf("the orchestrator's next search kept a parent: %q", env.ParentSessionID)
+	}
+	if l := file(); l.ParentSessionID != "" || l.SessionID != top {
+		t.Errorf("lineage file back under the orchestrator: session=%q parent=%q", l.SessionID, l.ParentSessionID)
 	}
 }
 

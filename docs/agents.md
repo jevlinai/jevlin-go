@@ -130,6 +130,9 @@ trace. There is no skill directory: install prints a rules block to paste into `
 
 It runs Bash on macOS and Linux, and PowerShell on Windows.
 
+A subagent runs as a child session, and its searches name the session that started it. The
+plugin learns that from the session's creation, or asks opencode once.
+
 ### Known limits
 
 `/jevlin off` and `agents prefer` do not reach it: its `AGENTS.md` line carries no preference.

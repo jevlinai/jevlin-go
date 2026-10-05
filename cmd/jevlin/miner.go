@@ -195,15 +195,18 @@ func readIntake(dir string) (records []intakeFile, unreadable []string, err erro
 // sidecar is a workspace's lineage as the hooks last saw it. Every
 // identifier is already hashed; the raw host ids never reach disk.
 type lineageFile struct {
-	V         int            `json:"v"`
-	Harness   string         `json:"harness,omitempty"`
-	SessionID string         `json:"session_id,omitempty"`
-	TurnID    string         `json:"turn_id,omitempty"`
-	CallID    string         `json:"call_id,omitempty"`
-	Window    string         `json:"window,omitempty"`
-	Seq       int            `json:"seq,omitempty"`
-	History   []traceHistory `json:"history,omitempty"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	V         int    `json:"v"`
+	Harness   string `json:"harness,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+	// ParentSessionID mirrors traceEnvelope's: set while the file holds a
+	// subagent's lane, empty otherwise.
+	ParentSessionID string         `json:"parent_session_id,omitempty"`
+	TurnID          string         `json:"turn_id,omitempty"`
+	CallID          string         `json:"call_id,omitempty"`
+	Window          string         `json:"window,omitempty"`
+	Seq             int            `json:"seq,omitempty"`
+	History         []traceHistory `json:"history,omitempty"`
+	UpdatedAt       time.Time      `json:"updated_at"`
 }
 
 // lineagePath keys a sidecar on the workspace root, hashed like every
@@ -484,13 +487,14 @@ func (sc *lineageFile) envelope() *traceEnvelope {
 		return nil
 	}
 	env := &traceEnvelope{
-		V:         traceVersion,
-		Harness:   sc.Harness,
-		SessionID: sc.SessionID,
-		TurnID:    sc.TurnID,
-		CallID:    sc.CallID,
-		Window:    sc.Window,
-		Seq:       sc.Seq,
+		V:               traceVersion,
+		Harness:         sc.Harness,
+		SessionID:       sc.SessionID,
+		ParentSessionID: sc.ParentSessionID,
+		TurnID:          sc.TurnID,
+		CallID:          sc.CallID,
+		Window:          sc.Window,
+		Seq:             sc.Seq,
 	}
 	if len(sc.History) > 0 {
 		env.History = append([]traceHistory(nil), sc.History...)

@@ -394,6 +394,29 @@ func renderSearchForHuman(out searchOutcome, format string, keySrc keySource, st
 	case out.HTTPStatus == http.StatusUnauthorized:
 		fmt.Fprintf(stderr, "\njevlin: HTTP %d — the router refused the key (from %s); store a valid one with: jevlin login\n", out.HTTPStatus, keySrc)
 		return exitClientErr
+	case out.HTTPStatus == http.StatusPaymentRequired:
+		// Each 402 names the one remedy that clears it, branched on the
+		// router's own machine code — never its message — and only for
+		// codes this client knows. A 402 with an unrecognized code keeps
+		// the bare status line rather than guessing at advice. No portal
+		// URL is printed here: the portal's origin is configuration
+		// (platform.base_url), not something search resolves, and a
+		// hardcoded address would be wrong for every other deployment.
+		code := ""
+		if out.HasRouterErr {
+			code = out.RouterErr.Code
+		}
+		switch code {
+		case "credits_exhausted":
+			fmt.Fprintf(stderr, "\njevlin: HTTP %d — the account is out of credit; retrying will not fix it. Top up at the platform console.\n", out.HTTPStatus)
+		case "spend_ceiling":
+			fmt.Fprintf(stderr, "\njevlin: HTTP %d — a spend cap is reached. `jevlin limits` shows the caps and today's spend; the day resets at UTC midnight, the week on Monday, the month on the 1st.\n", out.HTTPStatus)
+		case "budget_exceeded":
+			fmt.Fprintf(stderr, "\njevlin: HTTP %d — no provider set fits this tier's per-query ceiling; retry with a cheaper -tier, not as-is.\n", out.HTTPStatus)
+		default:
+			fmt.Fprintf(stderr, "\njevlin: HTTP %d\n", out.HTTPStatus)
+		}
+		return exitClientErr
 	default:
 		fmt.Fprintf(stderr, "\njevlin: HTTP %d\n", out.HTTPStatus)
 		return exitClientErr
