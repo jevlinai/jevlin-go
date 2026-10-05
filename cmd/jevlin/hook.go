@@ -369,7 +369,9 @@ func hookLineage(ops hookOps, hc hookContext, payload []byte, stdout io.Writer) 
 		env.CallID = traceHash(p.SessionID + "|" + p.ToolUseID)
 	}
 	if p.AgentID != "" {
-		// A subagent threads as its own lane under the session.
+		// A subagent threads as its own lane under the session, and says
+		// whose lane it hangs off: the id the orchestrator's searches carry.
+		env.ParentSessionID = env.SessionID
 		env.SessionID = traceHash(p.SessionID + "|" + p.AgentID)
 	}
 	if text := currentAssistantText(ops, p); text != "" {
@@ -387,6 +389,8 @@ func hookLineage(ops hookOps, hc hookContext, payload []byte, stdout io.Writer) 
 	if hc.sessionsDir != "" && p.Cwd != "" {
 		_ = updateLineage(ops, lineagePath(hc.sessionsDir, p.Cwd), ops.now(), func(l *lineageFile) {
 			l.Harness, l.SessionID, l.TurnID, l.CallID, l.Window = env.Harness, env.SessionID, env.TurnID, env.CallID, env.Window
+			// Assigned every time, so the orchestrator's next call clears it.
+			l.ParentSessionID = env.ParentSessionID
 			l.Seq++
 			l.History = env.History
 		})

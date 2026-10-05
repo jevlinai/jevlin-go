@@ -18,6 +18,7 @@ Values to look up. Every flag is in `jevlin help` and `jevlin <command> -h`.
 | `status` | What this installation has and has not completed. `-json` for one envelope. |
 | `doctor` | Whether searches are recorded and earning, check by check. `-json` for one envelope. |
 | `earnings` | What the chain has paid to your payout address. |
+| `limits` | This key's spend caps and today's spend against the effective ceiling, read from the router. Reading spends nothing; setting caps is not built yet. `-json` for one envelope. |
 | `wallet init\|address\|register\|balance\|send` | The wallet setup made, or one you make here. |
 | `login`, `enroll`, `payout`, `join`, `provider` | The portal's older manual path. |
 | `version`, `help` | The version, and the full usage text. |
@@ -257,7 +258,8 @@ degradation.
 |---|---|
 | `v` | `1`. |
 | `harness` | Which agent: `claude-code`, `cursor`, and so on. |
-| `session_id`, `turn_id`, `call_id` | The agent's ids, hashed with SHA-256 before they leave the machine. |
+| `session_id`, `turn_id`, `call_id` | The agent's ids, hashed with SHA-256 before they leave the machine. A subagent has a `session_id` of its own. |
+| `parent_session_id` | On a subagent's search only: the hashed `session_id` of the agent that started it. Claude Code and opencode. |
 | `window` | Which context window of the session, after compactions. |
 | `seq` | A call counter. |
 | `history` | The assistant text before the search, scrubbed of secrets, last 32 KiB. |

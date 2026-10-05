@@ -25,6 +25,16 @@ The first release replaces this heading with its own.
   `cd … && jevlin search …` sent the bridge to `cd`, splitting one
   conversation's searches across unrelated sessions. Such commands are now left
   exactly as written; the search still runs, with the per-shell identity.
+- **A subagent's searches name their parent.** Under Claude Code and opencode, a
+  search made by a subagent now carries `parent_session_id` in its trace: the hashed id of
+  the session that started it. The router could already tell that two sessions
+  searched during the same turn, but not which one delegated to the other. It is
+  an id, hashed like the rest; no agent name or task text is added.
+- **`jevlin limits` reads your spend caps.** The three caps and today's spend
+  against the effective ceiling, straight from the router; reading spends
+  nothing and works even at the ceiling. Setting caps is not built yet. A
+  search refused with a 402 now also says which money problem it is and the one
+  thing that clears it, instead of a bare status line.
 - **Installed through npm, or from a release archive.** The `install.sh`,
   `install.ps1` and `setup.sh` scripts are gone. Without Node, download the archive
   for your OS from the releases page, verify it against `checksums.txt`, put the

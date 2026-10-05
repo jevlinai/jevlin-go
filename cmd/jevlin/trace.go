@@ -41,15 +41,21 @@ type traceHistory struct {
 }
 
 type traceEnvelope struct {
-	V         int             `json:"v"`
-	Harness   string          `json:"harness,omitempty"`
-	SessionID string          `json:"session_id,omitempty"`
-	TurnID    string          `json:"turn_id,omitempty"`
-	CallID    string          `json:"call_id,omitempty"`
-	Window    string          `json:"window,omitempty"`
-	Seq       int             `json:"seq,omitempty"`
-	History   []traceHistory  `json:"history,omitempty"`
-	HostMeta  json.RawMessage `json:"host_meta,omitempty"`
+	V         int    `json:"v"`
+	Harness   string `json:"harness,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+	// ParentSessionID is set only on a subagent's envelope: the session id
+	// the orchestrator's own searches carry. A subagent's session id is a
+	// hash that cannot be mapped back to its parent's, so without this the
+	// router can see that two lanes shared a turn but not which one spawned
+	// the other. Hashed like every other id; it names no agent and no task.
+	ParentSessionID string          `json:"parent_session_id,omitempty"`
+	TurnID          string          `json:"turn_id,omitempty"`
+	CallID          string          `json:"call_id,omitempty"`
+	Window          string          `json:"window,omitempty"`
+	Seq             int             `json:"seq,omitempty"`
+	History         []traceHistory  `json:"history,omitempty"`
+	HostMeta        json.RawMessage `json:"host_meta,omitempty"`
 }
 
 // traceHash derives a stable identifier using domain-separated SHA-256
