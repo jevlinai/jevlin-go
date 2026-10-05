@@ -150,6 +150,7 @@ enabled        = true                              # default false
 intake_dir     = "/home/you/.jevlin/intake"     # served request ids, until flushed
 sessions_dir   = "/home/you/.jevlin/sessions"   # per-workspace lineage files
 flush_interval = "3m"                              # default 3m: how often a flush re-asks the AS
+turn_end       = false                             # default false: report a searched turn's final answer (see The turn end)
 # router_url = "..."   defaults to the [[provider]] upstream
 ```
 
@@ -214,7 +215,7 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | `state/` | Identity, authorization, the mining decision, health records, the flush stamp. | connect, flush | No: it is your registration. |
 | `intake/` | Served request ids, until a flush takes them. | search | No: unsent evidence. |
 | `spool/` | Evidence waiting for the rewards service to acknowledge it. | flush | No: unsent evidence. |
-| `sessions/` | Lineage files, one per workspace or Cursor conversation. | hooks | Yes, with no agent running; the hooks write them again. |
+| `sessions/` | Lineage files, one per workspace or Cursor conversation; with `turn_end` on, an empty mark per searched turn and a turn's final answer for the moment before it is sent. | hooks | Yes, with no agent running; the hooks write them again. |
 | `wallet/` | `wallet.key` (sealed), `wallet.pub`, `pending_tx.json` during a send. | wallet, setup | Never without the 24 words. |
 | `setup-env.json` | Windows only: what setup changed in your user environment. | setup | No; uninstall reverts from it. |
 
@@ -278,6 +279,28 @@ groups quick reformulations by it there, and reads the trajectory from the envel
 identifier in both places, sent only while an envelope rides, and dropped with the envelope on
 the one compatibility retry. The trace is unauthenticated metadata: nothing treats it as proof
 of origin. `JEVLIN_TRACE=off` sends none.
+
+## The turn end
+
+Off unless `[miner] turn_end = true`. The trace carries what the assistant wrote before a search;
+this carries what it concluded. When a turn ends, the agent's end-of-turn hook sends the router's
+`POST /v1/turns` one record:
+
+| field | carries |
+|---|---|
+| `session_id`, `turn_id` | The same hashed ids the turn's searches carried. |
+| `harness` | Which agent. |
+| `status` | `completed`, `interrupted` or `failed`. |
+| `final_text` | The assistant's last message of the turn, scrubbed of secrets, last 32 KiB. Only on a completed turn, and absent when there is no message to send; the status is sent either way. |
+| `final_chars`, `truncated` | Its length before the cut, and whether it was cut. |
+
+Only for a turn in which a jevlin search was served: `search` marks the turn after the router
+answers, so a search you refused, or one that failed, does not count, and a turn with no served
+search sends nothing. Only to the router `miner.router_url` names; without that line nothing is
+sent. Never your prompt, and never a tool's input or output. The hook writes the record to an owner-only file in
+`sessions/` and a detached `jevlin turn-end` sends it once and deletes the file, sent or not.
+`JEVLIN_TRACE=off` turns it off too. Claude Code (2.1.196 or later) and Cursor; other agents send
+none. A project set to retain no content keeps the status and not the text.
 
 ## Security notes
 

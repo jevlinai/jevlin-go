@@ -18,6 +18,12 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **Opt-in: a turn's final answer.** With `[miner] turn_end = true`, when a turn
+  in which jevlin searched ends, the assistant's last message is sent to the
+  router so a session can be read from its searches to what they were for. Off
+  by default. Scrubbed and capped like the trace; never your prompt, never a
+  tool's output; nothing for a turn with no served search, and nothing unless
+  `miner.router_url` names the router. Claude Code and Cursor.
 - **A lost claim link is replaced, not mourned.** For a registration rebuilt from
   the platform that is still unclaimed with no claim link, a foreground
   `jevlin connect` now asks the platform for a fresh link and prints it. The old

@@ -92,24 +92,27 @@ type hookOps struct {
 	readTail func(path string, max int64) ([]byte, error)
 	// spawnFlush starts a detached flush. Best effort.
 	spawnFlush func(cfgPath string) error
-	now        func() time.Time
-	pid        int
+	// spawnTurnEnd starts the detached sender of one queued turn end.
+	spawnTurnEnd func(cfgPath, file string) error
+	now          func() time.Time
+	pid          int
 }
 
 func realHookOps() hookOps {
 	return hookOps{
-		executable: os.Executable,
-		getenv:     os.Getenv,
-		readFile:   os.ReadFile,
-		writeFile:  os.WriteFile,
-		mkdirAll:   os.MkdirAll,
-		rename:     os.Rename,
-		remove:     os.Remove,
-		listTemps:  listTempFiles,
-		readTail:   readFileTail,
-		spawnFlush: startFlush,
-		now:        time.Now,
-		pid:        os.Getpid(),
+		executable:   os.Executable,
+		getenv:       os.Getenv,
+		readFile:     os.ReadFile,
+		writeFile:    os.WriteFile,
+		mkdirAll:     os.MkdirAll,
+		rename:       os.Rename,
+		remove:       os.Remove,
+		listTemps:    listTempFiles,
+		readTail:     readFileTail,
+		spawnFlush:   startFlush,
+		spawnTurnEnd: startTurnEnd,
+		now:          time.Now,
+		pid:          os.Getpid(),
 	}
 }
 
@@ -147,6 +150,9 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv fu
 type hookContext struct {
 	cfgPath     string
 	sessionsDir string
+	// turnEnd is [miner] turn_end: this installation reports a turn's final
+	// message. See turn_end.go.
+	turnEnd bool
 }
 
 func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -163,6 +169,7 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 	// config costs the lineage file, never the call: fail-open.
 	if cfg, _, err := loadConfig(cfgPath, ops.getenv); err == nil {
 		hc.sessionsDir = cfg.Miner.SessionsDir
+		hc.turnEnd = cfg.Miner.TurnEnd
 	}
 	// One leading byte-order mark is tolerated here for the same reason as on
 	// `search --stdin`: the shell in front of a hook is the host's choice,
@@ -194,6 +201,10 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 			hookHermes(args[1], payload, stdout)
 		}
 	case "flush":
+		// Claude Code's Stop: the turn is over. Its final message is queued
+		// first — when the installation opted in and the turn searched — and
+		// then the flush starts, as before.
+		claudeTurnEnd(ops, hc, payload)
 		if ops.spawnFlush != nil {
 			_ = ops.spawnFlush(hc.cfgPath)
 		}
@@ -711,6 +722,8 @@ type cursorPayload struct {
 	Cwd            string   `json:"cwd"`
 	Command        string   `json:"command"`
 	Text           string   `json:"text"`
+	// Status is how the turn ended, on `stop`: completed, aborted or error.
+	Status string `json:"status"`
 }
 
 // hookCursor handles one Cursor event. Every event that carries a
@@ -815,19 +828,35 @@ func hookCursor(ops hookOps, hc hookContext, event string, payload []byte, stdou
 			return
 		}
 		p.Text = repairStoredText(p.Text, stderr)
-		update(func(l *lineageFile) { l.History = []traceHistory{{Role: "reasoning", Text: p.Text}} })
+		update(func(l *lineageFile) {
+			l.History = []traceHistory{{Role: "reasoning", Text: p.Text}}
+			l.AnswerTurnID = ""
+		})
 	case "afterAgentResponse":
 		if p.Text == "" {
 			return
 		}
 		p.Text = repairStoredText(p.Text, stderr)
-		update(func(l *lineageFile) { l.History = []traceHistory{{Role: "assistant", Text: p.Text}} })
+		update(func(l *lineageFile) {
+			l.History = []traceHistory{{Role: "assistant", Text: p.Text}}
+			l.AnswerTurnID = ""
+			if p.GenerationID != "" {
+				l.AnswerTurnID = traceHash(p.ConversationID + "|" + p.GenerationID)
+			}
+		})
 	case "preCompact":
 		update(func(l *lineageFile) {
 			n, _ := strconv.Atoi(l.Window)
 			l.Window = strconv.Itoa(n + 1)
 		})
-	case "stop", "sessionEnd":
+	case "stop":
+		if path != "" {
+			if l, ok := loadLineage(ops, path); ok {
+				cursorTurnEnd(ops, hc, p, l)
+			}
+		}
+		flush()
+	case "sessionEnd":
 		flush()
 	}
 }

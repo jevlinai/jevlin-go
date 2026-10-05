@@ -206,7 +206,11 @@ type lineageFile struct {
 	Window          string         `json:"window,omitempty"`
 	Seq             int            `json:"seq,omitempty"`
 	History         []traceHistory `json:"history,omitempty"`
-	UpdatedAt       time.Time      `json:"updated_at"`
+	// AnswerTurnID is the turn the assistant text in History was written in,
+	// when a host's hook knows it (Cursor's afterAgentResponse). The turn end
+	// sends that text only under this turn, never under a later one.
+	AnswerTurnID string    `json:"answer_turn_id,omitempty"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // lineagePath keys a sidecar on the workspace root, hashed like every

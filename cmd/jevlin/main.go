@@ -223,6 +223,9 @@ func dispatch(name string, args []string) int {
 		return cmdHook(args, os.Stdin, os.Stdout, os.Stderr, os.Getenv)
 	case "flush":
 		return cmdFlush(args, os.Stdout, os.Stderr, os.Getenv)
+	case "turn-end":
+		// Started by a hook, detached; not a command a person runs.
+		return cmdTurnEnd(args, os.Getenv)
 	case "login":
 		return cmdLogin(args, os.Stdin, os.Stdout, os.Stderr, os.Getenv)
 	case "setup":
