@@ -253,7 +253,7 @@ func probeKey(ctx context.Context, routerURL, key string) (probeOutcome, string,
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", searchUserAgent+"/"+strings.TrimPrefix(buildVersion(), "v"))
+	req.Header.Set("User-Agent", clientIdentifier())
 	req.Header.Set("Authorization", "Bearer "+key)
 	// CheckRedirect: this probe exists to verify the key before it is ever
 	// stored, and it carries that key in Authorization to do it — the same

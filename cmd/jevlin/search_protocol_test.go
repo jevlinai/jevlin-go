@@ -455,8 +455,61 @@ func TestOnlyAnExactTraceUnsupportedCodeBuysASecondPost(t *testing.T) {
 	}
 }
 
-func TestTheTraceFallbackChangesOnlyTheTraceField(t *testing.T) {
-	rt := &recordingTransport{fn: func(i int, _ *http.Request) (*http.Response, error) {
+// The router reads session identity twice: trace.session_id threads the
+// Trajectories view, and the top-level session_id (with its X-Session-Id
+// header twin) feeds the live reformulation tracker. The mirror is the
+// envelope's own hashed id — it must never exist without the envelope,
+// and never differ from it.
+func TestATracedSearchMirrorsItsSessionIntoBodyAndHeader(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		trace *traceEnvelope
+		want  string
+	}{
+		{"traced with a session", &traceEnvelope{V: traceVersion, Harness: "cli", SessionID: "sess", CallID: "call"}, "sess"},
+		{"traced with no session id", &traceEnvelope{V: traceVersion, Harness: "cli", CallID: "call"}, ""},
+		{"untraced", nil, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var headers []http.Header
+			rt := &recordingTransport{fn: func(_ int, req *http.Request) (*http.Response, error) {
+				headers = append(headers, req.Header.Clone())
+				return fakeResponse(http.StatusOK, routerBody, nil), nil
+			}}
+			useTransport(t, rt)
+			call := searchCall{Endpoint: "https://router.fictional.test/v1/search", Key: "sr-fictional", Query: "q", Trace: tc.trace}
+			out := runPerformSearch(t, 30*time.Second, call)
+			if !out.ok() {
+				t.Fatalf("search failed: %q %v", out.Fault, out.Err)
+			}
+			body := decodeSentBody(t, rt.bodies[0])
+			sid, present := body["session_id"]
+			if tc.want == "" {
+				if present {
+					t.Errorf("session_id %v sent without a traced session", sid)
+				}
+				if got := headers[0].Get("X-Session-Id"); got != "" {
+					t.Errorf("X-Session-Id %q sent without a traced session", got)
+				}
+				return
+			}
+			if sid != tc.want {
+				t.Errorf("session_id = %v, want %q", sid, tc.want)
+			}
+			if got := headers[0].Get("X-Session-Id"); got != tc.want {
+				t.Errorf("X-Session-Id = %q, want %q", got, tc.want)
+			}
+			if tr, ok := body["trace"].(map[string]any); !ok || tr["session_id"] != tc.want {
+				t.Errorf("the mirror and trace.session_id disagree: %v vs %v", sid, body["trace"])
+			}
+		})
+	}
+}
+
+func TestTheTraceFallbackRemovesExactlyTheTraceAndItsSessionMirror(t *testing.T) {
+	var headers []http.Header
+	rt := &recordingTransport{fn: func(i int, req *http.Request) (*http.Response, error) {
+		headers = append(headers, req.Header.Clone())
 		if i == 0 {
 			return fakeResponse(http.StatusBadRequest, `{"code":"trace_unsupported","error":"no"}`, nil), nil
 		}
@@ -476,9 +529,19 @@ func TestTheTraceFallbackChangesOnlyTheTraceField(t *testing.T) {
 	if _, ok := second["trace"]; ok {
 		t.Error("the fallback still carried the trace")
 	}
+	// The session mirror exists only for the trace's sake: a router that
+	// refuses the trace field predates the top-level session_id too, so
+	// the fallback must shed body field and header together.
+	if _, ok := second["session_id"]; ok {
+		t.Error("the fallback still carried the session mirror")
+	}
+	if got := headers[1].Get("X-Session-Id"); got != "" {
+		t.Errorf("the fallback still carried X-Session-Id %q", got)
+	}
 	delete(first, "trace")
+	delete(first, "session_id")
 	if fmt.Sprint(first) != fmt.Sprint(second) {
-		t.Errorf("the fallback changed more than the trace:\n first (minus trace) %v\n second %v", first, second)
+		t.Errorf("the fallback changed more than the trace and its mirror:\n first (minus both) %v\n second %v", first, second)
 	}
 	if second["query"] != call.Query || second["tier"] != call.Tier {
 		t.Errorf("the fallback altered the search: %v", second)

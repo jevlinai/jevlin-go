@@ -18,6 +18,13 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **A traced search names its session twice.** The hashed session id the trace
+  envelope already carried is now also sent as the request's top-level
+  `session_id` and `X-Session-Id` header, so the router can group quick
+  reformulations of one conversation's queries. Same identifier, no new content:
+  it is sent only while a trace envelope rides, and `JEVLIN_TRACE=off` still
+  sends none of it. `connect` also names the build (`jevlin/<version>`) when it
+  registers an agent.
 - **The trace prefix no longer edits a command it cannot carry.** The bridge's
   POSIX prefix binds to the first command of a line, so the hooks now write it
   only when that command is the search itself. Before, a loop around a search

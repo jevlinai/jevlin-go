@@ -27,7 +27,7 @@ func TestNetworkFenceCoversPlatformClient(t *testing.T) {
 	client := New("https://fence-probe.invalid", "https://fence-probe.invalid")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, err := client.Register(ctx, "network-fence-guard", []string{"credits"})
+	_, err := client.Register(ctx, "network-fence-guard", "", []string{"credits"})
 	if err == nil {
 		t.Fatal("Register returned no error at all — did it actually reach the network?")
 	}
