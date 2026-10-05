@@ -26,11 +26,17 @@ package main
 //	    preCompact (bump the window), stop (flush).
 //	hook [-config file] flush
 //	    Claude Code Stop. Start a detached flush.
+//	hook [-config file] codex <Event>
+//	    Codex hooks, the event in Codex's own spelling (codex_hook.go):
+//	    PreToolUse (put the trace bridge on this installation's exact
+//	    rendered search, and allow it), SessionStart (seed the window,
+//	    flush), PreCompact / PostCompact (bump the window), Stop (flush).
 //
 // The lineage, window and flush entry points are installed for Claude Code
 // and for nobody else. Another host that loads Claude Code's settings and
 // runs them with its own payload (Cursor does, dropin-miner#87) gets nothing from them:
-// see runByAnotherHost.
+// see runByAnotherHost. The codex entry points are installed for Codex, and
+// stand down for a payload Codex did not send: see codexEntryStandsDown.
 //
 // FAIL-OPEN, ALWAYS. Any error, malformed payload, unreadable transcript:
 // emit nothing (or the one output the host requires to proceed) and exit
@@ -161,7 +167,7 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 		cfgPath, args = args[1], args[2:]
 	}
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: jevlin hook [-config file] lineage | window <phase> | cursor <event> | flush")
+		fmt.Fprintln(stderr, "usage: jevlin hook [-config file] lineage | window <phase> | cursor <event> | codex <event> | flush")
 		return exitUsage
 	}
 	hc := hookContext{cfgPath: cfgPath}
@@ -182,6 +188,12 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 	if event, claudeFormat := claudeEntryEvent(args); claudeFormat && runByAnotherHost(payload, event) {
 		return exitOK
 	}
+	// A hook installed for Codex stands down the same way for a payload Codex
+	// did not send (issue #19): the command line says Codex, and the payload
+	// is read only for contradiction.
+	if event, codex := codexEntryEvent(args); codex && codexEntryStandsDown(payload, event) {
+		return exitOK
+	}
 	switch args[0] {
 	case "lineage":
 		hookLineage(ops, hc, payload, stdout)
@@ -199,6 +211,10 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 	case "hermes":
 		if len(args) > 1 {
 			hookHermes(args[1], payload, stdout)
+		}
+	case "codex":
+		if len(args) > 1 {
+			hookCodex(ops, hc, args[1], payload, stdout)
 		}
 	case "flush":
 		// Claude Code's Stop: the turn is over. Its final message is queued

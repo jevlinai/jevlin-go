@@ -315,6 +315,12 @@ func TestCursorsOwnHooksAreNotGated(t *testing.T) {
 	if _, gated := claudeEntryEvent([]string{"hermes", "pre_tool_call"}); gated {
 		t.Error("a Hermes entry point is treated as Claude-format")
 	}
+	if _, gated := claudeEntryEvent([]string{"codex", "Stop"}); gated {
+		t.Error("a Codex entry point is treated as Claude-format")
+	}
+	if _, codex := codexEntryEvent([]string{"cursor", "stop"}); codex {
+		t.Error("a Cursor entry point is treated as Codex's")
+	}
 }
 
 // claudeEntryEvent is a second statement of what claudeHooks installs. Held
