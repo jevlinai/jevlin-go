@@ -32,6 +32,10 @@ func traceBoundaryInputs() map[string]string {
 		"quoted_assignment": `API_TOKEN="HunterCanary0123456789 two words"`,
 		"env_dump":          "\nA_ONE=DumpCanary1\nB_TWO=DumpCanary2\nexport C_THREE=DumpCanary3\nD_FOUR=DumpCanary4\nE_FIVE=DumpCanary5\nF_SIX=DumpCanary6",
 		"bridge":            "JEVLIN_TRACE_BRIDGE=BridgeCanary0123456789 jevlin search --stdin",
+		// A carriage return or U+2028 inside a line ends the line for
+		// JavaScript's `.` and not for Go's: with `.` those two lines would
+		// not count, the run would fall under five, and nothing would go.
+		"env_dump_odd_lines": "\nA_ONE=DumpCanary1\nB_TWO=DumpCanary2\u2028tail\nC_THREE=DumpCanary3\rmid\nD_FOUR=DumpCanary4\nE_FIVE=DumpCanary5",
 	}
 	out := map[string]string{}
 	for name, secret := range shapes {
@@ -69,6 +73,24 @@ func traceIdentityInputs() map[string]string {
 		}
 	}
 	return out
+}
+
+// traceSurvivorInputs are texts the new rules must leave exactly as they
+// are, in both languages: the scrubbers agreeing on what to remove is half
+// of parity, and agreeing on what to keep is the other half. A rule that is
+// looser in the JavaScript copy removes text the Go consumer never would.
+func traceSurvivorInputs() map[string]string {
+	return map[string]string{ // #nosec G101 -- prose that must NOT be read as credentials
+		"survives/lowercase key":  "pass key=value pairs, sort --key=2, and pass=2 of the compiler",
+		"survives/not a segment":  "MONKEY=banana TOKENIZER_PATH=/opt/tok JEVLIN_CONFIG=/etc/jevlin.toml",
+		"survives/four env lines": "A_ONE=1\nB_TWO=2\nC_THREE=3\nD_FOUR=4\nthen prose",
+		"survives/broken run":     "A=1\nB=2\nprose\nC=3\nD=4\nE=5",
+		"survives/name in a word": "xsyntheticacct0123 and syntheticacct0123_2 and presynthetichost0123x",
+		"survives/empty value":    "set API_TOKEN= to clear it",
+		// A no-break space is whitespace to JavaScript's \s and not to Go's:
+		// with \s the third line would join the run and make it a dump.
+		"survives/nbsp breaks a run": "A=1\nB=2\n\u00a0C=3\nD=4\nE=5",
+	}
 }
 
 func assertPreparedHistory(t *testing.T, text, source string) {
@@ -378,7 +400,16 @@ func TestSharedTraceSourceRedactionBoundaries(t *testing.T) {
 	for name, text := range traceIdentityInputs() {
 		textCases[name] = text
 	}
+	survivors := traceSurvivorInputs()
+	for name, text := range survivors {
+		if got := redact.TraceText(text); got != text {
+			t.Fatalf("%s: the Go scrubber altered a text this test needs it to keep: %q", name, got)
+		}
+	}
 	cases := map[string][]map[string]string{}
+	for name, text := range survivors {
+		cases[name] = []map[string]string{{"type": "text", "text": text}}
+	}
 	for name, text := range textCases {
 		cases[name] = []map[string]string{{"type": "text", "text": text}}
 	}
@@ -422,6 +453,13 @@ func TestSharedTraceSourceRedactionBoundaries(t *testing.T) {
 				t.Fatal("a bounded source was omitted whole")
 			}
 			assertPreparedHistory(t, *got.Text, text)
+		})
+	}
+	for name, text := range survivors {
+		t.Run(name, func(t *testing.T) {
+			if got := results[name]; got.Text == nil || *got.Text != text {
+				t.Fatalf("the JavaScript scrubber altered a text the Go scrubber keeps:\n  in:  %q\n  out: %v", text, got.Text)
+			}
 		})
 	}
 	t.Run("over the source budget is omitted whole", func(t *testing.T) {
