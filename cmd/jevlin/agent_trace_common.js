@@ -178,20 +178,47 @@ const traceIsName = (c) => traceIsWord(c) || c === 45 || c === 46
 const traceIsBlank = (c) => c === 32 || c === 9
 const traceIsSpace = (c) => c === 32 || c === 9 || c === 10 || c === 12 || c === 13
 // The quote at v closes at the returned index's left, or -1: not within
-// TRACE_QUOTED_VALUE_MAX_LINES line breaks. A backslash escapes one unit.
-const traceClosingQuote = (s, v) => {
+// maxLines line breaks. The escaping reading (a backslash escapes one unit,
+// and in a double-quoted string so does a backtick) is taken when it closes
+// on v's own line; otherwise the plain one, the next quote of the same kind,
+// so 'C:\keys\' closes where a POSIX shell closes it.
+const traceEscapedClosingQuote = (s, v) => {
   const q = s.charCodeAt(v)
-  let lines = 0
   for (let i = v + 1; i < s.length; i++) {
-    let c = s.charCodeAt(i)
-    if (c === 92) {
-      i++
-      if (i >= s.length) break
-      c = s.charCodeAt(i)
+    const c = s.charCodeAt(i)
+    if (c === 10) return -1
+    if (c === 92 || (c === 96 && q === 34)) {
+      if (i + 1 < s.length && s.charCodeAt(i + 1) !== 10) i++
     } else if (c === q) {
       return i + 1
     }
-    if (c === 10 && ++lines > TRACE_QUOTED_VALUE_MAX_LINES) return -1
+  }
+  return -1
+}
+const traceClosingQuote = (s, v, maxLines) => {
+  const escaped = traceEscapedClosingQuote(s, v)
+  if (escaped >= 0) return escaped
+  const q = s.charCodeAt(v)
+  let lines = 0
+  for (let i = v + 1; i < s.length; i++) {
+    const c = s.charCodeAt(i)
+    if (c === q) return i + 1
+    if (c === 10 && ++lines > maxLines) return -1
+  }
+  return -1
+}
+// Three quotes run to the next three of the same within the line cap.
+const traceOpensThreeQuotes = (s, v) => v + 3 <= s.length && s.charCodeAt(v + 1) === s.charCodeAt(v) && s.charCodeAt(v + 2) === s.charCodeAt(v)
+const traceTripleQuoteEnd = (s, v) => {
+  const q = s.charCodeAt(v)
+  let lines = 0
+  for (let i = v + 3; i + 2 < s.length; i++) {
+    const c = s.charCodeAt(i)
+    if (c === q) {
+      if (s.charCodeAt(i + 1) === q && s.charCodeAt(i + 2) === q) return i + 3
+    } else if (c === 10 && ++lines > TRACE_QUOTED_VALUE_MAX_LINES) {
+      return -1
+    }
   }
   return -1
 }
@@ -200,8 +227,12 @@ const traceLineEnd = (s, v) => {
   if (i < 0) return s.length
   return i > v && s.charCodeAt(i - 1) === 13 ? i - 1 : i
 }
+// An unquoted value ends at whitespace, & or ;, except where a backslash
+// keeps the unit after it (correct\ horse), a line break aside.
+const traceIsEscape = (s, i) => s.charCodeAt(i) === 92 && i + 1 < s.length && s.charCodeAt(i + 1) !== 10 && s.charCodeAt(i + 1) !== 13
 const traceRunEnd = (s, i) => {
   while (i < s.length) {
+    if (traceIsEscape(s, i)) { i += 2; continue }
     const c = s.charCodeAt(i)
     if (traceIsSpace(c) || c === 38 || c === 59) break
     i++
@@ -237,13 +268,36 @@ const traceTrimValueTail = (s, from, to) => {
   }
   return to
 }
+// A value that starts with a quote is read as a shell reads a word: quoted
+// parts next to each other, a backslash-quote between them and characters
+// joined to them are all one value. The first part may cross the line cap's
+// worth of lines (three quotes run to the next three) and takes the rest of
+// its line when it never closes; a later part must close on its own line, or
+// its quote is just a character.
+const traceQuotedWordEnd = (s, v) => {
+  let i = traceOpensThreeQuotes(s, v) ? traceTripleQuoteEnd(s, v) : traceClosingQuote(s, v, TRACE_QUOTED_VALUE_MAX_LINES)
+  if (i < 0) return traceLineEnd(s, v)
+  let last = i
+  while (i < s.length) {
+    const c = s.charCodeAt(i)
+    if (c === 34 || c === 39) {
+      const closed = traceClosingQuote(s, i, 0)
+      if (closed >= 0) { i = last = closed; continue }
+      i++
+    } else if (traceIsEscape(s, i)) {
+      i += 2
+    } else if (traceIsSpace(c) || c === 38 || c === 59) {
+      break
+    } else {
+      i++
+    }
+  }
+  return traceTrimValueTail(s, last, i)
+}
 const traceSecretValueEnd = (s, v) => {
   if (v >= s.length) return v
   const c = s.charCodeAt(v)
-  if (c === 34 || c === 39) {
-    const closed = traceClosingQuote(s, v)
-    return closed < 0 ? traceLineEnd(s, v) : traceTrimValueTail(s, closed, traceRunEnd(s, closed))
-  }
+  if (c === 34 || c === 39) return traceQuotedWordEnd(s, v)
   if (c === 61) return v
   return traceTrimValueTail(s, v, traceRunEnd(s, v))
 }

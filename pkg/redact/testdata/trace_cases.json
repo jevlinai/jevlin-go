@@ -1202,5 +1202,124 @@
   "account": "",
   "in": "C:\\Users\\bob 'rel\\path' and C:\\Users\\bob \"rel\\path\"",
   "want": "C:\\Users\\[REDACTED] 'rel\\path' and C:\\Users\\[REDACTED] \"rel\\path\""
+ },
+ {
+  "name": "quote/a single-quoted backslash before a line break",
+  "host": "",
+  "account": "",
+  "in": "export SSH_KEY_DIR='C:\\keys\\'\nexport API_TOKEN='Token Canary Tail'",
+  "want": "export SSH_KEY_DIR=[REDACTED]\nexport API_TOKEN=[REDACTED]"
+ },
+ {
+  "name": "quote/a double-quoted backslash before a line break",
+  "host": "",
+  "account": "",
+  "in": "TOKEN_DIR=\"C:\\dir\\\"\r\nAPI_TOKEN=\"Token Canary Tail\"",
+  "want": "TOKEN_DIR=[REDACTED]\r\nAPI_TOKEN=[REDACTED]"
+ },
+ {
+  "name": "quote/a backslash-quote that closes on its line escapes",
+  "host": "",
+  "account": "",
+  "in": "PASSWORD='it\\'s Hunter Canary' next",
+  "want": "PASSWORD=[REDACTED] next"
+ },
+ {
+  "name": "quote/a powershell doubled single quote",
+  "host": "",
+  "account": "",
+  "in": "$env:DB_PASSWORD = 'it''s HunterCanary'",
+  "want": "$env:DB_PASSWORD = [REDACTED]"
+ },
+ {
+  "name": "quote/a powershell doubled double quote",
+  "host": "",
+  "account": "",
+  "in": "$env:DB_PASSWORD = \"say \"\"Hunter Canary\"\" ok\"; next",
+  "want": "$env:DB_PASSWORD = [REDACTED]; next"
+ },
+ {
+  "name": "quote/a powershell backtick escape",
+  "host": "",
+  "account": "",
+  "in": "$env:DB_PASSWORD = \"a`\"Hunter Canary\"; next",
+  "want": "$env:DB_PASSWORD = [REDACTED]; next"
+ },
+ {
+  "name": "quote/a backtick does not escape in single quotes",
+  "host": "",
+  "account": "",
+  "in": "$env:DB_PASSWORD = 'a`' + 'b c'",
+  "want": "$env:DB_PASSWORD = [REDACTED] + 'b c'"
+ },
+ {
+  "name": "quote/a posix quote-backslash-quote",
+  "host": "",
+  "account": "",
+  "in": "export DB_PASSWORD='it'\\''s HunterCanary' next",
+  "want": "export DB_PASSWORD=[REDACTED] next"
+ },
+ {
+  "name": "quote/backslash-escaped spaces",
+  "host": "",
+  "account": "",
+  "in": "export DB_PASSWORD=correct\\ horse\\ battery next",
+  "want": "export DB_PASSWORD=[REDACTED] next"
+ },
+ {
+  "name": "quote/a backslash before a line break ends the value",
+  "host": "",
+  "account": "",
+  "in": "API_TOKEN=abc\\\nnext line",
+  "want": "API_TOKEN=[REDACTED]\nnext line"
+ },
+ {
+  "name": "quote/a backslash before a carriage return ends the value",
+  "host": "",
+  "account": "",
+  "in": "API_TOKEN=abc\\\r\nnext line",
+  "want": "API_TOKEN=[REDACTED]\r\nnext line"
+ },
+ {
+  "name": "quote/triple double quotes",
+  "host": "",
+  "account": "",
+  "in": "private_key=\"\"\"line one\nline two Canary\n\"\"\" next",
+  "want": "private_key=[REDACTED] next"
+ },
+ {
+  "name": "quote/triple single quotes",
+  "host": "",
+  "account": "",
+  "in": "PASSWORD='''a b''' next",
+  "want": "PASSWORD=[REDACTED] next"
+ },
+ {
+  "name": "quote/triple quotes that do not close take the line",
+  "host": "",
+  "account": "",
+  "in": "PASSWORD=\"\"\"abc def\nnext line",
+  "want": "PASSWORD=[REDACTED]\nnext line"
+ },
+ {
+  "name": "quote/a stray quote after a value stays on its line",
+  "host": "",
+  "account": "",
+  "in": "PASSWORD='a'b'c\nnext 'line'",
+  "want": "PASSWORD=[REDACTED]\nnext 'line'"
+ },
+ {
+  "name": "quote/parts of two kinds are one value",
+  "host": "",
+  "account": "",
+  "in": "PASSWORD='a'\"b c\"d next",
+  "want": "PASSWORD=[REDACTED] next"
+ },
+ {
+  "name": "quote/an empty quoted value",
+  "host": "",
+  "account": "",
+  "in": "API_TOKEN=\"\" next",
+  "want": "API_TOKEN=[REDACTED] next"
  }
 ]

@@ -73,15 +73,17 @@ func secretName(name string) bool {
 // `$env:` (PowerShell), and for the trace bridge in any syntax, spaces or
 // tabs may stand on either side of the `=`.
 //
-// The value is, when it starts with a quote, everything to the matching
-// unescaped quote (a backslash escapes the next character), across at most
-// quotedValueMaxLines line breaks, and then any unquoted characters joined
-// to it; when that quote does not close, the rest of its line. Otherwise
-// it is everything up to whitespace, `&` or `;`, with any trailing `,`, and
-// any trailing `)` `]` `}` or quote that the value itself did not open,
-// handed back to the text around it, because those close something the
-// value sits inside: f(password=pw), "TOKEN=x", ?access_token=x&page=2.
-// A value that starts with `=` is a comparison (a==b) and is not one.
+// The value, when it starts with a quote, is read as a shell reads a word
+// (quotedWordEnd): quoted parts and the characters joined to them, up to
+// whitespace, `&` or `;`. The first part may run across at most
+// quotedValueMaxLines line breaks, and when it does not close, the value is
+// the rest of its line. Otherwise the value is everything up to whitespace,
+// `&` or `;`, a backslash keeping the character after it (correct\ horse).
+// Either way any trailing `,`, and any trailing `)` `]` `}` or quote that
+// the value itself did not open, is handed back to the text around it,
+// because those close something the value sits inside: f(password=pw),
+// "TOKEN=x", ?access_token=x&page=2. A value that starts with `=` is a
+// comparison (a==b) and is not one.
 func redactSecretAssignments(s string) string {
 	e := strings.IndexByte(s, '=')
 	if e < 0 {
@@ -162,36 +164,126 @@ func secretValueEnd(s string, v int) int {
 	}
 	switch s[v] {
 	case '"', '\'':
-		closed := closingQuote(s, v)
-		if closed < 0 {
-			return lineEnd(s, v)
-		}
-		return trimValueTail(s, closed, unquotedRunEnd(s, closed))
+		return quotedWordEnd(s, v)
 	case '=':
 		return v
 	}
 	return trimValueTail(s, v, unquotedRunEnd(s, v))
 }
 
-// closingQuote returns the index just past the unescaped quote that closes
-// the one at v, or -1 when there is none within quotedValueMaxLines lines.
-func closingQuote(s string, v int) int {
-	q, lines := s[v], 0
-	for i := v + 1; i < len(s); i++ {
-		c := s[i]
-		if c == '\\' {
-			i++
-			if i >= len(s) {
-				break
+// quotedWordEnd reads the value that starts with the quote at v the way a
+// shell reads a word, because that is how the forms that hide part of a
+// value are put together: quoted parts next to each other are one value
+// (PowerShell writes a quote inside a single-quoted string as two, and
+// Python's triple quotes are three), a backslash before a quote between
+// them keeps it (POSIX ends the string, writes \' and opens another), and
+// characters joined to a part are part of it. The word ends at whitespace,
+// `&` or `;` outside the quotes, with trimValueTail applied to what follows
+// the last quoted part.
+//
+// A value that opens with three quotes runs to the next three of the same,
+// within quotedValueMaxLines line breaks. Otherwise the first part runs to
+// its closing quote (closingQuote) within that many line breaks. When the
+// first part does not close, the value is the rest of its line. A later part must close
+// on its own line, or its quote is an ordinary character: a stray quote
+// after a value must not reach into the lines that follow it.
+func quotedWordEnd(s string, v int) int {
+	var i int
+	if opensThreeQuotes(s, v) {
+		i = tripleQuoteEnd(s, v)
+	} else {
+		i = closingQuote(s, v, quotedValueMaxLines)
+	}
+	if i < 0 {
+		return lineEnd(s, v)
+	}
+	last := i
+	for i < len(s) {
+		switch c := s[i]; {
+		case c == '"' || c == '\'':
+			if closed := closingQuote(s, i, 0); closed >= 0 {
+				i, last = closed, closed
+				continue
 			}
-			c = s[i]
-		} else if c == q {
-			return i + 1
+			i++
+		case c == '\\' && i+1 < len(s) && s[i+1] != '\n' && s[i+1] != '\r':
+			i += 2
+		case isSpace(c) || c == '&' || c == ';':
+			return trimValueTail(s, last, i)
+		default:
+			i++
 		}
-		if c == '\n' {
+	}
+	return trimValueTail(s, last, i)
+}
+
+func opensThreeQuotes(s string, v int) bool {
+	return v+3 <= len(s) && s[v+1] == s[v] && s[v+2] == s[v]
+}
+
+// tripleQuoteEnd returns the index just past the three quotes that close the
+// three at v, or -1 when they do not close within quotedValueMaxLines line
+// breaks.
+func tripleQuoteEnd(s string, v int) int {
+	q, lines := s[v], 0
+	for i := v + 3; i+2 < len(s); i++ {
+		switch s[i] {
+		case q:
+			if s[i+1] == q && s[i+2] == q {
+				return i + 3
+			}
+		case '\n':
 			if lines++; lines > quotedValueMaxLines {
 				return -1
 			}
+		}
+	}
+	return -1
+}
+
+// closingQuote returns the index just past the quote that closes the one at
+// v, or -1 when there is none within maxLines line breaks.
+//
+// Whether a backslash escapes depends on the language, and the text does not
+// say which it is: in Python, JSON and a POSIX double-quoted string it does,
+// in a POSIX or PowerShell single-quoted string and a TOML literal it does
+// not. So the escaping reading (a backslash escapes the next character, and
+// in a double-quoted string so does PowerShell's backtick) is taken when it
+// closes the quote on its own line, being the longer of the two; when it
+// does not, the plain reading is: the next quote of the same kind. Taken the
+// other way round, SSH_KEY_DIR='C:\keys\' would run on into the next line
+// and stop inside the value assigned there, leaving that value's tail.
+func closingQuote(s string, v, maxLines int) int {
+	if i := escapedClosingQuote(s, v); i >= 0 {
+		return i
+	}
+	q, lines := s[v], 0
+	for i := v + 1; i < len(s); i++ {
+		switch s[i] {
+		case q:
+			return i + 1
+		case '\n':
+			if lines++; lines > maxLines {
+				return -1
+			}
+		}
+	}
+	return -1
+}
+
+// escapedClosingQuote is closingQuote's escaping reading, on v's own line.
+func escapedClosingQuote(s string, v int) int {
+	q := s[v]
+	for i := v + 1; i < len(s); i++ {
+		switch c := s[i]; {
+		case c == '\n':
+			return -1
+		case c == '\\' || (c == '`' && q == '"'):
+			if i+1 < len(s) && s[i+1] != '\n' {
+				i++
+			}
+		case c == q:
+			return i + 1
 		}
 	}
 	return -1
@@ -210,8 +302,20 @@ func lineEnd(s string, v int) int {
 	return end
 }
 
+// unquotedRunEnd is the end of an unquoted value: whitespace, `&` or `;`,
+// except where a backslash keeps the character after it, as a shell does
+// (correct\ horse\ battery is one word). A backslash before a line break is
+// not one of those: the value ends with its line.
 func unquotedRunEnd(s string, i int) int {
-	for i < len(s) && !isSpace(s[i]) && s[i] != '&' && s[i] != ';' {
+	for i < len(s) {
+		c := s[i]
+		if c == '\\' && i+1 < len(s) && s[i+1] != '\n' && s[i+1] != '\r' {
+			i += 2
+			continue
+		}
+		if isSpace(c) || c == '&' || c == ';' {
+			break
+		}
 		i++
 	}
 	return i
