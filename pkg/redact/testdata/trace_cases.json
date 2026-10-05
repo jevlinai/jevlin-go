@@ -1461,5 +1461,124 @@
   "account": "",
   "in": "-e \"PASSWORD=a`\" b\" next",
   "want": "-e \"PASSWORD=[REDACTED]\" next"
+ },
+ {
+  "name": "braced/powershell ${env:NAME}",
+  "host": "",
+  "account": "",
+  "in": "${env:API_TOKEN}='Token Canary Tail'; next",
+  "want": "${env:API_TOKEN}=[REDACTED]; next"
+ },
+ {
+  "name": "braced/the bridge with spaces",
+  "host": "",
+  "account": "",
+  "in": "${env:JEVLIN_TRACE_BRIDGE} = \"eyJCanary0123\"; jevlin search",
+  "want": "${env:JEVLIN_TRACE_BRIDGE} = [REDACTED]; jevlin search"
+ },
+ {
+  "name": "braced/any letter case",
+  "host": "",
+  "account": "",
+  "in": "${Env:db_password} = \"a b\"",
+  "want": "${Env:db_password} = [REDACTED]"
+ },
+ {
+  "name": "survives/a braced name that is not a secret",
+  "host": "",
+  "account": "",
+  "in": "${env:PATH} = \"C:\\x;$env:PATH\"",
+  "want": "${env:PATH} = \"C:\\x;$env:PATH\""
+ },
+ {
+  "name": "survives/a brace that is not ${env:",
+  "host": "",
+  "account": "",
+  "in": "${other:API_TOKEN}=x and f{API_TOKEN}=y",
+  "want": "${other:API_TOKEN}=x and f{API_TOKEN}=y"
+ },
+ {
+  "name": "cmd/set takes the rest of the line",
+  "host": "",
+  "account": "",
+  "in": "set DB_PASSWORD=correct horse battery\r\nnext",
+  "want": "set DB_PASSWORD=[REDACTED]\r\nnext"
+ },
+ {
+  "name": "cmd/@set after blanks",
+  "host": "",
+  "account": "",
+  "in": "  @SET API_TOKEN=a b c\nnext",
+  "want": "  @SET API_TOKEN=[REDACTED]\nnext"
+ },
+ {
+  "name": "cmd/an ampersand ends it",
+  "host": "",
+  "account": "",
+  "in": "set DB_PASSWORD=a b & echo ok",
+  "want": "set DB_PASSWORD=[REDACTED] & echo ok"
+ },
+ {
+  "name": "cmd/a pipe ends it",
+  "host": "",
+  "account": "",
+  "in": "x | set API_TOKEN=a b| more",
+  "want": "x | set API_TOKEN=[REDACTED]| more"
+ },
+ {
+  "name": "cmd/inside parentheses",
+  "host": "",
+  "account": "",
+  "in": "if x (set DB_PASSWORD=a b)",
+  "want": "if x (set DB_PASSWORD=[REDACTED])"
+ },
+ {
+  "name": "cmd/in a code span",
+  "host": "",
+  "account": "",
+  "in": "Run `set DB_PASSWORD=a b` first",
+  "want": "Run `set DB_PASSWORD=[REDACTED]` first"
+ },
+ {
+  "name": "cmd/quotes are part of the value",
+  "host": "",
+  "account": "",
+  "in": "set API_TOKEN=\"a b\" c",
+  "want": "set API_TOKEN=[REDACTED]"
+ },
+ {
+  "name": "survives/set with a lowercase name keeps the sentence",
+  "host": "",
+  "account": "",
+  "in": "set password=abc and restart",
+  "want": "set password=[REDACTED] and restart"
+ },
+ {
+  "name": "survives/set inside a sentence keeps the sentence",
+  "host": "",
+  "account": "",
+  "in": "you can set API_TOKEN=abc in the shell",
+  "want": "you can set API_TOKEN=[REDACTED] in the shell"
+ },
+ {
+  "name": "survives/a word ending in set is not set",
+  "host": "",
+  "account": "",
+  "in": "reset API_TOKEN=abc now",
+  "want": "reset API_TOKEN=[REDACTED] now"
+ },
+ {
+  "name": "cmd/a delimiter inside a removed value does not make a set",
+  "host": "",
+  "account": "",
+  "in": "JEVLIN_TRACE_BRIDGE=x| set API_TOKEN=a b",
+  "want": "JEVLIN_TRACE_BRIDGE=[REDACTED] set API_TOKEN=[REDACTED] b"
+ },
+ {
+  "name": "survives/a brace with env: but no dollar",
+  "host": "",
+  "account": "",
+  "in": "#{env:API_TOKEN}=y and %{env:API_TOKEN} = y",
+  "want": "#{env:API_TOKEN}=y and %{env:API_TOKEN} = y"
  }
 ]

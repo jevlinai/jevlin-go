@@ -71,7 +71,8 @@ func secretName(name string) bool {
 // in a letter, digit or `_`, and starting where the character before it is
 // not a letter, digit or `_`; it is written immediately before `=`. After
 // `$env:` (PowerShell), and for the trace bridge in any syntax, spaces or
-// tabs may stand on either side of the `=`.
+// tabs may stand on either side of the `=`; so they may in PowerShell's
+// braced form, ${env:NAME} = '...'.
 //
 // The value, when it starts with a quote, is read as a shell reads a word
 // (quotedWordEnd): quoted parts and the characters joined to them, up to
@@ -126,25 +127,37 @@ func secretValueAt(s string, floor, e int, words *wordScan) (start, end int, ok 
 	for k > floor && isBlank(s[k-1]) {
 		k--
 	}
-	r := k
-	for r > floor && isNameChar(s[r-1]) {
-		r--
-	}
-	if r == k || !isWordChar(s[k-1]) {
-		return 0, 0, false
-	}
-	p := -1
-	for q := r; q < k; q++ {
-		if isNameStart(s[q]) && (q == 0 || !isWordChar(s[q-1])) {
-			p = q
-			break
+	p, name, psEnv := -1, "", false
+	if k > floor && s[k-1] == '}' {
+		// PowerShell's braced form, ${env:NAME}, spaces around = allowed.
+		r := k - 1
+		for r > floor && isNameChar(s[r-1]) {
+			r--
 		}
+		if r == k-1 || !isNameStart(s[r]) || !isWordChar(s[k-2]) || r < 6 || !asciiEqualFold(s[r-6:r], "${env:") {
+			return 0, 0, false
+		}
+		p, name, psEnv = r, s[r:k-1], true
+	} else {
+		r := k
+		for r > floor && isNameChar(s[r-1]) {
+			r--
+		}
+		if r == k || !isWordChar(s[k-1]) {
+			return 0, 0, false
+		}
+		for q := r; q < k; q++ {
+			if isNameStart(s[q]) && (q == 0 || !isWordChar(s[q-1])) {
+				p = q
+				break
+			}
+		}
+		if p < 0 {
+			return 0, 0, false
+		}
+		name = s[p:k]
+		psEnv = p >= 5 && asciiEqualFold(s[p-5:p], "$env:")
 	}
-	if p < 0 {
-		return 0, 0, false
-	}
-	name := s[p:k]
-	psEnv := p >= 5 && asciiEqualFold(s[p-5:p], "$env:")
 	bridge := isBridgeName(name)
 	if k < e && !psEnv && !bridge {
 		return 0, 0, false
@@ -159,11 +172,59 @@ func secretValueAt(s string, floor, e int, words *wordScan) (start, end int, ok 
 		}
 	}
 	words.advance(s, p)
-	end = secretValueEnd(s, v, words)
+	if v < len(s) && !isSpace(s[v]) && s[v] != '=' && isCmdSet(s, floor, p, name) {
+		end = cmdValueEnd(s, v)
+	} else {
+		end = secretValueEnd(s, v, words)
+	}
 	if end == v || s[v:end] == placeholder {
 		return 0, 0, false
 	}
 	return v, end, true
+}
+
+// isCmdSet reports whether the name at p is set by cmd's `set NAME=value`,
+// which takes the rest of the line as the value, spaces and quotes and all. It counts
+// only where cmd would read it as a command: `set` (any letter case, after
+// an optional @) at the start of a line, or after a backtick, `&`, `(` or
+// `|`, and a name with no lowercase letter. "You can set password=x in the
+// shell" and a line that begins "set password=x and restart" are prose,
+// and a line-long value there would take the rest of the sentence. Nothing
+// before floor is read: a removed value is a placeholder on the next pass.
+func isCmdSet(s string, floor, p int, name string) bool {
+	if name != strings.ToUpper(name) || p == 0 || !isBlank(s[p-1]) {
+		return false
+	}
+	j := p
+	for j > 0 && isBlank(s[j-1]) {
+		j--
+	}
+	if j-3 < floor || !asciiEqualFold(s[j-3:j], "set") {
+		return false
+	}
+	k := j - 3
+	if k > floor && s[k-1] == '@' {
+		k--
+	}
+	for k > floor && isBlank(s[k-1]) {
+		k--
+	}
+	return k == 0 || (k > floor && strings.IndexByte("\n`&(|", s[k-1]) >= 0)
+}
+
+// cmdValueEnd is where cmd's `set` value ends: at the end of its line, or
+// at `&`, `|` or a backtick, which end the command or the code span it is
+// written in; trailing blanks and what trimValueTail hands back stay
+// outside.
+func cmdValueEnd(s string, v int) int {
+	end := v
+	for end < len(s) && strings.IndexByte("\n\r&|`", s[end]) < 0 {
+		end++
+	}
+	for end > v && isBlank(s[end-1]) {
+		end--
+	}
+	return trimValueTail(s, v, end)
 }
 
 // wordScan follows, left to right, the word that holds each name: what

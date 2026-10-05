@@ -376,22 +376,57 @@ const traceWordSkip = (w, to) => {
   w.begun = true
 }
 
+// cmd's `set NAME=value` takes the rest of the line: only where cmd reads it
+// as a command (set, after an optional @, at a line's start or after a
+// backtick, & ( or |) and for a name with no lowercase letter, so prose
+// that says "set password=x and ..." keeps its sentence. Nothing before
+// floor is read: a removed value is a placeholder on the next pass.
+const traceIsCmdSet = (s, floor, p, name) => {
+  if (name !== name.toUpperCase() || p === 0 || !traceIsBlank(s.charCodeAt(p - 1))) return false
+  let j = p
+  while (j > 0 && traceIsBlank(s.charCodeAt(j - 1))) j--
+  if (j - 3 < floor || s.slice(j - 3, j).toLowerCase() !== 'set') return false
+  let k = j - 3
+  if (k > floor && s.charCodeAt(k - 1) === 64) k--
+  while (k > floor && traceIsBlank(s.charCodeAt(k - 1))) k--
+  return k === 0 || (k > floor && '\n`&(|'.includes(s[k - 1]))
+}
+// It ends at the line's end, &, | or a backtick; blanks and what the tail
+// rule hands back stay outside.
+const traceCmdValueEnd = (s, v) => {
+  let end = v
+  while (end < s.length && !'\n\r&|`'.includes(s[end])) end++
+  end = traceTrimBlanksEnd(s, v, end)
+  return traceTrimValueTail(s, v, end)
+}
 // The secret value behind the = at e, as [start, end], or null. The name is
 // read backwards from e and never past floor, the end of the last value
 // removed.
 const traceSecretValueAt = (s, floor, e, words) => {
   let k = e
   while (k > floor && traceIsBlank(s.charCodeAt(k - 1))) k--
-  let r = k
-  while (r > floor && traceIsName(s.charCodeAt(r - 1))) r--
-  if (r === k || !traceIsWord(s.charCodeAt(k - 1))) return null
   let p = -1
-  for (let q = r; q < k; q++) {
-    if (traceIsNameStart(s.charCodeAt(q)) && (q === 0 || !traceIsWord(s.charCodeAt(q - 1)))) { p = q; break }
+  let name = ''
+  let psEnv = false
+  if (k > floor && s.charCodeAt(k - 1) === 125) {
+    // PowerShell's braced form, ${env:NAME}, spaces around = allowed.
+    let r = k - 1
+    while (r > floor && traceIsName(s.charCodeAt(r - 1))) r--
+    if (r === k - 1 || !traceIsNameStart(s.charCodeAt(r)) || !traceIsWord(s.charCodeAt(k - 2)) || r < 6 || !/^\$\{[Ee][Nn][Vv]:$/.test(s.slice(r - 6, r))) return null
+    p = r
+    name = s.slice(r, k - 1)
+    psEnv = true
+  } else {
+    let r = k
+    while (r > floor && traceIsName(s.charCodeAt(r - 1))) r--
+    if (r === k || !traceIsWord(s.charCodeAt(k - 1))) return null
+    for (let q = r; q < k; q++) {
+      if (traceIsNameStart(s.charCodeAt(q)) && (q === 0 || !traceIsWord(s.charCodeAt(q - 1)))) { p = q; break }
+    }
+    if (p < 0) return null
+    name = s.slice(p, k)
+    psEnv = p >= 5 && /^\$[Ee][Nn][Vv]:$/.test(s.slice(p - 5, p))
   }
-  if (p < 0) return null
-  const name = s.slice(p, k)
-  const psEnv = p >= 5 && /^\$[Ee][Nn][Vv]:$/.test(s.slice(p - 5, p))
   // The bridge's name alone or as the last part of a dotted or hyphenated
   // name: a later step can remove what stands before it (an email's domain),
   // and a second pass must not then find what the first did not.
@@ -402,7 +437,10 @@ const traceSecretValueAt = (s, floor, e, words) => {
   let v = e + 1
   if (psEnv || bridge) while (v < s.length && traceIsBlank(s.charCodeAt(v))) v++
   traceWordAdvance(words, s, p)
-  const end = traceSecretValueEnd(s, v, words)
+  const c = s.charCodeAt(v)
+  const end = v < s.length && !traceIsSpace(c) && c !== 61 && traceIsCmdSet(s, floor, p, name)
+    ? traceCmdValueEnd(s, v)
+    : traceSecretValueEnd(s, v, words)
   if (end === v || s.slice(v, end) === TRACE_REDACTED) return null
   return [v, end]
 }
