@@ -71,7 +71,8 @@ func traceIdentityInputs() map[string]string {
 	shapes := map[string]string{
 		"account_in_env":   "USER=syntheticacct0123",
 		"account_in_ssh":   "ssh syntheticacct0123@db1.example.test uptime",
-		"hostname_in_text": "logged in on synthetichost0123 as SyntheticAcct0123",
+		"hostname_in_text": "logged in on synthetichost0123 as USER=SyntheticAcct0123",
+		"account_in_home":  `copied to /mnt/c/Users/SyntheticAcct0123/x and C:\Users\syntheticacct0123\y`,
 		"prompt":           "syntheticacct0123@SyntheticHost0123:~$",
 	}
 	out := map[string]string{}
@@ -94,7 +95,9 @@ func traceSurvivorInputs() map[string]string {
 		"survives/four env lines": "A_ONE=1\nB_TWO=2\nC_THREE=3\nD_FOUR=4\nthen prose",
 		"survives/broken run":     "A=1\nB=2\nprose\nC=3\nD=4\nE=5",
 		"survives/name in a word": "xsyntheticacct0123 and syntheticacct0123_2 and presynthetichost0123x",
-		"survives/empty value":    "set API_TOKEN= to clear it",
+		// The account is removed only where the text uses it as one.
+		"survives/account in prose": "syntheticacct0123 wrote this, and SyntheticAcct0123: it is a word here",
+		"survives/empty value":      "set API_TOKEN= to clear it",
 		// A no-break space is whitespace to JavaScript's \s and not to Go's:
 		// with \s the third line would join the run and make it a dump.
 		"survives/nbsp breaks a run": "A=1\nB=2\n\u00a0C=3\nD=4\nE=5",

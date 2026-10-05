@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -118,7 +119,7 @@ func TestTheRenderedBridgeLosesItsValue(t *testing.T) {
  const out = {};
  for (const shell of ['powershell', 'posix']) {
   const rendered = m.withTraceBridge(input.input.search, input.input.bridge, shell);
-  out[shell] = { rendered, scrubbed: m.scrubTraceText(rendered, []) };
+  out[shell] = { rendered, scrubbed: m.scrubTraceText(rendered, m.traceIdentityPatterns('', '')) };
  }
  process.stdout.write(JSON.stringify(out));`, map[string]string{"bridge": bridge, "search": search}, &js)
 	defer redact.SetLocalIdentity("", "")()
@@ -137,5 +138,114 @@ func TestTheRenderedBridgeLosesItsValue(t *testing.T) {
 		if js[name].Scrubbed != scrubbed {
 			t.Errorf("%s: the scrubbers disagree on the rendered bridge\n%s", name, traceDifference(js[name].Scrubbed, scrubbed))
 		}
+	}
+}
+
+// The shared source finds the account where pkg/redact does: USERNAME on
+// Windows, USER then LOGNAME elsewhere, then the home directory's last
+// element. Each case runs node in an environment that holds only what the
+// case names, so the answer cannot come from the user database.
+func TestTheSharedSourceFindsTheAccountAsGoDoes(t *testing.T) {
+	type accountCase struct {
+		env  map[string]string
+		want string
+	}
+	home := filepath.Join(t.TempDir(), "homeacct")
+	cases := map[string]accountCase{
+		"USER first":              {map[string]string{"USER": "ann", "LOGNAME": "bob", "HOME": home}, "ann"},
+		"then LOGNAME":            {map[string]string{"LOGNAME": "bob", "HOME": home}, "bob"},
+		"then the home directory": {map[string]string{"HOME": home}, "homeacct"},
+	}
+	if runtime.GOOS == "windows" {
+		cases = map[string]accountCase{
+			"USERNAME, not USER":      {map[string]string{"USERNAME": "John Smith", "USER": "ann", "USERPROFILE": home}, "John Smith"},
+			"then the home directory": {map[string]string{"USER": "ann", "USERPROFILE": home}, "homeacct"},
+		}
+	}
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatal("node is required to verify the shared trace-preparation source")
+	}
+	src := agentTraceCommonJS + "\nprocess.stdout.write(JSON.stringify(traceLocalAccount()));"
+	for name, tc := range cases {
+		var env []string
+		for _, kv := range os.Environ() {
+			k, _, _ := strings.Cut(kv, "=")
+			switch strings.ToUpper(k) {
+			case "USER", "LOGNAME", "USERNAME", "HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH":
+				continue
+			}
+			env = append(env, kv)
+		}
+		for k, v := range tc.env {
+			env = append(env, k+"="+v)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		cmd := exec.CommandContext(ctx, node, "--input-type=module", "-e", src) // #nosec G204 -- fixed test script and local Node runtime
+		cmd.Env = env
+		out, err := cmd.Output()
+		cancel()
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		var got string
+		if err := json.Unmarshal(out, &got); err != nil {
+			t.Fatalf("%s: %v: %s", name, err, out)
+		}
+		if got != tc.want {
+			t.Errorf("%s: the shared source found the account %q, want %q", name, got, tc.want)
+		}
+	}
+}
+
+// What the installed adapters run is the shared source with no identity
+// argument: the names of the machine it is on. This holds that default to
+// Go's on a text naming this machine's own host and account in every
+// context the rules cover, so an adapter whose default identity found
+// nothing, or found other names than Go does, fails here and not only in a
+// golden snapshot. Where this machine's names are both generic or too short
+// to be searched for, there is nothing to compare and the test says so.
+func TestBothScrubbersRemoveThisMachinesOwnNames(t *testing.T) {
+	host, _ := os.Hostname()
+	label, _, _ := strings.Cut(host, ".")
+	account := ""
+	names := []string{"USER", "LOGNAME"}
+	if runtime.GOOS == "windows" {
+		names = []string{"USERNAME"}
+	}
+	for _, name := range names {
+		if account = os.Getenv(name); account != "" {
+			break
+		}
+	}
+	if account == "" {
+		if dir, err := os.UserHomeDir(); err == nil {
+			account = filepath.Base(dir)
+		}
+	}
+	text := "built on " + label + " today; ssh " + account + "@db1; USER=" + account + "; cp /mnt/c/Users/" + account + "/x ."
+	searched := func(h, a string) bool {
+		defer redact.SetLocalIdentity(h, a)()
+		return redact.TraceText(text) != text
+	}
+	hostSearched, accountSearched := searched(label, ""), searched("", account)
+	if !hostSearched && !accountSearched {
+		t.Skipf("this machine's host label %q and account %q are both generic or too short to be searched for", label, account)
+	}
+	goText := redact.TraceText(text)
+	if hostSearched && strings.Contains(strings.ToLower(goText), "built on "+strings.ToLower(label)) {
+		t.Errorf("the Go scrubber's default identity kept this machine's host label: %q", goText)
+	}
+	if accountSearched && strings.Contains(goText, "USER="+account) {
+		t.Errorf("the Go scrubber's default identity kept this machine's account: %q", goText)
+	}
+	var js []*string
+	runSharedTraceSource(t, `
+ process.stdout.write(JSON.stringify([m.prepareTraceHistory([{ type: 'text', text: input.input }])]));`, text, &js)
+	if len(js) != 1 || js[0] == nil {
+		t.Fatalf("the shared source omitted the text: %v", js)
+	}
+	if *js[0] != goText {
+		t.Errorf("the two scrubbers' default identities disagree\n%s", traceDifference(*js[0], goText))
 	}
 }

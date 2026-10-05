@@ -14,11 +14,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
-	"os/user"
 	"regexp"
 	"strings"
-	"sync"
 )
 
 const placeholder = "[REDACTED]"
@@ -126,14 +123,16 @@ func String(s string) string {
 //
 // It also covers what an assistant writes around a search that has no
 // credential shape at all: an environment dump, a secret assigned by name,
-// this client's own trace bridge, and the machine's hostname and account
-// name wherever they stand. The log path does not need those: a log line
-// is this client's own words, not a model's account of what it just read.
+// this client's own trace bridge, the machine's hostname wherever it stands
+// as a word, and the account name where the text uses it as one. The log
+// path does not need those: a log line is this client's own words, not a
+// model's account of what it just read.
 func TraceText(s string) string {
 	s = scrubCommon(s)
 	s = redactSecretAssignments(s)
 	s = redactEnvDumps(s)
 	s = redactEmails(s)
+	s = redactAccountHomes(s)
 	s = redactHomePaths(s)
 	s = redactLocalIdentity(s)
 	return s
@@ -198,116 +197,6 @@ func redactEnvDumps(s string) string {
 		return s
 	}
 	return strings.Join(lines, "\n")
-}
-
-// genericIdentityNames are account and host names that identify nobody
-// and are ordinary words in a model's prose. Replacing every "user" or
-// "admin" in a trajectory would destroy the text to hide nothing.
-var genericIdentityNames = map[string]bool{
-	"root": true, "user": true, "users": true, "admin": true, "administrator": true,
-	"ubuntu": true, "debian": true, "runner": true, "guest": true, "test": true, "dev": true,
-	"home": true, "node": true, "app": true, "www": true, "git": true, "deploy": true,
-	"build": true, "docker": true, "vagrant": true, "localhost": true, "local": true,
-	"server": true, "host": true, "macbook": true, "mac": true, "desktop": true,
-	"laptop": true, "workstation": true, "default": true, "system": true, "nobody": true,
-	"daemon": true, "code": true, "agent": true, "main": true, "master": true,
-}
-
-// identityNamePattern is what a name must look like to be searched for:
-// ASCII, so the Go and JavaScript scrubbers fold case the same way.
-var identityNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]{3,}$`)
-
-var (
-	identityMu       sync.Mutex
-	identityResolved bool
-	identityPatterns []*regexp.Regexp
-)
-
-// SetLocalIdentity names the host and the account whose names TraceText
-// removes, in place of asking the operating system, and returns a function
-// that restores what was there. Tests use it so a guarantee about a name
-// does not depend on the machine it runs on.
-func SetLocalIdentity(host, account string) (restore func()) {
-	identityMu.Lock()
-	defer identityMu.Unlock()
-	prevResolved, prevPatterns := identityResolved, identityPatterns
-	identityResolved, identityPatterns = true, compileIdentity(host, account)
-	return func() {
-		identityMu.Lock()
-		defer identityMu.Unlock()
-		identityResolved, identityPatterns = prevResolved, prevPatterns
-	}
-}
-
-// compileIdentity keeps the hostname's first label and the account name,
-// each only when it is specific enough to identify this machine or person.
-func compileIdentity(host, account string) []*regexp.Regexp {
-	if i := strings.IndexByte(host, '.'); i >= 0 {
-		host = host[:i]
-	}
-	// A Windows account arrives as DOMAIN\name; the name is what is typed.
-	if i := strings.LastIndexByte(account, '\\'); i >= 0 {
-		account = account[i+1:]
-	}
-	var out []*regexp.Regexp
-	seen := map[string]bool{}
-	for _, name := range []string{host, account} {
-		lower := strings.ToLower(name)
-		if !identityNamePattern.MatchString(name) || genericIdentityNames[lower] || seen[lower] {
-			continue
-		}
-		seen[lower] = true
-		out = append(out, regexp.MustCompile(`(?i)`+regexp.QuoteMeta(name)))
-	}
-	return out
-}
-
-func localIdentity() []*regexp.Regexp {
-	identityMu.Lock()
-	defer identityMu.Unlock()
-	if !identityResolved {
-		host, _ := os.Hostname()
-		account := ""
-		if u, err := user.Current(); err == nil {
-			account = u.Username
-		}
-		identityResolved, identityPatterns = true, compileIdentity(host, account)
-	}
-	return identityPatterns
-}
-
-// redactLocalIdentity replaces the machine's hostname (its first label)
-// and the account name where either stands as a whole word: `USER=name`,
-// `ssh name@host`, a prompt, plain prose. redactHomePaths already takes
-// the name out of /home/<name>; this is the same name everywhere else.
-func redactLocalIdentity(s string) string {
-	for _, re := range localIdentity() {
-		if !re.MatchString(s) {
-			continue
-		}
-		var b strings.Builder
-		last, pos := 0, 0
-		for pos < len(s) {
-			loc := re.FindStringIndex(s[pos:])
-			if loc == nil {
-				break
-			}
-			start, end := pos+loc[0], pos+loc[1]
-			if (start > 0 && isWordChar(s[start-1])) || (end < len(s) && isWordChar(s[end])) {
-				// Not a whole word here. Look again one byte on rather than
-				// past it, so an occurrence that overlaps this one is still
-				// found, as a regular expression with lookarounds finds it.
-				pos = start + 1
-				continue
-			}
-			b.WriteString(s[last:start])
-			b.WriteString(placeholder)
-			last, pos = end, end
-		}
-		b.WriteString(s[last:])
-		s = b.String()
-	}
-	return s
 }
 
 func isWordChar(c byte) bool {

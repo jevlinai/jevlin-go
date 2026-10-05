@@ -27,7 +27,8 @@
 // trace, which is the whole fallback contract: tracing must never be the
 // reason a search does not run.
 import { createHash } from "node:crypto"
-import { hostname as traceHostname, userInfo as traceUserInfo } from "node:os"
+import { homedir as traceHomedir, hostname as traceHostname } from "node:os"
+import { basename as traceBasename } from "node:path"
 
 // The trace hash: domain-separated SHA-256 over a PUBLIC prefix, truncated
 // to 16 bytes and hex-encoded — the same derivation as traceHash in
@@ -303,44 +304,86 @@ const redactTraceHomePaths = (text) => text
   .replace(/(\/Users\/|\/home\/)[^/\t\n\f\r ]+/g, (match, prefix, offset, source) =>
     offset > 0 && /[A-Za-z0-9.]/.test(source[offset - 1]) ? match : prefix + TRACE_REDACTED)
 
-// The local identity: the hostname's first label and the account name, each
-// only when specific enough to identify this machine or person. "user" and
-// "admin" are ordinary words; replacing them would destroy the text to hide
-// nothing. ASCII names only, so both languages fold case the same way.
+// The local identity, as pkg/redact/identity.go has it. The hostname's
+// first label goes wherever it stands as a whole word. The account name goes
+// only where the text uses it as an account, because an account is often a
+// word (will, max, claude): as the value of USER, USERNAME, LOGNAME or
+// SUDO_USER; directly before `@` (ssh name@host, a prompt); and after a home
+// directory prefix, /mnt/c/Users/ and a name with a space included. A
+// generic name identifies nobody and is not searched for, nor is one under
+// three characters or with anything but ASCII in it, so both languages fold
+// case the same way.
 const TRACE_GENERIC_IDENTITY = new Set(['root', 'user', 'users', 'admin', 'administrator',
   'ubuntu', 'debian', 'runner', 'guest', 'test', 'dev', 'home', 'node', 'app', 'www', 'git', 'deploy',
   'build', 'docker', 'vagrant', 'localhost', 'local', 'server', 'host', 'macbook', 'mac', 'desktop',
-  'laptop', 'workstation', 'default', 'system', 'nobody', 'daemon', 'code', 'agent', 'main', 'master'])
+  'laptop', 'workstation', 'default', 'system', 'nobody', 'daemon', 'code', 'agent', 'main', 'master',
+  'vscode', 'core', 'codespace', 'coder', 'gitpod', 'jovyan', 'ec2-user', 'azureuser', 'jenkins', 'circleci',
+  'gitlab-runner', 'runneradmin', 'bun', 'deno', 'owner', 'raspberrypi', 'kali', 'nixos', 'penguin', 'fedora',
+  'archlinux', 'api', 'web', 'prod', 'staging', 'worker',
+  'macbook-pro', 'macbook-air', 'mac-mini', 'imac', 'mac-studio'])
+const TRACE_ACCOUNT_VARIABLES = new Set(['user', 'username', 'logname', 'sudo_user'])
 const traceIdentityPatterns = (host, account) => {
   host = String(host || '')
   account = String(account || '')
   if (host.includes('.')) host = host.slice(0, host.indexOf('.'))
   if (account.includes('\\')) account = account.slice(account.lastIndexOf('\\') + 1)
-  const out = []
-  const seen = new Set()
-  for (const name of [host, account]) {
-    const lower = name.toLowerCase()
-    if (!/^[A-Za-z0-9._-]{3,}$/.test(name) || TRACE_GENERIC_IDENTITY.has(lower) || seen.has(lower)) continue
-    seen.add(lower)
-    out.push(new RegExp('(?<![A-Za-z0-9_])' + traceFold(name) + '(?![A-Za-z0-9_])', 'g'))
+  const out = { host: null, account: null, accountHome: null }
+  if (/^[A-Za-z0-9._-]{3,}$/.test(host) && !TRACE_GENERIC_IDENTITY.has(host.toLowerCase())) {
+    out.host = new RegExp('(?<![A-Za-z0-9_])' + traceFold(host) + '(?![A-Za-z0-9_])', 'g')
+  }
+  if (account.length >= 3 && /^[A-Za-z0-9._-]+(?: [A-Za-z0-9._-]+)*$/.test(account) && !TRACE_GENERIC_IDENTITY.has(account.toLowerCase())) {
+    out.account = new RegExp('(?<![A-Za-z0-9_])' + traceFold(account) + '(?![A-Za-z0-9_])', 'g')
+    out.accountHome = new RegExp('(\\/Users\\/|\\/home\\/|[A-Za-z\\u212A\\u017F]:\\\\[Uu][Ss\\u017F][Ee][Rr][Ss\\u017F]\\\\)' +
+      traceFold(account) + '(?![A-Za-z0-9_.-])', 'g')
   }
   return out
+}
+// The account name, found the way pkg/redact's localAccount finds it and
+// with nothing that can block: USERNAME on Windows, USER then LOGNAME
+// elsewhere, then the last element of the home directory. os.userInfo()
+// is not asked: it reads the user database, which Go does not.
+const traceLocalAccount = () => {
+  const env = process.env
+  const named = process.platform === 'win32' ? env.USERNAME : (env.USER || env.LOGNAME)
+  if (named) return named
+  try { return traceBasename(traceHomedir()) } catch { return '' }
 }
 const TRACE_LOCAL_IDENTITY = (() => {
   let host = ''
   let account = ''
   try { host = traceHostname() } catch {}
-  try { account = traceUserInfo().username } catch {}
+  try { account = traceLocalAccount() } catch {}
   return traceIdentityPatterns(host, account)
 })()
-// redactLocalIdentity: the hostname and the account name as whole words.
-// redactTraceHomePaths takes the name out of /home/<name>; this is the same
-// name everywhere else: USER=name, ssh name@host, a prompt, plain prose.
-const redactTraceLocalIdentity = (text, patterns) =>
-  patterns.reduce((out, re) => out.replace(re, TRACE_REDACTED), text)
+// The account is used as one: directly before `@`, or as the value of an
+// assignment to an account variable, optionally quoted, spaces around `=`.
+const traceNamesAnAccount = (s, start, end) => {
+  if (s.charCodeAt(end) === 64) return true
+  let p = start
+  if (p > 0 && (s.charCodeAt(p - 1) === 34 || s.charCodeAt(p - 1) === 39)) p--
+  while (p > 0 && traceIsBlank(s.charCodeAt(p - 1))) p--
+  if (p === 0 || s.charCodeAt(p - 1) !== 61) return false
+  p--
+  while (p > 0 && traceIsBlank(s.charCodeAt(p - 1))) p--
+  let q = p
+  while (q > 0 && traceIsWord(s.charCodeAt(q - 1))) q--
+  return TRACE_ACCOUNT_VARIABLES.has(s.slice(q, p).toLowerCase())
+}
+// redactAccountHomes: the account after a home directory prefix, before
+// redactTraceHomePaths cuts the segment at a space.
+const redactTraceAccountHomes = (text, identity) =>
+  identity.accountHome ? text.replace(identity.accountHome, (match, prefix) => prefix + TRACE_REDACTED) : text
+const redactTraceLocalIdentity = (text, identity) => {
+  if (identity.host) text = text.replace(identity.host, TRACE_REDACTED)
+  if (identity.account) {
+    text = text.replace(identity.account, (match, offset, source) =>
+      traceNamesAnAccount(source, offset, offset + match.length) ? TRACE_REDACTED : match)
+  }
+  return text
+}
 
 const scrubTraceText = (text, identity = TRACE_LOCAL_IDENTITY) =>
-  redactTraceLocalIdentity(redactTraceHomePaths(redactTraceEmails(redactTraceEnvDumps(redactTraceSecretAssignments(scrubTraceCommon(text))))), identity)
+  redactTraceLocalIdentity(redactTraceHomePaths(redactTraceAccountHomes(redactTraceEmails(redactTraceEnvDumps(redactTraceSecretAssignments(scrubTraceCommon(text)))), identity)), identity)
 
 // prepareTraceHistory takes the COMPLETE text parts of one assistant
 // message — `{type: 'text', text}` entries, the shape opencode's message

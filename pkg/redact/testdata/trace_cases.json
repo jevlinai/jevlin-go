@@ -873,5 +873,110 @@
   "account": "",
   "in": "A=1\nB=2\nPASSWORD=\"x\nnot env\"\nD=4\nE=5",
   "want": "A=[REDACTED]\nB=[REDACTED]\nPASSWORD=[REDACTED]\nD=[REDACTED]\nE=[REDACTED]"
+ },
+ {
+  "name": "identity/the account in prose stays",
+  "host": "Build-Box7.corp.example",
+  "account": "CORP\\mwhitlock",
+  "in": "logged in as mwhitlock on build-box7.",
+  "want": "logged in as mwhitlock on [REDACTED]."
+ },
+ {
+  "name": "identity/the account twice in prose stays",
+  "host": "Build-Box7.corp.example",
+  "account": "CORP\\mwhitlock",
+  "in": "mwhitlock mwhitlock",
+  "want": "mwhitlock mwhitlock"
+ },
+ {
+  "name": "identity/account variables",
+  "host": "Build-Box7.corp.example",
+  "account": "CORP\\mwhitlock",
+  "in": "USERNAME=mwhitlock LOGNAME=\"mwhitlock\" SUDO_USER = mwhitlock $env:USERNAME = 'mwhitlock' user=mwhitlock --user=mwhitlock",
+  "want": "USERNAME=[REDACTED] LOGNAME=\"[REDACTED]\" SUDO_USER = [REDACTED] $env:USERNAME = '[REDACTED]' user=[REDACTED] --user=[REDACTED]"
+ },
+ {
+  "name": "identity/not an account variable",
+  "host": "Build-Box7.corp.example",
+  "account": "CORP\\mwhitlock",
+  "in": "OWNER=mwhitlock, mwhitlock: and USER=mwhitlock2",
+  "want": "OWNER=mwhitlock, mwhitlock: and USER=mwhitlock2"
+ },
+ {
+  "name": "identity/the account in a WSL path",
+  "host": "Build-Box7.corp.example",
+  "account": "CORP\\mwhitlock",
+  "in": "cp /mnt/c/Users/mwhitlock/notes.txt .",
+  "want": "cp /mnt/c/Users/[REDACTED]/notes.txt ."
+ },
+ {
+  "name": "identity/an account that is a word",
+  "host": "",
+  "account": "will",
+  "in": "I will ssh will@db1 and set USER=will; Will agrees",
+  "want": "I will ssh [REDACTED]@db1 and set USER=[REDACTED]; Will agrees"
+ },
+ {
+  "name": "identity/an account with a space",
+  "host": "DESKTOP-X",
+  "account": "DESKTOP-X\\John Smith",
+  "in": "whoami says DESKTOP-X\\John Smith; C:\\Users\\John Smith\\Documents and /mnt/c/Users/john smith/x; USERNAME=John Smith; John Smith wrote it",
+  "want": "whoami says [REDACTED]\\John Smith; C:\\Users\\[REDACTED]\\Documents and /mnt/c/Users/[REDACTED]/x; USERNAME=[REDACTED]; John Smith wrote it"
+ },
+ {
+  "name": "identity/an account folds as Go folds it",
+  "host": "",
+  "account": "skipper",
+  "in": "ssh \u017fkipper@db1 and USER=s\u212aipper",
+  "want": "ssh [REDACTED]@db1 and USER=[REDACTED]"
+ },
+ {
+  "name": "identity/an owner's mac is not generic",
+  "host": "Alices-MacBook-Pro.local",
+  "account": "",
+  "in": "on alices-macbook-pro today",
+  "want": "on [REDACTED] today"
+ },
+ {
+  "name": "survives/generic identity macbook-pro.local/vscode",
+  "host": "macbook-pro.local",
+  "account": "vscode",
+  "in": "vscode@macbook-pro:~$ USER=vscode; /mnt/c/Users/vscode/x; on macbook-pro",
+  "want": "vscode@macbook-pro:~$ USER=vscode; /mnt/c/Users/vscode/x; on macbook-pro"
+ },
+ {
+  "name": "survives/generic identity prod/ec2-user",
+  "host": "prod",
+  "account": "ec2-user",
+  "in": "ec2-user@prod:~$ USER=ec2-user; /mnt/c/Users/ec2-user/x; on prod",
+  "want": "ec2-user@prod:~$ USER=ec2-user; /mnt/c/Users/ec2-user/x; on prod"
+ },
+ {
+  "name": "survives/generic identity staging/jovyan",
+  "host": "staging",
+  "account": "jovyan",
+  "in": "jovyan@staging:~$ USER=jovyan; /mnt/c/Users/jovyan/x; on staging",
+  "want": "jovyan@staging:~$ USER=jovyan; /mnt/c/Users/jovyan/x; on staging"
+ },
+ {
+  "name": "survives/generic identity raspberrypi/runneradmin",
+  "host": "raspberrypi",
+  "account": "runneradmin",
+  "in": "runneradmin@raspberrypi:~$ USER=runneradmin; /mnt/c/Users/runneradmin/x; on raspberrypi",
+  "want": "runneradmin@raspberrypi:~$ USER=runneradmin; /mnt/c/Users/runneradmin/x; on raspberrypi"
+ },
+ {
+  "name": "survives/generic identity Mac-Studio.local/gitlab-runner",
+  "host": "Mac-Studio.local",
+  "account": "gitlab-runner",
+  "in": "gitlab-runner@Mac-Studio:~$ USER=gitlab-runner; /mnt/c/Users/gitlab-runner/x; on Mac-Studio",
+  "want": "gitlab-runner@Mac-Studio:~$ USER=gitlab-runner; /mnt/c/Users/gitlab-runner/x; on Mac-Studio"
+ },
+ {
+  "name": "survives/non-ASCII names are not searched for",
+  "host": "h\u00e9llo-box",
+  "account": "jos\u00e9",
+  "in": "on h\u00e9llo-box as jos\u00e9: ssh jos\u00e9@db1, USER=jos\u00e9",
+  "want": "on h\u00e9llo-box as jos\u00e9: ssh jos\u00e9@db1, USER=jos\u00e9"
  }
 ]
