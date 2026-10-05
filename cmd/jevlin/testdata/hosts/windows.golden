@@ -167,6 +167,9 @@ JSON
 -- sessionStart
 "C:\Users\u\.jevlin\bin\jevlin.exe" hook -config "C:\Users\u\.jevlin\jevlin.toml" cursor sessionStart
 "\"C:\\Users\\u\\.jevlin\\bin\\jevlin.exe\" hook -config \"C:\\Users\\u\\.jevlin\\jevlin.toml\" cursor sessionStart"
+-- beforeSubmitPrompt
+"C:\Users\u\.jevlin\bin\jevlin.exe" hook -config "C:\Users\u\.jevlin\jevlin.toml" cursor beforeSubmitPrompt
+"\"C:\\Users\\u\\.jevlin\\bin\\jevlin.exe\" hook -config \"C:\\Users\\u\\.jevlin\\jevlin.toml\" cursor beforeSubmitPrompt"
 -- preToolUse
 "C:\Users\u\.jevlin\bin\jevlin.exe" hook -config "C:\Users\u\.jevlin\jevlin.toml" cursor preToolUse
 "\"C:\\Users\\u\\.jevlin\\bin\\jevlin.exe\" hook -config \"C:\\Users\\u\\.jevlin\\jevlin.toml\" cursor preToolUse"

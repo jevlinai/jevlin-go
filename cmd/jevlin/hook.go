@@ -161,7 +161,7 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 		cfgPath, args = args[1], args[2:]
 	}
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: jevlin hook [-config file] lineage | window <phase> | cursor <event> | flush")
+		fmt.Fprintln(stderr, "usage: jevlin hook [-config file] lineage | window <phase> | cursor <event> | turn <host> | flush")
 		return exitUsage
 	}
 	hc := hookContext{cfgPath: cfgPath}
@@ -199,6 +199,11 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 	case "hermes":
 		if len(args) > 1 {
 			hookHermes(args[1], payload, stdout)
+		}
+	case "turn":
+		// A JavaScript host's plugin, at the end of a turn (turn_hosts.go).
+		if len(args) > 1 {
+			hookHostTurn(ops, hc, args[1], payload)
 		}
 	case "flush":
 		// Claude Code's Stop: the turn is over. Its final message is queued
@@ -715,6 +720,14 @@ type cursorPayload struct {
 	Text           string   `json:"text"`
 	// Status is how the turn ended, on `stop`: completed, aborted or error.
 	Status string `json:"status"`
+	// Prompt is what the user typed, on `beforeSubmitPrompt`.
+	Prompt string `json:"prompt"`
+	// The model and the turn's token counts, on `stop`.
+	Model            string `json:"model"`
+	InputTokens      int64  `json:"input_tokens"`
+	OutputTokens     int64  `json:"output_tokens"`
+	CacheReadTokens  int64  `json:"cache_read_tokens"`
+	CacheWriteTokens int64  `json:"cache_write_tokens"`
 }
 
 // hookCursor handles one Cursor event. Every event that carries a
@@ -801,6 +814,16 @@ func hookCursor(ops hookOps, hc hookContext, event string, payload []byte, stdou
 				}
 				l.CallID = traceRandomID()
 				l.Seq++
+				// The turn end names this turn's searches in order. Kept only
+				// when the installation opted in, and only for one turn.
+				if hc.turnEnd && l.TurnID != "" {
+					if l.SearchesTurnID != l.TurnID {
+						l.SearchesTurnID, l.TurnSearches = l.TurnID, nil
+					}
+					if len(l.TurnSearches) < turnStepsMax {
+						l.TurnSearches = append(l.TurnSearches, l.CallID)
+					}
+				}
 			})
 		}
 		fmt.Fprintln(stdout, `{"permission":"allow"}`)
@@ -814,6 +837,22 @@ func hookCursor(ops hookOps, hc hookContext, event string, payload []byte, stdou
 			return
 		}
 		cursorPreToolUse(ops, hc, payload, shells, runners, stdout, stderr)
+	case "beforeSubmitPrompt":
+		// Cursor waits on this hook, and proceeds on this answer whatever
+		// else happens here.
+		fmt.Fprintln(stdout, `{"continue":true}`)
+		// What the user asked, for the turn end — kept only when the
+		// installation opted in, scrubbed and capped before it is written,
+		// and stamped with its turn so it is never sent under another.
+		if !turnEndEnabled(ops, hc) || p.GenerationID == "" || p.Prompt == "" {
+			return
+		}
+		p.Prompt = repairStoredText(p.Prompt, stderr)
+		text, chars, truncated := headText(p.Prompt, traceHistoryCap)
+		update(func(l *lineageFile) {
+			l.UserText, l.UserChars, l.UserTruncated = text, chars, truncated
+			l.UserTurnID = traceHash(p.ConversationID + "|" + p.GenerationID)
+		})
 	case "afterAgentThought":
 		if p.Text == "" {
 			return
@@ -845,6 +884,11 @@ func hookCursor(ops hookOps, hc hookContext, event string, payload []byte, stdou
 			if l, ok := loadLineage(ops, path); ok {
 				cursorTurnEnd(ops, hc, p, l)
 			}
+			// The turn is over: what was kept of it for the turn end goes.
+			update(func(l *lineageFile) {
+				l.UserText, l.UserChars, l.UserTruncated, l.UserTurnID = "", 0, false, ""
+				l.TurnSearches, l.SearchesTurnID = nil, ""
+			})
 		}
 		flush()
 	case "sessionEnd":

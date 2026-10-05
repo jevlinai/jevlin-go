@@ -24,8 +24,14 @@ The first release replaces this heading with its own.
   — each tool's name, time and outcome, never its input or output. A session
   can then be read from the question to the answer. Off by default. Scrubbed
   and capped like the trace; nothing for a turn with no served search, and
-  nothing unless `miner.router_url` names the router. The conversation is read
-  under Claude Code; Cursor sends the final answer only.
+  nothing unless `miner.router_url` names the router. Claude Code and opencode
+  send the whole turn; Cursor sends your prompt, the searches, the reply and
+  the model (its hooks carry nothing between tool calls). Cursor gains one hook
+  entry for this, so run `jevlin agents install` again; it keeps nothing unless
+  `turn_end` is on.
+- **opencode searches carry their turn.** A search made under opencode now says
+  which of your messages it answers to, so a session's searches group into
+  turns on the router as they do for Claude Code.
 - **A subagent's searches name their parent.** Under Claude Code and opencode, a
   search made by a subagent now carries `parent_session_id` in its trace: the hashed id of
   the session that started it. The router could already tell that two sessions
