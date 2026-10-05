@@ -527,6 +527,76 @@ func (c *Client) Me(ctx context.Context, key string) (*AgentIdentity, error) {
 	}, nil
 }
 
+// ClaimBootstrap is a fresh claim link for a still-unclaimed agent: what
+// ClaimCode returns, and the three fields register's response carries for
+// the same purpose.
+type ClaimBootstrap struct {
+	ClaimURL       string
+	ClaimCode      string
+	ClaimExpiresAt string
+}
+
+// ClaimCode calls POST /v1/agents/{agent_id}/claim-code with the key. The
+// platform mints a FRESH claim_url/claim_code and the old one dies — the
+// original code is never re-served (only its hash is stored), so this is
+// the one way back to a working human link for an agent whose link was
+// lost while still unclaimed (the router's skill file, "Lost the claim
+// link too"; it closes B.1's gap, where /v1/agents/me answers without the
+// claim bootstrap). The fresh code is short-lived (about an hour).
+//
+// Minting is a state change, not a read: the caller must want the old
+// code dead. A claimed agent has nothing to claim and answers 404, the
+// same no-oracle answer an unknown or revoked key gets — ErrAgentNotFound
+// either way, deliberately indistinguishable. The claim_url gets the same
+// origin-lock as register's (invariant 12): a registration link this
+// client will print must point at the configured portal.
+func (c *Client) ClaimCode(ctx context.Context, agentID, key string) (*ClaimBootstrap, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.apiBaseURL+"/v1/agents/"+url.PathEscape(agentID)+"/claim-code", nil)
+	if err != nil {
+		return nil, fmt.Errorf("platform: build claim-code request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("platform: claim-code request failed: %w", err)
+	}
+	defer drainAndClose(resp.Body)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("platform: read claim-code response: %w", err)
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrAgentNotFound
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, refusal(resp.StatusCode, data)
+	}
+	var wire struct {
+		ClaimURL       string `json:"claim_url"`
+		ClaimCode      string `json:"claim_code"`
+		ClaimExpiresAt string `json:"claim_expires_at"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return nil, fmt.Errorf("platform: parse claim-code response: %w", err)
+	}
+	if wire.ClaimURL == "" {
+		return nil, errors.New("platform: claim-code response carried no claim_url")
+	}
+	if err := validatePlatformURL(wire.ClaimURL, c.portalBaseURL); err != nil {
+		return nil, err
+	}
+	if hasControlChar(wire.ClaimCode) {
+		return nil, errors.New("platform: claim_code contains a control character; refusing")
+	}
+	return &ClaimBootstrap{
+		ClaimURL:       wire.ClaimURL,
+		ClaimCode:      wire.ClaimCode,
+		ClaimExpiresAt: wire.ClaimExpiresAt,
+	}, nil
+}
+
 // Enroll calls POST /v1/agents/enroll, returning the enrollment token
 // exactly as the AS receives it (§5.3, §7) — the caller
 // (cmd/jevlin/connect.go) redeems it via

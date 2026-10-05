@@ -65,6 +65,9 @@ type stubPlatform struct {
 	claimCodeByAgent        map[string]string
 	meError                 bool // every /v1/agents/me call answers 500
 	meOmitClaimFields       bool // /v1/agents/me never sends claim_url/claim_code, modeling B.1's known gap
+	claimCodeCalls          int  // POST /v1/agents/{id}/claim-code attempts, succeeded or not
+	claimCodeMints          int  // fresh codes actually minted
+	claimCodeDisabled       bool // the route answers 404, modeling a platform without it
 	// meHook, when set, runs synchronously right before a successful
 	// /v1/agents/me answer is written — a deterministic seam for timing a
 	// filesystem side effect (review correction §4) exactly between "the
@@ -195,6 +198,33 @@ func newStubPlatform(t *testing.T) *stubPlatform {
 	// this stub never issued (or one it does not recognize as current —
 	// modeling a revoked key, which the design gives the same answer as
 	// an unknown one).
+	mux.HandleFunc("POST /v1/agents/{id}/claim-code", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		f.claimCodeCalls++
+		disabled := f.claimCodeDisabled
+		id := r.PathValue("id")
+		key := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		owner, known := f.agentByKey[key]
+		ok := !disabled && known && owner == id && f.statusByAgent[id] == "unclaimed"
+		var fresh string
+		if ok {
+			f.claimCodeMints++
+			fresh = fmt.Sprintf("MINT-%02d", f.claimCodeMints)
+			f.claimCodeByAgent[id] = fresh
+		}
+		f.mu.Unlock()
+		if !ok {
+			// A platform without the route, a claimed agent and an unknown
+			// key all answer the same no-oracle 404 the real one gives.
+			writeStubJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"code": "not_found"}})
+			return
+		}
+		writeStubJSON(w, http.StatusOK, map[string]any{
+			"claim_url":        f.srv.URL + "/claim/" + fresh,
+			"claim_code":       fresh,
+			"claim_expires_at": "2026-12-31T00:00:00Z",
+		})
+	})
 	mux.HandleFunc("GET /v1/agents/me", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		f.meCalls++
@@ -316,6 +346,20 @@ func (f *stubPlatform) setMeOmitsClaimFields(omit bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.meOmitClaimFields = omit
+}
+
+// setClaimCodeRouteDisabled models a platform without the claim-code
+// re-mint route: every POST /v1/agents/{id}/claim-code answers 404.
+func (f *stubPlatform) setClaimCodeRouteDisabled(disabled bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.claimCodeDisabled = disabled
+}
+
+func (f *stubPlatform) claimCodeCallCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.claimCodeCalls
 }
 
 // setMeHook installs (or, with nil, removes) the synchronous hook run
@@ -2357,15 +2401,19 @@ func TestConnectRebuildsUnclaimedRegistrationWithClaimLink(t *testing.T) {
 }
 
 // The one documented gap (B.1): /v1/agents/me answering for a still-
-// unclaimed agent without the claim bootstrap fields. Rebuild persists
-// the identity anyway, prints the fallback (never a bare empty URL),
-// exits 0 without polling, and — on any later run, including `status` —
-// the durable state keeps printing the same fallback rather than ever
-// falling back into the ordinary print-and-wait narration.
+// unclaimed agent without the claim bootstrap fields, on a platform that
+// ALSO has no claim-code re-mint route (every mint attempt answers 404).
+// Rebuild persists the identity anyway, prints the fallback (never a bare
+// empty URL), exits 0 without polling, and — on any later run, including
+// `status` — the durable state keeps printing the same fallback rather
+// than ever falling back into the ordinary print-and-wait narration.
+// Against a platform WITH the route, the fallback is replaced by a fresh
+// link: TestForegroundConnectMintsAFreshClaimLinkForALostOne below.
 func TestConnectRebuildsUnclaimedRegistrationWithoutClaimLink(t *testing.T) {
 	withShortConnectTimings(t)
 	platform := newStubPlatform(t)
 	platform.setMeOmitsClaimFields(true)
+	platform.setClaimCodeRouteDisabled(true)
 	cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
 	cfg := mustLoadConfig(t, cfgPath)
 
@@ -2434,6 +2482,120 @@ func TestConnectRebuildsUnclaimedRegistrationWithoutClaimLink(t *testing.T) {
 // existing expired-replacement path unchanged — the same client.Status
 // re-verification and Register-a-replacement flow a normally-loaded
 // expired registration already takes.
+// B.4: against a platform with the claim-code route, a foreground connect
+// whose rebuilt registration is unclaimed with no claim link mints a
+// fresh one — persisted before it is printed, never a second register —
+// and from then on the installation behaves like any other unclaimed one.
+func TestForegroundConnectMintsAFreshClaimLinkForALostOne(t *testing.T) {
+	withShortConnectTimings(t)
+	platform := newStubPlatform(t)
+	platform.setMeOmitsClaimFields(true)
+	cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
+	cfg := mustLoadConfig(t, cfgPath)
+
+	agentID, key := registerAgent(t, platform)
+	setupLostRegistration(t, cfg, key, true)
+	registerCallsBefore, _, _ := platform.counts()
+
+	code, out, errOut := runConnect(t, cfgPath, nil)
+	if code != exitOK {
+		t.Fatalf("connect exited %d, stderr=%s", code, errOut)
+	}
+	freshURL := platform.srv.URL + "/claim/MINT-01"
+	if !strings.Contains(out, "claim this agent:") || !strings.Contains(out, freshURL) {
+		t.Fatalf("the fresh claim link was not printed: stdout=%q", out)
+	}
+	if !strings.Contains(out, "code: MINT-01") {
+		t.Fatalf("the fresh claim code was not printed: stdout=%q", out)
+	}
+	if strings.Contains(out, "not retrievable") {
+		t.Fatalf("printed the dead-end fallback despite a successful mint: stdout=%q", out)
+	}
+	reg, ok := loadAgent(t, stateDir)
+	if !ok || reg.AgentID != agentID || reg.Status != "unclaimed" {
+		t.Fatalf("rebuilt registration not as expected: %+v ok=%v", reg, ok)
+	}
+	if reg.ClaimURL != freshURL || reg.ClaimCode != "MINT-01" {
+		t.Fatalf("the fresh link was not persisted: %+v", reg)
+	}
+	if got := platform.claimCodeCallCount(); got != 1 {
+		t.Fatalf("claim-code calls = %d, want exactly 1", got)
+	}
+	if registerCalls, _, _ := platform.counts(); registerCalls != registerCallsBefore {
+		t.Fatalf("a mint must never become a second register: register calls %d -> %d", registerCallsBefore, registerCalls)
+	}
+}
+
+// The durable no-link state self-heals on a LATER foreground run too: the
+// dead end is re-tried at the print site, not only during the rebuild, so
+// a platform that gains the route after the loss still hands the
+// participant a working link without -force.
+func TestALaterForegroundConnectMintsWhenThePlatformGainsTheRoute(t *testing.T) {
+	withShortConnectTimings(t)
+	platform := newStubPlatform(t)
+	platform.setMeOmitsClaimFields(true)
+	platform.setClaimCodeRouteDisabled(true)
+	cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
+	cfg := mustLoadConfig(t, cfgPath)
+
+	agentID, key := registerAgent(t, platform)
+	setupLostRegistration(t, cfg, key, true)
+	if code, out, errOut := runConnect(t, cfgPath, nil); code != exitOK || !strings.Contains(out, "not retrievable") {
+		t.Fatalf("setup run: code=%d stdout=%q stderr=%s", code, out, errOut)
+	}
+
+	platform.setClaimCodeRouteDisabled(false)
+	code, out, errOut := runConnect(t, cfgPath, nil)
+	if code != exitOK {
+		t.Fatalf("connect exited %d, stderr=%s", code, errOut)
+	}
+	freshURL := platform.srv.URL + "/claim/MINT-01"
+	if !strings.Contains(out, "claim this agent:") || !strings.Contains(out, freshURL) {
+		t.Fatalf("the later run did not mint and print a fresh link: stdout=%q", out)
+	}
+	reg, ok := loadAgent(t, stateDir)
+	if !ok || reg.AgentID != agentID || reg.ClaimURL != freshURL {
+		t.Fatalf("the fresh link was not persisted: %+v ok=%v", reg, ok)
+	}
+}
+
+// Minting kills the old code, so only a deliberate foreground connect may
+// do it. A detached -resume against the same durable no-link state leaves
+// the route untouched even on a platform that has it.
+func TestResumeNeverMintsAClaimLink(t *testing.T) {
+	withShortConnectTimings(t)
+	platform := newStubPlatform(t)
+	platform.setMeOmitsClaimFields(true)
+	platform.setClaimCodeRouteDisabled(true)
+	cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
+	cfg := mustLoadConfig(t, cfgPath)
+
+	_, key := registerAgent(t, platform)
+	setupLostRegistration(t, cfg, key, true)
+	// One foreground run against the disabled route persists the durable
+	// unclaimed-without-link state (the B.3 dead end) and spends exactly
+	// one failed mint attempt.
+	if code, _, errOut := runConnect(t, cfgPath, nil); code != exitOK {
+		t.Fatalf("setup connect exited %d, stderr=%s", code, errOut)
+	}
+	if reg, ok := loadAgent(t, stateDir); !ok || reg.ClaimURL != "" {
+		t.Fatalf("setup did not leave the no-link state: %+v ok=%v", reg, ok)
+	}
+	attemptsAfterForeground := platform.claimCodeCallCount()
+
+	// The platform gains the route; -resume still must not use it.
+	platform.setClaimCodeRouteDisabled(false)
+	if code, _, _ := runConnect(t, cfgPath, nil, "-resume"); code != exitOK {
+		t.Fatalf("connect -resume failed")
+	}
+	if got := platform.claimCodeCallCount(); got != attemptsAfterForeground {
+		t.Fatalf("-resume reached the claim-code route: attempts %d -> %d", attemptsAfterForeground, got)
+	}
+	if reg, ok := loadAgent(t, stateDir); !ok || reg.ClaimURL != "" {
+		t.Fatalf("-resume changed the stored claim state: %+v ok=%v", reg, ok)
+	}
+}
+
 func TestConnectRebuildExpiredRegistrationFlowsIntoReplacementPath(t *testing.T) {
 	withShortConnectTimings(t)
 	platform := newStubPlatform(t)
