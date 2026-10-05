@@ -10,8 +10,8 @@ description: {{DESCRIPTION}}
 Send one JSON request on **stdin** and read one JSON object back.
 {{CALL}}
 `version` must be `1`. `query` is required. Everything else — `tier`,
-`recency`, `domain_filter`, `max_results`, `view` — is optional; see Tiers
-and Request options below. A malformed value in any of them answers
+`recency`, `domain_filter`, `max_results`, `providers`, `view` — is optional;
+see Tiers and Request options below. A malformed value in any of them answers
 `fix_input` before the request reaches the router.
 
 The query goes in the JSON, never in the command line. Build that JSON with a
@@ -28,7 +28,7 @@ attributed.
 
 ## Request options
 
-Three more fields, each optional, passed straight through to the router:
+Four more fields, each optional, passed straight through to the router:
 
 - `recency` — `"day"`, `"week"`, `"month"` or `"year"` — for anything
   time-bound: a release, a price, the news.
@@ -38,6 +38,10 @@ Three more fields, each optional, passed straight through to the router:
   `{"version":1,"query":"array flatten method","domain_filter":["developer.mozilla.org"]}`
 - `max_results` — an integer from 1 to 25 — to read less.
   `{"version":1,"query":"quick fact check","max_results":3}`
+- `providers` — up to 16 provider names — to restrict the fan-out to named
+  arms, or to reach an extended arm that fires only when named. The router
+  owns the list; an unknown name is its call, not refused here.
+  `{"version":1,"query":"compare agent frameworks","providers":["exa","brave"]}`
 
 `recency` and `domain_filter` are preferences: the router passes them to its
 providers, and not every provider honors them, so results from other dates or

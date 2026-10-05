@@ -292,8 +292,39 @@ func TestMachineOptionsRoundTripIntoTheBody(t *testing.T) {
 			},
 		},
 		{
-			name:  "all three together",
-			stdin: `{"version":1,"query":"q","tier":"balanced","recency":"day","domain_filter":["a.test"],"max_results":25}`,
+			name:  "providers",
+			stdin: `{"version":1,"query":"q","providers":["exa","parallel-search"]}`,
+			check: func(t *testing.T, body map[string]any) {
+				ps, _ := body["providers"].([]any)
+				if len(ps) != 2 || ps[0] != "exa" || ps[1] != "parallel-search" {
+					t.Errorf("providers: %v", body["providers"])
+				}
+				if _, ok := body["recency"]; ok {
+					t.Errorf("recency present when not requested: %v", body)
+				}
+			},
+		},
+		{
+			name:  "view merged travels to the router",
+			stdin: `{"version":1,"query":"q","view":"merged"}`,
+			check: func(t *testing.T, body map[string]any) {
+				if body["view"] != "merged" {
+					t.Errorf("view: %v", body)
+				}
+			},
+		},
+		{
+			name:  "view full is the client's own and never travels",
+			stdin: `{"version":1,"query":"q","view":"full"}`,
+			check: func(t *testing.T, body map[string]any) {
+				if _, ok := body["view"]; ok {
+					t.Errorf("view sent for the local default: %v", body)
+				}
+			},
+		},
+		{
+			name:  "every option together",
+			stdin: `{"version":1,"query":"q","tier":"balanced","recency":"day","domain_filter":["a.test"],"max_results":25,"providers":["exa"]}`,
 			check: func(t *testing.T, body map[string]any) {
 				if body["tier"] != "balanced" || body["recency"] != "day" || body["max_results"] != float64(25) {
 					t.Errorf("body: %v", body)
@@ -302,13 +333,17 @@ func TestMachineOptionsRoundTripIntoTheBody(t *testing.T) {
 				if len(df) != 1 || df[0] != "a.test" {
 					t.Errorf("domain_filter: %v", body["domain_filter"])
 				}
+				ps, _ := body["providers"].([]any)
+				if len(ps) != 1 || ps[0] != "exa" {
+					t.Errorf("providers: %v", body["providers"])
+				}
 			},
 		},
 		{
-			name:  "none of the three: unchanged from today",
+			name:  "none of the options: unchanged from today",
 			stdin: `{"version":1,"query":"q"}`,
 			check: func(t *testing.T, body map[string]any) {
-				for _, k := range []string{"tier", "recency", "domain_filter", "max_results"} {
+				for _, k := range []string{"tier", "recency", "domain_filter", "max_results", "providers", "view"} {
 					if _, ok := body[k]; ok {
 						t.Errorf("%s present in a version-1 request that only sent query: %v", k, body)
 					}
@@ -377,6 +412,17 @@ func TestMachineOptionsRefusedBeforeRouterCall(t *testing.T) {
 		{"max_results negative", `{"version":1,"query":"q","max_results":-1}`, codeInvalidMaxResults, ""},
 		{"max_results above 25", `{"version":1,"query":"q","max_results":26}`, codeInvalidMaxResults, ""},
 		{"max_results null", `{"version":1,"query":"q","max_results":null}`, codeInvalidMaxResults, "null"},
+		{"providers not an array", `{"version":1,"query":"q","providers":"exa"}`, codeInvalidProviders, ""},
+		{"providers not strings", `{"version":1,"query":"q","providers":[1]}`, codeInvalidProviders, ""},
+		{"providers empty array", `{"version":1,"query":"q","providers":[]}`, codeInvalidProviders, "empty"},
+		{"providers null", `{"version":1,"query":"q","providers":null}`, codeInvalidProviders, "null"},
+		{"providers entry with whitespace", `{"version":1,"query":"q","providers":["parallel search"]}`, codeInvalidProviders, ""},
+		{"providers entry empty", `{"version":1,"query":"q","providers":[""]}`, codeInvalidProviders, ""},
+		{
+			"providers too many entries",
+			`{"version":1,"query":"q","providers":["p0","p1","p2","p3","p4","p5","p6","p7","p8","p9","p10","p11","p12","p13","p14","p15","p16"]}`,
+			codeInvalidProviders, "at most",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {

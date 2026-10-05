@@ -243,6 +243,15 @@ func TestHookLineageStaysSilentWhenItShould(t *testing.T) {
 		// is a tool whose shell this client does not know, because the syntax
 		// of the prefix is exactly what it cannot guess.
 		{"a tool this client does not know", map[string]any{"session_id": "s", "tool_name": "SomeOtherShell", "tool_input": map[string]any{"command": "jevlin search q"}}},
+		// The POSIX prefix binds to the first simple command and is a syntax
+		// error before a compound one. Both shapes were hit live: the loop
+		// died on `V=x for`, and the cd-list handed the bridge to cd. The
+		// hook says nothing, the host runs the command exactly as written,
+		// and the search inside it falls back to its per-shell identity.
+		{"a compound command the prefix would break", map[string]any{"session_id": "s", "tool_name": "Bash",
+			"tool_input": map[string]any{"command": `for q in a b; do jevlin search "$q"; done`}}},
+		{"a search that is not the first command", map[string]any{"session_id": "s", "tool_name": "Bash",
+			"tool_input": map[string]any{"command": `cd /tmp && jevlin search q`}}},
 		{"no session id", map[string]any{"tool_input": map[string]any{"command": "jevlin search q"}}},
 		{"no tool input", map[string]any{"session_id": "s"}},
 		{"not json", "garbage"},

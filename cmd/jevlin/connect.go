@@ -99,6 +99,36 @@ func resumeStampPath(stateDir string) string { return filepath.Join(stateDir, "c
 const unclaimedNoLinkMessage = "registration recovered but it is unclaimed and its claim link is not retrievable " +
 	"from the platform; run `jevlin connect -force` to register a fresh agent, or wait for this one to expire"
 
+// remintClaimLink asks the platform for a fresh claim link for a still-
+// unclaimed registration whose link is gone (B.1/B.3), persists it, and
+// reports whether reg now carries one it is safe to print. The platform's
+// POST /v1/agents/{id}/claim-code is the one way back to a working human
+// link: the original code is never re-served, and minting kills whatever
+// code existed before — which is why only a deliberate foreground connect
+// calls this, never -resume (a detached run must not invalidate a link a
+// person may still be holding). Persisted before it is shown (invariant
+// 7's order): a link that could not be saved is not printed, because the
+// next run would mint again and kill it mid-use.
+//
+// On any failure the caller falls back to exactly the B.3 dead end this
+// closes — against a platform without the route (404) nothing changes but
+// one line on stderr.
+func remintClaimLink(ctx context.Context, client *platform.Client, store *auth.Store, reg *auth.AgentRegistration, key string, stderr io.Writer) bool {
+	fresh, err := client.ClaimCode(ctx, reg.AgentID, key)
+	if err != nil {
+		fmt.Fprintln(stderr, "jevlin: could not mint a fresh claim link:", err)
+		return false
+	}
+	updated := *reg
+	updated.ClaimURL, updated.ClaimCode, updated.ClaimExpiresAt = fresh.ClaimURL, fresh.ClaimCode, fresh.ClaimExpiresAt
+	if err := store.SaveAgentRegistration(updated); err != nil {
+		fmt.Fprintln(stderr, "jevlin: persist the fresh claim link:", err)
+		return false
+	}
+	*reg = updated
+	return true
+}
+
 // resumeStamp records the last time -resume was attempted (successfully
 // spawned or not — the point is pacing attempts, not counting successes).
 type resumeStamp struct {
@@ -749,8 +779,17 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 					reg, existed = rebuilt, true
 
 					if identity.Status == "unclaimed" && identity.ClaimURL == "" {
-						fmt.Fprintln(stdout, unclaimedNoLinkMessage)
-						return exitOK
+						// B.4: /me still carries no claim bootstrap (B.1), but
+						// the platform now mints a fresh link on request. One
+						// deliberate foreground attempt; on failure this run
+						// is exactly the B.3 dead end it always was.
+						if !remintClaimLink(ctx, client, store, &reg, credKey, stderr) {
+							fmt.Fprintln(stdout, unclaimedNoLinkMessage)
+							return exitOK
+						}
+						// reg carries a live link now; the ordinary narration
+						// and poll below treat it like any other unclaimed
+						// registration.
 					}
 				}
 			}
@@ -829,7 +868,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 				if code != exitOK {
 					return code
 				}
-				fresh, registerErr := client.Register(ctx, *name, registrationHint(outcome))
+				fresh, registerErr := client.Register(ctx, *name, clientIdentifier(), registrationHint(outcome))
 				if registerErr != nil {
 					fmt.Fprintln(stderr, "jevlin: register:", registerErr)
 					return exitTransport
@@ -877,7 +916,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 			if code != exitOK {
 				return code
 			}
-			fresh, err := client.Register(ctx, *name, registrationHint(outcome))
+			fresh, err := client.Register(ctx, *name, clientIdentifier(), registrationHint(outcome))
 			if err != nil {
 				fmt.Fprintln(stderr, "jevlin: register:", err)
 				return exitTransport
@@ -922,8 +961,9 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 		// B.3: a registration recovered without a claim link is durable —
 		// this never falls back into printing the bare (empty) URL, on
 		// this run or any later one, until the platform reports claimed
-		// or expired or -force replaces it.
-		if reg.ClaimURL == "" {
+		// or expired, -force replaces it, or the mint below (B.4) hands
+		// this foreground run a fresh link.
+		if reg.ClaimURL == "" && !remintClaimLink(ctx, client, store, &reg, key, stderr) {
 			fmt.Fprintln(stdout, unclaimedNoLinkMessage)
 		} else {
 			fmt.Fprintln(stdout, "claim this agent:")

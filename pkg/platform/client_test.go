@@ -17,11 +17,12 @@ import (
 // enrollassert_test.go newAssertAS: a mux plus assignable handler funcs
 // per test.
 type stubPlatform struct {
-	srv      *httptest.Server
-	register func(w http.ResponseWriter, r *http.Request)
-	status   func(w http.ResponseWriter, r *http.Request)
-	enroll   func(w http.ResponseWriter, r *http.Request)
-	me       func(w http.ResponseWriter, r *http.Request)
+	srv       *httptest.Server
+	register  func(w http.ResponseWriter, r *http.Request)
+	status    func(w http.ResponseWriter, r *http.Request)
+	enroll    func(w http.ResponseWriter, r *http.Request)
+	me        func(w http.ResponseWriter, r *http.Request)
+	claimCode func(w http.ResponseWriter, r *http.Request)
 }
 
 func newStubPlatform(t *testing.T) *stubPlatform {
@@ -56,6 +57,13 @@ func newStubPlatform(t *testing.T) *stubPlatform {
 		}
 		http.Error(w, "not configured", http.StatusInternalServerError)
 	})
+	mux.HandleFunc("POST /v1/agents/{id}/claim-code", func(w http.ResponseWriter, r *http.Request) {
+		if f.claimCode != nil {
+			f.claimCode(w, r)
+			return
+		}
+		http.Error(w, "not configured", http.StatusInternalServerError)
+	})
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)
 	return f
@@ -83,7 +91,7 @@ func TestRegisterReturnsAgentIdentity(t *testing.T) {
 		})
 	}
 	c := New(stub.srv.URL, stub.srv.URL)
-	reg, err := c.Register(context.Background(), "", nil)
+	reg, err := c.Register(context.Background(), "", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,22 +105,29 @@ func TestRegisterReturnsAgentIdentity(t *testing.T) {
 	if _, ok := sawBody["name"]; ok {
 		t.Error("empty name was sent as a field instead of omitted")
 	}
+	if _, ok := sawBody["client"]; ok {
+		t.Error("empty client was sent as a field instead of omitted")
+	}
 	if _, ok := sawBody["requested_scopes"]; ok {
 		t.Error("empty requested_scopes was sent as a field instead of omitted")
 	}
 
-	// A non-empty requested_scopes is sent as a hint.
+	// Non-empty fields are sent: requested_scopes as a hint, client as
+	// the build identifier.
 	stub.register = func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&sawBody)
 		writeJSON(w, http.StatusCreated, map[string]any{
 			"agent_id": "agent-2", "key": "sr-def456", "claim_url": stub.srv.URL + "/claim/X",
 		})
 	}
-	if _, err := c.Register(context.Background(), "my-agent", []string{"mining"}); err != nil {
+	if _, err := c.Register(context.Background(), "my-agent", "my-tool/1.0", []string{"mining"}); err != nil {
 		t.Fatal(err)
 	}
 	if sawBody["name"] != "my-agent" {
 		t.Errorf("name not sent: %+v", sawBody)
+	}
+	if sawBody["client"] != "my-tool/1.0" {
+		t.Errorf("client not sent: %+v", sawBody)
 	}
 	scopes, _ := sawBody["requested_scopes"].([]any)
 	if len(scopes) != 1 || scopes[0] != "mining" {
@@ -290,7 +305,7 @@ func TestPollIntervalIsFloorClamped(t *testing.T) {
 		})
 	}
 	c := New(stub.srv.URL, stub.srv.URL)
-	reg, err := c.Register(context.Background(), "", nil)
+	reg, err := c.Register(context.Background(), "", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +327,7 @@ func TestPollIntervalIsCeilingClamped(t *testing.T) {
 		})
 	}
 	c := New(stub.srv.URL, stub.srv.URL)
-	reg, err := c.Register(context.Background(), "", nil)
+	reg, err := c.Register(context.Background(), "", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +360,7 @@ func TestClientRefusesACrossOriginRedirect(t *testing.T) {
 	defer good.Close()
 
 	c := New(good.URL, good.URL)
-	if _, err := c.Register(context.Background(), "", nil); err == nil {
+	if _, err := c.Register(context.Background(), "", "", nil); err == nil {
 		t.Fatal("Register followed a cross-origin redirect instead of refusing it")
 	}
 	if evilHits != 0 {
@@ -366,7 +381,7 @@ func TestClientFollowsASameOriginRedirect(t *testing.T) {
 	})
 	srv = httptest.NewServer(mux)
 	defer srv.Close()
-	if _, err := New(srv.URL, srv.URL).Register(context.Background(), "", nil); err != nil {
+	if _, err := New(srv.URL, srv.URL).Register(context.Background(), "", "", nil); err != nil {
 		t.Fatalf("same-origin redirect refused: %v", err)
 	}
 }
@@ -380,7 +395,7 @@ func TestClaimURLOffOriginIsRefused(t *testing.T) {
 			"agent_id": "a", "key": "sr-1", "claim_url": "https://not-the-platform.example/claim/X",
 		})
 	}
-	if _, err := New(stub.srv.URL, stub.srv.URL).Register(context.Background(), "", nil); err == nil {
+	if _, err := New(stub.srv.URL, stub.srv.URL).Register(context.Background(), "", "", nil); err == nil {
 		t.Fatal("an off-origin claim_url was accepted")
 	}
 }
@@ -403,7 +418,7 @@ func TestClaimURLValidatesAgainstThePortalOriginNotTheAPIOrigin(t *testing.T) {
 			"agent_id": "a", "key": "sr-1", "claim_url": portal.URL + "/claim/X",
 		})
 	}
-	reg, err := New(api.srv.URL, portal.URL).Register(context.Background(), "", nil)
+	reg, err := New(api.srv.URL, portal.URL).Register(context.Background(), "", "", nil)
 	if err != nil {
 		t.Fatalf("a claim_url on the configured portal origin (different from the API origin) was refused: %v", err)
 	}
@@ -433,7 +448,7 @@ func TestClaimURLOnTheAgentsAPIOriginIsRejectedNotJustAnyMismatch(t *testing.T) 
 			"agent_id": "a", "key": "sr-1", "claim_url": api.srv.URL + "/claim/X",
 		})
 	}
-	if _, err := New(api.srv.URL, portal.URL).Register(context.Background(), "", nil); err == nil {
+	if _, err := New(api.srv.URL, portal.URL).Register(context.Background(), "", "", nil); err == nil {
 		t.Fatal("a claim_url on the agents API's own origin was accepted; " +
 			"a compromised API host could point a human at a page it controls")
 	}
@@ -448,7 +463,7 @@ func TestClaimURLControlCharacterIsRefused(t *testing.T) {
 			"agent_id": "a", "key": "sr-1", "claim_url": stub.srv.URL + "/claim/X\nfake line",
 		})
 	}
-	if _, err := New(stub.srv.URL, stub.srv.URL).Register(context.Background(), "", nil); err == nil {
+	if _, err := New(stub.srv.URL, stub.srv.URL).Register(context.Background(), "", "", nil); err == nil {
 		t.Fatal("a claim_url with a control character was accepted")
 	}
 }
@@ -461,7 +476,7 @@ func TestClaimCodeControlCharacterIsRefused(t *testing.T) {
 			"claim_code": "AB12\r\nCD34",
 		})
 	}
-	if _, err := New(stub.srv.URL, stub.srv.URL).Register(context.Background(), "", nil); err == nil {
+	if _, err := New(stub.srv.URL, stub.srv.URL).Register(context.Background(), "", "", nil); err == nil {
 		t.Fatal("a claim_code with a control character was accepted")
 	}
 }
@@ -608,6 +623,71 @@ func TestMeReturnsErrAgentNotFoundOn404(t *testing.T) {
 	_, err := New(stub.srv.URL, stub.srv.URL).Me(context.Background(), "sr-key")
 	if !errors.Is(err, ErrAgentNotFound) {
 		t.Fatalf("err = %v, want ErrAgentNotFound", err)
+	}
+}
+
+// ClaimCode mints a fresh claim link for a still-unclaimed agent: the key
+// rides as the bearer, the agent id is in the path, and the answer's
+// claim_url gets the same origin-lock and control-character checks as
+// register's — a link this client will print must point at the portal.
+func TestClaimCodeMintsAFreshPortalLockedLink(t *testing.T) {
+	stub := newStubPlatform(t)
+	var sawAuth, sawPath string
+	stub.claimCode = func(w http.ResponseWriter, r *http.Request) {
+		sawAuth = r.Header.Get("Authorization")
+		sawPath = r.URL.Path
+		writeJSON(w, http.StatusOK, map[string]any{
+			"claim_url":        stub.srv.URL + "/claim/MINT-01",
+			"claim_code":       "MINT-01",
+			"claim_expires_at": "2026-12-31T00:00:00Z",
+		})
+	}
+	got, err := New(stub.srv.URL, stub.srv.URL).ClaimCode(context.Background(), "agent-1", "sr-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sawAuth != "Bearer sr-key" || sawPath != "/v1/agents/agent-1/claim-code" {
+		t.Fatalf("request shape: auth=%q path=%q", sawAuth, sawPath)
+	}
+	if got.ClaimURL != stub.srv.URL+"/claim/MINT-01" || got.ClaimCode != "MINT-01" || got.ClaimExpiresAt != "2026-12-31T00:00:00Z" {
+		t.Fatalf("bootstrap: %+v", got)
+	}
+}
+
+// A claimed agent, an unknown key and a platform without the route all
+// answer 404, and all of them are ErrAgentNotFound — the same no-oracle
+// answer Status and Me give.
+func TestClaimCodeReturnsErrAgentNotFoundOn404(t *testing.T) {
+	stub := newStubPlatform(t)
+	stub.claimCode = func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"code": "not_found"}})
+	}
+	_, err := New(stub.srv.URL, stub.srv.URL).ClaimCode(context.Background(), "agent-1", "sr-key")
+	if !errors.Is(err, ErrAgentNotFound) {
+		t.Fatalf("err = %v, want ErrAgentNotFound", err)
+	}
+}
+
+// What a hostile or broken mint answer cannot do: hand this client a link
+// off the portal origin, a control character, or no link at all.
+func TestClaimCodeRefusesABadBootstrap(t *testing.T) {
+	for name, body := range map[string]map[string]any{
+		"off-origin claim_url": {"claim_url": "https://evil.example/claim/X", "claim_code": "X"},
+		"control character":    {"claim_url": "SELF/claim/X", "claim_code": "X\x1b]0;owned\x07"},
+		"no claim_url":         {"claim_code": "X"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			stub := newStubPlatform(t)
+			stub.claimCode = func(w http.ResponseWriter, r *http.Request) {
+				if u, ok := body["claim_url"].(string); ok && strings.HasPrefix(u, "SELF") {
+					body["claim_url"] = stub.srv.URL + strings.TrimPrefix(u, "SELF")
+				}
+				writeJSON(w, http.StatusOK, body)
+			}
+			if _, err := New(stub.srv.URL, stub.srv.URL).ClaimCode(context.Background(), "agent-1", "sr-key"); err == nil {
+				t.Fatal("a bad bootstrap was accepted")
+			}
+		})
 	}
 }
 

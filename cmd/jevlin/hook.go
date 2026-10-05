@@ -297,11 +297,20 @@ func runByAnotherHost(payload []byte, event string) bool {
 
 // ── our command, recognized ─────────────────────────────────────────────
 
+// searchInvocationPattern is the one spelling of "an invocation of this
+// binary's search command" the recognizers share: an optional drive letter,
+// an optionally quoted path whose last segment is jevlin(.exe), then the
+// search subcommand. searchCommandRe looks for it ANYWHERE, to decide
+// whether a command is worth looking at at all; bridge.go's
+// posixSearchLeadsRe anchors the same spelling, to decide whether a POSIX
+// assignment prefix written in front of the command would actually reach it.
+const searchInvocationPattern = `(?:[A-Za-z]:)?["']?(?:[^\s"']*[\\/])?jevlin(?:\.exe)?["']?\s+search(?:\s|$)`
+
 // searchCommandRe matches a shell command that runs OUR search: the binary
 // by bare name or any path, optionally quoted, optionally .exe, followed by
 // the search subcommand. Anything else is somebody else's command and the
 // hook stays out of it.
-var searchCommandRe = regexp.MustCompile(`(?:^|[\s;&|(]|\$\()\s*(?:&\s*)?(?:[A-Za-z]:)?["']?(?:[^\s"']*[\\/])?jevlin(?:\.exe)?["']?\s+search(?:\s|$)`)
+var searchCommandRe = regexp.MustCompile(`(?:^|[\s;&|(]|\$\()\s*(?:&\s*)?` + searchInvocationPattern)
 
 func isSearchCommand(cmd string) bool {
 	return cmd != "" && searchCommandRe.MatchString(cmd)
