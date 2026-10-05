@@ -27,6 +27,7 @@
 // trace, which is the whole fallback contract: tracing must never be the
 // reason a search does not run.
 import { createHash } from "node:crypto"
+import { hostname as traceHostname, userInfo as traceUserInfo } from "node:os"
 
 // The trace hash: domain-separated SHA-256 over a PUBLIC prefix, truncated
 // to 16 bytes and hex-encoded — the same derivation as traceHash in
@@ -66,20 +67,115 @@ const TRACE_BRIDGE_ENV = "JEVLIN_TRACE_BRIDGE"
 const traceHash = (raw) => createHash("sha256").update(TRACE_PREFIX + raw).digest("hex").slice(0, 32)
 
 // Mirror pkg/redact.TraceText for complete source entries before the bridge
-// is capped. The Go consumer applies its own preparation again.
+// is capped. The Go consumer applies its own preparation again. Every step
+// below is one function in pkg/redact/redact.go, in the same order, and
+// TestSharedTraceSourceRedactionBoundaries holds the two to the same bytes.
+//
+// The character classes are written out ([\t\n\f\r ] rather than \s, [^\n]
+// rather than .) because JavaScript's shorthands are wider than Go's, and a
+// rule that fires in one language and not the other is a parity bug.
+const TRACE_REDACTED = '[REDACTED]'
+
+// scrubCommon: credentials with a recognizable shape.
 // Start URL/email scans at token boundaries to avoid rescanning long words.
-const scrubTraceText = (text) => text
+const scrubTraceCommon = (text) => text
   .replace(/(?<![a-zA-Z0-9+.-])([a-zA-Z0-9+.-]*:\/\/)[^/@\s]+@/g, (match, prefix) =>
-    /[a-zA-Z]/.test(prefix) ? prefix + '[REDACTED]' : match)
-  .replace(/\b(?:sk|sr)-[A-Za-z0-9_-]{16,}/g, '[REDACTED]')
-  .replace(/\bgh[opsur]_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, '[REDACTED]')
-  .replace(/\bAKIA[0-9A-Z]{16}\b/g, '[REDACTED]')
-  .replace(/\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\b/g, '[REDACTED]')
+    /[a-zA-Z]/.test(prefix) ? prefix + TRACE_REDACTED : match)
+  .replace(/\b(?:sk|sr)-[A-Za-z0-9_-]{16,}/g, TRACE_REDACTED)
+  .replace(/\bgh[opsur]_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, TRACE_REDACTED)
+  .replace(/\bAKIA[0-9A-Z]{16}\b/g, TRACE_REDACTED)
+  .replace(/\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\b/g, TRACE_REDACTED)
+
+// redactEnvDumps: every value in a run of five or more consecutive
+// NAME=value lines. Five in a row is the output of env or printenv quoted
+// back, and nothing in it has a shape a pattern could pick secrets out by.
+const TRACE_ENV_DUMP_RUN = 5
+const TRACE_ENV_LINE = /^([\t\n\f\r ]*(?:export[\t\n\f\r ]+)?[A-Za-z_][A-Za-z0-9_]*=)([^\n]*)$/
+const redactTraceEnvDumps = (text) => {
+  if (text.split('=').length - 1 < TRACE_ENV_DUMP_RUN) return text
+  const lines = text.split('\n')
+  const bare = (i) => lines[i].endsWith('\r') ? lines[i].slice(0, -1) : lines[i]
+  const isEnv = (i) => TRACE_ENV_LINE.test(bare(i))
+  let changed = false
+  for (let i = 0; i < lines.length;) {
+    if (!isEnv(i)) { i++; continue }
+    let j = i
+    while (j < lines.length && isEnv(j)) j++
+    if (j - i >= TRACE_ENV_DUMP_RUN) {
+      for (let k = i; k < j; k++) {
+        const line = bare(k)
+        const cr = line === lines[k] ? '' : '\r'
+        const m = TRACE_ENV_LINE.exec(line)
+        if (m[2] !== '' && m[2] !== TRACE_REDACTED) { lines[k] = m[1] + TRACE_REDACTED + cr; changed = true }
+      }
+    }
+    i = j
+  }
+  return changed ? lines.join('\n') : text
+}
+
+// redactSecretAssignments: the value of NAME=value when a whole
+// `_`-separated segment of NAME says it is a secret, or NAME is our own
+// trace bridge, whose value is an envelope no pattern can see into. KEY and
+// PASS count only in a name with no lowercase letter: `key=value` is prose.
+const TRACE_SECRET_SEGMENTS = new Set(['PASSWORD', 'PASSWD', 'SECRET', 'SECRETS', 'TOKEN', 'CREDENTIAL', 'CREDENTIALS', 'APIKEY'])
+const TRACE_SECRET_SEGMENTS_UPPER_ONLY = new Set(['KEY', 'PASS'])
+const traceSecretName = (name) => {
+  const upper = name.toUpperCase()
+  const upperOnly = name === upper
+  return upper.split('_').some((seg) => TRACE_SECRET_SEGMENTS.has(seg) || (upperOnly && TRACE_SECRET_SEGMENTS_UPPER_ONLY.has(seg)))
+}
+const redactTraceSecretAssignments = (text) => text
+  .replace(/(^|[^A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)=("[^"\n]*"|'[^'\n]*'|[^\t\n\f\r "']+)/g, (match, lead, name, value) =>
+    value === TRACE_REDACTED || !(name === TRACE_BRIDGE_ENV || traceSecretName(name)) ? match : lead + name + '=' + TRACE_REDACTED)
+
+const redactTraceEmails = (text) => text
   .replace(/(?<![A-Za-z0-9._%+-])([.%+-]*)([A-Za-z0-9_][A-Za-z0-9._%+-]*@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b)/g, (match, leading, email, offset, source) =>
-    source[offset + match.length] === ':' || /(?:ssh|scp|rsync|sftp)$/i.test(source.slice(0, offset + leading.length).replace(/[ \t]+$/, '')) ? match : leading + '[REDACTED]')
-  .replace(/([A-Z]:\\Users\\)[^\\\s]+/gi, '$1[REDACTED]')
+    source[offset + match.length] === ':' || /(?:ssh|scp|rsync|sftp)$/i.test(source.slice(0, offset + leading.length).replace(/[ \t]+$/, '')) ? match : leading + TRACE_REDACTED)
+
+const redactTraceHomePaths = (text) => text
+  .replace(/([A-Z]:\\Users\\)[^\\\s]+/gi, '$1' + TRACE_REDACTED)
   .replace(/(\/Users\/|\/home\/)[^/\s]+/g, (match, prefix, offset, source) =>
-    offset > 0 && /[A-Za-z0-9.]/.test(source[offset - 1]) ? match : prefix + '[REDACTED]')
+    offset > 0 && /[A-Za-z0-9.]/.test(source[offset - 1]) ? match : prefix + TRACE_REDACTED)
+
+// The local identity: the hostname's first label and the account name, each
+// only when specific enough to identify this machine or person. "user" and
+// "admin" are ordinary words; replacing them would destroy the text to hide
+// nothing. ASCII names only, so both languages fold case the same way.
+const TRACE_GENERIC_IDENTITY = new Set(['root', 'user', 'users', 'admin', 'administrator',
+  'ubuntu', 'debian', 'runner', 'guest', 'test', 'dev', 'home', 'node', 'app', 'www', 'git', 'deploy',
+  'build', 'docker', 'vagrant', 'localhost', 'local', 'server', 'host', 'macbook', 'mac', 'desktop',
+  'laptop', 'workstation', 'default', 'system', 'nobody', 'daemon', 'code', 'agent', 'main', 'master'])
+const traceIdentityPatterns = (host, account) => {
+  host = String(host || '')
+  account = String(account || '')
+  if (host.includes('.')) host = host.slice(0, host.indexOf('.'))
+  if (account.includes('\\')) account = account.slice(account.lastIndexOf('\\') + 1)
+  const out = []
+  const seen = new Set()
+  for (const name of [host, account]) {
+    const lower = name.toLowerCase()
+    if (!/^[A-Za-z0-9._-]{3,}$/.test(name) || TRACE_GENERIC_IDENTITY.has(lower) || seen.has(lower)) continue
+    seen.add(lower)
+    out.push(new RegExp('(?<![A-Za-z0-9_])' + name.replace(/\./g, '\\.') + '(?![A-Za-z0-9_])', 'giu'))
+  }
+  return out
+}
+const TRACE_LOCAL_IDENTITY = (() => {
+  let host = ''
+  let account = ''
+  try { host = traceHostname() } catch {}
+  try { account = traceUserInfo().username } catch {}
+  return traceIdentityPatterns(host, account)
+})()
+// redactLocalIdentity: the hostname and the account name as whole words.
+// redactTraceHomePaths takes the name out of /home/<name>; this is the same
+// name everywhere else: USER=name, ssh name@host, a prompt, plain prose.
+const redactTraceLocalIdentity = (text, patterns) =>
+  patterns.reduce((out, re) => out.replace(re, TRACE_REDACTED), text)
+
+const scrubTraceText = (text, identity = TRACE_LOCAL_IDENTITY) =>
+  redactTraceLocalIdentity(redactTraceHomePaths(redactTraceEmails(redactTraceSecretAssignments(redactTraceEnvDumps(scrubTraceCommon(text))))), identity)
 
 // prepareTraceHistory takes the COMPLETE text parts of one assistant
 // message — `{type: 'text', text}` entries, the shape opencode's message
@@ -89,7 +185,7 @@ const scrubTraceText = (text) => text
 // Returns null when the complete source is over budget: the entry is
 // omitted whole, never sliced to fit, because slicing would hand the
 // scrubber a severed secret. Returns "" when there is nothing to send.
-const prepareTraceHistory = (parts) => {
+const prepareTraceHistory = (parts, identity = TRACE_LOCAL_IDENTITY) => {
   const texts = []
   let size = 0
   for (const part of parts) {
@@ -98,7 +194,7 @@ const prepareTraceHistory = (parts) => {
     if (size > TRACE_SOURCE_CAP) return null
     texts.push(part.text)
   }
-  const bytes = Buffer.from(scrubTraceText(texts.join('\n')))
+  const bytes = Buffer.from(scrubTraceText(texts.join('\n'), identity))
   // The tail, not the head: the words nearest the search are the ones that
   // explain it. Walk forward off any continuation byte so the cut lands on
   // a rune boundary and the result is still valid UTF-8.

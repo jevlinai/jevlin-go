@@ -267,6 +267,15 @@ degradation.
 | `history` | The assistant text before the search, scrubbed of secrets, last 32 KiB. |
 | `host_meta` | Agent-specific metadata. |
 
+The scrub removes what has a credential's shape (API keys, GitHub and AWS tokens, JWTs, a
+password inside a URL), email addresses, and the account name in a home path. It also removes
+what has no shape: the value of an assignment whose name says it is a secret
+(`DATABASE_PASSWORD=…`, `--api-key=…`), every value in an environment listing of five or more
+lines, the value of `JEVLIN_TRACE_BRIDGE` in a quoted command, and this machine's hostname and
+your account name wherever they stand as a word. A generic name such as `root` or `ubuntu` is
+left, because it identifies nobody. It is a filter over text a model wrote, not a guarantee: a
+secret with no telling name and no known shape, in ordinary prose, passes.
+
 The text is scrubbed before it is cut, and an entry too large to scrub whole is omitted whole.
 Over 48 KiB, `history` is dropped; an envelope still too large is not sent. It travels
 base64url-encoded in `JEVLIN_TRACE_BRIDGE`, written in the syntax of the shell that runs the

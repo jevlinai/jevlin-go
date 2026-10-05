@@ -26,6 +26,12 @@ func traceBoundaryInputs() map[string]string {
 		"userinfo": "https://synthetic:PasswordCanary0123456789@example.test", "email": "syntheticperson012345@example.test",
 		"unix_home": "/home/SyntheticPerson012345/private", "mac_home": "/Users/SyntheticPerson012345/private",
 		"windows_home": `C:\Users\SyntheticPerson012345\private`,
+		// What has no credential shape: a secret known only by its name, an
+		// environment dump, and this client's own trace bridge.
+		"secret_assignment": "export DATABASE_PASSWORD=HunterCanary0123456789",
+		"quoted_assignment": `API_TOKEN="HunterCanary0123456789 two words"`,
+		"env_dump":          "\nA_ONE=DumpCanary1\nB_TWO=DumpCanary2\nexport C_THREE=DumpCanary3\nD_FOUR=DumpCanary4\nE_FIVE=DumpCanary5\nF_SIX=DumpCanary6",
+		"bridge":            "JEVLIN_TRACE_BRIDGE=BridgeCanary0123456789 jevlin search --stdin",
 	}
 	out := map[string]string{}
 	for name, secret := range shapes {
@@ -34,6 +40,33 @@ func traceBoundaryInputs() map[string]string {
 		}
 		out[name+"/multiple"] = "start " + secret + " " + secret + " " + strings.Repeat(".", traceHistoryCap-len(secret))
 		out[name+"/utf8"] = "start " + secret + " " + strings.Repeat("界", traceHistoryCap/3-3) + "é"
+	}
+	return out
+}
+
+// The synthetic machine the identity cases run on. The Go scrubber is told
+// it through redact.SetLocalIdentity and the JavaScript one through
+// prepareTraceHistory's second argument, so no case depends on the name of
+// the machine or the account the tests happen to run under.
+const (
+	syntheticTraceHost    = "SyntheticHost0123.corp.example"
+	syntheticTraceAccount = "syntheticacct0123"
+)
+
+// traceIdentityInputs are the hostname and the account name where no path
+// pattern reaches them, cut at the same boundaries as the other canaries.
+func traceIdentityInputs() map[string]string {
+	shapes := map[string]string{
+		"account_in_env":   "USER=syntheticacct0123",
+		"account_in_ssh":   "ssh syntheticacct0123@db1.example.test uptime",
+		"hostname_in_text": "logged in on synthetichost0123 as SyntheticAcct0123",
+		"prompt":           "syntheticacct0123@SyntheticHost0123:~$",
+	}
+	out := map[string]string{}
+	for name, secret := range shapes {
+		for label, cut := range map[string]int{"before": len(secret) + 2, "crossing": len(secret) / 2, "beyond": -2} {
+			out[name+"/"+label] = "start " + secret + " " + strings.Repeat(".", traceHistoryCap-len(secret)-1+cut)
+		}
 	}
 	return out
 }
@@ -53,8 +86,9 @@ func assertPreparedHistory(t *testing.T, text, source string) {
 	if len(text) > traceHistoryCap || !utf8.ValidString(text) {
 		t.Fatalf("history exceeds byte cap or is invalid UTF-8: %d", len(text))
 	}
-	for _, fragment := range []string{"CredentialBody0123456789", "0123456789ABCDEF", "SyntheticPayload", "PasswordCanary0123456789", "syntheticperson012345", "SyntheticPerson012345"} {
-		if strings.Contains(text, fragment) {
+	for _, fragment := range []string{"CredentialBody0123456789", "0123456789ABCDEF", "SyntheticPayload", "PasswordCanary0123456789", "syntheticperson012345", "SyntheticPerson012345",
+		"HunterCanary0123456789", "DumpCanary", "BridgeCanary0123456789", "SyntheticHost0123", "syntheticacct0123"} {
+		if strings.Contains(strings.ToLower(text), strings.ToLower(fragment)) {
 			t.Fatalf("prepared history retains synthetic marker %q", fragment)
 		}
 	}
@@ -89,6 +123,24 @@ func TestTraceRedactionBoundaries(t *testing.T) {
 				}
 				assertPreparedHistory(t, l.History[0].Text, text)
 			})
+		})
+	}
+}
+
+// The hostname and the account name are removed on the Go path too, from
+// the same complete source and before the cut.
+func TestTraceRemovesTheLocalIdentity(t *testing.T) {
+	defer redact.SetLocalIdentity(syntheticTraceHost, syntheticTraceAccount)()
+	for name, text := range traceIdentityInputs() {
+		t.Run(name, func(t *testing.T) {
+			env := capTrace(&traceEnvelope{V: 1, History: []traceHistory{{Role: "assistant", Text: text}}})
+			if env == nil || len(env.History) != 1 {
+				t.Fatal("ordinary bounded source lost history")
+			}
+			assertPreparedHistory(t, env.History[0].Text, text)
+			if final, _, _ := prepareFinalText(text); final != env.History[0].Text {
+				t.Fatal("the turn end's final text is prepared differently from trace history")
+			}
 		})
 	}
 }
@@ -304,11 +356,12 @@ func TestSharedTraceSourceRedactionBoundaries(t *testing.T) {
 	script := `
  const fs = await import('node:fs');
  const input = JSON.parse(fs.readFileSync(0,'utf8'));
- const src = input.shared + "\nexport { prepareTraceHistory, traceBridge, needsTraceBridge, traceHash };";
+ const src = input.shared + "\nexport { prepareTraceHistory, traceBridge, needsTraceBridge, traceHash, traceIdentityPatterns };";
  const m = await import('data:text/javascript;base64,'+Buffer.from(src).toString('base64'));
+ const identity = m.traceIdentityPatterns(input.host, input.account);
  const result = {};
  for (const [name, parts] of Object.entries(input.cases)) {
-  const text = m.prepareTraceHistory(parts);
+  const text = m.prepareTraceHistory(parts, identity);
   const env = { v: 1, harness: 'test', session_id: m.traceHash('s') };
   if (text) env.history = [{ role: 'assistant', text }];
   result[name] = { text, bridge: m.traceBridge(env), history: env.history ? env.history.length : 0 };
@@ -318,7 +371,13 @@ func TestSharedTraceSourceRedactionBoundaries(t *testing.T) {
  result['__no_bridge'] = { bridge: m.traceBridge(huge), history: huge.history ? 1 : 0 };
  process.stdout.write(JSON.stringify(result));`
 
+	// Both scrubbers are given the same synthetic machine, so the identity
+	// cases compare like for like wherever the test runs.
+	defer redact.SetLocalIdentity(syntheticTraceHost, syntheticTraceAccount)()
 	textCases := traceBoundaryInputs()
+	for name, text := range traceIdentityInputs() {
+		textCases[name] = text
+	}
 	cases := map[string][]map[string]string{}
 	for name, text := range textCases {
 		cases[name] = []map[string]string{{"type": "text", "text": text}}
@@ -337,7 +396,8 @@ func TestSharedTraceSourceRedactionBoundaries(t *testing.T) {
 	cases["history_cap"] = []map[string]string{{"type": "text", "text": strings.Repeat("z", traceHistoryCap*2)}}
 	cases["envelope_drops_history"] = []map[string]string{{"type": "text", "text": strings.Repeat("\"", traceHistoryCap)}}
 
-	input, _ := json.Marshal(map[string]any{"shared": agentTraceCommonJS, "cases": cases, "envelopeCap": traceEnvelopeCap})
+	input, _ := json.Marshal(map[string]any{"shared": agentTraceCommonJS, "cases": cases, "envelopeCap": traceEnvelopeCap,
+		"host": syntheticTraceHost, "account": syntheticTraceAccount})
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, node, "--input-type=module", "-e", script) // #nosec G204 -- fixed test script and local Node runtime; synthetic input on stdin

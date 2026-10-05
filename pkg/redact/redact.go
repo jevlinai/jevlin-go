@@ -14,8 +14,11 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
+	"os/user"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 const placeholder = "[REDACTED]"
@@ -70,7 +73,43 @@ var (
 	// The Windows sibling: C:\Users\<name>\... . This repo ships Windows
 	// binaries; the Unix-only pattern above missed this entirely.
 	windowsHomePathPattern = regexp.MustCompile(`(?i)([A-Z]:\\Users\\)[^\\\s]+`)
+	// NAME=value, where NAME is an identifier that starts at a non-identifier
+	// character and the value is one quoted string or one unbroken run. The
+	// leading group is kept and written back, so the match cannot begin in
+	// the middle of a longer name. Applied via redactSecretAssignments,
+	// which decides from the NAME whether the value goes.
+	assignmentPattern = regexp.MustCompile(`(^|[^A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)=("[^"\n]*"|'[^'\n]*'|[^\s"']+)`)
+	// One line of an environment listing: optional `export `, a name, `=`,
+	// and the rest of the line. Applied via redactEnvDumps, to runs only.
+	envLinePattern = regexp.MustCompile(`^(\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*=)(.*)$`)
 )
+
+// envDumpRun is how many consecutive NAME=value lines make an environment
+// dump. One or two such lines are ordinary prose about a setting; five in
+// a row is the output of env or printenv quoted back, and nothing in it
+// has a shape a pattern could pick the secrets out by.
+const envDumpRun = 5
+
+// secretNameSegments are the words that make an assignment's value a
+// secret when they are a whole `_`-separated segment of its name, in any
+// letter case: DATABASE_PASSWORD, api_token, ClientSecret is not one (no
+// segment), client_secret is. A segment, not a substring, so MONKEY and
+// TOKENIZER_PATH are left alone.
+var secretNameSegments = map[string]bool{
+	"PASSWORD": true, "PASSWD": true, "SECRET": true, "SECRETS": true, "TOKEN": true,
+	"CREDENTIAL": true, "CREDENTIALS": true, "APIKEY": true,
+}
+
+// secretNameSegmentsUpperOnly count only in a name with no lowercase
+// letter, the way an environment variable is written. `key=value` and
+// `pass=2` are everyday prose and flag syntax; API_KEY and DB_PASS are not.
+var secretNameSegmentsUpperOnly = map[string]bool{"KEY": true, "PASS": true}
+
+// traceBridgeEnvName is this client's own trace bridge variable. Its value
+// is an encoded envelope that can itself hold earlier assistant text, and
+// no pattern can see into it, so a quoted command line that carries it has
+// the value removed whatever it looks like.
+const traceBridgeEnvName = "JEVLIN_TRACE_BRIDGE"
 
 // remoteAccessVerbs precede an ssh/scp/rsync/sftp destination that is
 // shaped exactly like an email address (user@host) but is not one —
@@ -99,11 +138,201 @@ func String(s string) string {
 // Authorization: Bearer credential is still caught here if it has a
 // recognizable shape (sk-/sr-/JWT/AWS/GitHub); only the generic
 // "bearer <word>" catch-all is skipped.
+//
+// It also covers what an assistant writes around a search that has no
+// credential shape at all: an environment dump, a secret assigned by name,
+// this client's own trace bridge, and the machine's hostname and account
+// name wherever they stand. The log path does not need those: a log line
+// is this client's own words, not a model's account of what it just read.
 func TraceText(s string) string {
 	s = scrubCommon(s)
+	s = redactEnvDumps(s)
+	s = redactSecretAssignments(s)
 	s = redactEmails(s)
 	s = redactHomePaths(s)
+	s = redactLocalIdentity(s)
 	return s
+}
+
+// redactEnvDumps replaces every value in a run of envDumpRun or more
+// consecutive NAME=value lines. The names stay: they say what kind of
+// output this was, and they identify nobody.
+func redactEnvDumps(s string) string {
+	if strings.Count(s, "=") < envDumpRun {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	isEnv := func(i int) bool { return envLinePattern.MatchString(strings.TrimSuffix(lines[i], "\r")) }
+	changed := false
+	for i := 0; i < len(lines); {
+		if !isEnv(i) {
+			i++
+			continue
+		}
+		j := i
+		for j < len(lines) && isEnv(j) {
+			j++
+		}
+		if j-i >= envDumpRun {
+			for k := i; k < j; k++ {
+				line, cr := strings.TrimSuffix(lines[k], "\r"), ""
+				if line != lines[k] {
+					cr = "\r"
+				}
+				m := envLinePattern.FindStringSubmatch(line)
+				if m[2] != "" && m[2] != placeholder {
+					lines[k] = m[1] + placeholder + cr
+					changed = true
+				}
+			}
+		}
+		i = j
+	}
+	if !changed {
+		return s
+	}
+	return strings.Join(lines, "\n")
+}
+
+// redactSecretAssignments replaces the value of an assignment whose NAME
+// says it is a secret (secretNameSegments) or is this client's own trace
+// bridge. It reads the name, not the value: a password has no shape.
+func redactSecretAssignments(s string) string {
+	if !strings.Contains(s, "=") {
+		return s
+	}
+	return assignmentPattern.ReplaceAllStringFunc(s, func(match string) string {
+		m := assignmentPattern.FindStringSubmatch(match)
+		lead, name, value := m[1], m[2], m[3]
+		if value == placeholder || (name != traceBridgeEnvName && !secretName(name)) {
+			return match
+		}
+		return lead + name + "=" + placeholder
+	})
+}
+
+func secretName(name string) bool {
+	upperOnly := name == strings.ToUpper(name)
+	for _, seg := range strings.Split(strings.ToUpper(name), "_") {
+		if secretNameSegments[seg] || (upperOnly && secretNameSegmentsUpperOnly[seg]) {
+			return true
+		}
+	}
+	return false
+}
+
+// genericIdentityNames are account and host names that identify nobody
+// and are ordinary words in a model's prose. Replacing every "user" or
+// "admin" in a trajectory would destroy the text to hide nothing.
+var genericIdentityNames = map[string]bool{
+	"root": true, "user": true, "users": true, "admin": true, "administrator": true,
+	"ubuntu": true, "debian": true, "runner": true, "guest": true, "test": true, "dev": true,
+	"home": true, "node": true, "app": true, "www": true, "git": true, "deploy": true,
+	"build": true, "docker": true, "vagrant": true, "localhost": true, "local": true,
+	"server": true, "host": true, "macbook": true, "mac": true, "desktop": true,
+	"laptop": true, "workstation": true, "default": true, "system": true, "nobody": true,
+	"daemon": true, "code": true, "agent": true, "main": true, "master": true,
+}
+
+// identityNamePattern is what a name must look like to be searched for:
+// ASCII, so the Go and JavaScript scrubbers fold case the same way.
+var identityNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]{3,}$`)
+
+var (
+	identityMu       sync.Mutex
+	identityResolved bool
+	identityPatterns []*regexp.Regexp
+)
+
+// SetLocalIdentity names the host and the account whose names TraceText
+// removes, in place of asking the operating system, and returns a function
+// that restores what was there. Tests use it so a guarantee about a name
+// does not depend on the machine it runs on.
+func SetLocalIdentity(host, account string) (restore func()) {
+	identityMu.Lock()
+	defer identityMu.Unlock()
+	prevResolved, prevPatterns := identityResolved, identityPatterns
+	identityResolved, identityPatterns = true, compileIdentity(host, account)
+	return func() {
+		identityMu.Lock()
+		defer identityMu.Unlock()
+		identityResolved, identityPatterns = prevResolved, prevPatterns
+	}
+}
+
+// compileIdentity keeps the hostname's first label and the account name,
+// each only when it is specific enough to identify this machine or person.
+func compileIdentity(host, account string) []*regexp.Regexp {
+	if i := strings.IndexByte(host, '.'); i >= 0 {
+		host = host[:i]
+	}
+	// A Windows account arrives as DOMAIN\name; the name is what is typed.
+	if i := strings.LastIndexByte(account, '\\'); i >= 0 {
+		account = account[i+1:]
+	}
+	var out []*regexp.Regexp
+	seen := map[string]bool{}
+	for _, name := range []string{host, account} {
+		lower := strings.ToLower(name)
+		if !identityNamePattern.MatchString(name) || genericIdentityNames[lower] || seen[lower] {
+			continue
+		}
+		seen[lower] = true
+		out = append(out, regexp.MustCompile(`(?i)`+regexp.QuoteMeta(name)))
+	}
+	return out
+}
+
+func localIdentity() []*regexp.Regexp {
+	identityMu.Lock()
+	defer identityMu.Unlock()
+	if !identityResolved {
+		host, _ := os.Hostname()
+		account := ""
+		if u, err := user.Current(); err == nil {
+			account = u.Username
+		}
+		identityResolved, identityPatterns = true, compileIdentity(host, account)
+	}
+	return identityPatterns
+}
+
+// redactLocalIdentity replaces the machine's hostname (its first label)
+// and the account name where either stands as a whole word: `USER=name`,
+// `ssh name@host`, a prompt, plain prose. redactHomePaths already takes
+// the name out of /home/<name>; this is the same name everywhere else.
+func redactLocalIdentity(s string) string {
+	for _, re := range localIdentity() {
+		if !re.MatchString(s) {
+			continue
+		}
+		var b strings.Builder
+		last, pos := 0, 0
+		for pos < len(s) {
+			loc := re.FindStringIndex(s[pos:])
+			if loc == nil {
+				break
+			}
+			start, end := pos+loc[0], pos+loc[1]
+			if (start > 0 && isWordChar(s[start-1])) || (end < len(s) && isWordChar(s[end])) {
+				// Not a whole word here. Look again one byte on rather than
+				// past it, so an occurrence that overlaps this one is still
+				// found, as a regular expression with lookarounds finds it.
+				pos = start + 1
+				continue
+			}
+			b.WriteString(s[last:start])
+			b.WriteString(placeholder)
+			last, pos = end, end
+		}
+		b.WriteString(s[last:])
+		s = b.String()
+	}
+	return s
+}
+
+func isWordChar(c byte) bool {
+	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
 }
 
 // scrubCommon is the part of the pipeline String and TraceText share.

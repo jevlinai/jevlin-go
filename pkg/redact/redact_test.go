@@ -234,3 +234,152 @@ func TestFalsePositiveExclusionsDoNotShadowRealSecretsNearby(t *testing.T) {
 		t.Errorf("real secret near an excluded shape was not redacted: %q", got)
 	}
 }
+
+// A password has no shape, so the name is what gives it away: an
+// assignment whose name has a secret word as a whole segment loses its
+// value, quoted or not, and keeps its name.
+func TestSecretNamedAssignmentsLoseTheirValue(t *testing.T) {
+	for name, tc := range map[string]struct{ in, want string }{
+		"env style":          {"DATABASE_PASSWORD=hunter2", "DATABASE_PASSWORD=" + placeholder},
+		"export":             {"run export API_TOKEN=abc123 first", "run export API_TOKEN=" + placeholder + " first"},
+		"double quoted":      {`CLIENT_SECRET="two words"`, "CLIENT_SECRET=" + placeholder},
+		"single quoted":      {`DB_PASSWD='p w'`, "DB_PASSWD=" + placeholder},
+		"lowercase name":     {"password=hunter2", "password=" + placeholder},
+		"flag":               {"mysql --password=hunter2 -h db", "mysql --password=" + placeholder + " -h db"},
+		"upper KEY":          {"STRIPE_KEY=whsec_1", "STRIPE_KEY=" + placeholder},
+		"upper PASS":         {"DB_PASS=x9", "DB_PASS=" + placeholder},
+		"two on a line":      {"A_TOKEN=one B_SECRET=two", "A_TOKEN=" + placeholder + " B_SECRET=" + placeholder},
+		"after a newline":    {"first\nAPI_TOKEN=abc", "first\nAPI_TOKEN=" + placeholder},
+		"powershell":         {`$env:API_TOKEN='abc'`, `$env:API_TOKEN=` + placeholder},
+		"already redacted":   {"API_TOKEN=" + placeholder, "API_TOKEN=" + placeholder},
+		"credentials plural": {"AWS_CREDENTIALS=a:b", "AWS_CREDENTIALS=" + placeholder},
+		"camel case apikey":  {"?apiKey=abc123", "?apiKey=" + placeholder},
+	} {
+		if got := TraceText(tc.in); got != tc.want {
+			t.Errorf("%s: TraceText(%q) = %q, want %q", name, tc.in, got, tc.want)
+		}
+	}
+}
+
+// The rule reads a whole segment of the name, and KEY and PASS only in an
+// all-uppercase name, so ordinary text about keys, passes and tokens is
+// not corpus damage.
+func TestAssignmentsThatAreNotSecretsSurvive(t *testing.T) {
+	for name, text := range map[string]string{ // #nosec G101 -- prose that must NOT be read as credentials
+		"key=value prose":      "pass key=value pairs to the parser",
+		"sort flag":            "sort --key=2 file.txt",
+		"lowercase pass":       "the compiler runs pass=2 next",
+		"substring, not a seg": "MONKEY=banana TOKENIZER_PATH=/opt/tok",
+		"path variables":       "JEVLIN_CONFIG=/etc/jevlin.toml JEVLIN_HOME=/opt/jevlin",
+		"pwd":                  "PWD=/srv/app OLDPWD=/srv",
+		"no value":             "set API_TOKEN= to clear it",
+		"comparison":           "if token == expected then",
+	} {
+		if got := TraceText(text); got != text {
+			t.Errorf("%s: TraceText altered non-secret text:\n  in:  %q\n  out: %q", name, text, got)
+		}
+	}
+}
+
+// Five or more NAME=value lines in a row is an environment dump: every
+// value goes and every name stays. Four is still prose about settings.
+func TestAnEnvironmentDumpLosesEveryValue(t *testing.T) {
+	dump := "here is the env:\nSHELL=/bin/zsh\nLANG=en_US.UTF-8\nexport EDITOR=vim\nTERM_PROGRAM=iTerm.app\n  COLORTERM=truecolor\r\nMYAPP_REGION=eu-west-9\nthat is all"
+	got := TraceText(dump)
+	for _, value := range []string{"/bin/zsh", "en_US.UTF-8", "vim", "iTerm.app", "truecolor", "eu-west-9"} {
+		if strings.Contains(got, value) {
+			t.Errorf("an environment dump kept the value %q: %q", value, got)
+		}
+	}
+	for _, kept := range []string{"here is the env:", "SHELL=", "export EDITOR=", "  COLORTERM=" + placeholder + "\r\n", "MYAPP_REGION=", "that is all"} {
+		if !strings.Contains(got, kept) {
+			t.Errorf("an environment dump lost %q: %q", kept, got)
+		}
+	}
+
+	four := "SHELL=/bin/zsh\nLANG=en_US.UTF-8\nEDITOR=vim\nTERM_PROGRAM=iTerm.app\nand then prose"
+	if got := TraceText(four); got != four {
+		t.Errorf("four assignment lines were treated as a dump: %q", got)
+	}
+	broken := "A=1\nB=2\nprose in between\nC=3\nD=4\nE=5"
+	if got := TraceText(broken); got != broken {
+		t.Errorf("a run broken by prose was treated as a dump: %q", got)
+	}
+}
+
+// The bridge variable's value is an encoded envelope that can hold earlier
+// assistant text. No pattern can see into it, so it goes whatever it is.
+func TestTheTraceBridgeAssignmentLosesItsValue(t *testing.T) {
+	for _, text := range []string{
+		"JEVLIN_TRACE_BRIDGE=eyJ2IjoxfQ jevlin search --stdin",
+		`$env:JEVLIN_TRACE_BRIDGE='eyJ2IjoxfQ'; jevlin search --stdin`,
+		`set "JEVLIN_TRACE_BRIDGE=eyJ2IjoxfQ" && jevlin search`,
+	} {
+		got := TraceText(text)
+		if strings.Contains(got, "eyJ2IjoxfQ") || !strings.Contains(got, traceBridgeEnvName+"="+placeholder) {
+			t.Errorf("the bridge value survived: %q -> %q", text, got)
+		}
+		if !strings.Contains(got, "jevlin search") {
+			t.Errorf("more than the bridge value was removed: %q -> %q", text, got)
+		}
+	}
+}
+
+// The hostname's first label and the account name go wherever they stand
+// as a whole word, in any letter case, and nowhere else.
+func TestTheLocalHostAndAccountNamesAreRemoved(t *testing.T) {
+	defer SetLocalIdentity("Build-Box7.corp.example", `CORP\mwhitlock`)()
+	for name, tc := range map[string]struct{ in, want string }{
+		"USER":            {"USER=mwhitlock", "USER=" + placeholder},
+		"ssh target":      {"ssh mwhitlock@db1 uptime", "ssh " + placeholder + "@db1 uptime"},
+		"prose":           {"logged in as mwhitlock on build-box7.", "logged in as " + placeholder + " on " + placeholder + "."},
+		"prompt":          {"mwhitlock@Build-Box7:~$ ls", placeholder + "@" + placeholder + ":~$ ls"},
+		"upper case":      {"HOSTNAME is BUILD-BOX7", "HOSTNAME is " + placeholder},
+		"fqdn keeps rest": {"host build-box7.corp.example is up", "host " + placeholder + ".corp.example is up"},
+		"twice":           {"mwhitlock mwhitlock", placeholder + " " + placeholder},
+	} {
+		if got := TraceText(tc.in); got != tc.want {
+			t.Errorf("%s: TraceText(%q) = %q, want %q", name, tc.in, got, tc.want)
+		}
+	}
+	for name, text := range map[string]string{
+		"inside a longer word": "the mwhitlocks and xmwhitlock and mwhitlock_2",
+		"inside a longer host": "prebuild-box7x is another machine",
+	} {
+		if got := TraceText(text); got != text {
+			t.Errorf("%s: a name inside a longer word was removed: %q -> %q", name, text, got)
+		}
+	}
+}
+
+// A generic or very short name identifies nobody and is an ordinary word:
+// replacing it everywhere would destroy the text to hide nothing.
+func TestGenericLocalNamesAreNotSearchedFor(t *testing.T) {
+	text := "the user asked the admin to restart the server as root on localhost; id ab"
+	for _, id := range [][2]string{{"localhost", "user"}, {"server.local", "root"}, {"ubuntu", "admin"}, {"ab", "ab"}, {"", ""}, {"héllo-box", "josé"}} {
+		restore := SetLocalIdentity(id[0], id[1])
+		if got := TraceText(text); got != text {
+			t.Errorf("identity %q/%q: generic words were removed: %q", id[0], id[1], got)
+		}
+		restore()
+	}
+}
+
+// An occurrence that overlaps a rejected one is still found, as the
+// JavaScript scrubber's lookarounds find it.
+func TestAnOverlappingNameIsStillFound(t *testing.T) {
+	defer SetLocalIdentity("a-a", "")()
+	if got, want := TraceText("xa-a-a"), "xa-"+placeholder; got != want {
+		t.Errorf("TraceText = %q, want %q", got, want)
+	}
+}
+
+// The log path is this client's own words and keeps its own rules: none of
+// the trajectory-only steps run there.
+func TestTheLogPathIsUnchangedByTheTraceRules(t *testing.T) {
+	defer SetLocalIdentity("Build-Box7", "mwhitlock")()
+	text := "DATABASE_PASSWORD=hunter2 as mwhitlock on Build-Box7"
+	if got := String(text); got != text {
+		t.Errorf("String applied a trace-only rule: %q", got)
+	}
+}
