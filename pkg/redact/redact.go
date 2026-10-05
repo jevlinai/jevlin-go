@@ -130,13 +130,16 @@ func String(s string) string {
 // "bearer <word>" catch-all is skipped.
 //
 // It also covers what an assistant writes around a search that has no
-// credential shape at all: an environment dump, a secret assigned by name,
+// credential shape at all: an environment dump, a secret assigned by name
+// (NAME=value, a key and a colon, a long flag and its value),
 // this client's own trace bridge, the machine's hostname wherever it stands
 // as a word, and the account name where the text uses it as one. The log
 // path does not need those: a log line is this client's own words, not a
 // model's account of what it just read.
 func TraceText(s string) string {
 	s = scrubCommon(s)
+	s = redactSecretFlags(s)
+	s = redactSecretKeys(s)
 	s = redactSecretAssignments(s)
 	s = redactEnvDumps(s)
 	s = redactEmails(s)

@@ -356,7 +356,7 @@ const traceSecretValueEnd = (s, v, words) => {
   let from = v
   const c = s.charCodeAt(v)
   if (c === 34 || c === 39) from = traceQuotedWordEnd(s, v)
-  else if (c === 61) return v
+  else if (c === 61 || traceIsSpace(c)) return v
   if (words.open) {
     const end = traceEnclosedValueEnd(s, from, words.head, words)
     if (end >= 0) return end
@@ -454,10 +454,15 @@ const traceSecretValueAt = (s, floor, e, words) => {
   // and a second pass must not then find what the first did not.
   const upperName = name.toUpperCase()
   const bridge = upperName === TRACE_BRIDGE_ENV || upperName.endsWith('.' + TRACE_BRIDGE_ENV) || upperName.endsWith('-' + TRACE_BRIDGE_ENV)
-  if (k < e && !psEnv && !bridge) return null
-  if (!bridge && !traceSecretName(name)) return null
   let v = e + 1
-  if (psEnv || bridge) while (v < s.length && traceIsBlank(s.charCodeAt(v))) v++
+  while (v < s.length && traceIsBlank(s.charCodeAt(v))) v++
+  // Blanks around = belong to PowerShell, the bridge, and a quoted value
+  // (TOML's and Python's password = "x"); not to code or prose.
+  if (!psEnv && !bridge && s.charCodeAt(v) !== 34 && s.charCodeAt(v) !== 39) {
+    if (k < e) return null
+    v = e + 1
+  }
+  if (!bridge && !traceSecretName(name)) return null
   traceWordAdvance(words, s, p)
   const c = s.charCodeAt(v)
   const end = v < s.length && !traceIsSpace(c) && c !== 61 && traceIsCmdSet(s, floor, p, name)
@@ -484,6 +489,142 @@ const redactTraceSecretAssignments = (text) => {
       traceWordSkip(words, found[1])
     }
     e = text.indexOf('=', next)
+  }
+  return changed ? out + text.slice(last) : text
+}
+
+// redactSecretKeys: the value of a secret key written with a colon, as
+// pkg/redact/keys.go has it. A key at a line's start (after indentation and
+// an optional - marker), quoted or not, then a colon and a blank or a quote:
+// the rest of the line. A key anywhere else, then a colon and a quoted value:
+// that quoted string, with parts that follow it directly in the same quote.
+const traceStartsLine = (s, floor, i) => {
+  while (i > floor && traceIsBlank(s.charCodeAt(i - 1))) i--
+  if (i > floor && s.charCodeAt(i - 1) === 45) {
+    i--
+    while (i > floor && traceIsBlank(s.charCodeAt(i - 1))) i--
+  }
+  return i === 0 || (i > floor && s.charCodeAt(i - 1) === 10)
+}
+const traceQuotedStringEnd = (s, v) => {
+  let i = traceOpensThreeQuotes(s, v) ? traceTripleQuoteEnd(s, v) : traceClosingQuote(s, v, TRACE_QUOTED_VALUE_MAX_LINES)
+  if (i < 0) return traceLineEnd(s, v)
+  while (i < s.length && s.charCodeAt(i) === s.charCodeAt(v)) {
+    const j = traceClosingQuote(s, i, 0)
+    if (j < 0) break
+    i = j
+  }
+  return i
+}
+const traceSecretKeyValueAt = (s, floor, c) => {
+  let k = c
+  while (k > floor && traceIsBlank(s.charCodeAt(k - 1))) k--
+  let name
+  let keyStart
+  const kc = s.charCodeAt(k - 1)
+  if (k > floor && (kc === 34 || kc === 39)) {
+    let r = k - 1
+    while (r > floor && traceIsName(s.charCodeAt(r - 1))) r--
+    if (r === k - 1 || r === floor || s.charCodeAt(r - 1) !== kc || !traceIsNameStart(s.charCodeAt(r)) || !traceIsWord(s.charCodeAt(k - 2))) return null
+    name = s.slice(r, k - 1)
+    keyStart = r - 1
+  } else {
+    if (k < c) return null
+    let r = k
+    while (r > floor && traceIsName(s.charCodeAt(r - 1))) r--
+    if (r === k || !traceIsWord(s.charCodeAt(k - 1))) return null
+    let p = -1
+    for (let q = r; q < k; q++) {
+      if (traceIsNameStart(s.charCodeAt(q)) && (q === 0 || !traceIsWord(s.charCodeAt(q - 1)))) { p = q; break }
+    }
+    if (p < 0) return null
+    name = s.slice(p, k)
+    keyStart = p
+  }
+  if (!traceSecretName(name)) return null
+  let v = c + 1
+  while (v < s.length && traceIsBlank(s.charCodeAt(v))) v++
+  if (v >= s.length || s.charCodeAt(v) === 10 || s.charCodeAt(v) === 13) return null
+  const quoted = s.charCodeAt(v) === 34 || s.charCodeAt(v) === 39
+  let end
+  if (traceStartsLine(s, floor, keyStart) && (v > c + 1 || quoted)) {
+    end = traceTrimValueTail(s, v, traceTrimBlanksEnd(s, v, traceLineEnd(s, v)))
+  } else if (quoted) {
+    end = traceQuotedStringEnd(s, v)
+  } else {
+    return null
+  }
+  if (end === v || s.slice(v, end) === TRACE_REDACTED) return null
+  return [v, end]
+}
+// redactSecretFlags: a long flag named as a secret's, then its value as the
+// next word on the line (curl --api-key VALUE). Not a value: one starting
+// with - or =, or one of lowercase letters only ("the --password flag").
+// What stands before -- is not asked, as a later step can remove it. The
+// flag rule runs first, then the key rule, then the assignment rule, so no
+// removal changes what an earlier rule read.
+const traceSecretFlagValueAt = (s, i) => {
+  const n = i + 2
+  if (n >= s.length || !traceIsNameStart(s.charCodeAt(n))) return null
+  let j = n
+  while (j < s.length && traceIsName(s.charCodeAt(j))) j++
+  const none = { nameEnd: j }
+  if (!traceIsWord(s.charCodeAt(j - 1)) || j >= s.length || !traceIsBlank(s.charCodeAt(j))) return none
+  if (!traceSecretName(s.slice(n, j))) return none
+  let v = j
+  while (v < s.length && traceIsBlank(s.charCodeAt(v))) v++
+  const c = s.charCodeAt(v)
+  if (v >= s.length || traceIsSpace(c) || c === 45 || c === 61) return none
+  let end
+  if (c === 34 || c === 39) {
+    end = traceQuotedWordEnd(s, v)
+  } else {
+    end = traceTrimValueTail(s, v, traceRunEnd(s, v))
+    if (/^[a-z]*$/.test(s.slice(v, end))) return none
+  }
+  if (end === v || s.slice(v, end) === TRACE_REDACTED) return none
+  return { start: v, end, nameEnd: j }
+}
+// The key rule's scanner: every colon, read once, left to right, never
+// reaching back past the last value removed.
+const traceRedactAt = (text, marker, valueAt) => {
+  let at = text.indexOf(marker)
+  if (at < 0) return text
+  let out = ''
+  let last = 0
+  let changed = false
+  while (at >= 0) {
+    let next = at + marker.length
+    const found = valueAt(text, last, at)
+    if (found) {
+      out += text.slice(last, found[0]) + TRACE_REDACTED
+      last = next = found[1]
+      changed = true
+    }
+    at = text.indexOf(marker, next)
+  }
+  return changed ? out + text.slice(last) : text
+}
+const redactTraceSecretKeys = (text) => traceRedactAt(text, ':', traceSecretKeyValueAt)
+// A flag's name is read whole, across -, so a -- inside it starts no flag
+// and a scan that finds none resumes past the name: linear on --a--a--a.
+const redactTraceSecretFlags = (text) => {
+  let at = text.indexOf('--')
+  if (at < 0) return text
+  let out = ''
+  let last = 0
+  let changed = false
+  while (at >= 0) {
+    let next = at + 2
+    const found = traceSecretFlagValueAt(text, at)
+    if (found && found.start !== undefined) {
+      out += text.slice(last, found.start) + TRACE_REDACTED
+      last = next = found.end
+      changed = true
+    } else if (found && found.nameEnd > next) {
+      next = found.nameEnd
+    }
+    at = text.indexOf('--', next)
   }
   return changed ? out + text.slice(last) : text
 }
@@ -645,7 +786,7 @@ const redactTraceLocalIdentity = (text, identity) => {
 }
 
 const scrubTraceText = (text, identity = TRACE_LOCAL_IDENTITY) =>
-  redactTraceLocalIdentity(redactTraceHomePaths(redactTraceAccountHomes(redactTraceEmails(redactTraceEnvDumps(redactTraceSecretAssignments(scrubTraceCommon(text)))), identity)), identity)
+  redactTraceLocalIdentity(redactTraceHomePaths(redactTraceAccountHomes(redactTraceEmails(redactTraceEnvDumps(redactTraceSecretAssignments(redactTraceSecretKeys(redactTraceSecretFlags(scrubTraceCommon(text)))))), identity)), identity)
 
 // prepareTraceHistory takes the COMPLETE text parts of one assistant
 // message — `{type: 'text', text}` entries, the shape opencode's message

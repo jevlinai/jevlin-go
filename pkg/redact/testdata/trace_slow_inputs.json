@@ -28,5 +28,17 @@
   "prefix": "\"",
   "unit": "PASSWORD=a;",
   "suffix": ""
+ },
+ {
+  "name": "dashes, over and over",
+  "prefix": "",
+  "unit": "--",
+  "suffix": ""
+ },
+ {
+  "name": "one flag name of many double dashes",
+  "prefix": "",
+  "unit": "--a",
+  "suffix": " x1"
  }
 ]

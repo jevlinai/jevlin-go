@@ -198,17 +198,22 @@ func secretValueAt(s string, floor, e int, words *wordScan) (start, end int, ok 
 		psEnv = p >= 5 && asciiEqualFold(s[p-5:p], "$env:")
 	}
 	bridge := isBridgeName(name)
-	if k < e && !psEnv && !bridge {
-		return 0, 0, false
+	v := e + 1
+	for v < len(s) && isBlank(s[v]) {
+		v++
+	}
+	// Blanks around `=` belong to PowerShell and the bridge, and to any
+	// name whose value is quoted: TOML's and Python's password = "x". An
+	// unquoted value after them is code (token = get_token()) or prose.
+	quoted := v < len(s) && (s[v] == '"' || s[v] == '\'')
+	if !psEnv && !bridge && !quoted {
+		if k < e {
+			return 0, 0, false
+		}
+		v = e + 1
 	}
 	if !bridge && !secretName(name) {
 		return 0, 0, false
-	}
-	v := e + 1
-	if psEnv || bridge {
-		for v < len(s) && isBlank(s[v]) {
-			v++
-		}
 	}
 	words.advance(s, p)
 	if v < len(s) && !isSpace(s[v]) && s[v] != '=' && isCmdSet(s, floor, p, name) {
@@ -330,7 +335,9 @@ func secretValueEnd(s string, v int, words *wordScan) int {
 	switch s[v] {
 	case '"', '\'':
 		from = quotedWordEnd(s, v)
-	case '=':
+	case '=', ' ', '\t', '\n', '\f', '\r':
+		// A comparison (a==b), or no value at all (set NAME= to clear it):
+		// a quote that holds the name does not reach past the blank.
 		return v
 	}
 	if q := words.enclosing(); q != 0 {

@@ -1671,5 +1671,222 @@
   "account": "",
   "in": "JWTToken=a",
   "want": "JWTToken=[REDACTED]"
+ },
+ {
+  "name": "spaced/toml and python with a quoted value",
+  "host": "",
+  "account": "",
+  "in": "password = \"correct horse\"\nAPI_KEY = 'abc def'\nclient_secret\t=\t\"x\"",
+  "want": "password = [REDACTED]\nAPI_KEY = [REDACTED]\nclient_secret\t=\t[REDACTED]"
+ },
+ {
+  "name": "spaced/a blank after = only",
+  "host": "",
+  "account": "",
+  "in": "password= \"a b\" next",
+  "want": "password= [REDACTED] next"
+ },
+ {
+  "name": "survives/spaced = before code",
+  "host": "",
+  "account": "",
+  "in": "token = get_token()\npassword = None\nsecret = os.environ[\"S\"]",
+  "want": "token = get_token()\npassword = None\nsecret = os.environ[\"S\"]"
+ },
+ {
+  "name": "survives/a comparison with a quoted value",
+  "host": "",
+  "account": "",
+  "in": "if password == \"x\": pass\nif token != 'y': pass",
+  "want": "if password == \"x\": pass\nif token != 'y': pass"
+ },
+ {
+  "name": "keys/yaml",
+  "host": "",
+  "account": "",
+  "in": "db:\n  user: app\n  password: correct horse battery\n  host: db1",
+  "want": "db:\n  user: app\n  password: [REDACTED]\n  host: db1"
+ },
+ {
+  "name": "keys/yaml list item and crlf",
+  "host": "",
+  "account": "",
+  "in": "- API_TOKEN: abc def\r\n- name: x",
+  "want": "- API_TOKEN: [REDACTED]\r\n- name: x"
+ },
+ {
+  "name": "keys/yaml quoted value takes the line",
+  "host": "",
+  "account": "",
+  "in": "  client_secret: \"a b\" # rotated",
+  "want": "  client_secret: [REDACTED]"
+ },
+ {
+  "name": "keys/pretty json",
+  "host": "",
+  "account": "",
+  "in": "{\n  \"client_secret\": \"Secret Canary\",\n  \"client_id\": \"app\"\n}",
+  "want": "{\n  \"client_secret\": [REDACTED],\n  \"client_id\": \"app\"\n}"
+ },
+ {
+  "name": "keys/inline json",
+  "host": "",
+  "account": "",
+  "in": "{\"client_secret\": \"Secret Canary\", \"user\": \"app\"}",
+  "want": "{\"client_secret\": [REDACTED], \"user\": \"app\"}"
+ },
+ {
+  "name": "keys/minified json keeps the next key",
+  "host": "",
+  "account": "",
+  "in": "{\"password\":\"a b\",\"user\":\"app\"}",
+  "want": "{\"password\":[REDACTED],\"user\":\"app\"}"
+ },
+ {
+  "name": "keys/a js object mid-line",
+  "host": "",
+  "account": "",
+  "in": "connect({ password: 'it''s x', host })",
+  "want": "connect({ password: [REDACTED], host })"
+ },
+ {
+  "name": "keys/single-quoted keys",
+  "host": "",
+  "account": "",
+  "in": "{'apiKey': 'abc', 'n': 1}",
+  "want": "{'apiKey': [REDACTED], 'n': 1}"
+ },
+ {
+  "name": "keys/a header at a line's start",
+  "host": "",
+  "account": "",
+  "in": "X-Api-Key: abc123\nAccept: */*",
+  "want": "X-Api-Key: [REDACTED]\nAccept: */*"
+ },
+ {
+  "name": "keys/cost: prose at a line's start",
+  "host": "",
+  "account": "",
+  "in": "Password: use the vault, not this file",
+  "want": "Password: [REDACTED]"
+ },
+ {
+  "name": "survives/a key and a colon mid-sentence",
+  "host": "",
+  "account": "",
+  "in": "the password: use the vault, and the token: rotate it",
+  "want": "the password: use the vault, and the token: rotate it"
+ },
+ {
+  "name": "survives/a key with nothing after it",
+  "host": "",
+  "account": "",
+  "in": "secrets:\n  password:\n    file: x",
+  "want": "secrets:\n  password:\n    file: x"
+ },
+ {
+  "name": "survives/a key without a blank before an unquoted value",
+  "host": "",
+  "account": "",
+  "in": "password:x at the start",
+  "want": "password:x at the start"
+ },
+ {
+  "name": "survives/a non-secret key",
+  "host": "",
+  "account": "",
+  "in": "name: app\n\"user\": \"x\"",
+  "want": "name: app\n\"user\": \"x\""
+ },
+ {
+  "name": "flags/curl --api-key",
+  "host": "",
+  "account": "",
+  "in": "curl --api-key KeyCanary0123 https://example.test",
+  "want": "curl --api-key [REDACTED] https://example.test"
+ },
+ {
+  "name": "flags/a quoted value",
+  "host": "",
+  "account": "",
+  "in": "mysql --password 'a b' -h db",
+  "want": "mysql --password [REDACTED] -h db"
+ },
+ {
+  "name": "flags/a variable",
+  "host": "",
+  "account": "",
+  "in": "gh --token $GH_TOKEN repo list",
+  "want": "gh --token [REDACTED] repo list"
+ },
+ {
+  "name": "survives/a flag in prose",
+  "host": "",
+  "account": "",
+  "in": "use the --password flag, or pass --token to the command",
+  "want": "use the --password flag, or pass --token to the command"
+ },
+ {
+  "name": "survives/the next flag is not a value",
+  "host": "",
+  "account": "",
+  "in": "docker login --password-stdin --username x\nfoo --token --verbose",
+  "want": "docker login --password-stdin --username x\nfoo --token --verbose"
+ },
+ {
+  "name": "survives/a single-dash flag",
+  "host": "",
+  "account": "",
+  "in": "mysql -p hunter2 -u root",
+  "want": "mysql -p hunter2 -u root"
+ },
+ {
+  "name": "survives/a flag on its own line end",
+  "host": "",
+  "account": "",
+  "in": "set --api-key\nnext",
+  "want": "set --api-key\nnext"
+ },
+ {
+  "name": "flags/a flag joined to a word",
+  "host": "",
+  "account": "",
+  "in": "bob@example.com--token abc1 and a-b--token abc1",
+  "want": "[REDACTED]--token [REDACTED] and a-b--token [REDACTED]"
+ },
+ {
+  "name": "order/a key's value removed before the word it opens is read",
+  "host": "",
+  "account": "",
+  "in": "next - PASS:\" \"key:MII--PASS=),\"\"\"\"",
+  "want": "next - PASS:[REDACTED]key:MII--PASS=[REDACTED]"
+ },
+ {
+  "name": "order/a flag's value removed before a set is read",
+  "host": "",
+  "account": "",
+  "in": "x --token abc1,`set PASS=| next",
+  "want": "x --token [REDACTED] PASS=[REDACTED] next"
+ },
+ {
+  "name": "survives/a blank after = inside a quoted word",
+  "host": "",
+  "account": "",
+  "in": "-e \"PASSWORD= a b\" next",
+  "want": "-e \"PASSWORD= a b\" next"
+ },
+ {
+  "name": "survives/a blank before a colon",
+  "host": "",
+  "account": "",
+  "in": "password : x y\n  token : abc1",
+  "want": "password : x y\n  token : abc1"
+ },
+ {
+  "name": "survives/three dashes are not a flag",
+  "host": "",
+  "account": "",
+  "in": "---token abc1",
+  "want": "---token abc1"
  }
 ]
