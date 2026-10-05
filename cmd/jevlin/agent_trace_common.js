@@ -91,15 +91,66 @@ const traceFold = (name) => name.replace(/[A-Za-z.]/g, (c) => {
   return '[' + l + c.toUpperCase() + (l === 'k' ? '\u212A' : l === 's' ? '\u017F' : '') + ']'
 })
 
+// The end of the blanks (space, tab) that close s[from:to]: a loop, because
+// /[ \t]+$/ restarts at every blank of a run that something else ends and
+// takes time quadratic in the run.
+const traceTrimBlanksEnd = (s, from, to) => {
+  while (to > from && traceIsBlank(s.charCodeAt(to - 1))) to--
+  return to
+}
+
+// A bare JWT, as Go's \beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\b
+// matches it, by a scan rather than that expression. A backtracking engine
+// restarts it at every eyJ that follows a `-` and runs each start to the end
+// of the same segment, which is quadratic in a run such as -eyJ-eyJ-eyJ….
+// Every start inside one run of [A-Za-z0-9_-] shares that run's end, and the
+// first segment must be the whole rest of the run (the next character has to
+// be a dot), so the leftmost start decides for all of them: when it fails, the
+// scan moves past the run. The third segment ends at the last word character
+// of its run, where \b holds; a trailing `-` is not a word character.
+const traceIsJwtChar = (c) => traceIsWord(c) || c === 45
+const traceJwtRunEnd = (s, i) => {
+  while (i < s.length && traceIsJwtChar(s.charCodeAt(i))) i++
+  return i
+}
+const redactTraceJwts = (text) => {
+  let out = ''
+  let last = 0
+  let i = text.indexOf('eyJ')
+  while (i >= 0) {
+    if (i > 0 && traceIsWord(text.charCodeAt(i - 1))) {
+      i = text.indexOf('eyJ', i + 1)
+      continue
+    }
+    const r1 = traceJwtRunEnd(text, i + 3)
+    let end = -1
+    if (r1 - (i + 3) >= 4 && text.charCodeAt(r1) === 46) {
+      const r2 = traceJwtRunEnd(text, r1 + 1)
+      if (r2 - (r1 + 1) >= 4 && text.charCodeAt(r2) === 46) {
+        let r3 = traceJwtRunEnd(text, r2 + 1)
+        while (r3 > r2 + 1 && text.charCodeAt(r3 - 1) === 45) r3--
+        if (r3 - (r2 + 1) >= 4) end = r3
+      }
+    }
+    if (end < 0) {
+      i = text.indexOf('eyJ', r1)
+      continue
+    }
+    out += text.slice(last, i) + TRACE_REDACTED
+    last = end
+    i = text.indexOf('eyJ', end)
+  }
+  return last === 0 ? text : out + text.slice(last)
+}
+
 // scrubCommon: credentials with a recognizable shape.
 // Start URL/email scans at token boundaries to avoid rescanning long words.
-const scrubTraceCommon = (text) => text
+const scrubTraceCommon = (text) => redactTraceJwts(text
   .replace(/(?<![a-zA-Z0-9+.-])([a-zA-Z0-9+.-]*:\/\/)[^/@\t\n\f\r ]+@/g, (match, prefix) =>
     /[a-zA-Z]/.test(prefix) ? prefix + TRACE_REDACTED : match)
   .replace(/\b(?:sk|sr)-[A-Za-z0-9_-]{16,}/g, TRACE_REDACTED)
   .replace(/\bgh[opsur]_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, TRACE_REDACTED)
-  .replace(/\bAKIA[0-9A-Z]{16}\b/g, TRACE_REDACTED)
-  .replace(/\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\b/g, TRACE_REDACTED)
+  .replace(/\bAKIA[0-9A-Z]{16}\b/g, TRACE_REDACTED))
 
 // redactSecretAssignments: the value of NAME=value when a whole segment of
 // NAME (split on _ - .) is a secret word, or NAME is our own trace bridge,
@@ -266,7 +317,8 @@ const redactTraceEnvDumps = (text) => {
     const m = TRACE_ENV_LINE.exec(line)
     if (m) {
       const v = m[3]
-      isEnv[i] = !v.startsWith('=') && !v.replace(/[ \t]+$/, '').endsWith(',') && !TRACE_ENV_PAIR_AFTER_SPACE.test(v)
+      const vEnd = traceTrimBlanksEnd(v, 0, v.length)
+      isEnv[i] = !v.startsWith('=') && !(vEnd > 0 && v.charCodeAt(vEnd - 1) === 44) && !TRACE_ENV_PAIR_AFTER_SPACE.test(v)
       names[i] = m[2]
       continue
     }
@@ -299,9 +351,18 @@ const redactTraceEnvDumps = (text) => {
 // the first match ended, and removes ".a1@example.org"; the lookbehind here,
 // which keeps this scan from restarting inside every long word, does not,
 // and keeps it. No byte-identical rewrite is known that stays linear.
+//
+// The remote-access verb is looked for directly before the address, past
+// any blanks, without copying or rescanning the text before it: once per
+// address over everything before it is quadratic in a text of addresses.
+const TRACE_REMOTE_ACCESS_VERBS = ['ssh', 'scp', 'rsync', 'sftp']
+const traceLooksLikeRemoteTarget = (s, start) => {
+  const k = traceTrimBlanksEnd(s, 0, start)
+  return TRACE_REMOTE_ACCESS_VERBS.some((verb) => k >= verb.length && s.slice(k - verb.length, k).toLowerCase() === verb)
+}
 const redactTraceEmails = (text) => text
   .replace(/(?<![A-Za-z0-9._%+-])([.%+-]*)([A-Za-z0-9_][A-Za-z0-9._%+-]*@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b)/g, (match, leading, email, offset, source) =>
-    source[offset + match.length] === ':' || /(?:ssh|scp|rsync|sftp)$/i.test(source.slice(0, offset + leading.length).replace(/[ \t]+$/, '')) ? match : leading + TRACE_REDACTED)
+    source[offset + match.length] === ':' || traceLooksLikeRemoteTarget(source, offset + leading.length) ? match : leading + TRACE_REDACTED)
 
 const redactTraceHomePaths = (text) => text
   .replace(/([A-Za-z\u212A\u017F]:\\[Uu][Ss\u017F][Ee][Rr][Ss\u017F]\\)[^\\\t\n\f\r ]+/g, '$1' + TRACE_REDACTED)

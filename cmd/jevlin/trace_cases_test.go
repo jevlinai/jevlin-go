@@ -249,3 +249,84 @@ func TestBothScrubbersRemoveThisMachinesOwnNames(t *testing.T) {
 		t.Errorf("the two scrubbers' default identities disagree\n%s", traceDifference(*js[0], goText))
 	}
 }
+
+// sharedTraceLinearBound is how long the shared source's scrub may take over
+// 256 KiB of any row of pkg/redact/testdata/trace_slow_inputs.json, which
+// pkg/redact's TestTraceTextIsLinearOnAdversarialInputs holds Go to. Before
+// they were made linear the fastest of them took 4.7 s here (an address
+// after an address) and the slowest 168 s (blanks before a few addresses);
+// after, each takes under 15 ms. So the bound fails the quadratic code by
+// ten times and passes the linear code by more than twenty on the machine
+// that measured it. The scrub runs synchronously in the opencode plugin and
+// the Pi extension, before the shell tool, so slow here is a delayed search.
+const sharedTraceLinearBound = 400 * time.Millisecond
+
+// Each slow input, built to 256 KiB, through the JavaScript scrubber in a
+// node of its own, timed inside node so its start-up is not counted: the
+// best of three runs against sharedTraceLinearBound. A node that has not
+// finished in fifteen seconds is stopped, and that is a failure too.
+func TestTheSharedSourceScrubsAdversarialInputsInLinearTime(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "pkg", "redact", "testdata", "trace_slow_inputs.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inputs []struct{ Name, Prefix, Unit, Suffix string }
+	if err := json.Unmarshal(raw, &inputs); err != nil {
+		t.Fatal(err)
+	}
+	if len(inputs) == 0 {
+		t.Fatal("no slow inputs")
+	}
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatal("node is required to verify the shared trace-preparation source")
+	}
+	script := `
+ const fs = await import('node:fs');
+ const input = JSON.parse(fs.readFileSync(0,'utf8'));
+ const src = input.shared + "\nexport { scrubTraceText, traceIdentityPatterns, TRACE_SOURCE_CAP };";
+ const m = await import('data:text/javascript;base64,'+Buffer.from(src).toString('base64'));
+ const c = input.input;
+ const n = Math.floor((m.TRACE_SOURCE_CAP - Buffer.byteLength(c.Prefix) - Buffer.byteLength(c.Suffix)) / Buffer.byteLength(c.Unit));
+ const text = c.Prefix + c.Unit.repeat(n) + c.Suffix;
+ const id = m.traceIdentityPatterns('', '');
+ let best = Infinity;
+ for (let i = 0; i < 3 && best > input.boundMs; i++) {
+  const start = performance.now();
+  m.scrubTraceText(text, id);
+  best = Math.min(best, performance.now() - start);
+ }
+ process.stdout.write(JSON.stringify({ bytes: Buffer.byteLength(text), ms: best }));`
+	for _, in := range inputs {
+		payload, err := json.Marshal(map[string]any{"shared": agentTraceCommonJS, "input": in, "boundMs": sharedTraceLinearBound.Milliseconds()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		cmd := exec.CommandContext(ctx, node, "--input-type=module", "-e", script) // #nosec G204 -- fixed test script and local Node runtime; synthetic input on stdin
+		cmd.Stdin = strings.NewReader(string(payload))
+		output, err := cmd.Output()
+		timedOut := ctx.Err() != nil
+		cancel()
+		if timedOut {
+			t.Errorf("%s: the shared source had not finished after 15 s", in.Name)
+			continue
+		}
+		if err != nil {
+			t.Fatalf("%s: %v\n%s", in.Name, err, output)
+		}
+		var got struct {
+			Bytes int
+			Ms    float64
+		}
+		if err := json.Unmarshal(output, &got); err != nil {
+			t.Fatalf("%s: %v: %s", in.Name, err, output)
+		}
+		if got.Bytes < 255*1024 {
+			t.Fatalf("%s: built only %d bytes", in.Name, got.Bytes)
+		}
+		if bound := float64(sharedTraceLinearBound.Milliseconds()); got.Ms > bound {
+			t.Errorf("%s: the shared source took %.0f ms over %d bytes, bound %.0f ms", in.Name, got.Ms, got.Bytes, bound)
+		}
+	}
+}

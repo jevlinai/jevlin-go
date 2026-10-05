@@ -1,0 +1,26 @@
+[
+ {
+  "name": "a run of blanks inside an environment line's value",
+  "prefix": "A=",
+  "unit": " ",
+  "suffix": "x"
+ },
+ {
+  "name": "a run of blanks before a few addresses",
+  "prefix": "",
+  "unit": " ",
+  "suffix": "x a@b.cc a@b.cc a@b.cc a@b.cc"
+ },
+ {
+  "name": "eyJ after a dash, over and over",
+  "prefix": "",
+  "unit": "-eyJ",
+  "suffix": ""
+ },
+ {
+  "name": "address after address",
+  "prefix": "",
+  "unit": "A@b.cc ",
+  "suffix": ""
+ }
+]

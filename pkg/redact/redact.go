@@ -242,7 +242,7 @@ func redactEmails(s string) string {
 		if end < len(s) && s[end] == ':' {
 			continue
 		}
-		if looksLikeRemoteTarget(s[:start]) {
+		if looksLikeRemoteTarget(s, start) {
 			continue
 		}
 		b.WriteString(s[last:start])
@@ -253,14 +253,19 @@ func redactEmails(s string) string {
 	return b.String()
 }
 
-// looksLikeRemoteTarget reports whether before ends with a remote-access
-// verb immediately adjacent to where a match starts (only whitespace
+// looksLikeRemoteTarget reports whether s[:start] ends with a remote-access
+// verb immediately adjacent to where a match starts (only spaces or tabs
 // between) — "ssh deploy@..." qualifies, "contact ssh@..." does not,
-// since "contact" sits between "ssh" and nothing there.
-func looksLikeRemoteTarget(before string) bool {
-	trimmed := strings.ToLower(strings.TrimRight(before, " \t"))
+// since "contact" sits between "ssh" and nothing there. It looks back from
+// start and touches only those blanks and the verb: lowering and trimming
+// all of s[:start] for every address is quadratic in a text of addresses.
+func looksLikeRemoteTarget(s string, start int) bool {
+	k := start
+	for k > 0 && isBlank(s[k-1]) {
+		k--
+	}
 	for _, verb := range remoteAccessVerbs {
-		if strings.HasSuffix(trimmed, verb) {
+		if k >= len(verb) && asciiEqualFold(s[k-len(verb):k], verb) {
 			return true
 		}
 	}

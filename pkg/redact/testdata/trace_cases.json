@@ -999,5 +999,117 @@
   "account": "redacted",
   "in": "API_TOKEN=x on redacted, and USER=redacted",
   "want": "API_TOKEN=[REDACTED] on redacted, and USER=redacted"
+ },
+ {
+  "name": "jwt/after a dash",
+  "host": "",
+  "account": "",
+  "in": "x-eyJabcd.efgh.ijkl next",
+  "want": "x-[REDACTED] next"
+ },
+ {
+  "name": "survives/jwt after a word character",
+  "host": "",
+  "account": "",
+  "in": "xeyJabcd.efgh.ijkl",
+  "want": "xeyJabcd.efgh.ijkl"
+ },
+ {
+  "name": "jwt/a trailing dash is handed back",
+  "host": "",
+  "account": "",
+  "in": "eyJabcd.efgh.ijkl-- next",
+  "want": "[REDACTED]-- next"
+ },
+ {
+  "name": "survives/jwt third segment short once its dashes go",
+  "host": "",
+  "account": "",
+  "in": "eyJabcd.efgh.ijk-- next",
+  "want": "eyJabcd.efgh.ijk-- next"
+ },
+ {
+  "name": "survives/jwt first segment too short",
+  "host": "",
+  "account": "",
+  "in": "eyJab.efgh.ijkl",
+  "want": "eyJab.efgh.ijkl"
+ },
+ {
+  "name": "survives/jwt second segment too short",
+  "host": "",
+  "account": "",
+  "in": "eyJabcd.efg.ijkl",
+  "want": "eyJabcd.efg.ijkl"
+ },
+ {
+  "name": "survives/jwt with no second dot",
+  "host": "",
+  "account": "",
+  "in": "eyJabcd.efghijkl",
+  "want": "eyJabcd.efghijkl"
+ },
+ {
+  "name": "jwt/the leftmost start in a run decides",
+  "host": "",
+  "account": "",
+  "in": "-eyJ-eyJabcd.efgh.ijkl",
+  "want": "-[REDACTED]"
+ },
+ {
+  "name": "jwt/one after another",
+  "host": "",
+  "account": "",
+  "in": "eyJabcd.efgh.ijkl.eyJabcd.efgh.ijkl",
+  "want": "[REDACTED].[REDACTED]"
+ },
+ {
+  "name": "jwt/a failed start gives up only its own run",
+  "host": "",
+  "account": "",
+  "in": "eyJab.eyJabcd.efgh.ijkl",
+  "want": "eyJab.[REDACTED]"
+ },
+ {
+  "name": "jwt/a run that fails as a third segment can be a second",
+  "host": "",
+  "account": "",
+  "in": "eyJabcd.eyJabcd.ab--.wxyz",
+  "want": "eyJabcd.[REDACTED]"
+ },
+ {
+  "name": "survives/a remote verb in capitals, then blanks",
+  "host": "",
+  "account": "",
+  "in": "SSH \t deploy@prod.example.com",
+  "want": "SSH \t deploy@prod.example.com"
+ },
+ {
+  "name": "email/a remote verb not next to the address",
+  "host": "",
+  "account": "",
+  "in": "ssh is deploy@prod.example.com",
+  "want": "ssh is [REDACTED]"
+ },
+ {
+  "name": "email/a remote verb on the line before",
+  "host": "",
+  "account": "",
+  "in": "ssh\ndeploy@prod.example.com",
+  "want": "ssh\n[REDACTED]"
+ },
+ {
+  "name": "dump/a value ending in a comma and blanks breaks a run",
+  "host": "",
+  "account": "",
+  "in": "A=1,  \nB=2\nC=3\nD=4\nE=5\nF=6",
+  "want": "A=1,  \nB=[REDACTED]\nC=[REDACTED]\nD=[REDACTED]\nE=[REDACTED]\nF=[REDACTED]"
+ },
+ {
+  "name": "survives/jwt first segment one short",
+  "host": "",
+  "account": "",
+  "in": "eyJabc.efgh.ijkl",
+  "want": "eyJabc.efgh.ijkl"
  }
 ]
