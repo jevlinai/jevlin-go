@@ -157,8 +157,8 @@ const scrubTraceCommon = (text) => redactTraceJwts(text
 // it, before every other step: from a BEGIN marker whose label ends PRIVATE
 // KEY (or PRIVATE KEY BLOCK) to the next private-key END marker, when no
 // other BEGIN comes first; with none, to its line's end and on through the
-// lines a body holds (base64, Proc-Type:/DEK-Info: headers and the empty
-// line after one).
+// lines a body holds (base64, armor headers and the empty line after one,
+// indentation, > markers and trailing blanks aside).
 const TRACE_PEM_BEGIN = '-----BEGIN '
 const TRACE_PEM_END = '-----END '
 const tracePemMarkerEnd = (s, i) => {
@@ -173,6 +173,15 @@ const tracePemMarkerEnd = (s, i) => {
   return [j + 5, label.endsWith('PRIVATE KEY') || label.endsWith('PRIVATE KEY BLOCK')]
 }
 const traceIsBase64Line = (line) => /^[A-Za-z0-9+\/=]*$/.test(line)
+// A body line is read without leading blanks and > markers and without
+// trailing blanks, so an indented or blockquoted key goes as a bare one does.
+// (Loops, not /[\t ]+$/, which is quadratic in a run of blanks.)
+const tracePemLineContent = (line) => {
+  let i = 0
+  while (i < line.length && (traceIsBlank(line.charCodeAt(i)) || line.charCodeAt(i) === 62)) i++
+  return line.slice(i, traceTrimBlanksEnd(line, i, line.length))
+}
+const TRACE_PEM_HEADERS = ['Proc-Type:', 'DEK-Info:', 'Version:', 'Comment:', 'Hash:', 'Charset:', 'MessageID:']
 const tracePemBodyEnd = (s, h) => {
   let end = traceLineEnd(s, h)
   let afterHeader = false
@@ -181,12 +190,13 @@ const tracePemBodyEnd = (s, h) => {
     if (s.charCodeAt(start) === 13) start++
     if (start >= s.length || s.charCodeAt(start) !== 10) break
     start++
-    const line = s.slice(start, traceLineEnd(s, start))
+    const raw = s.slice(start, traceLineEnd(s, start))
+    const line = tracePemLineContent(raw)
     if (line === '' && afterHeader) afterHeader = false
-    else if (line.startsWith('Proc-Type:') || line.startsWith('DEK-Info:')) afterHeader = true
+    else if (TRACE_PEM_HEADERS.some((p) => line.startsWith(p))) afterHeader = true
     else if (line !== '' && traceIsBase64Line(line)) afterHeader = false
     else return end
-    end = start + line.length
+    end = start + raw.length
   }
   return end
 }

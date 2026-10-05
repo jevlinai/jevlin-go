@@ -2168,5 +2168,40 @@
   "account": "",
   "in": "x --clientSecret Sx1 --secretName Sx2",
   "want": "x --clientSecret [REDACTED] --secretName Sx2"
+ },
+ {
+  "name": "pem/a cut-off key that is indented",
+  "host": "",
+  "account": "",
+  "in": "Here it is:\n    -----BEGIN PRIVATE KEY-----\n    MIIEvQSyntheticCanary\n    SyntheticCanaryLine2  \nand that is all",
+  "want": "Here it is:\n    [REDACTED]\nand that is all"
+ },
+ {
+  "name": "pem/a cut-off key in a blockquote",
+  "host": "",
+  "account": "",
+  "in": "> -----BEGIN RSA PRIVATE KEY-----\n> Proc-Type: 4,ENCRYPTED\n> DEK-Info: AES-128-CBC,0A1B\n>\n> MIIBSyntheticCanary\n\nnext",
+  "want": "> [REDACTED]\n\nnext"
+ },
+ {
+  "name": "pem/a cut-off key led by tabs",
+  "host": "",
+  "account": "",
+  "in": "\t-----BEGIN EC PRIVATE KEY-----\n\tMHcCAQEEISynthetic\n\t\tQUJD\nnext line",
+  "want": "\t[REDACTED]\nnext line"
+ },
+ {
+  "name": "pem/a cut-off pgp block with its headers",
+  "host": "",
+  "account": "",
+  "in": "-----BEGIN PGP PRIVATE KEY BLOCK-----\nVersion: GnuPG v2\nComment: synthetic\n\nlQOYBSyntheticCanary\n=abcd\nnext line",
+  "want": "[REDACTED]\nnext line"
+ },
+ {
+  "name": "pem/a prose line after a cut-off key stays",
+  "host": "",
+  "account": "",
+  "in": "-----BEGIN PRIVATE KEY-----\nMIIB\nNote: the rest was cut",
+  "want": "[REDACTED]\nNote: the rest was cut"
  }
 ]

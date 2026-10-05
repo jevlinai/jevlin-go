@@ -38,8 +38,9 @@ func pemMarkerEnd(s string, i int) (int, bool) {
 // key, when no other BEGIN marker comes first. A block with no such END is
 // cut short or was pasted in part, and goes from its BEGIN marker to the
 // end of that line and on through the lines that follow it while they are
-// a body's: base64 only, an RFC 1421 header (Proc-Type:, DEK-Info:), or
-// the empty line after one.
+// a body's: base64 only, an armor header (Proc-Type:, DEK-Info:, Version:,
+// Comment: and the like), or the empty line after one, each read without
+// the indentation, blockquote markers or trailing blanks around it.
 //
 // The cost: prose that quotes a BEGIN marker and later an END marker loses
 // what stands between them.
@@ -96,7 +97,10 @@ func indexFrom(s, sub string, i int) int {
 
 // pemBodyEnd is where an unclosed block that starts its header line's
 // remainder at h ends: that line's end, then each following line that a
-// PEM body holds, with the empty line after a header.
+// PEM body holds, with the empty line after a header. A line is read
+// without what quoting adds around it: leading blanks and tabs, Markdown
+// blockquote markers (> ), and trailing blanks, so an indented, a
+// blockquoted or a tab-led key loses its body as a bare one does.
 func pemBodyEnd(s string, h int) int {
 	end := lineEnd(s, h)
 	afterHeader := false
@@ -109,20 +113,47 @@ func pemBodyEnd(s string, h int) int {
 			break
 		}
 		start++
-		line := s[start:lineEnd(s, start)]
+		raw := s[start:lineEnd(s, start)]
+		line := pemLineContent(raw)
 		switch {
 		case line == "" && afterHeader:
 			afterHeader = false
-		case strings.HasPrefix(line, "Proc-Type:") || strings.HasPrefix(line, "DEK-Info:"):
+		case pemHeaderLine(line):
 			afterHeader = true
 		case line != "" && isBase64Line(line):
 			afterHeader = false
 		default:
 			return end
 		}
-		end = start + len(line)
+		end = start + len(raw)
 	}
 	return end
+}
+
+// pemLineContent is a line without leading blanks and > markers and without
+// trailing blanks.
+func pemLineContent(line string) string {
+	i := 0
+	for i < len(line) && (isBlank(line[i]) || line[i] == '>') {
+		i++
+	}
+	j := len(line)
+	for j > i && isBlank(line[j-1]) {
+		j--
+	}
+	return line[i:j]
+}
+
+// pemHeaderLine reports whether line is one of the headers an armored
+// block carries before its body: RFC 1421's Proc-Type and DEK-Info, and
+// OpenPGP's Version, Comment, Hash, Charset and MessageID.
+func pemHeaderLine(line string) bool {
+	for _, h := range []string{"Proc-Type:", "DEK-Info:", "Version:", "Comment:", "Hash:", "Charset:", "MessageID:"} {
+		if strings.HasPrefix(line, h) {
+			return true
+		}
+	}
+	return false
 }
 
 func isBase64Line(line string) bool {
