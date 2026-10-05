@@ -121,6 +121,23 @@ JSON
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' -format model "<query>"
 
+== codex: hooks.json commands, as read back from the file
+-- PreToolUse
+'/Users/u/.jevlin/bin/jevlin' hook -config '/Users/u/.jevlin/jevlin.toml' codex PreToolUse
+"'/Users/u/.jevlin/bin/jevlin' hook -config '/Users/u/.jevlin/jevlin.toml' codex PreToolUse"
+-- SessionStart
+'/Users/u/.jevlin/bin/jevlin' hook -config '/Users/u/.jevlin/jevlin.toml' codex SessionStart
+"'/Users/u/.jevlin/bin/jevlin' hook -config '/Users/u/.jevlin/jevlin.toml' codex SessionStart"
+-- PreCompact
+'/Users/u/.jevlin/bin/jevlin' hook -config '/Users/u/.jevlin/jevlin.toml' codex PreCompact
+"'/Users/u/.jevlin/bin/jevlin' hook -config '/Users/u/.jevlin/jevlin.toml' codex PreCompact"
+-- PostCompact
+'/Users/u/.jevlin/bin/jevlin' hook -config '/Users/u/.jevlin/jevlin.toml' codex PostCompact
+"'/Users/u/.jevlin/bin/jevlin' hook -config '/Users/u/.jevlin/jevlin.toml' codex PostCompact"
+-- Stop
+'/Users/u/.jevlin/bin/jevlin' hook -config '/Users/u/.jevlin/jevlin.toml' codex Stop
+"'/Users/u/.jevlin/bin/jevlin' hook -config '/Users/u/.jevlin/jevlin.toml' codex Stop"
+
 == cursor: skill command blocks
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' --stdin <<'JSON'

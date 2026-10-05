@@ -144,6 +144,10 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 -- fence powershell
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
 
+== codex: hooks.json commands, as read back from the file
+-- refused
+Codex on windows: which shell runs its hook commands is not established, so nothing is rendered for it
+
 == cursor: skill command blocks
 -- fence powershell
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)

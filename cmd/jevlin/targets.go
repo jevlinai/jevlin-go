@@ -545,12 +545,13 @@ func (codexTarget) Detect(ops agentOps, _ agentPaths, _ func(string) string) str
 	return detectCommand(ops, "codex")
 }
 
-// Codex has two halves — a skill and the sandbox block — and "already
-// installed" is a claim about both. It used to be decided by the skill alone
-// and printed before the block was even planned, so a host whose block is
-// another installation's was reported as already installed AND left in place,
-// in one plan, for one host. Both halves answer now, and the line is printed
-// only when neither of them had anything to do.
+// Codex has three parts — a skill, the sandbox block and, where a live run
+// established what runs them, its hooks — and "already installed" is a claim
+// about all of them. It used to be decided by the skill alone and printed
+// before the block was even planned, so a host whose block is another
+// installation's was reported as already installed AND left in place, in one
+// plan, for one host. Every part answers now, and the line is printed only
+// when none of them had anything to do.
 func (t codexTarget) PlanInstall(ops agentOps, paths agentPaths, entry binEntry, getenv func(string) string, p *agentPlan) {
 	prefer := readPrefer(ops, entry)
 	skillChanged, skillLeft := planSkill(ops, t, paths.codexSkill, entry, prefer, "", p)
@@ -560,9 +561,92 @@ func (t codexTarget) PlanInstall(ops agentOps, paths agentPaths, entry binEntry,
 	} else {
 		p.notes = append(p.notes, t.Label()+": shell commands run sandboxed; if searches record nothing, allow this command network access and let it write to your jevlin home")
 	}
-	if !skillChanged && !skillLeft && !blockChanged && !blockLeft {
+	hooksChanged := t.planHooks(ops, paths, entry, runtime.GOOS, p)
+	if !skillChanged && !skillLeft && !blockChanged && !blockLeft && !hooksChanged {
 		p.skipped = append(p.skipped, t.Label()+": already installed")
 	}
+}
+
+// codexApprovalSentence is what install says whenever it writes Codex's
+// hooks. The client never records an approval for them, in config.toml or
+// anywhere else: approving is the participant's review of commands that run
+// outside Codex's sandbox with their rights, and a tool that approved itself
+// would remove the one check Codex puts between an installer and that.
+const codexApprovalSentence = "Codex runs these hooks only after you approve them: start codex, or open the app, and review them when it asks. " +
+	"Until then they do nothing, and under codex exec nothing says so; searches still run, without a session or a turn. " +
+	"Seen working with codex-cli 0.158.0 and 0.160.0"
+
+// planHooks merges this installation's entries into Codex's hooks.json, for
+// the runner goos declares. An OS with no established runner gets none, and
+// says so in a note rather than a refusal: the skill and the sandbox block it
+// does get are everything it had before, and a refusal would make that
+// working install exit non-zero.
+func (t codexTarget) planHooks(ops agentOps, paths agentPaths, entry binEntry, goos string, p *agentPlan) bool {
+	spec, err := codexHooksFor(t, entry, goos)
+	if err != nil {
+		p.notes = append(p.notes, err.Error()+"; Codex gets the skill and the sandbox block, and its searches carry no session or turn")
+		return false
+	}
+	others := codexHooksHoldOthers(ops, paths.codexHooks, entry)
+	if !planHooksMerge(ops, t.Label(), paths.codexHooks, p, entry, spec) {
+		return false
+	}
+	p.notes = append(p.notes, t.Label()+": "+codexApprovalSentence)
+	if others {
+		p.notes = append(p.notes, t.Label()+": "+paths.codexHooks+" also holds hooks jevlin did not write, and the file is written back whole; Codex may ask you to review them again")
+	}
+	return true
+}
+
+// codexHookLists is every event's list of entries in Codex's hooks.json, or
+// nil when the file is absent or does not read as one.
+func codexHookLists(ops agentOps, path string) map[string][]any {
+	b, err := ops.readFile(path)
+	if err != nil {
+		return nil
+	}
+	m, err := decodeJSONObject(b)
+	if err != nil {
+		return nil
+	}
+	hooks, _ := m["hooks"].(map[string]any)
+	out := map[string][]any{}
+	for ev, v := range hooks {
+		if list, ok := v.([]any); ok {
+			out[ev] = list
+		}
+	}
+	return out
+}
+
+// codexHooksHoldOthers: does the file hold any entry that is not this
+// installation's?
+func codexHooksHoldOthers(ops agentOps, path string, entry binEntry) bool {
+	for _, list := range codexHookLists(ops, path) {
+		for _, e := range list {
+			if !entryIsOurs(e, refFor(entry)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// codexHooksAfterOurs: does any event list an entry that is not ours after
+// one that is? Removing ours moves those up one place.
+func codexHooksAfterOurs(ops agentOps, path string, entry binEntry) bool {
+	for _, list := range codexHookLists(ops, path) {
+		seen := false
+		for _, e := range list {
+			switch {
+			case entryIsOurs(e, refFor(entry)):
+				seen = true
+			case seen:
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (t codexTarget) PlanUninstall(ops agentOps, paths agentPaths, entry binEntry, getenv func(string) string, p *agentPlan) {
@@ -570,6 +654,14 @@ func (t codexTarget) PlanUninstall(ops agentOps, paths agentPaths, entry binEntr
 	if pathExists(ops, filepath.Dir(paths.codexSkill)) {
 		planRemove(p, t.Label(), filepath.Dir(paths.codexSkill))
 		removed = true
+	}
+	shifted := codexHooksAfterOurs(ops, paths.codexHooks, entry)
+	if planHooksRemove(ops, t.Label(), paths.codexHooks, p, entry, "hooks") {
+		removed = true
+		p.notes = append(p.notes, t.Label()+": Codex's record of your approval of these hooks stays in "+paths.codexConfig+"; jevlin never writes it, and leaves it")
+		if shifted {
+			p.notes = append(p.notes, t.Label()+": hooks listed after jevlin's in "+paths.codexHooks+" move up one place, and Codex keys an approval by place; it may ask you to review them again")
+		}
 	}
 	if existing, mode, err := readWithMode(ops, paths.codexConfig); err == nil && existing != nil {
 		switch r := removeOurSandboxBlock(existing, entry, getenv); {
@@ -688,11 +780,21 @@ func pathUnder(p, dir string) bool {
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-func (codexTarget) Status(ops agentOps, paths agentPaths, _ binEntry) targetStatus {
-	if pathExists(ops, paths.codexSkill) {
+// Status says "skill+hooks" only when this installation's entries are in
+// hooks.json, and nothing here says the hooks run: Codex runs a hook only
+// once the participant approves it, and an unapproved one is silent. On an
+// OS where no hooks are written the skill is the whole install.
+func (t codexTarget) Status(ops agentOps, paths agentPaths, entry binEntry) targetStatus {
+	if !pathExists(ops, paths.codexSkill) {
+		return targetStatus{}
+	}
+	if _, err := codexHooksFor(t, entry, runtime.GOOS); err != nil {
 		return targetStatus{true, "skill"}
 	}
-	return targetStatus{}
+	if hooksHaveOurs(ops, paths.codexHooks, entry) {
+		return targetStatus{true, "skill+hooks"}
+	}
+	return targetStatus{true, "skill only"}
 }
 
 func (t codexTarget) PlanPreference(ops agentOps, paths agentPaths, entry binEntry, prefer string, p *agentPlan) {

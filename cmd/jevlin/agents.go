@@ -190,6 +190,7 @@ type agentPaths struct {
 	claudeSettings string
 	codexSkill     string
 	codexConfig    string
+	codexHooks     string
 	cursorSkill    string
 	cursorHooks    string
 	opencodePlugin string
@@ -217,6 +218,7 @@ func (o agentOps) paths(getenv func(string) string) agentPaths {
 		claudeSettings: filepath.Join(claudeDir, "settings.json"),
 		codexSkill:     filepath.Join(codexHome, "skills", agentsName, "SKILL.md"),
 		codexConfig:    filepath.Join(codexHome, "config.toml"),
+		codexHooks:     filepath.Join(codexHome, "hooks.json"),
 		cursorSkill:    filepath.Join(o.home, ".cursor", "skills", agentsName, "SKILL.md"),
 		cursorHooks:    filepath.Join(o.home, ".cursor", "hooks.json"),
 		opencodePlugin: filepath.Join(xdg, "opencode", "plugins", agentsName+".js"),
@@ -946,6 +948,11 @@ type hooksSpec struct {
 	// allow lists the host's permission rules for the search command
 	// (Claude Code only); empty for hosts that have none.
 	allow []string
+	// replaceInPlace writes a changed entry of ours where the first one
+	// stands, instead of at the end of its event's list (Codex). Codex keys a
+	// hook's approval by its place in that list, so moving ours to the end
+	// would renumber every hook after it, and each would need approving again.
+	replaceInPlace bool
 }
 
 // claudeToolMatcher is the PreToolUse matcher: both shell tools, not one.
@@ -1059,6 +1066,43 @@ func cursorHooks(entry binEntry, shells []shellKind) (hooksSpec, string, error) 
 	return hooksSpec{root: "hooks", version: 1, entries: entries, order: events}, note, nil
 }
 
+// codexEvents are the Codex events the install writes an entry under, in
+// the order it writes them. UserPromptSubmit (the prompt), PostToolUse (a
+// tool's output), the subagent events, SessionEnd and PermissionRequest are
+// left out: nothing this client does needs them, and the first two would
+// hand the hook what invariant 2 keeps out of it.
+var codexEvents = []string{"PreToolUse", "SessionStart", "PreCompact", "PostCompact", "Stop"}
+
+// codexHookTimeout is the per-hook timeout, in seconds, Codex was seen
+// running hooks with. Every handler returns at once — the flush is detached —
+// so it bounds only a hook that has gone wrong.
+const codexHookTimeout = 10
+
+// codexHooks is Codex's hooks.json entries, in the shape the live runs used:
+// one group per event, PreToolUse's matched with "*" (no narrower matcher
+// was seen to work, so the hook itself leaves on any tool but the shell),
+// and the command rendered for the runner Codex's declaration names.
+//
+// The command depends on the binary's path, the config's path and the event
+// word, and on nothing else. Codex approves a hook by what it runs, so an
+// upgrade that moves neither renders the same bytes and the approval stands;
+// TestTheCodexHookCommandIsPinned holds the words to a literal.
+func codexHooks(entry binEntry, sh shellKind) (hooksSpec, error) {
+	spec := hooksSpec{root: "hooks", entries: map[string]map[string]any{}, order: codexEvents, replaceInPlace: true}
+	for _, ev := range codexEvents {
+		cmd, err := entry.hookCommandForShell(sh, "codex", ev)
+		if err != nil {
+			return hooksSpec{}, err
+		}
+		group := map[string]any{"hooks": []any{map[string]any{"type": "command", "command": cmd, "timeout": codexHookTimeout}}}
+		if ev == "PreToolUse" {
+			group["matcher"] = "*"
+		}
+		spec.entries[ev] = group
+	}
+	return spec, nil
+}
+
 // claudeHooksFor and cursorHooksFor render a host's hook entries for the
 // runner its declaration names on this OS. An unknown cell has no fallback
 // here: a hook command is not a skill, and one written for a shell nobody
@@ -1072,6 +1116,19 @@ func claudeHooksFor(t installTarget, entry binEntry, goos string) (hooksSpec, er
 		return hooksSpec{}, fmt.Errorf("its hook runner is declared as %d shells; Claude Code's is one", len(shells))
 	}
 	return claudeHooks(entry, shells[0])
+}
+
+// codexHooksFor is the same for Codex, whose hook runner is one shell where
+// it is declared at all.
+func codexHooksFor(t installTarget, entry binEntry, goos string) (hooksSpec, error) {
+	shells, err := declaredShells(t, goos, channelHook)
+	if err != nil {
+		return hooksSpec{}, err
+	}
+	if len(shells) != 1 {
+		return hooksSpec{}, fmt.Errorf("its hook runner is declared as %d shells; Codex's is one", len(shells))
+	}
+	return codexHooks(entry, shells[0])
 }
 
 func cursorHooksFor(t installTarget, entry binEntry, goos string) (hooksSpec, string, error) {
@@ -1188,7 +1245,11 @@ func planHooksMerge(ops agentOps, label, path string, p *agentPlan, entry binEnt
 			// install is a no-op byte for byte.
 			continue
 		}
-		hooks[ev] = append(kept, spec.entries[ev])
+		if spec.replaceInPlace && ours > 0 {
+			hooks[ev] = replaceFirstOfOurs(list, spec.entries[ev], refFor(entry))
+		} else {
+			hooks[ev] = append(kept, spec.entries[ev])
+		}
 		changed = true
 	}
 	if len(spec.allow) > 0 && mergeAllowRules(m, entry, spec.allow) {
@@ -1199,6 +1260,25 @@ func planHooksMerge(ops agentOps, label, path string, p *agentPlan, entry binEnt
 	}
 	next, _ := json.MarshalIndent(m, "", "  ")
 	return planWrite(ops, label, path, append(next, '\n'), mode, "hooks", p)
+}
+
+// replaceFirstOfOurs is list with the first entry of ours replaced by want
+// where it stands, and any other entry of ours removed. Every other entry
+// keeps its order, and those before ours keep their places.
+func replaceFirstOfOurs(list []any, want map[string]any, ref installationRef) []any {
+	out := make([]any, 0, len(list))
+	placed := false
+	for _, e := range list {
+		if !entryIsOurs(e, ref) {
+			out = append(out, e)
+			continue
+		}
+		if !placed {
+			out = append(out, want)
+			placed = true
+		}
+	}
+	return out
 }
 
 // mergeAllowRules brings this installation's permission rules to exactly
