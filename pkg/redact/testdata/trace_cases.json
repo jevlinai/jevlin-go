@@ -2203,5 +2203,12 @@
   "account": "",
   "in": "-----BEGIN PRIVATE KEY-----\nMIIB\nNote: the rest was cut",
   "want": "[REDACTED]\nNote: the rest was cut"
+ },
+ {
+  "name": "keys/two template expressions are not one reference",
+  "host": "",
+  "account": "",
+  "in": "token: ${{ secrets.A }}x y ${{ secrets.B }}",
+  "want": "token: [REDACTED]"
  }
 ]

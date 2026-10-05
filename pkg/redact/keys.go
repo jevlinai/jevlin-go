@@ -178,7 +178,7 @@ func notASecret(v string) bool {
 	return secretReferencePattern.MatchString(v)
 }
 
-var secretReferencePattern = regexp.MustCompile(`^(?:\$?\{\{[^\n]*\}\}|\$\{[^}\n]*\}|\$[A-Za-z_][A-Za-z0-9_]*|<[^<>\t\n ]+>|string|str|number|int|integer|bool|boolean|any|unknown|bytes|float|double|char|String|[A-Za-z_][A-Za-z0-9_:]*<[^\n]*>|[0-9]+ bytes|[{\[(|>+-]+)$`)
+var secretReferencePattern = regexp.MustCompile(`^(?:\$?\{\{[^{}\n]*\}\}|\$\{[^}\n]*\}|\$[A-Za-z_][A-Za-z0-9_]*|<[^<>\t\n ]+>|string|str|number|int|integer|bool|boolean|any|unknown|bytes|float|double|char|String|[A-Za-z_][A-Za-z0-9_:]*<[^\n]*>|[0-9]+ bytes|[{\[(|>+-]+)$`)
 
 // startsLine reports whether only blanks and an optional `-` list marker
 // stand between the start of a line and i, reading nothing before floor.
