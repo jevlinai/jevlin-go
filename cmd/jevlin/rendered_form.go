@@ -90,11 +90,16 @@ func matchedRenderedForms(command, cfg string, shells []shellKind) []renderedFor
 			if !ok {
 				continue
 			}
+			bin, binOK := readRenderedPath(sh, got.bin)
+			cfgPath, cfgOK := readRenderedPath(sh, got.cfg)
+			if !binOK || !cfgOK {
+				continue
+			}
 			out = append(out, renderedFormMatch{
 				shell:     sh,
 				path:      candidate.path,
-				bin:       got.bin,
-				cfg:       unquoteRendered(got.cfg, candidate.text),
+				bin:       bin,
+				cfg:       cfgPath,
 				body:      got.body,
 				wantsBody: candidate.wantsBody,
 			})
@@ -116,7 +121,13 @@ func recognizeRenderedForm(command string, executable func() (string, error), cf
 		if !sameBinary(m.bin, executable) {
 			continue
 		}
-		if cfg != "" && !samePath(m.cfg, cfg) {
+		// The config in the command must already be in clean form. samePath
+		// cleans both sides, and cleaning is a text operation: `a/../x`
+		// cleans to `x` whatever `a` is, while the kernel follows `a` if it
+		// is a symlink and opens another file. Only the hook's own path is
+		// cleaned, so the doubled separators a %q-quoted hook command hands
+		// it still compare.
+		if cfg != "" && (filepath.Clean(m.cfg) != m.cfg || !samePath(m.cfg, cfg)) {
 			continue
 		}
 		if m.wantsBody {
@@ -268,19 +279,41 @@ func matchRendered(command string, form renderedCommand) (matched, bool) {
 	if rest != "" || got.bin == "" {
 		return matched{}, false
 	}
-	got.bin = unquoteRendered(got.bin, form.text)
 	return got, true
 }
 
-// unquoteRendered reverses the quoting a renderer applied to a path. The
-// form's own text says which shell wrote it: a PowerShell command carries
-// the call operator, a POSIX one does not.
-func unquoteRendered(raw, form string) string {
-	if strings.Contains(form, "& "+cfgPlaceholder) || strings.Contains(form, "& "+binPlaceholder) ||
-		strings.Contains(form, "& '") {
-		return strings.ReplaceAll(raw, "''", "'")
+// readRenderedPath reads back a path region of a command rendered for sh,
+// and reports whether it is exactly what that shell's quoting writes for the
+// path it names: quoting the path read back must give back the region, byte
+// for byte.
+//
+// matchRendered takes a path region to run up to the next literal of the
+// form, so the region is whatever the command put there, and a region need
+// not be one quoted word. `'/x'; echo x; '/../jevlin.toml'` in the config's
+// place is read as a path that cleans to the right config, while a POSIX
+// shell ends the quoted word at the first lone quote and runs `echo x`.
+// Re-quoting is the test that only one word was written: a lone quote would
+// be escaped by the quoting, so the region cannot come back unchanged.
+//
+// PowerShell also ends a single-quoted string at a typographic single quote
+// (U+2018 to U+201B), which powerShellQuoteArg does not double, so a region
+// holding one is refused too.
+func readRenderedPath(sh shellKind, raw string) (string, bool) {
+	switch sh {
+	case shellPOSIX:
+		path := strings.ReplaceAll(raw, `'\''`, "'")
+		return path, posixQuoteArg(path) == "'"+raw+"'"
+	case shellPowerShell:
+		if strings.ContainsAny(raw, "\u2018\u2019\u201a\u201b") {
+			return "", false
+		}
+		path := strings.ReplaceAll(raw, "''", "'")
+		return path, powerShellQuoteArg(path) == "'"+raw+"'"
+	case shellCmd:
+		quoted, ok := cmdQuoteArg(raw)
+		return raw, ok && quoted == `"`+raw+`"`
 	}
-	return strings.ReplaceAll(raw, `'\''`, "'")
+	return "", false
 }
 
 // sameBinary is the identity check: the command's own path, resolved, is the
