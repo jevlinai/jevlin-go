@@ -286,11 +286,14 @@ this carries what it concluded. When a turn ends, the agent's end-of-turn hook s
 | `status` | `completed`, `interrupted` or `failed`. |
 | `final_text` | The assistant's last message of the turn, scrubbed of secrets, last 32 KiB. Only on a completed turn, and absent when there is no message to send; the status is sent either way. |
 | `final_chars`, `truncated` | Its length before the cut, and whether it was cut. |
+| `user_text` | What you asked in that turn, scrubbed of secrets, first 32 KiB. Claude Code only. |
+| `steps` | The turn in order: what the assistant wrote (scrubbed, capped), and for each tool it called the tool's **name, duration and whether it succeeded**. Never a tool's input or output. A search of ours is marked by its call id. Claude Code only. |
+| `model`, `usage` | The model, and the turn's token counts. Claude Code only. |
 
 Only for a turn in which a jevlin search was served: `search` marks the turn after the router
 answers, so a search you refused, or one that failed, does not count, and a turn with no served
 search sends nothing. Only to the router `miner.router_url` names; without that line nothing is
-sent. Never your prompt, and never a tool's input or output. The hook writes the record to an owner-only file in
+sent. With it on, what you typed in a searched turn is sent; what your tools read and wrote never is: not a file's contents, not a command, not its output. The model's private reasoning and a subagent's own steps are not sent either. The hook writes the record to an owner-only file in
 `sessions/` and a detached `jevlin turn-end` sends it once and deletes the file, sent or not.
 `JEVLIN_TRACE=off` turns it off too. Claude Code (2.1.196 or later) and Cursor; other agents send
 none. A project set to retain no content keeps the status and not the text.

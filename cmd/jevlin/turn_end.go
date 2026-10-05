@@ -72,6 +72,14 @@ type turnEndRecord struct {
 	FinalText       string `json:"final_text,omitempty"`
 	FinalChars      int    `json:"final_chars,omitempty"`
 	Truncated       bool   `json:"truncated,omitempty"`
+	// The turn's conversation (turn_detail.go). Absent when it could not be
+	// read whole, and for hosts this client has no transcript reader for.
+	UserText      string     `json:"user_text,omitempty"`
+	UserChars     int        `json:"user_chars,omitempty"`
+	UserTruncated bool       `json:"user_truncated,omitempty"`
+	Model         string     `json:"model,omitempty"`
+	Usage         *turnUsage `json:"usage,omitempty"`
+	Steps         []turnStep `json:"steps,omitempty"`
 }
 
 // prepareFinalText scrubs the assistant's final message and keeps its tail,
@@ -184,6 +192,7 @@ type claudeStopPayload struct {
 	HookEventName        string `json:"hook_event_name"`
 	StopHookActive       bool   `json:"stop_hook_active"`
 	LastAssistantMessage string `json:"last_assistant_message"`
+	TranscriptPath       string `json:"transcript_path"`
 }
 
 // claudeTurnEnd reports a Claude Code turn that searched. The final message
@@ -224,6 +233,14 @@ func claudeTurnEnd(ops hookOps, hc hookContext, payload []byte) {
 	}
 	if text, chars, truncated := prepareFinalText(p.LastAssistantMessage); text != "" {
 		rec.FinalText, rec.FinalChars, rec.Truncated = text, chars, truncated
+	}
+	if d := claudeTurnDetail(ops, p); d != nil {
+		rec.UserText, rec.UserChars, rec.UserTruncated = d.UserText, d.UserChars, d.UserTruncated
+		rec.Model, rec.Usage = d.Model, d.Usage
+		rec.Steps = d.Steps
+		if rec.FinalText != "" {
+			rec.Steps = withoutClosingText(rec.Steps)
+		}
 	}
 	queueTurnEnd(ops, hc, rec)
 }

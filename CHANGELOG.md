@@ -18,12 +18,14 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
-- **Opt-in: a turn's final answer.** With `[miner] turn_end = true`, when a turn
-  in which jevlin searched ends, the assistant's last message is sent to the
-  router so a session can be read from its searches to what they were for. Off
-  by default. Scrubbed and capped like the trace; never your prompt, never a
-  tool's output; nothing for a turn with no served search, and nothing unless
-  `miner.router_url` names the router. Claude Code and Cursor.
+- **Opt-in: the conversation around a search.** With `[miner] turn_end = true`,
+  when a turn in which jevlin searched ends, the router is sent that turn: what
+  you asked, what the assistant wrote and concluded, and which tools it called
+  — each tool's name, time and outcome, never its input or output. A session
+  can then be read from the question to the answer. Off by default. Scrubbed
+  and capped like the trace; nothing for a turn with no served search, and
+  nothing unless `miner.router_url` names the router. The conversation is read
+  under Claude Code; Cursor sends the final answer only.
 - **A subagent's searches name their parent.** Under Claude Code and opencode, a
   search made by a subagent now carries `parent_session_id` in its trace: the hashed id of
   the session that started it. The router could already tell that two sessions
