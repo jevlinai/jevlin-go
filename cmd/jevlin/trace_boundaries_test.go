@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os/exec"
 	"strings"
 	"testing"
@@ -103,7 +104,7 @@ func assertPreparedHistory(t *testing.T, text, source string) {
 		}
 	}
 	if text != expected {
-		t.Fatalf("prepared history differs from complete-source scrub followed by UTF-8 cap (got %d bytes, want %d)", len(text), len(expected))
+		t.Fatalf("prepared history differs from complete-source scrub followed by UTF-8 cap (got %d bytes, want %d)\n%s", len(text), len(expected), traceDifference(text, expected))
 	}
 	if len(text) > traceHistoryCap || !utf8.ValidString(text) {
 		t.Fatalf("history exceeds byte cap or is invalid UTF-8: %d", len(text))
@@ -114,6 +115,20 @@ func assertPreparedHistory(t *testing.T, text, source string) {
 			t.Fatalf("prepared history retains synthetic marker %q", fragment)
 		}
 	}
+}
+
+// traceDifference shows where two texts part, bounded on both sides, so a
+// parity failure says what differs rather than only that the lengths do.
+func traceDifference(got, want string) string {
+	i := 0
+	for i < len(got) && i < len(want) && got[i] == want[i] {
+		i++
+	}
+	from := max(0, i-40)
+	window := func(s string) string {
+		return s[min(from, len(s)):min(i+80, len(s))]
+	}
+	return fmt.Sprintf("first difference at byte %d:\n  got:  %q\n  want: %q", i, window(got), window(want))
 }
 
 func TestTraceRedactionBoundaries(t *testing.T) {

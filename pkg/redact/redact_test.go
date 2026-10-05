@@ -2,10 +2,12 @@ package redact
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 )
@@ -235,142 +237,75 @@ func TestFalsePositiveExclusionsDoNotShadowRealSecretsNearby(t *testing.T) {
 	}
 }
 
-// A password has no shape, so the name is what gives it away: an
-// assignment whose name has a secret word as a whole segment loses its
-// value, quoted or not, and keeps its name.
-func TestSecretNamedAssignmentsLoseTheirValue(t *testing.T) {
-	for name, tc := range map[string]struct{ in, want string }{
-		"env style":          {"DATABASE_PASSWORD=hunter2", "DATABASE_PASSWORD=" + placeholder},
-		"export":             {"run export API_TOKEN=abc123 first", "run export API_TOKEN=" + placeholder + " first"},
-		"double quoted":      {`CLIENT_SECRET="two words"`, "CLIENT_SECRET=" + placeholder},
-		"single quoted":      {`DB_PASSWD='p w'`, "DB_PASSWD=" + placeholder},
-		"lowercase name":     {"password=hunter2", "password=" + placeholder},
-		"flag":               {"mysql --password=hunter2 -h db", "mysql --password=" + placeholder + " -h db"},
-		"upper KEY":          {"STRIPE_KEY=whsec_1", "STRIPE_KEY=" + placeholder},
-		"upper PASS":         {"DB_PASS=x9", "DB_PASS=" + placeholder},
-		"two on a line":      {"A_TOKEN=one B_SECRET=two", "A_TOKEN=" + placeholder + " B_SECRET=" + placeholder},
-		"after a newline":    {"first\nAPI_TOKEN=abc", "first\nAPI_TOKEN=" + placeholder},
-		"powershell":         {`$env:API_TOKEN='abc'`, `$env:API_TOKEN=` + placeholder},
-		"already redacted":   {"API_TOKEN=" + placeholder, "API_TOKEN=" + placeholder},
-		"credentials plural": {"AWS_CREDENTIALS=a:b", "AWS_CREDENTIALS=" + placeholder},
-		"camel case apikey":  {"?apiKey=abc123", "?apiKey=" + placeholder},
-	} {
-		if got := TraceText(tc.in); got != tc.want {
-			t.Errorf("%s: TraceText(%q) = %q, want %q", name, tc.in, got, tc.want)
-		}
-	}
+// TestMain takes the machine's own names out of every test in the package.
+// TraceText searches for the hostname and the account it runs under, so a
+// guarantee about ordinary text would otherwise depend on the machine: on a
+// host called prod, or under an account called value, a test whose text
+// says either would fail. A test that needs a name sets it with
+// SetLocalIdentity and restores this.
+func TestMain(m *testing.M) {
+	restore := SetLocalIdentity("", "")
+	code := m.Run()
+	restore()
+	os.Exit(code)
 }
 
-// The rule reads a whole segment of the name, and KEY and PASS only in an
-// all-uppercase name, so ordinary text about keys, passes and tokens is
-// not corpus damage.
-func TestAssignmentsThatAreNotSecretsSurvive(t *testing.T) {
-	for name, text := range map[string]string{ // #nosec G101 -- prose that must NOT be read as credentials
-		"key=value prose":      "pass key=value pairs to the parser",
-		"sort flag":            "sort --key=2 file.txt",
-		"lowercase pass":       "the compiler runs pass=2 next",
-		"substring, not a seg": "MONKEY=banana TOKENIZER_PATH=/opt/tok",
-		"path variables":       "JEVLIN_CONFIG=/etc/jevlin.toml JEVLIN_HOME=/opt/jevlin",
-		"pwd":                  "PWD=/srv/app OLDPWD=/srv",
-		"no value":             "set API_TOKEN= to clear it",
-		"comparison":           "if token == expected then",
-	} {
-		if got := TraceText(text); got != text {
-			t.Errorf("%s: TraceText altered non-secret text:\n  in:  %q\n  out: %q", name, text, got)
-		}
-	}
+// traceCase is one row of testdata/trace_cases.json: the identity the
+// scrubber is told, the text, and exactly what must come out. The same rows
+// run through the JavaScript scrubber in cmd/jevlin
+// (TestSharedTraceSourceAgreesOnEveryTraceCase), so the two languages are
+// held to one table rather than to two that can drift.
+type traceCase struct {
+	Name    string `json:"name"`
+	Host    string `json:"host"`
+	Account string `json:"account"`
+	In      string `json:"in"`
+	Want    string `json:"want"`
 }
 
-// Five or more NAME=value lines in a row is an environment dump: every
-// value goes and every name stays. Four is still prose about settings.
-func TestAnEnvironmentDumpLosesEveryValue(t *testing.T) {
-	dump := "here is the env:\nSHELL=/bin/zsh\nLANG=en_US.UTF-8\nexport EDITOR=vim\nTERM_PROGRAM=iTerm.app\n  COLORTERM=truecolor\r\nMYAPP_REGION=eu-west-9\nthat is all"
-	got := TraceText(dump)
-	for _, value := range []string{"/bin/zsh", "en_US.UTF-8", "vim", "iTerm.app", "truecolor", "eu-west-9"} {
-		if strings.Contains(got, value) {
-			t.Errorf("an environment dump kept the value %q: %q", value, got)
+func loadTraceCases(t *testing.T) []traceCase {
+	t.Helper()
+	raw, err := os.ReadFile("testdata/trace_cases.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []traceCase
+	if err := json.Unmarshal(raw, &cases); err != nil {
+		t.Fatal(err)
+	}
+	if len(cases) == 0 {
+		t.Fatal("no trace cases")
+	}
+	seen := map[string]bool{}
+	for _, c := range cases {
+		if seen[c.Name] {
+			t.Fatalf("two trace cases are named %q", c.Name)
 		}
+		seen[c.Name] = true
 	}
-	for _, kept := range []string{"here is the env:", "SHELL=", "export EDITOR=", "  COLORTERM=" + placeholder + "\r\n", "MYAPP_REGION=", "that is all"} {
-		if !strings.Contains(got, kept) {
-			t.Errorf("an environment dump lost %q: %q", kept, got)
-		}
-	}
-
-	four := "SHELL=/bin/zsh\nLANG=en_US.UTF-8\nEDITOR=vim\nTERM_PROGRAM=iTerm.app\nand then prose"
-	if got := TraceText(four); got != four {
-		t.Errorf("four assignment lines were treated as a dump: %q", got)
-	}
-	broken := "A=1\nB=2\nprose in between\nC=3\nD=4\nE=5"
-	if got := TraceText(broken); got != broken {
-		t.Errorf("a run broken by prose was treated as a dump: %q", got)
-	}
+	return cases
 }
 
-// The bridge variable's value is an encoded envelope that can hold earlier
-// assistant text. No pattern can see into it, so it goes whatever it is.
-func TestTheTraceBridgeAssignmentLosesItsValue(t *testing.T) {
-	for _, text := range []string{
-		"JEVLIN_TRACE_BRIDGE=eyJ2IjoxfQ jevlin search --stdin",
-		`$env:JEVLIN_TRACE_BRIDGE='eyJ2IjoxfQ'; jevlin search --stdin`,
-		`set "JEVLIN_TRACE_BRIDGE=eyJ2IjoxfQ" && jevlin search`,
-	} {
-		got := TraceText(text)
-		if strings.Contains(got, "eyJ2IjoxfQ") || !strings.Contains(got, traceBridgeEnvName+"="+placeholder) {
-			t.Errorf("the bridge value survived: %q -> %q", text, got)
-		}
-		if !strings.Contains(got, "jevlin search") {
-			t.Errorf("more than the bridge value was removed: %q -> %q", text, got)
-		}
-	}
-}
-
-// The hostname's first label and the account name go wherever they stand
-// as a whole word, in any letter case, and nowhere else.
-func TestTheLocalHostAndAccountNamesAreRemoved(t *testing.T) {
-	defer SetLocalIdentity("Build-Box7.corp.example", `CORP\mwhitlock`)()
-	for name, tc := range map[string]struct{ in, want string }{
-		"USER":            {"USER=mwhitlock", "USER=" + placeholder},
-		"ssh target":      {"ssh mwhitlock@db1 uptime", "ssh " + placeholder + "@db1 uptime"},
-		"prose":           {"logged in as mwhitlock on build-box7.", "logged in as " + placeholder + " on " + placeholder + "."},
-		"prompt":          {"mwhitlock@Build-Box7:~$ ls", placeholder + "@" + placeholder + ":~$ ls"},
-		"upper case":      {"HOSTNAME is BUILD-BOX7", "HOSTNAME is " + placeholder},
-		"fqdn keeps rest": {"host build-box7.corp.example is up", "host " + placeholder + ".corp.example is up"},
-		"twice":           {"mwhitlock mwhitlock", placeholder + " " + placeholder},
-	} {
-		if got := TraceText(tc.in); got != tc.want {
-			t.Errorf("%s: TraceText(%q) = %q, want %q", name, tc.in, got, tc.want)
-		}
-	}
-	for name, text := range map[string]string{
-		"inside a longer word": "the mwhitlocks and xmwhitlock and mwhitlock_2",
-		"inside a longer host": "prebuild-box7x is another machine",
-	} {
-		if got := TraceText(text); got != text {
-			t.Errorf("%s: a name inside a longer word was removed: %q -> %q", name, text, got)
-		}
-	}
-}
-
-// A generic or very short name identifies nobody and is an ordinary word:
-// replacing it everywhere would destroy the text to hide nothing.
-func TestGenericLocalNamesAreNotSearchedFor(t *testing.T) {
-	text := "the user asked the admin to restart the server as root on localhost; id ab"
-	for _, id := range [][2]string{{"localhost", "user"}, {"server.local", "root"}, {"ubuntu", "admin"}, {"ab", "ab"}, {"", ""}, {"héllo-box", "josé"}} {
-		restore := SetLocalIdentity(id[0], id[1])
-		if got := TraceText(text); got != text {
-			t.Errorf("identity %q/%q: generic words were removed: %q", id[0], id[1], got)
+// Every row of the shared table, on the Go side. A row whose want equals
+// its input is a survivor: text the scrubber must leave exactly as it is.
+func TestTraceCases(t *testing.T) {
+	for _, c := range loadTraceCases(t) {
+		restore := SetLocalIdentity(c.Host, c.Account)
+		if got := TraceText(c.In); got != c.Want {
+			t.Errorf("%s: TraceText(%q) with identity %q/%q\n  got:  %q\n  want: %q", c.Name, c.In, c.Host, c.Account, got, c.Want)
 		}
 		restore()
 	}
 }
 
-// An occurrence that overlaps a rejected one is still found, as the
-// JavaScript scrubber's lookarounds find it.
-func TestAnOverlappingNameIsStillFound(t *testing.T) {
-	defer SetLocalIdentity("a-a", "")()
-	if got, want := TraceText("xa-a-a"), "xa-"+placeholder; got != want {
-		t.Errorf("TraceText = %q, want %q", got, want)
+// A non-ASCII name is not searched for: Go and JavaScript fold case
+// differently outside ASCII, so a rule for it could not be held to the
+// same bytes in both. The text carries both names, so the test can fail.
+func TestNonASCIILocalNamesAreNotSearchedFor(t *testing.T) {
+	defer SetLocalIdentity("héllo-box", "josé")()
+	text := "on héllo-box as josé: ssh josé@db1, USER=josé, héllo-box.example"
+	if got := TraceText(text); got != text {
+		t.Errorf("a non-ASCII name was removed: %q -> %q", text, got)
 	}
 }
 
