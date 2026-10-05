@@ -18,6 +18,13 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **The trace prefix no longer edits a command it cannot carry.** The bridge's
+  POSIX prefix binds to the first command of a line, so the hooks now write it
+  only when that command is the search itself. Before, a loop around a search
+  was rewritten into a bash syntax error and the whole command failed, and a
+  `cd … && jevlin search …` sent the bridge to `cd`, splitting one
+  conversation's searches across unrelated sessions. Such commands are now left
+  exactly as written; the search still runs, with the per-shell identity.
 - **A subagent's searches name their parent.** Under Claude Code and opencode, a
   search made by a subagent now carries `parent_session_id` in its trace: the hashed id of
   the session that started it. The router could already tell that two sessions

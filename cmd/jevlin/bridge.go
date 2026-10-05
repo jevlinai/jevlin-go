@@ -50,6 +50,16 @@ var bridgeAssignmentRe = regexp.MustCompile(
 		`set\s+` + bridgeEnv + `=[^&\n]*(?:&+|\n)\s*` +
 		`)`)
 
+// posixSearchLeadsRe proves an assignment prefix would reach the search:
+// after any leading plain NAME=value words, the first simple command of the
+// line is the search invocation itself. A value carrying a quote or a
+// backslash is not chased — the miss stands the bridge down, which is the
+// safe direction, because a declined rewrite only costs threading while a
+// wrong one breaks the command. Pinned to the JavaScript copy
+// (SEARCH_LEADS_RE in agent_trace_common.js) by TestBridgeGuardsAgree and
+// TestTheLeadsGuardsAreOneRegex.
+var posixSearchLeadsRe = regexp.MustCompile(`^\s*(?:[A-Za-z_][A-Za-z0-9_]*=[^\s"'\\]*\s+)*` + searchInvocationPattern)
+
 // powerShellWrapperRe matches the try/finally wrapper this adapter writes
 // around a PowerShell command, so a command it has already rewritten is
 // unwrapped rather than wrapped twice.
@@ -104,6 +114,20 @@ func withTraceBridge(sh shellKind, bridge, cmd string) (string, bool) {
 		// One assignment in front of one command: POSIX scopes it to that
 		// command and nothing else, which is the behavior PowerShell needs
 		// the finally for.
+		//
+		// The prefix is grammar, not decoration. POSIX binds NAME=value to
+		// the FIRST simple command and rejects it outright before a compound
+		// one — `V=x for …` is a syntax error that kills the participant's
+		// whole line, and `V=x cd … && jevlin search …` hands the bridge to
+		// cd, observed live as a reformulation pair split across two
+		// fallback sessions. So the prefix is written only when the first
+		// simple command is provably the search; any other shape is left
+		// byte-identical, because a search that loses its bridge still runs
+		// on its local fallback identity, and a command broken by a prefix
+		// does not run at all.
+		if !posixSearchLeadsRe.MatchString(stripped) {
+			return cmd, false
+		}
 		return bridgeEnv + "=" + bridge + " " + stripped, true
 	default:
 		return cmd, false

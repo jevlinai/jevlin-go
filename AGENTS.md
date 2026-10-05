@@ -136,6 +136,11 @@ govulncheck.
     `agent_trace_common.js` and pinned by `TestBridgeGuardsAgree`), taken from the host's
     declaration — or, for Claude Code, from the tool its payload names, since that host runs two.
     A POSIX prefix handed to PowerShell is looked up as a program name, and the search does not run.
+    **And only onto a command that syntax can carry it to**: the POSIX assignment prefix binds to
+    the first simple command and is a syntax error before a compound one, so it is written only
+    when that first command is provably the search (`posixSearchLeadsRe`, one regex with the JS
+    copy); a loop, a list or a pipeline with the search elsewhere is left byte-identical, and that
+    search runs on its local fallback identity instead of not running at all.
     **Provenance: only a bridge an adapter wrote for this call may carry that adapter's harness** —
     it removes every assignment it can prove standalone in a declared shell's syntax and writes its
     own, and leaves a command carrying one it cannot remove exactly as it found it. The trace is unauthenticated metadata either way:
