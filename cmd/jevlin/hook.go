@@ -34,8 +34,8 @@ package main
 //
 // The lineage, window and flush entry points are installed for Claude Code
 // and for nobody else. Another host that loads Claude Code's settings and
-// runs them with its own payload (Cursor does, dropin-miner#87) gets nothing from them:
-// see runByAnotherHost. The codex entry points are installed for Codex, and
+// runs them with its own payload (Cursor does, dropin-miner#87) gets nothing from them,
+// and nor does Codex: see claudeEntryStandsDown. The codex entry points are installed for Codex, and
 // stand down for a payload Codex did not send: see codexEntryStandsDown.
 //
 // FAIL-OPEN, ALWAYS. Any error, malformed payload, unreadable transcript:
@@ -185,7 +185,7 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 	payload = trimUTF8BOM(payload)
 	// A hook installed for Claude Code stands down when another host runs it
 	// (dropin-miner#87): nothing written, nothing spawned, nothing printed, exit 0.
-	if event, claudeFormat := claudeEntryEvent(args); claudeFormat && runByAnotherHost(payload, event) {
+	if event, claudeFormat := claudeEntryEvent(args); claudeFormat && claudeEntryStandsDown(payload, event) {
 		return exitOK
 	}
 	// A hook installed for Codex stands down the same way for a payload Codex
@@ -293,8 +293,12 @@ func claudeEntryEvent(args []string) (event string, ok bool) {
 // Everything else is NOT evidence and changes nothing: a payload that names
 // no event at all, or one that is not JSON, is handled exactly as before.
 // Nothing is known about a caller that says nothing — Copilot CLI's payload
-// carries no `hook_event_name` and Codex uses Claude Code's own names — and
-// a rule that stood down for them would be a guess.
+// carries no `hook_event_name` — and a rule that stood down for it would be
+// a guess.
+//
+// Both signals are about Cursor's loader, so Codex's own entry points ask
+// this too (codexEntryStandsDown). What tells a Claude Code entry that Codex
+// is calling is claudeEntryStandsDown's.
 func runByAnotherHost(payload []byte, event string) bool {
 	var keys map[string]json.RawMessage
 	if json.Unmarshal(payload, &keys) != nil {
@@ -309,6 +313,30 @@ func runByAnotherHost(payload []byte, event string) bool {
 	}
 	var name string
 	return json.Unmarshal(raw, &name) != nil || name != event
+}
+
+// claudeEntryStandsDown is the whole of a Claude Code entry's decision:
+// another host's payload (runByAnotherHost), or Codex's.
+//
+// Codex sends Claude Code's own event names, so the event rule cannot see
+// it. What it does send is a transcript that is one of its rollout files,
+// rollout-<time>-<thread>.jsonl, in every payload captured from it on Linux,
+// macOS and the desktop app (issue #19); Claude Code names a transcript after
+// its session id. A Codex that ran Claude Code's entries — one a participant
+// pasted into hooks.json by hand, or a later Codex that read Claude Code's
+// settings — used to be served as Claude Code, and its searches reached the
+// router labeled claude-code. It has entries of its own now.
+func claudeEntryStandsDown(payload []byte, event string) bool {
+	if runByAnotherHost(payload, event) {
+		return true
+	}
+	var p struct {
+		TranscriptPath *string `json:"transcript_path"`
+	}
+	if json.Unmarshal(payload, &p) != nil || p.TranscriptPath == nil {
+		return false
+	}
+	return isCodexRollout(*p.TranscriptPath)
 }
 
 // ── our command, recognized ─────────────────────────────────────────────

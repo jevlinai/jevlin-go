@@ -228,10 +228,17 @@ func TestLineageStandsDownForCursorWhateverTheToolName(t *testing.T) {
 	}
 }
 
-// Each signal on its own, and the absence of both. The last two rows are the
-// decision about callers nothing is known of: a payload that names no event
-// (Copilot CLI's shape) or names Claude Code's own (Codex's) is served as
-// before — asserted, so that it is a decision and not an accident.
+// Each signal on its own, and the absence of every one. A payload that names
+// no event (Copilot CLI's shape) is served as before — asserted, so that it is
+// a decision and not an accident.
+//
+// One row was decided the other way once. Codex sends Claude Code's own event
+// names, and this table used to assert that such a payload is served as
+// Claude Code's, because nothing in hand told the two apart and a rule would
+// have been a guess. Codex's payloads are in hand now (issue #19), and every
+// one names a rollout transcript: Claude Code's event name with Codex's
+// transcript stands down. Claude Code's event name with Claude Code's own
+// transcript is still served — that is the row the control rests on.
 func TestWhatCountsAsEvidenceOfAnotherHost(t *testing.T) {
 	cfg := writeHookConfig(t)
 	for _, c := range []struct {
@@ -250,7 +257,15 @@ func TestWhatCountsAsEvidenceOfAnotherHost(t *testing.T) {
 		// flush that the next search starts anyway.
 		{"a Claude Code event this entry point is not installed under", func(m map[string]any) { m["hook_event_name"] = "PreToolUse" }, true},
 		{"no event name at all", func(m map[string]any) { delete(m, "hook_event_name") }, false},
-		{"Claude Code's event name", func(map[string]any) {}, false},
+		{"Claude Code's event name and its own transcript", func(m map[string]any) {
+			m["transcript_path"] = "/home/u/.claude/projects/-home-u-project/00000000-0000-4000-8000-000000000000.jsonl"
+		}, false},
+		{"Claude Code's event name and a Codex rollout transcript", func(m map[string]any) {
+			m["transcript_path"] = "/home/u/.codex/sessions/2026/10/05/rollout-2026-10-05T03-14-48-01a10a0e-8e3d-7171-8bbb-d28f7394059e.jsonl"
+		}, true},
+		{"a Codex rollout transcript spelled for Windows", func(m map[string]any) {
+			m["transcript_path"] = `C:\Users\u\.codex\sessions\2026\10\05\rollout-2026-10-05T03-14-48-01a10a0e.jsonl`
+		}, true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			fs, ops := newFakeHookOps(nil)
@@ -365,5 +380,63 @@ func TestTheCallerGateNamesExactlyTheEventsTheInstallWrites(t *testing.T) {
 		if !seen[strings.Join(sub, " ")] {
 			t.Errorf("`hook %s` is gated as Claude-format but the install never writes it", strings.Join(sub, " "))
 		}
+	}
+}
+
+// codexIntoClaudeEntry is the Claude Code entry point installed under the
+// event a Codex payload names: the one that would run if Codex loaded Claude
+// Code's settings, or a participant pasted them into hooks.json.
+var codexIntoClaudeEntry = map[string][]string{
+	"PreToolUse":   {"lineage"},
+	"SessionStart": {"window", "session-start"},
+	"PreCompact":   {"window", "pre-compact"},
+	"PostCompact":  {"window", "post-compact"},
+	"Stop":         {"flush"},
+}
+
+// Every payload Codex sent, into the Claude Code entry for its event: nothing
+// written, nothing spawned, nothing printed. A command is replaced by a
+// search Claude Code's hook would rewrite, so the silence is the gate's and
+// not the stand-in command's.
+func TestClaudeFormatHooksStandDownForTheRealCodexPayloads(t *testing.T) {
+	cfg := writeHookConfig(t)
+	names, err := filepath.Glob(filepath.Join("testdata", "hook", "codex-*.json"))
+	if err != nil || len(names) == 0 {
+		t.Fatalf("no Codex payload fixtures: %v", err)
+	}
+	ran := 0
+	for _, full := range names {
+		name := filepath.Base(full)
+		payload := codexPayloadFixture(t, name)
+		args, installed := codexIntoClaudeEntry[payload["hook_event_name"].(string)]
+		if !installed {
+			continue // SessionEnd: no Claude Code entry is installed under it
+		}
+		if in, ok := payload["tool_input"].(map[string]any); ok {
+			if _, shell := in["command"].(string); shell {
+				payload = withCommand(payload, "/home/u/.jevlin/bin/jevlin search -format model \"q\"")
+			}
+		}
+		t.Run(name, func(t *testing.T) {
+			ran++
+			fs, ops := newFakeHookOps(nil)
+			if got := runRealHookMain(t, fs, ops, cfg, args, payload); !got.nothing() {
+				t.Fatalf("a Claude Code hook run with Codex's payload did something: %+v", got)
+			}
+			// The control: the same payload naming Claude Code's own
+			// transcript is served, so it is the transcript that decided.
+			claude := map[string]any{}
+			for k, v := range payload {
+				claude[k] = v
+			}
+			claude["transcript_path"] = "/home/u/.claude/projects/-home-u-project/" + payload["session_id"].(string) + ".jsonl"
+			fs, ops = newFakeHookOps(nil)
+			if got := runRealHookMain(t, fs, ops, cfg, args, claude); got.nothing() {
+				t.Fatalf("the control did nothing either, so the silence above proves nothing: %v", args)
+			}
+		})
+	}
+	if ran == 0 {
+		t.Fatal("no Codex payload reached a Claude Code entry")
 	}
 }
