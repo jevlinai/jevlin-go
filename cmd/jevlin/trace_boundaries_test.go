@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os/exec"
 	"strings"
 	"testing"
@@ -26,6 +27,23 @@ func traceBoundaryInputs() map[string]string {
 		"userinfo": "https://synthetic:PasswordCanary0123456789@example.test", "email": "syntheticperson012345@example.test",
 		"unix_home": "/home/SyntheticPerson012345/private", "mac_home": "/Users/SyntheticPerson012345/private",
 		"windows_home": `C:\Users\SyntheticPerson012345\private`,
+		// What has no credential shape: a secret known only by its name, an
+		// environment dump, and this client's own trace bridge.
+		"secret_assignment": "export DATABASE_PASSWORD=HunterCanary0123456789",
+		"quoted_assignment": `API_TOKEN="HunterCanary0123456789 two words"`,
+		"env_dump":          "\nA_ONE=DumpCanary1\nB_TWO=DumpCanary2\nexport C_THREE=DumpCanary3\nD_FOUR=DumpCanary4\nE_FIVE=DumpCanary5\nF_SIX=DumpCanary6",
+		"bridge":            "JEVLIN_TRACE_BRIDGE=BridgeCanary0123456789 jevlin search --stdin",
+		// A secret chained behind a name that is not one, PowerShell's
+		// spaced assignment, a hyphenated flag, and a quoted value across
+		// lines: each is removed whole before the cut, wherever it falls.
+		"chained_assignment":    "jdbc:postgresql://db/app?user=fred&password=HunterCanary0123456789&ssl=true",
+		"powershell_assignment": `$env:API_TOKEN = "HunterCanary0123456789"`,
+		"hyphenated_flag":       "curl --api-key=HunterCanary0123456789 https://example.test",
+		"quoted_across_lines":   "PRIVATE_KEY=\"HunterCanary0123456789\nHunterCanary0123456789\n\" next",
+		// A carriage return or U+2028 inside a line ends the line for
+		// JavaScript's `.` and not for Go's: with `.` those two lines would
+		// not count, the run would fall under five, and nothing would go.
+		"env_dump_odd_lines": "\nA_ONE=DumpCanary1\nB_TWO=DumpCanary2\u2028tail\nC_THREE=DumpCanary3\rmid\nD_FOUR=DumpCanary4\nE_FIVE=DumpCanary5",
 	}
 	out := map[string]string{}
 	for name, secret := range shapes {
@@ -38,6 +56,54 @@ func traceBoundaryInputs() map[string]string {
 	return out
 }
 
+// The synthetic machine the identity cases run on. The Go scrubber is told
+// it through redact.SetLocalIdentity and the JavaScript one through
+// prepareTraceHistory's second argument, so no case depends on the name of
+// the machine or the account the tests happen to run under.
+const (
+	syntheticTraceHost    = "SyntheticHost0123.corp.example"
+	syntheticTraceAccount = "syntheticacct0123"
+)
+
+// traceIdentityInputs are the hostname and the account name where no path
+// pattern reaches them, cut at the same boundaries as the other canaries.
+func traceIdentityInputs() map[string]string {
+	shapes := map[string]string{
+		"account_in_env":   "USER=syntheticacct0123",
+		"account_in_ssh":   "ssh syntheticacct0123@db1.example.test uptime",
+		"hostname_in_text": "logged in on synthetichost0123 as USER=SyntheticAcct0123",
+		"account_in_home":  `copied to /mnt/c/Users/SyntheticAcct0123/x and C:\Users\syntheticacct0123\y`,
+		"prompt":           "syntheticacct0123@SyntheticHost0123:~$",
+	}
+	out := map[string]string{}
+	for name, secret := range shapes {
+		for label, cut := range map[string]int{"before": len(secret) + 2, "crossing": len(secret) / 2, "beyond": -2} {
+			out[name+"/"+label] = "start " + secret + " " + strings.Repeat(".", traceHistoryCap-len(secret)-1+cut)
+		}
+	}
+	return out
+}
+
+// traceSurvivorInputs are texts the new rules must leave exactly as they
+// are, in both languages: the scrubbers agreeing on what to remove is half
+// of parity, and agreeing on what to keep is the other half. A rule that is
+// looser in the JavaScript copy removes text the Go consumer never would.
+func traceSurvivorInputs() map[string]string {
+	return map[string]string{ // #nosec G101 -- prose that must NOT be read as credentials
+		"survives/lowercase key":  "pass key=value pairs, sort --key=2, and pass=2 of the compiler",
+		"survives/not a segment":  "MONKEY=banana TOKENIZER_PATH=/opt/tok JEVLIN_CONFIG=/etc/jevlin.toml",
+		"survives/four env lines": "A_ONE=1\nB_TWO=2\nC_THREE=3\nD_FOUR=4\nthen prose",
+		"survives/broken run":     "A=1\nB=2\nprose\nC=3\nD=4\nE=5",
+		"survives/name in a word": "xsyntheticacct0123 and syntheticacct0123_2 and presynthetichost0123x",
+		// The account is removed only where the text uses it as one.
+		"survives/account in prose": "syntheticacct0123 wrote this, and SyntheticAcct0123: it is a word here",
+		"survives/empty value":      "set API_TOKEN= to clear it",
+		// A no-break space is whitespace to JavaScript's \s and not to Go's:
+		// with \s the third line would join the run and make it a dump.
+		"survives/nbsp breaks a run": "A=1\nB=2\n\u00a0C=3\nD=4\nE=5",
+	}
+}
+
 func assertPreparedHistory(t *testing.T, text, source string) {
 	t.Helper()
 	expected := redact.TraceText(source)
@@ -48,16 +114,31 @@ func assertPreparedHistory(t *testing.T, text, source string) {
 		}
 	}
 	if text != expected {
-		t.Fatalf("prepared history differs from complete-source scrub followed by UTF-8 cap (got %d bytes, want %d)", len(text), len(expected))
+		t.Fatalf("prepared history differs from complete-source scrub followed by UTF-8 cap (got %d bytes, want %d)\n%s", len(text), len(expected), traceDifference(text, expected))
 	}
 	if len(text) > traceHistoryCap || !utf8.ValidString(text) {
 		t.Fatalf("history exceeds byte cap or is invalid UTF-8: %d", len(text))
 	}
-	for _, fragment := range []string{"CredentialBody0123456789", "0123456789ABCDEF", "SyntheticPayload", "PasswordCanary0123456789", "syntheticperson012345", "SyntheticPerson012345"} {
-		if strings.Contains(text, fragment) {
+	for _, fragment := range []string{"CredentialBody0123456789", "0123456789ABCDEF", "SyntheticPayload", "PasswordCanary0123456789", "syntheticperson012345", "SyntheticPerson012345",
+		"HunterCanary0123456789", "DumpCanary", "BridgeCanary0123456789", "SyntheticHost0123", "syntheticacct0123"} {
+		if strings.Contains(strings.ToLower(text), strings.ToLower(fragment)) {
 			t.Fatalf("prepared history retains synthetic marker %q", fragment)
 		}
 	}
+}
+
+// traceDifference shows where two texts part, bounded on both sides, so a
+// parity failure says what differs rather than only that the lengths do.
+func traceDifference(got, want string) string {
+	i := 0
+	for i < len(got) && i < len(want) && got[i] == want[i] {
+		i++
+	}
+	from := max(0, i-40)
+	window := func(s string) string {
+		return s[min(from, len(s)):min(i+80, len(s))]
+	}
+	return fmt.Sprintf("first difference at byte %d:\n  got:  %q\n  want: %q", i, window(got), window(want))
 }
 
 func TestTraceRedactionBoundaries(t *testing.T) {
@@ -89,6 +170,24 @@ func TestTraceRedactionBoundaries(t *testing.T) {
 				}
 				assertPreparedHistory(t, l.History[0].Text, text)
 			})
+		})
+	}
+}
+
+// The hostname and the account name are removed on the Go path too, from
+// the same complete source and before the cut.
+func TestTraceRemovesTheLocalIdentity(t *testing.T) {
+	defer redact.SetLocalIdentity(syntheticTraceHost, syntheticTraceAccount)()
+	for name, text := range traceIdentityInputs() {
+		t.Run(name, func(t *testing.T) {
+			env := capTrace(&traceEnvelope{V: 1, History: []traceHistory{{Role: "assistant", Text: text}}})
+			if env == nil || len(env.History) != 1 {
+				t.Fatal("ordinary bounded source lost history")
+			}
+			assertPreparedHistory(t, env.History[0].Text, text)
+			if final, _, _ := prepareFinalText(text); final != env.History[0].Text {
+				t.Fatal("the turn end's final text is prepared differently from trace history")
+			}
 		})
 	}
 }
@@ -304,11 +403,12 @@ func TestSharedTraceSourceRedactionBoundaries(t *testing.T) {
 	script := `
  const fs = await import('node:fs');
  const input = JSON.parse(fs.readFileSync(0,'utf8'));
- const src = input.shared + "\nexport { prepareTraceHistory, traceBridge, needsTraceBridge, traceHash };";
+ const src = input.shared + "\nexport { prepareTraceHistory, traceBridge, needsTraceBridge, traceHash, traceIdentityPatterns };";
  const m = await import('data:text/javascript;base64,'+Buffer.from(src).toString('base64'));
+ const identity = m.traceIdentityPatterns(input.host, input.account);
  const result = {};
  for (const [name, parts] of Object.entries(input.cases)) {
-  const text = m.prepareTraceHistory(parts);
+  const text = m.prepareTraceHistory(parts, identity);
   const env = { v: 1, harness: 'test', session_id: m.traceHash('s') };
   if (text) env.history = [{ role: 'assistant', text }];
   result[name] = { text, bridge: m.traceBridge(env), history: env.history ? env.history.length : 0 };
@@ -318,8 +418,23 @@ func TestSharedTraceSourceRedactionBoundaries(t *testing.T) {
  result['__no_bridge'] = { bridge: m.traceBridge(huge), history: huge.history ? 1 : 0 };
  process.stdout.write(JSON.stringify(result));`
 
+	// Both scrubbers are given the same synthetic machine, so the identity
+	// cases compare like for like wherever the test runs.
+	defer redact.SetLocalIdentity(syntheticTraceHost, syntheticTraceAccount)()
 	textCases := traceBoundaryInputs()
+	for name, text := range traceIdentityInputs() {
+		textCases[name] = text
+	}
+	survivors := traceSurvivorInputs()
+	for name, text := range survivors {
+		if got := redact.TraceText(text); got != text {
+			t.Fatalf("%s: the Go scrubber altered a text this test needs it to keep: %q", name, got)
+		}
+	}
 	cases := map[string][]map[string]string{}
+	for name, text := range survivors {
+		cases[name] = []map[string]string{{"type": "text", "text": text}}
+	}
 	for name, text := range textCases {
 		cases[name] = []map[string]string{{"type": "text", "text": text}}
 	}
@@ -337,7 +452,8 @@ func TestSharedTraceSourceRedactionBoundaries(t *testing.T) {
 	cases["history_cap"] = []map[string]string{{"type": "text", "text": strings.Repeat("z", traceHistoryCap*2)}}
 	cases["envelope_drops_history"] = []map[string]string{{"type": "text", "text": strings.Repeat("\"", traceHistoryCap)}}
 
-	input, _ := json.Marshal(map[string]any{"shared": agentTraceCommonJS, "cases": cases, "envelopeCap": traceEnvelopeCap})
+	input, _ := json.Marshal(map[string]any{"shared": agentTraceCommonJS, "cases": cases, "envelopeCap": traceEnvelopeCap,
+		"host": syntheticTraceHost, "account": syntheticTraceAccount})
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, node, "--input-type=module", "-e", script) // #nosec G204 -- fixed test script and local Node runtime; synthetic input on stdin
@@ -362,6 +478,13 @@ func TestSharedTraceSourceRedactionBoundaries(t *testing.T) {
 				t.Fatal("a bounded source was omitted whole")
 			}
 			assertPreparedHistory(t, *got.Text, text)
+		})
+	}
+	for name, text := range survivors {
+		t.Run(name, func(t *testing.T) {
+			if got := results[name]; got.Text == nil || *got.Text != text {
+				t.Fatalf("the JavaScript scrubber altered a text the Go scrubber keeps:\n  in:  %q\n  out: %v", text, got.Text)
+			}
 		})
 	}
 	t.Run("over the source budget is omitted whole", func(t *testing.T) {

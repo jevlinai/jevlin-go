@@ -1,0 +1,1003 @@
+[
+ {
+  "name": "assignment/env style",
+  "host": "",
+  "account": "",
+  "in": "DATABASE_PASSWORD=HunterCanary1",
+  "want": "DATABASE_PASSWORD=[REDACTED]"
+ },
+ {
+  "name": "assignment/export",
+  "host": "",
+  "account": "",
+  "in": "run export API_TOKEN=abc123 first",
+  "want": "run export API_TOKEN=[REDACTED] first"
+ },
+ {
+  "name": "assignment/double quoted",
+  "host": "",
+  "account": "",
+  "in": "CLIENT_SECRET=\"two words\"",
+  "want": "CLIENT_SECRET=[REDACTED]"
+ },
+ {
+  "name": "assignment/single quoted",
+  "host": "",
+  "account": "",
+  "in": "DB_PASSWD='p w'",
+  "want": "DB_PASSWD=[REDACTED]"
+ },
+ {
+  "name": "assignment/lowercase name",
+  "host": "",
+  "account": "",
+  "in": "password=hunter2",
+  "want": "password=[REDACTED]"
+ },
+ {
+  "name": "assignment/mixed case name",
+  "host": "",
+  "account": "",
+  "in": "Db_Password=hunter2",
+  "want": "Db_Password=[REDACTED]"
+ },
+ {
+  "name": "assignment/flag",
+  "host": "",
+  "account": "",
+  "in": "mysql --password=hunter2 -h db",
+  "want": "mysql --password=[REDACTED] -h db"
+ },
+ {
+  "name": "assignment/upper KEY",
+  "host": "",
+  "account": "",
+  "in": "STRIPE_KEY=whsec_1",
+  "want": "STRIPE_KEY=[REDACTED]"
+ },
+ {
+  "name": "assignment/upper PASS",
+  "host": "",
+  "account": "",
+  "in": "DB_PASS=x9",
+  "want": "DB_PASS=[REDACTED]"
+ },
+ {
+  "name": "assignment/two on a line",
+  "host": "",
+  "account": "",
+  "in": "A_TOKEN=one B_SECRET=two",
+  "want": "A_TOKEN=[REDACTED] B_SECRET=[REDACTED]"
+ },
+ {
+  "name": "assignment/after a newline",
+  "host": "",
+  "account": "",
+  "in": "first\nAPI_TOKEN=abc",
+  "want": "first\nAPI_TOKEN=[REDACTED]"
+ },
+ {
+  "name": "assignment/powershell no spaces",
+  "host": "",
+  "account": "",
+  "in": "$env:API_TOKEN='abc'",
+  "want": "$env:API_TOKEN=[REDACTED]"
+ },
+ {
+  "name": "assignment/already redacted",
+  "host": "",
+  "account": "",
+  "in": "API_TOKEN=[REDACTED]",
+  "want": "API_TOKEN=[REDACTED]"
+ },
+ {
+  "name": "assignment/credentials plural",
+  "host": "",
+  "account": "",
+  "in": "AWS_CREDENTIALS=a:b",
+  "want": "AWS_CREDENTIALS=[REDACTED]"
+ },
+ {
+  "name": "assignment/credential",
+  "host": "",
+  "account": "",
+  "in": "GIT_CREDENTIAL=a:b",
+  "want": "GIT_CREDENTIAL=[REDACTED]"
+ },
+ {
+  "name": "assignment/secrets plural",
+  "host": "",
+  "account": "",
+  "in": "APP_SECRETS=s3",
+  "want": "APP_SECRETS=[REDACTED]"
+ },
+ {
+  "name": "assignment/camel case apikey",
+  "host": "",
+  "account": "",
+  "in": "?apiKey=abc123",
+  "want": "?apiKey=[REDACTED]"
+ },
+ {
+  "name": "assignment/apikey segment",
+  "host": "",
+  "account": "",
+  "in": "MY_APIKEY=abc123",
+  "want": "MY_APIKEY=[REDACTED]"
+ },
+ {
+  "name": "assignment/token segment lowercase",
+  "host": "",
+  "account": "",
+  "in": "github_token=abc123",
+  "want": "github_token=[REDACTED]"
+ },
+ {
+  "name": "assignment/nbsp inside a value",
+  "host": "",
+  "account": "",
+  "in": "API_TOKEN=abc\u00a0def ghi",
+  "want": "API_TOKEN=[REDACTED] ghi"
+ },
+ {
+  "name": "survives/key=value prose",
+  "host": "",
+  "account": "",
+  "in": "pass key=value pairs to the parser",
+  "want": "pass key=value pairs to the parser"
+ },
+ {
+  "name": "survives/sort flag",
+  "host": "",
+  "account": "",
+  "in": "sort --key=2 file.txt",
+  "want": "sort --key=2 file.txt"
+ },
+ {
+  "name": "survives/lowercase pass",
+  "host": "",
+  "account": "",
+  "in": "the compiler runs pass=2 next",
+  "want": "the compiler runs pass=2 next"
+ },
+ {
+  "name": "survives/substring, not a segment",
+  "host": "",
+  "account": "",
+  "in": "MONKEY=banana TOKENIZER_PATH=/opt/tok",
+  "want": "MONKEY=banana TOKENIZER_PATH=/opt/tok"
+ },
+ {
+  "name": "survives/path variables",
+  "host": "",
+  "account": "",
+  "in": "JEVLIN_CONFIG=/etc/jevlin.toml JEVLIN_HOME=/opt/jevlin",
+  "want": "JEVLIN_CONFIG=/etc/jevlin.toml JEVLIN_HOME=/opt/jevlin"
+ },
+ {
+  "name": "survives/pwd",
+  "host": "",
+  "account": "",
+  "in": "PWD=/srv/app OLDPWD=/srv",
+  "want": "PWD=/srv/app OLDPWD=/srv"
+ },
+ {
+  "name": "survives/no value",
+  "host": "",
+  "account": "",
+  "in": "set API_TOKEN= to clear it",
+  "want": "set API_TOKEN= to clear it"
+ },
+ {
+  "name": "survives/comparison",
+  "host": "",
+  "account": "",
+  "in": "if token == expected then",
+  "want": "if token == expected then"
+ },
+ {
+  "name": "dump/every value goes",
+  "host": "",
+  "account": "",
+  "in": "here is the env:\nSHELL=/bin/zsh\nLANG=en_US.UTF-8\nexport EDITOR=vim\nTERM_PROGRAM=iTerm.app\n  COLORTERM=truecolor\r\nMYAPP_REGION=eu-west-9\nthat is all",
+  "want": "here is the env:\nSHELL=[REDACTED]\nLANG=[REDACTED]\nexport EDITOR=[REDACTED]\nTERM_PROGRAM=[REDACTED]\n  COLORTERM=[REDACTED]\r\nMYAPP_REGION=[REDACTED]\nthat is all"
+ },
+ {
+  "name": "dump/crlf lines keep their carriage returns",
+  "host": "",
+  "account": "",
+  "in": "A_ONE=1\r\nB_TWO=2\r\nC_THREE=3\r\nD_FOUR=4\r\nE_FIVE=5\r\n",
+  "want": "A_ONE=[REDACTED]\r\nB_TWO=[REDACTED]\r\nC_THREE=[REDACTED]\r\nD_FOUR=[REDACTED]\r\nE_FIVE=[REDACTED]\r\n"
+ },
+ {
+  "name": "dump/empty value stays empty",
+  "host": "",
+  "account": "",
+  "in": "A=1\nB=\nC=3\nD=4\nE=5",
+  "want": "A=[REDACTED]\nB=\nC=[REDACTED]\nD=[REDACTED]\nE=[REDACTED]"
+ },
+ {
+  "name": "survives/four lines",
+  "host": "",
+  "account": "",
+  "in": "SHELL=/bin/zsh\nLANG=en_US.UTF-8\nEDITOR=vim\nTERM_PROGRAM=iTerm.app\nand then prose",
+  "want": "SHELL=/bin/zsh\nLANG=en_US.UTF-8\nEDITOR=vim\nTERM_PROGRAM=iTerm.app\nand then prose"
+ },
+ {
+  "name": "survives/a run broken by prose",
+  "host": "",
+  "account": "",
+  "in": "A=1\nB=2\nprose in between\nC=3\nD=4\nE=5",
+  "want": "A=1\nB=2\nprose in between\nC=3\nD=4\nE=5"
+ },
+ {
+  "name": "survives/nbsp breaks a run",
+  "host": "",
+  "account": "",
+  "in": "A=1\nB=2\n\u00a0C=3\nD=4\nE=5",
+  "want": "A=1\nB=2\n\u00a0C=3\nD=4\nE=5"
+ },
+ {
+  "name": "bridge/posix",
+  "host": "",
+  "account": "",
+  "in": "JEVLIN_TRACE_BRIDGE=eyJ2IjoxfQ jevlin search --stdin",
+  "want": "JEVLIN_TRACE_BRIDGE=[REDACTED] jevlin search --stdin"
+ },
+ {
+  "name": "bridge/powershell no spaces",
+  "host": "",
+  "account": "",
+  "in": "$env:JEVLIN_TRACE_BRIDGE='eyJ2IjoxfQ'; jevlin search --stdin",
+  "want": "$env:JEVLIN_TRACE_BRIDGE=[REDACTED]; jevlin search --stdin"
+ },
+ {
+  "name": "bridge/cmd",
+  "host": "",
+  "account": "",
+  "in": "set \"JEVLIN_TRACE_BRIDGE=eyJ2IjoxfQ\" && jevlin search",
+  "want": "set \"JEVLIN_TRACE_BRIDGE=[REDACTED]\" && jevlin search"
+ },
+ {
+  "name": "survives/git ssh remote",
+  "host": "",
+  "account": "",
+  "in": "git clone git@github.com:acme/repo.git",
+  "want": "git clone git@github.com:acme/repo.git"
+ },
+ {
+  "name": "survives/ssh command",
+  "host": "",
+  "account": "",
+  "in": "ssh deploy@prod.example.com",
+  "want": "ssh deploy@prod.example.com"
+ },
+ {
+  "name": "survives/css accessibility class",
+  "host": "",
+  "account": "",
+  "in": "class=\"sr-only-focusable\"",
+  "want": "class=\"sr-only-focusable\""
+ },
+ {
+  "name": "survives/bcp-47 locale tag",
+  "host": "",
+  "account": "",
+  "in": "locale sr-Latn-RS is Serbian (Latin, Serbia)",
+  "want": "locale sr-Latn-RS is Serbian (Latin, Serbia)"
+ },
+ {
+  "name": "survives/generic cache key",
+  "host": "",
+  "account": "",
+  "in": "invalidating cache key sk-cache-entry-42",
+  "want": "invalidating cache key sk-cache-entry-42"
+ },
+ {
+  "name": "survives/url path, not a home",
+  "host": "",
+  "account": "",
+  "in": "see https://example.com/home/page for docs",
+  "want": "see https://example.com/home/page for docs"
+ },
+ {
+  "name": "survives/bearer prose",
+  "host": "",
+  "account": "",
+  "in": "bearer tokens expire",
+  "want": "bearer tokens expire"
+ },
+ {
+  "name": "home/windows",
+  "host": "",
+  "account": "",
+  "in": "C:\\Users\\realname\\.aws\\credentials",
+  "want": "C:\\Users\\[REDACTED]\\.aws\\credentials"
+ },
+ {
+  "name": "home/unix",
+  "host": "",
+  "account": "",
+  "in": "cat /home/realname/.netrc",
+  "want": "cat /home/[REDACTED]/.netrc"
+ },
+ {
+  "name": "home/mac",
+  "host": "",
+  "account": "",
+  "in": "open /Users/realname/Desktop",
+  "want": "open /Users/[REDACTED]/Desktop"
+ },
+ {
+  "name": "identity/USER",
+  "host": "Build-Box7.corp.example",
+  "account": "CORP\\mwhitlock",
+  "in": "USER=mwhitlock",
+  "want": "USER=[REDACTED]"
+ },
+ {
+  "name": "identity/ssh target",
+  "host": "Build-Box7.corp.example",
+  "account": "CORP\\mwhitlock",
+  "in": "ssh mwhitlock@db1 uptime",
+  "want": "ssh [REDACTED]@db1 uptime"
+ },
+ {
+  "name": "identity/prompt",
+  "host": "Build-Box7.corp.example",
+  "account": "CORP\\mwhitlock",
+  "in": "mwhitlock@Build-Box7:~$ ls",
+  "want": "[REDACTED]@[REDACTED]:~$ ls"
+ },
+ {
+  "name": "identity/host in upper case",
+  "host": "Build-Box7.corp.example",
+  "account": "CORP\\mwhitlock",
+  "in": "HOSTNAME is BUILD-BOX7",
+  "want": "HOSTNAME is [REDACTED]"
+ },
+ {
+  "name": "identity/fqdn keeps the rest",
+  "host": "Build-Box7.corp.example",
+  "account": "CORP\\mwhitlock",
+  "in": "host build-box7.corp.example is up",
+  "want": "host [REDACTED].corp.example is up"
+ },
+ {
+  "name": "identity/host in prose",
+  "host": "Build-Box7.corp.example",
+  "account": "CORP\\mwhitlock",
+  "in": "deployed from build-box7 today",
+  "want": "deployed from [REDACTED] today"
+ },
+ {
+  "name": "survives/a name inside a longer word",
+  "host": "Build-Box7.corp.example",
+  "account": "CORP\\mwhitlock",
+  "in": "the mwhitlocks and xmwhitlock and mwhitlock_2",
+  "want": "the mwhitlocks and xmwhitlock and mwhitlock_2"
+ },
+ {
+  "name": "survives/a host inside a longer host",
+  "host": "Build-Box7.corp.example",
+  "account": "CORP\\mwhitlock",
+  "in": "prebuild-box7x is another machine",
+  "want": "prebuild-box7x is another machine"
+ },
+ {
+  "name": "identity/an overlapping occurrence is found",
+  "host": "a-a",
+  "account": "",
+  "in": "xa-a-a",
+  "want": "xa-[REDACTED]"
+ },
+ {
+  "name": "identity/without the domain prefix",
+  "host": "",
+  "account": "CORP\\mwhitlock",
+  "in": "ssh mwhitlock@db1",
+  "want": "ssh [REDACTED]@db1"
+ },
+ {
+  "name": "identity/a dotted account",
+  "host": "",
+  "account": "first.last",
+  "in": "ssh first.last@db1 and ssh firstxlast@db1",
+  "want": "ssh [REDACTED]@db1 and ssh firstxlast@db1"
+ },
+ {
+  "name": "identity/a dotted host label is cut",
+  "host": "kessler-box.lan",
+  "account": "",
+  "in": "on kessler-box today",
+  "want": "on [REDACTED] today"
+ },
+ {
+  "name": "survives/generic identity localhost/user",
+  "host": "localhost",
+  "account": "user",
+  "in": "root@ubuntu:~# whoami; USER=root; the user asked the admin to restart the server on localhost",
+  "want": "root@ubuntu:~# whoami; USER=root; the user asked the admin to restart the server on localhost"
+ },
+ {
+  "name": "survives/generic identity server.local/root",
+  "host": "server.local",
+  "account": "root",
+  "in": "root@ubuntu:~# whoami; USER=root; the user asked the admin to restart the server on localhost",
+  "want": "root@ubuntu:~# whoami; USER=root; the user asked the admin to restart the server on localhost"
+ },
+ {
+  "name": "survives/generic identity ubuntu/admin",
+  "host": "ubuntu",
+  "account": "admin",
+  "in": "root@ubuntu:~# whoami; USER=root; the user asked the admin to restart the server on localhost",
+  "want": "root@ubuntu:~# whoami; USER=root; the user asked the admin to restart the server on localhost"
+ },
+ {
+  "name": "survives/generic identity -/-",
+  "host": "",
+  "account": "",
+  "in": "root@ubuntu:~# whoami; USER=root; the user asked the admin to restart the server on localhost",
+  "want": "root@ubuntu:~# whoami; USER=root; the user asked the admin to restart the server on localhost"
+ },
+ {
+  "name": "survives/a name under three characters",
+  "host": "ab",
+  "account": "ab",
+  "in": "ssh ab@ab; USER=ab; ab is on ab",
+  "want": "ssh ab@ab; USER=ab; ab is on ab"
+ },
+ {
+  "name": "identity/a kelvin sign folds as Go folds it",
+  "host": "kessler-box.lan",
+  "account": "",
+  "in": "on \u212aessler-box, kessler-box\u017f and ke\u017f\u017fler-box",
+  "want": "on [REDACTED], [REDACTED]\u017f and [REDACTED]"
+ },
+ {
+  "name": "home/windows long s folds as Go folds it",
+  "host": "",
+  "account": "",
+  "in": "C:\\U\u017fers\\alice\\x",
+  "want": "C:\\U\u017fers\\[REDACTED]\\x"
+ },
+ {
+  "name": "home/windows kelvin drive letter",
+  "host": "",
+  "account": "",
+  "in": "\u212a:\\Users\\alice",
+  "want": "\u212a:\\Users\\[REDACTED]"
+ },
+ {
+  "name": "userinfo/vertical tab inside userinfo",
+  "host": "",
+  "account": "",
+  "in": "see https://us\u000ber:pw@example.com/x",
+  "want": "see https://[REDACTED]example.com/x"
+ },
+ {
+  "name": "home/unix no-break space inside the name",
+  "host": "",
+  "account": "",
+  "in": "/home/al\u00a0ice/x",
+  "want": "/home/[REDACTED]/x"
+ },
+ {
+  "name": "home/windows vertical tab inside the name",
+  "host": "",
+  "account": "",
+  "in": "C:\\Users\\\u000balice",
+  "want": "C:\\Users\\[REDACTED]"
+ },
+ {
+  "name": "chain/url query",
+  "host": "",
+  "account": "",
+  "in": "jdbc:postgresql://localhost:5432/mydb?user=fred&password=HunterCanary&ssl=true",
+  "want": "jdbc:postgresql://localhost:5432/mydb?user=fred&password=[REDACTED]&ssl=true"
+ },
+ {
+  "name": "chain/docker --env",
+  "host": "",
+  "account": "",
+  "in": "docker run --env=POSTGRES_PASSWORD=HunterCanary postgres:16",
+  "want": "docker run --env=POSTGRES_PASSWORD=[REDACTED] postgres:16"
+ },
+ {
+  "name": "chain/kubectl --from-literal",
+  "host": "",
+  "account": "",
+  "in": "kubectl create secret generic db --from-literal=password=HunterCanary",
+  "want": "kubectl create secret generic db --from-literal=password=[REDACTED]"
+ },
+ {
+  "name": "chain/connection string",
+  "host": "",
+  "account": "",
+  "in": "Server=localhost;User Id=sa;Password=HunterCanary;Trust=True",
+  "want": "Server=localhost;User Id=sa;Password=[REDACTED];Trust=True"
+ },
+ {
+  "name": "chain/--set-env-vars",
+  "host": "",
+  "account": "",
+  "in": "gcloud run deploy --set-env-vars=DB_PASSWORD=HunterCanary,API_TOKEN=TokenCanary",
+  "want": "gcloud run deploy --set-env-vars=DB_PASSWORD=[REDACTED]"
+ },
+ {
+  "name": "chain/printf with literal escapes",
+  "host": "",
+  "account": "",
+  "in": "printf 'DB_HOST=localhost\\nDB_PASSWORD=HunterCanary\\n' > .env",
+  "want": "printf 'DB_HOST=localhost\\nDB_PASSWORD=[REDACTED]' > .env"
+ },
+ {
+  "name": "chain/bridge behind two names",
+  "host": "",
+  "account": "",
+  "in": "FOO=bar=JEVLIN_TRACE_BRIDGE=eyJCanary0123",
+  "want": "FOO=bar=JEVLIN_TRACE_BRIDGE=[REDACTED]"
+ },
+ {
+  "name": "chain/form body",
+  "host": "",
+  "account": "",
+  "in": "-d \"grant_type=client_credentials&client_id=app&client_secret=HunterCanary\"",
+  "want": "-d \"grant_type=client_credentials&client_id=app&client_secret=[REDACTED]\""
+ },
+ {
+  "name": "powershell/spaces around =",
+  "host": "",
+  "account": "",
+  "in": "$env:API_TOKEN = \"TokenCanary\"",
+  "want": "$env:API_TOKEN = [REDACTED]"
+ },
+ {
+  "name": "powershell/tabs and case",
+  "host": "",
+  "account": "",
+  "in": "$Env:DB_PASSWORD\t=\t'HunterCanary'; next",
+  "want": "$Env:DB_PASSWORD\t=\t[REDACTED]; next"
+ },
+ {
+  "name": "bridge/spaces in any syntax",
+  "host": "",
+  "account": "",
+  "in": "JEVLIN_TRACE_BRIDGE = eyJCanary0123 jevlin search",
+  "want": "JEVLIN_TRACE_BRIDGE = [REDACTED] jevlin search"
+ },
+ {
+  "name": "bridge/any letter case",
+  "host": "",
+  "account": "",
+  "in": "jevlin_trace_bridge=eyJCanary0123 jevlin search",
+  "want": "jevlin_trace_bridge=[REDACTED] jevlin search"
+ },
+ {
+  "name": "survives/spaces around = need $env:",
+  "host": "",
+  "account": "",
+  "in": "the API_TOKEN = value line in prose",
+  "want": "the API_TOKEN = value line in prose"
+ },
+ {
+  "name": "names/--api-key",
+  "host": "",
+  "account": "",
+  "in": "curl --api-key=KeyCanary0123 https://example.test",
+  "want": "curl --api-key=[REDACTED] https://example.test"
+ },
+ {
+  "name": "names/--secret-key",
+  "host": "",
+  "account": "",
+  "in": "aws configure --secret-key=KeyCanary0123",
+  "want": "aws configure --secret-key=[REDACTED]"
+ },
+ {
+  "name": "names/--access-key",
+  "host": "",
+  "account": "",
+  "in": "s3cmd --access-key=KeyCanary0123",
+  "want": "s3cmd --access-key=[REDACTED]"
+ },
+ {
+  "name": "names/api_key lowercase",
+  "host": "",
+  "account": "",
+  "in": "api_key=KeyCanary0123",
+  "want": "api_key=[REDACTED]"
+ },
+ {
+  "name": "names/client-secret",
+  "host": "",
+  "account": "",
+  "in": "--client-secret=SecretCanary",
+  "want": "--client-secret=[REDACTED]"
+ },
+ {
+  "name": "names/dotted",
+  "host": "",
+  "account": "",
+  "in": "spring.datasource.password=HunterCanary",
+  "want": "spring.datasource.password=[REDACTED]"
+ },
+ {
+  "name": "names/db_pass lowercase",
+  "host": "",
+  "account": "",
+  "in": "db_pass=HunterCanary",
+  "want": "db_pass=[REDACTED]"
+ },
+ {
+  "name": "names/PGPASSWORD",
+  "host": "",
+  "account": "",
+  "in": "PGPASSWORD=HunterCanary psql -h db",
+  "want": "PGPASSWORD=[REDACTED] psql -h db"
+ },
+ {
+  "name": "names/MYSQL_PWD",
+  "host": "",
+  "account": "",
+  "in": "MYSQL_PWD=HunterCanary mysql",
+  "want": "MYSQL_PWD=[REDACTED] mysql"
+ },
+ {
+  "name": "names/PASSPHRASE",
+  "host": "",
+  "account": "",
+  "in": "GPG_PASSPHRASE=HunterCanary and passphrase=HunterCanary",
+  "want": "GPG_PASSPHRASE=[REDACTED] and passphrase=[REDACTED]"
+ },
+ {
+  "name": "survives/a name ending in a dash is no name",
+  "host": "",
+  "account": "",
+  "in": "the foo-=bar operator",
+  "want": "the foo-=bar operator"
+ },
+ {
+  "name": "value/a quoted key across lines",
+  "host": "",
+  "account": "",
+  "in": "PRIVATE_KEY=\"-----BEGIN PRIVATE KEY-----\nMIIEvQSyntheticCanary\nSyntheticCanaryLine2\n-----END PRIVATE KEY-----\"\nnext line",
+  "want": "PRIVATE_KEY=[REDACTED]\nnext line"
+ },
+ {
+  "name": "value/an unclosed quote runs to the end of its line",
+  "host": "",
+  "account": "",
+  "in": "API_TOKEN=\"TokenCanary and the rest\nnext line",
+  "want": "API_TOKEN=[REDACTED]\nnext line"
+ },
+ {
+  "name": "value/an unclosed quote keeps the carriage return",
+  "host": "",
+  "account": "",
+  "in": "API_TOKEN='TokenCanary\r\nnext line",
+  "want": "API_TOKEN=[REDACTED]\r\nnext line"
+ },
+ {
+  "name": "value/a quote closing at the line cap",
+  "host": "",
+  "account": "",
+  "in": "API_TOKEN=\"TokenCanary\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\" after",
+  "want": "API_TOKEN=[REDACTED] after"
+ },
+ {
+  "name": "value/a quote closing past the line cap",
+  "host": "",
+  "account": "",
+  "in": "API_TOKEN=\"TokenCanary\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\" after",
+  "want": "API_TOKEN=[REDACTED]\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx\" after"
+ },
+ {
+  "name": "value/a quote inside an unquoted value",
+  "host": "",
+  "account": "",
+  "in": "DB_PASSWORD=O'HunterCanary! next",
+  "want": "DB_PASSWORD=[REDACTED] next"
+ },
+ {
+  "name": "value/an escaped quote inside a quoted value",
+  "host": "",
+  "account": "",
+  "in": "export API_TOKEN=\"abc\\\"TokenCanary\" next",
+  "want": "export API_TOKEN=[REDACTED] next"
+ },
+ {
+  "name": "value/a quoted value joined to an unquoted one",
+  "host": "",
+  "account": "",
+  "in": "PASSWORD=\"abc\"HunterCanary next",
+  "want": "PASSWORD=[REDACTED] next"
+ },
+ {
+  "name": "value/a closing paren stays",
+  "host": "",
+  "account": "",
+  "in": "f(password=pw)",
+  "want": "f(password=[REDACTED])"
+ },
+ {
+  "name": "value/a closing paren after a quoted value stays",
+  "host": "",
+  "account": "",
+  "in": "f(password=\"pw\")",
+  "want": "f(password=[REDACTED])"
+ },
+ {
+  "name": "value/a semicolon ends it",
+  "host": "",
+  "account": "",
+  "in": "DATABASE_PASSWORD=hunter2; echo ok",
+  "want": "DATABASE_PASSWORD=[REDACTED]; echo ok"
+ },
+ {
+  "name": "value/the rest of the query stays",
+  "host": "",
+  "account": "",
+  "in": "?access_token=abc&page=2",
+  "want": "?access_token=[REDACTED]&page=2"
+ },
+ {
+  "name": "value/an expression is one value",
+  "host": "",
+  "account": "",
+  "in": "password=os.environ[\"PGPASSWORD\"] next",
+  "want": "password=[REDACTED] next"
+ },
+ {
+  "name": "value/an expression inside a call",
+  "host": "",
+  "account": "",
+  "in": "f(password=os.environ[\"PGPASSWORD\"]), x",
+  "want": "f(password=[REDACTED]), x"
+ },
+ {
+  "name": "value/a keyword argument list",
+  "host": "",
+  "account": "",
+  "in": "connect(user, password=pw, port=5432)",
+  "want": "connect(user, password=[REDACTED], port=5432)"
+ },
+ {
+  "name": "value/a quoted assignment keeps its quotes",
+  "host": "",
+  "account": "",
+  "in": "\"API_TOKEN=TokenCanary\" and [API_TOKEN=TokenCanary]",
+  "want": "\"API_TOKEN=[REDACTED]\" and [API_TOKEN=[REDACTED]]"
+ },
+ {
+  "name": "survives/a comparison is not a value",
+  "host": "",
+  "account": "",
+  "in": "if password==expected:",
+  "want": "if password==expected:"
+ },
+ {
+  "name": "survives/a logfmt log",
+  "host": "",
+  "account": "",
+  "in": "time=2026-10-05T10:00:00Z level=info msg=\"starting server\" port=8080 version=1.4.2\ntime=2026-10-05T10:00:01Z level=info msg=\"connected to postgres\" host=db1 pool=10\ntime=2026-10-05T10:00:07Z level=warn msg=\"slow query\" duration=1.2s table=orders\ntime=2026-10-05T10:00:09Z level=error msg=\"request failed\" err=\"context deadline exceeded\" status=504\ntime=2026-10-05T10:00:09Z level=info msg=\"retrying\" attempt=2 backoff=200ms\ntime=2026-10-05T10:00:10Z level=error msg=\"giving up\" attempts=3",
+  "want": "time=2026-10-05T10:00:00Z level=info msg=\"starting server\" port=8080 version=1.4.2\ntime=2026-10-05T10:00:01Z level=info msg=\"connected to postgres\" host=db1 pool=10\ntime=2026-10-05T10:00:07Z level=warn msg=\"slow query\" duration=1.2s table=orders\ntime=2026-10-05T10:00:09Z level=error msg=\"request failed\" err=\"context deadline exceeded\" status=504\ntime=2026-10-05T10:00:09Z level=info msg=\"retrying\" attempt=2 backoff=200ms\ntime=2026-10-05T10:00:10Z level=error msg=\"giving up\" attempts=3"
+ },
+ {
+  "name": "survives/keyword arguments",
+  "host": "",
+  "account": "",
+  "in": "response = client.chat.completions.create(\n    model=\"gpt-4o-mini\",\n    messages=messages,\n    temperature=0.2,\n    max_tokens=1024,\n    timeout=30,\n    stream=False,\n)",
+  "want": "response = client.chat.completions.create(\n    model=\"gpt-4o-mini\",\n    messages=messages,\n    temperature=0.2,\n    max_tokens=1024,\n    timeout=30,\n    stream=False,\n)"
+ },
+ {
+  "name": "survives/pinned requirements",
+  "host": "",
+  "account": "",
+  "in": "requests==2.31.0\nurllib3==1.26.18\nnumpy==1.26.4\npandas==2.2.1\nflask==3.0.2\ngunicorn==21.2.0",
+  "want": "requests==2.31.0\nurllib3==1.26.18\nnumpy==1.26.4\npandas==2.2.1\nflask==3.0.2\ngunicorn==21.2.0"
+ },
+ {
+  "name": "survives/diff context",
+  "host": "",
+  "account": "",
+  "in": "@@ -12,9 +12,9 @@ def ask(messages):\n response = client.chat.completions.create(\n-    model=\"gpt-4\",\n+    model=\"gpt-4o\",\n     messages=messages,\n     temperature=0.2,\n     max_tokens=1024,\n     timeout=30,\n     stream=False,\n )",
+  "want": "@@ -12,9 +12,9 @@ def ask(messages):\n response = client.chat.completions.create(\n-    model=\"gpt-4\",\n+    model=\"gpt-4o\",\n     messages=messages,\n     temperature=0.2,\n     max_tokens=1024,\n     timeout=30,\n     stream=False,\n )"
+ },
+ {
+  "name": "survives/a loop's output names one variable",
+  "host": "",
+  "account": "",
+  "in": "i=0\ni=1\ni=2\ni=3\ni=4\ni=5",
+  "want": "i=0\ni=1\ni=2\ni=3\ni=4\ni=5"
+ },
+ {
+  "name": "survives/two variables alternating",
+  "host": "",
+  "account": "",
+  "in": "x=1\ny=2\nx=3\ny=4\nx=5\ny=6",
+  "want": "x=1\ny=2\nx=3\ny=4\nx=5\ny=6"
+ },
+ {
+  "name": "dump/values with spaces are still a listing",
+  "host": "",
+  "account": "",
+  "in": "SHELL=/bin/bash\nPS1=\\u@\\h \\w $ \nLS_COLORS=rs=0:di=01;34:ln=01;36\nLESSOPEN=| /usr/bin/lesspipe %s\nTERM=xterm-256color\n_=/usr/bin/env",
+  "want": "SHELL=[REDACTED]\nPS1=[REDACTED]\nLS_COLORS=[REDACTED]\nLESSOPEN=[REDACTED]\nTERM=[REDACTED]\n_=[REDACTED]"
+ },
+ {
+  "name": "dump/declare -x",
+  "host": "",
+  "account": "",
+  "in": "declare -x EDITOR=\"vim\"\ndeclare -x OLDPWD\ndeclare -x PATH=\"/usr/bin:/bin\"\ndeclare -x SHELL=\"/bin/bash\"\ndeclare -x TERM=\"xterm\"\ndeclare -rx APP_HINT=\"abc def\"",
+  "want": "declare -x EDITOR=[REDACTED]\ndeclare -x OLDPWD\ndeclare -x PATH=[REDACTED]\ndeclare -x SHELL=[REDACTED]\ndeclare -x TERM=[REDACTED]\ndeclare -rx APP_HINT=[REDACTED]"
+ },
+ {
+  "name": "dump/typeset -x",
+  "host": "",
+  "account": "",
+  "in": "typeset -x A_ONE=1\ntypeset -x B_TWO=2\ntypeset -x C_THREE=3\ntypeset -x D_FOUR=4\ntypeset -x E_FIVE=5",
+  "want": "typeset -x A_ONE=[REDACTED]\ntypeset -x B_TWO=[REDACTED]\ntypeset -x C_THREE=[REDACTED]\ntypeset -x D_FOUR=[REDACTED]\ntypeset -x E_FIVE=[REDACTED]"
+ },
+ {
+  "name": "dump/a bulleted listing",
+  "host": "",
+  "account": "",
+  "in": "- A_ONE=1\n* B_TWO=2\n+ C_THREE=3\n> D_FOUR=4\n-\tE_FIVE=5",
+  "want": "- A_ONE=[REDACTED]\n* B_TWO=[REDACTED]\n+ C_THREE=[REDACTED]\n> D_FOUR=[REDACTED]\n-\tE_FIVE=[REDACTED]"
+ },
+ {
+  "name": "dump/cat -n",
+  "host": "",
+  "account": "",
+  "in": "     1\tA_ONE=1\n     2\tB_TWO=2\n     3\tC_THREE=3\n     4\tD_FOUR=4\n     5\tE_FIVE=5",
+  "want": "     1\tA_ONE=[REDACTED]\n     2\tB_TWO=[REDACTED]\n     3\tC_THREE=[REDACTED]\n     4\tD_FOUR=[REDACTED]\n     5\tE_FIVE=[REDACTED]"
+ },
+ {
+  "name": "dump/a numbered list",
+  "host": "",
+  "account": "",
+  "in": "1. A_ONE=1\n2) B_TWO=2\n3. C_THREE=3\n4. D_FOUR=4\n5. E_FIVE=5",
+  "want": "1. A_ONE=[REDACTED]\n2) B_TWO=[REDACTED]\n3. C_THREE=[REDACTED]\n4. D_FOUR=[REDACTED]\n5. E_FIVE=[REDACTED]"
+ },
+ {
+  "name": "dump/a logfmt line splits a listing",
+  "host": "",
+  "account": "",
+  "in": "A=1\nB=2\nC=3\nD=4\nE=5\nSUDO_COMMAND=/usr/bin/env F=6\nG=7",
+  "want": "A=[REDACTED]\nB=[REDACTED]\nC=[REDACTED]\nD=[REDACTED]\nE=[REDACTED]\nSUDO_COMMAND=/usr/bin/env F=6\nG=7"
+ },
+ {
+  "name": "dump/a quoted value across lines is read before the listing",
+  "host": "",
+  "account": "",
+  "in": "A=1\nB=2\nPASSWORD=\"x\nnot env\"\nD=4\nE=5",
+  "want": "A=[REDACTED]\nB=[REDACTED]\nPASSWORD=[REDACTED]\nD=[REDACTED]\nE=[REDACTED]"
+ },
+ {
+  "name": "identity/the account in prose stays",
+  "host": "Build-Box7.corp.example",
+  "account": "CORP\\mwhitlock",
+  "in": "logged in as mwhitlock on build-box7.",
+  "want": "logged in as mwhitlock on [REDACTED]."
+ },
+ {
+  "name": "identity/the account twice in prose stays",
+  "host": "Build-Box7.corp.example",
+  "account": "CORP\\mwhitlock",
+  "in": "mwhitlock mwhitlock",
+  "want": "mwhitlock mwhitlock"
+ },
+ {
+  "name": "identity/account variables",
+  "host": "Build-Box7.corp.example",
+  "account": "CORP\\mwhitlock",
+  "in": "USERNAME=mwhitlock LOGNAME=\"mwhitlock\" SUDO_USER = mwhitlock $env:USERNAME = 'mwhitlock' user=mwhitlock --user=mwhitlock",
+  "want": "USERNAME=[REDACTED] LOGNAME=\"[REDACTED]\" SUDO_USER = [REDACTED] $env:USERNAME = '[REDACTED]' user=[REDACTED] --user=[REDACTED]"
+ },
+ {
+  "name": "identity/not an account variable",
+  "host": "Build-Box7.corp.example",
+  "account": "CORP\\mwhitlock",
+  "in": "OWNER=mwhitlock, mwhitlock: and USER=mwhitlock2",
+  "want": "OWNER=mwhitlock, mwhitlock: and USER=mwhitlock2"
+ },
+ {
+  "name": "identity/the account in a WSL path",
+  "host": "Build-Box7.corp.example",
+  "account": "CORP\\mwhitlock",
+  "in": "cp /mnt/c/Users/mwhitlock/notes.txt .",
+  "want": "cp /mnt/c/Users/[REDACTED]/notes.txt ."
+ },
+ {
+  "name": "identity/an account that is a word",
+  "host": "",
+  "account": "will",
+  "in": "I will ssh will@db1 and set USER=will; Will agrees",
+  "want": "I will ssh [REDACTED]@db1 and set USER=[REDACTED]; Will agrees"
+ },
+ {
+  "name": "identity/an account with a space",
+  "host": "DESKTOP-X",
+  "account": "DESKTOP-X\\John Smith",
+  "in": "whoami says DESKTOP-X\\John Smith; C:\\Users\\John Smith\\Documents and /mnt/c/Users/john smith/x; USERNAME=John Smith; John Smith wrote it",
+  "want": "whoami says [REDACTED]\\John Smith; C:\\Users\\[REDACTED]\\Documents and /mnt/c/Users/[REDACTED]/x; USERNAME=[REDACTED]; John Smith wrote it"
+ },
+ {
+  "name": "identity/an account folds as Go folds it",
+  "host": "",
+  "account": "skipper",
+  "in": "ssh \u017fkipper@db1 and USER=s\u212aipper",
+  "want": "ssh [REDACTED]@db1 and USER=[REDACTED]"
+ },
+ {
+  "name": "identity/an owner's mac is not generic",
+  "host": "Alices-MacBook-Pro.local",
+  "account": "",
+  "in": "on alices-macbook-pro today",
+  "want": "on [REDACTED] today"
+ },
+ {
+  "name": "survives/generic identity macbook-pro.local/vscode",
+  "host": "macbook-pro.local",
+  "account": "vscode",
+  "in": "vscode@macbook-pro:~$ USER=vscode; /mnt/c/Users/vscode/x; on macbook-pro",
+  "want": "vscode@macbook-pro:~$ USER=vscode; /mnt/c/Users/vscode/x; on macbook-pro"
+ },
+ {
+  "name": "survives/generic identity prod/ec2-user",
+  "host": "prod",
+  "account": "ec2-user",
+  "in": "ec2-user@prod:~$ USER=ec2-user; /mnt/c/Users/ec2-user/x; on prod",
+  "want": "ec2-user@prod:~$ USER=ec2-user; /mnt/c/Users/ec2-user/x; on prod"
+ },
+ {
+  "name": "survives/generic identity staging/jovyan",
+  "host": "staging",
+  "account": "jovyan",
+  "in": "jovyan@staging:~$ USER=jovyan; /mnt/c/Users/jovyan/x; on staging",
+  "want": "jovyan@staging:~$ USER=jovyan; /mnt/c/Users/jovyan/x; on staging"
+ },
+ {
+  "name": "survives/generic identity raspberrypi/runneradmin",
+  "host": "raspberrypi",
+  "account": "runneradmin",
+  "in": "runneradmin@raspberrypi:~$ USER=runneradmin; /mnt/c/Users/runneradmin/x; on raspberrypi",
+  "want": "runneradmin@raspberrypi:~$ USER=runneradmin; /mnt/c/Users/runneradmin/x; on raspberrypi"
+ },
+ {
+  "name": "survives/generic identity Mac-Studio.local/gitlab-runner",
+  "host": "Mac-Studio.local",
+  "account": "gitlab-runner",
+  "in": "gitlab-runner@Mac-Studio:~$ USER=gitlab-runner; /mnt/c/Users/gitlab-runner/x; on Mac-Studio",
+  "want": "gitlab-runner@Mac-Studio:~$ USER=gitlab-runner; /mnt/c/Users/gitlab-runner/x; on Mac-Studio"
+ },
+ {
+  "name": "survives/non-ASCII names are not searched for",
+  "host": "h\u00e9llo-box",
+  "account": "jos\u00e9",
+  "in": "on h\u00e9llo-box as jos\u00e9: ssh jos\u00e9@db1, USER=jos\u00e9",
+  "want": "on h\u00e9llo-box as jos\u00e9: ssh jos\u00e9@db1, USER=jos\u00e9"
+ },
+ {
+  "name": "bridge/as the last part of a dotted name",
+  "host": "",
+  "account": "",
+  "in": "ssh7bob@example.com.JEVLIN_TRACE_BRIDGE=eyJCanary0123 x",
+  "want": "[REDACTED].JEVLIN_TRACE_BRIDGE=[REDACTED] x"
+ },
+ {
+  "name": "survives/a bridge-like name that is not the bridge's",
+  "host": "",
+  "account": "",
+  "in": "MY_JEVLIN_TRACE_BRIDGE=value",
+  "want": "MY_JEVLIN_TRACE_BRIDGE=value"
+ },
+ {
+  "name": "survives/a host named after the placeholder",
+  "host": "redacted.lan",
+  "account": "redacted",
+  "in": "API_TOKEN=x on redacted, and USER=redacted",
+  "want": "API_TOKEN=[REDACTED] on redacted, and USER=redacted"
+ }
+]

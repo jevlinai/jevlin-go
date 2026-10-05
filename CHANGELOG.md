@@ -18,6 +18,18 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **The trace scrubber covers secrets that have no shape.** Assistant text sent
+  with a search, and a turn's final answer, already lost API keys, tokens,
+  emails and the name in a home path. It now also loses the value of an
+  assignment whose name says it is a secret (`DATABASE_PASSWORD=…`,
+  `--api-key=…`, `$env:API_TOKEN = '…'`, a password chained behind another
+  setting in a URL or a connection string), every value in a pasted
+  environment listing, the trace bridge's own value in a quoted command, this
+  machine's hostname wherever it appears as a word, and your account name
+  where the text uses it as an account: `USER=…`, `name@host`, a home path.
+  Your account name in ordinary prose is left, since it is often a word. A
+  filter, not a guarantee: a secret with no telling name and no known shape
+  still passes.
 - **Opt-in: a turn's final answer.** With `[miner] turn_end = true`, when a turn
   in which jevlin searched ends, the assistant's last message is sent to the
   router so a session can be read from its searches to what they were for. Off

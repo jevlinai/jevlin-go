@@ -267,6 +267,42 @@ degradation.
 | `history` | The assistant text before the search, scrubbed of secrets, last 32 KiB. |
 | `host_meta` | Agent-specific metadata. |
 
+The scrub removes what has a credential's shape (API keys, GitHub and AWS tokens, JWTs, a
+password inside a URL), email addresses, and the account name in a home path. It also removes
+what has no shape.
+
+A secret known by its name: the value of an assignment whose name has, as one of the parts `_`,
+`-` and `.` separate, `PASSWORD`, `PASSWD`, `PASSPHRASE`, `SECRET`, `SECRETS`, `TOKEN`,
+`CREDENTIAL`, `CREDENTIALS` or `APIKEY` in any letter case (`DATABASE_PASSWORD=…`, `client-secret=…`, `db.password=…`), or
+`KEY` or `PASS` in a name written in capitals or of two or more parts (`API_KEY=…`,
+`--api-key=…`, `db_pass=…`); also `PGPASSWORD` and `MYSQL_PWD`. A bare `key=…`, `--key=2` or
+`pass=2` is left. Every `=` is read, so a secret chained behind another setting goes too
+(`?user=fred&password=…`, `--env=DB_PASSWORD=…`), and PowerShell's `$env:NAME = '…'` counts
+with its spaces. A quoted value goes to its closing quote, across at most 100 line breaks; a quote
+that does not close takes the rest of its line. An unquoted value goes to whitespace, `&` or
+`;`, and a closing `)`, `]`, `}`, quote or `,` after it that belongs to the text around it
+stays.
+
+An environment listing: every value in a run of lines naming five or more different variables,
+as `NAME=value`, `export`, `declare -x` or `typeset -x`, also behind a list marker or `cat -n`
+numbering. A line whose value starts with `=` (`requests==2.31.0`), ends with `,` (a keyword
+argument) or holds another `NAME=` after a space (a logfmt record) is not part of one, and
+breaks the run. And the value of `JEVLIN_TRACE_BRIDGE` in a quoted command, in any shell's
+syntax.
+
+This machine's names: the hostname's first label wherever it stands as a word, and your
+account name only where the text uses it as an account. That is the value of `USER`,
+`USERNAME`, `LOGNAME` or `SUDO_USER`, directly before `@` (`ssh name@host`, a prompt), and a
+home path, including `/mnt/c/Users/` and an account name with a space in it. Anywhere else your
+account name is left, because it is often an ordinary word. The account is the one `USERNAME`
+names on Windows, `USER` or else `LOGNAME` elsewhere, or else the home directory's name. A
+generic name such as `root`, `ubuntu`, `vscode` or `macbook-pro` is left, because it identifies
+nobody.
+
+It is a filter over text a model wrote, not a guarantee: a secret with no telling name and no
+known shape, in ordinary prose, passes, and so does one written as `password: …`,
+`"password": "…"` or `NAME = …` outside PowerShell.
+
 The text is scrubbed before it is cut, and an entry too large to scrub whole is omitted whole.
 Over 48 KiB, `history` is dropped; an envelope still too large is not sent. It travels
 base64url-encoded in `JEVLIN_TRACE_BRIDGE`, written in the syntax of the shell that runs the
