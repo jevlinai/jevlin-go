@@ -265,6 +265,7 @@ func TestAgentsUninstallRemovesOnlyWhatInstallWrote(t *testing.T) {
 	m, ops := newFakeMachine("claude", "cursor", "codex", "opencode")
 	m.files["/home/u/.claude/settings.json"] = []byte(`{"permissions":{"allow":["Bash(git status:*)"]},"hooks":{"PreToolUse":[{"matcher":"Write","hooks":[{"type":"command","command":"lint"}]}],"Stop":[{"hooks":[{"type":"command","command":"say done"}]}]}}`)
 	m.files["/home/u/.cursor/hooks.json"] = []byte(`{"version":1,"hooks":{"stop":[{"command":"./hooks/mine.sh"}]}}`)
+	m.files["/home/u/.codex/hooks.json"] = []byte(`{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"say done","timeout":5}]}]}}`)
 	if code, out, _ := runAgents(t, ops, nil, "install", "-config", testCfg, "-yes"); code != exitOK {
 		t.Fatalf("install: %d\n%s", code, out)
 	}
@@ -303,6 +304,10 @@ func TestAgentsUninstallRemovesOnlyWhatInstallWrote(t *testing.T) {
 	}
 	if _, ok := cursor["sessionStart"]; ok {
 		t.Error("Cursor sessionStart not removed")
+	}
+	codex := hooksOf(t, m, "/home/u/.codex/hooks.json")
+	if stop := codex["Stop"].([]any); len(stop) != 1 || len(codex) != 1 {
+		t.Errorf("Codex's hooks after uninstall: %v, want only the participant's own Stop hook", codex)
 	}
 	for _, r := range m.removed {
 		if !strings.Contains(r, agentsName) {

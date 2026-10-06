@@ -18,9 +18,11 @@ it. For documentation and small fixes, a pull request on its own is fine.
 ## The flow
 
 1. Branch from `main` as it stands, never from another unmerged branch.
-2. Run `make verify` and get it green locally. It builds, tests (with and without the race
-   detector), vets, lints for the host and for Windows, scans dependencies for known
-   vulnerabilities, runs `go mod tidy`, and cross-compiles every release platform.
+2. Run `make verify` and get it green locally before you push. It builds, vets, lints for the
+   host and for Windows, runs `go mod tidy`, runs every test under the race detector, scans
+   dependencies for known vulnerabilities, and cross-compiles every release platform. CI runs
+   the tests without the race detector too, on all four systems. While you work, and before
+   each commit, `make quick RUN=<test name pattern>` runs only the tests you name, in seconds.
 3. Open a pull request, as a draft while CI runs, with the template filled in.
 4. All eight checks must be green on the exact head commit: `test` on Linux, macOS, Windows
    and Windows arm64, plus `race`, `cross`, `golangci-lint` and `govulncheck`.

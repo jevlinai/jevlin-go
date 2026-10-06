@@ -174,6 +174,13 @@ func goldenHookSpec(t *testing.T, id string, entry binEntry, goos string) hooksS
 		}
 		return spec
 	}
+	if id == "codex" {
+		spec, err := codexHooksFor(tg, entry, goos)
+		if err != nil {
+			t.Fatalf("codex hooks on %s: %v", goos, err)
+		}
+		return spec
+	}
 	spec, err := claudeHooksFor(tg, entry, goos)
 	if err != nil {
 		t.Fatalf("%s hooks on %s: %v", id, goos, err)
@@ -339,8 +346,9 @@ func jsBridgedCommand(t *testing.T, host, command string, sh shellKind) string {
 }
 
 // bridgedCommand is the command host's lineage adapter hands the host for
-// command, or "" for a host with no bridge (Codex; Cursor, whose lineage is
-// a file its hooks write).
+// command, or "" for Cursor, whose lineage is a file its hooks write, and for
+// Codex, whose hook answers only as the installation it runs as
+// (codexBridgedCommand).
 func bridgedCommand(t *testing.T, host, command string, sh shellKind) string {
 	t.Helper()
 	switch host {
@@ -479,6 +487,21 @@ func renderedHostStrings(t *testing.T, goos string) string {
 			value("stdin command alone", recognizerVerdict(entry.stdinCommand(), entry, goos))
 			value("the rendered search plus a second statement",
 				recognizerVerdict(strings.Replace(stdinSearch.body, "\nJSON", "\nJSON; echo x", 1), entry, goos))
+		case "codex":
+			// Pinned by bytes because Codex approves a hook by what it runs:
+			// a change here is a change every participant approves again.
+			section("codex: hooks.json commands, as read back from the file")
+			tg, _ := targetByID(installTargets, "codex")
+			spec, err := codexHooksFor(tg, entry, goos)
+			if err != nil {
+				value("refused", err.Error())
+				break
+			}
+			file := installedHookFile(t, spec, entry)
+			for _, h := range installedHookCommands(t, file, spec) {
+				literal, _ := json.Marshal(h.command)
+				value(h.event, h.command+"\n"+string(literal))
+			}
 		case "hermes":
 			section("hermes: config.yaml hook command")
 			cmd, ok := hermesHookCommand(entry, goos == "windows")

@@ -64,13 +64,16 @@ const usageTemplate = `usage: jevlin <command> [flags]
 
 the tool (what an agent runs):
   search     one web search through the router, two forms: jevlin
-             search [-tier fast] [-format json|model] <query words> for a
-             person, or jevlin search --stdin for an agent (one
-             version-1 JSON request object on stdin, one JSON envelope on
-             stdout; -format is ignored, the envelope is always JSON).
-             The --stdin request may also carry tier, recency, domain_filter,
-             max_results and view ("full" or "merged"); a malformed value
-             answers fix_input before any router call.
+             search [-tier fast] [-format json|model] [-view merged]
+             <query words> for a person, or jevlin search --stdin for an
+             agent (one version-1 JSON request object on stdin, one JSON
+             envelope on stdout; -format and -view are ignored, the
+             envelope is always JSON and the request's own view field
+             decides). The --stdin request may also carry tier, recency,
+             domain_filter, max_results, providers and view ("full" or
+             "merged"); a malformed value answers fix_input before any
+             router call. view "merged" is also sent to the router, which
+             adds its own merged and indexes to the raw response.
              -timeout bounds the whole search in either form, default
              1m0s. Records the served request for mining and starts a
              flush. Exit: 0=valid search response, 1=transport/timeout/
@@ -263,6 +266,14 @@ func dispatch(name string, args []string) int {
 		fmt.Fprintf(os.Stderr, "jevlin: unknown command %q\n\n%s", name, usageText)
 		return 2
 	}
+}
+
+// clientIdentifier is the one spelling of "which build is speaking" sent
+// upstream: the User-Agent on every router call, and register's client
+// field. "jevlin/0.1.0" for a release, "jevlin/dev (abc123def456)" for a
+// local build — inside the router's 128-byte bound either way.
+func clientIdentifier() string {
+	return searchUserAgent + "/" + strings.TrimPrefix(buildVersion(), "v")
 }
 
 func buildVersion() string {

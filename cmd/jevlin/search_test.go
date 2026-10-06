@@ -130,6 +130,63 @@ const routerBody = `{"request_id":"01a03e86-fictional","query":"how do ports wor
 	`{"provider":"fictional","kind":"answer","status":"ok","answer":"Ports number the endpoints.","citations":[{"url":"https://b.test/2","title":"Two","snippet":"second snippet"}]}],` +
 	`"session":{"id":"sess-9"},"usage":{"latency_ms":12}}`
 
+// -view is the human path's way to ask the router for its own merged
+// view: "merged" travels in the request body, while "full" and the
+// default send nothing — the router accepts no other value, so the
+// client's own rendering default must never reach it. Anything else is
+// refused before any router call.
+func TestSearchViewFlagForwardsOnlyMerged(t *testing.T) {
+	for name, tc := range map[string]struct {
+		args []string
+		want any // nil = the key must be absent
+	}{
+		"merged":  {[]string{"-view", "merged"}, "merged"},
+		"full":    {[]string{"-view", "full"}, nil},
+		"default": {nil, nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(routerBody))
+			})
+			h := fixedSearchOps(root)
+			args := append([]string{"-config", cfg}, tc.args...)
+			args = append(args, "q")
+			code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "sr-fictional"}, args...)
+			if code != exitOK {
+				t.Fatalf("exit %d out %q err %q", code, out, errOut)
+			}
+			_, sent := fr.last(t)
+			var body map[string]any
+			if err := json.Unmarshal(sent, &body); err != nil {
+				t.Fatal(err)
+			}
+			got, present := body["view"]
+			if tc.want == nil && present {
+				t.Errorf("view sent for the local default: %v", got)
+			}
+			if tc.want != nil && got != tc.want {
+				t.Errorf("view = %v, want %v", got, tc.want)
+			}
+		})
+	}
+	t.Run("a value this client does not render is refused", func(t *testing.T) {
+		fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(routerBody))
+		})
+		h := fixedSearchOps(root)
+		code, _, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "sr-fictional"},
+			"-config", cfg, "-view", "sideways", "q")
+		if code != exitUsage || !strings.Contains(errOut, "-view") {
+			t.Fatalf("exit %d, stderr %q", code, errOut)
+		}
+		fr.mu.Lock()
+		defer fr.mu.Unlock()
+		if len(fr.reqs) != 0 {
+			t.Error("a refused -view was sent to the router anyway")
+		}
+	})
+}
+
 func TestSearchPostsToTheRouterPrintsVerbatimAndRecordsIntake(t *testing.T) {
 	fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Request-Id", "01a03e86-fictional")

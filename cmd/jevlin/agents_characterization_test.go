@@ -170,6 +170,9 @@ func compareGoldenPlan(t *testing.T, got goldenPlan, path string) {
 // it was captured on.
 func capturePlanForGolden(id string, ops agentOps, entry binEntry, plan agentPlan) goldenPlan {
 	got := capturePlan(plan)
+	if id == "codex" {
+		got = withoutCodexHooks(got)
+	}
 	if id == "hermes" {
 		got = normalizeHermesHome(got, slash(hermesHomeDir(ops.home, noEnv)))
 		if cmd, ok := hermesHookCommand(entry, runtime.GOOS == "windows"); ok {
@@ -268,6 +271,39 @@ func withSkillPlaceholder(g goldenPlan) goldenPlan {
 	return g
 }
 
+// withoutCodexHooks takes Codex's hooks out of a captured plan. They are
+// written on macOS and Linux and not on Windows, where nothing has
+// established what runs a Codex hook, so their write, their removal and every
+// note about them exist on two of the four runners this golden is compared
+// on. They are pinned instead by codex-hooks.*.golden, which renders them for
+// Linux on every runner (TestCodexHooksPlanGolden).
+func withoutCodexHooks(g goldenPlan) goldenPlan {
+	isHooks := func(p string) bool { return strings.HasSuffix(p, "/.codex/hooks.json") }
+	var out goldenPlan
+	out.Skipped, out.Refused = g.Skipped, g.Refused
+	for _, w := range g.Writes {
+		if !isHooks(w.Path) {
+			out.Writes = append(out.Writes, w)
+		}
+	}
+	for _, r := range g.Removes {
+		if !isHooks(r.Path) {
+			out.Removes = append(out.Removes, r)
+		}
+	}
+	for _, n := range g.Notes {
+		switch {
+		case strings.Contains(n, codexApprovalSentence),
+			strings.Contains(n, "which shell runs its hook commands is not established"),
+			strings.Contains(n, "record of your approval of these hooks"),
+			strings.Contains(n, "/.codex/hooks.json"):
+		default:
+			out.Notes = append(out.Notes, n)
+		}
+	}
+	return out
+}
+
 // These goldens are one file each, compared on four runners, so anything
 // in a plan that differs by OS has to leave them — and "differs by OS"
 // includes a note that exists on one OS and not another. Codex's
@@ -314,6 +350,23 @@ func TestPlanGoldenCaptureDropsWhatDiffersByOS(t *testing.T) {
 			strings.Contains(out.Writes[0].Content, "/h/jevlin.toml") {
 			t.Errorf("a per-OS quoting survived into the golden: %q -> %q", spelling, out.Writes[0].Content)
 		}
+	}
+
+	// Codex's hooks exist on two OSes of the four: their write, their removal
+	// and every note about them leave the shared golden.
+	codex := withoutCodexHooks(goldenPlan{
+		Writes:  []goldenWrite{{Path: "/h/.codex/hooks.json"}, {Path: "/h/.codex/config.toml"}},
+		Removes: []goldenRemove{{Path: "/h/.codex/hooks.json"}},
+		Notes: []string{
+			"Codex: " + codexApprovalSentence,
+			"Codex on windows: which shell runs its hook commands is not established, so nothing is rendered for it; Codex gets the skill and the sandbox block",
+			"Codex: Codex's record of your approval of these hooks stays in /h/.codex/config.toml",
+			"Codex: shell commands run sandboxed",
+		},
+	})
+	if len(codex.Writes) != 1 || codex.Writes[0].Path != "/h/.codex/config.toml" || len(codex.Removes) != 0 ||
+		len(codex.Notes) != 1 || codex.Notes[0] != "Codex: shell commands run sandboxed" {
+		t.Errorf("Codex's per-OS hooks survived into the golden: %+v", codex)
 	}
 
 	// And the one line the installer writes into a JavaScript adapter.
@@ -506,7 +559,7 @@ func TestCodexSandboxPlanGolden(t *testing.T) {
 		_, ops := newFakeMachine()
 		paths := ops.paths(noEnv)
 		plan := buildInstallPlan(ops, paths, []installTarget{surface}, entry, noEnv)
-		compareGoldenPlan(t, withSkillPlaceholder(normalizeGoldenPlan(capturePlan(plan), home)), filepath.Join("testdata", "agents", "codex-sandbox.install.golden"))
+		compareGoldenPlan(t, withSkillPlaceholder(normalizeGoldenPlan(withoutCodexHooks(capturePlan(plan)), home)), filepath.Join("testdata", "agents", "codex-sandbox.install.golden"))
 	})
 
 	t.Run("uninstall", func(t *testing.T) {
@@ -519,7 +572,37 @@ func TestCodexSandboxPlanGolden(t *testing.T) {
 			t.Fatalf("committing the sandboxed install: %d failures", failures)
 		}
 		plan := buildUninstallPlan(ops, paths, []installTarget{surface}, entry, noEnv)
-		compareGoldenPlan(t, withSkillPlaceholder(normalizeGoldenPlan(capturePlan(plan), home)), filepath.Join("testdata", "agents", "codex-sandbox.uninstall.golden"))
+		compareGoldenPlan(t, withSkillPlaceholder(normalizeGoldenPlan(withoutCodexHooks(capturePlan(plan)), home)), filepath.Join("testdata", "agents", "codex-sandbox.uninstall.golden"))
+	})
+}
+
+// TestCodexHooksPlanGolden is the install and uninstall of Codex's hooks
+// alone, rendered for Linux's declared runner on every runner, the way
+// TestCodexSandboxPlanGolden holds the sandbox block: the shared codex
+// golden cannot hold a write that exists on two OSes of four.
+func TestCodexHooksPlanGolden(t *testing.T) {
+	entry := goldenEntry()
+	install := func(ops agentOps, paths agentPaths) agentPlan {
+		var p agentPlan
+		if !(codexTarget{}).planHooks(ops, paths, entry, "linux", &p) {
+			t.Fatalf("no hooks planned for Linux: %+v", p)
+		}
+		return p
+	}
+	t.Run("install", func(t *testing.T) {
+		_, ops := newFakeMachine()
+		compareGoldenPlan(t, capturePlan(install(ops, ops.paths(noEnv))), filepath.Join("testdata", "agents", "codex-hooks.install.golden"))
+	})
+	t.Run("uninstall", func(t *testing.T) {
+		_, ops := newFakeMachine()
+		paths := ops.paths(noEnv)
+		installed := install(ops, paths)
+		if failures := commitPlan(ops, &installed, io.Discard, io.Discard); failures != 0 {
+			t.Fatalf("committing the hooks: %d failures", failures)
+		}
+		var p agentPlan
+		(codexTarget{}).PlanUninstall(ops, paths, entry, noEnv, &p)
+		compareGoldenPlan(t, capturePlan(p), filepath.Join("testdata", "agents", "codex-hooks.uninstall.golden"))
 	})
 }
 
@@ -584,6 +667,33 @@ func exactHostStatusLine(t *testing.T, out, label string) string {
 	return matches[0]
 }
 
+// codexInstalledState is Codex's state after a full install on this runner:
+// its hooks are written on macOS and Linux and not on Windows, where nothing
+// has established what runs one, and the skill is then the whole install.
+var codexInstalledState = func() string {
+	if runtime.GOOS == "windows" {
+		return "installed (skill)"
+	}
+	return "installed (skill+hooks)"
+}()
+
+// codexHooksIfWritten removes Codex's hooks where the install wrote them, and
+// nothing on Windows, where it wrote none; codexSkillOnlyState is what status
+// then says.
+func codexHooksIfWritten(p agentPaths) []string {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	return []string{p.codexHooks}
+}
+
+var codexSkillOnlyState = func() string {
+	if runtime.GOOS == "windows" {
+		return "installed (skill)"
+	}
+	return "installed (skill only)"
+}()
+
 // TestAgentStatusExactStates enumerates, per host, absent, fully
 // installed, and every partial state printAgentStatus's own switch
 // currently distinguishes (Claude and Cursor: skill without hooks; Pi and
@@ -606,7 +716,8 @@ func TestAgentStatusExactStates(t *testing.T) {
 		{"claude", "Claude Code", "skill+hooks", true, nil, "installed (skill+hooks)"},
 
 		{"codex", "Codex", "absent", false, nil, "not installed"},
-		{"codex", "Codex", "installed", true, nil, "installed (skill)"},
+		{"codex", "Codex", "skill only", true, codexHooksIfWritten, codexSkillOnlyState},
+		{"codex", "Codex", "installed", true, nil, codexInstalledState},
 
 		{"cursor", "Cursor", "absent", false, nil, "not installed"},
 		{"cursor", "Cursor", "skill only", true, func(p agentPaths) []string { return []string{p.cursorHooks} }, "installed (skill only)"},

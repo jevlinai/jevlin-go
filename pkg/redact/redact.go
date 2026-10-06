@@ -55,6 +55,9 @@ var (
 	githubTokenPattern = regexp.MustCompile(`\bgh[opsur]_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{20,}\b`)
 	// AWS access key ids: a fixed shape, AKIA + 16 uppercase alnums.
 	awsKeyPattern = regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`)
+	// Stripe's secret and restricted keys, live and test: sk_live_...,
+	// rk_test_.... The publishable pk_ key is public by design.
+	stripeKeyPattern = regexp.MustCompile(`\b[rs]k_(?:live|test)_[A-Za-z0-9]{16,}`)
 	// A bare JWT (three base64url segments): a token pasted into free
 	// text or logged directly, not only one riding after "Bearer ".
 	jwtPattern = regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\b`)
@@ -68,9 +71,115 @@ var (
 	// redactHomePaths, not a bare ReplaceAll — see there for why.
 	homePathPattern = regexp.MustCompile(`(/Users/|/home/)[^/\s]+`)
 	// The Windows sibling: C:\Users\<name>\... . This repo ships Windows
-	// binaries; the Unix-only pattern above missed this entirely.
-	windowsHomePathPattern = regexp.MustCompile(`(?i)([A-Z]:\\Users\\)[^\\\s]+`)
+	// binaries; the Unix-only pattern above missed this entirely. A
+	// separator may be doubled (or more), as Python's repr and JSON print a
+	// path: C:\\Users\\<name>. A name with spaces in it (C:\Users\Équipe
+	// Données\Documents) is taken whole when the path goes on past it: up to
+	// three more words, none holding a quote, a colon, a slash or a
+	// backtick, and then a backslash. A word with any of those is the next
+	// path or the text around this one (C:\Users\bob and C:\Users\…), and
+	// without the backslash after it nothing marks where a name ends and
+	// prose begins, so there only the first word goes.
+	windowsHomePathPattern = regexp.MustCompile("(?i)([A-Z]:\\\\+Users\\\\+)[^\\\\\\s]+(?:(?: [^\\\\\\s:\"'`/]+){1,3}(\\\\))?")
+	// One line of an environment listing: an optional list marker (- * + >)
+	// or line number (cat -n, a numbered list), an optional `export`,
+	// `declare -x` or `typeset -x`, a name, `=`, and the rest of the line.
+	// Applied via redactEnvDumps, to runs only.
+	envLinePattern = regexp.MustCompile(`^([\t\n\f\r ]*` + envLineMarker + `(?:(?:export|(?:declare|typeset)[\t ]+-[A-Za-z]+)[\t ]+)?([A-Za-z_][A-Za-z0-9_]*)=)(.*)$`)
+	// bash's `declare -x NAME` for a variable exported with no value: part
+	// of the listing, with nothing to remove.
+	envBareDeclarePattern = regexp.MustCompile(`^[\t\n\f\r ]*` + envLineMarker + `(?:declare|typeset)[\t ]+-[A-Za-z]+[\t ]+([A-Za-z_][A-Za-z0-9_]*)[\t\n\f\r ]*$`)
+	// A second NAME= after whitespace: a logfmt record or a command line,
+	// not one variable's value.
+	envPairAfterSpacePattern = regexp.MustCompile(`[\t\n\f\r ][A-Za-z_][A-Za-z0-9_]*=`)
 )
+
+// PowerShell's Get-ChildItem Env: (and any hashtable it prints) is a
+// table, not NAME=value lines: a Name/Value header, a rule of dashes, and
+// a row per variable. Applied via redactEnvTables.
+var (
+	envTableHeader = regexp.MustCompile(`^[\t ]*Name[\t ]+Value[\t ]*$`)
+	envTableRule   = regexp.MustCompile(`^[\t ]*-+[\t ]+-+[\t ]*$`)
+	envTableRow    = regexp.MustCompile(`^([\t ]*[^\t\n\f\r ]+(?:\t|  )[\t ]*)([^\t\n\f\r ].*)$`)
+	// A row with no value: one name and nothing after it but blanks. A
+	// name starts with a letter or `_` and holds letters, digits and
+	// `_ . ( ) -` (ProgramFiles(x86)), ending in neither `.` nor `-`.
+	envTableNameOnly = regexp.MustCompile(`^[\t ]*[A-Za-z_](?:[A-Za-z0-9_.()-]*[A-Za-z0-9_)])?[\t ]*$`)
+)
+
+// redactEnvTables replaces every value in a table under a Name/Value
+// header and its rule of dashes, each row's value being the rest of its
+// line after the name and two or more blanks (or a tab). Two more lines
+// continue a table: a name with no value (envTableNameOnly), which is how
+// PowerShell prints an empty variable or a $null entry, and a line whose
+// blanks reach exactly the column the header's Value starts at, which is
+// how Format-Table -Wrap continues a long value; that line's text is the
+// value's and goes too. A table ends at the first line that is none of
+// these: an empty line, a code fence, a sentence (one blank after its first
+// word), a numbered list item (1. one blank). So the text after it keeps
+// its words.
+// The names stay, as in redactEnvDumps. The cost: any hashtable PowerShell
+// prints has the same header, and loses its values too; and a one-word line
+// right after a table, being a name with no value, does not end it, so a
+// line after that one shaped like a row loses its value.
+func redactEnvTables(s string) string {
+	if !strings.Contains(s, "Value") {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	changed := false
+	for i := 0; i+1 < len(lines); i++ {
+		header := strings.TrimSuffix(lines[i], "\r")
+		if !envTableHeader.MatchString(header) || !envTableRule.MatchString(strings.TrimSuffix(lines[i+1], "\r")) {
+			continue
+		}
+		column := strings.Index(header, "Value")
+		k := i + 2
+		for ; k < len(lines); k++ {
+			line, cr := strings.TrimSuffix(lines[k], "\r"), ""
+			if line != lines[k] {
+				cr = "\r"
+			}
+			indent := 0
+			for indent < len(line) && isBlank(line[indent]) {
+				indent++
+			}
+			if indent == column && indent < len(line) {
+				if line[indent:] != placeholder {
+					lines[k] = line[:indent] + placeholder + cr
+					changed = true
+				}
+				continue
+			}
+			if envTableNameOnly.MatchString(line) {
+				continue
+			}
+			m := envTableRow.FindStringSubmatch(line)
+			if m == nil {
+				break
+			}
+			if m[2] != placeholder {
+				lines[k] = m[1] + placeholder + cr
+				changed = true
+			}
+		}
+		i = k - 1
+	}
+	if !changed {
+		return s
+	}
+	return strings.Join(lines, "\n")
+}
+
+// envDumpRun is how many consecutive NAME=value lines make an environment
+// dump. One or two such lines are ordinary prose about a setting; five in
+// a row is the output of env or printenv quoted back, and nothing in it
+// has a shape a pattern could pick the secrets out by.
+const envDumpRun = 5
+
+// envLineMarker is what may stand before an environment line when it is
+// quoted in a list, a blockquote or `cat -n` output.
+const envLineMarker = `(?:(?:[-*+>]|[0-9]+[.)]?)[\t ]+)?`
 
 // remoteAccessVerbs precede an ssh/scp/rsync/sftp destination that is
 // shaped exactly like an email address (user@host) but is not one —
@@ -99,11 +208,93 @@ func String(s string) string {
 // Authorization: Bearer credential is still caught here if it has a
 // recognizable shape (sk-/sr-/JWT/AWS/GitHub); only the generic
 // "bearer <word>" catch-all is skipped.
+//
+// It also covers a PEM private key block, whatever stands around it, and
+// what an assistant writes around a search that has no credential shape
+// at all: an environment dump, a secret assigned by name
+// (NAME=value, a key and a colon, a long flag and its value),
+// this client's own trace bridge, the machine's hostname wherever it stands
+// as a word, and the account name where the text uses it as one. The log
+// path does not need those: a log line is this client's own words, not a
+// model's account of what it just read.
 func TraceText(s string) string {
+	s = redactPrivateKeyBlocks(s)
 	s = scrubCommon(s)
+	s = redactSecretFlags(s)
+	s = redactSecretKeys(s)
+	s = redactSecretAssignments(s)
+	s = redactEnvDumps(s)
+	s = redactEnvTables(s)
 	s = redactEmails(s)
+	s = redactAccountHomes(s)
 	s = redactHomePaths(s)
+	s = redactLocalIdentity(s)
 	return s
+}
+
+// redactEnvDumps replaces every value in a run of consecutive environment
+// lines that names at least envDumpRun distinct variables. The names stay:
+// they say what kind of output this was, and they identify nobody.
+//
+// A line does not count, and breaks a run, when its value starts with `=`
+// (a pinned requirement, name==1.2), ends with `,` (a keyword argument or
+// a diff of one), or carries another NAME= after whitespace (a logfmt
+// record). That is what keeps code and logs that are only shaped like a
+// listing; the cost is that an environment variable whose own value holds
+// " NAME=" splits a real listing there and that one line is kept. A run
+// of fewer distinct names is a loop's output (i=0, i=1, ...), not a dump.
+func redactEnvDumps(s string) string {
+	if !strings.Contains(s, "=") {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	names := make([]string, len(lines))
+	isEnv := make([]bool, len(lines))
+	for i, raw := range lines {
+		line := strings.TrimSuffix(raw, "\r")
+		if m := envLinePattern.FindStringSubmatch(line); m != nil {
+			v := m[3]
+			isEnv[i] = !strings.HasPrefix(v, "=") && !strings.HasSuffix(strings.TrimRight(v, " \t"), ",") && !envPairAfterSpacePattern.MatchString(v)
+			names[i] = m[2]
+		} else if m := envBareDeclarePattern.FindStringSubmatch(line); m != nil {
+			isEnv[i], names[i] = true, m[1]
+		}
+	}
+	changed := false
+	for i := 0; i < len(lines); {
+		if !isEnv[i] {
+			i++
+			continue
+		}
+		j := i
+		distinct := map[string]bool{}
+		for j < len(lines) && isEnv[j] {
+			distinct[names[j]] = true
+			j++
+		}
+		if len(distinct) >= envDumpRun {
+			for k := i; k < j; k++ {
+				line, cr := strings.TrimSuffix(lines[k], "\r"), ""
+				if line != lines[k] {
+					cr = "\r"
+				}
+				m := envLinePattern.FindStringSubmatch(line)
+				if m != nil && m[3] != "" && m[3] != placeholder {
+					lines[k] = m[1] + placeholder + cr
+					changed = true
+				}
+			}
+		}
+		i = j
+	}
+	if !changed {
+		return s
+	}
+	return strings.Join(lines, "\n")
+}
+
+func isWordChar(c byte) bool {
+	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
 }
 
 // scrubCommon is the part of the pipeline String and TraceText share.
@@ -112,6 +303,7 @@ func scrubCommon(s string) string {
 	s = skPattern.ReplaceAllString(s, placeholder)
 	s = githubTokenPattern.ReplaceAllString(s, placeholder)
 	s = awsKeyPattern.ReplaceAllString(s, placeholder)
+	s = stripeKeyPattern.ReplaceAllString(s, placeholder)
 	s = jwtPattern.ReplaceAllString(s, placeholder)
 	return s
 }
@@ -145,7 +337,7 @@ func redactEmails(s string) string {
 		if end < len(s) && s[end] == ':' {
 			continue
 		}
-		if looksLikeRemoteTarget(s[:start]) {
+		if looksLikeRemoteTarget(s, start) {
 			continue
 		}
 		b.WriteString(s[last:start])
@@ -156,14 +348,19 @@ func redactEmails(s string) string {
 	return b.String()
 }
 
-// looksLikeRemoteTarget reports whether before ends with a remote-access
-// verb immediately adjacent to where a match starts (only whitespace
+// looksLikeRemoteTarget reports whether s[:start] ends with a remote-access
+// verb immediately adjacent to where a match starts (only spaces or tabs
 // between) — "ssh deploy@..." qualifies, "contact ssh@..." does not,
-// since "contact" sits between "ssh" and nothing there.
-func looksLikeRemoteTarget(before string) bool {
-	trimmed := strings.ToLower(strings.TrimRight(before, " \t"))
+// since "contact" sits between "ssh" and nothing there. It looks back from
+// start and touches only those blanks and the verb: lowering and trimming
+// all of s[:start] for every address is quadratic in a text of addresses.
+func looksLikeRemoteTarget(s string, start int) bool {
+	k := start
+	for k > 0 && isBlank(s[k-1]) {
+		k--
+	}
 	for _, verb := range remoteAccessVerbs {
-		if strings.HasSuffix(trimmed, verb) {
+		if k >= len(verb) && asciiEqualFold(s[k-len(verb):k], verb) {
 			return true
 		}
 	}
@@ -180,7 +377,7 @@ func looksLikeRemoteTarget(before string) bool {
 // string). The Windows pattern needs no such check: "C:\Users\" does not
 // occur as a URL path segment.
 func redactHomePaths(s string) string {
-	s = windowsHomePathPattern.ReplaceAllString(s, "${1}"+placeholder)
+	s = windowsHomePathPattern.ReplaceAllString(s, "${1}"+placeholder+"${2}")
 
 	// Submatch indices, not just the whole-match indices: group 1 is
 	// "/Users/" or "/home/", which the replacement keeps verbatim while

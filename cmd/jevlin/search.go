@@ -130,11 +130,11 @@ type routerAttempt struct {
 	BodyErr error
 }
 
-// searchCall is everything one search sends. Recency, DomainFilter and
-// MaxResults are absent (nil) unless the --stdin caller supplied them:
-// the router accepts their absence as "use your default", and sending a
-// zeroed value instead would silently override that default with one
-// this client chose, not one the caller or the router asked for.
+// searchCall is everything one search sends. Recency, DomainFilter,
+// MaxResults and Providers are absent (nil) unless the --stdin caller
+// supplied them: the router accepts their absence as "use your default",
+// and sending a zeroed value instead would silently override that default
+// with one this client chose, not one the caller or the router asked for.
 type searchCall struct {
 	Endpoint     string
 	Key          string
@@ -143,7 +143,13 @@ type searchCall struct {
 	Recency      *string
 	DomainFilter []string
 	MaxResults   *int
-	Trace        *traceEnvelope
+	Providers    []string
+	// View is "" or "merged" — never "full". "full" is this client's own
+	// rendering default and not a value the router accepts; "merged" asks
+	// the router to add its own merged list and per-arm indexes to the
+	// response, and changes nothing else about how the search runs.
+	View  string
+	Trace *traceEnvelope
 }
 
 // searchOutcome is the structured result of running a search. Both
@@ -198,6 +204,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	cfgPath := fs.String("config", "", "path to TOML config file")
 	tier := fs.String("tier", "", "search tier accepted by the router, e.g. fast; empty = the router's default")
 	format := fs.String("format", "json", "output: json (the router's bytes, verbatim) or model (compact text for an agent)")
+	viewFlag := fs.String("view", "", `router view: "merged" adds the router's own cross-provider merged list and per-arm indexes to the raw response; empty or "full" asks for none`)
 	noFlush := fs.Bool("no-flush", false, "do not start a flush after this search")
 	timeout := fs.Duration("timeout", defaultSearchTimeout, "whole-search deadline, covering connect, headers, body and the one trace-compatibility retry")
 	fs.Bool("stdin", false, "read one version-1 JSON search request from stdin and answer with the machine envelope")
@@ -212,6 +219,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	var recency *string
 	var domainFilter []string
 	var maxResults *int
+	var providers []string
 	var view string
 	if machine {
 		// No positional query in machine mode: two sources for the same
@@ -236,6 +244,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		recency = req.recency
 		domainFilter = req.domainFilter
 		maxResults = req.maxResults
+		providers = req.providers
 		view = req.view
 	} else {
 		query = strings.TrimSpace(strings.Join(fs.Args(), " "))
@@ -247,6 +256,11 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 			fmt.Fprintf(stderr, "jevlin search: -format must be json or model, not %q\n", *format)
 			return exitUsage
 		}
+		if *viewFlag != "" && *viewFlag != "full" && *viewFlag != "merged" {
+			fmt.Fprintf(stderr, "jevlin search: -view must be full or merged, not %q\n", *viewFlag)
+			return exitUsage
+		}
+		view = *viewFlag
 	}
 	// Refused rather than treated as "no limit": a zero or negative budget
 	// used to be the only state this command had, and restoring it by
@@ -309,6 +323,13 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		// same place the trace_unsupported retry below is reported.
 		fmt.Fprintln(stderr, "jevlin search: ignoring "+bridgeEnv+": this session's host declared the lineage file ("+lineageEnv+") as its trace channel, so a bridge here was written by something else")
 	}
+	// Only "merged" travels: it is the one view the router accepts, while
+	// "full" (explicit or defaulted) is this client's own rendering choice
+	// and would be refused upstream with a 400.
+	forwardView := ""
+	if view == "merged" {
+		forwardView = "merged"
+	}
 	out := performSearch(ctx, ops.now, searchCall{
 		Endpoint:     strings.TrimRight(cfg.Miner.RouterURL.String(), "/") + "/v1/search",
 		Key:          key,
@@ -317,6 +338,8 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		Recency:      recency,
 		DomainFilter: domainFilter,
 		MaxResults:   maxResults,
+		Providers:    providers,
+		View:         forwardView,
 		Trace:        trace,
 	})
 	if out.Retried {
@@ -537,9 +560,26 @@ func performSearch(ctx context.Context, now func() time.Time, call searchCall) s
 	if call.MaxResults != nil {
 		body["max_results"] = *call.MaxResults
 	}
+	if call.Providers != nil {
+		body["providers"] = call.Providers
+	}
+	if call.View != "" {
+		body["view"] = call.View
+	}
 	out := searchOutcome{Traced: call.Trace != nil}
 	if out.Traced {
 		body["trace"] = call.Trace
+		// The router reads session identity in two places: trace.session_id
+		// threads the console's Trajectories view, and a top-level
+		// session_id (mirrored into X-Session-Id by postSearch) feeds its
+		// live reformulation tracker — "put the same id in both to get
+		// both" (the router's skill file). The mirror is the same hashed id
+		// the envelope already carries, so nothing new leaves the machine,
+		// and it exists only while an envelope rides: JEVLIN_TRACE=off
+		// stops both together.
+		if call.Trace.SessionID != "" {
+			body["session_id"] = call.Trace.SessionID
+		}
 	}
 
 	// CheckRedirect: this request carries the participant's sr- key in
@@ -567,7 +607,11 @@ func performSearch(ctx context.Context, now func() time.Time, call searchCall) s
 		// accept the field. One retry without it, on the SAME ctx, so the
 		// fallback gets only what is left of the original budget. Never
 		// recursive: this is the only place a second POST is issued.
+		// The session mirror goes with the trace: a router old enough to
+		// refuse the trace field predates the top-level session_id too,
+		// and this retry exists exactly for those routers.
 		delete(body, "trace")
+		delete(body, "session_id")
 		out.Retried = true
 		attempt, err = postSearch(ctx, client, call, body)
 		out.Attempts++
@@ -655,8 +699,14 @@ func postSearch(ctx context.Context, client *http.Client, call searchCall, body 
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", searchUserAgent+"/"+strings.TrimPrefix(buildVersion(), "v"))
+	req.Header.Set("User-Agent", clientIdentifier())
 	req.Header.Set("Authorization", "Bearer "+call.Key)
+	if sid, ok := body["session_id"].(string); ok && sid != "" {
+		// Read off the body, not off call.Trace, so the header cannot
+		// outlive the field: the trace-compatibility retry deletes the
+		// key, and the header must disappear with it.
+		req.Header.Set("X-Session-Id", sid)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return routerAttempt{}, err

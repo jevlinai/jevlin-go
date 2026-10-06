@@ -9,7 +9,7 @@ config: /Users/u/.jevlin/jevlin.toml
 claude    tool established posix
 claude    hook established posix
 codex     tool established posix
-codex     hook none
+codex     hook established posix
 cursor    tool established posix
 cursor    hook established posix
 opencode  tool established posix
@@ -120,6 +120,23 @@ JSON
 '/Users/u/.jevlin/bin/jevlin' agents prefer -config '/Users/u/.jevlin/jevlin.toml' <argument>
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' -format model "<query>"
+
+== codex: hooks.json commands, as read back from the file
+-- PreToolUse
+'/Users/u/.jevlin/bin/jevlin' hook -config '/Users/u/.jevlin/jevlin.toml' codex PreToolUse
+"'/Users/u/.jevlin/bin/jevlin' hook -config '/Users/u/.jevlin/jevlin.toml' codex PreToolUse"
+-- SessionStart
+'/Users/u/.jevlin/bin/jevlin' hook -config '/Users/u/.jevlin/jevlin.toml' codex SessionStart
+"'/Users/u/.jevlin/bin/jevlin' hook -config '/Users/u/.jevlin/jevlin.toml' codex SessionStart"
+-- PreCompact
+'/Users/u/.jevlin/bin/jevlin' hook -config '/Users/u/.jevlin/jevlin.toml' codex PreCompact
+"'/Users/u/.jevlin/bin/jevlin' hook -config '/Users/u/.jevlin/jevlin.toml' codex PreCompact"
+-- PostCompact
+'/Users/u/.jevlin/bin/jevlin' hook -config '/Users/u/.jevlin/jevlin.toml' codex PostCompact
+"'/Users/u/.jevlin/bin/jevlin' hook -config '/Users/u/.jevlin/jevlin.toml' codex PostCompact"
+-- Stop
+'/Users/u/.jevlin/bin/jevlin' hook -config '/Users/u/.jevlin/jevlin.toml' codex Stop
+"'/Users/u/.jevlin/bin/jevlin' hook -config '/Users/u/.jevlin/jevlin.toml' codex Stop"
 
 == cursor: skill command blocks
 -- fence bash

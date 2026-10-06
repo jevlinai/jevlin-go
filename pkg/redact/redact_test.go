@@ -2,10 +2,13 @@ package redact
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 )
@@ -232,5 +235,159 @@ func TestFalsePositiveExclusionsDoNotShadowRealSecretsNearby(t *testing.T) {
 	got := TraceText(text)
 	if strings.Contains(got, secret) {
 		t.Errorf("real secret near an excluded shape was not redacted: %q", got)
+	}
+}
+
+// TestMain takes the machine's own names out of every test in the package.
+// TraceText searches for the hostname and the account it runs under, so a
+// guarantee about ordinary text would otherwise depend on the machine: on a
+// host called prod, or under an account called value, a test whose text
+// says either would fail. A test that needs a name sets it with
+// SetLocalIdentity and restores this.
+func TestMain(m *testing.M) {
+	restore := SetLocalIdentity("", "")
+	code := m.Run()
+	restore()
+	os.Exit(code)
+}
+
+// traceCase is one row of testdata/trace_cases.json: the identity the
+// scrubber is told, the text, and exactly what must come out. The same rows
+// run through the JavaScript scrubber in cmd/jevlin
+// (TestSharedTraceSourceAgreesOnEveryTraceCase), so the two languages are
+// held to one table rather than to two that can drift.
+type traceCase struct {
+	Name    string `json:"name"`
+	Host    string `json:"host"`
+	Account string `json:"account"`
+	In      string `json:"in"`
+	Want    string `json:"want"`
+}
+
+func loadTraceCases(t *testing.T) []traceCase {
+	t.Helper()
+	raw, err := os.ReadFile("testdata/trace_cases.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []traceCase
+	if err := json.Unmarshal(raw, &cases); err != nil {
+		t.Fatal(err)
+	}
+	if len(cases) == 0 {
+		t.Fatal("no trace cases")
+	}
+	seen := map[string]bool{}
+	for _, c := range cases {
+		if seen[c.Name] {
+			t.Fatalf("two trace cases are named %q", c.Name)
+		}
+		seen[c.Name] = true
+	}
+	return cases
+}
+
+// Every row of the shared table, on the Go side. A row whose want equals
+// its input is a survivor: text the scrubber must leave exactly as it is.
+func TestTraceCases(t *testing.T) {
+	for _, c := range loadTraceCases(t) {
+		restore := SetLocalIdentity(c.Host, c.Account)
+		if got := TraceText(c.In); got != c.Want {
+			t.Errorf("%s: TraceText(%q) with identity %q/%q\n  got:  %q\n  want: %q", c.Name, c.In, c.Host, c.Account, got, c.Want)
+		}
+		restore()
+	}
+}
+
+// A non-ASCII name is not searched for: Go and JavaScript fold case
+// differently outside ASCII, so a rule for it could not be held to the
+// same bytes in both. The text carries both names, so the test can fail.
+func TestNonASCIILocalNamesAreNotSearchedFor(t *testing.T) {
+	defer SetLocalIdentity("héllo-box", "josé")()
+	text := "on héllo-box as josé: ssh josé@db1, USER=josé, héllo-box.example"
+	if got := TraceText(text); got != text {
+		t.Errorf("a non-ASCII name was removed: %q -> %q", text, got)
+	}
+}
+
+// The log path is this client's own words and keeps its own rules: none of
+// the trajectory-only steps run there.
+func TestTheLogPathIsUnchangedByTheTraceRules(t *testing.T) {
+	defer SetLocalIdentity("Build-Box7", "mwhitlock")()
+	text := "DATABASE_PASSWORD=hunter2 as mwhitlock on Build-Box7"
+	if got := String(text); got != text {
+		t.Errorf("String applied a trace-only rule: %q", got)
+	}
+}
+
+// TraceText removes what it removes once: its own output, scrubbed again,
+// comes back unchanged. A rule whose match could swallow the start of the
+// next one, or whose placeholder could read as a value of its own, fails
+// this on the second pass. Every row of the shared table is an input, with
+// its identity, and so are the rows run together, so that a value removed
+// on one row meets the text of the next.
+func TestTraceTextIsIdempotent(t *testing.T) {
+	cases := loadTraceCases(t)
+	check := func(name, host, account, text string) {
+		t.Helper()
+		restore := SetLocalIdentity(host, account)
+		defer restore()
+		once := TraceText(text)
+		if twice := TraceText(once); twice != once {
+			t.Errorf("%s: a second pass changed the text\n  once:  %q\n  twice: %q", name, once, twice)
+		}
+	}
+	var plain []string
+	for _, c := range cases {
+		check(c.Name, c.Host, c.Account, c.In)
+		if c.Host == "" && c.Account == "" {
+			plain = append(plain, c.In)
+		}
+	}
+	for _, sep := range []string{"\n", "", ",", "&", " "} {
+		check(fmt.Sprintf("the rows joined by %q", sep), "", "", strings.Join(plain, sep))
+	}
+}
+
+// A line that opens a quote it does not close on its own reading of the
+// rules (a prompt string, an error message, a label ending in a key and a
+// colon) must not reach into the next line: a review found
+// pw = input("Password: ") followed by DB_PASSWORD="..." keeping the
+// password, the key rule having taken the closing quote of "Password: " for
+// an opening one and run to the quote on the next line. Every row of the
+// shared table that removes something is put on the line after each prompt
+// line of testdata/trace_prompt_lines.json, and what comes out after the
+// prompt line must be exactly the row's own answer, and the prompt line
+// exactly its own: a flag's value read from the prompt string's closing
+// quote changed both lines. The lines are strings and calls that end in a
+// key and a colon, a flag, or a name and `=`, so every rule that reads a
+// quoted value meets a quote it did not open. cmd/jevlin's
+// TestTheSharedSourceLetsNoPromptLineReachTheNextLine holds JavaScript to
+// the same.
+func TestNoPromptLineReachesTheNextLine(t *testing.T) {
+	raw, err := os.ReadFile("testdata/trace_prompt_lines.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var prompts []string
+	if err := json.Unmarshal(raw, &prompts); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range loadTraceCases(t) {
+		if c.Want == c.In {
+			continue
+		}
+		restore := SetLocalIdentity(c.Host, c.Account)
+		for _, p := range prompts {
+			got := TraceText(p + "\n" + c.In)
+			before, after, _ := strings.Cut(got, "\n")
+			if strings.Count(p, "\n") == 0 && after != c.Want {
+				t.Errorf("%s after %q:\n  got:  %q\n  want: %q", c.Name, p, after, c.Want)
+			}
+			if own := TraceText(p); before != own {
+				t.Errorf("%q before %s:\n  got:  %q\n  want: %q", p, c.Name, before, own)
+			}
+		}
+		restore()
 	}
 }

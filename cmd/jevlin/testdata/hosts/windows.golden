@@ -9,7 +9,7 @@ config: C:\Users\u\.jevlin\jevlin.toml
 claude    tool established posix+powershell
 claude    hook established posix
 codex     tool established powershell
-codex     hook none
+codex     hook unknown
 cursor    tool established powershell+posix
 cursor    hook ruled       cmd+powershell
 opencode  tool established powershell
@@ -143,6 +143,10 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
 -- fence powershell
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
+
+== codex: hooks.json commands, as read back from the file
+-- refused
+Codex on windows: which shell runs its hook commands is not established, so nothing is rendered for it
 
 == cursor: skill command blocks
 -- fence powershell

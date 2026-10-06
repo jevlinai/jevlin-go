@@ -35,9 +35,16 @@ mirrored there — not owned here either). `pkg/platform` conforms to it the sam
 conforms to the AS contract: implementer here, authority elsewhere.
 
 ## The verify loop
-`make verify` = `build test race vet lint lint-windows vuln tidy cross`. **Green before every commit.** `lint`
-is golangci-lint v2 (gosec, misspell locale US, unconvert, depguard, gofmt, goimports); `vuln` is
-govulncheck.
+`make verify` = `build vet lint lint-windows tidy race vuln cross`, the checks that take seconds
+first. **Green before every push**: CI runs the same checks on every pushed head, and a commit pushed
+with others is checked as part of that head. `lint` is golangci-lint v2 (gosec, misspell locale US,
+unconvert, depguard, gofmt, goimports); `vuln` is govulncheck. `race` runs every test under the race
+detector, split by `tools/testshard` into `RACE_PARTS` processes at once, because cmd/jevlin's tests
+run one after another and are nearly all of its time; CI splits the same run into three jobs. There
+is no separate `test` stage: CI's test matrix runs every test without the race detector on all four
+systems, and that is where pkg/redact's tight linear-time bound is held. While a change is being
+made, and before each commit, `make quick RUN=<pattern> PKG=<packages>` vets, lints and runs only
+the named tests.
 
 ## Hard invariants — a change that violates one is wrong even if it compiles and every test passes
 1. **Fail-open on the earning path.** A mining-side write, spawn, or network failure MUST NOT turn
@@ -146,6 +153,11 @@ govulncheck.
     `agent_trace_common.js` and pinned by `TestBridgeGuardsAgree`), taken from the host's
     declaration — or, for Claude Code, from the tool its payload names, since that host runs two.
     A POSIX prefix handed to PowerShell is looked up as a program name, and the search does not run.
+    **And only onto a command that syntax can carry it to**: the POSIX assignment prefix binds to
+    the first simple command and is a syntax error before a compound one, so it is written only
+    when that first command is provably the search (`posixSearchLeadsRe`, one regex with the JS
+    copy); a loop, a list or a pipeline with the search elsewhere is left byte-identical, and that
+    search runs on its local fallback identity instead of not running at all.
     **Provenance: only a bridge an adapter wrote for this call may carry that adapter's harness** —
     it removes every assignment it can prove standalone in a declared shell's syntax and writes its
     own, and leaves a command carrying one it cannot remove exactly as it found it. The trace is unauthenticated metadata either way:
@@ -228,14 +240,18 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   test ran.
 - **The registration journal and the rebuild** — `cmd/jevlin/connect.go` owns the order
   (journal, publish, clear); `pkg/auth/store.go` owns the journal and the agent record;
-  `pkg/platform/client.go` owns `Register`, `Status` and `Me`. Its guards, in
+  `pkg/platform/client.go` owns `Register`, `Status`, `Me` and `ClaimCode`. Its guards, in
   `agent_onboarding_test.go`, named exactly because a trailing ellipsis is not a test:
   `TestPendingRegistrationRecoveryPublishesWithoutRegister` (the journal is finished, never
   re-registered), `TestConnectRebuildsClaimedRegistrationFromThePlatform` (the `/v1/agents/me`
   rebuild), `TestForegroundConnectReplacesExpiredRegistrationAndPropagatesNewIdentity` (the
-  no-flag replacement of a positively-verified expired identity) and
+  no-flag replacement of a positively-verified expired identity),
   `TestConnectRefusesCorruptRegistrationWithExistingPlatformCredential` (the refusal that
-  `-force` exists to override).
+  `-force` exists to override), and the claim-code re-mint pair —
+  `TestForegroundConnectMintsAFreshClaimLinkForALostOne` and `TestResumeNeverMintsAClaimLink`
+  (`remintClaimLink`: minting kills the old code, so only a deliberate foreground connect asks,
+  the fresh link is persisted before it is printed, and every failure is exactly the old
+  no-link dead end). For participants: [guide, The claim link](docs/guide.md#the-claim-link).
 - **The prompt rule** — `cmd/jevlin/prompt.go` owns what counts as an answer and the two
   readers that ask; every prompt in the binary goes through one of them.
   `prompt_abort_test.go` drives each real command to each real question, under both an interrupted
@@ -268,7 +284,13 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `[projects.'/home/u/work [1]']` is exactly what a loose pattern misses. The grammar is fixed;
   the net is what makes the next miss a refusal instead of a lost table, and the two are tested
   independently on purpose. `codex_block_ownership_test.go` drives install and uninstall against
-  the shapes Codex produces; `marked_block_sections_test.go` tests the split on its own first,
+  the shapes Codex produces, its record of hook approvals among them — one
+  `[hooks.state."<hooks.json>:<event>:<i>:<j>"]` table per approved hook, written inside our block
+  whenever the block is last (`TestUninstallKeepsCodexsHookTrustInsideOurBlock`,
+  `TestInstallMovesCodexsHookTrustOutOfOurBlockRatherThanDeletingIt`). This client only ever
+  reads that record, for `agents status` (`codexApprovalLines`), and never writes one: approving
+  is the participant's review of commands that run outside Codex's sandbox
+  (`TestTheClientNeverWritesCodexHookTrust`); `marked_block_sections_test.go` tests the split on its own first,
   because getting it wrong in the removing direction destroys a participant's settings.
   **Where the block sits is also ours to preserve**: install writes it **where it finds
   it** — `replaceBlockInPlace` over `markedRegion`'s own pre and post — and appends only when
@@ -379,6 +401,19 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `TestLineageStandsDownForCursorWhateverTheToolName` holds the gate to the payload rather than
   the tool name, and `TestTheCallerGateNamesExactlyTheEventsTheInstallWrites` holds the event table to
   `claudeHooks`' own output so a wrong entry cannot silence a hook inside Claude Code itself.
+  Codex sends Claude Code's own event names, so for a Claude Code entry `claudeEntryStandsDown`
+  adds one rule to that payload test: a transcript that is one of Codex's rollout files
+  (`isCodexRollout`) is Codex's, and gets nothing
+  (`TestClaudeFormatHooksStandDownForTheRealCodexPayloads`, over the payloads captured in
+  `cmd/jevlin/testdata/hook/`). Codex has entry points of its own, `hook codex <Event>`, in
+  `codex_hook.go`: the command line names the caller, because no payload field does, and
+  `codexEntryStandsDown` reads the payload only for contradiction — Cursor's signals, no event
+  name, not an object, or a non-empty transcript that is not a rollout file; a null one is not
+  evidence. `codexEntryEvent` is held to `codexHooks`' output by
+  `TestTheCodexGateNamesExactlyTheEventsTheInstallWrites`, and
+  `TestCodexEntriesStandDownForAnotherHostsPayload` and `TestWhatContradictsACodexEntry` hold the
+  gate. Codex's PreToolUse answers only this installation's exact rendered search, with the bridge
+  and an allow, and is silent for anything else (`TestCodexRewritesAndAllowsOnlyTheRenderedSearch`).
 - **Whose lineage file a search may use** — `search.go`'s `searchTrace` owns the channel rule and
   the declared file's session guard; `miner.go`'s `lineageForCwd` owns the walk, which with a
   session exported climbs past a file of another session to the searching session's own, and
@@ -433,7 +468,9 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   shell declaration**: per host and per OS, the set of shells that run its tool calls and what
   runs its hook commands, each cell established by documentation, source or a live run —
   `host_shells_test.go` holds the declaration to a written-out table so no cell moves without a
-  reviewed diff. `shell_commands.go` renders every command for a declared shell and owns the
+  reviewed diff. A hook cell nothing has established writes no hook at all: Codex's Windows cell
+  is unknown, so its install there writes the skill and the block, says why in a note and does not
+  refuse (`TestCodexOnAnUndeclaredHookRunnerWritesNoHooksAndExitsZero`). `shell_commands.go` renders every command for a declared shell and owns the
   quoting of the paths in it (never Go's `%q`, which is neither shell's); `skill_render.go`
   renders one form per shell a host runs, and the Bash form, with a line in the install plan,
   for a cell nobody has established. `host_exec_test.go` is what makes any of it
@@ -493,6 +530,12 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   than "installed", because `Status` answers from the file existing and a host another
   installation set up would read as this one's. `agents_skill_ownership_test.go` guards it on real
   files, with `TestUninstallingOneInstallationLeavesAnothersIntegrations`.
+  **Codex numbers its hooks by place.** It keys an approval by an entry's index in its event's
+  list, so `planHooksMerge` rewrites a Codex entry of ours where the first one stands
+  (`replaceInPlace`) instead of appending it, and appends only to an event that has none of ours:
+  no hook of anyone else's is renumbered by a refresh of ours (`TestAReplacedCodexHookKeepsItsIndex`),
+  and a second install writes nothing (`TestASecondCodexInstallWritesNothing`). Uninstall says
+  when removing ours moves another hook up a place.
   **An allow rule has one current spelling.** Adding a rule only when its exact text is absent
   means a rule whose text has changed is never seen as the same rule and stays beside its
   replacement for ever. `mergeAllowRules` replaces the rules `ruleIsOurs` recognizes — any
