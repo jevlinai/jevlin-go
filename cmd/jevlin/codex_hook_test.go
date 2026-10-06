@@ -330,13 +330,14 @@ func TestCodexWindowCountsOneGenerationPerCompaction(t *testing.T) {
 	}
 }
 
-// Stop starts the flush and does nothing else, whatever the installation
-// opted into: the turn's final message is the model's words, and Codex's
-// turn end is not built. A turn mark that would let one be sent is put there
-// first, so a turn end that read `turn_id` would find it.
-func TestCodexStopStartsOneFlushAndQueuesNothing(t *testing.T) {
+// Stop starts one flush and prints nothing: Codex reads a Stop hook's output
+// as a decision. An installation that did not opt in to the turn end gets
+// nothing else, not even with a served search's mark there: no turn end and
+// no copy of the turn's final message. What an opted-in installation gets is
+// codex_turn_end_test.go's.
+func TestCodexStopStartsOneFlushAndPrintsNothing(t *testing.T) {
 	stop := codexPayloadFixture(t, "codex-0.158.0-linux-Stop.json")
-	hc := hookContext{cfgPath: "/home/u/.jevlin/jevlin.toml", sessionsDir: "/sessions", turnEnd: true}
+	hc := hookContext{cfgPath: "/home/u/.jevlin/jevlin.toml", sessionsDir: "/sessions"}
 	fs, ops := newFakeHookOps(nil)
 	spawnedTurnEnds := 0
 	ops.spawnTurnEnd = func(string, string) error { spawnedTurnEnds++; return nil }

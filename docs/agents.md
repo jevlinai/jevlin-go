@@ -121,8 +121,14 @@ need approving again; an upgrade in place does not change the commands.
 With the hooks approved, a search Codex runs carries its session, turn and call, and a
 subagent's search names the session that started it. Only the search command the skill shows is
 given them, and allowed without a prompt; anything else, including the search after a `cd`, in a
-loop or piped on, runs as written and carries the per-shell identity. The hooks read no prompt,
-no tool's output and none of the assistant's words, and a Codex search carries no assistant text.
+loop or piped on, runs as written and carries the per-shell identity. A Codex search carries no
+assistant text.
+
+With `[miner] turn_end = true`, Codex's `Stop` hook also reports a turn in which a jevlin search was
+served (see [The turn end](reference.md#the-turn-end)). It reads the turn from Codex's own session
+file: what you asked, what the assistant wrote along the way, its final answer, and each tool call by
+name and outcome, never a tool's input or output. A subagent's turn sends nothing of its own. Without
+`turn_end`, the hooks read no prompt, no tool's output and none of the assistant's words.
 
 Codex appends its own tables, such as folder trust, `[windows] sandbox` or its record of hook
 approvals (`[hooks.state.…]`), to the end of `config.toml`, where they can land between jevlin's
@@ -135,7 +141,8 @@ jevlin's table goes with it, and the plan says so first. If you keep your own
 ### Known limits
 
 On Windows no hooks are written, because what runs a Codex hook there has not been seen; the
-skill and the block are as before. No turn end is sent for Codex. Whether a search can reach the
+skill and the block are as before. A Codex turn end gives a shell command no duration: the session
+file Codex 0.160.0 writes holds none that is the command's. Whether a search can reach the
 router from inside the desktop app's sandbox has not been established: its sandbox is not the
 CLI's.
 
