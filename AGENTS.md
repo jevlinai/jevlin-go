@@ -43,7 +43,8 @@ detector, split by `tools/testshard` into `RACE_PARTS` processes at once, becaus
 run one after another and are nearly all of its time; CI splits the same run into three jobs. There
 is no separate `test` stage: CI's test matrix runs every test without the race detector on all four
 systems, and that is where pkg/redact's tight linear-time bound is held. While a change is being
-made, `make quick RUN=<pattern> PKG=<packages>` vets, lints and runs only the named tests.
+made, and before each commit, `make quick RUN=<pattern> PKG=<packages>` vets, lints and runs only
+the named tests.
 
 ## Hard invariants — a change that violates one is wrong even if it compiles and every test passes
 1. **Fail-open on the earning path.** A mining-side write, spawn, or network failure MUST NOT turn
