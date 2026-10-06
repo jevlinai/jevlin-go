@@ -423,8 +423,8 @@ answers, so a search you refused, or one that failed, does not count, and a turn
 search sends nothing. Only to the router `miner.router_url` names; without that line nothing is
 sent. With it on, what you typed in a searched turn is sent; what your tools read and wrote never is: not a file's contents, not a command, not its output. The model's private reasoning and a subagent's own steps are not sent either. The hook writes the record to an owner-only file in
 `sessions/` and a detached `jevlin turn-end` sends it once and deletes the file, sent or not.
-`JEVLIN_TRACE=off` turns it off too. Claude Code (2.1.196 or later) and Cursor; other agents,
-Codex included, send none. A project set to retain no content keeps the status and not the text.
+`JEVLIN_TRACE=off` turns it off too. Claude Code (2.1.196 or later), Cursor and opencode; other
+agents, Codex included, send none. A project set to retain no content keeps the status and not the text.
 
 ## Security notes
 

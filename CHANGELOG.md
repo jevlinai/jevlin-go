@@ -69,7 +69,8 @@ The first release replaces this heading with its own.
   send the whole turn; Cursor sends your prompt, the searches, the reply and
   the model (its hooks carry nothing between tool calls). Cursor gains one hook
   entry for this, so run `jevlin agents install` again; it keeps nothing unless
-  `turn_end` is on.
+  `turn_end` is on. Not live-smoked under Cursor or opencode: the fields come
+  from Cursor's documentation and opencode's SDK types, not from a running host.
 - **opencode searches carry their turn.** A search made under opencode now says
   which of your messages it answers to, so a session's searches group into
   turns on the router as they do for Claude Code.

@@ -149,6 +149,10 @@ export const JevlinLineage = async ({ client }) => {
   // is reported only if it searched, and once.
   const searched = new Map()
   const reported = new Map()
+  // sessionID|turn of a report under way. opencode can say a session went idle
+  // twice in a row (both events below), and the first is still waiting on a
+  // lookup when the second arrives; this keeps it to one report.
+  const reporting = new Set()
   const parents = new Map()
   const parentOf = async (sid) => {
     if (parents.has(sid)) return parents.get(sid)
@@ -186,15 +190,21 @@ export const JevlinLineage = async ({ client }) => {
           // only a session known to have no parent reports one. A parent this
           // plugin could not learn counts as one: the turn is left unreported,
           // to be tried again at the next idle.
-          if (turnId && reported.get(sid) !== turnId) {
-            await parentOf(sid)
-            if (parents.get(sid) === "") {
-              const messages = (await client.session.messages({ path: { id: sid } }))?.data ?? []
-              const turn = turnOf(messages)
-              if (turn && turn.turn === turnId) {
-                reported.set(sid, turnId)
-                await reportTurn({ session: sid, ...turn })
+          const key = sid + "|" + turnId
+          if (turnId && reported.get(sid) !== turnId && !reporting.has(key)) {
+            reporting.add(key)
+            try {
+              await parentOf(sid)
+              if (parents.get(sid) === "") {
+                const messages = (await client.session.messages({ path: { id: sid } }))?.data ?? []
+                const turn = turnOf(messages)
+                if (turn && turn.turn === turnId) {
+                  reported.set(sid, turnId)
+                  await reportTurn({ session: sid, ...turn })
+                }
               }
+            } finally {
+              reporting.delete(key)
             }
           }
         }

@@ -178,7 +178,8 @@ func TestOpencodePluginReportsTheTurn(t *testing.T) {
 	got := filepath.Join(dir, "got.json")
 	argv := filepath.Join(dir, "argv.txt")
 	bin := filepath.Join(dir, "jevlin")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > '"+argv+"'\ncat > '"+got+".tmp' && mv '"+got+".tmp' '"+got+"'\n"), 0o700); err != nil { // #nosec G306 -- a test stand-in that must be executable
+	count := filepath.Join(dir, "count.txt")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > '"+argv+"'\ncat > '"+got+".tmp' && mv '"+got+".tmp' '"+got+"'\necho x >> '"+count+"'\n"), 0o700); err != nil { // #nosec G306 -- a test stand-in that must be executable
 		t.Fatal(err)
 	}
 	script := `
@@ -231,8 +232,19 @@ func TestOpencodePluginReportsTheTurn(t *testing.T) {
   await new Promise(r=>setTimeout(r,400));
   result.children[sid] = fs.existsSync(input.got);
  }
+ // Both idle events at once, the second arriving while the first still waits
+ // on its lookups: the turn is reported once.
+ const reports = () => fs.existsSync(input.count) ? fs.readFileSync(input.count,'utf8').trim().split('\n').length : 0;
+ const before = reports();
+ await hooks['tool.execute.before']({tool:'bash',sessionID:'ses_2',callID:'c_ses_2'},{args:{command:'jevlin search stadium'}});
+ await Promise.all([
+  hooks.event({event:{type:'session.idle',properties:{sessionID:'ses_2'}}}),
+  hooks.event({event:{type:'session.status',properties:{sessionID:'ses_2',status:{type:'idle'}}}}),
+ ]);
+ await new Promise(r=>setTimeout(r,500));
+ result.concurrent = reports() - before;
  process.stdout.write(JSON.stringify(result));`
-	in, _ := json.Marshal(map[string]any{"plugin": renderAgentScriptFor(opencodePluginJS, shellPOSIX, "/etc/jevlin.toml", bin), "got": got, "argv": argv})
+	in, _ := json.Marshal(map[string]any{"plugin": renderAgentScriptFor(opencodePluginJS, shellPOSIX, "/etc/jevlin.toml", bin), "got": got, "argv": argv, "count": count})
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, node, "--input-type=module", "-e", script) // #nosec G204 -- fixed test script and local Node runtime; synthetic input on stdin
@@ -244,6 +256,7 @@ func TestOpencodePluginReportsTheTurn(t *testing.T) {
 	var res struct {
 		Before, Again bool
 		Children      map[string]bool
+		Concurrent    int
 		Env           traceEnvelope
 		Raw           string
 		Argv          []string
@@ -257,6 +270,9 @@ func TestOpencodePluginReportsTheTurn(t *testing.T) {
 	}
 	if len(res.Children) != 3 {
 		t.Fatalf("the subagent cases did not all run: %v", res.Children)
+	}
+	if res.Concurrent != 1 {
+		t.Errorf("two idle events at once reported the turn %d times, want once", res.Concurrent)
 	}
 	for sid, reported := range res.Children {
 		if reported {
