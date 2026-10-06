@@ -1,0 +1,17 @@
+[
+ "pw = input(\"Password: \")",
+ "x = input('Password: ')",
+ "pw = getpass.getpass(\"Password: \")",
+ "read -rsp \"Password: \" pw",
+ "throw new Error(\"invalid token: \" + t)",
+ "return fmt.Errorf(\"invalid token: \"+err.Error())",
+ "System.out.println(\"Token: \" + t);",
+ "Console.Write(\"Password: \");",
+ "curl -u \"$STRIPE_SECRET_KEY:\" https://api.example.test",
+ "print('secret: ', s)",
+ "log.info(\"api key: %s\", masked)",
+ "echo \"password:\"",
+ "const label = `token: ${t}`",
+ "prompt = \"Secret: \"",
+ "it's the users' password: and more"
+]
