@@ -291,25 +291,42 @@ in a name written in capitals or of two or more parts or words (`API_KEY`, `--ap
   PowerShell's `$env:NAME` and `${env:NAME}`, and before any quoted value (`password = "…"`);
 - after a colon, as YAML and JSON write it: a key at the start of a line, quoted or not, takes
   the rest of the line (`password: …`, `"client_secret": "…",`); elsewhere only where a member of
-  an object, a map or a call opens (after `{`, `,`, `(` or `[`), and only a quoted value that
+  an object, a map, a call, a statement or a code span opens (after `{`, `,`, `(`, `[`, `;` or a
+  backtick: `user: "app"; password: "…"`, `` `password: "…"` ``), and only a quoted value that
   closes on its own line, and only that string (`{"password":"…","user":"app"}` keeps its user).
   A key and a colon inside a string (`input("Password: ")`) take nothing, and no colon rule
   reads past a line break. A value that is a reference or a placeholder stays:
   `${{ secrets.X }}`, a template expression, `${VAR}`, `$VAR`, `<pad>`, a type name (`string`,
-  `String`, `Option<String>`), a size (`1234 bytes`), or a block that only opens (`{`, `[`, `|`);
+  `String`, `Option<String>`), a size (`1234 bytes`), or a block that only opens (`{`, `[`, `|`).
+  A reference that carries a literal is a value and goes: a default, assignment or alternate in an
+  expansion (`${VAR:-…}`, `${VAR-…}`, `${VAR:=…}`, `${VAR=…}`, `${VAR:+…}`) whose word is not
+  empty and not itself a variable, and a template expression that holds a quoted string
+  (`{{ .Values.x | default "…" }}`, `default('…')`, `${{ secrets.X || '…' }}`).
+  `${VAR:?message}` stays: it never gives a value, and its word is the message printed when the
+  variable is unset. A variable is `$` and capitals, digits and `_` (`$CI_JOB_TOKEN`), or letters
+  and `_` with no digit (`$password`); a word that mixes lowercase letters and digits after `$`
+  (`$ecret123`) is a value;
 - as the word after a long flag whose last word is a secret's (`curl --api-key …`,
   `--password …`, `--clientSecret …`), so `--key-name`, `--secret-id`, `--passphrase-file` and
-  `--token-ttl` keep theirs. Not a value: lowercase letters only (`the --password flag`), the
-  flag's own name in capitals (`--token TOKEN`), a redirection or pipe (`<`, `>`, `|`), a command's
-  output (`$(…)`), or anything after a `--with-` or `--no-` switch. A single-dash flag such as
-  `-p` is not read.
+  `--token-ttl` keep theirs. A last word that names the value's form, `string`, `value` or
+  `phrase`, asks the word before it instead (`--secret-string …`, `--secret-value …`,
+  `--pass-phrase …`, `--secretString …`; `--value` and `--default-value` keep theirs). Not a
+  value: lowercase letters only (`the --password flag`), the flag's own name in capitals
+  (`--token TOKEN`), a redirection or pipe (`<`, `>`, `|`), a command's output (`$(…)`), anything
+  after a `--with-` or `--no-` switch, or a quote that does not close on its own line (in
+  `"mysql --password " + pw` the quote closes a string). A single-dash flag such as `-p` is not
+  read.
 
-A quoted value is read as a shell reads a word: to its closing quote, across at most 100 line
-breaks, together with quoted parts and characters joined to it, so PowerShell's `'it''s …'`,
-POSIX's `'it'\''s …'` and Python's `"""…"""` go whole. A backslash escapes the next character
-only when that reading closes the quote on its own line, so `'C:\keys\'` closes where a POSIX
-shell closes it; a quote that does not close takes the rest of its line. An unquoted value goes
-to whitespace, `&` or `;`, keeping a character a backslash escapes (`correct\ horse`), and a
+A quoted value is read as a shell reads a word: to its closing quote, together with quoted parts
+and characters joined to it, so PowerShell's `'it''s …'`, POSIX's `'it'\''s …'` and Python's
+`"""…"""` go whole. Its first part may run across at most 100 line breaks only when the name
+starts its line, after indentation alone or after `export`, `set`, `declare -x`, `typeset -x`,
+`$env:` or `${env:`: only there is the quote sure to open a value. Anywhere else it closes on its
+own line, because in `print("password=", pw)` or `"PASSWORD=" + pw` the quote closes a string,
+and read as an opening one it would run into the next line's value. A backslash escapes the next
+character only when that reading closes the quote on its own line, so `'C:\keys\'` closes where
+a POSIX shell closes it; a quote that does not close takes the rest of its line. An unquoted value
+goes to whitespace, `&` or `;`, keeping a character a backslash escapes (`correct\ horse`), and a
 closing `)`, `]`, `}`, quote, backtick or `,` after it that belongs to the text around it stays. When the
 word holding the name opened with a quote that is still open, the value runs to where that
 quote closes on its line, or to a `;` or `&` before it (`-e "DB_PASSWORD=correct horse
@@ -321,8 +338,10 @@ An environment listing: every value in a run of lines naming five or more differ
 as `NAME=value`, `export`, `declare -x` or `typeset -x`, also behind a list marker or `cat -n`
 numbering, and every value in a PowerShell `Name`/`Value` table under its rule of dashes
 (`Get-ChildItem Env:`; any hashtable PowerShell prints looks the same and loses its values too),
-each row a name, two or more blanks and a value, the first line that is not one ending the
-table.
+each row a name, two or more blanks and a value. A name with no value (an empty variable, a
+`$null` entry) is a row too, and a line indented exactly to the `Value` column continues the
+value before it, as `Format-Table -Wrap` prints one, and goes with it. The first line that is
+none of these ends the table: an empty line, a code fence, a sentence, a numbered item.
 A line whose value starts with `=` (`requests==2.31.0`), ends with `,` (a keyword argument) or
 holds another `NAME=` after a space (a logfmt record) is not part of a listing, and breaks the
 run. And the value of `JEVLIN_TRACE_BRIDGE` in a quoted command, as POSIX, PowerShell (`$env:`
@@ -343,12 +362,20 @@ known shape, in ordinary prose, passes, and so do these: `password: …` in the 
 sentence; `NAME = value` unquoted outside PowerShell; a value inside a quote that opened before
 another word (`echo "export PASSWORD=a b"` keeps `b`); a lowercase cmd `set` name, or a `set`
 written after other words, keeps the tail of a value with spaces; a flag's value of lowercase
-letters only, or after a flag whose last word is not a secret's (`--auth …`); JSON escaped inside
-a quoted string, such as a `curl -d "{\"password\": \"…\"}"` body; NUL-separated `env -0` output;
-a PowerShell table row whose name fills its column; and a Windows name with spaces at the very
-end of a path keeps all but its first word. In return, a line that begins `Password: …` loses
-the rest of the line, a call at a line's start (`apiKey: getKey(),`) loses its value, and prose
-that quotes a PEM BEGIN marker and later its END marker loses what stands between them.
+letters only, or after a flag whose last word is not a secret's (`--auth …`); a flag's quoted
+value broken across lines; a quoted value after `=` in the middle of a line that runs across
+lines keeps every line after its first (`docker run -e API_TOKEN="…` and a line break); a
+secret of capitals and digits after `$` (`password: $ECRET123`), read as a variable; JSON
+escaped inside a quoted string, such as a `curl -d "{\"password\": \"…\"}"` body;
+NUL-separated `env -0` output; a PowerShell table row whose name fills its column, and the rows
+after a one-word line that follows a table, which reads as a name with no value; and a Windows
+name with spaces at the very end of a path keeps all but its first word. In return, a line that
+begins `Password: …` loses the rest of the line, a call at a line's start (`apiKey: getKey(),`)
+loses its value, a variable named with lowercase letters and digits (`$token2`) or a template
+that names another by a quoted string (`{{ include "chart.name" . }}`) after a secret's key
+loses it, `--key-value` and `--token-string` lose their value whatever it is, a string holding
+`; password: ` followed by another quoted string on its line loses the text between them, and
+prose that quotes a PEM BEGIN marker and later its END marker loses what stands between them.
 
 Both scrubbers are built to take time linear in their input, so a long run of blanks or a
 repeated token in the assistant's text does not hold up the search it precedes; every input
