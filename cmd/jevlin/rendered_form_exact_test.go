@@ -13,6 +13,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -205,10 +206,14 @@ func reencodedByCursorOnWindows(s string) string {
 // so a typographic quote PowerShell ends a string at reaches the hook as
 // three characters nothing refuses. The real bytes are refused; the bytes
 // the hook sees must be too. The rendered search, and one whose query is not
-// ASCII, are still allowed.
+// ASCII, are still allowed. Driven through the event, with Windows' declared
+// shells and runners, so the answer Cursor reads is what is asserted.
 func TestCursorShellHookRefusesAPathItsRunnerReencoded(t *testing.T) {
 	bin, cfg, _ := exactTestInstall(t)
-	shells, runners := []shellKind{shellPowerShell, shellPOSIX}, []shellKind{shellCmd, shellPowerShell}
+	shells, err := declaredShells(cursorTarget{}, "windows", channelTool)
+	if err != nil {
+		t.Fatal(err)
+	}
 	render := func(body string) string {
 		_, s, err := searchBlockForShell(shellPowerShell, binEntry{command: bin, cfg: cfg}, body)
 		if err != nil {
@@ -217,41 +222,54 @@ func TestCursorShellHookRefusesAPathItsRunnerReencoded(t *testing.T) {
 		return s
 	}
 	search := render(`{"version":1,"query":"q"}`)
+	// The directory the hook's view names exists and holds this binary: a
+	// cloned repository can hold the directory, and a hard link needs no
+	// privilege on any of the three systems.
 	segment := "d\u2019; echo x; & \u2018"
-	real := strings.Replace(search, powerShellQuoteArg(bin), "'"+filepath.Join(filepath.Dir(bin), segment)+string(filepath.Separator)+".."+string(filepath.Separator)+"jevlin'", 1)
+	seenDir := filepath.Join(filepath.Dir(bin), reencodedByCursorOnWindows(segment))
+	if err := os.MkdirAll(seenDir, 0o700); err != nil {
+		t.Skipf("this filesystem will not hold the directory name: %v", err)
+	}
+	if err := os.Link(bin, filepath.Join(seenDir, "jevlin")); err != nil {
+		t.Skipf("this filesystem will not hold a hard link: %v", err)
+	}
+	real := strings.Replace(search, powerShellQuoteArg(bin), "'"+filepath.Join(filepath.Dir(bin), segment, "jevlin")+"'", 1)
 	if real == search {
 		t.Fatal("the injection was not applied")
 	}
 	if got := matchedRenderedForms(real, cfg, []shellKind{shellPowerShell}); len(got) != 0 {
 		t.Fatalf("the bytes PowerShell runs are not refused, so this case is not the one it says: %+v", got)
 	}
-	// The directory the hook's view names exists: a cloned repository can
-	// hold it.
-	if err := os.MkdirAll(filepath.Join(filepath.Dir(bin), reencodedByCursorOnWindows(segment)), 0o700); err != nil {
-		t.Skipf("this filesystem will not hold the directory name: %v", err)
-	}
 	_, ops := newFakeHookOps(nil)
 	ops.executable = func() (string, error) { return bin, nil }
+	hc := hookContext{cfgPath: cfg}
 	seen := reencodedByCursorOnWindows(real)
-	if recognizeCursorCommand(ops, hookContext{cfgPath: cfg}, seen, shells) == nil {
+	if recognizeCursorCommand(ops, hc, seen, shells) == nil {
 		t.Fatal("the recognizer alone refuses the re-encoded command, so the runner rule is not what is tested")
 	}
-	if f := cursorShellRecognizes(ops, hookContext{cfgPath: cfg}, seen, shells, runners); f != nil {
-		t.Errorf("Cursor's beforeShellExecution allowed a command whose real bytes PowerShell runs as several statements:\nreal: %q\nseen: %q", real, seen)
+	answer := func(command string) string {
+		var out bytes.Buffer
+		hookCursorOn("windows", ops, hc, "beforeShellExecution", mustJSON(t, map[string]any{"command": command}), &out, io.Discard)
+		return out.String()
+	}
+	if got := answer(seen); got != "" {
+		t.Errorf("Cursor's beforeShellExecution answered %q to a command whose real bytes PowerShell runs as several statements:\nreal: %q\nseen: %q", got, real, seen)
 	}
 	for name, command := range map[string]string{
 		"the rendered search":               search,
 		"a search whose query is not ASCII": render(`{"version":1,"query":"caf\u00e9 \u2014 na\u00efve"}`),
 	} {
-		if cursorShellRecognizes(ops, hookContext{cfgPath: cfg}, reencodedByCursorOnWindows(command), shells, runners) == nil {
-			t.Errorf("%s is no longer allowed under Windows' hook runners", name)
+		if got := answer(reencodedByCursorOnWindows(command)); got != `{"permission":"allow"}`+"\n" {
+			t.Errorf("%s is no longer allowed under Windows' hook runners: answered %q", name, got)
 		}
 	}
 }
 
 // On Windows a binary path holding a . or .. element can name one file to
-// sameBinary and run another, so it is not taken there; elsewhere the kernel
-// resolves it as sameBinary does, and nothing changes.
+// sameBinary and run another, and so can one Windows reads as . or .. once it
+// strips the dots and spaces that end an element; none is taken there.
+// Elsewhere the kernel resolves the path as sameBinary does, and nothing
+// changes.
 func TestABinaryPathWithADotSegmentIsNotTakenOnWindows(t *testing.T) {
 	for _, c := range []struct {
 		goos, path string
@@ -261,7 +279,13 @@ func TestABinaryPathWithADotSegmentIsNotTakenOnWindows(t *testing.T) {
 		{"windows", `C:\X\link\..\bin\jevlin.exe`, false},
 		{"windows", `C:\X\.\bin\jevlin.exe`, false},
 		{"windows", `C:/X/link/../bin/jevlin.exe`, false},
+		{"windows", `C:\X\link\...\bin\jevlin.exe`, false},
+		{"windows", `C:\X\link\.. \bin\jevlin.exe`, false},
+		{"windows", `C:\X\link\. .\bin\jevlin.exe`, false},
+		{"windows", `C:\X\bin \jevlin.exe`, false},
+		{"windows", `C:\X\bin\jevlin.exe.`, false},
 		{"windows", `C:\Users\u\..jevlin\bin\jevlin.exe`, true},
+		{"windows", `C:\Program Files\jevlin\jevlin.exe`, true},
 		{"darwin", "/Users/u/work/../.jevlin/bin/jevlin", true},
 		{"linux", "/home/u/link/../bin/jevlin", true},
 	} {

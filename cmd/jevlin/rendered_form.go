@@ -326,17 +326,21 @@ func readRenderedPath(sh shellKind, raw string) (string, bool) {
 // POSIX kernel does, so on macOS and Linux the two agree. Windows does not: it
 // collapses `a\..` as text before it opens anything, whatever `a` is. So with
 // `link` pointing elsewhere, `C:\X\link\..\bin\jevlin.exe` resolves to this
-// binary for sameBinary and runs `C:\X\bin\jevlin.exe` on Windows. A binary
-// path holding a `.` or `..` element is therefore not taken on Windows, where
-// the skill renders os.Executable's path, which is already clean. It is taken
-// elsewhere: os.Executable on macOS hands back an unclean path after a
+// binary for sameBinary and runs `C:\X\bin\jevlin.exe` on Windows. Windows
+// also strips the dots and spaces that end an element before it opens it, so
+// an element spelled `...` or `.. ` may be read as one of those two. A binary
+// path holding any element that ends in a dot or a space is therefore not
+// taken on Windows, which covers `.` and `..` themselves. The skill renders
+// os.Executable's path there, which is clean, and the ordinary file APIs
+// cannot create a name ending in either, so no rendered path holds one. It is
+// taken elsewhere: os.Executable on macOS hands back an unclean path after a
 // relative launch, and the skill renders that path as it is.
 func binaryPathRunsAsRead(goos, path string) bool {
 	if goos != "windows" {
 		return true
 	}
 	for _, el := range strings.FieldsFunc(path, func(r rune) bool { return r == '/' || r == '\\' }) {
-		if el == "." || el == ".." {
+		if strings.HasSuffix(el, ".") || strings.HasSuffix(el, " ") {
 			return false
 		}
 	}

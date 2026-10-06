@@ -731,6 +731,14 @@ type cursorPayload struct {
 // waits on an answer for get exactly the answer that lets the session
 // proceed.
 func hookCursor(ops hookOps, hc hookContext, event string, payload []byte, stdout, stderr io.Writer) {
+	hookCursorOn(runtime.GOOS, ops, hc, event, payload, stdout, stderr)
+}
+
+// hookCursorOn is hookCursor with the OS whose declaration supplies Cursor's
+// shells and hook runners as a parameter, so that every OS's answer is
+// exercised, through the event, on every CI runner. The path rules inside
+// recognizeRenderedForm follow the OS this process runs on.
+func hookCursorOn(goos string, ops hookOps, hc hookContext, event string, payload []byte, stdout, stderr io.Writer) {
 	var p cursorPayload
 	if err := json.Unmarshal(payload, &p); err != nil {
 		p = cursorPayload{}
@@ -795,11 +803,11 @@ func hookCursor(ops hookOps, hc hookContext, event string, payload []byte, stdou
 		// The shells Cursor runs on this OS, from the declaration: the command
 		// this hook is asked about was rendered for one of them, and a form
 		// rendered for a shell Cursor does not use is not ours to allow.
-		shells, err := declaredShells(cursorTarget{}, runtime.GOOS, channelTool)
+		shells, err := declaredShells(cursorTarget{}, goos, channelTool)
 		if err != nil {
 			return // nothing established: allow nothing, stamp nothing
 		}
-		runners, err := declaredShells(cursorTarget{}, runtime.GOOS, channelHook)
+		runners, err := declaredShells(cursorTarget{}, goos, channelHook)
 		if err != nil {
 			return
 		}
@@ -818,11 +826,11 @@ func hookCursor(ops hookOps, hc hookContext, event string, payload []byte, stdou
 		}
 		fmt.Fprintln(stdout, `{"permission":"allow"}`)
 	case "preToolUse":
-		shells, err := declaredShells(cursorTarget{}, runtime.GOOS, channelTool)
+		shells, err := declaredShells(cursorTarget{}, goos, channelTool)
 		if err != nil {
 			return
 		}
-		runners, err := declaredShells(cursorTarget{}, runtime.GOOS, channelHook)
+		runners, err := declaredShells(cursorTarget{}, goos, channelHook)
 		if err != nil {
 			return
 		}
