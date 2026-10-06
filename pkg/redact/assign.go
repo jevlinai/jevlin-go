@@ -114,10 +114,11 @@ func isDigit(c byte) bool { return c >= '0' && c <= '9' }
 // braced form, ${env:NAME} = '...'.
 //
 // The value, when it starts with a quote, is read as a shell reads a word
-// (quotedWordEnd): quoted parts and the characters joined to them, up to
-// whitespace, `&` or `;`. The first part may run across at most
-// quotedValueMaxLines line breaks, and when it does not close, the value is
-// the rest of its line. Otherwise the value is everything up to whitespace,
+// (quotedWordEndWithin): quoted parts and the characters joined to them, up
+// to whitespace, `&` or `;`. When the name starts its line
+// (assignmentStartsLine) the first part may run across at most
+// quotedValueMaxLines line breaks; anywhere else it closes on its own line.
+// When it does not close, the value is the rest of its line. Otherwise the value is everything up to whitespace,
 // `&` or `;`, a backslash keeping the character after it (correct\ horse).
 // Either way any trailing `,`, and any trailing `)` `]` `}` or quote that
 // the value itself did not open, is handed back to the text around it,
@@ -219,13 +220,96 @@ func secretValueAt(s string, floor, e int, words *wordScan) (start, end int, ok 
 	if v < len(s) && !isSpace(s[v]) && s[v] != '=' && isCmdSet(s, floor, p, name) {
 		end = cmdValueEnd(s, v)
 	} else {
-		end = secretValueEnd(s, v, words)
+		end = secretValueEnd(s, v, words, assignmentStartsLine(s, floor, p))
 	}
 	if end == v || s[v:end] == placeholder {
 		return 0, 0, false
 	}
 	return v, end, true
 }
+
+// assignmentStartsLine reports whether the name at p begins its line: after
+// indentation, and after nothing else on the line but a run of the words a
+// declaration or a list puts before a name (declarationWord: export const,
+// local -r, ENV, - , > ), and directly after `$`, `$env:` or `${env:`. Only
+// there is a quote after `=` certain to open a value, since nothing before it
+// on the line holds a quote, and only there may the value run across lines,
+// as a .env file, a heredoc-free shell script, Python's or a JavaScript
+// const's triple quotes and a Compose list write it. Anywhere else the quote
+// may close a string the name was written in ("PASSWORD=" + pw,
+// print("password=", pw)), and read as an opening one it ran on to the next
+// quote, inside the value assigned on the next line. The words are a fixed
+// set because no later step changes them: a rule that asked only that no
+// quote stand before the name would decide differently on a second pass
+// once a home path's segment holding a quote had been removed. Nothing
+// before floor is read: a removed value is a placeholder on the next pass.
+func assignmentStartsLine(s string, floor, p int) bool {
+	i := p
+	switch {
+	case i-6 >= floor && asciiEqualFold(s[i-6:i], "${env:"):
+		i -= 6
+	case i-5 >= floor && asciiEqualFold(s[i-5:i], "$env:"):
+		i -= 5
+	case i-1 >= floor && s[i-1] == '$':
+		i--
+	}
+	for {
+		k := i
+		for k > floor && isBlank(s[k-1]) {
+			k--
+		}
+		if k == 0 || (k > floor && s[k-1] == '\n') {
+			return true
+		}
+		if k == i {
+			return false
+		}
+		j := k
+		for j > floor && !isSpace(s[j-1]) {
+			j--
+		}
+		if (j > 0 && !isSpace(s[j-1])) || !declarationWord(s[j:k]) {
+			return false
+		}
+		i = j
+	}
+}
+
+// declarationWord reports whether w is one of the words that may stand
+// before a name that starts its line: a declaration keyword of a shell, a
+// Dockerfile or JavaScript in any letter case (export, set, declare,
+// typeset, local, readonly, env, arg, const, let, var), a word of flags
+// (-x, -r), a list marker (-, *, +, 1., 1)) or a quote marker (>).
+func declarationWord(w string) bool {
+	for _, k := range declarationKeywords {
+		if asciiEqualFold(w, k) {
+			return true
+		}
+	}
+	switch {
+	case w == "-" || w == "*" || w == "+" || w == ">":
+		return true
+	case len(w) >= 2 && w[0] == '-':
+		for i := 1; i < len(w); i++ {
+			if !isLetter(w[i]) {
+				return false
+			}
+		}
+		return true
+	case len(w) >= 2 && (w[len(w)-1] == '.' || w[len(w)-1] == ')'):
+		for i := 0; i < len(w)-1; i++ {
+			if !isDigit(w[i]) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+var declarationKeywords = []string{"export", "set", "declare", "typeset", "local", "readonly", "env", "arg", "const", "let", "var"}
+
+func isLetter(c byte) bool { return isUpper(c) || isLower(c) }
 
 // isCmdSet reports whether the name at p is set by cmd's `set NAME=value`,
 // which takes the rest of the line as the value, spaces and quotes and all. It counts
@@ -327,14 +411,24 @@ func (w *wordScan) enclosing() byte {
 	return 0
 }
 
-func secretValueEnd(s string, v int, words *wordScan) int {
+// secretValueEnd is where the value at v ends. A quoted value's first part
+// may run across quotedValueMaxLines line breaks only when its name starts
+// its line (assignmentStartsLine); anywhere else it closes on its own line,
+// and when it does not, the value is the rest of that line.
+func secretValueEnd(s string, v int, words *wordScan, startsLine bool) int {
 	if v >= len(s) {
 		return v
 	}
 	from := v
 	switch s[v] {
 	case '"', '\'':
-		from = quotedWordEnd(s, v)
+		maxLines := 0
+		if startsLine {
+			maxLines = quotedValueMaxLines
+		}
+		if from = quotedWordEndWithin(s, v, maxLines); from < 0 {
+			from = lineEnd(s, v)
+		}
 	case '=', ' ', '\t', '\n', '\f', '\r':
 		// A comparison (a==b), or no value at all (set NAME= to clear it):
 		// a quote that holds the name does not reach past the blank.
@@ -413,7 +507,7 @@ func (f *quoteSearch) find(s string, v int, q byte) int {
 	return f.at
 }
 
-// quotedWordEnd reads the value that starts with the quote at v the way a
+// quotedWordEndWithin reads the value that starts with the quote at v the way a
 // shell reads a word, because that is how the forms that hide part of a
 // value are put together: quoted parts next to each other are one value
 // (PowerShell writes a quote inside a single-quoted string as two, and
@@ -424,21 +518,22 @@ func (f *quoteSearch) find(s string, v int, q byte) int {
 // the last quoted part.
 //
 // A value that opens with three quotes runs to the next three of the same,
-// within quotedValueMaxLines line breaks. Otherwise the first part runs to
-// its closing quote (closingQuote) within that many line breaks. When the
-// first part does not close, the value is the rest of its line. A later part must close
-// on its own line, or its quote is an ordinary character: a stray quote
-// after a value must not reach into the lines that follow it.
-func quotedWordEnd(s string, v int) int {
+// within maxLines line breaks. Otherwise the first part runs to its closing
+// quote (closingQuote) within that many line breaks. When the first part
+// does not close, it returns -1, and the caller decides what the value is.
+// A later part must close on its own line, or its quote is an ordinary
+// character: a stray quote after a value must not reach into the lines that
+// follow it.
+func quotedWordEndWithin(s string, v, maxLines int) int {
 	var closer quoteCloser
 	var i int
 	if opensThreeQuotes(s, v) {
-		i = tripleQuoteEnd(s, v)
+		i = tripleQuoteEnd(s, v, maxLines)
 	} else {
-		i = closer.close(s, v, quotedValueMaxLines)
+		i = closer.close(s, v, maxLines)
 	}
 	if i < 0 {
-		return lineEnd(s, v)
+		return -1
 	}
 	last := i
 	for i < len(s) {
@@ -465,9 +560,8 @@ func opensThreeQuotes(s string, v int) bool {
 }
 
 // tripleQuoteEnd returns the index just past the three quotes that close the
-// three at v, or -1 when they do not close within quotedValueMaxLines line
-// breaks.
-func tripleQuoteEnd(s string, v int) int {
+// three at v, or -1 when they do not close within maxLines line breaks.
+func tripleQuoteEnd(s string, v, maxLines int) int {
 	q, lines := s[v], 0
 	for i := v + 3; i+2 < len(s); i++ {
 		switch s[i] {
@@ -476,7 +570,7 @@ func tripleQuoteEnd(s string, v int) int {
 				return i + 3
 			}
 		case '\n':
-			if lines++; lines > quotedValueMaxLines {
+			if lines++; lines > maxLines {
 				return -1
 			}
 		}

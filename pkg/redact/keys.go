@@ -29,7 +29,8 @@ import (
 //     what trimValueTail hands back left outside. YAML's password: x y z,
 //     and a pretty-printed JSON or JS object's "password": "x",.
 //   - a key anywhere else, quoted or not, where a member of an object, a
-//     map or an argument list starts (opensMember), followed by a colon and
+//     map, an argument list, a statement or a code span starts
+//     (opensMember), followed by a colon and
 //     a quoted value that closes on its own line: the value is the quoted
 //     string (quotedStringEnd). Inline JSON {"client_secret": "x"} and a JS
 //     object {password: 'x'}.
@@ -147,7 +148,9 @@ func secretKeyValueAt(s string, floor, c int) (start, end int, ok bool) {
 
 // opensMember reports whether the key at i stands where an object, a map,
 // a list or an argument list opens a member: after `{`, `,`, `(` or `[`,
-// blanks aside. Anywhere else a key and a colon mid-line are text: prose,
+// blanks aside; and where a statement or a code span opens one, after `;`
+// or a backtick (user: "app"; password: "x", and `password: "x"` in
+// prose). Anywhere else a key and a colon mid-line are text: prose,
 // or more often the inside of a string ("Password: " in input("Password: "),
 // "invalid token: " + t), whose closing quote would otherwise be read as
 // the value's opening one and run on to the next quote, which a review
@@ -156,7 +159,7 @@ func opensMember(s string, floor, i int) bool {
 	for i > floor && isBlank(s[i-1]) {
 		i--
 	}
-	return i > floor && strings.IndexByte("{,([", s[i-1]) >= 0
+	return i > floor && strings.IndexByte("{,([;`", s[i-1]) >= 0
 }
 
 // notASecret reports whether a key's value, quoted or not, with a trailing
@@ -168,6 +171,33 @@ func opensMember(s string, floor, i int) bool {
 // Removing them hides nothing, and they are what code, CI files and
 // tokenizer configs hold. So is a value that only opens a block: {, [, a
 // YAML | or >-.
+//
+// A variable is $ and a name written as variables are: capitals, digits
+// and `_` ($CI_JOB_TOKEN, $TOKEN2), or letters and `_` with no digit
+// ($password, $dbPassword). A word after `$` that mixes lowercase letters
+// and digits ($ecret123, $Pa55word) is how a password that starts with a
+// dollar sign is written, not how a variable is named, and is a value. The
+// cost both ways: a variable named that way ($token2, $s3Key) after a
+// secret's key loses its name, and a secret of capitals and digits after a
+// dollar sign ($ECRET123) keeps its value. $[REDACTED] is a variable too:
+// a later step (the hostname, the account) replaced its name, and on a
+// second pass it must read as what the first pass kept, or password: $myhost
+// would lose on the second pass what the first left. A placeholder holds
+// nothing, so reading it as a variable keeps nothing.
+//
+// A reference that carries a literal is not one, because the literal is the
+// value whenever the variable is unset: a default or an assignment in a
+// shell or Compose expansion (literalDefaultPattern: ${VAR:-x}, ${VAR-x},
+// ${VAR:=x}, ${VAR=x}, and ${VAR:+x}, whose word is the value when VAR is
+// set), a default after a plain colon as Spring, Quarkus and Elastic write
+// one (${DB_PASSWORD:dev}, ${db.password:dev}; literalDefault), and a
+// template expression holding a quoted string anywhere (| default "x",
+// default('x'), || 'x'). ${VAR:?message} stays: it never gives a value, and
+// its word is the message printed when VAR is unset. A default that is
+// itself a variable, or empty, stays. The cost: a template that names
+// another by a quoted string ({{ include "chart.name" . }}) or carries a
+// required message loses it after a secret's key, and so does bash's
+// substring with a named offset (${TOKEN:start}).
 func notASecret(v string) bool {
 	if strings.HasSuffix(v, ",") || strings.HasSuffix(v, ";") {
 		v = v[:len(v)-1]
@@ -175,10 +205,32 @@ func notASecret(v string) bool {
 	if len(v) >= 2 && (v[0] == '"' || v[0] == '\'') && v[len(v)-1] == v[0] {
 		v = v[1 : len(v)-1]
 	}
+	if m := literalDefaultPattern.FindStringSubmatch(v); m != nil && literalDefault(m[1], m[2]) {
+		return false
+	}
 	return secretReferencePattern.MatchString(v)
 }
 
-var secretReferencePattern = regexp.MustCompile(`^(?:\$?\{\{[^{}\n]*\}\}|\$\{[^}\n]*\}|\$[A-Za-z_][A-Za-z0-9_]*|<[^<>\t\n ]+>|string|str|number|int|integer|bool|boolean|any|unknown|bytes|float|double|char|String|[A-Za-z_][A-Za-z0-9_:]*<[^\n]*>|[0-9]+ bytes|[{\[(|>+-]+)$`)
+var (
+	literalDefaultPattern = regexp.MustCompile(`^\$\{[A-Za-z_][A-Za-z0-9_.]*(:?[-=+]|:)([^}\n]*)\}$`)
+	bareVariablePattern   = regexp.MustCompile(`^(?:` + variablePattern + `)?$`)
+)
+
+const variablePattern = `\$(?:[A-Z_][A-Z0-9_]*|[A-Za-z_]+|\[REDACTED\])`
+
+// literalDefault reports whether an expansion's operator and word give the
+// variable a literal value: a word that is not empty and not itself a
+// variable. After a plain colon, a word that starts with a digit, a blank or
+// `?` is bash's substring (${VAR:0:5}, ${VAR: -3}) or a mistyped :?, not a
+// default.
+func literalDefault(op, word string) bool {
+	if bareVariablePattern.MatchString(word) {
+		return false
+	}
+	return op != ":" || (!isDigit(word[0]) && !isBlank(word[0]) && word[0] != '?')
+}
+
+var secretReferencePattern = regexp.MustCompile(`^(?:\$?\{\{[^{}"'\x60\n]*\}\}|\$\{[^}\n]*\}|` + variablePattern + `|<[^<>\t\n ]+>|string|str|number|int|integer|bool|boolean|any|unknown|bytes|float|double|char|String|[A-Za-z_][A-Za-z0-9_:]*<[^\n]*>|[0-9]+ bytes|[{\[(|>+-]+)$`)
 
 // startsLine reports whether only blanks and an optional `-` list marker
 // stand between the start of a line and i, reading nothing before floor.
@@ -199,7 +251,7 @@ func startsLine(s string, floor, i int) bool {
 // closingQuote reads one but on its own line only, with any part that
 // follows it directly in the same quote (a quote written twice, as YAML and
 // PowerShell escape one; three quotes read this way too). Unlike
-// quotedWordEnd it takes nothing joined to it: in {"password":"x",
+// quotedWordEndWithin it takes nothing joined to it: in {"password":"x",
 // "user":"y"} the value ends at the quote. A string that does not close on
 // its own line is no value, -1: a key's value never reaches the next line.
 func quotedStringEnd(s string, v int) int {
@@ -225,7 +277,11 @@ func quotedStringEnd(s string, v int) int {
 // blanks on the same line, read as an assignment's is, and is not one when
 // it starts with `-` (the next flag), `=` (the assignment rule's), `<`, `>`
 // or `|` (a redirection or a pipe) or `$(` (a command's output), or when it
-// is the flag's own name in capitals (a help text's metavar). A value of lowercase letters only is kept: "use the --password
+// is the flag's own name in capitals (a help text's metavar). A quoted value
+// closes on its own line or is not a value, as a mid-line key's is: in
+// "mysql --password " + pw the quote after the flag closes a string, and read
+// as an opening one it ran on to the next quote, inside the value assigned on
+// the next line. A value of lowercase letters only is kept: "use the --password
 // flag" and "pass --token to the command" are prose, and the cost is a
 // password of lowercase letters only, which keeps its value written this
 // way. A single-dash flag (-p) is not read: what follows it is a password
@@ -292,7 +348,9 @@ func secretFlagValueAt(s string, i int) (start, end, nameEnd int, ok bool) {
 		return 0, 0, j, false
 	}
 	if s[v] == '"' || s[v] == '\'' {
-		end = quotedWordEnd(s, v)
+		if end = quotedWordEndWithin(s, v, 0); end < 0 {
+			return 0, 0, j, false
+		}
 	} else {
 		end = trimValueTail(s, v, unquotedRunEnd(s, v))
 		if lowercaseWord(s[v:end]) || metavar(s[v:end], name) {
@@ -314,6 +372,12 @@ func secretFlagValueAt(s string, i int) (start, end, nameEnd int, ok bool) {
 // or nothing. A --with- or --no- flag is a switch and takes no value.
 // KEY and PASS count as in secretName: in a name of capitals or of two or
 // more segments or words.
+//
+// A last word that names the form a value takes rather than what it is
+// (valueFormWords: --secret-string, --secret-value, --pass-phrase,
+// --secretString) passes the question to the word before it, which counts
+// as a secret's word of a name of two or more. The cost: --key-value and
+// --token-string lose their value too, whatever it is.
 func secretFlagName(name string) bool {
 	if hasPrefixFold(name, "with-") || hasPrefixFold(name, "no-") {
 		return false
@@ -331,8 +395,23 @@ func secretFlagName(name string) bool {
 			return true
 		}
 	}
-	return false
+	word, before := hump, last[:len(last)-len(hump)]
+	if hump == last {
+		before = ""
+		if len(parts) >= 2 {
+			before = parts[len(parts)-2]
+		}
+	}
+	if before == "" || !valueFormWords[strings.ToUpper(word)] {
+		return false
+	}
+	seg := strings.ToUpper(lastHump(before))
+	return secretNameSegments[seg] || secretNameSegmentsQualified[seg]
 }
+
+// valueFormWords are a flag's last words that say what form its value takes
+// (a string, a value, a phrase), not whether it is a secret.
+var valueFormWords = map[string]bool{"STRING": true, "VALUE": true, "PHRASE": true}
 
 func hasPrefixFold(s, prefix string) bool {
 	return len(s) >= len(prefix) && asciiEqualFold(s[:len(prefix)], prefix)

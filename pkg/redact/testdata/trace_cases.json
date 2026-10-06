@@ -2030,11 +2030,11 @@
   "want": "Key    Value\n----   -----\nA      1"
  },
  {
-  "name": "pstable/a name with no value ends the table",
+  "name": "pstable/a name with no value is a row",
   "host": "",
   "account": "",
   "in": "Name  Value\n----  -----\nEMPTY\nB     2",
-  "want": "Name  Value\n----  -----\nEMPTY\nB     2"
+  "want": "Name  Value\n----  -----\nEMPTY\nB     [REDACTED]"
  },
  {
   "name": "keys/a prompt string does not reach the next line",
@@ -2210,5 +2210,222 @@
   "account": "",
   "in": "token: ${{ secrets.A }}x y ${{ secrets.B }}",
   "want": "token: [REDACTED]"
+ },
+ {
+  "name": "flags/a quote that closes a string is no value",
+  "host": "",
+  "account": "",
+  "in": "cmd = \"mysql --password \" + pw\nDB_PASSWORD=\"correct horse battery\"",
+  "want": "cmd = \"mysql --password \" + pw\nDB_PASSWORD=[REDACTED]"
+ },
+ {
+  "name": "flags/a quoted value that closes on its line goes whole",
+  "host": "",
+  "account": "",
+  "in": "x --token \"a b\"'c' next\ny --api-key 'c d' -v",
+  "want": "x --token [REDACTED] next\ny --api-key [REDACTED] -v"
+ },
+ {
+  "name": "survives/a flag's quoted value that runs past its line",
+  "host": "",
+  "account": "",
+  "in": "mysql --password \"first\nsecond\" -h db",
+  "want": "mysql --password \"first\nsecond\" -h db"
+ },
+ {
+  "name": "assignment/a quote after a name mid-line closes on its own line",
+  "host": "",
+  "account": "",
+  "in": "print(\"password=\", pw)\nDB_PASSWORD=\"correct horse battery\"",
+  "want": "print(\"password=[REDACTED]\nDB_PASSWORD=[REDACTED]"
+ },
+ {
+  "name": "assignment/a set inside a string is mid-line",
+  "host": "",
+  "account": "",
+  "in": "cmd = \"set API_TOKEN=\" + t\nAPI_KEY='two words here'",
+  "want": "cmd = \"set API_TOKEN=[REDACTED]\nAPI_KEY=[REDACTED]"
+ },
+ {
+  "name": "assignment/a name that starts its line may run across lines",
+  "host": "",
+  "account": "",
+  "in": "export DB_PASSWORD=\"line one\nline two\" next\n    password = '''a\nb''' next\n$env:API_TOKEN = \"c\nd\" next\ndeclare -x API_KEY='e\nf' next\nset PASS=\"g\nh\" next",
+  "want": "export DB_PASSWORD=[REDACTED] next\n    password = [REDACTED] next\n$env:API_TOKEN = [REDACTED] next\ndeclare -x API_KEY=[REDACTED] next\nset PASS=[REDACTED]\nh\" next"
+ },
+ {
+  "name": "assignment/a quoted value mid-line keeps the lines after its first",
+  "host": "",
+  "account": "",
+  "in": "docker run -e API_TOKEN=\"first\nsecond\" img",
+  "want": "docker run -e API_TOKEN=[REDACTED]\nsecond\" img"
+ },
+ {
+  "name": "pstable/an empty variable does not end the table",
+  "host": "",
+  "account": "",
+  "in": "Name                           Value\n----                           -----\nALLUSERSPROFILE                C:\\ProgramData\nEMPTY_VAR\nGITHUB_TOKEN                   TokenCanary0123Long",
+  "want": "Name                           Value\n----                           -----\nALLUSERSPROFILE                [REDACTED]\nEMPTY_VAR\nGITHUB_TOKEN                   [REDACTED]"
+ },
+ {
+  "name": "pstable/a name padded with blanks and no value is a row",
+  "host": "",
+  "account": "",
+  "in": "Name       Value\r\n----       -----\r\nEMPTY      \r\nProgramFiles(x86)\r\nAPI_TOKEN  Token Canary Tail\r\n",
+  "want": "Name       Value\r\n----       -----\r\nEMPTY      \r\nProgramFiles(x86)\r\nAPI_TOKEN  [REDACTED]\r\n"
+ },
+ {
+  "name": "pstable/a wrapped value's continuation goes and the table goes on",
+  "host": "",
+  "account": "",
+  "in": "Name                           Value\n----                           -----\nPath                           C:\\Windows\\system32;C:\\Windows;C:\\Program\n                               Files\\Git\\cmd;C:\\Tools\nAPI_TOKEN                      TokenCanary0123Long\n\nNext paragraph.",
+  "want": "Name                           Value\n----                           -----\nPath                           [REDACTED]\n                               [REDACTED]\nAPI_TOKEN                      [REDACTED]\n\nNext paragraph."
+ },
+ {
+  "name": "pstable/only a line indented exactly to the value column continues a value",
+  "host": "",
+  "account": "",
+  "in": "Name      Value\n----      -----\nA_ONE     1\n    note that\nB_TWO     2\n\nName      Value\n----      -----\nA_ONE     1\n            deeper text\nB_TWO     2",
+  "want": "Name      Value\n----      -----\nA_ONE     [REDACTED]\n    note that\nB_TWO     2\n\nName      Value\n----      -----\nA_ONE     [REDACTED]\n            deeper text\nB_TWO     2"
+ },
+ {
+  "name": "pstable/a name followed by a sentence ends the table there",
+  "host": "",
+  "account": "",
+  "in": "Name    Value\n----    -----\nA_ONE   1\nEMPTY\nThat is all of it.\nB_TWO   2",
+  "want": "Name    Value\n----    -----\nA_ONE   [REDACTED]\nEMPTY\nThat is all of it.\nB_TWO   2"
+ },
+ {
+  "name": "pstable/a name-only row cannot be a fence, a number or punctuation",
+  "host": "",
+  "account": "",
+  "in": "Name    Value\n----    -----\nA_ONE   1\n~~~\nB_TWO   2\n\nName    Value\n----    -----\nA_ONE   1\n42\nB_TWO   2\n\nName    Value\n----    -----\nA_ONE   1\nDone.\nB_TWO   2",
+  "want": "Name    Value\n----    -----\nA_ONE   [REDACTED]\n~~~\nB_TWO   2\n\nName    Value\n----    -----\nA_ONE   [REDACTED]\n42\nB_TWO   2\n\nName    Value\n----    -----\nA_ONE   [REDACTED]\nDone.\nB_TWO   2"
+ },
+ {
+  "name": "keys/a reference's literal default goes",
+  "host": "",
+  "account": "",
+  "in": "services:\n  db:\n    environment:\n      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-r00tPa55w0rd}\n      DB_PASSWORD: ${DB_PASSWORD-Fallback1}\n      API_TOKEN: ${API_TOKEN:=Assigned2}\n      api_key: ${API_KEY=Assigned3}\n      SECRET: ${SECRET:+Alternate4}\n      {\"password\": \"${DB_PASS:-Quoted5}\"}",
+  "want": "services:\n  db:\n    environment:\n      MYSQL_ROOT_PASSWORD: [REDACTED]\n      DB_PASSWORD: [REDACTED]\n      API_TOKEN: [REDACTED]\n      api_key: [REDACTED]\n      SECRET: [REDACTED]\n      {\"password\": [REDACTED]}"
+ },
+ {
+  "name": "keys/a template's quoted literal goes",
+  "host": "",
+  "account": "",
+  "in": "password: {{ .Values.db.password | default \"hunter2secret\" }}\napi_key: {{ default \"Lit2\" .Values.apiKey }}\ntoken: \"{{ token | default('Lit3') }}\"\nsecret: ${{ secrets.X || 'Lit4' }}\nclient_secret: {{ .Values.s | default `Lit5` }}",
+  "want": "password: [REDACTED]\napi_key: [REDACTED]\ntoken: [REDACTED]\nsecret: [REDACTED]\nclient_secret: [REDACTED]"
+ },
+ {
+  "name": "survives/a reference with no literal stays",
+  "host": "",
+  "account": "",
+  "in": "password: ${DB_PASSWORD}\ntoken: $API_TOKEN\nsecret: ${{ secrets.X }}\napi_key: {{ .Values.apiKey | b64enc }}\npassword: ${DB_PASSWORD:?set DB_PASSWORD first}\ntoken: ${TOKEN:-}\nsecret: ${SECRET:-$FALLBACK}\npassword: ${DB_PASSWORD#prefix}",
+  "want": "password: ${DB_PASSWORD}\ntoken: $API_TOKEN\nsecret: ${{ secrets.X }}\napi_key: {{ .Values.apiKey | b64enc }}\npassword: ${DB_PASSWORD:?set DB_PASSWORD first}\ntoken: ${TOKEN:-}\nsecret: ${SECRET:-$FALLBACK}\npassword: ${DB_PASSWORD#prefix}"
+ },
+ {
+  "name": "keys/a value that starts with a dollar sign",
+  "host": "",
+  "account": "",
+  "in": "password: $ecret123\n{\"password\": \"$Pa55word\"}\napi_key: $apiKey2\ntoken: ${A:-$ecret9}",
+  "want": "password: [REDACTED]\n{\"password\": [REDACTED]}\napi_key: [REDACTED]\ntoken: [REDACTED]"
+ },
+ {
+  "name": "survives/a variable after a secret's key",
+  "host": "",
+  "account": "",
+  "in": "password: $DB_PASSWORD2\ntoken: $token\nsecret: $dbSecret\n{\"password\": \"$PASSWORD\"}\ntoken: ${A:-$TOKEN_2}\npassword: $ECRET123",
+  "want": "password: $DB_PASSWORD2\ntoken: $token\nsecret: $dbSecret\n{\"password\": \"$PASSWORD\"}\ntoken: ${A:-$TOKEN_2}\npassword: $ECRET123"
+ },
+ {
+  "name": "keys/a key in inline code or after a semicolon",
+  "host": "",
+  "account": "",
+  "in": "Then add `password: \"hunter2secret\"` to config.yml.\nuser: \"app\"; password: \"hunter2 secret\"\nx;token: 'a b'",
+  "want": "Then add `password: [REDACTED]` to config.yml.\nuser: \"app\"; password: [REDACTED]\nx;token: [REDACTED]"
+ },
+ {
+  "name": "survives/a key in a code span or after a semicolon with no quoted value",
+  "host": "",
+  "account": "",
+  "in": "Set `password:` in the file; password: see the vault\nlog(\"done; token: \" + t)",
+  "want": "Set `password:` in the file; password: see the vault\nlog(\"done; token: \" + t)"
+ },
+ {
+  "name": "keys/the cost: a key after ; inside a string takes the quotes after it on its line",
+  "host": "",
+  "account": "",
+  "in": "printf \"user: %s; password: \" \"$u\" > out\nnext",
+  "want": "printf \"user: %s; password: [REDACTED]$u\" > out\nnext"
+ },
+ {
+  "name": "flags/a last word naming the value's form asks the word before it",
+  "host": "",
+  "account": "",
+  "in": "aws secretsmanager put-secret-value --secret-id prod/db --secret-string \"Pa55w0rd!Long\"\nx --pass-phrase Phrase1 --secret-value Val2x --secretString S3x --api-key-value K4x",
+  "want": "aws secretsmanager put-secret-value --secret-id prod/db --secret-string [REDACTED]\nx --pass-phrase [REDACTED] --secret-value [REDACTED] --secretString [REDACTED] --api-key-value [REDACTED]"
+ },
+ {
+  "name": "survives/a value-form word after a word that is not a secret's",
+  "host": "",
+  "account": "",
+  "in": "x --value Q1 --default-value D1 --user-string U1 --string-value S1 --phrase P1 --secret-id I1 --key-name N1 --secret-file F1 --token-ttl 30",
+  "want": "x --value Q1 --default-value D1 --user-string U1 --string-value S1 --phrase P1 --secret-id I1 --key-name N1 --secret-file F1 --token-ttl 30"
+ },
+ {
+  "name": "assignment/a declaration, a list marker or a $ starts the line too",
+  "host": "",
+  "account": "",
+  "in": "const API_TOKEN = \"\"\"\nLineOne1\n\"\"\"\nlocal DB_PASSWORD=\"\nLineTwo2\n\"\nENV API_TOKEN=\"a\nb\"\nexport const apiToken = 'c\nd'\n$ApiToken = \"e\nf\"\n- API_TOKEN=\"g\nh\"\n> API_TOKEN=\"i\nj\"\n1. API_TOKEN=\"k\nl\"\nlocal -r API_TOKEN=\"m\nn\"",
+  "want": "const API_TOKEN = [REDACTED]\nlocal DB_PASSWORD=[REDACTED]\nENV API_TOKEN=[REDACTED]\nexport const apiToken = [REDACTED]\n$ApiToken = [REDACTED]\n- API_TOKEN=[REDACTED]\n> API_TOKEN=[REDACTED]\n1. API_TOKEN=[REDACTED]\nlocal -r API_TOKEN=[REDACTED]"
+ },
+ {
+  "name": "assignment/a word that is not a declaration's leaves the name mid-line",
+  "host": "",
+  "account": "",
+  "in": "foo API_TOKEN=\"a\nb\" next\n-- API_TOKEN=\"c\nd\" next\n1.5 API_TOKEN=\"e\nf\" next",
+  "want": "foo API_TOKEN=[REDACTED]\nb\" next\n-- API_TOKEN=[REDACTED]\nd\" next\n1.5 API_TOKEN=[REDACTED]\nf\" next"
+ },
+ {
+  "name": "assignment/the cost: a quote opened at the end of a line mid-line keeps the whole value",
+  "host": "",
+  "account": "",
+  "in": "docker run -e API_TOKEN=\"\nWholeValue1\" img",
+  "want": "docker run -e API_TOKEN=[REDACTED]\nWholeValue1\" img"
+ },
+ {
+  "name": "assignment/a word ending in . or ) that is not a number leaves the name mid-line",
+  "host": "",
+  "account": "",
+  "in": "e.g. API_TOKEN=\"a\nb\" next\nf(x) API_TOKEN=\"c\nd\" next",
+  "want": "e.g. API_TOKEN=[REDACTED]\nb\" next\nf(x) API_TOKEN=[REDACTED]\nd\" next"
+ },
+ {
+  "name": "keys/a default after a plain colon is a literal too",
+  "host": "",
+  "account": "",
+  "in": "password: ${DB_PASSWORD:Dev5ecret}\nspring.datasource.password: ${DB_PASSWORD:Dev5ecret2}\ntoken: \"${db.token:Dev5ecret3}\"\n{\"password\": \"${app.db.password:Dev5ecret4}\"}",
+  "want": "password: [REDACTED]\nspring.datasource.password: [REDACTED]\ntoken: [REDACTED]\n{\"password\": [REDACTED]}"
+ },
+ {
+  "name": "survives/a substring, a message or a variable after a plain colon",
+  "host": "",
+  "account": "",
+  "in": "token: ${VAR:0:5}\npassword: ${DB_PASSWORD: -3}\nsecret: ${SECRET:?required}\npassword: ${DB_PASSWORD:$FALLBACK}\ntoken: ${TOKEN:}",
+  "want": "token: ${VAR:0:5}\npassword: ${DB_PASSWORD: -3}\nsecret: ${SECRET:?required}\npassword: ${DB_PASSWORD:$FALLBACK}\ntoken: ${TOKEN:}"
+ },
+ {
+  "name": "identity/a variable named like this machine reads the same on a second pass",
+  "host": "buildhost.lan",
+  "account": "",
+  "in": "password: ${DB_PASSWORD:-$buildhost}\ntoken: $buildhost\nsecret: \"$buildhost\"",
+  "want": "password: ${DB_PASSWORD:-$[REDACTED]}\ntoken: $[REDACTED]\nsecret: \"$[REDACTED]\""
+ },
+ {
+  "name": "survives/a variable whose name was replaced",
+  "host": "",
+  "account": "",
+  "in": "password: $[REDACTED]\ntoken: ${A:-$[REDACTED]}",
+  "want": "password: $[REDACTED]\ntoken: ${A:-$[REDACTED]}"
  }
 ]

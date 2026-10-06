@@ -34,14 +34,22 @@ The first release replaces this heading with its own.
   secret known by its name: `DATABASE_PASSWORD=…`, `--api-key=…`, a camelCase
   `accessToken=…` or `.npmrc`'s `_authToken=…`, `$env:API_TOKEN = '…'` and
   `${env:API_TOKEN}`, `password = "…"`, YAML's `password: …` at a line's start,
-  JSON's `"client_secret": "…"` (never a key inside a string, such as a prompt's
-  `"Password: "`), `curl --api-key …`, cmd's `set NAME=…` to the
-  end of the line, an Azure SAS `sig=`, and a password chained behind another
-  setting in a URL or a connection string. A quoted value is read as a shell
-  reads it, so a password with spaces, PowerShell's `'it''s'`, POSIX's
-  `'\''`, Python's triple quotes and `-e "DB_PASSWORD=a b c"` all go whole. It
+  JSON's `"client_secret": "…"`, also after `;` or in a code span (never a key
+  inside a string, such as a prompt's `"Password: "`), a reference's literal
+  default (`${DB_PASSWORD:-…}`, Spring's `${DB_PASSWORD:…}`, a template's
+  `default "…"`), a value that starts
+  with `$` and mixes lowercase letters and digits, `curl --api-key …` and
+  `--secret-string …`, cmd's `set NAME=…` to the end of the line, an Azure SAS
+  `sig=`, and a password chained behind another setting in a URL or a
+  connection string. A quoted value is read as a shell reads it, so a password
+  with spaces, PowerShell's `'it''s'`, POSIX's `'\''`, Python's triple quotes
+  and `-e "DB_PASSWORD=a b c"` all go whole; it runs across lines only where
+  its name starts the line, after nothing but declaration words (`export`,
+  `const`, `ENV`, `local -r`) and list markers, so a string that ends in
+  `PASSWORD=` or `--password ` never reaches into the line after it. It
   also loses every value in a pasted environment listing or PowerShell's
-  `Get-ChildItem Env:` table, the trace bridge's own value in a quoted command,
+  `Get-ChildItem Env:` table, rows with no value and wrapped values included,
+  the trace bridge's own value in a quoted command,
   this machine's hostname wherever it appears as a word, and your account name
   where the text uses it as an account: `USER=…`, `name@host`, a home path, also
   with doubled separators and a Windows name with spaces. Your account name in

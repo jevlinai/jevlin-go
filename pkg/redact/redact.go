@@ -101,17 +101,27 @@ var (
 	envTableHeader = regexp.MustCompile(`^[\t ]*Name[\t ]+Value[\t ]*$`)
 	envTableRule   = regexp.MustCompile(`^[\t ]*-+[\t ]+-+[\t ]*$`)
 	envTableRow    = regexp.MustCompile(`^([\t ]*[^\t\n\f\r ]+(?:\t|  )[\t ]*)([^\t\n\f\r ].*)$`)
+	// A row with no value: one name and nothing after it but blanks. A
+	// name starts with a letter or `_` and holds letters, digits and
+	// `_ . ( ) -` (ProgramFiles(x86)), ending in neither `.` nor `-`.
+	envTableNameOnly = regexp.MustCompile(`^[\t ]*[A-Za-z_](?:[A-Za-z0-9_.()-]*[A-Za-z0-9_)])?[\t ]*$`)
 )
 
 // redactEnvTables replaces every value in a table under a Name/Value
 // header and its rule of dashes, each row's value being the rest of its
-// line after the name and two or more blanks (or a tab), until a line that
-// is not such a row: an empty line, a code fence, a sentence, a numbered
-// list item (1. one blank), or a name with no value. A table ends at the
-// first line that does not continue it, so the text after it keeps its
-// words.
+// line after the name and two or more blanks (or a tab). Two more lines
+// continue a table: a name with no value (envTableNameOnly), which is how
+// PowerShell prints an empty variable or a $null entry, and a line whose
+// blanks reach exactly the column the header's Value starts at, which is
+// how Format-Table -Wrap continues a long value; that line's text is the
+// value's and goes too. A table ends at the first line that is none of
+// these: an empty line, a code fence, a sentence (one blank after its first
+// word), a numbered list item (1. one blank). So the text after it keeps
+// its words.
 // The names stay, as in redactEnvDumps. The cost: any hashtable PowerShell
-// prints has the same header, and loses its values too.
+// prints has the same header, and loses its values too; and a one-word line
+// right after a table, being a name with no value, does not end it, so a
+// line after that one shaped like a row loses its value.
 func redactEnvTables(s string) string {
 	if !strings.Contains(s, "Value") {
 		return s
@@ -119,14 +129,30 @@ func redactEnvTables(s string) string {
 	lines := strings.Split(s, "\n")
 	changed := false
 	for i := 0; i+1 < len(lines); i++ {
-		if !envTableHeader.MatchString(strings.TrimSuffix(lines[i], "\r")) || !envTableRule.MatchString(strings.TrimSuffix(lines[i+1], "\r")) {
+		header := strings.TrimSuffix(lines[i], "\r")
+		if !envTableHeader.MatchString(header) || !envTableRule.MatchString(strings.TrimSuffix(lines[i+1], "\r")) {
 			continue
 		}
+		column := strings.Index(header, "Value")
 		k := i + 2
 		for ; k < len(lines); k++ {
 			line, cr := strings.TrimSuffix(lines[k], "\r"), ""
 			if line != lines[k] {
 				cr = "\r"
+			}
+			indent := 0
+			for indent < len(line) && isBlank(line[indent]) {
+				indent++
+			}
+			if indent == column && indent < len(line) {
+				if line[indent:] != placeholder {
+					lines[k] = line[:indent] + placeholder + cr
+					changed = true
+				}
+				continue
+			}
+			if envTableNameOnly.MatchString(line) {
+				continue
 			}
 			m := envTableRow.FindStringSubmatch(line)
 			if m == nil {

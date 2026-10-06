@@ -357,7 +357,11 @@ func TestTraceTextIsIdempotent(t *testing.T) {
 // an opening one and run to the quote on the next line. Every row of the
 // shared table that removes something is put on the line after each prompt
 // line of testdata/trace_prompt_lines.json, and what comes out after the
-// prompt line must be exactly the row's own answer. cmd/jevlin's
+// prompt line must be exactly the row's own answer, and the prompt line
+// exactly its own: a flag's value read from the prompt string's closing
+// quote changed both lines. The lines are strings and calls that end in a
+// key and a colon, a flag, or a name and `=`, so every rule that reads a
+// quoted value meets a quote it did not open. cmd/jevlin's
 // TestTheSharedSourceLetsNoPromptLineReachTheNextLine holds JavaScript to
 // the same.
 func TestNoPromptLineReachesTheNextLine(t *testing.T) {
@@ -376,9 +380,12 @@ func TestNoPromptLineReachesTheNextLine(t *testing.T) {
 		restore := SetLocalIdentity(c.Host, c.Account)
 		for _, p := range prompts {
 			got := TraceText(p + "\n" + c.In)
-			_, after, _ := strings.Cut(got, "\n")
+			before, after, _ := strings.Cut(got, "\n")
 			if strings.Count(p, "\n") == 0 && after != c.Want {
 				t.Errorf("%s after %q:\n  got:  %q\n  want: %q", c.Name, p, after, c.Want)
+			}
+			if own := TraceText(p); before != own {
+				t.Errorf("%q before %s:\n  got:  %q\n  want: %q", p, c.Name, before, own)
 			}
 		}
 		restore()
