@@ -731,7 +731,10 @@ const traceSecretKeyValueAt = (s, floor, c) => {
 // removal changes what an earlier rule read.
 // A flag's name counts by its last segment (or that segment's last camelCase
 // word): --api-key takes a secret, --key-name, --secret-id, --token-ttl and
-// --passphrase-file do not. A --with- or --no- flag takes no value.
+// --passphrase-file do not. A --with- or --no- flag takes no value. A last
+// word naming the value's form (string, value, phrase) asks the word before
+// it: --secret-string, --pass-phrase.
+const TRACE_VALUE_FORM_WORDS = new Set(['STRING', 'VALUE', 'PHRASE'])
 const traceSecretFlagName = (name) => {
   const lower = name.toLowerCase()
   if (lower.startsWith('with-') || lower.startsWith('no-')) return false
@@ -741,7 +744,11 @@ const traceSecretFlagName = (name) => {
   const last = parts[parts.length - 1]
   const hump = traceLastHump(last)
   const qualified = name === upper || parts.length >= 2 || hump !== last
-  return [last.toUpperCase(), hump.toUpperCase()].some((seg) => TRACE_SECRET_SEGMENTS.has(seg) || (qualified && TRACE_SECRET_SEGMENTS_QUALIFIED.has(seg)))
+  if ([last.toUpperCase(), hump.toUpperCase()].some((seg) => TRACE_SECRET_SEGMENTS.has(seg) || (qualified && TRACE_SECRET_SEGMENTS_QUALIFIED.has(seg)))) return true
+  const before = hump !== last ? last.slice(0, last.length - hump.length) : parts.length >= 2 ? parts[parts.length - 2] : ''
+  if (before === '' || !TRACE_VALUE_FORM_WORDS.has(hump.toUpperCase())) return false
+  const seg = traceLastHump(before).toUpperCase()
+  return TRACE_SECRET_SEGMENTS.has(seg) || TRACE_SECRET_SEGMENTS_QUALIFIED.has(seg)
 }
 const traceSecretFlagValueAt = (s, i) => {
   const n = i + 2

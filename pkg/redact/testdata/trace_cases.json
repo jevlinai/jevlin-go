@@ -2357,5 +2357,19 @@
   "account": "",
   "in": "printf \"user: %s; password: \" \"$u\" > out\nnext",
   "want": "printf \"user: %s; password: [REDACTED]$u\" > out\nnext"
+ },
+ {
+  "name": "flags/a last word naming the value's form asks the word before it",
+  "host": "",
+  "account": "",
+  "in": "aws secretsmanager put-secret-value --secret-id prod/db --secret-string \"Pa55w0rd!Long\"\nx --pass-phrase Phrase1 --secret-value Val2x --secretString S3x --api-key-value K4x",
+  "want": "aws secretsmanager put-secret-value --secret-id prod/db --secret-string [REDACTED]\nx --pass-phrase [REDACTED] --secret-value [REDACTED] --secretString [REDACTED] --api-key-value [REDACTED]"
+ },
+ {
+  "name": "survives/a value-form word after a word that is not a secret's",
+  "host": "",
+  "account": "",
+  "in": "x --value Q1 --default-value D1 --user-string U1 --string-value S1 --phrase P1 --secret-id I1 --key-name N1 --secret-file F1 --token-ttl 30",
+  "want": "x --value Q1 --default-value D1 --user-string U1 --string-value S1 --phrase P1 --secret-id I1 --key-name N1 --secret-file F1 --token-ttl 30"
  }
 ]

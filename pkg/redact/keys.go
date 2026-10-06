@@ -353,6 +353,12 @@ func secretFlagValueAt(s string, i int) (start, end, nameEnd int, ok bool) {
 // or nothing. A --with- or --no- flag is a switch and takes no value.
 // KEY and PASS count as in secretName: in a name of capitals or of two or
 // more segments or words.
+//
+// A last word that names the form a value takes rather than what it is
+// (valueFormWords: --secret-string, --secret-value, --pass-phrase,
+// --secretString) passes the question to the word before it, which counts
+// as a secret's word of a name of two or more. The cost: --key-value and
+// --token-string lose their value too, whatever it is.
 func secretFlagName(name string) bool {
 	if hasPrefixFold(name, "with-") || hasPrefixFold(name, "no-") {
 		return false
@@ -370,8 +376,23 @@ func secretFlagName(name string) bool {
 			return true
 		}
 	}
-	return false
+	word, before := hump, last[:len(last)-len(hump)]
+	if hump == last {
+		before = ""
+		if len(parts) >= 2 {
+			before = parts[len(parts)-2]
+		}
+	}
+	if before == "" || !valueFormWords[strings.ToUpper(word)] {
+		return false
+	}
+	seg := strings.ToUpper(lastHump(before))
+	return secretNameSegments[seg] || secretNameSegmentsQualified[seg]
 }
+
+// valueFormWords are a flag's last words that say what form its value takes
+// (a string, a value, a phrase), not whether it is a secret.
+var valueFormWords = map[string]bool{"STRING": true, "VALUE": true, "PHRASE": true}
 
 func hasPrefixFold(s, prefix string) bool {
 	return len(s) >= len(prefix) && asciiEqualFold(s[:len(prefix)], prefix)
