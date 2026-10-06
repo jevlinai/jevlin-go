@@ -321,14 +321,14 @@ const traceClosingQuote = (s, v, maxLines, closer = traceQuoteCloser()) => {
 }
 // Three quotes run to the next three of the same within the line cap.
 const traceOpensThreeQuotes = (s, v) => v + 3 <= s.length && s.charCodeAt(v + 1) === s.charCodeAt(v) && s.charCodeAt(v + 2) === s.charCodeAt(v)
-const traceTripleQuoteEnd = (s, v) => {
+const traceTripleQuoteEnd = (s, v, maxLines) => {
   const q = s.charCodeAt(v)
   let lines = 0
   for (let i = v + 3; i + 2 < s.length; i++) {
     const c = s.charCodeAt(i)
     if (c === q) {
       if (s.charCodeAt(i + 1) === q && s.charCodeAt(i + 2) === q) return i + 3
-    } else if (c === 10 && ++lines > TRACE_QUOTED_VALUE_MAX_LINES) {
+    } else if (c === 10 && ++lines > maxLines) {
       return -1
     }
   }
@@ -384,14 +384,14 @@ const traceTrimValueTail = (s, from, to) => {
 }
 // A value that starts with a quote is read as a shell reads a word: quoted
 // parts next to each other, a backslash-quote between them and characters
-// joined to them are all one value. The first part may cross the line cap's
-// worth of lines (three quotes run to the next three) and takes the rest of
-// its line when it never closes; a later part must close on its own line, or
-// its quote is just a character.
-const traceQuotedWordEnd = (s, v) => {
+// joined to them are all one value. The first part may cross maxLines line
+// breaks (three quotes run to the next three), -1 when it does not close
+// within them; a later part must close on its own line, or its quote is just
+// a character.
+const traceQuotedWordEndWithin = (s, v, maxLines) => {
   const closer = traceQuoteCloser()
-  let i = traceOpensThreeQuotes(s, v) ? traceTripleQuoteEnd(s, v) : traceClosingQuote(s, v, TRACE_QUOTED_VALUE_MAX_LINES, closer)
-  if (i < 0) return traceLineEnd(s, v)
+  let i = traceOpensThreeQuotes(s, v) ? traceTripleQuoteEnd(s, v, maxLines) : traceClosingQuote(s, v, maxLines, closer)
+  if (i < 0) return -1
   let last = i
   while (i < s.length) {
     const c = s.charCodeAt(i)
@@ -444,12 +444,17 @@ const traceQuoteSearch = (f, s, v, q) => {
   f.stop = i
   return f.at
 }
-const traceSecretValueEnd = (s, v, words) => {
+// A quoted value's first part may cross the line cap only when its name
+// starts its line; elsewhere it closes on its own line, else it is the rest
+// of the line.
+const traceSecretValueEnd = (s, v, words, startsLine) => {
   if (v >= s.length) return v
   let from = v
   const c = s.charCodeAt(v)
-  if (c === 34 || c === 39) from = traceQuotedWordEnd(s, v)
-  else if (c === 61 || traceIsSpace(c)) return v
+  if (c === 34 || c === 39) {
+    from = traceQuotedWordEndWithin(s, v, startsLine ? TRACE_QUOTED_VALUE_MAX_LINES : 0)
+    if (from < 0) from = traceLineEnd(s, v)
+  } else if (c === 61 || traceIsSpace(c)) return v
   if (words.open) {
     const end = traceEnclosedValueEnd(s, from, words.head, words)
     if (end >= 0) return end
@@ -489,6 +494,45 @@ const traceWordAdvance = (w, s, to) => {
 const traceWordSkip = (w, to) => {
   if (to > w.pos) w.pos = to
   w.begun = true
+}
+
+// A name begins its line after indentation and nothing else on the line but
+// a run of declaration words (export const, local -r, ENV, - , > ), and
+// directly after $, $env: or ${env:. Only there is a quote after = certain
+// to open a value and allowed to run across lines; elsewhere it may close a
+// string ("PASSWORD=" + pw) and must not run on into the next line. The words
+// are a fixed set because no later step changes them. Nothing before floor
+// is read.
+const traceIsLetter = (c) => traceIsUpper(c) || traceIsLower(c)
+const TRACE_DECLARATION_KEYWORDS = new Set(['export', 'set', 'declare', 'typeset', 'local', 'readonly', 'env', 'arg', 'const', 'let', 'var'])
+const traceDeclarationWord = (w) => {
+  if (TRACE_DECLARATION_KEYWORDS.has(w.toLowerCase())) return true
+  if (w === '-' || w === '*' || w === '+' || w === '>') return true
+  if (w.length >= 2 && w[0] === '-') {
+    for (let i = 1; i < w.length; i++) if (!traceIsLetter(w.charCodeAt(i))) return false
+    return true
+  }
+  if (w.length >= 2 && (w[w.length - 1] === '.' || w[w.length - 1] === ')')) {
+    for (let i = 0; i < w.length - 1; i++) if (w.charCodeAt(i) < 48 || w.charCodeAt(i) > 57) return false
+    return true
+  }
+  return false
+}
+const traceAssignmentStartsLine = (s, floor, p) => {
+  let i = p
+  if (i - 6 >= floor && s.slice(i - 6, i).toLowerCase() === '${env:') i -= 6
+  else if (i - 5 >= floor && s.slice(i - 5, i).toLowerCase() === '$env:') i -= 5
+  else if (i - 1 >= floor && s.charCodeAt(i - 1) === 36) i -= 1
+  for (;;) {
+    let k = i
+    while (k > floor && traceIsBlank(s.charCodeAt(k - 1))) k--
+    if (k === 0 || (k > floor && s.charCodeAt(k - 1) === 10)) return true
+    if (k === i) return false
+    let j = k
+    while (j > floor && !traceIsSpace(s.charCodeAt(j - 1))) j--
+    if ((j > 0 && !traceIsSpace(s.charCodeAt(j - 1))) || !traceDeclarationWord(s.slice(j, k))) return false
+    i = j
+  }
 }
 
 // cmd's `set NAME=value` takes the rest of the line: only where cmd reads it
@@ -562,7 +606,7 @@ const traceSecretValueAt = (s, floor, e, words) => {
   const c = s.charCodeAt(v)
   const end = v < s.length && !traceIsSpace(c) && c !== 61 && traceIsCmdSet(s, floor, p, name)
     ? traceCmdValueEnd(s, v)
-    : traceSecretValueEnd(s, v, words)
+    : traceSecretValueEnd(s, v, words, traceAssignmentStartsLine(s, floor, p))
   if (end === v || s.slice(v, end) === TRACE_REDACTED) return null
   return [v, end]
 }
@@ -615,20 +659,33 @@ const traceQuotedStringEnd = (s, v) => {
   }
   return i
 }
-// A mid-line key counts only where a member opens: after { , ( or [. Anywhere
-// else it is prose or the inside of a string ("Password: " in input(...)),
-// whose closing quote must not be read as the value's opening one.
+// A mid-line key counts only where a member opens: after { , ( or [, or where
+// a statement or a code span does, after ; or a backtick. Anywhere else it is
+// prose or the inside of a string ("Password: " in input(...)), whose closing
+// quote must not be read as the value's opening one.
 const traceOpensMember = (s, floor, i) => {
   while (i > floor && traceIsBlank(s.charCodeAt(i - 1))) i--
-  return i > floor && '{,(['.includes(s[i - 1])
+  return i > floor && '{,([;`'.includes(s[i - 1])
 }
 // A reference or a placeholder is not the secret: a GitHub Actions or
 // template expression in double braces, ${TOKEN}, $TOKEN, <pad>, a type name,
-// a size (5 bytes), or a block that only opens ({, [, |, >-).
-const TRACE_SECRET_REFERENCE = /^(?:\$?\{\{[^{}\n]*\}\}|\$\{[^}\n]*\}|\$[A-Za-z_][A-Za-z0-9_]*|<[^<>\t\n ]+>|string|str|number|int|integer|bool|boolean|any|unknown|bytes|float|double|char|String|[A-Za-z_][A-Za-z0-9_:]*<[^\n]*>|[0-9]+ bytes|[{\[(|>+-]+)$/
+// a size (5 bytes), or a block that only opens ({, [, |, >-). A reference
+// that carries a literal is: a literal default, assignment or alternate in
+// an expansion (the :- - := = :+ + forms, and Spring's plain : unless its
+// word starts with a digit, a blank or ?, which is bash's substring; :?
+// stays, its word is a message),
+// and an expression in double braces holding a quoted string. A variable is
+// $ and capitals, digits and _, or letters and _ with no digit: $ecret123
+// and $Pa55word are values. $ and the placeholder is a variable whose name a
+// later step replaced, so a second pass keeps what the first kept.
+const TRACE_LITERAL_DEFAULT = /^\$\{[A-Za-z_][A-Za-z0-9_.]*(:?[-=+]|:)([^}\n]*)\}$/
+const TRACE_BARE_VARIABLE = /^(?:\$(?:[A-Z_][A-Z0-9_]*|[A-Za-z_]+|\[REDACTED\]))?$/
+const TRACE_SECRET_REFERENCE = /^(?:\$?\{\{[^{}"'`\n]*\}\}|\$\{[^}\n]*\}|\$(?:[A-Z_][A-Z0-9_]*|[A-Za-z_]+|\[REDACTED\])|<[^<>\t\n ]+>|string|str|number|int|integer|bool|boolean|any|unknown|bytes|float|double|char|String|[A-Za-z_][A-Za-z0-9_:]*<[^\n]*>|[0-9]+ bytes|[{\[(|>+-]+)$/
 const traceNotASecret = (v) => {
   if (v.endsWith(',') || v.endsWith(';')) v = v.slice(0, -1)
   if (v.length >= 2 && (v[0] === '"' || v[0] === "'") && v[v.length - 1] === v[0]) v = v.slice(1, -1)
+  const d = TRACE_LITERAL_DEFAULT.exec(v)
+  if (d && !TRACE_BARE_VARIABLE.test(d[2]) && (d[1] !== ':' || !/^[0-9\t ?]/.test(d[2]))) return false
   return TRACE_SECRET_REFERENCE.test(v)
 }
 const traceSecretKeyValueAt = (s, floor, c) => {
@@ -681,7 +738,10 @@ const traceSecretKeyValueAt = (s, floor, c) => {
 // removal changes what an earlier rule read.
 // A flag's name counts by its last segment (or that segment's last camelCase
 // word): --api-key takes a secret, --key-name, --secret-id, --token-ttl and
-// --passphrase-file do not. A --with- or --no- flag takes no value.
+// --passphrase-file do not. A --with- or --no- flag takes no value. A last
+// word naming the value's form (string, value, phrase) asks the word before
+// it: --secret-string, --pass-phrase.
+const TRACE_VALUE_FORM_WORDS = new Set(['STRING', 'VALUE', 'PHRASE'])
 const traceSecretFlagName = (name) => {
   const lower = name.toLowerCase()
   if (lower.startsWith('with-') || lower.startsWith('no-')) return false
@@ -691,7 +751,11 @@ const traceSecretFlagName = (name) => {
   const last = parts[parts.length - 1]
   const hump = traceLastHump(last)
   const qualified = name === upper || parts.length >= 2 || hump !== last
-  return [last.toUpperCase(), hump.toUpperCase()].some((seg) => TRACE_SECRET_SEGMENTS.has(seg) || (qualified && TRACE_SECRET_SEGMENTS_QUALIFIED.has(seg)))
+  if ([last.toUpperCase(), hump.toUpperCase()].some((seg) => TRACE_SECRET_SEGMENTS.has(seg) || (qualified && TRACE_SECRET_SEGMENTS_QUALIFIED.has(seg)))) return true
+  const before = hump !== last ? last.slice(0, last.length - hump.length) : parts.length >= 2 ? parts[parts.length - 2] : ''
+  if (before === '' || !TRACE_VALUE_FORM_WORDS.has(hump.toUpperCase())) return false
+  const seg = traceLastHump(before).toUpperCase()
+  return TRACE_SECRET_SEGMENTS.has(seg) || TRACE_SECRET_SEGMENTS_QUALIFIED.has(seg)
 }
 const traceSecretFlagValueAt = (s, i) => {
   const n = i + 2
@@ -708,7 +772,10 @@ const traceSecretFlagValueAt = (s, i) => {
   if (v >= s.length || traceIsSpace(c) || '-=<>|'.includes(s[v]) || s.startsWith('$(', v)) return none
   let end
   if (c === 34 || c === 39) {
-    end = traceQuotedWordEnd(s, v)
+    // A quoted value closes on its own line, or the quote closes a string
+    // ("mysql --password " + pw) and must not run on into the next line.
+    end = traceQuotedWordEndWithin(s, v, 0)
+    if (end < 0) return none
   } else {
     end = traceTrimValueTail(s, v, traceRunEnd(s, v))
     const word = s.slice(v, end)
@@ -815,22 +882,35 @@ const redactTraceEnvDumps = (text) => {
 
 // redactEnvTables: PowerShell's Get-ChildItem Env: table (and any hashtable
 // it prints): under a Name/Value header and a rule of dashes, each row's
-// value is the rest of its line after the name and two blanks or a tab,
-// until the first line that is not such a row (an empty line, a fence, prose).
+// value is the rest of its line after the name and two blanks or a tab. A
+// name with no value (an empty variable, a $null entry) and a line whose
+// blanks reach exactly the header's Value column (-Wrap's continuation,
+// whose text goes too) continue the table; the first other line ends it
+// (an empty line, a fence, prose, a numbered item).
 const TRACE_ENV_TABLE_HEADER = /^[\t ]*Name[\t ]+Value[\t ]*$/
 const TRACE_ENV_TABLE_RULE = /^[\t ]*-+[\t ]+-+[\t ]*$/
 const TRACE_ENV_TABLE_ROW = /^([\t ]*[^\t\n\f\r ]+(?:\t|  )[\t ]*)([^\t\n\f\r ][^\n]*)$/
+const TRACE_ENV_TABLE_NAME_ONLY = /^[\t ]*[A-Za-z_](?:[A-Za-z0-9_.()-]*[A-Za-z0-9_)])?[\t ]*$/
 const redactTraceEnvTables = (text) => {
   if (!text.includes('Value')) return text
   const lines = text.split('\n')
   const bare = (i) => lines[i].endsWith('\r') ? lines[i].slice(0, -1) : lines[i]
   let changed = false
   for (let i = 0; i + 1 < lines.length; i++) {
-    if (!TRACE_ENV_TABLE_HEADER.test(bare(i)) || !TRACE_ENV_TABLE_RULE.test(bare(i + 1))) continue
+    const header = bare(i)
+    if (!TRACE_ENV_TABLE_HEADER.test(header) || !TRACE_ENV_TABLE_RULE.test(bare(i + 1))) continue
+    const column = header.indexOf('Value')
     let k = i + 2
     for (; k < lines.length; k++) {
       const line = bare(k)
       const cr = line === lines[k] ? '' : '\r'
+      let indent = 0
+      while (indent < line.length && traceIsBlank(line.charCodeAt(indent))) indent++
+      if (indent === column && indent < line.length) {
+        if (line.slice(indent) !== TRACE_REDACTED) { lines[k] = line.slice(0, indent) + TRACE_REDACTED + cr; changed = true }
+        continue
+      }
+      if (TRACE_ENV_TABLE_NAME_ONLY.test(line)) continue
       const m = TRACE_ENV_TABLE_ROW.exec(line)
       if (!m) break
       if (m[2] !== TRACE_REDACTED) { lines[k] = m[1] + TRACE_REDACTED + cr; changed = true }
