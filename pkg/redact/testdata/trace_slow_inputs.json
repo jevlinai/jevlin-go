@@ -59,5 +59,11 @@
   "prefix": "--token \"",
   "unit": "`\"",
   "suffix": ""
+ },
+ {
+  "name": "a flag whose quoted value never closes on its line, line after line",
+  "prefix": "",
+  "unit": "--token \"a\n",
+  "suffix": ""
  }
 ]

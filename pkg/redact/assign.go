@@ -430,15 +430,24 @@ func (f *quoteSearch) find(s string, v int, q byte) int {
 // on its own line, or its quote is an ordinary character: a stray quote
 // after a value must not reach into the lines that follow it.
 func quotedWordEnd(s string, v int) int {
+	if i := quotedWordEndWithin(s, v, quotedValueMaxLines); i >= 0 {
+		return i
+	}
+	return lineEnd(s, v)
+}
+
+// quotedWordEndWithin is quotedWordEnd with the first part allowed maxLines
+// line breaks, and -1 when it does not close within them.
+func quotedWordEndWithin(s string, v, maxLines int) int {
 	var closer quoteCloser
 	var i int
 	if opensThreeQuotes(s, v) {
-		i = tripleQuoteEnd(s, v)
+		i = tripleQuoteEnd(s, v, maxLines)
 	} else {
-		i = closer.close(s, v, quotedValueMaxLines)
+		i = closer.close(s, v, maxLines)
 	}
 	if i < 0 {
-		return lineEnd(s, v)
+		return -1
 	}
 	last := i
 	for i < len(s) {
@@ -465,9 +474,8 @@ func opensThreeQuotes(s string, v int) bool {
 }
 
 // tripleQuoteEnd returns the index just past the three quotes that close the
-// three at v, or -1 when they do not close within quotedValueMaxLines line
-// breaks.
-func tripleQuoteEnd(s string, v int) int {
+// three at v, or -1 when they do not close within maxLines line breaks.
+func tripleQuoteEnd(s string, v, maxLines int) int {
 	q, lines := s[v], 0
 	for i := v + 3; i+2 < len(s); i++ {
 		switch s[i] {
@@ -476,7 +484,7 @@ func tripleQuoteEnd(s string, v int) int {
 				return i + 3
 			}
 		case '\n':
-			if lines++; lines > quotedValueMaxLines {
+			if lines++; lines > maxLines {
 				return -1
 			}
 		}

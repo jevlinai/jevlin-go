@@ -321,14 +321,14 @@ const traceClosingQuote = (s, v, maxLines, closer = traceQuoteCloser()) => {
 }
 // Three quotes run to the next three of the same within the line cap.
 const traceOpensThreeQuotes = (s, v) => v + 3 <= s.length && s.charCodeAt(v + 1) === s.charCodeAt(v) && s.charCodeAt(v + 2) === s.charCodeAt(v)
-const traceTripleQuoteEnd = (s, v) => {
+const traceTripleQuoteEnd = (s, v, maxLines) => {
   const q = s.charCodeAt(v)
   let lines = 0
   for (let i = v + 3; i + 2 < s.length; i++) {
     const c = s.charCodeAt(i)
     if (c === q) {
       if (s.charCodeAt(i + 1) === q && s.charCodeAt(i + 2) === q) return i + 3
-    } else if (c === 10 && ++lines > TRACE_QUOTED_VALUE_MAX_LINES) {
+    } else if (c === 10 && ++lines > maxLines) {
       return -1
     }
   }
@@ -389,9 +389,14 @@ const traceTrimValueTail = (s, from, to) => {
 // its line when it never closes; a later part must close on its own line, or
 // its quote is just a character.
 const traceQuotedWordEnd = (s, v) => {
+  const i = traceQuotedWordEndWithin(s, v, TRACE_QUOTED_VALUE_MAX_LINES)
+  return i >= 0 ? i : traceLineEnd(s, v)
+}
+// The same with the first part allowed maxLines line breaks, -1 past them.
+const traceQuotedWordEndWithin = (s, v, maxLines) => {
   const closer = traceQuoteCloser()
-  let i = traceOpensThreeQuotes(s, v) ? traceTripleQuoteEnd(s, v) : traceClosingQuote(s, v, TRACE_QUOTED_VALUE_MAX_LINES, closer)
-  if (i < 0) return traceLineEnd(s, v)
+  let i = traceOpensThreeQuotes(s, v) ? traceTripleQuoteEnd(s, v, maxLines) : traceClosingQuote(s, v, maxLines, closer)
+  if (i < 0) return -1
   let last = i
   while (i < s.length) {
     const c = s.charCodeAt(i)
@@ -708,7 +713,10 @@ const traceSecretFlagValueAt = (s, i) => {
   if (v >= s.length || traceIsSpace(c) || '-=<>|'.includes(s[v]) || s.startsWith('$(', v)) return none
   let end
   if (c === 34 || c === 39) {
-    end = traceQuotedWordEnd(s, v)
+    // A quoted value closes on its own line, or the quote closes a string
+    // ("mysql --password " + pw) and must not run on into the next line.
+    end = traceQuotedWordEndWithin(s, v, 0)
+    if (end < 0) return none
   } else {
     end = traceTrimValueTail(s, v, traceRunEnd(s, v))
     const word = s.slice(v, end)

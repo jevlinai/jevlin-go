@@ -13,5 +13,11 @@
  "echo \"password:\"",
  "const label = `token: ${t}`",
  "prompt = \"Secret: \"",
- "it's the users' password: and more"
+ "it's the users' password: and more",
+ "\"mysql --password \" + pw",
+ "\"--token \" + t",
+ "'--api-key ' + k",
+ "`--password ${p}`",
+ "args = \"--client-secret \" + s + \" --verbose\"",
+ "cmd = \"psql --pgpassword \" + pw"
 ]

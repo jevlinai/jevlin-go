@@ -342,7 +342,8 @@ func TestTheSharedSourceScrubsAdversarialInputsInLinearTime(t *testing.T) {
 // pkg/redact's TestNoPromptLineReachesTheNextLine, for the JavaScript
 // scrubber: every row of the shared table that removes something, on the
 // line after each prompt line of trace_prompt_lines.json, gives exactly the
-// row's own answer after the prompt line.
+// row's own answer after the prompt line, and the prompt line's own answer
+// before it.
 func TestTheSharedSourceLetsNoPromptLineReachTheNextLine(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "pkg", "redact", "testdata", "trace_prompt_lines.json"))
 	if err != nil {
@@ -356,6 +357,9 @@ func TestTheSharedSourceLetsNoPromptLineReachTheNextLine(t *testing.T) {
 		Host, Account, In, Want, Name string
 	}
 	var pairs []pair
+	for _, p := range prompts {
+		pairs = append(pairs, pair{In: p, Want: p, Name: p})
+	}
 	for _, c := range loadSharedTraceCases(t) {
 		if c.Want == c.In {
 			continue
@@ -371,9 +375,17 @@ func TestTheSharedSourceLetsNoPromptLineReachTheNextLine(t *testing.T) {
 	if len(js) != len(pairs) {
 		t.Fatalf("%d answers for %d pairs", len(js), len(pairs))
 	}
-	for i, p := range pairs {
-		if _, after, _ := strings.Cut(js[i], "\n"); after != p.Want {
+	own := map[string]string{}
+	for i, p := range prompts {
+		own[p] = js[i]
+	}
+	for i, p := range pairs[len(prompts):] {
+		before, after, _ := strings.Cut(js[len(prompts)+i], "\n")
+		if after != p.Want {
 			t.Errorf("%s:\n  got:  %q\n  want: %q", p.Name, after, p.Want)
+		}
+		if prompt, _, _ := strings.Cut(p.In, "\n"); before != own[prompt] {
+			t.Errorf("%s, the prompt line:\n  got:  %q\n  want: %q", p.Name, before, own[prompt])
 		}
 	}
 }

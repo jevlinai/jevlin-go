@@ -225,7 +225,11 @@ func quotedStringEnd(s string, v int) int {
 // blanks on the same line, read as an assignment's is, and is not one when
 // it starts with `-` (the next flag), `=` (the assignment rule's), `<`, `>`
 // or `|` (a redirection or a pipe) or `$(` (a command's output), or when it
-// is the flag's own name in capitals (a help text's metavar). A value of lowercase letters only is kept: "use the --password
+// is the flag's own name in capitals (a help text's metavar). A quoted value
+// closes on its own line or is not a value, as a mid-line key's is: in
+// "mysql --password " + pw the quote after the flag closes a string, and read
+// as an opening one it ran on to the next quote, inside the value assigned on
+// the next line. A value of lowercase letters only is kept: "use the --password
 // flag" and "pass --token to the command" are prose, and the cost is a
 // password of lowercase letters only, which keeps its value written this
 // way. A single-dash flag (-p) is not read: what follows it is a password
@@ -292,7 +296,9 @@ func secretFlagValueAt(s string, i int) (start, end, nameEnd int, ok bool) {
 		return 0, 0, j, false
 	}
 	if s[v] == '"' || s[v] == '\'' {
-		end = quotedWordEnd(s, v)
+		if end = quotedWordEndWithin(s, v, 0); end < 0 {
+			return 0, 0, j, false
+		}
 	} else {
 		end = trimValueTail(s, v, unquotedRunEnd(s, v))
 		if lowercaseWord(s[v:end]) || metavar(s[v:end], name) {

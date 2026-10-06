@@ -2210,5 +2210,26 @@
   "account": "",
   "in": "token: ${{ secrets.A }}x y ${{ secrets.B }}",
   "want": "token: [REDACTED]"
+ },
+ {
+  "name": "flags/a quote that closes a string is no value",
+  "host": "",
+  "account": "",
+  "in": "cmd = \"mysql --password \" + pw\nDB_PASSWORD=\"correct horse battery\"",
+  "want": "cmd = \"mysql --password \" + pw\nDB_PASSWORD=[REDACTED]"
+ },
+ {
+  "name": "flags/a quoted value that closes on its line goes whole",
+  "host": "",
+  "account": "",
+  "in": "x --token \"a b\"'c' next\ny --api-key 'c d' -v",
+  "want": "x --token [REDACTED] next\ny --api-key [REDACTED] -v"
+ },
+ {
+  "name": "survives/a flag's quoted value that runs past its line",
+  "host": "",
+  "account": "",
+  "in": "mysql --password \"first\nsecond\" -h db",
+  "want": "mysql --password \"first\nsecond\" -h db"
  }
 ]
