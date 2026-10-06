@@ -169,6 +169,15 @@ func opensMember(s string, floor, i int) bool {
 // tokenizer configs hold. So is a value that only opens a block: {, [, a
 // YAML | or >-.
 //
+// A variable is $ and a name written as variables are: capitals, digits
+// and `_` ($CI_JOB_TOKEN, $TOKEN2), or letters and `_` with no digit
+// ($password, $dbPassword). A word after `$` that mixes lowercase letters
+// and digits ($ecret123, $Pa55word) is how a password that starts with a
+// dollar sign is written, not how a variable is named, and is a value. The
+// cost both ways: a variable named that way ($token2, $s3Key) after a
+// secret's key loses its name, and a secret of capitals and digits after a
+// dollar sign ($ECRET123) keeps its value.
+//
 // A reference that carries a literal is not one, because the literal is the
 // value whenever the variable is unset: a default or an assignment in a
 // shell or Compose expansion (literalDefaultPattern: ${VAR:-x}, ${VAR-x},
@@ -194,10 +203,12 @@ func notASecret(v string) bool {
 
 var (
 	literalDefaultPattern = regexp.MustCompile(`^\$\{[A-Za-z_][A-Za-z0-9_]*:?[-=+]([^}\n]*)\}$`)
-	bareVariablePattern   = regexp.MustCompile(`^(?:\$[A-Za-z_][A-Za-z0-9_]*)?$`)
+	bareVariablePattern   = regexp.MustCompile(`^(?:` + variablePattern + `)?$`)
 )
 
-var secretReferencePattern = regexp.MustCompile(`^(?:\$?\{\{[^{}"'\x60\n]*\}\}|\$\{[^}\n]*\}|\$[A-Za-z_][A-Za-z0-9_]*|<[^<>\t\n ]+>|string|str|number|int|integer|bool|boolean|any|unknown|bytes|float|double|char|String|[A-Za-z_][A-Za-z0-9_:]*<[^\n]*>|[0-9]+ bytes|[{\[(|>+-]+)$`)
+const variablePattern = `\$(?:[A-Z_][A-Z0-9_]*|[A-Za-z_]+)`
+
+var secretReferencePattern = regexp.MustCompile(`^(?:\$?\{\{[^{}"'\x60\n]*\}\}|\$\{[^}\n]*\}|` + variablePattern + `|<[^<>\t\n ]+>|string|str|number|int|integer|bool|boolean|any|unknown|bytes|float|double|char|String|[A-Za-z_][A-Za-z0-9_:]*<[^\n]*>|[0-9]+ bytes|[{\[(|>+-]+)$`)
 
 // startsLine reports whether only blanks and an optional `-` list marker
 // stand between the start of a line and i, reading nothing before floor.

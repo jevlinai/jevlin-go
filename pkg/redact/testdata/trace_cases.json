@@ -2322,5 +2322,19 @@
   "account": "",
   "in": "password: ${DB_PASSWORD}\ntoken: $API_TOKEN\nsecret: ${{ secrets.X }}\napi_key: {{ .Values.apiKey | b64enc }}\npassword: ${DB_PASSWORD:?set DB_PASSWORD first}\ntoken: ${TOKEN:-}\nsecret: ${SECRET:-$FALLBACK}\npassword: ${DB_PASSWORD#prefix}",
   "want": "password: ${DB_PASSWORD}\ntoken: $API_TOKEN\nsecret: ${{ secrets.X }}\napi_key: {{ .Values.apiKey | b64enc }}\npassword: ${DB_PASSWORD:?set DB_PASSWORD first}\ntoken: ${TOKEN:-}\nsecret: ${SECRET:-$FALLBACK}\npassword: ${DB_PASSWORD#prefix}"
+ },
+ {
+  "name": "keys/a value that starts with a dollar sign",
+  "host": "",
+  "account": "",
+  "in": "password: $ecret123\n{\"password\": \"$Pa55word\"}\napi_key: $apiKey2\ntoken: ${A:-$ecret9}",
+  "want": "password: [REDACTED]\n{\"password\": [REDACTED]}\napi_key: [REDACTED]\ntoken: [REDACTED]"
+ },
+ {
+  "name": "survives/a variable after a secret's key",
+  "host": "",
+  "account": "",
+  "in": "password: $DB_PASSWORD2\ntoken: $token\nsecret: $dbSecret\n{\"password\": \"$PASSWORD\"}\ntoken: ${A:-$TOKEN_2}\npassword: $ECRET123",
+  "want": "password: $DB_PASSWORD2\ntoken: $token\nsecret: $dbSecret\n{\"password\": \"$PASSWORD\"}\ntoken: ${A:-$TOKEN_2}\npassword: $ECRET123"
  }
 ]
