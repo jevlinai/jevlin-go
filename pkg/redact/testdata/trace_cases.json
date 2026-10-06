@@ -154,6 +154,13 @@
   "want": "sort --key=2 file.txt"
  },
  {
+  "name": "survives/flag named only by separators",
+  "host": "",
+  "account": "",
+  "in": "x --_ y and --__ z then --_-_ w",
+  "want": "x --_ y and --__ z then --_-_ w"
+ },
+ {
   "name": "survives/lowercase pass",
   "host": "",
   "account": "",
