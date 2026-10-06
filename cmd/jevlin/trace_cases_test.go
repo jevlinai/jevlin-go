@@ -166,7 +166,12 @@ func TestTheSharedSourceFindsTheAccountAsGoDoes(t *testing.T) {
 	if err != nil {
 		t.Fatal("node is required to verify the shared trace-preparation source")
 	}
-	src := agentTraceCommonJS + "\nprocess.stdout.write(JSON.stringify(traceLocalAccount()));"
+	// The source goes to node as a file: it is longer than a Windows command
+	// line may be, so "-e <source>" fails to start there.
+	script := filepath.Join(t.TempDir(), "account.mjs")
+	if err := os.WriteFile(script, []byte(agentTraceCommonJS+"\nprocess.stdout.write(JSON.stringify(traceLocalAccount()));"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	for name, tc := range cases {
 		var env []string
 		for _, kv := range os.Environ() {
@@ -181,7 +186,7 @@ func TestTheSharedSourceFindsTheAccountAsGoDoes(t *testing.T) {
 			env = append(env, k+"="+v)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-		cmd := exec.CommandContext(ctx, node, "--input-type=module", "-e", src) // #nosec G204 -- fixed test script and local Node runtime
+		cmd := exec.CommandContext(ctx, node, script) // #nosec G204 -- fixed test script and local Node runtime
 		cmd.Env = env
 		out, err := cmd.Output()
 		cancel()
@@ -247,5 +252,140 @@ func TestBothScrubbersRemoveThisMachinesOwnNames(t *testing.T) {
 	}
 	if *js[0] != goText {
 		t.Errorf("the two scrubbers' default identities disagree\n%s", traceDifference(*js[0], goText))
+	}
+}
+
+// sharedTraceLinearBound is how long the shared source's scrub may take over
+// 256 KiB of any row of pkg/redact/testdata/trace_slow_inputs.json, which
+// pkg/redact's TestTraceTextIsLinearOnAdversarialInputs holds Go to. Before
+// they were made linear the fastest of them took 4.7 s here (an address
+// after an address) and the slowest 168 s (blanks before a few addresses);
+// after, each takes under 15 ms. So the bound fails the quadratic code by
+// ten times and passes the linear code by more than twenty on the machine
+// that measured it. The scrub runs synchronously in the opencode plugin and
+// the Pi extension, before the shell tool, so slow here is a delayed search.
+const sharedTraceLinearBound = 400 * time.Millisecond
+
+// Each slow input, built to 256 KiB, through the JavaScript scrubber in a
+// node of its own, timed inside node so its start-up is not counted: the
+// best of three runs against sharedTraceLinearBound. A node that has not
+// finished in fifteen seconds is stopped, and that is a failure too.
+func TestTheSharedSourceScrubsAdversarialInputsInLinearTime(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "pkg", "redact", "testdata", "trace_slow_inputs.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inputs []struct {
+		Name, Prefix, Unit, Suffix string
+		Bytes                      int
+	}
+	if err := json.Unmarshal(raw, &inputs); err != nil {
+		t.Fatal(err)
+	}
+	if len(inputs) == 0 {
+		t.Fatal("no slow inputs")
+	}
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatal("node is required to verify the shared trace-preparation source")
+	}
+	script := `
+ const fs = await import('node:fs');
+ const input = JSON.parse(fs.readFileSync(0,'utf8'));
+ const src = input.shared + "\nexport { scrubTraceText, traceIdentityPatterns, TRACE_SOURCE_CAP };";
+ const m = await import('data:text/javascript;base64,'+Buffer.from(src).toString('base64'));
+ const c = input.input;
+ const n = Math.floor(((c.Bytes || m.TRACE_SOURCE_CAP) - Buffer.byteLength(c.Prefix) - Buffer.byteLength(c.Suffix)) / Buffer.byteLength(c.Unit));
+ const text = c.Prefix + c.Unit.repeat(n) + c.Suffix;
+ const id = m.traceIdentityPatterns('', '');
+ let best = Infinity;
+ for (let i = 0; i < 3 && best > input.boundMs; i++) {
+  const start = performance.now();
+  m.scrubTraceText(text, id);
+  best = Math.min(best, performance.now() - start);
+ }
+ process.stdout.write(JSON.stringify({ bytes: Buffer.byteLength(text), ms: best }));`
+	for _, in := range inputs {
+		payload, err := json.Marshal(map[string]any{"shared": agentTraceCommonJS, "input": in, "boundMs": sharedTraceLinearBound.Milliseconds()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		cmd := exec.CommandContext(ctx, node, "--input-type=module", "-e", script) // #nosec G204 -- fixed test script and local Node runtime; synthetic input on stdin
+		cmd.Stdin = strings.NewReader(string(payload))
+		output, err := cmd.Output()
+		timedOut := ctx.Err() != nil
+		cancel()
+		if timedOut {
+			t.Errorf("%s: the shared source had not finished after 15 s", in.Name)
+			continue
+		}
+		if err != nil {
+			t.Fatalf("%s: %v\n%s", in.Name, err, output)
+		}
+		var got struct {
+			Bytes int
+			Ms    float64
+		}
+		if err := json.Unmarshal(output, &got); err != nil {
+			t.Fatalf("%s: %v: %s", in.Name, err, output)
+		}
+		if got.Bytes < 255*1024 {
+			t.Fatalf("%s: built only %d bytes", in.Name, got.Bytes)
+		}
+		if bound := float64(sharedTraceLinearBound.Milliseconds()); got.Ms > bound {
+			t.Errorf("%s: the shared source took %.0f ms over %d bytes, bound %.0f ms", in.Name, got.Ms, got.Bytes, bound)
+		}
+	}
+}
+
+// pkg/redact's TestNoPromptLineReachesTheNextLine, for the JavaScript
+// scrubber: every row of the shared table that removes something, on the
+// line after each prompt line of trace_prompt_lines.json, gives exactly the
+// row's own answer after the prompt line, and the prompt line's own answer
+// before it.
+func TestTheSharedSourceLetsNoPromptLineReachTheNextLine(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "pkg", "redact", "testdata", "trace_prompt_lines.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var prompts []string
+	if err := json.Unmarshal(raw, &prompts); err != nil {
+		t.Fatal(err)
+	}
+	type pair struct {
+		Host, Account, In, Want, Name string
+	}
+	var pairs []pair
+	for _, p := range prompts {
+		pairs = append(pairs, pair{In: p, Want: p, Name: p})
+	}
+	for _, c := range loadSharedTraceCases(t) {
+		if c.Want == c.In {
+			continue
+		}
+		for _, p := range prompts {
+			pairs = append(pairs, pair{c.Host, c.Account, p + "\n" + c.In, c.Want, c.Name + " after " + p})
+		}
+	}
+	var js []string
+	runSharedTraceSource(t, `
+ const out = input.input.map((c) => m.scrubTraceText(c.In, m.traceIdentityPatterns(c.Host, c.Account)));
+ process.stdout.write(JSON.stringify(out));`, pairs, &js)
+	if len(js) != len(pairs) {
+		t.Fatalf("%d answers for %d pairs", len(js), len(pairs))
+	}
+	own := map[string]string{}
+	for i, p := range prompts {
+		own[p] = js[i]
+	}
+	for i, p := range pairs[len(prompts):] {
+		before, after, _ := strings.Cut(js[len(prompts)+i], "\n")
+		if after != p.Want {
+			t.Errorf("%s:\n  got:  %q\n  want: %q", p.Name, after, p.Want)
+		}
+		if prompt, _, _ := strings.Cut(p.In, "\n"); before != own[prompt] {
+			t.Errorf("%s, the prompt line:\n  got:  %q\n  want: %q", p.Name, before, own[prompt])
+		}
 	}
 }

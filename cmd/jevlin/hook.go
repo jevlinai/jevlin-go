@@ -26,11 +26,17 @@ package main
 //	    preCompact (bump the window), stop (flush).
 //	hook [-config file] flush
 //	    Claude Code Stop. Start a detached flush.
+//	hook [-config file] codex <Event>
+//	    Codex hooks, the event in Codex's own spelling (codex_hook.go):
+//	    PreToolUse (put the trace bridge on this installation's exact
+//	    rendered search, and allow it), SessionStart (seed the window,
+//	    flush), PreCompact / PostCompact (bump the window), Stop (flush).
 //
 // The lineage, window and flush entry points are installed for Claude Code
 // and for nobody else. Another host that loads Claude Code's settings and
-// runs them with its own payload (Cursor does, dropin-miner#87) gets nothing from them:
-// see runByAnotherHost.
+// runs them with its own payload (Cursor does, dropin-miner#87) gets nothing from them,
+// and nor does Codex: see claudeEntryStandsDown. The codex entry points are installed for Codex, and
+// stand down for a payload Codex did not send: see codexEntryStandsDown.
 //
 // FAIL-OPEN, ALWAYS. Any error, malformed payload, unreadable transcript:
 // emit nothing (or the one output the host requires to proceed) and exit
@@ -161,7 +167,7 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 		cfgPath, args = args[1], args[2:]
 	}
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: jevlin hook [-config file] lineage | window <phase> | cursor <event> | flush")
+		fmt.Fprintln(stderr, "usage: jevlin hook [-config file] lineage | window <phase> | cursor <event> | codex <event> | turn <host> | flush")
 		return exitUsage
 	}
 	hc := hookContext{cfgPath: cfgPath}
@@ -179,7 +185,13 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 	payload = trimUTF8BOM(payload)
 	// A hook installed for Claude Code stands down when another host runs it
 	// (dropin-miner#87): nothing written, nothing spawned, nothing printed, exit 0.
-	if event, claudeFormat := claudeEntryEvent(args); claudeFormat && runByAnotherHost(payload, event) {
+	if event, claudeFormat := claudeEntryEvent(args); claudeFormat && claudeEntryStandsDown(payload, event) {
+		return exitOK
+	}
+	// A hook installed for Codex stands down the same way for a payload Codex
+	// did not send (issue #19): the command line says Codex, and the payload
+	// is read only for contradiction.
+	if event, codex := codexEntryEvent(args); codex && codexEntryStandsDown(payload, event) {
 		return exitOK
 	}
 	switch args[0] {
@@ -199,6 +211,15 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 	case "hermes":
 		if len(args) > 1 {
 			hookHermes(args[1], payload, stdout)
+		}
+	case "codex":
+		if len(args) > 1 {
+			hookCodex(ops, hc, args[1], payload, stdout)
+		}
+	case "turn":
+		// A JavaScript host's plugin, at the end of a turn (turn_hosts.go).
+		if len(args) > 1 {
+			hookHostTurn(ops, hc, args[1], payload)
 		}
 	case "flush":
 		// Claude Code's Stop: the turn is over. Its final message is queued
@@ -277,8 +298,12 @@ func claudeEntryEvent(args []string) (event string, ok bool) {
 // Everything else is NOT evidence and changes nothing: a payload that names
 // no event at all, or one that is not JSON, is handled exactly as before.
 // Nothing is known about a caller that says nothing — Copilot CLI's payload
-// carries no `hook_event_name` and Codex uses Claude Code's own names — and
-// a rule that stood down for them would be a guess.
+// carries no `hook_event_name` — and a rule that stood down for it would be
+// a guess.
+//
+// Both signals are about Cursor's loader, so Codex's own entry points ask
+// this too (codexEntryStandsDown). What tells a Claude Code entry that Codex
+// is calling is claudeEntryStandsDown's.
 func runByAnotherHost(payload []byte, event string) bool {
 	var keys map[string]json.RawMessage
 	if json.Unmarshal(payload, &keys) != nil {
@@ -293,6 +318,30 @@ func runByAnotherHost(payload []byte, event string) bool {
 	}
 	var name string
 	return json.Unmarshal(raw, &name) != nil || name != event
+}
+
+// claudeEntryStandsDown is the whole of a Claude Code entry's decision:
+// another host's payload (runByAnotherHost), or Codex's.
+//
+// Codex sends Claude Code's own event names, so the event rule cannot see
+// it. What it does send is a transcript that is one of its rollout files,
+// rollout-<time>-<thread>.jsonl, in every payload captured from it on Linux,
+// macOS and the desktop app (issue #19); Claude Code names a transcript after
+// its session id. A Codex that ran Claude Code's entries — one a participant
+// pasted into hooks.json by hand, or a later Codex that read Claude Code's
+// settings — used to be served as Claude Code, and its searches reached the
+// router labeled claude-code. It has entries of its own now.
+func claudeEntryStandsDown(payload []byte, event string) bool {
+	if runByAnotherHost(payload, event) {
+		return true
+	}
+	var p struct {
+		TranscriptPath *string `json:"transcript_path"`
+	}
+	if json.Unmarshal(payload, &p) != nil || p.TranscriptPath == nil {
+		return false
+	}
+	return isCodexRollout(*p.TranscriptPath)
 }
 
 // ── our command, recognized ─────────────────────────────────────────────
@@ -724,6 +773,14 @@ type cursorPayload struct {
 	Text           string   `json:"text"`
 	// Status is how the turn ended, on `stop`: completed, aborted or error.
 	Status string `json:"status"`
+	// Prompt is what the user typed, on `beforeSubmitPrompt`.
+	Prompt string `json:"prompt"`
+	// The model and the turn's token counts, on `stop`.
+	Model            string `json:"model"`
+	InputTokens      int64  `json:"input_tokens"`
+	OutputTokens     int64  `json:"output_tokens"`
+	CacheReadTokens  int64  `json:"cache_read_tokens"`
+	CacheWriteTokens int64  `json:"cache_write_tokens"`
 }
 
 // hookCursor handles one Cursor event. Every event that carries a
@@ -731,6 +788,14 @@ type cursorPayload struct {
 // waits on an answer for get exactly the answer that lets the session
 // proceed.
 func hookCursor(ops hookOps, hc hookContext, event string, payload []byte, stdout, stderr io.Writer) {
+	hookCursorOn(runtime.GOOS, ops, hc, event, payload, stdout, stderr)
+}
+
+// hookCursorOn is hookCursor with the OS whose declaration supplies Cursor's
+// shells and hook runners as a parameter, so that every OS's answer is
+// exercised, through the event, on every CI runner. The path rules inside
+// recognizeRenderedForm follow the OS this process runs on.
+func hookCursorOn(goos string, ops hookOps, hc hookContext, event string, payload []byte, stdout, stderr io.Writer) {
 	var p cursorPayload
 	if err := json.Unmarshal(payload, &p); err != nil {
 		p = cursorPayload{}
@@ -795,11 +860,15 @@ func hookCursor(ops hookOps, hc hookContext, event string, payload []byte, stdou
 		// The shells Cursor runs on this OS, from the declaration: the command
 		// this hook is asked about was rendered for one of them, and a form
 		// rendered for a shell Cursor does not use is not ours to allow.
-		shells, err := declaredShells(cursorTarget{}, runtime.GOOS, channelTool)
+		shells, err := declaredShells(cursorTarget{}, goos, channelTool)
 		if err != nil {
 			return // nothing established: allow nothing, stamp nothing
 		}
-		recognized := recognizeCursorCommand(ops, hc, p.Command, shells)
+		runners, err := declaredShells(cursorTarget{}, goos, channelHook)
+		if err != nil {
+			return
+		}
+		recognized := cursorShellRecognizes(ops, hc, p.Command, shells, runners)
 		if recognized == nil {
 			return
 		}
@@ -810,19 +879,45 @@ func hookCursor(ops hookOps, hc hookContext, event string, payload []byte, stdou
 				}
 				l.CallID = traceRandomID()
 				l.Seq++
+				// The turn end names this turn's searches in order. Kept only
+				// when the installation opted in, and only for one turn.
+				if hc.turnEnd && l.TurnID != "" {
+					if l.SearchesTurnID != l.TurnID {
+						l.SearchesTurnID, l.TurnSearches = l.TurnID, nil
+					}
+					if len(l.TurnSearches) < turnStepsMax {
+						l.TurnSearches = append(l.TurnSearches, l.CallID)
+					}
+				}
 			})
 		}
 		fmt.Fprintln(stdout, `{"permission":"allow"}`)
 	case "preToolUse":
-		shells, err := declaredShells(cursorTarget{}, runtime.GOOS, channelTool)
+		shells, err := declaredShells(cursorTarget{}, goos, channelTool)
 		if err != nil {
 			return
 		}
-		runners, err := declaredShells(cursorTarget{}, runtime.GOOS, channelHook)
+		runners, err := declaredShells(cursorTarget{}, goos, channelHook)
 		if err != nil {
 			return
 		}
 		cursorPreToolUse(ops, hc, payload, shells, runners, stdout, stderr)
+	case "beforeSubmitPrompt":
+		// Cursor waits on this hook, and proceeds on this answer whatever
+		// else happens here.
+		fmt.Fprintln(stdout, `{"continue":true}`)
+		// What the user asked, for the turn end — kept only when the
+		// installation opted in, scrubbed and capped before it is written,
+		// and stamped with its turn so it is never sent under another.
+		if !turnEndEnabled(ops, hc) || p.GenerationID == "" || p.Prompt == "" {
+			return
+		}
+		p.Prompt = repairStoredText(p.Prompt, stderr)
+		text, chars, truncated := headText(p.Prompt, traceHistoryCap)
+		update(func(l *lineageFile) {
+			l.UserText, l.UserChars, l.UserTruncated = text, chars, truncated
+			l.UserTurnID = traceHash(p.ConversationID + "|" + p.GenerationID)
+		})
 	case "afterAgentThought":
 		if p.Text == "" {
 			return
@@ -854,6 +949,11 @@ func hookCursor(ops hookOps, hc hookContext, event string, payload []byte, stdou
 			if l, ok := loadLineage(ops, path); ok {
 				cursorTurnEnd(ops, hc, p, l)
 			}
+			// The turn is over: what was kept of it for the turn end goes.
+			update(func(l *lineageFile) {
+				l.UserText, l.UserChars, l.UserTruncated, l.UserTurnID = "", 0, false, ""
+				l.TurnSearches, l.SearchesTurnID = nil, ""
+			})
 		}
 		flush()
 	case "sessionEnd":
@@ -1093,6 +1193,30 @@ func recognizeCursorCommand(ops hookOps, hc hookContext, command string, shells 
 		}
 	}
 	return nil
+}
+
+// cursorShellRecognizes is beforeShellExecution's allow decision, with the
+// shells Cursor runs and the runners it starts its hooks with as parameters,
+// so every OS's answer is exercised on every runner.
+//
+// Where those runners hand the hook the payload re-encoded (Windows,
+// dropin-miner#113), the command this hook reads is not the command the shell
+// will run: every byte above ASCII arrives as other characters. A typographic
+// quote, which PowerShell ends a single-quoted string at, arrives as three
+// characters readRenderedPath has no reason to refuse. So there, a binary or
+// config path that is not ASCII is not allowed. The query in the request
+// body may still be anything: the body must be one JSON object, and no line
+// of a JSON object begins with a quote, so it cannot end the here-string it
+// sits in.
+func cursorShellRecognizes(ops hookOps, hc hookContext, command string, shells, runners []shellKind) *recognizedForm {
+	f := recognizeCursorCommand(ops, hc, command, shells)
+	if f == nil {
+		return nil
+	}
+	if !hookInputIntact(runners) && (!isASCII(f.bin) || !isASCII(f.cfg)) {
+		return nil
+	}
+	return f
 }
 
 func isSearchForm(f *recognizedForm) bool {

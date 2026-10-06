@@ -35,11 +35,13 @@ func traceBoundaryInputs() map[string]string {
 		"bridge":            "JEVLIN_TRACE_BRIDGE=BridgeCanary0123456789 jevlin search --stdin",
 		// A secret chained behind a name that is not one, PowerShell's
 		// spaced assignment, a hyphenated flag, and a quoted value across
-		// lines: each is removed whole before the cut, wherever it falls.
+		// lines: each is removed whole before the cut, wherever it falls. The
+		// last starts its line, the only place a quoted value may run across
+		// lines: mid-line its quote may close a string instead.
 		"chained_assignment":    "jdbc:postgresql://db/app?user=fred&password=HunterCanary0123456789&ssl=true",
 		"powershell_assignment": `$env:API_TOKEN = "HunterCanary0123456789"`,
 		"hyphenated_flag":       "curl --api-key=HunterCanary0123456789 https://example.test",
-		"quoted_across_lines":   "PRIVATE_KEY=\"HunterCanary0123456789\nHunterCanary0123456789\n\" next",
+		"quoted_across_lines":   "\nPRIVATE_KEY=\"HunterCanary0123456789\nHunterCanary0123456789\n\" next",
 		// A carriage return or U+2028 inside a line ends the line for
 		// JavaScript's `.` and not for Go's: with `.` those two lines would
 		// not count, the run would fall under five, and nothing would go.
@@ -144,6 +146,10 @@ func traceDifference(got, want string) string {
 func TestTraceRedactionBoundaries(t *testing.T) {
 	for name, text := range traceBoundaryInputs() {
 		t.Run(name, func(t *testing.T) {
+			// Each input has its own fake filesystem and reads no shared
+			// state, and under the race detector this is the slowest test in
+			// the package by minutes, so the inputs run side by side.
+			t.Parallel()
 			t.Run("envelope", func(t *testing.T) {
 				env := capTrace(&traceEnvelope{V: 1, History: []traceHistory{{Role: "assistant", Text: text}}})
 				if env == nil || len(env.History) != 1 {

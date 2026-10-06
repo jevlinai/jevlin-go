@@ -11,6 +11,7 @@ package main
 // and only then relied on by the plan.
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -177,6 +178,13 @@ func TestSplitMarkedBlockReadsAHeaderByTheKeyGrammar(t *testing.T) {
 		`projects."/home/u/say \"hi\" ]x"`,
 		`a . 'b]' . "c]"`,
 		`'only]quoted'`,
+		// Codex's record of hook approvals (issue #19): the bare parent Linux
+		// 0.158.0 writes, one captured key, and the two Windows spellings of a
+		// key, which are derived from the grammar rather than captured.
+		`hooks.state`,
+		`hooks.state."/home/u/.codex/hooks.json:pre_tool_use:0:0"`,
+		`hooks.state."C:\\Users\\u\\.codex\\hooks.json:stop:0:0"`,
+		`hooks.state.'C:\Users\u\.codex\hooks.json:stop:0:0'`,
 	} {
 		t.Run(header, func(t *testing.T) {
 			region := ourBlockRegion(t, "/home/u/.jevlin/state") + "[" + header + "]\nk = 1\n"
@@ -205,5 +213,49 @@ func TestSplitMarkedBlockDoesNotTakeAValueForAHeader(t *testing.T) {
 	}
 	if got := sectionNames(sections); len(got) != 1 || got[0] != "a" {
 		t.Fatalf("sections = %v, want just [a]", got)
+	}
+}
+
+// What Codex 0.160.0 left inside our markers on macOS once a participant
+// approved its hooks (issue #19): eleven [hooks.state."<hooks.json>:<event>:
+// <i>:<j>"] tables, after our last key, because the block was last in the
+// file. Each key is one double-quoted segment holding slashes, dots and
+// colons. Every table must be a section of its own, named exactly, carrying
+// exactly its own bytes — the blank line Codex wrote above it included — so
+// that what is kept is the participant's approval and not a re-rendering of
+// it. The fixture is derived from the capture; codex_fixtures_test.go says
+// how.
+func TestSplitMarkedBlockSeparatesCodexsHookTrustTables(t *testing.T) {
+	_, region, _, ok := markedRegion([]byte(codexConfigFixture(t, macosAfterTrustBlock)))
+	if !ok {
+		t.Fatal("the fixture holds no marked block")
+	}
+	preamble, sections, ok := splitMarkedBlock(region)
+	if !ok {
+		t.Fatal("the block Codex left did not split")
+	}
+	if strings.TrimSpace(preamble) != "" {
+		t.Fatalf("preamble = %q, want only whitespace", preamble)
+	}
+	want := []string{codexSandboxTable}
+	for _, event := range []string{"pre_tool_use", "permission_request", "post_tool_use", "pre_compact", "post_compact",
+		"session_start", "session_end", "user_prompt_submit", "subagent_start", "subagent_stop", "stop"} {
+		want = append(want, `hooks.state."/Users/u/.codex/hooks.json:`+event+`:0:0"`)
+	}
+	if got := sectionNames(sections); !slices.Equal(got, want) {
+		t.Fatalf("sections =\n%q\nwant\n%q", got, want)
+	}
+	if !strings.HasSuffix(sections[0].text, "/state\"]\n") {
+		t.Errorf("our section does not end at our last key:\n%s", sections[0].text)
+	}
+	var foreign strings.Builder
+	for _, s := range sections[1:] {
+		if !strings.HasPrefix(s.text, "\n[hooks.state.") || strings.Count(s.text, "\n[") != 1 {
+			t.Errorf("a section is not exactly one approval with its blank line: %q", s.text)
+		}
+		foreign.WriteString(s.text)
+	}
+	if foreign.String() != macosHookTrust(t) {
+		t.Errorf("the approvals, taken together, are not the bytes Codex wrote:\n%s", foreign.String())
 	}
 }

@@ -969,11 +969,69 @@ func cursorLineageFileExists(in *execInstallation) bool {
 	return err == nil
 }
 
+// execCodexPayload is a captured Codex payload for an execution case, with a
+// shell command replaced by the search this installation's skill renders and
+// the working directory made the installation's. A fixture that does not
+// read comes back nil, which the hook refuses as not Codex's and the case's
+// proof then fails on; TestCodexFixturesAreThePayloadsCodexSent is what
+// holds the fixtures themselves.
+func execCodexPayload(in *execInstallation, name string) any {
+	b, err := os.ReadFile(filepath.Join("testdata", "hook", name)) // #nosec G304 -- a fixed testdata path
+	if err != nil {
+		return nil
+	}
+	var m map[string]any
+	if json.Unmarshal(b, &m) != nil {
+		return nil
+	}
+	m["cwd"] = in.root
+	if input, ok := m["tool_input"].(map[string]any); ok {
+		_, search, err := searchBlockForShell(shellPOSIX, in.entry, `{"version":1,"query":"exact query text"}`)
+		if err != nil {
+			return nil
+		}
+		input["command"] = search
+	}
+	return m
+}
+
 // The hook events that spawn a detached flush (Claude Code's SessionStart
-// and Stop, Cursor's sessionStart and stop) are not run here: a flush that
-// outlives its test holds files in the test's temporary directory. H3's hook
-// execution test runs every installed hook.
+// and Stop, Cursor's sessionStart and stop, Codex's SessionStart and Stop) are
+// not run here: a flush that outlives its test holds files in the test's
+// temporary directory. H3's hook execution test runs every installed hook.
 var hookCases = map[string][]hookCase{
+	"codex": {
+		{
+			event: "PreToolUse",
+			payload: func(in *execInstallation) any {
+				return execCodexPayload(in, "codex-0.158.0-linux-PreToolUse-bash.json")
+			},
+			proof: func(t *testing.T, in *execInstallation, out execOutcome) bool {
+				return out.exit == 0 && strings.Contains(out.stdout, `"permissionDecision":"allow"`) &&
+					strings.Contains(out.stdout, bridgeEnv+"=") && lineageFileExists(in)
+			},
+		},
+		{
+			event: "PreCompact",
+			payload: func(in *execInstallation) any {
+				return execCodexPayload(in, "codex-0.160.0-macos-PreCompact-auto.json")
+			},
+			proof: func(t *testing.T, in *execInstallation, out execOutcome) bool {
+				_, err := os.Stat(filepath.Join(in.sessions, hookStateFile))
+				return out.exit == 0 && err == nil
+			},
+		},
+		{
+			event: "PostCompact",
+			payload: func(in *execInstallation) any {
+				return execCodexPayload(in, "codex-0.160.0-macos-PostCompact-auto.json")
+			},
+			proof: func(t *testing.T, in *execInstallation, out execOutcome) bool {
+				_, err := os.Stat(filepath.Join(in.sessions, hookStateFile))
+				return out.exit == 0 && err == nil
+			},
+		},
+	},
 	"claude": {
 		{
 			event: "PreToolUse",
@@ -1062,7 +1120,13 @@ var hookCases = map[string][]hookCase{
 // whose next word is a parse error — so on Windows no Cursor hook ever ran,
 // nothing recorded the failure, and the binary never started.
 func TestInstalledHookCommandsRunInTheirRunner(t *testing.T) {
-	for _, host := range []string{"claude", "cursor"} {
+	for _, host := range []string{"claude", "cursor", "codex"} {
+		if host == "codex" && !codexServesHere() {
+			// No hook is written for Codex on this OS: nothing to run.
+			// TestCodexOnAnUndeclaredHookRunnerWritesNoHooksAndExitsZero holds
+			// that on every runner.
+			continue
+		}
 		for _, sh := range hostShellsOnThisOS(t, host, channelHook) {
 			for _, hc := range hookCases[host] {
 				t.Run(host+"/"+sh.name+"/"+hc.event, func(t *testing.T) {
@@ -1181,7 +1245,23 @@ func TestHermesHookCommandRunsThroughItsSplitter(t *testing.T) {
 }
 
 // harnessFor is the harness value each adapter writes into its bridge.
-var harnessFor = map[string]string{"claude": "claude-code", "hermes": "hermes", "opencode": "opencode", "pi": "pi"}
+var harnessFor = map[string]string{"claude": "claude-code", "codex": "codex", "hermes": "hermes", "opencode": "opencode", "pi": "pi"}
+
+// codexBridgedCommand is the command Codex's PreToolUse hook hands back for a
+// Bash call running command — the hook itself, in process, as this
+// installation: its answer depends on the binary and config it runs as.
+func codexBridgedCommand(t *testing.T, in *execInstallation, command string) string {
+	t.Helper()
+	ops := realHookOps()
+	ops.executable = func() (string, error) { return in.bin, nil }
+	ops.getenv = func(string) string { return "" }
+	ops.spawnFlush = nil
+	payload := codexPayloadFixture(t, "codex-0.158.0-linux-PreToolUse-bash.json")
+	payload["cwd"] = in.root
+	var out bytes.Buffer
+	hookCodexOn(ops, hookContext{cfgPath: in.cfg, sessionsDir: in.sessions}, runtime.GOOS, "PreToolUse", mustJSON(t, withCommand(payload, command)), &out)
+	return rewrittenCommand(t, out.String())
+}
 
 // TestBridgedSearchCarriesItsHostsHarness takes the command each lineage
 // adapter hands its host — the adapter itself, run in process or in Node —
@@ -1194,7 +1274,10 @@ var harnessFor = map[string]string{"claude": "claude-code", "hermes": "hermes", 
 // binary's own `cli` fallback harness — a search with no lineage at all. The
 // harness assertion is what makes that impossible now.
 func TestBridgedSearchCarriesItsHostsHarness(t *testing.T) {
-	for _, host := range []string{"claude", "hermes", "opencode", "pi"} {
+	for _, host := range []string{"claude", "codex", "hermes", "opencode", "pi"} {
+		if host == "codex" && !codexServesHere() {
+			continue // no Codex hook is written on this OS, so nothing bridges
+		}
 		for _, sh := range renderedShellsOnThisOS(t, host) {
 			t.Run(host+"/"+sh.name, func(t *testing.T) {
 				in := newExecInstallation(t)
@@ -1213,6 +1296,9 @@ func TestBridgedSearchCarriesItsHostsHarness(t *testing.T) {
 					command = skillBlockFor(t, in.renderedSkill(host), sh.kind, "search").body
 				}
 				bridged := bridgedCommand(t, host, command, sh.kind)
+				if host == "codex" {
+					bridged = codexBridgedCommand(t, in, command)
+				}
 				if bridged == command || !strings.Contains(bridged, bridgeEnv) {
 					t.Fatalf("the %s adapter wrote no bridge for %s: %q", host, sh.kind, bridged)
 				}

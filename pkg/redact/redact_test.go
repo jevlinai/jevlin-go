@@ -348,3 +348,46 @@ func TestTraceTextIsIdempotent(t *testing.T) {
 		check(fmt.Sprintf("the rows joined by %q", sep), "", "", strings.Join(plain, sep))
 	}
 }
+
+// A line that opens a quote it does not close on its own reading of the
+// rules (a prompt string, an error message, a label ending in a key and a
+// colon) must not reach into the next line: a review found
+// pw = input("Password: ") followed by DB_PASSWORD="..." keeping the
+// password, the key rule having taken the closing quote of "Password: " for
+// an opening one and run to the quote on the next line. Every row of the
+// shared table that removes something is put on the line after each prompt
+// line of testdata/trace_prompt_lines.json, and what comes out after the
+// prompt line must be exactly the row's own answer, and the prompt line
+// exactly its own: a flag's value read from the prompt string's closing
+// quote changed both lines. The lines are strings and calls that end in a
+// key and a colon, a flag, or a name and `=`, so every rule that reads a
+// quoted value meets a quote it did not open. cmd/jevlin's
+// TestTheSharedSourceLetsNoPromptLineReachTheNextLine holds JavaScript to
+// the same.
+func TestNoPromptLineReachesTheNextLine(t *testing.T) {
+	raw, err := os.ReadFile("testdata/trace_prompt_lines.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var prompts []string
+	if err := json.Unmarshal(raw, &prompts); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range loadTraceCases(t) {
+		if c.Want == c.In {
+			continue
+		}
+		restore := SetLocalIdentity(c.Host, c.Account)
+		for _, p := range prompts {
+			got := TraceText(p + "\n" + c.In)
+			before, after, _ := strings.Cut(got, "\n")
+			if strings.Count(p, "\n") == 0 && after != c.Want {
+				t.Errorf("%s after %q:\n  got:  %q\n  want: %q", c.Name, p, after, c.Want)
+			}
+			if own := TraceText(p); before != own {
+				t.Errorf("%q before %s:\n  got:  %q\n  want: %q", p, c.Name, before, own)
+			}
+		}
+		restore()
+	}
+}

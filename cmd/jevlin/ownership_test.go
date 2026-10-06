@@ -244,7 +244,11 @@ func TestUninstallingOneInstallationLeavesAnothersIntegrations(t *testing.T) {
 			// is what made this test red on both Windows runners.
 			mine := installationRef{bins: []string{s.exe, filepath.Join(uninstalled, "bin", binaryNameFor())}, cfg: filepath.Join(uninstalled, setupConfigFile)}
 			theirs := installationRef{bins: []string{s.exe, filepath.Join(keeper, "bin", binaryNameFor())}, cfg: keeperCfg}
-			for _, hooks := range []string{paths.claudeSettings, paths.cursorHooks} {
+			shared := []string{paths.claudeSettings, paths.cursorHooks}
+			if codexServesHere() {
+				shared = append(shared, paths.codexHooks)
+			}
+			for _, hooks := range shared {
 				entries := allHookEntries(t, hooks)
 				if len(entries) == 0 {
 					t.Errorf("uninstalling %s left no hook entries in %s, but %s's were there", uninstalled, hooks, keeper)
@@ -567,7 +571,7 @@ func TestNoHookFileCanEnterTheAttributionPlan(t *testing.T) {
 			t.Fatalf("no target registered as %q", id)
 		}
 		for _, sh := range []shellKind{shellPOSIX, shellPowerShell, shellCmd} {
-			for _, sub := range [][]string{{"lineage"}, {"cursor", "sessionStart"}, {"window", "pre-compact"}} {
+			for _, sub := range [][]string{{"lineage"}, {"cursor", "sessionStart"}, {"window", "pre-compact"}, {"codex", "PreToolUse"}} {
 				cmd, err := entry.hookCommandForShell(sh, sub...)
 				if err != nil {
 					continue
@@ -594,12 +598,19 @@ func TestNoHookFileCanEnterTheAttributionPlan(t *testing.T) {
 	if failures := commitPlan(ops, &installed, io.Discard, io.Discard); failures != 0 {
 		t.Fatalf("installing every host: %d failures", failures)
 	}
-	for _, p := range []string{paths.claudeSettings, paths.cursorHooks} {
+	written := []string{paths.claudeSettings, paths.cursorHooks}
+	if codexServesHere() {
+		written = append(written, paths.codexHooks) // not written where no runner is established
+	}
+	for _, p := range written {
 		if _, err := ops.readFile(p); err != nil {
 			t.Fatalf("install wrote no %s, so this proves nothing about keeping it out", p)
 		}
 	}
-	hookFiles := map[string]bool{slash(paths.claudeSettings): true, slash(paths.cursorHooks): true}
+	hookFiles := map[string]bool{}
+	for _, p := range written {
+		hookFiles[slash(p)] = true
+	}
 	for _, tg := range all {
 		var agnostic agentPlan
 		tg.PlanUninstall(ops, paths, binEntry{command: uninstallProbeCommand, cfg: entry.cfg}, noEnv, &agnostic)

@@ -1,0 +1,37 @@
+[tui]
+screen_reader_detection_done = true
+
+[tui.model_availability_nux]
+"gpt-6.1-sol" = 1
+
+[projects."/tmp/codex-exp-n2Rx2s"]
+trust_level = "trusted"
+
+[hooks.state]
+
+[hooks.state."/home/u/.codex/hooks.json:pre_tool_use:0:0"]
+trusted_hash = "sha256:e39576459dd85f619d4cdc29ef9471bbd8bc3cd77c4bcbcd421d9e607917a11e"
+
+[hooks.state."/home/u/.codex/hooks.json:permission_request:0:0"]
+trusted_hash = "sha256:e856524d3f901f9a97ec1d40f3ba9aac253c316f9e631e33ef10d1d30840f733"
+
+[hooks.state."/home/u/.codex/hooks.json:post_tool_use:0:0"]
+trusted_hash = "sha256:56aafb8b8e88cd49eec3e4b70784b6751ba3d745757cd138a816ad75dcda6857"
+
+[hooks.state."/home/u/.codex/hooks.json:pre_compact:0:0"]
+trusted_hash = "sha256:ac84479c2313bed44c7732100fc82eab767440249413ae0bd327867677ed0a3b"
+
+[hooks.state."/home/u/.codex/hooks.json:session_start:0:0"]
+trusted_hash = "sha256:cdc9e994e59b0ade0c5a0e47f0fee80591e65e0fdbcf93c5c625d1e15d43e00d"
+
+[hooks.state."/home/u/.codex/hooks.json:user_prompt_submit:0:0"]
+trusted_hash = "sha256:f86ed40ee3999527e5567139b071c1d3a1538963ee1be3b97d34af508d753337"
+
+[hooks.state."/home/u/.codex/hooks.json:subagent_start:0:0"]
+trusted_hash = "sha256:e963c20f382fe8f3750ea54466eee398b8d5c6d8e715ac2cc42634bc40e7b64e"
+
+[hooks.state."/home/u/.codex/hooks.json:subagent_stop:0:0"]
+trusted_hash = "sha256:2ae4556c298bc5a17c15841f2945d830ccb19bdf8ec45b88ebc9eec9a783bb99"
+
+[hooks.state."/home/u/.codex/hooks.json:stop:0:0"]
+trusted_hash = "sha256:3b27912b93b870a241c192970b1c19fbf7d947f9d1e1d16c95a3f856d1814f58"

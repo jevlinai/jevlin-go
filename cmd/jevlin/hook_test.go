@@ -130,6 +130,8 @@ func hookMainWith(ops hookOps, hc hookContext, args []string, stdin *bytes.Reade
 		hookCursor(ops, hc, args[1], payload, stdout, stderr)
 	case "hermes":
 		hookHermes(args[1], payload, stdout)
+	case "turn":
+		hookHostTurn(ops, hc, args[1], payload)
 	case "flush":
 		claudeTurnEnd(ops, hc, payload) // as hookMain does, before the flush
 		_ = ops.spawnFlush(hc.cfgPath)
@@ -705,6 +707,9 @@ func TestHookMainNeverExitsNonZeroForAKnownSubcommand(t *testing.T) {
 		{"cursor sessionStart, persist fails", []string{"-config", cfgPath, "cursor", "sessionStart"}, mustJSON(t, map[string]any{"conversation_id": "c"})},
 		{"flush, spawn refused", []string{"-config", cfgPath, "flush"}, nil},
 		{"lineage, malformed payload", []string{"-config", cfgPath, "lineage"}, []byte("not json")},
+		{"codex Stop, spawn refused", []string{"-config", cfgPath, "codex", "Stop"}, readHookFixture(t, "codex-0.158.0-linux-Stop.json")},
+		{"codex PreToolUse, malformed payload", []string{"-config", cfgPath, "codex", "PreToolUse"}, []byte("not json")},
+		{"codex, an event it never installs", []string{"-config", cfgPath, "codex", "UserPromptSubmit"}, []byte(`{"hook_event_name":"UserPromptSubmit","session_id":"s"}`)},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

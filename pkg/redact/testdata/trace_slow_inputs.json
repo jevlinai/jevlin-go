@@ -1,0 +1,129 @@
+[
+ {
+  "name": "a run of blanks inside an environment line's value",
+  "prefix": "A=",
+  "unit": " ",
+  "suffix": "x"
+ },
+ {
+  "name": "a run of blanks before a few addresses",
+  "prefix": "",
+  "unit": " ",
+  "suffix": "x a@b.cc a@b.cc a@b.cc a@b.cc"
+ },
+ {
+  "name": "eyJ after a dash, over and over",
+  "prefix": "",
+  "unit": "-eyJ",
+  "suffix": ""
+ },
+ {
+  "name": "address after address",
+  "prefix": "",
+  "unit": "A@b.cc ",
+  "suffix": ""
+ },
+ {
+  "name": "names in a quoted word whose quote never closes",
+  "prefix": "\"",
+  "unit": "PASSWORD=a;",
+  "suffix": ""
+ },
+ {
+  "name": "dashes, over and over",
+  "prefix": "",
+  "unit": "--",
+  "suffix": ""
+ },
+ {
+  "name": "one flag name of many double dashes",
+  "prefix": "",
+  "unit": "--a",
+  "suffix": " x1"
+ },
+ {
+  "name": "private key BEGIN markers with one END at the very end",
+  "prefix": "",
+  "unit": "-----BEGIN PRIVATE KEY-----\n",
+  "suffix": "-----END PRIVATE KEY-----",
+  "bytes": 2097152
+ },
+ {
+  "name": "backtick-escaped double quotes in a quoted value",
+  "prefix": "TOKEN=\"",
+  "unit": "`\"",
+  "suffix": ""
+ },
+ {
+  "name": "backtick-escaped double quotes after a flag",
+  "prefix": "--token \"",
+  "unit": "`\"",
+  "suffix": ""
+ },
+ {
+  "name": "a flag whose quoted value never closes on its line, line after line",
+  "prefix": "",
+  "unit": "--token \"a\n",
+  "suffix": ""
+ },
+ {
+  "name": "a name mid-line whose quote closes a string, line after line",
+  "prefix": "",
+  "unit": "print(\"password=\", pw)\n",
+  "suffix": ""
+ },
+ {
+  "name": "a table of names with no value and wrapped values",
+  "prefix": "Name    Value\n----    -----\n",
+  "unit": "A    1\nEMPTY\n        w\n",
+  "suffix": ""
+ },
+ {
+  "name": "one name-shaped table line that is not a name at its end",
+  "prefix": "Name    Value\n----    -----\n",
+  "unit": "a",
+  "suffix": "."
+ },
+ {
+  "name": "keys whose values are references with a default, line after line",
+  "prefix": "",
+  "unit": "password: ${A:-x}\n",
+  "suffix": ""
+ },
+ {
+  "name": "one key whose default runs to the end of the text",
+  "prefix": "password: ${A:-",
+  "unit": "x",
+  "suffix": "}"
+ },
+ {
+  "name": "a run of list markers before one name",
+  "prefix": "",
+  "unit": "- ",
+  "suffix": "API_TOKEN=\"x"
+ },
+ {
+  "name": "names after a list marker with no value, one after another",
+  "prefix": "",
+  "unit": "- API_TOKEN= ",
+  "suffix": ""
+ },
+ {
+  "name": "a table of nothing but names with no value",
+  "prefix": "Name    Value\n----    -----\n",
+  "unit": "EMPTY_VAR\n",
+  "suffix": "A    1"
+ },
+ {
+  "name": "a table of nothing but wrapped-value lines",
+  "prefix": "Name    Value\n----    -----\nA    1\n",
+  "unit": "        w\n",
+  "suffix": ""
+ },
+ {
+  "name": "a table name followed by a run of blanks and then a value",
+  "prefix": "Name    Value\n----    -----\nEMPTY",
+  "unit": " ",
+  "suffix": "x"
+ }
+]
