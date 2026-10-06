@@ -146,6 +146,10 @@ func traceDifference(got, want string) string {
 func TestTraceRedactionBoundaries(t *testing.T) {
 	for name, text := range traceBoundaryInputs() {
 		t.Run(name, func(t *testing.T) {
+			// Each input has its own fake filesystem and reads no shared
+			// state, and under the race detector this is the slowest test in
+			// the package by minutes, so the inputs run side by side.
+			t.Parallel()
 			t.Run("envelope", func(t *testing.T) {
 				env := capTrace(&traceEnvelope{V: 1, History: []traceHistory{{Role: "assistant", Text: text}}})
 				if env == nil || len(env.History) != 1 {

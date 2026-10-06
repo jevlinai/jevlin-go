@@ -26,7 +26,15 @@ jobs:
         if: runner.os != 'Windows'
       - run: go build -trimpath -o NUL ./cmd/jevlin
         if: runner.os == 'Windows'
-  race:
+  # The race run was the slowest job by minutes, and one package is nearly all
+  # of it. tools/testshard deals that run's tests by name into three parts that
+  # run at the same time; together they are every test, each once.
+  race-part:
+    name: race part ${{ matrix.part }}
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [0, 1, 2]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -38,7 +46,16 @@ jobs:
         with:
           node-version: "22"
           package-manager-cache: false
-      - run: go test -race -count=1 ./cmd/...
+      - run: go run ./tools/testshard -race -n 3 -i ${{ matrix.part }} ./cmd/...
+  # `race` is the required check's name, so this job keeps it: it passes only
+  # when every part passed, and fails when any part failed, was cancelled or
+  # never ran.
+  race:
+    needs: race-part
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.race-part.result }}" = success
   cross:
     runs-on: ubuntu-latest
     steps:

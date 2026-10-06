@@ -35,9 +35,16 @@ mirrored there — not owned here either). `pkg/platform` conforms to it the sam
 conforms to the AS contract: implementer here, authority elsewhere.
 
 ## The verify loop
-`make verify` = `build test race vet lint lint-windows vuln tidy cross`. **Green before every commit.** `lint`
-is golangci-lint v2 (gosec, misspell locale US, unconvert, depguard, gofmt, goimports); `vuln` is
-govulncheck.
+`make verify` = `build vet lint lint-windows tidy race vuln cross`, the checks that take seconds
+first. **Green before every push**: CI runs the same checks on every pushed head, and a commit pushed
+with others is checked as part of that head. `lint` is golangci-lint v2 (gosec, misspell locale US,
+unconvert, depguard, gofmt, goimports); `vuln` is govulncheck. `race` runs every test under the race
+detector, split by `tools/testshard` into `RACE_PARTS` processes at once, because cmd/jevlin's tests
+run one after another and are nearly all of its time; CI splits the same run into three jobs. There
+is no separate `test` stage: CI's test matrix runs every test without the race detector on all four
+systems, and that is where pkg/redact's tight linear-time bound is held. While a change is being
+made, and before each commit, `make quick RUN=<pattern> PKG=<packages>` vets, lints and runs only
+the named tests.
 
 ## Hard invariants — a change that violates one is wrong even if it compiles and every test passes
 1. **Fail-open on the earning path.** A mining-side write, spawn, or network failure MUST NOT turn
