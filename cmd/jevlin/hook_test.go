@@ -705,6 +705,9 @@ func TestHookMainNeverExitsNonZeroForAKnownSubcommand(t *testing.T) {
 		{"cursor sessionStart, persist fails", []string{"-config", cfgPath, "cursor", "sessionStart"}, mustJSON(t, map[string]any{"conversation_id": "c"})},
 		{"flush, spawn refused", []string{"-config", cfgPath, "flush"}, nil},
 		{"lineage, malformed payload", []string{"-config", cfgPath, "lineage"}, []byte("not json")},
+		{"codex Stop, spawn refused", []string{"-config", cfgPath, "codex", "Stop"}, readHookFixture(t, "codex-0.158.0-linux-Stop.json")},
+		{"codex PreToolUse, malformed payload", []string{"-config", cfgPath, "codex", "PreToolUse"}, []byte("not json")},
+		{"codex, an event it never installs", []string{"-config", cfgPath, "codex", "UserPromptSubmit"}, []byte(`{"hook_event_name":"UserPromptSubmit","session_id":"s"}`)},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

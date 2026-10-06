@@ -18,6 +18,15 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **Codex searches carry their session.** `agents install` writes Codex's
+  hooks into `~/.codex/hooks.json` on macOS and Linux, and a search Codex runs
+  then reaches the router with its session, turn and call, and a subagent's
+  search names the session that started it. Codex runs hooks only once you
+  approve them in Codex, and jevlin never approves them for you;
+  `agents status` says what Codex has on record. Only the search the skill
+  shows is changed and allowed. No assistant text travels with a Codex
+  search, no turn end is sent, and Windows gets no hooks yet. A Claude Code
+  hook run by Codex now stands aside, as it does for Cursor.
 - **The trace scrubber covers secrets that have no shape.** Assistant text sent
   with a search, and a turn's final answer, already lost API keys, tokens,
   emails and the name in a home path. It now also loses Stripe secret keys, a

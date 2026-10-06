@@ -5,12 +5,16 @@ package main
 // editing five places in agents.go's switches.
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/BurntSushi/toml"
 )
 
 // targetKind distinguishes a coding-agent host — something a participant
@@ -67,6 +71,14 @@ type installTarget interface {
 type preferenceTarget interface {
 	installTarget
 	PlanPreference(ops agentOps, paths agentPaths, entry binEntry, prefer string, p *agentPlan)
+}
+
+// statusNoter is the optional capability: lines a host adds under its own
+// row in `agents status`, about something only it can read. Codex is the one
+// host with any: whether it has an approval on record for the hooks.
+type statusNoter interface {
+	installTarget
+	StatusNotes(ops agentOps, paths agentPaths, entry binEntry) []string
 }
 
 // ── the shell each host runs ─────────────────────────────────────────────
@@ -140,8 +152,8 @@ const (
 type shellEvidence string
 
 const (
-	// evidenceNone: the host has no such channel on this OS (Codex has no
-	// hooks; opencode's and Pi's lineage run in-process, not as commands).
+	// evidenceNone: the host has no such channel on this OS (opencode's and
+	// Pi's lineage run in-process, not as commands).
 	evidenceNone shellEvidence = "none"
 	// evidenceEstablished: the host's documentation or source, or a live run.
 	evidenceEstablished shellEvidence = "established"
@@ -475,7 +487,7 @@ func (t claudeTarget) PlanUninstall(ops agentOps, paths agentPaths, entry binEnt
 		planRemove(p, t.Label(), filepath.Dir(paths.claudeSkill))
 		removed = true
 	}
-	if planHooksRemove(ops, t.Label(), paths.claudeSettings, p, entry, "hooks") {
+	if planHooksRemove(ops, t.Label(), paths.claudeSettings, p, entry, "hooks", false) {
 		removed = true
 	}
 	if !removed {
@@ -515,33 +527,43 @@ func (codexTarget) Kind() targetKind { return targetHost }
 // the WSL launcher, which fails — only because our fence said bash, and the
 // follow-up run settled it by fencing the other way. That is the cell's
 // whole content: what the host does with the block we actually render, not
-// what its source defaults to. Codex has no hooks.
+// what its source defaults to.
+//
+// Its hooks (issue #19) are commands in hooks.json, and every one captured
+// before this was an unquoted path and one word, so nothing showed that
+// Codex's runner honors the quoting this client writes. A live run on
+// macOS and on Linux did: the hook command the renderer produces — the
+// binary and the config each single-quoted, both under a path holding a
+// space — ran, and read the config it named; and a probe entry beside it
+// showed a POSIX shell interpreting the string, under Codex's own process.
+// On Windows no hook has run, so none is written there.
 func (codexTarget) Shells(goos string) hostShells {
 	switch goos {
 	case "darwin", "linux":
 		return hostShells{
 			tool: established("source codex-rs shell_detect.rs default_user_shell (user's shell, else zsh/bash); live: soak dropin-miner#57 macOS", shellPOSIX),
-			hook: cellNoChannel,
+			hook: established("live: 2026-10-05, codex exec, codex-cli 0.160.0 macOS and 0.158.0 Linux: the rendered hook command, binary and config single-quoted under a path with a space, ran and read its config; a probe entry's $0 was /bin/zsh on macOS and /bin/bash on Linux, its parent Codex", shellPOSIX),
 		}
 	case "windows":
 		return hostShells{
 			tool: established("live: Windows soak follow-up 2026-09-16, codex-cli 0.154.0, both codex exec and the TUI", shellPowerShell),
-			hook: cellNoChannel,
+			hook: cellUnknown,
 		}
 	}
-	return hostShells{tool: cellUnknown, hook: cellNoChannel}
+	return hostShells{tool: cellUnknown, hook: cellUnknown}
 }
 
 func (codexTarget) Detect(ops agentOps, _ agentPaths, _ func(string) string) string {
 	return detectCommand(ops, "codex")
 }
 
-// Codex has two halves — a skill and the sandbox block — and "already
-// installed" is a claim about both. It used to be decided by the skill alone
-// and printed before the block was even planned, so a host whose block is
-// another installation's was reported as already installed AND left in place,
-// in one plan, for one host. Both halves answer now, and the line is printed
-// only when neither of them had anything to do.
+// Codex has three parts — a skill, the sandbox block and, where a live run
+// established what runs them, its hooks — and "already installed" is a claim
+// about all of them. It used to be decided by the skill alone and printed
+// before the block was even planned, so a host whose block is another
+// installation's was reported as already installed AND left in place, in one
+// plan, for one host. Every part answers now, and the line is printed only
+// when none of them had anything to do.
 func (t codexTarget) PlanInstall(ops agentOps, paths agentPaths, entry binEntry, getenv func(string) string, p *agentPlan) {
 	prefer := readPrefer(ops, entry)
 	skillChanged, skillLeft := planSkill(ops, t, paths.codexSkill, entry, prefer, "", p)
@@ -551,9 +573,92 @@ func (t codexTarget) PlanInstall(ops agentOps, paths agentPaths, entry binEntry,
 	} else {
 		p.notes = append(p.notes, t.Label()+": shell commands run sandboxed; if searches record nothing, allow this command network access and let it write to your jevlin home")
 	}
-	if !skillChanged && !skillLeft && !blockChanged && !blockLeft {
+	hooksChanged := t.planHooks(ops, paths, entry, runtime.GOOS, p)
+	if !skillChanged && !skillLeft && !blockChanged && !blockLeft && !hooksChanged {
 		p.skipped = append(p.skipped, t.Label()+": already installed")
 	}
+}
+
+// codexApprovalSentence is what install says whenever it writes Codex's
+// hooks. The client never records an approval for them, in config.toml or
+// anywhere else: approving is the participant's review of commands that run
+// outside Codex's sandbox with their rights, and a tool that approved itself
+// would remove the one check Codex puts between an installer and that.
+const codexApprovalSentence = "Codex runs these hooks only after you approve them: start codex, or open the app, and review them when it asks. " +
+	"Until then they do nothing, and under codex exec nothing says so; searches still run, without a session or a turn. " +
+	"Seen working with codex-cli 0.158.0 and 0.160.0"
+
+// planHooks merges this installation's entries into Codex's hooks.json, for
+// the runner goos declares. An OS with no established runner gets none, and
+// says so in a note rather than a refusal: the skill and the sandbox block it
+// does get are everything it had before, and a refusal would make that
+// working install exit non-zero.
+func (t codexTarget) planHooks(ops agentOps, paths agentPaths, entry binEntry, goos string, p *agentPlan) bool {
+	spec, err := codexHooksFor(t, entry, goos)
+	if err != nil {
+		p.notes = append(p.notes, err.Error()+"; Codex gets the skill and the sandbox block, and its searches carry no session or turn")
+		return false
+	}
+	others := codexHooksHoldOthers(ops, paths.codexHooks, entry)
+	if !planHooksMerge(ops, t.Label(), paths.codexHooks, p, entry, spec) {
+		return false
+	}
+	p.notes = append(p.notes, t.Label()+": "+codexApprovalSentence)
+	if others {
+		p.notes = append(p.notes, t.Label()+": "+paths.codexHooks+" also holds hooks jevlin did not write, and the file is written back whole; Codex may ask you to review them again")
+	}
+	return true
+}
+
+// codexHookLists is every event's list of entries in Codex's hooks.json, or
+// nil when the file is absent or does not read as one.
+func codexHookLists(ops agentOps, path string) map[string][]any {
+	b, err := ops.readFile(path)
+	if err != nil {
+		return nil
+	}
+	m, err := decodeJSONObject(b)
+	if err != nil {
+		return nil
+	}
+	hooks, _ := m["hooks"].(map[string]any)
+	out := map[string][]any{}
+	for ev, v := range hooks {
+		if list, ok := v.([]any); ok {
+			out[ev] = list
+		}
+	}
+	return out
+}
+
+// codexHooksHoldOthers: does the file hold any entry that is not this
+// installation's?
+func codexHooksHoldOthers(ops agentOps, path string, entry binEntry) bool {
+	for _, list := range codexHookLists(ops, path) {
+		for _, e := range list {
+			if !entryIsOurs(e, refFor(entry)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// codexHooksAfterOurs: does any event list an entry that is not ours after
+// one that is? Removing ours moves those up one place.
+func codexHooksAfterOurs(ops agentOps, path string, entry binEntry) bool {
+	for _, list := range codexHookLists(ops, path) {
+		seen := false
+		for _, e := range list {
+			switch {
+			case entryIsOurs(e, refFor(entry)):
+				seen = true
+			case seen:
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (t codexTarget) PlanUninstall(ops agentOps, paths agentPaths, entry binEntry, getenv func(string) string, p *agentPlan) {
@@ -561,6 +666,14 @@ func (t codexTarget) PlanUninstall(ops agentOps, paths agentPaths, entry binEntr
 	if pathExists(ops, filepath.Dir(paths.codexSkill)) {
 		planRemove(p, t.Label(), filepath.Dir(paths.codexSkill))
 		removed = true
+	}
+	shifted := codexHooksAfterOurs(ops, paths.codexHooks, entry)
+	if planHooksRemove(ops, t.Label(), paths.codexHooks, p, entry, "hooks", false) {
+		removed = true
+		p.notes = append(p.notes, t.Label()+": Codex's record of your approval of these hooks stays in "+paths.codexConfig+"; jevlin never writes it, and leaves it")
+		if shifted {
+			p.notes = append(p.notes, t.Label()+": hooks listed after jevlin's in "+paths.codexHooks+" move up one place, and Codex keys an approval by place; it may ask you to review them again")
+		}
 	}
 	if existing, mode, err := readWithMode(ops, paths.codexConfig); err == nil && existing != nil {
 		switch r := removeOurSandboxBlock(existing, entry, getenv); {
@@ -679,11 +792,123 @@ func pathUnder(p, dir string) bool {
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-func (codexTarget) Status(ops agentOps, paths agentPaths, _ binEntry) targetStatus {
-	if pathExists(ops, paths.codexSkill) {
+// Status says "skill+hooks" only when this installation's entries are in
+// hooks.json, and nothing here says the hooks run: Codex runs a hook only
+// once the participant approves it, and an unapproved one is silent. On an
+// OS where no hooks are written the skill is the whole install.
+func (t codexTarget) Status(ops agentOps, paths agentPaths, entry binEntry) targetStatus {
+	if !pathExists(ops, paths.codexSkill) {
+		return targetStatus{}
+	}
+	if _, err := codexHooksFor(t, entry, runtime.GOOS); err != nil {
 		return targetStatus{true, "skill"}
 	}
-	return targetStatus{}
+	if hooksHaveOurs(ops, paths.codexHooks, entry) {
+		return targetStatus{true, "skill+hooks"}
+	}
+	return targetStatus{true, "skill only"}
+}
+
+// StatusNotes says how far Codex has approved this installation's hooks, on
+// an OS where they are written at all.
+func (t codexTarget) StatusNotes(ops agentOps, paths agentPaths, entry binEntry) []string {
+	if _, err := codexHooksFor(t, entry, runtime.GOOS); err != nil {
+		return nil
+	}
+	return codexApprovalLines(ops, paths, entry)
+}
+
+// codexApprovalEvent is an event as Codex spells it in an approval's key,
+// read off the keys Codex wrote on Linux and macOS.
+var codexApprovalEvent = map[string]string{
+	"PreToolUse":   "pre_tool_use",
+	"SessionStart": "session_start",
+	"PreCompact":   "pre_compact",
+	"PostCompact":  "post_compact",
+	"Stop":         "stop",
+}
+
+// codexApprovalLines reads, and only reads, Codex's record of approvals:
+// one [hooks.state."<hooks.json>:<event>:<i>:<j>"] table per approved hook in
+// config.toml. It answers as far as that record goes and no further. It never
+// says the hooks are active or trusted: an approval on record may be for a
+// command as it read before, and whether Codex still accepts it is Codex's
+// to decide. And where the key Codex would use cannot be known — a hook of
+// ours that is not the first of its event, when only first places were ever
+// seen numbered — it says so rather than guess an index.
+func codexApprovalLines(ops agentOps, paths agentPaths, entry binEntry) []string {
+	lists := codexHookLists(ops, paths.codexHooks)
+	ours := map[string]int{}
+	for _, ev := range codexEvents {
+		for i, e := range lists[ev] {
+			if entryIsOurs(e, refFor(entry)) {
+				ours[ev] = i
+				break
+			}
+		}
+	}
+	if len(ours) == 0 {
+		return nil
+	}
+	for _, ev := range codexEvents {
+		if i, ok := ours[ev]; ok && i != 0 {
+			return []string{"hooks: approval unknown; jevlin's " + ev + " hook is not the first listed for that event, and how Codex numbers a later one is not established"}
+		}
+	}
+	state := map[string]any{}
+	switch b, err := ops.readFile(paths.codexConfig); {
+	case errors.Is(err, fs.ErrNotExist):
+	case err != nil:
+		return []string{"hooks: approval unknown; " + paths.codexConfig + " cannot be read: " + err.Error()}
+	default:
+		// Into a map, not a struct: the decoder matches a struct's fields
+		// without regard to case, and Codex reads `hooks.state` exactly.
+		var doc map[string]any
+		if _, err := toml.Decode(string(b), &doc); err != nil {
+			return []string{"hooks: approval unknown; " + paths.codexConfig + " does not read as TOML"}
+		}
+		if hooks, ok := doc["hooks"].(map[string]any); ok {
+			state, _ = hooks["state"].(map[string]any)
+		}
+	}
+	onRecord := 0
+	for ev := range ours {
+		if codexApprovalOnRecord(state, paths.codexHooks, codexApprovalEvent[ev]) {
+			onRecord++
+		}
+	}
+	switch {
+	case onRecord == 0:
+		return []string{"hooks: no approval on record; Codex runs them only after you approve them in Codex"}
+	case onRecord < len(ours):
+		return []string{fmt.Sprintf("hooks: an approval is on record for %d of %d; Codex runs the others only after you approve them in Codex, and whether a recorded one is for the command as it reads now is Codex's to decide", onRecord, len(ours))}
+	}
+	return []string{fmt.Sprintf("hooks: an approval is on record for %d of %d; whether it is for the commands as they read now is Codex's to decide", onRecord, len(ours))}
+}
+
+// codexApprovalOnRecord: does state hold an approval of the first hook of
+// the first group under event, in this hooks.json? The key is split from the
+// right, because the path in front of it may hold a colon of its own.
+func codexApprovalOnRecord(state map[string]any, hooksPath, event string) bool {
+	for key, v := range state {
+		parts := strings.Split(key, ":")
+		if len(parts) < 4 {
+			continue
+		}
+		n := len(parts)
+		if parts[n-1] != "0" || parts[n-2] != "0" || parts[n-3] != event {
+			continue
+		}
+		if !samePath(strings.Join(parts[:n-3], ":"), hooksPath) {
+			continue
+		}
+		if table, ok := v.(map[string]any); ok {
+			if hash, _ := table["trusted_hash"].(string); hash != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (t codexTarget) PlanPreference(ops agentOps, paths agentPaths, entry binEntry, prefer string, p *agentPlan) {
@@ -810,7 +1035,7 @@ func (t cursorTarget) PlanUninstall(ops agentOps, paths agentPaths, entry binEnt
 		planRemove(p, t.Label(), filepath.Dir(paths.cursorSkill))
 		removed = true
 	}
-	if planHooksRemove(ops, t.Label(), paths.cursorHooks, p, entry, "hooks") {
+	if planHooksRemove(ops, t.Label(), paths.cursorHooks, p, entry, "hooks", true) {
 		removed = true
 	}
 	if !removed {
