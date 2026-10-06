@@ -113,8 +113,9 @@ func exactTestInstall(t *testing.T) (bin, cfg, search string) {
 	return bin, cfg, search
 }
 
-// Through the two hooks that answer "allow" on main: Claude Code's lineage
-// and Cursor's beforeShellExecution. The rendered search is allowed (the
+// Through the three hooks that answer "allow": Claude Code's lineage,
+// Cursor's beforeShellExecution and Codex's PreToolUse, the last for Linux,
+// whose Codex runs the POSIX form. The rendered search is allowed (the
 // control); the same search with a config or binary region that closes its
 // quoted word is not.
 func TestTheAllowingHooksRefuseASearchCarryingASecondCommand(t *testing.T) {
@@ -154,6 +155,13 @@ func TestTheAllowingHooksRefuseASearchCarryingASecondCommand(t *testing.T) {
 		}
 		if got := recognizeCursorCommand(ops, hookContext{cfgPath: cfg}, command, []shellKind{shellPOSIX}) != nil; got != allowed {
 			t.Errorf("Cursor's beforeShellExecution, %s: allowed %v, want %v", name, got, allowed)
+		}
+		out.Reset()
+		hookCodexOn(ops, hookContext{cfgPath: cfg}, "linux", "PreToolUse", mustJSON(t, map[string]any{
+			"session_id": "s", "tool_name": "Bash", "tool_input": map[string]any{"command": command},
+		}), &out)
+		if got := strings.Contains(out.String(), `"permissionDecision":"allow"`); got != allowed {
+			t.Errorf("Codex's PreToolUse, %s: allowed %v, want %v\n%s", name, got, allowed, out.String())
 		}
 	}
 }
