@@ -95,9 +95,11 @@ from PowerShell instead; the editor is unaffected. Reported to Cursor (forum thr
 
 ### What is written and where
 
-A skill in `~/.codex/skills/jevlin/` and, when `~/.codex/config.toml` exists, a marked block in
-it that widens the sandbox: network on, and writable roots for the state directory always, plus
-the intake, sessions and spool directories when `[miner] enabled` is set.
+A skill in `~/.codex/skills/jevlin/`; on macOS and Linux, five hooks in `~/.codex/hooks.json`
+(`PreToolUse`, `SessionStart`, `PreCompact`, `PostCompact`, `Stop`), each written where any of
+jevlin's stood before so no other hook moves; and, when `~/.codex/config.toml` exists, a marked
+block in it that widens the sandbox: network on, and writable roots for the state directory
+always, plus the intake, sessions and spool directories when `[miner] enabled` is set.
 
 ### What to know
 
@@ -106,17 +108,36 @@ cannot record, so it earns nothing and the claim is never picked up. The config,
 are never writable, so a command gone wrong cannot change where your credentials go. Sandboxed
 commands can read `credentials.json` and the state directory; on Windows, not the wallet.
 
-Codex appends its own tables, such as folder trust or `[windows] sandbox`, to the end of
-`config.toml`, where they can land between jevlin's markers. Install and uninstall change only
-jevlin's one table, and move any other table inside the markers to just below the block, naming
-it in the plan. Install writes the block where it sits, so nothing else moves (after an uninstall,
-at the end). A block that is not valid TOML is left and reported; a key you added inside
+Codex runs the hooks only after you approve them: start `codex`, or open the app, and approve
+them when it asks you to review hooks. Until then they do nothing, and under `codex exec` nothing
+says so; searches still run and record, without a session or a turn. jevlin never records an
+approval for you. `jevlin agents status` says what Codex has on record, read from its
+`config.toml`: an approval for some or all of the hooks, none, or that it cannot tell. An
+approval on record may be for an earlier version of a command, and whether it still counts is
+Codex's to decide; a Codex too old to run hooks reads as "no approval on record" too, since no
+version is checked. A hook whose command changes, after you move the binary or the config, may
+need approving again; an upgrade in place does not change the commands.
+
+With the hooks approved, a search Codex runs carries its session, turn and call, and a
+subagent's search names the session that started it. Only the search command the skill shows is
+given them, and allowed without a prompt; anything else, including the search after a `cd`, in a
+loop or piped on, runs as written and carries the per-shell identity. The hooks read no prompt,
+no tool's output and none of the assistant's words, and a Codex search carries no assistant text.
+
+Codex appends its own tables, such as folder trust, `[windows] sandbox` or its record of hook
+approvals (`[hooks.state.…]`), to the end of `config.toml`, where they can land between jevlin's
+markers. Install and uninstall change only jevlin's one table, and move any other table inside the
+markers to just below the block, naming it in the plan. Install writes the block where it sits,
+so nothing else moves (after an uninstall, at the end). A block that is not valid TOML is left and reported; a key you added inside
 jevlin's table goes with it, and the plan says so first. If you keep your own
 `[sandbox_workspace_write]` table, install leaves it and prints the settings to add by hand.
 
 ### Known limits
 
-None known.
+On Windows no hooks are written, because what runs a Codex hook there has not been seen; the
+skill and the block are as before. No turn end is sent for Codex. Whether a search can reach the
+router from inside the desktop app's sandbox has not been established: its sandbox is not the
+CLI's.
 
 ## opencode
 

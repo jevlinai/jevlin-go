@@ -16,9 +16,13 @@ package main
 // and install made it last.
 
 import (
+	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/BurntSushi/toml"
 )
 
 // codexFixture is a Codex config.toml with our installed block and whatever
@@ -387,6 +391,8 @@ func TestTheNetRefusesASectionThatIsNotOnlyOurs(t *testing.T) {
 		{"our table and a foreign one", ours + "[windows]\nsandbox = \"unelevated\"\n", false},
 		{"our table and the table the first pattern missed", ours + "[projects.'/home/u/work [1]']\ntrust_level = \"trusted\"\n", false},
 		{"a sub-table nested under our own name", ours + "[" + codexSandboxTable + ".'a]b']\nk = 1\n", false},
+		// What Codex writes on approving a hook (issue #19), riding in our section.
+		{"our table and Codex's record of a hook approval", ours + "\n[hooks.state.\"/home/u/.codex/hooks.json:pre_tool_use:0:0\"]\ntrusted_hash = \"sha256:00\"\n", false},
 		{"an inline table inside ours", ours + "extra = { k = 1 }\n", false},
 		{"a foreign table alone", "[windows]\nsandbox = \"unelevated\"\n", false},
 		{"not TOML", "= = =\n", false},
@@ -438,6 +444,175 @@ func TestAKeyAddedInsideOurTableIsNamedBeforeItGoes(t *testing.T) {
 			for _, want := range []string{"exclude_slash_tmp", "did not write", "goes with the table"} {
 				if !strings.Contains(out, want) {
 					t.Errorf("the plan did not say %q:\n%s", want, out)
+				}
+			}
+		})
+	}
+}
+
+// ── issue #19: Codex's record of a hook approval ────────────────────────
+//
+// When a participant approves a hook, Codex writes one table per hook to
+// config.toml: [hooks.state."<hooks.json>:<event>:<i>:<j>"], holding a
+// trusted_hash. It writes them at the end of the file, so with our block last
+// they land inside our markers — on macOS 0.160.0 all eleven did. They are
+// Codex's, not ours, and the participant's approval is in them: losing one
+// silently turns a hook off until it is approved again.
+//
+// The shapes come from config.toml captures (codex_fixtures_test.go): the
+// macOS block, re-marked and DERIVED from the capture as that file says, and
+// the Linux file whole, whose bare [hooks.state] parent table is a shape of
+// its own.
+
+const macosAfterTrustBlock = "config-0.160.0-macos.after-trust.block.toml"
+
+// macosHookTrust is what Codex 0.160.0 wrote inside our block on approval:
+// from the end of our last key to the end marker, byte for byte.
+func macosHookTrust(t *testing.T) string {
+	t.Helper()
+	_, region, _, ok := markedRegion([]byte(codexConfigFixture(t, macosAfterTrustBlock)))
+	if !ok {
+		t.Fatalf("%s holds no marked block", macosAfterTrustBlock)
+	}
+	i := strings.Index(region, "\n\n[hooks.state.")
+	if i < 0 {
+		t.Fatalf("%s holds no hook approval after our last key", macosAfterTrustBlock)
+	}
+	return region[i+1:]
+}
+
+// linuxHookTrust is what Codex 0.158.0 wrote on Linux: the bare parent table
+// and nine approvals, from the first [hooks.state] line to the end.
+func linuxHookTrust(t *testing.T) string {
+	t.Helper()
+	text := codexConfigFixture(t, "config-0.158.0-linux.after-trust.toml")
+	i := strings.Index(text, "[hooks.state]\n")
+	if i < 0 {
+		t.Fatal("the Linux capture holds no bare [hooks.state] table")
+	}
+	return text[i:]
+}
+
+// hookTrustOf is the approvals a config records, decoded: the assertion is
+// about what Codex will read back, not about where the bytes sit.
+func hookTrustOf(t *testing.T, text string) map[string]any {
+	t.Helper()
+	var doc struct {
+		Hooks struct {
+			State map[string]any `toml:"state"`
+		} `toml:"hooks"`
+	}
+	if _, err := toml.Decode(text, &doc); err != nil {
+		t.Fatalf("the config does not decode: %v\n%s", err, text)
+	}
+	return doc.Hooks.State
+}
+
+// codexHookTrustShapes are the captured shapes, each placed where Codex puts
+// it: at the end of the file, inside our markers.
+func codexHookTrustShapes(t *testing.T) []struct {
+	name   string
+	text   string
+	tables int
+} {
+	t.Helper()
+	return []struct {
+		name   string
+		text   string
+		tables int
+	}{
+		{"macOS 0.160.0, eleven approvals", macosHookTrust(t), 11},
+		{"Linux 0.158.0, the bare parent and nine approvals", linuxHookTrust(t), 10},
+	}
+}
+
+func TestUninstallKeepsCodexsHookTrustInsideOurBlock(t *testing.T) {
+	for _, shape := range codexHookTrustShapes(t) {
+		t.Run(shape.name, func(t *testing.T) {
+			m, ops, cfgPath, seeded := insideOurMarkers(t, shape.text)
+			want := hookTrustOf(t, seeded)
+			if len(want) == 0 {
+				t.Fatal("the seeded config records no approval, so keeping it proves nothing")
+			}
+			code, out, errOut := runAgents(t, ops, nil, "uninstall", "-config", cfgPath, "-yes")
+			if code != exitOK {
+				t.Fatalf("uninstall: %d\n%s%s", code, out, errOut)
+			}
+			got := string(m.files[codexConfigPath])
+			if strings.Contains(got, agentsMarkerBegin) || strings.Contains(got, "["+codexSandboxTable+"]") {
+				t.Errorf("our own block survived the uninstall:\n%s", got)
+			}
+			if !reflect.DeepEqual(hookTrustOf(t, got), want) {
+				t.Errorf("Codex's record of the approvals changed\n got %v\nwant %v", hookTrustOf(t, got), want)
+			}
+			if !strings.Contains(got, strings.TrimLeft(shape.text, "\n")) {
+				t.Errorf("the approval tables did not survive byte for byte:\n%s", got)
+			}
+			if want := fmt.Sprintf("keeping %d tables", shape.tables); !strings.Contains(out, want) {
+				t.Errorf("the plan did not say %q:\n%s", want, out)
+			}
+		})
+	}
+}
+
+func TestInstallMovesCodexsHookTrustOutOfOurBlockRatherThanDeletingIt(t *testing.T) {
+	for _, shape := range codexHookTrustShapes(t) {
+		t.Run(shape.name, func(t *testing.T) {
+			m, ops, cfgPath, seeded := insideOurMarkers(t, shape.text)
+			want := hookTrustOf(t, seeded)
+			code, out, errOut := runAgents(t, ops, nil, "install", "-config", cfgPath, "-yes")
+			if code != exitOK {
+				t.Fatalf("install: %d\n%s%s", code, out, errOut)
+			}
+			got := string(m.files[codexConfigPath])
+			if !reflect.DeepEqual(hookTrustOf(t, got), want) {
+				t.Errorf("Codex's record of the approvals changed\n got %v\nwant %v", hookTrustOf(t, got), want)
+			}
+			_, region, post, ok := markedRegion([]byte(got))
+			if !ok {
+				t.Fatalf("our block is gone:\n%s", got)
+			}
+			if strings.Contains(region, "[hooks.state") {
+				t.Errorf("an approval is still inside our markers, where the next refresh would have to judge it again:\n%s", got)
+			}
+			if !strings.Contains(post, strings.TrimLeft(shape.text, "\n")) {
+				t.Errorf("the approval tables are not directly below our block, byte for byte:\n%s", got)
+			}
+			if want := fmt.Sprintf("moving %d tables", shape.tables); !strings.Contains(out, want) {
+				t.Errorf("the plan did not say %q:\n%s", want, out)
+			}
+		})
+	}
+}
+
+// Codex keys an approval by the path of its hooks.json, so on Windows the
+// key holds backslashes: escaped in a double-quoted key, bare in a
+// single-quoted one. No Windows approval has been captured. These two keys
+// are DERIVED from the captured ones by TOML's key grammar alone, and the
+// case says so rather than passing for a measurement.
+func TestCodexsHookTrustSpelledForWindowsSurvivesBothPaths(t *testing.T) {
+	basic := "\n[hooks.state.\"C:\\\\Users\\\\u\\\\.codex\\\\hooks.json:pre_tool_use:0:0\"]\ntrusted_hash = \"sha256:4dec8e969f5df1b9dcb7186eaa477ca862461e22ac63fe482807bbde0e1f4e22\"\n"
+	literal := "\n[hooks.state.'C:\\Users\\u\\.codex\\hooks.json:stop:0:0']\ntrusted_hash = \"sha256:61e8fcd19218c4e9e3fac8f44747a47370e4bc9eba2aebc3e3659b99d889cea0\"\n"
+	for _, verb := range []string{"uninstall", "install"} {
+		t.Run(verb, func(t *testing.T) {
+			m, ops, cfgPath, seeded := insideOurMarkers(t, basic+literal)
+			want := hookTrustOf(t, seeded)
+			for _, key := range []string{`C:\Users\u\.codex\hooks.json:pre_tool_use:0:0`, `C:\Users\u\.codex\hooks.json:stop:0:0`} {
+				if _, ok := want[key]; !ok {
+					t.Fatalf("the derived key does not decode to %q: %v", key, want)
+				}
+			}
+			code, out, errOut := runAgents(t, ops, nil, verb, "-config", cfgPath, "-yes")
+			if code != exitOK {
+				t.Fatalf("%s: %d\n%s%s", verb, code, out, errOut)
+			}
+			got := string(m.files[codexConfigPath])
+			if !reflect.DeepEqual(hookTrustOf(t, got), want) {
+				t.Errorf("Codex's record of the approvals changed\n got %v\nwant %v", hookTrustOf(t, got), want)
+			}
+			for _, table := range []string{basic, literal} {
+				if !strings.Contains(got, strings.TrimLeft(table, "\n")) {
+					t.Errorf("a Windows-spelled approval did not survive byte for byte:\n%s", got)
 				}
 			}
 		})

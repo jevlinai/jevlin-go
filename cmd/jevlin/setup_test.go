@@ -314,7 +314,7 @@ func targetOwnedPaths(p agentPaths, id string) []string {
 	case "claude":
 		return []string{filepath.Dir(p.claudeSkill), p.claudeSettings}
 	case "codex":
-		return []string{filepath.Dir(p.codexSkill), p.codexConfig}
+		return []string{filepath.Dir(p.codexSkill), p.codexConfig, p.codexHooks}
 	case "cursor":
 		return []string{filepath.Dir(p.cursorSkill), p.cursorHooks}
 	case "opencode":
@@ -579,7 +579,8 @@ func TestSetupSecondRunIsANoOp(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		static = append(static, filepath.Join(s.home, setupEnvJournalFile))
 	} else {
-		static = append(static, s.profilePath())
+		// Codex's hooks are written where a runner for them is established.
+		static = append(static, s.profilePath(), paths.codexHooks)
 	}
 	staticBefore := map[string][]byte{}
 	for _, p := range static {

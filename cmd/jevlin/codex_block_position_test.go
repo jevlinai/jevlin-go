@@ -10,6 +10,7 @@ package main
 // comparing bytes.
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -189,5 +190,49 @@ func TestUninstallThenInstallMovesNoParticipantLine(t *testing.T) {
 	}
 	if n := strings.Count(got, agentsMarkerBegin); n != 1 {
 		t.Errorf("begin markers after the round trip: %d, want 1:\n%s", n, got)
+	}
+}
+
+// Codex's record of a hook approval is a run of tables at the end of the file
+// (issue #19). Below our block — where install moves it when Codex wrote it
+// inside — a refresh of our own table must leave it exactly where and what it
+// is: the participant's approval is keyed by those bytes' meaning, and a
+// moved or rewritten line is one a diff cannot vouch for. The shape is Linux
+// 0.158.0's, bare [hooks.state] parent included.
+func TestReinstallingWithHookTrustBelowTheBlockMovesNoLine(t *testing.T) {
+	linux := codexConfigFixture(t, "config-0.158.0-linux.after-trust.toml")
+	i := strings.Index(linux, "[hooks.state]\n")
+	if i < 0 {
+		t.Fatal("the Linux capture holds no bare [hooks.state] table")
+	}
+	cfgPath, _ := sandboxTestConfig(t)
+	m, ops := newFakeMachine("codex")
+	// The file before Codex's approvals: the participant's own tables.
+	m.files[codexConfigPath] = []byte(linux[:i])
+	if code, out, errOut := runAgents(t, ops, nil, "install", "-config", cfgPath, "-yes"); code != exitOK {
+		t.Fatalf("install: exit %d\n%s%s", code, out, errOut)
+	}
+	withTrust := strings.TrimRight(string(m.files[codexConfigPath]), "\n") + "\n\n" + linux[i:]
+	stale := staleOurTable(t, withTrust)
+	m.files[codexConfigPath] = []byte(stale)
+	wantPre, wantPost := outsideOurMarkers(t, stale)
+	if !strings.Contains(wantPost, "[hooks.state]") {
+		t.Fatalf("this case is meant to have the approvals below our block, and they are not: %q", wantPost)
+	}
+	wantTrust := hookTrustOf(t, stale)
+
+	if code, out, errOut := runAgents(t, ops, nil, "install", "-config", cfgPath, "-yes"); code != exitOK {
+		t.Fatalf("reinstall: exit %d\n%s%s", code, out, errOut)
+	}
+	got := string(m.files[codexConfigPath])
+	if !strings.Contains(got, "network_access = true") {
+		t.Fatalf("the reinstall did not refresh our own table, so nothing about the approvals' position is being tested:\n%s", got)
+	}
+	gotPre, gotPost := outsideOurMarkers(t, got)
+	if gotPre != wantPre || gotPost != wantPost {
+		t.Errorf("a byte outside our block moved\n gotPre %q\nwantPre %q\n gotPost %q\nwantPost %q", gotPre, wantPre, gotPost, wantPost)
+	}
+	if !reflect.DeepEqual(hookTrustOf(t, got), wantTrust) {
+		t.Errorf("Codex's record of the approvals changed\n got %v\nwant %v", hookTrustOf(t, got), wantTrust)
 	}
 }

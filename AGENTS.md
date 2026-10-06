@@ -277,7 +277,13 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `[projects.'/home/u/work [1]']` is exactly what a loose pattern misses. The grammar is fixed;
   the net is what makes the next miss a refusal instead of a lost table, and the two are tested
   independently on purpose. `codex_block_ownership_test.go` drives install and uninstall against
-  the shapes Codex produces; `marked_block_sections_test.go` tests the split on its own first,
+  the shapes Codex produces, its record of hook approvals among them — one
+  `[hooks.state."<hooks.json>:<event>:<i>:<j>"]` table per approved hook, written inside our block
+  whenever the block is last (`TestUninstallKeepsCodexsHookTrustInsideOurBlock`,
+  `TestInstallMovesCodexsHookTrustOutOfOurBlockRatherThanDeletingIt`). This client only ever
+  reads that record, for `agents status` (`codexApprovalLines`), and never writes one: approving
+  is the participant's review of commands that run outside Codex's sandbox
+  (`TestTheClientNeverWritesCodexHookTrust`); `marked_block_sections_test.go` tests the split on its own first,
   because getting it wrong in the removing direction destroys a participant's settings.
   **Where the block sits is also ours to preserve**: install writes it **where it finds
   it** — `replaceBlockInPlace` over `markedRegion`'s own pre and post — and appends only when
@@ -388,6 +394,19 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `TestLineageStandsDownForCursorWhateverTheToolName` holds the gate to the payload rather than
   the tool name, and `TestTheCallerGateNamesExactlyTheEventsTheInstallWrites` holds the event table to
   `claudeHooks`' own output so a wrong entry cannot silence a hook inside Claude Code itself.
+  Codex sends Claude Code's own event names, so for a Claude Code entry `claudeEntryStandsDown`
+  adds one rule to that payload test: a transcript that is one of Codex's rollout files
+  (`isCodexRollout`) is Codex's, and gets nothing
+  (`TestClaudeFormatHooksStandDownForTheRealCodexPayloads`, over the payloads captured in
+  `cmd/jevlin/testdata/hook/`). Codex has entry points of its own, `hook codex <Event>`, in
+  `codex_hook.go`: the command line names the caller, because no payload field does, and
+  `codexEntryStandsDown` reads the payload only for contradiction — Cursor's signals, no event
+  name, not an object, or a non-empty transcript that is not a rollout file; a null one is not
+  evidence. `codexEntryEvent` is held to `codexHooks`' output by
+  `TestTheCodexGateNamesExactlyTheEventsTheInstallWrites`, and
+  `TestCodexEntriesStandDownForAnotherHostsPayload` and `TestWhatContradictsACodexEntry` hold the
+  gate. Codex's PreToolUse answers only this installation's exact rendered search, with the bridge
+  and an allow, and is silent for anything else (`TestCodexRewritesAndAllowsOnlyTheRenderedSearch`).
 - **Whose lineage file a search may use** — `search.go`'s `searchTrace` owns the channel rule and
   the declared file's session guard; `miner.go`'s `lineageForCwd` owns the walk, which with a
   session exported climbs past a file of another session to the searching session's own, and
@@ -442,7 +461,9 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   shell declaration**: per host and per OS, the set of shells that run its tool calls and what
   runs its hook commands, each cell established by documentation, source or a live run —
   `host_shells_test.go` holds the declaration to a written-out table so no cell moves without a
-  reviewed diff. `shell_commands.go` renders every command for a declared shell and owns the
+  reviewed diff. A hook cell nothing has established writes no hook at all: Codex's Windows cell
+  is unknown, so its install there writes the skill and the block, says why in a note and does not
+  refuse (`TestCodexOnAnUndeclaredHookRunnerWritesNoHooksAndExitsZero`). `shell_commands.go` renders every command for a declared shell and owns the
   quoting of the paths in it (never Go's `%q`, which is neither shell's); `skill_render.go`
   renders one form per shell a host runs, and the Bash form, with a line in the install plan,
   for a cell nobody has established. `host_exec_test.go` is what makes any of it
@@ -502,6 +523,12 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   than "installed", because `Status` answers from the file existing and a host another
   installation set up would read as this one's. `agents_skill_ownership_test.go` guards it on real
   files, with `TestUninstallingOneInstallationLeavesAnothersIntegrations`.
+  **Codex numbers its hooks by place.** It keys an approval by an entry's index in its event's
+  list, so `planHooksMerge` rewrites a Codex entry of ours where the first one stands
+  (`replaceInPlace`) instead of appending it, and appends only to an event that has none of ours:
+  no hook of anyone else's is renumbered by a refresh of ours (`TestAReplacedCodexHookKeepsItsIndex`),
+  and a second install writes nothing (`TestASecondCodexInstallWritesNothing`). Uninstall says
+  when removing ours moves another hook up a place.
   **An allow rule has one current spelling.** Adding a rule only when its exact text is absent
   means a rule whose text has changed is never seen as the same rule and stays beside its
   replacement for ever. `mergeAllowRules` replaces the rules `ruleIsOurs` recognizes — any

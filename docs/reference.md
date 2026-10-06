@@ -259,12 +259,12 @@ degradation.
 | field | carries |
 |---|---|
 | `v` | `1`. |
-| `harness` | Which agent: `claude-code`, `cursor`, and so on. |
+| `harness` | Which agent: `claude-code`, `codex`, `cursor`, and so on. |
 | `session_id`, `turn_id`, `call_id` | The agent's ids, hashed with SHA-256 before they leave the machine. A subagent has a `session_id` of its own. |
-| `parent_session_id` | On a subagent's search only: the hashed `session_id` of the agent that started it. Claude Code and opencode. |
+| `parent_session_id` | On a subagent's search only: the hashed `session_id` of the agent that started it. Claude Code, Codex and opencode. |
 | `window` | Which context window of the session, after compactions. |
 | `seq` | A call counter. |
-| `history` | The assistant text before the search, scrubbed of secrets, last 32 KiB. |
+| `history` | The assistant text before the search, scrubbed of secrets, last 32 KiB. Codex and Hermes send none. |
 | `host_meta` | Agent-specific metadata. |
 
 The scrub removes what has a credential's shape (API keys, Stripe secret keys, GitHub and AWS
@@ -423,8 +423,8 @@ answers, so a search you refused, or one that failed, does not count, and a turn
 search sends nothing. Only to the router `miner.router_url` names; without that line nothing is
 sent. With it on, what you typed in a searched turn is sent; what your tools read and wrote never is: not a file's contents, not a command, not its output. The model's private reasoning and a subagent's own steps are not sent either. The hook writes the record to an owner-only file in
 `sessions/` and a detached `jevlin turn-end` sends it once and deletes the file, sent or not.
-`JEVLIN_TRACE=off` turns it off too. Claude Code (2.1.196 or later) and Cursor; other agents send
-none. A project set to retain no content keeps the status and not the text.
+`JEVLIN_TRACE=off` turns it off too. Claude Code (2.1.196 or later) and Cursor; other agents,
+Codex included, send none. A project set to retain no content keeps the status and not the text.
 
 ## Security notes
 
