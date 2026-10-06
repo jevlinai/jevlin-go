@@ -15,7 +15,9 @@ package main
 //	SessionStart  seed the window, start a flush.
 //	PreCompact,   bump the window, once per compaction.
 //	PostCompact
-//	Stop          start a flush.
+//	Stop          queue the turn end, when the installation opted in and a
+//	              search of ours was served in the turn (codex_turn_end.go);
+//	              start a flush.
 //
 // Fail-open, as every hook here: any doubt is silence and exit 0.
 
@@ -120,9 +122,10 @@ func hookCodexOn(ops hookOps, hc hookContext, goos, event string, payload []byte
 	case "PostCompact":
 		hookWindow(ops, hc, "post-compact", payload)
 	case "Stop":
-		// The turn is over. `last_assistant_message` is the model's words:
-		// it is not decoded here, and nothing of it is kept or sent
-		// (invariant 2). Codex's turn end is not built.
+		// The turn is over. Its turn end is queued first — only when the
+		// installation opted in and a search of ours was served in this turn
+		// — and then the flush starts, as Claude Code's Stop does.
+		codexTurnEnd(ops, hc, payload)
 		flush()
 	}
 }

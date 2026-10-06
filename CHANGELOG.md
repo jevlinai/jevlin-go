@@ -25,8 +25,14 @@ The first release replaces this heading with its own.
   approve them in Codex, and jevlin never approves them for you;
   `agents status` says what Codex has on record. Only the search the skill
   shows is changed and allowed. No assistant text travels with a Codex
-  search, no turn end is sent, and Windows gets no hooks yet. A Claude Code
-  hook run by Codex now stands aside, as it does for Cursor.
+  search, and Windows gets no hooks yet. A Claude Code hook run by Codex now
+  stands aside, as it does for Cursor.
+- **Opt-in: Codex's turn end.** With `[miner] turn_end = true`, a Codex turn
+  in which a jevlin search was served is reported when it ends, as Claude
+  Code's is: what you asked, what the assistant wrote along the way and its
+  final answer, scrubbed, and each tool call by name and outcome, read from
+  Codex's own session file. Never a tool's input or output, and nothing of a
+  subagent's own turn.
 - **The trace scrubber covers secrets that have no shape.** Assistant text sent
   with a search, and a turn's final answer, already lost API keys, tokens,
   emails and the name in a home path. It now also loses Stripe secret keys, a
