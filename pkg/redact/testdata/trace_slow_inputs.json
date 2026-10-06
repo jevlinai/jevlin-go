@@ -71,5 +71,17 @@
   "prefix": "",
   "unit": "print(\"password=\", pw)\n",
   "suffix": ""
+ },
+ {
+  "name": "a table of names with no value and wrapped values",
+  "prefix": "Name    Value\n----    -----\n",
+  "unit": "A    1\nEMPTY\n        w\n",
+  "suffix": ""
+ },
+ {
+  "name": "one name-shaped table line that is not a name at its end",
+  "prefix": "Name    Value\n----    -----\n",
+  "unit": "a",
+  "suffix": "."
  }
 ]

@@ -858,22 +858,35 @@ const redactTraceEnvDumps = (text) => {
 
 // redactEnvTables: PowerShell's Get-ChildItem Env: table (and any hashtable
 // it prints): under a Name/Value header and a rule of dashes, each row's
-// value is the rest of its line after the name and two blanks or a tab,
-// until the first line that is not such a row (an empty line, a fence, prose).
+// value is the rest of its line after the name and two blanks or a tab. A
+// name with no value (an empty variable, a $null entry) and a line whose
+// blanks reach exactly the header's Value column (-Wrap's continuation,
+// whose text goes too) continue the table; the first other line ends it
+// (an empty line, a fence, prose, a numbered item).
 const TRACE_ENV_TABLE_HEADER = /^[\t ]*Name[\t ]+Value[\t ]*$/
 const TRACE_ENV_TABLE_RULE = /^[\t ]*-+[\t ]+-+[\t ]*$/
 const TRACE_ENV_TABLE_ROW = /^([\t ]*[^\t\n\f\r ]+(?:\t|  )[\t ]*)([^\t\n\f\r ][^\n]*)$/
+const TRACE_ENV_TABLE_NAME_ONLY = /^[\t ]*[A-Za-z_](?:[A-Za-z0-9_.()-]*[A-Za-z0-9_)])?[\t ]*$/
 const redactTraceEnvTables = (text) => {
   if (!text.includes('Value')) return text
   const lines = text.split('\n')
   const bare = (i) => lines[i].endsWith('\r') ? lines[i].slice(0, -1) : lines[i]
   let changed = false
   for (let i = 0; i + 1 < lines.length; i++) {
-    if (!TRACE_ENV_TABLE_HEADER.test(bare(i)) || !TRACE_ENV_TABLE_RULE.test(bare(i + 1))) continue
+    const header = bare(i)
+    if (!TRACE_ENV_TABLE_HEADER.test(header) || !TRACE_ENV_TABLE_RULE.test(bare(i + 1))) continue
+    const column = header.indexOf('Value')
     let k = i + 2
     for (; k < lines.length; k++) {
       const line = bare(k)
       const cr = line === lines[k] ? '' : '\r'
+      let indent = 0
+      while (indent < line.length && traceIsBlank(line.charCodeAt(indent))) indent++
+      if (indent === column && indent < line.length) {
+        if (line.slice(indent) !== TRACE_REDACTED) { lines[k] = line.slice(0, indent) + TRACE_REDACTED + cr; changed = true }
+        continue
+      }
+      if (TRACE_ENV_TABLE_NAME_ONLY.test(line)) continue
       const m = TRACE_ENV_TABLE_ROW.exec(line)
       if (!m) break
       if (m[2] !== TRACE_REDACTED) { lines[k] = m[1] + TRACE_REDACTED + cr; changed = true }

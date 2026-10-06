@@ -2030,11 +2030,11 @@
   "want": "Key    Value\n----   -----\nA      1"
  },
  {
-  "name": "pstable/a name with no value ends the table",
+  "name": "pstable/a name with no value is a row",
   "host": "",
   "account": "",
   "in": "Name  Value\n----  -----\nEMPTY\nB     2",
-  "want": "Name  Value\n----  -----\nEMPTY\nB     2"
+  "want": "Name  Value\n----  -----\nEMPTY\nB     [REDACTED]"
  },
  {
   "name": "keys/a prompt string does not reach the next line",
@@ -2259,5 +2259,47 @@
   "account": "",
   "in": "docker run -e API_TOKEN=\"first\nsecond\" img",
   "want": "docker run -e API_TOKEN=[REDACTED]\nsecond\" img"
+ },
+ {
+  "name": "pstable/an empty variable does not end the table",
+  "host": "",
+  "account": "",
+  "in": "Name                           Value\n----                           -----\nALLUSERSPROFILE                C:\\ProgramData\nEMPTY_VAR\nGITHUB_TOKEN                   TokenCanary0123Long",
+  "want": "Name                           Value\n----                           -----\nALLUSERSPROFILE                [REDACTED]\nEMPTY_VAR\nGITHUB_TOKEN                   [REDACTED]"
+ },
+ {
+  "name": "pstable/a name padded with blanks and no value is a row",
+  "host": "",
+  "account": "",
+  "in": "Name       Value\r\n----       -----\r\nEMPTY      \r\nProgramFiles(x86)\r\nAPI_TOKEN  Token Canary Tail\r\n",
+  "want": "Name       Value\r\n----       -----\r\nEMPTY      \r\nProgramFiles(x86)\r\nAPI_TOKEN  [REDACTED]\r\n"
+ },
+ {
+  "name": "pstable/a wrapped value's continuation goes and the table goes on",
+  "host": "",
+  "account": "",
+  "in": "Name                           Value\n----                           -----\nPath                           C:\\Windows\\system32;C:\\Windows;C:\\Program\n                               Files\\Git\\cmd;C:\\Tools\nAPI_TOKEN                      TokenCanary0123Long\n\nNext paragraph.",
+  "want": "Name                           Value\n----                           -----\nPath                           [REDACTED]\n                               [REDACTED]\nAPI_TOKEN                      [REDACTED]\n\nNext paragraph."
+ },
+ {
+  "name": "pstable/only a line indented exactly to the value column continues a value",
+  "host": "",
+  "account": "",
+  "in": "Name      Value\n----      -----\nA_ONE     1\n    note that\nB_TWO     2\n\nName      Value\n----      -----\nA_ONE     1\n            deeper text\nB_TWO     2",
+  "want": "Name      Value\n----      -----\nA_ONE     [REDACTED]\n    note that\nB_TWO     2\n\nName      Value\n----      -----\nA_ONE     [REDACTED]\n            deeper text\nB_TWO     2"
+ },
+ {
+  "name": "pstable/a name followed by a sentence ends the table there",
+  "host": "",
+  "account": "",
+  "in": "Name    Value\n----    -----\nA_ONE   1\nEMPTY\nThat is all of it.\nB_TWO   2",
+  "want": "Name    Value\n----    -----\nA_ONE   [REDACTED]\nEMPTY\nThat is all of it.\nB_TWO   2"
+ },
+ {
+  "name": "pstable/a name-only row cannot be a fence, a number or punctuation",
+  "host": "",
+  "account": "",
+  "in": "Name    Value\n----    -----\nA_ONE   1\n~~~\nB_TWO   2\n\nName    Value\n----    -----\nA_ONE   1\n42\nB_TWO   2\n\nName    Value\n----    -----\nA_ONE   1\nDone.\nB_TWO   2",
+  "want": "Name    Value\n----    -----\nA_ONE   [REDACTED]\n~~~\nB_TWO   2\n\nName    Value\n----    -----\nA_ONE   [REDACTED]\n42\nB_TWO   2\n\nName    Value\n----    -----\nA_ONE   [REDACTED]\nDone.\nB_TWO   2"
  }
 ]
