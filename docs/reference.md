@@ -299,13 +299,15 @@ in a name written in capitals or of two or more parts or words (`API_KEY`, `--ap
   `${{ secrets.X }}`, a template expression, `${VAR}`, `$VAR`, `<pad>`, a type name (`string`,
   `String`, `Option<String>`), a size (`1234 bytes`), or a block that only opens (`{`, `[`, `|`).
   A reference that carries a literal is a value and goes: a default, assignment or alternate in an
-  expansion (`${VAR:-…}`, `${VAR-…}`, `${VAR:=…}`, `${VAR=…}`, `${VAR:+…}`) whose word is not
-  empty and not itself a variable, and a template expression that holds a quoted string
-  (`{{ .Values.x | default "…" }}`, `default('…')`, `${{ secrets.X || '…' }}`).
-  `${VAR:?message}` stays: it never gives a value, and its word is the message printed when the
-  variable is unset. A variable is `$` and capitals, digits and `_` (`$CI_JOB_TOKEN`), or letters
-  and `_` with no digit (`$password`); a word that mixes lowercase letters and digits after `$`
-  (`$ecret123`) is a value;
+  expansion (`${VAR:-…}`, `${VAR-…}`, `${VAR:=…}`, `${VAR=…}`, `${VAR:+…}`, and Spring's
+  `${db.password:…}` after a plain colon) whose word is not empty and not itself a variable, and
+  a template expression that holds a quoted string (`{{ .Values.x | default "…" }}`,
+  `default('…')`, `${{ secrets.X || '…' }}`). After a plain colon, a word that starts with a
+  digit, a blank or `?` is bash's substring (`${VAR:0:5}`) and stays. `${VAR:?message}` stays: it
+  never gives a value, and its word is the message printed when the variable is unset. A variable
+  is `$` and capitals, digits and `_` (`$CI_JOB_TOKEN`), or letters and `_` with no digit
+  (`$password`), or a name a later step replaced (`$[REDACTED]`); a word that mixes lowercase
+  letters and digits after `$` (`$ecret123`) is a value;
 - as the word after a long flag whose last word is a secret's (`curl --api-key …`,
   `--password …`, `--clientSecret …`), so `--key-name`, `--secret-id`, `--passphrase-file` and
   `--token-ttl` keep theirs. A last word that names the value's form, `string`, `value` or
@@ -320,9 +322,11 @@ in a name written in capitals or of two or more parts or words (`API_KEY`, `--ap
 A quoted value is read as a shell reads a word: to its closing quote, together with quoted parts
 and characters joined to it, so PowerShell's `'it''s …'`, POSIX's `'it'\''s …'` and Python's
 `"""…"""` go whole. Its first part may run across at most 100 line breaks only when the name
-starts its line, after indentation alone or after `export`, `set`, `declare -x`, `typeset -x`,
-`$env:` or `${env:`: only there is the quote sure to open a value. Anywhere else it closes on its
-own line, because in `print("password=", pw)` or `"PASSWORD=" + pw` the quote closes a string,
+starts its line: after indentation, and after nothing on the line but a run of declaration words
+(`export`, `set`, `declare`, `typeset`, `local`, `readonly`, `env`, Dockerfile's `ENV` and
+`ARG`, `const`, `let`, `var`, a word of flags such as `-x`), list markers (`-`, `*`, `+`, `1.`)
+and quote markers (`>`), and directly after `$`, `$env:` or `${env:`. Only there is the quote
+sure to open a value. Anywhere else it closes on its own line, because in `print("password=", pw)` or `"PASSWORD=" + pw` the quote closes a string,
 and read as an opening one it would run into the next line's value. A backslash escapes the next
 character only when that reading closes the quote on its own line, so `'C:\keys\'` closes where
 a POSIX shell closes it; a quote that does not close takes the rest of its line. An unquoted value
@@ -364,8 +368,10 @@ another word (`echo "export PASSWORD=a b"` keeps `b`); a lowercase cmd `set` nam
 written after other words, keeps the tail of a value with spaces; a flag's value of lowercase
 letters only, or after a flag whose last word is not a secret's (`--auth …`); a flag's quoted
 value broken across lines; a quoted value after `=` in the middle of a line that runs across
-lines keeps every line after its first (`docker run -e API_TOKEN="…` and a line break); a
-secret of capitals and digits after `$` (`password: $ECRET123`), read as a variable; JSON
+lines keeps every line after the one its quote opens on, which is the whole value when the quote
+ends its line (`docker run -e API_TOKEN="` and a line break); a secret of capitals and digits
+after `$` (`password: $ECRET123`), read as a variable; a Spring default that starts with a digit
+(`${DB_PASSWORD:1234…}`), read as bash's substring; JSON
 escaped inside a quoted string, such as a `curl -d "{\"password\": \"…\"}"` body;
 NUL-separated `env -0` output; a PowerShell table row whose name fills its column, and the rows
 after a one-word line that follows a table, which reads as a name with no value; and a Windows
@@ -373,7 +379,8 @@ name with spaces at the very end of a path keeps all but its first word. In retu
 begins `Password: …` loses the rest of the line, a call at a line's start (`apiKey: getKey(),`)
 loses its value, a variable named with lowercase letters and digits (`$token2`) or a template
 that names another by a quoted string (`{{ include "chart.name" . }}`) after a secret's key
-loses it, `--key-value` and `--token-string` lose their value whatever it is, a string holding
+loses it, as does bash's substring with a named offset (`${TOKEN:start}`), `--key-value` and
+`--token-string` lose their value whatever it is, a string holding
 `; password: ` followed by another quoted string on its line loses the text between them, and
 prose that quotes a PEM BEGIN marker and later its END marker loses what stands between them.
 
