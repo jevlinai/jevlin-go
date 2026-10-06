@@ -107,5 +107,23 @@
   "prefix": "",
   "unit": "- API_TOKEN= ",
   "suffix": ""
+ },
+ {
+  "name": "a table of nothing but names with no value",
+  "prefix": "Name    Value\n----    -----\n",
+  "unit": "EMPTY_VAR\n",
+  "suffix": "A    1"
+ },
+ {
+  "name": "a table of nothing but wrapped-value lines",
+  "prefix": "Name    Value\n----    -----\nA    1\n",
+  "unit": "        w\n",
+  "suffix": ""
+ },
+ {
+  "name": "a table name followed by a run of blanks and then a value",
+  "prefix": "Name    Value\n----    -----\nEMPTY",
+  "unit": " ",
+  "suffix": "x"
  }
 ]
