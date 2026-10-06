@@ -799,7 +799,11 @@ func hookCursor(ops hookOps, hc hookContext, event string, payload []byte, stdou
 		if err != nil {
 			return // nothing established: allow nothing, stamp nothing
 		}
-		recognized := recognizeCursorCommand(ops, hc, p.Command, shells)
+		runners, err := declaredShells(cursorTarget{}, runtime.GOOS, channelHook)
+		if err != nil {
+			return
+		}
+		recognized := cursorShellRecognizes(ops, hc, p.Command, shells, runners)
 		if recognized == nil {
 			return
 		}
@@ -1093,6 +1097,30 @@ func recognizeCursorCommand(ops hookOps, hc hookContext, command string, shells 
 		}
 	}
 	return nil
+}
+
+// cursorShellRecognizes is beforeShellExecution's allow decision, with the
+// shells Cursor runs and the runners it starts its hooks with as parameters,
+// so every OS's answer is exercised on every runner.
+//
+// Where those runners hand the hook the payload re-encoded (Windows,
+// dropin-miner#113), the command this hook reads is not the command the shell
+// will run: every byte above ASCII arrives as other characters. A typographic
+// quote, which PowerShell ends a single-quoted string at, arrives as three
+// characters readRenderedPath has no reason to refuse. So there, a binary or
+// config path that is not ASCII is not allowed. The query in the request
+// body may still be anything: the body must be one JSON object, and no line
+// of a JSON object begins with a quote, so it cannot end the here-string it
+// sits in.
+func cursorShellRecognizes(ops hookOps, hc hookContext, command string, shells, runners []shellKind) *recognizedForm {
+	f := recognizeCursorCommand(ops, hc, command, shells)
+	if f == nil {
+		return nil
+	}
+	if !hookInputIntact(runners) && (!isASCII(f.bin) || !isASCII(f.cfg)) {
+		return nil
+	}
+	return f
 }
 
 func isSearchForm(f *recognizedForm) bool {

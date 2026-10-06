@@ -49,6 +49,9 @@ type recognizedForm struct {
 	path []string
 	// body is the request body of a search, already checked.
 	body string
+	// bin and cfg are the binary and config paths as the command names them,
+	// read back out of their quoting.
+	bin, cfg string
 }
 
 // renderedFormMatch is one rendered form a command matched on grammar
@@ -118,7 +121,7 @@ func recognizeRenderedForm(command string, executable func() (string, error), cf
 		return nil
 	}
 	for _, m := range matchedRenderedForms(command, cfg, shells) {
-		if !sameBinary(m.bin, executable) {
+		if !binaryPathRunsAsRead(runtime.GOOS, m.bin) || !sameBinary(m.bin, executable) {
 			continue
 		}
 		// The config in the command must already be in clean form. samePath
@@ -134,9 +137,9 @@ func recognizeRenderedForm(command string, executable func() (string, error), cf
 			if !isOneVersionOneRequest(m.body) {
 				continue
 			}
-			return &recognizedForm{path: m.path, body: m.body}
+			return &recognizedForm{path: m.path, body: m.body, bin: m.bin, cfg: m.cfg}
 		}
-		return &recognizedForm{path: m.path}
+		return &recognizedForm{path: m.path, bin: m.bin, cfg: m.cfg}
 	}
 	return nil
 }
@@ -314,6 +317,30 @@ func readRenderedPath(sh shellKind, raw string) (string, bool) {
 		return raw, ok && quoted == `"`+raw+`"`
 	}
 	return "", false
+}
+
+// binaryPathRunsAsRead reports whether the binary path in a command names, to
+// the system that runs it, the file sameBinary resolves it to.
+//
+// sameBinary resolves a symlink before the `..` that follows it, the way a
+// POSIX kernel does, so on macOS and Linux the two agree. Windows does not: it
+// collapses `a\..` as text before it opens anything, whatever `a` is. So with
+// `link` pointing elsewhere, `C:\X\link\..\bin\jevlin.exe` resolves to this
+// binary for sameBinary and runs `C:\X\bin\jevlin.exe` on Windows. A binary
+// path holding a `.` or `..` element is therefore not taken on Windows, where
+// the skill renders os.Executable's path, which is already clean. It is taken
+// elsewhere: os.Executable on macOS hands back an unclean path after a
+// relative launch, and the skill renders that path as it is.
+func binaryPathRunsAsRead(goos, path string) bool {
+	if goos != "windows" {
+		return true
+	}
+	for _, el := range strings.FieldsFunc(path, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if el == "." || el == ".." {
+			return false
+		}
+	}
+	return true
 }
 
 // sameBinary is the identity check: the command's own path, resolved, is the
