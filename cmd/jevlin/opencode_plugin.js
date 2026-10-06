@@ -181,12 +181,20 @@ export const JevlinLineage = async ({ client }) => {
         if (event?.type === "session.idle" || (event?.type === "session.status" && event?.properties?.status?.type === "idle")) {
           const sid = event?.properties?.sessionID
           const turnId = typeof sid === "string" ? searched.get(sid) : undefined
+          // A subagent runs as a child session. Its turn is not the user's,
+          // and a subagent's own records are not sent (hard invariant 2), so
+          // only a session known to have no parent reports one. A parent this
+          // plugin could not learn counts as one: the turn is left unreported,
+          // to be tried again at the next idle.
           if (turnId && reported.get(sid) !== turnId) {
-            const messages = (await client.session.messages({ path: { id: sid } }))?.data ?? []
-            const turn = turnOf(messages)
-            if (turn && turn.turn === turnId) {
-              reported.set(sid, turnId)
-              await reportTurn({ session: sid, ...turn })
+            await parentOf(sid)
+            if (parents.get(sid) === "") {
+              const messages = (await client.session.messages({ path: { id: sid } }))?.data ?? []
+              const turn = turnOf(messages)
+              if (turn && turn.turn === turnId) {
+                reported.set(sid, turnId)
+                await reportTurn({ session: sid, ...turn })
+              }
             }
           }
         }

@@ -197,7 +197,10 @@ func TestOpencodePluginReportsTheTurn(t *testing.T) {
   ]},
   {info:{id:'m_a2',role:'assistant',modelID:'claude-opus-5-5',tokens:{input:50,output:10,cache:{read:0,write:0}}}, parts:[{type:'text',text:'Populous designed it.'}]},
  ];
- const client = {session:{ messages: async()=>({data:messages}), get: async({path})=>({data:{id:path.id}}) }};
+ const client = {session:{ messages: async()=>({data:messages}), get: async({path})=>{
+  if (path.id==='ses_unknown') throw new Error('unreachable');
+  return {data:{id:path.id, ...(path.id==='ses_child2'?{parentID:'ses_1'}:{})}};
+ } }};
  const hooks = await plugin.JevlinLineage({client});
  const result = {};
  // idle before any search: nothing is reported
@@ -217,6 +220,17 @@ func TestOpencodePluginReportsTheTurn(t *testing.T) {
  await hooks.event({event:{type:'session.status',properties:{sessionID:'ses_1',status:{type:'idle'}}}});
  await new Promise(r=>setTimeout(r,400));
  result.again = fs.existsSync(input.got);
+ // A subagent's session reports nothing: one whose creation the plugin saw,
+ // one whose parent it had to ask for, and one whose parent it could not learn.
+ await hooks.event({event:{type:'session.created',properties:{info:{id:'ses_child',parentID:'ses_1'}}}});
+ result.children = {};
+ for (const sid of ['ses_child','ses_child2','ses_unknown']) {
+  if (fs.existsSync(input.got)) fs.unlinkSync(input.got);
+  await hooks['tool.execute.before']({tool:'bash',sessionID:sid,callID:'c_'+sid},{args:{command:'jevlin search stadium'}});
+  await hooks.event({event:{type:'session.idle',properties:{sessionID:sid}}});
+  await new Promise(r=>setTimeout(r,400));
+  result.children[sid] = fs.existsSync(input.got);
+ }
  process.stdout.write(JSON.stringify(result));`
 	in, _ := json.Marshal(map[string]any{"plugin": renderAgentScriptFor(opencodePluginJS, shellPOSIX, "/etc/jevlin.toml", bin), "got": got, "argv": argv})
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -229,6 +243,7 @@ func TestOpencodePluginReportsTheTurn(t *testing.T) {
 	}
 	var res struct {
 		Before, Again bool
+		Children      map[string]bool
 		Env           traceEnvelope
 		Raw           string
 		Argv          []string
@@ -239,6 +254,14 @@ func TestOpencodePluginReportsTheTurn(t *testing.T) {
 	}
 	if res.Before || res.Again {
 		t.Errorf("reported before a search (%v) or twice (%v)", res.Before, res.Again)
+	}
+	if len(res.Children) != 3 {
+		t.Fatalf("the subagent cases did not all run: %v", res.Children)
+	}
+	for sid, reported := range res.Children {
+		if reported {
+			t.Errorf("a subagent's turn was reported (%s)", sid)
+		}
 	}
 	// The search now carries a turn id, and the report names the same turn.
 	if res.Env.TurnID != traceHash("ses_1|m_user") || res.Turn.Session != "ses_1" || res.Turn.Turn != "m_user" {
