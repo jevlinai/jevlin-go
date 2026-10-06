@@ -2371,5 +2371,26 @@
   "account": "",
   "in": "x --value Q1 --default-value D1 --user-string U1 --string-value S1 --phrase P1 --secret-id I1 --key-name N1 --secret-file F1 --token-ttl 30",
   "want": "x --value Q1 --default-value D1 --user-string U1 --string-value S1 --phrase P1 --secret-id I1 --key-name N1 --secret-file F1 --token-ttl 30"
+ },
+ {
+  "name": "assignment/a declaration, a list marker or a $ starts the line too",
+  "host": "",
+  "account": "",
+  "in": "const API_TOKEN = \"\"\"\nLineOne1\n\"\"\"\nlocal DB_PASSWORD=\"\nLineTwo2\n\"\nENV API_TOKEN=\"a\nb\"\nexport const apiToken = 'c\nd'\n$ApiToken = \"e\nf\"\n- API_TOKEN=\"g\nh\"\n> API_TOKEN=\"i\nj\"\n1. API_TOKEN=\"k\nl\"\nlocal -r API_TOKEN=\"m\nn\"",
+  "want": "const API_TOKEN = [REDACTED]\nlocal DB_PASSWORD=[REDACTED]\nENV API_TOKEN=[REDACTED]\nexport const apiToken = [REDACTED]\n$ApiToken = [REDACTED]\n- API_TOKEN=[REDACTED]\n> API_TOKEN=[REDACTED]\n1. API_TOKEN=[REDACTED]\nlocal -r API_TOKEN=[REDACTED]"
+ },
+ {
+  "name": "assignment/a word that is not a declaration's leaves the name mid-line",
+  "host": "",
+  "account": "",
+  "in": "foo API_TOKEN=\"a\nb\" next\n-- API_TOKEN=\"c\nd\" next\n1.5 API_TOKEN=\"e\nf\" next",
+  "want": "foo API_TOKEN=[REDACTED]\nb\" next\n-- API_TOKEN=[REDACTED]\nd\" next\n1.5 API_TOKEN=[REDACTED]\nf\" next"
+ },
+ {
+  "name": "assignment/the cost: a quote opened at the end of a line mid-line keeps the whole value",
+  "host": "",
+  "account": "",
+  "in": "docker run -e API_TOKEN=\"\nWholeValue1\" img",
+  "want": "docker run -e API_TOKEN=[REDACTED]\nWholeValue1\" img"
  }
 ]

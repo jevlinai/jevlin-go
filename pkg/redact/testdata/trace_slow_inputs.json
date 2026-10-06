@@ -95,5 +95,17 @@
   "prefix": "password: ${A:-",
   "unit": "x",
   "suffix": "}"
+ },
+ {
+  "name": "a run of list markers before one name",
+  "prefix": "",
+  "unit": "- ",
+  "suffix": "API_TOKEN=\"x"
+ },
+ {
+  "name": "names after a list marker with no value, one after another",
+  "prefix": "",
+  "unit": "- API_TOKEN= ",
+  "suffix": ""
  }
 ]

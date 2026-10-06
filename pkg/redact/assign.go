@@ -229,61 +229,85 @@ func secretValueAt(s string, floor, e int, words *wordScan) (start, end int, ok 
 }
 
 // assignmentStartsLine reports whether the name at p begins its line: after
-// indentation only, or after `export`, `set`, `declare -x` or `typeset -x`,
-// or directly after `$env:` or `${env:`. Only there is a quote after `=`
-// certain to open a value, and only there may the value run across lines, as
-// a quoted key in a .env file or Python's triple quotes do. Anywhere else the
-// quote may close a string the name was written in ("PASSWORD=" + pw,
+// indentation, and after nothing else on the line but a run of the words a
+// declaration or a list puts before a name (declarationWord: export const,
+// local -r, ENV, - , > ), and directly after `$`, `$env:` or `${env:`. Only
+// there is a quote after `=` certain to open a value, since nothing before it
+// on the line holds a quote, and only there may the value run across lines,
+// as a .env file, a heredoc-free shell script, Python's or a JavaScript
+// const's triple quotes and a Compose list write it. Anywhere else the quote
+// may close a string the name was written in ("PASSWORD=" + pw,
 // print("password=", pw)), and read as an opening one it ran on to the next
-// quote, inside the value assigned on the next line. Nothing before floor is
-// read: a removed value is a placeholder on the next pass.
+// quote, inside the value assigned on the next line. The words are a fixed
+// set because no later step changes them: a rule that asked only that no
+// quote stand before the name would decide differently on a second pass
+// once a home path's segment holding a quote had been removed. Nothing
+// before floor is read: a removed value is a placeholder on the next pass.
 func assignmentStartsLine(s string, floor, p int) bool {
 	i := p
-	if i-6 >= floor && asciiEqualFold(s[i-6:i], "${env:") {
+	switch {
+	case i-6 >= floor && asciiEqualFold(s[i-6:i], "${env:"):
 		i -= 6
-	} else if i-5 >= floor && asciiEqualFold(s[i-5:i], "$env:") {
+	case i-5 >= floor && asciiEqualFold(s[i-5:i], "$env:"):
 		i -= 5
+	case i-1 >= floor && s[i-1] == '$':
+		i--
 	}
-	k := i
-	for k > floor && isBlank(s[k-1]) {
-		k--
-	}
-	if k < i {
-		if j := shellKeywordBefore(s, floor, k); j >= 0 {
-			for k = j; k > floor && isBlank(s[k-1]); k-- {
-			}
+	for {
+		k := i
+		for k > floor && isBlank(s[k-1]) {
+			k--
 		}
+		if k == 0 || (k > floor && s[k-1] == '\n') {
+			return true
+		}
+		if k == i {
+			return false
+		}
+		j := k
+		for j > floor && !isSpace(s[j-1]) {
+			j--
+		}
+		if (j > 0 && !isSpace(s[j-1])) || !declarationWord(s[j:k]) {
+			return false
+		}
+		i = j
 	}
-	return k == 0 || (k > floor && s[k-1] == '\n')
 }
 
-// shellKeywordBefore is where the `export`, `set`, `declare -x` or
-// `typeset -x` that ends at i starts, or -1.
-func shellKeywordBefore(s string, floor, i int) int {
-	j := i
-	for j > floor && (isLetter(s[j-1]) || s[j-1] == '-') {
-		j--
+// declarationWord reports whether w is one of the words that may stand
+// before a name that starts its line: a declaration keyword of a shell, a
+// Dockerfile or JavaScript in any letter case (export, set, declare,
+// typeset, local, readonly, env, arg, const, let, var), a word of flags
+// (-x, -r), a list marker (-, *, +, 1., 1)) or a quote marker (>).
+func declarationWord(w string) bool {
+	for _, k := range declarationKeywords {
+		if asciiEqualFold(w, k) {
+			return true
+		}
 	}
-	w := s[j:i]
-	if asciiEqualFold(w, "export") || asciiEqualFold(w, "set") {
-		return j
+	switch {
+	case w == "-" || w == "*" || w == "+" || w == ">":
+		return true
+	case len(w) >= 2 && w[0] == '-':
+		for i := 1; i < len(w); i++ {
+			if !isLetter(w[i]) {
+				return false
+			}
+		}
+		return true
+	case len(w) >= 2 && (w[len(w)-1] == '.' || w[len(w)-1] == ')'):
+		for i := 0; i < len(w)-1; i++ {
+			if !isDigit(w[i]) {
+				return false
+			}
+		}
+		return true
 	}
-	if len(w) < 2 || w[0] != '-' || strings.IndexByte(w[1:], '-') >= 0 {
-		return -1
-	}
-	k := j
-	for k > floor && isBlank(s[k-1]) {
-		k--
-	}
-	m := k
-	for m > floor && isLetter(s[m-1]) {
-		m--
-	}
-	if k < j && (asciiEqualFold(s[m:k], "declare") || asciiEqualFold(s[m:k], "typeset")) {
-		return m
-	}
-	return -1
+	return false
 }
+
+var declarationKeywords = []string{"export", "set", "declare", "typeset", "local", "readonly", "env", "arg", "const", "let", "var"}
 
 func isLetter(c byte) bool { return isUpper(c) || isLower(c) }
 

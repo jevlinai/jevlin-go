@@ -496,39 +496,43 @@ const traceWordSkip = (w, to) => {
   w.begun = true
 }
 
-// A name begins its line after indentation only, or after export, set,
-// declare -x or typeset -x, or directly after $env: or ${env:. Only there is
-// a quote after = certain to open a value and allowed to run across lines;
-// elsewhere it may close a string ("PASSWORD=" + pw) and must not run on
-// into the next line. Nothing before floor is read.
+// A name begins its line after indentation and nothing else on the line but
+// a run of declaration words (export const, local -r, ENV, - , > ), and
+// directly after $, $env: or ${env:. Only there is a quote after = certain
+// to open a value and allowed to run across lines; elsewhere it may close a
+// string ("PASSWORD=" + pw) and must not run on into the next line. The words
+// are a fixed set because no later step changes them. Nothing before floor
+// is read.
 const traceIsLetter = (c) => traceIsUpper(c) || traceIsLower(c)
-const traceShellKeywordBefore = (s, floor, i) => {
-  let j = i
-  while (j > floor && (traceIsLetter(s.charCodeAt(j - 1)) || s.charCodeAt(j - 1) === 45)) j--
-  const w = s.slice(j, i).toLowerCase()
-  if (w === 'export' || w === 'set') return j
-  if (w.length < 2 || w[0] !== '-' || w.indexOf('-', 1) >= 0) return -1
-  let k = j
-  while (k > floor && traceIsBlank(s.charCodeAt(k - 1))) k--
-  let m = k
-  while (m > floor && traceIsLetter(s.charCodeAt(m - 1))) m--
-  const kw = s.slice(m, k).toLowerCase()
-  return k < j && (kw === 'declare' || kw === 'typeset') ? m : -1
+const TRACE_DECLARATION_KEYWORDS = new Set(['export', 'set', 'declare', 'typeset', 'local', 'readonly', 'env', 'arg', 'const', 'let', 'var'])
+const traceDeclarationWord = (w) => {
+  if (TRACE_DECLARATION_KEYWORDS.has(w.toLowerCase())) return true
+  if (w === '-' || w === '*' || w === '+' || w === '>') return true
+  if (w.length >= 2 && w[0] === '-') {
+    for (let i = 1; i < w.length; i++) if (!traceIsLetter(w.charCodeAt(i))) return false
+    return true
+  }
+  if (w.length >= 2 && (w[w.length - 1] === '.' || w[w.length - 1] === ')')) {
+    for (let i = 0; i < w.length - 1; i++) if (w.charCodeAt(i) < 48 || w.charCodeAt(i) > 57) return false
+    return true
+  }
+  return false
 }
 const traceAssignmentStartsLine = (s, floor, p) => {
   let i = p
   if (i - 6 >= floor && s.slice(i - 6, i).toLowerCase() === '${env:') i -= 6
   else if (i - 5 >= floor && s.slice(i - 5, i).toLowerCase() === '$env:') i -= 5
-  let k = i
-  while (k > floor && traceIsBlank(s.charCodeAt(k - 1))) k--
-  if (k < i) {
-    const j = traceShellKeywordBefore(s, floor, k)
-    if (j >= 0) {
-      k = j
-      while (k > floor && traceIsBlank(s.charCodeAt(k - 1))) k--
-    }
+  else if (i - 1 >= floor && s.charCodeAt(i - 1) === 36) i -= 1
+  for (;;) {
+    let k = i
+    while (k > floor && traceIsBlank(s.charCodeAt(k - 1))) k--
+    if (k === 0 || (k > floor && s.charCodeAt(k - 1) === 10)) return true
+    if (k === i) return false
+    let j = k
+    while (j > floor && !traceIsSpace(s.charCodeAt(j - 1))) j--
+    if ((j > 0 && !traceIsSpace(s.charCodeAt(j - 1))) || !traceDeclarationWord(s.slice(j, k))) return false
+    i = j
   }
-  return k === 0 || (k > floor && s.charCodeAt(k - 1) === 10)
 }
 
 // cmd's `set NAME=value` takes the rest of the line: only where cmd reads it

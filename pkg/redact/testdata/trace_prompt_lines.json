@@ -28,5 +28,9 @@
  "cmd = \"set API_TOKEN=\" + t",
  "msg = `password: \"` + pw",
  "echo \"user: x; password: \" + pw",
- "log(\"done; token: \" + t)"
+ "log(\"done; token: \" + t)",
+ "const s = \"PASSWORD=\" + pw",
+ "- cmd = \"API_TOKEN=\" + t",
+ "> print(\"token=\", t)",
+ "export const label = 'api_key=' + k"
 ]
