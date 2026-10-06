@@ -183,6 +183,26 @@ func TestARecognizedConfigPathIsAlreadyClean(t *testing.T) {
 	}
 }
 
+// A config path spelled with forward slashes is clean: on Windows `/` is a
+// separator, and Clean's rewriting it to `\` is not a `.` or `..` element.
+// Elsewhere ToSlash changes nothing and this is the control again; the
+// Windows runners are where it holds anything.
+func TestAConfigPathSpelledWithForwardSlashesIsStillClean(t *testing.T) {
+	bin, cfg, search := exactTestInstall(t)
+	slashed := filepath.ToSlash(cfg)
+	command := strings.Replace(search, posixQuoteArg(cfg), posixQuoteArg(slashed), 1)
+	if command == search && slashed != cfg {
+		t.Fatal("the slashed config was not applied")
+	}
+	if f := recognizeRenderedForm(command, func() (string, error) { return bin, nil }, cfg, []shellKind{shellPOSIX}); f == nil {
+		t.Errorf("a config path spelled with forward slashes was refused: %s", slashed)
+	}
+	dotted := filepath.ToSlash(filepath.Join(filepath.Dir(cfg), "bin")) + "/../jevlin.toml"
+	if f := recognizeRenderedForm(strings.Replace(search, posixQuoteArg(cfg), posixQuoteArg(dotted), 1), func() (string, error) { return bin, nil }, cfg, []shellKind{shellPOSIX}); f != nil {
+		t.Errorf("a slashed config path with a .. element was recognized: %s", dotted)
+	}
+}
+
 // reencodedByCursorOnWindows is what Cursor's Windows hook wrapper hands a
 // hook (dropin-miner#113): each UTF-8 byte of the payload read as one cp1252
 // character, then written out as UTF-8 again.
