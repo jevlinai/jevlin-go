@@ -129,8 +129,11 @@ func recognizeRenderedForm(command string, executable func() (string, error), cf
 		// cleans to `x` whatever `a` is, while the kernel follows `a` if it
 		// is a symlink and opens another file. Only the hook's own path is
 		// cleaned, so the doubled separators a %q-quoted hook command hands
-		// it still compare.
-		if cfg != "" && (filepath.Clean(m.cfg) != m.cfg || !samePath(m.cfg, cfg)) {
+		// it still compare. On Windows, where `/` is a separator too, Clean
+		// also turns every `/` into `\`, so the path is compared in that
+		// spelling: a `.` or `..` element or a doubled separator makes it
+		// unclean, and a forward slash does not.
+		if cfg != "" && (filepath.Clean(m.cfg) != filepath.FromSlash(m.cfg) || !samePath(m.cfg, cfg)) {
 			continue
 		}
 		if m.wantsBody {
