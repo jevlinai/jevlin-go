@@ -2301,5 +2301,26 @@
   "account": "",
   "in": "Name    Value\n----    -----\nA_ONE   1\n~~~\nB_TWO   2\n\nName    Value\n----    -----\nA_ONE   1\n42\nB_TWO   2\n\nName    Value\n----    -----\nA_ONE   1\nDone.\nB_TWO   2",
   "want": "Name    Value\n----    -----\nA_ONE   [REDACTED]\n~~~\nB_TWO   2\n\nName    Value\n----    -----\nA_ONE   [REDACTED]\n42\nB_TWO   2\n\nName    Value\n----    -----\nA_ONE   [REDACTED]\nDone.\nB_TWO   2"
+ },
+ {
+  "name": "keys/a reference's literal default goes",
+  "host": "",
+  "account": "",
+  "in": "services:\n  db:\n    environment:\n      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-r00tPa55w0rd}\n      DB_PASSWORD: ${DB_PASSWORD-Fallback1}\n      API_TOKEN: ${API_TOKEN:=Assigned2}\n      api_key: ${API_KEY=Assigned3}\n      SECRET: ${SECRET:+Alternate4}\n      {\"password\": \"${DB_PASS:-Quoted5}\"}",
+  "want": "services:\n  db:\n    environment:\n      MYSQL_ROOT_PASSWORD: [REDACTED]\n      DB_PASSWORD: [REDACTED]\n      API_TOKEN: [REDACTED]\n      api_key: [REDACTED]\n      SECRET: [REDACTED]\n      {\"password\": [REDACTED]}"
+ },
+ {
+  "name": "keys/a template's quoted literal goes",
+  "host": "",
+  "account": "",
+  "in": "password: {{ .Values.db.password | default \"hunter2secret\" }}\napi_key: {{ default \"Lit2\" .Values.apiKey }}\ntoken: \"{{ token | default('Lit3') }}\"\nsecret: ${{ secrets.X || 'Lit4' }}\nclient_secret: {{ .Values.s | default `Lit5` }}",
+  "want": "password: [REDACTED]\napi_key: [REDACTED]\ntoken: [REDACTED]\nsecret: [REDACTED]\nclient_secret: [REDACTED]"
+ },
+ {
+  "name": "survives/a reference with no literal stays",
+  "host": "",
+  "account": "",
+  "in": "password: ${DB_PASSWORD}\ntoken: $API_TOKEN\nsecret: ${{ secrets.X }}\napi_key: {{ .Values.apiKey | b64enc }}\npassword: ${DB_PASSWORD:?set DB_PASSWORD first}\ntoken: ${TOKEN:-}\nsecret: ${SECRET:-$FALLBACK}\npassword: ${DB_PASSWORD#prefix}",
+  "want": "password: ${DB_PASSWORD}\ntoken: $API_TOKEN\nsecret: ${{ secrets.X }}\napi_key: {{ .Values.apiKey | b64enc }}\npassword: ${DB_PASSWORD:?set DB_PASSWORD first}\ntoken: ${TOKEN:-}\nsecret: ${SECRET:-$FALLBACK}\npassword: ${DB_PASSWORD#prefix}"
  }
 ]

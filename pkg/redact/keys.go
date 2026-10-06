@@ -168,6 +168,17 @@ func opensMember(s string, floor, i int) bool {
 // Removing them hides nothing, and they are what code, CI files and
 // tokenizer configs hold. So is a value that only opens a block: {, [, a
 // YAML | or >-.
+//
+// A reference that carries a literal is not one, because the literal is the
+// value whenever the variable is unset: a default or an assignment in a
+// shell or Compose expansion (literalDefaultPattern: ${VAR:-x}, ${VAR-x},
+// ${VAR:=x}, ${VAR=x}, and ${VAR:+x}, whose word is the value when VAR is
+// set), and a template expression holding a quoted string anywhere
+// (| default "x", default('x'), || 'x'). ${VAR:?message} stays: it never
+// gives a value, and its word is the message printed when VAR is unset. A
+// default that is itself a variable, or empty, stays. The cost: a template
+// that names another by a quoted string ({{ include "chart.name" . }}) or
+// carries a required message loses it after a secret's key.
 func notASecret(v string) bool {
 	if strings.HasSuffix(v, ",") || strings.HasSuffix(v, ";") {
 		v = v[:len(v)-1]
@@ -175,10 +186,18 @@ func notASecret(v string) bool {
 	if len(v) >= 2 && (v[0] == '"' || v[0] == '\'') && v[len(v)-1] == v[0] {
 		v = v[1 : len(v)-1]
 	}
+	if m := literalDefaultPattern.FindStringSubmatch(v); m != nil && !bareVariablePattern.MatchString(m[1]) {
+		return false
+	}
 	return secretReferencePattern.MatchString(v)
 }
 
-var secretReferencePattern = regexp.MustCompile(`^(?:\$?\{\{[^{}\n]*\}\}|\$\{[^}\n]*\}|\$[A-Za-z_][A-Za-z0-9_]*|<[^<>\t\n ]+>|string|str|number|int|integer|bool|boolean|any|unknown|bytes|float|double|char|String|[A-Za-z_][A-Za-z0-9_:]*<[^\n]*>|[0-9]+ bytes|[{\[(|>+-]+)$`)
+var (
+	literalDefaultPattern = regexp.MustCompile(`^\$\{[A-Za-z_][A-Za-z0-9_]*:?[-=+]([^}\n]*)\}$`)
+	bareVariablePattern   = regexp.MustCompile(`^(?:\$[A-Za-z_][A-Za-z0-9_]*)?$`)
+)
+
+var secretReferencePattern = regexp.MustCompile(`^(?:\$?\{\{[^{}"'\x60\n]*\}\}|\$\{[^}\n]*\}|\$[A-Za-z_][A-Za-z0-9_]*|<[^<>\t\n ]+>|string|str|number|int|integer|bool|boolean|any|unknown|bytes|float|double|char|String|[A-Za-z_][A-Za-z0-9_:]*<[^\n]*>|[0-9]+ bytes|[{\[(|>+-]+)$`)
 
 // startsLine reports whether only blanks and an optional `-` list marker
 // stand between the start of a line and i, reading nothing before floor.

@@ -83,5 +83,17 @@
   "prefix": "Name    Value\n----    -----\n",
   "unit": "a",
   "suffix": "."
+ },
+ {
+  "name": "keys whose values are references with a default, line after line",
+  "prefix": "",
+  "unit": "password: ${A:-x}\n",
+  "suffix": ""
+ },
+ {
+  "name": "one key whose default runs to the end of the text",
+  "prefix": "password: ${A:-",
+  "unit": "x",
+  "suffix": "}"
  }
 ]
