@@ -267,41 +267,92 @@ degradation.
 | `history` | The assistant text before the search, scrubbed of secrets, last 32 KiB. Codex and Hermes send none. |
 | `host_meta` | Agent-specific metadata. |
 
-The scrub removes what has a credential's shape (API keys, GitHub and AWS tokens, JWTs, a
-password inside a URL), email addresses, and the account name in a home path. It also removes
-what has no shape.
+The scrub removes what has a credential's shape (API keys, Stripe secret keys, GitHub and AWS
+tokens, JWTs, a password inside a URL), a PEM private key block whole, markers included, quoted
+or not (one cut short goes from its BEGIN marker through the lines that still look like a key's
+body: base64 and armor headers, indented, blockquoted or not), email addresses, and the
+account name in a home path: after `/home/`, `/Users/` or `C:\Users\`, also with every separator
+doubled as Python and JSON print a path. A Windows name of up to four words (`C:\Users\Équipe
+Données\Documents`) goes whole when the path goes on past it; at the end of a path only its first
+word goes. It also removes what has no shape.
 
-A secret known by its name: the value of an assignment whose name has, as one of the parts `_`,
-`-` and `.` separate, `PASSWORD`, `PASSWD`, `PASSPHRASE`, `SECRET`, `SECRETS`, `TOKEN`,
-`CREDENTIAL`, `CREDENTIALS` or `APIKEY` in any letter case (`DATABASE_PASSWORD=…`, `client-secret=…`, `db.password=…`), or
-`KEY` or `PASS` in a name written in capitals or of two or more parts (`API_KEY=…`,
-`--api-key=…`, `db_pass=…`); also `PGPASSWORD` and `MYSQL_PWD`. A bare `key=…`, `--key=2` or
-`pass=2` is left. Every `=` is read, so a secret chained behind another setting goes too
-(`?user=fred&password=…`, `--env=DB_PASSWORD=…`), and PowerShell's `$env:NAME = '…'` counts
-with its spaces. A quoted value goes to its closing quote, across at most 100 line breaks; a quote
-that does not close takes the rest of its line. An unquoted value goes to whitespace, `&` or
-`;`, and a closing `)`, `]`, `}`, quote or `,` after it that belongs to the text around it
-stays.
+A secret known by its name. A name counts when one of its parts is `PASSWORD`, `PASSWD`,
+`PASSPHRASE`, `SECRET`, `SECRETS`, `TOKEN`, `CREDENTIAL`, `CREDENTIALS` or `APIKEY` in any letter
+case, the parts being what `_`, `-` and `.` separate (`DATABASE_PASSWORD`, `client-secret`,
+`db.password`) and, in camelCase, the last word (`accessToken`, `clientSecret`, `.npmrc`'s
+`_authToken`; `tokenCount` and `keyName` hold a count and a name and stay). `KEY` and `PASS` count
+in a name written in capitals or of two or more parts or words (`API_KEY`, `--api-key`, `apiKey`,
+`db_pass`); so `primaryKey=` loses its value too, as `primary_key=` does. Also `PGPASSWORD`,
+`MYSQL_PWD`, and `sig` as a URL query parameter (an Azure SAS). A bare `key=…`, `--key=2` or
+`pass=2` is left. Its value goes when it is written:
+
+- after `=`, wherever the `=` is, so a secret chained behind another setting goes too
+  (`?user=fred&password=…`, `--env=DB_PASSWORD=…`); with spaces or tabs around `=` after
+  PowerShell's `$env:NAME` and `${env:NAME}`, and before any quoted value (`password = "…"`);
+- after a colon, as YAML and JSON write it: a key at the start of a line, quoted or not, takes
+  the rest of the line (`password: …`, `"client_secret": "…",`); elsewhere only where a member of
+  an object, a map or a call opens (after `{`, `,`, `(` or `[`), and only a quoted value that
+  closes on its own line, and only that string (`{"password":"…","user":"app"}` keeps its user).
+  A key and a colon inside a string (`input("Password: ")`) take nothing, and no colon rule
+  reads past a line break. A value that is a reference or a placeholder stays:
+  `${{ secrets.X }}`, a template expression, `${VAR}`, `$VAR`, `<pad>`, a type name (`string`,
+  `String`, `Option<String>`), a size (`1234 bytes`), or a block that only opens (`{`, `[`, `|`);
+- as the word after a long flag whose last word is a secret's (`curl --api-key …`,
+  `--password …`, `--clientSecret …`), so `--key-name`, `--secret-id`, `--passphrase-file` and
+  `--token-ttl` keep theirs. Not a value: lowercase letters only (`the --password flag`), the
+  flag's own name in capitals (`--token TOKEN`), a redirection or pipe (`<`, `>`, `|`), a command's
+  output (`$(…)`), or anything after a `--with-` or `--no-` switch. A single-dash flag such as
+  `-p` is not read.
+
+A quoted value is read as a shell reads a word: to its closing quote, across at most 100 line
+breaks, together with quoted parts and characters joined to it, so PowerShell's `'it''s …'`,
+POSIX's `'it'\''s …'` and Python's `"""…"""` go whole. A backslash escapes the next character
+only when that reading closes the quote on its own line, so `'C:\keys\'` closes where a POSIX
+shell closes it; a quote that does not close takes the rest of its line. An unquoted value goes
+to whitespace, `&` or `;`, keeping a character a backslash escapes (`correct\ horse`), and a
+closing `)`, `]`, `}`, quote, backtick or `,` after it that belongs to the text around it stays. When the
+word holding the name opened with a quote that is still open, the value runs to where that
+quote closes on its line, or to a `;` or `&` before it (`-e "DB_PASSWORD=correct horse
+battery"`, `"Server=db;Password=a b"`). cmd's `set NAME=…` takes the rest of the line where cmd
+reads it as a command: at the start of a line, or after `&`, `(`, `|` or a backtick, for a name
+with no lowercase letter.
 
 An environment listing: every value in a run of lines naming five or more different variables,
 as `NAME=value`, `export`, `declare -x` or `typeset -x`, also behind a list marker or `cat -n`
-numbering. A line whose value starts with `=` (`requests==2.31.0`), ends with `,` (a keyword
-argument) or holds another `NAME=` after a space (a logfmt record) is not part of one, and
-breaks the run. And the value of `JEVLIN_TRACE_BRIDGE` in a quoted command, in any shell's
-syntax.
+numbering, and every value in a PowerShell `Name`/`Value` table under its rule of dashes
+(`Get-ChildItem Env:`; any hashtable PowerShell prints looks the same and loses its values too),
+each row a name, two or more blanks and a value, the first line that is not one ending the
+table.
+A line whose value starts with `=` (`requests==2.31.0`), ends with `,` (a keyword argument) or
+holds another `NAME=` after a space (a logfmt record) is not part of a listing, and breaks the
+run. And the value of `JEVLIN_TRACE_BRIDGE` in a quoted command, as POSIX, PowerShell (`$env:`
+and `${env:}`) and cmd write it.
 
 This machine's names: the hostname's first label wherever it stands as a word, and your
 account name only where the text uses it as an account. That is the value of `USER`,
 `USERNAME`, `LOGNAME` or `SUDO_USER`, directly before `@` (`ssh name@host`, a prompt), and a
 home path, including `/mnt/c/Users/` and an account name with a space in it. Anywhere else your
 account name is left, because it is often an ordinary word. The account is the one `USERNAME`
-names on Windows, `USER` or else `LOGNAME` elsewhere, or else the home directory's name. A
-generic name such as `root`, `ubuntu`, `vscode` or `macbook-pro` is left, because it identifies
-nobody.
+names on Windows, `USER` or else `LOGNAME` elsewhere, or else the home directory's name, and is
+searched for only when it is ASCII, so that both scrubbers fold its case alike; a non-ASCII name
+goes in a home path by the rule above and nowhere else. A generic name such as `root`,
+`ubuntu`, `vscode` or `macbook-pro` is left, because it identifies nobody.
 
-It is a filter over text a model wrote, not a guarantee: a secret with no telling name and no
-known shape, in ordinary prose, passes, and so does one written as `password: …`,
-`"password": "…"` or `NAME = …` outside PowerShell.
+It is a filter over text a model wrote, not a guarantee. A secret with no telling name and no
+known shape, in ordinary prose, passes, and so do these: `password: …` in the middle of a
+sentence; `NAME = value` unquoted outside PowerShell; a value inside a quote that opened before
+another word (`echo "export PASSWORD=a b"` keeps `b`); a lowercase cmd `set` name, or a `set`
+written after other words, keeps the tail of a value with spaces; a flag's value of lowercase
+letters only, or after a flag whose last word is not a secret's (`--auth …`); JSON escaped inside
+a quoted string, such as a `curl -d "{\"password\": \"…\"}"` body; NUL-separated `env -0` output;
+a PowerShell table row whose name fills its column; and a Windows name with spaces at the very
+end of a path keeps all but its first word. In return, a line that begins `Password: …` loses
+the rest of the line, a call at a line's start (`apiKey: getKey(),`) loses its value, and prose
+that quotes a PEM BEGIN marker and later its END marker loses what stands between them.
+
+Both scrubbers are built to take time linear in their input, so a long run of blanks or a
+repeated token in the assistant's text does not hold up the search it precedes; every input
+found to take longer is held to a time bound by test.
 
 The text is scrubbed before it is cut, and an entry too large to scrub whole is omitted whole.
 Over 48 KiB, `history` is dropped; an envelope still too large is not sent. It travels
