@@ -2413,5 +2413,19 @@
   "account": "",
   "in": "token: ${VAR:0:5}\npassword: ${DB_PASSWORD: -3}\nsecret: ${SECRET:?required}\npassword: ${DB_PASSWORD:$FALLBACK}\ntoken: ${TOKEN:}",
   "want": "token: ${VAR:0:5}\npassword: ${DB_PASSWORD: -3}\nsecret: ${SECRET:?required}\npassword: ${DB_PASSWORD:$FALLBACK}\ntoken: ${TOKEN:}"
+ },
+ {
+  "name": "identity/a variable named like this machine reads the same on a second pass",
+  "host": "buildhost.lan",
+  "account": "",
+  "in": "password: ${DB_PASSWORD:-$buildhost}\ntoken: $buildhost\nsecret: \"$buildhost\"",
+  "want": "password: ${DB_PASSWORD:-$[REDACTED]}\ntoken: $[REDACTED]\nsecret: \"$[REDACTED]\""
+ },
+ {
+  "name": "survives/a variable whose name was replaced",
+  "host": "",
+  "account": "",
+  "in": "password: $[REDACTED]\ntoken: ${A:-$[REDACTED]}",
+  "want": "password: $[REDACTED]\ntoken: ${A:-$[REDACTED]}"
  }
 ]

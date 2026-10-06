@@ -676,10 +676,11 @@ const traceOpensMember = (s, floor, i) => {
 // stays, its word is a message),
 // and an expression in double braces holding a quoted string. A variable is
 // $ and capitals, digits and _, or letters and _ with no digit: $ecret123
-// and $Pa55word are values.
+// and $Pa55word are values. $ and the placeholder is a variable whose name a
+// later step replaced, so a second pass keeps what the first kept.
 const TRACE_LITERAL_DEFAULT = /^\$\{[A-Za-z_][A-Za-z0-9_.]*(:?[-=+]|:)([^}\n]*)\}$/
-const TRACE_BARE_VARIABLE = /^(?:\$(?:[A-Z_][A-Z0-9_]*|[A-Za-z_]+))?$/
-const TRACE_SECRET_REFERENCE = /^(?:\$?\{\{[^{}"'`\n]*\}\}|\$\{[^}\n]*\}|\$(?:[A-Z_][A-Z0-9_]*|[A-Za-z_]+)|<[^<>\t\n ]+>|string|str|number|int|integer|bool|boolean|any|unknown|bytes|float|double|char|String|[A-Za-z_][A-Za-z0-9_:]*<[^\n]*>|[0-9]+ bytes|[{\[(|>+-]+)$/
+const TRACE_BARE_VARIABLE = /^(?:\$(?:[A-Z_][A-Z0-9_]*|[A-Za-z_]+|\[REDACTED\]))?$/
+const TRACE_SECRET_REFERENCE = /^(?:\$?\{\{[^{}"'`\n]*\}\}|\$\{[^}\n]*\}|\$(?:[A-Z_][A-Z0-9_]*|[A-Za-z_]+|\[REDACTED\])|<[^<>\t\n ]+>|string|str|number|int|integer|bool|boolean|any|unknown|bytes|float|double|char|String|[A-Za-z_][A-Za-z0-9_:]*<[^\n]*>|[0-9]+ bytes|[{\[(|>+-]+)$/
 const traceNotASecret = (v) => {
   if (v.endsWith(',') || v.endsWith(';')) v = v.slice(0, -1)
   if (v.length >= 2 && (v[0] === '"' || v[0] === "'") && v[v.length - 1] === v[0]) v = v.slice(1, -1)

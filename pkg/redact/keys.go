@@ -179,7 +179,11 @@ func opensMember(s string, floor, i int) bool {
 // dollar sign is written, not how a variable is named, and is a value. The
 // cost both ways: a variable named that way ($token2, $s3Key) after a
 // secret's key loses its name, and a secret of capitals and digits after a
-// dollar sign ($ECRET123) keeps its value.
+// dollar sign ($ECRET123) keeps its value. $[REDACTED] is a variable too:
+// a later step (the hostname, the account) replaced its name, and on a
+// second pass it must read as what the first pass kept, or password: $myhost
+// would lose on the second pass what the first left. A placeholder holds
+// nothing, so reading it as a variable keeps nothing.
 //
 // A reference that carries a literal is not one, because the literal is the
 // value whenever the variable is unset: a default or an assignment in a
@@ -212,7 +216,7 @@ var (
 	bareVariablePattern   = regexp.MustCompile(`^(?:` + variablePattern + `)?$`)
 )
 
-const variablePattern = `\$(?:[A-Z_][A-Z0-9_]*|[A-Za-z_]+)`
+const variablePattern = `\$(?:[A-Z_][A-Z0-9_]*|[A-Za-z_]+|\[REDACTED\])`
 
 // literalDefault reports whether an expansion's operator and word give the
 // variable a literal value: a word that is not empty and not itself a
