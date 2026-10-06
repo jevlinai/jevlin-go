@@ -2399,5 +2399,19 @@
   "account": "",
   "in": "e.g. API_TOKEN=\"a\nb\" next\nf(x) API_TOKEN=\"c\nd\" next",
   "want": "e.g. API_TOKEN=[REDACTED]\nb\" next\nf(x) API_TOKEN=[REDACTED]\nd\" next"
+ },
+ {
+  "name": "keys/a default after a plain colon is a literal too",
+  "host": "",
+  "account": "",
+  "in": "password: ${DB_PASSWORD:Dev5ecret}\nspring.datasource.password: ${DB_PASSWORD:Dev5ecret2}\ntoken: \"${db.token:Dev5ecret3}\"\n{\"password\": \"${app.db.password:Dev5ecret4}\"}",
+  "want": "password: [REDACTED]\nspring.datasource.password: [REDACTED]\ntoken: [REDACTED]\n{\"password\": [REDACTED]}"
+ },
+ {
+  "name": "survives/a substring, a message or a variable after a plain colon",
+  "host": "",
+  "account": "",
+  "in": "token: ${VAR:0:5}\npassword: ${DB_PASSWORD: -3}\nsecret: ${SECRET:?required}\npassword: ${DB_PASSWORD:$FALLBACK}\ntoken: ${TOKEN:}",
+  "want": "token: ${VAR:0:5}\npassword: ${DB_PASSWORD: -3}\nsecret: ${SECRET:?required}\npassword: ${DB_PASSWORD:$FALLBACK}\ntoken: ${TOKEN:}"
  }
 ]

@@ -185,12 +185,15 @@ func opensMember(s string, floor, i int) bool {
 // value whenever the variable is unset: a default or an assignment in a
 // shell or Compose expansion (literalDefaultPattern: ${VAR:-x}, ${VAR-x},
 // ${VAR:=x}, ${VAR=x}, and ${VAR:+x}, whose word is the value when VAR is
-// set), and a template expression holding a quoted string anywhere
-// (| default "x", default('x'), || 'x'). ${VAR:?message} stays: it never
-// gives a value, and its word is the message printed when VAR is unset. A
-// default that is itself a variable, or empty, stays. The cost: a template
-// that names another by a quoted string ({{ include "chart.name" . }}) or
-// carries a required message loses it after a secret's key.
+// set), a default after a plain colon as Spring, Quarkus and Elastic write
+// one (${DB_PASSWORD:dev}, ${db.password:dev}; literalDefault), and a
+// template expression holding a quoted string anywhere (| default "x",
+// default('x'), || 'x'). ${VAR:?message} stays: it never gives a value, and
+// its word is the message printed when VAR is unset. A default that is
+// itself a variable, or empty, stays. The cost: a template that names
+// another by a quoted string ({{ include "chart.name" . }}) or carries a
+// required message loses it after a secret's key, and so does bash's
+// substring with a named offset (${TOKEN:start}).
 func notASecret(v string) bool {
 	if strings.HasSuffix(v, ",") || strings.HasSuffix(v, ";") {
 		v = v[:len(v)-1]
@@ -198,18 +201,30 @@ func notASecret(v string) bool {
 	if len(v) >= 2 && (v[0] == '"' || v[0] == '\'') && v[len(v)-1] == v[0] {
 		v = v[1 : len(v)-1]
 	}
-	if m := literalDefaultPattern.FindStringSubmatch(v); m != nil && !bareVariablePattern.MatchString(m[1]) {
+	if m := literalDefaultPattern.FindStringSubmatch(v); m != nil && literalDefault(m[1], m[2]) {
 		return false
 	}
 	return secretReferencePattern.MatchString(v)
 }
 
 var (
-	literalDefaultPattern = regexp.MustCompile(`^\$\{[A-Za-z_][A-Za-z0-9_]*:?[-=+]([^}\n]*)\}$`)
+	literalDefaultPattern = regexp.MustCompile(`^\$\{[A-Za-z_][A-Za-z0-9_.]*(:?[-=+]|:)([^}\n]*)\}$`)
 	bareVariablePattern   = regexp.MustCompile(`^(?:` + variablePattern + `)?$`)
 )
 
 const variablePattern = `\$(?:[A-Z_][A-Z0-9_]*|[A-Za-z_]+)`
+
+// literalDefault reports whether an expansion's operator and word give the
+// variable a literal value: a word that is not empty and not itself a
+// variable. After a plain colon, a word that starts with a digit, a blank or
+// `?` is bash's substring (${VAR:0:5}, ${VAR: -3}) or a mistyped :?, not a
+// default.
+func literalDefault(op, word string) bool {
+	if bareVariablePattern.MatchString(word) {
+		return false
+	}
+	return op != ":" || (!isDigit(word[0]) && !isBlank(word[0]) && word[0] != '?')
+}
 
 var secretReferencePattern = regexp.MustCompile(`^(?:\$?\{\{[^{}"'\x60\n]*\}\}|\$\{[^}\n]*\}|` + variablePattern + `|<[^<>\t\n ]+>|string|str|number|int|integer|bool|boolean|any|unknown|bytes|float|double|char|String|[A-Za-z_][A-Za-z0-9_:]*<[^\n]*>|[0-9]+ bytes|[{\[(|>+-]+)$`)
 
