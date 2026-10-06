@@ -42,9 +42,16 @@ type entry struct {
 	pkg, name string
 }
 
-// testName is what `go test -list` prints for a runnable top-level test.
-// Benchmarks are left out: a plain `go test` does not run them.
-var testName = regexp.MustCompile(`^(Test|Example|Fuzz)[A-Za-z0-9_]*$`)
+// testName is what `go test -list` prints for a runnable top-level test: a
+// Go identifier, so any letter or digit, not only ASCII. Benchmarks are left
+// out, because a plain `go test` does not run them, and so is the summary
+// line. Any other line is refused rather than skipped: a name this pattern
+// did not expect would otherwise be dropped from every part, and never run.
+var (
+	testName      = regexp.MustCompile(`^(Test|Example|Fuzz)[\p{L}\p{N}_]*$`)
+	benchmarkName = regexp.MustCompile(`^Benchmark[\p{L}\p{N}_]*$`)
+	summaryLine   = regexp.MustCompile(`^(ok|\?)\s`)
+)
 
 func main() {
 	n := flag.Int("n", 1, "number of parts")
@@ -66,6 +73,11 @@ func main() {
 }
 
 func run(n int, parts []int, race bool, pkgs []string, stdout, stderr io.Writer) error {
+	// With no part to run, every check below would pass and nothing would
+	// be tested, so a part count under one, or no part, is refused first.
+	if n < 1 || len(parts) == 0 {
+		return fmt.Errorf("%d parts: there must be at least one", n)
+	}
 	for _, i := range parts {
 		if n < 1 || i < 0 || i >= n {
 			return fmt.Errorf("part %d of %d does not exist", i, n)
@@ -173,20 +185,30 @@ func list(pkg string, flags []string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listing the tests of %s: %w", pkg, err)
 	}
-	return parseList(string(out)), nil
+	names, err := parseList(string(out))
+	if err != nil {
+		return nil, fmt.Errorf("listing the tests of %s: %w", pkg, err)
+	}
+	return names, nil
 }
 
 // parseList keeps the lines of `go test -list` output that name a runnable
-// test, and drops the package summary and any benchmark.
-func parseList(out string) []string {
+// test, passes over the package summary and any benchmark, and refuses any
+// other line.
+func parseList(out string) ([]string, error) {
 	var names []string
 	sc := bufio.NewScanner(strings.NewReader(out))
 	for sc.Scan() {
-		if line := strings.TrimSpace(sc.Text()); testName.MatchString(line) {
+		line := strings.TrimSpace(sc.Text())
+		switch {
+		case line == "" || benchmarkName.MatchString(line) || summaryLine.MatchString(line):
+		case testName.MatchString(line):
 			names = append(names, line)
+		default:
+			return nil, fmt.Errorf("go test -list printed %q, which is not a test name this tool knows", line)
 		}
 	}
-	return names
+	return names, sc.Err()
 }
 
 // deal returns part i of n: every n-th listed test, starting at the i-th.

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"regexp"
 	"strings"
 	"testing"
@@ -18,13 +19,13 @@ func TestThePartsAreEveryTestExactlyOnce(t *testing.T) {
 		}
 		for n := 1; n <= total && n <= 9; n++ {
 			seen := map[entry]int{}
-			sizes := map[int]bool{}
+			smallest, largest := total, 0
 			for i := 0; i < n; i++ {
 				part, err := deal(all, n, i)
 				if err != nil {
 					t.Fatalf("%d tests, part %d of %d: %v", total, i, n, err)
 				}
-				sizes[len(part)] = true
+				smallest, largest = min(smallest, len(part)), max(largest, len(part))
 				for _, e := range part {
 					seen[e]++
 				}
@@ -37,9 +38,26 @@ func TestThePartsAreEveryTestExactlyOnce(t *testing.T) {
 					t.Errorf("%d tests in %d parts: %v dealt %d times", total, n, e, c)
 				}
 			}
-			if len(sizes) > 2 {
-				t.Errorf("%d tests in %d parts: part sizes %v differ by more than one", total, n, sizes)
+			if largest-smallest > 1 {
+				t.Errorf("%d tests in %d parts: part sizes run from %d to %d", total, n, smallest, largest)
 			}
+		}
+	}
+}
+
+// A run with no part to run is refused before anything is listed: it would
+// pass having tested nothing, as make race RACE_PARTS=0 once did.
+func TestARunWithNoPartIsRefused(t *testing.T) {
+	for name, c := range map[string]struct {
+		n     int
+		parts []int
+	}{
+		"zero parts":            {0, nil},
+		"no part named":         {3, nil},
+		"a part past the count": {3, []int{3}},
+	} {
+		if err := run(c.n, c.parts, false, []string{"./..."}, io.Discard, io.Discard); err == nil {
+			t.Errorf("%s: the run was accepted", name)
 		}
 	}
 }
@@ -56,12 +74,27 @@ func TestAnEmptyPartIsRefused(t *testing.T) {
 }
 
 // What `go test -list` prints, benchmarks and the package summary included.
+// A test name is a Go identifier, so a name with a non-ASCII letter is kept.
 func TestTheListKeepsOnlyRunnableTests(t *testing.T) {
-	out := "TestOne\nTestTwo_sub\nBenchmarkSlow\nExampleThing\nFuzzParse\n" +
+	out := "TestOne\nTestTwo_sub\nBenchmarkSlow\nExampleThing\nFuzzParse\nTest\u00c9t\u00e9\n" +
 		"ok  \tgithub.com/x/y\t0.012s\n"
-	got := strings.Join(parseList(out), ",")
-	if want := "TestOne,TestTwo_sub,ExampleThing,FuzzParse"; got != want {
+	names, err := parseList(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(names, ","), "TestOne,TestTwo_sub,ExampleThing,FuzzParse,Test\u00c9t\u00e9"; got != want {
 		t.Errorf("parseList = %s, want %s", got, want)
+	}
+	if names, err := parseList("?   \tgithub.com/x/z\t[no test files]\n"); err != nil || len(names) != 0 {
+		t.Errorf("a package with no tests: %v, %v", names, err)
+	}
+}
+
+// A line the list is not expected to hold is refused, not skipped: a test
+// whose name it is would otherwise be in no part, and never run.
+func TestAnUnknownListLineIsRefused(t *testing.T) {
+	if _, err := parseList("TestOne\nsomething-else\nok  \tgithub.com/x/y\t0.01s\n"); err == nil {
+		t.Error("an unknown line was skipped")
 	}
 }
 
