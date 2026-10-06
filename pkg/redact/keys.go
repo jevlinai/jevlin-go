@@ -29,7 +29,8 @@ import (
 //     what trimValueTail hands back left outside. YAML's password: x y z,
 //     and a pretty-printed JSON or JS object's "password": "x",.
 //   - a key anywhere else, quoted or not, where a member of an object, a
-//     map or an argument list starts (opensMember), followed by a colon and
+//     map, an argument list, a statement or a code span starts
+//     (opensMember), followed by a colon and
 //     a quoted value that closes on its own line: the value is the quoted
 //     string (quotedStringEnd). Inline JSON {"client_secret": "x"} and a JS
 //     object {password: 'x'}.
@@ -147,7 +148,9 @@ func secretKeyValueAt(s string, floor, c int) (start, end int, ok bool) {
 
 // opensMember reports whether the key at i stands where an object, a map,
 // a list or an argument list opens a member: after `{`, `,`, `(` or `[`,
-// blanks aside. Anywhere else a key and a colon mid-line are text: prose,
+// blanks aside; and where a statement or a code span opens one, after `;`
+// or a backtick (user: "app"; password: "x", and `password: "x"` in
+// prose). Anywhere else a key and a colon mid-line are text: prose,
 // or more often the inside of a string ("Password: " in input("Password: "),
 // "invalid token: " + t), whose closing quote would otherwise be read as
 // the value's opening one and run on to the next quote, which a review
@@ -156,7 +159,7 @@ func opensMember(s string, floor, i int) bool {
 	for i > floor && isBlank(s[i-1]) {
 		i--
 	}
-	return i > floor && strings.IndexByte("{,([", s[i-1]) >= 0
+	return i > floor && strings.IndexByte("{,([;`", s[i-1]) >= 0
 }
 
 // notASecret reports whether a key's value, quoted or not, with a trailing

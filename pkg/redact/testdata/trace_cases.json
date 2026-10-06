@@ -2336,5 +2336,26 @@
   "account": "",
   "in": "password: $DB_PASSWORD2\ntoken: $token\nsecret: $dbSecret\n{\"password\": \"$PASSWORD\"}\ntoken: ${A:-$TOKEN_2}\npassword: $ECRET123",
   "want": "password: $DB_PASSWORD2\ntoken: $token\nsecret: $dbSecret\n{\"password\": \"$PASSWORD\"}\ntoken: ${A:-$TOKEN_2}\npassword: $ECRET123"
+ },
+ {
+  "name": "keys/a key in inline code or after a semicolon",
+  "host": "",
+  "account": "",
+  "in": "Then add `password: \"hunter2secret\"` to config.yml.\nuser: \"app\"; password: \"hunter2 secret\"\nx;token: 'a b'",
+  "want": "Then add `password: [REDACTED]` to config.yml.\nuser: \"app\"; password: [REDACTED]\nx;token: [REDACTED]"
+ },
+ {
+  "name": "survives/a key in a code span or after a semicolon with no quoted value",
+  "host": "",
+  "account": "",
+  "in": "Set `password:` in the file; password: see the vault\nlog(\"done; token: \" + t)",
+  "want": "Set `password:` in the file; password: see the vault\nlog(\"done; token: \" + t)"
+ },
+ {
+  "name": "keys/the cost: a key after ; inside a string takes the quotes after it on its line",
+  "host": "",
+  "account": "",
+  "in": "printf \"user: %s; password: \" \"$u\" > out\nnext",
+  "want": "printf \"user: %s; password: [REDACTED]$u\" > out\nnext"
  }
 ]

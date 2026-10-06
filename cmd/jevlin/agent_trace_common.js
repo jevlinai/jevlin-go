@@ -655,12 +655,13 @@ const traceQuotedStringEnd = (s, v) => {
   }
   return i
 }
-// A mid-line key counts only where a member opens: after { , ( or [. Anywhere
-// else it is prose or the inside of a string ("Password: " in input(...)),
-// whose closing quote must not be read as the value's opening one.
+// A mid-line key counts only where a member opens: after { , ( or [, or where
+// a statement or a code span does, after ; or a backtick. Anywhere else it is
+// prose or the inside of a string ("Password: " in input(...)), whose closing
+// quote must not be read as the value's opening one.
 const traceOpensMember = (s, floor, i) => {
   while (i > floor && traceIsBlank(s.charCodeAt(i - 1))) i--
-  return i > floor && '{,(['.includes(s[i - 1])
+  return i > floor && '{,([;`'.includes(s[i - 1])
 }
 // A reference or a placeholder is not the secret: a GitHub Actions or
 // template expression in double braces, ${TOKEN}, $TOKEN, <pad>, a type name,
