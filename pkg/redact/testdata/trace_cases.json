@@ -2392,5 +2392,12 @@
   "account": "",
   "in": "docker run -e API_TOKEN=\"\nWholeValue1\" img",
   "want": "docker run -e API_TOKEN=[REDACTED]\nWholeValue1\" img"
+ },
+ {
+  "name": "assignment/a word ending in . or ) that is not a number leaves the name mid-line",
+  "host": "",
+  "account": "",
+  "in": "e.g. API_TOKEN=\"a\nb\" next\nf(x) API_TOKEN=\"c\nd\" next",
+  "want": "e.g. API_TOKEN=[REDACTED]\nb\" next\nf(x) API_TOKEN=[REDACTED]\nd\" next"
  }
 ]
