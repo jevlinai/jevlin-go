@@ -387,6 +387,11 @@ func secretFlagName(name string) bool {
 		return true
 	}
 	parts := strings.FieldsFunc(name, func(r rune) bool { return r == '_' || r == '-' || r == '.' })
+	// A name made only of separators, as in `--_ x`, has no word to be a
+	// secret's, and indexing its last word would panic.
+	if len(parts) == 0 {
+		return false
+	}
 	last := parts[len(parts)-1]
 	hump := lastHump(last)
 	qualified := name == upper || len(parts) >= 2 || hump != last

@@ -748,6 +748,9 @@ const traceSecretFlagName = (name) => {
   const upper = name.toUpperCase()
   if (TRACE_SECRET_NAMES.has(upper)) return true
   const parts = name.split(/[_.-]/).filter((part) => part !== '')
+  // A name made only of separators, as in `--_ x`, has no word to be a
+  // secret's, and reading its last word would throw.
+  if (parts.length === 0) return false
   const last = parts[parts.length - 1]
   const hump = traceLastHump(last)
   const qualified = name === upper || parts.length >= 2 || hump !== last
