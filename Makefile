@@ -1,7 +1,7 @@
 GO ?= go
 VERSION ?= dev
 
-.PHONY: build test race vet fmt lint lint-windows vuln cross tidy verify
+.PHONY: build test race vet fmt lint lint-windows vuln cross tidy verify quick
 
 build:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "-X main.version=$(VERSION)" -o bin/jevlin ./cmd/jevlin
@@ -10,8 +10,12 @@ test:
 	$(GO) test -count=1 ./...
 
 # The race detector needs cgo; deliberately separate from the CGO_ENABLED=0 build.
+# cmd/jevlin's tests run one after another in one process and are nearly all of this
+# stage's time, so tools/testshard splits the run into RACE_PARTS processes at once,
+# as CI splits it into jobs. Together the parts run every test, each once.
+RACE_PARTS ?= 4
 race:
-	CGO_ENABLED=1 $(GO) test -race -count=1 ./...
+	CGO_ENABLED=1 $(GO) run ./tools/testshard -race -all -n $(RACE_PARTS) ./...
 
 vet:
 	$(GO) vet ./...
@@ -43,4 +47,18 @@ cross:
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath -o /dev/null ./... || exit 1; \
 	done; done
 
-verify: build test race vet lint lint-windows vuln tidy cross
+# The inner loop while a change is being made: vet, lint and the tests RUN names (a
+# `go test -run` pattern) in PKG. A narrow RUN takes seconds. It is not the gate:
+# make verify runs before every push.
+PKG ?= ./...
+RUN ?= .
+quick:
+	$(GO) vet $(PKG)
+	golangci-lint run $(PKG)
+	$(GO) test -count=1 -run '$(RUN)' $(PKG)
+
+# The checks that take seconds come first, so a vet or lint finding stops the run before
+# the tests start. There is no separate `test`: race runs every test, and CI's test matrix
+# runs them without the race detector on all four systems, which is where
+# pkg/redact's tight linear-time bound is held.
+verify: build vet lint lint-windows tidy race vuln cross

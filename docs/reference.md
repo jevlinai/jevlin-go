@@ -416,7 +416,8 @@ sandboxed agent from you, so the passphrase is what protects the key.
 
 ```bash
 make build      # bin/jevlin
-make verify     # build, test, race, vet and lint (each incl. Windows), vuln, tidy, cross-compile
+make verify     # build, vet and lint (each incl. Windows), tidy, race, vuln, cross-compile
+make quick RUN=TestName   # vet, lint and only the named tests, while you work
 ```
 
 Go 1.25 or newer; the tests also need Node.js (CI uses 22) to run the embedded opencode plugin.

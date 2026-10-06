@@ -11,12 +11,18 @@
 // part, so the parts together run every test the whole run would, and a test
 // added later is dealt like the rest without anyone listing it.
 //
+// With -all it runs every part at once on this machine instead, which is
+// how make race uses the cores a single test process leaves idle. Each
+// part's output is held and printed whole when the part ends, so the parts'
+// lines do not interleave.
+//
 // The deal is the decision with a right answer, so it lives in deal(), which
 // a test drives; listing and running are thin calls to `go test`.
 package main
 
 import (
 	"bufio"
+	"bytes"
 	"flag"
 	"fmt"
 	"io"
@@ -24,6 +30,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // maxPattern keeps one -run argument well under Linux's 128 KiB limit on a
@@ -42,17 +49,27 @@ var testName = regexp.MustCompile(`^(Test|Example|Fuzz)[A-Za-z0-9_]*$`)
 func main() {
 	n := flag.Int("n", 1, "number of parts")
 	i := flag.Int("i", 0, "the part to run, from 0 to n-1")
+	all := flag.Bool("all", false, "run every part at once, on this machine")
 	race := flag.Bool("race", false, "run with the race detector")
 	flag.Parse()
-	if err := run(*n, *i, *race, flag.Args(), os.Stdout, os.Stderr); err != nil {
+	parts := []int{*i}
+	if *all {
+		parts = parts[:0]
+		for k := 0; k < *n; k++ {
+			parts = append(parts, k)
+		}
+	}
+	if err := run(*n, parts, *race, flag.Args(), os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintln(os.Stderr, "testshard:", err)
 		os.Exit(1)
 	}
 }
 
-func run(n, i int, race bool, pkgs []string, stdout, stderr io.Writer) error {
-	if n < 1 || i < 0 || i >= n {
-		return fmt.Errorf("part %d of %d does not exist", i, n)
+func run(n int, parts []int, race bool, pkgs []string, stdout, stderr io.Writer) error {
+	for _, i := range parts {
+		if n < 1 || i < 0 || i >= n {
+			return fmt.Errorf("part %d of %d does not exist", i, n)
+		}
 	}
 	pkgs, err := expand(pkgs)
 	if err != nil {
@@ -72,6 +89,37 @@ func run(n, i int, race bool, pkgs []string, stdout, stderr io.Writer) error {
 			all = append(all, entry{pkg, name})
 		}
 	}
+	if len(parts) == 1 {
+		return runPart(all, n, parts[0], pkgs, flags, stdout, stderr)
+	}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	failed := 0
+	for _, i := range parts {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			var out bytes.Buffer
+			err := runPart(all, n, i, pkgs, flags, &out, &out)
+			mu.Lock()
+			defer mu.Unlock()
+			_, _ = stdout.Write(out.Bytes())
+			if err != nil {
+				fmt.Fprintln(stderr, "testshard:", err)
+				failed++
+			}
+		}(i)
+	}
+	wg.Wait()
+	if failed > 0 {
+		return fmt.Errorf("%d of %d parts failed", failed, len(parts))
+	}
+	return nil
+}
+
+// runPart deals part i of n from every listed test and runs it, package by
+// package.
+func runPart(all []entry, n, i int, pkgs, flags []string, stdout, stderr io.Writer) error {
 	part, err := deal(all, n, i)
 	if err != nil {
 		return err
@@ -87,7 +135,7 @@ func run(n, i int, race bool, pkgs []string, stdout, stderr io.Writer) error {
 		}
 		args := append([]string{"test", "-count=1"}, flags...)
 		args = append(args, "-run", pattern, pkg)
-		fmt.Fprintf(stderr, "testshard: part %d of %d: %d tests in %s\n", i, n, strings.Count(pattern, "|")+1, pkg)
+		fmt.Fprintf(stderr, "testshard: part %d of %d runs %d of the tests in %s\n", i, n, strings.Count(pattern, "|")+1, pkg)
 		cmd := exec.Command("go", args...) // #nosec G204 -- CI tooling; the arguments are this run's own flags and listed test names
 		cmd.Stdout, cmd.Stderr = stdout, stderr
 		if err := cmd.Run(); err != nil {
