@@ -384,15 +384,10 @@ const traceTrimValueTail = (s, from, to) => {
 }
 // A value that starts with a quote is read as a shell reads a word: quoted
 // parts next to each other, a backslash-quote between them and characters
-// joined to them are all one value. The first part may cross the line cap's
-// worth of lines (three quotes run to the next three) and takes the rest of
-// its line when it never closes; a later part must close on its own line, or
-// its quote is just a character.
-const traceQuotedWordEnd = (s, v) => {
-  const i = traceQuotedWordEndWithin(s, v, TRACE_QUOTED_VALUE_MAX_LINES)
-  return i >= 0 ? i : traceLineEnd(s, v)
-}
-// The same with the first part allowed maxLines line breaks, -1 past them.
+// joined to them are all one value. The first part may cross maxLines line
+// breaks (three quotes run to the next three), -1 when it does not close
+// within them; a later part must close on its own line, or its quote is just
+// a character.
 const traceQuotedWordEndWithin = (s, v, maxLines) => {
   const closer = traceQuoteCloser()
   let i = traceOpensThreeQuotes(s, v) ? traceTripleQuoteEnd(s, v, maxLines) : traceClosingQuote(s, v, maxLines, closer)
@@ -449,12 +444,17 @@ const traceQuoteSearch = (f, s, v, q) => {
   f.stop = i
   return f.at
 }
-const traceSecretValueEnd = (s, v, words) => {
+// A quoted value's first part may cross the line cap only when its name
+// starts its line; elsewhere it closes on its own line, else it is the rest
+// of the line.
+const traceSecretValueEnd = (s, v, words, startsLine) => {
   if (v >= s.length) return v
   let from = v
   const c = s.charCodeAt(v)
-  if (c === 34 || c === 39) from = traceQuotedWordEnd(s, v)
-  else if (c === 61 || traceIsSpace(c)) return v
+  if (c === 34 || c === 39) {
+    from = traceQuotedWordEndWithin(s, v, startsLine ? TRACE_QUOTED_VALUE_MAX_LINES : 0)
+    if (from < 0) from = traceLineEnd(s, v)
+  } else if (c === 61 || traceIsSpace(c)) return v
   if (words.open) {
     const end = traceEnclosedValueEnd(s, from, words.head, words)
     if (end >= 0) return end
@@ -494,6 +494,41 @@ const traceWordAdvance = (w, s, to) => {
 const traceWordSkip = (w, to) => {
   if (to > w.pos) w.pos = to
   w.begun = true
+}
+
+// A name begins its line after indentation only, or after export, set,
+// declare -x or typeset -x, or directly after $env: or ${env:. Only there is
+// a quote after = certain to open a value and allowed to run across lines;
+// elsewhere it may close a string ("PASSWORD=" + pw) and must not run on
+// into the next line. Nothing before floor is read.
+const traceIsLetter = (c) => traceIsUpper(c) || traceIsLower(c)
+const traceShellKeywordBefore = (s, floor, i) => {
+  let j = i
+  while (j > floor && (traceIsLetter(s.charCodeAt(j - 1)) || s.charCodeAt(j - 1) === 45)) j--
+  const w = s.slice(j, i).toLowerCase()
+  if (w === 'export' || w === 'set') return j
+  if (w.length < 2 || w[0] !== '-' || w.indexOf('-', 1) >= 0) return -1
+  let k = j
+  while (k > floor && traceIsBlank(s.charCodeAt(k - 1))) k--
+  let m = k
+  while (m > floor && traceIsLetter(s.charCodeAt(m - 1))) m--
+  const kw = s.slice(m, k).toLowerCase()
+  return k < j && (kw === 'declare' || kw === 'typeset') ? m : -1
+}
+const traceAssignmentStartsLine = (s, floor, p) => {
+  let i = p
+  if (i - 6 >= floor && s.slice(i - 6, i).toLowerCase() === '${env:') i -= 6
+  else if (i - 5 >= floor && s.slice(i - 5, i).toLowerCase() === '$env:') i -= 5
+  let k = i
+  while (k > floor && traceIsBlank(s.charCodeAt(k - 1))) k--
+  if (k < i) {
+    const j = traceShellKeywordBefore(s, floor, k)
+    if (j >= 0) {
+      k = j
+      while (k > floor && traceIsBlank(s.charCodeAt(k - 1))) k--
+    }
+  }
+  return k === 0 || (k > floor && s.charCodeAt(k - 1) === 10)
 }
 
 // cmd's `set NAME=value` takes the rest of the line: only where cmd reads it
@@ -567,7 +602,7 @@ const traceSecretValueAt = (s, floor, e, words) => {
   const c = s.charCodeAt(v)
   const end = v < s.length && !traceIsSpace(c) && c !== 61 && traceIsCmdSet(s, floor, p, name)
     ? traceCmdValueEnd(s, v)
-    : traceSecretValueEnd(s, v, words)
+    : traceSecretValueEnd(s, v, words, traceAssignmentStartsLine(s, floor, p))
   if (end === v || s.slice(v, end) === TRACE_REDACTED) return null
   return [v, end]
 }

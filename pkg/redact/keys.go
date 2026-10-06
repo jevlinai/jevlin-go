@@ -199,7 +199,7 @@ func startsLine(s string, floor, i int) bool {
 // closingQuote reads one but on its own line only, with any part that
 // follows it directly in the same quote (a quote written twice, as YAML and
 // PowerShell escape one; three quotes read this way too). Unlike
-// quotedWordEnd it takes nothing joined to it: in {"password":"x",
+// quotedWordEndWithin it takes nothing joined to it: in {"password":"x",
 // "user":"y"} the value ends at the quote. A string that does not close on
 // its own line is no value, -1: a key's value never reaches the next line.
 func quotedStringEnd(s string, v int) int {

@@ -19,5 +19,11 @@
  "'--api-key ' + k",
  "`--password ${p}`",
  "args = \"--client-secret \" + s + \" --verbose\"",
- "cmd = \"psql --pgpassword \" + pw"
+ "cmd = \"psql --pgpassword \" + pw",
+ "\"PASSWORD=\" + pw",
+ "url = \"https://h.example/?token=\" + t",
+ "'api_key=' + k",
+ "print(\"password=\", pw)",
+ "s = \"token = \" + t",
+ "cmd = \"set API_TOKEN=\" + t"
 ]

@@ -65,5 +65,11 @@
   "prefix": "",
   "unit": "--token \"a\n",
   "suffix": ""
+ },
+ {
+  "name": "a name mid-line whose quote closes a string, line after line",
+  "prefix": "",
+  "unit": "print(\"password=\", pw)\n",
+  "suffix": ""
  }
 ]

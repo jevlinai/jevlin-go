@@ -2231,5 +2231,33 @@
   "account": "",
   "in": "mysql --password \"first\nsecond\" -h db",
   "want": "mysql --password \"first\nsecond\" -h db"
+ },
+ {
+  "name": "assignment/a quote after a name mid-line closes on its own line",
+  "host": "",
+  "account": "",
+  "in": "print(\"password=\", pw)\nDB_PASSWORD=\"correct horse battery\"",
+  "want": "print(\"password=[REDACTED]\nDB_PASSWORD=[REDACTED]"
+ },
+ {
+  "name": "assignment/a set inside a string is mid-line",
+  "host": "",
+  "account": "",
+  "in": "cmd = \"set API_TOKEN=\" + t\nAPI_KEY='two words here'",
+  "want": "cmd = \"set API_TOKEN=[REDACTED]\nAPI_KEY=[REDACTED]"
+ },
+ {
+  "name": "assignment/a name that starts its line may run across lines",
+  "host": "",
+  "account": "",
+  "in": "export DB_PASSWORD=\"line one\nline two\" next\n    password = '''a\nb''' next\n$env:API_TOKEN = \"c\nd\" next\ndeclare -x API_KEY='e\nf' next\nset PASS=\"g\nh\" next",
+  "want": "export DB_PASSWORD=[REDACTED] next\n    password = [REDACTED] next\n$env:API_TOKEN = [REDACTED] next\ndeclare -x API_KEY=[REDACTED] next\nset PASS=[REDACTED]\nh\" next"
+ },
+ {
+  "name": "assignment/a quoted value mid-line keeps the lines after its first",
+  "host": "",
+  "account": "",
+  "in": "docker run -e API_TOKEN=\"first\nsecond\" img",
+  "want": "docker run -e API_TOKEN=[REDACTED]\nsecond\" img"
  }
 ]

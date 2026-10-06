@@ -114,10 +114,11 @@ func isDigit(c byte) bool { return c >= '0' && c <= '9' }
 // braced form, ${env:NAME} = '...'.
 //
 // The value, when it starts with a quote, is read as a shell reads a word
-// (quotedWordEnd): quoted parts and the characters joined to them, up to
-// whitespace, `&` or `;`. The first part may run across at most
-// quotedValueMaxLines line breaks, and when it does not close, the value is
-// the rest of its line. Otherwise the value is everything up to whitespace,
+// (quotedWordEndWithin): quoted parts and the characters joined to them, up
+// to whitespace, `&` or `;`. When the name starts its line
+// (assignmentStartsLine) the first part may run across at most
+// quotedValueMaxLines line breaks; anywhere else it closes on its own line.
+// When it does not close, the value is the rest of its line. Otherwise the value is everything up to whitespace,
 // `&` or `;`, a backslash keeping the character after it (correct\ horse).
 // Either way any trailing `,`, and any trailing `)` `]` `}` or quote that
 // the value itself did not open, is handed back to the text around it,
@@ -219,13 +220,72 @@ func secretValueAt(s string, floor, e int, words *wordScan) (start, end int, ok 
 	if v < len(s) && !isSpace(s[v]) && s[v] != '=' && isCmdSet(s, floor, p, name) {
 		end = cmdValueEnd(s, v)
 	} else {
-		end = secretValueEnd(s, v, words)
+		end = secretValueEnd(s, v, words, assignmentStartsLine(s, floor, p))
 	}
 	if end == v || s[v:end] == placeholder {
 		return 0, 0, false
 	}
 	return v, end, true
 }
+
+// assignmentStartsLine reports whether the name at p begins its line: after
+// indentation only, or after `export`, `set`, `declare -x` or `typeset -x`,
+// or directly after `$env:` or `${env:`. Only there is a quote after `=`
+// certain to open a value, and only there may the value run across lines, as
+// a quoted key in a .env file or Python's triple quotes do. Anywhere else the
+// quote may close a string the name was written in ("PASSWORD=" + pw,
+// print("password=", pw)), and read as an opening one it ran on to the next
+// quote, inside the value assigned on the next line. Nothing before floor is
+// read: a removed value is a placeholder on the next pass.
+func assignmentStartsLine(s string, floor, p int) bool {
+	i := p
+	if i-6 >= floor && asciiEqualFold(s[i-6:i], "${env:") {
+		i -= 6
+	} else if i-5 >= floor && asciiEqualFold(s[i-5:i], "$env:") {
+		i -= 5
+	}
+	k := i
+	for k > floor && isBlank(s[k-1]) {
+		k--
+	}
+	if k < i {
+		if j := shellKeywordBefore(s, floor, k); j >= 0 {
+			for k = j; k > floor && isBlank(s[k-1]); k-- {
+			}
+		}
+	}
+	return k == 0 || (k > floor && s[k-1] == '\n')
+}
+
+// shellKeywordBefore is where the `export`, `set`, `declare -x` or
+// `typeset -x` that ends at i starts, or -1.
+func shellKeywordBefore(s string, floor, i int) int {
+	j := i
+	for j > floor && (isLetter(s[j-1]) || s[j-1] == '-') {
+		j--
+	}
+	w := s[j:i]
+	if asciiEqualFold(w, "export") || asciiEqualFold(w, "set") {
+		return j
+	}
+	if len(w) < 2 || w[0] != '-' || strings.IndexByte(w[1:], '-') >= 0 {
+		return -1
+	}
+	k := j
+	for k > floor && isBlank(s[k-1]) {
+		k--
+	}
+	m := k
+	for m > floor && isLetter(s[m-1]) {
+		m--
+	}
+	if k < j && (asciiEqualFold(s[m:k], "declare") || asciiEqualFold(s[m:k], "typeset")) {
+		return m
+	}
+	return -1
+}
+
+func isLetter(c byte) bool { return isUpper(c) || isLower(c) }
 
 // isCmdSet reports whether the name at p is set by cmd's `set NAME=value`,
 // which takes the rest of the line as the value, spaces and quotes and all. It counts
@@ -327,14 +387,24 @@ func (w *wordScan) enclosing() byte {
 	return 0
 }
 
-func secretValueEnd(s string, v int, words *wordScan) int {
+// secretValueEnd is where the value at v ends. A quoted value's first part
+// may run across quotedValueMaxLines line breaks only when its name starts
+// its line (assignmentStartsLine); anywhere else it closes on its own line,
+// and when it does not, the value is the rest of that line.
+func secretValueEnd(s string, v int, words *wordScan, startsLine bool) int {
 	if v >= len(s) {
 		return v
 	}
 	from := v
 	switch s[v] {
 	case '"', '\'':
-		from = quotedWordEnd(s, v)
+		maxLines := 0
+		if startsLine {
+			maxLines = quotedValueMaxLines
+		}
+		if from = quotedWordEndWithin(s, v, maxLines); from < 0 {
+			from = lineEnd(s, v)
+		}
 	case '=', ' ', '\t', '\n', '\f', '\r':
 		// A comparison (a==b), or no value at all (set NAME= to clear it):
 		// a quote that holds the name does not reach past the blank.
@@ -413,7 +483,7 @@ func (f *quoteSearch) find(s string, v int, q byte) int {
 	return f.at
 }
 
-// quotedWordEnd reads the value that starts with the quote at v the way a
+// quotedWordEndWithin reads the value that starts with the quote at v the way a
 // shell reads a word, because that is how the forms that hide part of a
 // value are put together: quoted parts next to each other are one value
 // (PowerShell writes a quote inside a single-quoted string as two, and
@@ -424,20 +494,12 @@ func (f *quoteSearch) find(s string, v int, q byte) int {
 // the last quoted part.
 //
 // A value that opens with three quotes runs to the next three of the same,
-// within quotedValueMaxLines line breaks. Otherwise the first part runs to
-// its closing quote (closingQuote) within that many line breaks. When the
-// first part does not close, the value is the rest of its line. A later part must close
-// on its own line, or its quote is an ordinary character: a stray quote
-// after a value must not reach into the lines that follow it.
-func quotedWordEnd(s string, v int) int {
-	if i := quotedWordEndWithin(s, v, quotedValueMaxLines); i >= 0 {
-		return i
-	}
-	return lineEnd(s, v)
-}
-
-// quotedWordEndWithin is quotedWordEnd with the first part allowed maxLines
-// line breaks, and -1 when it does not close within them.
+// within maxLines line breaks. Otherwise the first part runs to its closing
+// quote (closingQuote) within that many line breaks. When the first part
+// does not close, it returns -1, and the caller decides what the value is.
+// A later part must close on its own line, or its quote is an ordinary
+// character: a stray quote after a value must not reach into the lines that
+// follow it.
 func quotedWordEndWithin(s string, v, maxLines int) int {
 	var closer quoteCloser
 	var i int
