@@ -280,6 +280,21 @@ func cursorTurnEnd(ops hookOps, hc hookContext, p cursorPayload, l *lineageFile)
 	default:
 		return
 	}
+	// The rest of the turn, each piece only if it was stamped with this turn.
+	if l.UserTurnID == turn && l.UserText != "" {
+		rec.UserText, rec.UserChars, rec.UserTruncated = l.UserText, l.UserChars, l.UserTruncated
+	}
+	if l.SearchesTurnID == turn {
+		for _, call := range l.TurnSearches {
+			rec.Steps = append(rec.Steps, turnStep{Kind: "search", CallID: call})
+		}
+	}
+	if toolNameRe.MatchString(p.Model) {
+		rec.Model = p.Model
+	}
+	if in, out := p.InputTokens+p.CacheReadTokens+p.CacheWriteTokens, p.OutputTokens; in > 0 || out > 0 {
+		rec.Usage = &turnUsage{InputTokens: in, OutputTokens: out}
+	}
 	queueTurnEnd(ops, hc, rec)
 }
 

@@ -57,7 +57,7 @@ match, so none is written. Searches through the Bash tool, with Git for Windows,
 
 ### What is written and where
 
-A skill in `~/.cursor/skills/jevlin/`; seven entries in `~/.cursor/hooks.json`, which the editor
+A skill in `~/.cursor/skills/jevlin/`; eight entries in `~/.cursor/hooks.json`, which the editor
 and the Agent CLI both load.
 
 ### What to know
@@ -65,6 +65,12 @@ and the Agent CLI both load.
 The hooks keep one lineage file per conversation, so two chats on one project do not relabel
 each other's searches. `preToolUse` puts the conversation's identity in front of exactly the
 search the skill renders and rewrites nothing else; the shell hook allows exactly that command.
+
+One of the hooks runs when you submit a prompt. It keeps nothing unless you turned `turn_end` on;
+then it holds what you asked, scrubbed, until that turn ends. With `turn_end` on, a turn that
+searched is reported with your prompt, its searches, the reply and the model. Cursor's hooks carry
+no text written between tool calls, and jevlin installs no hook behind every tool, so its other
+tools are not listed.
 
 On Windows, commands run in the terminal `terminal.integrated.defaultProfile.windows` names,
 which this client cannot read, so the skill carries both forms: "If your terminal is PowerShell"
@@ -163,6 +169,10 @@ It runs Bash on macOS and Linux, and PowerShell on Windows.
 
 A subagent runs as a child session, and its searches name the session that started it. The
 plugin learns that from the session's creation, or asks opencode once.
+
+Each search now carries the turn it was made in. With `turn_end` on, when a turn that searched
+goes idle the plugin pipes that turn to jevlin: what you asked, what the assistant wrote, each
+tool by name, time and outcome, and the model. A tool's input and output are never read into it.
 
 ### Known limits
 

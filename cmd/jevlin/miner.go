@@ -209,8 +209,19 @@ type lineageFile struct {
 	// AnswerTurnID is the turn the assistant text in History was written in,
 	// when a host's hook knows it (Cursor's afterAgentResponse). The turn end
 	// sends that text only under this turn, never under a later one.
-	AnswerTurnID string    `json:"answer_turn_id,omitempty"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	AnswerTurnID string `json:"answer_turn_id,omitempty"`
+	// The rest of a turn, for a host whose hooks each carry a piece of it
+	// (Cursor). Written only when the installation opted in to the turn end,
+	// already scrubbed and capped, and cleared when the turn ends. UserText is
+	// what the user asked in UserTurnID; TurnSearches are the call ids of the
+	// searches made in SearchesTurnID, in order.
+	UserText       string    `json:"user_text,omitempty"`
+	UserChars      int       `json:"user_chars,omitempty"`
+	UserTruncated  bool      `json:"user_truncated,omitempty"`
+	UserTurnID     string    `json:"user_turn_id,omitempty"`
+	TurnSearches   []string  `json:"turn_searches,omitempty"`
+	SearchesTurnID string    `json:"searches_turn_id,omitempty"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // lineagePath keys a sidecar on the workspace root, hashed like every

@@ -71,8 +71,15 @@ The first release replaces this heading with its own.
   — each tool's name, time and outcome, never its input or output. A session
   can then be read from the question to the answer. Off by default. Scrubbed
   and capped like the trace; nothing for a turn with no served search, and
-  nothing unless `miner.router_url` names the router. The conversation is read
-  under Claude Code; Cursor sends the final answer only.
+  nothing unless `miner.router_url` names the router. Claude Code and opencode
+  send the whole turn; Cursor sends your prompt, the searches, the reply and
+  the model (its hooks carry nothing between tool calls). Cursor gains one hook
+  entry for this, so run `jevlin agents install` again; it keeps nothing unless
+  `turn_end` is on. Not live-smoked under Cursor or opencode: the fields come
+  from Cursor's documentation and opencode's SDK types, not from a running host.
+- **opencode searches carry their turn.** A search made under opencode now says
+  which of your messages it answers to, so a session's searches group into
+  turns on the router as they do for Claude Code.
 - **A lost claim link is replaced, not mourned.** For a registration rebuilt from
   the platform that is still unclaimed with no claim link, a foreground
   `jevlin connect` now asks the platform for a fresh link and prints it. The old

@@ -152,6 +152,9 @@ JSON
 -- sessionStart
 '/home/u/.jevlin/bin/jevlin' hook -config '/home/u/.jevlin/jevlin.toml' cursor sessionStart
 "'/home/u/.jevlin/bin/jevlin' hook -config '/home/u/.jevlin/jevlin.toml' cursor sessionStart"
+-- beforeSubmitPrompt
+'/home/u/.jevlin/bin/jevlin' hook -config '/home/u/.jevlin/jevlin.toml' cursor beforeSubmitPrompt
+"'/home/u/.jevlin/bin/jevlin' hook -config '/home/u/.jevlin/jevlin.toml' cursor beforeSubmitPrompt"
 -- preToolUse
 '/home/u/.jevlin/bin/jevlin' hook -config '/home/u/.jevlin/jevlin.toml' cursor preToolUse
 "'/home/u/.jevlin/bin/jevlin' hook -config '/home/u/.jevlin/jevlin.toml' cursor preToolUse"
