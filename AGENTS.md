@@ -58,7 +58,7 @@ the named tests.
    nothing to redact here because nothing is captured. The search-router **trace** is the one
    channel that carries model-influenceable text off the machine (the assistant text just before a
    search, capped and hashed per `trace.go`); it MUST be redacted before egress and is a conscious
-   privacy surface, not a default. The **turn end** (`turn_end.go`, `turn_detail.go`) is the only other one: for
+   privacy surface, not a default. The **turn end** (`turn_end.go`, `turn_detail.go`, `turn_hosts.go`) is the only other one: for
    a turn that searched, the user's message, the assistant's visible text, and its final message,
    all under the same scrub and caps, with a skeleton of the turn's other tool calls. It is sent
    only when the installation set `[miner] turn_end = true`. It MUST stay off by default; MUST
@@ -511,9 +511,10 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   Codex's sandbox block names directories rather than a config, so `removeOurSandboxBlock`
   attributes it by its writable roots lying under this installation. **Every artifact this client
   writes names the installation that wrote it** — `TestEveryArtifactNamesTheInstallationThatWroteIt`
-  — including the JavaScript adapters, which run no command of ours and therefore carry an
-  `INSTALL_CONFIG` line for no other purpose; without it opencode's plugin would name nothing and a
-  disposable installation's purge could delete the main installation's copy. An artifact naming no
+  — including the JavaScript adapters, through their `INSTALL_CONFIG` line. Pi's extension runs no
+  command of ours, and opencode's plugin runs one only to hand a finished turn to `hook turn`, so
+  without that line neither would name its installation's config, and a disposable installation's
+  purge could delete the main installation's copy. An artifact naming no
   installation is left and reported, never deleted on the assumption it is ours — with the file
   named and the one `agents install` that would stamp it, so the dead end self-heals.
   **The rule holds at install time too.** A host has one skill directory, and opencode and Pi one

@@ -29,10 +29,10 @@ package main
 //	              (window), Stop (flush); and a permissions.allow rule for
 //	              the search command, so it runs unprompted.
 //	Codex         ~/.codex/skills/jevlin/SKILL.md.
-//	Cursor        ~/.cursor/skills/jevlin/SKILL.md, and six entries
+//	Cursor        ~/.cursor/skills/jevlin/SKILL.md, and eight entries
 //	              merged into ~/.cursor/hooks.json: sessionStart,
-//	              beforeShellExecution, afterAgentThought,
-//	              afterAgentResponse, preCompact, stop.
+//	              beforeSubmitPrompt, preToolUse, beforeShellExecution,
+//	              afterAgentThought, afterAgentResponse, preCompact, stop.
 //	opencode      an in-process plugin that prefixes our search command with
 //	              the bridge, the way the Claude hook does, plus a line to
 //	              paste into AGENTS.md (opencode has no skill directory).
@@ -117,7 +117,22 @@ const traceShellMarker = "{{HOST_SHELL}}"
 // main installation's opencode plugin (dropin-miner#73).
 const traceConfigMarker = "{{INSTALL_CONFIG}}"
 
+// traceBinMarker is where an adapter that reports the end of a turn records
+// which binary to hand it to. An adapter with no such marker ignores it.
+const traceBinMarker = "{{JEVLIN_BIN}}"
+
+// renderAgentScript renders a template with no binary named: the adapter
+// threads searches and reports no turn end. It is what the tests of the
+// trace pipeline render.
 func renderAgentScript(template string, sh shellKind, cfg string) string {
+	return renderAgentScriptFor(template, sh, cfg, "")
+}
+
+// renderAgentScriptFor is renderAgentScript for an installation: bin is the
+// binary whose `hook turn` the adapter pipes a finished turn to.
+func renderAgentScriptFor(template string, sh shellKind, cfg, bin string) string {
+	quotedBin, _ := json.Marshal(bin)
+	template = strings.Replace(template, `"`+traceBinMarker+`"`, string(quotedBin), 1)
 	out := strings.Replace(template, traceCommonMarker, strings.TrimRight(agentTraceCommonJS, "\n"), 1)
 	out = strings.Replace(out, traceShellMarker, string(sh), 1)
 	// JSON quoting, because the marker sits inside a JavaScript string
@@ -146,7 +161,7 @@ func planAgentScriptWrite(ops agentOps, t installTarget, path, template, why str
 		p.refused = append(p.refused, fmt.Sprintf("%s: %v", t.Label(), err))
 		return false
 	}
-	return planSlotWrite(ops, t.Label(), path, []byte(renderAgentScript(template, shells[0], entry.cfg)), 0o600, why, p)
+	return planSlotWrite(ops, t.Label(), path, []byte(renderAgentScriptFor(template, shells[0], entry.cfg, entry.command)), 0o600, why, p)
 }
 
 const (
@@ -1048,7 +1063,9 @@ func ruleIsOurs(e any, ref installationRef) bool {
 }
 
 func cursorHooks(entry binEntry, shells []shellKind) (hooksSpec, string, error) {
-	events := []string{"sessionStart", "preToolUse", "beforeShellExecution", "afterAgentThought", "afterAgentResponse", "preCompact", "stop"}
+	// beforeSubmitPrompt is for the turn end: it is where Cursor says what the
+	// user asked. It keeps nothing unless the installation opted in.
+	events := []string{"sessionStart", "beforeSubmitPrompt", "preToolUse", "beforeShellExecution", "afterAgentThought", "afterAgentResponse", "preCompact", "stop"}
 	entries := map[string]map[string]any{}
 	note := ""
 	for _, ev := range events {
