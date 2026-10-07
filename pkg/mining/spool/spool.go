@@ -53,6 +53,12 @@ type Record struct {
 type Spool struct {
 	dir        string
 	quarantine string
+	// id is the directory dir named when the spool was opened. Every
+	// operation reopens the root and refuses any other directory: the
+	// spool can sit inside another writable root (its default is
+	// <state_dir>/spool), where a sandboxed command can rename it aside and
+	// leave a link or another directory at the name.
+	id fs.FileInfo
 
 	mu                sync.Mutex
 	locations         map[string]string
@@ -72,12 +78,13 @@ const recordMaxBytes = 1 << 20
 //
 // The spool directory is a writable root of Codex's sandbox when mining is
 // on, and the quarantine is the one directory below it: a sandboxed command
-// can replace it with a link to a directory outside, and every move, read
-// and listing that goes through it would follow. So everything below the
-// spool's top level goes through fsx.Root, which refuses a link out of it
-// (pkg/fsx/confined.go). The top level needs no root: the spool directory
-// itself cannot be replaced from inside, and fsx's writers there already
-// stage under an exclusive random name.
+// can replace the quarantine with a link to a directory outside, and every
+// move, read and listing that goes through it would follow. The spool
+// directory itself can be replaced too when it sits inside another writable
+// root, as the default <state_dir>/spool does. So every operation goes
+// through fsx.Root, which refuses a link out of the spool, opened on the
+// directory the spool was opened on and no other (pkg/fsx/confined.go). A
+// spool_dir that is itself a link is refused: name the real directory.
 func Open(dir string) (*Spool, error) {
 	if dir == "" {
 		return nil, errors.New("spool: directory is empty")
@@ -86,10 +93,16 @@ func Open(dir string) (*Spool, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("spool: create %s: %w", dir, err)
 	}
-	if err := inRoot(dir, func(r *fsx.Root) error { return r.MkdirAll("quarantine", 0o700) }); err != nil {
+	r, err := fsx.OpenRoot(dir)
+	if err != nil {
+		return nil, fmt.Errorf("spool: %w", err)
+	}
+	defer func() { _ = r.Close() }()
+	if err := r.MkdirAll("quarantine", 0o700); err != nil {
 		return nil, fmt.Errorf("spool: create %s: %w", quarantine, err)
 	}
-	s := &Spool{dir: dir, quarantine: quarantine, locations: make(map[string]string), move: moveInRoot(dir), remove: fsx.RemoveFileDurable, write: fsx.WriteFileAtomic}
+	s := &Spool{dir: dir, quarantine: quarantine, id: r.Identity(), locations: make(map[string]string)}
+	s.move, s.remove, s.write = s.moveInRoot, s.removeInRoot, s.writeInRoot
 	if err := s.reconstruct(); err != nil {
 		return nil, err
 	}
@@ -110,7 +123,12 @@ func OpenExisting(dir string) (*Spool, error) {
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 		return nil, fmt.Errorf("spool: %s is not a directory", dir)
 	}
-	return &Spool{dir: dir, quarantine: filepath.Join(dir, "quarantine")}, nil
+	r, err := fsx.OpenRoot(dir)
+	if err != nil {
+		return nil, fmt.Errorf("spool: %w", err)
+	}
+	defer func() { _ = r.Close() }()
+	return &Spool{dir: dir, quarantine: filepath.Join(dir, "quarantine"), id: r.Identity()}, nil
 }
 
 // NewClientRecordID mints the stable transport identity (contract §49):
@@ -291,7 +309,7 @@ func (s *Spool) persist(rec *Record, name string, exclusive bool) error {
 		return err
 	}
 	if exclusive {
-		err = fsx.WriteFileExclusive(s.dir, name, payload, 0o600)
+		err = s.inRoot(func(r *fsx.Root) error { return r.WriteFileExclusive(name, payload, 0o600) })
 	} else {
 		err = s.write(s.dir, name, payload, 0o600)
 	}
@@ -303,7 +321,7 @@ func (s *Spool) persist(rec *Record, name string, exclusive bool) error {
 }
 
 func (s *Spool) syncDir() error {
-	err := fsx.SyncDirectory(s.dir)
+	err := s.inRoot(func(r *fsx.Root) error { return r.SyncDir(".") })
 	if errors.Is(err, fsx.ErrDirectorySyncUnsupported) {
 		return nil
 	} // Windows publication uses write-through.
@@ -316,7 +334,7 @@ func (s *Spool) syncDir() error {
 func (s *Spool) Pending() ([]*Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	entries, err := os.ReadDir(s.dir)
+	entries, err := s.list(s.dir)
 	if err != nil {
 		return nil, fmt.Errorf("spool: scan: %w", err)
 	}
@@ -357,48 +375,77 @@ func (s *Spool) Pending() ([]*Record, error) {
 	return records, nil
 }
 
-// inRoot runs f on the spool directory opened as an fsx.Root.
-func inRoot(dir string, f func(*fsx.Root) error) error {
-	r, err := fsx.OpenRoot(dir)
+// inRoot runs f on the spool directory opened as an fsx.Root, and refuses a
+// directory other than the one the spool was opened on.
+func (s *Spool) inRoot(f func(*fsx.Root) error) error {
+	r, err := fsx.OpenRoot(s.dir)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = r.Close() }()
+	if s.id != nil && !r.SameDirectory(s.id) {
+		return fmt.Errorf("spool: %s is no longer the directory the spool was opened on", s.dir)
+	}
 	return f(r)
 }
 
-// list reads one of the spool's two directories: the top level by its path,
-// the quarantine through the root, so a quarantine replaced by a link out of
-// the spool is an error rather than a listing of somewhere else.
+// list reads one of the spool's two directories through the root, so that
+// neither a spool nor a quarantine replaced by a link out of it is listed.
 func (s *Spool) list(dir string) ([]fs.DirEntry, error) {
-	if dir == s.dir {
-		return os.ReadDir(dir)
+	name := "."
+	if dir != s.dir {
+		name = filepath.Base(dir)
 	}
 	var entries []fs.DirEntry
-	err := inRoot(s.dir, func(r *fsx.Root) (err error) {
-		entries, err = r.ReadDir(filepath.Base(dir))
+	err := s.inRoot(func(r *fsx.Root) (err error) {
+		entries, err = r.ReadDir(name)
 		return err
 	})
 	return entries, err
 }
 
-// moveInRoot is the spool's durable move. Its callers name both ends by
-// path; the move itself goes through the root, relative to the spool
-// directory, with fsx.MoveFileDurable's semantics.
-func moveInRoot(dir string) func(from, to string) error {
-	return func(from, to string) error {
-		rf, ferr := filepath.Rel(dir, from)
-		rt, terr := filepath.Rel(dir, to)
-		if ferr != nil || terr != nil || !filepath.IsLocal(rf) || !filepath.IsLocal(rt) {
-			return &fsx.StageError{Stage: "move", Err: fmt.Errorf("spool: %s or %s is not inside %s", from, to, dir)}
-		}
-		return inRoot(dir, func(r *fsx.Root) error { return r.MoveDurable(rf, rt) })
+// rel is path's name relative to the spool directory, refused when it is not
+// inside it.
+func (s *Spool) rel(path string) (string, error) {
+	name, err := filepath.Rel(s.dir, path)
+	if err != nil || !filepath.IsLocal(name) {
+		return "", fmt.Errorf("spool: %s is not inside %s", path, s.dir)
 	}
+	return name, nil
+}
+
+// moveInRoot, removeInRoot and writeInRoot are the spool's durable move,
+// remove and write. Their callers name files by path, which lets a test stand
+// in for them; the operations themselves go through the root, with fsx's
+// path-based semantics.
+func (s *Spool) moveInRoot(from, to string) error {
+	rf, ferr := s.rel(from)
+	rt, terr := s.rel(to)
+	if ferr != nil || terr != nil {
+		return &fsx.StageError{Stage: "move", Err: errors.Join(ferr, terr)}
+	}
+	return s.inRoot(func(r *fsx.Root) error { return r.MoveDurable(rf, rt) })
+}
+
+func (s *Spool) removeInRoot(path string) error {
+	name, err := s.rel(path)
+	if err != nil {
+		return &fsx.StageError{Stage: "remove", Err: err}
+	}
+	return s.inRoot(func(r *fsx.Root) error { return r.RemoveDurable(name) })
+}
+
+func (s *Spool) writeInRoot(dir, name string, data []byte, mode fs.FileMode) error {
+	rel, err := s.rel(filepath.Join(dir, name))
+	if err != nil {
+		return &fsx.StageError{Stage: "name", Err: err}
+	}
+	return s.inRoot(func(r *fsx.Root) error { return r.WriteFileAtomic(rel, data, mode) })
 }
 
 func (s *Spool) read(name string) (*Record, error) {
 	var raw []byte
-	err := inRoot(s.dir, func(r *fsx.Root) (err error) {
+	err := s.inRoot(func(r *fsx.Root) (err error) {
 		raw, err = r.ReadRegular(name, recordMaxBytes)
 		return err
 	})
@@ -498,7 +545,7 @@ func (s *Spool) Touch(rec *Record) error {
 // That is the safer error: it over-reports a backlog by the number of files
 // that are already broken, rather than mutating a queue it does not own.
 func (s *Spool) Count() (int, error) {
-	entries, err := os.ReadDir(s.dir)
+	entries, err := s.list(s.dir)
 	if err != nil {
 		return 0, fmt.Errorf("spool: scan: %w", err)
 	}
