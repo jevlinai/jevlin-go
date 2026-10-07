@@ -303,8 +303,10 @@ func listTempFiles(dir string) ([]tempEntry, error) {
 }
 
 var (
-	// tempNameRe is the one shape these writers produce: "<file>.<pid>.tmp".
-	tempNameRe = regexp.MustCompile(`^(.+)\.(\d+)\.tmp$`)
+	// tempNameRe is the one shape these writers produce,
+	// "<file>.<pid>-<random>.tmp" (tempNameFor), and the "<file>.<pid>.tmp"
+	// earlier versions wrote, which the sweep still collects.
+	tempNameRe = regexp.MustCompile(`^(.+)\.(\d+)(?:-[0-9a-f]+)?\.tmp$`)
 	// lineageNameRe is a lineage file's name: lineagePath's 32 hex digits.
 	lineageNameRe = regexp.MustCompile(`^[0-9a-f]{32}\.json$`)
 )
@@ -320,7 +322,7 @@ var (
 // path is untouched by a failure, as before.
 func replaceViaTemp(ops hookOps, path string, data []byte, now time.Time, lineageDir bool) error {
 	sweepStaleTemps(ops, path, now, lineageDir)
-	tmp := fmt.Sprintf("%s.%d.tmp", path, ops.pid)
+	tmp := tempNameFor(ops, path)
 	if err := ops.writeFile(tmp, data, 0o600); err != nil {
 		removeTemp(ops, tmp) // a write that failed halfway leaves one too
 		return err
@@ -330,6 +332,21 @@ func replaceViaTemp(ops hookOps, path string, data []byte, now time.Time, lineag
 		return err
 	}
 	return nil
+}
+
+// tempNameFor is the temporary name replaceViaTemp writes before its rename.
+// The directory is a writable root of Codex's sandbox (pkg/fsx/confined.go),
+// so the name is unpredictable as well as exclusive: a sandboxed command
+// cannot leave a link at a name it cannot know, and ops.writeFile creates
+// the file with O_EXCL whatever it guessed. The pid stays in the name for
+// sweepStaleTemps.
+func tempNameFor(ops hookOps, path string) string {
+	if ops.tempSuffix != nil {
+		if s := ops.tempSuffix(); s != "" {
+			return fmt.Sprintf("%s.%d-%s.tmp", path, ops.pid, s)
+		}
+	}
+	return fmt.Sprintf("%s.%d.tmp", path, ops.pid)
 }
 
 func removeTemp(ops hookOps, tmp string) {
