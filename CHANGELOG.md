@@ -18,6 +18,15 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **Service-document endpoints must live on the AS's origin.** Discovery now
+  refuses a `/.well-known/twilight-mining` document whose endpoints,
+  `authorization_server` or `participation_resource` point at another host, a
+  different port, plain http, or carry userinfo, so a tampered document cannot
+  steer the access token, the participation capability or the provider
+  verification key elsewhere. The mining plane stays closed until the AS serves
+  a same-origin document; search is unaffected.
+  `enrollment_authorization_template` is still held to the provider allowlist
+  instead.
 - **`search` takes `-config` once.** The Claude Code allow rule ends after
   the installed `-config <file>`, and whatever follows it runs without a
   prompt. A second `-config` used to win, so an appended one could send your
