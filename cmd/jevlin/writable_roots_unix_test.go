@@ -63,6 +63,7 @@ func TestNoStateOrIntakeReadWaitsOnAFIFO(t *testing.T) {
 	}
 	returnsWithin(t, "readResumeStamp", func() { _ = readResumeStamp(resumeStampPath(state)) })
 	returnsWithin(t, "readFlushStamp", func() { _ = readFlushStamp(flushStamp) })
+	returnsWithin(t, "readFlushStampForDoctor", func() { _, _, _ = readFlushStampForDoctor(flushStamp) })
 	returnsWithin(t, "readIntake", func() { _, _, _ = readIntake(intake) })
 	returnsWithin(t, "readSearchEpoch", func() { _, _, _ = readSearchEpoch(intake) })
 }
