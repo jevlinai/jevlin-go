@@ -51,8 +51,9 @@ import (
 )
 
 const (
-	credentialsFile    = "credentials.json"
-	credentialsVersion = 1
+	credentialsFile         = "credentials.json"
+	credentialsVersion      = 1
+	registrationJournalFile = "registration_pending.json"
 
 	apiKeyEnv = "JEVLIN_API_KEY" // #nosec G101 -- an env var NAME, not a credential value
 
@@ -99,6 +100,12 @@ type credentials struct {
 // standard layout that is ~/.jevlin/credentials.json.
 func credentialsPath(m config.Miner) string {
 	return filepath.Join(minerRoot(m), credentialsFile)
+}
+
+// registrationJournal is registration_pending.json beside credentials.json,
+// outside the state directory a sandboxed agent may write.
+func registrationJournal(m config.Miner) (*auth.RegistrationJournal, error) {
+	return auth.OpenRegistrationJournal(minerRoot(m))
 }
 
 // platformKey uses only the credential connect stored for platform calls.

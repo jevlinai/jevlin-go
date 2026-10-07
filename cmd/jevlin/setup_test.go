@@ -879,7 +879,7 @@ func writeInstallation(t *testing.T, dir string, parts ...string) {
 			write(filepath.Join("state", "agent.json"), `{"agent_id":"old-agent","status":"claimed"}`)
 			write(credentialsFile, `{"api_key":"sr-old"}`)
 		case "pending":
-			write(filepath.Join("state", "registration_pending.json"), `{"agent_id":"pending-agent"}`)
+			write(registrationJournalFile, `{"agent_id":"pending-agent"}`)
 		case "spool":
 			write(filepath.Join("spool", "unsent-1.json"), `{"v":1}`)
 		case "config":
@@ -975,7 +975,7 @@ func TestSetupAdoptsASourceHoldingOnlyAPendingRegistration(t *testing.T) {
 	if !strings.Contains(out, "A previous installation is set aside at "+sibling) {
 		t.Fatalf("a pending registration did not count as an installation:\n%s", out)
 	}
-	if !lexists(filepath.Join(s.home, "state", "registration_pending.json")) && !lexists(filepath.Join(s.home, "state", "agent.json")) {
+	if !lexists(filepath.Join(s.home, registrationJournalFile)) || lexists(filepath.Join(sibling, registrationJournalFile)) {
 		t.Errorf("the pending registration was not adopted:\n%s", out)
 	}
 }

@@ -18,6 +18,13 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **The registration journal moved beside `credentials.json`.** `connect`
+  used to keep `registration_pending.json` in the state directory, which a
+  Codex-sandboxed command can write, so a forged journal could make the next
+  `connect` swap your stored platform key for someone else's. It now lives in
+  the jevlin home, and one left in the state directory is discarded unread.
+  A registration interrupted mid-publish by an older release is not resumed;
+  run `jevlin connect` again.
 - **Codex searches carry their session.** `agents install` writes Codex's
   hooks into `~/.codex/hooks.json` on macOS and Linux, and a search Codex runs
   then reaches the router with its session, turn and call, and a subagent's

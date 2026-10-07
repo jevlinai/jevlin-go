@@ -120,7 +120,9 @@ the named tests.
 13. **Registration is one journaled transaction.** A complete `register` response is journaled
     (`registration_pending.json`) before `agent.json` or the credential is written, and finished
     from the journal on the next run, never by a second `register`. The journal is consulted before
-    anything else. A lost or unreadable record beside a stored credential is rebuilt through
+    anything else. It lives beside `credentials.json`, never in the state dir: a sandboxed agent can
+    write the state dir, and the journal can authorize replacing the credential. A
+    `registration_pending.json` found in the state dir is discarded unread. A lost or unreadable record beside a stored credential is rebuilt through
     `GET /v1/agents/me` with nothing local changed before a valid answer. `-force` bypasses
     recovery and authorizes deliberate replacement where local state would otherwise refuse a
     fresh registration. Separately and without `-force`, an ordinary foreground `connect` may

@@ -43,12 +43,14 @@ import (
 // installationMarkers are the files whose presence makes a directory an
 // installation. registration_pending.json is one: an interrupted
 // registration is durable state, and ignoring it would mint a second
-// identity for the same participant.
+// identity for the same participant. It sits beside credentials.json; the
+// state/ copy is an older release's and connect discards it unread.
 var installationMarkers = []string{
 	filepath.Join("wallet", walletKeyFile),
 	filepath.Join("state", "refresh.token"),
 	filepath.Join("state", "agent.json"),
 	filepath.Join("state", "registration_pending.json"),
+	registrationJournalFile,
 	credentialsFile,
 }
 
@@ -125,7 +127,7 @@ func describeInstallation(dir string) string {
 	if lexists(filepath.Join(dir, "state", "refresh.token")) || lexists(filepath.Join(dir, "state", "agent.json")) {
 		parts = append(parts, "enrolled")
 	}
-	if lexists(filepath.Join(dir, "state", "registration_pending.json")) {
+	if lexists(filepath.Join(dir, registrationJournalFile)) || lexists(filepath.Join(dir, "state", "registration_pending.json")) {
 		parts = append(parts, "an unfinished registration")
 	}
 	if lexists(filepath.Join(dir, credentialsFile)) {
@@ -336,8 +338,8 @@ func (f *adoptionFailure) Error() string {
 // and move only after that outer commit.
 func (a *adoption) run() error {
 	t := a.txn(
-		filepath.Join(a.src, "state"), filepath.Join(a.src, credentialsFile), filepath.Join(a.src, "wallet"),
-		filepath.Join(a.dst, "state"), filepath.Join(a.dst, credentialsFile), filepath.Join(a.dst, "wallet"),
+		filepath.Join(a.src, "state"), filepath.Join(a.src, credentialsFile), filepath.Join(a.src, registrationJournalFile), filepath.Join(a.src, "wallet"),
+		filepath.Join(a.dst, "state"), filepath.Join(a.dst, credentialsFile), filepath.Join(a.dst, registrationJournalFile), filepath.Join(a.dst, "wallet"),
 		a.aside("state.unenrolled"), a.aside("wallet.incomplete"),
 	)
 	if err := a.identity(t); err != nil {
@@ -368,12 +370,13 @@ func (a *adoption) aside(prefix string) string {
 func (a *adoption) identity(t *bundleTxn) error {
 	srcState, srcCreds := filepath.Join(a.src, "state"), filepath.Join(a.src, credentialsFile)
 	dstState, dstCreds := filepath.Join(a.dst, "state"), filepath.Join(a.dst, credentialsFile)
+	srcJournal, dstJournal := filepath.Join(a.src, registrationJournalFile), filepath.Join(a.dst, registrationJournalFile)
 	aside := a.aside("state.unenrolled")
-	hasState, hasCreds := lexists(srcState), lexists(srcCreds)
-	if !hasState && !hasCreds {
+	hasState, hasCreds, hasJournal := lexists(srcState), lexists(srcCreds), lexists(srcJournal)
+	if !hasState && !hasCreds && !hasJournal {
 		return nil
 	}
-	for _, p := range []string{srcState, srcCreds} {
+	for _, p := range []string{srcState, srcCreds, srcJournal} {
 		if !lexists(p) {
 			continue
 		}
@@ -390,8 +393,10 @@ func (a *adoption) identity(t *bundleTxn) error {
 	conflict := func(evidence string) *identityConflict {
 		return &identityConflict{Destination: a.dst, Evidence: evidence, Source: a.src}
 	}
-	if lexists(dstCreds) {
-		return conflict(dstCreds)
+	for _, p := range []string{dstCreds, dstJournal} {
+		if lexists(p) {
+			return conflict(p)
+		}
 	}
 	setAside := false
 	if lexists(dstState) {
@@ -433,6 +438,11 @@ func (a *adoption) identity(t *bundleTxn) error {
 		// Half an identity is worse than none: a failure here puts the state
 		// back too.
 		if err := t.move(srcCreds, dstCreds); err != nil {
+			return t.fail(identityBundle, err)
+		}
+	}
+	if hasJournal {
+		if err := t.move(srcJournal, dstJournal); err != nil {
 			return t.fail(identityBundle, err)
 		}
 	}
