@@ -2,9 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -358,4 +360,101 @@ func TestSendTurnEnd(t *testing.T) {
 	if code := sendTurnEnd(old.Client(), old.URL, "sr-test", rec); code != 0 {
 		t.Errorf("unreachable router: %d", code)
 	}
+}
+
+// plantLink puts a symlink at link pointing to a file outside the sessions
+// directory, as a sandboxed agent can, and returns the target's path.
+func plantLink(t *testing.T, link string) string {
+	t.Helper()
+	victim := filepath.Join(t.TempDir(), "victim")
+	if err := os.WriteFile(victim, []byte("precious\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	return victim
+}
+
+func assertUntouched(t *testing.T, victim string) {
+	t.Helper()
+	if b, err := os.ReadFile(victim); err != nil || string(b) != "precious\n" { // #nosec G304 -- the test's own temp file
+		t.Fatalf("link target = %q, %v; it was written through", b, err)
+	}
+}
+
+func TestWriteFileNoFollowReplacesAPlantedLink(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "file")
+	victim := plantLink(t, path)
+	if err := writeFileNoFollow(path, []byte("mine"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	assertUntouched(t, victim)
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		t.Fatalf("path is %v, %v; want a regular file", info, err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != "mine" { // #nosec G304 -- the test's own temp file
+		t.Fatalf("path holds %q", b)
+	}
+}
+
+func TestQueueTurnEndDoesNotWriteThroughAPlantedLink(t *testing.T) {
+	dir := t.TempDir()
+	ops := realHookOps()
+	var queued []string
+	ops.spawnTurnEnd = func(_, file string) error { queued = append(queued, file); return nil }
+	rec := turnEndRecord{SessionID: "s", TurnID: "t", Harness: "codex", Status: turnCompleted, FinalText: "$(echo pwned)"}
+	// The name the record used to be written under, computable in the sandbox.
+	victim := plantLink(t, filepath.Join(dir, traceHash("turn-end|s|t")+turnEndSuffix))
+
+	queueTurnEnd(ops, hookContext{sessionsDir: dir, turnEnd: true}, rec)
+	assertUntouched(t, victim)
+	if len(queued) != 1 || filepath.Dir(queued[0]) != dir || !strings.HasSuffix(queued[0], turnEndSuffix) {
+		t.Fatalf("queued %v", queued)
+	}
+	body, err := readQueuedTurnEnd(queued[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got turnEndRecord
+	if err := json.Unmarshal(body, &got); err != nil || got.FinalText != rec.FinalText {
+		t.Fatalf("queued record %+v, %v", got, err)
+	}
+
+	// Two turn ends never share a name: the random part is not derivable.
+	queueTurnEnd(ops, hookContext{sessionsDir: dir, turnEnd: true}, rec)
+	if len(queued) != 2 || queued[0] == queued[1] {
+		t.Fatalf("queued %v", queued)
+	}
+}
+
+func TestMarkTurnSearchedDoesNotTruncateThroughAPlantedLink(t *testing.T) {
+	dir := t.TempDir()
+	victim := plantLink(t, turnSearchedPath(dir, "turn"))
+	markTurnSearched(realHookOps(), config.Miner{TurnEnd: true, SessionsDir: dir}, &traceEnvelope{TurnID: "turn"})
+	assertUntouched(t, victim)
+}
+
+func TestReplaceViaTempDoesNotWriteThroughAPlantedTemp(t *testing.T) {
+	dir := t.TempDir()
+	ops := realHookOps()
+	path := filepath.Join(dir, "state.json")
+	victim := plantLink(t, fmt.Sprintf("%s.%d.tmp", path, ops.pid))
+	if err := replaceViaTemp(ops, path, []byte(`{"v":1}`), time.Now(), false); err != nil {
+		t.Fatal(err)
+	}
+	assertUntouched(t, victim)
+	if b, _ := os.ReadFile(path); string(b) != `{"v":1}` { // #nosec G304 -- the test's own temp file
+		t.Fatalf("path holds %q", b)
+	}
+}
+
+func TestReadQueuedTurnEndRefusesALink(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "x"+turnEndSuffix)
+	victim := plantLink(t, path)
+	if body, err := readQueuedTurnEnd(path); err == nil {
+		t.Fatalf("read %q through a link", body)
+	}
+	assertUntouched(t, victim)
 }

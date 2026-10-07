@@ -33,7 +33,10 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -175,7 +178,16 @@ func queueTurnEnd(ops hookOps, hc hookContext, rec turnEndRecord) {
 	if err := ops.mkdirAll(hc.sessionsDir, 0o700); err != nil {
 		return
 	}
-	path := filepath.Join(hc.sessionsDir, traceHash("turn-end|"+rec.SessionID+"|"+rec.TurnID)+turnEndSuffix)
+	// The sessions directory is writable from inside a Codex sandbox, and
+	// the hashed ids are readable there. A random part makes the name one
+	// nothing could have planted a symlink at ahead of time; writeFile never
+	// writes through one either way.
+	var nonce [16]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return
+	}
+	name := traceHash("turn-end|"+rec.SessionID+"|"+rec.TurnID) + "." + hex.EncodeToString(nonce[:]) + turnEndSuffix
+	path := filepath.Join(hc.sessionsDir, name)
 	if err := ops.writeFile(path, body, 0o600); err != nil {
 		return
 	}
@@ -332,7 +344,7 @@ func cmdTurnEnd(args []string, getenv func(string) string) int {
 	if cfg.Miner.SessionsDir == "" || filepath.Dir(path) != filepath.Clean(cfg.Miner.SessionsDir) || !strings.HasSuffix(path, turnEndSuffix) {
 		return exitOK
 	}
-	body, err := os.ReadFile(path) // #nosec G304 -- confined to the sessions directory and the turn-end suffix just above
+	body, err := readQueuedTurnEnd(path)
 	// Deleted before the send, whatever comes next: one attempt, and no file
 	// of assistant text left behind by a send that hung.
 	_ = os.Remove(path)
@@ -353,6 +365,34 @@ func cmdTurnEnd(args []string, getenv func(string) string) int {
 	client := &http.Client{Timeout: turnEndTimeout, CheckRedirect: auth.SameOriginRedirects, Transport: loginProbeTransport}
 	_ = sendTurnEnd(client, strings.TrimRight(cfg.Miner.RouterURL.String(), "/"), key, rec)
 	return exitOK
+}
+
+// readQueuedTurnEnd reads the queued record only if it is a regular file at
+// path itself. The sessions directory is writable from inside a Codex
+// sandbox, and a symlink planted there must not make this unsandboxed
+// process read, and send, a file it points at.
+func readQueuedTurnEnd(path string) ([]byte, error) {
+	before, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !before.Mode().IsRegular() {
+		return nil, fmt.Errorf("queued turn end is not a regular file")
+	}
+	f, err := os.Open(path) // #nosec G304 -- confined to the sessions directory and the turn-end suffix by cmdTurnEnd
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	opened, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	// Swapped for a link, or another file, between the Lstat and the open.
+	if !os.SameFile(before, opened) {
+		return nil, fmt.Errorf("queued turn end changed while it was opened")
+	}
+	return io.ReadAll(f)
 }
 
 // sendTurnEnd posts one turn end. The status code is returned for tests; no

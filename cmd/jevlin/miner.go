@@ -318,6 +318,11 @@ var (
 // the 0.2.10 release check — and each failure used to leave one
 // "<hash>.json.<pid>.tmp" in the sessions directory for good. What was at
 // path is untouched by a failure, as before.
+//
+// The directories it writes into are writable from inside a Codex sandbox,
+// so "<path>.<pid>.tmp" may already be a planted symlink. The real hook ops
+// write with writeFileNoFollow, and the rename replaces whatever sits at path
+// without following it.
 func replaceViaTemp(ops hookOps, path string, data []byte, now time.Time, lineageDir bool) error {
 	sweepStaleTemps(ops, path, now, lineageDir)
 	tmp := fmt.Sprintf("%s.%d.tmp", path, ops.pid)
@@ -330,6 +335,30 @@ func replaceViaTemp(ops hookOps, path string, data []byte, now time.Time, lineag
 		return err
 	}
 	return nil
+}
+
+// writeFileNoFollow is the hook's os.WriteFile for files under the state and
+// sessions directories, which a sandboxed agent can write into. It never
+// writes through what is already at path: the file is created with O_EXCL,
+// which fails on any existing name, a symlink included, and does not follow
+// it. An existing entry is unlinked — the link itself, never its target —
+// and the create is tried once more.
+func writeFileNoFollow(path string, data []byte, mode os.FileMode) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode) // #nosec G304 -- callers name files in their own state and sessions directories
+	if errors.Is(err, fs.ErrExist) {
+		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		f, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode) // #nosec G304 -- as above
+	}
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(data)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	return err
 }
 
 func removeTemp(ops hookOps, tmp string) {

@@ -109,7 +109,7 @@ func realHookOps() hookOps {
 		executable:   os.Executable,
 		getenv:       os.Getenv,
 		readFile:     os.ReadFile,
-		writeFile:    os.WriteFile,
+		writeFile:    writeFileNoFollow,
 		mkdirAll:     os.MkdirAll,
 		rename:       os.Rename,
 		remove:       os.Remove,

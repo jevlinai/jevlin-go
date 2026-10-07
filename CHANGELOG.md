@@ -142,3 +142,11 @@ The first release replaces this heading with its own.
   earning, upgrading and removing; `docs/agents.md` covers each coding agent and its
   known limits; `docs/reference.md` holds the envelope, config, environment, files and
   `doctor`'s checks. `docs/PARTICIPANT.md` is gone, replaced by the guide.
+- **The turn end no longer writes through a planted link.** The sessions
+  directory is writable from inside Codex's sandbox, and the unsandboxed
+  Stop hook wrote the queued turn end, the turn's search mark, and every
+  temporary file it renames into place under names a sandboxed command
+  could predict, following any symlink already there. Those writes now
+  create the file afresh and never follow a link, the queued turn end's
+  name carries a random part, and `jevlin turn-end` sends only a regular
+  file that is still the one it checked.
