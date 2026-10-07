@@ -13,6 +13,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -102,6 +104,11 @@ func TestReplaceViaTempUsesAnUnpredictableName(t *testing.T) {
 	}
 	if m := tempNameRe.FindStringSubmatch(filepath.Base(a)); m == nil || m[1] != "f.json" {
 		t.Fatalf("the sweep would not recognize %s", a)
+	}
+	// Different is not enough: a counter differs too, and a sandboxed
+	// command can guess a counter's next value. The random part is 128 bits.
+	if !regexp.MustCompile(`\.\d+-[0-9a-f]{32}\.tmp$`).MatchString(a) {
+		t.Fatalf("the temporary name %s does not carry 32 random hex digits", a)
 	}
 }
 
@@ -259,5 +266,43 @@ func TestReadCredentialsReadsTheFileItChecked(t *testing.T) {
 	c, err := readCredentials(path)
 	if err == nil {
 		t.Fatalf("read the credentials of a link swapped in after the checks: key %q", c.APIKey)
+	}
+}
+
+// overHookBound is a file size just past hookFileMaxBytes as this client sets
+// it. It is a literal, not the constant plus one, so a change that raises the
+// bound shows here as a failure instead of growing the test with it.
+const overHookBound = 17 << 20
+
+// A window state the hook cannot read (here, past its bound) is left as it
+// is: rewriting it from a fresh state would erase every other session's
+// window. And a lineage file past the hook's bound is not read at all.
+func TestTheHookNeverRewritesAWindowStateItCouldNotRead(t *testing.T) {
+	dir, _ := rootAndCanary(t)
+	ops := fixedSuffixOps()
+	path := filepath.Join(dir, hookStateFile)
+	big := make([]byte, overHookBound)
+	for i := range big {
+		big[i] = ' '
+	}
+	if err := os.WriteFile(path, big, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	hookWindow(ops, hookContext{sessionsDir: dir}, "session-start", []byte(`{"session_id":"s"}`))
+	info, err := os.Stat(path)
+	if err != nil || info.Size() != int64(len(big)) {
+		t.Fatalf("the unreadable window state was rewritten: size %v, %v", info.Size(), err)
+	}
+}
+
+func TestALineageFilePastTheHooksBoundIsNotRead(t *testing.T) {
+	dir, _ := rootAndCanary(t)
+	path := lineagePath(dir, "/w")
+	doc := `{"v":1,"session_id":"s","history":[{"role":"assistant","text":"` + strings.Repeat("x", overHookBound) + `"}]}`
+	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := loadLineage(fixedSuffixOps(), path); ok {
+		t.Fatal("a lineage file past hookFileMaxBytes was read")
 	}
 }

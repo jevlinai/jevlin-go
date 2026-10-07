@@ -49,8 +49,10 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -68,11 +70,13 @@ const (
 	hookTailBytes     = 256 << 10
 	hookMaxTranscript = 64 << 20
 	// hookFileMaxBytes bounds every file the hook reads back from its own
-	// directories (lineage files, window state, turn marks). The largest,
-	// a lineage file, holds at most traceHistoryCap of history and the
-	// user's message under the same cap, escaped; a file past the bound is
-	// not one this client wrote.
-	hookFileMaxBytes = 1 << 20
+	// directories (lineage files, window state, turn marks). A lineage file
+	// holds at most traceHistoryCap of history and the user's message under
+	// the same cap, escaped, a few hundred KiB at most. The largest is the
+	// window state, which keeps about 70 bytes for every session it has seen
+	// and is never pruned: 16 MiB is some 240,000 sessions. A file past the
+	// bound is not read, and the window state is then left as it is.
+	hookFileMaxBytes = 16 << 20
 	hookStateFile    = "window.json"
 	// bridgeEnv is how a rewritten shell command hands `search` its
 	// envelope: one environment assignment in front of the command.
@@ -702,20 +706,24 @@ func hookStatePath(ops hookOps, hc hookContext) string {
 	return ""
 }
 
-func hookReadState(ops hookOps, path string) hookWindowState {
-	state := hookWindowState{Version: 1, Sessions: map[string]hookWindowEntry{}}
+// hookReadState reads the window state. ok is false when a file is there and
+// could not be read (past its bound, a FIFO, no permission): the caller must
+// then not write, because a write would replace every session's window with
+// this one's. An absent file, or one that does not parse, is a fresh state.
+func hookReadState(ops hookOps, path string) (state hookWindowState, ok bool) {
+	state = hookWindowState{Version: 1, Sessions: map[string]hookWindowEntry{}}
 	if path == "" {
-		return state
+		return state, true
 	}
 	b, err := ops.readFile(path)
 	if err != nil {
-		return state
+		return state, errors.Is(err, fs.ErrNotExist)
 	}
 	var loaded hookWindowState
 	if json.Unmarshal(b, &loaded) == nil && loaded.Sessions != nil {
-		return loaded
+		return loaded, true
 	}
-	return state
+	return state, true
 }
 
 // hookWindow applies one phase event. Never fails; a state-file problem must
@@ -731,7 +739,10 @@ func hookWindow(ops hookOps, hc hookContext, phase string, payload []byte) {
 	if path == "" {
 		return
 	}
-	state := hookReadState(ops, path)
+	state, ok := hookReadState(ops, path)
+	if !ok {
+		return
+	}
 	entry, existed := state.Sessions[p.SessionID]
 
 	switch phase {
@@ -776,7 +787,7 @@ func hookWindow(ops hookOps, hc hookContext, phase string, payload []byte) {
 // hookWindowID is what lineage stamps into the envelope: "none" until the
 // first compaction, then the generation number.
 func hookWindowID(ops hookOps, hc hookContext, sessionID string) string {
-	state := hookReadState(ops, hookStatePath(ops, hc))
+	state, _ := hookReadState(ops, hookStatePath(ops, hc))
 	entry := state.Sessions[sessionID]
 	if entry.Generation == 0 {
 		return "none"
