@@ -18,6 +18,10 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **Setup adopts only what is yours.** A set-aside installation another
+  account owns is no longer offered, and adoption leaves behind any file or
+  folder in it that is not yours. On Windows, owner-only access now also makes
+  you the owner: another owner could otherwise open the folder up again.
 - **Codex searches carry their session.** `agents install` writes Codex's
   hooks into `~/.codex/hooks.json` on macOS and Linux, and a search Codex runs
   then reaches the router with its session, turn and call, and a subagent's
