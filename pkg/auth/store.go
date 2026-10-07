@@ -183,6 +183,10 @@ func (s *Store) DeleteRefreshToken() error {
 	return nil
 }
 
+// storeFileMaxBytes bounds every file read back from the state dir. Its
+// records and secrets are each a few kilobytes at most.
+const storeFileMaxBytes = 1 << 20
+
 // readSecret loads a secret file, re-verifying on EVERY load that it is
 // a regular, owner-only file (ADR-0008: a group/world-readable secret
 // refuses mining startup).
@@ -201,7 +205,10 @@ func (s *Store) readSecret(name string) ([]byte, error) {
 	if posixModes && info.Mode().Perm()&0o077 != 0 {
 		return nil, fmt.Errorf("auth: %s is group/world-accessible (%04o); refusing mining startup", name, info.Mode().Perm())
 	}
-	raw, err := os.ReadFile(path) // #nosec G304 -- path is store-dir + fixed name
+	// Read through the open file, not the name again: the state dir is a
+	// writable root of Codex's sandbox, and what was a regular file at the
+	// Lstat may be a FIFO now (fsx.ReadRegular does not wait on one).
+	raw, err := fsx.ReadRegular(path, storeFileMaxBytes)
 	if err != nil {
 		return nil, fmt.Errorf("auth: read %s: %w", name, err)
 	}

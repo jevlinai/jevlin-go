@@ -9,6 +9,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -166,5 +167,51 @@ func TestWindowStateIsNeverKeptInTheSharedTemporaryDirectory(t *testing.T) {
 	}
 	if id := hookWindowID(ops, hookContext{}, "s"); id != "none" {
 		t.Fatalf("window id with no state kept: %q, want none", id)
+	}
+}
+
+// connect.lock lives in the state dir. A symlink a sandboxed command left
+// there is refused rather than followed to a file outside; a hard link is
+// locked, which writes nothing.
+func TestConnectLockNeverFollowsOrWritesALinkAtItsName(t *testing.T) {
+	t.Run("symlink", func(t *testing.T) {
+		dir, canary := rootAndCanary(t)
+		plantOrSkip(t, "symlink", plantedLinks()["symlink"], canary, connectLockPath(dir))
+		f, ok, err := tryLockFile(connectLockPath(dir))
+		if f != nil {
+			_ = f.Close()
+		}
+		if ok || err == nil {
+			t.Fatalf("connect.lock as a symlink out of the state dir was taken (ok=%t, err=%v)", ok, err)
+		}
+		requireCanaryIntact(t, canary)
+	})
+	t.Run("hard link", func(t *testing.T) {
+		dir, canary := rootAndCanary(t)
+		plantOrSkip(t, "hard link", plantedLinks()["hard link"], canary, connectLockPath(dir))
+		if f, _, _ := tryLockFile(connectLockPath(dir)); f != nil {
+			_ = f.Close()
+		}
+		requireCanaryIntact(t, canary)
+	})
+}
+
+// The resume stamp used "<path>.<pid>.tmp", a name a sandboxed command could
+// compute for the next connect -resume; fsx now stages it under a random
+// name it creates exclusively.
+func TestResumeStampNeverWritesThroughALinkAtItsOldTemporaryName(t *testing.T) {
+	for kind, plant := range plantedLinks() {
+		t.Run(kind, func(t *testing.T) {
+			dir, canary := rootAndCanary(t)
+			path := resumeStampPath(dir)
+			plantOrSkip(t, kind, plant, canary, fmt.Sprintf("%s.%d.tmp", path, os.Getpid()))
+			if err := writeResumeStamp(path, resumeStamp{LastAttempt: time.Now()}); err != nil {
+				t.Fatal(err)
+			}
+			requireCanaryIntact(t, canary)
+			if st := readResumeStamp(path); st.V != 1 {
+				t.Fatalf("the stamp was not written: %+v", st)
+			}
+		})
 	}
 }

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"syscall"
 	"testing"
@@ -43,4 +44,25 @@ func TestNoHookReadWaitsOnAFIFO(t *testing.T) {
 			t.Error("a FIFO was taken as a turn mark")
 		}
 	})
+}
+
+// The state and intake directories' readers: a FIFO at the resume stamp, the
+// flush stamp, an intake record or the recorded epoch costs that read, never
+// a wait.
+func TestNoStateOrIntakeReadWaitsOnAFIFO(t *testing.T) {
+	state, _ := rootAndCanary(t)
+	intake := filepath.Join(filepath.Dir(state), "intake")
+	if err := os.Mkdir(intake, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	flushStamp := filepath.Join(state, "flush.json")
+	for _, name := range []string{resumeStampPath(state), flushStamp, filepath.Join(intake, "planted.json"), filepath.Join(intake, recordedEpochFile)} {
+		if err := syscall.Mkfifo(name, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	returnsWithin(t, "readResumeStamp", func() { _ = readResumeStamp(resumeStampPath(state)) })
+	returnsWithin(t, "readFlushStamp", func() { _ = readFlushStamp(flushStamp) })
+	returnsWithin(t, "readIntake", func() { _, _, _ = readIntake(intake) })
+	returnsWithin(t, "readSearchEpoch", func() { _, _, _ = readSearchEpoch(intake) })
 }

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"os"
 	"syscall"
+
+	"github.com/jevlinai/jevlin-go/pkg/fsx"
 )
 
 var (
@@ -16,26 +18,16 @@ var (
 // tryLockFile on Windows: an exclusive open (share mode 0) IS the lock,
 // and a sharing violation means another flush holds it.
 func tryLockFile(path string) (*os.File, bool, error) {
-	name, err := syscall.UTF16PtrFromString(path)
-	if err != nil {
-		return nil, false, err
-	}
-	h, err := syscall.CreateFile(
-		name,
-		syscall.GENERIC_READ|syscall.GENERIC_WRITE,
-		0,
-		nil,
-		syscall.OPEN_ALWAYS,
-		syscall.FILE_ATTRIBUTE_NORMAL,
-		0,
-	)
+	// Share mode 0, and the state dir being a writable root of Codex's
+	// sandbox, a link at the name refused rather than followed.
+	f, err := fsx.OpenLock(path)
 	if err != nil {
 		if errors.Is(err, errSharingViolation) || errors.Is(err, errLockViolation) {
 			return nil, false, nil
 		}
 		return nil, false, err
 	}
-	return os.NewFile(uintptr(h), path), true, nil
+	return f, true, nil
 }
 
 // tryFlushLock is tryLockFile with the flush's read-only fallback (see

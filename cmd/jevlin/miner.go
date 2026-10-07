@@ -52,6 +52,12 @@ const (
 	// search after it belongs to a new one, so `search` falls back to its
 	// per-shell session identity rather than thread into the old lane.
 	lineageMaxAge = 12 * time.Hour
+	// stampMaxBytes and intakeMaxBytes bound what is read back from the
+	// state and intake directories, writable roots of Codex's sandbox: a
+	// stamp is a few dozen bytes and an intake record a closed field set,
+	// so a larger file at either name is not one this client wrote.
+	stampMaxBytes  = 64 << 10
+	intakeMaxBytes = 1 << 20
 	// lineageWalkUp bounds how many parent directories `search` climbs
 	// looking for the workspace a hook wrote for. Hooks key on the project
 	// root; agents run commands from subdirectories of it.
@@ -175,7 +181,7 @@ func readIntake(dir string) (records []intakeFile, unreadable []string, err erro
 	sort.Strings(names)
 	for _, name := range names {
 		path := filepath.Join(dir, name)
-		data, rerr := os.ReadFile(path) // #nosec G304 -- our own intake dir
+		data, rerr := fsx.ReadRegular(path, intakeMaxBytes)
 		if rerr != nil {
 			unreadable = append(unreadable, path)
 			continue
@@ -572,7 +578,7 @@ func loadFlushStamp(path string) flushStamp {
 }
 
 func readFlushStamp(path string) flushStamp {
-	data, err := os.ReadFile(path) // #nosec G304 -- our own state dir
+	data, err := fsx.ReadRegular(path, stampMaxBytes)
 	if err != nil {
 		return flushStamp{}
 	}
@@ -628,7 +634,7 @@ func recordSearchEpoch(dir string, epoch uint64) {
 // could not be parsed, fed to the same undetermined path doctor's other
 // unreadable inputs use, rather than silently read as "nothing happened."
 func readSearchEpoch(dir string) (epoch uint64, present bool, err error) {
-	data, rerr := os.ReadFile(filepath.Join(dir, recordedEpochFile)) // #nosec G304 -- this installation's own intake dir
+	data, rerr := fsx.ReadRegular(filepath.Join(dir, recordedEpochFile), stampMaxBytes)
 	if errors.Is(rerr, fs.ErrNotExist) {
 		return 0, false, nil
 	}

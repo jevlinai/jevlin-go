@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"os"
 	"syscall"
+
+	"github.com/jevlinai/jevlin-go/pkg/fsx"
 )
 
 // tryLockFile makes one non-blocking attempt to hold path exclusively.
@@ -16,7 +18,9 @@ import (
 // the same reason — a flock belongs to the open description, so two
 // goroutines contend exactly as two processes do.
 func tryLockFile(path string) (*os.File, bool, error) {
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600) // #nosec G304 -- our own state dir
+	// The state dir is a writable root of Codex's sandbox: a link a
+	// sandboxed command left at the name is refused, not followed.
+	f, err := fsx.OpenLock(path)
 	if err != nil {
 		return nil, false, err
 	}
