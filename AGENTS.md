@@ -419,9 +419,13 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   session exported climbs past a file of another session to the searching session's own, and
   without one takes the nearest file of the searching harness. `miner.go`'s `replaceViaTemp` is the one writer
   behind the lineage files, the window state and the flush stamp: a failed write or rename removes
-  its temporary file, and the sweep takes only `<file>.<pid>.tmp` of another pid older than
+  its temporary file, which is created exclusively (`createExclusive`, O_EXCL) under an
+  unpredictable `<file>.<pid>-<random>.tmp` so a link planted in a sandbox-writable directory is
+  never written through, and the sweep takes only `<file>.<pid>[-<random>].tmp` of another pid older than
   `lineageMaxAge` — any lineage file's for a lineage write, only its own for the other two, since
-  the stamp's directory is shared and the window state can live in TMPDIR. Guards:
+  the stamp's directory is shared and the window state can live in the plugin root. With neither a
+  sessions directory nor a plugin root the window state is not kept: never in the shared system
+  temp directory. Guards:
   `search_channel_test.go`, `lineage_session_test.go`, `lineage_declared_session_test.go` and
   `temp_cleanup_test.go`, all asserted on the bytes the router receives or the files left behind.
 - **Setup** — `setup.go` owns the order (binary, previous

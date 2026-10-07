@@ -10,6 +10,8 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -75,7 +77,7 @@ func TestAFailedWindowStateRenameLeavesNoTemp(t *testing.T) {
 // A write that fails halfway has made a temporary file too.
 func TestAFailedTempWriteIsRemovedAsWell(t *testing.T) {
 	fs, ops := newFakeHookOps(nil)
-	ops.writeFile = func(p string, b []byte, _ os.FileMode) error {
+	ops.createNew = func(p string, b []byte, _ os.FileMode) error {
 		fs.files[p] = b[:len(b)/2]
 		return errors.New("disk full")
 	}
@@ -169,6 +171,11 @@ func TestTheSweepTakesOnlyOldForeignTempsOfItsOwnKind(t *testing.T) {
 		{"resume.json.7.tmp", lineageMaxAge + time.Minute, false}, // the right shape, not a lineage file
 		{hexA + ".tmp", lineageMaxAge + time.Minute, false},       // no pid: not a name these writers produce
 		{hexA + ".7.tmp.bak", lineageMaxAge + time.Minute, false},
+		// The shape these writers now produce, "<file>.<pid>-<random>.tmp".
+		{hexA + ".7-0a1b2c3d4e5f.tmp", lineageMaxAge + time.Minute, true},
+		{hexA + ".7-0a1b2c3d4e5f.tmp", lineageMaxAge - time.Minute, false},
+		{hexB + ".42-0a1b2c3d4e5f.tmp", lineageMaxAge + time.Minute, false},
+		{hexA + ".7-NOTHEX.tmp", lineageMaxAge + time.Minute, false},
 	}
 	run := func(t *testing.T, rows []row, write func(hookOps)) {
 		for _, r := range rows {
@@ -196,10 +203,8 @@ func TestTheSweepTakesOnlyOldForeignTempsOfItsOwnKind(t *testing.T) {
 		run(t, []row{
 			{hookStateFile + ".7.tmp", lineageMaxAge + time.Minute, true},
 			{hookStateFile + ".7.tmp", lineageMaxAge - time.Minute, false},
-			// No own-pid row here: for a single file, a leftover under this
-			// process's pid IS the path the writer is about to reuse, so it is
-			// overwritten and renamed into place rather than swept or kept.
-			// The lineage rows above carry that case, on another file's name.
+			{hookStateFile + ".7-0a1b2c3d4e5f.tmp", lineageMaxAge + time.Minute, true},
+			{hookStateFile + ".42-0a1b2c3d4e5f.tmp", lineageMaxAge + time.Minute, false},
 			{hexA + ".7.tmp", lineageMaxAge + time.Minute, false},
 			{"somebody-elses.7.tmp", lineageMaxAge + time.Minute, false},
 		}, func(ops hookOps) {
@@ -219,5 +224,103 @@ func TestASweepThatFailsDoesNotFailTheWrite(t *testing.T) {
 	}
 	if _, ok := fs.files[path]; !ok {
 		t.Error("nothing was written")
+	}
+}
+
+// The temporary names sit in directories a sandboxed command can write (the
+// state and sessions directories are Codex writable roots). A link planted at
+// the name an older release would have used — "<file>.<pid>.tmp" — or at any
+// name, must never be written through.
+func plantLink(t *testing.T, link string) (target string) {
+	t.Helper()
+	target = filepath.Join(t.TempDir(), "victim")
+	if err := os.WriteFile(target, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("cannot create a symlink here: %v", err)
+	}
+	return target
+}
+
+func assertUntouched(t *testing.T, target string) {
+	t.Helper()
+	if b, err := os.ReadFile(target); err != nil || string(b) != "keep" { // #nosec G304 -- a test temp file
+		t.Errorf("the file behind a planted link was written: %q, %v", b, err)
+	}
+}
+
+func TestTempWritersNeverWriteThroughALinkAtThePredictableName(t *testing.T) {
+	pid := os.Getpid()
+	t.Run("flush stamp", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "flush.json")
+		target := plantLink(t, fmt.Sprintf("%s.%d.tmp", path, pid))
+		if err := writeFlushStamp(path, flushStamp{TargetEpoch: 9}); err != nil {
+			t.Fatal(err)
+		}
+		assertUntouched(t, target)
+		if b, _ := os.ReadFile(path); !bytes.Contains(b, []byte(`"target_epoch":9`)) { // #nosec G304 -- a test temp file
+			t.Errorf("the stamp was not written: %s", b)
+		}
+	})
+	t.Run("lineage file", func(t *testing.T) {
+		path := lineagePath(t.TempDir(), "/w")
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		target := plantLink(t, fmt.Sprintf("%s.%d.tmp", path, pid))
+		if err := saveLineage(realHookOps(), path, &lineageFile{SessionID: "s"}, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		assertUntouched(t, target)
+	})
+	t.Run("window state", func(t *testing.T) {
+		dir := t.TempDir()
+		target := plantLink(t, fmt.Sprintf("%s.%d.tmp", filepath.Join(dir, hookStateFile), pid))
+		hookWindow(realHookOps(), hookContext{sessionsDir: dir}, "session-start", []byte(`{"session_id":"s"}`))
+		assertUntouched(t, target)
+		if _, err := os.Stat(filepath.Join(dir, hookStateFile)); err != nil {
+			t.Errorf("the window state was not written: %v", err)
+		}
+	})
+	t.Run("resume stamp", func(t *testing.T) {
+		path := resumeStampPath(t.TempDir())
+		target := plantLink(t, fmt.Sprintf("%s.%d.tmp", path, pid))
+		if err := writeResumeStamp(path, resumeStamp{LastAttempt: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+		assertUntouched(t, target)
+		if readResumeStamp(path).V != 1 {
+			t.Error("the resume stamp was not written")
+		}
+	})
+}
+
+func TestCreateExclusiveRefusesALink(t *testing.T) {
+	link := filepath.Join(t.TempDir(), "x.tmp")
+	target := plantLink(t, link)
+	if err := createExclusive(link, []byte("overwritten"), 0o600); !errors.Is(err, fs.ErrExist) {
+		t.Fatalf("createExclusive over a link: %v, want fs.ErrExist", err)
+	}
+	assertUntouched(t, target)
+}
+
+// With no sessions directory and no plugin root, window state is not kept at
+// all — never in the system temporary directory, which on Linux is /tmp,
+// shared by every local user.
+func TestWindowStateIsNeverKeptInTheSystemTempDir(t *testing.T) {
+	fs, ops := newFakeHookOps(map[string]string{"TMPDIR": "/tmp"})
+	if p := hookStatePath(ops, hookContext{}); p != "" {
+		t.Fatalf("hookStatePath with nothing configured = %q, want none", p)
+	}
+	fs.files[filepath.Join(os.TempDir(), "jevlin-"+hookStateFile)] = []byte(`{"version":1,"sessions":{"s":{"generation":7}}}`)
+	fs.files[filepath.Join("/tmp", "jevlin-"+hookStateFile)] = []byte(`{"version":1,"sessions":{"s":{"generation":7}}}`)
+	before := len(fs.files)
+	hookWindow(ops, hookContext{}, "pre-compact", []byte(`{"session_id":"s"}`))
+	if len(fs.files) != before {
+		t.Errorf("window state was written with nowhere private to keep it: %v", keys(fs.files))
+	}
+	if got := hookWindowID(ops, hookContext{}, "s"); got != "none" {
+		t.Errorf("hookWindowID read a shared temp file: %q", got)
 	}
 }

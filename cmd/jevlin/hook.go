@@ -87,9 +87,12 @@ type hookOps struct {
 	getenv     func(string) string
 	readFile   func(string) ([]byte, error)
 	writeFile  func(string, []byte, os.FileMode) error
-	mkdirAll   func(string, os.FileMode) error
-	rename     func(string, string) error
-	remove     func(string) error
+	// createNew writes a file that must not exist yet, refusing any name
+	// already taken — a symlink included. replaceViaTemp's temporary files.
+	createNew func(string, []byte, os.FileMode) error
+	mkdirAll  func(string, os.FileMode) error
+	rename    func(string, string) error
+	remove    func(string) error
 	// listTemps returns the entries of dir whose names end in ".tmp", with
 	// their modification times. Only replaceViaTemp's sweep reads it.
 	listTemps func(dir string) ([]tempEntry, error)
@@ -110,6 +113,7 @@ func realHookOps() hookOps {
 		getenv:       os.Getenv,
 		readFile:     os.ReadFile,
 		writeFile:    os.WriteFile,
+		createNew:    createExclusive,
 		mkdirAll:     os.MkdirAll,
 		rename:       os.Rename,
 		remove:       os.Remove,
@@ -673,6 +677,10 @@ type hookWindowEntry struct {
 	Open       bool `json:"open"`
 }
 
+// hookStatePath is "" when neither a sessions directory nor a plugin root is
+// known: window state is then not kept. It never falls back to the system
+// temporary directory, which on Linux is /tmp, shared by every local user —
+// another user could forge the state there or plant links at its names.
 func hookStatePath(ops hookOps, hc hookContext) string {
 	if hc.sessionsDir != "" {
 		return filepath.Join(hc.sessionsDir, hookStateFile)
@@ -680,10 +688,7 @@ func hookStatePath(ops hookOps, hc hookContext) string {
 	if root := ops.getenv("CLAUDE_PLUGIN_ROOT"); root != "" {
 		return filepath.Join(root, hookStateFile)
 	}
-	if tmp := ops.getenv("TMPDIR"); tmp != "" {
-		return filepath.Join(tmp, "jevlin-"+hookStateFile)
-	}
-	return filepath.Join(os.TempDir(), "jevlin-"+hookStateFile)
+	return ""
 }
 
 func hookReadState(ops hookOps, path string) hookWindowState {
@@ -709,6 +714,9 @@ func hookWindow(ops hookOps, hc hookContext, phase string, payload []byte) {
 		return
 	}
 	path := hookStatePath(ops, hc)
+	if path == "" {
+		return
+	}
 	state := hookReadState(ops, path)
 	entry, existed := state.Sessions[p.SessionID]
 
@@ -747,14 +755,18 @@ func hookWindow(ops hookOps, hc hookContext, phase string, payload []byte) {
 	// session start or a compaction — but a failed rename no longer leaves
 	// its temporary file behind (dropin-miner#100). Only this file's own leftovers are
 	// swept: with no sessions directory configured the state file lives in
-	// the plugin root or TMPDIR, which are not this client's to tidy.
+	// the plugin root, which is not this client's to tidy.
 	_ = replaceViaTemp(ops, path, b, ops.now(), false)
 }
 
 // hookWindowID is what lineage stamps into the envelope: "none" until the
 // first compaction, then the generation number.
 func hookWindowID(ops hookOps, hc hookContext, sessionID string) string {
-	state := hookReadState(ops, hookStatePath(ops, hc))
+	path := hookStatePath(ops, hc)
+	if path == "" {
+		return "none"
+	}
+	state := hookReadState(ops, path)
 	entry := state.Sessions[sessionID]
 	if entry.Generation == 0 {
 		return "none"

@@ -47,6 +47,7 @@ import (
 
 	"github.com/jevlinai/jevlin-go/pkg/auth"
 	"github.com/jevlinai/jevlin-go/pkg/config"
+	"github.com/jevlinai/jevlin-go/pkg/fsx"
 	"github.com/jevlinai/jevlin-go/pkg/platform"
 )
 
@@ -154,11 +155,9 @@ func writeResumeStamp(path string, st resumeStamp) error {
 	if err != nil {
 		return err
 	}
-	tmp := fmt.Sprintf("%s.%d.tmp", path, os.Getpid())
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	// The state dir is sandbox-writable: never a predictable, link-following
+	// temporary name there.
+	return fsx.WriteFileAtomic(filepath.Dir(path), filepath.Base(path), data, 0o600)
 }
 
 type registrationPublicationOptions struct {

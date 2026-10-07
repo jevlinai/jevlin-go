@@ -303,15 +303,22 @@ func listTempFiles(dir string) ([]tempEntry, error) {
 }
 
 var (
-	// tempNameRe is the one shape these writers produce: "<file>.<pid>.tmp".
-	tempNameRe = regexp.MustCompile(`^(.+)\.(\d+)\.tmp$`)
+	// tempNameRe is the shape these writers produce, "<file>.<pid>-<random>.tmp",
+	// and the "<file>.<pid>.tmp" that older releases left behind.
+	tempNameRe = regexp.MustCompile(`^(.+)\.(\d+)(?:-[0-9a-f]+)?\.tmp$`)
 	// lineageNameRe is a lineage file's name: lineagePath's 32 hex digits.
 	lineageNameRe = regexp.MustCompile(`^[0-9a-f]{32}\.json$`)
 )
 
-// replaceViaTemp writes data to "<path>.<pid>.tmp" and renames it over path,
-// so a reader never sees a half-written file. It is the one writer behind the
-// lineage files, the window state and the flush stamp.
+// replaceViaTemp writes data to "<path>.<pid>-<random>.tmp" and renames it
+// over path, so a reader never sees a half-written file. It is the one writer
+// behind the lineage files, the window state and the flush stamp.
+//
+// The temporary file is created exclusively under a name nobody can predict.
+// Its directory may be writable by a sandboxed command (the state and sessions
+// directories are Codex writable roots), and a predictable name written with a
+// symlink-following call let such a command plant a link there and have an
+// unsandboxed writer truncate whatever it pointed at.
 //
 // A failed write or rename removes the temporary file before returning (dropin-miner#100).
 // On Windows a rename fails while the target is momentarily held — seen on
@@ -320,9 +327,11 @@ var (
 // path is untouched by a failure, as before.
 func replaceViaTemp(ops hookOps, path string, data []byte, now time.Time, lineageDir bool) error {
 	sweepStaleTemps(ops, path, now, lineageDir)
-	tmp := fmt.Sprintf("%s.%d.tmp", path, ops.pid)
-	if err := ops.writeFile(tmp, data, 0o600); err != nil {
-		removeTemp(ops, tmp) // a write that failed halfway leaves one too
+	tmp := fmt.Sprintf("%s.%d-%s.tmp", path, ops.pid, randomSuffix())
+	if err := ops.createNew(tmp, data, 0o600); err != nil {
+		if !errors.Is(err, fs.ErrExist) {
+			removeTemp(ops, tmp) // a write that failed halfway leaves one too
+		}
 		return err
 	}
 	if err := ops.rename(tmp, path); err != nil {
@@ -330,6 +339,21 @@ func replaceViaTemp(ops hookOps, path string, data []byte, now time.Time, lineag
 		return err
 	}
 	return nil
+}
+
+// createExclusive writes data to a file that must not exist yet. O_EXCL
+// refuses any existing name, a symlink included, so nothing planted at path
+// is followed; on Windows it is CREATE_NEW, which refuses the same.
+func createExclusive(path string, data []byte, mode os.FileMode) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode) // #nosec G304 -- a fresh temporary name beside a file this client owns
+	if err != nil {
+		return err
+	}
+	_, werr := f.Write(data)
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	return werr
 }
 
 func removeTemp(ops hookOps, tmp string) {
@@ -344,11 +368,12 @@ func removeTemp(ops hookOps, tmp string) {
 //
 // What it may remove is narrow on every axis:
 //
-//   - the NAME is "<file>.<pid>.tmp", where <file> is the file being written
+//   - the NAME is "<file>.<pid>-<random>.tmp" (or an older release's
+//     "<file>.<pid>.tmp"), where <file> is the file being written
 //     or — for a lineage write only — any lineage file's name. The sessions
 //     directory is this code's own; the flush stamp's directory is shared
-//     with other writers of the same shape (connect's resume stamp), and the
-//     window state can live in TMPDIR, so those two sweep only their own.
+//     with other writers, and the window state can live in the plugin root,
+//     so those two sweep only their own.
 //   - the PID is not this process's.
 //   - the AGE is more than lineageMaxAge. That is the lineage code's own
 //     answer to "how long can a session plausibly last": past it the session

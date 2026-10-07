@@ -51,6 +51,16 @@ func newFakeHookOps(env map[string]string) (*fakeHookFS, hookOps) {
 			f.files[p] = b
 			return nil
 		},
+		createNew: func(p string, b []byte, _ os.FileMode) error {
+			if f.forceWriteErr != nil {
+				return f.forceWriteErr
+			}
+			if _, taken := f.files[p]; taken {
+				return fs.ErrExist
+			}
+			f.files[p] = b
+			return nil
+		},
 		mkdirAll: func(string, os.FileMode) error { return f.forceMkdirErr },
 		rename: func(from, to string) error {
 			if f.forceRenameErr != nil {
