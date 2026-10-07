@@ -190,8 +190,9 @@ wallet (a reward address this installation controls):
   wallet send      move funds to another twilight address: -to and -amount
 
 Every command takes -config <file>, falling back to JEVLIN_CONFIG, then
-./jevlin.toml, then the installation's own config ($JEVLIN_HOME/
-jevlin.toml, else ~/.jevlin/jevlin.toml, when that file exists).
+the installation's own config ($JEVLIN_HOME/jevlin.toml, else
+~/.jevlin/jevlin.toml, when that file exists). A jevlin.toml in the
+working directory is never read unless named.
 status and doctor name the file they resolved, or say plainly that none was
 found and built-in defaults are in use; connect refuses outright when
 resolution finds no config file at all, and says to run jevlin setup.
