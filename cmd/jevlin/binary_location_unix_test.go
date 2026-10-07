@@ -16,7 +16,12 @@ import (
 // refusal that names neither bin nor the file came from above root.
 func binaryLayout(t *testing.T) (root, bin, exe string) {
 	t.Helper()
-	root = t.TempDir()
+	// Resolved, so the paths a refusal names match on macOS, where the temp
+	// directory is under the /var -> /private/var link.
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("TMPDIR", filepath.Join(root, "elsewhere"))
 	bin = filepath.Join(root, "bin")
 	exe = filepath.Join(bin, "jevlin")
