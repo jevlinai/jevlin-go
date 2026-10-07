@@ -116,7 +116,9 @@ commands can read `credentials.json` and the state directory; on Windows, not th
 They can also leave files in the directories the block makes writable. jevlin's hooks and
 flushes, which run outside the sandbox, never write through a link left there and never wait on
 a pipe left at a name they read, so a sandboxed command cannot turn them into a write to a file
-of yours elsewhere, or stall a search.
+of yours elsewhere, or stall a search. If your config puts `jevlin.toml`, or the folder that
+holds `credentials.json`, inside one of those directories, the install widens nothing and says
+why: give each directory its own place, as setup does.
 
 Codex runs the hooks only after you approve them: start `codex`, or open the app, and approve
 them when it asks you to review hooks. Until then they do nothing, and under `codex exec` nothing

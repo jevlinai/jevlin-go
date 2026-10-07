@@ -26,7 +26,12 @@ The first release replaces this heading with its own.
   name there for writing, never waits on what is at a name it reads, refuses a
   link at a lock's name, and keeps the spool's quarantine from leading outside
   the spool. The window state is no longer kept in the shared temporary
-  directory when no sessions directory is configured.
+  directory when no sessions directory is configured. Two layouts change:
+  a `spool_dir` that is itself a symlink is refused (mining stops, with a
+  message, until it names the real directory), and `agents install` gives
+  Codex no writable directories at all when one of them would contain your
+  `jevlin.toml` or the folder holding `credentials.json`; give `state_dir`,
+  `intake_dir`, `sessions_dir` and `spool_dir` directories of their own.
 - **A hook allows a search only under the binary path its skill shows.** Cursor,
   Claude Code and Codex used to allow any path that reached the jevlin binary when
   the hook resolved it, and on Linux `/proc/self/exe` is jevlin to the hook but

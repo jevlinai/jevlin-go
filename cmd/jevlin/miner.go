@@ -317,8 +317,10 @@ var (
 	lineageNameRe = regexp.MustCompile(`^[0-9a-f]{32}\.json$`)
 )
 
-// replaceViaTemp writes data to "<path>.<pid>.tmp" and renames it over path,
-// so a reader never sees a half-written file. It is the one writer behind the
+// replaceViaTemp writes data to a new "<path>.<pid>-<random>.tmp"
+// (tempNameFor), created exclusively, and renames it over path, so a reader
+// never sees a half-written file and no link at the temporary name is written
+// through. It is the one writer behind the
 // lineage files, the window state and the flush stamp.
 //
 // A failed write or rename removes the temporary file before returning (dropin-miner#100).
@@ -367,11 +369,12 @@ func removeTemp(ops hookOps, tmp string) {
 //
 // What it may remove is narrow on every axis:
 //
-//   - the NAME is "<file>.<pid>.tmp", where <file> is the file being written
-//     or — for a lineage write only — any lineage file's name. The sessions
-//     directory is this code's own; the flush stamp's directory is shared
-//     with other writers of the same shape (connect's resume stamp), and the
-//     window state can live in TMPDIR, so those two sweep only their own.
+//   - the NAME is "<file>.<pid>-<random>.tmp", or the "<file>.<pid>.tmp"
+//     earlier versions wrote, where <file> is the file being written or —
+//     for a lineage write only — any lineage file's name. The sessions
+//     directory is this code's own; the flush stamp shares the state dir
+//     with other writers, and the window state can live in a plugin root,
+//     so those two sweep only their own.
 //   - the PID is not this process's.
 //   - the AGE is more than lineageMaxAge. That is the lineage code's own
 //     answer to "how long can a session plausibly last": past it the session

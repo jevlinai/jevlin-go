@@ -4,14 +4,14 @@ package auth
 
 // The Windows half of the refresh lock.
 //
-// The obvious call is LockFileEx, and it is deliberately not used. Its
-// lpOverlapped argument has to reach the kernel as a raw pointer, and
-// producing one in Go needs the unsafe package — admitted in exactly one file
+// The obvious call is LockFileEx, and it is not used. The standard syscall
+// package does not wrap it, and calling it through syscall would need the
+// unsafe package for its overlapped argument — admitted in exactly one file
 // in this module, setup's Windows environment broadcast, and guarded by
-// TestOnlyTheEnvironmentBroadcastImportsUnsafe. The
-// standard syscall package does not wrap LockFileEx, and the wrapper in
-// golang.org/x/sys/windows would be a new module dependency, which the
-// dependency budget admits only under an accepted ADR.
+// TestOnlyTheEnvironmentBroadcastImportsUnsafe. golang.org/x/sys/windows
+// does wrap it, and the module already uses that package (pkg/fsx, which
+// this lock now opens through), but share mode 0 is the lock connect.lock
+// and flush.lock use too, and one mechanism is kept.
 //
 // Opening the lockfile with dwShareMode = 0 buys the same property from
 // the file system instead: while one handle is open, every other
