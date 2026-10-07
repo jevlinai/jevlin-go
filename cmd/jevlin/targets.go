@@ -812,10 +812,30 @@ func (t codexTarget) Status(ops agentOps, paths agentPaths, entry binEntry) targ
 // StatusNotes says how far Codex has approved this installation's hooks, on
 // an OS where they are written at all.
 func (t codexTarget) StatusNotes(ops agentOps, paths agentPaths, entry binEntry) []string {
-	if _, err := codexHooksFor(t, entry, runtime.GOOS); err != nil {
-		return nil
+	var lines []string
+	if _, err := codexHooksFor(t, entry, runtime.GOOS); err == nil {
+		lines = codexApprovalLines(ops, paths, entry)
 	}
-	return codexApprovalLines(ops, paths, entry)
+	if codexBlockNetworkOn(ops, paths.codexConfig) {
+		lines = append(lines, "network_access is on in "+tilde(ops.home, paths.codexConfig)+
+			": every command Codex runs in its sandbox can reach any host without asking; `agents install -client codex -codex-network off` turns it off")
+	}
+	return lines
+}
+
+// codexBlockNetworkOn: does our marked table in Codex's config.toml turn the
+// network on for the sandbox?
+func codexBlockNetworkOn(ops agentOps, path string) bool {
+	b, err := ops.readFile(path)
+	if err != nil {
+		return false
+	}
+	_, region, _, ok := markedRegion(b)
+	if !ok {
+		return false
+	}
+	contents, readable := splitCodexBlock(region)
+	return readable && codexNetworkEnabled(contents.oursText())
 }
 
 // codexApprovalEvent is an event as Codex spells it in an approval's key,

@@ -104,8 +104,9 @@ from PowerShell instead; the editor is unaffected. Reported to Cursor (forum thr
 A skill in `~/.codex/skills/jevlin/`; on macOS and Linux, five hooks in `~/.codex/hooks.json`
 (`PreToolUse`, `SessionStart`, `PreCompact`, `PostCompact`, `Stop`), each written where any of
 jevlin's stood before so no other hook moves; and, when `~/.codex/config.toml` exists, a marked
-block in it that widens the sandbox: network on, and writable roots for the state directory
-always, plus the intake, sessions and spool directories when `[miner] enabled` is set.
+block in it that widens the sandbox: writable roots for the state directory always, plus the
+intake, sessions and spool directories when `[miner] enabled` is set. The block leaves the
+network off (`network_access = false`).
 
 ### What to know
 
@@ -113,6 +114,15 @@ Bash on macOS and Linux, PowerShell on Windows. Without the block, a search retu
 cannot record, so it earns nothing and the claim is never picked up. The config, key and wallet
 are never writable, so a command gone wrong cannot change where your credentials go. Sandboxed
 commands can read `credentials.json` and the state directory; on Windows, not the wallet.
+
+With the network off, a search Codex runs in its sandbox cannot reach the router until you
+approve it in Codex. `jevlin agents install -client codex -codex-network on` turns
+`network_access` on instead, and the plan says what that means: it is not scoped to the search.
+Every command Codex runs in its workspace-write sandbox, in every project, can then reach any host
+without asking, and can send any file it can read off the machine, `credentials.json` and the
+state directory included. Install keeps the opt-in until `-codex-network off`, and
+`agents status` names it while it is on. A block from an earlier version, which turned the network
+on without asking, is turned off by the next install, and the plan says so.
 
 Codex runs the hooks only after you approve them: start `codex`, or open the app, and approve
 them when it asks you to review hooks. Until then they do nothing, and under `codex exec` nothing

@@ -57,7 +57,7 @@ func participantLines(t *testing.T, file string) []string {
 // our markers and nothing else.
 func staleOurTable(t *testing.T, file string) string {
 	t.Helper()
-	stale := strings.Replace(file, "network_access = true", "network_access = false", 1)
+	stale := strings.Replace(file, "network_access = false", "network_access = true", 1)
 	if stale == file {
 		t.Fatal("this fixture is meant to make our own table stale and did not change a byte, so the install below would have nothing to write")
 	}
@@ -85,7 +85,7 @@ func TestReinstallingWritesTheCodexBlockWhereItWas(t *testing.T) {
 				t.Fatalf("install: exit %d\n%s%s", code, out, errOut)
 			}
 			got := string(m.files[codexConfigPath])
-			if !strings.Contains(got, "network_access = true") {
+			if !strings.Contains(got, "network_access = false") {
 				t.Fatalf("the install did not refresh our own table, so nothing about its position is being tested:\n%s", got)
 			}
 			gotPre, gotPost := outsideOurMarkers(t, got)
@@ -225,7 +225,7 @@ func TestReinstallingWithHookTrustBelowTheBlockMovesNoLine(t *testing.T) {
 		t.Fatalf("reinstall: exit %d\n%s%s", code, out, errOut)
 	}
 	got := string(m.files[codexConfigPath])
-	if !strings.Contains(got, "network_access = true") {
+	if !strings.Contains(got, "network_access = false") {
 		t.Fatalf("the reinstall did not refresh our own table, so nothing about the approvals' position is being tested:\n%s", got)
 	}
 	gotPre, gotPost := outsideOurMarkers(t, got)
