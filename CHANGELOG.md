@@ -18,6 +18,27 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **Service-document endpoints must live on the AS's origin.** Discovery now
+  refuses a `/.well-known/twilight-mining` document whose endpoints,
+  `authorization_server` or `participation_resource` point at another host, a
+  different port, plain http, or carry userinfo, so a tampered document cannot
+  steer the access token, the participation capability or the provider
+  verification key elsewhere. The mining plane stays closed until the AS serves
+  a same-origin document; search is unaffected.
+  `enrollment_authorization_template` is still held to the provider allowlist
+  instead.
+- **`search` takes `-config` once.** The Claude Code allow rule ends after
+  the installed `-config <file>`, and whatever follows it runs without a
+  prompt. A second `-config` used to win, so an appended one could send your
+  key to another config's router. `search` now refuses a repeated
+  `-config`, even one naming the same file, before reading any config.
+- **A `jevlin.toml` in the working directory is no longer read on its own.**
+  Without `-config` or `JEVLIN_CONFIG`, every command now uses the
+  installation's config (`$JEVLIN_HOME/jevlin.toml`, else
+  `~/.jevlin/jevlin.toml`) or built-in defaults. Before, a `jevlin.toml` in a
+  cloned repo could name its own router or platform host and receive your
+  `sr-` key from `login`, `search`, `limits` or `connect`. To use a config
+  in the current directory, pass `-config ./jevlin.toml`.
 - **Codex searches carry their session.** `agents install` writes Codex's
   hooks into `~/.codex/hooks.json` on macOS and Linux, and a search Codex runs
   then reaches the router with its session, turn and call, and a subagent's
