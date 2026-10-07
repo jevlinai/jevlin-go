@@ -180,19 +180,30 @@ type agentOps struct {
 	stat       func(string) (os.FileInfo, error)
 	removeAll  func(string) error
 	isTerminal func() bool
+	// binaryLocation vets the binary install records; nil means
+	// checkBinaryLocation.
+	binaryLocation func(exe string) error
+}
+
+func (ops agentOps) binaryLocationFn() func(string) error {
+	if ops.binaryLocation != nil {
+		return ops.binaryLocation
+	}
+	return checkBinaryLocation
 }
 
 func realAgentOps() agentOps {
 	home, _ := os.UserHomeDir()
 	return agentOps{
-		home:       home,
-		lookPath:   exec.LookPath,
-		executable: os.Executable,
-		readFile:   os.ReadFile,
-		writeFile:  os.WriteFile,
-		mkdirAll:   os.MkdirAll,
-		stat:       os.Stat,
-		removeAll:  os.RemoveAll,
+		home:           home,
+		lookPath:       exec.LookPath,
+		executable:     os.Executable,
+		readFile:       os.ReadFile,
+		writeFile:      os.WriteFile,
+		mkdirAll:       os.MkdirAll,
+		stat:           os.Stat,
+		removeAll:      os.RemoveAll,
+		binaryLocation: checkBinaryLocation,
 		isTerminal: func() bool {
 			fi, err := os.Stdin.Stat()
 			return err == nil && fi.Mode()&os.ModeCharDevice != 0
@@ -462,6 +473,12 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 	if err != nil {
 		fmt.Fprintln(stderr, "jevlin agents:", err)
 		return exitTransport
+	}
+	if sub == "install" {
+		if err := ops.binaryLocationFn()(entry.command); err != nil {
+			fmt.Fprintln(stderr, "jevlin agents:", err)
+			return exitUsage
+		}
 	}
 
 	if sub == "status" {

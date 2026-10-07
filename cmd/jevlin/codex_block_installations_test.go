@@ -58,6 +58,7 @@ func newTwoCodexInstallations(t *testing.T) *twoCodexInstallations {
 	ops.executable = func() (string, error) {
 		return filepath.Join(root, "user", ".jevlin", "bin", "jevlin"), nil
 	}
+	ops.binaryLocation = func(string) error { return nil } // the sandbox is in the temp dir
 	ops.isTerminal = func() bool { return false }
 	m := &twoCodexInstallations{t: t, ops: ops, paths: ops.paths(noEnv)}
 	m.first = writeMiningHomeConfig(t, filepath.Join(root, "user", ".jevlin"))

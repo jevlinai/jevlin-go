@@ -177,6 +177,7 @@ func newUpgradeFixture(t *testing.T, lr *localRelease) *upgradeFixture {
 	f := &upgradeFixture{t: t, home: filepath.Join(root, "custom-home"), lr: lr, runner: &contentRunner{}, env: map[string]string{}, build: "0.3.0", timeout: selfupdate.OperationTimeout}
 	f.exe = filepath.Join(f.home, "bin", "jevlin")
 	f.agents = realAgentOps()
+	f.agents.binaryLocation = func(string) error { return nil } // the sandbox is in the temp dir
 	f.agents.home = root
 	f.agents.lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
 	f.agents.executable = func() (string, error) { return f.exe, nil }

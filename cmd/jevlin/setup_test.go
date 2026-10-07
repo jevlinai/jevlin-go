@@ -60,6 +60,9 @@ type setupSandbox struct {
 	// case can make one of them fail.
 	move     func(from, to string) error
 	restrict func(path string, dir bool) error
+	// binaryLocation, when set, replaces the sandbox's accept-all stand-in
+	// for checkBinaryLocation.
+	binaryLocation func(exe string) error
 	// agentPlanObserver, when set, is threaded through to setupDeps: a case
 	// wanting the plan agentsStep actually built sets this before calling
 	// run.
@@ -122,7 +125,17 @@ func (s *setupSandbox) agentOps(interactive bool) agentOps {
 	}
 	ops.executable = func() (string, error) { return s.exe, nil }
 	ops.isTerminal = func() bool { return interactive }
+	ops.binaryLocation = s.binaryLocationCheck()
 	return ops
+}
+
+// binaryLocationCheck is the sandbox's stand-in for checkBinaryLocation:
+// the sandbox lives in a temp directory the real check refuses.
+func (s *setupSandbox) binaryLocationCheck() func(string) error {
+	if s.binaryLocation != nil {
+		return s.binaryLocation
+	}
+	return func(string) error { return nil }
 }
 
 func (s *setupSandbox) deps(stdin io.Reader, stdout, stderr io.Writer, interactive bool) setupDeps {
@@ -143,6 +156,7 @@ func (s *setupSandbox) deps(stdin io.Reader, stdout, stderr io.Writer, interacti
 		now:               fixedSetupClock,
 		move:              s.move,
 		restrict:          s.restrict,
+		binaryLocation:    s.binaryLocationCheck(),
 		agentPlanObserver: s.agentPlanObserver,
 	}
 }

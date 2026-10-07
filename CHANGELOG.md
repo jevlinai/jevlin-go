@@ -18,6 +18,12 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **Setup refuses a binary that someone else could replace.** `setup` and
+  `agents install` record the binary's path in your agents' hooks and skills,
+  and setup puts its directory on PATH. They now refuse a binary under the
+  temp directory, or one that another user can write, or that sits in a
+  directory another user can write or owns. Move it somewhere only you can
+  write, such as `~/.local/bin`, and run it from there.
 - **Codex searches carry their session.** `agents install` writes Codex's
   hooks into `~/.codex/hooks.json` on macOS and Linux, and a search Codex runs
   then reaches the router with its session, turn and call, and a subagent's

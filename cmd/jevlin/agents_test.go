@@ -57,7 +57,8 @@ func newFakeMachine(onPath ...string) (*fakeMachine, agentOps) {
 			}
 			return "", errors.New("not found")
 		},
-		executable: func() (string, error) { return "/home/u/.jevlin/bin/jevlin", nil },
+		executable:     func() (string, error) { return "/home/u/.jevlin/bin/jevlin", nil },
+		binaryLocation: func(string) error { return nil },
 		readFile: func(p string) ([]byte, error) {
 			b, ok := m.files[slash(p)]
 			if !ok {
