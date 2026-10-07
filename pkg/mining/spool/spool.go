@@ -62,19 +62,34 @@ type Spool struct {
 	write             func(string, string, []byte, fs.FileMode) error
 }
 
+// recordMaxBytes bounds a record read back from the spool. A record is one
+// observation (the AS takes at most 16 KiB of one) and its custody fields,
+// so a larger file at a record's name is not one this spool wrote.
+const recordMaxBytes = 1 << 20
+
 // Open prepares the spool directories (0700: records carry no secrets,
 // but they are participant activity metadata).
+//
+// The spool directory is a writable root of Codex's sandbox when mining is
+// on, and the quarantine is the one directory below it: a sandboxed command
+// can replace it with a link to a directory outside, and every move, read
+// and listing that goes through it would follow. So everything below the
+// spool's top level goes through fsx.Root, which refuses a link out of it
+// (pkg/fsx/confined.go). The top level needs no root: the spool directory
+// itself cannot be replaced from inside, and fsx's writers there already
+// stage under an exclusive random name.
 func Open(dir string) (*Spool, error) {
 	if dir == "" {
 		return nil, errors.New("spool: directory is empty")
 	}
 	quarantine := filepath.Join(dir, "quarantine")
-	for _, d := range []string{dir, quarantine} {
-		if err := os.MkdirAll(d, 0o700); err != nil {
-			return nil, fmt.Errorf("spool: create %s: %w", d, err)
-		}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, fmt.Errorf("spool: create %s: %w", dir, err)
 	}
-	s := &Spool{dir: dir, quarantine: quarantine, locations: make(map[string]string), move: fsx.MoveFileDurable, remove: fsx.RemoveFileDurable, write: fsx.WriteFileAtomic}
+	if err := inRoot(dir, func(r *fsx.Root) error { return r.MkdirAll("quarantine", 0o700) }); err != nil {
+		return nil, fmt.Errorf("spool: create %s: %w", quarantine, err)
+	}
+	s := &Spool{dir: dir, quarantine: quarantine, locations: make(map[string]string), move: moveInRoot(dir), remove: fsx.RemoveFileDurable, write: fsx.WriteFileAtomic}
 	if err := s.reconstruct(); err != nil {
 		return nil, err
 	}
@@ -132,7 +147,7 @@ var ErrDuplicateIdentity = errors.New("spool: identity at multiple active locati
 // This mutex/index is not a cross-process protocol; CLI flush owns its lock.
 func (s *Spool) reconstruct() error {
 	for _, dir := range []string{s.dir, s.quarantine} {
-		entries, err := os.ReadDir(dir)
+		entries, err := s.list(dir)
 		if err != nil {
 			return err
 		}
@@ -342,8 +357,51 @@ func (s *Spool) Pending() ([]*Record, error) {
 	return records, nil
 }
 
+// inRoot runs f on the spool directory opened as an fsx.Root.
+func inRoot(dir string, f func(*fsx.Root) error) error {
+	r, err := fsx.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = r.Close() }()
+	return f(r)
+}
+
+// list reads one of the spool's two directories: the top level by its path,
+// the quarantine through the root, so a quarantine replaced by a link out of
+// the spool is an error rather than a listing of somewhere else.
+func (s *Spool) list(dir string) ([]fs.DirEntry, error) {
+	if dir == s.dir {
+		return os.ReadDir(dir)
+	}
+	var entries []fs.DirEntry
+	err := inRoot(s.dir, func(r *fsx.Root) (err error) {
+		entries, err = r.ReadDir(filepath.Base(dir))
+		return err
+	})
+	return entries, err
+}
+
+// moveInRoot is the spool's durable move. Its callers name both ends by
+// path; the move itself goes through the root, relative to the spool
+// directory, with fsx.MoveFileDurable's semantics.
+func moveInRoot(dir string) func(from, to string) error {
+	return func(from, to string) error {
+		rf, ferr := filepath.Rel(dir, from)
+		rt, terr := filepath.Rel(dir, to)
+		if ferr != nil || terr != nil || !filepath.IsLocal(rf) || !filepath.IsLocal(rt) {
+			return &fsx.StageError{Stage: "move", Err: fmt.Errorf("spool: %s or %s is not inside %s", from, to, dir)}
+		}
+		return inRoot(dir, func(r *fsx.Root) error { return r.MoveDurable(rf, rt) })
+	}
+}
+
 func (s *Spool) read(name string) (*Record, error) {
-	raw, err := os.ReadFile(filepath.Join(s.dir, name)) // #nosec G304 -- name comes from our own directory listing
+	var raw []byte
+	err := inRoot(s.dir, func(r *fsx.Root) (err error) {
+		raw, err = r.ReadRegular(name, recordMaxBytes)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -470,7 +528,7 @@ func (s *Spool) Count() (int, error) {
 // A missing quarantine directory is zero, not an error: OpenExisting does
 // not create it, and a spool that has never quarantined anything has none.
 func (s *Spool) CountQuarantined() (int, error) {
-	entries, err := os.ReadDir(s.quarantine)
+	entries, err := s.list(s.quarantine)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return 0, nil
