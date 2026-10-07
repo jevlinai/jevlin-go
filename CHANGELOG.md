@@ -18,6 +18,11 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **`search` takes `-config` once.** The Claude Code allow rule ends after
+  the installed `-config <file>`, and whatever follows it runs without a
+  prompt. A second `-config` used to win, so an appended one could send your
+  key to another config's router. `search` now refuses a repeated
+  `-config`, even one naming the same file, before reading any config.
 - **A `jevlin.toml` in the working directory is no longer read on its own.**
   Without `-config` or `JEVLIN_CONFIG`, every command now uses the
   installation's config (`$JEVLIN_HOME/jevlin.toml`, else

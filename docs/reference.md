@@ -29,6 +29,9 @@ file exists, and built-in defaults. A `jevlin.toml` in the working directory is 
 unless you name it, so a cloned repo cannot choose where your keys are sent. `status` and `doctor`
 name the file they used. `connect` refuses to run with no config file, and says to run
 `jevlin setup`.
+`search` refuses a second `-config`, even one naming the same file: the Claude Code allow rule
+ends after the installed `-config <file>`, so a second one could otherwise send the key to
+another config's router without a prompt.
 
 ## The `--stdin` request
 
