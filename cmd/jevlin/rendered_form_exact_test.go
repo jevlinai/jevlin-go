@@ -13,6 +13,8 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -32,6 +34,85 @@ var injections = map[shellKind][]string{
 		`C:\Users\u\x'; echo x; '\..\jevlin.toml`,
 		"C:\\Users\\u\\x\u2019; echo x; \u2018\\..\\jevlin.toml",
 	},
+}
+
+func TestPowerShellRendererRefusesTypographicQuotes(t *testing.T) {
+	paths := append([]string(nil), injections[shellPowerShell]...)
+	for r := '\u2018'; r <= '\u201b'; r++ {
+		paths = append(paths, `C:\Users\O`+string(r)+`Brien\jevlin.exe`)
+	}
+	for i, path := range paths {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			for _, tokens := range [][]cmdToken{
+				{pathToken(path), literalToken("search"), literalToken("--stdin")},
+				{pathToken(`C:\jevlin.exe`), literalToken("search"), literalToken("-config"), pathToken(path), literalToken("--stdin")},
+			} {
+				command, err := renderShellCommand(shellPowerShell, tokens)
+				if strings.ContainsAny(path, "\u2018\u2019\u201a\u201b") {
+					if err == nil || command != "" {
+						t.Fatalf("rendered a path holding a typographic quote: %q -> %q, %v", path, command, err)
+					}
+				} else if err != nil {
+					t.Fatalf("an ASCII apostrophe can be quoted: %q: %v", path, err)
+				}
+			}
+		})
+	}
+}
+
+func TestShellRendererRefusesControlCharactersAndInvalidUTF8(t *testing.T) {
+	unsafe := []string{"\xff"}
+	for r := rune(0); r < 0x20; r++ {
+		unsafe = append(unsafe, string(r))
+	}
+	unsafe = append(unsafe, "\x7f")
+	for _, sh := range []shellKind{shellPOSIX, shellPowerShell, shellCmd} {
+		for _, s := range unsafe {
+			path := `C:\before` + s + `after\jevlin.exe`
+			t.Run(fmt.Sprintf("%s/%x", sh, s), func(t *testing.T) {
+				for _, tokens := range [][]cmdToken{
+					{pathToken(path), literalToken("search")},
+					{pathToken(`C:\jevlin.exe`), literalToken("search"), literalToken("-config"), pathToken(path)},
+				} {
+					if command, err := renderShellCommand(sh, tokens); err == nil || command != "" {
+						t.Fatalf("rendered an unsafe path: %q -> %q, %v", path, command, err)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestPowerShellRenderedPathsRoundTrip(t *testing.T) {
+	paths := append([]string(nil), injections[shellPowerShell]...)
+	paths = append(paths, `C:\Program Files\jevlin\jevlin.exe`, `C:\Users\it's\a''b\jevlin.toml`, "C:\\café\\東京\\jevlin.exe", "C:\\a$(`echo x`) & ; #\\jevlin.toml")
+	for _, path := range paths {
+		command, err := renderShellCommand(shellPowerShell, []cmdToken{pathToken(path)})
+		if err != nil {
+			if !strings.ContainsAny(path, "\u2018\u2019\u201a\u201b") || command != "" {
+				t.Fatalf("a representable path was refused: %q -> %q, %v", path, command, err)
+			}
+			continue
+		}
+		raw := strings.TrimSuffix(strings.TrimPrefix(command, "& '"), "'")
+		if got, ok := readRenderedPath(shellPowerShell, raw); !ok || got != path {
+			t.Fatalf("rendered path did not round-trip: %q -> %q -> %q (%v)", path, command, got, ok)
+		}
+		for _, sh := range execShellsFor(shellPowerShell, false) {
+			t.Run(sh.name+"/"+path, func(t *testing.T) {
+				command, err := renderShellCommand(shellPowerShell, []cmdToken{literalToken("Show-Path"), pathToken(path)})
+				if err != nil {
+					t.Fatal(err)
+				}
+				script := "function Show-Path { param([string]$Path) [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Path)) }\n" + command
+				out := runInShell(t, sh, script, nil, nil)
+				want := base64.StdEncoding.EncodeToString([]byte(path))
+				if out.exit != 0 || strings.TrimSpace(out.stdout) != want {
+					t.Fatalf("rendered path did not reach PowerShell unchanged: %q\n%s", path, out)
+				}
+			})
+		}
+	}
 }
 
 func TestARenderedPathRegionIsExactlyOneQuotedWord(t *testing.T) {

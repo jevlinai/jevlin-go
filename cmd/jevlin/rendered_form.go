@@ -185,17 +185,19 @@ func samePath(a, b string) bool {
 // `C:\\Users\\…`, doubled separators and all, naming the same file in other
 // bytes. Everything outside the placeholders is still compared exactly.
 func renderedFormsForShell(cfg string, sh shellKind) []renderedCommand {
-	entry := binEntry{command: binPlaceholder}
+	const binMarker, cfgMarker = "JEVLIN_RENDERED_BINARY", "JEVLIN_RENDERED_CONFIG"
+	entry := binEntry{command: binMarker}
 	if cfg != "" {
-		entry.cfg = cfgPlaceholder
+		entry.cfg = cfgMarker
 	}
+	placeholders := strings.NewReplacer(binMarker, binPlaceholder, cfgMarker, cfgPlaceholder)
 	var out []renderedCommand
 	if _, script, err := searchBlockForShell(sh, entry, bodyPlaceholder); err == nil {
-		out = append(out, renderedCommand{text: script, path: []string{"search"}, wantsBody: true})
+		out = append(out, renderedCommand{text: placeholders.Replace(script), path: []string{"search"}, wantsBody: true})
 	}
 	if prefer, err := entry.preferCommandForShell(sh); err == nil {
 		for _, arg := range []string{"on", "off", "status"} {
-			out = append(out, renderedCommand{text: prefer + " " + arg, path: []string{"agents", "prefer"}})
+			out = append(out, renderedCommand{text: placeholders.Replace(prefer) + " " + arg, path: []string{"agents", "prefer"}})
 		}
 	}
 	return out
