@@ -18,6 +18,10 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **Setup adopts only what is yours.** A set-aside installation another
+  account owns is no longer offered, and adoption leaves behind any file or
+  folder in it that is not yours. On Windows, owner-only access now also makes
+  you the owner: another owner could otherwise open the folder up again.
 - **Wallet output no longer passes a node's escape sequences through.** Error
   messages, transaction logs and transfer senders that a chain node sends are
   cleaned the way search results are before `jevlin wallet` or `jevlin earnings`

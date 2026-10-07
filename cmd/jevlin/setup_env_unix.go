@@ -7,9 +7,12 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/jevlinai/jevlin-go/pkg/fsx"
 )
@@ -26,6 +29,19 @@ func restrictToOwner(path string, dir bool) error {
 		return err
 	}
 	return os.Chmod(path, info.Mode().Perm()&0o700) // #nosec G703 -- as above
+}
+
+// ownedByCurrentUser refuses an object whose owner is not this process's
+// user. info is the object's Lstat.
+func ownedByCurrentUser(path string, info fs.FileInfo) error {
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("%s: its owner cannot be read", path)
+	}
+	if uid := os.Getuid(); int64(st.Uid) != int64(uid) {
+		return fmt.Errorf("%s is owned by uid %d, not the current user (uid %d)", path, st.Uid, uid)
+	}
+	return nil
 }
 
 // systemUserEnvironment has no POSIX meaning: the profile block is the
