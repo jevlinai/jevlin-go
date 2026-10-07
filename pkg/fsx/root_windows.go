@@ -2,41 +2,80 @@ package fsx
 
 import (
 	"fmt"
+	"io/fs"
 	"path/filepath"
 
 	"golang.org/x/sys/windows"
 )
 
-// moveDurable keeps the Windows durability barrier MoveFileDurable uses,
-// MOVEFILE_WRITE_THROUGH, which os.Root's rename does not set. MoveFileEx
-// takes paths, so each directory below the root that the move goes through
-// is pinned first: opened by its path without FILE_SHARE_DELETE, which stops
-// anyone renaming or deleting it while the handle is held, and checked to be
-// a real directory (not a reparse point) that is the same directory the root
-// itself resolves at that name. The path then names that directory for the
-// whole move. The root's own directory is not pinned: replacing it needs
-// write access to its parent, which is not a writable root.
-func (r *Root) moveDurable(from, to string) error {
+// On Windows every operation through a Root keeps the durability barrier the
+// path-based writers use, MOVEFILE_WRITE_THROUGH, which os.Root's rename does
+// not set. MoveFileEx takes paths, so each directory the operation goes
+// through is pinned first, the root's own included (a root inside another
+// writable root can be renamed): opened by its path without
+// FILE_SHARE_DELETE, which stops anyone renaming or deleting it while the
+// handle is held, and checked to be a real directory, not a reparse point,
+// that is the same directory the root resolves at that name. The paths then
+// name those directories for the whole operation, and the path-based code
+// does the rest.
+
+// pinDirs pins "." and each distinct directory of names, and returns a
+// function that releases them.
+func (r *Root) pinDirs(names ...string) (func(), error) {
 	var pins []windows.Handle
-	defer func() {
+	release := func() {
 		for _, h := range pins {
 			_ = windows.CloseHandle(h)
 		}
-	}()
-	for _, dir := range []string{filepath.Dir(to), filepath.Dir(from)} {
-		if dir == "." {
+	}
+	seen := map[string]bool{}
+	for _, dir := range append([]string{"."}, names...) {
+		dir = filepath.Clean(dir)
+		if seen[dir] {
 			continue
 		}
+		seen[dir] = true
 		h, err := r.pinDir(dir)
 		if err != nil {
-			return &StageError{Stage: "move", Err: err}
+			release()
+			return nil, err
 		}
 		pins = append(pins, h)
 	}
+	return release, nil
+}
+
+func (r *Root) moveDurable(from, to string) error {
+	release, err := r.pinDirs(filepath.Dir(to), filepath.Dir(from))
+	if err != nil {
+		return &StageError{Stage: "move", Err: err}
+	}
+	defer release()
 	if err := movePublication(filepath.Join(r.dir, from), filepath.Join(r.dir, to)); err != nil {
 		return &StageError{Stage: "move", Err: err}
 	}
 	return nil
+}
+
+func (r *Root) writeFile(name string, data []byte, mode fs.FileMode, exclusive bool) error {
+	if name == "." || name == "" || !filepath.IsLocal(name) {
+		return &StageError{Stage: "name", Err: fs.ErrInvalid}
+	}
+	release, err := r.pinDirs(filepath.Dir(name))
+	if err != nil {
+		return &StageError{Stage: "create", Err: err}
+	}
+	defer release()
+	return writeFile(filepath.Join(r.dir, filepath.Dir(name)), filepath.Base(name), data, mode, exclusive, defaultOperations())
+}
+
+func (r *Root) removeDurable(name string) error {
+	release, err := r.pinDirs(filepath.Dir(name))
+	if err != nil {
+		return &StageError{Stage: "remove", Err: err}
+	}
+	defer release()
+	return removeDurable(filepath.Join(r.dir, name))
 }
 
 func (r *Root) pinDir(name string) (windows.Handle, error) {
@@ -83,3 +122,5 @@ func (r *Root) pinDir(name string) (windows.Handle, error) {
 	}
 	return h, nil
 }
+
+func (r *Root) syncDirExported(string) error { return ErrDirectorySyncUnsupported }

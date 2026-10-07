@@ -245,3 +245,59 @@ func TestReadRegularNoFollowRefusesALink(t *testing.T) {
 		t.Fatalf("a regular file: %q, %v, %v", data, info, err)
 	}
 }
+
+func TestRootWritesRemovesAndPublishesExclusively(t *testing.T) {
+	root, _ := writableRoot(t)
+	r, err := OpenRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = r.Close() }()
+	if err := r.WriteFileAtomic("a.json", []byte("one"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.WriteFileAtomic("a.json", []byte("two"), 0o600); err != nil {
+		t.Fatalf("replacing: %v", err)
+	}
+	if got, err := r.ReadRegular("a.json", 64); err != nil || string(got) != "two" {
+		t.Fatalf("read back %q, %v", got, err)
+	}
+	if err := r.WriteFileExclusive("a.json", []byte("three"), 0o600); !errors.Is(err, fs.ErrExist) {
+		t.Fatalf("exclusive over an existing file: %v, want fs.ErrExist", err)
+	}
+	if err := r.RemoveDurable("a.json"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.RemoveDurable("a.json"); err != nil {
+		t.Fatalf("removing an absent file: %v", err)
+	}
+	entries, err := r.ReadDir(".")
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("the root still lists %v (staging names left behind?), %v", entries, err)
+	}
+}
+
+// A root reopened by path is held to the directory it was first opened on.
+func TestRootSameDirectoryRefusesASwappedDirectory(t *testing.T) {
+	root, _ := writableRoot(t)
+	first, err := OpenRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := first.Identity()
+	_ = first.Close()
+	if err := os.Rename(root, root+".aside"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	again, err := OpenRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = again.Close() }()
+	if again.SameDirectory(id) {
+		t.Fatal("a directory swapped in at the root's path passed as the one first opened")
+	}
+}

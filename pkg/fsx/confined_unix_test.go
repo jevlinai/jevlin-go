@@ -47,6 +47,11 @@ func TestNoReadOrLockWaitsOnAFIFO(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = r.Close() }()
+	within(t, "Root.ReadDir", func() {
+		if _, err := r.ReadDir("fifo"); err == nil {
+			t.Error("Root.ReadDir listed a FIFO")
+		}
+	})
 	within(t, "Root.ReadRegular", func() {
 		if _, err := r.ReadRegular("fifo", 1<<20); !errors.Is(err, ErrNotRegular) {
 			t.Errorf("Root.ReadRegular on a FIFO: %v, want ErrNotRegular", err)
