@@ -350,34 +350,28 @@ func binaryPathRunsAsRead(goos, path string) bool {
 	return true
 }
 
-// sameBinary is the identity check: the command's own path, resolved, is the
-// file this process is running from. A different program that happens to be
-// spelled the same way is refused; this file reached through a link is not.
+// sameBinary is the identity check: the command names this binary by exactly
+// the path this process was started by, which is the path the skill renders
+// (agents install spells the binary with os.Executable), and that path is
+// this installation's regular file. Any other spelling is refused, even one
+// that reaches this file when the hook resolves it: a path such as
+// /proc/self/exe or /proc/self/cwd/... names one file to the hook and another
+// to the shell that later runs the command, so resolving a candidate in this
+// process says nothing about what the shell will execute.
 func sameBinary(candidate string, executable func() (string, error)) bool {
 	if candidate == "" || !filepath.IsAbs(candidate) {
 		return false
 	}
 	own, err := executable()
-	if err != nil || !filepath.IsAbs(own) {
+	if err != nil || own != candidate {
 		return false
 	}
-	own, err = filepath.EvalSymlinks(own)
+	resolved, err := filepath.EvalSymlinks(own)
 	if err != nil {
 		return false
 	}
-	resolved, err := filepath.EvalSymlinks(candidate)
-	if err != nil {
-		return false
-	}
-	ownInfo, err := os.Stat(own)
-	if err != nil || !ownInfo.Mode().IsRegular() {
-		return false
-	}
-	candidateInfo, err := os.Stat(resolved)
-	if err != nil {
-		return false
-	}
-	return os.SameFile(ownInfo, candidateInfo)
+	info, err := os.Stat(resolved)
+	return err == nil && info.Mode().IsRegular()
 }
 
 // isOneVersionOneRequest holds the body to the same contract `search --stdin`
