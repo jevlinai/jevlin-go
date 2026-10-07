@@ -18,6 +18,12 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **No more predictable temporary files in shared or sandbox-writable places.**
+  The resume stamp, flush stamp, lineage files and window state are now written
+  through a temporary file created exclusively under a random name, so a link
+  planted in the state or sessions directory is never written through. With no
+  sessions directory and no plugin root, window state is no longer kept in the
+  system temp directory (`/tmp/jevlin-window.json` on Linux); it is not kept.
 - **Codex searches carry their session.** `agents install` writes Codex's
   hooks into `~/.codex/hooks.json` on macOS and Linux, and a search Codex runs
   then reaches the router with its session, turn and call, and a subagent's
