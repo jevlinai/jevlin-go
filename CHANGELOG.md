@@ -24,7 +24,7 @@ The first release replaces this heading with its own.
   different port, plain http, or carry userinfo, so a tampered document cannot
   steer the access token, the participation capability or the provider
   verification key elsewhere. The mining plane stays closed until the AS serves
-  a same-origin document; inference is unaffected.
+  a same-origin document; search is unaffected.
   `enrollment_authorization_template` is still held to the provider allowlist
   instead.
 - **`search` takes `-config` once.** The Claude Code allow rule ends after
