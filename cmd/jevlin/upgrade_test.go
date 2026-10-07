@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -30,7 +31,8 @@ import (
 
 // localRelease publishes releases at an httptest server; the client's
 // transport sends the compiled-in GitHub URLs there, so discovery, bounds,
-// checksum verification and archive inspection all run for real.
+// signature and checksum verification and archive inspection all run for
+// real, under releaseTestKey.
 type localRelease struct {
 	t        *testing.T
 	latest   string
@@ -40,6 +42,8 @@ type localRelease struct {
 	deadline []time.Time
 	srv      *httptest.Server
 }
+
+var releaseTestKey = ed25519.NewKeyFromSeed(bytes.Repeat([]byte{7}, ed25519.SeedSize))
 
 func newLocalRelease(t *testing.T, latest string, bodies map[string]string) *localRelease {
 	t.Helper()
@@ -79,6 +83,7 @@ func (lr *localRelease) serve(w http.ResponseWriter, r *http.Request) {
 			"assets": []map[string]any{
 				{"name": name, "size": len(archive)},
 				{"name": "checksums.txt", "size": 200},
+				{"name": "checksums.txt.sig", "size": 89},
 			},
 		})
 	case strings.Contains(path, "/releases/download/v"):
@@ -90,6 +95,8 @@ func (lr *localRelease) serve(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write(archive)
 		case "checksums.txt":
 			fmt.Fprintf(w, "%x  %s\n", sha256.Sum256(archive), name)
+		case "checksums.txt.sig":
+			_, _ = w.Write(selfupdate.SignChecksums(releaseTestKey, []byte(fmt.Sprintf("%x  %s\n", sha256.Sum256(archive), name))))
 		default:
 			http.NotFound(w, r)
 		}
@@ -218,7 +225,8 @@ func (f *upgradeFixture) run(args ...string) (int, string, string) {
 			return f.lr.source()
 		},
 		runner: runner, goos: "linux", goarch: "amd64", operationTimeout: f.timeout,
-		agents: f.agents, environ: func() []string { return nil },
+		verifier: selfupdate.NewSignedVerifier(releaseTestKey.Public().(ed25519.PublicKey)),
+		agents:   f.agents, environ: func() []string { return nil },
 	}
 	code := upgradeMain(d, append([]string{"-home", f.home}, args...))
 	return code, out.String(), errOut.String()

@@ -21,6 +21,15 @@ archives:
         formats: [zip]
 checksum:
   name_template: checksums.txt
+# checksums.txt.sig: what every installed updater requires before it trusts
+# checksums.txt (internal/selfupdate/signature.go). The key is the
+# release-signing environment's secret; releasecheck sign refuses one whose
+# public half the tagged updater does not compile in. See docs/RELEASING.md.
+signs:
+  - artifacts: checksum
+    signature: "${artifact}.sig"
+    cmd: go
+    args: [run, ./tools/releasecheck, sign, -in, "${artifact}", -out, "${signature}"]
 release:
   draft: false
   # The release body is a commit list (changelog.use: git below), which is the

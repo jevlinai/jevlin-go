@@ -137,6 +137,11 @@ jobs:
     name: GitHub Release
     needs: preflight
     runs-on: ubuntu-latest
+    # The release signing key (JEVLIN_RELEASE_SIGNING_KEY) lives in this
+    # environment, restricted to v* tags, so contents: write alone cannot
+    # sign a release that installed updaters will accept. See
+    # docs/RELEASING.md.
+    environment: release-signing
     permissions:
       # The one place this workflow writes to the repository, and the
       # only reason any job needs more than read.
@@ -164,6 +169,7 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JEVLIN_RELEASE_SIGNING_KEY: ${{ secrets.JEVLIN_RELEASE_SIGNING_KEY }}
 
   verify-release:
     name: verify release assets
@@ -196,6 +202,17 @@ jobs:
         run: |
           go run ./tools/releasecheck verify-assets \
             -tag "${GITHUB_REF_NAME}" -repo . -have release.json
+
+      # The authenticity installed updaters require, checked by their own
+      # code against the keys this tag compiles in, before npm ships it.
+      - name: checksums.txt is signed by a compiled-in release key
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${GITHUB_REF_NAME}" -D signed \
+            -p checksums.txt -p checksums.txt.sig
+          go run ./tools/releasecheck verify-signature \
+            -sums signed/checksums.txt -sig signed/checksums.txt.sig
 
   publish-npm:
     name: publish to npm

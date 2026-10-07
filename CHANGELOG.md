@@ -18,6 +18,12 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **`jevlin upgrade` installs only signed releases.** A release now carries
+  `checksums.txt.sig`, a signature over `checksums.txt` by the project's release
+  key, and the updater checks it against the key compiled into it before it
+  trusts a checksum. Someone able to replace a release's files can no longer get
+  a binary of their own installed by matching its checksum. Releases from before
+  signing are refused; reinstall to move past one.
 - **Codex searches carry their session.** `agents install` writes Codex's
   hooks into `~/.codex/hooks.json` on macOS and Linux, and a search Codex runs
   then reaches the router with its session, turn and call, and a subagent's

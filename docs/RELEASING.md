@@ -122,17 +122,24 @@ is what makes a rerun safe.
 
 Six static binaries (linux, darwin and windows, each amd64 and arm64), each archived with
 `LICENSE`, `NOTICE` and `README.md` — `tar.gz`, `zip` on Windows — and checksummed into
-`checksums.txt`, published as a non-draft GitHub Release whose body is the commit log since
-the last tag, opened by a link to `CHANGELOG.md` at this one. It is the only job with
-`contents: write`, and goreleaser runs only when the release is `absent`.
+`checksums.txt`, which is signed into `checksums.txt.sig`, published as a non-draft GitHub
+Release whose body is the commit log since the last tag, opened by a link to `CHANGELOG.md` at
+this one. It is the only job with `contents: write` and the only one that names the
+`release-signing` environment, and goreleaser runs only when the release is `absent`.
+
+goreleaser's `signs` step runs `go run ./tools/releasecheck sign` with the environment's
+`JEVLIN_RELEASE_SIGNING_KEY`. It signs only with a key whose public half the tagged
+`internal/selfupdate` compiles in, so a release no installed updater could verify stops here,
+before anything is published.
 
 ### `verify-release` — read it back
 
-The release is read back from the API and must carry **exactly** the six archives and
-`checksums.txt`, no more and no fewer. An unexpected asset fails as a missing one does: it
+The release is read back from the API and must carry **exactly** the six archives,
+`checksums.txt` and `checksums.txt.sig`, no more and no fewer. An unexpected asset fails as a missing one does: it
 means the configuration grew an artifact the check cannot name, and a verifier that shrugs at
 files it does not understand is not verifying. goreleaser exiting zero is not proof it
-published.
+published. The published `checksums.txt.sig` is then downloaded and checked by the updater's
+own verifier, `releasecheck verify-signature`, against the keys this tag compiles in.
 
 ### `publish-npm` — the package
 
@@ -207,6 +214,13 @@ for copies already out there, so each is a contract with a test that fails in CI
   `checksums.txt`, computed by a small checked-in function rather than goreleaser's templates.
   `tools/releasecheck`'s `TestSelfUpdaterAssetNamesMatchGoReleaser` derives the matrix from
   `.goreleaser.yaml` and requires the two to agree.
+- **A signed `checksums.txt`**: `checksums.txt.sig` is one line of standard base64, the
+  Ed25519 signature over `jevlin release checksums.txt v1\n` followed by `checksums.txt`'s
+  exact bytes, by a key in `internal/selfupdate`'s compiled-in `releasePublicKeys`. The
+  updater checks it before it reads a checksum, so someone who can replace release assets but
+  does not hold the key cannot get a binary run or installed: a matching `checksums.txt` is
+  integrity, the signature is authenticity. An updater with no compiled-in key refuses every
+  release. `internal/selfupdate`'s `signature_test.go` guards it.
 - **A stable, published release from the canonical origin, under the frozen bounds**: GitHub's
   latest release, or exactly `vX.Y.Z` when asked, from the compiled-in `jevlinai/jevlin-go`;
   no drafts, pre-releases or non-canonical tags; redirects only to GitHub's own hosts; at most
@@ -216,6 +230,27 @@ for copies already out there, so each is a contract with a test that fails in CI
   `TestReleaseRejectsWhatIsNotAStableCanonicalRelease`,
   `TestRedirectPolicyIsHTTPSHostBoundedAndHopBounded` and `TestFrozenBounds` guard it. A
   release approaching half a bound is a question for review, not a reason to raise it.
+
+## The release signing key
+
+Installed updaters trust exactly the public keys compiled into them, so the key outlives any
+one release. To create one, on a trusted machine:
+
+```sh
+go run ./tools/releasecheck keygen -out release-signing.key
+```
+
+It prints the public key and writes the private seed to the new file, mode 0600, and nowhere
+else. Store the file's contents as the `JEVLIN_RELEASE_SIGNING_KEY` secret of the
+`release-signing` environment, keep an offline backup if you want one, delete the file, and
+add the public key to `releasePublicKeys` in a reviewed pull request. Until that pull request
+is on `main` and in the tag, `releasecheck sign` refuses and nothing is published.
+
+To rotate, add the new public key alongside the old one and release; once installations have
+had time to upgrade, swap the secret and drop the old key. A copy that never took a release
+carrying the new key cannot verify releases signed only by it, and has to be reinstalled. If
+the key leaks, remove its public half from `releasePublicKeys` and release under a new key
+at once: installations still trusting the leaked key are exposed until they upgrade.
 
 ## Repository settings this relies on
 
@@ -228,7 +263,9 @@ for copies already out there, so each is a contract with a test that fails in CI
   are refused, and nobody can bypass it.
 - **`release` environment**: deployments need a required reviewer's approval and are allowed
   only from `main` and `v*` tags.
-- **No secrets**, in the repository or the environment; npm authenticates by OIDC.
+- **`release-signing` environment**: allowed only from `v*` tags, holding the one secret,
+  `JEVLIN_RELEASE_SIGNING_KEY`. Nothing else in the repository or the `release` environment
+  is a secret; npm authenticates by OIDC.
 
 Three controls, because each covers a case the others do not. A tag push runs the workflow as
 it exists at the tagged commit, so a crafted commit could carry a `release.yml` without the

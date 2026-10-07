@@ -7,6 +7,9 @@ const (
 	ProjectName = "jevlin"
 	// ChecksumAssetName is GoReleaser's checksum.name_template.
 	ChecksumAssetName = "checksums.txt"
+	// SignatureAssetName is the release signature over ChecksumAssetName,
+	// GoReleaser's signs[0].signature.
+	SignatureAssetName = ChecksumAssetName + ".sig"
 )
 
 // Artifact is the one release archive, and the one executable in it, for a

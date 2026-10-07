@@ -32,12 +32,20 @@ archives:
         formats: [zip]
 checksum:
   name_template: checksums.txt
+signs:
+  - artifacts: checksum
+    signature: "${artifact}.sig"
 release:
   draft: false
 `
 
+// wantInstallerAssets028 is what npm/install.js fetches: everything but the
+// self-updater's checksum signature.
+var wantInstallerAssets028 = append(wantAssets028[:1:1], wantAssets028[2:]...)
+
 var wantAssets028 = []string{
 	"checksums.txt",
+	"checksums.txt.sig",
 	"jevlin_0.2.8_darwin_amd64.tar.gz",
 	"jevlin_0.2.8_darwin_arm64.tar.gz",
 	"jevlin_0.2.8_linux_amd64.tar.gz",
@@ -72,7 +80,7 @@ func TestSelfUpdaterAssetNamesMatchGoReleaser(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got := []string{selfupdate.ChecksumAssetName}
+		got := []string{selfupdate.ChecksumAssetName, selfupdate.SignatureAssetName}
 		for _, goos := range contract.GOOS {
 			for _, goarch := range contract.GOARCH {
 				artifact, err := selfupdate.ArtifactFor(runtimeVersion, goos, goarch)

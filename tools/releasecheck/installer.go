@@ -85,9 +85,21 @@ func CheckNamingContractsAgree(goreleaserYAML, installJS []byte, v ReleaseVersio
 	if err != nil {
 		return err
 	}
-	fromConfig, err := contract.ExpectedAssets(v)
+	all, err := contract.ExpectedAssets(v)
 	if err != nil {
 		return err
+	}
+	// The checksum signature is the self-updater's, not the wrapper's: npm
+	// already attests the package, and install.js never fetches it.
+	signature, err := contract.SignatureName(v)
+	if err != nil {
+		return err
+	}
+	var fromConfig []string
+	for _, name := range all {
+		if name != signature {
+			fromConfig = append(fromConfig, name)
+		}
 	}
 	fromInstaller, err := InstallerAssetNames(installJS, v)
 	if err != nil {
