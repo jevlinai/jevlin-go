@@ -18,6 +18,11 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **`search` takes `-config` once.** The Claude Code allow rule ends after
+  the installed `-config <file>`, and whatever follows it runs without a
+  prompt. A second `-config` used to win, so an appended one could send your
+  key to another config's router. `search` now refuses a repeated
+  `-config`, even one naming the same file, before reading any config.
 - **Codex searches carry their session.** `agents install` writes Codex's
   hooks into `~/.codex/hooks.json` on macOS and Linux, and a search Codex runs
   then reaches the router with its session, turn and call, and a subagent's
