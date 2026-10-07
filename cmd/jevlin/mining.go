@@ -136,8 +136,13 @@ func cmdMiningEnable(args []string, stdin io.Reader, stdout, stderr io.Writer, g
 	if !hasScope(reg.Scopes, "mining") {
 		switch reg.Status {
 		case "unclaimed":
+			claimURL := printableClaimURL(reg.ClaimURL, cfg.Platform.BaseURL, stderr)
+			if claimURL == "" {
+				fmt.Fprintln(stdout, "\nthis agent has not been claimed yet, and no usable claim link is on file. Run `jevlin connect` for a fresh one.")
+				break
+			}
 			fmt.Fprintln(stdout, "\nthis agent has not been claimed yet. Claim it (and grant mining) at:")
-			fmt.Fprintln(stdout, "  "+reg.ClaimURL)
+			fmt.Fprintln(stdout, "  "+claimURL)
 			fmt.Fprintln(stdout, "\nOnce claimed, this resolves automatically the next time `search` runs, or run `jevlin connect` to check now.")
 		case "expired":
 			fmt.Fprintln(stdout, "\nthis registration expired before being claimed; run `jevlin connect` again for a new one")

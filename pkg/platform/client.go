@@ -287,6 +287,15 @@ func validatePlatformURL(raw, baseURL string) error {
 	return nil
 }
 
+// ValidateStoredClaimURL applies validatePlatformURL to a claim_url read
+// back from local state rather than straight off the wire. agent.json lives
+// in a sandbox-writable state_dir, so the copy there is only as trustworthy
+// as the last thing that wrote the file: it must pass the same check
+// against the configured platform.base_url before it is shown to anyone.
+func ValidateStoredClaimURL(raw, baseURL string) error {
+	return validatePlatformURL(raw, strings.TrimRight(baseURL, "/"))
+}
+
 // AgentStatus is what Status returns (§5.2), flattened.
 type AgentStatus struct {
 	Status             string // "unclaimed" | "claimed" | "expired"

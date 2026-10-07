@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/jevlinai/jevlin-go/pkg/auth"
+	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
 func decodeCommandEnvelope(t *testing.T, stdout, command string) map[string]any {
@@ -296,7 +297,7 @@ func TestConnectJSONExposesClaimArtifactsAndNoCredential(t *testing.T) {
 	reg := auth.AgentRegistration{
 		AgentID:        "agent-fictional-9",
 		Status:         "unclaimed",
-		ClaimURL:       "https://portal.fictional.test/claim/abc123",
+		ClaimURL:       config.DefaultPlatformBaseURL + "/claim/abc123",
 		ClaimCode:      "ABC-123",
 		ClaimExpiresAt: "2026-09-13T00:00:00Z",
 	}
@@ -329,6 +330,49 @@ func TestConnectJSONExposesClaimArtifactsAndNoCredential(t *testing.T) {
 	for _, forbidden := range []string{"api_key", "apiKey", "refresh", "dpop", "private_key", "mnemonic", "passphrase"} {
 		if strings.Contains(strings.ToLower(buf.String()), forbidden) {
 			t.Errorf("the JSON report carries a %q field: %s", forbidden, buf.String())
+		}
+	}
+}
+
+// agent.json is sandbox-writable, so a stored claim URL off the configured
+// platform.base_url origin (invariant 12) is never shown: not by status's
+// text or JSON report, and not by connect's JSON envelope.
+func TestAStoredClaimURLOffThePlatformOriginIsNeverReported(t *testing.T) {
+	for _, bad := range []string{
+		"https://evil.example/claim/abc123",
+		"http://platform.nyks.dev/claim/abc123",
+		"https://platform.nyks.dev.evil.example/claim/abc123",
+		"https://platform.nyks.dev/claim/\x1b]8;;https://evil.example\x07x",
+	} {
+		cfgPath, _, store := statusFixture(t)
+		if err := store.SaveAgentRegistration(auth.AgentRegistration{
+			AgentID: "agent-fictional-9", Status: "unclaimed", ClaimURL: bad, ClaimCode: "ABC-123",
+		}); err != nil {
+			t.Fatal(err)
+		}
+
+		var text, textErr bytes.Buffer
+		if code := statusMain([]string{"-config", cfgPath}, &text, &textErr, noEnv); code != exitOK {
+			t.Fatalf("status exited %d: %s", code, textErr.String())
+		}
+		var statusJSON, statusJSONErr bytes.Buffer
+		if code := statusMain([]string{"-json", "-config", cfgPath}, &statusJSON, &statusJSONErr, noEnv); code != exitOK {
+			t.Fatalf("status -json exited %d: %s", code, statusJSONErr.String())
+		}
+		var connectJSON bytes.Buffer
+		emitMachine(&connectJSON, connectEnvelope(cfgPath, noEnv, exitOK, ""))
+
+		if !strings.Contains(text.String(), "agent:  unclaimed") {
+			t.Errorf("status no longer reports the unclaimed agent:\n%s", text.String())
+		}
+		for name, out := range map[string]string{
+			"status":        text.String() + textErr.String(),
+			"status -json":  statusJSON.String() + statusJSONErr.String(),
+			"connect -json": connectJSON.String(),
+		} {
+			if strings.Contains(out, "evil.example") || strings.Contains(out, "http://platform") || strings.Contains(out, "ABC-123") {
+				t.Errorf("%s reported the stored claim artifacts for %q:\n%s", name, bad, out)
+			}
 		}
 	}
 }

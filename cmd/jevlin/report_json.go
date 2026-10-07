@@ -217,13 +217,14 @@ func statusEnvelope(f agentIdentityFacts, as *statusASFacts) commandEnvelope {
 		report.AgentErr = boundMessage(f.RegistrationErr.Error())
 	} else if f.HasRegistration {
 		reg := f.Registration
+		claimURL, claimCode := printableClaimArtifacts(reg, f.PlatformBaseURL)
 		agent := &statusAgentJSON{
 			AgentID:        reg.AgentID,
 			Status:         reg.Status,
 			Claimed:        reg.Status == "claimed",
 			Scopes:         reg.Scopes,
-			ClaimURL:       reg.ClaimURL,
-			ClaimCode:      reg.ClaimCode,
+			ClaimURL:       claimURL,
+			ClaimCode:      claimCode,
 			ClaimExpiresAt: reg.ClaimExpiresAt,
 			EnrolledSlot:   reg.LastEnrollmentSlot,
 			EnrolledAt:     reg.LastEnrollmentAt,
@@ -334,8 +335,7 @@ func connectEnvelope(cfgPath string, getenv func(string) string, exitCode int, n
 				report.Status = reg.Status
 				report.Claimed = reg.Status == "claimed"
 				report.Scopes = reg.Scopes
-				report.ClaimURL = reg.ClaimURL
-				report.ClaimCode = reg.ClaimCode
+				report.ClaimURL, report.ClaimCode = printableClaimArtifacts(reg, cfg.Platform.BaseURL)
 				report.ClaimExpiresAt = reg.ClaimExpiresAt
 				report.EnrolledSlot = reg.LastEnrollmentSlot
 				report.SlotRefusal = reg.SlotRefusal
@@ -378,4 +378,14 @@ func connectOutcome(exitCode int, status string) (code string, retryable bool, a
 	default:
 		return "ok", false, actionNone
 	}
+}
+
+// printableClaimArtifacts is the stored claim URL and code as a report may
+// show them: both dropped together when the URL fails invariant 12, since
+// a code is only meaningful beside the link it was issued with.
+func printableClaimArtifacts(reg auth.AgentRegistration, baseURL string) (claimURL, claimCode string) {
+	if reg.ClaimURL != "" && printableClaimURL(reg.ClaimURL, baseURL, nil) == "" {
+		return "", ""
+	}
+	return reg.ClaimURL, reg.ClaimCode
 }

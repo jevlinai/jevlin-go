@@ -1843,6 +1843,41 @@ func TestMiningEnableOnAnUnclaimedAgentPrintsTheOriginalStillValidClaimLink(t *t
 	}
 }
 
+// mining enable reads the same sandbox-writable agent.json: an unclaimed
+// agent's stored claim URL off the platform origin is never printed.
+func TestMiningEnableNeverPrintsAStoredClaimURLOffThePlatformOrigin(t *testing.T) {
+	platform := newStubPlatform(t)
+	cfgPath, stateDir := connectConfig(t, platform.srv.URL, "https://as.example.invalid")
+	cfg := mustLoadConfig(t, cfgPath)
+	if err := os.MkdirAll(filepath.Dir(credentialsPath(cfg.Miner)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-key"}); err != nil {
+		t.Fatal(err)
+	}
+	store, err := auth.OpenStore(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveAgentRegistration(auth.AgentRegistration{
+		AgentID: "agent-1", Status: "unclaimed", ClaimURL: "https://evil.example/claim/AB12-CD34",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := cmdMining([]string{"enable", "-config", cfgPath}, &bytes.Buffer{}, &stdout, &stderr, noEnv)
+	if code != exitOK {
+		t.Fatalf("cmdMining enable: code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if strings.Contains(stdout.String()+stderr.String(), "evil.example") {
+		t.Fatalf("mining enable printed the off-origin stored claim URL:\n%s\n%s", stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "no usable claim link is on file") {
+		t.Errorf("mining enable did not explain the missing link:\n%s", stdout.String())
+	}
+}
+
 // An expired registration has no valid path forward at all — not the
 // original link (its window closed), not a console grant (nothing was
 // ever claimed to grant a scope on). Matches pollOnce's identical wording
@@ -2556,6 +2591,60 @@ func TestALaterForegroundConnectMintsWhenThePlatformGainsTheRoute(t *testing.T) 
 	reg, ok := loadAgent(t, stateDir)
 	if !ok || reg.AgentID != agentID || reg.ClaimURL != freshURL {
 		t.Fatalf("the fresh link was not persisted: %+v ok=%v", reg, ok)
+	}
+}
+
+// agent.json is sandbox-writable: a claim URL rewritten there to another
+// origin is treated like a lost link (invariant 12) — never printed, and
+// replaced on disk by a freshly minted one.
+func TestForegroundConnectNeverPrintsAStoredClaimURLOffThePlatformOrigin(t *testing.T) {
+	withShortConnectTimings(t)
+	platform := newStubPlatform(t)
+	cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
+	if code, _, errOut := runConnect(t, cfgPath, nil); code != exitOK {
+		t.Fatalf("setup connect exited %d, stderr=%s", code, errOut)
+	}
+	store, err := auth.OpenStore(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg, ok := loadAgent(t, stateDir)
+	if !ok || reg.Status != "unclaimed" {
+		t.Fatalf("setup registration: %+v ok=%v", reg, ok)
+	}
+	const evil = "https://evil.example/claim/AB12-CD34"
+	reg.ClaimURL = evil
+	if err := store.SaveAgentRegistration(reg); err != nil {
+		t.Fatal(err)
+	}
+
+	code, out, errOut := runConnect(t, cfgPath, nil)
+	if code != exitOK {
+		t.Fatalf("connect exited %d, stderr=%s", code, errOut)
+	}
+	if strings.Contains(out+errOut, "evil.example") {
+		t.Fatalf("connect printed the off-origin stored claim URL: stdout=%q stderr=%q", out, errOut)
+	}
+	freshURL := platform.srv.URL + "/claim/MINT-01"
+	if !strings.Contains(out, "claim this agent:") || !strings.Contains(out, freshURL) {
+		t.Fatalf("connect did not mint and print a fresh link in its place: stdout=%q", out)
+	}
+	if reg, _ := loadAgent(t, stateDir); reg.ClaimURL != freshURL {
+		t.Fatalf("the off-origin link was not replaced on disk: %+v", reg)
+	}
+
+	// With no way to mint, nothing is printed in its place.
+	reg.ClaimURL = evil
+	if err := store.SaveAgentRegistration(reg); err != nil {
+		t.Fatal(err)
+	}
+	platform.setClaimCodeRouteDisabled(true)
+	code, out, errOut = runConnect(t, cfgPath, nil)
+	if code != exitOK {
+		t.Fatalf("connect exited %d, stderr=%s", code, errOut)
+	}
+	if strings.Contains(out+errOut, "evil.example") || !strings.Contains(out, unclaimedNoLinkMessage) || strings.Contains(out, "URL above") {
+		t.Fatalf("connect without a mint route: stdout=%q stderr=%q", out, errOut)
 	}
 }
 

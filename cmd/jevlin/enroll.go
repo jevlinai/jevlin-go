@@ -412,7 +412,7 @@ func statusMain(args []string, stdout, stderr io.Writer, getenv func(string) str
 	local, ok := gatherAgentIdentity(args, getenv)
 	if !ok {
 		local = agentIdentityFacts{Mining: cfg.Mining, ConfigSource: src, StateDir: cfg.Mining.StateDir,
-			StoreMissing: true, Decision: auth.MiningDecision{State: auth.MiningUndecided}}
+			PlatformBaseURL: cfg.Platform.BaseURL, StoreMissing: true, Decision: auth.MiningDecision{State: auth.MiningUndecided}}
 	}
 
 	// WP2-adversarial-review finding 16: an unclaimed or search-only
@@ -555,6 +555,10 @@ type agentIdentityFacts struct {
 	ConfigSource string
 	StateDir     string
 
+	// PlatformBaseURL is what a stored claim URL must match before it is
+	// printed (invariant 12): agent.json is sandbox-writable.
+	PlatformBaseURL string
+
 	// StoreMissing is the ordinary "nothing has decided anything here"
 	// state; StoreErr is a state directory that exists and cannot be read.
 	StoreMissing bool
@@ -590,7 +594,7 @@ func gatherAgentIdentity(args []string, getenv func(string) string) (agentIdenti
 	if err != nil {
 		return agentIdentityFacts{}, false
 	}
-	f := agentIdentityFacts{Mining: cfg.Mining, ConfigSource: src, StateDir: cfg.Mining.StateDir}
+	f := agentIdentityFacts{Mining: cfg.Mining, ConfigSource: src, StateDir: cfg.Mining.StateDir, PlatformBaseURL: cfg.Platform.BaseURL}
 	store, err := auth.OpenStoreExisting(cfg.Mining.StateDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -694,8 +698,11 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 			fmt.Fprintln(stdout, "agent:  unclaimed — recovered from the platform; its claim link is not "+
 				"retrievable here. Run `jevlin connect -force` to register a fresh agent, or wait for "+
 				"this one to expire.")
+		} else if claimURL := printableClaimURL(reg.ClaimURL, f.PlatformBaseURL, stderr); claimURL != "" {
+			fmt.Fprintf(stdout, "agent:  unclaimed — claim at %s\n", claimURL)
 		} else {
-			fmt.Fprintf(stdout, "agent:  unclaimed — claim at %s\n", reg.ClaimURL)
+			fmt.Fprintln(stdout, "agent:  unclaimed — the stored claim link failed validation and is not shown. "+
+				"Run `jevlin connect` for a fresh one.")
 		}
 	case "expired":
 		fmt.Fprintln(stdout, "agent:  expired — run `jevlin connect` again for a new registration")

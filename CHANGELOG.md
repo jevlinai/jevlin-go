@@ -80,6 +80,11 @@ The first release replaces this heading with its own.
 - **opencode searches carry their turn.** A search made under opencode now says
   which of your messages it answers to, so a session's searches group into
   turns on the router as they do for Claude Code.
+- **A claim link is only shown if it points at the platform.** `connect`, `status`
+  and `mining enable` now check the claim link stored in `agent.json` against
+  `platform.base_url` before printing it, the same check a freshly registered
+  link gets. A link that fails is not shown; a foreground `connect` mints a
+  fresh one in its place.
 - **A lost claim link is replaced, not mourned.** For a registration rebuilt from
   the platform that is still unclaimed with no claim link, a foreground
   `jevlin connect` now asks the platform for a fresh link and prints it. The old

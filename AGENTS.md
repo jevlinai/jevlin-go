@@ -116,7 +116,9 @@ the named tests.
 11. **A claim or console URL is printed, never opened.** `connect.go` and `mining.go` import no
     `os/exec`. Structural, and tested.
 12. **`platform.base_url` is compared against, never dialed.** It is the origin a platform-supplied
-    URL must match (`validatePlatformURL`); every request goes to `agents_api_url`.
+    URL must match (`validatePlatformURL`); every request goes to `agents_api_url`. A claim URL
+    read back from `agent.json` (sandbox-writable) is checked again before it is printed
+    (`platform.ValidateStoredClaimURL`).
 13. **Registration is one journaled transaction.** A complete `register` response is journaled
     (`registration_pending.json`) before `agent.json` or the credential is written, and finished
     from the journal on the next run, never by a second `register`. The journal is consulted before

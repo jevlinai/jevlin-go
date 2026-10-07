@@ -99,6 +99,23 @@ func resumeStampPath(stateDir string) string { return filepath.Join(stateDir, "c
 const unclaimedNoLinkMessage = "registration recovered but it is unclaimed and its claim link is not retrievable " +
 	"from the platform; run `jevlin connect -force` to register a fresh agent, or wait for this one to expire"
 
+// printableClaimURL returns a stored claim URL only when it still passes
+// invariant 12 against the configured platform.base_url. agent.json sits
+// in a sandbox-writable state_dir, so a copy that fails is treated as
+// absent; the rejected value itself is never echoed. stderr may be nil.
+func printableClaimURL(raw, baseURL string, stderr io.Writer) string {
+	if raw == "" {
+		return ""
+	}
+	if platform.ValidateStoredClaimURL(raw, baseURL) != nil {
+		if stderr != nil {
+			fmt.Fprintf(stderr, "jevlin: the stored claim link is not on the configured platform.base_url (%s); not printing it\n", baseURL)
+		}
+		return ""
+	}
+	return raw
+}
+
 // remintClaimLink asks the platform for a fresh claim link for a still-
 // unclaimed registration whose link is gone (B.1/B.3), persists it, and
 // reports whether reg now carries one it is safe to print. The platform's
@@ -963,11 +980,18 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 		// this run or any later one, until the platform reports claimed
 		// or expired, -force replaces it, or the mint below (B.4) hands
 		// this foreground run a fresh link.
-		if reg.ClaimURL == "" && !remintClaimLink(ctx, client, store, &reg, key, stderr) {
+		// A stored link that fails invariant 12 (agent.json is sandbox-
+		// writable) is handled exactly like a missing one: re-minted, which
+		// also overwrites the bad copy on disk, or not printed at all.
+		claimURL := printableClaimURL(reg.ClaimURL, cfg.Platform.BaseURL, stderr)
+		if claimURL == "" && remintClaimLink(ctx, client, store, &reg, key, stderr) {
+			claimURL = reg.ClaimURL
+		}
+		if claimURL == "" {
 			fmt.Fprintln(stdout, unclaimedNoLinkMessage)
 		} else {
 			fmt.Fprintln(stdout, "claim this agent:")
-			fmt.Fprintln(stdout, "  "+reg.ClaimURL)
+			fmt.Fprintln(stdout, "  "+claimURL)
 			if reg.ClaimCode != "" {
 				fmt.Fprintln(stdout, "code:", reg.ClaimCode)
 			}
@@ -996,7 +1020,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 			// so this local reg is already current — a registration
 			// recovered without a claim link stays durable through the
 			// timeout narration too, not just the initial print.
-			if reg.Status == "unclaimed" && reg.ClaimURL == "" {
+			if reg.Status == "unclaimed" && printableClaimURL(reg.ClaimURL, cfg.Platform.BaseURL, nil) == "" {
 				fmt.Fprintln(stdout, "\n"+unclaimedNoLinkMessage)
 			} else {
 				fmt.Fprintln(stdout, "\nnot claimed yet. Approve it at the URL above, then run `jevlin connect` again")
