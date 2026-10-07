@@ -49,14 +49,24 @@ type Store struct {
 }
 
 // OpenStore creates or opens the state directory ([mining] state_dir):
-// created 0700, and refused if it is a symlink or group/world-accessible
-// — the same hazard discipline as the Unix-socket listener.
+// created 0700 (on Windows, with a protected owner-only DACL), and refused
+// if it is a symlink or accessible to anyone else — the same hazard
+// discipline as the Unix-socket listener.
 func OpenStore(dir string) (*Store, error) {
 	if dir == "" {
 		return nil, errors.New("auth: state_dir is empty")
 	}
+	_, statErr := os.Lstat(dir) // #nosec G703 -- operator-configured state dir, validated below
+	created := errors.Is(statErr, fs.ErrNotExist)
 	if err := os.MkdirAll(dir, 0o700); err != nil { // #nosec G703 -- operator-configured state dir, validated just below
 		return nil, fmt.Errorf("auth: create state dir: %w", err)
+	}
+	if created {
+		// Before anything is written into it: on Windows MkdirAll sets no
+		// DACL, so the new directory would inherit its parent's.
+		if err := restrictStateDir(dir); err != nil {
+			return nil, fmt.Errorf("auth: restrict state dir to its owner: %w", err)
+		}
 	}
 	return openExistingStore(dir)
 }
@@ -85,6 +95,9 @@ func openExistingStore(dir string) (*Store, error) {
 	}
 	if posixModes && info.Mode().Perm()&0o077 != 0 {
 		return nil, fmt.Errorf("auth: state dir is group/world-accessible (%04o); refusing", info.Mode().Perm())
+	}
+	if err := checkStateAccess(dir); err != nil {
+		return nil, fmt.Errorf("auth: state dir %s %w; refusing", dir, err)
 	}
 	return &Store{dir: dir}, nil
 }
@@ -200,6 +213,9 @@ func (s *Store) readSecret(name string) ([]byte, error) {
 	}
 	if posixModes && info.Mode().Perm()&0o077 != 0 {
 		return nil, fmt.Errorf("auth: %s is group/world-accessible (%04o); refusing mining startup", name, info.Mode().Perm())
+	}
+	if err := checkStateAccess(path); err != nil {
+		return nil, fmt.Errorf("auth: %s %w; refusing mining startup", name, err)
 	}
 	raw, err := os.ReadFile(path) // #nosec G304 -- path is store-dir + fixed name
 	if err != nil {
@@ -357,6 +373,9 @@ func (s *Store) PreserveCorruptAgentRegistration() error {
 	}
 	if posixModes && info.Mode().Perm()&0o077 != 0 {
 		return fmt.Errorf("auth: agent registration is readable by others (%04o); refusing", info.Mode().Perm())
+	}
+	if err := checkStateAccess(path); err != nil {
+		return fmt.Errorf("auth: agent registration %w; refusing", err)
 	}
 	backup := filepath.Join(s.dir, "agent.json.corrupt")
 	if _, err := os.Lstat(backup); err == nil {

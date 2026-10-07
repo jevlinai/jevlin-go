@@ -18,6 +18,14 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **Windows: the state directory is owner-only and checked.** A
+  `[mining] state_dir` that `connect`, `enroll` or `mining enable` creates now
+  gets a protected owner-only access list, as `jevlin setup` gives
+  `<home>\state`, instead of inheriting its parent's. Every open of the state
+  directory and every load of a secret in it now refuses one that is owned by,
+  or grants access to, anyone other than you, SYSTEM and Administrators — the
+  check POSIX already made with file modes. An existing state directory outside
+  your profile may need restricting to your account before mining runs again.
 - **Codex searches carry their session.** `agents install` writes Codex's
   hooks into `~/.codex/hooks.json` on macOS and Linux, and a search Codex runs
   then reaches the router with its session, turn and call, and a subagent's
