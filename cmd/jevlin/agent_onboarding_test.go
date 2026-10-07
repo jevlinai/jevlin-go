@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -636,6 +637,33 @@ func connectConfig(t *testing.T, platformURL, asURL string) (cfgPath, stateDir s
 	return writeTOML(t, b.String()), stateDir
 }
 
+// withPayoutAddress returns a copy of a connectConfig file whose [mining]
+// block also names payout_address — the trusted source an unattended
+// connect may declare, unlike an address that is only in payout.json.
+func withPayoutAddress(t *testing.T, cfgPath, address string) string {
+	t.Helper()
+	raw, err := os.ReadFile(cfgPath) // #nosec G304 -- the test's own writeTOML output, not an external path
+	if err != nil {
+		t.Fatal(err)
+	}
+	return writeTOML(t, string(raw)+fmt.Sprintf("payout_address = %q\n", address))
+}
+
+// configurePayoutAddress is the scripted install's shape: the address in
+// mining.payout_address and persisted to payout.json, as
+// finishMiningEnabled would leave it.
+func configurePayoutAddress(t *testing.T, cfgPath, stateDir, address string) string {
+	t.Helper()
+	store, err := auth.OpenStore(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SavePayoutAddress(address); err != nil {
+		t.Fatal(err)
+	}
+	return withPayoutAddress(t, cfgPath, address)
+}
+
 func mustLoadConfig(t *testing.T, cfgPath string) *config.Config {
 	t.Helper()
 	cfg, _, err := loadConfig(cfgPath, noEnv)
@@ -758,15 +786,9 @@ func TestConnectCaseAccountExistsSearchAndMining(t *testing.T) {
 	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
 		t.Fatal("first connect failed")
 	}
-	// Give it a payout address the way a scripted install would: set it
-	// directly on the store, as mining enable would have.
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SavePayoutAddress("twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n"); err != nil {
-		t.Fatal(err)
-	}
+	// Give it a payout address the way a scripted install would:
+	// mining.payout_address in the config.
+	cfgPath = configurePayoutAddress(t, cfgPath, stateDir, "twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n")
 	platform.claim("credits", "mining")
 
 	code, out, _ := runConnect(t, cfgPath, nil)
@@ -806,15 +828,8 @@ func TestConnectCaseMiningGrantedLater(t *testing.T) {
 		t.Fatal("enrolled before mining was granted")
 	}
 
-	// Mining granted later, with a payout address already on file
-	// (as if `mining enable` had run in between).
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SavePayoutAddress("twilight1gz3fu9w3jp08jp4qcjj6hsckzktsexd09vz039"); err != nil {
-		t.Fatal(err)
-	}
+	// Mining granted later, with a payout address now configured.
+	cfgPath = configurePayoutAddress(t, cfgPath, stateDir, "twilight1gz3fu9w3jp08jp4qcjj6hsckzktsexd09vz039")
 	platform.claim("credits", "mining")
 
 	code, out, _ := runConnect(t, cfgPath, nil)
@@ -929,14 +944,8 @@ func TestAddressSetAfterEnrollmentIsDeclaredOnTheNextRun(t *testing.T) {
 		t.Fatalf("expected enrollment to be recorded: %+v ok=%v", reg, ok)
 	}
 
-	// The address arrives afterward, as `mining enable` would leave it.
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SavePayoutAddress("twilight19ltafk0vdyzwtnzjcfwgvlu3ldmvgemdqxsn79"); err != nil {
-		t.Fatal(err)
-	}
+	// The address arrives afterward, in the config.
+	cfgPath = configurePayoutAddress(t, cfgPath, stateDir, "twilight19ltafk0vdyzwtnzjcfwgvlu3ldmvgemdqxsn79")
 
 	// A subsequent, ordinary poll — already enrolled, nothing about
 	// enrollment changed — must still declare the now-present address.
@@ -958,17 +967,11 @@ func TestDeclareIsNotRepeatedOnceSettled(t *testing.T) {
 	platform := newStubPlatform(t)
 	as := newStubAS(t)
 	cfgPath, stateDir := connectConfig(t, platform.srv.URL, as.srv.URL)
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
 		t.Fatal("first connect failed")
 	}
-	if err := store.SavePayoutAddress("twilight1225q9dwktuz2vjj0q220m2jjy3x8cajwcfueq0"); err != nil {
-		t.Fatal(err)
-	}
+	cfgPath = configurePayoutAddress(t, cfgPath, stateDir, "twilight1225q9dwktuz2vjj0q220m2jjy3x8cajwcfueq0")
 	platform.claim("credits", "mining")
 
 	// Enrolls and declares in this run.
@@ -1241,8 +1244,25 @@ func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
 		}
 		cfg := configured
 		cfg.StateDir = stateDir
+		cfg.PayoutAddress = "twilight16hmu7hucv64zeanfsa58cjdhku98k43j4cnrkr"
 		if !shouldResume(&config.Config{Mining: cfg}) {
 			t.Fatal("shouldResume false for an enrolled installation with an undeclared address")
+		}
+	})
+
+	t.Run("settled: enrolled with an undeclared address only payout.json names", func(t *testing.T) {
+		stateDir := shouldResumeFixture(t, "claimed", []string{"mining"}, true, "twilight16hmu7hucv64zeanfsa58cjdhku98k43j4cnrkr")
+		store, err := auth.OpenStore(stateDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.SaveMiningEnabled(true); err != nil {
+			t.Fatal(err)
+		}
+		cfg := configured
+		cfg.StateDir = stateDir
+		if shouldResume(&config.Config{Mining: cfg}) {
+			t.Fatal("shouldResume true for an address a resume may not declare (state dir only)")
 		}
 	})
 }
@@ -1553,13 +1573,7 @@ func TestDeclarationRunsUnattendedAfterEnrollment(t *testing.T) {
 	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
 		t.Fatal("connect failed")
 	}
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SavePayoutAddress("twilight1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc"); err != nil {
-		t.Fatal(err)
-	}
+	cfgPath = configurePayoutAddress(t, cfgPath, stateDir, "twilight1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc")
 	platform.claim("mining")
 
 	// The detached shape specifically: -resume, no stdin, exactly the
@@ -1570,6 +1584,106 @@ func TestDeclarationRunsUnattendedAfterEnrollment(t *testing.T) {
 	}
 	if got := as.declaredAddress(); got != "twilight1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc" {
 		t.Fatalf("declared address = %q, want twilight1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc", got)
+	}
+}
+
+// sfind-cc9434e1: the state dir is a Codex sandbox writable root, so a
+// sandboxed command can plant payout.json and mining_decision.json there.
+// A detached resume must never declare such an address — the first payout
+// declaration of an address the config does not name needs a terminal.
+func TestResumeNeverDeclaresAnAddressOnlyTheStateDirNames(t *testing.T) {
+	withShortConnectTimings(t)
+	platform := newStubPlatform(t)
+	as := newStubAS(t)
+	cfgPath, stateDir := connectConfig(t, platform.srv.URL, as.srv.URL)
+
+	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
+		t.Fatal("connect failed")
+	}
+	store, err := auth.OpenStore(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const planted = "twilight1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc"
+	if err := store.SaveMiningEnabled(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SavePayoutAddress(planted); err != nil {
+		t.Fatal(err)
+	}
+	platform.claim("mining")
+
+	code, out, _ := runConnect(t, cfgPath, nil, "-resume")
+	if code != exitOK {
+		t.Fatalf("resume exited %d: %s", code, out)
+	}
+	if reg, _ := loadAgent(t, stateDir); reg.LastEnrollmentSlot == "" {
+		t.Fatal("resume should still enroll; only the declaration needs a terminal")
+	}
+	if got := as.declarationAttempts(); got != 0 {
+		t.Fatalf("declaration attempts = %d, want 0: a resume declared an address only payout.json names", got)
+	}
+	if !strings.Contains(out, "NOT declared") {
+		t.Fatalf("resume did not say why it skipped the declaration: %q", out)
+	}
+	if shouldResume(mustLoadConfig(t, cfgPath)) {
+		t.Fatal("shouldResume keeps spawning resumes that cannot declare")
+	}
+
+	// A config naming a different address does not vouch for this one.
+	other := withPayoutAddress(t, cfgPath, "twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n")
+	if code, out, _ := runConnect(t, other, nil, "-resume"); code != exitOK {
+		t.Fatalf("resume exited %d: %s", code, out)
+	}
+	if got := as.declarationAttempts(); got != 0 {
+		t.Fatalf("declaration attempts = %d, want 0 with a mismatched mining.payout_address", got)
+	}
+}
+
+// The foreground half: an interactive connect asks before declaring an
+// address it did not decide itself, and only a yes declares it.
+func TestForegroundConnectConfirmsAStateDirAddressBeforeDeclaring(t *testing.T) {
+	for _, tc := range []struct {
+		answer      string
+		wantDeclare bool
+	}{{"n\n", false}, {"\n", false}, {"y\n", true}} {
+		t.Run(strings.TrimSpace(tc.answer), func(t *testing.T) {
+			withShortConnectTimings(t)
+			platform := newStubPlatform(t)
+			as := newStubAS(t)
+			cfgPath, stateDir := connectConfig(t, platform.srv.URL, as.srv.URL)
+			if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
+				t.Fatal("connect failed")
+			}
+			store, err := auth.OpenStore(stateDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			const addr = "twilight1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc"
+			if err := store.SavePayoutAddress(addr); err != nil {
+				t.Fatal(err)
+			}
+			platform.claim("mining")
+
+			orig := connectInteractive
+			connectInteractive = func(io.Reader, io.Writer) bool { return true }
+			t.Cleanup(func() { connectInteractive = orig })
+
+			code, out, errOut := runConnect(t, cfgPath, bytes.NewBufferString(tc.answer))
+			if code != exitOK {
+				t.Fatalf("connect exited %d: %s %s", code, out, errOut)
+			}
+			if !strings.Contains(errOut, "Declare "+addr) {
+				t.Fatalf("no confirmation prompt: %q", errOut)
+			}
+			got := as.declaredAddress()
+			if tc.wantDeclare && got != addr {
+				t.Fatalf("declared %q after a yes, want %q", got, addr)
+			}
+			if !tc.wantDeclare && as.declarationAttempts() != 0 {
+				t.Fatalf("declared %q without a yes", got)
+			}
+		})
 	}
 }
 
@@ -1660,13 +1774,7 @@ func TestStatusReportsBothAddressesOnBindingConflict(t *testing.T) {
 	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
 		t.Fatal("connect failed")
 	}
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SavePayoutAddress("twilight1nv60etsw245g8z00h4h322m4vr764z3840swpa"); err != nil {
-		t.Fatal(err)
-	}
+	cfgPath = configurePayoutAddress(t, cfgPath, stateDir, "twilight1nv60etsw245g8z00h4h322m4vr764z3840swpa")
 	platform.claim("mining")
 	if code, out, _ := runConnect(t, cfgPath, nil, "-resume"); code != exitOK {
 		t.Fatalf("resume exited %d: %s", code, out)
@@ -1921,6 +2029,7 @@ func TestConcurrentResumesProduceExactlyOneEnrollmentAndDeclaration(t *testing.T
 	if err := store.SavePayoutAddress(addr); err != nil {
 		t.Fatal(err)
 	}
+	cfgPath = withPayoutAddress(t, cfgPath, addr)
 	platform.claim("mining")
 
 	const n = 10
@@ -2068,6 +2177,17 @@ func TestTerminalYesIsFollowedThroughToAnActualEnrollment(t *testing.T) {
 
 	if got := as.assertionRedemptionCount(); got != 1 {
 		t.Fatalf("the terminal-driven address answer never reached an actual AS enrollment redemption: redemptions = %d", got)
+	}
+	// The detached resume enrolls but never declares an address the
+	// config does not name; the next foreground connect confirms it.
+	if got := as.declarationAttempts(); got != 0 {
+		t.Fatalf("the detached resume declared a state-dir address: attempts = %d", got)
+	}
+	orig := connectInteractive
+	connectInteractive = func(io.Reader, io.Writer) bool { return true }
+	t.Cleanup(func() { connectInteractive = orig })
+	if code, out, errOut := runConnect(t, cfgPath, bytes.NewBufferString("y\n")); code != exitOK {
+		t.Fatalf("foreground connect exited %d: stdout=%s stderr=%s", code, out, errOut)
 	}
 	if got := as.declaredAddress(); got != addr {
 		t.Fatalf("the terminal-typed address was never declared: declared = %q, want %q", got, addr)

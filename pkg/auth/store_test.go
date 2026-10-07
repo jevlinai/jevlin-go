@@ -401,6 +401,21 @@ func TestSavePayoutAddressRejectsNonBech32(t *testing.T) {
 	}
 }
 
+// payout.json sits in a Codex sandbox writable root, so a record that
+// never went through SavePayoutAddress must be refused on load too.
+func TestLoadPayoutAddressRejectsAnInvalidRecordOnDisk(t *testing.T) {
+	s, dir := newStore(t)
+	for _, bad := range []string{"", "not-an-address", "cosmos1qqnfjqxr5w5c60x5xw24k5zqe0shsrtj04kagr"} {
+		raw := `{"address":"` + bad + `"}`
+		if err := os.WriteFile(filepath.Join(dir, "payout.json"), []byte(raw), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got, ok, err := s.LoadPayoutAddress(); err == nil || ok || got != "" {
+			t.Errorf("LoadPayoutAddress over %q: got %q ok=%v err=%v, want a refusal", bad, got, ok, err)
+		}
+	}
+}
+
 func TestSavePayoutAddressRejectsWrongHRP(t *testing.T) {
 	s, _ := newStore(t)
 	// A syntactically valid bech32 string, but for a different chain's

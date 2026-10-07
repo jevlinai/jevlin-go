@@ -670,6 +670,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 	br := bufio.NewReader(stdin)
 
 	interval := resumePollInterval
+	var decidedPayout string // a payout address decided by this run, never one merely read back
 	var reg auth.AgentRegistration
 	var existed bool
 	var key string
@@ -868,6 +869,9 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 				if code != exitOK {
 					return code
 				}
+				if outcome.decidedHere {
+					decidedPayout = outcome.payoutAddress
+				}
 				fresh, registerErr := client.Register(ctx, *name, clientIdentifier(), registrationHint(outcome))
 				if registerErr != nil {
 					fmt.Fprintln(stderr, "jevlin: register:", registerErr)
@@ -915,6 +919,9 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 			outcome, code := decideRegistrationOutcome(stdin, br, stdout, stderr, getenv, cfg, store, connectInteractive(stdin, stdout))
 			if code != exitOK {
 				return code
+			}
+			if outcome.decidedHere {
+				decidedPayout = outcome.payoutAddress
 			}
 			fresh, err := client.Register(ctx, *name, clientIdentifier(), registrationHint(outcome))
 			if err != nil {
@@ -976,15 +983,20 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 
 	if *resume {
 		callCtx, callCancel := context.WithTimeout(ctx, roundTrip)
-		_, code := pollOnce(callCtx, stdout, stderr, client, store, cfg, &reg, key)
+		_, code := pollOnce(callCtx, stdout, stderr, client, store, cfg, &reg, key, nil)
 		callCancel()
 		return code
+	}
+
+	confirm := &payoutConfirmer{decided: decidedPayout}
+	if !machine && connectInteractive(stdin, stdout) {
+		confirm = terminalPayoutConfirmer(br, stderr, decidedPayout)
 	}
 
 	deadline := time.Now().Add(connectPollBudget)
 	for {
 		callCtx, callCancel := context.WithTimeout(ctx, roundTrip)
-		done, code := pollOnce(callCtx, stdout, stderr, client, store, cfg, &reg, key)
+		done, code := pollOnce(callCtx, stdout, stderr, client, store, cfg, &reg, key, confirm)
 		callCancel()
 		if done {
 			return code
@@ -1106,7 +1118,10 @@ func registrationHint(outcome miningEnableOutcome) []string {
 // done=false means "keep polling" (still unclaimed, or a transient
 // error worth retrying in the foreground — a resume does not retry,
 // it simply exits and lets the next resume try again).
-func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Client, store *auth.Store, cfg *config.Config, reg *auth.AgentRegistration, key string) (done bool, code int) {
+//
+// confirm decides whether an on-file payout address may be declared by
+// this process (see payoutConfirmer); nil allows only mining.payout_address.
+func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Client, store *auth.Store, cfg *config.Config, reg *auth.AgentRegistration, key string, confirm *payoutConfirmer) (done bool, code int) {
 	// WP2-adversarial-review finding 6: re-read the on-disk record before
 	// mutating it — reg may be stale relative to whatever the most recent
 	// write actually persisted (this function is called repeatedly across
@@ -1221,7 +1236,17 @@ func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Cl
 	// this exactly as it gates enrollment above — an installation that
 	// opted out after enrolling once must not keep declaring.
 	if miningActive(store) {
-		if address, ok, aerr := store.LoadPayoutAddress(); aerr == nil && ok && !addressSettled(store, address) {
+		address, ok, aerr := store.LoadPayoutAddress()
+		if aerr != nil {
+			fmt.Fprintln(stderr, "jevlin:", aerr)
+		}
+		if aerr == nil && ok && !addressSettled(store, address) {
+			if !confirm.allows(cfg, address) {
+				fmt.Fprintf(stdout, "payout address %s is on file but was NOT declared: it is not mining.payout_address "+
+					"and was not confirmed at a terminal. Run `jevlin connect` or `jevlin mining enable` at a terminal "+
+					"to confirm it, or set mining.payout_address.\n", address)
+				return true, exitOK
+			}
 			_, miningClient, err := buildMiningClient(ctx, cfg.Mining)
 			if err != nil {
 				fmt.Fprintln(stderr, "jevlin:", err)
@@ -1231,6 +1256,68 @@ func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Cl
 		}
 	}
 	return true, exitOK
+}
+
+// payoutConfirmer decides whether an on-file payout address is the
+// participant's to declare. payout.json lives in the state dir, which the
+// Codex sandbox block makes writable, so a sandboxed command can plant an
+// address there; its presence alone is never a participant decision. Only
+// three sources are: mining.payout_address in the config, an address
+// decided in this very process (a terminal answer, a wallet created here,
+// or the config's own value via askMiningQuestion), and an address a human
+// confirms at a terminal now. The detached resume has no terminal and
+// decides nothing, so it can only ever declare mining.payout_address.
+type payoutConfirmer struct {
+	decided string
+	ask     func(address string) bool
+	answers map[string]bool
+}
+
+// configuredPayoutAddress reports whether address is the one the trusted
+// config names — the only address an unattended run may declare.
+func configuredPayoutAddress(cfg *config.Config, address string) bool {
+	return address != "" && address == cfg.Mining.PayoutAddress
+}
+
+func (c *payoutConfirmer) allows(cfg *config.Config, address string) bool {
+	if configuredPayoutAddress(cfg, address) {
+		return true
+	}
+	if c == nil || address == "" {
+		return false
+	}
+	if address == c.decided {
+		return true
+	}
+	if c.ask == nil {
+		return false
+	}
+	if ok, seen := c.answers[address]; seen {
+		return ok
+	}
+	ok := c.ask(address)
+	if c.answers == nil {
+		c.answers = map[string]bool{}
+	}
+	c.answers[address] = ok
+	return ok
+}
+
+// terminalPayoutConfirmer asks at the terminal before declaring an address
+// nothing else in this process vouches for. A prompt that cannot be
+// answered (EOF, interrupt) is a no.
+func terminalPayoutConfirmer(br *bufio.Reader, stderr io.Writer, decided string) *payoutConfirmer {
+	return &payoutConfirmer{
+		decided: decided,
+		ask: func(address string) bool {
+			line, err := promptBufio(stderr, "Declare "+address+" as this participant's payout address? It was read from "+
+				"the state directory, not from mining.payout_address. [y/N] ", br)
+			if err != nil {
+				return false
+			}
+			return strings.HasPrefix(strings.ToLower(strings.TrimSpace(line)), "y")
+		},
+	}
 }
 
 // declarePayoutIfSafe is §5.5's read-before-declare rule (design f0ddb69):
@@ -1464,7 +1551,10 @@ func shouldResume(cfg *config.Config) bool {
 		if aerr != nil || !hasAddr {
 			return false // enrolled, nothing to declare
 		}
-		return !addressSettled(store, address)
+		// A resume declares only mining.payout_address (payoutConfirmer);
+		// any other on-file address waits for a terminal, so spawning a
+		// resume for it would do nothing.
+		return configuredPayoutAddress(cfg, address) && !addressSettled(store, address)
 	default:
 		return false // expired, or unrecognized: nothing a resume can do
 	}

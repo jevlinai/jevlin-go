@@ -475,9 +475,10 @@ func boundedNonEmpty(value string, min, max int) bool {
 // agent.json — one concern per file, matching dpop.key/refresh.token/
 // enrollment.json/receipt-*.jws — because the address is a local mining
 // preference the client owns outright, while agent.json mirrors platform
-// state that a poll can overwrite. A detached resume reads this file as
-// the one thing it needs to declare a payout unattended once enrollment
-// succeeds; it never needs to know how the address was decided.
+// state that a poll can overwrite. The state dir is a Codex sandbox
+// writable root, so this file alone is never treated as the participant's
+// decision: connect declares it only when it is mining.payout_address or
+// was decided or confirmed at a terminal in the same process.
 // validatePayoutAddress is the one place every payout address in this
 // flow is checked (WP2-adversarial-review finding 9): a terminal-typed
 // answer, mining.payout_address from config, and — redundantly but
@@ -513,7 +514,9 @@ func (s *Store) SavePayoutAddress(address string) error {
 }
 
 // LoadPayoutAddress returns the stored address, ok=false when none has
-// been decided yet.
+// been decided yet. The address is validated on load as well as on save:
+// the state dir is a Codex sandbox writable root, so payout.json may not
+// have been written by SavePayoutAddress at all.
 func (s *Store) LoadPayoutAddress() (address string, ok bool, err error) {
 	raw, err := s.readSecret("payout.json")
 	if errors.Is(err, fs.ErrNotExist) {
@@ -527,6 +530,9 @@ func (s *Store) LoadPayoutAddress() (address string, ok bool, err error) {
 	}
 	if err := json.Unmarshal(raw, &rec); err != nil {
 		return "", false, fmt.Errorf("auth: decode payout address: %w", err)
+	}
+	if err := validatePayoutAddress(rec.Address); err != nil {
+		return "", false, err
 	}
 	return rec.Address, true, nil
 }

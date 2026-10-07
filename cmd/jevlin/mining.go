@@ -154,7 +154,14 @@ func cmdMiningEnable(args []string, stdin io.Reader, stdout, stderr io.Writer, g
 	}
 
 	// Already granted: act now rather than waiting for the next search.
-	_, code = pollOnce(ctx, stdout, stderr, client, store, cfg, &reg, key)
+	confirm := &payoutConfirmer{}
+	if outcome.decidedHere {
+		confirm.decided = outcome.payoutAddress
+	}
+	if isInteractive(stdin, stdout) {
+		confirm = terminalPayoutConfirmer(br, stderr, confirm.decided)
+	}
+	_, code = pollOnce(ctx, stdout, stderr, client, store, cfg, &reg, key, confirm)
 	return code
 }
 
@@ -308,6 +315,9 @@ func retryPendingRevoke(ctx context.Context, store *auth.Store, oauthClient *aut
 type miningEnableOutcome struct {
 	enabled       bool   // the participant chose (or config said) to enable mining
 	payoutAddress string // set only when enabled and an address exists; "" means "enabled, no wallet/address yet"
+	// decidedHere: payoutAddress came from this process (terminal, wallet
+	// created here, or the config), not read back from payout.json.
+	decidedHere bool
 }
 
 // askMiningQuestion is the one place "enable mining rewards?" is
@@ -326,8 +336,9 @@ type miningEnableOutcome struct {
 //
 // It never enrolls or declares anything — only decides whether mining
 // is on and, if so, persists the resulting address via
-// store.SavePayoutAddress so a later detached resume has one thing to
-// read before declaring it unattended.
+// store.SavePayoutAddress. The returned outcome's decidedHere is what lets
+// the same process declare that address; a later detached resume declares
+// only mining.payout_address (payoutConfirmer).
 //
 // interactive is the caller's own isInteractive(stdin, stdout) — passed
 // in rather than computed here so a test can force the interactive
@@ -438,7 +449,7 @@ func finishMiningEnabled(stdin io.Reader, br *bufio.Reader, stdout, stderr io.Wr
 			fmt.Fprintln(stderr, "jevlin:", err)
 			return miningEnableOutcome{}, exitTransport
 		}
-		return miningEnableOutcome{enabled: true, payoutAddress: cfg.Mining.PayoutAddress}, exitOK
+		return miningEnableOutcome{enabled: true, payoutAddress: cfg.Mining.PayoutAddress, decidedHere: true}, exitOK
 	}
 
 	// The address question is asked at a terminal whenever nothing is on
@@ -540,7 +551,7 @@ func finishMiningEnabled(stdin io.Reader, br *bufio.Reader, stdout, stderr io.Wr
 		fmt.Fprintln(stderr, "jevlin:", err)
 		return miningEnableOutcome{}, exitTransport
 	}
-	return miningEnableOutcome{enabled: true, payoutAddress: address}, exitOK
+	return miningEnableOutcome{enabled: true, payoutAddress: address, decidedHere: true}, exitOK
 }
 
 // isInteractive reports whether both ends of the terminal are real: a

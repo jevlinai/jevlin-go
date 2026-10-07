@@ -112,7 +112,10 @@ the named tests.
     and `miningActive`. `[mining] enabled` in the config is a scripted first answer for onboarding,
     never a switch; `[miner] enabled` says only that intake is configured; `as_url` being non-empty
     is what says an AS exists (`miningASConfigured`). An unreadable or unsafe decision is DEGRADED
-    and stops mining.
+    and stops mining. The state directory is a Codex sandbox writable root, so `payout.json` is
+    never a participant decision by itself: a detached `connect -resume` declares only
+    `[mining] payout_address`, and any other on-file address is declared only by a foreground
+    `connect`/`mining enable` that decided it or confirmed it at a terminal (`payoutConfirmer`).
 11. **A claim or console URL is printed, never opened.** `connect.go` and `mining.go` import no
     `os/exec`. Structural, and tested.
 12. **`platform.base_url` is compared against, never dialed.** It is the origin a platform-supplied
