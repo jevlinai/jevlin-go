@@ -18,6 +18,15 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **Codex's sandbox keeps its network off.** `agents install` used to write
+  `network_access = true` into Codex's `config.toml`, which let every command
+  Codex runs in its sandbox, in every project, reach any host without asking,
+  and so send anything it could read, jevlin's `credentials.json` included.
+  The block now writes `network_access = false`, and the next install turns an
+  earlier block's network off and says so. A search Codex runs in its sandbox
+  needs your approval in Codex to reach the router; `agents install -client
+  codex -codex-network on` is the opt-in, its plan says what it opens, and
+  `agents status` names it while it is on.
 - **Codex searches carry their session.** `agents install` writes Codex's
   hooks into `~/.codex/hooks.json` on macOS and Linux, and a search Codex runs
   then reaches the router with its session, turn and call, and a subagent's

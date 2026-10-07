@@ -304,7 +304,7 @@ func TestAnInstallationWhoseStateDirIsElsewhereStillOwnsItsBlock(t *testing.T) {
 
 	// Something to refresh: the participant's config has not changed, so the
 	// block is made stale the way an earlier version's rendering would be.
-	stale := strings.Replace(installed, "network_access = true", "network_access = false", 1)
+	stale := strings.Replace(installed, "network_access = false", "network_access = true", 1)
 	if stale == installed {
 		t.Fatal("the block fixture did not change, so nothing about a refresh is being tested")
 	}
@@ -355,7 +355,7 @@ func TestAnInstallationStillRefreshesItsOwnCodexSandboxBlock(t *testing.T) {
 	m.install(m.first)
 	fresh := m.codexConfig()
 
-	stale := strings.Replace(fresh, "network_access = true", "network_access = false", 1)
+	stale := strings.Replace(fresh, "network_access = false", "network_access = true", 1)
 	if stale == fresh {
 		t.Fatal("the block fixture did not change, so nothing about a refresh is being tested")
 	}

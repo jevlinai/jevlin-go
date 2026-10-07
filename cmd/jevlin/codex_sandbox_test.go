@@ -103,7 +103,7 @@ func TestCodexInstallConfiguresSandboxAndUninstallRemovesIt(t *testing.T) {
 		"model = \"gpt-5\"",         // preserved
 		agentsMarkerBegin,           // our block
 		"[sandbox_workspace_write]", //
-		"network_access = true",     // both restrictions lifted
+		"network_access = false",    // the network stays off by default
 		// The four directories themselves, sorted — never the home.
 		"writable_roots = [" + strings.Join([]string{
 			fmt.Sprintf("%q", filepath.Join(home, "intake")),
@@ -190,8 +190,8 @@ func TestCodexInstallWithMinerOffStillWritesStateDirRoot(t *testing.T) {
 	if got == "" {
 		t.Fatal("no block written though the claim resume writes the state dir")
 	}
-	if !strings.Contains(got, "network_access = true") {
-		t.Errorf("network not enabled:\n%s", got)
+	if !strings.Contains(got, "network_access = false") {
+		t.Errorf("network not left off:\n%s", got)
 	}
 	// The state dir alone.
 	if !strings.Contains(got, "writable_roots = ["+fmt.Sprintf("%q", filepath.Join(home, "state"))+"]") {

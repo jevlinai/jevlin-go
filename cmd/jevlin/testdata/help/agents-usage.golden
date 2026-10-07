@@ -1,4 +1,5 @@
 usage: jevlin agents install|status|uninstall [-config file] [-client name]... [-dry-run] [-yes]
+       jevlin agents install -codex-network on|off [-config file] [-client codex] [-dry-run] [-yes]
        jevlin agents prefer on|off|status [-config file]
   install     detect coding agents (by command or config directory) and give each
               the search skill and hooks
@@ -9,5 +10,9 @@ usage: jevlin agents install|status|uninstall [-config file] [-client name]... [
               skills so it takes effect in every agent (/jevlin off|on in
               the agent does the same)
   -client     act on this agent only (claude, codex, cursor, opencode, pi, hermes); repeatable
+  -codex-network
+              on: every command Codex runs in its sandbox, in every project,
+              may reach any host without asking (off by default; install
+              keeps an opt-in until it is turned off)
   -dry-run    print the plan, change nothing
   -yes        do not ask before writing

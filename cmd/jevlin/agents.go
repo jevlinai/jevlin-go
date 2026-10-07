@@ -261,7 +261,22 @@ type binEntry struct {
 	// change to the config package's own defaulting (finishMiner's
 	// intake/sessions derivation, for one) is reflected here too.
 	rendered *config.Config
+
+	// codexNetwork is what `agents install -codex-network` asked of the
+	// network_access key in Codex's sandbox table. The zero value, asked by
+	// every caller that is not that flag, keeps an opt-in already on record
+	// and otherwise leaves the network off.
+	codexNetwork codexNetworkChoice
 }
+
+// codexNetworkChoice is the answer to `agents install -codex-network`.
+type codexNetworkChoice int
+
+const (
+	codexNetworkKeep codexNetworkChoice = iota // an opt-in on record stays, else off
+	codexNetworkOn                             // -codex-network on
+	codexNetworkOff                            // -codex-network off
+)
 
 // searchCommand is the exact invocation the skill teaches.
 func (e binEntry) searchCommand() string {
@@ -410,6 +425,7 @@ func cmdAgents(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv 
 }
 
 var agentsUsage = `usage: jevlin agents install|status|uninstall [-config file] [-client name]... [-dry-run] [-yes]
+       jevlin agents install -codex-network on|off [-config file] [-client codex] [-dry-run] [-yes]
        jevlin agents prefer on|off|status [-config file]
   install     detect coding agents (by command or config directory) and give each
               the search skill and hooks
@@ -420,6 +436,10 @@ var agentsUsage = `usage: jevlin agents install|status|uninstall [-config file] 
               skills so it takes effect in every agent (/jevlin off|on in
               the agent does the same)
   -client     act on this agent only (` + targetIDs(targetHost) + `); repeatable
+  -codex-network
+              on: every command Codex runs in its sandbox, in every project,
+              may reach any host without asking (off by default; install
+              keeps an opt-in until it is turned off)
   -dry-run    print the plan, change nothing
   -yes        do not ask before writing
 `
@@ -444,11 +464,27 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 	fs.Var(&clients, "client", "act on this agent only; repeatable")
 	dryRun := fs.Bool("dry-run", false, "print the plan and change nothing")
 	yes := fs.Bool("yes", false, "do not ask before writing")
+	codexNet := fs.String("codex-network", "", "install only: on|off, network access for every command Codex runs in its sandbox")
 	if err := fs.Parse(rest); err != nil {
 		return exitUsage
 	}
 	if fs.NArg() > 0 {
 		fmt.Fprintf(stderr, "jevlin agents: unexpected argument %q\n", fs.Arg(0))
+		return exitUsage
+	}
+	netChoice := codexNetworkKeep
+	switch *codexNet {
+	case "":
+	case "on":
+		netChoice = codexNetworkOn
+	case "off":
+		netChoice = codexNetworkOff
+	default:
+		fmt.Fprintf(stderr, "jevlin agents: -codex-network is on or off, not %q\n", *codexNet)
+		return exitUsage
+	}
+	if netChoice != codexNetworkKeep && sub != "install" {
+		fmt.Fprintln(stderr, "jevlin agents: -codex-network is for install only")
 		return exitUsage
 	}
 
@@ -463,6 +499,7 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 		fmt.Fprintln(stderr, "jevlin agents:", err)
 		return exitTransport
 	}
+	entry.codexNetwork = netChoice
 
 	if sub == "status" {
 		printAgentStatus(ops, paths, entry, signals, getenv, stdout)
@@ -1753,8 +1790,17 @@ func readWithMode(ops agentOps, path string) ([]byte, os.FileMode, error) {
 // workspace-write profile blocks network and denies writes outside the open
 // project, so the search's mining observation — written under the jevlin
 // home — is silently dropped and nothing is earned. We widen the sandbox
-// just enough (network on, plus the jevlin directories as writable roots)
-// in a marked block we own and can cleanly remove.
+// just enough (the jevlin directories as writable roots) in a marked block
+// we own and can cleanly remove.
+//
+// The network stays off unless the participant opts in with
+// `agents install -codex-network on`. network_access is not a setting for
+// one command: it lifts the network block for every command Codex runs in
+// its workspace-write sandbox, in every project, without an approval. Any
+// such command — one a prompt injection wrote, say — could then send
+// anything it can read, credentials.json and the state directory included,
+// to any host. So it is never turned on by default, and turning it on is
+// disclosed in the plan in those words.
 
 // codexSandboxRoots is the set of directories a Codex-run search must be able
 // to write, cleaned, deduplicated and sorted. Empty only when there is no
@@ -1895,17 +1941,28 @@ func planCodexSandbox(ops agentOps, label, path string, roots []string, entry bi
 		p.refused = append(p.refused, fmt.Sprintf("%s: cannot read %s: %v", label, path, err))
 		return false, true
 	}
+	pre, region, post, marked := markedRegion(existing)
+	var have codexBlockContents
+	readable := true
+	if marked {
+		have, readable = splitCodexBlock(region)
+	}
+	network := codexNetworkWanted(entry.codexNetwork, have.oursText())
+
 	stripped, _ := removeMarkedBlock(existing)
 	if bytes.Contains(stripped, []byte("["+codexSandboxTable+"]")) {
 		p.refused = append(p.refused, fmt.Sprintf(
 			"%s: %s already defines [%s]; add these settings to it by hand so searches can record:\n%s",
-			label, path, codexSandboxTable, indentBlock(sandboxSettings(roots))))
+			label, path, codexSandboxTable, indentBlock(sandboxSettingsWith(roots, network))))
 		return false, true
 	}
 
-	want := codexSandboxBlock(roots)
-	if pre, region, post, ok := markedRegion(existing); ok {
-		have, readable := splitCodexBlock(region)
+	want := codexSandboxBlockWith(roots, network)
+	why := "sandbox: writable_roots so searches can record; network stays off"
+	if network {
+		why = "sandbox: writable_roots so searches can record, and network for every sandboxed command (-codex-network on)"
+	}
+	if marked {
 		if !readable {
 			p.refused = append(p.refused, fmt.Sprintf(
 				"%s: the jevlin block in %s cannot be read as TOML tables, so it is left as it is; "+
@@ -1914,6 +1971,9 @@ func planCodexSandbox(ops agentOps, label, path string, roots []string, entry bi
 		}
 		wantContents, _ := splitCodexBlock(mustRegion(want))
 		if have.oursText() == wantContents.oursText() && len(have.foreign) == 0 {
+			if network {
+				p.notes = append(p.notes, codexNetworkNote(label, path))
+			}
 			return false, false // already what we would write, wherever in the file it sits
 		}
 		// Asked only of a block we are about to change, and after the no-op
@@ -1934,11 +1994,68 @@ func planCodexSandbox(ops agentOps, label, path string, roots []string, entry bi
 			p.notes = append(p.notes, fmt.Sprintf("%s: moving %s out of the jevlin block in %s, below it, so a later append by Codex lands outside ours: %s",
 				label, tables(len(have.foreign)), path, strings.Join(have.foreignNames(), ", ")))
 		}
+		planCodexNetworkNotes(label, path, network, have.oursText(), p)
 		next := replaceBlockInPlace(pre, want, have.foreignText(), post)
-		return planWrite(ops, label, path, next, mode, "sandbox: network + writable_roots so searches can record", p), false
+		return planWrite(ops, label, path, next, mode, why, p), false
 	}
+	planCodexNetworkNotes(label, path, network, "", p)
 	next := appendMarkedBlock(stripped, want)
-	return planWrite(ops, label, path, next, mode, "sandbox: network + writable_roots so searches can record", p), false
+	return planWrite(ops, label, path, next, mode, why, p), false
+}
+
+// codexNetworkOptIn is the line our table carries when, and only when, the
+// participant opted in to network_access. It is what tells an opt-in apart
+// from the network_access = true every block had before the opt-in existed,
+// which install turns off.
+const codexNetworkOptIn = "# network_access: opted in with `jevlin agents install -codex-network on`"
+
+// codexNetworkWanted is whether the table install writes turns the network
+// on: what -codex-network said, else whether the table already there records
+// an opt-in.
+func codexNetworkWanted(choice codexNetworkChoice, oursText string) bool {
+	switch choice {
+	case codexNetworkOn:
+		return true
+	case codexNetworkOff:
+		return false
+	}
+	return codexNetworkOptedIn(oursText)
+}
+
+// codexNetworkOptedIn: does our table turn the network on, by an opt-in?
+func codexNetworkOptedIn(oursText string) bool {
+	return codexNetworkEnabled(oursText) && strings.Contains(oursText, codexNetworkOptIn)
+}
+
+// codexNetworkEnabled: does our table turn the network on, by whatever means?
+func codexNetworkEnabled(oursText string) bool {
+	var doc map[string]any
+	if _, err := toml.Decode(oursText, &doc); err != nil {
+		return false
+	}
+	table, _ := doc[codexSandboxTable].(map[string]any)
+	on, _ := table["network_access"].(bool)
+	return on
+}
+
+// codexNetworkNote is the sentence every plan that leaves the network on
+// prints: what it actually means, and how to undo it.
+func codexNetworkNote(label, path string) string {
+	return fmt.Sprintf("%s: network_access is on in %s (-codex-network on). Every command Codex runs in its workspace-write sandbox, in every project, "+
+		"can reach any host without asking, and can send any file it can read off this machine, jevlin's credentials.json and state directory included. "+
+		"Turn it off with: jevlin agents install -client codex -codex-network off", label, path)
+}
+
+// planCodexNetworkNotes says what a write of our table does to the network.
+func planCodexNetworkNotes(label, path string, network bool, oursText string, p *agentPlan) {
+	switch {
+	case network:
+		p.notes = append(p.notes, codexNetworkNote(label, path))
+	case codexNetworkEnabled(oursText):
+		p.notes = append(p.notes, fmt.Sprintf("%s: turning network_access off in %s: it let every command Codex runs in its sandbox reach any host without asking. "+
+			"A search Codex runs in its sandbox cannot reach the router until you approve it there; "+
+			"to turn it back on for every sandboxed command: jevlin agents install -client codex -codex-network on", label, path))
+	}
 }
 
 // droppedKeysNote is the one sentence both plans use for a key a participant
@@ -1974,20 +2091,31 @@ func tables(n int) string {
 // no two of them can come to disagree about which table is ours (dropin-miner#82).
 const codexSandboxTable = "sandbox_workspace_write"
 
-func sandboxSettings(roots []string) string {
+// sandboxSettings is our table as install writes it by default: the network
+// left off.
+func sandboxSettings(roots []string) string { return sandboxSettingsWith(roots, false) }
+
+func sandboxSettingsWith(roots []string, network bool) string {
 	quoted := make([]string, len(roots))
 	for i, r := range roots {
 		quoted[i] = strconv.Quote(r)
 	}
-	return "[" + codexSandboxTable + "]\nnetwork_access = true\nwritable_roots = [" + strings.Join(quoted, ", ") + "]\n"
+	net := "network_access = false\n"
+	if network {
+		net = codexNetworkOptIn + "\nnetwork_access = true\n"
+	}
+	return "[" + codexSandboxTable + "]\n" + net + "writable_roots = [" + strings.Join(quoted, ", ") + "]\n"
 }
 
-func codexSandboxBlock(roots []string) []byte {
+func codexSandboxBlock(roots []string) []byte { return codexSandboxBlockWith(roots, false) }
+
+func codexSandboxBlockWith(roots []string, network bool) []byte {
 	return []byte(agentsMarkerBegin + "\n" +
-		"# Lets jevlin's search reach the router and record its mining\n" +
-		"# observation under your jevlin home. Without this, Codex's default\n" +
-		"# sandbox blocks the write and searches earn nothing.\n" +
-		sandboxSettings(roots) +
+		"# Lets jevlin's search record its mining observation under your\n" +
+		"# jevlin home. Without this, Codex's default sandbox blocks the write\n" +
+		"# and searches earn nothing. The network stays off unless you opted in:\n" +
+		"# network_access applies to every command Codex runs in its sandbox.\n" +
+		sandboxSettingsWith(roots, network) +
 		agentsMarkerEnd + "\n")
 }
 
