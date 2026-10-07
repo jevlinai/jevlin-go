@@ -46,6 +46,12 @@ func main() {
 		err = runVerifyAssets(os.Args[2:], os.Stdout)
 	case "smoke":
 		err = runSmoke(os.Args[2:], os.Stdout)
+	case "sign":
+		err = runSign(os.Args[2:], os.Stdout)
+	case "verify-signature":
+		err = runVerifySignature(os.Args[2:], os.Stdout)
+	case "keygen":
+		err = runKeygen(os.Args[2:], os.Stdout)
 	case "help", "-h", "--help":
 		usage(os.Stdout)
 		return
@@ -83,6 +89,20 @@ func usage(w io.Writer) {
   smoke          -tag vX.Y.Z -file FILE
                  FILE holds what the installed binary printed for "version".
                  Requires exactly "jevlin X.Y.Z".
+
+  sign           -in checksums.txt -out checksums.txt.sig
+                 goreleaser's signs command. Signs with the base64 Ed25519 seed
+                 in $`+signingKeyEnv+`, and only when its public half is one
+                 internal/selfupdate compiles in.
+
+  verify-signature -sums checksums.txt -sig checksums.txt.sig
+                 the published signature verifies under the compiled-in release
+                 keys, through the self-updater's own check.
+
+  keygen         -out FILE
+                 a new release signing key: the seed is written to FILE (0600,
+                 never printed) for the release-signing environment's secret,
+                 and the public key is printed for internal/selfupdate.
 `)
 }
 

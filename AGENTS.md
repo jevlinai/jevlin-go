@@ -661,7 +661,10 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   explicit choice: it follows a redirect only over HTTPS, at most five hops, and only to
   `api.github.com`, `github.com`, `objects.githubusercontent.com` and
   `release-assets.githubusercontent.com`; anything else is refused with advice to reinstall. The
-  release origin is compiled in and no environment variable redirects it.
+  release origin is compiled in and no environment variable redirects it. `checksums.txt` is trusted
+  only under `checksums.txt.sig`, an Ed25519 signature by a compiled-in release key
+  (`SignedVerifier`, the default); `SHA256Verifier` alone is integrity, not authenticity, and is
+  never a production verifier.
 - State YOUR forbidden edges here and nowhere else. Don't import another repo's edges; a boundary with
   no argument you can state should not exist.
 

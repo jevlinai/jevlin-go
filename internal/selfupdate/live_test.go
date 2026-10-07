@@ -5,14 +5,16 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
 // TestLiveReleaseVerification runs the real pipeline against the published
-// v0.2.8 release — discover, select, download, verify, inspect, stage and run
-// the candidate's version — and stops there: nothing is replaced, and the
-// "installed binary" is a placeholder in a temporary directory. It is opt-in,
-// because ordinary tests must not depend on GitHub:
+// v0.2.8 release, which predates release signing: discovery and selection
+// succeed, and the updater must then refuse it for carrying no
+// checksums.txt.sig, before downloading or staging anything. Nothing is
+// replaced, and the "installed binary" is a placeholder in a temporary
+// directory. It is opt-in, because ordinary tests must not depend on GitHub:
 //
 //	JEVLIN_LIVE_RELEASE=1 go test ./internal/selfupdate -run TestLiveReleaseVerification -count=1 -v
 func TestLiveReleaseVerification(t *testing.T) {
@@ -45,17 +47,14 @@ func TestLiveReleaseVerification(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A fictional older build, so the real v0.2.8 is the upgrade target.
-	p, err := Updater{Source: source, GOOS: runtime.GOOS, GOARCH: runtime.GOARCH}.Prepare(ctx, placeholder, "0.2.7", &v)
-	if err != nil {
-		t.Fatal(err)
+	_, err = Updater{Source: source, GOOS: runtime.GOOS, GOARCH: runtime.GOARCH}.Prepare(ctx, placeholder, "0.2.7", &v)
+	if KindOf(err) != KindReleaseInvalid || !strings.Contains(err.Error(), SignatureAssetName) {
+		t.Fatalf("an unsigned release must be refused for its missing %s, got %v", SignatureAssetName, err)
 	}
-	defer p.Discard()
-	info, err := os.Stat(p.Candidate)
-	if err != nil {
-		t.Fatal(err)
+	t.Logf("refused unsigned %s: %v", release.Version.Tag(), err)
+	if left, err := StagingLeftovers(filepath.Dir(placeholder)); err != nil || len(left) != 0 {
+		t.Errorf("nothing may be staged from an unsigned release: %v %v", left, err)
 	}
-	t.Logf("verified %s (%s, checksums.txt), staged %s (%d bytes), candidate reports %s; stopped before replacement",
-		target.ArchiveName, release.Version.Tag(), filepath.Base(p.Candidate), info.Size(), p.To)
 	if b, _ := os.ReadFile(placeholder); string(b) != "placeholder" { // #nosec G304 -- test path
 		t.Error("the placeholder installed binary must be untouched")
 	}

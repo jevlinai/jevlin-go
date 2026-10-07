@@ -38,8 +38,8 @@ func TestInstallerAssetNamesMatchesTheGoreleaserDerivation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(got, "\n") != strings.Join(wantAssets028, "\n") {
-		t.Errorf("npm/install.js will fetch\n got %v\nwant %v", got, wantAssets028)
+	if strings.Join(got, "\n") != strings.Join(wantInstallerAssets028, "\n") {
+		t.Errorf("npm/install.js will fetch\n got %v\nwant %v", got, wantInstallerAssets028)
 	}
 }
 

@@ -26,7 +26,8 @@ type ReleaseVerifier interface {
 
 // SHA256Verifier checks the archive against the release's checksums.txt.
 // It proves the bytes are the ones the release published, not who published
-// them; signing is not part of this release.
+// them: alone it is integrity only. SignedVerifier, the updater's default,
+// adds the authenticity check in front of it.
 type SHA256Verifier struct{}
 
 func (SHA256Verifier) RequiredAssets(_ ReleaseInfo, target Artifact) ([]AssetRequirement, error) {
