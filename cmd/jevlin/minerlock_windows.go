@@ -4,14 +4,49 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"syscall"
+
+	"golang.org/x/sys/windows"
 )
 
 var (
 	errSharingViolation = syscall.Errno(32)
 	errLockViolation    = syscall.Errno(33)
 )
+
+// errLockNotRegular is a lock path that is a reparse point (a symlink or
+// junction) or not a regular disk file.
+var errLockNotRegular = errors.New("lock is a reparse point or not a regular file; refusing")
+
+// openLockFile makes the share-mode-0 open that is the lock, without
+// following a reparse point, and refuses anything but a regular disk file.
+// Lock files live in directories a sandboxed agent can write, so a planted
+// link must not steer an unsandboxed open to a path outside them.
+func openLockFile(name *uint16, path string, access, disposition uint32) (*os.File, error) {
+	h, err := syscall.CreateFile(name, access, 0, nil, disposition,
+		syscall.FILE_ATTRIBUTE_NORMAL|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+	if err != nil {
+		return nil, err
+	}
+	var info syscall.ByHandleFileInformation
+	if err := syscall.GetFileInformationByHandle(h, &info); err != nil {
+		_ = syscall.CloseHandle(h)
+		return nil, err
+	}
+	ft, err := syscall.GetFileType(h)
+	if err != nil {
+		_ = syscall.CloseHandle(h)
+		return nil, err
+	}
+	if info.FileAttributes&(windows.FILE_ATTRIBUTE_REPARSE_POINT|windows.FILE_ATTRIBUTE_DIRECTORY) != 0 ||
+		ft != windows.FILE_TYPE_DISK {
+		_ = syscall.CloseHandle(h)
+		return nil, fmt.Errorf("%w: %s", errLockNotRegular, path)
+	}
+	return os.NewFile(uintptr(h), path), nil
+}
 
 // tryLockFile on Windows: an exclusive open (share mode 0) IS the lock,
 // and a sharing violation means another flush holds it.
@@ -20,22 +55,14 @@ func tryLockFile(path string) (*os.File, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	h, err := syscall.CreateFile(
-		name,
-		syscall.GENERIC_READ|syscall.GENERIC_WRITE,
-		0,
-		nil,
-		syscall.OPEN_ALWAYS,
-		syscall.FILE_ATTRIBUTE_NORMAL,
-		0,
-	)
+	f, err := openLockFile(name, path, syscall.GENERIC_READ|syscall.GENERIC_WRITE, syscall.OPEN_ALWAYS)
 	if err != nil {
 		if errors.Is(err, errSharingViolation) || errors.Is(err, errLockViolation) {
 			return nil, false, nil
 		}
 		return nil, false, err
 	}
-	return os.NewFile(uintptr(h), path), true, nil
+	return f, true, nil
 }
 
 // tryFlushLock is tryLockFile with the flush's read-only fallback (see
@@ -47,8 +74,7 @@ func tryFlushLock(path string) (*os.File, bool, flushLockMode, error) {
 		return nil, false, flushLockReadWrite, err
 	}
 	mode := flushLockReadWrite
-	h, err := syscall.CreateFile(name, syscall.GENERIC_READ|syscall.GENERIC_WRITE, 0, nil,
-		syscall.OPEN_ALWAYS, syscall.FILE_ATTRIBUTE_NORMAL, 0)
+	f, err := openLockFile(name, path, syscall.GENERIC_READ|syscall.GENERIC_WRITE, syscall.OPEN_ALWAYS)
 	if err != nil {
 		switch classifyFlushLockOpenError(err, false) {
 		case flushOpenBusy:
@@ -58,8 +84,7 @@ func tryFlushLock(path string) (*os.File, bool, flushLockMode, error) {
 			return nil, false, mode, err
 		}
 		mode = flushLockReadOnly
-		h, err = syscall.CreateFile(name, syscall.GENERIC_READ, 0, nil,
-			syscall.OPEN_EXISTING, syscall.FILE_ATTRIBUTE_NORMAL, 0)
+		f, err = openLockFile(name, path, syscall.GENERIC_READ, syscall.OPEN_EXISTING)
 		if err != nil {
 			switch classifyFlushLockOpenError(err, true) {
 			case flushOpenBusy:
@@ -71,7 +96,7 @@ func tryFlushLock(path string) (*os.File, bool, flushLockMode, error) {
 			}
 		}
 	}
-	return os.NewFile(uintptr(h), path), true, mode, nil
+	return f, true, mode, nil
 }
 
 // classifyFlushLockOpenError is the Windows fallback decision. The exclusive
