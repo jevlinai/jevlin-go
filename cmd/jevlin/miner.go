@@ -59,13 +59,13 @@ const (
 )
 
 // loadConfig resolves the config exactly as describeConfigSource does
-// (ruling D-R1: -config, JEVLIN_CONFIG, ./jevlin.toml, the
-// installation's own config, then defaults) and returns the full config so
+// (ruling D-R1: -config, JEVLIN_CONFIG, the installation's own config,
+// then defaults) and returns the full config so
 // the miner can read [miner] and [mining]. pkg/config is not changed: the
 // resolved path, once found, is handed to config.Load as an explicit
 // -config, which is exactly what makes it required to exist — a guarantee
-// this function has already checked for the two soft-discovered steps
-// before choosing them.
+// this function has already checked for the soft-discovered installation
+// step before choosing it.
 func loadConfig(cfgPath string, getenv func(string) string) (*config.Config, string, error) {
 	src := describeConfigSource(cfgPath, getenv)
 	args := []string{}
