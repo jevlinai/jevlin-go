@@ -113,6 +113,10 @@ Bash on macOS and Linux, PowerShell on Windows. Without the block, a search retu
 cannot record, so it earns nothing and the claim is never picked up. The config, key and wallet
 are never writable, so a command gone wrong cannot change where your credentials go. Sandboxed
 commands can read `credentials.json` and the state directory; on Windows, not the wallet.
+They can also leave files in the directories the block makes writable. jevlin's hooks and
+flushes, which run outside the sandbox, never write through a link left there and never wait on
+a pipe left at a name they read, so a sandboxed command cannot turn them into a write to a file
+of yours elsewhere, or stall a search.
 
 Codex runs the hooks only after you approve them: start `codex`, or open the app, and approve
 them when it asks you to review hooks. Until then they do nothing, and under `codex exec` nothing

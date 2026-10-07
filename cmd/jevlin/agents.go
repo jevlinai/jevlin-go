@@ -1780,7 +1780,11 @@ func readWithMode(ops agentOps, path string) ([]byte, os.FileMode, error) {
 // could read those files before this block existed; it could not redirect
 // where they go, and it must not be able to after it either. The state dir is
 // writable because the claim resume and the flush rotate the refresh token
-// there — a deletion-only exposure, not an exfiltration one.
+// there. That is more than a deletion exposure: a sandboxed command can leave
+// a symlink, a hard link or a FIFO at any name in these directories, which
+// hard invariant 19 (pkg/fsx/confined.go) answers for this client's own
+// writes and reads, and it can rewrite the records themselves, which nothing
+// here yet answers.
 func codexSandboxRoots(entry binEntry, getenv func(string) string) []string {
 	cfg := configForEntry(entry, getenv)
 	if cfg == nil {

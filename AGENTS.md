@@ -205,6 +205,23 @@ the named tests.
     A typed refusal and an unanswered question are different outcomes and must stay
     distinguishable by exit code, which is why the ones that change nothing either way
     (`agents install`'s `Proceed?`, `wallet send`'s confirmation) still differ there.
+19. **A sandboxed agent's files never redirect or stall this client's own.** The state dir, and
+    with mining the intake, sessions and spool dirs, are writable roots of Codex's sandbox
+    (`codexSandboxRoots`), while hooks, hook-spawned flushes and connect's resume work in them
+    from outside it. Live on Codex 0.160.0's macOS sandbox, a command there could leave a symlink
+    out of the root, a hard link to a participant's file outside it, and a FIFO; it could not
+    remove the root itself. So in those directories no existing name is opened for writing
+    (`fsx.CreateNew`; a replacement is an exclusively created, unpredictably named temporary file
+    renamed into place), no read waits on what is there or reads past a bound (`fsx.ReadRegular`),
+    no lock follows a link (`fsx.OpenLock`), and nothing below a root's top level is reached by
+    path (`fsx.Root`, which the spool's quarantine goes through). `pkg/fsx/confined.go` owns the
+    operations. `cmd/jevlin/writable_roots_guard_test.go` classifies every file operation in the
+    module by (file, function, call) with the reason it is safe, and fails on a new one until
+    someone classifies it: the forbidden state is not choosing. `writable_roots_test.go`,
+    `pkg/fsx/confined_test.go`, `pkg/mining/spool/quarantine_link_test.go` and
+    `pkg/auth/refreshlock_link_test.go` plant the links and FIFOs at the exact names. What the
+    records in those directories say is a separate question, not answered here: a sandboxed
+    command can still rewrite them.
 
 ## Subsystems and where their rules live
 A subsystem's authority is one file, and a subsystem nobody has watched fail is a hypothesis — so
