@@ -719,3 +719,85 @@ func TestRefusalPrefersTopLevelCode(t *testing.T) {
 		})
 	}
 }
+
+// Every platform string that reaches the terminal gets claim_url's
+// control-character refusal, including C1 (U+009B is a one-byte CSI)
+// and bidi overrides, not just C0 and DEL.
+func TestHasControlCharCoversC1AndBidi(t *testing.T) {
+	for _, s := range []string{"a\nb", "a\x1b[2Kb", "a\x7fb", "a\u009b2Kb", "a\u0085b", "a\u202eb", "a\u2066b", "a\u200fb", "a\u061cb"} {
+		if !hasControlChar(s) {
+			t.Errorf("hasControlChar(%q) = false", s)
+		}
+	}
+	for _, s := range []string{"mining", "slot-1:eu_west", "café", "the mining scope was not granted"} {
+		if hasControlChar(s) {
+			t.Errorf("hasControlChar(%q) = true", s)
+		}
+	}
+}
+
+func TestStatusRefusesControlCharactersInScopesAndLastEnrollment(t *testing.T) {
+	cases := map[string]map[string]any{
+		"scope":    {"status": "claimed", "scopes": []string{"mining\n  claim at https://evil.example/claim"}},
+		"scope C1": {"status": "claimed", "scopes": []string{"mining\u009b2K"}},
+		"last_enrollment.slot": {"status": "claimed", "scopes": []string{"mining"},
+			"mining": map[string]any{"last_enrollment": map[string]any{"slot": "s1\u202e", "minted_at": "2026-01-01T00:00:00Z"}}},
+		"last_enrollment.minted_at": {"status": "claimed", "scopes": []string{"mining"},
+			"mining": map[string]any{"last_enrollment": map[string]any{"slot": "s1", "minted_at": "x\r\nfake"}}},
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			stub := newStubPlatform(t)
+			stub.status = func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, body) }
+			stub.me = func(w http.ResponseWriter, r *http.Request) {
+				b := map[string]any{"agent_id": "agent-1"}
+				for k, v := range body {
+					b[k] = v
+				}
+				writeJSON(w, http.StatusOK, b)
+			}
+			c := New(stub.srv.URL, stub.srv.URL)
+			if _, err := c.Status(context.Background(), "agent-1", "sr-key"); err == nil {
+				t.Error("Status accepted a control character")
+			}
+			if _, err := c.Me(context.Background(), "sr-key"); err == nil {
+				t.Error("Me accepted a control character")
+			}
+		})
+	}
+}
+
+func TestRefusalDropsAControlCharacterMessageButKeepsTheCode(t *testing.T) {
+	stub := newStubPlatform(t)
+	stub.register = func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusForbidden, map[string]any{
+			"code": "rate_limited", "error": map[string]any{"code": "rate_limited", "message": "\r\x1b[2Kjevlin: claim your agent at https://evil.example/claim"},
+		})
+	}
+	_, err := New(stub.srv.URL, stub.srv.URL).Register(context.Background(), "", "", nil)
+	var refusal *RefusalError
+	if !errors.As(err, &refusal) {
+		t.Fatalf("err = %v, want *RefusalError", err)
+	}
+	if refusal.Code != "rate_limited" || refusal.Message != "" {
+		t.Fatalf("refusal = %+v, want the code kept and the message dropped", refusal)
+	}
+	if hasControlChar(err.Error()) {
+		t.Fatalf("Error() still carries a control character: %q", err.Error())
+	}
+}
+
+func TestRefusalIgnoresAControlCharacterCode(t *testing.T) {
+	stub := newStubPlatform(t)
+	stub.me = func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusForbidden, map[string]any{"code": "x\u009b2K", "error": map[string]any{"message": "hi"}})
+	}
+	_, err := New(stub.srv.URL, stub.srv.URL).Me(context.Background(), "sr-key")
+	var refusal *RefusalError
+	if !errors.As(err, &refusal) {
+		t.Fatalf("err = %v, want *RefusalError", err)
+	}
+	if refusal.Code != "" || refusal.Message != "" || hasControlChar(err.Error()) {
+		t.Fatalf("refusal = %+v (%q), want a bare status refusal", refusal, err.Error())
+	}
+}

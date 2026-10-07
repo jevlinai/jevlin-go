@@ -186,12 +186,68 @@ func (d *Discoverer) fetch(ctx context.Context) (*wire.DiscoveryDocument, error)
 	if err := doc.Validate(); err != nil {
 		return nil, err
 	}
+	if err := checkEndpointOrigins(&doc, d.origin); err != nil {
+		return nil, err
+	}
 	// §19 pre-use rule: chain/slot identity must match configuration.
 	// Mismatch fails the mining plane closed (AUTH-020/021).
 	if err := doc.CheckIdentity(d.cfg.ChainID, d.cfg.SlotID); err != nil {
 		return nil, err
 	}
 	return &doc, nil
+}
+
+// checkEndpointOrigins is the §19 same-origin rule for the service document
+// itself (AUTH-022): every endpoint the client will dial, and the resource it
+// asks a token for, must be an absolute URL on the configured AS origin. A
+// document that names a foreign or downgraded host would otherwise steer
+// credential-bearing requests there — and SameOriginRedirects anchors on
+// that first host, so nothing later would catch it.
+//
+// enrollment_authorization_template is deliberately absent: it is displayed,
+// never fetched, and checkProviderAuthorizationTemplate holds it to the
+// compiled providerhosts allowlist instead.
+func checkEndpointOrigins(doc *wire.DiscoveryDocument, origin *url.URL) error {
+	for _, f := range []struct{ name, v string }{
+		{"authorization_server", doc.AuthorizationServer},
+		{"join_epoch_endpoint_template", doc.JoinEpochEndpointTemplate},
+		{"epoch_status_endpoint_template", doc.EpochStatusEndpointTemplate},
+		{"candidate_list_endpoint_template", doc.CandidateListEndpointTemplate},
+		{"current_target_endpoint_template", doc.CurrentTargetEndpointTemplate},
+		{"participation_resource", doc.ParticipationResource},
+		{"observations_endpoint", doc.ObservationsEndpoint},
+		{"observations_batch_endpoint", doc.ObservationsBatchEndpoint},
+		{"observation_status_endpoint_template", doc.ObservationStatusEndpointTemplate},
+		{"activity_status_endpoint_template", doc.ActivityStatusEndpointTemplate},
+		{"provider_verification_endpoint_template", doc.ProviderVerificationEndpointTemplate},
+	} {
+		// current_target_endpoint_template is optional; Validate already
+		// refused an empty required field.
+		if f.v == "" {
+			continue
+		}
+		u, err := url.Parse(fillPlaceholders(f.v))
+		if err != nil || !u.IsAbs() || u.Host == "" || u.User != nil || !sameOrigin(u, origin) {
+			return fmt.Errorf("auth: discovery %s is off-origin or invalid (%q); refusing a different AS identity", f.name, f.v)
+		}
+	}
+	return nil
+}
+
+// templatePlaceholders stands in for every variable the client expands
+// (expandTemplate, providerEndpoint, observation status). The stand-ins hold
+// no URL delimiter, exactly like the real values, so the authority parsed
+// here is the one the expanded request dials; any other brace is left as the
+// literal the client would send.
+var templatePlaceholders = strings.NewReplacer(
+	"{slot_id}", "0",
+	"{target_epoch}", "0",
+	"{observation_id}", "0",
+	"{provider}", "openrouter",
+)
+
+func fillPlaceholders(tmpl string) string {
+	return templatePlaceholders.Replace(tmpl)
 }
 
 func sameOrigin(a, b *url.URL) bool {
