@@ -18,6 +18,12 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **Cursor on Windows asks before a PowerShell search with an apostrophe in
+  it.** The participant picks Cursor's terminal there, and Git Bash reads the
+  PowerShell form's here-string as an ordinary quoted string that an
+  apostrophe in the request ends, running whatever follows. Cursor's hook now
+  allows that form only when the request holds no `'`, and the skill says to
+  write one as `\u0027`, which reaches the router as the same query.
 - **Codex searches carry their session.** `agents install` writes Codex's
   hooks into `~/.codex/hooks.json` on macOS and Linux, and a search Codex runs
   then reaches the router with its session, turn and call, and a subagent's

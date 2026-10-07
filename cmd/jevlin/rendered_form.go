@@ -52,6 +52,8 @@ type recognizedForm struct {
 	// bin and cfg are the binary and config paths as the command names them,
 	// read back out of their quoting.
 	bin, cfg string
+	// shell is the shell the matched form was rendered for.
+	shell shellKind
 }
 
 // renderedFormMatch is one rendered form a command matched on grammar
@@ -140,9 +142,9 @@ func recognizeRenderedForm(command string, executable func() (string, error), cf
 			if !isOneVersionOneRequest(m.body) {
 				continue
 			}
-			return &recognizedForm{path: m.path, body: m.body, bin: m.bin, cfg: m.cfg}
+			return &recognizedForm{path: m.path, body: m.body, bin: m.bin, cfg: m.cfg, shell: m.shell}
 		}
-		return &recognizedForm{path: m.path, bin: m.bin, cfg: m.cfg}
+		return &recognizedForm{path: m.path, bin: m.bin, cfg: m.cfg, shell: m.shell}
 	}
 	return nil
 }

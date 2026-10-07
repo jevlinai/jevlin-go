@@ -14,13 +14,17 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // cursorPreToolUseFixture is the preToolUse INPUT Cursor sends for a Shell
@@ -475,5 +479,106 @@ func TestCursorRewrittenSearchReachesTheRouterAsCursor(t *testing.T) {
 				t.Fatalf("the search did not read and advance the declared lineage file: %+v", l)
 			}
 		})
+	}
+}
+
+// TestCursorShellHookAllowsOnlyWhatGitBashCannotRun: on Windows the
+// participant picks Cursor's terminal, PowerShell or Git Bash, and the hook
+// cannot know which. The PowerShell here-string read by Bash is an ordinary
+// single-quoted string that the body's first `'` closes, and an interactive
+// terminal runs what follows it. So that form is allowed only with a body
+// holding no `'`, and every command the hook allows is run here through
+// interactive Bash to show it runs nothing.
+func TestCursorShellHookAllowsOnlyWhatGitBashCannotRun(t *testing.T) {
+	hc := hookContext{cfgPath: "/c.toml", sessionsDir: "/sessions"}
+	env := cursorIdentityEnv(hc.sessionsDir, "conv-1")
+	_, ops := newFakeHookOps(env)
+	tool, runners := cursorShellsFor(t, "windows")
+	if !slices.Contains(tool, shellPowerShell) || !slices.Contains(tool, shellPOSIX) {
+		t.Fatalf("Cursor's Windows cell is no longer PowerShell and Git Bash: %v", tool)
+	}
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "ran")
+	breakout := `{"version":1,"query":"x'; touch ` + marker + `; #"` + "\n}"
+	escaped := `{"version":1,"query":"x\u0027; touch ` + marker + `; #"` + "\n}"
+
+	var q struct{ Query string }
+	if err := json.Unmarshal([]byte(escaped), &q); err != nil || !strings.HasPrefix(q.Query, "x'") {
+		t.Fatalf("\\u0027 does not decode to an apostrophe: %q, %v", q.Query, err)
+	}
+
+	commands := func(body string) map[string]string {
+		rendered := renderedCursorSearch(t, shellPowerShell, hc.cfgPath, body)
+		return map[string]string{
+			"plain":    rendered,
+			"prefixed": expectedCursorCommand(t, shellPowerShell, env, rendered),
+		}
+	}
+	var allowed []string
+	for name, cmd := range commands(breakout) {
+		if f := cursorShellRecognizes(ops, hc, cmd, tool, runners); f != nil {
+			t.Errorf("%s: the PowerShell search with a ' in its body was allowed where Git Bash may run it:\n%s", name, cmd)
+		}
+		if f := cursorShellRecognizes(ops, hc, cmd, []shellKind{shellPowerShell}, runners); !isSearchForm(f) {
+			t.Errorf("%s: a PowerShell-only cell no longer allows a ' in the body:\n%s", name, cmd)
+		}
+	}
+	for name, cmd := range commands(escaped) {
+		if f := cursorShellRecognizes(ops, hc, cmd, tool, runners); !isSearchForm(f) {
+			t.Errorf("%s: the PowerShell search with \\u0027 in its body was refused:\n%s", name, cmd)
+		}
+		allowed = append(allowed, cmd)
+	}
+	for _, body := range []string{breakout, escaped} {
+		rendered := renderedCursorSearch(t, shellPOSIX, hc.cfgPath, body)
+		if f := cursorShellRecognizes(ops, hc, rendered, tool, runners); isSearchForm(f) {
+			allowed = append(allowed, rendered)
+		}
+	}
+
+	bash, err := exec.LookPath("bash")
+	if err != nil || runtime.GOOS == "windows" {
+		t.Skip("no POSIX bash to read the allowed commands with")
+	}
+	runInteractiveBash := func(cmd string) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		c := exec.CommandContext(ctx, bash, "--norc", "--noprofile", "-i")
+		c.Dir, c.Stdin, c.Env = dir, strings.NewReader(cmd+"\n"), []string{"PATH=" + os.Getenv("PATH"), "HOME=" + dir}
+		_ = c.Run()
+	}
+	// The harness itself: the refused command does break out under it.
+	runInteractiveBash(commands(breakout)["plain"])
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("interactive bash did not run the breakout this test guards against: %v", err)
+	}
+	for _, cmd := range allowed {
+		if err := os.Remove(marker); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		runInteractiveBash(cmd)
+		if _, err := os.Stat(marker); err == nil {
+			t.Errorf("an allowed command ran its body as a command under interactive bash:\n%s", cmd)
+		}
+	}
+}
+
+// TestCursorWindowsSkillWritesApostrophesEscaped: the skill that teaches the
+// PowerShell form to a participant who may be in Git Bash says to write an
+// apostrophe as \u0027; a host whose PowerShell tool is always PowerShell
+// is not told to.
+func TestCursorWindowsSkillWritesApostrophesEscaped(t *testing.T) {
+	entry := hostStringsEntry("windows")
+	if skill := renderedSkillFor("cursor", entry, "windows"); !strings.Contains(skill, "`\\u0027`") {
+		t.Errorf("Cursor's Windows skill does not say to write an apostrophe as \\u0027:\n%s", skill)
+	}
+	for _, id := range []string{"claude", "codex"} {
+		if skill := renderedSkillFor(id, entry, "windows"); strings.Contains(skill, "`\\u0027`") {
+			t.Errorf("%s's Windows skill carries the Git Bash apostrophe note", id)
+		}
+	}
+	if skill := renderedSkillFor("cursor", hostStringsEntry("darwin"), "darwin"); strings.Contains(skill, "`\\u0027`") {
+		t.Errorf("Cursor's macOS skill carries the Git Bash apostrophe note")
 	}
 }

@@ -55,6 +55,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -1216,7 +1217,31 @@ func cursorShellRecognizes(ops hookOps, hc hookContext, command string, shells, 
 	if !hookInputIntact(runners) && (!isASCII(f.bin) || !isASCII(f.cfg)) {
 		return nil
 	}
+	if !inertUnderEveryShell(f, shells) {
+		return nil
+	}
 	return f
+}
+
+// inertUnderEveryShell reports whether a recognized command does nothing but
+// our search under every shell Cursor may run it in, not only the one it was
+// rendered for. Where the participant picks the terminal (Windows: PowerShell
+// or Git Bash), this hook cannot know which one will read the command.
+//
+// The POSIX heredoc is inert under PowerShell: PowerShell parses the whole
+// script before it runs any of it, and `<<` does not parse. The PowerShell
+// here-string is not inert under Bash: `@'` opens an ordinary single-quoted
+// string there, so the first `'` in the body closes it and the rest of that
+// line runs as commands; an interactive terminal goes on past line 1's syntax
+// error to do it. A body without `'` stays inside that one quoted word, which
+// the line after it cannot run (`| &` does not parse). So that form is allowed
+// only when its body holds no `'`; the skill writes one as the JSON escape
+// \u0027, which decodes to the same query.
+func inertUnderEveryShell(f *recognizedForm, shells []shellKind) bool {
+	if f.shell == shellPowerShell && slices.Contains(shells, shellPOSIX) && strings.ContainsRune(f.body, '\'') {
+		return false
+	}
+	return true
 }
 
 func isSearchForm(f *recognizedForm) bool {
