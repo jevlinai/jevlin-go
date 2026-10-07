@@ -18,6 +18,11 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **A hook allows a search only under the binary path its skill shows.** Cursor,
+  Claude Code and Codex used to allow any path that reached the jevlin binary when
+  the hook resolved it, and on Linux `/proc/self/exe` is jevlin to the hook but
+  the shell itself to the shell that runs the command. A search naming the binary
+  any other way than the path the hook was started by now waits for approval.
 - **Setup adopts only what is yours.** A set-aside installation another
   account owns is no longer offered, and adoption leaves behind any file or
   folder in it that is not yours. On Windows, owner-only access now also makes
