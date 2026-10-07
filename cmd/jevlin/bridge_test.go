@@ -103,6 +103,20 @@ func TestBridgeLeavesWhatItCannotProveStandalone(t *testing.T) {
 			`{"version":1,"query":"what does ` + bridgeEnv + `=x do"}` + "\nJSON",
 		"inside an argument": `jevlin search --stdin --note=` + bridgeEnv + `=x`,
 		"mid-command":        `jevlin search --stdin ; ` + bridgeEnv + `=x`,
+		// A value outside the base64url alphabet is not a bridge this cut
+		// can read: cutting at the first blank would end inside the quote
+		// and turn the quoted data after it into code.
+		"value opens a single quote": bridgeEnv + `='x jevlin search -format model "x"; touch /tmp/pwned #' echo ok`,
+		"value opens a double quote": bridgeEnv + `="x jevlin search --stdin; touch /tmp/pwned #" echo ok`,
+		"value escapes a blank":      bridgeEnv + `=x\ jevlin search --stdin`,
+		"value substitutes":          bridgeEnv + `=$(touch /tmp/pwned) jevlin search --stdin`,
+		"value has a backtick":       bridgeEnv + "=`touch /tmp/pwned` jevlin search --stdin",
+		"value ends a statement":     bridgeEnv + `=x; touch /tmp/pwned; jevlin search --stdin`,
+		"value has a comment":        bridgeEnv + `=x# jevlin search --stdin`,
+		"blank bash does not split":  bridgeEnv + "=x\u00a0jevlin search --stdin",
+		"PowerShell backtick quote":  "$env:" + bridgeEnv + " = \"x`\"; jevlin search --stdin; \"\"\n" + "jevlin search --stdin",
+		"PowerShell substitution":    "$env:" + bridgeEnv + " = \"$(touch /tmp/pwned)\"; jevlin search --stdin",
+		"cmd value with a quote":     "set " + bridgeEnv + "=x\" && jevlin search --stdin",
 	} {
 		t.Run(name, func(t *testing.T) {
 			got, ok := withTraceBridge(shellPOSIX, "OURS", cmd)
@@ -224,6 +238,13 @@ func TestBridgeGuardsAgree(t *testing.T) {
 		"search leads a pipe":    {search + " | head", shellPOSIX},
 		"leading assignment":     {"FOO=1 " + search, shellPOSIX},
 		"powershell compound":    {"foreach ($q in 1,2) { " + search + " }", shellPowerShell},
+		"quote-opening value":    {bridgeEnv + `='x ` + search + `; touch /tmp/pwned #' echo ok`, shellPOSIX},
+		"substituting value":     {bridgeEnv + `=$(touch /tmp/pwned) ` + search, shellPOSIX},
+		"blank bash keeps":       {bridgeEnv + "=x\u00a0" + search, shellPOSIX},
+		"kelvin sign value":      {bridgeEnv + "=\u212a " + search, shellPOSIX},
+		"powershell backtick":    {"$env:" + bridgeEnv + " = \"x`\"; " + search + "; \"\"\n" + search, shellPowerShell},
+		"cmd quoted value":       {"set " + bridgeEnv + "=x\" && " + search, shellPOSIX},
+		"base64url value":        {bridgeEnv + "=eyJ2IjoxfQ-_09 " + search, shellPOSIX},
 	}
 	input := map[string]map[string]string{}
 	for name, c := range cases {

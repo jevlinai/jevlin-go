@@ -1088,19 +1088,26 @@ const traceBridge = (env) => {
 // trace stays unauthenticated metadata either way; what this protects is
 // the meaning of the harness field, not the trust in it.
 
+// The only value a recognized assignment may carry: the base64url alphabet
+// the bridge is encoded in, with no quote, escape or shell metacharacter. A
+// quote-unaware cut through any other value can end inside a string the
+// shell would have read as data, and turn that data into code. One rule with
+// bridgeValue in bridge.go, pinned by TestBridgeGuardsAgree.
+const BRIDGE_VALUE = "[A-Za-z0-9_-]*"
+
 // A standalone bridge assignment at the START of the command, in each
 // declared shell's syntax, with the rest of the command after it.
 const BRIDGE_ASSIGNMENT_RE = new RegExp(
   "^(?:" +
     // POSIX: NAME=value as a leading word.
-    TRACE_BRIDGE_ENV + "=[^\\s]*\\s+" +
+    TRACE_BRIDGE_ENV + "=" + BRIDGE_VALUE + "[ \\t\\n]+" +
     "|" +
     // PowerShell: $env:NAME = '…' or "…" or a bare word, as its own
     // statement, ended by a newline or a semicolon.
-    "\\$env:" + TRACE_BRIDGE_ENV + "\\s*=\\s*(?:'[^']*'|\"[^\"]*\"|[^\\s;]*)\\s*[;\\n]\\s*" +
+    "\\$env:" + TRACE_BRIDGE_ENV + "\\s*=\\s*(?:'" + BRIDGE_VALUE + "'|\"" + BRIDGE_VALUE + "\"|" + BRIDGE_VALUE + ")\\s*[;\\n]\\s*" +
     "|" +
     // cmd: set NAME=value as its own command.
-    "set\\s+" + TRACE_BRIDGE_ENV + "=[^&\\n]*(?:&+|\\n)\\s*" +
+    "set\\s+" + TRACE_BRIDGE_ENV + "=" + BRIDGE_VALUE + "[ \\t]*(?:&+|\\n)\\s*" +
     ")",
   "i",
 )

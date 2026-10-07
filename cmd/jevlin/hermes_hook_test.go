@@ -191,6 +191,24 @@ func TestHermesHookReplacesABridgeItDidNotWrite(t *testing.T) {
 	}
 }
 
+// A bridge-looking prefix whose value is not base64url is not one the hook
+// can remove: a cut at the first blank would end inside the quote, and the
+// quoted data after it would run as code once Hermes applied the rewrite.
+// The command gets no directive and runs exactly as the model wrote it.
+func TestHermesHookLeavesAQuoteOpeningBridgeAlone(t *testing.T) {
+	for name, cmd := range map[string]string{
+		"single quote": `JEVLIN_TRACE_BRIDGE='x jevlin search -format model "x"; touch /tmp/pwned #' echo ok`,
+		"double quote": `JEVLIN_TRACE_BRIDGE="x jevlin search -format model x; touch /tmp/pwned #" echo ok`,
+		"substitution": `JEVLIN_TRACE_BRIDGE=$(touch /tmp/pwned) ` + hermesSearch,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if out, d := hermesRun(t, hermesPayload("s", cmd, map[string]any{"tool_call_id": "c"})); d != nil || strings.TrimSpace(out) != "" {
+				t.Fatalf("rewrote a command whose bridge it could not remove: %q", out)
+			}
+		})
+	}
+}
+
 func TestHermesHookLeavesEverythingElseAlone(t *testing.T) {
 	for name, payload := range map[string]any{
 		"foreign command":  hermesPayload("s", "ls -la", nil),
