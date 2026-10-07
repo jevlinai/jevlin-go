@@ -49,8 +49,8 @@ func grantUsersRead(t *testing.T, path string, dir bool) {
 	}
 }
 
-// OpenStore gives a directory it creates a protected DACL with one entry,
-// for the current user, so nothing is inherited from the parent.
+// OpenStore gives a directory it creates a protected DACL whose entries are
+// all for the current user, so nothing is inherited from the parent.
 func TestOpenStoreCreatesOwnerOnlyDACL(t *testing.T) {
 	parent := t.TempDir()
 	grantUsersRead(t, parent, true)
@@ -77,8 +77,15 @@ func TestOpenStoreCreatesOwnerOnlyDACL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(acc.aces) != 1 || !acc.aces[0].allow || acc.aces[0].sid != user.String() {
-		t.Fatalf("state dir DACL = %s, want one entry for %s", sd, user)
+	// Windows splits the one inheritable GENERIC_ALL grant into an effective
+	// FA entry and an inherit-only GA entry, both for the user.
+	if len(acc.aces) == 0 {
+		t.Fatalf("state dir DACL = %s, want entries for %s only", sd, user)
+	}
+	for _, ace := range acc.aces {
+		if !ace.allow || ace.sid != user.String() {
+			t.Fatalf("state dir DACL = %s, want entries for %s only", sd, user)
+		}
 	}
 }
 
