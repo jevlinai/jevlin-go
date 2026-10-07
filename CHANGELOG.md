@@ -18,6 +18,11 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **Wallet output no longer passes a node's escape sequences through.** Error
+  messages, transaction logs and transfer senders that a chain node sends are
+  cleaned the way search results are before `jevlin wallet` or `jevlin earnings`
+  prints them, and a balance that is not a plain number is refused rather than
+  printed. A malicious node can no longer rewrite the terminal or its clipboard.
 - **Service-document endpoints must live on the AS's origin.** Discovery now
   refuses a `/.well-known/twilight-mining` document whose endpoints,
   `authorization_server` or `participation_resource` point at another host, a
