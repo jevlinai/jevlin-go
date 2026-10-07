@@ -19,10 +19,12 @@ package main
 //
 // Two things keep this honest. The rendered form is built by the same
 // functions the skill uses, so the recognizer cannot drift from what the
-// participant's agent was taught; and the binary in the command is still
-// identified by os.SameFile, not by its spelling, so a path that reaches this
-// same file through a link is recognized while a different program with a
-// similar name is not.
+// participant's agent was taught; and the binary in the command must be
+// spelled exactly as this hook's own path (os.Executable, the spelling
+// `agents install` renders into the skill). A path that reaches the same file
+// another way, through a link or as /proc/self/exe, is not recognized: what a
+// path names can depend on the process resolving it, and the shell that later
+// runs the command is not the hook.
 //
 // This decides whether to auto-allow OUR OWN search and to stamp lineage for
 // it. It is a permission answer, so it stays exact: everything it cannot
@@ -323,14 +325,16 @@ func readRenderedPath(sh shellKind, raw string) (string, bool) {
 }
 
 // binaryPathRunsAsRead reports whether the binary path in a command names, to
-// the system that runs it, the file sameBinary resolves it to.
+// the system that runs it, the file the hook takes it for.
 //
-// sameBinary resolves a symlink before the `..` that follows it, the way a
-// POSIX kernel does, so on macOS and Linux the two agree. Windows does not: it
-// collapses `a\..` as text before it opens anything, whatever `a` is. So with
-// `link` pointing elsewhere, `C:\X\link\..\bin\jevlin.exe` resolves to this
-// binary for sameBinary and runs `C:\X\bin\jevlin.exe` on Windows. Windows
-// also strips the dots and spaces that end an element before it opens it, so
+// It is the second of two guards. sameBinary already requires the exact
+// spelling this hook was started by, so a path reaches this one only if the
+// hook itself was launched by that spelling; what is left is a spelling a
+// Windows runner reads differently. Windows collapses `a\..` as text before it
+// opens anything, whatever `a` is, where a POSIX kernel follows the link `a`
+// first: with `link` pointing elsewhere, `C:\X\link\..\bin\jevlin.exe` reaches
+// this binary through the link and runs `C:\X\bin\jevlin.exe`. Windows also
+// strips the dots and spaces that end an element before it opens it, so
 // an element spelled `...` or `.. ` may be read as one of those two. A binary
 // path holding any element that ends in a dot or a space is therefore not
 // taken on Windows, which covers `.` and `..` themselves. The skill renders
