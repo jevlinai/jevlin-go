@@ -1,6 +1,6 @@
 package fsx
 
-// Directories a sandboxed agent can write too.
+// Directories a sandboxed agent can also write.
 //
 // Codex's workspace-write sandbox is given this client's state directory, and
 // with mining its intake, sessions and spool directories, as writable roots.
