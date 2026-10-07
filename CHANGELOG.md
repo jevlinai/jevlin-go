@@ -18,6 +18,11 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **Wallet output no longer passes a node's escape sequences through.** Error
+  messages, transaction logs and transfer senders that a chain node sends are
+  cleaned the way search results are before `jevlin wallet` or `jevlin earnings`
+  prints them, and a balance that is not a plain number is refused rather than
+  printed. A malicious node can no longer rewrite the terminal or its clipboard.
 - **Codex searches carry their session.** `agents install` writes Codex's
   hooks into `~/.codex/hooks.json` on macOS and Linux, and a search Codex runs
   then reaches the router with its session, turn and call, and a subagent's
