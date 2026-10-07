@@ -226,3 +226,22 @@ func TestRootMovesIntoARealSubdirectory(t *testing.T) {
 		t.Fatalf("quarantine lists %v, %v", entries, err)
 	}
 }
+
+// ReadRegularNoFollow's open refuses a link at the name, so a check made on
+// the name before it cannot be outrun by swapping one in.
+func TestReadRegularNoFollowRefusesALink(t *testing.T) {
+	root, canary := writableRoot(t)
+	name := filepath.Join(root, "secret")
+	symlinkOrSkip(t, canary, name)
+	if data, _, err := ReadRegularNoFollow(name, 1<<20); err == nil {
+		t.Fatalf("read %q through a symlink at the name", data)
+	}
+	real := filepath.Join(root, "real")
+	if err := os.WriteFile(real, []byte("ours"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	data, info, err := ReadRegularNoFollow(real, 1<<20)
+	if err != nil || string(data) != "ours" || !info.Mode().IsRegular() {
+		t.Fatalf("a regular file: %q, %v, %v", data, info, err)
+	}
+}

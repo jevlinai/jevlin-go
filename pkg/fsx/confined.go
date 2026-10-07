@@ -99,6 +99,29 @@ func readBounded(f *os.File, path string, limit int64) ([]byte, error) {
 	return data, nil
 }
 
+// ReadRegularNoFollow is ReadRegular for a name that must not be a link. The
+// open itself refuses one (O_NOFOLLOW; on Windows, a reparse point), so a
+// check made on the name beforehand cannot be outrun by replacing it between
+// the check and the read. It returns the open file's own information, for any
+// further check (owner-only mode, say) to be made on what was read rather
+// than on what the name was.
+func ReadRegularNoFollow(path string, limit int64) ([]byte, fs.FileInfo, error) {
+	f, err := openNoFollow(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, nil, err
+	}
+	data, err := readBounded(f, path, limit)
+	if err != nil {
+		return nil, nil, err
+	}
+	return data, info, nil
+}
+
 // OpenLock opens path for an exclusive lock, creating it when absent. A
 // symlink at the name is refused rather than followed, and anything that is
 // not a regular file is refused once open. The open error is returned as the

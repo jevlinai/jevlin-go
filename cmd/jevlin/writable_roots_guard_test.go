@@ -136,6 +136,7 @@ var classifiedFileCalls = map[fileCallSite]string{
 	{"pkg/fsx/confined.go", "CreateNew", "os.OpenFile"}:                                 "fsx: O_EXCL, never an existing name",
 	{"pkg/fsx/confined.go", "CreateNew", "os.Remove"}:                                   "fsx: removes the file it just created",
 	{"pkg/fsx/confined_unix.go", "openLock", "os.OpenFile"}:                             "fsx: O_NOFOLLOW, then a regular-file check",
+	{"pkg/fsx/confined_unix.go", "openNoFollow", "os.OpenFile"}:                         "fsx: O_NOFOLLOW and O_NONBLOCK, then a regular-file check",
 	{"pkg/fsx/confined_unix.go", "openNoWait", "os.OpenFile"}:                           "fsx: O_NONBLOCK, then a regular-file check",
 	{"pkg/fsx/confined_windows.go", "openNoWait", "os.Open"}:                            "fsx: then a regular-file check; no FIFO lives at a Windows name",
 	{"pkg/fsx/publication_unix.go", "movePublication", "os.Rename"}:                     "fsx: the durable move its callers confine",

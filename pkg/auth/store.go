@@ -205,12 +205,16 @@ func (s *Store) readSecret(name string) ([]byte, error) {
 	if posixModes && info.Mode().Perm()&0o077 != 0 {
 		return nil, fmt.Errorf("auth: %s is group/world-accessible (%04o); refusing mining startup", name, info.Mode().Perm())
 	}
-	// Read through the open file, not the name again: the state dir is a
-	// writable root of Codex's sandbox, and what was a regular file at the
-	// Lstat may be a FIFO now (fsx.ReadRegular does not wait on one).
-	raw, err := fsx.ReadRegular(path, storeFileMaxBytes)
+	// The checks above name the file; the state dir is a writable root of
+	// Codex's sandbox, so the name can be replaced before the read. The read
+	// opens it once, refusing a link and not waiting on a FIFO, and the
+	// type and mode are checked again on what was opened.
+	raw, held, err := fsx.ReadRegularNoFollow(path, storeFileMaxBytes)
 	if err != nil {
 		return nil, fmt.Errorf("auth: read %s: %w", name, err)
+	}
+	if posixModes && held.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf("auth: %s is group/world-accessible (%04o); refusing mining startup", name, held.Mode().Perm())
 	}
 	return raw, nil
 }
