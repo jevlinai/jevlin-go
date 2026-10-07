@@ -379,7 +379,7 @@ func readQueuedTurnEnd(path string) ([]byte, error) {
 	if !before.Mode().IsRegular() {
 		return nil, fmt.Errorf("queued turn end is not a regular file")
 	}
-	f, err := os.Open(path) // #nosec G304 -- confined to the sessions directory and the turn-end suffix by cmdTurnEnd
+	f, err := os.OpenFile(path, os.O_RDONLY|openNonblock, 0) // #nosec G304 -- confined to the sessions directory and the turn-end suffix by cmdTurnEnd
 	if err != nil {
 		return nil, err
 	}

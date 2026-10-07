@@ -8,6 +8,9 @@ import (
 	"syscall"
 )
 
+// openNonblock: Windows has no FIFO a path can be swapped for.
+const openNonblock = 0
+
 const (
 	createNewProcessGroup = 0x00000200
 	detachedProcess       = 0x00000008

@@ -8,6 +8,10 @@ import (
 	"syscall"
 )
 
+// openNonblock keeps an open from waiting on a FIFO swapped in after a
+// Lstat said regular file; the read that follows is of a regular file.
+const openNonblock = syscall.O_NONBLOCK
+
 // spawnDetached starts exe in its own session with no terminal, so the
 // parent may exit (and the agent's tool call return) while the child
 // finishes. Output goes nowhere: a flush reports through its exit code
