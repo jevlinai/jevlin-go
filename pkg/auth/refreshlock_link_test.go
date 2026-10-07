@@ -59,3 +59,31 @@ func TestRefreshLockNeverFollowsOrWritesALinkAtItsName(t *testing.T) {
 		intact(t, canary)
 	})
 }
+
+// readSecret checks the name, then reads: a link swapped in between, at
+// exactly that moment, must not be read.
+func TestReadSecretReadsTheFileItChecked(t *testing.T) {
+	base := t.TempDir()
+	state := filepath.Join(base, "state")
+	if err := os.Mkdir(state, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(base, "outside")
+	if err := os.WriteFile(outside, []byte("not this installation's secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(state, "secret"), []byte("ours"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	secretCheckedHook = func(p string) {
+		_ = os.Remove(p)
+		if err := os.Symlink(outside, p); err != nil {
+			t.Errorf("swap: %v", err)
+		}
+	}
+	t.Cleanup(func() { secretCheckedHook = nil })
+	s := &Store{dir: state}
+	if raw, err := s.readSecret("secret"); err == nil {
+		t.Fatalf("read %q through a link swapped in after the checks", raw)
+	}
+}

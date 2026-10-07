@@ -187,6 +187,11 @@ func (s *Store) DeleteRefreshToken() error {
 // records and secrets are each a few kilobytes at most.
 const storeFileMaxBytes = 1 << 20
 
+// secretCheckedHook runs between readSecret's checks on the name and its
+// read, when a test sets it: the seam a test uses to replace the file at
+// exactly that moment. Nil in production.
+var secretCheckedHook func(path string)
+
 // readSecret loads a secret file, re-verifying on EVERY load that it is
 // a regular, owner-only file (ADR-0008: a group/world-readable secret
 // refuses mining startup).
@@ -204,6 +209,9 @@ func (s *Store) readSecret(name string) ([]byte, error) {
 	}
 	if posixModes && info.Mode().Perm()&0o077 != 0 {
 		return nil, fmt.Errorf("auth: %s is group/world-accessible (%04o); refusing mining startup", name, info.Mode().Perm())
+	}
+	if secretCheckedHook != nil {
+		secretCheckedHook(path)
 	}
 	// The checks above name the file; the state dir is a writable root of
 	// Codex's sandbox, so the name can be replaced before the read. The read
