@@ -8,6 +8,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -105,6 +106,7 @@ func fixedSearchOps(cwd string) *searchHarness {
 	h.ops = searchOps{
 		getppid:  func() int { return 4242 },
 		hostname: func() (string, error) { return "fictional-host", nil },
+		traceKey: func(string) ([]byte, error) { return []byte("fictional-trace-key-0123456789ab"), nil },
 		getwd:    func() (string, error) { return cwd, nil },
 		spawnFlush: func(cfg string) error {
 			h.flushes = append(h.flushes, cfg)
@@ -507,5 +509,43 @@ func TestSearchUsageErrors(t *testing.T) {
 	}
 	if code, _, _ := runSearch(t, h, nil, "-config", cfg, "-format", "xml", "q"); code != exitUsage {
 		t.Errorf("bad format: exit %d", code)
+	}
+}
+
+// With no hook, the per-shell session id is keyed with the installation's
+// trace key: the router cannot recover the hostname by hashing guesses of
+// host|ppid, and a missing key yields a one-off id rather than a bare hash.
+func TestFallbackSessionIDIsKeyed(t *testing.T) {
+	getenv := envOf(map[string]string{})
+	sid := func(key []byte, keyErr error) string {
+		h := fixedSearchOps(t.TempDir())
+		h.ops.traceKey = func(string) ([]byte, error) { return key, keyErr }
+		env, _ := searchTrace(h.ops, config.Miner{}, "", getenv)
+		if env == nil {
+			t.Fatal("no trace")
+		}
+		return env.SessionID
+	}
+	keyA := []byte("installation-a-trace-key-0123456")
+	keyB := []byte("installation-b-trace-key-0123456")
+	bare := traceHash("fictional-host|4242")
+
+	a1, a2, b := sid(keyA, nil), sid(keyA, nil), sid(keyB, nil)
+	if a1 != traceKeyedHash(keyA, "fictional-host|4242") || len(a1) != 32 {
+		t.Fatalf("session id %q is not the keyed hash of host|ppid", a1)
+	}
+	if a1 != a2 {
+		t.Errorf("one shell, one key: ids differ %q %q", a1, a2)
+	}
+	if a1 == b {
+		t.Errorf("two installations share a session id %q", a1)
+	}
+	if a1 == bare || b == bare {
+		t.Errorf("session id is the unkeyed hash of host|ppid")
+	}
+
+	n1, n2 := sid(nil, errors.New("no state dir")), sid(nil, errors.New("no state dir"))
+	if n1 == "" || n1 == bare || n1 == n2 {
+		t.Errorf("without a key: %q %q, want distinct one-off ids", n1, n2)
 	}
 }

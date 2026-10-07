@@ -394,7 +394,10 @@ base64url-encoded in `JEVLIN_TRACE_BRIDGE`, written in the syntax of the shell t
 command, and only inside the search request — and only onto a command where that syntax
 actually reaches the search. A loop, a list or a pipeline with the search anywhere but first is
 left exactly as written; the search still runs, carrying the hashed per-shell identity instead.
-With no hook, a search carries that same per-shell identity. The hashed `session_id` is also
+With no hook, a search carries that same per-shell identity: the hostname and the parent shell's
+pid, keyed with a random `trace.key` the installation creates in `state_dir` and never sends, so
+the router cannot guess its way back to the hostname. Without a readable `state_dir` each search
+gets a one-off id instead. The hashed `session_id` is also
 mirrored as the request's own top-level `session_id` and `X-Session-Id` header — the router
 groups quick reformulations by it there, and reads the trajectory from the envelope; the same
 identifier in both places, sent only while an envelope rides, and dropped with the envelope on

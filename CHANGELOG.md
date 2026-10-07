@@ -18,6 +18,11 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **The per-shell trace id no longer gives away your hostname.** A search with
+  no hook used to send a plain hash of the hostname and parent pid, which the
+  router could match against guessed hostnames. It is now keyed with a random
+  `trace.key` kept in `state_dir`, so ids are unique to each installation; a
+  search that can't read `state_dir` sends a one-off id.
 - **Codex searches carry their session.** `agents install` writes Codex's
   hooks into `~/.codex/hooks.json` on macOS and Linux, and a search Codex runs
   then reaches the router with its session, turn and call, and a subagent's

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"crypto/elliptic"
 	"os"
 	"path/filepath"
@@ -56,6 +57,48 @@ func TestDPoPKeyGeneratedOnceAndStable(t *testing.T) {
 	info, err := os.Stat(filepath.Join(dir, "dpop.key"))
 	if err != nil || (posixModes && info.Mode().Perm() != 0o600) {
 		t.Fatalf("dpop.key perms = %v, want 0600", info.Mode().Perm())
+	}
+}
+
+// The trace key is created once, owner-only, and reused; a symlinked or
+// malformed key is refused rather than trusted.
+func TestTraceKeyGeneratedOnceAndStable(t *testing.T) {
+	s, dir := newStore(t)
+	k1, err := s.TraceKey()
+	if err != nil || len(k1) != traceKeyLen {
+		t.Fatalf("TraceKey: %d bytes, %v", len(k1), err)
+	}
+	k2, err := s.TraceKey()
+	if err != nil || !bytes.Equal(k1, k2) {
+		t.Fatalf("reload produced a different key: %v", err)
+	}
+	info, err := os.Stat(filepath.Join(dir, traceKeyFile))
+	if err != nil || (posixModes && info.Mode().Perm() != 0o600) {
+		t.Fatalf("trace.key perms = %v, %v; want 0600", info.Mode().Perm(), err)
+	}
+	other, _ := newStore(t)
+	if k3, err := other.TraceKey(); err != nil || bytes.Equal(k1, k3) {
+		t.Fatalf("distinct installations share a trace key: %v", err)
+	}
+
+	short, shortDir := newStore(t)
+	if err := os.WriteFile(filepath.Join(shortDir, traceKeyFile), []byte("short"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := short.TraceKey(); err == nil {
+		t.Fatal("malformed trace.key accepted")
+	}
+
+	target := filepath.Join(t.TempDir(), "elsewhere")
+	if err := os.WriteFile(target, bytes.Repeat([]byte("k"), traceKeyLen), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	linked, linkedDir := newStore(t)
+	if err := os.Symlink(target, filepath.Join(linkedDir, traceKeyFile)); err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+	if _, err := linked.TraceKey(); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("symlinked trace.key not refused: %v", err)
 	}
 }
 

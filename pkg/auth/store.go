@@ -37,6 +37,8 @@ const (
 	participationSecretFile = "participation.secret"
 	refreshTokenFile        = "refresh.token"
 	registrationPendingFile = "registration_pending.json"
+	traceKeyFile            = "trace.key"
+	traceKeyLen             = 32
 )
 
 // ErrAgentRegistrationCorrupt identifies an undecodable agent.json whose
@@ -252,6 +254,36 @@ func (s *Store) ParticipationSecret() (*draw.Secret, error) {
 	default:
 		return nil, err
 	}
+}
+
+// TraceKey loads the installation's 32-byte trace key, generating it on
+// first use (0600, exclusive-create). It keys the trace identifiers derived
+// from guessable local facts (hostname, parent pid) so the router that
+// receives them cannot enumerate them back. The key never leaves the machine.
+func (s *Store) TraceKey() ([]byte, error) {
+	raw, err := s.readSecret(traceKeyFile)
+	if errors.Is(err, fs.ErrNotExist) {
+		key := make([]byte, traceKeyLen)
+		if _, err := rand.Read(key); err != nil {
+			return nil, fmt.Errorf("auth: generate %s: %w", traceKeyFile, err)
+		}
+		err = s.createExclusive(traceKeyFile, key)
+		if err == nil {
+			return key, nil
+		}
+		if !errors.Is(err, fs.ErrExist) {
+			return nil, err
+		}
+		// Another process created it first; its key is the one to use.
+		raw, err = s.readSecret(traceKeyFile)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) != traceKeyLen {
+		return nil, fmt.Errorf("auth: %s is %d bytes, want %d; refusing", traceKeyFile, len(raw), traceKeyLen)
+	}
+	return raw, nil
 }
 
 // SaveReceipt persists an enrollment receipt's exact bytes (contract
