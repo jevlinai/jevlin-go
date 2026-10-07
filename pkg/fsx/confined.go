@@ -132,6 +132,22 @@ func OpenLock(path string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
+	return requireRegularLock(f, path)
+}
+
+// OpenLockExisting opens an existing lock file read-only: the fallback where
+// a sandbox denies the read-write open (flush.lock, under Codex's macOS
+// sandbox). OpenLock's rules hold: no link followed, only a regular file, and
+// nothing created or written. Share mode 0 is kept on Windows.
+func OpenLockExisting(path string) (*os.File, error) {
+	f, err := openLockExisting(path)
+	if err != nil {
+		return nil, err
+	}
+	return requireRegularLock(f, path)
+}
+
+func requireRegularLock(f *os.File, path string) (*os.File, error) {
 	info, err := f.Stat()
 	if err != nil {
 		_ = f.Close()

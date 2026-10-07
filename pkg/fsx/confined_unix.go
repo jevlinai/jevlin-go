@@ -30,3 +30,9 @@ func openNoFollow(path string) (*os.File, error) {
 func openLock(path string) (*os.File, error) {
 	return os.OpenFile(path, os.O_RDWR|os.O_CREATE|syscall.O_NOFOLLOW|noWait, 0o600) // #nosec G304 -- the caller's own directory; a link is refused, not followed
 }
+
+// openLockExisting opens an existing lock read-only, refusing a symlink at
+// the name and without waiting on a FIFO.
+func openLockExisting(path string) (*os.File, error) {
+	return os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|noWait, 0) // #nosec G304 -- the caller's own directory; a link is refused, not followed
+}

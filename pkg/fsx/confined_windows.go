@@ -54,17 +54,21 @@ func openNoFollow(path string) (*os.File, error) {
 // symlink or junction at the name as itself instead of following it, and the
 // attribute check then refuses it.
 func openLock(path string) (*os.File, error) {
+	return openExclusive(path, windows.GENERIC_READ|windows.GENERIC_WRITE, windows.OPEN_ALWAYS)
+}
+
+// openLockExisting is openLock read-only, on an existing file.
+func openLockExisting(path string) (*os.File, error) {
+	return openExclusive(path, windows.GENERIC_READ, windows.OPEN_EXISTING)
+}
+
+func openExclusive(path string, access, disposition uint32) (*os.File, error) {
 	name, err := windows.UTF16PtrFromString(path)
 	if err != nil {
 		return nil, err
 	}
-	h, err := windows.CreateFile(name,
-		windows.GENERIC_READ|windows.GENERIC_WRITE,
-		0,
-		nil,
-		windows.OPEN_ALWAYS,
-		windows.FILE_ATTRIBUTE_NORMAL|windows.FILE_FLAG_OPEN_REPARSE_POINT,
-		0)
+	h, err := windows.CreateFile(name, access, 0, nil, disposition,
+		windows.FILE_ATTRIBUTE_NORMAL|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
 	if err != nil {
 		return nil, &fs.PathError{Op: "open", Path: path, Err: err}
 	}

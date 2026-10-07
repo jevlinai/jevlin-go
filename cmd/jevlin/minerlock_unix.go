@@ -40,14 +40,17 @@ func tryLockFile(path string) (*os.File, bool, error) {
 // flushlock.go): a permission-denied read-write open retries read-only on the
 // existing file and takes the same exclusive flock.
 func tryFlushLock(path string) (*os.File, bool, flushLockMode, error) {
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600) // #nosec G304 -- the configured flush lock
+	// flush.lock sits in the installation's root, which is not a writable
+	// root of Codex's sandbox unless a config nests it in one (which agents
+	// install refuses to grant); a link at the name is refused either way.
+	f, err := fsx.OpenLock(path)
 	mode := flushLockReadWrite
 	if err != nil {
 		if classifyFlushLockOpenError(err, false) != flushOpenFallBack {
 			return nil, false, mode, err
 		}
 		mode = flushLockReadOnly
-		f, err = os.Open(path) // #nosec G304 -- the configured flush lock
+		f, err = fsx.OpenLockExisting(path)
 		if err != nil {
 			if classifyFlushLockOpenError(err, true) == flushOpenAbsent {
 				return nil, false, mode, errFlushLockAbsent

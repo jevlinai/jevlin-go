@@ -215,3 +215,49 @@ func TestResumeStampNeverWritesThroughALinkAtItsOldTemporaryName(t *testing.T) {
 		})
 	}
 }
+
+// flush.lock sits in the installation's own directory, which a layout that
+// nests it in a writable root would expose (agents install refuses that
+// layout, and this holds either way): a link at the name is refused, and a
+// dangling one does not create its target.
+func TestFlushLockNeverFollowsALinkAtItsName(t *testing.T) {
+	dir, canary := rootAndCanary(t)
+	path := filepath.Join(dir, "flush.lock")
+	plantOrSkip(t, "symlink", plantedLinks()["symlink"], canary+"-absent", path)
+	f, held, _, err := tryFlushLock(path)
+	if f != nil {
+		_ = f.Close()
+	}
+	if held || err == nil {
+		t.Fatalf("flush.lock as a link was taken (held=%t, err=%v)", held, err)
+	}
+	if _, err := os.Lstat(canary + "-absent"); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("the link's target was created: %v", err)
+	}
+	requireCanaryIntact(t, canary)
+}
+
+// readCredentials checks the name, then reads: a link swapped in between,
+// at exactly that moment, must not be read.
+func TestReadCredentialsReadsTheFileItChecked(t *testing.T) {
+	dir, _ := rootAndCanary(t)
+	outside := filepath.Join(filepath.Dir(dir), "outside-credentials.json")
+	if err := os.WriteFile(outside, []byte(`{"v":1,"api_key":"sr-not-this-installations"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, credentialsFile)
+	if err := os.WriteFile(path, []byte(`{"v":1,"api_key":"sr-ours"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	credentialsCheckedHook = func(p string) {
+		_ = os.Remove(p) // #nosec G703 -- the test's own temporary file
+		if err := os.Symlink(outside, p); err != nil {
+			t.Errorf("swap: %v", err)
+		}
+	}
+	t.Cleanup(func() { credentialsCheckedHook = nil })
+	c, err := readCredentials(path)
+	if err == nil {
+		t.Fatalf("read the credentials of a link swapped in after the checks: key %q", c.APIKey)
+	}
+}
