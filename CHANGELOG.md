@@ -23,6 +23,13 @@ The first release replaces this heading with its own.
   prompt. A second `-config` used to win, so an appended one could send your
   key to another config's router. `search` now refuses a repeated
   `-config`, even one naming the same file, before reading any config.
+- **A `jevlin.toml` in the working directory is no longer read on its own.**
+  Without `-config` or `JEVLIN_CONFIG`, every command now uses the
+  installation's config (`$JEVLIN_HOME/jevlin.toml`, else
+  `~/.jevlin/jevlin.toml`) or built-in defaults. Before, a `jevlin.toml` in a
+  cloned repo could name its own router or platform host and receive your
+  `sr-` key from `login`, `search`, `limits` or `connect`. To use a config
+  in the current directory, pass `-config ./jevlin.toml`.
 - **Codex searches carry their session.** `agents install` writes Codex's
   hooks into `~/.codex/hooks.json` on macOS and Linux, and a search Codex runs
   then reaches the router with its session, turn and call, and a subagent's
