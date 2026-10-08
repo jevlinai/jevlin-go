@@ -168,11 +168,13 @@ an opt-out `connect` does not re-ask. Setup writes `enabled = true` only with no
 also stops mining.
 
 `[miner]`'s two directories default beside the state directory, and `intake_dir`'s parent is
-where `credentials.json`, `flush.lock`, the payout address you chose (`payout.json`) and an
-unfinished registration (`registration_pending.json`) are kept: never the state directory, which
-an agent's sandbox may write. A `payout.json` an older version left in the state directory is
-never declared; `connect` moves it beside `credentials.json` only when the rewards service
-already has that address in force. `base_url` is never dialed: a printed
+where `credentials.json`, `flush.lock`, the payout address you chose (`payout.json`), the claim
+link (`claim.json`) and an unfinished registration (`registration_pending.json`) are kept: never
+the state directory, which an agent's sandbox may write. A `payout.json` an older version left in
+the state directory is never declared from there; `connect` records it beside `credentials.json`
+only when it is this installation's own wallet address, and records `[mining] payout_address`
+instead when the config sets one. A claim link an older version kept in `state/agent.json` is not
+read; the next `jevlin connect` mints a fresh one. `base_url` is never dialed: a printed
 claim link must point there. `agents_api_url` is where `connect` and `mining enable` send
 requests. A non-default, non-loopback `base_url` without `agents_api_url` is refused; a
 loopback one alone defaults `agents_api_url` to it. Every URL must be https, or http on
@@ -220,6 +222,7 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | `credentials.json` | The search key, owner-only. Refused if a symlink or readable by others. | connect, login | Only to forget the key: `login -forget`. |
 | `payout.json` | The payout address you chose, which connect declares for you once mining is approved. | connect, mining enable | No, until `jevlin payout show` says it is in force. |
 | `registration_pending.json` | A registration the platform answered that is not yet saved; finished by the next connect. | connect | No: it holds the new key. |
+| `claim.json` | The claim link and code for this installation's agent, while it is unclaimed. | connect | Yes; the next `jevlin connect` mints a fresh link, which ends the old one. |
 | `search-default` | `agents prefer`'s choice. | agents prefer | Yes; the skill default returns. |
 | `bin/jevlin` | A native binary, and `jevlin.previous` after an upgrade. | setup, upgrade | Through `uninstall -binary`. |
 | `state/` | Identity, authorization, the mining decision, health records, the flush stamp. | connect, flush | No: it is your registration. |

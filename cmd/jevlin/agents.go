@@ -1808,14 +1808,16 @@ func readWithMode(ops agentOps, path string) ([]byte, os.FileMode, error) {
 // there. That is more than a deletion exposure: a sandboxed command can leave
 // a symlink, a hard link or a FIFO at any name in these directories, which
 // hard invariant 19 (pkg/fsx/confined.go) answers for this client's own
-// writes and reads, and it can rewrite the records themselves. The two
-// records that could make this client act on a writer's say-so are kept
+// writes and reads, and it can rewrite the records themselves. The records
+// that could make this client act on, or show, a writer's say-so are kept
 // beside credentials.json for that reason: the registration journal, which
-// can authorize replacing the platform credential (hard invariant 13), and
-// the payout record, the address a resume declares. Every record left in
-// these directories is held on load to what this client writes
-// (pkg/auth/record_text.go), and agent.json to the platform's answer about
-// the stored key; what a record says within that is still the writer's.
+// can authorize replacing the platform credential (hard invariant 13), the
+// payout record, the address a resume declares, and the claim record, the
+// link a person is told to open. The state directory's own records are held
+// on load to what this client writes (pkg/auth/record_text.go), agent.json
+// to the platform's answer about the stored key, and what a foreground
+// flush prints, which names intake and spool files, to a terminal-safe
+// filter. What a record says within that is still the writer's.
 func codexSandboxRoots(entry binEntry, getenv func(string) string) []string {
 	cfg := configForEntry(entry, getenv)
 	if cfg == nil {

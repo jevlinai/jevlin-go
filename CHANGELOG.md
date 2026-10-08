@@ -22,10 +22,14 @@ The first release replaces this heading with its own.
   `mining enable` used to keep the address you chose in the state directory,
   which a Codex-sandboxed command can write, and the background resume declared
   whatever address it found there: a planted one could become your first,
-  effective payout address. It now lives in the jevlin home, and an address
-  left in the state directory is never declared: `connect` moves one there
-  only when the rewards service already has that exact address in force, and
-  otherwise asks you to run `jevlin mining enable`. An agent in Codex's sandbox
+  effective payout address. It now lives in the jevlin home. With none on file
+  there, the address recorded and declared comes only from your config's
+  `[mining] payout_address` or, for a `payout.json` an older version left in
+  the state directory, when it is this installation's own wallet address. Any
+  other address there is never recorded, declared or repeated: `status` says
+  it is not used and to run `jevlin mining enable` at a terminal, which on an
+  installation already enabled now asks only for the address, not the enable
+  question an Enter would have answered No. An agent in Codex's sandbox
   can still reach the rewards service with this installation's access in the
   moments before your address is in force; `jevlin payout show` says which
   address is.
@@ -56,13 +60,21 @@ The first release replaces this heading with its own.
   `jevlin connect` again. If that build was replacing an expired registration,
   `connect` finds the new agent from your stored key and rebuilds the record
   from the platform.
-- **`connect` rebuilds a record that names someone else's agent.** When
-  `agent.json` names an agent the platform does not know for your stored key,
-  a `jevlin connect` you run asks the platform which agent the key belongs to
-  and rebuilds the record from its answer, before it prints a claim link or
-  replaces anything. An agent's sandbox can write the state directory, so the
-  link printed is now always your own agent's. The background resume still
-  never rebuilds, and `-force` still replaces instead.
+- **The claim link lives beside `credentials.json`, and `connect` asks whose
+  key it is first.** The link you are told to open used to come from
+  `agent.json`, in the state directory an agent's sandbox can write: a
+  planted record could keep your agent's id and carry another agent's link,
+  on the platform's own address. The link now lives in `claim.json` in the
+  jevlin home, written only by a `connect` you run, and bound to its agent;
+  `connect`, `status` and `mining enable` print only that one, only for an
+  agent the platform last said is unclaimed, and only while it is exactly a
+  link on `platform.base_url`. Before printing anything, a `jevlin connect`
+  you run asks the platform which agent your stored key belongs to: a record
+  naming another agent is rebuilt from the answer, a claimed agent shows no
+  link, and if the platform cannot answer no link is shown at all. A link an
+  older version kept in `agent.json` is not read; the first `connect` after
+  upgrading mints a fresh one. The background resume never rebuilds, and
+  `-force` does not either: it says so and to run `connect` without it.
 - **Files an agent's sandbox leaves in jevlin's directories no longer reach
   your own files.** Codex's sandbox may write jevlin's state, intake, sessions
   and spool directories. A link left there could make a hook, a flush or
@@ -174,17 +186,19 @@ The first release replaces this heading with its own.
 - **opencode searches carry their turn.** A search made under opencode now says
   which of your messages it answers to, so a session's searches group into
   turns on the router as they do for Claude Code.
-- **A claim link is only shown if it points at the platform.** `connect`, `status`
-  and `mining enable` now check the claim link stored in `agent.json` against
-  `platform.base_url` before printing it, the same check a freshly registered
-  link gets. A link that fails is not shown; a foreground `connect` mints a
-  fresh one in its place.
 - **Nothing an agent's sandbox writes into the state directory reaches your
-  terminal as an escape sequence.** An `agent.json` with a control, C1 or
-  bidi character in any field is treated as damaged: `status` says it cannot
-  be read, and the next `jevlin connect` you run rebuilds it from the
-  platform. The payout records must hold real payout addresses, and a health
-  record's detail is written without such characters and refused with them.
+  terminal as an escape sequence.** An `agent.json` with a control, format or
+  line-separator character in any field, or an agent id that names a route
+  such as `me`, is treated as damaged: `status` says it cannot be read and to
+  run `jevlin connect`, which rebuilds it from the platform. The payout
+  records must hold real payout addresses, a held-binding note is shown only
+  for the address on file and never over what the rewards service just
+  answered, a health record's detail is written without such characters and
+  refused with them, and a record that does not decode is reported without
+  repeating its text. What `jevlin flush` prints is filtered the same way,
+  since its errors name files an agent's sandbox can write. A registration
+  interrupted mid-publish is finished even if the state directory holds a
+  record naming another agent, which is set aside.
 - **A lost claim link is replaced, not mourned.** For a registration rebuilt from
   the platform that is still unclaimed with no claim link, a foreground
   `jevlin connect` now asks the platform for a fresh link and prints it. The old

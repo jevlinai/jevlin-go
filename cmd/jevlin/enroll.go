@@ -696,7 +696,7 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 		// used to make this function print nothing at all, identical to
 		// "never ran connect" — status is exactly where a participant
 		// would go looking to understand why connect started refusing.
-		fmt.Fprintf(stderr, "agent:  registration on file could not be read: %v\n", f.RegistrationErr)
+		fmt.Fprintf(stderr, "agent:  registration on file could not be read: %v; run `jevlin connect` to rebuild it from the platform\n", f.RegistrationErr)
 		return false
 	}
 	if !f.HasRegistration {
