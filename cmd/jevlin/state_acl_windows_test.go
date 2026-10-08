@@ -15,7 +15,9 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -76,13 +78,7 @@ func TestDoctorStateAccessReportsADirectoryWithNoAccessList(t *testing.T) {
 	if err := os.Mkdir(stateDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := windows.SetNamedSecurityInfo(stateDir, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION, nil, nil, nil, nil); err != nil {
-		skipPermissionTest(t, "a NULL DACL cannot be set on a directory here: "+err.Error())
-		return
-	}
-	if d, err := winacl.Read(stateDir); err != nil || !d.NullDACL {
-		t.Fatalf("fixture: %s does not have a NULL DACL (err %v): %+v", stateDir, err, d)
-	}
+	setNullDACL(t, stateDir)
 	cfgPath := doctorConfig(t, as.srv.URL, stateDir, filepath.Join(root, "spool"))
 
 	check := doctorStateCheckFor(t, cfgPath)
@@ -92,5 +88,94 @@ func TestDoctorStateAccessReportsADirectoryWithNoAccessList(t *testing.T) {
 	}
 	if fix, _ := check["fix"].(string); !strings.Contains(fix, "access list that only you hold") {
 		t.Errorf("fix = %q, want the step that restricts the directory", fix)
+	}
+}
+
+// setNullDACL gives path no access list at all, which grants everyone
+// everything, and proves it did.
+func setNullDACL(t *testing.T, path string) {
+	t.Helper()
+	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION, nil, nil, nil, nil); err != nil {
+		skipPermissionTest(t, "a NULL DACL cannot be set on "+path+" here: "+err.Error())
+		return
+	}
+	if d, err := winacl.Read(path); err != nil || !d.NullDACL {
+		t.Fatalf("fixture: %s does not have a NULL DACL (err %v): %+v", path, err, d)
+	}
+}
+
+// makeJunction makes link a directory junction to target. A junction needs no
+// privilege, unlike a symlink, which the Windows runners cannot create without
+// Developer Mode: the link cases in state_acl_test.go skip there, so this is
+// the platform on which the refusal of a link is actually exercised.
+func makeJunction(t *testing.T, link, target string) {
+	t.Helper()
+	if out, err := exec.Command("cmd", "/c", "mklink", "/J", link, target).CombinedOutput(); err != nil { // #nosec G204 -- cmd's mklink on this test's own paths
+		skipPermissionTest(t, fmt.Sprintf("create a directory junction: %v: %s", err, out))
+		return
+	}
+	info, err := os.Lstat(link)
+	if err != nil || !isReparsePoint(info) {
+		t.Fatalf("fixture: %s is not a reparse point (%v)", link, err)
+	}
+}
+
+// A junction as the state directory is not read through. Its target has no
+// access list, which would be a NO if the junction were followed; the line
+// says it could not read the directory instead, and names the link.
+func TestDoctorStateAccessDoesNotReadThroughAJunctionAsTheStateDirectory(t *testing.T) {
+	as := newFakeAS(t)
+	root := t.TempDir()
+	target := filepath.Join(root, "elsewhere")
+	if err := os.Mkdir(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFileT(t, filepath.Join(target, "dpop.key"), "x")
+	setNullDACL(t, target)
+	stateDir := filepath.Join(root, "state")
+	makeJunction(t, stateDir, target)
+	cfgPath := doctorConfig(t, as.srv.URL, stateDir, filepath.Join(root, "spool"))
+
+	check := doctorStateCheckFor(t, cfgPath)
+	detail, _ := check["detail"].(string)
+	if check["verdict"] != string(verdictUnknown) || !strings.Contains(detail, stateDir) || !strings.Contains(detail, "link") {
+		t.Fatalf("verdict %v, detail %q; want UNKNOWN naming the junction", check["verdict"], detail)
+	}
+	if strings.Contains(detail, "no access list") {
+		t.Errorf("the junction's target was read through it: %q", detail)
+	}
+}
+
+// A junction at a credential's name is not read through either, and the rest
+// of the directory is still judged: a state directory that is the user's alone
+// reads as such for everything but the name that is a link. The target has no
+// access list, which would be a NO against dpop.key if it were followed.
+func TestDoctorStateAccessDoesNotReadThroughAJunctionAtACredentialName(t *testing.T) {
+	as := newFakeAS(t)
+	root := t.TempDir()
+	stateDir := filepath.Join(root, "state")
+	if err := os.Mkdir(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := winacl.RestrictToOwner(stateDir, true); err != nil {
+		t.Fatal(err)
+	}
+	writeFileT(t, filepath.Join(stateDir, "agent.json"), "{}")
+	target := filepath.Join(root, "elsewhere")
+	if err := os.Mkdir(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	setNullDACL(t, target)
+	link := filepath.Join(stateDir, "dpop.key")
+	makeJunction(t, link, target)
+	cfgPath := doctorConfig(t, as.srv.URL, stateDir, filepath.Join(root, "spool"))
+
+	check := doctorStateCheckFor(t, cfgPath)
+	detail, _ := check["detail"].(string)
+	if check["verdict"] != string(verdictUnknown) || !strings.Contains(detail, link) || !strings.Contains(detail, "link") {
+		t.Fatalf("verdict %v, detail %q; want UNKNOWN naming %s", check["verdict"], detail, link)
+	}
+	if strings.Contains(detail, "no access list") {
+		t.Errorf("the junction's target was read through it: %q", detail)
 	}
 }
