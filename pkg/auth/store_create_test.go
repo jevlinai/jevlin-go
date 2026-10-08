@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -15,6 +16,7 @@ type restrictRecorder struct {
 	calls  []string
 	held   [][]string
 	fail   error
+	failAt string // if set, only a call for this directory fails
 	onCall func(dir string)
 }
 
@@ -35,6 +37,9 @@ func useRestrictRecorder(t *testing.T) *restrictRecorder {
 		r.held = append(r.held, names)
 		if r.onCall != nil {
 			r.onCall(dir)
+		}
+		if r.failAt != "" && dir != r.failAt {
+			return nil
 		}
 		return r.fail
 	}
@@ -139,6 +144,100 @@ func TestAFailedRestrictionThatCannotBeUndoneSaysSo(t *testing.T) {
 	}
 	if _, statErr := os.Lstat(dir); statErr != nil {
 		t.Errorf("a directory that was not empty was removed anyway: %v", statErr)
+	}
+}
+
+// MkdirAll can make several levels, and each inherits its parent's list: a
+// D:\jevlin made on the way to D:\jevlin\state would keep D:\'s entries, and
+// whoever those admit could rename the restricted state dir away and plant
+// their own. Every level the call made is restricted, outermost first, and the
+// leaf is still the one with nothing in it.
+func TestOpenStoreRestrictsEveryDirectoryItCreates(t *testing.T) {
+	r := useRestrictRecorder(t)
+	root := t.TempDir()
+	a, b, dir := filepath.Join(root, "a"), filepath.Join(root, "a", "b"), filepath.Join(root, "a", "b", "state")
+	if _, err := OpenStore(dir); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{a, b, dir}; !reflect.DeepEqual(r.calls, want) {
+		t.Fatalf("restricted %q, want %q: every level this call made, outermost first", r.calls, want)
+	}
+	if len(r.held[2]) != 0 {
+		t.Errorf("the state dir held %q when it was restricted, want it empty", r.held[2])
+	}
+}
+
+// What was already there is not OpenStore's to restrict: a level that exists
+// may be a parent the participant chose, or setup's own.
+func TestOpenStoreRestrictsOnlyTheLevelsItMade(t *testing.T) {
+	r := useRestrictRecorder(t)
+	root := t.TempDir()
+	a, b, dir := filepath.Join(root, "a"), filepath.Join(root, "a", "b"), filepath.Join(root, "a", "b", "state")
+	if err := os.Mkdir(a, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenStore(dir); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{b, dir}; !reflect.DeepEqual(r.calls, want) {
+		t.Fatalf("restricted %q, want %q: not %s, which was already there", r.calls, want, a)
+	}
+}
+
+// A level that cannot be restricted takes with it everything this call made,
+// the ones already restricted too, so the next run starts from nothing and
+// restricts all of them again; what existed before stays.
+func TestAFailedRestrictionOfAnAncestorUndoesEveryLevelItMade(t *testing.T) {
+	r := useRestrictRecorder(t)
+	root := t.TempDir()
+	existing, b, dir := filepath.Join(root, "a"), filepath.Join(root, "a", "b"), filepath.Join(root, "a", "b", "state")
+	if err := os.Mkdir(existing, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	r.fail, r.failAt = errors.New("injected: access denied"), b
+
+	_, err := OpenStore(dir)
+	if err == nil || !strings.Contains(err.Error(), b) || !strings.Contains(err.Error(), "injected: access denied") {
+		t.Fatalf("OpenStore = %v, want an error naming %s and its cause", err, b)
+	}
+	for _, gone := range []string{b, dir} {
+		if _, statErr := os.Lstat(gone); !errors.Is(statErr, os.ErrNotExist) {
+			t.Errorf("%s is still there (%v): the next OpenStore would take it as it finds it", gone, statErr)
+		}
+	}
+	if _, statErr := os.Lstat(existing); statErr != nil {
+		t.Errorf("a directory that was there before was removed: %v", statErr)
+	}
+
+	r.fail, r.calls = nil, nil
+	if _, err := OpenStore(dir); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{b, dir}; !reflect.DeepEqual(r.calls, want) {
+		t.Errorf("the second run restricted %q, want %q", r.calls, want)
+	}
+}
+
+// MkdirAll that gets part of the way leaves levels no later call would
+// restrict, since they exist by then. A component the filesystem refuses
+// makes it stop after the one before it.
+func TestAMkdirAllThatStopsHalfwayLeavesNothingItMade(t *testing.T) {
+	r := useRestrictRecorder(t)
+	root := t.TempDir()
+	a := filepath.Join(root, "a")
+	dir := filepath.Join(a, strings.Repeat("x", 300), "state")
+	_, err := OpenStore(dir)
+	if err == nil {
+		t.Skip("this filesystem accepts a 300-byte name, so MkdirAll cannot be made to stop halfway")
+	}
+	if !strings.Contains(err.Error(), "create state dir") {
+		t.Fatalf("OpenStore = %v, want the failure to create the directory", err)
+	}
+	if _, statErr := os.Lstat(a); !errors.Is(statErr, os.ErrNotExist) {
+		t.Errorf("%s was made on the way and is still there (%v): no later call would restrict it", a, statErr)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("restricted %q after the directory could not be made", r.calls)
 	}
 }
 

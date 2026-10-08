@@ -61,23 +61,28 @@ func hasEntryFor(d winacl.Descriptor, sid string) bool {
 	return false
 }
 
-// OpenStore gives a directory it creates a protected DACL whose entries are
-// all for the current user, so nothing is inherited from the parent. The
-// fixture proves itself first: a directory made beside it by plain Mkdir does
-// inherit the parent's BUILTIN\Users entry, which is the hole.
+// OpenStore gives every directory it creates a protected DACL whose entries are
+// all for the current user, and the user as owner, so nothing is inherited from
+// the parent: not the leaf only, since MkdirAll makes the levels above it too
+// and each would keep the parent's entries. The fixture proves itself first: a
+// path made under the parent by plain MkdirAll does inherit the parent's
+// BUILTIN\Users entry at every level, which is the hole.
 func TestOpenStoreCreatesOwnerOnlyDACL(t *testing.T) {
 	parent := t.TempDir()
 	grantUsersRead(t, parent, true)
 
-	plain := filepath.Join(parent, "plain")
-	if err := os.Mkdir(plain, 0o700); err != nil {
+	plain := filepath.Join(parent, "plain", "inner")
+	if err := os.MkdirAll(plain, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if d, err := winacl.Read(plain); err != nil || !hasEntryFor(d, sidBuiltinUsers) {
-		t.Fatalf("fixture: a directory made by Mkdir under the parent does not inherit its BUILTIN\\Users entry (err %v): %+v", err, d)
+	for _, p := range []string{filepath.Dir(plain), plain} {
+		if d, err := winacl.Read(p); err != nil || !hasEntryFor(d, sidBuiltinUsers) {
+			t.Fatalf("fixture: %s, made by MkdirAll under the parent, does not inherit its BUILTIN\\Users entry (err %v): %+v", p, err, d)
+		}
 	}
 
-	dir := filepath.Join(parent, "state")
+	outer := filepath.Join(parent, "jevlin")
+	dir := filepath.Join(outer, "a", "state")
 	if _, err := OpenStore(dir); err != nil {
 		t.Fatal(err)
 	}
@@ -85,29 +90,35 @@ func TestOpenStoreCreatesOwnerOnlyDACL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d, err := winacl.Read(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !d.Protected {
-		t.Errorf("state dir DACL is not protected: %+v", d)
-	}
-	// The owner matters as much as the list: an owner keeps WRITE_DAC whatever
-	// the list says, and a directory is born with its creator's default owner,
-	// which is BUILTIN\Administrators for an elevated process.
-	if d.Owner != user {
-		t.Errorf("state dir owner = %s, want the current user %s", d.Owner, user)
-	}
-	// Windows splits the one inheritable GENERIC_ALL grant into an effective
-	// FA entry and an inherit-only GA entry, both for the user, so the
-	// assertion is on who the entries are for rather than on how many there are.
-	if d.NullDACL || len(d.ACEs) == 0 {
-		t.Fatalf("state dir DACL = %+v, want entries for %s only", d, user)
-	}
-	for _, ace := range d.ACEs {
-		if !ace.Allow || ace.SID != user {
-			t.Fatalf("state dir DACL entry %+v, want allow entries for %s only", ace, user)
+	for _, p := range []string{outer, filepath.Join(outer, "a"), dir} {
+		d, err := winacl.Read(p)
+		if err != nil {
+			t.Fatal(err)
 		}
+		if !d.Protected {
+			t.Errorf("%s: DACL is not protected: %+v", p, d)
+		}
+		// The owner matters as much as the list: an owner keeps WRITE_DAC
+		// whatever the list says, and a directory is born with its creator's
+		// default owner, which is BUILTIN\Administrators for an elevated process.
+		if d.Owner != user {
+			t.Errorf("%s: owner = %s, want the current user %s", p, d.Owner, user)
+		}
+		// Windows splits the one inheritable GENERIC_ALL grant into an
+		// effective FA entry and an inherit-only GA entry, both for the user,
+		// so the assertion is on who the entries are for rather than how many.
+		if d.NullDACL || len(d.ACEs) == 0 {
+			t.Fatalf("%s: DACL = %+v, want entries for %s only", p, d, user)
+		}
+		for _, ace := range d.ACEs {
+			if !ace.Allow || ace.SID != user {
+				t.Fatalf("%s: DACL entry %+v, want allow entries for %s only", p, ace, user)
+			}
+		}
+	}
+	// The parent was there before, so it is not OpenStore's to change.
+	if d, err := winacl.Read(parent); err != nil || !hasEntryFor(d, sidBuiltinUsers) {
+		t.Errorf("the parent lost its BUILTIN\\Users entry (err %v): %+v", err, d)
 	}
 }
 

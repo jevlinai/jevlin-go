@@ -410,10 +410,11 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `perm_reads_test.go` parses every source file in the package, Windows-tagged ones included,
   and fails on a descriptor read, an account lookup or any `winacl` call but `RestrictToOwner`;
   `perm_windows_test.go` adds `BUILTIN\Users` to the directory and every credential and goes
-  through each way in. The one thing the store does is at creation: a `state_dir` `OpenStore`
-  creates gets `setup`'s own protected owner-only DACL and owner (`restrictStateDir`, the same
-  function), and is removed again if that fails, so the next run restricts a directory it
-  creates instead of opening one it did not. `store_create_test.go` holds that wiring on every OS
+  through each way in. The one thing the store does is at creation: every directory `OpenStore`
+  makes on the way to a `state_dir` (`MkdirAll` can make several, each inheriting its parent's
+  list) gets `setup`'s own protected owner-only DACL and owner (`restrictStateDir`, the same
+  function), and all of them are removed again if any step fails, so the next run restricts
+  directories it creates instead of opening ones it did not. `store_create_test.go` holds that wiring on every OS
   through `restrictCreatedStateDir`, a variable for the reason `secretCheckedHook` is one: the
   real call does nothing on POSIX, so deleting it there would otherwise change no result.
   What a participant is told is `doctor`'s `state access` (`cmd/jevlin/state_acl.go`): it asks

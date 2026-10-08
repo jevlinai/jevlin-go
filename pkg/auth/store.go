@@ -23,6 +23,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/jevlinai/jevlin-go/pkg/fsx"
@@ -63,35 +65,71 @@ type Store struct {
 }
 
 // OpenStore creates or opens the state directory ([mining] state_dir):
-// created 0700 (on Windows, restricted to its owner when it is created and
-// never judged afterwards: perm.go), and refused if it is a symlink or
-// group/world-accessible — the same hazard discipline as the Unix-socket
-// listener.
+// created 0700 (on Windows, every directory this call creates is restricted
+// to its owner as it is created and none is judged afterwards: perm.go), and
+// refused if it is a symlink or group/world-accessible — the same hazard
+// discipline as the Unix-socket listener.
 func OpenStore(dir string) (*Store, error) {
 	if dir == "" {
 		return nil, errors.New("auth: state_dir is empty")
 	}
-	_, statErr := os.Lstat(dir) // #nosec G703 -- operator-configured state dir, validated below
-	created := errors.Is(statErr, fs.ErrNotExist)
+	// MkdirAll can make several levels, and on Windows each inherits its
+	// parent's list: restricting only the leaf would leave a D:\jevlin this
+	// call made with D:\'s entries, from where another account can rename the
+	// restricted state dir away and plant its own. So the levels that do not
+	// exist are recorded first and every one of them is restricted.
+	made := missingDirs(dir)
 	if err := os.MkdirAll(dir, 0o700); err != nil { // #nosec G703 -- operator-configured state dir, validated just below
-		return nil, fmt.Errorf("auth: create state dir: %w", err)
+		return nil, fmt.Errorf("auth: create state dir: %w%s", err, undoCreated(made))
 	}
-	if created {
-		// Before anything is written into it: on Windows MkdirAll sets no
-		// DACL, so the new directory would inherit its parent's.
-		if err := restrictCreatedStateDir(dir); err != nil {
+	// Before anything is written into any of them, outermost first.
+	for _, d := range made {
+		if err := restrictCreatedStateDir(d); err != nil {
 			// Left in place, the next OpenStore would find a directory that
 			// exists, take it as it stands and never restrict it: one failed
 			// call would leave the secrets under the parent's list for good.
-			// It was made a moment ago and nothing was written into it, so
-			// it goes, and the next run restricts a directory it creates.
-			if rmErr := os.Remove(dir); rmErr != nil { // #nosec G703 -- the directory created just above
-				return nil, fmt.Errorf("auth: restrict state dir to its owner: %w (and it could not be removed to try again: %v)", err, rmErr)
-			}
-			return nil, fmt.Errorf("auth: restrict state dir to its owner: %w", err)
+			// They were made a moment ago and nothing was written into them,
+			// so they go, and the next run restricts what it creates.
+			return nil, fmt.Errorf("auth: restrict state dir %s to its owner: %w%s", d, err, undoCreated(made))
 		}
 	}
 	return openExistingStore(dir)
+}
+
+// missingDirs lists the directories on the way to dir, dir included, that do
+// not exist yet, outermost first.
+func missingDirs(dir string) []string {
+	var missing []string
+	for p := filepath.Clean(dir); ; {
+		if _, err := os.Lstat(p); !errors.Is(err, fs.ErrNotExist) { // #nosec G703 -- operator-configured state dir
+			break // there, or not something to make
+		}
+		missing = append(missing, p)
+		parent := filepath.Dir(p)
+		if parent == p {
+			break
+		}
+		p = parent
+	}
+	slices.Reverse(missing)
+	return missing
+}
+
+// undoCreated takes away, innermost first, the directories a failed OpenStore
+// made, and returns what to append to its error when one could not go (a
+// directory that is no longer empty stays, and is said). A directory that is
+// already gone is not a failure.
+func undoCreated(made []string) string {
+	var stuck []string
+	for i := len(made) - 1; i >= 0; i-- {
+		if err := os.Remove(made[i]); err != nil && !errors.Is(err, fs.ErrNotExist) { // #nosec G703 -- directories this call created
+			stuck = append(stuck, made[i])
+		}
+	}
+	if len(stuck) == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" (and %s could not be removed to try again)", strings.Join(stuck, ", "))
 }
 
 // OpenStoreExisting opens an already-existing state directory without
