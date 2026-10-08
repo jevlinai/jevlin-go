@@ -43,11 +43,11 @@ func miningClients(ctx context.Context, args []string, cmd string) (*auth.OAuthC
 	if err := fs.Parse(args); err != nil {
 		return nil, nil, config.Mining{}, 2
 	}
-	// No -config is not an error here: config.Load resolves the flag, then
-	// JEVLIN_CONFIG, then ./jevlin.toml, then defaults — the same
-	// order the daemon and the agent commands use. Refusing early made
-	// these six commands the only ones that ignored the environment.
-	cfg, _, err := config.Load([]string{"-config", *cfgPath}, os.Getenv)
+	// No -config is not an error here: loadConfig resolves the flag, then
+	// JEVLIN_CONFIG, then the installation's own config, then defaults —
+	// the same order the agent commands use. Refusing early made these six
+	// commands the only ones that ignored the environment.
+	cfg, _, err := loadConfig(*cfgPath, os.Getenv)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "jevlin:", err)
 		return nil, nil, config.Mining{}, 1
@@ -61,7 +61,7 @@ func miningClients(ctx context.Context, args []string, cmd string) (*auth.OAuthC
 		if src := describeConfigSource(*cfgPath, os.Getenv); src != "" {
 			fmt.Fprintf(os.Stderr, "jevlin: no authorization server configured in %s; there is nothing to enroll\n", src)
 		} else {
-			fmt.Fprintln(os.Stderr, "jevlin: no config file found — looked at $JEVLIN_CONFIG and ./jevlin.toml.")
+			fmt.Fprintln(os.Stderr, "jevlin: no config file found — looked at $JEVLIN_CONFIG and the installation's own config.")
 			fmt.Fprintln(os.Stderr, "  Pass -config <file>, or set JEVLIN_CONFIG.")
 		}
 		return nil, nil, config.Mining{}, 1

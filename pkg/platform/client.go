@@ -226,14 +226,22 @@ func clampPollInterval(d time.Duration) time.Duration {
 	return d
 }
 
-// controlCharPattern is any C0 control character (including \n, \r, \t)
-// or DEL — none legitimately appears in a claim URL, a claim code, or a
-// slot name. Not a full sanitizer: a REFUSAL, not a strip, because a
-// platform response containing one is not a shape this client trusts
-// enough to guess what was meant (WP2-adversarial-review finding 12).
+// hasControlChar reports any C0 control character (including \n, \r,
+// \t), DEL, C1 control (U+0080–U+009F, which includes the one-byte CSI
+// U+009B) or bidi formatting character — none legitimately appears in a
+// claim URL, a claim code, a scope, a slot name or a refusal message,
+// and each can forge or reorder what the terminal shows. Not a full
+// sanitizer: a REFUSAL, not a strip, because a platform response
+// containing one is not a shape this client trusts enough to guess
+// what was meant (WP2-adversarial-review finding 12).
 func hasControlChar(s string) bool {
 	for _, r := range s {
-		if r < 0x20 || r == 0x7f {
+		switch {
+		case r < 0x20, r == 0x7f, r >= 0x80 && r <= 0x9f:
+			return true
+		case r == 0x061c, r == 0x200e, r == 0x200f,
+			r >= 0x202a && r <= 0x202e,
+			r >= 0x2066 && r <= 0x2069:
 			return true
 		}
 	}
@@ -427,6 +435,14 @@ func decodeAgentStatusWire(data []byte, portalBaseURL string) (AgentStatus, erro
 		if hasControlChar(slot) {
 			return AgentStatus{}, errors.New("platform: a slot name in the status response contains a control character; refusing")
 		}
+	}
+	for _, sc := range wire.Scopes {
+		if hasControlChar(sc) {
+			return AgentStatus{}, errors.New("platform: a scope in the status response contains a control character; refusing")
+		}
+	}
+	if le := wire.Mining.LastEnrollment; le != nil && (hasControlChar(le.Slot) || hasControlChar(le.MintedAt)) {
+		return AgentStatus{}, errors.New("platform: last_enrollment in the status response contains a control character; refusing")
 	}
 	// console_url gets the same origin-lock and control-character check
 	// as register's claim_url (invariant 12) — but dropped, not failed,
@@ -701,8 +717,15 @@ func refusal(status int, raw []byte) error {
 		if code == "" {
 			code = env.Error.Code
 		}
-		if code != "" {
-			return &RefusalError{Status: status, Code: code, Message: env.Error.Message}
+		// Both are printed verbatim by Error(): a code carrying a control
+		// character is no code at all, and such a message is dropped
+		// (the code alone still classifies the refusal).
+		if code != "" && !hasControlChar(code) {
+			msg := env.Error.Message
+			if hasControlChar(msg) {
+				msg = ""
+			}
+			return &RefusalError{Status: status, Code: code, Message: msg}
 		}
 	}
 	return &RefusalError{Status: status}

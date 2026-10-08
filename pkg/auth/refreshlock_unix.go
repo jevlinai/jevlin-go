@@ -15,6 +15,8 @@ import (
 	"fmt"
 	"os"
 	"syscall"
+
+	"github.com/jevlinai/jevlin-go/pkg/fsx"
 )
 
 // tryLockRefreshFile makes one non-blocking attempt at an exclusive
@@ -28,7 +30,9 @@ import (
 // as two processes do. That is what makes one mechanism enough: there is
 // no second, in-process lock that could disagree with this one.
 func tryLockRefreshFile(path string) (*os.File, bool, error) {
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600) // #nosec G304 G703 -- store-dir + fixed name
+	// The state dir is a writable root of Codex's sandbox: OpenLock refuses a
+	// link a sandboxed command left at the name instead of locking its target.
+	f, err := fsx.OpenLock(path)
 	if err != nil {
 		return nil, false, fmt.Errorf("auth: open %s: %w", refreshLockFile, err)
 	}

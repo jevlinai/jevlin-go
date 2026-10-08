@@ -1780,12 +1780,27 @@ func readWithMode(ops agentOps, path string) ([]byte, os.FileMode, error) {
 // could read those files before this block existed; it could not redirect
 // where they go, and it must not be able to after it either. The state dir is
 // writable because the claim resume and the flush rotate the refresh token
-// there — a deletion-only exposure, not an exfiltration one.
+// there. That is more than a deletion exposure: a sandboxed command can leave
+// a symlink, a hard link or a FIFO at any name in these directories, which
+// hard invariant 19 (pkg/fsx/confined.go) answers for this client's own
+// writes and reads, and it can rewrite the records themselves. The one record
+// that could authorize replacing the platform credential, the registration
+// journal, is kept beside credentials.json for that reason (hard invariant
+// 13); for the others nothing here yet answers.
 func codexSandboxRoots(entry binEntry, getenv func(string) string) []string {
 	cfg := configForEntry(entry, getenv)
 	if cfg == nil {
 		return nil
 	}
+	dirs := codexCandidateRoots(cfg)
+	if codexRootsProblem(entry.cfg, cfg, dirs) != "" {
+		return nil
+	}
+	return dirs
+}
+
+// codexCandidateRoots are the directories the block would grant.
+func codexCandidateRoots(cfg *config.Config) []string {
 	// Always: the claim resume writes here after every search, mining or not.
 	dirs := []string{cfg.Mining.StateDir}
 	// Only where the miner records searches — the static flag, not the
@@ -1794,6 +1809,46 @@ func codexSandboxRoots(entry binEntry, getenv func(string) string) []string {
 		dirs = append(dirs, cfg.Miner.IntakeDir, cfg.Miner.SessionsDir, cfg.Mining.SpoolDir)
 	}
 	return cleanDirs(dirs)
+}
+
+// codexSandboxProblem is codexRootsProblem for an entry, for install's note.
+func codexSandboxProblem(entry binEntry, getenv func(string) string) string {
+	cfg := configForEntry(entry, getenv)
+	if cfg == nil {
+		return ""
+	}
+	return codexRootsProblem(entry.cfg, cfg, codexCandidateRoots(cfg))
+}
+
+// codexRootsProblem is why the block must grant none of dirs, or "". Hard
+// invariant 19 rests on the installation's own directory (credentials.json,
+// flush.lock) and the config's directory not being writable from the
+// sandbox: a config rewritten there names the hosts the keys go to. A layout
+// that nests either inside a directory the block would grant is refused
+// whole rather than granted in part.
+func codexRootsProblem(cfgPath string, cfg *config.Config, dirs []string) string {
+	type protected struct{ dir, what string }
+	guard := []protected{{minerRoot(cfg.Miner), "the installation's own directory, which holds credentials.json and flush.lock"}}
+	if cfgPath != "" {
+		guard = append(guard, protected{filepath.Dir(cfgPath), "the config's directory"})
+	}
+	for _, g := range guard {
+		for _, d := range dirs {
+			if dirWithin(g.dir, d) {
+				return fmt.Sprintf("granting %s would make %s, %s, writable from the sandbox; give state_dir, intake_dir, sessions_dir and spool_dir directories of their own", d, g.dir, g.what)
+			}
+		}
+	}
+	return ""
+}
+
+// dirWithin reports whether dir is parent or lies inside it.
+func dirWithin(dir, parent string) bool {
+	if dir == "" || parent == "" {
+		return false
+	}
+	rel, err := filepath.Rel(filepath.Clean(parent), filepath.Clean(dir))
+	return err == nil && (rel == "." || filepath.IsLocal(rel))
 }
 
 // codexOwnedRoots is every directory THIS config names that our block may

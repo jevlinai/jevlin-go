@@ -8,6 +8,8 @@ package main
 
 import (
 	"errors"
+	"fmt"
+	"io/fs"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -17,10 +19,13 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-// restrictToOwner replaces the object's DACL with one entry granting the
-// current user full control, and protects it from inheriting anything else —
-// what `icacls <dir> /inheritance:r /grant:r <user>:(OI)(CI)F` did. A
-// directory's entry is inherited by what is created inside it.
+// restrictToOwner makes the current user the object's owner and replaces its
+// DACL with one entry granting that user full control, protected from
+// inheriting anything else — what `icacls <dir> /setowner <user>
+// /inheritance:r /grant:r <user>:(OI)(CI)F` did. A directory's entry is
+// inherited by what is created inside it. The owner matters as much as the
+// DACL: an owner keeps WRITE_DAC whatever the DACL says, so an object left
+// with another owner could be opened up again by them.
 func restrictToOwner(path string, dir bool) error {
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {
@@ -44,8 +49,39 @@ func restrictToOwner(path string, dir bool) error {
 		return err
 	}
 	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
-		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
-		nil, nil, acl, nil)
+		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
+		user.User.Sid, nil, acl, nil)
+}
+
+// ownedByCurrentUser refuses an object whose owner is not this process's
+// user. An elevated process's default owner is BUILTIN\Administrators, so
+// that owner is accepted too, but only while this process holds that group:
+// no unprivileged account can give an object that owner.
+func ownedByCurrentUser(path string, _ fs.FileInfo) error {
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		return fmt.Errorf("read the current user: %w", err)
+	}
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
+	if err != nil {
+		return fmt.Errorf("read the owner of %s: %w", path, err)
+	}
+	owner, _, err := sd.Owner()
+	if err != nil {
+		return fmt.Errorf("read the owner of %s: %w", path, err)
+	}
+	if owner == nil {
+		return fmt.Errorf("%s has no owner", path)
+	}
+	if owner.Equals(user.User.Sid) {
+		return nil
+	}
+	if owner.IsWellKnown(windows.WinBuiltinAdministratorsSid) {
+		if member, err := windows.Token(0).IsMember(owner); err == nil && member {
+			return nil
+		}
+	}
+	return fmt.Errorf("%s is owned by %s, not the current user", path, principalName(owner.String()))
 }
 
 // registryUserEnvironment is HKCU\<key> — Environment in production, a

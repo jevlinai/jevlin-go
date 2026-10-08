@@ -332,23 +332,17 @@ func Load(args []string, getenv func(string) string) (cfg *Config, showVersion b
 
 	raw := newRawConfigDefaults()
 
-	// TOML file: explicit path (flag or env) is required to exist; the
-	// conventional ./jevlin.toml is picked up when present.
+	// TOML file: only an explicit path (flag or env), which is required to
+	// exist. A jevlin.toml in the working directory is never picked up on
+	// its own: whoever wrote that directory (a cloned repo, an archive)
+	// would choose where the participant's keys are sent.
 	path := *flagConfig
 	if path == "" {
 		path = getenv("JEVLIN_CONFIG")
 	}
-	explicit := path != ""
-	if path == "" {
-		if _, statErr := os.Stat("jevlin.toml"); statErr == nil {
-			path = "jevlin.toml"
-		}
-	}
 	if path != "" {
 		if err := raw.applyFile(path); err != nil {
-			if explicit || !errors.Is(err, os.ErrNotExist) {
-				return nil, false, err
-			}
+			return nil, false, err
 		}
 	}
 

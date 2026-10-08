@@ -636,6 +636,22 @@ func connectConfig(t *testing.T, platformURL, asURL string) (cfgPath, stateDir s
 	return writeTOML(t, b.String()), stateDir
 }
 
+// testJournal is the registration journal connect uses for cfgPath: beside
+// credentials.json, not in the state directory.
+func testJournal(t *testing.T, cfgPath string) *auth.RegistrationJournal {
+	t.Helper()
+	j, err := registrationJournal(mustLoadConfig(t, cfgPath).Miner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return j
+}
+
+func testJournalPath(t *testing.T, cfgPath string) string {
+	t.Helper()
+	return filepath.Join(minerRoot(mustLoadConfig(t, cfgPath).Miner), registrationJournalFile)
+}
+
 func mustLoadConfig(t *testing.T, cfgPath string) *config.Config {
 	t.Helper()
 	cfg, _, err := loadConfig(cfgPath, noEnv)
@@ -2959,7 +2975,7 @@ func TestForegroundConnectReplacesExpiredRegistrationAndPropagatesNewIdentity(t 
 	if _, ok, err := store.LoadHealth(auth.HealthFlush); err != nil || !ok {
 		t.Fatalf("expired replacement cleared flush health: ok=%v err=%v", ok, err)
 	}
-	if _, ok, err := store.LoadPendingRegistration(); err != nil || ok {
+	if _, ok, err := testJournal(t, cfgPath).Load(); err != nil || ok {
 		t.Fatalf("pending registration journal remains after replacement: ok=%v err=%v", ok, err)
 	}
 
@@ -3075,7 +3091,7 @@ func TestExpiredRegistrationWithMissingCredentialRefusesForceReplacement(t *test
 	if _, err := os.Stat(credPath); !os.IsNotExist(err) {
 		t.Fatalf("missing credential was unexpectedly written: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(stateDir, "registration_pending.json")); !os.IsNotExist(err) {
+	if _, err := os.Stat(testJournalPath(t, cfgPath)); !os.IsNotExist(err) {
 		t.Fatalf("replacement journal was unexpectedly created: %v", err)
 	}
 }
@@ -3117,7 +3133,7 @@ func TestExpiredRegistrationStatusFailureRefusesForceReplacement(t *testing.T) {
 	if raw, err := os.ReadFile(credPath); err != nil || !strings.Contains(string(raw), "sr-old-key") { // #nosec G304 -- test controls its credential path
 		t.Fatalf("existing credential changed: err=%v contents=%q", err, raw)
 	}
-	if _, err := os.Stat(filepath.Join(stateDir, "registration_pending.json")); !os.IsNotExist(err) {
+	if _, err := os.Stat(testJournalPath(t, cfgPath)); !os.IsNotExist(err) {
 		t.Fatalf("replacement journal was unexpectedly created: %v", err)
 	}
 }
@@ -3141,7 +3157,7 @@ func TestLostRegisterResponseLeavesNoLocalCommitAndNextConnectMayRetry(t *testin
 	if _, ok := loadAgent(t, stateDir); ok {
 		t.Fatal("an invented agent registration was persisted")
 	}
-	if _, err := os.Stat(filepath.Join(stateDir, "registration_pending.json")); !os.IsNotExist(err) {
+	if _, err := os.Stat(testJournalPath(t, cfgPath)); !os.IsNotExist(err) {
 		t.Fatalf("a complete-response journal was created after a lost response: %v", err)
 	}
 
@@ -3158,17 +3174,13 @@ func TestPendingRegistrationRecoveryPublishesWithoutRegister(t *testing.T) {
 	platform := newStubPlatform(t)
 	cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
 	cfg := mustLoadConfig(t, cfgPath)
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
 	client := platformapi.New(cfg.Platform.AgentsAPIURL, cfg.Platform.BaseURL)
 	fresh, err := client.Register(context.Background(), "journal-crash", "", nil)
 	if err != nil {
 		t.Fatalf("completed Register response: %v", err)
 	}
 	pending := pendingRegistrationFromPlatform(fresh)
-	if err := store.SavePendingRegistration(pending); err != nil {
+	if err := testJournal(t, cfgPath).Save(pending); err != nil {
 		t.Fatal(err)
 	}
 
@@ -3185,7 +3197,7 @@ func TestPendingRegistrationRecoveryPublishesWithoutRegister(t *testing.T) {
 	if got, err := os.ReadFile(credentialsPath(cfg.Miner)); err != nil || !strings.Contains(string(got), pending.Key) {
 		t.Fatalf("journaled platform key was not published: err=%v contents=%q", err, got)
 	}
-	if _, ok, err := store.LoadPendingRegistration(); err != nil || ok {
+	if _, ok, err := testJournal(t, cfgPath).Load(); err != nil || ok {
 		t.Fatalf("journal was not cleared after recovery: ok=%v err=%v", ok, err)
 	}
 
@@ -3208,8 +3220,7 @@ func TestPendingJournalRecoveryNeverCallsMeEvenWithACorruptRegistrationAndCreden
 	platform := newStubPlatform(t)
 	cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
 	cfg := mustLoadConfig(t, cfgPath)
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
+	if _, err := auth.OpenStore(stateDir); err != nil {
 		t.Fatal(err)
 	}
 
@@ -3219,7 +3230,7 @@ func TestPendingJournalRecoveryNeverCallsMeEvenWithACorruptRegistrationAndCreden
 		t.Fatalf("completed Register response: %v", err)
 	}
 	pending := pendingRegistrationFromPlatform(fresh)
-	if err := store.SavePendingRegistration(pending); err != nil {
+	if err := testJournal(t, cfgPath).Save(pending); err != nil {
 		t.Fatal(err)
 	}
 
@@ -3251,7 +3262,7 @@ func TestPendingJournalRecoveryNeverCallsMeEvenWithACorruptRegistrationAndCreden
 	if got, err := os.ReadFile(filepath.Join(stateDir, "agent.json.corrupt")); err != nil || string(got) != string(corruptBytes) { // #nosec G304 -- test controls its temporary state directory
 		t.Fatalf("the pre-existing corrupt registration evidence was not preserved as PR3 already does: err=%v contents=%q", err, got)
 	}
-	if _, ok, err := store.LoadPendingRegistration(); err != nil || ok {
+	if _, ok, err := testJournal(t, cfgPath).Load(); err != nil || ok {
 		t.Fatalf("journal was not cleared after recovery: ok=%v err=%v", ok, err)
 	}
 }
@@ -3274,7 +3285,7 @@ func TestPendingExpiredReplacementRecoveryCompletesAcrossRestart(t *testing.T) {
 	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-old-key"}); err != nil { // #nosec G101 -- canned test credential
 		t.Fatal(err)
 	}
-	if err := store.SavePendingRegistration(auth.PendingRegistration{
+	if err := testJournal(t, cfgPath).Save(auth.PendingRegistration{
 		AgentID:         "agent-new",
 		Key:             "sr-new-key",
 		ClaimURL:        platform.srv.URL + "/claim/NEW",
@@ -3301,12 +3312,16 @@ func TestPendingExpiredReplacementRecoveryCompletesAcrossRestart(t *testing.T) {
 	if got, err := os.ReadFile(credentialsPath(cfg.Miner)); err != nil || !strings.Contains(string(got), "sr-new-key") {
 		t.Fatalf("replacement key was not published after restart: err=%v contents=%q", err, got)
 	}
-	if _, ok, err := store.LoadPendingRegistration(); err != nil || ok {
+	if _, ok, err := testJournal(t, cfgPath).Load(); err != nil || ok {
 		t.Fatalf("replacement journal survived successful recovery: ok=%v err=%v", ok, err)
 	}
 }
 
-func TestPendingRegistrationConflictDoesNotOverwriteOrRegister(t *testing.T) {
+// The state directory is a Codex sandbox writable root. A journal written
+// there with replace_expired authority — and an agent.json to match it — must
+// not let connect publish its key over credentials.json.
+func TestForgedStateDirJournalCannotReplaceCredential(t *testing.T) {
+	withShortConnectTimings(t)
 	platform := newStubPlatform(t)
 	cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
 	cfg := mustLoadConfig(t, cfgPath)
@@ -3314,6 +3329,52 @@ func TestPendingRegistrationConflictDoesNotOverwriteOrRegister(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-victim-key"}); err != nil { // #nosec G101 -- canned test credential
+		t.Fatal(err)
+	}
+	forged := auth.PendingRegistration{
+		V:               1,
+		AgentID:         "agent-attacker",
+		Key:             "sr-attacker-key",
+		ClaimURL:        platform.srv.URL + "/claim/EVIL",
+		ClaimCode:       "EVIL",
+		ClaimExpiresAt:  "2026-09-16T00:00:00Z",
+		Status:          "unclaimed",
+		ReplaceExpired:  true,
+		PreviousAgentID: "agent-victim",
+		PreviousKey:     "sr-victim-key",
+	}
+	raw, err := json.Marshal(forged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := filepath.Join(stateDir, registrationJournalFile)
+	if err := os.WriteFile(legacy, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveAgentRegistration(agentRegistrationFromPending(forged)); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, errOut := runConnect(t, cfgPath, nil, "-resume")
+	if !strings.Contains(errOut, "discarded registration_pending.json") {
+		t.Errorf("no diagnostic for the discarded state-dir journal: %q", errOut)
+	}
+	if got, err := os.ReadFile(credentialsPath(cfg.Miner)); err != nil || !strings.Contains(string(got), "sr-victim-key") || strings.Contains(string(got), "sr-attacker-key") {
+		t.Fatalf("forged state-dir journal replaced the credential: err=%v contents=%q", err, got)
+	}
+	if lexists(legacy) {
+		t.Error("the state-dir journal was left in place")
+	}
+	if _, ok, err := testJournal(t, cfgPath).Load(); err != nil || ok {
+		t.Fatalf("a journal appeared beside credentials.json: ok=%v err=%v", ok, err)
+	}
+}
+
+func TestPendingRegistrationConflictDoesNotOverwriteOrRegister(t *testing.T) {
+	platform := newStubPlatform(t)
+	cfgPath, _ := connectConfig(t, platform.srv.URL, "")
+	cfg := mustLoadConfig(t, cfgPath)
 	pending := auth.PendingRegistration{
 		AgentID:        "agent-journal",
 		Key:            "sr-journal-key",
@@ -3322,7 +3383,7 @@ func TestPendingRegistrationConflictDoesNotOverwriteOrRegister(t *testing.T) {
 		ClaimExpiresAt: "2026-09-16T00:00:00Z",
 		Status:         "unclaimed",
 	}
-	if err := store.SavePendingRegistration(pending); err != nil {
+	if err := testJournal(t, cfgPath).Save(pending); err != nil {
 		t.Fatal(err)
 	}
 	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-other-key"}); err != nil { // #nosec G101 -- canned test credential
@@ -3337,7 +3398,7 @@ func TestPendingRegistrationConflictDoesNotOverwriteOrRegister(t *testing.T) {
 	if registerCalls, _, _ := platform.counts(); registerCalls != 0 {
 		t.Fatalf("journal conflict issued a new Register: %d", registerCalls)
 	}
-	if _, ok, err := store.LoadPendingRegistration(); err != nil || !ok {
+	if _, ok, err := testJournal(t, cfgPath).Load(); err != nil || !ok {
 		t.Fatalf("journal was lost after a publication conflict: ok=%v err=%v", ok, err)
 	}
 }
@@ -3354,7 +3415,7 @@ func TestPendingRegistrationAgentConflictDoesNotOverwriteOrRegister(t *testing.T
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SavePendingRegistration(auth.PendingRegistration{
+	if err := testJournal(t, cfgPath).Save(auth.PendingRegistration{
 		AgentID:        "agent-journal",
 		Key:            "sr-journal-key",
 		ClaimURL:       platform.srv.URL + "/claim/JOURNAL-1",
@@ -3377,7 +3438,7 @@ func TestPendingRegistrationAgentConflictDoesNotOverwriteOrRegister(t *testing.T
 	if !ok || reg.AgentID != "agent-other" {
 		t.Fatalf("conflicting agent registration was overwritten: %+v ok=%v", reg, ok)
 	}
-	if _, ok, err := store.LoadPendingRegistration(); err != nil || !ok {
+	if _, ok, err := testJournal(t, cfgPath).Load(); err != nil || !ok {
 		t.Fatalf("journal was lost after an agent publication conflict: ok=%v err=%v", ok, err)
 	}
 }
