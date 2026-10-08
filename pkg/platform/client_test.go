@@ -811,7 +811,7 @@ func TestAClaimURLCarriesNothingAfterItsOwnText(t *testing.T) {
 	const base = "https://platform.example"
 	for name, raw := range map[string]string{
 		"a space, then another URL":    base + "/claim/AB12-CD34 https://evil.example/claim",
-		"U+3000, then another URL":     base + "/claim/AB12-CD34　https://evil.example/claim",
+		"U+3000, then another URL":     base + "/claim/AB12-CD34\u3000https://evil.example/claim",
 		"a non-ASCII rune in the path": base + "/claim/AB12-CD34é",
 		"a user before the host":       "https://evil.example@platform.example/claim/AB12-CD34",
 		"a tab":                        base + "/claim/AB12\tCD34",
@@ -837,5 +837,74 @@ func TestAClaimURLCarriesNothingAfterItsOwnText(t *testing.T) {
 	}
 	if _, err := New(stub.srv.URL, stub.srv.URL).Register(context.Background(), "", "", nil); err == nil {
 		t.Fatal("a register claim_url with a second URL after a space was accepted")
+	}
+}
+
+// connect journals a register response and publishes its key before it
+// writes agent.json, and the record refuses an agent id that names a route
+// or holds a control character, and a claim time holding one. So the client
+// must refuse those fields here, on the wire, or a bad response wedges the
+// journal: the review's stub answered agent_id "agent-1<RLM>" and every
+// later connect failed the same way.
+func TestTheFieldsARecordRefusesAreRefusedOnTheWire(t *testing.T) {
+	registerWith := func(t *testing.T, fields map[string]any) error {
+		stub := newStubPlatform(t)
+		stub.register = func(w http.ResponseWriter, r *http.Request) {
+			body := map[string]any{"agent_id": "a", "key": "sr-1", "claim_url": stub.srv.URL + "/claim/X"}
+			for k, v := range fields {
+				body[k] = v
+			}
+			writeJSON(w, http.StatusCreated, body)
+		}
+		_, err := New(stub.srv.URL, stub.srv.URL).Register(context.Background(), "", "", nil)
+		return err
+	}
+	for name, fields := range map[string]map[string]any{
+		"agent_id with RLM":           {"agent_id": "agent-1\u200f"},
+		"agent_id me":                 {"agent_id": "me"},
+		"agent_id with a slash":       {"agent_id": "a/b"},
+		"claim_expires_at with ESC":   {"claim_expires_at": "2026-09-16\x1b[2J"},
+		"claim_expires_at with a tag": {"claim_expires_at": "2026-09-16\U000e0049"},
+	} {
+		if err := registerWith(t, fields); err == nil {
+			t.Errorf("register: %s accepted", name)
+		}
+	}
+	if err := registerWith(t, map[string]any{"claim_expires_at": "2026-09-16T00:00:00Z"}); err != nil {
+		t.Errorf("register: an ordinary response refused: %v", err)
+	}
+
+	stub := newStubPlatform(t)
+	meID, statusExpiry, mintExpiry := "me", "2026-09-16T00:00:00Z", "2026-09-16T00:00:00Z"
+	stub.me = func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{"agent_id": meID, "status": "claimed"})
+	}
+	stub.status = func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{"status": "unclaimed", "claim_expires_at": statusExpiry})
+	}
+	stub.claimCode = func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{"claim_url": stub.srv.URL + "/claim/Y", "claim_code": "Y", "claim_expires_at": mintExpiry})
+	}
+	c := New(stub.srv.URL, stub.srv.URL)
+	if _, err := c.Me(context.Background(), "sr-1"); err == nil {
+		t.Error("me: an agent_id naming the self-lookup route accepted")
+	}
+	statusExpiry = "2026-09-16\u2028x"
+	if _, err := c.Status(context.Background(), "a", "sr-1"); err == nil {
+		t.Error("status: a claim_expires_at with U+2028 accepted")
+	}
+	mintExpiry = "2026-09-16\x07"
+	if _, err := c.ClaimCode(context.Background(), "a", "sr-1"); err == nil {
+		t.Error("claim-code: a claim_expires_at with BEL accepted")
+	}
+	meID, statusExpiry, mintExpiry = "agent-1", "2026-09-16T00:00:00Z", "2026-09-16T00:00:00Z"
+	if _, err := c.Me(context.Background(), "sr-1"); err != nil {
+		t.Errorf("me: an ordinary answer refused: %v", err)
+	}
+	if _, err := c.Status(context.Background(), "a", "sr-1"); err != nil {
+		t.Errorf("status: an ordinary answer refused: %v", err)
+	}
+	if _, err := c.ClaimCode(context.Background(), "a", "sr-1"); err != nil {
+		t.Errorf("claim-code: an ordinary answer refused: %v", err)
 	}
 }

@@ -200,11 +200,20 @@ func (c *Client) Register(ctx context.Context, name, client string, requestedSco
 	if wire.AgentID == "" || wire.Key == "" || wire.ClaimURL == "" {
 		return nil, errors.New("platform: register response missing agent_id, key or claim_url")
 	}
+	// Refused here, before connect journals the response: a field the
+	// client would not save later wedges the journal it has already
+	// written, and the key in it is published first.
+	if err := auth.ValidAgentID(wire.AgentID); err != nil {
+		return nil, fmt.Errorf("platform: register response: %w; refusing", err)
+	}
 	if err := validatePlatformURL(wire.ClaimURL, c.portalBaseURL); err != nil {
 		return nil, err
 	}
 	if hasControlChar(wire.ClaimCode) {
 		return nil, errors.New("platform: claim_code contains a control character; refusing")
+	}
+	if hasControlChar(wire.ClaimExpiresAt) {
+		return nil, errors.New("platform: claim_expires_at contains a control character; refusing")
 	}
 	return &Registration{
 		AgentID:        wire.AgentID,
@@ -227,9 +236,9 @@ func clampPollInterval(d time.Duration) time.Duration {
 	return d
 }
 
-// hasControlChar is internal/termtext's rule: any C0 control character,
-// DEL, C1 control or bidi formatting character. None legitimately appears
-// in a claim URL, a claim code, a scope, a slot name or a refusal message.
+// hasControlChar is internal/termtext's rule: any control, format or line
+// separator character. None legitimately appears in an agent id, a claim
+// URL, a claim code, a claim time, a scope, a slot name or a refusal message.
 // A REFUSAL, not a strip, because a platform response containing one is
 // not a shape this client trusts enough to guess what was meant
 // (WP2-adversarial-review finding 12). pkg/auth reads its records back
@@ -452,6 +461,9 @@ func decodeAgentStatusWire(data []byte, portalBaseURL string) (AgentStatus, erro
 	if le := wire.Mining.LastEnrollment; le != nil && (hasControlChar(le.Slot) || hasControlChar(le.MintedAt)) {
 		return AgentStatus{}, errors.New("platform: last_enrollment in the status response contains a control character; refusing")
 	}
+	if hasControlChar(wire.ClaimExpiresAt) || hasControlChar(wire.ClaimedAt) {
+		return AgentStatus{}, errors.New("platform: a claim time in the status response contains a control character; refusing")
+	}
 	// console_url gets the same origin-lock and control-character check
 	// as register's claim_url (invariant 12) — but dropped, not failed,
 	// when invalid. Unlike claim_url, which IS the point of a register
@@ -544,6 +556,9 @@ func (c *Client) Me(ctx context.Context, key string) (*AgentIdentity, error) {
 	if wire.AgentID == "" {
 		return nil, errors.New("platform: self-lookup response carried no agent_id")
 	}
+	if err := auth.ValidAgentID(wire.AgentID); err != nil {
+		return nil, fmt.Errorf("platform: self-lookup response: %w; refusing", err)
+	}
 	if hasControlChar(wire.ClaimCode) {
 		return nil, errors.New("platform: claim_code contains a control character; refusing")
 	}
@@ -622,6 +637,9 @@ func (c *Client) ClaimCode(ctx context.Context, agentID, key string) (*ClaimBoot
 	}
 	if hasControlChar(wire.ClaimCode) {
 		return nil, errors.New("platform: claim_code contains a control character; refusing")
+	}
+	if hasControlChar(wire.ClaimExpiresAt) {
+		return nil, errors.New("platform: claim_expires_at contains a control character; refusing")
 	}
 	return &ClaimBootstrap{
 		ClaimURL:       wire.ClaimURL,

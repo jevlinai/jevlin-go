@@ -335,6 +335,9 @@ type AgentRegistration struct {
 // write-and-rename rather than createExclusive. A record
 // LoadAgentRegistration would refuse is not written.
 func (s *Store) SaveAgentRegistration(rec AgentRegistration) error {
+	if err := ValidAgentID(rec.AgentID); err != nil {
+		return fmt.Errorf("auth: refusing to store an agent registration: %w", err)
+	}
 	if field := recordTextProblem(rec); field != "" {
 		return fmt.Errorf("auth: refusing to store an agent registration whose %s holds a control, C1 or bidi character", field)
 	}
@@ -370,6 +373,9 @@ func (s *Store) LoadAgentRegistration() (rec AgentRegistration, ok bool, err err
 	}
 	if field := recordTextProblem(rec); field != "" {
 		return AgentRegistration{}, false, fmt.Errorf("%w: its %s holds a control, C1 or bidi character", ErrAgentRegistrationCorrupt, field)
+	}
+	if err := ValidAgentID(rec.AgentID); err != nil {
+		return AgentRegistration{}, false, fmt.Errorf("%w: %v", ErrAgentRegistrationCorrupt, err)
 	}
 	return rec, true, nil
 }

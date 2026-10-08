@@ -13,8 +13,11 @@ import (
 // strings to the participant's terminal; a control, C1 or bidi character in
 // one is a terminal escape or a reordered line in jevlin's own output, with
 // jevlin's authority behind it. The platform client refuses those
-// characters in what it receives (pkg/platform), so a record this client
-// wrote never holds one, and a record that does was not written by it.
+// characters in every field of what it receives that reaches a record
+// (pkg/platform: the agent id, the claim link, code and times, the scopes,
+// the slots and the last enrollment), and the save side refuses what the
+// load side would, so a record this client wrote never holds one, and a
+// record that does was not written by it.
 
 // recordTextProblem names the first string in rec, a struct or a pointer to
 // one, that holds a character termtext refuses: its JSON name, or "" when

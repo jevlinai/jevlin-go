@@ -23,7 +23,7 @@ func TestHasControlCharNamesEveryRangeItRefuses(t *testing.T) {
 	}
 	allowed := []string{
 		"", "twilight1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc", "https://platform.example/claim/AB12-CD34",
-		"José", "日本", "a b", " ", "é", // a combining accent is a letter's, not a format character
+		"José", "日本", "a b", "\u00a0", "e\u0301", // a combining accent is a letter's, not a format character
 		"2026-09-16T00:00:00Z", "agent-01a11680-4c2e",
 	}
 	for _, s := range allowed {

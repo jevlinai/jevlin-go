@@ -80,6 +80,9 @@ type stubPlatform struct {
 	// under a root test runner. Runs on the httptest handler's own
 	// goroutine: must not call testing.T methods directly.
 	meHook func()
+	// registerAgentID, when set, is the agent_id every register answers
+	// with, so a test can send one the client must refuse.
+	registerAgentID string
 }
 
 func newStubPlatform(t *testing.T) *stubPlatform {
@@ -110,6 +113,9 @@ func newStubPlatform(t *testing.T) *stubPlatform {
 			return
 		}
 		agentID := fmt.Sprintf("agent-%d", registerNumber)
+		if f.registerAgentID != "" {
+			agentID = f.registerAgentID
+		}
 		key := "sr-stubkey"
 		claimCode := "AB12-CD34"
 		if registerNumber > 1 {
