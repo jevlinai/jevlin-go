@@ -59,15 +59,19 @@ type stubPlatform struct {
 	dropNextRegisterBodies  int
 	statusNotFound          bool
 	statusError             bool
-	statusByAgent           map[string]string
-	scopesByAgent           map[string][]string
-	agentByKey              map[string]string // bearer key -> agent id, for /v1/agents/me
-	claimCodeByAgent        map[string]string
-	meError                 bool // every /v1/agents/me call answers 500
-	meOmitClaimFields       bool // /v1/agents/me never sends claim_url/claim_code, modeling B.1's known gap
-	claimCodeCalls          int  // POST /v1/agents/{id}/claim-code attempts, succeeded or not
-	claimCodeMints          int  // fresh codes actually minted
-	claimCodeDisabled       bool // the route answers 404, modeling a platform without it
+	// statusRequiresOwner makes GET /v1/agents/{id} answer 404 unless the
+	// bearer key is the one this stub minted for that id, as the real
+	// router does: it resolves the key to its own agent first.
+	statusRequiresOwner bool
+	statusByAgent       map[string]string
+	scopesByAgent       map[string][]string
+	agentByKey          map[string]string // bearer key -> agent id, for /v1/agents/me
+	claimCodeByAgent    map[string]string
+	meError             bool // every /v1/agents/me call answers 500
+	meOmitClaimFields   bool // /v1/agents/me never sends claim_url/claim_code, modeling B.1's known gap
+	claimCodeCalls      int  // POST /v1/agents/{id}/claim-code attempts, succeeded or not
+	claimCodeMints      int  // fresh codes actually minted
+	claimCodeDisabled   bool // the route answers 404, modeling a platform without it
 	// meHook, when set, runs synchronously right before a successful
 	// /v1/agents/me answer is written — a deterministic seam for timing a
 	// filesystem side effect (review correction §4) exactly between "the
@@ -76,6 +80,9 @@ type stubPlatform struct {
 	// under a root test runner. Runs on the httptest handler's own
 	// goroutine: must not call testing.T methods directly.
 	meHook func()
+	// registerAgentID, when set, is the agent_id every register answers
+	// with, so a test can send one the client must refuse.
+	registerAgentID string
 }
 
 func newStubPlatform(t *testing.T) *stubPlatform {
@@ -106,6 +113,9 @@ func newStubPlatform(t *testing.T) *stubPlatform {
 			return
 		}
 		agentID := fmt.Sprintf("agent-%d", registerNumber)
+		if f.registerAgentID != "" {
+			agentID = f.registerAgentID
+		}
 		key := "sr-stubkey"
 		claimCode := "AB12-CD34"
 		if registerNumber > 1 {
@@ -153,6 +163,10 @@ func newStubPlatform(t *testing.T) *stubPlatform {
 		id := strings.TrimPrefix(r.URL.Path, "/v1/agents/")
 		st, scopes, slots, consoleURL := f.status, f.scopes, f.slots, f.consoleURL
 		notFound := f.statusNotFound
+		if f.statusRequiresOwner {
+			owner, known := f.agentByKey[strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")]
+			notFound = notFound || !known || owner != id
+		}
 		statusError := f.statusError
 		if agentStatus, ok := f.statusByAgent[id]; ok {
 			st = agentStatus
@@ -298,6 +312,12 @@ func (f *stubPlatform) setStatusNotFound(notFound bool) {
 	f.statusNotFound = notFound
 }
 
+func (f *stubPlatform) setStatusRequiresOwner(requires bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.statusRequiresOwner = requires
+}
+
 func (f *stubPlatform) setStatusError(statusError bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -411,6 +431,7 @@ type stubOnboardingAS struct {
 	declared             string
 	activeAddress        string // "" means no active binding yet (GET answers 404)
 	declareCalls         int
+	standingCalls        int // GET /v1/payout/declaration: the read-before-declare and the adoption's look
 	tokenCalls           int
 	assertionRedemptions int // /oauth/token calls that carried a non-empty assertion (the enrollment grant, as opposed to an ordinary refresh-token grant a second authenticated client needs)
 	// declareOutcome overrides the PUT response's shape for the hold-shape
@@ -483,6 +504,7 @@ func newStubAS(t *testing.T) *stubOnboardingAS {
 	})
 	mux.HandleFunc("GET /v1/payout/declaration", func(w http.ResponseWriter, _ *http.Request) {
 		f.mu.Lock()
+		f.standingCalls++
 		active := f.activeAddress
 		f.mu.Unlock()
 		// "nothing declared yet" is 200 with active: null, not a 404 — the
@@ -547,6 +569,14 @@ func (f *stubOnboardingAS) setRevokeFails(fails bool) {
 	f.mu.Lock()
 	f.revokeFails = fails
 	f.mu.Unlock()
+}
+
+// standingReads is how many times anything asked where this participant is
+// paid.
+func (f *stubOnboardingAS) standingReads() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.standingCalls
 }
 
 // setDeclareOutcome overrides what PUT /v1/payout/declaration answers, for
@@ -645,6 +675,34 @@ func testJournal(t *testing.T, cfgPath string) *auth.RegistrationJournal {
 		t.Fatal(err)
 	}
 	return j
+}
+
+// testPayoutRecord is payout.json beside credentials.json for a config
+// whose intake_dir is the default, the state dir's sibling: the record is
+// then in the state dir's parent, never in the state dir itself.
+func testPayoutRecord(t *testing.T, stateDir string) *auth.PayoutRecord {
+	t.Helper()
+	record, err := auth.OpenPayoutRecord(filepath.Dir(stateDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return record
+}
+
+// seedClaim writes the claim record connect keeps beside credentials.json,
+// as a publication, a rebuild or a re-mint would have.
+func seedClaim(t *testing.T, cfgPath, agentID, claimURL, claimCode string) {
+	t.Helper()
+	if err := saveClaim(mustLoadConfig(t, cfgPath).Miner, auth.ClaimBootstrap{AgentID: agentID, ClaimURL: claimURL, ClaimCode: claimCode}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// storedClaim is the claim record on file for agentID, zero when none is.
+func storedClaim(t *testing.T, cfgPath, agentID string) auth.ClaimBootstrap {
+	t.Helper()
+	claim, _ := claimFor(mustLoadConfig(t, cfgPath).Miner, agentID, nil)
+	return claim
 }
 
 func testJournalPath(t *testing.T, cfgPath string) string {
@@ -774,13 +832,9 @@ func TestConnectCaseAccountExistsSearchAndMining(t *testing.T) {
 	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
 		t.Fatal("first connect failed")
 	}
-	// Give it a payout address the way a scripted install would: set it
-	// directly on the store, as mining enable would have.
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SavePayoutAddress("twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n"); err != nil {
+	// Give it a payout address the way a scripted install would: written
+	// beside credentials.json, as mining enable would have.
+	if err := testPayoutRecord(t, stateDir).Save("twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n"); err != nil {
 		t.Fatal(err)
 	}
 	platform.claim("credits", "mining")
@@ -824,11 +878,7 @@ func TestConnectCaseMiningGrantedLater(t *testing.T) {
 
 	// Mining granted later, with a payout address already on file
 	// (as if `mining enable` had run in between).
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SavePayoutAddress("twilight1gz3fu9w3jp08jp4qcjj6hsckzktsexd09vz039"); err != nil {
+	if err := testPayoutRecord(t, stateDir).Save("twilight1gz3fu9w3jp08jp4qcjj6hsckzktsexd09vz039"); err != nil {
 		t.Fatal(err)
 	}
 	platform.claim("credits", "mining")
@@ -860,15 +910,15 @@ func TestChooseSlot(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			slot, errText := chooseSlot(c.slots, c.platformSlot)
+			slot, refusal := chooseSlot(c.slots, c.platformSlot)
 			if slot != c.wantSlot {
 				t.Errorf("slot = %q, want %q", slot, c.wantSlot)
 			}
-			if c.wantErr && errText == "" {
-				t.Error("wanted a non-empty refusal message, got none")
+			if c.wantErr && slotRefusalText(refusal, c.slots, c.platformSlot) == "" {
+				t.Error("wanted a refusal with a message, got none")
 			}
-			if !c.wantErr && errText != "" {
-				t.Errorf("unexpected refusal message: %q", errText)
+			if !c.wantErr && refusal != "" {
+				t.Errorf("unexpected refusal: %q", refusal)
 			}
 		})
 	}
@@ -946,11 +996,7 @@ func TestAddressSetAfterEnrollmentIsDeclaredOnTheNextRun(t *testing.T) {
 	}
 
 	// The address arrives afterward, as `mining enable` would leave it.
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SavePayoutAddress("twilight19ltafk0vdyzwtnzjcfwgvlu3ldmvgemdqxsn79"); err != nil {
+	if err := testPayoutRecord(t, stateDir).Save("twilight19ltafk0vdyzwtnzjcfwgvlu3ldmvgemdqxsn79"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -974,7 +1020,7 @@ func TestDeclareIsNotRepeatedOnceSettled(t *testing.T) {
 	platform := newStubPlatform(t)
 	as := newStubAS(t)
 	cfgPath, stateDir := connectConfig(t, platform.srv.URL, as.srv.URL)
-	store, err := auth.OpenStore(stateDir)
+	_, err := auth.OpenStore(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -982,7 +1028,7 @@ func TestDeclareIsNotRepeatedOnceSettled(t *testing.T) {
 	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
 		t.Fatal("first connect failed")
 	}
-	if err := store.SavePayoutAddress("twilight1225q9dwktuz2vjj0q220m2jjy3x8cajwcfueq0"); err != nil {
+	if err := testPayoutRecord(t, stateDir).Save("twilight1225q9dwktuz2vjj0q220m2jjy3x8cajwcfueq0"); err != nil {
 		t.Fatal(err)
 	}
 	platform.claim("credits", "mining")
@@ -1109,12 +1155,23 @@ func TestDetachedResumePollsOnceAndExits(t *testing.T) {
 }
 
 func TestShouldResumeIsALocalCheckWithNoStoredRegistration(t *testing.T) {
-	if shouldResume(&config.Config{Mining: config.Mining{StateDir: filepath.Join(t.TempDir(), "state")}}) {
+	if shouldResume(&config.Config{Mining: config.Mining{StateDir: filepath.Join(t.TempDir(), "state")}}, noEnv) {
 		t.Fatal("shouldResume true with nothing on disk")
 	}
-	if shouldResume(&config.Config{}) {
+	if shouldResume(&config.Config{}, noEnv) {
 		t.Fatal("shouldResume true with an empty state dir")
 	}
+}
+
+// WP2-review defect 3 / coverage gap A: the spawn must stop once there is
+// nothing a resume can do, and — the reviewer's specific finding — every
+// condition that decides that needs a test that fails if THAT condition
+// alone is deleted, not just a return value it happens to share with a
+// resumeConfig is the config pkg/config would build around m: intake_dir,
+// and with it the directory credentials.json and the payout record sit in,
+// derived from the state dir.
+func resumeConfig(m config.Mining) *config.Config {
+	return &config.Config{Mining: m, Miner: config.Miner{IntakeDir: filepath.Join(filepath.Dir(m.StateDir), "intake")}}
 }
 
 // WP2-review defect 3 / coverage gap A: the spawn must stop once there is
@@ -1138,7 +1195,7 @@ func shouldResumeFixture(t *testing.T, status string, scopes []string, enrolled 
 		t.Fatal(err)
 	}
 	if address != "" {
-		if err := store.SavePayoutAddress(address); err != nil {
+		if err := testPayoutRecord(t, stateDir).Save(address); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -1150,7 +1207,7 @@ func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
 
 	t.Run("unclaimed: still actionable", func(t *testing.T) {
 		stateDir := shouldResumeFixture(t, "unclaimed", nil, false, "")
-		if !shouldResume(&config.Config{Mining: config.Mining{StateDir: stateDir}}) {
+		if !shouldResume(&config.Config{Mining: config.Mining{StateDir: stateDir}}, noEnv) {
 			t.Fatal("shouldResume false for an unclaimed registration still worth polling")
 		}
 	})
@@ -1159,14 +1216,14 @@ func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
 		stateDir := shouldResumeFixture(t, "claimed", []string{"credits"}, false, "")
 		cfg := configured
 		cfg.StateDir = stateDir
-		if shouldResume(&config.Config{Mining: cfg}) {
+		if shouldResume(resumeConfig(cfg), noEnv) {
 			t.Fatal("shouldResume true for a search-only claim")
 		}
 	})
 
 	t.Run("expired: settled", func(t *testing.T) {
 		stateDir := shouldResumeFixture(t, "expired", nil, false, "")
-		if shouldResume(&config.Config{Mining: config.Mining{StateDir: stateDir}}) {
+		if shouldResume(&config.Config{Mining: config.Mining{StateDir: stateDir}}, noEnv) {
 			t.Fatal("shouldResume true for an expired registration")
 		}
 	})
@@ -1188,7 +1245,7 @@ func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
 			t.Fatal(err)
 		}
 		cfg := config.Mining{StateDir: stateDir, ASBaseURL: "https://as.example"}
-		if shouldResume(&config.Config{Mining: cfg}) {
+		if shouldResume(resumeConfig(cfg), noEnv) {
 			t.Fatal("shouldResume true despite a stored decision of mining off")
 		}
 	})
@@ -1196,7 +1253,7 @@ func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
 	t.Run("not enrolled, mining.enabled = true but no as_url: settled", func(t *testing.T) {
 		stateDir := shouldResumeFixture(t, "claimed", []string{"mining"}, false, "")
 		cfg := config.Mining{StateDir: stateDir, Enabled: true, ASBaseURL: ""}
-		if shouldResume(&config.Config{Mining: cfg}) {
+		if shouldResume(resumeConfig(cfg), noEnv) {
 			t.Fatal("shouldResume true with no mining.as_url configured")
 		}
 	})
@@ -1205,7 +1262,7 @@ func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
 		stateDir := shouldResumeFixture(t, "claimed", []string{"mining"}, true, "")
 		cfg := configured
 		cfg.StateDir = stateDir
-		if shouldResume(&config.Config{Mining: cfg}) {
+		if shouldResume(resumeConfig(cfg), noEnv) {
 			t.Fatal("shouldResume true for a fully settled installation")
 		}
 	})
@@ -1221,7 +1278,7 @@ func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
 		}
 		cfg := configured
 		cfg.StateDir = stateDir
-		if shouldResume(&config.Config{Mining: cfg}) {
+		if shouldResume(resumeConfig(cfg), noEnv) {
 			t.Fatal("shouldResume true for an address already confirmed declared")
 		}
 	})
@@ -1241,7 +1298,7 @@ func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
 		}
 		cfg := configured
 		cfg.StateDir = stateDir
-		if !shouldResume(&config.Config{Mining: cfg}) {
+		if !shouldResume(resumeConfig(cfg), noEnv) {
 			t.Fatal("shouldResume false for an installation that can still enroll")
 		}
 	})
@@ -1257,7 +1314,7 @@ func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
 		}
 		cfg := configured
 		cfg.StateDir = stateDir
-		if !shouldResume(&config.Config{Mining: cfg}) {
+		if !shouldResume(resumeConfig(cfg), noEnv) {
 			t.Fatal("shouldResume false for an enrolled installation with an undeclared address")
 		}
 	})
@@ -1284,7 +1341,7 @@ func TestInstallerMiningQuestionAllThreeAnswers(t *testing.T) {
 		if code != exitOK || outcome.enabled {
 			t.Fatalf("got %+v code=%d, want disabled", outcome, code)
 		}
-		if _, ok, _ := store.LoadPayoutAddress(); ok {
+		if _, ok, _ := testPayoutRecord(t, stateDir).Load(); ok {
 			t.Fatal("an address was persisted after answering no")
 		}
 	})
@@ -1305,7 +1362,7 @@ func TestInstallerMiningQuestionAllThreeAnswers(t *testing.T) {
 		if code != exitOK || !outcome.enabled || outcome.payoutAddress != "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn" {
 			t.Fatalf("got %+v code=%d", outcome, code)
 		}
-		if addr, ok, _ := store.LoadPayoutAddress(); !ok || addr != "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn" {
+		if addr, ok, _ := testPayoutRecord(t, stateDir).Load(); !ok || addr != "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn" {
 			t.Fatalf("address not persisted: %q ok=%v", addr, ok)
 		}
 	})
@@ -1332,7 +1389,7 @@ func TestInstallerMiningQuestionAllThreeAnswers(t *testing.T) {
 		if !strings.Contains(out.String(), "recovery phrase") {
 			t.Fatalf("mnemonic was not printed: %q", out.String())
 		}
-		if addr, ok, _ := store.LoadPayoutAddress(); !ok || addr != outcome.payoutAddress {
+		if addr, ok, _ := testPayoutRecord(t, stateDir).Load(); !ok || addr != outcome.payoutAddress {
 			t.Fatalf("address not persisted: %q ok=%v want %q", addr, ok, outcome.payoutAddress)
 		}
 	})
@@ -1416,7 +1473,7 @@ func TestScriptedInstallMiningConfig(t *testing.T) {
 		if code != exitOK || !outcome.enabled || outcome.payoutAddress != "twilight1xnxmhqt2l55flef42ks4sn0er6tv6yhyqx7wy8" {
 			t.Fatalf("got %+v code=%d", outcome, code)
 		}
-		if addr, ok, _ := store.LoadPayoutAddress(); !ok || addr != "twilight1xnxmhqt2l55flef42ks4sn0er6tv6yhyqx7wy8" {
+		if addr, ok, _ := testPayoutRecord(t, stateDir).Load(); !ok || addr != "twilight1xnxmhqt2l55flef42ks4sn0er6tv6yhyqx7wy8" {
 			t.Fatalf("address not persisted: %q ok=%v", addr, ok)
 		}
 	})
@@ -1442,7 +1499,7 @@ func TestScriptedInstallMiningConfig(t *testing.T) {
 		if !strings.Contains(out.String(), "no wallet was created") {
 			t.Fatalf("no explanatory status line: %q", out.String())
 		}
-		if _, ok, _ := store.LoadPayoutAddress(); ok {
+		if _, ok, _ := testPayoutRecord(t, stateDir).Load(); ok {
 			t.Fatal("an address was persisted with none configured")
 		}
 	})
@@ -1569,11 +1626,7 @@ func TestDeclarationRunsUnattendedAfterEnrollment(t *testing.T) {
 	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
 		t.Fatal("connect failed")
 	}
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SavePayoutAddress("twilight1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc"); err != nil {
+	if err := testPayoutRecord(t, stateDir).Save("twilight1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc"); err != nil {
 		t.Fatal(err)
 	}
 	platform.claim("mining")
@@ -1602,10 +1655,10 @@ func TestDeclareProceedsWhenNoActiveBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
-	declarePayoutIfSafe(context.Background(), mining, store, "twilight1new", &stdout, &stderr)
+	declarePayoutIfSafe(context.Background(), mining, store, "twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n", &stdout, &stderr)
 
-	if got := as.declaredAddress(); got != "twilight1new" {
-		t.Fatalf("declared address = %q, want twilight1new (no active binding, must proceed)", got)
+	if got := as.declaredAddress(); got != "twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n" {
+		t.Fatalf("declared address = %q, want twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n (no active binding, must proceed)", got)
 	}
 	if stderr.String() != "" {
 		t.Fatalf("stderr: %s", stderr.String())
@@ -1620,20 +1673,20 @@ func TestDeclareProceedsWhenNoActiveBinding(t *testing.T) {
 // without spending a PUT on it.
 func TestDeclareProceedsWhenActiveMatchesLocal(t *testing.T) {
 	as := newStubAS(t)
-	as.setActiveAddress("twilight1same")
+	as.setActiveAddress("twilight1xnxmhqt2l55flef42ks4sn0er6tv6yhyqx7wy8")
 	mining, stateDir := as.miningClient(t)
 	store, err := auth.OpenStore(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
-	declarePayoutIfSafe(context.Background(), mining, store, "twilight1same", &stdout, &stderr)
+	declarePayoutIfSafe(context.Background(), mining, store, "twilight1xnxmhqt2l55flef42ks4sn0er6tv6yhyqx7wy8", &stdout, &stderr)
 
 	if got := as.declarationAttempts(); got != 0 {
 		t.Fatalf("declaration attempts = %d, want 0 (already active and matching; no redundant AS round trip needed)", got)
 	}
-	if declared, ok, derr := store.LoadPayoutDeclared(); derr != nil || !ok || declared != "twilight1same" {
-		t.Fatalf("LoadPayoutDeclared() = %q ok=%v err=%v, want twilight1same recorded as settled", declared, ok, derr)
+	if declared, ok, derr := store.LoadPayoutDeclared(); derr != nil || !ok || declared != "twilight1xnxmhqt2l55flef42ks4sn0er6tv6yhyqx7wy8" {
+		t.Fatalf("LoadPayoutDeclared() = %q ok=%v err=%v, want twilight1xnxmhqt2l55flef42ks4sn0er6tv6yhyqx7wy8 recorded as settled", declared, ok, derr)
 	}
 	if _, ok, _ := store.LoadPayoutBindingHeld(); ok {
 		t.Fatal("a matching declaration must not leave a held-binding note")
@@ -1642,23 +1695,23 @@ func TestDeclareProceedsWhenActiveMatchesLocal(t *testing.T) {
 
 func TestDeclareReadsStandingFirstAndSkipsWhenActiveDiffers(t *testing.T) {
 	as := newStubAS(t)
-	as.setActiveAddress("twilight1active")
+	as.setActiveAddress("twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn")
 	mining, stateDir := as.miningClient(t)
 	store, err := auth.OpenStore(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
-	declarePayoutIfSafe(context.Background(), mining, store, "twilight1local", &stdout, &stderr)
+	declarePayoutIfSafe(context.Background(), mining, store, "twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh", &stdout, &stderr)
 
 	if got := as.declarationAttempts(); got != 0 {
 		t.Fatalf("declaration attempts = %d, want 0 — a different active address must never be declared over blind", got)
 	}
 	held, ok, err := store.LoadPayoutBindingHeld()
-	if err != nil || !ok || held.Local != "twilight1local" || held.Active != "twilight1active" {
+	if err != nil || !ok || held.Local != "twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh" || held.Active != "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn" {
 		t.Fatalf("LoadPayoutBindingHeld() = %+v, ok=%v, err=%v", held, ok, err)
 	}
-	if !strings.Contains(stdout.String(), "twilight1active") || !strings.Contains(stdout.String(), "twilight1local") {
+	if !strings.Contains(stdout.String(), "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn") || !strings.Contains(stdout.String(), "twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh") {
 		t.Fatalf("stdout does not name both addresses: %s", stdout.String())
 	}
 }
@@ -1670,17 +1723,13 @@ func TestStatusReportsBothAddressesOnBindingConflict(t *testing.T) {
 	withShortConnectTimings(t)
 	platform := newStubPlatform(t)
 	as := newStubAS(t)
-	as.setActiveAddress("twilight1operator")
+	as.setActiveAddress(plantedAddress)
 	cfgPath, stateDir := connectConfig(t, platform.srv.URL, as.srv.URL)
 
 	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
 		t.Fatal("connect failed")
 	}
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SavePayoutAddress("twilight1nv60etsw245g8z00h4h322m4vr764z3840swpa"); err != nil {
+	if err := testPayoutRecord(t, stateDir).Save("twilight1nv60etsw245g8z00h4h322m4vr764z3840swpa"); err != nil {
 		t.Fatal(err)
 	}
 	platform.claim("mining")
@@ -1693,7 +1742,7 @@ func TestStatusReportsBothAddressesOnBindingConflict(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	printAgentIdentityStatus([]string{"-config", cfgPath}, &stdout, &stderr, os.Getenv)
-	if !strings.Contains(stdout.String(), "twilight1operator") || !strings.Contains(stdout.String(), "twilight1nv60etsw245g8z00h4h322m4vr764z3840swpa") {
+	if !strings.Contains(stdout.String(), plantedAddress) || !strings.Contains(stdout.String(), "twilight1nv60etsw245g8z00h4h322m4vr764z3840swpa") {
 		t.Fatalf("status does not name both addresses:\n%s", stdout.String())
 	}
 	if !strings.Contains(stdout.String(), "HELD") {
@@ -1737,10 +1786,11 @@ func TestMiningEnableReApprovalPointsAtTheGenericClaimAddressNotTheDeadOneTimeUR
 	}
 	deadClaimURL := platform.srv.URL + "/claim/AB12-CD34"
 	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-1", Status: "claimed", Scopes: []string{"credits"}, ClaimURL: deadClaimURL,
+		AgentID: "agent-1", Status: "claimed", Scopes: []string{"credits"},
 	}); err != nil {
 		t.Fatal(err)
 	}
+	seedClaim(t, cfgPath, "agent-1", deadClaimURL, "")
 	platform.claim("credits") // claimed, credits only — mining not granted
 
 	var stdout bytes.Buffer
@@ -1782,10 +1832,10 @@ func TestMiningEnableReApprovalPrefersTheRealConsoleURLWhenThePlatformSendsOne(t
 	}
 	if err := store.SaveAgentRegistration(auth.AgentRegistration{
 		AgentID: "agent-1", Status: "claimed", Scopes: []string{"credits"},
-		ClaimURL: platform.srv.URL + "/claim/AB12-CD34",
 	}); err != nil {
 		t.Fatal(err)
 	}
+	seedClaim(t, cfgPath, "agent-1", platform.srv.URL+"/claim/AB12-CD34", "")
 	platform.claim("credits") // claimed, credits only — mining not granted
 	realConsoleURL := platform.srv.URL + "/projects/8fe850f9-eb9a-4a80-b9c8-7341bd346a48"
 	platform.setConsoleURL(realConsoleURL)
@@ -1833,10 +1883,11 @@ func TestMiningEnableOnAnUnclaimedAgentPrintsTheOriginalStillValidClaimLink(t *t
 	}
 	originalClaimURL := platform.srv.URL + "/claim/AB12-CD34"
 	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-1", Status: "unclaimed", ClaimURL: originalClaimURL,
+		AgentID: "agent-1", Status: "unclaimed",
 	}); err != nil {
 		t.Fatal(err)
 	}
+	seedClaim(t, cfgPath, "agent-1", originalClaimURL, "")
 
 	var stdout bytes.Buffer
 	code := cmdMining([]string{"enable", "-config", cfgPath}, &bytes.Buffer{}, &stdout, &bytes.Buffer{}, noEnv)
@@ -1856,6 +1907,42 @@ func TestMiningEnableOnAnUnclaimedAgentPrintsTheOriginalStillValidClaimLink(t *t
 	// "unclaimed" from the already-claimed re-approval branch.
 	if strings.Contains(out, "Sign in and grant it") {
 		t.Errorf("stdout used the already-claimed re-approval wording for a never-claimed agent:\n%s", out)
+	}
+}
+
+// mining enable reads the same sandbox-writable agent.json: an unclaimed
+// agent's stored claim URL off the platform origin is never printed.
+func TestMiningEnableNeverPrintsAStoredClaimURLOffThePlatformOrigin(t *testing.T) {
+	platform := newStubPlatform(t)
+	cfgPath, stateDir := connectConfig(t, platform.srv.URL, "https://as.example.invalid")
+	cfg := mustLoadConfig(t, cfgPath)
+	if err := os.MkdirAll(filepath.Dir(credentialsPath(cfg.Miner)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-key"}); err != nil {
+		t.Fatal(err)
+	}
+	store, err := auth.OpenStore(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveAgentRegistration(auth.AgentRegistration{
+		AgentID: "agent-1", Status: "unclaimed",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	seedClaim(t, cfgPath, "agent-1", "https://evil.example/claim/AB12-CD34", "")
+
+	var stdout, stderr bytes.Buffer
+	code := cmdMining([]string{"enable", "-config", cfgPath}, &bytes.Buffer{}, &stdout, &stderr, noEnv)
+	if code != exitOK {
+		t.Fatalf("cmdMining enable: code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if strings.Contains(stdout.String()+stderr.String(), "evil.example") {
+		t.Fatalf("mining enable printed the off-origin stored claim URL:\n%s\n%s", stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "no usable claim link is on file") {
+		t.Errorf("mining enable did not explain the missing link:\n%s", stdout.String())
 	}
 }
 
@@ -1883,10 +1970,11 @@ func TestMiningEnableOnAnExpiredRegistrationSaysToRegisterAgain(t *testing.T) {
 	}
 	deadClaimURL := platform.srv.URL + "/claim/AB12-CD34"
 	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-1", Status: "expired", ClaimURL: deadClaimURL,
+		AgentID: "agent-1", Status: "expired",
 	}); err != nil {
 		t.Fatal(err)
 	}
+	seedClaim(t, cfgPath, "agent-1", deadClaimURL, "")
 
 	var stdout bytes.Buffer
 	code := cmdMining([]string{"enable", "-config", cfgPath}, &bytes.Buffer{}, &stdout, &bytes.Buffer{}, noEnv)
@@ -1934,7 +2022,7 @@ func TestConcurrentResumesProduceExactlyOneEnrollmentAndDeclaration(t *testing.T
 		t.Fatal(err)
 	}
 	const addr = "twilight1wx0rwcuexfwc36h0r2cg3fvfsds66f0qadt8cs"
-	if err := store.SavePayoutAddress(addr); err != nil {
+	if err := testPayoutRecord(t, stateDir).Save(addr); err != nil {
 		t.Fatal(err)
 	}
 	platform.claim("mining")
@@ -2408,7 +2496,7 @@ func TestConnectRebuildsUnclaimedRegistrationWithClaimLink(t *testing.T) {
 		t.Fatalf("did not print the recovered claim link: stdout=%q", out)
 	}
 	reg, ok := loadAgent(t, stateDir)
-	if !ok || reg.AgentID != agentID || reg.Status != "unclaimed" || reg.ClaimURL == "" || reg.ClaimCode != "AB12-CD34" {
+	if !ok || reg.AgentID != agentID || reg.Status != "unclaimed" || storedClaim(t, cfgPath, agentID).ClaimURL == "" || storedClaim(t, cfgPath, agentID).ClaimCode != "AB12-CD34" {
 		t.Fatalf("rebuilt registration not as expected: %+v ok=%v", reg, ok)
 	}
 	if registerCalls, _, _ := platform.counts(); registerCalls != registerCallsBefore {
@@ -2441,7 +2529,7 @@ func TestConnectRebuildsUnclaimedRegistrationWithoutClaimLink(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("connect exited %d, stderr=%s", code, errOut)
 	}
-	if !strings.Contains(out, "run `jevlin connect -force`") {
+	if !strings.Contains(out, "no claim link is on file for it") {
 		t.Fatalf("missing the recovered-without-link fallback: stdout=%q", out)
 	}
 	if strings.Contains(out, "claim this agent:") {
@@ -2451,7 +2539,7 @@ func TestConnectRebuildsUnclaimedRegistrationWithoutClaimLink(t *testing.T) {
 		t.Fatalf("printed a bare empty claim link: stdout=%q", out)
 	}
 	reg, ok := loadAgent(t, stateDir)
-	if !ok || reg.AgentID != agentID || reg.Status != "unclaimed" || reg.ClaimURL != "" {
+	if !ok || reg.AgentID != agentID || reg.Status != "unclaimed" || storedClaim(t, cfgPath, agentID).ClaimURL != "" {
 		t.Fatalf("rebuilt registration not as expected: %+v ok=%v", reg, ok)
 	}
 	if registerCalls, statusCalls, _ := platform.counts(); registerCalls != registerCallsBefore || statusCalls != statusCallsBefore {
@@ -2468,7 +2556,7 @@ func TestConnectRebuildsUnclaimedRegistrationWithoutClaimLink(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("second connect exited %d, stderr=%s", code, errOut)
 	}
-	if !strings.Contains(out, "run `jevlin connect -force`") {
+	if !strings.Contains(out, "no claim link is on file for it") {
 		t.Fatalf("second run dropped the recovered-without-link fallback: stdout=%q", out)
 	}
 	if strings.Contains(out, "claim this agent:") {
@@ -2486,7 +2574,7 @@ func TestConnectRebuildsUnclaimedRegistrationWithoutClaimLink(t *testing.T) {
 	statusOut := captureStdout(t, func() {
 		printAgentIdentityStatus([]string{"-config", cfgPath}, os.Stdout, os.Stderr, noEnv)
 	})
-	if !strings.Contains(statusOut, "recovered from the platform") {
+	if !strings.Contains(statusOut, "no claim link is on file for it here") {
 		t.Fatalf("status did not report the recovered-without-link state: %q", statusOut)
 	}
 	if strings.Contains(statusOut, "claim at \n") || strings.Contains(statusOut, "claim at\n") {
@@ -2524,15 +2612,15 @@ func TestForegroundConnectMintsAFreshClaimLinkForALostOne(t *testing.T) {
 	if !strings.Contains(out, "code: MINT-01") {
 		t.Fatalf("the fresh claim code was not printed: stdout=%q", out)
 	}
-	if strings.Contains(out, "not retrievable") {
+	if strings.Contains(out, "no claim link is on file") {
 		t.Fatalf("printed the dead-end fallback despite a successful mint: stdout=%q", out)
 	}
 	reg, ok := loadAgent(t, stateDir)
 	if !ok || reg.AgentID != agentID || reg.Status != "unclaimed" {
 		t.Fatalf("rebuilt registration not as expected: %+v ok=%v", reg, ok)
 	}
-	if reg.ClaimURL != freshURL || reg.ClaimCode != "MINT-01" {
-		t.Fatalf("the fresh link was not persisted: %+v", reg)
+	if claim := storedClaim(t, cfgPath, agentID); claim.ClaimURL != freshURL || claim.ClaimCode != "MINT-01" {
+		t.Fatalf("the fresh link was not persisted: %+v", claim)
 	}
 	if got := platform.claimCodeCallCount(); got != 1 {
 		t.Fatalf("claim-code calls = %d, want exactly 1", got)
@@ -2556,7 +2644,7 @@ func TestALaterForegroundConnectMintsWhenThePlatformGainsTheRoute(t *testing.T) 
 
 	agentID, key := registerAgent(t, platform)
 	setupLostRegistration(t, cfg, key, true)
-	if code, out, errOut := runConnect(t, cfgPath, nil); code != exitOK || !strings.Contains(out, "not retrievable") {
+	if code, out, errOut := runConnect(t, cfgPath, nil); code != exitOK || !strings.Contains(out, "no claim link is on file for it") {
 		t.Fatalf("setup run: code=%d stdout=%q stderr=%s", code, out, errOut)
 	}
 
@@ -2570,8 +2658,52 @@ func TestALaterForegroundConnectMintsWhenThePlatformGainsTheRoute(t *testing.T) 
 		t.Fatalf("the later run did not mint and print a fresh link: stdout=%q", out)
 	}
 	reg, ok := loadAgent(t, stateDir)
-	if !ok || reg.AgentID != agentID || reg.ClaimURL != freshURL {
+	if !ok || reg.AgentID != agentID || storedClaim(t, cfgPath, agentID).ClaimURL != freshURL {
 		t.Fatalf("the fresh link was not persisted: %+v ok=%v", reg, ok)
+	}
+}
+
+// A stored claim URL off the configured platform origin (platform.base_url
+// changed since it was stored) is treated like a lost link (invariant 12) —
+// never printed, and replaced on disk by a freshly minted one.
+func TestForegroundConnectNeverPrintsAStoredClaimURLOffThePlatformOrigin(t *testing.T) {
+	withShortConnectTimings(t)
+	platform := newStubPlatform(t)
+	cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
+	if code, _, errOut := runConnect(t, cfgPath, nil); code != exitOK {
+		t.Fatalf("setup connect exited %d, stderr=%s", code, errOut)
+	}
+	reg, ok := loadAgent(t, stateDir)
+	if !ok || reg.Status != "unclaimed" {
+		t.Fatalf("setup registration: %+v ok=%v", reg, ok)
+	}
+	const evil = "https://evil.example/claim/AB12-CD34"
+	seedClaim(t, cfgPath, reg.AgentID, evil, "")
+
+	code, out, errOut := runConnect(t, cfgPath, nil)
+	if code != exitOK {
+		t.Fatalf("connect exited %d, stderr=%s", code, errOut)
+	}
+	if strings.Contains(out+errOut, "evil.example") {
+		t.Fatalf("connect printed the off-origin stored claim URL: stdout=%q stderr=%q", out, errOut)
+	}
+	freshURL := platform.srv.URL + "/claim/MINT-01"
+	if !strings.Contains(out, "claim this agent:") || !strings.Contains(out, freshURL) {
+		t.Fatalf("connect did not mint and print a fresh link in its place: stdout=%q", out)
+	}
+	if reg, _ := loadAgent(t, stateDir); storedClaim(t, cfgPath, reg.AgentID).ClaimURL != freshURL {
+		t.Fatalf("the off-origin link was not replaced on disk: %+v", reg)
+	}
+
+	// With no way to mint, nothing is printed in its place.
+	seedClaim(t, cfgPath, reg.AgentID, evil, "")
+	platform.setClaimCodeRouteDisabled(true)
+	code, out, errOut = runConnect(t, cfgPath, nil)
+	if code != exitOK {
+		t.Fatalf("connect exited %d, stderr=%s", code, errOut)
+	}
+	if strings.Contains(out+errOut, "evil.example") || !strings.Contains(out, unclaimedNoLinkMessage) || strings.Contains(out, "URL above") {
+		t.Fatalf("connect without a mint route: stdout=%q stderr=%q", out, errOut)
 	}
 }
 
@@ -2594,7 +2726,7 @@ func TestResumeNeverMintsAClaimLink(t *testing.T) {
 	if code, _, errOut := runConnect(t, cfgPath, nil); code != exitOK {
 		t.Fatalf("setup connect exited %d, stderr=%s", code, errOut)
 	}
-	if reg, ok := loadAgent(t, stateDir); !ok || reg.ClaimURL != "" {
+	if reg, ok := loadAgent(t, stateDir); !ok || storedClaim(t, cfgPath, reg.AgentID).ClaimURL != "" {
 		t.Fatalf("setup did not leave the no-link state: %+v ok=%v", reg, ok)
 	}
 	attemptsAfterForeground := platform.claimCodeCallCount()
@@ -2607,7 +2739,7 @@ func TestResumeNeverMintsAClaimLink(t *testing.T) {
 	if got := platform.claimCodeCallCount(); got != attemptsAfterForeground {
 		t.Fatalf("-resume reached the claim-code route: attempts %d -> %d", attemptsAfterForeground, got)
 	}
-	if reg, ok := loadAgent(t, stateDir); !ok || reg.ClaimURL != "" {
+	if reg, ok := loadAgent(t, stateDir); !ok || storedClaim(t, cfgPath, reg.AgentID).ClaimURL != "" {
 		t.Fatalf("-resume changed the stored claim state: %+v ok=%v", reg, ok)
 	}
 }
@@ -2737,10 +2869,11 @@ func TestConnectResumeNeverRebuildsOrRegistersOnLostRegistration(t *testing.T) {
 // obstruct anything there. Instead this only ever ADDS a new sibling
 // entry inside the state directory, never touching the directory or
 // connect.lock:
-//   - corrupt: pre-creates agent.json.corrupt so
-//     PreserveCorruptAgentRegistration's own existing safety check
-//     (os.Lstat(backup) succeeding refuses outright, whatever backup is)
-//     refuses deterministically, before ever touching agent.json itself.
+//   - corrupt: moves the corrupt agent.json aside (outside the state
+//     directory) and puts a directory at its name, so
+//     PreserveCorruptAgentRegistration's own check (agent.json must be a
+//     regular file) refuses deterministically. An existing
+//     agent.json.corrupt no longer obstructs anything: it is replaced.
 //   - absent: pre-creates agent.json as a directory, so
 //     SaveAgentRegistration's rename-onto-that-path fails deterministically
 //     on every OS (renaming a file onto an existing directory is refused
@@ -2763,9 +2896,7 @@ func TestConnectRebuildRetriesAfterATransientPersistFailure(t *testing.T) {
 			registerCallsBefore, _, _ := platform.counts()
 
 			obstructionPath := filepath.Join(stateDir, "agent.json")
-			if corrupt {
-				obstructionPath = filepath.Join(stateDir, "agent.json.corrupt")
-			}
+			heldAside := filepath.Join(t.TempDir(), "agent.json")
 
 			// Armed for exactly the first successful /v1/agents/me answer.
 			armed := true
@@ -2775,10 +2906,9 @@ func TestConnectRebuildRetriesAfterATransientPersistFailure(t *testing.T) {
 				}
 				armed = false
 				if corrupt {
-					_ = os.WriteFile(obstructionPath, nil, 0o600) // #nosec G306 -- test fixture, not a secret
-				} else {
-					_ = os.Mkdir(obstructionPath, 0o700)
+					_ = os.Rename(obstructionPath, heldAside)
 				}
+				_ = os.Mkdir(obstructionPath, 0o700)
 			})
 
 			code, _, errOut := runConnect(t, cfgPath, nil)
@@ -2789,18 +2919,24 @@ func TestConnectRebuildRetriesAfterATransientPersistFailure(t *testing.T) {
 				t.Fatalf("Register calls = %d, want unchanged from %d — a failed persist must never fall through to Register", registerCalls, registerCallsBefore)
 			}
 			if corrupt {
-				got, err := os.ReadFile(filepath.Join(stateDir, "agent.json")) // #nosec G304 -- test controls its temporary state directory
+				got, err := os.ReadFile(heldAside) // #nosec G304 -- test controls its temporary directory
 				if err != nil || string(got) != string(corruptBytes) {
 					t.Fatalf("corrupt starting bytes were disturbed despite Preserve refusing: err=%v contents=%q", err, got)
 				}
+				if lexists(filepath.Join(stateDir, "agent.json.corrupt")) {
+					t.Fatal("a refused Preserve still wrote evidence")
+				}
 			}
 
-			// Remove the obstruction; nothing else needs restoring — the
-			// corrupt starting bytes (when this case has any) were never
-			// reached by the failed run, since Preserve refused before ever
-			// touching agent.json.
+			// Remove the obstruction and, in the corrupt case, put the
+			// corrupt starting bytes back where the failed run found them.
 			if err := os.Remove(obstructionPath); err != nil {
 				t.Fatal(err)
+			}
+			if corrupt {
+				if err := os.Rename(heldAside, obstructionPath); err != nil {
+					t.Fatal(err)
+				}
 			}
 			platform.setMeHook(nil)
 
@@ -2842,7 +2978,7 @@ func TestForegroundConnectReplacesExpiredRegistrationAndPropagatesNewIdentity(t 
 		t.Fatal(err)
 	}
 	const payout = "twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n"
-	if err := store.SavePayoutAddress(payout); err != nil {
+	if err := testPayoutRecord(t, stateDir).Save(payout); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.MarkHealth(auth.HealthCapture, auth.HealthIntakeUnwritable, "preserve capture health"); err != nil {
@@ -2868,13 +3004,13 @@ func TestForegroundConnectReplacesExpiredRegistrationAndPropagatesNewIdentity(t 
 		t.Fatalf("Register calls = %d, want exactly 2", registerCalls)
 	}
 	reg, ok := loadAgent(t, stateDir)
-	if !ok || reg.AgentID != "agent-2" || reg.ClaimURL != newURL || reg.ClaimCode != "EF56-GH02" || reg.Status != "unclaimed" {
+	if !ok || reg.AgentID != "agent-2" || storedClaim(t, cfgPath, "agent-2").ClaimURL != newURL || storedClaim(t, cfgPath, "agent-2").ClaimCode != "EF56-GH02" || reg.Status != "unclaimed" {
 		t.Fatalf("durable replacement registration = %+v ok=%v", reg, ok)
 	}
 	if got, err := os.ReadFile(credentialsPath(mustLoadConfig(t, cfgPath).Miner)); err != nil || !strings.Contains(string(got), "sr-stubkey-2") {
 		t.Fatalf("new platform key was not published: err=%v contents=%q", err, got)
 	}
-	if got, ok, err := store.LoadPayoutAddress(); err != nil || !ok || got != payout {
+	if got, ok, err := testPayoutRecord(t, stateDir).Load(); err != nil || !ok || got != payout {
 		t.Fatalf("unrelated payout state changed: value=%q ok=%v err=%v", got, ok, err)
 	}
 	if decision := store.ReadMiningDecision(); decision.State != auth.MiningEnabled {
@@ -2932,7 +3068,7 @@ func TestDetachedResumePersistsExpiredWithoutReplacing(t *testing.T) {
 	if !ok || reg.AgentID != "agent-1" || reg.Status != "expired" {
 		t.Fatalf("detached resume did not persist the expired identity: %+v ok=%v", reg, ok)
 	}
-	if shouldResume(mustLoadConfig(t, cfgPath)) {
+	if shouldResume(mustLoadConfig(t, cfgPath), noEnv) {
 		t.Fatal("shouldResume approved a replacement for an expired identity")
 	}
 }
@@ -2975,10 +3111,11 @@ func TestExpiredRegistrationWithMissingCredentialRefusesForceReplacement(t *test
 		t.Fatal(err)
 	}
 	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-expired", Status: "expired", ClaimURL: platform.srv.URL + "/claim/OLD", ClaimCode: "OLD",
+		AgentID: "agent-expired", Status: "expired",
 	}); err != nil {
 		t.Fatal(err)
 	}
+	seedClaim(t, cfgPath, "agent-expired", platform.srv.URL+"/claim/OLD", "OLD")
 	cfg := mustLoadConfig(t, cfgPath)
 	credPath := credentialsPath(cfg.Miner)
 	if err := os.Remove(credPath); err != nil && !os.IsNotExist(err) {
@@ -3016,10 +3153,11 @@ func TestExpiredRegistrationStatusFailureRefusesForceReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-expired", Status: "expired", ClaimURL: platform.srv.URL + "/claim/OLD", ClaimCode: "OLD",
+		AgentID: "agent-expired", Status: "expired",
 	}); err != nil {
 		t.Fatal(err)
 	}
+	seedClaim(t, cfgPath, "agent-expired", platform.srv.URL+"/claim/OLD", "OLD")
 	cfg := mustLoadConfig(t, cfgPath)
 	credPath := credentialsPath(cfg.Miner)
 	if err := writeCredentials(credPath, credentials{APIKey: "sr-old-key"}); err != nil { // #nosec G101 -- canned test credential
@@ -3102,7 +3240,7 @@ func TestPendingRegistrationRecoveryPublishesWithoutRegister(t *testing.T) {
 		t.Fatalf("pending recovery changed the completed Register count: %d", registerCalls)
 	}
 	reg, ok := loadAgent(t, stateDir)
-	if !ok || reg.AgentID != pending.AgentID || reg.ClaimURL != pending.ClaimURL {
+	if !ok || reg.AgentID != pending.AgentID || storedClaim(t, cfgPath, pending.AgentID).ClaimURL != pending.ClaimURL {
 		t.Fatalf("journaled registration was not published: %+v ok=%v", reg, ok)
 	}
 	if got, err := os.ReadFile(credentialsPath(cfg.Miner)); err != nil || !strings.Contains(string(got), pending.Key) {
@@ -3167,7 +3305,7 @@ func TestPendingJournalRecoveryNeverCallsMeEvenWithACorruptRegistrationAndCreden
 		t.Fatalf("Register calls = %d, want 1 (the journal's own completed Register, no fresh one)", registerCalls)
 	}
 	reg, ok := loadAgent(t, stateDir)
-	if !ok || reg.AgentID != pending.AgentID || reg.ClaimURL != pending.ClaimURL {
+	if !ok || reg.AgentID != pending.AgentID || storedClaim(t, cfgPath, pending.AgentID).ClaimURL != pending.ClaimURL {
 		t.Fatalf("journaled registration was not published: %+v ok=%v", reg, ok)
 	}
 	if got, err := os.ReadFile(filepath.Join(stateDir, "agent.json.corrupt")); err != nil || string(got) != string(corruptBytes) { // #nosec G304 -- test controls its temporary state directory
@@ -3189,10 +3327,11 @@ func TestPendingExpiredReplacementRecoveryCompletesAcrossRestart(t *testing.T) {
 	}
 	oldURL := platform.srv.URL + "/claim/OLD"
 	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-old", ClaimURL: oldURL, ClaimCode: "OLD", Status: "expired",
+		AgentID: "agent-old", Status: "expired",
 	}); err != nil {
 		t.Fatal(err)
 	}
+	seedClaim(t, cfgPath, "agent-old", oldURL, "OLD")
 	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-old-key"}); err != nil { // #nosec G101 -- canned test credential
 		t.Fatal(err)
 	}
@@ -3217,7 +3356,7 @@ func TestPendingExpiredReplacementRecoveryCompletesAcrossRestart(t *testing.T) {
 		t.Fatalf("restart recovery minted another registration: %d", registerCalls)
 	}
 	reg, ok := loadAgent(t, stateDir)
-	if !ok || reg.AgentID != "agent-new" || reg.ClaimURL != platform.srv.URL+"/claim/NEW" || reg.Status != "unclaimed" {
+	if !ok || reg.AgentID != "agent-new" || storedClaim(t, cfgPath, "agent-new").ClaimURL != platform.srv.URL+"/claim/NEW" || reg.Status != "unclaimed" {
 		t.Fatalf("replacement journal did not complete publication: %+v ok=%v", reg, ok)
 	}
 	if got, err := os.ReadFile(credentialsPath(cfg.Miner)); err != nil || !strings.Contains(string(got), "sr-new-key") {
@@ -3314,15 +3453,22 @@ func TestPendingRegistrationConflictDoesNotOverwriteOrRegister(t *testing.T) {
 	}
 }
 
-func TestPendingRegistrationAgentConflictDoesNotOverwriteOrRegister(t *testing.T) {
+// The journal and the credential beside it are outside the state
+// directory; agent.json is inside it. A record there naming another agent
+// used to win: publication refused "a different identity" after the key was
+// already published, the journal stayed, and every later run failed the same
+// way. The review planted exactly that record. Now the journal's record is
+// published and the other is set aside as evidence, with no new Register.
+func TestAJournalWinsOverAnAgentRecordNamingAnotherAgent(t *testing.T) {
 	platform := newStubPlatform(t)
 	cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
+	cfg := mustLoadConfig(t, cfgPath)
 	store, err := auth.OpenStore(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-other", ClaimURL: platform.srv.URL + "/claim/OTHER", ClaimCode: "OTHER", Status: "unclaimed",
+		AgentID: "agent-other", Status: "claimed",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -3337,20 +3483,21 @@ func TestPendingRegistrationAgentConflictDoesNotOverwriteOrRegister(t *testing.T
 		t.Fatal(err)
 	}
 
-	if code, _, errOut := runConnect(t, cfgPath, nil); code == exitOK {
-		t.Fatal("connect overwrote a conflicting agent registration during journal recovery")
-	} else if !strings.Contains(errOut, "different identity") {
-		t.Fatalf("missing agent conflict diagnostic: %q", errOut)
-	}
+	runConnect(t, cfgPath, nil, "-resume")
 	if registerCalls, _, _ := platform.counts(); registerCalls != 0 {
-		t.Fatalf("agent conflict issued a new Register: %d", registerCalls)
+		t.Fatalf("journal recovery issued a new Register: %d", registerCalls)
 	}
-	reg, ok := loadAgent(t, stateDir)
-	if !ok || reg.AgentID != "agent-other" {
-		t.Fatalf("conflicting agent registration was overwritten: %+v ok=%v", reg, ok)
+	if reg, ok := loadAgent(t, stateDir); !ok || reg.AgentID != "agent-journal" {
+		t.Fatalf("the journal's registration was not published over the other record: %+v ok=%v", reg, ok)
 	}
-	if _, ok, err := testJournal(t, cfgPath).Load(); err != nil || !ok {
-		t.Fatalf("journal was lost after an agent publication conflict: ok=%v err=%v", ok, err)
+	if got, err := os.ReadFile(filepath.Join(stateDir, "agent.json.replaced")); err != nil || !strings.Contains(string(got), "agent-other") { // #nosec G304 -- the test's own state dir
+		t.Fatalf("the other record was not kept as evidence: %q %v", got, err)
+	}
+	if _, ok, err := testJournal(t, cfgPath).Load(); err != nil || ok {
+		t.Fatalf("the journal was not finished: ok=%v err=%v", ok, err)
+	}
+	if got, err := readCredentials(credentialsPath(cfg.Miner)); err != nil || got.APIKey != "sr-journal-key" {
+		t.Fatalf("credentials.json = %+v %v", got, err)
 	}
 }
 

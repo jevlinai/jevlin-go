@@ -261,7 +261,7 @@ func TestCredentialFilesAreTheFilesTheStoreWritesForCredentials(t *testing.T) {
 	if _, err := s.EnsureTraceKey(); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SaveAgentRegistration(AgentRegistration{AgentID: "a", ClaimCode: "c", Status: "unclaimed"}); err != nil {
+	if err := s.SaveAgentRegistration(AgentRegistration{AgentID: "a", Status: "unclaimed"}); err != nil {
 		t.Fatal(err)
 	}
 	entries, err := os.ReadDir(dir)

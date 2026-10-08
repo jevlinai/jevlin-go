@@ -185,7 +185,9 @@ func (s *Spool) reconstruct() error {
 				continue
 			}
 			if _, exists := s.locations[rec.ClientRecordID]; exists {
-				return fmt.Errorf("%w: %s", ErrDuplicateIdentity, rec.ClientRecordID)
+				// %q: the id is read from a file in a directory a sandboxed
+				// command can write, and this error reaches a terminal.
+				return fmt.Errorf("%w: %q", ErrDuplicateIdentity, rec.ClientRecordID)
 			}
 			s.locations[rec.ClientRecordID] = name
 		}

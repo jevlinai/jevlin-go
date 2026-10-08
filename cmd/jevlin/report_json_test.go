@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/jevlinai/jevlin-go/pkg/auth"
+	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
 func decodeCommandEnvelope(t *testing.T, stdout, command string) map[string]any {
@@ -296,13 +297,13 @@ func TestConnectJSONExposesClaimArtifactsAndNoCredential(t *testing.T) {
 	reg := auth.AgentRegistration{
 		AgentID:        "agent-fictional-9",
 		Status:         "unclaimed",
-		ClaimURL:       "https://portal.fictional.test/claim/abc123",
-		ClaimCode:      "ABC-123",
 		ClaimExpiresAt: "2026-09-13T00:00:00Z",
 	}
 	if err := store.SaveAgentRegistration(reg); err != nil {
 		t.Fatal(err)
 	}
+	claim := auth.ClaimBootstrap{AgentID: reg.AgentID, ClaimURL: config.DefaultPlatformBaseURL + "/claim/abc123", ClaimCode: "ABC-123"}
+	seedClaim(t, cfgPath, claim.AgentID, claim.ClaimURL, claim.ClaimCode)
 	if err := writeCredentials(filepath.Join(root, "credentials.json"), credentials{APIKey: key}); err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +313,7 @@ func TestConnectJSONExposesClaimArtifactsAndNoCredential(t *testing.T) {
 	env := decodeCommandEnvelope(t, buf.String(), "connect")
 	data := dataOf(t, env)
 
-	if data["claim_url"] != reg.ClaimURL || data["claim_code"] != reg.ClaimCode {
+	if data["claim_url"] != claim.ClaimURL || data["claim_code"] != claim.ClaimCode {
 		t.Errorf("claim artifacts are not explicit fields: %v", data)
 	}
 	if data["agent_id"] != reg.AgentID || data["status"] != "unclaimed" || data["claimed"] != false {
@@ -329,6 +330,54 @@ func TestConnectJSONExposesClaimArtifactsAndNoCredential(t *testing.T) {
 	for _, forbidden := range []string{"api_key", "apiKey", "refresh", "dpop", "private_key", "mnemonic", "passphrase"} {
 		if strings.Contains(strings.ToLower(buf.String()), forbidden) {
 			t.Errorf("the JSON report carries a %q field: %s", forbidden, buf.String())
+		}
+	}
+}
+
+// A claim link is never shown unless it is on file beside credentials.json
+// and still on the configured platform.base_url origin (invariant 12): not
+// by status's text or JSON report, and not by connect's JSON envelope. Each
+// bad link is planted twice, the way a sandboxed command would plant it in
+// agent.json (which no longer holds a link at all) and as a claim record
+// whose link fails the check, written raw because the record's own Save
+// refuses a control character.
+func TestAStoredClaimURLOffThePlatformOriginIsNeverReported(t *testing.T) {
+	for _, bad := range []string{
+		"https://evil.example/claim/abc123",
+		"http://platform.nyks.dev/claim/abc123",
+		"https://platform.nyks.dev.evil.example/claim/abc123",
+		"https://platform.nyks.dev/claim/abc123 https://evil.example/claim",
+		"https://platform.nyks.dev/claim/\x1b]8;;https://evil.example\x07x",
+	} {
+		cfgPath, root, _ := statusFixture(t)
+		writeAgentRecordRaw(t, filepath.Join(root, "state"), map[string]any{
+			"agent_id": "agent-fictional-9", "status": "unclaimed", "claim_url": bad, "claim_code": "ABC-123",
+		})
+		writeClaimRecordRaw(t, root, map[string]any{"agent_id": "agent-fictional-9", "claim_url": bad, "claim_code": "ABC-123"})
+
+		var text, textErr bytes.Buffer
+		if code := statusMain([]string{"-config", cfgPath}, &text, &textErr, noEnv); code != exitOK {
+			t.Fatalf("status exited %d: %s", code, textErr.String())
+		}
+		var statusJSON, statusJSONErr bytes.Buffer
+		if code := statusMain([]string{"-json", "-config", cfgPath}, &statusJSON, &statusJSONErr, noEnv); code != exitOK {
+			t.Fatalf("status -json exited %d: %s", code, statusJSONErr.String())
+		}
+		var connectJSON bytes.Buffer
+		emitMachine(&connectJSON, connectEnvelope(cfgPath, noEnv, exitOK, ""))
+
+		if !strings.Contains(text.String(), "agent:  unclaimed") {
+			t.Errorf("status no longer reports the unclaimed agent:\n%s", text.String())
+		}
+		requireNoPlantedEscape(t, "status", text.String()+textErr.String()+statusJSON.String()+statusJSONErr.String()+connectJSON.String())
+		for name, out := range map[string]string{
+			"status":        text.String() + textErr.String(),
+			"status -json":  statusJSON.String() + statusJSONErr.String(),
+			"connect -json": connectJSON.String(),
+		} {
+			if strings.Contains(out, "evil.example") || strings.Contains(out, "http://platform") || strings.Contains(out, "ABC-123") {
+				t.Errorf("%s reported the stored claim artifacts for %q:\n%s", name, bad, out)
+			}
 		}
 	}
 }

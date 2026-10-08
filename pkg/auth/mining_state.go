@@ -54,7 +54,7 @@ func (s *Store) ReadMiningDecision() MiningDecision {
 	}
 	if err := json.Unmarshal(raw, &rec); err != nil {
 		return MiningDecision{State: MiningDegraded, Present: true,
-			Err: fmt.Errorf("auth: decode mining decision: %w", err)}
+			Err: &decodeError{what: "mining decision", err: err}}
 	}
 	version := miningDecisionVersion
 	if rec.Version != nil {

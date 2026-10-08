@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/jevlinai/jevlin-go/internal/termtext"
 	"github.com/jevlinai/jevlin-go/pkg/redact"
 )
 
@@ -84,7 +85,17 @@ func validHealthReason(reason HealthReason) bool {
 	}
 }
 
+// boundHealthDetail is the one shape a detail is written in: redacted, one
+// line, no character a terminal acts on, at most healthDetailCap bytes.
+// strings.Fields alone did not give the third: ESC and BEL are not spaces,
+// and a detail is often an error naming a path, which can hold either.
 func boundHealthDetail(detail string) string {
+	detail = strings.Map(func(r rune) rune {
+		if termtext.HasControlChar(string(r)) {
+			return ' '
+		}
+		return r
+	}, detail)
 	detail = redact.String(strings.Join(strings.Fields(detail), " "))
 	if len(detail) > healthDetailCap {
 		cut := healthDetailCap
@@ -136,13 +147,29 @@ func (s *Store) LoadHealth(component HealthComponent) (HealthRecord, bool, error
 	}
 	var rec HealthRecord
 	if err := json.Unmarshal(raw, &rec); err != nil {
-		return HealthRecord{}, false, fmt.Errorf("auth: decode health: %w", err)
+		return HealthRecord{}, false, &decodeError{what: "health", err: err}
 	}
 	if rec.Version != healthVersion || rec.Component != component || !validHealthReason(rec.Reason) {
 		return HealthRecord{}, false, fmt.Errorf("auth: invalid health record for %s", component)
 	}
+	// status and doctor print the detail. MarkHealth never writes one
+	// longer than the cap or holding a character a terminal acts on, so a
+	// record that does was written by something else, in a directory a
+	// sandboxed command can write, or by an older version before the
+	// detail was cleaned. Its reason is still known and valid, so it comes
+	// back with the detail emptied and ErrHealthDetailRefused: nothing
+	// prints it, and the flush's own bookkeeping, which decides on the
+	// reason, can still clear it once the condition has passed.
+	if len(rec.Detail) > healthDetailCap || termtext.HasControlChar(rec.Detail) {
+		rec.Detail = ""
+		return rec, false, fmt.Errorf("auth: invalid health record for %s: %w", component, ErrHealthDetailRefused)
+	}
 	return rec, true, nil
 }
+
+// ErrHealthDetailRefused is a health record whose version, component and
+// reason are valid but whose detail is not one MarkHealth writes.
+var ErrHealthDetailRefused = errors.New("its detail is not one MarkHealth writes")
 
 // HealthRecords reads all three components without changing any of them.
 // Results are returned in the stable decision, capture, flush order.

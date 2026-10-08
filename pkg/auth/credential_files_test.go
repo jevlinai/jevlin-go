@@ -25,15 +25,17 @@ var storeRecords = map[string]string{
 	"revoke_pending.json":       "a marker that a revocation is owed",
 	"receipt-%d-%d.jws":         "an enrollment receipt, signed by the AS and kept as evidence",
 	"registration_pending.json": "the registration journal, which lives in the installation directory beside credentials.json and not in the state dir (invariant 13)",
+	"claim.json":                "the claim link and code, which live in the installation directory beside credentials.json and not in the state dir (invariant 12)",
 }
 
 // storeNamesFromVariables are the call sites that pass a name held in a
 // variable, so the walk cannot read it off the call. Each is classified by
 // hand, here, and a new one fails the test.
 var storeNamesFromVariables = map[string]string{
-	"health.go:MarkHealth": "health records, one file per component: records",
-	"health.go:LoadHealth": "health records, one file per component: records",
-	"store.go:SaveReceipt": "receipt-%d-%d.jws: a record",
+	"health.go:MarkHealth":       "health records, one file per component: records",
+	"health.go:LoadHealth":       "health records, one file per component: records",
+	"store.go:SaveReceipt":       "receipt-%d-%d.jws: a record",
+	"store.go:loadAddressRecord": "payout.json, payout_declared.json: a payout address, which is public: records",
 }
 
 // Every file name the store reads or writes through readSecret,

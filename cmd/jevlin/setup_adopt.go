@@ -48,6 +48,13 @@ import (
 // registration is durable state, and ignoring it would mint a second
 // identity for the same participant. It sits beside credentials.json; the
 // state/ copy is an older release's and connect discards it unread.
+//
+// The payout record and the claim record are not markers, though they move
+// with the identity. A home holding only payout.json is what a first connect
+// leaves when the participant answered the address question and Register
+// then failed; counting it as an installation made setup report "a payout
+// address" as the previous installation and never offer the one actually
+// set aside beside it.
 var installationMarkers = []string{
 	filepath.Join("wallet", walletKeyFile),
 	filepath.Join("state", "refresh.token"),
@@ -140,6 +147,9 @@ func describeInstallation(dir string) string {
 	}
 	if lexists(filepath.Join(dir, credentialsFile)) {
 		parts = append(parts, "stored API key")
+	}
+	if lexists(filepath.Join(dir, payoutRecordFile)) {
+		parts = append(parts, "a payout address")
 	}
 	if treeHasFiles(filepath.Join(dir, "spool")) {
 		parts = append(parts, "unsent spool")
@@ -356,8 +366,10 @@ func (a *adoption) run() error {
 		return err
 	}
 	t := a.txn(
-		filepath.Join(a.src, "state"), filepath.Join(a.src, credentialsFile), filepath.Join(a.src, registrationJournalFile), filepath.Join(a.src, "wallet"),
-		filepath.Join(a.dst, "state"), filepath.Join(a.dst, credentialsFile), filepath.Join(a.dst, registrationJournalFile), filepath.Join(a.dst, "wallet"),
+		filepath.Join(a.src, "state"), filepath.Join(a.src, credentialsFile), filepath.Join(a.src, registrationJournalFile),
+		filepath.Join(a.src, payoutRecordFile), filepath.Join(a.src, claimRecordFile), filepath.Join(a.src, "wallet"),
+		filepath.Join(a.dst, "state"), filepath.Join(a.dst, credentialsFile), filepath.Join(a.dst, registrationJournalFile),
+		filepath.Join(a.dst, payoutRecordFile), filepath.Join(a.dst, claimRecordFile), filepath.Join(a.dst, "wallet"),
 		a.aside("state.unenrolled"), a.aside("wallet.incomplete"),
 	)
 	if err := a.identity(t); err != nil {
@@ -382,19 +394,37 @@ func (a *adoption) aside(prefix string) string {
 }
 
 // identity is the custody transaction's first stage: state/ and
-// credentials.json together, or neither. A destination that already holds an
-// identity is returned as a conflict; it is found before this stage moves
-// anything, and this stage is the first.
+// credentials.json together, with the registration journal, the payout
+// record and the claim record that sit beside the credential, or none of
+// them. A destination that already holds an identity is returned as a
+// conflict; it is found before this stage moves anything, and this stage is
+// the first. A payout record already at the destination is not an identity:
+// it is the participant's latest answer to the address question, so it is
+// kept and the adopted installation's stays where it was set aside.
 func (a *adoption) identity(t *bundleTxn) error {
 	srcState, srcCreds := filepath.Join(a.src, "state"), filepath.Join(a.src, credentialsFile)
 	dstState, dstCreds := filepath.Join(a.dst, "state"), filepath.Join(a.dst, credentialsFile)
 	srcJournal, dstJournal := filepath.Join(a.src, registrationJournalFile), filepath.Join(a.dst, registrationJournalFile)
+	srcPayout, dstPayout := filepath.Join(a.src, payoutRecordFile), filepath.Join(a.dst, payoutRecordFile)
+	srcClaim, dstClaim := filepath.Join(a.src, claimRecordFile), filepath.Join(a.dst, claimRecordFile)
 	aside := a.aside("state.unenrolled")
-	hasState, hasCreds, hasJournal := lexists(srcState), lexists(srcCreds), lexists(srcJournal)
-	if !hasState && !hasCreds && !hasJournal {
+	hasState, hasCreds, hasJournal, hasClaim := lexists(srcState), lexists(srcCreds), lexists(srcJournal), lexists(srcClaim)
+	hasPayout := lexists(srcPayout) && !lexists(dstPayout)
+	if lexists(srcPayout) && !hasPayout {
+		a.say("kept the payout address on file in %s; the one in %s is left there", a.dst, a.src)
+	}
+	if !hasState && !hasCreds && !hasJournal && !hasPayout && !hasClaim {
 		return nil
 	}
-	for _, p := range []string{srcState, srcCreds, srcJournal} {
+	moving := []string{srcState, srcCreds, srcJournal, srcClaim}
+	if hasPayout {
+		// A source payout record left in place, because the destination
+		// keeps its own, is not moved and so not judged: refusing the whole
+		// adoption over a file it leaves where it is would be a refusal
+		// about nothing it does.
+		moving = append(moving, srcPayout)
+	}
+	for _, p := range moving {
 		if !lexists(p) {
 			continue
 		}
@@ -411,7 +441,7 @@ func (a *adoption) identity(t *bundleTxn) error {
 	conflict := func(evidence string) *identityConflict {
 		return &identityConflict{Destination: a.dst, Evidence: evidence, Source: a.src}
 	}
-	for _, p := range []string{dstCreds, dstJournal} {
+	for _, p := range []string{dstCreds, dstJournal, dstClaim} {
 		if lexists(p) {
 			return conflict(p)
 		}
@@ -461,6 +491,16 @@ func (a *adoption) identity(t *bundleTxn) error {
 	}
 	if hasJournal {
 		if err := t.move(srcJournal, dstJournal); err != nil {
+			return t.fail(identityBundle, err)
+		}
+	}
+	if hasPayout {
+		if err := t.move(srcPayout, dstPayout); err != nil {
+			return t.fail(identityBundle, err)
+		}
+	}
+	if hasClaim {
+		if err := t.move(srcClaim, dstClaim); err != nil {
 			return t.fail(identityBundle, err)
 		}
 	}

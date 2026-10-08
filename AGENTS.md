@@ -116,14 +116,28 @@ the named tests.
 11. **A claim or console URL is printed, never opened.** `connect.go` and `mining.go` import no
     `os/exec`. Structural, and tested.
 12. **`platform.base_url` is compared against, never dialed.** It is the origin a platform-supplied
-    URL must match (`validatePlatformURL`); every request goes to `agents_api_url`.
+    URL must match (`validatePlatformURL`): every byte printable ASCII, no user before the host,
+    and the URL must read back as exactly the text given, so what is checked is all of what is
+    printed. Every request goes to `agents_api_url`. The claim link lives in `claim.json` beside
+    `credentials.json` (`auth.ClaimRecord`), bound to its agent and written only from the
+    platform's answer or the registration journal beside it: by a foreground run, or by a resume
+    finishing that journal (which, in a sandbox, cannot write there and leaves it to the next
+    foreground run), never in the sandbox-writable `agent.json`; it is checked again before it is printed
+    (`platform.ValidateStoredClaimURL`), because `platform.base_url` may have changed since.
 13. **Registration is one journaled transaction.** A complete `register` response is journaled
     (`registration_pending.json`) before `agent.json` or the credential is written, and finished
     from the journal on the next run, never by a second `register`. The journal is consulted before
     anything else. It lives beside `credentials.json`, never in the state dir: a sandboxed agent can
     write the state dir, and the journal can authorize replacing the credential. A
-    `registration_pending.json` found in the state dir is discarded unread. A lost or unreadable record beside a stored credential is rebuilt through
-    `GET /v1/agents/me` with nothing local changed before a valid answer. `-force` bypasses
+    `registration_pending.json` found in the state dir is discarded unread, and once the journal's
+    key is in `credentials.json` an `agent.json` naming another agent is set aside rather than
+    allowed to stop publication. Before a foreground `connect` prints, polls or replaces anything
+    it asks `GET /v1/agents/me` with the stored credential: a lost or unreadable record, or one
+    naming an agent the credential does not belong to, is rebuilt from the answer, with nothing
+    local changed before a valid answer; the credential is the authority, because it lives outside
+    every writable root and `agent.json` does not. Unreadable includes a record holding a character
+    a terminal acts on or an agent id that names a route (`LoadAgentRegistration`,
+    `auth.ValidAgentID`). A `/me` failure shows no claim link. `-force` does not rebuild; it bypasses
     recovery and authorizes deliberate replacement where local state would otherwise refuse a
     fresh registration. Separately and without `-force`, an ordinary foreground `connect` may
     replace a registration the platform has positively verified as expired; that replacement
@@ -219,9 +233,9 @@ the named tests.
     there or reads past a bound (`fsx.ReadRegular`, `ReadRegularNoFollow` where a check on the
     name came first), no lock follows a link (`fsx.OpenLock`), and the spool, which can be nested,
     does every operation through `fsx.Root` held to the directory it opened on. The premise is
-    that the installation's own directory (credentials.json, the registration journal, flush.lock)
-    and the config's directory are writable from no sandbox: `agents install` grants Codex
-    nothing when a layout would put either inside a root (`codexRootsProblem`), and nothing here can help if Codex's
+    that the installation's own directory (credentials.json, the registration journal, the payout
+    record, flush.lock) and the config's directory are writable from no sandbox: `agents install`
+    grants Codex nothing when a layout would put either inside a root (`codexRootsProblem`), and nothing here can help if Codex's
     own workspace is the installation or above it. `pkg/fsx/confined.go` owns the operations.
     `cmd/jevlin/writable_roots_guard_test.go` resolves every file's imports and classifies each
     reference to a file operation in os, io/ioutil, syscall, x/sys/unix, x/sys/windows and
@@ -230,8 +244,33 @@ the named tests.
     `codex_sandbox_test.go`, `pkg/fsx/confined_test.go`, `pkg/mining/spool/quarantine_link_test.go`
     and `pkg/auth/refreshlock_link_test.go` plant the links and FIFOs at the exact names, and swap
     a file between a check and its read through the test seams in `readSecret` and
-    `readCredentials`. What the records in those directories say is a separate question, not
-    answered here: a sandboxed command can still rewrite them.
+    `readCredentials`. What the records say is answered in three parts. A record that could make
+    this client act on, or show, its writer's say-so does not live there: the registration
+    journal, the payout record and the claim record sit beside `credentials.json`, and what an
+    older version left in the state dir is discarded unread or, for a payout address, recorded
+    only when it is the installation's own wallet address (`payoutAddressToDeclare`). Every record
+    a command prints is held on load to what this client writes: a string holding a control,
+    format or line-separator character (`internal/termtext`, Unicode Cc, Cf, Zl and Zp, found by
+    reflection over every string `encoding/json` fills in `pkg/auth/record_text.go`) makes
+    `agent.json` corrupt and any other record unreadable; an identifier a record carries (an
+    agent id, a scope, a slot name, a time) is a token, never a sentence (`pkg/auth/agent_id.go`,
+    held on the platform's wire as well, before anything is journaled), and a slot refusal is
+    stored as a code the client renders in its own words; an address must be twilight bech32; a
+    held-binding note is shown only for the address this installation would declare, with a
+    reason only when it is one the client knows; no message repeats the agent id `agent.json`
+    held; and a decode error repeats none of
+    the record (`auth.DecodeProblem`: the state dir's records, the flush stamp, and the journal
+    and claim record beside the credential alike). What a foreground `flush` prints, which names intake and spool files, goes
+    through `terminalSafeWriter`. And `agent.json` naming an agent the stored credential does not
+    belong to is rebuilt from the platform (invariant 13).
+    `cmd/jevlin/state_record_escape_guard_test.go` builds an installation through the real
+    commands, plants each class of character, one at a time, in every string of every record it
+    leaves and in a spool record's id, runs every command that prints, `flush` included, and fails
+    on a file nobody has classified; it then plants a visible sentence at every scalar of every
+    record, which no command may repeat, with the health detail, free text by design, named as
+    the one exception (`visibleFreeText`). Within those shapes a
+    record still says what its last writer chose: a forged `mining_decision.json` still turns
+    mining on, a forged `payout_declared.json` still makes a resume skip a declaration.
 
 ## Subsystems and where their rules live
 A subsystem's authority is one file, and a subsystem nobody has watched fail is a hypothesis — so
@@ -281,8 +320,45 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   (`remintClaimLink`: minting kills the old code, so only a deliberate foreground connect asks,
   the fresh link is persisted before it is printed, and every failure is exactly the old
   no-link dead end). The journal can hold a platform key, so `-purge-state` removes it with
-  the credential (`registration_journal_purge_test.go`). For participants:
+  the credential (`registration_journal_purge_test.go`). A record that names an agent the
+  stored key does not belong to is rebuilt by a foreground connect from `/v1/agents/me` before
+  anything is printed or replaced, never by the resume or under `-force`:
+  `registration_unknown_agent_test.go`, against a stub that answers status only for the key's
+  own agent, as the router does. The claim link is `claim.json` beside the credential
+  (`pkg/auth/claim_record.go`): `claim_link_test.go` plants another agent's on-origin link in
+  `agent.json` and holds connect, status, both JSON reports and mining enable to never printing
+  it, a claimed agent to showing none, a `/me` failure to showing none (in `connect -json` too,
+  `TestConnectJSONCarriesNoLinkTheRunWithheld`), and a record naming `me` to being rebuilt;
+  `TestTheRebuildNamesOnlyThePlatformsAgent` holds every message to the id `/me` returned, and
+  `TestForceOnARecordNamingAnotherAgentAsksForDifferentInput` machine mode's `-force` to
+  `fix_input`. `TestAJournalWinsOverAnAgentRecordNamingAnotherAgent`,
+  `TestAJournalPublishesOverWhateverIsAtTheAgentRecordsName` (a loose-mode record, a link, a
+  directory, a FIFO) and `registration_set_aside_test.go` hold a planted record or old evidence
+  to never wedging recovery. For participants:
   [guide, The claim link](docs/guide.md#the-claim-link).
+- **The payout record** — `pkg/auth/store.go`'s `PayoutRecord` owns `payout.json`, the address a
+  resume declares unattended, and keeps it beside `credentials.json`, never in the state dir:
+  a first declaration takes effect on arrival (`pkg/auth/payout.go`), and a `payout.json` a
+  sandboxed command planted in the state dir was declared by the next resume. It does not
+  stop a sandboxed command that declares with the installation's AS authority itself, which it
+  can read in the state dir; that is the AS's question, and it is open. With nothing on file
+  beside the credential, the address recorded and declared comes only from where no sandbox
+  writes (`payoutAddressToDeclare`): the config's `[mining] payout_address`, or a `payout.json` an
+  older version left in the state dir when it is this installation's own wallet address, whose
+  state-dir copy is then removed. "The AS already has it in force" was the rule once, and a
+  sandboxed command can make that true by itself with `jevlin payout set`. Any other
+  state-dir `payout.json` is never recorded, declared or repeated, and status says to run
+  `jevlin mining enable`, which on an installation already enabled asks only for the address
+  (`miningEnableDecision`). `cmd/jevlin/payout_record_test.go`
+  (`TestTheResumeNeverDeclaresAnAddressOnlyTheStateDirNames`,
+  `TestAnAddressTheSandboxMadeActiveIsNotAdopted`,
+  `TestALegacyAddressThatIsTheInstallationsOwnWalletIsAdopted`,
+  `TestTheConfigsPayoutAddressIsRecordedAndDeclared`), `payout_record_unix_test.go` (a resume
+  that cannot write the home declares the wallet address and leaves the record to the next
+  foreground run), `payout_record_purge_test.go`, `setup_test.go`'s
+  `TestALonePayoutRecordDoesNotHideASetAsideInstallation` and the adoption cases in
+  `setup_units_test.go`. For participants:
+  [guide, Changing the payout address](docs/guide.md#changing-the-payout-address).
 - **The prompt rule** — `cmd/jevlin/prompt.go` owns what counts as an answer and the two
   readers that ask; every prompt in the binary goes through one of them.
   `prompt_abort_test.go` drives each real command to each real question, under both an interrupted
@@ -505,7 +581,8 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   the rule that the mining question stays connect's: `-yes` never answers it, and
   `[mining] enabled = true` is written only with no terminal and `JEVLIN_MINING=1`.
   `setup_adopt.go` owns what counts as an installation and adoption by bundle — the
-  identity (`state/` and `credentials.json`) moves whole or not at all, and a destination
+  identity (`state/`, `credentials.json`, and beside it the registration journal, the payout
+  record and the claim record) moves whole or not at all, and a destination
   identity is a typed conflict that stops setup non-zero before anything moves and before
   connect runs (`TestSetupStopsOnAnIdentityConflictBeforeConnect`). `setup_config.go` owns TOML quoting and
   the migration policy (parse first; `[miner]` present → byte-identical; otherwise append
