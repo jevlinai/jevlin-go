@@ -119,6 +119,9 @@ func TestAnAddressTheSandboxMadeActiveIsNotAdopted(t *testing.T) {
 	if strings.Contains(text.String(), plantedAddress) || !strings.Contains(text.String(), "jevlin mining enable") {
 		t.Fatalf("status repeated the planted address or gave no next step:\n%s", text.String())
 	}
+	if !strings.Contains(text.String(), "a payout.json in the state directory is not used") {
+		t.Fatalf("status does not say the state directory's payout.json is not used:\n%s", text.String())
+	}
 }
 
 // A participant who upgraded has, usually, the wallet they made at the
