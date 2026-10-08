@@ -602,6 +602,11 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 		fmt.Fprintln(stderr, "jevlin:", err)
 		return exitTransport
 	}
+	// The trace key is made here, outside any sandbox and in a directory this
+	// run writes anyway, so a search that cannot write there only has to read
+	// it and keeps one session id instead of sending a new one each time. Best
+	// effort and silent: a search makes the key itself where it can write.
+	_, _ = store.EnsureTraceKey()
 
 	if *resume {
 		// Pace attempts before anything else — including before the lock
