@@ -49,9 +49,10 @@ type Store struct {
 }
 
 // OpenStore creates or opens the state directory ([mining] state_dir):
-// created 0700 (on Windows, with a protected owner-only DACL), and refused
-// if it is a symlink or accessible to anyone else — the same hazard
-// discipline as the Unix-socket listener.
+// created 0700 (on Windows, restricted to its owner when it is created and
+// never judged afterwards: perm.go), and refused if it is a symlink or
+// group/world-accessible — the same hazard discipline as the Unix-socket
+// listener.
 func OpenStore(dir string) (*Store, error) {
 	if dir == "" {
 		return nil, errors.New("auth: state_dir is empty")
@@ -95,9 +96,6 @@ func openExistingStore(dir string) (*Store, error) {
 	}
 	if posixModes && info.Mode().Perm()&0o077 != 0 {
 		return nil, fmt.Errorf("auth: state dir is group/world-accessible (%04o); refusing", info.Mode().Perm())
-	}
-	if err := checkStateAccess(dir); err != nil {
-		return nil, fmt.Errorf("auth: state dir %s %w; refusing", dir, err)
 	}
 	return &Store{dir: dir}, nil
 }
@@ -222,9 +220,6 @@ func (s *Store) readSecret(name string) ([]byte, error) {
 	}
 	if posixModes && info.Mode().Perm()&0o077 != 0 {
 		return nil, fmt.Errorf("auth: %s is group/world-accessible (%04o); refusing mining startup", name, info.Mode().Perm())
-	}
-	if err := checkStateAccess(path); err != nil {
-		return nil, fmt.Errorf("auth: %s %w; refusing mining startup", name, err)
 	}
 	if secretCheckedHook != nil {
 		secretCheckedHook(path)
@@ -392,9 +387,6 @@ func (s *Store) PreserveCorruptAgentRegistration() error {
 	}
 	if posixModes && info.Mode().Perm()&0o077 != 0 {
 		return fmt.Errorf("auth: agent registration is readable by others (%04o); refusing", info.Mode().Perm())
-	}
-	if err := checkStateAccess(path); err != nil {
-		return fmt.Errorf("auth: agent registration %w; refusing", err)
 	}
 	backup := filepath.Join(s.dir, "agent.json.corrupt")
 	if _, err := os.Lstat(backup); err == nil {

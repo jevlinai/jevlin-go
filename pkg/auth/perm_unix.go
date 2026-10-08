@@ -9,6 +9,3 @@ const posixModes = true
 
 // restrictStateDir: the 0700 mode OpenStore creates with is the whole story.
 func restrictStateDir(string) error { return nil }
-
-// checkStateAccess: the mode checks in store.go are the whole story.
-func checkStateAccess(string) error { return nil }

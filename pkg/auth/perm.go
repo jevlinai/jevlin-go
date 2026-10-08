@@ -1,73 +1,25 @@
 package auth
 
-import (
-	"errors"
-	"fmt"
-	"sort"
-	"strings"
-)
-
-// Who may open the state directory and its files, where access is a DACL
-// (Windows; perm_windows.go reads and sets it). A DACL is inherited, so a
-// state_dir created outside jevlin setup — or one beneath a parent that later
-// gains an inheritable entry — would otherwise silently admit every principal
-// its parent does. OpenStore gives a directory it creates a protected
-// owner-only DACL, and every open and every secret load re-verifies it here.
+// Who may open the state directory and its files.
 //
-// SYSTEM and BUILTIN\Administrators are tolerated, as they are in the
-// default profile DACL: both can take ownership of any object regardless.
-
-const (
-	sidLocalSystem    = "S-1-5-18"
-	sidAdministrators = "S-1-5-32-544"
-)
-
-// stateACE is one access-list entry, reduced to what the judgment needs.
-type stateACE struct {
-	allow bool
-	sid   string
-}
-
-// stateAccess is what one object's security descriptor says.
-type stateAccess struct {
-	owner string
-	// nullDACL: the object has no access list, which grants everyone everything.
-	nullDACL bool
-	aces     []stateACE
-}
-
-// judgeStateAccess refuses an object owned by, or granting any access to, a
-// principal other than user, SYSTEM and Administrators. Any allow entry
-// counts, whatever its mask and inheritance flags: an inherit-only entry
-// reaches every secret later created beneath the directory, and write access
-// alone lets another principal replace a secret. Deny entries never widen
-// access, so they play no part. name renders a SID for the refusal.
-func judgeStateAccess(acc stateAccess, user string, name func(sid string) string) error {
-	trusted := func(sid string) bool {
-		return sid == user || sid == sidLocalSystem || sid == sidAdministrators
-	}
-	if acc.nullDACL {
-		return errors.New("has no access list, so everyone can open it")
-	}
-	var problems []string
-	if !trusted(acc.owner) {
-		problems = append(problems, "is owned by "+name(acc.owner))
-	}
-	seen := map[string]bool{}
-	var others []string
-	for _, ace := range acc.aces {
-		if !ace.allow || trusted(ace.sid) || seen[ace.sid] {
-			continue
-		}
-		seen[ace.sid] = true
-		others = append(others, name(ace.sid))
-	}
-	if len(others) > 0 {
-		sort.Strings(others)
-		problems = append(problems, "grants access to "+strings.Join(others, ", "))
-	}
-	if len(problems) == 0 {
-		return nil
-	}
-	return fmt.Errorf("%s (restrict it to your account)", strings.Join(problems, " and "))
-}
+// On POSIX that is file modes, and the store checks them on every open and
+// every load (store.go): a group- or world-accessible secret refuses mining
+// startup. On Windows Go's modes say nothing (posixModes is false) and access
+// is a DACL, which is inherited: a state_dir made outside `jevlin setup`, or
+// beneath a parent that later gains an inheritable entry, admits every
+// principal its parent does. So on Windows the protection is applied once, when
+// OpenStore creates the directory (perm_windows.go), and the store never reads
+// an access list afterwards.
+//
+// That last part is a decision, not a gap. The state directory is a writable
+// root of Codex's sandbox (codexSandboxRoots), docs/agents.md tells the
+// participant that sandboxed commands read it, and a sandbox's setup grants its
+// own group an entry on it — so another principal on the list is the intended
+// state of an installation that uses one. A refusal on "any entry for anyone
+// but you, SYSTEM and Administrators" would then fail on every open: mining
+// DEGRADED after every search, and connect, status and doctor refusing the
+// store they exist to repair or report. A check on every load would also read
+// a DACL, and name its principals, on the search path (AGENTS.md invariant 1).
+// What the participant is told about who else can open the directory is
+// doctor's `state access` line (cmd/jevlin/state_acl.go), which reads and
+// reports and changes nothing.
