@@ -172,9 +172,14 @@ func TestPermissionHazardsRefused(t *testing.T) {
 		t.Fatalf("restored perms still refused: %v", err)
 	}
 
-	// Loose state directory refuses OpenStore entirely.
+	// Loose state directory refuses OpenStore entirely. The hazard is set with
+	// Chmod, not the mode MkdirAll is given: that passes through the umask,
+	// and under 0077 it would leave a 0700 directory with nothing to refuse.
 	looseDir := filepath.Join(t.TempDir(), "loose")
-	if err := os.MkdirAll(looseDir, 0o755); err != nil { // #nosec G301 -- deliberately loose: the test proves refusal
+	if err := os.MkdirAll(looseDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(looseDir, 0o755); err != nil { // #nosec G302 -- deliberately loose: the test proves refusal
 		t.Fatal(err)
 	}
 	if _, err := OpenStore(looseDir); err == nil {
