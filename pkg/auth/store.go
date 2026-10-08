@@ -410,7 +410,28 @@ type PendingRegistration struct {
 
 const pendingRegistrationVersion = 1
 
-func (s *Store) SavePendingRegistration(rec PendingRegistration) error {
+// RegistrationJournal holds registration_pending.json. It is not part of
+// the state directory: a sandboxed agent may write [mining] state_dir, and
+// the journal carries the authority to publish a platform key over
+// credentials.json (replace_expired, previous_key). It lives beside
+// credentials.json, so whoever can forge it could already rewrite the
+// credential itself.
+type RegistrationJournal struct {
+	dir string
+}
+
+// OpenRegistrationJournal names the journal in dir, the directory holding
+// credentials.json. Nothing is created until Save.
+func OpenRegistrationJournal(dir string) (*RegistrationJournal, error) {
+	if dir == "" {
+		return nil, errors.New("auth: registration journal directory is empty")
+	}
+	return &RegistrationJournal{dir: dir}, nil
+}
+
+func (j *RegistrationJournal) store() *Store { return &Store{dir: j.dir} }
+
+func (j *RegistrationJournal) Save(rec PendingRegistration) error {
 	rec.V = pendingRegistrationVersion
 	if err := validatePendingRegistration(rec); err != nil {
 		return err
@@ -419,11 +440,14 @@ func (s *Store) SavePendingRegistration(rec PendingRegistration) error {
 	if err != nil {
 		return fmt.Errorf("auth: encode pending registration: %w", err)
 	}
-	return s.saveStateFile(registrationPendingFile, raw)
+	if err := os.MkdirAll(j.dir, 0o700); err != nil { // #nosec G703 -- the jevlin home, beside credentials.json
+		return fmt.Errorf("auth: create registration journal dir: %w", err)
+	}
+	return j.store().saveStateFile(registrationPendingFile, raw)
 }
 
-func (s *Store) LoadPendingRegistration() (rec PendingRegistration, ok bool, err error) {
-	raw, err := s.readSecret(registrationPendingFile)
+func (j *RegistrationJournal) Load() (rec PendingRegistration, ok bool, err error) {
+	raw, err := j.store().readSecret(registrationPendingFile)
 	if errors.Is(err, fs.ErrNotExist) {
 		return PendingRegistration{}, false, nil
 	}
@@ -448,20 +472,38 @@ func (s *Store) LoadPendingRegistration() (rec PendingRegistration, ok bool, err
 	return rec, true, nil
 }
 
-// ClearPendingRegistration removes the transient journal only after both
-// local publication targets have been verified. Reuse readSecret first so a
-// symlink or unsafe journal is never removed as if it were our state file.
-func (s *Store) ClearPendingRegistration() error {
-	if _, err := s.readSecret(registrationPendingFile); err != nil {
+// Clear removes the transient journal only after both local publication
+// targets have been verified. Reuse readSecret first so a symlink or unsafe
+// journal is never removed as if it were our state file.
+func (j *RegistrationJournal) Clear() error {
+	if _, err := j.store().readSecret(registrationPendingFile); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
 		return err
 	}
-	if err := os.Remove(filepath.Join(s.dir, registrationPendingFile)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := os.Remove(filepath.Join(j.dir, registrationPendingFile)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("auth: clear pending registration: %w", err)
 	}
 	return nil
+}
+
+// DiscardLegacyPendingRegistration removes a registration_pending.json from
+// the state directory, where releases before RegistrationJournal kept it. It
+// is never read: anything in the state directory may have been written by a
+// sandboxed command. Only the name itself is removed, never a link target.
+func (s *Store) DiscardLegacyPendingRegistration() (bool, error) {
+	path := filepath.Join(s.dir, registrationPendingFile)
+	if _, err := os.Lstat(path); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("auth: stat legacy pending registration: %w", err)
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return true, fmt.Errorf("auth: discard legacy pending registration: %w", err)
+	}
+	return true, nil
 }
 
 func validatePendingRegistration(rec PendingRegistration) error {

@@ -210,7 +210,11 @@ func TestAgentRegistrationSurvivesAcrossStoreReopens(t *testing.T) {
 }
 
 func TestPendingRegistrationJournalIsStrictAndOwnerOnly(t *testing.T) {
-	s, dir := newStore(t)
+	dir := t.TempDir()
+	s, err := OpenRegistrationJournal(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := PendingRegistration{
 		AgentID:        "agent-journal",
 		Key:            "sr-journal-key",
@@ -220,10 +224,10 @@ func TestPendingRegistrationJournalIsStrictAndOwnerOnly(t *testing.T) {
 		Status:         "unclaimed",
 		PollIntervalMS: 2000,
 	}
-	if err := s.SavePendingRegistration(want); err != nil {
+	if err := s.Save(want); err != nil {
 		t.Fatal(err)
 	}
-	got, ok, err := s.LoadPendingRegistration()
+	got, ok, err := s.Load()
 	if err != nil || !ok || got.AgentID != want.AgentID || got.Key != want.Key || got.ClaimURL != want.ClaimURL || got.PollIntervalMS != want.PollIntervalMS {
 		t.Fatalf("got %+v ok=%v err=%v, want %+v", got, ok, err, want)
 	}
@@ -231,10 +235,10 @@ func TestPendingRegistrationJournalIsStrictAndOwnerOnly(t *testing.T) {
 	if err != nil || (posixModes && info.Mode().Perm() != 0o600) {
 		t.Fatalf("registration journal perms = %v, want 0600", info.Mode().Perm())
 	}
-	if err := s.ClearPendingRegistration(); err != nil {
+	if err := s.Clear(); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := s.LoadPendingRegistration(); err != nil || ok {
+	if _, ok, err := s.Load(); err != nil || ok {
 		t.Fatalf("cleared journal still loads: ok=%v err=%v", ok, err)
 	}
 
@@ -243,13 +247,16 @@ func TestPendingRegistrationJournalIsStrictAndOwnerOnly(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "registration_pending.json"), []byte(`{"v":1,"agent_id":"a","key":"sr-k","claim_url":"https://platform.nyks.dev/c","claim_code":"c","claim_expires_at":"","status":"unclaimed","unexpected":true}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := s.LoadPendingRegistration(); err == nil || ok || !strings.Contains(err.Error(), "unknown field") {
+	if _, ok, err := s.Load(); err == nil || ok || !strings.Contains(err.Error(), "unknown field") {
 		t.Fatalf("journal with unknown field accepted: ok=%v err=%v", ok, err)
 	}
 }
 
 func TestPendingExpiredReplacementJournalBindsPreviousIdentity(t *testing.T) {
-	s, _ := newStore(t)
+	s, err := OpenRegistrationJournal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := PendingRegistration{
 		AgentID:         "agent-new",
 		Key:             "sr-new-key",
@@ -261,10 +268,10 @@ func TestPendingExpiredReplacementJournalBindsPreviousIdentity(t *testing.T) {
 		PreviousAgentID: "agent-old",
 		PreviousKey:     "sr-old-key",
 	}
-	if err := s.SavePendingRegistration(want); err != nil {
+	if err := s.Save(want); err != nil {
 		t.Fatal(err)
 	}
-	got, ok, err := s.LoadPendingRegistration()
+	got, ok, err := s.Load()
 	if err != nil || !ok || !got.ReplaceExpired || got.PreviousAgentID != want.PreviousAgentID || got.PreviousKey != want.PreviousKey {
 		t.Fatalf("replacement journal lost previous binding: got=%+v ok=%v err=%v", got, ok, err)
 	}

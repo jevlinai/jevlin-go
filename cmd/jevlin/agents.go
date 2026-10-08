@@ -1808,8 +1808,10 @@ func readWithMode(ops agentOps, path string) ([]byte, os.FileMode, error) {
 // there. That is more than a deletion exposure: a sandboxed command can leave
 // a symlink, a hard link or a FIFO at any name in these directories, which
 // hard invariant 19 (pkg/fsx/confined.go) answers for this client's own
-// writes and reads, and it can rewrite the records themselves, which nothing
-// here yet answers.
+// writes and reads, and it can rewrite the records themselves. The one record
+// that could authorize replacing the platform credential, the registration
+// journal, is kept beside credentials.json for that reason (hard invariant
+// 13); for the others nothing here yet answers.
 func codexSandboxRoots(entry binEntry, getenv func(string) string) []string {
 	cfg := configForEntry(entry, getenv)
 	if cfg == nil {
