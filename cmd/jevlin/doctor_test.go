@@ -439,13 +439,13 @@ func TestAHeldPayoutBindingIsNotOK(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SavePayoutBindingHeld("twilight1local", "twilight1active", auth.HeldReplacesActive); err != nil {
+	if err := store.SavePayoutBindingHeld("twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh", "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn", auth.HeldReplacesActive); err != nil {
 		t.Fatal(err)
 	}
 	as := &stubAS{
 		doc:      &wire.DiscoveryDocument{ChainID: "twilight-1", SlotID: "7"},
 		target:   nil,
-		standing: &auth.PayoutStanding{Active: &auth.PayoutDeclaration{Address: "twilight1active", Effective: true}},
+		standing: &auth.PayoutStanding{Active: &auth.PayoutDeclaration{Address: "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn", Effective: true}},
 	}
 	f := gatherDoctorFacts(context.Background(), as, config.Mining{
 		ASBaseURL: "https://as.example.com", StateDir: stateDir, SpoolDir: t.TempDir(),
@@ -457,7 +457,7 @@ func TestAHeldPayoutBindingIsNotOK(t *testing.T) {
 	if got.Verdict != verdictNo {
 		t.Fatalf("payout address = %s (%s), want NO — a held binding is not what status calls OK", got.Verdict, got.Detail)
 	}
-	for _, want := range []string{"HELD", "twilight1active", "twilight1local"} {
+	for _, want := range []string{"HELD", "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn", "twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh"} {
 		if !strings.Contains(got.Detail, want) {
 			t.Errorf("detail %q is missing %q", got.Detail, want)
 		}

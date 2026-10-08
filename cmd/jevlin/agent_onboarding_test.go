@@ -1602,10 +1602,10 @@ func TestDeclareProceedsWhenNoActiveBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
-	declarePayoutIfSafe(context.Background(), mining, store, "twilight1new", &stdout, &stderr)
+	declarePayoutIfSafe(context.Background(), mining, store, "twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n", &stdout, &stderr)
 
-	if got := as.declaredAddress(); got != "twilight1new" {
-		t.Fatalf("declared address = %q, want twilight1new (no active binding, must proceed)", got)
+	if got := as.declaredAddress(); got != "twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n" {
+		t.Fatalf("declared address = %q, want twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n (no active binding, must proceed)", got)
 	}
 	if stderr.String() != "" {
 		t.Fatalf("stderr: %s", stderr.String())
@@ -1620,20 +1620,20 @@ func TestDeclareProceedsWhenNoActiveBinding(t *testing.T) {
 // without spending a PUT on it.
 func TestDeclareProceedsWhenActiveMatchesLocal(t *testing.T) {
 	as := newStubAS(t)
-	as.setActiveAddress("twilight1same")
+	as.setActiveAddress("twilight1xnxmhqt2l55flef42ks4sn0er6tv6yhyqx7wy8")
 	mining, stateDir := as.miningClient(t)
 	store, err := auth.OpenStore(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
-	declarePayoutIfSafe(context.Background(), mining, store, "twilight1same", &stdout, &stderr)
+	declarePayoutIfSafe(context.Background(), mining, store, "twilight1xnxmhqt2l55flef42ks4sn0er6tv6yhyqx7wy8", &stdout, &stderr)
 
 	if got := as.declarationAttempts(); got != 0 {
 		t.Fatalf("declaration attempts = %d, want 0 (already active and matching; no redundant AS round trip needed)", got)
 	}
-	if declared, ok, derr := store.LoadPayoutDeclared(); derr != nil || !ok || declared != "twilight1same" {
-		t.Fatalf("LoadPayoutDeclared() = %q ok=%v err=%v, want twilight1same recorded as settled", declared, ok, derr)
+	if declared, ok, derr := store.LoadPayoutDeclared(); derr != nil || !ok || declared != "twilight1xnxmhqt2l55flef42ks4sn0er6tv6yhyqx7wy8" {
+		t.Fatalf("LoadPayoutDeclared() = %q ok=%v err=%v, want twilight1xnxmhqt2l55flef42ks4sn0er6tv6yhyqx7wy8 recorded as settled", declared, ok, derr)
 	}
 	if _, ok, _ := store.LoadPayoutBindingHeld(); ok {
 		t.Fatal("a matching declaration must not leave a held-binding note")
@@ -1642,23 +1642,23 @@ func TestDeclareProceedsWhenActiveMatchesLocal(t *testing.T) {
 
 func TestDeclareReadsStandingFirstAndSkipsWhenActiveDiffers(t *testing.T) {
 	as := newStubAS(t)
-	as.setActiveAddress("twilight1active")
+	as.setActiveAddress("twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn")
 	mining, stateDir := as.miningClient(t)
 	store, err := auth.OpenStore(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
-	declarePayoutIfSafe(context.Background(), mining, store, "twilight1local", &stdout, &stderr)
+	declarePayoutIfSafe(context.Background(), mining, store, "twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh", &stdout, &stderr)
 
 	if got := as.declarationAttempts(); got != 0 {
 		t.Fatalf("declaration attempts = %d, want 0 — a different active address must never be declared over blind", got)
 	}
 	held, ok, err := store.LoadPayoutBindingHeld()
-	if err != nil || !ok || held.Local != "twilight1local" || held.Active != "twilight1active" {
+	if err != nil || !ok || held.Local != "twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh" || held.Active != "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn" {
 		t.Fatalf("LoadPayoutBindingHeld() = %+v, ok=%v, err=%v", held, ok, err)
 	}
-	if !strings.Contains(stdout.String(), "twilight1active") || !strings.Contains(stdout.String(), "twilight1local") {
+	if !strings.Contains(stdout.String(), "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn") || !strings.Contains(stdout.String(), "twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh") {
 		t.Fatalf("stdout does not name both addresses: %s", stdout.String())
 	}
 }

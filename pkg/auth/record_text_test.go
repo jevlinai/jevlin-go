@@ -118,3 +118,76 @@ func TestSaveAgentRegistrationRefusesWhatLoadWouldRefuse(t *testing.T) {
 		t.Fatalf("agent.json was written: %v", err)
 	}
 }
+
+const validTestAddress = "twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh"
+
+// status prints the payout address and both halves of a held binding;
+// connect declares the address. Each of the records refuses what a
+// sandboxed command would plant, on load, and names no planted byte.
+func TestPayoutRecordsRefuseAPlantedValueOnLoad(t *testing.T) {
+	declared := func(s *Store) error {
+		_, ok, err := s.LoadPayoutDeclared()
+		return refusedUnlessOK(ok, err)
+	}
+	held := func(s *Store) error {
+		_, ok, err := s.LoadPayoutBindingHeld()
+		return refusedUnlessOK(ok, err)
+	}
+	address := func(s *Store) error {
+		_, ok, err := s.LoadPayoutAddress()
+		return refusedUnlessOK(ok, err)
+	}
+	for _, tc := range []struct {
+		name, file string
+		body       map[string]any
+		load       func(s *Store) error
+	}{
+		{"address/escape", "payout.json", map[string]any{"address": plantedText}, address},
+		{"address/not bech32", "payout.json", map[string]any{"address": "cosmos1kl0dn0rtwk46h9zcmazyyrruta290crhqxn5sp"}, address},
+		{"declared/escape", "payout_declared.json", map[string]any{"address": plantedText}, declared},
+		{"declared/not bech32", "payout_declared.json", map[string]any{"address": "twilight1notanaddress"}, declared},
+		{"held/local", "payout_binding_held.json", map[string]any{"local": plantedText, "active": validTestAddress}, held},
+		{"held/active", "payout_binding_held.json", map[string]any{"local": validTestAddress, "active": plantedText}, held},
+		{"held/held_for", "payout_binding_held.json", map[string]any{"local": validTestAddress, "active": validTestAddress, "held_for": plantedText}, held},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, dir := newStore(t)
+			raw, err := json.Marshal(tc.body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, tc.file), raw, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			err = tc.load(s)
+			if err == nil {
+				t.Fatalf("%s loaded %v", tc.file, tc.body)
+			}
+			assertNoPlantedBytes(t, "the refusal", err.Error())
+		})
+	}
+}
+
+// refusedUnlessOK folds a load's (ok, err) into the one question these
+// tests ask: was the record accepted? nil means it was.
+func refusedUnlessOK(ok bool, err error) error {
+	if err == nil && !ok {
+		return errors.New("not found")
+	}
+	return err
+}
+
+func TestPayoutRecordsRefuseToWriteWhatTheyWouldRefuseToLoad(t *testing.T) {
+	s, dir := newStore(t)
+	if err := s.SavePayoutDeclared("twilight1notanaddress"); err == nil {
+		t.Fatal("an invalid declared address was written")
+	}
+	if err := s.SavePayoutBindingHeld(validTestAddress, plantedText, HeldReplacesActive); err == nil {
+		t.Fatal("a held binding naming a planted active address was written")
+	}
+	for _, name := range []string{"payout_declared.json", "payout_binding_held.json"} {
+		if _, err := os.Lstat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+			t.Fatalf("%s was written: %v", name, err)
+		}
+	}
+}

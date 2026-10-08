@@ -591,9 +591,18 @@ func (s *Store) SavePayoutAddress(address string) error {
 }
 
 // LoadPayoutAddress returns the stored address, ok=false when none has
-// been decided yet.
+// been decided yet. The address is validated on the way back in as well as
+// on the way out (#51): the file is in a directory a sandboxed command can
+// write, a resume declares what it says, and status prints it.
 func (s *Store) LoadPayoutAddress() (address string, ok bool, err error) {
-	raw, err := s.readSecret("payout.json")
+	return s.loadAddressRecord("payout.json")
+}
+
+// loadAddressRecord reads one of the {"address": ...} records and refuses an
+// address that is not a twilight bech32 address, which also refuses every
+// character a terminal would act on: bech32 has none.
+func (s *Store) loadAddressRecord(name string) (string, bool, error) {
+	raw, err := s.readSecret(name)
 	if errors.Is(err, fs.ErrNotExist) {
 		return "", false, nil
 	}
@@ -604,7 +613,10 @@ func (s *Store) LoadPayoutAddress() (address string, ok bool, err error) {
 		Address string `json:"address"`
 	}
 	if err := json.Unmarshal(raw, &rec); err != nil {
-		return "", false, fmt.Errorf("auth: decode payout address: %w", err)
+		return "", false, fmt.Errorf("auth: decode %s: %w", name, err)
+	}
+	if err := validatePayoutAddress(rec.Address); err != nil {
+		return "", false, fmt.Errorf("auth: %s: %w", name, err)
 	}
 	return rec.Address, true, nil
 }
@@ -771,7 +783,11 @@ type PayoutBindingHeld struct {
 // AS's active address differs from the one this installation would
 // declare.
 func (s *Store) SavePayoutBindingHeld(local, active string, heldFor string) error {
-	raw, err := json.Marshal(PayoutBindingHeld{Local: local, Active: active, HeldFor: heldFor})
+	rec := PayoutBindingHeld{Local: local, Active: active, HeldFor: heldFor}
+	if err := checkPayoutBindingHeld(rec); err != nil {
+		return err
+	}
+	raw, err := json.Marshal(rec)
 	if err != nil {
 		return fmt.Errorf("auth: encode payout binding held: %w", err)
 	}
@@ -780,6 +796,8 @@ func (s *Store) SavePayoutBindingHeld(local, active string, heldFor string) erro
 
 // LoadPayoutBindingHeld returns the stored held-binding note, ok=false
 // when declaration has never been held (or the hold has been cleared).
+// status and doctor print all three of its strings, so a record that
+// fails checkPayoutBindingHeld is an error rather than a note.
 func (s *Store) LoadPayoutBindingHeld() (rec PayoutBindingHeld, ok bool, err error) {
 	raw, err := s.readSecret("payout_binding_held.json")
 	if errors.Is(err, fs.ErrNotExist) {
@@ -791,7 +809,25 @@ func (s *Store) LoadPayoutBindingHeld() (rec PayoutBindingHeld, ok bool, err err
 	if err := json.Unmarshal(raw, &rec); err != nil {
 		return PayoutBindingHeld{}, false, fmt.Errorf("auth: decode payout binding held: %w", err)
 	}
+	if err := checkPayoutBindingHeld(rec); err != nil {
+		return PayoutBindingHeld{}, false, err
+	}
 	return rec, true, nil
+}
+
+// checkPayoutBindingHeld holds the local address to the rule every address
+// this client declares meets, and every string to termtext's. The active
+// address and the reason are the AS's words, and the AS's hold vocabulary is
+// open (payout.go: a client prints a reason it does not know), so those two
+// are held only to what a terminal may be handed.
+func checkPayoutBindingHeld(rec PayoutBindingHeld) error {
+	if err := validatePayoutAddress(rec.Local); err != nil {
+		return fmt.Errorf("auth: payout binding held: %w", err)
+	}
+	if field := recordTextProblem(rec); field != "" {
+		return fmt.Errorf("auth: payout binding held: its %s holds a control, C1 or bidi character", field)
+	}
+	return nil
 }
 
 // ClearPayoutBindingHeld removes the held-binding note once the addresses
@@ -816,6 +852,9 @@ func (s *Store) SavePayoutDeclared(address string) error {
 	if address == "" {
 		return errors.New("auth: refusing to record an empty address as declared")
 	}
+	if err := validatePayoutAddress(address); err != nil {
+		return err
+	}
 	raw, err := json.Marshal(struct {
 		Address string `json:"address"`
 	}{Address: address})
@@ -827,21 +866,10 @@ func (s *Store) SavePayoutDeclared(address string) error {
 
 // LoadPayoutDeclared returns the address last confirmed active, ok=false
 // when nothing has ever been declared or confirmed from this installation.
+// An address that is not a twilight bech32 address is an error, which
+// addressSettled reads as "not settled": the next poll asks the AS again.
 func (s *Store) LoadPayoutDeclared() (address string, ok bool, err error) {
-	raw, err := s.readSecret("payout_declared.json")
-	if errors.Is(err, fs.ErrNotExist) {
-		return "", false, nil
-	}
-	if err != nil {
-		return "", false, err
-	}
-	var rec struct {
-		Address string `json:"address"`
-	}
-	if err := json.Unmarshal(raw, &rec); err != nil {
-		return "", false, fmt.Errorf("auth: decode payout declared: %w", err)
-	}
-	return rec.Address, true, nil
+	return s.loadAddressRecord("payout_declared.json")
 }
 
 // SaveMiningEnabled persists the explicit runtime mining decision. The

@@ -358,11 +358,12 @@ func TestSaveLoadPayoutBindingHeldRoundTrips(t *testing.T) {
 	if _, ok, err := s.LoadPayoutBindingHeld(); err != nil || ok {
 		t.Fatalf("fresh store: ok=%v err=%v, want ok=false err=nil", ok, err)
 	}
-	if err := s.SavePayoutBindingHeld("twilight1local", "twilight1active", HeldReplacesActive); err != nil {
+	const local, active = "twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh", "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn"
+	if err := s.SavePayoutBindingHeld(local, active, HeldReplacesActive); err != nil {
 		t.Fatal(err)
 	}
 	got, ok, err := s.LoadPayoutBindingHeld()
-	if err != nil || !ok || got.Local != "twilight1local" || got.Active != "twilight1active" {
+	if err != nil || !ok || got.Local != local || got.Active != active {
 		t.Fatalf("got %+v ok=%v err=%v", got, ok, err)
 	}
 	if err := s.ClearPayoutBindingHeld(); err != nil {
