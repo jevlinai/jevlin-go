@@ -11,7 +11,9 @@ package main
 //  2. a previous installation, in the installation directory or set aside
 //     beside it — adopted by bundle, and only when a terminal says yes
 //  3. the directories, owner-only before any secret moves; then adoption
-//  4. the config: written fresh, or an existing one migrated (never rewritten)
+//  4. the config: written fresh, or an existing one migrated (never rewritten);
+//     then the files a sandboxed search can only read: the flush lock and the
+//     trace key
 //  5. connect, in-process, which asks the mining question itself
 //  6. the environment: a profile block on POSIX, the User environment on
 //     Windows
@@ -395,6 +397,9 @@ func (r *setupRun) run(homeFlag string, with []string) int {
 	if code := r.flushLock(); code != exitOK {
 		return code
 	}
+	if code := r.traceKey(); code != exitOK {
+		return code
+	}
 
 	// ── 5. connect ──
 	r.say("Search context")
@@ -768,6 +773,51 @@ func (r *setupRun) flushLock() int {
 		return exitTransport
 	}
 	r.changed = r.changed || created
+	return exitOK
+}
+
+// traceKey creates the trace key the config's state directory will hold. A
+// search with no hook sends an id keyed by it, and one that cannot write the
+// state directory (a sandbox, a read-only mount) can use a key only if it is
+// already there to read; without one that search sends a different id every
+// time. Setup runs outside any sandbox and writes this directory anyway, so it
+// is the place to make the key. connect makes it too, for an installation
+// that is not set up through here, and a search still makes one where it can
+// write: this step is what makes a search's id stable where it cannot.
+//
+// A failure here is said and does not stop setup: the key serves a stable id,
+// not mining, and connect, which reads the same directory, stops on the
+// problems that matter.
+func (r *setupRun) traceKey() int {
+	stateDir := filepath.Join(r.home, "state")
+	if lexists(r.cfgPath) {
+		cfg, _, err := loadConfig(r.cfgPath, r.d.getenv)
+		if err != nil {
+			fmt.Fprintf(r.d.stderr, "jevlin setup: config %s: %v\n", r.cfgPath, err)
+			return exitTransport
+		}
+		stateDir = cfg.Mining.StateDir
+	}
+	if stateDir == "" {
+		return exitOK
+	}
+	path := auth.TraceKeyPath(stateDir)
+	if r.dry {
+		if !lexists(path) {
+			r.printf("(dry run) would create %s\n", path)
+		}
+		return exitOK
+	}
+	store, err := auth.OpenStore(stateDir)
+	if err == nil {
+		var created bool
+		if created, err = store.EnsureTraceKey(); err == nil {
+			r.changed = r.changed || created
+			return exitOK
+		}
+	}
+	fmt.Fprintf(r.d.stderr, "jevlin setup: could not make the trace key %s: %v\n"+
+		"Searches will make one themselves where they can write there; until then each search from a shell with no hook sends a one-off session id.\n", path, err)
 	return exitOK
 }
 
