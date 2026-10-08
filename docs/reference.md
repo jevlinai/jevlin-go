@@ -399,14 +399,17 @@ command, and only inside the search request — and only onto a command where th
 actually reaches the search. A loop, a list or a pipeline with the search anywhere but first is
 left exactly as written; the search still runs, carrying the hashed per-shell identity instead.
 With no hook, a search carries that same per-shell identity: the hostname and the parent shell's
-pid, keyed with a random `trace.key` the installation creates in `state_dir` and never sends, so
-the router cannot guess its way back to the hostname. Without a readable `state_dir` each search
-gets a one-off id instead. The hashed `session_id` is also
-mirrored as the request's own top-level `session_id` and `X-Session-Id` header — the router
-groups quick reformulations by it there, and reads the trajectory from the envelope; the same
-identifier in both places, sent only while an envelope rides, and dropped with the envelope on
-the one compatibility retry. The trace is unauthenticated metadata: nothing treats it as proof
-of origin. `JEVLIN_TRACE=off` sends none.
+pid, keyed with a random `trace.key` in `state_dir` that `setup` and `connect` create and that is
+never sent, so the router cannot guess its way back to the hostname. A search that finds no key
+makes one if it can write `state_dir`; that is why a sandbox that denies the write still keeps one
+id once setup has made the key. A search with no usable key that cannot make one (`state_dir` is
+read-only and holds none, or the key is a link, open to others or not 32 bytes) sends a one-off id,
+different on every search, rather than any id the hostname could be recovered from. The hashed
+`session_id` is also mirrored as the request's own top-level `session_id` and `X-Session-Id`
+header — the router groups quick reformulations by it there, and reads the trajectory from the
+envelope; the same identifier in both places, sent only while an envelope rides, and dropped with
+the envelope on the one compatibility retry. The trace is unauthenticated metadata: nothing
+treats it as proof of origin. `JEVLIN_TRACE=off` sends none.
 
 ## The turn end
 
