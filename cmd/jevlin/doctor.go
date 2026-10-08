@@ -195,6 +195,11 @@ type doctorFacts struct {
 	// there is no wallet access check.
 	Wallet walletAccessFacts
 
+	// State is who can open the state directory and its credentials, where
+	// the platform has access lists to ask (state_acl.go); elsewhere it is not
+	// checked and there is no state access check.
+	State stateAccessFacts
+
 	// Now is sampled once, by the gatherer. Nothing downstream calls
 	// time.Now(), so a judgment over these facts is reproducible.
 	Now time.Time
@@ -216,6 +221,9 @@ func assembleDoctor(f doctorFacts) []doctorCheck {
 	}
 	if f.Wallet.Checked {
 		checks = append(checks, doctorWalletCheck(f.Wallet))
+	}
+	if f.State.Checked {
+		checks = append(checks, doctorStateCheck(f.State))
 	}
 	return checks
 }
@@ -515,6 +523,9 @@ func cmdDoctor(args []string, stdout, stderr io.Writer) int {
 	f.StateDir = cfg.Mining.StateDir
 	if walletACL.managed {
 		f.Wallet = inspectWalletAccess(doctorWalletDir(src, os.Getenv))
+	}
+	if stateACL.managed {
+		f.State = inspectStateAccess(cfg.Mining.StateDir, auth.CredentialFiles())
 	}
 	checks := assembleDoctor(f)
 	if *asJSON {

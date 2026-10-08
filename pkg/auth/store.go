@@ -23,6 +23,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/jevlinai/jevlin-go/pkg/fsx"
@@ -42,6 +44,22 @@ const (
 	traceKeyLen             = 32
 )
 
+// agentRegistrationFile holds the platform identity. Its claim code moved to
+// the claim record beside credentials.json, outside the state directory.
+const agentRegistrationFile = "agent.json"
+
+// CredentialFiles names the files in the state directory whose content
+// authorizes someone or keys something: the DPoP key, the refresh token, the
+// participation secret, the trace key, and the agent registration, which
+// names this installation's platform identity. It is a closed list on purpose. doctor reports who else can open
+// them, and a directory a sandbox can write is not one to enumerate, so the
+// report asks for these by name. A file added to the store is held to this
+// list by credential_files_test.go, which fails until it is classified here or
+// as a record.
+func CredentialFiles() []string {
+	return []string{dpopKeyFile, refreshTokenFile, participationSecretFile, traceKeyFile, agentRegistrationFile}
+}
+
 // ErrAgentRegistrationCorrupt identifies an undecodable agent.json whose
 // contents may still represent a live platform identity.
 var ErrAgentRegistrationCorrupt = errors.New("auth: agent registration is corrupt")
@@ -52,16 +70,71 @@ type Store struct {
 }
 
 // OpenStore creates or opens the state directory ([mining] state_dir):
-// created 0700, and refused if it is a symlink or group/world-accessible
-// — the same hazard discipline as the Unix-socket listener.
+// created 0700 (on Windows, every directory this call creates is restricted
+// to its owner as it is created and none is judged afterwards: perm.go), and
+// refused if it is a symlink or group/world-accessible — the same hazard
+// discipline as the Unix-socket listener.
 func OpenStore(dir string) (*Store, error) {
 	if dir == "" {
 		return nil, errors.New("auth: state_dir is empty")
 	}
+	// MkdirAll can make several levels, and on Windows each inherits its
+	// parent's list: restricting only the leaf would leave a D:\jevlin this
+	// call made with D:\'s entries, from where another account can rename the
+	// restricted state dir away and plant its own. So the levels that do not
+	// exist are recorded first and every one of them is restricted.
+	made := missingDirs(dir)
 	if err := os.MkdirAll(dir, 0o700); err != nil { // #nosec G703 -- operator-configured state dir, validated just below
-		return nil, fmt.Errorf("auth: create state dir: %w", err)
+		return nil, fmt.Errorf("auth: create state dir: %w%s", err, undoCreated(made))
+	}
+	// Before anything is written into any of them, outermost first.
+	for _, d := range made {
+		if err := restrictCreatedStateDir(d); err != nil {
+			// Left in place, the next OpenStore would find a directory that
+			// exists, take it as it stands and never restrict it: one failed
+			// call would leave the secrets under the parent's list for good.
+			// They were made a moment ago and nothing was written into them,
+			// so they go, and the next run restricts what it creates.
+			return nil, fmt.Errorf("auth: restrict state dir %s to its owner: %w%s", d, err, undoCreated(made))
+		}
 	}
 	return openExistingStore(dir)
+}
+
+// missingDirs lists the directories on the way to dir, dir included, that do
+// not exist yet, outermost first.
+func missingDirs(dir string) []string {
+	var missing []string
+	for p := filepath.Clean(dir); ; {
+		if _, err := os.Lstat(p); !errors.Is(err, fs.ErrNotExist) { // #nosec G703 -- operator-configured state dir
+			break // there, or not something to make
+		}
+		missing = append(missing, p)
+		parent := filepath.Dir(p)
+		if parent == p {
+			break
+		}
+		p = parent
+	}
+	slices.Reverse(missing)
+	return missing
+}
+
+// undoCreated takes away, innermost first, the directories a failed OpenStore
+// made, and returns what to append to its error when one could not go (a
+// directory that is no longer empty stays, and is said). A directory that is
+// already gone is not a failure.
+func undoCreated(made []string) string {
+	var stuck []string
+	for i := len(made) - 1; i >= 0; i-- {
+		if err := os.Remove(made[i]); err != nil && !errors.Is(err, fs.ErrNotExist) { // #nosec G703 -- directories this call created
+			stuck = append(stuck, made[i])
+		}
+	}
+	if len(stuck) == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" (and %s could not be removed to try again)", strings.Join(stuck, ", "))
 }
 
 // OpenStoreExisting opens an already-existing state directory without
@@ -404,7 +477,7 @@ func (s *Store) SaveAgentRegistration(rec AgentRegistration) error {
 	if err != nil {
 		return fmt.Errorf("auth: encode agent registration: %w", err)
 	}
-	return s.saveStateFile("agent.json", raw)
+	return s.saveStateFile(agentRegistrationFile, raw)
 }
 
 // LoadAgentRegistration returns the stored platform identity, ok=false
@@ -420,7 +493,7 @@ func (s *Store) SaveAgentRegistration(rec AgentRegistration) error {
 // and rebuilds it from GET /v1/agents/me, and nothing else acts on it. The
 // error names the field and never repeats its bytes.
 func (s *Store) LoadAgentRegistration() (rec AgentRegistration, ok bool, err error) {
-	raw, err := s.readSecret("agent.json")
+	raw, err := s.readSecret(agentRegistrationFile)
 	if errors.Is(err, fs.ErrNotExist) {
 		return AgentRegistration{}, false, nil
 	}
@@ -487,7 +560,7 @@ func (s *Store) SetAsideUnreadableAgentRegistration() error {
 // timestamped name instead, since a rename cannot put a directory over a
 // file or a file over a directory.
 func (s *Store) setAsideAgentRegistration(why string, anyShape bool) error {
-	path := filepath.Join(s.dir, "agent.json")
+	path := filepath.Join(s.dir, agentRegistrationFile)
 	info, err := os.Lstat(path)
 	if err != nil {
 		return err

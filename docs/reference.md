@@ -167,6 +167,17 @@ an opt-out `connect` does not re-ask. Setup writes `enabled = true` only with no
 `as_url` says an authorization server exists. An unreadable decision counts as degraded, which
 also stops mining.
 
+**Who can open the state directory, on Windows.** `jevlin setup` gives `<home>\state` an access
+list that names only you. A `state_dir` that `setup` (when it is outside the installation), `connect`, `enroll`, `mining
+enable` or `mining disable` creates gets the same list, with you as its owner, and so does each directory it had to create on the way to
+it; if a list cannot be set, what was created is removed rather than left to be opened as it is. A directory that already exists is left as it is by
+those commands, and so is any entry another program has added to it, because an agent's sandbox
+is meant to reach this directory: nothing refuses a state directory over who else is on its
+list. `jevlin setup` is the exception for `<home>\state` and its siblings: it gives them an
+owner-only list on every run, which removes such an entry until the sandbox's own setup adds it
+again. `doctor`'s `state access` line says whose the directory is and names anyone else the list
+admits.
+
 `[miner]`'s two directories default beside the state directory, and `intake_dir`'s parent is
 where `credentials.json`, `flush.lock`, the payout address you chose (`payout.json`), the claim
 link (`claim.json`) and an unfinished registration (`registration_pending.json`) are kept: never
@@ -254,6 +265,7 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | intake writable | This process can write where a search records. Probes with one inert non-`.json` file, then removes it. |
 | recording | Recorded searches are waiting, queued, or verified at the AS; or nothing ran recently. |
 | wallet access | Windows only: nobody but you can read the wallet. |
+| state access | Windows only: the state directory and its credentials have an access list and an owner, who is you, SYSTEM or Administrators. Anyone else the list names is shown, and is `OK`: an agent's sandbox is expected there. |
 
 `NO` is a fact and a successful diagnosis; `UNKNOWN` is the absence of one. `doctor` exits
 non-zero only when every check came back `UNKNOWN`. It opens existing state only and creates no

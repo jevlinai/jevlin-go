@@ -18,6 +18,20 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **Windows: a state directory jevlin creates is owner-only.** A
+  `[mining] state_dir` that `setup` (for one outside the installation),
+  `connect`, `enroll`, `mining enable` or `mining disable` creates now
+  gets a protected access list that names only you, and you as its owner, as
+  `jevlin setup` gives `<home>\state`, instead of inheriting its parent's, and
+  so does every directory it had to create on the way to it. If a list cannot
+  be set, what was created is removed rather than left to be opened as it is
+  next time. Nothing refuses a state directory afterwards: an
+  agent's sandbox is meant to be able to reach it, so another principal on its
+  list is not an error. `doctor` has a new Windows-only `state access` line:
+  it says whether the directory and its credentials are yours, names anyone
+  else their access lists admit, and calls only a directory or credential with
+  no access list, or with an owner who is not you, SYSTEM or Administrators
+  (or none on record), a problem.
 - **The payout address moved beside `credentials.json`.** `connect` and
   `mining enable` used to keep the address you chose in the state directory,
   which a Codex-sandboxed command can write, and the background resume declared

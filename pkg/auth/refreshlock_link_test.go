@@ -76,7 +76,7 @@ func TestReadSecretReadsTheFileItChecked(t *testing.T) {
 		t.Fatal(err)
 	}
 	secretCheckedHook = func(p string) {
-		_ = os.Remove(p)
+		_ = os.Remove(p) // #nosec G703 -- test-owned scratch root
 		if err := os.Symlink(outside, p); err != nil {
 			t.Errorf("swap: %v", err)
 		}

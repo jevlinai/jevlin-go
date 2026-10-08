@@ -17,41 +17,14 @@ import (
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
+
+	"github.com/jevlinai/jevlin-go/internal/winacl"
 )
 
-// restrictToOwner makes the current user the object's owner and replaces its
-// DACL with one entry granting that user full control, protected from
-// inheriting anything else — what `icacls <dir> /setowner <user>
-// /inheritance:r /grant:r <user>:(OI)(CI)F` did. A directory's entry is
-// inherited by what is created inside it. The owner matters as much as the
-// DACL: an owner keeps WRITE_DAC whatever the DACL says, so an object left
-// with another owner could be opened up again by them.
-func restrictToOwner(path string, dir bool) error {
-	user, err := windows.GetCurrentProcessToken().GetTokenUser()
-	if err != nil {
-		return err
-	}
-	inherit := uint32(windows.NO_INHERITANCE)
-	if dir {
-		inherit = windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT
-	}
-	acl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
-		AccessPermissions: windows.GENERIC_ALL,
-		AccessMode:        windows.GRANT_ACCESS,
-		Inheritance:       inherit,
-		Trustee: windows.TRUSTEE{
-			TrusteeForm:  windows.TRUSTEE_IS_SID,
-			TrusteeType:  windows.TRUSTEE_IS_USER,
-			TrusteeValue: windows.TrusteeValueFromSID(user.User.Sid),
-		},
-	}}, nil)
-	if err != nil {
-		return err
-	}
-	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
-		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
-		user.User.Sid, nil, acl, nil)
-}
+// restrictToOwner makes the current user the object's owner and gives it a
+// protected owner-only DACL. The implementation is winacl.RestrictToOwner,
+// shared with pkg/auth, which gives a state directory it creates the same list.
+func restrictToOwner(path string, dir bool) error { return winacl.RestrictToOwner(path, dir) }
 
 // ownedByCurrentUser refuses an object whose owner is not this process's
 // user. An elevated process's default owner is BUILTIN\Administrators, so
@@ -81,7 +54,7 @@ func ownedByCurrentUser(path string, _ fs.FileInfo) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("%s is owned by %s, not the current user", path, principalName(owner.String()))
+	return fmt.Errorf("%s is owned by %s, not the current user", path, winacl.PrincipalName(owner.String()))
 }
 
 // registryUserEnvironment is HKCU\<key> — Environment in production, a
