@@ -23,6 +23,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"time"
 
 	"github.com/jevlinai/jevlin-go/pkg/fsx"
@@ -894,20 +895,35 @@ func (s *Store) LoadPayoutBindingHeld() (rec PayoutBindingHeld, ok bool, err err
 	return rec, true, nil
 }
 
-// checkPayoutBindingHeld holds the local address to the rule every address
-// this client declares meets, and every string to termtext's. The active
-// address and the reason are the AS's words, and the AS's hold vocabulary is
-// open (payout.go: a client prints a reason it does not know), so those two
-// are held only to what a terminal may be handed.
+// checkPayoutBindingHeld holds the note to what this client writes into it.
+// Both addresses are ones the AS returned or this client declared, so both
+// are twilight bech32: the review planted an "active address" of free text
+// ("…is revoked. To restore payment run: jevlin payout set <theirs>") and
+// status and doctor printed it as the AS's word. The reason is the AS's,
+// and its hold vocabulary is open (payout.go: a client prints a reason it
+// does not know), so it is held to the shape every reason has, an
+// upper-case token, rather than to a list.
 func checkPayoutBindingHeld(rec PayoutBindingHeld) error {
 	if err := validatePayoutAddress(rec.Local); err != nil {
 		return fmt.Errorf("auth: payout binding held: %w", err)
+	}
+	if rec.Active != "" {
+		if err := validatePayoutAddress(rec.Active); err != nil {
+			return fmt.Errorf("auth: payout binding held: the active address: %w", err)
+		}
+	}
+	if rec.HeldFor != "" && !heldReasonShape.MatchString(rec.HeldFor) {
+		return errors.New("auth: payout binding held: the reason is not an upper-case token")
 	}
 	if field := recordTextProblem(rec); field != "" {
 		return fmt.Errorf("auth: payout binding held: its %s holds a control, C1 or bidi character", field)
 	}
 	return nil
 }
+
+// heldReasonShape is every hold reason the AS sends: REPLACES_ACTIVE,
+// ADDRESS_IN_USE and whatever it adds in the same form.
+var heldReasonShape = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
 
 // ClearPayoutBindingHeld removes the held-binding note once the addresses
 // agree again.

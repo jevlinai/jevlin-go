@@ -628,7 +628,12 @@ func gatherAgentIdentity(args []string, getenv func(string) string) (agentIdenti
 	}
 	// WP4b (design f0ddb69 §5.5): both of these are read-before-declare /
 	// conflict bookkeeping the store already has, no AS round trip needed.
-	if held, ok, herr := store.LoadPayoutBindingHeld(); herr == nil && ok {
+	// The held note is in the state directory; it is shown only when its
+	// local address is the one on file beside credentials.json, which every
+	// note this client writes is (declarePayoutIfSafe saves the record's
+	// own address), so a planted note naming another address, with
+	// instructions in its reason, is not shown as the AS's word.
+	if held, ok, herr := store.LoadPayoutBindingHeld(); herr == nil && ok && f.HasPayoutAddress && held.Local == f.PayoutAddress {
 		f.Held, f.HasHeld = held, true
 	}
 	if conflicts, cerr := store.EpochConflicts(); cerr == nil {

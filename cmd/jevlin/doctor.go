@@ -355,7 +355,13 @@ func doctorEpochOrigin(f doctorFacts) string {
 
 func doctorPayoutCheck(f doctorFacts) doctorCheck {
 	c := doctorCheck{Name: "payout address"}
-	if f.HasPayoutHeld {
+	// When the AS answered this run, its answer is what is true; the note is
+	// shown only while it agrees with that answer about what is in force. A
+	// note that does not was overtaken (an operator activated the change),
+	// or was planted in the state directory to stand in for the AS.
+	asAnswered := f.DocErr == nil && f.StandingErr == nil
+	agrees := f.Standing != nil && f.Standing.Active != nil && f.Standing.Active.Address == f.PayoutHeld.Active
+	if f.HasPayoutHeld && (!asAnswered || agrees) {
 		// The same local fact status already reports (enroll.go): connect
 		// declined to declare because the AS already has a different
 		// address active. Reporting it here does not need PayoutStanding
@@ -662,8 +668,13 @@ func gatherDoctorFactsFor(ctx context.Context, as asClient, m config.Mining, min
 			f.HasRegistration, f.RegistrationSlot, f.RegistrationAt = true, reg.LastEnrollmentSlot, reg.LastEnrollmentAt
 		}
 		f.Health, f.HealthErr = store.HealthRecords()
+		// The held note is in the state directory: counted only when its
+		// local address is the one on file beside credentials.json, as
+		// every note this client writes is (status's rule, enroll.go).
 		if held, ok, err := store.LoadPayoutBindingHeld(); err == nil && ok {
-			f.PayoutHeld, f.HasPayoutHeld = held, true
+			if local, has, lerr := loadPayoutAddress(miner); lerr == nil && has && held.Local == local {
+				f.PayoutHeld, f.HasPayoutHeld = held, true
+			}
 		}
 	}
 
