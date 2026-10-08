@@ -670,10 +670,13 @@ func gatherDoctorFactsFor(ctx context.Context, as asClient, m config.Mining, min
 		}
 		f.Health, f.HealthErr = store.HealthRecords()
 		// The held note is in the state directory: counted only when its
-		// local address is the one on file beside credentials.json, as
-		// every note this client writes is (status's rule, enroll.go).
+		// local address is the one this installation would declare
+		// (payoutAddressToDeclare, status's rule too), as every note this
+		// client writes is, including one a sandboxed resume wrote for a
+		// config or wallet address it could not record.
 		if held, ok, err := store.LoadPayoutBindingHeld(); err == nil && ok {
-			if local, has, lerr := loadPayoutAddress(miner); lerr == nil && has && held.Local == local {
+			local, source, lerr := payoutAddressToDeclare(&config.Config{Mining: m, Miner: miner}, store, os.Getenv)
+			if lerr == nil && source != payoutNone && held.Local == local {
 				f.PayoutHeld, f.HasPayoutHeld = held, true
 			}
 		}

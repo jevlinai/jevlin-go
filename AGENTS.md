@@ -246,7 +246,7 @@ the named tests.
     this client act on, or show, its writer's say-so does not live there: the registration
     journal, the payout record and the claim record sit beside `credentials.json`, and what an
     older version left in the state dir is discarded unread or, for a payout address, recorded
-    only when it is the installation's own wallet address (`payoutAddressToRecord`). Every record
+    only when it is the installation's own wallet address (`payoutAddressToDeclare`). Every record
     a command prints is held on load to what this client writes: a string holding a control,
     format or line-separator character (`internal/termtext`, Unicode Cc, Cf, Zl and Zp, found by
     reflection over every string `encoding/json` fills in `pkg/auth/record_text.go`) makes
@@ -329,7 +329,7 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   stop a sandboxed command that declares with the installation's AS authority itself, which it
   can read in the state dir; that is the AS's question, and it is open. With nothing on file
   beside the credential, the address recorded and declared comes only from where no sandbox
-  writes (`payoutAddressToRecord`): the config's `[mining] payout_address`, or a `payout.json` an
+  writes (`payoutAddressToDeclare`): the config's `[mining] payout_address`, or a `payout.json` an
   older version left in the state dir when it is this installation's own wallet address, whose
   state-dir copy is then removed. "The AS already has it in force" was the rule once, and a
   sandboxed command can make that true by itself with `jevlin payout set`. Any other

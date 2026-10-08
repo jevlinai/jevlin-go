@@ -578,11 +578,16 @@ type agentIdentityFacts struct {
 	Claim    auth.ClaimBootstrap
 	HasClaim bool
 
+	// PayoutAddress is the address this installation would declare
+	// (payoutAddressToDeclare), and PayoutSource where it was found: a
+	// config or wallet address not yet recorded is still this
+	// installation's, and is named as such.
 	PayoutAddress    string
+	PayoutSource     payoutSource
 	HasPayoutAddress bool
 	PayoutAddressErr error
-	// LegacyPayout is a payout.json in the state directory with no record
-	// beside credentials.json: not used, and named without its address.
+	// LegacyPayout is a payout.json in the state directory that is not
+	// used: named without its address.
 	LegacyPayout bool
 
 	Held    auth.PayoutBindingHeld
@@ -623,7 +628,8 @@ func gatherAgentIdentity(args []string, getenv func(string) string) (agentIdenti
 	}
 	if f.HasRegistration {
 		f.Claim, f.HasClaim = claimFor(cfg.Miner, f.Registration.AgentID, nil)
-		f.PayoutAddress, f.HasPayoutAddress, f.PayoutAddressErr = loadPayoutAddress(cfg.Miner)
+		f.PayoutAddress, f.PayoutSource, f.PayoutAddressErr = payoutAddressToDeclare(cfg, store, getenv)
+		f.HasPayoutAddress = f.PayoutSource != payoutNone
 		f.LegacyPayout = !f.HasPayoutAddress && lexists(filepath.Join(cfg.Mining.StateDir, payoutRecordFile))
 	}
 	// WP4b (design f0ddb69 §5.5): both of these are read-before-declare /
@@ -657,6 +663,19 @@ func (f agentIdentityFacts) needsMining() bool {
 		return false
 	}
 	return f.Decision.State == auth.MiningEnabled && miningASConfigured(f.Mining)
+}
+
+// payoutSourceNote says where an address status names came from when it is
+// not yet recorded beside credentials.json: the next foreground connect
+// records it, and a resume declares it either way.
+func payoutSourceNote(source payoutSource) string {
+	switch source {
+	case payoutConfig:
+		return " (from mining.payout_address; recorded at the next `jevlin connect`)"
+	case payoutWallet:
+		return " (this installation's own wallet; recorded at the next `jevlin connect`)"
+	}
+	return ""
 }
 
 // heldNoteText is the client's own sentence for a held-binding note. Agent
@@ -756,7 +775,7 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 		fmt.Fprintf(stdout, "agent:  claimed (scopes: %s)\n", strings.Join(reg.Scopes, ", "))
 		if reg.LastEnrollmentSlot != "" {
 			if f.PayoutAddressErr == nil && f.HasPayoutAddress {
-				fmt.Fprintf(stdout, "        enrolled on %s, payout address %s\n", reg.LastEnrollmentSlot, f.PayoutAddress)
+				fmt.Fprintf(stdout, "        enrolled on %s, payout address %s%s\n", reg.LastEnrollmentSlot, f.PayoutAddress, payoutSourceNote(f.PayoutSource))
 			} else {
 				fmt.Fprintf(stdout, "        enrolled on %s, no payout address on file yet — run `jevlin mining enable` at a terminal to choose one\n", reg.LastEnrollmentSlot)
 				if f.LegacyPayout {
