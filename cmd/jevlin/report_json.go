@@ -339,8 +339,14 @@ func connectEnvelope(cfgPath string, getenv func(string) string, exitCode int, n
 				report.Status = reg.Status
 				report.Claimed = reg.Status == "claimed"
 				report.Scopes = reg.Scopes
-				claim, _ := claimFor(cfg.Miner, reg.AgentID, nil)
-				report.ClaimURL, report.ClaimCode = printableClaimArtifacts(claim, cfg.Platform.BaseURL)
+				// A run that did not finish carries no claim link: it may have
+				// withheld the link (the platform could not say whose the
+				// stored key is), and the envelope must not show what the run
+				// said it would not.
+				if exitCode == exitOK {
+					claim, _ := claimFor(cfg.Miner, reg.AgentID, nil)
+					report.ClaimURL, report.ClaimCode = printableClaimArtifacts(claim, cfg.Platform.BaseURL)
+				}
 				report.ClaimExpiresAt = reg.ClaimExpiresAt
 				report.EnrolledSlot = reg.LastEnrollmentSlot
 				report.SlotRefusal = slotRefusalText(reg.SlotRefusal, reg.OfferedSlots, cfg.Mining.PlatformSlot)

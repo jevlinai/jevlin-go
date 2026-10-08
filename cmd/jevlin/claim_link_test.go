@@ -169,6 +169,21 @@ func TestALinkAnOlderVersionKeptInTheAgentRecordIsReplacedByAFreshOne(t *testing
 	}
 }
 
+// The machine envelope says no more than the run did: when /me fails the
+// run withholds the claim link, and connect -json carried it anyway, read
+// from disk beside an error saying none was shown.
+func TestConnectJSONCarriesNoLinkTheRunWithheld(t *testing.T) {
+	platform, cfgPath, _, _, claimURL, _ := connectedUnclaimed(t)
+	platform.setMeError(true)
+	code, out, errOut := runConnect(t, cfgPath, nil, "-json")
+	if code == exitOK {
+		t.Fatalf("connect -json exited 0 with /me failing:\n%s%s", out, errOut)
+	}
+	if strings.Contains(out, claimURL) || strings.Contains(out, `"claim_url"`) || strings.Contains(out, `"claim_code"`) {
+		t.Fatalf("the envelope carried the link the run withheld:\n%s", out)
+	}
+}
+
 // -force with a record naming another agent than the stored key's does not
 // rebuild, so running the same command again can never succeed: machine
 // mode says fix_input, with a code of its own, never retry.
