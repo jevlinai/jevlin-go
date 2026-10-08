@@ -118,7 +118,8 @@ the named tests.
 12. **`platform.base_url` is compared against, never dialed.** It is the origin a platform-supplied
     URL must match (`validatePlatformURL`); every request goes to `agents_api_url`. A claim URL
     read back from `agent.json` (sandbox-writable) is checked again before it is printed
-    (`platform.ValidateStoredClaimURL`).
+    (`platform.ValidateStoredClaimURL`), and a record holding a character a terminal acts on is
+    not read at all (invariant 19).
 13. **Registration is one journaled transaction.** A complete `register` response is journaled
     (`registration_pending.json`) before `agent.json` or the credential is written, and finished
     from the journal on the next run, never by a second `register`. The journal is consulted before
@@ -236,8 +237,20 @@ the named tests.
     `codex_sandbox_test.go`, `pkg/fsx/confined_test.go`, `pkg/mining/spool/quarantine_link_test.go`
     and `pkg/auth/refreshlock_link_test.go` plant the links and FIFOs at the exact names, and swap
     a file between a check and its read through the test seams in `readSecret` and
-    `readCredentials`. What the records in those directories say is a separate question, not
-    answered here: a sandboxed command can still rewrite them.
+    `readCredentials`. What the records say is answered in three parts. A record that could make
+    this client act on its writer's say-so does not live there: the registration journal and the
+    payout record sit beside `credentials.json`, and what an older version left in the state dir
+    is discarded unread or, for an address, adopted only when the AS already has it in force.
+    Every record a command prints is held on load to what this client writes: a string holding a
+    control, C1 or bidi character (`internal/termtext`, found by reflection over the record type
+    in `pkg/auth/record_text.go`) makes `agent.json` corrupt and any other record unreadable, and
+    an address must be twilight bech32. And `agent.json` naming an agent the platform does not
+    know for the stored credential is rebuilt from the platform (invariant 13).
+    `cmd/jevlin/state_record_escape_guard_test.go` builds an installation through the real
+    commands, plants an escape in every string of every record it leaves, one at a time, runs
+    every command that prints, and fails on a file nobody has classified. Within those shapes a
+    record still says what its last writer chose: a forged `mining_decision.json` still turns
+    mining on, a forged `payout_declared.json` still makes a resume skip a declaration.
 
 ## Subsystems and where their rules live
 A subsystem's authority is one file, and a subsystem nobody has watched fail is a hypothesis — so

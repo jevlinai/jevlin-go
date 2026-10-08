@@ -161,6 +161,12 @@ The first release replaces this heading with its own.
   `platform.base_url` before printing it, the same check a freshly registered
   link gets. A link that fails is not shown; a foreground `connect` mints a
   fresh one in its place.
+- **Nothing an agent's sandbox writes into the state directory reaches your
+  terminal as an escape sequence.** An `agent.json` with a control, C1 or
+  bidi character in any field is treated as damaged: `status` says it cannot
+  be read, and the next `jevlin connect` you run rebuilds it from the
+  platform. The payout records must hold real payout addresses, and a health
+  record's detail is written without such characters and refused with them.
 - **A lost claim link is replaced, not mourned.** For a registration rebuilt from
   the platform that is still unclaimed with no claim link, a foreground
   `jevlin connect` now asks the platform for a fresh link and prints it. The old
