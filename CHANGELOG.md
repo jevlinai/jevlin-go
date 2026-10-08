@@ -18,6 +18,16 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **Setup refuses a binary that someone else could replace.** `setup`,
+  `agents install` and `agents prefer` record the binary's path in your
+  agents' hooks and skills, and setup puts its directory on PATH. They now
+  refuse a binary under the temp directory, or one that sits in a directory
+  every user can write or another user owns. A directory writable by `admin`,
+  `wheel`, `sudo` or `root`, as a Homebrew prefix is, is accepted; one
+  writable by any other shared group, such as Debian's `staff` on
+  `/usr/local`, gets a warning and setup goes on. On Windows only the
+  temp-directory rule is checked. Move a refused binary somewhere only you
+  can write, such as `~/.local/bin`, and run it from there.
 - **Cursor on Windows asks before a PowerShell search with an apostrophe in
   it.** The participant picks Cursor's terminal there, and Git Bash reads the
   PowerShell form's here-string as an ordinary quoted string that an

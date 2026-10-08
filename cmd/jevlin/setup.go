@@ -86,6 +86,10 @@ type setupDeps struct {
 	// fsx.MoveFileDurable and restrictToOwner. Tests inject failures here.
 	move     func(from, to string) error
 	restrict func(path string, dir bool) error
+	// binaryLocation vets the directory setup records the binary by; nil
+	// means checkBinaryLocation. Tests whose binary sits in a temp sandbox
+	// replace it.
+	binaryLocation binaryLocationCheck
 	// agentPlanObserver, when non-nil, is called with the plan agentsStep
 	// builds — after buildInstallPlan, before anything is printed or
 	// committed — so a test can inspect exactly what production code
@@ -100,6 +104,13 @@ func (d setupDeps) restrictFn() func(string, bool) error {
 		return d.restrict
 	}
 	return restrictToOwner
+}
+
+func (d setupDeps) binaryLocationFn() binaryLocationCheck {
+	if d.binaryLocation != nil {
+		return d.binaryLocation
+	}
+	return checkBinaryLocation
 }
 
 func cmdSetup(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
@@ -296,6 +307,11 @@ func (r *setupRun) run(homeFlag string, with []string) int {
 		return exitTransport
 	}
 	if err := checkSetupLaunch(exe, d.getenv("JEVLIN_LAUNCH")); err != nil {
+		fmt.Fprintln(d.stderr, "jevlin setup:", err)
+		return exitUsage
+	}
+	// The hooks, the skills and the profile's PATH all name this path.
+	if err := vetBinaryLocation(d.binaryLocationFn(), exe, "jevlin setup", d.stderr); err != nil {
 		fmt.Fprintln(d.stderr, "jevlin setup:", err)
 		return exitUsage
 	}

@@ -180,19 +180,30 @@ type agentOps struct {
 	stat       func(string) (os.FileInfo, error)
 	removeAll  func(string) error
 	isTerminal func() bool
+	// binaryLocation vets the binary install records; nil means
+	// checkBinaryLocation.
+	binaryLocation binaryLocationCheck
+}
+
+func (ops agentOps) binaryLocationFn() binaryLocationCheck {
+	if ops.binaryLocation != nil {
+		return ops.binaryLocation
+	}
+	return checkBinaryLocation
 }
 
 func realAgentOps() agentOps {
 	home, _ := os.UserHomeDir()
 	return agentOps{
-		home:       home,
-		lookPath:   exec.LookPath,
-		executable: os.Executable,
-		readFile:   os.ReadFile,
-		writeFile:  os.WriteFile,
-		mkdirAll:   os.MkdirAll,
-		stat:       os.Stat,
-		removeAll:  os.RemoveAll,
+		home:           home,
+		lookPath:       exec.LookPath,
+		executable:     os.Executable,
+		readFile:       os.ReadFile,
+		writeFile:      os.WriteFile,
+		mkdirAll:       os.MkdirAll,
+		stat:           os.Stat,
+		removeAll:      os.RemoveAll,
+		binaryLocation: checkBinaryLocation,
 		isTerminal: func() bool {
 			fi, err := os.Stdin.Stat()
 			return err == nil && fi.Mode()&os.ModeCharDevice != 0
@@ -463,6 +474,12 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 		fmt.Fprintln(stderr, "jevlin agents:", err)
 		return exitTransport
 	}
+	if sub == "install" {
+		if err := vetBinaryLocation(ops.binaryLocationFn(), entry.command, "jevlin agents", stderr); err != nil {
+			fmt.Fprintln(stderr, "jevlin agents:", err)
+			return exitUsage
+		}
+	}
 
 	if sub == "status" {
 		printAgentStatus(ops, paths, entry, signals, getenv, stdout)
@@ -573,6 +590,14 @@ func agentsPrefer(ops agentOps, args []string, stdout, stderr io.Writer, getenv 
 	if want == "status" {
 		fmt.Fprintf(stdout, "search default: %s\n", preferLabel(current))
 		return exitOK
+	}
+	// The skills it rewrites name the running binary, exactly as install
+	// writes them, so the same location is refused here before anything is
+	// written: run from somewhere else, prefer would repoint every installed
+	// skill at that copy.
+	if err := vetBinaryLocation(ops.binaryLocationFn(), entry.command, "jevlin agents prefer", stderr); err != nil {
+		fmt.Fprintln(stderr, "jevlin agents prefer:", err)
+		return exitUsage
 	}
 	next := preferOn
 	if want == "off" {
