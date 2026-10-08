@@ -202,8 +202,9 @@ The first release replaces this heading with its own.
   records must hold real payout addresses, a held-binding note is shown only
   for the address on file and never over what the rewards service just
   answered, a health record's detail is written without such characters and
-  refused with them, and a record that does not decode is reported without
-  repeating its text. What `jevlin flush` prints is filtered the same way,
+  refused with them, and a record that does not decode, in the state
+  directory or beside `credentials.json`, is reported without repeating its
+  text. What `jevlin flush` prints is filtered the same way,
   since its errors name files an agent's sandbox can write. A registration
   interrupted mid-publish is finished even if the state directory holds a
   record naming another agent, which is set aside.

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"strings"
 	"time"
@@ -108,6 +109,11 @@ func (e *decodeError) Error() string { return "auth: decode " + e.what + ": " + 
 
 func (e *decodeError) Unwrap() error { return e.err }
 
+// DecodeProblem says why a record did not decode in the client's own words,
+// for a caller outside this package that decodes a record of its own in a
+// directory a sandboxed command can write (cmd/jevlin's flush stamp).
+func DecodeProblem(err error) string { return decodeProblem(err) }
+
 func decodeProblem(err error) string {
 	var syntax *json.SyntaxError
 	var typ *json.UnmarshalTypeError
@@ -119,6 +125,12 @@ func decodeProblem(err error) string {
 		return "a field has the wrong type"
 	case errors.As(err, &parse):
 		return "a time in it does not parse"
+	case errors.Is(err, io.ErrUnexpectedEOF):
+		return "it is cut short"
+	case strings.HasPrefix(err.Error(), "json: unknown field "):
+		// DisallowUnknownFields' error is a plain string quoting the name,
+		// and the name is the planter's to choose.
+		return "it holds a field this client does not write"
 	default:
 		return "it does not decode"
 	}

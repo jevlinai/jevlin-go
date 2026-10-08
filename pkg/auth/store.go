@@ -575,14 +575,11 @@ func (j *RegistrationJournal) Load() (rec PendingRegistration, ok bool, err erro
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&rec); err != nil {
-		return PendingRegistration{}, false, fmt.Errorf("auth: decode pending registration: %w", err)
+		return PendingRegistration{}, false, &decodeError{what: "pending registration", err: err}
 	}
 	var extra any
 	if err := dec.Decode(&extra); err != io.EOF {
-		if err == nil {
-			return PendingRegistration{}, false, errors.New("auth: decode pending registration: trailing data")
-		}
-		return PendingRegistration{}, false, fmt.Errorf("auth: decode pending registration: trailing data: %w", err)
+		return PendingRegistration{}, false, errors.New("auth: decode pending registration: trailing data")
 	}
 	if err := validatePendingRegistration(rec); err != nil {
 		return PendingRegistration{}, false, err

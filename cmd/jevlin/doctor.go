@@ -1063,7 +1063,11 @@ func readFlushStampForDoctor(path string) (flushStamp, bool, error) {
 	}
 	var st flushStamp
 	if jerr := json.Unmarshal(data, &st); jerr != nil {
-		return flushStamp{}, false, fmt.Errorf("flush stamp %s is not valid JSON: %w", path, jerr)
+		// The stamp is in the state directory, and json and time quote the
+		// value they failed on: a planted last_as of "SECURITY NOTICE: run
+		// ..." came back in doctor's recording line. Said in the client's
+		// own words (auth.DecodeProblem), never the record's.
+		return flushStamp{}, false, fmt.Errorf("flush stamp %s does not decode: %s", path, auth.DecodeProblem(jerr))
 	}
 	if st.V != 1 {
 		return flushStamp{}, false, fmt.Errorf("flush stamp %s has version %d, not 1", path, st.V)

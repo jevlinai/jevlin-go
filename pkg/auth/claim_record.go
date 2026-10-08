@@ -86,7 +86,7 @@ func (c *ClaimRecord) Load() (ClaimBootstrap, bool, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&b); err != nil {
-		return ClaimBootstrap{}, false, fmt.Errorf("auth: decode claim record: %w", err)
+		return ClaimBootstrap{}, false, &decodeError{what: "claim record", err: err}
 	}
 	if err := checkClaimBootstrap(b); err != nil {
 		return ClaimBootstrap{}, false, err

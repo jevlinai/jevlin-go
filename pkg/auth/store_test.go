@@ -335,7 +335,7 @@ func TestPendingRegistrationJournalIsStrictAndOwnerOnly(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "registration_pending.json"), []byte(`{"v":1,"agent_id":"a","key":"sr-k","claim_url":"https://platform.nyks.dev/c","claim_code":"c","claim_expires_at":"","status":"unclaimed","unexpected":true}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := s.Load(); err == nil || ok || !strings.Contains(err.Error(), "unknown field") {
+	if _, ok, err := s.Load(); err == nil || ok || !strings.Contains(err.Error(), "a field this client does not write") {
 		t.Fatalf("journal with unknown field accepted: ok=%v err=%v", ok, err)
 	}
 }

