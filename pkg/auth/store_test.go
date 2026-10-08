@@ -102,6 +102,53 @@ func TestTraceKeyGeneratedOnceAndStable(t *testing.T) {
 	}
 }
 
+// EnsureTraceKey is what setup and connect call, outside any sandbox, so that
+// a search which cannot write the state directory finds the key and only
+// reads it. It must say truthfully whether it made the key (setup reports a
+// change from it), leave an existing key's bytes alone, and refuse what
+// TraceKey refuses rather than replace it.
+func TestEnsureTraceKeyMakesTheKeyOnceAndSaysSo(t *testing.T) {
+	s, dir := newStore(t)
+	path := TraceKeyPath(dir)
+	if path != filepath.Join(dir, "trace.key") {
+		t.Fatalf("TraceKeyPath = %q, want trace.key in the state directory", path)
+	}
+	created, err := s.EnsureTraceKey()
+	if err != nil || !created {
+		t.Fatalf("first EnsureTraceKey = %v, %v; want created", created, err)
+	}
+	first, err := os.ReadFile(path) // #nosec G304 -- the test's own state directory
+	if err != nil || len(first) != traceKeyLen {
+		t.Fatalf("trace.key is %d bytes, %v; want %d", len(first), err, traceKeyLen)
+	}
+	if info, err := os.Stat(path); err != nil || (posixModes && info.Mode().Perm() != 0o600) {
+		t.Fatalf("trace.key perms = %v, %v; want 0600", info.Mode().Perm(), err)
+	}
+	created, err = s.EnsureTraceKey()
+	if err != nil || created {
+		t.Fatalf("second EnsureTraceKey = %v, %v; want not created", created, err)
+	}
+	if again, _ := os.ReadFile(path); !bytes.Equal(first, again) { // #nosec G304 -- same path
+		t.Fatal("EnsureTraceKey rewrote an existing key")
+	}
+	if key, err := s.TraceKey(); err != nil || !bytes.Equal(key, first) {
+		t.Fatalf("TraceKey after EnsureTraceKey = %x, %v; want the key on disk", key, err)
+	}
+
+	// A key that is not 32 bytes is refused and left where it lies.
+	bad, badDir := newStore(t)
+	badPath := TraceKeyPath(badDir)
+	if err := os.WriteFile(badPath, []byte("short"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if created, err := bad.EnsureTraceKey(); err == nil || created {
+		t.Fatalf("EnsureTraceKey over a short key = %v, %v; want a refusal", created, err)
+	}
+	if kept, _ := os.ReadFile(badPath); string(kept) != "short" { // #nosec G304 -- same path
+		t.Fatalf("EnsureTraceKey replaced a key it refused: %q", kept)
+	}
+}
+
 // PRIV-008 permission assertion: loose modes refuse the mining plane.
 func TestPermissionHazardsRefused(t *testing.T) {
 	if runtime.GOOS == "windows" {
