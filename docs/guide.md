@@ -246,7 +246,8 @@ only when you say yes at a terminal, in pieces that belong together:
 | **Unsent searches, session files** | Merge one file at a time, never overwriting. |
 | **Config** | Moves only if `~/.jevlin` has none. |
 
-Symlinks are not moved, and the set-aside folder is removed only once it is empty.
+Symlinks and anything another account owns are not moved: a set-aside folder that is not yours
+is never offered. The set-aside folder is removed only once it is empty.
 
 The profile lines are one block between `# >>> jevlin >>>` and `# <<< jevlin <<<`; delete it to
 undo them. If the block no longer has exactly one start and one end line, setup leaves the file

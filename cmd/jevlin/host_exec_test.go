@@ -1035,12 +1035,22 @@ var hookCases = map[string][]hookCase{
 	"claude": {
 		{
 			event: "PreToolUse",
+			// The search the skill renders for the Bash tool, so the allow is
+			// asserted too: the hook allows only the binary spelled exactly as
+			// its own os.Executable, and this is where that spelling meets the
+			// one the hook runner starts it by. On Windows that runner is Git
+			// Bash, and no other case runs the allow through it.
 			payload: func(in *execInstallation) any {
+				_, search, err := searchBlockForShell(shellPOSIX, in.entry, `{"version":1,"query":"exact query text"}`)
+				if err != nil {
+					return nil
+				}
 				return map[string]any{"session_id": "exec-session", "tool_use_id": "exec-call", "tool_name": "Bash", "cwd": in.root,
-					"tool_input": map[string]any{"command": in.entry.stdinCommand()}}
+					"tool_input": map[string]any{"command": search}}
 			},
 			proof: func(t *testing.T, in *execInstallation, out execOutcome) bool {
-				return out.exit == 0 && strings.Contains(out.stdout, `"updatedInput"`) && strings.Contains(out.stdout, bridgeEnv+"=") && lineageFileExists(in)
+				return out.exit == 0 && strings.Contains(out.stdout, `"permissionDecision":"allow"`) &&
+					strings.Contains(out.stdout, `"updatedInput"`) && strings.Contains(out.stdout, bridgeEnv+"=") && lineageFileExists(in)
 			},
 		},
 		{
