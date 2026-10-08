@@ -445,8 +445,12 @@ func (s *Store) LoadAgentRegistration() (rec AgentRegistration, ok bool, err err
 // confirmed the key still names a real identity there. An existing platform
 // key no longer forces a refusal on its own; it only means the rename must
 // wait for that confirmation first.
+//
+// It moves only a regular file: the record it was asked to preserve is one
+// that was read and found corrupt, and anything else at the name since is
+// not that record.
 func (s *Store) PreserveCorruptAgentRegistration() error {
-	return s.setAsideAgentRegistration("corrupt")
+	return s.setAsideAgentRegistration("corrupt", false)
 }
 
 // SetAsideAgentRegistration moves a readable agent record that names a
@@ -454,26 +458,39 @@ func (s *Store) PreserveCorruptAgentRegistration() error {
 // it: the registration journal and the credential beside it, both outside
 // the state directory, have decided which agent this installation is.
 func (s *Store) SetAsideAgentRegistration() error {
-	return s.setAsideAgentRegistration("replaced")
+	return s.setAsideAgentRegistration("replaced", true)
 }
 
-// setAsideAgentRegistration renames whatever is at agent.json to
-// agent.json.<why>: a record, or a link, a directory, a FIFO or a file
-// others can read, which a sandboxed command can leave at that name. A
-// rename moves a name and never opens or follows what it names, so none of
-// those is a reason to refuse; refusing, as this once did, left a
-// registration the journal had already decided wedged behind whatever was
-// planted. An earlier copy at the backup name is replaced: it is evidence
+// SetAsideUnreadableAgentRegistration moves aside whatever is at agent.json
+// that would not load: a link, a directory, a FIFO or a file others can
+// read, any of which a sandboxed command can leave there. Publication calls
+// it once credentials.json holds the registration journal's key, when the
+// journal has decided which agent this installation is.
+func (s *Store) SetAsideUnreadableAgentRegistration() error {
+	return s.setAsideAgentRegistration("unreadable", true)
+}
+
+// setAsideAgentRegistration renames agent.json to agent.json.<why>. With
+// anyShape it moves whatever is there: a record, or a link, a directory, a
+// FIFO or a file others can read, which a sandboxed command can leave at
+// that name. A rename moves a name and never opens or follows what it names,
+// so none of those is a reason to refuse where the journal has already
+// decided which agent this is; refusing, as this once did, left that
+// registration wedged behind whatever was planted. Without anyShape only a
+// regular file is moved. An earlier copy at the backup name is replaced: it is evidence
 // of an earlier record in a directory a sandboxed command can write, and
 // refusing on it made every later rebuild fail the same way. Where either
 // name holds anything but a regular file the backup gets a fresh,
 // timestamped name instead, since a rename cannot put a directory over a
 // file or a file over a directory.
-func (s *Store) setAsideAgentRegistration(why string) error {
+func (s *Store) setAsideAgentRegistration(why string, anyShape bool) error {
 	path := filepath.Join(s.dir, "agent.json")
 	info, err := os.Lstat(path)
 	if err != nil {
 		return err
+	}
+	if !anyShape && !info.Mode().IsRegular() {
+		return errors.New("auth: agent registration is not a regular file")
 	}
 	backup := filepath.Join(s.dir, "agent.json."+why)
 	if held, err := os.Lstat(backup); err == nil && (!held.Mode().IsRegular() || !info.Mode().IsRegular()) {

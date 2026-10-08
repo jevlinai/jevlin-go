@@ -384,7 +384,11 @@ func publishPendingRegistration(store *auth.Store, m config.Miner, pending auth.
 		// the journal unfinished and every later run failing the same way,
 		// with the journal's key already published. The name is renamed aside,
 		// never opened or followed, and the journal's record published.
-		if err := store.PreserveCorruptAgentRegistration(); err != nil {
+		setAside := store.SetAsideUnreadableAgentRegistration
+		if errors.Is(err, auth.ErrAgentRegistrationCorrupt) {
+			setAside = store.PreserveCorruptAgentRegistration
+		}
+		if err := setAside(); err != nil {
 			return auth.AgentRegistration{}, err
 		}
 		ok = false

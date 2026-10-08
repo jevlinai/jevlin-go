@@ -89,7 +89,7 @@ func TestAJournalPublishesOverWhateverIsAtTheAgentRecordsName(t *testing.T) {
 			if got, err := os.ReadFile(outside); err != nil || string(got) != "the participant's own file" { // #nosec G304 -- the test's own file
 				t.Fatalf("the file a planted link named changed: %q %v", got, err)
 			}
-			matches, _ := filepath.Glob(filepath.Join(stateDir, "agent.json.corrupt*"))
+			matches, _ := filepath.Glob(filepath.Join(stateDir, "agent.json.unreadable*"))
 			if len(matches) != 1 {
 				t.Fatalf("what was at agent.json was not kept aside once: %v", matches)
 			}
