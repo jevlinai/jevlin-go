@@ -550,6 +550,69 @@ func TestFallbackSessionIDIsKeyed(t *testing.T) {
 	}
 }
 
+// TestFallbackSessionIDIsKeyed calls searchTrace with the key and the state
+// directory handed to it, and every other search test stubs traceKey, so none
+// of them sees whether searchMain hands searchTrace the state directory the
+// config names, or whether realSearchOps wires loadTraceKey in at all. This
+// one runs searchMain with the real loadTraceKey against a fixture state
+// directory and reads what the router was sent: two searches carry one
+// X-Session-Id, and it is the keyed hash of the key on disk and host|ppid.
+// The second case has no key yet, so the first search makes it; the second
+// reads it.
+func TestASearchSendsTheSessionIDKeyedByTheStateDirsKey(t *testing.T) {
+	const fixtureKey = "fixture-key-on-disk-0123456789ab"
+	for _, tc := range []struct {
+		name   string
+		onDisk bool
+	}{
+		{"a key already on disk", true},
+		{"no key yet, so the first search makes it", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(routerBody))
+			})
+			keyPath := auth.TraceKeyPath(filepath.Join(root, "state"))
+			if tc.onDisk {
+				if err := os.WriteFile(keyPath, []byte(fixtureKey), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			} else if lexists(keyPath) {
+				t.Fatal("the fixture state directory already holds a trace key")
+			}
+
+			ids := make([]string, 2)
+			for i := range ids {
+				h := fixedSearchOps(root)
+				h.ops.traceKey = realSearchOps().traceKey
+				code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "-no-flush", "q")
+				if code != exitOK {
+					t.Fatalf("search %d exited %d\n%s\n%s", i, code, out, errOut)
+				}
+				req, _ := fr.last(t)
+				if ids[i] = req.Header.Get("X-Session-Id"); ids[i] == "" {
+					t.Fatalf("search %d sent no X-Session-Id", i)
+				}
+			}
+
+			onDisk, err := os.ReadFile(keyPath) // #nosec G304 -- a path in this test's own temp dir
+			if err != nil {
+				t.Fatalf("no trace key in the state directory after two searches: %v", err)
+			}
+			if len(onDisk) != 32 || (tc.onDisk && string(onDisk) != fixtureKey) {
+				t.Fatalf("the key on disk is %q; want %d bytes, and the fixture's own when it was put there", onDisk, 32)
+			}
+			want := traceKeyedHash(onDisk, fixtureHostPpid)
+			if ids[0] != want || ids[1] != want {
+				t.Errorf("X-Session-Id %q and %q; want both %q, the keyed hash of the key on disk and host|ppid", ids[0], ids[1], want)
+			}
+			if bare := traceHash(fixtureHostPpid); ids[0] == bare {
+				t.Errorf("X-Session-Id is the unkeyed hash of host|ppid")
+			}
+		})
+	}
+}
+
 // The Claude Code allow rule is a prefix ending after this installation's
 // `-config <path>`, so whatever follows it runs unprompted. A second
 // -config must not be able to swap in another config's router and send it
