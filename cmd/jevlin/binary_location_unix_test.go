@@ -219,6 +219,59 @@ func TestBinaryLocationWarnsOnAnyOtherGroup(t *testing.T) {
 	}
 }
 
+// ownedInfo is a directory with the owner, group and mode a test names. A
+// test cannot chown a file to another user, so the owner rule is driven
+// through writableByOthers with this in place of a real Lstat.
+type ownedInfo struct {
+	fakeFileInfo
+	mode     os.FileMode
+	uid, gid uint32
+}
+
+func (f ownedInfo) Mode() os.FileMode { return os.ModeDir | f.mode }
+func (f ownedInfo) Sys() any          { return &syscall.Stat_t{Uid: f.uid, Gid: f.gid} }
+
+// otherUID is a uid that is neither this user's nor root's.
+func otherUID() uint32 {
+	self := uint32(os.Getuid()) // #nosec G115 -- a uid is never negative on POSIX
+	for u := uint32(4242); ; u++ {
+		if u != self {
+			return u
+		}
+	}
+}
+
+// A directory owned by anyone but this user or root is refused whatever
+// its mode, because its owner can change it; this user's and root's own
+// 0755 directories are accepted.
+func TestWritableByOthersRefusesAnotherOwner(t *testing.T) {
+	self := uint32(os.Getuid())  // #nosec G115 -- a uid is never negative on POSIX
+	group := uint32(os.Getgid()) // #nosec G115 -- a gid is never negative on POSIX
+	other := otherUID()
+	for _, c := range []struct {
+		uid    uint32
+		mode   os.FileMode
+		refuse bool
+	}{
+		{self, 0o755, false},
+		{0, 0o755, false},
+		{other, 0o755, true},
+		{other, 0o700, true},
+	} {
+		refuse, warn := writableByOthers(ownedInfo{fakeFileInfo: fakeFileInfo{name: "bin", dir: true}, mode: c.mode, uid: c.uid, gid: group})
+		if warn != "" {
+			t.Errorf("uid %d mode %v: warned %q", c.uid, c.mode, warn)
+		}
+		want := fmt.Sprintf("is owned by another user (uid %d)", c.uid)
+		if c.refuse && refuse != want {
+			t.Errorf("uid %d mode %v: refusal %q, want %q", c.uid, c.mode, refuse, want)
+		}
+		if !c.refuse && refuse != "" {
+			t.Errorf("uid %d mode %v: refused %q", c.uid, c.mode, refuse)
+		}
+	}
+}
+
 // The group's write bit does not soften the rules before it: a prefix
 // another user owns, or one every user can write, is still refused.
 func TestBinaryLocationGroupTrustDoesNotCoverOtherRules(t *testing.T) {
@@ -228,6 +281,19 @@ func TestBinaryLocationGroupTrustDoesNotCoverOtherRules(t *testing.T) {
 	chmod(t, lib, 0o777)
 	if _, err := checkBinaryLocation(link); !refusedAt(err, lib) {
 		t.Errorf("a world-writable admin directory was accepted: %v", err)
+	}
+
+	// Owned by another user and group-writable by admin, as a Homebrew
+	// prefix another account installed would be.
+	fi, err := os.Stat(prefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gid := fi.Sys().(*syscall.Stat_t).Gid
+	other := otherUID()
+	refuse, _ := writableByOthers(ownedInfo{fakeFileInfo: fakeFileInfo{name: "homebrew", dir: true}, mode: 0o775, uid: other, gid: gid})
+	if want := fmt.Sprintf("is owned by another user (uid %d)", other); refuse != want {
+		t.Errorf("an admin directory another user owns: refusal %q, want %q", refuse, want)
 	}
 }
 
