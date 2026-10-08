@@ -31,6 +31,19 @@ own computer, without limit, and nothing tells you they are trying.
 Install globally, as the [README](../README.md#install) shows, then run `jevlin setup`. Setup
 refuses to run from an `npx` cache or a project's `node_modules`, whose paths would disappear.
 
+Setup also refuses a binary someone else could replace, because your agents' hooks and skills
+and your PATH will name it: one under the temporary directory, or one where the file or a
+directory above it, on the path you ran or the file it links to, is owned by another user or
+writable by every user (the sticky bit is no exception). `agents install` and `agents prefer`
+refuse the same, since they write the same path. A directory its group can write is accepted
+when that group is your own or one whose members can already become root (`admin`, `wheel`,
+`sudo`, `root`), which is how Homebrew's prefix is set up. For any other group, such as
+Debian's `staff` on `/usr/local`, setup prints a warning naming the directory and goes on:
+whether anyone else is in that group is something only you can say. On Windows only the
+temporary-directory rule applies; who else can write a folder is not checked there yet. To
+fix a refusal, move the binary somewhere only you can write, such as `~/.local/bin`, and run
+it from there.
+
 | it asks | what your answer does |
 |---|---|
 | **Use it? [Y/n]** | Only when a previous installation is set aside beside `~/.jevlin`. Setup first says where it is and what it holds. Yes brings back your wallet, registration and key, and skips the questions they answer. |
@@ -246,7 +259,8 @@ only when you say yes at a terminal, in pieces that belong together:
 | **Unsent searches, session files** | Merge one file at a time, never overwriting. |
 | **Config** | Moves only if `~/.jevlin` has none. |
 
-Symlinks are not moved, and the set-aside folder is removed only once it is empty.
+Symlinks and anything another account owns are not moved: a set-aside folder that is not yours
+is never offered. The set-aside folder is removed only once it is empty.
 
 The profile lines are one block between `# >>> jevlin >>>` and `# <<< jevlin <<<`; delete it to
 undo them. If the block no longer has exactly one start and one end line, setup leaves the file

@@ -34,8 +34,8 @@ package main
 //
 // Who is keyed where. connect and flush key the gate on the directory of the
 // config file they are about to load — chosen exactly as loadConfig chooses
-// it (-config, then JEVLIN_CONFIG, then ./jevlin.toml, then the
-// installation's own config when that file exists) — and they know that
+// it (-config, then JEVLIN_CONFIG, then the installation's own config
+// when that file exists) — and they know that
 // path before loading anything. setup keys it on the installation
 // directory it writes, whose config is H/jevlin.toml; on the installer
 // layout the two keys are the same path. Every path that names a gate goes

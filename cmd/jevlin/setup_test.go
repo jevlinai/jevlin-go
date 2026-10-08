@@ -60,6 +60,9 @@ type setupSandbox struct {
 	// case can make one of them fail.
 	move     func(from, to string) error
 	restrict func(path string, dir bool) error
+	// binaryLocation, when set, replaces the sandbox's accept-all stand-in
+	// for checkBinaryLocation.
+	binaryLocation binaryLocationCheck
 	// agentPlanObserver, when set, is threaded through to setupDeps: a case
 	// wanting the plan agentsStep actually built sets this before calling
 	// run.
@@ -122,7 +125,17 @@ func (s *setupSandbox) agentOps(interactive bool) agentOps {
 	}
 	ops.executable = func() (string, error) { return s.exe, nil }
 	ops.isTerminal = func() bool { return interactive }
+	ops.binaryLocation = s.binaryLocationCheck()
 	return ops
+}
+
+// binaryLocationCheck is the sandbox's stand-in for checkBinaryLocation:
+// the sandbox lives in a temp directory the real check refuses.
+func (s *setupSandbox) binaryLocationCheck() binaryLocationCheck {
+	if s.binaryLocation != nil {
+		return s.binaryLocation
+	}
+	return func(string) ([]string, error) { return nil, nil }
 }
 
 func (s *setupSandbox) deps(stdin io.Reader, stdout, stderr io.Writer, interactive bool) setupDeps {
@@ -143,6 +156,7 @@ func (s *setupSandbox) deps(stdin io.Reader, stdout, stderr io.Writer, interacti
 		now:               fixedSetupClock,
 		move:              s.move,
 		restrict:          s.restrict,
+		binaryLocation:    s.binaryLocationCheck(),
 		agentPlanObserver: s.agentPlanObserver,
 	}
 }
@@ -879,7 +893,7 @@ func writeInstallation(t *testing.T, dir string, parts ...string) {
 			write(filepath.Join("state", "agent.json"), `{"agent_id":"old-agent","status":"claimed"}`)
 			write(credentialsFile, `{"api_key":"sr-old"}`)
 		case "pending":
-			write(filepath.Join("state", "registration_pending.json"), `{"agent_id":"pending-agent"}`)
+			write(registrationJournalFile, `{"agent_id":"pending-agent"}`)
 		case "spool":
 			write(filepath.Join("spool", "unsent-1.json"), `{"v":1}`)
 		case "config":
@@ -975,7 +989,7 @@ func TestSetupAdoptsASourceHoldingOnlyAPendingRegistration(t *testing.T) {
 	if !strings.Contains(out, "A previous installation is set aside at "+sibling) {
 		t.Fatalf("a pending registration did not count as an installation:\n%s", out)
 	}
-	if !lexists(filepath.Join(s.home, "state", "registration_pending.json")) && !lexists(filepath.Join(s.home, "state", "agent.json")) {
+	if !lexists(filepath.Join(s.home, registrationJournalFile)) || lexists(filepath.Join(sibling, registrationJournalFile)) {
 		t.Errorf("the pending registration was not adopted:\n%s", out)
 	}
 }
