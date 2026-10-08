@@ -225,9 +225,9 @@ the named tests.
     there or reads past a bound (`fsx.ReadRegular`, `ReadRegularNoFollow` where a check on the
     name came first), no lock follows a link (`fsx.OpenLock`), and the spool, which can be nested,
     does every operation through `fsx.Root` held to the directory it opened on. The premise is
-    that the installation's own directory (credentials.json, the registration journal, flush.lock)
-    and the config's directory are writable from no sandbox: `agents install` grants Codex
-    nothing when a layout would put either inside a root (`codexRootsProblem`), and nothing here can help if Codex's
+    that the installation's own directory (credentials.json, the registration journal, the payout
+    record, flush.lock) and the config's directory are writable from no sandbox: `agents install`
+    grants Codex nothing when a layout would put either inside a root (`codexRootsProblem`), and nothing here can help if Codex's
     own workspace is the installation or above it. `pkg/fsx/confined.go` owns the operations.
     `cmd/jevlin/writable_roots_guard_test.go` resolves every file's imports and classifies each
     reference to a file operation in os, io/ioutil, syscall, x/sys/unix, x/sys/windows and
@@ -293,6 +293,16 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `registration_unknown_agent_test.go`, against a stub that answers status only for the key's
   own agent, as the router does. For participants:
   [guide, The claim link](docs/guide.md#the-claim-link).
+- **The payout record** — `pkg/auth/store.go`'s `PayoutRecord` owns `payout.json`, the address a
+  resume declares unattended, and keeps it beside `credentials.json`, never in the state dir:
+  a first declaration takes effect on arrival (`pkg/auth/payout.go`), and a `payout.json` a
+  sandboxed command planted in the state dir was declared by the next resume. It does not
+  stop a sandboxed command that declares with the installation's AS authority itself, which it
+  can read in the state dir; that is the AS's question, and it is open. `cmd/jevlin/payout_record_test.go`
+  (`TestTheResumeNeverDeclaresAnAddressOnlyTheStateDirNames` and the participant's own address
+  still declared unattended), `payout_record_purge_test.go`, and the adoption cases in
+  `setup_units_test.go`. For participants:
+  [guide, Changing the payout address](docs/guide.md#changing-the-payout-address).
 - **The prompt rule** — `cmd/jevlin/prompt.go` owns what counts as an answer and the two
   readers that ask; every prompt in the binary goes through one of them.
   `prompt_abort_test.go` drives each real command to each real question, under both an interrupted

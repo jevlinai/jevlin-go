@@ -18,6 +18,15 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **The payout address moved beside `credentials.json`.** `connect` and
+  `mining enable` used to keep the address you chose in the state directory,
+  which a Codex-sandboxed command can write, and the background resume declared
+  whatever address it found there: a planted one could become your first,
+  effective payout address. It now lives in the jevlin home, and an address
+  left in the state directory is never declared. An agent in Codex's sandbox
+  can still reach the rewards service with this installation's access in the
+  moments before your address is in force; `jevlin payout show` says which
+  address is.
 - **The registration journal moved beside `credentials.json`.** `connect`
   used to keep `registration_pending.json` in the state directory, which a
   Codex-sandboxed command can write, so a forged journal could make the next

@@ -163,6 +163,13 @@ approval, and you are paid at the old one until then. Ask at
 <https://platform.nyks.dev/contact-us>, naming the new address. Nobody needs your key, your
 recovery phrase or the contents of `~/.jevlin` for this, and no operator will ask for them.
 
+The address you give `connect` or `mining enable` is kept in `~/.jevlin/payout.json`, beside your
+stored key, and declared for you as soon as mining is approved. It is not kept in the state
+directory, which an agent's sandbox may write, so nothing an agent leaves there is declared. An
+agent in Codex's sandbox can still use this installation's access to the rewards service
+directly, though, and could declare an address of its own in the moments before yours is in
+force. After you approve mining, `jevlin payout show` should name your address.
+
 ## Sending funds
 
 `jevlin wallet send -to <address> -amount <n>` moves funds out of the wallet. If the node's

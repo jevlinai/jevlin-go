@@ -1783,10 +1783,14 @@ func readWithMode(ops agentOps, path string) ([]byte, os.FileMode, error) {
 // there. That is more than a deletion exposure: a sandboxed command can leave
 // a symlink, a hard link or a FIFO at any name in these directories, which
 // hard invariant 19 (pkg/fsx/confined.go) answers for this client's own
-// writes and reads, and it can rewrite the records themselves. The one record
-// that could authorize replacing the platform credential, the registration
-// journal, is kept beside credentials.json for that reason (hard invariant
-// 13); for the others nothing here yet answers.
+// writes and reads, and it can rewrite the records themselves. The two
+// records that could make this client act on a writer's say-so are kept
+// beside credentials.json for that reason: the registration journal, which
+// can authorize replacing the platform credential (hard invariant 13), and
+// the payout record, the address a resume declares. Every record left in
+// these directories is held on load to what this client writes
+// (pkg/auth/record_text.go), and agent.json to the platform's answer about
+// the stored key; what a record says within that is still the writer's.
 func codexSandboxRoots(entry binEntry, getenv func(string) string) []string {
 	cfg := configForEntry(entry, getenv)
 	if cfg == nil {
@@ -1828,7 +1832,7 @@ func codexSandboxProblem(entry binEntry, getenv func(string) string) string {
 // whole rather than granted in part.
 func codexRootsProblem(cfgPath string, cfg *config.Config, dirs []string) string {
 	type protected struct{ dir, what string }
-	guard := []protected{{minerRoot(cfg.Miner), "the installation's own directory, which holds credentials.json and flush.lock"}}
+	guard := []protected{{minerRoot(cfg.Miner), "the installation's own directory, which holds credentials.json, the payout record and flush.lock"}}
 	if cfgPath != "" {
 		guard = append(guard, protected{filepath.Dir(cfgPath), "the config's directory"})
 	}

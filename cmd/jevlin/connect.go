@@ -1182,7 +1182,7 @@ func decideRegistrationOutcome(stdin io.Reader, br *bufio.Reader, stdout, stderr
 		fmt.Fprintln(stderr, "jevlin: mining decision is degraded; run `mining enable` or `mining disable` to repair it explicitly")
 		return miningEnableOutcome{}, exitTransport
 	case auth.MiningEnabled:
-		if address, ok, err := store.LoadPayoutAddress(); err == nil && ok {
+		if address, ok, err := loadPayoutAddress(cfg.Miner); err == nil && ok {
 			return miningEnableOutcome{enabled: true, payoutAddress: address}, exitOK
 		}
 		return finishMiningEnabled(stdin, br, stdout, stderr, getenv, cfg, store, interactive)
@@ -1342,7 +1342,7 @@ func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Cl
 	// this exactly as it gates enrollment above — an installation that
 	// opted out after enrolling once must not keep declaring.
 	if miningActive(store) {
-		if address, ok, aerr := store.LoadPayoutAddress(); aerr == nil && ok && !addressSettled(store, address) {
+		if address, ok, aerr := loadPayoutAddress(cfg.Miner); aerr == nil && ok && !addressSettled(store, address) {
 			_, miningClient, err := buildMiningClient(ctx, cfg.Mining)
 			if err != nil {
 				fmt.Fprintln(stderr, "jevlin:", err)
@@ -1581,7 +1581,7 @@ func shouldResume(cfg *config.Config) bool {
 		if !miningActive(store) {
 			return false
 		}
-		address, hasAddr, aerr := store.LoadPayoutAddress()
+		address, hasAddr, aerr := loadPayoutAddress(cfg.Miner)
 		if aerr != nil || !hasAddr {
 			return false // enrolled, nothing to declare
 		}

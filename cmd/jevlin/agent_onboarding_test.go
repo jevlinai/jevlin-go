@@ -661,6 +661,18 @@ func testJournal(t *testing.T, cfgPath string) *auth.RegistrationJournal {
 	return j
 }
 
+// testPayoutRecord is payout.json beside credentials.json for a config
+// whose intake_dir is the default, the state dir's sibling: the record is
+// then in the state dir's parent, never in the state dir itself.
+func testPayoutRecord(t *testing.T, stateDir string) *auth.PayoutRecord {
+	t.Helper()
+	record, err := auth.OpenPayoutRecord(filepath.Dir(stateDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return record
+}
+
 func testJournalPath(t *testing.T, cfgPath string) string {
 	t.Helper()
 	return filepath.Join(minerRoot(mustLoadConfig(t, cfgPath).Miner), registrationJournalFile)
@@ -790,11 +802,11 @@ func TestConnectCaseAccountExistsSearchAndMining(t *testing.T) {
 	}
 	// Give it a payout address the way a scripted install would: set it
 	// directly on the store, as mining enable would have.
-	store, err := auth.OpenStore(stateDir)
+	_, err := auth.OpenStore(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SavePayoutAddress("twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n"); err != nil {
+	if err := testPayoutRecord(t, stateDir).Save("twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n"); err != nil {
 		t.Fatal(err)
 	}
 	platform.claim("credits", "mining")
@@ -838,11 +850,11 @@ func TestConnectCaseMiningGrantedLater(t *testing.T) {
 
 	// Mining granted later, with a payout address already on file
 	// (as if `mining enable` had run in between).
-	store, err := auth.OpenStore(stateDir)
+	_, err := auth.OpenStore(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SavePayoutAddress("twilight1gz3fu9w3jp08jp4qcjj6hsckzktsexd09vz039"); err != nil {
+	if err := testPayoutRecord(t, stateDir).Save("twilight1gz3fu9w3jp08jp4qcjj6hsckzktsexd09vz039"); err != nil {
 		t.Fatal(err)
 	}
 	platform.claim("credits", "mining")
@@ -960,11 +972,11 @@ func TestAddressSetAfterEnrollmentIsDeclaredOnTheNextRun(t *testing.T) {
 	}
 
 	// The address arrives afterward, as `mining enable` would leave it.
-	store, err := auth.OpenStore(stateDir)
+	_, err := auth.OpenStore(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SavePayoutAddress("twilight19ltafk0vdyzwtnzjcfwgvlu3ldmvgemdqxsn79"); err != nil {
+	if err := testPayoutRecord(t, stateDir).Save("twilight19ltafk0vdyzwtnzjcfwgvlu3ldmvgemdqxsn79"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -988,7 +1000,7 @@ func TestDeclareIsNotRepeatedOnceSettled(t *testing.T) {
 	platform := newStubPlatform(t)
 	as := newStubAS(t)
 	cfgPath, stateDir := connectConfig(t, platform.srv.URL, as.srv.URL)
-	store, err := auth.OpenStore(stateDir)
+	_, err := auth.OpenStore(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -996,7 +1008,7 @@ func TestDeclareIsNotRepeatedOnceSettled(t *testing.T) {
 	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
 		t.Fatal("first connect failed")
 	}
-	if err := store.SavePayoutAddress("twilight1225q9dwktuz2vjj0q220m2jjy3x8cajwcfueq0"); err != nil {
+	if err := testPayoutRecord(t, stateDir).Save("twilight1225q9dwktuz2vjj0q220m2jjy3x8cajwcfueq0"); err != nil {
 		t.Fatal(err)
 	}
 	platform.claim("credits", "mining")
@@ -1137,6 +1149,13 @@ func TestShouldResumeIsALocalCheckWithNoStoredRegistration(t *testing.T) {
 // alone is deleted, not just a return value it happens to share with a
 // neighbor. shouldResumeFixture builds a registration and lets each
 // subtest vary exactly one thing.
+// resumeConfig is the config pkg/config would build around m: intake_dir,
+// and with it the directory credentials.json and the payout record sit in,
+// derived from the state dir.
+func resumeConfig(m config.Mining) *config.Config {
+	return &config.Config{Mining: m, Miner: config.Miner{IntakeDir: filepath.Join(filepath.Dir(m.StateDir), "intake")}}
+}
+
 func shouldResumeFixture(t *testing.T, status string, scopes []string, enrolled bool, address string) (stateDir string) {
 	t.Helper()
 	stateDir = filepath.Join(t.TempDir(), "state")
@@ -1152,7 +1171,7 @@ func shouldResumeFixture(t *testing.T, status string, scopes []string, enrolled 
 		t.Fatal(err)
 	}
 	if address != "" {
-		if err := store.SavePayoutAddress(address); err != nil {
+		if err := testPayoutRecord(t, stateDir).Save(address); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -1173,7 +1192,7 @@ func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
 		stateDir := shouldResumeFixture(t, "claimed", []string{"credits"}, false, "")
 		cfg := configured
 		cfg.StateDir = stateDir
-		if shouldResume(&config.Config{Mining: cfg}) {
+		if shouldResume(resumeConfig(cfg)) {
 			t.Fatal("shouldResume true for a search-only claim")
 		}
 	})
@@ -1202,7 +1221,7 @@ func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
 			t.Fatal(err)
 		}
 		cfg := config.Mining{StateDir: stateDir, ASBaseURL: "https://as.example"}
-		if shouldResume(&config.Config{Mining: cfg}) {
+		if shouldResume(resumeConfig(cfg)) {
 			t.Fatal("shouldResume true despite a stored decision of mining off")
 		}
 	})
@@ -1210,7 +1229,7 @@ func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
 	t.Run("not enrolled, mining.enabled = true but no as_url: settled", func(t *testing.T) {
 		stateDir := shouldResumeFixture(t, "claimed", []string{"mining"}, false, "")
 		cfg := config.Mining{StateDir: stateDir, Enabled: true, ASBaseURL: ""}
-		if shouldResume(&config.Config{Mining: cfg}) {
+		if shouldResume(resumeConfig(cfg)) {
 			t.Fatal("shouldResume true with no mining.as_url configured")
 		}
 	})
@@ -1219,7 +1238,7 @@ func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
 		stateDir := shouldResumeFixture(t, "claimed", []string{"mining"}, true, "")
 		cfg := configured
 		cfg.StateDir = stateDir
-		if shouldResume(&config.Config{Mining: cfg}) {
+		if shouldResume(resumeConfig(cfg)) {
 			t.Fatal("shouldResume true for a fully settled installation")
 		}
 	})
@@ -1235,7 +1254,7 @@ func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
 		}
 		cfg := configured
 		cfg.StateDir = stateDir
-		if shouldResume(&config.Config{Mining: cfg}) {
+		if shouldResume(resumeConfig(cfg)) {
 			t.Fatal("shouldResume true for an address already confirmed declared")
 		}
 	})
@@ -1255,7 +1274,7 @@ func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
 		}
 		cfg := configured
 		cfg.StateDir = stateDir
-		if !shouldResume(&config.Config{Mining: cfg}) {
+		if !shouldResume(resumeConfig(cfg)) {
 			t.Fatal("shouldResume false for an installation that can still enroll")
 		}
 	})
@@ -1271,7 +1290,7 @@ func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
 		}
 		cfg := configured
 		cfg.StateDir = stateDir
-		if !shouldResume(&config.Config{Mining: cfg}) {
+		if !shouldResume(resumeConfig(cfg)) {
 			t.Fatal("shouldResume false for an enrolled installation with an undeclared address")
 		}
 	})
@@ -1298,7 +1317,7 @@ func TestInstallerMiningQuestionAllThreeAnswers(t *testing.T) {
 		if code != exitOK || outcome.enabled {
 			t.Fatalf("got %+v code=%d, want disabled", outcome, code)
 		}
-		if _, ok, _ := store.LoadPayoutAddress(); ok {
+		if _, ok, _ := testPayoutRecord(t, stateDir).Load(); ok {
 			t.Fatal("an address was persisted after answering no")
 		}
 	})
@@ -1319,7 +1338,7 @@ func TestInstallerMiningQuestionAllThreeAnswers(t *testing.T) {
 		if code != exitOK || !outcome.enabled || outcome.payoutAddress != "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn" {
 			t.Fatalf("got %+v code=%d", outcome, code)
 		}
-		if addr, ok, _ := store.LoadPayoutAddress(); !ok || addr != "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn" {
+		if addr, ok, _ := testPayoutRecord(t, stateDir).Load(); !ok || addr != "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn" {
 			t.Fatalf("address not persisted: %q ok=%v", addr, ok)
 		}
 	})
@@ -1346,7 +1365,7 @@ func TestInstallerMiningQuestionAllThreeAnswers(t *testing.T) {
 		if !strings.Contains(out.String(), "recovery phrase") {
 			t.Fatalf("mnemonic was not printed: %q", out.String())
 		}
-		if addr, ok, _ := store.LoadPayoutAddress(); !ok || addr != outcome.payoutAddress {
+		if addr, ok, _ := testPayoutRecord(t, stateDir).Load(); !ok || addr != outcome.payoutAddress {
 			t.Fatalf("address not persisted: %q ok=%v want %q", addr, ok, outcome.payoutAddress)
 		}
 	})
@@ -1430,7 +1449,7 @@ func TestScriptedInstallMiningConfig(t *testing.T) {
 		if code != exitOK || !outcome.enabled || outcome.payoutAddress != "twilight1xnxmhqt2l55flef42ks4sn0er6tv6yhyqx7wy8" {
 			t.Fatalf("got %+v code=%d", outcome, code)
 		}
-		if addr, ok, _ := store.LoadPayoutAddress(); !ok || addr != "twilight1xnxmhqt2l55flef42ks4sn0er6tv6yhyqx7wy8" {
+		if addr, ok, _ := testPayoutRecord(t, stateDir).Load(); !ok || addr != "twilight1xnxmhqt2l55flef42ks4sn0er6tv6yhyqx7wy8" {
 			t.Fatalf("address not persisted: %q ok=%v", addr, ok)
 		}
 	})
@@ -1456,7 +1475,7 @@ func TestScriptedInstallMiningConfig(t *testing.T) {
 		if !strings.Contains(out.String(), "no wallet was created") {
 			t.Fatalf("no explanatory status line: %q", out.String())
 		}
-		if _, ok, _ := store.LoadPayoutAddress(); ok {
+		if _, ok, _ := testPayoutRecord(t, stateDir).Load(); ok {
 			t.Fatal("an address was persisted with none configured")
 		}
 	})
@@ -1583,11 +1602,11 @@ func TestDeclarationRunsUnattendedAfterEnrollment(t *testing.T) {
 	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
 		t.Fatal("connect failed")
 	}
-	store, err := auth.OpenStore(stateDir)
+	_, err := auth.OpenStore(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SavePayoutAddress("twilight1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc"); err != nil {
+	if err := testPayoutRecord(t, stateDir).Save("twilight1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc"); err != nil {
 		t.Fatal(err)
 	}
 	platform.claim("mining")
@@ -1690,11 +1709,11 @@ func TestStatusReportsBothAddressesOnBindingConflict(t *testing.T) {
 	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
 		t.Fatal("connect failed")
 	}
-	store, err := auth.OpenStore(stateDir)
+	_, err := auth.OpenStore(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SavePayoutAddress("twilight1nv60etsw245g8z00h4h322m4vr764z3840swpa"); err != nil {
+	if err := testPayoutRecord(t, stateDir).Save("twilight1nv60etsw245g8z00h4h322m4vr764z3840swpa"); err != nil {
 		t.Fatal(err)
 	}
 	platform.claim("mining")
@@ -1983,7 +2002,7 @@ func TestConcurrentResumesProduceExactlyOneEnrollmentAndDeclaration(t *testing.T
 		t.Fatal(err)
 	}
 	const addr = "twilight1wx0rwcuexfwc36h0r2cg3fvfsds66f0qadt8cs"
-	if err := store.SavePayoutAddress(addr); err != nil {
+	if err := testPayoutRecord(t, stateDir).Save(addr); err != nil {
 		t.Fatal(err)
 	}
 	platform.claim("mining")
@@ -2945,7 +2964,7 @@ func TestForegroundConnectReplacesExpiredRegistrationAndPropagatesNewIdentity(t 
 		t.Fatal(err)
 	}
 	const payout = "twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n"
-	if err := store.SavePayoutAddress(payout); err != nil {
+	if err := testPayoutRecord(t, stateDir).Save(payout); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.MarkHealth(auth.HealthCapture, auth.HealthIntakeUnwritable, "preserve capture health"); err != nil {
@@ -2977,7 +2996,7 @@ func TestForegroundConnectReplacesExpiredRegistrationAndPropagatesNewIdentity(t 
 	if got, err := os.ReadFile(credentialsPath(mustLoadConfig(t, cfgPath).Miner)); err != nil || !strings.Contains(string(got), "sr-stubkey-2") {
 		t.Fatalf("new platform key was not published: err=%v contents=%q", err, got)
 	}
-	if got, ok, err := store.LoadPayoutAddress(); err != nil || !ok || got != payout {
+	if got, ok, err := testPayoutRecord(t, stateDir).Load(); err != nil || !ok || got != payout {
 		t.Fatalf("unrelated payout state changed: value=%q ok=%v err=%v", got, ok, err)
 	}
 	if decision := store.ReadMiningDecision(); decision.State != auth.MiningEnabled {

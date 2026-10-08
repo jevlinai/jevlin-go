@@ -331,7 +331,7 @@ type miningEnableOutcome struct {
 //
 // It never enrolls or declares anything — only decides whether mining
 // is on and, if so, persists the resulting address via
-// store.SavePayoutAddress so a later detached resume has one thing to
+// savePayoutAddress, beside credentials.json, so a later detached resume has one thing to
 // read before declaring it unattended.
 //
 // interactive is the caller's own isInteractive(stdin, stdout) — passed
@@ -439,7 +439,7 @@ func finishMiningEnabled(stdin io.Reader, br *bufio.Reader, stdout, stderr io.Wr
 				"`jevlin mining enable` at a terminal.")
 			return miningEnableOutcome{enabled: true}, exitOK
 		}
-		if err := store.SavePayoutAddress(cfg.Mining.PayoutAddress); err != nil {
+		if err := savePayoutAddress(cfg.Miner, cfg.Mining.PayoutAddress); err != nil {
 			fmt.Fprintln(stderr, "jevlin:", err)
 			return miningEnableOutcome{}, exitTransport
 		}
@@ -541,7 +541,7 @@ func finishMiningEnabled(stdin io.Reader, br *bufio.Reader, stdout, stderr io.Wr
 		}
 	}
 
-	if err := store.SavePayoutAddress(address); err != nil {
+	if err := savePayoutAddress(cfg.Miner, address); err != nil {
 		fmt.Fprintln(stderr, "jevlin:", err)
 		return miningEnableOutcome{}, exitTransport
 	}

@@ -55,6 +55,7 @@ const (
 	credentialsFile         = "credentials.json"
 	credentialsVersion      = 1
 	registrationJournalFile = "registration_pending.json"
+	payoutRecordFile        = "payout.json"
 
 	apiKeyEnv = "JEVLIN_API_KEY" // #nosec G101 -- an env var NAME, not a credential value
 
@@ -107,6 +108,37 @@ func credentialsPath(m config.Miner) string {
 // outside the state directory a sandboxed agent may write.
 func registrationJournal(m config.Miner) (*auth.RegistrationJournal, error) {
 	return auth.OpenRegistrationJournal(minerRoot(m))
+}
+
+// payoutRecord is payout.json beside credentials.json, outside the state
+// directory a sandboxed agent may write: the address a resume declares
+// unattended must be one the participant decided (auth.PayoutRecord).
+func payoutRecord(m config.Miner) (*auth.PayoutRecord, error) {
+	if m.IntakeDir == "" {
+		// minerRoot would be ".", the working directory: a config always
+		// derives intake_dir from state_dir, so only a hand-built one gets
+		// here, and the record must not land wherever the command ran.
+		return nil, errors.New("no miner.intake_dir, so no directory for the payout record")
+	}
+	return auth.OpenPayoutRecord(minerRoot(m))
+}
+
+// loadPayoutAddress reads the address on file beside credentials.json.
+func loadPayoutAddress(m config.Miner) (string, bool, error) {
+	record, err := payoutRecord(m)
+	if err != nil {
+		return "", false, err
+	}
+	return record.Load()
+}
+
+// savePayoutAddress writes the address beside credentials.json.
+func savePayoutAddress(m config.Miner, address string) error {
+	record, err := payoutRecord(m)
+	if err != nil {
+		return err
+	}
+	return record.Save(address)
 }
 
 // platformKey uses only the credential connect stored for platform calls.

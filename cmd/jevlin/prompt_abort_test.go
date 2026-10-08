@@ -197,7 +197,7 @@ func TestAnInterruptAtThePayoutAddressCreatesNoWallet(t *testing.T) {
 		if lexists(filepath.Join(walletDir, walletKeyFile)) {
 			t.Fatal("a wallet was created for an address question nobody answered")
 		}
-		if _, ok, _ := store.LoadPayoutAddress(); ok {
+		if _, ok, _ := testPayoutRecord(t, stateDir).Load(); ok {
 			t.Fatal("a payout address was persisted for a question nobody answered")
 		}
 		// The typed "y" above still decided its own half, and the state it

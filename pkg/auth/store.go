@@ -37,6 +37,7 @@ const (
 	participationSecretFile = "participation.secret"
 	refreshTokenFile        = "refresh.token"
 	registrationPendingFile = "registration_pending.json"
+	payoutRecordFile        = "payout.json"
 )
 
 // ErrAgentRegistrationCorrupt identifies an undecodable agent.json whose
@@ -547,22 +548,14 @@ func boundedNonEmpty(value string, min, max int) bool {
 	return bounded(value, min, max)
 }
 
-// SavePayoutAddress persists the payout address decided at the terminal
-// (agent onboarding design §5.5): typed directly, or the address of a
-// wallet just created. It is kept in its own file rather than folded into
-// agent.json — one concern per file, matching dpop.key/refresh.token/
-// enrollment.json/receipt-*.jws — because the address is a local mining
-// preference the client owns outright, while agent.json mirrors platform
-// state that a poll can overwrite. A detached resume reads this file as
-// the one thing it needs to declare a payout unattended once enrollment
-// succeeds; it never needs to know how the address was decided.
 // validatePayoutAddress is the one place every payout address in this
 // flow is checked (WP2-adversarial-review finding 9): a terminal-typed
 // answer, mining.payout_address from config, and — redundantly but
 // harmlessly, since it is already valid by construction — a freshly
-// created wallet's own address all funnel through SavePayoutAddress, so
+// created wallet's own address all funnel through PayoutRecord.Save, so
 // validating here structurally covers all three without relying on each
-// call site to remember to.
+// call site to remember to. Every load of a record naming an address
+// applies it again (#51).
 func validatePayoutAddress(address string) error {
 	hrp, _, err := DecodeBech32Address(address)
 	if err != nil {
@@ -574,7 +567,42 @@ func validatePayoutAddress(address string) error {
 	return nil
 }
 
-func (s *Store) SavePayoutAddress(address string) error {
+// PayoutRecord holds payout.json, the payout address decided at the
+// terminal (agent onboarding design §5.5): typed directly, the address of
+// a wallet created there, or mining.payout_address. It is its own file
+// rather than part of agent.json — one concern per file — because the
+// address is a local mining preference the client owns outright, while
+// agent.json mirrors platform state a poll can overwrite. A detached resume
+// declares what this file says once enrollment succeeds, without knowing
+// how it was decided.
+//
+// That is why it is not in the state directory (#51). The state directory
+// is a writable root of Codex's sandbox, and a first declaration takes
+// effect on arrival (payout.go): a payout.json planted there was declared
+// by the next resume, the participant's own authority sending the money
+// somewhere else. Beside credentials.json, whoever can rewrite this file
+// could already rewrite the credential. It is not a defense against a
+// sandboxed command that declares with the installation's AS authority
+// directly — that is the AS's to answer — only against jevlin declaring
+// an address nobody decided.
+type PayoutRecord struct {
+	dir string
+}
+
+// OpenPayoutRecord names payout.json in dir, the directory holding
+// credentials.json. Nothing is created until Save.
+func OpenPayoutRecord(dir string) (*PayoutRecord, error) {
+	if dir == "" {
+		return nil, errors.New("auth: payout record directory is empty")
+	}
+	return &PayoutRecord{dir: dir}, nil
+}
+
+func (p *PayoutRecord) store() *Store { return &Store{dir: p.dir} }
+
+// Save writes the address, refusing one that is not a twilight bech32
+// address.
+func (p *PayoutRecord) Save(address string) error {
 	if address == "" {
 		return errors.New("auth: refusing to store an empty payout address")
 	}
@@ -587,15 +615,26 @@ func (s *Store) SavePayoutAddress(address string) error {
 	if err != nil {
 		return fmt.Errorf("auth: encode payout address: %w", err)
 	}
-	return s.saveStateFile("payout.json", raw)
+	if err := os.MkdirAll(p.dir, 0o700); err != nil { // #nosec G703 -- the jevlin home, beside credentials.json
+		return fmt.Errorf("auth: create payout record dir: %w", err)
+	}
+	return p.store().saveStateFile(payoutRecordFile, raw)
 }
 
-// LoadPayoutAddress returns the stored address, ok=false when none has
-// been decided yet. The address is validated on the way back in as well as
-// on the way out (#51): the file is in a directory a sandboxed command can
-// write, a resume declares what it says, and status prints it.
-func (s *Store) LoadPayoutAddress() (address string, ok bool, err error) {
-	return s.loadAddressRecord("payout.json")
+// Load returns the stored address, ok=false when none has been decided
+// yet. The address is validated on the way back in as well as on the way
+// out: a resume declares what it says, and status prints it.
+func (p *PayoutRecord) Load() (address string, ok bool, err error) {
+	return p.store().loadAddressRecord(payoutRecordFile)
+}
+
+// LoadLegacyPayoutAddress reads a payout.json in the state directory, where
+// releases before PayoutRecord kept it. Anything there may have been
+// written by a sandboxed command, so the address is never declared from
+// here; a caller may only compare it with the binding the AS already has
+// active.
+func (s *Store) LoadLegacyPayoutAddress() (address string, ok bool, err error) {
+	return s.loadAddressRecord(payoutRecordFile)
 }
 
 // loadAddressRecord reads one of the {"address": ...} records and refuses an

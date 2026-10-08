@@ -176,8 +176,8 @@ func TestPayoutRecordsRefuseAPlantedValueOnLoad(t *testing.T) {
 		_, ok, err := s.LoadPayoutBindingHeld()
 		return refusedUnlessOK(ok, err)
 	}
-	address := func(s *Store) error {
-		_, ok, err := s.LoadPayoutAddress()
+	legacy := func(s *Store) error {
+		_, ok, err := s.LoadLegacyPayoutAddress()
 		return refusedUnlessOK(ok, err)
 	}
 	for _, tc := range []struct {
@@ -185,8 +185,8 @@ func TestPayoutRecordsRefuseAPlantedValueOnLoad(t *testing.T) {
 		body       map[string]any
 		load       func(s *Store) error
 	}{
-		{"address/escape", "payout.json", map[string]any{"address": plantedText}, address},
-		{"address/not bech32", "payout.json", map[string]any{"address": "cosmos1kl0dn0rtwk46h9zcmazyyrruta290crhqxn5sp"}, address},
+		{"legacy address/escape", "payout.json", map[string]any{"address": plantedText}, legacy},
+		{"legacy address/not bech32", "payout.json", map[string]any{"address": "cosmos1kl0dn0rtwk46h9zcmazyyrruta290crhqxn5sp"}, legacy},
 		{"declared/escape", "payout_declared.json", map[string]any{"address": plantedText}, declared},
 		{"declared/not bech32", "payout_declared.json", map[string]any{"address": "twilight1notanaddress"}, declared},
 		{"held/local", "payout_binding_held.json", map[string]any{"local": plantedText, "active": validTestAddress}, held},
@@ -208,6 +208,49 @@ func TestPayoutRecordsRefuseAPlantedValueOnLoad(t *testing.T) {
 			}
 			assertNoPlantedBytes(t, "the refusal", err.Error())
 		})
+	}
+}
+
+// The record beside credentials.json is validated on load too: a resume
+// declares what it says.
+func TestPayoutRecordRefusesAnInvalidAddressOnLoad(t *testing.T) {
+	for _, bad := range []string{plantedText, "cosmos1kl0dn0rtwk46h9zcmazyyrruta290crhqxn5sp"} {
+		p, home := newPayoutRecord(t)
+		if err := os.MkdirAll(home, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := json.Marshal(map[string]string{"address": bad})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(home, "payout.json"), raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok, err := p.Load(); ok || err == nil {
+			t.Fatalf("payout.json naming %q loaded", bad)
+		} else {
+			assertNoPlantedBytes(t, "the refusal", err.Error())
+		}
+	}
+}
+
+// The record is written only where it was opened: a state directory beside
+// it, which is where releases before it kept payout.json, stays untouched.
+func TestPayoutRecordNeverWritesTheStateDirectory(t *testing.T) {
+	p, home := newPayoutRecord(t)
+	state := filepath.Join(filepath.Dir(home), "state")
+	s, err := OpenStore(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Save(validTestAddress); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(state, "payout.json")); !os.IsNotExist(err) {
+		t.Fatalf("payout.json was written to the state directory: %v", err)
+	}
+	if _, ok, err := s.LoadLegacyPayoutAddress(); ok || err != nil {
+		t.Fatalf("the legacy loader found the new record: ok=%v err=%v", ok, err)
 	}
 }
 

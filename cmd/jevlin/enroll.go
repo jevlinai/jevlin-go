@@ -613,7 +613,7 @@ func gatherAgentIdentity(args []string, getenv func(string) string) (agentIdenti
 		return f, true
 	}
 	if f.HasRegistration {
-		f.PayoutAddress, f.HasPayoutAddress, f.PayoutAddressErr = store.LoadPayoutAddress()
+		f.PayoutAddress, f.HasPayoutAddress, f.PayoutAddressErr = loadPayoutAddress(cfg.Miner)
 	}
 	// WP4b (design f0ddb69 §5.5): both of these are read-before-declare /
 	// conflict bookkeeping the store already has, no AS round trip needed.

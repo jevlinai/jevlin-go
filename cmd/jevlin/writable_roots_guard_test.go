@@ -199,6 +199,7 @@ var classifiedFileCalls = map[fileCallSite]fileCallClass{
 	{"pkg/auth/store.go", "Store.ClearPayoutBindingHeld", "os.Remove"}:                  {1, "root: removes a name"},
 	{"pkg/auth/store.go", "RegistrationJournal.Clear", "os.Remove"}:                     {1, "outside: the journal's name in the installation's own directory, which agents install keeps out of every writable root; read through readSecret first"},
 	{"pkg/auth/store.go", "RegistrationJournal.Save", "os.MkdirAll"}:                    {1, "outside: creates the installation's own directory, beside credentials.json"},
+	{"pkg/auth/store.go", "PayoutRecord.Save", "os.MkdirAll"}:                           {1, "outside: creates the installation's own directory, beside credentials.json; payout.json is written there through fsx.WriteFileAtomic and read through readSecret"},
 	{"pkg/auth/store.go", "Store.DiscardLegacyPendingRegistration", "os.Remove"}:        {1, "root: removes the legacy journal's name in the state dir, never read"},
 	{"pkg/auth/store.go", "Store.ClearRevokePending", "os.Remove"}:                      {1, "root: removes a name"},
 	{"pkg/auth/store.go", "Store.DeleteRefreshToken", "os.Remove"}:                      {1, "root: removes a name"},

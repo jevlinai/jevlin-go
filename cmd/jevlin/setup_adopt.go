@@ -356,8 +356,10 @@ func (a *adoption) run() error {
 		return err
 	}
 	t := a.txn(
-		filepath.Join(a.src, "state"), filepath.Join(a.src, credentialsFile), filepath.Join(a.src, registrationJournalFile), filepath.Join(a.src, "wallet"),
-		filepath.Join(a.dst, "state"), filepath.Join(a.dst, credentialsFile), filepath.Join(a.dst, registrationJournalFile), filepath.Join(a.dst, "wallet"),
+		filepath.Join(a.src, "state"), filepath.Join(a.src, credentialsFile), filepath.Join(a.src, registrationJournalFile),
+		filepath.Join(a.src, payoutRecordFile), filepath.Join(a.src, "wallet"),
+		filepath.Join(a.dst, "state"), filepath.Join(a.dst, credentialsFile), filepath.Join(a.dst, registrationJournalFile),
+		filepath.Join(a.dst, payoutRecordFile), filepath.Join(a.dst, "wallet"),
 		a.aside("state.unenrolled"), a.aside("wallet.incomplete"),
 	)
 	if err := a.identity(t); err != nil {
@@ -382,19 +384,21 @@ func (a *adoption) aside(prefix string) string {
 }
 
 // identity is the custody transaction's first stage: state/ and
-// credentials.json together, or neither. A destination that already holds an
+// credentials.json together, with the registration journal and the payout
+// record that sit beside the credential, or none of them. A destination that already holds an
 // identity is returned as a conflict; it is found before this stage moves
 // anything, and this stage is the first.
 func (a *adoption) identity(t *bundleTxn) error {
 	srcState, srcCreds := filepath.Join(a.src, "state"), filepath.Join(a.src, credentialsFile)
 	dstState, dstCreds := filepath.Join(a.dst, "state"), filepath.Join(a.dst, credentialsFile)
 	srcJournal, dstJournal := filepath.Join(a.src, registrationJournalFile), filepath.Join(a.dst, registrationJournalFile)
+	srcPayout, dstPayout := filepath.Join(a.src, payoutRecordFile), filepath.Join(a.dst, payoutRecordFile)
 	aside := a.aside("state.unenrolled")
-	hasState, hasCreds, hasJournal := lexists(srcState), lexists(srcCreds), lexists(srcJournal)
-	if !hasState && !hasCreds && !hasJournal {
+	hasState, hasCreds, hasJournal, hasPayout := lexists(srcState), lexists(srcCreds), lexists(srcJournal), lexists(srcPayout)
+	if !hasState && !hasCreds && !hasJournal && !hasPayout {
 		return nil
 	}
-	for _, p := range []string{srcState, srcCreds, srcJournal} {
+	for _, p := range []string{srcState, srcCreds, srcJournal, srcPayout} {
 		if !lexists(p) {
 			continue
 		}
@@ -411,7 +415,10 @@ func (a *adoption) identity(t *bundleTxn) error {
 	conflict := func(evidence string) *identityConflict {
 		return &identityConflict{Destination: a.dst, Evidence: evidence, Source: a.src}
 	}
-	for _, p := range []string{dstCreds, dstJournal} {
+	// The payout record is the address the next resume declares: one at the
+	// destination is that installation's choice, never overwritten by the
+	// adopted one's.
+	for _, p := range []string{dstCreds, dstJournal, dstPayout} {
 		if lexists(p) {
 			return conflict(p)
 		}
@@ -461,6 +468,11 @@ func (a *adoption) identity(t *bundleTxn) error {
 	}
 	if hasJournal {
 		if err := t.move(srcJournal, dstJournal); err != nil {
+			return t.fail(identityBundle, err)
+		}
+	}
+	if hasPayout {
+		if err := t.move(srcPayout, dstPayout); err != nil {
 			return t.fail(identityBundle, err)
 		}
 	}
