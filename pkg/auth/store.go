@@ -37,6 +37,8 @@ const (
 	participationSecretFile = "participation.secret"
 	refreshTokenFile        = "refresh.token"
 	registrationPendingFile = "registration_pending.json"
+	traceKeyFile            = "trace.key"
+	traceKeyLen             = 32
 )
 
 // ErrAgentRegistrationCorrupt identifies an undecodable agent.json whose
@@ -271,6 +273,55 @@ func (s *Store) ParticipationSecret() (*draw.Secret, error) {
 	default:
 		return nil, err
 	}
+}
+
+// TraceKey loads the installation's 32-byte trace key, generating it on
+// first use (0600, exclusive-create). It keys the trace identifiers derived
+// from guessable local facts (hostname, parent pid) so the router that
+// receives them cannot enumerate them back. The key never leaves the machine.
+func (s *Store) TraceKey() ([]byte, error) {
+	key, _, err := s.traceKey()
+	return key, err
+}
+
+// EnsureTraceKey makes the trace key exist and reports whether this call
+// made it. Setup and connect call it because they run outside any sandbox
+// and already write this directory; a search that cannot write here then
+// finds the key and only has to read it (TraceKey still creates one where
+// it can, for an installation that predates the call).
+func (s *Store) EnsureTraceKey() (created bool, err error) {
+	_, created, err = s.traceKey()
+	return created, err
+}
+
+// TraceKeyPath is where the trace key of the state directory dir lives, for
+// a caller that wants to say so without opening the store.
+func TraceKeyPath(dir string) string { return filepath.Join(dir, traceKeyFile) }
+
+func (s *Store) traceKey() (key []byte, created bool, err error) {
+	raw, err := s.readSecret(traceKeyFile)
+	if errors.Is(err, fs.ErrNotExist) {
+		key := make([]byte, traceKeyLen)
+		if _, err := rand.Read(key); err != nil {
+			return nil, false, fmt.Errorf("auth: generate %s: %w", traceKeyFile, err)
+		}
+		err = s.createExclusive(traceKeyFile, key)
+		if err == nil {
+			return key, true, nil
+		}
+		if !errors.Is(err, fs.ErrExist) {
+			return nil, false, err
+		}
+		// Another process created it first; its key is the one to use.
+		raw, err = s.readSecret(traceKeyFile)
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if len(raw) != traceKeyLen {
+		return nil, false, fmt.Errorf("auth: %s is %d bytes, want %d; refusing", traceKeyFile, len(raw), traceKeyLen)
+	}
+	return raw, false, nil
 }
 
 // SaveReceipt persists an enrollment receipt's exact bytes (contract
