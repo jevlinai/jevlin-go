@@ -18,6 +18,20 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **Files an agent's sandbox leaves in jevlin's directories no longer reach
+  your own files.** Codex's sandbox may write jevlin's state, intake, sessions
+  and spool directories. A link left there could make a hook, a flush or
+  `connect -resume`, which run outside the sandbox, write into a file of yours
+  elsewhere, and a FIFO could stall a search. jevlin now never opens an existing
+  name there for writing, never waits on what is at a name it reads, refuses a
+  link at a lock's name, and keeps the spool's quarantine from leading outside
+  the spool. The window state is no longer kept in the shared temporary
+  directory when no sessions directory is configured. Two layouts change:
+  a `spool_dir` that is itself a symlink is refused (mining stops, with a
+  message, until it names the real directory), and `agents install` gives
+  Codex no writable directories at all when one of them would contain your
+  `jevlin.toml` or the folder holding `credentials.json`; give `state_dir`,
+  `intake_dir`, `sessions_dir` and `spool_dir` directories of their own.
 - **A hook allows a search only under the binary path its skill shows.** Cursor,
   Claude Code and Codex used to allow any path that reached the jevlin binary when
   the hook resolved it, and on Linux `/proc/self/exe` is jevlin to the hook but

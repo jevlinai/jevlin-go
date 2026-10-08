@@ -44,12 +44,17 @@ import (
 
 	"github.com/jevlinai/jevlin-go/pkg/auth"
 	"github.com/jevlinai/jevlin-go/pkg/config"
+	"github.com/jevlinai/jevlin-go/pkg/fsx"
 	"github.com/jevlinai/jevlin-go/pkg/redact"
 )
 
 const (
 	turnEndTimeout = 10 * time.Second
-	turnEndSuffix  = ".turn-end.json"
+	// turnEndMaxBytes bounds the queued record the sender reads back: its
+	// texts are each capped well below it, so a larger file is not one this
+	// client queued.
+	turnEndMaxBytes = 1 << 20
+	turnEndSuffix   = ".turn-end.json"
 	// A mark that a search was served in a turn: an empty file named after
 	// the hashed turn id. Written by `search`, taken by the turn end.
 	turnSearchedSuffix = ".searched"
@@ -175,7 +180,17 @@ func queueTurnEnd(ops hookOps, hc hookContext, rec turnEndRecord) {
 	if err := ops.mkdirAll(hc.sessionsDir, 0o700); err != nil {
 		return
 	}
-	path := filepath.Join(hc.sessionsDir, traceHash("turn-end|"+rec.SessionID+"|"+rec.TurnID)+turnEndSuffix)
+	// The name is unpredictable as well as exclusive (ops.writeFile is
+	// CreateNew): the sessions directory is a writable root of Codex's
+	// sandbox, and a name a sandboxed command can compute is one it can
+	// occupy first. cmdTurnEnd checks only the directory and the suffix.
+	name := traceHash("turn-end|" + rec.SessionID + "|" + rec.TurnID)
+	if ops.tempSuffix != nil {
+		if r := ops.tempSuffix(); r != "" {
+			name += "." + r
+		}
+	}
+	path := filepath.Join(hc.sessionsDir, name+turnEndSuffix)
 	if err := ops.writeFile(path, body, 0o600); err != nil {
 		return
 	}
@@ -332,7 +347,7 @@ func cmdTurnEnd(args []string, getenv func(string) string) int {
 	if cfg.Miner.SessionsDir == "" || filepath.Dir(path) != filepath.Clean(cfg.Miner.SessionsDir) || !strings.HasSuffix(path, turnEndSuffix) {
 		return exitOK
 	}
-	body, err := os.ReadFile(path) // #nosec G304 -- confined to the sessions directory and the turn-end suffix just above
+	body, err := fsx.ReadRegular(path, turnEndMaxBytes)
 	// Deleted before the send, whatever comes next: one attempt, and no file
 	// of assistant text left behind by a send that hung.
 	_ = os.Remove(path)

@@ -47,6 +47,7 @@ import (
 
 	"github.com/jevlinai/jevlin-go/pkg/auth"
 	"github.com/jevlinai/jevlin-go/pkg/config"
+	"github.com/jevlinai/jevlin-go/pkg/fsx"
 	"github.com/jevlinai/jevlin-go/pkg/platform"
 )
 
@@ -137,7 +138,7 @@ type resumeStamp struct {
 }
 
 func readResumeStamp(path string) resumeStamp {
-	data, err := os.ReadFile(path) // #nosec G304 -- our own state dir
+	data, err := fsx.ReadRegular(path, stampMaxBytes)
 	if err != nil {
 		return resumeStamp{}
 	}
@@ -154,11 +155,10 @@ func writeResumeStamp(path string, st resumeStamp) error {
 	if err != nil {
 		return err
 	}
-	tmp := fmt.Sprintf("%s.%d.tmp", path, os.Getpid())
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	// The state dir is a writable root of Codex's sandbox: fsx stages under
+	// a random name it creates exclusively, so no link at a predictable
+	// temporary name is written through (the old "<path>.<pid>.tmp" was).
+	return fsx.WriteFileAtomic(filepath.Dir(path), filepath.Base(path), data, 0o600)
 }
 
 type registrationPublicationOptions struct {

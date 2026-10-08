@@ -52,6 +52,12 @@ const (
 	// search after it belongs to a new one, so `search` falls back to its
 	// per-shell session identity rather than thread into the old lane.
 	lineageMaxAge = 12 * time.Hour
+	// stampMaxBytes and intakeMaxBytes bound what is read back from the
+	// state and intake directories, writable roots of Codex's sandbox: a
+	// stamp is a few dozen bytes and an intake record a closed field set,
+	// so a larger file at either name is not one this client wrote.
+	stampMaxBytes  = 64 << 10
+	intakeMaxBytes = 1 << 20
 	// lineageWalkUp bounds how many parent directories `search` climbs
 	// looking for the workspace a hook wrote for. Hooks key on the project
 	// root; agents run commands from subdirectories of it.
@@ -175,7 +181,7 @@ func readIntake(dir string) (records []intakeFile, unreadable []string, err erro
 	sort.Strings(names)
 	for _, name := range names {
 		path := filepath.Join(dir, name)
-		data, rerr := os.ReadFile(path) // #nosec G304 -- our own intake dir
+		data, rerr := fsx.ReadRegular(path, intakeMaxBytes)
 		if rerr != nil {
 			unreadable = append(unreadable, path)
 			continue
@@ -303,14 +309,18 @@ func listTempFiles(dir string) ([]tempEntry, error) {
 }
 
 var (
-	// tempNameRe is the one shape these writers produce: "<file>.<pid>.tmp".
-	tempNameRe = regexp.MustCompile(`^(.+)\.(\d+)\.tmp$`)
+	// tempNameRe is the one shape these writers produce,
+	// "<file>.<pid>-<random>.tmp" (tempNameFor), and the "<file>.<pid>.tmp"
+	// earlier versions wrote, which the sweep still collects.
+	tempNameRe = regexp.MustCompile(`^(.+)\.(\d+)(?:-[0-9a-f]+)?\.tmp$`)
 	// lineageNameRe is a lineage file's name: lineagePath's 32 hex digits.
 	lineageNameRe = regexp.MustCompile(`^[0-9a-f]{32}\.json$`)
 )
 
-// replaceViaTemp writes data to "<path>.<pid>.tmp" and renames it over path,
-// so a reader never sees a half-written file. It is the one writer behind the
+// replaceViaTemp writes data to a new "<path>.<pid>-<random>.tmp"
+// (tempNameFor), created exclusively, and renames it over path, so a reader
+// never sees a half-written file and no link at the temporary name is written
+// through. It is the one writer behind the
 // lineage files, the window state and the flush stamp.
 //
 // A failed write or rename removes the temporary file before returning (dropin-miner#100).
@@ -320,7 +330,7 @@ var (
 // path is untouched by a failure, as before.
 func replaceViaTemp(ops hookOps, path string, data []byte, now time.Time, lineageDir bool) error {
 	sweepStaleTemps(ops, path, now, lineageDir)
-	tmp := fmt.Sprintf("%s.%d.tmp", path, ops.pid)
+	tmp := tempNameFor(ops, path)
 	if err := ops.writeFile(tmp, data, 0o600); err != nil {
 		removeTemp(ops, tmp) // a write that failed halfway leaves one too
 		return err
@@ -330,6 +340,21 @@ func replaceViaTemp(ops hookOps, path string, data []byte, now time.Time, lineag
 		return err
 	}
 	return nil
+}
+
+// tempNameFor is the temporary name replaceViaTemp writes before its rename.
+// The directory is a writable root of Codex's sandbox (pkg/fsx/confined.go),
+// so the name is unpredictable as well as exclusive: a sandboxed command
+// cannot leave a link at a name it cannot know, and ops.writeFile creates
+// the file with O_EXCL whatever it guessed. The pid stays in the name for
+// sweepStaleTemps.
+func tempNameFor(ops hookOps, path string) string {
+	if ops.tempSuffix != nil {
+		if s := ops.tempSuffix(); s != "" {
+			return fmt.Sprintf("%s.%d-%s.tmp", path, ops.pid, s)
+		}
+	}
+	return fmt.Sprintf("%s.%d.tmp", path, ops.pid)
 }
 
 func removeTemp(ops hookOps, tmp string) {
@@ -344,11 +369,12 @@ func removeTemp(ops hookOps, tmp string) {
 //
 // What it may remove is narrow on every axis:
 //
-//   - the NAME is "<file>.<pid>.tmp", where <file> is the file being written
-//     or — for a lineage write only — any lineage file's name. The sessions
-//     directory is this code's own; the flush stamp's directory is shared
-//     with other writers of the same shape (connect's resume stamp), and the
-//     window state can live in TMPDIR, so those two sweep only their own.
+//   - the NAME is "<file>.<pid>-<random>.tmp", or the "<file>.<pid>.tmp"
+//     earlier versions wrote, where <file> is the file being written or —
+//     for a lineage write only — any lineage file's name. The sessions
+//     directory is this code's own; the flush stamp shares the state dir
+//     with other writers, and the window state can live in a plugin root,
+//     so those two sweep only their own.
 //   - the PID is not this process's.
 //   - the AGE is more than lineageMaxAge. That is the lineage code's own
 //     answer to "how long can a session plausibly last": past it the session
@@ -555,7 +581,7 @@ func loadFlushStamp(path string) flushStamp {
 }
 
 func readFlushStamp(path string) flushStamp {
-	data, err := os.ReadFile(path) // #nosec G304 -- our own state dir
+	data, err := fsx.ReadRegular(path, stampMaxBytes)
 	if err != nil {
 		return flushStamp{}
 	}
@@ -611,7 +637,7 @@ func recordSearchEpoch(dir string, epoch uint64) {
 // could not be parsed, fed to the same undetermined path doctor's other
 // unreadable inputs use, rather than silently read as "nothing happened."
 func readSearchEpoch(dir string) (epoch uint64, present bool, err error) {
-	data, rerr := os.ReadFile(filepath.Join(dir, recordedEpochFile)) // #nosec G304 -- this installation's own intake dir
+	data, rerr := fsx.ReadRegular(filepath.Join(dir, recordedEpochFile), stampMaxBytes)
 	if errors.Is(rerr, fs.ErrNotExist) {
 		return 0, false, nil
 	}
