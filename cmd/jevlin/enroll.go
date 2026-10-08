@@ -572,6 +572,11 @@ type agentIdentityFacts struct {
 	HasRegistration bool
 	RegistrationErr error
 
+	// Claim is the claim link on file beside credentials.json for the
+	// registration's agent; agent.json carries none (auth.ClaimRecord).
+	Claim    auth.ClaimBootstrap
+	HasClaim bool
+
 	PayoutAddress    string
 	HasPayoutAddress bool
 	PayoutAddressErr error
@@ -613,6 +618,7 @@ func gatherAgentIdentity(args []string, getenv func(string) string) (agentIdenti
 		return f, true
 	}
 	if f.HasRegistration {
+		f.Claim, f.HasClaim = claimFor(cfg.Miner, f.Registration.AgentID, nil)
 		f.PayoutAddress, f.HasPayoutAddress, f.PayoutAddressErr = loadPayoutAddress(cfg.Miner)
 	}
 	// WP4b (design f0ddb69 §5.5): both of these are read-before-declare /
@@ -690,15 +696,15 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 	reg := f.Registration
 	switch reg.Status {
 	case "unclaimed":
-		if reg.ClaimURL == "" {
-			// B.3: a registration rebuilt from GET /v1/agents/me before the
-			// platform served the claim bootstrap fields (B.1's known gap)
-			// is durable — status must never fall back to printing the
-			// bare (empty) URL the ordinary branch below prints.
-			fmt.Fprintln(stdout, "agent:  unclaimed — recovered from the platform; its claim link is not "+
-				"retrievable here. Run `jevlin connect -force` to register a fresh agent, or wait for "+
-				"this one to expire.")
-		} else if claimURL := printableClaimURL(reg.ClaimURL, f.PlatformBaseURL, stderr); claimURL != "" {
+		if !f.HasClaim {
+			// No claim link is on file beside credentials.json for this
+			// agent: a registration rebuilt from GET /v1/agents/me before
+			// the platform served the claim bootstrap fields (B.1's known
+			// gap), or one an older version kept the link for in
+			// agent.json, which is not read. Status never falls back to
+			// printing a bare URL; a foreground connect mints a fresh one.
+			fmt.Fprintln(stdout, "agent:  unclaimed — no claim link is on file for it here. Run `jevlin connect` for a fresh one.")
+		} else if claimURL := printableClaimURL(f.Claim.ClaimURL, f.PlatformBaseURL, stderr); claimURL != "" {
 			fmt.Fprintf(stdout, "agent:  unclaimed — claim at %s\n", claimURL)
 		} else {
 			fmt.Fprintln(stdout, "agent:  unclaimed — the stored claim link failed validation and is not shown. "+

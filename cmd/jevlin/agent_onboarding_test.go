@@ -679,6 +679,22 @@ func testPayoutRecord(t *testing.T, stateDir string) *auth.PayoutRecord {
 	return record
 }
 
+// seedClaim writes the claim record connect keeps beside credentials.json,
+// as a publication, a rebuild or a re-mint would have.
+func seedClaim(t *testing.T, cfgPath, agentID, claimURL, claimCode string) {
+	t.Helper()
+	if err := saveClaim(mustLoadConfig(t, cfgPath).Miner, auth.ClaimBootstrap{AgentID: agentID, ClaimURL: claimURL, ClaimCode: claimCode}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// storedClaim is the claim record on file for agentID, zero when none is.
+func storedClaim(t *testing.T, cfgPath, agentID string) auth.ClaimBootstrap {
+	t.Helper()
+	claim, _ := claimFor(mustLoadConfig(t, cfgPath).Miner, agentID, nil)
+	return claim
+}
+
 func testJournalPath(t *testing.T, cfgPath string) string {
 	t.Helper()
 	return filepath.Join(minerRoot(mustLoadConfig(t, cfgPath).Miner), registrationJournalFile)
@@ -1776,10 +1792,11 @@ func TestMiningEnableReApprovalPointsAtTheGenericClaimAddressNotTheDeadOneTimeUR
 	}
 	deadClaimURL := platform.srv.URL + "/claim/AB12-CD34"
 	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-1", Status: "claimed", Scopes: []string{"credits"}, ClaimURL: deadClaimURL,
+		AgentID: "agent-1", Status: "claimed", Scopes: []string{"credits"},
 	}); err != nil {
 		t.Fatal(err)
 	}
+	seedClaim(t, cfgPath, "agent-1", deadClaimURL, "")
 	platform.claim("credits") // claimed, credits only — mining not granted
 
 	var stdout bytes.Buffer
@@ -1821,10 +1838,10 @@ func TestMiningEnableReApprovalPrefersTheRealConsoleURLWhenThePlatformSendsOne(t
 	}
 	if err := store.SaveAgentRegistration(auth.AgentRegistration{
 		AgentID: "agent-1", Status: "claimed", Scopes: []string{"credits"},
-		ClaimURL: platform.srv.URL + "/claim/AB12-CD34",
 	}); err != nil {
 		t.Fatal(err)
 	}
+	seedClaim(t, cfgPath, "agent-1", platform.srv.URL+"/claim/AB12-CD34", "")
 	platform.claim("credits") // claimed, credits only — mining not granted
 	realConsoleURL := platform.srv.URL + "/projects/8fe850f9-eb9a-4a80-b9c8-7341bd346a48"
 	platform.setConsoleURL(realConsoleURL)
@@ -1872,10 +1889,11 @@ func TestMiningEnableOnAnUnclaimedAgentPrintsTheOriginalStillValidClaimLink(t *t
 	}
 	originalClaimURL := platform.srv.URL + "/claim/AB12-CD34"
 	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-1", Status: "unclaimed", ClaimURL: originalClaimURL,
+		AgentID: "agent-1", Status: "unclaimed",
 	}); err != nil {
 		t.Fatal(err)
 	}
+	seedClaim(t, cfgPath, "agent-1", originalClaimURL, "")
 
 	var stdout bytes.Buffer
 	code := cmdMining([]string{"enable", "-config", cfgPath}, &bytes.Buffer{}, &stdout, &bytes.Buffer{}, noEnv)
@@ -1915,10 +1933,11 @@ func TestMiningEnableNeverPrintsAStoredClaimURLOffThePlatformOrigin(t *testing.T
 		t.Fatal(err)
 	}
 	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-1", Status: "unclaimed", ClaimURL: "https://evil.example/claim/AB12-CD34",
+		AgentID: "agent-1", Status: "unclaimed",
 	}); err != nil {
 		t.Fatal(err)
 	}
+	seedClaim(t, cfgPath, "agent-1", "https://evil.example/claim/AB12-CD34", "")
 
 	var stdout, stderr bytes.Buffer
 	code := cmdMining([]string{"enable", "-config", cfgPath}, &bytes.Buffer{}, &stdout, &stderr, noEnv)
@@ -1957,10 +1976,11 @@ func TestMiningEnableOnAnExpiredRegistrationSaysToRegisterAgain(t *testing.T) {
 	}
 	deadClaimURL := platform.srv.URL + "/claim/AB12-CD34"
 	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-1", Status: "expired", ClaimURL: deadClaimURL,
+		AgentID: "agent-1", Status: "expired",
 	}); err != nil {
 		t.Fatal(err)
 	}
+	seedClaim(t, cfgPath, "agent-1", deadClaimURL, "")
 
 	var stdout bytes.Buffer
 	code := cmdMining([]string{"enable", "-config", cfgPath}, &bytes.Buffer{}, &stdout, &bytes.Buffer{}, noEnv)
@@ -2482,7 +2502,7 @@ func TestConnectRebuildsUnclaimedRegistrationWithClaimLink(t *testing.T) {
 		t.Fatalf("did not print the recovered claim link: stdout=%q", out)
 	}
 	reg, ok := loadAgent(t, stateDir)
-	if !ok || reg.AgentID != agentID || reg.Status != "unclaimed" || reg.ClaimURL == "" || reg.ClaimCode != "AB12-CD34" {
+	if !ok || reg.AgentID != agentID || reg.Status != "unclaimed" || storedClaim(t, cfgPath, agentID).ClaimURL == "" || storedClaim(t, cfgPath, agentID).ClaimCode != "AB12-CD34" {
 		t.Fatalf("rebuilt registration not as expected: %+v ok=%v", reg, ok)
 	}
 	if registerCalls, _, _ := platform.counts(); registerCalls != registerCallsBefore {
@@ -2515,7 +2535,7 @@ func TestConnectRebuildsUnclaimedRegistrationWithoutClaimLink(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("connect exited %d, stderr=%s", code, errOut)
 	}
-	if !strings.Contains(out, "run `jevlin connect -force`") {
+	if !strings.Contains(out, "no claim link is on file for it") {
 		t.Fatalf("missing the recovered-without-link fallback: stdout=%q", out)
 	}
 	if strings.Contains(out, "claim this agent:") {
@@ -2525,7 +2545,7 @@ func TestConnectRebuildsUnclaimedRegistrationWithoutClaimLink(t *testing.T) {
 		t.Fatalf("printed a bare empty claim link: stdout=%q", out)
 	}
 	reg, ok := loadAgent(t, stateDir)
-	if !ok || reg.AgentID != agentID || reg.Status != "unclaimed" || reg.ClaimURL != "" {
+	if !ok || reg.AgentID != agentID || reg.Status != "unclaimed" || storedClaim(t, cfgPath, agentID).ClaimURL != "" {
 		t.Fatalf("rebuilt registration not as expected: %+v ok=%v", reg, ok)
 	}
 	if registerCalls, statusCalls, _ := platform.counts(); registerCalls != registerCallsBefore || statusCalls != statusCallsBefore {
@@ -2542,7 +2562,7 @@ func TestConnectRebuildsUnclaimedRegistrationWithoutClaimLink(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("second connect exited %d, stderr=%s", code, errOut)
 	}
-	if !strings.Contains(out, "run `jevlin connect -force`") {
+	if !strings.Contains(out, "no claim link is on file for it") {
 		t.Fatalf("second run dropped the recovered-without-link fallback: stdout=%q", out)
 	}
 	if strings.Contains(out, "claim this agent:") {
@@ -2560,7 +2580,7 @@ func TestConnectRebuildsUnclaimedRegistrationWithoutClaimLink(t *testing.T) {
 	statusOut := captureStdout(t, func() {
 		printAgentIdentityStatus([]string{"-config", cfgPath}, os.Stdout, os.Stderr, noEnv)
 	})
-	if !strings.Contains(statusOut, "recovered from the platform") {
+	if !strings.Contains(statusOut, "no claim link is on file for it here") {
 		t.Fatalf("status did not report the recovered-without-link state: %q", statusOut)
 	}
 	if strings.Contains(statusOut, "claim at \n") || strings.Contains(statusOut, "claim at\n") {
@@ -2598,15 +2618,15 @@ func TestForegroundConnectMintsAFreshClaimLinkForALostOne(t *testing.T) {
 	if !strings.Contains(out, "code: MINT-01") {
 		t.Fatalf("the fresh claim code was not printed: stdout=%q", out)
 	}
-	if strings.Contains(out, "not retrievable") {
+	if strings.Contains(out, "no claim link is on file") {
 		t.Fatalf("printed the dead-end fallback despite a successful mint: stdout=%q", out)
 	}
 	reg, ok := loadAgent(t, stateDir)
 	if !ok || reg.AgentID != agentID || reg.Status != "unclaimed" {
 		t.Fatalf("rebuilt registration not as expected: %+v ok=%v", reg, ok)
 	}
-	if reg.ClaimURL != freshURL || reg.ClaimCode != "MINT-01" {
-		t.Fatalf("the fresh link was not persisted: %+v", reg)
+	if claim := storedClaim(t, cfgPath, agentID); claim.ClaimURL != freshURL || claim.ClaimCode != "MINT-01" {
+		t.Fatalf("the fresh link was not persisted: %+v", claim)
 	}
 	if got := platform.claimCodeCallCount(); got != 1 {
 		t.Fatalf("claim-code calls = %d, want exactly 1", got)
@@ -2630,7 +2650,7 @@ func TestALaterForegroundConnectMintsWhenThePlatformGainsTheRoute(t *testing.T) 
 
 	agentID, key := registerAgent(t, platform)
 	setupLostRegistration(t, cfg, key, true)
-	if code, out, errOut := runConnect(t, cfgPath, nil); code != exitOK || !strings.Contains(out, "not retrievable") {
+	if code, out, errOut := runConnect(t, cfgPath, nil); code != exitOK || !strings.Contains(out, "no claim link is on file for it") {
 		t.Fatalf("setup run: code=%d stdout=%q stderr=%s", code, out, errOut)
 	}
 
@@ -2644,14 +2664,14 @@ func TestALaterForegroundConnectMintsWhenThePlatformGainsTheRoute(t *testing.T) 
 		t.Fatalf("the later run did not mint and print a fresh link: stdout=%q", out)
 	}
 	reg, ok := loadAgent(t, stateDir)
-	if !ok || reg.AgentID != agentID || reg.ClaimURL != freshURL {
+	if !ok || reg.AgentID != agentID || storedClaim(t, cfgPath, agentID).ClaimURL != freshURL {
 		t.Fatalf("the fresh link was not persisted: %+v ok=%v", reg, ok)
 	}
 }
 
-// agent.json is sandbox-writable: a claim URL rewritten there to another
-// origin is treated like a lost link (invariant 12) — never printed, and
-// replaced on disk by a freshly minted one.
+// A stored claim URL off the configured platform origin (platform.base_url
+// changed since it was stored) is treated like a lost link (invariant 12) —
+// never printed, and replaced on disk by a freshly minted one.
 func TestForegroundConnectNeverPrintsAStoredClaimURLOffThePlatformOrigin(t *testing.T) {
 	withShortConnectTimings(t)
 	platform := newStubPlatform(t)
@@ -2659,19 +2679,12 @@ func TestForegroundConnectNeverPrintsAStoredClaimURLOffThePlatformOrigin(t *test
 	if code, _, errOut := runConnect(t, cfgPath, nil); code != exitOK {
 		t.Fatalf("setup connect exited %d, stderr=%s", code, errOut)
 	}
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
 	reg, ok := loadAgent(t, stateDir)
 	if !ok || reg.Status != "unclaimed" {
 		t.Fatalf("setup registration: %+v ok=%v", reg, ok)
 	}
 	const evil = "https://evil.example/claim/AB12-CD34"
-	reg.ClaimURL = evil
-	if err := store.SaveAgentRegistration(reg); err != nil {
-		t.Fatal(err)
-	}
+	seedClaim(t, cfgPath, reg.AgentID, evil, "")
 
 	code, out, errOut := runConnect(t, cfgPath, nil)
 	if code != exitOK {
@@ -2684,15 +2697,12 @@ func TestForegroundConnectNeverPrintsAStoredClaimURLOffThePlatformOrigin(t *test
 	if !strings.Contains(out, "claim this agent:") || !strings.Contains(out, freshURL) {
 		t.Fatalf("connect did not mint and print a fresh link in its place: stdout=%q", out)
 	}
-	if reg, _ := loadAgent(t, stateDir); reg.ClaimURL != freshURL {
+	if reg, _ := loadAgent(t, stateDir); storedClaim(t, cfgPath, reg.AgentID).ClaimURL != freshURL {
 		t.Fatalf("the off-origin link was not replaced on disk: %+v", reg)
 	}
 
 	// With no way to mint, nothing is printed in its place.
-	reg.ClaimURL = evil
-	if err := store.SaveAgentRegistration(reg); err != nil {
-		t.Fatal(err)
-	}
+	seedClaim(t, cfgPath, reg.AgentID, evil, "")
 	platform.setClaimCodeRouteDisabled(true)
 	code, out, errOut = runConnect(t, cfgPath, nil)
 	if code != exitOK {
@@ -2722,7 +2732,7 @@ func TestResumeNeverMintsAClaimLink(t *testing.T) {
 	if code, _, errOut := runConnect(t, cfgPath, nil); code != exitOK {
 		t.Fatalf("setup connect exited %d, stderr=%s", code, errOut)
 	}
-	if reg, ok := loadAgent(t, stateDir); !ok || reg.ClaimURL != "" {
+	if reg, ok := loadAgent(t, stateDir); !ok || storedClaim(t, cfgPath, reg.AgentID).ClaimURL != "" {
 		t.Fatalf("setup did not leave the no-link state: %+v ok=%v", reg, ok)
 	}
 	attemptsAfterForeground := platform.claimCodeCallCount()
@@ -2735,7 +2745,7 @@ func TestResumeNeverMintsAClaimLink(t *testing.T) {
 	if got := platform.claimCodeCallCount(); got != attemptsAfterForeground {
 		t.Fatalf("-resume reached the claim-code route: attempts %d -> %d", attemptsAfterForeground, got)
 	}
-	if reg, ok := loadAgent(t, stateDir); !ok || reg.ClaimURL != "" {
+	if reg, ok := loadAgent(t, stateDir); !ok || storedClaim(t, cfgPath, reg.AgentID).ClaimURL != "" {
 		t.Fatalf("-resume changed the stored claim state: %+v ok=%v", reg, ok)
 	}
 }
@@ -2996,7 +3006,7 @@ func TestForegroundConnectReplacesExpiredRegistrationAndPropagatesNewIdentity(t 
 		t.Fatalf("Register calls = %d, want exactly 2", registerCalls)
 	}
 	reg, ok := loadAgent(t, stateDir)
-	if !ok || reg.AgentID != "agent-2" || reg.ClaimURL != newURL || reg.ClaimCode != "EF56-GH02" || reg.Status != "unclaimed" {
+	if !ok || reg.AgentID != "agent-2" || storedClaim(t, cfgPath, "agent-2").ClaimURL != newURL || storedClaim(t, cfgPath, "agent-2").ClaimCode != "EF56-GH02" || reg.Status != "unclaimed" {
 		t.Fatalf("durable replacement registration = %+v ok=%v", reg, ok)
 	}
 	if got, err := os.ReadFile(credentialsPath(mustLoadConfig(t, cfgPath).Miner)); err != nil || !strings.Contains(string(got), "sr-stubkey-2") {
@@ -3103,10 +3113,11 @@ func TestExpiredRegistrationWithMissingCredentialRefusesForceReplacement(t *test
 		t.Fatal(err)
 	}
 	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-expired", Status: "expired", ClaimURL: platform.srv.URL + "/claim/OLD", ClaimCode: "OLD",
+		AgentID: "agent-expired", Status: "expired",
 	}); err != nil {
 		t.Fatal(err)
 	}
+	seedClaim(t, cfgPath, "agent-expired", platform.srv.URL+"/claim/OLD", "OLD")
 	cfg := mustLoadConfig(t, cfgPath)
 	credPath := credentialsPath(cfg.Miner)
 	if err := os.Remove(credPath); err != nil && !os.IsNotExist(err) {
@@ -3144,10 +3155,11 @@ func TestExpiredRegistrationStatusFailureRefusesForceReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-expired", Status: "expired", ClaimURL: platform.srv.URL + "/claim/OLD", ClaimCode: "OLD",
+		AgentID: "agent-expired", Status: "expired",
 	}); err != nil {
 		t.Fatal(err)
 	}
+	seedClaim(t, cfgPath, "agent-expired", platform.srv.URL+"/claim/OLD", "OLD")
 	cfg := mustLoadConfig(t, cfgPath)
 	credPath := credentialsPath(cfg.Miner)
 	if err := writeCredentials(credPath, credentials{APIKey: "sr-old-key"}); err != nil { // #nosec G101 -- canned test credential
@@ -3230,7 +3242,7 @@ func TestPendingRegistrationRecoveryPublishesWithoutRegister(t *testing.T) {
 		t.Fatalf("pending recovery changed the completed Register count: %d", registerCalls)
 	}
 	reg, ok := loadAgent(t, stateDir)
-	if !ok || reg.AgentID != pending.AgentID || reg.ClaimURL != pending.ClaimURL {
+	if !ok || reg.AgentID != pending.AgentID || storedClaim(t, cfgPath, pending.AgentID).ClaimURL != pending.ClaimURL {
 		t.Fatalf("journaled registration was not published: %+v ok=%v", reg, ok)
 	}
 	if got, err := os.ReadFile(credentialsPath(cfg.Miner)); err != nil || !strings.Contains(string(got), pending.Key) {
@@ -3295,7 +3307,7 @@ func TestPendingJournalRecoveryNeverCallsMeEvenWithACorruptRegistrationAndCreden
 		t.Fatalf("Register calls = %d, want 1 (the journal's own completed Register, no fresh one)", registerCalls)
 	}
 	reg, ok := loadAgent(t, stateDir)
-	if !ok || reg.AgentID != pending.AgentID || reg.ClaimURL != pending.ClaimURL {
+	if !ok || reg.AgentID != pending.AgentID || storedClaim(t, cfgPath, pending.AgentID).ClaimURL != pending.ClaimURL {
 		t.Fatalf("journaled registration was not published: %+v ok=%v", reg, ok)
 	}
 	if got, err := os.ReadFile(filepath.Join(stateDir, "agent.json.corrupt")); err != nil || string(got) != string(corruptBytes) { // #nosec G304 -- test controls its temporary state directory
@@ -3317,10 +3329,11 @@ func TestPendingExpiredReplacementRecoveryCompletesAcrossRestart(t *testing.T) {
 	}
 	oldURL := platform.srv.URL + "/claim/OLD"
 	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-old", ClaimURL: oldURL, ClaimCode: "OLD", Status: "expired",
+		AgentID: "agent-old", Status: "expired",
 	}); err != nil {
 		t.Fatal(err)
 	}
+	seedClaim(t, cfgPath, "agent-old", oldURL, "OLD")
 	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-old-key"}); err != nil { // #nosec G101 -- canned test credential
 		t.Fatal(err)
 	}
@@ -3345,7 +3358,7 @@ func TestPendingExpiredReplacementRecoveryCompletesAcrossRestart(t *testing.T) {
 		t.Fatalf("restart recovery minted another registration: %d", registerCalls)
 	}
 	reg, ok := loadAgent(t, stateDir)
-	if !ok || reg.AgentID != "agent-new" || reg.ClaimURL != platform.srv.URL+"/claim/NEW" || reg.Status != "unclaimed" {
+	if !ok || reg.AgentID != "agent-new" || storedClaim(t, cfgPath, "agent-new").ClaimURL != platform.srv.URL+"/claim/NEW" || reg.Status != "unclaimed" {
 		t.Fatalf("replacement journal did not complete publication: %+v ok=%v", reg, ok)
 	}
 	if got, err := os.ReadFile(credentialsPath(cfg.Miner)); err != nil || !strings.Contains(string(got), "sr-new-key") {
@@ -3450,10 +3463,11 @@ func TestPendingRegistrationAgentConflictDoesNotOverwriteOrRegister(t *testing.T
 		t.Fatal(err)
 	}
 	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-other", ClaimURL: platform.srv.URL + "/claim/OTHER", ClaimCode: "OTHER", Status: "unclaimed",
+		AgentID: "agent-other", Status: "unclaimed",
 	}); err != nil {
 		t.Fatal(err)
 	}
+	seedClaim(t, cfgPath, "agent-other", platform.srv.URL+"/claim/OTHER", "OTHER")
 	if err := testJournal(t, cfgPath).Save(auth.PendingRegistration{
 		AgentID:        "agent-journal",
 		Key:            "sr-journal-key",

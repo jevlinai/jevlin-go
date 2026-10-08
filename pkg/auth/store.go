@@ -309,10 +309,14 @@ func (s *Store) LoadReceipt(slotID, targetEpoch uint64) (string, bool, error) {
 // client's cache of the platform's own state, re-verified against
 // GET /v1/agents/{id} on every poll — never trusted as an authority on
 // its own, only as what to resume from.
+//
+// It carries no claim link. Older versions kept claim_url and claim_code
+// here; they decode as unknown fields and are ignored, because this file is
+// in a state directory a sandboxed command can rewrite and the link is what
+// a person is told to open. The link lives in ClaimRecord, beside
+// credentials.json.
 type AgentRegistration struct {
 	AgentID            string   `json:"agent_id"`
-	ClaimURL           string   `json:"claim_url"`
-	ClaimCode          string   `json:"claim_code"`
 	Status             string   `json:"status"` // "unclaimed" | "claimed" | "expired"
 	Scopes             []string `json:"scopes,omitempty"`
 	ClaimExpiresAt     string   `json:"claim_expires_at,omitempty"`

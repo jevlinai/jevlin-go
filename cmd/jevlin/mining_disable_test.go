@@ -138,7 +138,7 @@ func TestMiningDisablePersistsOffForRegisteredUnclaimedAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-1", Status: "unclaimed", ClaimURL: "https://platform.example/claim",
+		AgentID: "agent-1", Status: "unclaimed",
 	}); err != nil {
 		t.Fatal(err)
 	}

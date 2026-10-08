@@ -213,9 +213,8 @@ func seedResumableRegistration(t *testing.T, root string) {
 		t.Fatal(err)
 	}
 	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID:  "agent-fictional-resume",
-		Status:   "unclaimed",
-		ClaimURL: "https://portal.fictional.test/claim/abc",
+		AgentID: "agent-fictional-resume",
+		Status:  "unclaimed",
 	}); err != nil {
 		t.Fatal(err)
 	}

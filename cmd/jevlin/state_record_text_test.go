@@ -26,6 +26,19 @@ func requireNoPlantedEscape(t *testing.T, what, out string) {
 	}
 }
 
+// writeClaimRecordRaw writes claim.json in home without the record's own
+// Save, which refuses what its Load refuses.
+func writeClaimRecordRaw(t *testing.T, home string, rec map[string]any) {
+	t.Helper()
+	raw, err := json.Marshal(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, claimRecordFile), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func writeAgentRecordRaw(t *testing.T, stateDir string, rec map[string]any) {
 	t.Helper()
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
@@ -37,43 +50,6 @@ func writeAgentRecordRaw(t *testing.T, stateDir string, rec map[string]any) {
 	}
 	if err := os.WriteFile(filepath.Join(stateDir, "agent.json"), raw, 0o600); err != nil {
 		t.Fatal(err)
-	}
-}
-
-// The triage's residual for the claim-link check: an on-origin claim_url
-// passes it, and the claim_code beside it went to connect's stdout raw. A
-// foreground connect now treats the record as corrupt and rebuilds it from
-// the platform, which knows the real code.
-func TestAPlantedClaimCodeIsRebuiltFromThePlatformNotPrinted(t *testing.T) {
-	withShortConnectTimings(t)
-	platform := newStubPlatform(t)
-	cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
-	cfg := mustLoadConfig(t, cfgPath)
-	agentID, key := registerAgent(t, platform)
-	setupLostRegistration(t, cfg, key, false)
-	writeAgentRecordRaw(t, stateDir, map[string]any{
-		"agent_id": agentID, "status": "unclaimed",
-		"claim_url":  platform.srv.URL + "/claim/AB12-CD34",
-		"claim_code": plantedEscapes,
-	})
-
-	code, out, errOut := runConnect(t, cfgPath, nil)
-	requireNoPlantedEscape(t, "connect", out+errOut)
-	if code != exitOK {
-		t.Fatalf("connect exited %d\nstdout=%s\nstderr=%s", code, out, errOut)
-	}
-	if platform.meCallCount() != 1 {
-		t.Fatalf("the record was not rebuilt from /v1/agents/me: %d calls", platform.meCallCount())
-	}
-	reg, ok := loadAgent(t, stateDir)
-	if !ok || reg.AgentID != agentID || reg.ClaimCode != "AB12-CD34" {
-		t.Fatalf("rebuilt record = %+v ok=%v", reg, ok)
-	}
-	if !strings.Contains(out, "code: AB12-CD34") {
-		t.Fatalf("connect did not print the platform's own code:\n%s", out)
-	}
-	if !lexists(filepath.Join(stateDir, "agent.json.corrupt")) {
-		t.Fatal("the planted record was not set aside as evidence")
 	}
 }
 

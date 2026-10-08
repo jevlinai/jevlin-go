@@ -217,7 +217,7 @@ func statusEnvelope(f agentIdentityFacts, as *statusASFacts) commandEnvelope {
 		report.AgentErr = boundMessage(f.RegistrationErr.Error())
 	} else if f.HasRegistration {
 		reg := f.Registration
-		claimURL, claimCode := printableClaimArtifacts(reg, f.PlatformBaseURL)
+		claimURL, claimCode := printableClaimArtifacts(f.Claim, f.PlatformBaseURL)
 		agent := &statusAgentJSON{
 			AgentID:        reg.AgentID,
 			Status:         reg.Status,
@@ -335,7 +335,8 @@ func connectEnvelope(cfgPath string, getenv func(string) string, exitCode int, n
 				report.Status = reg.Status
 				report.Claimed = reg.Status == "claimed"
 				report.Scopes = reg.Scopes
-				report.ClaimURL, report.ClaimCode = printableClaimArtifacts(reg, cfg.Platform.BaseURL)
+				claim, _ := claimFor(cfg.Miner, reg.AgentID, nil)
+				report.ClaimURL, report.ClaimCode = printableClaimArtifacts(claim, cfg.Platform.BaseURL)
 				report.ClaimExpiresAt = reg.ClaimExpiresAt
 				report.EnrolledSlot = reg.LastEnrollmentSlot
 				report.SlotRefusal = reg.SlotRefusal
@@ -380,12 +381,13 @@ func connectOutcome(exitCode int, status string) (code string, retryable bool, a
 	}
 }
 
-// printableClaimArtifacts is the stored claim URL and code as a report may
-// show them: both dropped together when the URL fails invariant 12, since
-// a code is only meaningful beside the link it was issued with.
-func printableClaimArtifacts(reg auth.AgentRegistration, baseURL string) (claimURL, claimCode string) {
-	if reg.ClaimURL != "" && printableClaimURL(reg.ClaimURL, baseURL, nil) == "" {
+// printableClaimArtifacts is the claim URL and code on file beside
+// credentials.json as a report may show them: both dropped together when
+// the URL fails invariant 12, since a code is only meaningful beside the
+// link it was issued with.
+func printableClaimArtifacts(claim auth.ClaimBootstrap, baseURL string) (claimURL, claimCode string) {
+	if printableClaimURL(claim.ClaimURL, baseURL, nil) == "" {
 		return "", ""
 	}
-	return reg.ClaimURL, reg.ClaimCode
+	return claim.ClaimURL, claim.ClaimCode
 }

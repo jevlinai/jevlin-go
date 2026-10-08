@@ -231,7 +231,7 @@ func TestTheHumanDecisionGateMatchesWhereTheQuestionIsActuallyAsked(t *testing.T
 			t.Fatal(err)
 		}
 		if err := store.SaveAgentRegistration(auth.AgentRegistration{
-			AgentID: "agent-fictional", Status: status, ClaimURL: "https://portal.fictional.test/c",
+			AgentID: "agent-fictional", Status: status,
 		}); err != nil {
 			t.Fatal(err)
 		}

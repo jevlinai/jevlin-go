@@ -50,8 +50,8 @@ func stringFieldsOf(t *testing.T, typ reflect.Type) []string {
 func validAgentRegistrationJSON(t *testing.T) map[string]any {
 	t.Helper()
 	raw, err := json.Marshal(AgentRegistration{
-		AgentID: "agent-1", ClaimURL: "https://platform.example/claim/AB12", ClaimCode: "AB12-CD34",
-		Status: "claimed", Scopes: []string{"search", "mining"}, ClaimExpiresAt: "2026-09-16T00:00:00Z",
+		AgentID: "agent-1",
+		Status:  "claimed", Scopes: []string{"search", "mining"}, ClaimExpiresAt: "2026-09-16T00:00:00Z",
 		LastEnrollmentSlot: "twilight-slot-3", LastEnrollmentAt: "2026-09-16T00:00:00Z",
 		SlotRefusal: "more than one slot offered",
 	})

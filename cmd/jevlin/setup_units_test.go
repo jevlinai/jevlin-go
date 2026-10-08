@@ -238,7 +238,7 @@ func TestUserEnvironmentJournalRecordsDeltas(t *testing.T) {
 }
 
 func TestIdentityBundleConflictsWithADestinationAgentJSON(t *testing.T) {
-	for _, existing := range []string{"agent.json", "refresh.token", "registration_pending.json", "participation.secret", credentialsFile, "home/" + registrationJournalFile, "home/" + payoutRecordFile} {
+	for _, existing := range []string{"agent.json", "refresh.token", "registration_pending.json", "participation.secret", credentialsFile, "home/" + registrationJournalFile, "home/" + payoutRecordFile, "home/" + claimRecordFile} {
 		t.Run(existing, func(t *testing.T) {
 			root := t.TempDir()
 			src, dst := filepath.Join(root, "src"), filepath.Join(root, "dst")
@@ -252,6 +252,9 @@ func TestIdentityBundleConflictsWithADestinationAgentJSON(t *testing.T) {
 			}
 			if existing == "home/"+payoutRecordFile {
 				rel = payoutRecordFile
+			}
+			if existing == "home/"+claimRecordFile {
+				rel = claimRecordFile
 			}
 			p := filepath.Join(dst, rel)
 			if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
@@ -286,6 +289,9 @@ func TestIdentityBundleMovesStateAndKeyTogether(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(src, payoutRecordFile), []byte(`{"address":"twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(src, claimRecordFile), []byte(`{"agent_id":"old-agent","claim_url":"https://platform.example/claim/X"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(filepath.Join(dst, "state"), 0o700); err != nil { // setup's own empty state/
 		t.Fatal(err)
 	}
@@ -293,7 +299,7 @@ func TestIdentityBundleMovesStateAndKeyTogether(t *testing.T) {
 	if err := a.run(); err != nil {
 		t.Fatalf("unexpected adoption error: %v", err)
 	}
-	for _, rel := range []string{filepath.Join("state", "refresh.token"), filepath.Join("state", "dpop.key"), credentialsFile, payoutRecordFile} {
+	for _, rel := range []string{filepath.Join("state", "refresh.token"), filepath.Join("state", "dpop.key"), credentialsFile, payoutRecordFile, claimRecordFile} {
 		if !lexists(filepath.Join(dst, rel)) || lexists(filepath.Join(src, rel)) {
 			t.Errorf("%s did not move with the bundle", rel)
 		}

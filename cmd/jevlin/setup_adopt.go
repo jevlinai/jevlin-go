@@ -49,7 +49,9 @@ import (
 // identity for the same participant. It sits beside credentials.json; the
 // state/ copy is an older release's and connect discards it unread. The
 // payout record is one too: it is the address the next resume declares,
-// and a directory holding it holds a participant's decision.
+// and a directory holding it holds a participant's decision. The claim
+// record is not: it moves with the identity, but it is only ever written
+// beside a credential, which is a marker already.
 var installationMarkers = []string{
 	filepath.Join("wallet", walletKeyFile),
 	filepath.Join("state", "refresh.token"),
@@ -363,9 +365,9 @@ func (a *adoption) run() error {
 	}
 	t := a.txn(
 		filepath.Join(a.src, "state"), filepath.Join(a.src, credentialsFile), filepath.Join(a.src, registrationJournalFile),
-		filepath.Join(a.src, payoutRecordFile), filepath.Join(a.src, "wallet"),
+		filepath.Join(a.src, payoutRecordFile), filepath.Join(a.src, claimRecordFile), filepath.Join(a.src, "wallet"),
 		filepath.Join(a.dst, "state"), filepath.Join(a.dst, credentialsFile), filepath.Join(a.dst, registrationJournalFile),
-		filepath.Join(a.dst, payoutRecordFile), filepath.Join(a.dst, "wallet"),
+		filepath.Join(a.dst, payoutRecordFile), filepath.Join(a.dst, claimRecordFile), filepath.Join(a.dst, "wallet"),
 		a.aside("state.unenrolled"), a.aside("wallet.incomplete"),
 	)
 	if err := a.identity(t); err != nil {
@@ -390,21 +392,23 @@ func (a *adoption) aside(prefix string) string {
 }
 
 // identity is the custody transaction's first stage: state/ and
-// credentials.json together, with the registration journal and the payout
-// record that sit beside the credential, or none of them. A destination that already holds an
-// identity is returned as a conflict; it is found before this stage moves
-// anything, and this stage is the first.
+// credentials.json together, with the registration journal, the payout
+// record and the claim record that sit beside the credential, or none of
+// them. A destination that already holds an identity is returned as a
+// conflict; it is found before this stage moves anything, and this stage is
+// the first.
 func (a *adoption) identity(t *bundleTxn) error {
 	srcState, srcCreds := filepath.Join(a.src, "state"), filepath.Join(a.src, credentialsFile)
 	dstState, dstCreds := filepath.Join(a.dst, "state"), filepath.Join(a.dst, credentialsFile)
 	srcJournal, dstJournal := filepath.Join(a.src, registrationJournalFile), filepath.Join(a.dst, registrationJournalFile)
 	srcPayout, dstPayout := filepath.Join(a.src, payoutRecordFile), filepath.Join(a.dst, payoutRecordFile)
+	srcClaim, dstClaim := filepath.Join(a.src, claimRecordFile), filepath.Join(a.dst, claimRecordFile)
 	aside := a.aside("state.unenrolled")
-	hasState, hasCreds, hasJournal, hasPayout := lexists(srcState), lexists(srcCreds), lexists(srcJournal), lexists(srcPayout)
-	if !hasState && !hasCreds && !hasJournal && !hasPayout {
+	hasState, hasCreds, hasJournal, hasPayout, hasClaim := lexists(srcState), lexists(srcCreds), lexists(srcJournal), lexists(srcPayout), lexists(srcClaim)
+	if !hasState && !hasCreds && !hasJournal && !hasPayout && !hasClaim {
 		return nil
 	}
-	for _, p := range []string{srcState, srcCreds, srcJournal, srcPayout} {
+	for _, p := range []string{srcState, srcCreds, srcJournal, srcPayout, srcClaim} {
 		if !lexists(p) {
 			continue
 		}
@@ -424,7 +428,7 @@ func (a *adoption) identity(t *bundleTxn) error {
 	// The payout record is the address the next resume declares: one at the
 	// destination is that installation's choice, never overwritten by the
 	// adopted one's.
-	for _, p := range []string{dstCreds, dstJournal, dstPayout} {
+	for _, p := range []string{dstCreds, dstJournal, dstPayout, dstClaim} {
 		if lexists(p) {
 			return conflict(p)
 		}
@@ -479,6 +483,11 @@ func (a *adoption) identity(t *bundleTxn) error {
 	}
 	if hasPayout {
 		if err := t.move(srcPayout, dstPayout); err != nil {
+			return t.fail(identityBundle, err)
+		}
+	}
+	if hasClaim {
+		if err := t.move(srcClaim, dstClaim); err != nil {
 			return t.fail(identityBundle, err)
 		}
 	}

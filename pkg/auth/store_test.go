@@ -148,8 +148,6 @@ func TestSaveLoadAgentRegistrationRoundTrips(t *testing.T) {
 	}
 	want := AgentRegistration{
 		AgentID:        "agent-1",
-		ClaimURL:       "https://platform.nyks.dev/claim/AB12-CD34",
-		ClaimCode:      "AB12-CD34",
 		Status:         "unclaimed",
 		ClaimExpiresAt: "2026-09-16T00:00:00Z",
 	}
@@ -157,8 +155,8 @@ func TestSaveLoadAgentRegistrationRoundTrips(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, ok, err := s.LoadAgentRegistration()
-	if err != nil || !ok || got.AgentID != want.AgentID || got.ClaimURL != want.ClaimURL ||
-		got.ClaimCode != want.ClaimCode || got.Status != want.Status || got.ClaimExpiresAt != want.ClaimExpiresAt ||
+	if err != nil || !ok || got.AgentID != want.AgentID ||
+		got.Status != want.Status || got.ClaimExpiresAt != want.ClaimExpiresAt ||
 		len(got.Scopes) != 0 {
 		t.Fatalf("got %+v ok=%v err=%v, want %+v", got, ok, err, want)
 	}

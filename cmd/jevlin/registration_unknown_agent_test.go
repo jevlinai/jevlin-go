@@ -110,8 +110,10 @@ func TestConnectRebuildsAClaimedRecordTheKeyDoesNotKnow(t *testing.T) {
 	}
 }
 
-// The resume never rebuilds (invariant 13), and -force replaces rather
-// than recovers: neither asks /v1/agents/me, and agent.json is untouched.
+// The resume never rebuilds (invariant 13) and never asks /v1/agents/me.
+// -force does not rebuild either: it may ask, so as to say what it found,
+// but agent.json is untouched, and it never tells the participant to run
+// the command they just ran.
 func TestNeitherTheResumeNorForceRebuildsAnUnknownAgent(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -132,8 +134,11 @@ func TestNeitherTheResumeNorForceRebuildsAnUnknownAgent(t *testing.T) {
 				t.Fatal(err)
 			}
 			_, out, errOut := runConnect(t, cfgPath, nil, tc.args...)
-			if n := platform.meCallCount(); n != 0 {
+			if n := platform.meCallCount(); n != 0 && tc.args[0] == "-resume" {
 				t.Fatalf("%s asked /v1/agents/me %d times\nstdout=%s\nstderr=%s", tc.name, n, out, errOut)
+			}
+			if tc.args[0] == "-force" && strings.Contains(out+errOut, "connect -force") {
+				t.Fatalf("%s told the participant to run connect -force:\n%s%s", tc.name, out, errOut)
 			}
 			after, err := os.ReadFile(filepath.Join(stateDir, "agent.json")) // #nosec G304 -- the test's own state dir
 			if err != nil {

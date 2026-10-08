@@ -56,6 +56,7 @@ const (
 	credentialsVersion      = 1
 	registrationJournalFile = "registration_pending.json"
 	payoutRecordFile        = "payout.json"
+	claimRecordFile         = "claim.json"
 
 	apiKeyEnv = "JEVLIN_API_KEY" // #nosec G101 -- an env var NAME, not a credential value
 
@@ -139,6 +140,43 @@ func savePayoutAddress(m config.Miner, address string) error {
 		return err
 	}
 	return record.Save(address)
+}
+
+// claimRecord is claim.json beside credentials.json: the claim link and
+// code, which only an unsandboxed foreground run writes (auth.ClaimRecord).
+func claimRecord(m config.Miner) (*auth.ClaimRecord, error) {
+	if m.IntakeDir == "" {
+		return nil, errors.New("no miner.intake_dir, so no directory for the claim record")
+	}
+	return auth.OpenClaimRecord(minerRoot(m))
+}
+
+// claimFor is the stored claim link for agentID, ok=false when none is on
+// file for that agent. A record that cannot be read is reported on stderr
+// (when given) and treated as absent: the caller's answer to a missing link
+// is a re-mint or the no-link message, never another source.
+func claimFor(m config.Miner, agentID string, stderr io.Writer) (auth.ClaimBootstrap, bool) {
+	record, err := claimRecord(m)
+	if err != nil {
+		return auth.ClaimBootstrap{}, false
+	}
+	b, ok, err := record.For(agentID)
+	if err != nil {
+		if stderr != nil {
+			fmt.Fprintln(stderr, "jevlin: the claim record beside credentials.json could not be read:", err)
+		}
+		return auth.ClaimBootstrap{}, false
+	}
+	return b, ok
+}
+
+// saveClaim writes the claim link beside credentials.json.
+func saveClaim(m config.Miner, b auth.ClaimBootstrap) error {
+	record, err := claimRecord(m)
+	if err != nil {
+		return err
+	}
+	return record.Save(b)
 }
 
 // platformKey uses only the credential connect stored for platform calls.

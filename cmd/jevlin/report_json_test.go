@@ -297,13 +297,13 @@ func TestConnectJSONExposesClaimArtifactsAndNoCredential(t *testing.T) {
 	reg := auth.AgentRegistration{
 		AgentID:        "agent-fictional-9",
 		Status:         "unclaimed",
-		ClaimURL:       config.DefaultPlatformBaseURL + "/claim/abc123",
-		ClaimCode:      "ABC-123",
 		ClaimExpiresAt: "2026-09-13T00:00:00Z",
 	}
 	if err := store.SaveAgentRegistration(reg); err != nil {
 		t.Fatal(err)
 	}
+	claim := auth.ClaimBootstrap{AgentID: reg.AgentID, ClaimURL: config.DefaultPlatformBaseURL + "/claim/abc123", ClaimCode: "ABC-123"}
+	seedClaim(t, cfgPath, claim.AgentID, claim.ClaimURL, claim.ClaimCode)
 	if err := writeCredentials(filepath.Join(root, "credentials.json"), credentials{APIKey: key}); err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +313,7 @@ func TestConnectJSONExposesClaimArtifactsAndNoCredential(t *testing.T) {
 	env := decodeCommandEnvelope(t, buf.String(), "connect")
 	data := dataOf(t, env)
 
-	if data["claim_url"] != reg.ClaimURL || data["claim_code"] != reg.ClaimCode {
+	if data["claim_url"] != claim.ClaimURL || data["claim_code"] != claim.ClaimCode {
 		t.Errorf("claim artifacts are not explicit fields: %v", data)
 	}
 	if data["agent_id"] != reg.AgentID || data["status"] != "unclaimed" || data["claimed"] != false {
@@ -334,25 +334,26 @@ func TestConnectJSONExposesClaimArtifactsAndNoCredential(t *testing.T) {
 	}
 }
 
-// agent.json is sandbox-writable, so a stored claim URL off the configured
-// platform.base_url origin (invariant 12) is never shown: not by status's
-// text or JSON report, and not by connect's JSON envelope.
+// A claim link is never shown unless it is on file beside credentials.json
+// and still on the configured platform.base_url origin (invariant 12): not
+// by status's text or JSON report, and not by connect's JSON envelope. Each
+// bad link is planted twice, the way a sandboxed command would plant it in
+// agent.json (which no longer holds a link at all) and as a claim record
+// whose link fails the check, written raw because the record's own Save
+// refuses a control character.
 func TestAStoredClaimURLOffThePlatformOriginIsNeverReported(t *testing.T) {
 	for _, bad := range []string{
 		"https://evil.example/claim/abc123",
 		"http://platform.nyks.dev/claim/abc123",
 		"https://platform.nyks.dev.evil.example/claim/abc123",
+		"https://platform.nyks.dev/claim/abc123 https://evil.example/claim",
 		"https://platform.nyks.dev/claim/\x1b]8;;https://evil.example\x07x",
 	} {
 		cfgPath, root, _ := statusFixture(t)
-		// Written the way a sandboxed command would, not through
-		// SaveAgentRegistration, which refuses a control character itself.
 		writeAgentRecordRaw(t, filepath.Join(root, "state"), map[string]any{
 			"agent_id": "agent-fictional-9", "status": "unclaimed", "claim_url": bad, "claim_code": "ABC-123",
 		})
-		// A control character makes the whole record unreadable
-		// (LoadAgentRegistration); an off-origin link alone hides the link.
-		hasEscape := strings.ContainsAny(bad, "\x1b\x07")
+		writeClaimRecordRaw(t, root, map[string]any{"agent_id": "agent-fictional-9", "claim_url": bad, "claim_code": "ABC-123"})
 
 		var text, textErr bytes.Buffer
 		if code := statusMain([]string{"-config", cfgPath}, &text, &textErr, noEnv); code != exitOK {
@@ -365,10 +366,7 @@ func TestAStoredClaimURLOffThePlatformOriginIsNeverReported(t *testing.T) {
 		var connectJSON bytes.Buffer
 		emitMachine(&connectJSON, connectEnvelope(cfgPath, noEnv, exitOK, ""))
 
-		switch {
-		case hasEscape && !strings.Contains(textErr.String(), "registration on file could not be read"):
-			t.Errorf("status did not say the record cannot be read:\n%s", textErr.String())
-		case !hasEscape && !strings.Contains(text.String(), "agent:  unclaimed"):
+		if !strings.Contains(text.String(), "agent:  unclaimed") {
 			t.Errorf("status no longer reports the unclaimed agent:\n%s", text.String())
 		}
 		requireNoPlantedEscape(t, "status", text.String()+textErr.String()+statusJSON.String()+statusJSONErr.String()+connectJSON.String())
