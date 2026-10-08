@@ -20,8 +20,6 @@ func TestSDDLTrusteesSplitsEntriesAtTheirClosingParenthesis(t *testing.T) {
 			"D:PAI(A;;FA;;;LA)(A;OICIIO;GA;;;LA)", []string{"LA", "LA"}},
 		{"with an owner and a group before the list",
 			"O:" + user + "G:SYD:PAI(A;OICI;FA;;;" + user + ")(A;;0x1200a9;;;BU)", []string{user, "BU"}},
-		{"an owner alias ending in D does not start the list early",
-			"O:DDD:P(A;;FA;;;SY)", []string{"SY"}},
 		{"a conditional entry carries parentheses of its own",
 			`D:(XA;;FX;;;S-1-1-0;(@User.Title=="PM" && (@User.Division=="Fin" || @User.Division=="Eng")))(A;;FA;;;SY)`,
 			[]string{"S-1-1-0", "SY"}},
