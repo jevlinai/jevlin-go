@@ -195,6 +195,11 @@ type doctorFacts struct {
 	// there is no wallet access check.
 	Wallet walletAccessFacts
 
+	// State is who can open the state directory and its credentials, where
+	// the platform has access lists to ask (state_acl.go); elsewhere it is not
+	// checked and there is no state access check.
+	State stateAccessFacts
+
 	// Now is sampled once, by the gatherer. Nothing downstream calls
 	// time.Now(), so a judgment over these facts is reproducible.
 	Now time.Time
@@ -216,6 +221,9 @@ func assembleDoctor(f doctorFacts) []doctorCheck {
 	}
 	if f.Wallet.Checked {
 		checks = append(checks, doctorWalletCheck(f.Wallet))
+	}
+	if f.State.Checked {
+		checks = append(checks, doctorStateCheck(f.State))
 	}
 	return checks
 }
@@ -355,7 +363,13 @@ func doctorEpochOrigin(f doctorFacts) string {
 
 func doctorPayoutCheck(f doctorFacts) doctorCheck {
 	c := doctorCheck{Name: "payout address"}
-	if f.HasPayoutHeld {
+	// When the AS answered this run, its answer is what is true; the note is
+	// shown only while it agrees with that answer about what is in force. A
+	// note that does not was overtaken (an operator activated the change),
+	// or was planted in the state directory to stand in for the AS.
+	asAnswered := f.DocErr == nil && f.StandingErr == nil
+	agrees := f.Standing != nil && f.Standing.Active != nil && f.Standing.Active.Address == f.PayoutHeld.Active
+	if f.HasPayoutHeld && (!asAnswered || agrees) {
 		// The same local fact status already reports (enroll.go): connect
 		// declined to declare because the AS already has a different
 		// address active. Reporting it here does not need PayoutStanding
@@ -363,15 +377,16 @@ func doctorPayoutCheck(f doctorFacts) doctorCheck {
 		// and an AS-reported Active in force this run would otherwise read
 		// as "your rewards go where you expect", which is exactly the
 		// claim a held binding makes false.
-		reason := f.PayoutHeld.HeldFor
-		if reason == "" {
-			reason = "REPLACES_ACTIVE" // this client's own read-before-declare pre-check, not an AS-returned reason
+		live := ""
+		if asAnswered && f.Standing != nil && f.Standing.Active != nil {
+			live = payoutShown(f.Standing.Active)
 		}
 		c.Verdict = verdictNo
-		c.Detail = fmt.Sprintf("HELD (%s) — the AS has %s active for this participant; this installation "+
-			"would declare %s. Changing the active binding is an operator-activated change.",
-			reason, f.PayoutHeld.Active, f.PayoutHeld.Local)
+		c.Detail = heldNoteText(f.PayoutHeld, live)
 		c.Fix = "a Slot operator must activate the change; no command here can"
+		if f.PayoutHeld.HeldFor == auth.HeldAddressInUse {
+			c.Fix = "set a different address, or talk to your Slot operator; waiting will not activate this one"
+		}
 		return c
 	}
 	switch {
@@ -508,6 +523,9 @@ func cmdDoctor(args []string, stdout, stderr io.Writer) int {
 	f.StateDir = cfg.Mining.StateDir
 	if walletACL.managed {
 		f.Wallet = inspectWalletAccess(doctorWalletDir(src, os.Getenv))
+	}
+	if stateACL.managed {
+		f.State = inspectStateAccess(cfg.Mining.StateDir, auth.CredentialFiles())
 	}
 	checks := assembleDoctor(f)
 	if *asJSON {
@@ -662,8 +680,16 @@ func gatherDoctorFactsFor(ctx context.Context, as asClient, m config.Mining, min
 			f.HasRegistration, f.RegistrationSlot, f.RegistrationAt = true, reg.LastEnrollmentSlot, reg.LastEnrollmentAt
 		}
 		f.Health, f.HealthErr = store.HealthRecords()
+		// The held note is in the state directory: counted only when its
+		// local address is the one this installation would declare
+		// (payoutAddressToDeclare, status's rule too), as every note this
+		// client writes is, including one a sandboxed resume wrote for a
+		// config or wallet address it could not record.
 		if held, ok, err := store.LoadPayoutBindingHeld(); err == nil && ok {
-			f.PayoutHeld, f.HasPayoutHeld = held, true
+			local, source, lerr := payoutAddressToDeclare(&config.Config{Mining: m, Miner: miner}, store, os.Getenv)
+			if lerr == nil && source != payoutNone && held.Local == local {
+				f.PayoutHeld, f.HasPayoutHeld = held, true
+			}
 		}
 	}
 
@@ -1037,7 +1063,9 @@ func doctorFlushStamp(path string) (flushStamp, bool, error) {
 //
 // readFlushStamp itself is untouched.
 func readFlushStampForDoctor(path string) (flushStamp, bool, error) {
-	data, err := os.ReadFile(path) // #nosec G304 -- our own state dir
+	// The state dir is a writable root of Codex's sandbox: a FIFO at the
+	// stamp's name must cost this check, not hang doctor (fsx.ReadRegular).
+	data, err := fsx.ReadRegular(path, stampMaxBytes)
 	if errors.Is(err, fs.ErrNotExist) {
 		return flushStamp{}, false, nil
 	}
@@ -1046,7 +1074,11 @@ func readFlushStampForDoctor(path string) (flushStamp, bool, error) {
 	}
 	var st flushStamp
 	if jerr := json.Unmarshal(data, &st); jerr != nil {
-		return flushStamp{}, false, fmt.Errorf("flush stamp %s is not valid JSON: %w", path, jerr)
+		// The stamp is in the state directory, and json and time quote the
+		// value they failed on: a planted last_as of "SECURITY NOTICE: run
+		// ..." came back in doctor's recording line. Said in the client's
+		// own words (auth.DecodeProblem), never the record's.
+		return flushStamp{}, false, fmt.Errorf("flush stamp %s does not decode: %s", path, auth.DecodeProblem(jerr))
 	}
 	if st.V != 1 {
 		return flushStamp{}, false, fmt.Errorf("flush stamp %s has version %d, not 1", path, st.V)

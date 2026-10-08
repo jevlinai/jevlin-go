@@ -180,19 +180,30 @@ type agentOps struct {
 	stat       func(string) (os.FileInfo, error)
 	removeAll  func(string) error
 	isTerminal func() bool
+	// binaryLocation vets the binary install records; nil means
+	// checkBinaryLocation.
+	binaryLocation binaryLocationCheck
+}
+
+func (ops agentOps) binaryLocationFn() binaryLocationCheck {
+	if ops.binaryLocation != nil {
+		return ops.binaryLocation
+	}
+	return checkBinaryLocation
 }
 
 func realAgentOps() agentOps {
 	home, _ := os.UserHomeDir()
 	return agentOps{
-		home:       home,
-		lookPath:   exec.LookPath,
-		executable: os.Executable,
-		readFile:   os.ReadFile,
-		writeFile:  os.WriteFile,
-		mkdirAll:   os.MkdirAll,
-		stat:       os.Stat,
-		removeAll:  os.RemoveAll,
+		home:           home,
+		lookPath:       exec.LookPath,
+		executable:     os.Executable,
+		readFile:       os.ReadFile,
+		writeFile:      os.WriteFile,
+		mkdirAll:       os.MkdirAll,
+		stat:           os.Stat,
+		removeAll:      os.RemoveAll,
+		binaryLocation: checkBinaryLocation,
 		isTerminal: func() bool {
 			fi, err := os.Stdin.Stat()
 			return err == nil && fi.Mode()&os.ModeCharDevice != 0
@@ -463,6 +474,12 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 		fmt.Fprintln(stderr, "jevlin agents:", err)
 		return exitTransport
 	}
+	if sub == "install" {
+		if err := vetBinaryLocation(ops.binaryLocationFn(), entry.command, "jevlin agents", stderr); err != nil {
+			fmt.Fprintln(stderr, "jevlin agents:", err)
+			return exitUsage
+		}
+	}
 
 	if sub == "status" {
 		printAgentStatus(ops, paths, entry, signals, getenv, stdout)
@@ -573,6 +590,14 @@ func agentsPrefer(ops agentOps, args []string, stdout, stderr io.Writer, getenv 
 	if want == "status" {
 		fmt.Fprintf(stdout, "search default: %s\n", preferLabel(current))
 		return exitOK
+	}
+	// The skills it rewrites name the running binary, exactly as install
+	// writes them, so the same location is refused here before anything is
+	// written: run from somewhere else, prefer would repoint every installed
+	// skill at that copy.
+	if err := vetBinaryLocation(ops.binaryLocationFn(), entry.command, "jevlin agents prefer", stderr); err != nil {
+		fmt.Fprintln(stderr, "jevlin agents prefer:", err)
+		return exitUsage
 	}
 	next := preferOn
 	if want == "off" {
@@ -1780,12 +1805,33 @@ func readWithMode(ops agentOps, path string) ([]byte, os.FileMode, error) {
 // could read those files before this block existed; it could not redirect
 // where they go, and it must not be able to after it either. The state dir is
 // writable because the claim resume and the flush rotate the refresh token
-// there — a deletion-only exposure, not an exfiltration one.
+// there. That is more than a deletion exposure: a sandboxed command can leave
+// a symlink, a hard link or a FIFO at any name in these directories, which
+// hard invariant 19 (pkg/fsx/confined.go) answers for this client's own
+// writes and reads, and it can rewrite the records themselves. The records
+// that could make this client act on, or show, a writer's say-so are kept
+// beside credentials.json for that reason: the registration journal, which
+// can authorize replacing the platform credential (hard invariant 13), the
+// payout record, the address a resume declares, and the claim record, the
+// link a person is told to open. The state directory's own records are held
+// on load to what this client writes (pkg/auth/record_text.go), agent.json
+// to the platform's answer about the stored key, and what a foreground
+// flush prints, which names intake and spool files, to a terminal-safe
+// filter. What a record says within that is still the writer's.
 func codexSandboxRoots(entry binEntry, getenv func(string) string) []string {
 	cfg := configForEntry(entry, getenv)
 	if cfg == nil {
 		return nil
 	}
+	dirs := codexCandidateRoots(cfg)
+	if codexRootsProblem(entry.cfg, cfg, dirs) != "" {
+		return nil
+	}
+	return dirs
+}
+
+// codexCandidateRoots are the directories the block would grant.
+func codexCandidateRoots(cfg *config.Config) []string {
 	// Always: the claim resume writes here after every search, mining or not.
 	dirs := []string{cfg.Mining.StateDir}
 	// Only where the miner records searches — the static flag, not the
@@ -1794,6 +1840,46 @@ func codexSandboxRoots(entry binEntry, getenv func(string) string) []string {
 		dirs = append(dirs, cfg.Miner.IntakeDir, cfg.Miner.SessionsDir, cfg.Mining.SpoolDir)
 	}
 	return cleanDirs(dirs)
+}
+
+// codexSandboxProblem is codexRootsProblem for an entry, for install's note.
+func codexSandboxProblem(entry binEntry, getenv func(string) string) string {
+	cfg := configForEntry(entry, getenv)
+	if cfg == nil {
+		return ""
+	}
+	return codexRootsProblem(entry.cfg, cfg, codexCandidateRoots(cfg))
+}
+
+// codexRootsProblem is why the block must grant none of dirs, or "". Hard
+// invariant 19 rests on the installation's own directory (credentials.json,
+// flush.lock) and the config's directory not being writable from the
+// sandbox: a config rewritten there names the hosts the keys go to. A layout
+// that nests either inside a directory the block would grant is refused
+// whole rather than granted in part.
+func codexRootsProblem(cfgPath string, cfg *config.Config, dirs []string) string {
+	type protected struct{ dir, what string }
+	guard := []protected{{minerRoot(cfg.Miner), "the installation's own directory, which holds credentials.json, the payout record and flush.lock"}}
+	if cfgPath != "" {
+		guard = append(guard, protected{filepath.Dir(cfgPath), "the config's directory"})
+	}
+	for _, g := range guard {
+		for _, d := range dirs {
+			if dirWithin(g.dir, d) {
+				return fmt.Sprintf("granting %s would make %s, %s, writable from the sandbox; give state_dir, intake_dir, sessions_dir and spool_dir directories of their own", d, g.dir, g.what)
+			}
+		}
+	}
+	return ""
+}
+
+// dirWithin reports whether dir is parent or lies inside it.
+func dirWithin(dir, parent string) bool {
+	if dir == "" || parent == "" {
+		return false
+	}
+	rel, err := filepath.Rel(filepath.Clean(parent), filepath.Clean(dir))
+	return err == nil && (rel == "." || filepath.IsLocal(rel))
 }
 
 // codexOwnedRoots is every directory THIS config names that our block may

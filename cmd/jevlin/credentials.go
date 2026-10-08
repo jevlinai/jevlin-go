@@ -48,11 +48,15 @@ import (
 	"github.com/jevlinai/jevlin-go/internal/netdial"
 	"github.com/jevlinai/jevlin-go/pkg/auth"
 	"github.com/jevlinai/jevlin-go/pkg/config"
+	"github.com/jevlinai/jevlin-go/pkg/fsx"
 )
 
 const (
-	credentialsFile    = "credentials.json"
-	credentialsVersion = 1
+	credentialsFile         = "credentials.json"
+	credentialsVersion      = 1
+	registrationJournalFile = "registration_pending.json"
+	payoutRecordFile        = "payout.json"
+	claimRecordFile         = "claim.json"
 
 	apiKeyEnv = "JEVLIN_API_KEY" // #nosec G101 -- an env var NAME, not a credential value
 
@@ -101,6 +105,82 @@ func credentialsPath(m config.Miner) string {
 	return filepath.Join(minerRoot(m), credentialsFile)
 }
 
+// registrationJournal is registration_pending.json beside credentials.json,
+// outside the state directory a sandboxed agent may write.
+func registrationJournal(m config.Miner) (*auth.RegistrationJournal, error) {
+	return auth.OpenRegistrationJournal(minerRoot(m))
+}
+
+// payoutRecord is payout.json beside credentials.json, outside the state
+// directory a sandboxed agent may write: the address a resume declares
+// unattended must be one the participant decided (auth.PayoutRecord).
+func payoutRecord(m config.Miner) (*auth.PayoutRecord, error) {
+	if m.IntakeDir == "" {
+		// minerRoot would be ".", the working directory: a config always
+		// derives intake_dir from state_dir, so only a hand-built one gets
+		// here, and the record must not land wherever the command ran.
+		return nil, errors.New("no miner.intake_dir, so no directory for the payout record")
+	}
+	return auth.OpenPayoutRecord(minerRoot(m))
+}
+
+// loadPayoutAddress reads the address on file beside credentials.json.
+func loadPayoutAddress(m config.Miner) (string, bool, error) {
+	record, err := payoutRecord(m)
+	if err != nil {
+		return "", false, err
+	}
+	return record.Load()
+}
+
+// savePayoutAddress writes the address beside credentials.json.
+func savePayoutAddress(m config.Miner, address string) error {
+	record, err := payoutRecord(m)
+	if err != nil {
+		return err
+	}
+	return record.Save(address)
+}
+
+// claimRecord is claim.json beside credentials.json: the claim link and
+// code (auth.ClaimRecord), written only from the platform's answer or the
+// registration journal beside it, by a foreground run or by a resume
+// finishing that journal; a resume in Codex's sandbox cannot write here.
+func claimRecord(m config.Miner) (*auth.ClaimRecord, error) {
+	if m.IntakeDir == "" {
+		return nil, errors.New("no miner.intake_dir, so no directory for the claim record")
+	}
+	return auth.OpenClaimRecord(minerRoot(m))
+}
+
+// claimFor is the stored claim link for agentID, ok=false when none is on
+// file for that agent. A record that cannot be read is reported on stderr
+// (when given) and treated as absent: the caller's answer to a missing link
+// is a re-mint or the no-link message, never another source.
+func claimFor(m config.Miner, agentID string, stderr io.Writer) (auth.ClaimBootstrap, bool) {
+	record, err := claimRecord(m)
+	if err != nil {
+		return auth.ClaimBootstrap{}, false
+	}
+	b, ok, err := record.For(agentID)
+	if err != nil {
+		if stderr != nil {
+			fmt.Fprintln(stderr, "jevlin: the claim record beside credentials.json could not be read:", err)
+		}
+		return auth.ClaimBootstrap{}, false
+	}
+	return b, ok
+}
+
+// saveClaim writes the claim link beside credentials.json.
+func saveClaim(m config.Miner, b auth.ClaimBootstrap) error {
+	record, err := claimRecord(m)
+	if err != nil {
+		return err
+	}
+	return record.Save(b)
+}
+
 // platformKey uses only the credential connect stored for platform calls.
 // The search-only environment override does not apply to enrollment.
 func platformKey(m config.Miner) (string, error) {
@@ -144,6 +224,14 @@ func resolveAPIKey(getenv func(string) string, m config.Miner) (string, keySourc
 // readCredentials reads and validates the file. Mode checks are gated by
 // posixModes exactly as the wallet's are: Go reports 0777 for every file
 // on Windows, where the directory ACL is the guard.
+// credentialsMaxBytes bounds credentials.json, a version and a key.
+const credentialsMaxBytes = 64 << 10
+
+// credentialsCheckedHook runs between readCredentials' checks on the name and
+// its read, when a test sets it: the seam a test uses to replace the file at
+// exactly that moment. Nil in production.
+var credentialsCheckedHook func(path string)
+
 func readCredentials(path string) (*credentials, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -159,9 +247,19 @@ func readCredentials(path string) (*credentials, error) {
 		return nil, fmt.Errorf("credentials: %s is readable by others (%04o); refusing — chmod 600 it, or re-run: jevlin login",
 			path, info.Mode().Perm())
 	}
-	data, err := os.ReadFile(path) // #nosec G304 -- our own state dir plus a fixed name
+	if credentialsCheckedHook != nil {
+		credentialsCheckedHook(path)
+	}
+	// The checks above name the file; it is read by one open that refuses a
+	// link and does not wait on a FIFO, and the mode is checked again on
+	// what was opened, so the name cannot be replaced between them.
+	data, held, err := fsx.ReadRegularNoFollow(path, credentialsMaxBytes)
 	if err != nil {
 		return nil, err
+	}
+	if posixModes && held.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf("credentials: %s is readable by others (%04o); refusing — chmod 600 it, or re-run: jevlin login",
+			path, held.Mode().Perm())
 	}
 	var c credentials
 	if err := json.Unmarshal(data, &c); err != nil {

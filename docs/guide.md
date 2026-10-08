@@ -31,9 +31,22 @@ own computer, without limit, and nothing tells you they are trying.
 Install globally, as the [README](../README.md#install) shows, then run `jevlin setup`. Setup
 refuses to run from an `npx` cache or a project's `node_modules`, whose paths would disappear.
 
+Setup also refuses a binary someone else could replace, because your agents' hooks and skills
+and your PATH will name it: one under the temporary directory, or one where the file or a
+directory above it, on the path you ran or the file it links to, is owned by another user or
+writable by every user (the sticky bit is no exception). `agents install` and `agents prefer`
+refuse the same, since they write the same path. A directory its group can write is accepted
+when that group is your own or one whose members can already become root (`admin`, `wheel`,
+`sudo`, `root`), which is how Homebrew's prefix is set up. For any other group, such as
+Debian's `staff` on `/usr/local`, setup prints a warning naming the directory and goes on:
+whether anyone else is in that group is something only you can say. On Windows only the
+temporary-directory rule applies; who else can write a folder is not checked there yet. To
+fix a refusal, move the binary somewhere only you can write, such as `~/.local/bin`, and run
+it from there.
+
 | it asks | what your answer does |
 |---|---|
-| **Use it? [Y/n]** | Only when a previous installation is set aside beside `~/.jevlin`. Setup first says where it is and what it holds. Yes brings back your wallet, registration and key, and skips the questions they answer. |
+| **Use it? [Y/n]** | Only when a previous installation is set aside beside `~/.jevlin`. Setup first says where it is and what it holds. Yes brings back your wallet, registration, key, payout address and claim link, and skips the questions they answer. A payout address you already gave this time is kept. |
 | **Enable mining rewards? [y/N]** | A bare Enter is no, and search still works. Change your mind later with `jevlin mining enable` or `jevlin mining disable`. |
 | **Payout address (leave empty to create a wallet here):** | Asked only after yes. Paste an address, or leave it empty: it asks for a keyfile passphrase twice, then prints the 24 words once. Have paper ready. |
 | **Add them to ~/.zshrc? [Y/n]** | Or `~/.bashrc`, whichever your shell reads. One marked block puts the binary on PATH and sets `JEVLIN_CONFIG`, plus `JEVLIN_WALLET_DIR` when a wallet was made here. No just means longer commands. On Windows it asks **Set them for your user?** and sets PATH and `JEVLIN_CONFIG` only. |
@@ -55,16 +68,25 @@ confirmations and `wallet send`'s: a typed no exits 0, no answer exits non-zero.
 ## The claim link
 
 Setup ends by printing a claim link and waits a few minutes for you to visit it. You need not do
-it then: search already works, and using an agent later resumes the claim on its own. An interrupted registration is finished on the next run, never registered twice. A lost local
-record is rebuilt from the platform. If the platform no longer recognizes the key, `connect`
-stops, and `jevlin connect -force` replaces the credential: run it only on purpose. An
-unclaimed registration that expires is replaced by the next `jevlin connect` you run, changing
-only the platform agent and its key; a background resume never replaces one. A lost claim link
-is replaced too: for a rebuilt registration that is still unclaimed, a foreground
+it then: search already works, and using an agent later resumes the claim on its own. The link
+is kept in `~/.jevlin/claim.json`, beside your stored key, and only for the agent it was issued
+to; it is never read from the state directory, which an agent's sandbox may write. Before
+`jevlin connect` prints it, it asks the platform which agent your key belongs to: a claimed agent
+shows no link, and if the platform cannot answer, none is shown. An interrupted registration is
+finished on the next run, never registered twice. A lost or damaged local record is rebuilt from
+the platform (one holding characters that would act on your terminal counts as damaged, and
+`status` says it cannot be read and to run `jevlin connect`), and so is one that names an agent
+your key does not belong to, which is what an agent's sandbox can leave in the state directory,
+or an older version interrupted while it replaced an expired registration. If the platform no
+longer recognizes the key, `connect` stops, and `jevlin connect -force` replaces the credential:
+run it only on purpose; it never rebuilds a record. An unclaimed registration that expires is
+replaced by the next `jevlin connect` you run, changing only the platform agent and its key; a
+background resume never replaces one. A lost claim link is replaced too, including one an older
+version kept in the state directory: for a registration that is still unclaimed, a foreground
 `jevlin connect` asks the platform for a fresh link and prints it — the old code is dead the
 moment a new one is minted, which is why only a connect you run does this, never a background
-resume. Where the platform cannot mint one, the old one-line notice remains: wait for the claim
-or expiry, or `-force`.
+resume. Where the platform cannot mint one, `connect` says so; run it again later, or wait for
+the registration to expire and connect again.
 
 `jevlin connect` also re-runs onboarding by hand. `jevlin mining disable` stops mining and
 revokes access at the rewards service; your approval on the platform is revoked only at its console.
@@ -160,6 +182,18 @@ approval, and you are paid at the old one until then. Ask at
 <https://platform.nyks.dev/contact-us>, naming the new address. Nobody needs your key, your
 recovery phrase or the contents of `~/.jevlin` for this, and no operator will ask for them.
 
+The address you give `connect` or `mining enable` is kept in `~/.jevlin/payout.json`, beside your
+stored key, and declared for you as soon as mining is approved. It is not kept in the state
+directory, which an agent's sandbox may write, so nothing an agent leaves there is declared. An
+older version did keep it there: after upgrading, that address is used only when it is this
+installation's own wallet address, or when your config sets `[mining] payout_address`. Otherwise
+`status` says no address is on file and to run `jevlin mining enable` at a terminal; with mining
+already on, that asks only for the address, and never turns mining off. `jevlin payout set`
+records the address it declares here too. An agent in Codex's sandbox can still use this
+installation's access to the rewards service directly, though, and could declare an address of
+its own in the moments before yours is in force. After you approve mining, `jevlin payout show`
+should name your address.
+
 ## Sending funds
 
 `jevlin wallet send -to <address> -amount <n>` moves funds out of the wallet. If the node's
@@ -246,7 +280,8 @@ only when you say yes at a terminal, in pieces that belong together:
 | **Unsent searches, session files** | Merge one file at a time, never overwriting. |
 | **Config** | Moves only if `~/.jevlin` has none. |
 
-Symlinks are not moved, and the set-aside folder is removed only once it is empty.
+Symlinks and anything another account owns are not moved: a set-aside folder that is not yours
+is never offered. The set-aside folder is removed only once it is empty.
 
 The profile lines are one block between `# >>> jevlin >>>` and `# <<< jevlin <<<`; delete it to
 undo them. If the block no longer has exactly one start and one end line, setup leaves the file

@@ -60,6 +60,9 @@ type setupSandbox struct {
 	// case can make one of them fail.
 	move     func(from, to string) error
 	restrict func(path string, dir bool) error
+	// binaryLocation, when set, replaces the sandbox's accept-all stand-in
+	// for checkBinaryLocation.
+	binaryLocation binaryLocationCheck
 	// agentPlanObserver, when set, is threaded through to setupDeps: a case
 	// wanting the plan agentsStep actually built sets this before calling
 	// run.
@@ -122,7 +125,17 @@ func (s *setupSandbox) agentOps(interactive bool) agentOps {
 	}
 	ops.executable = func() (string, error) { return s.exe, nil }
 	ops.isTerminal = func() bool { return interactive }
+	ops.binaryLocation = s.binaryLocationCheck()
 	return ops
+}
+
+// binaryLocationCheck is the sandbox's stand-in for checkBinaryLocation:
+// the sandbox lives in a temp directory the real check refuses.
+func (s *setupSandbox) binaryLocationCheck() binaryLocationCheck {
+	if s.binaryLocation != nil {
+		return s.binaryLocation
+	}
+	return func(string) ([]string, error) { return nil, nil }
 }
 
 func (s *setupSandbox) deps(stdin io.Reader, stdout, stderr io.Writer, interactive bool) setupDeps {
@@ -143,6 +156,7 @@ func (s *setupSandbox) deps(stdin io.Reader, stdout, stderr io.Writer, interacti
 		now:               fixedSetupClock,
 		move:              s.move,
 		restrict:          s.restrict,
+		binaryLocation:    s.binaryLocationCheck(),
 		agentPlanObserver: s.agentPlanObserver,
 	}
 }
@@ -879,7 +893,7 @@ func writeInstallation(t *testing.T, dir string, parts ...string) {
 			write(filepath.Join("state", "agent.json"), `{"agent_id":"old-agent","status":"claimed"}`)
 			write(credentialsFile, `{"api_key":"sr-old"}`)
 		case "pending":
-			write(filepath.Join("state", "registration_pending.json"), `{"agent_id":"pending-agent"}`)
+			write(registrationJournalFile, `{"agent_id":"pending-agent"}`)
 		case "spool":
 			write(filepath.Join("spool", "unsent-1.json"), `{"v":1}`)
 		case "config":
@@ -975,8 +989,36 @@ func TestSetupAdoptsASourceHoldingOnlyAPendingRegistration(t *testing.T) {
 	if !strings.Contains(out, "A previous installation is set aside at "+sibling) {
 		t.Fatalf("a pending registration did not count as an installation:\n%s", out)
 	}
-	if !lexists(filepath.Join(s.home, "state", "registration_pending.json")) && !lexists(filepath.Join(s.home, "state", "agent.json")) {
+	if !lexists(filepath.Join(s.home, registrationJournalFile)) || lexists(filepath.Join(sibling, registrationJournalFile)) {
 		t.Errorf("the pending registration was not adopted:\n%s", out)
+	}
+}
+
+// A home holding only payout.json is what a first connect leaves when the
+// participant answered the address question and Register then failed. It
+// is not an installation: setup used to report "a payout address" as the
+// previous installation and never offer the one set aside beside it. Now
+// the set-aside identity is offered and adopted, and the home's payout
+// record, the participant's latest answer, is kept.
+func TestALonePayoutRecordDoesNotHideASetAsideInstallation(t *testing.T) {
+	s := newSetupSandbox(t)
+	sibling := s.home + ".bak"
+	writeInstallation(t, sibling, "identity")
+	const homeAddress = `{"address":"twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh"}`
+	writeFileT(t, filepath.Join(sibling, payoutRecordFile), `{"address":"twilight1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc"}`)
+	writeFileT(t, filepath.Join(s.home, payoutRecordFile), homeAddress)
+	_, out, _ := s.run(tty("y", "n"), true, "-no-agents", "-no-profile")
+	if !strings.Contains(out, "A previous installation is set aside at "+sibling) {
+		t.Fatalf("the set-aside installation was not offered:\n%s", out)
+	}
+	if !lexists(filepath.Join(s.home, credentialsFile)) {
+		t.Fatalf("the set-aside identity was not adopted:\n%s", out)
+	}
+	if got, _ := os.ReadFile(filepath.Join(s.home, payoutRecordFile)); string(got) != homeAddress { // #nosec G304 -- the test's own sandbox
+		t.Errorf("the home's own payout record was replaced: %s", got)
+	}
+	if !lexists(filepath.Join(sibling, payoutRecordFile)) {
+		t.Error("the set-aside installation's payout record was not left where it was")
 	}
 }
 
@@ -1948,7 +1990,14 @@ func TestSetupEditsASymlinkedProfileThroughTheLink(t *testing.T) {
 		t.Fatal(err)
 	}
 	target := filepath.Join(dotfiles, "zshrc")
-	if err := os.WriteFile(target, []byte("alias ll='ls -l'\n"), 0o640); err != nil { // #nosec G306 -- a profile with a deliberate non-default mode, to prove it is kept
+	if err := os.WriteFile(target, []byte("alias ll='ls -l'\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The non-default mode is set with Chmod, not WriteFile: that mode passes
+	// through the umask, and 0077 would hand setup a 0600 profile, which is
+	// also what its replacement file is before any Chmod, so "kept" would prove
+	// nothing.
+	if err := os.Chmod(target, 0o640); err != nil { // #nosec G302 -- a profile with a deliberate non-default mode, to prove it is kept
 		t.Fatal(err)
 	}
 	if err := os.Symlink(target, s.profilePath()); err != nil {

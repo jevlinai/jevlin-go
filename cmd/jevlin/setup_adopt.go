@@ -21,7 +21,10 @@ package main
 //
 // Every source object is checked before it moves: a regular file or a
 // directory, never a symlink (a moved link would point the runtime's custody
-// checks at whatever it names). Each object is restricted to its owner again
+// checks at whatever it names), and owned by the current user. A sibling of
+// home can sit in a directory other accounts write to; one they created is
+// their registration and their wallet, and they would stay its owner after
+// the move. Each object is restricted to its owner again
 // immediately after the move, so no intermediate state is weaker than what
 // the auth store accepts at runtime.
 
@@ -43,12 +46,21 @@ import (
 // installationMarkers are the files whose presence makes a directory an
 // installation. registration_pending.json is one: an interrupted
 // registration is durable state, and ignoring it would mint a second
-// identity for the same participant.
+// identity for the same participant. It sits beside credentials.json; the
+// state/ copy is an older release's and connect discards it unread.
+//
+// The payout record and the claim record are not markers, though they move
+// with the identity. A home holding only payout.json is what a first connect
+// leaves when the participant answered the address question and Register
+// then failed; counting it as an installation made setup report "a payout
+// address" as the previous installation and never offer the one actually
+// set aside beside it.
 var installationMarkers = []string{
 	filepath.Join("wallet", walletKeyFile),
 	filepath.Join("state", "refresh.token"),
 	filepath.Join("state", "agent.json"),
 	filepath.Join("state", "registration_pending.json"),
+	registrationJournalFile,
 	credentialsFile,
 }
 
@@ -70,8 +82,13 @@ func hasInstallation(dir string) bool {
 	return false
 }
 
+// adoptionOwnerCheck refuses a source object the current user does not own;
+// a variable so tests can stand in for another account.
+var adoptionOwnerCheck = ownedByCurrentUser
+
 // setAsideInstallation is the newest sibling of home — home.<anything> or
-// home-<anything>, a real directory, not a link — that holds an installation.
+// home-<anything>, a real directory, not a link, owned by the current user —
+// that holds an installation.
 func setAsideInstallation(home string) string {
 	parent, base := filepath.Dir(home), filepath.Base(home)
 	entries, err := os.ReadDir(parent)
@@ -95,7 +112,7 @@ func setAsideInstallation(home string) string {
 		}
 		path := filepath.Join(parent, name)
 		info, err := os.Lstat(path)
-		if err != nil || !info.IsDir() {
+		if err != nil || !info.IsDir() || adoptionOwnerCheck(path, info) != nil {
 			continue
 		}
 		if hasInstallation(path) {
@@ -125,11 +142,14 @@ func describeInstallation(dir string) string {
 	if lexists(filepath.Join(dir, "state", "refresh.token")) || lexists(filepath.Join(dir, "state", "agent.json")) {
 		parts = append(parts, "enrolled")
 	}
-	if lexists(filepath.Join(dir, "state", "registration_pending.json")) {
+	if lexists(filepath.Join(dir, registrationJournalFile)) || lexists(filepath.Join(dir, "state", "registration_pending.json")) {
 		parts = append(parts, "an unfinished registration")
 	}
 	if lexists(filepath.Join(dir, credentialsFile)) {
 		parts = append(parts, "stored API key")
+	}
+	if lexists(filepath.Join(dir, payoutRecordFile)) {
+		parts = append(parts, "a payout address")
 	}
 	if treeHasFiles(filepath.Join(dir, "spool")) {
 		parts = append(parts, "unsent spool")
@@ -152,8 +172,8 @@ func treeHasFiles(dir string) bool {
 	return found
 }
 
-// validateTree refuses anything but regular files and directories, anywhere
-// under root (root included).
+// validateTree refuses anything but regular files and directories the current
+// user owns, anywhere under root (root included).
 func validateTree(root string) error {
 	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error { // #nosec G703 -- root is a bundle inside the installation directory or its set-aside sibling
 		if err != nil {
@@ -169,7 +189,7 @@ func validateTree(root string) error {
 		if !info.IsDir() && !info.Mode().IsRegular() {
 			return fmt.Errorf("%s is not a regular file or directory", path)
 		}
-		return nil
+		return adoptionOwnerCheck(path, info)
 	})
 }
 
@@ -335,9 +355,21 @@ func (f *adoptionFailure) Error() string {
 // intake, sessions and config are independent records with per-file rules,
 // and move only after that outer commit.
 func (a *adoption) run() error {
+	info, err := os.Lstat(a.src)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s is not a directory", a.src)
+	}
+	if err := adoptionOwnerCheck(a.src, info); err != nil {
+		return err
+	}
 	t := a.txn(
-		filepath.Join(a.src, "state"), filepath.Join(a.src, credentialsFile), filepath.Join(a.src, "wallet"),
-		filepath.Join(a.dst, "state"), filepath.Join(a.dst, credentialsFile), filepath.Join(a.dst, "wallet"),
+		filepath.Join(a.src, "state"), filepath.Join(a.src, credentialsFile), filepath.Join(a.src, registrationJournalFile),
+		filepath.Join(a.src, payoutRecordFile), filepath.Join(a.src, claimRecordFile), filepath.Join(a.src, "wallet"),
+		filepath.Join(a.dst, "state"), filepath.Join(a.dst, credentialsFile), filepath.Join(a.dst, registrationJournalFile),
+		filepath.Join(a.dst, payoutRecordFile), filepath.Join(a.dst, claimRecordFile), filepath.Join(a.dst, "wallet"),
 		a.aside("state.unenrolled"), a.aside("wallet.incomplete"),
 	)
 	if err := a.identity(t); err != nil {
@@ -362,18 +394,37 @@ func (a *adoption) aside(prefix string) string {
 }
 
 // identity is the custody transaction's first stage: state/ and
-// credentials.json together, or neither. A destination that already holds an
-// identity is returned as a conflict; it is found before this stage moves
-// anything, and this stage is the first.
+// credentials.json together, with the registration journal, the payout
+// record and the claim record that sit beside the credential, or none of
+// them. A destination that already holds an identity is returned as a
+// conflict; it is found before this stage moves anything, and this stage is
+// the first. A payout record already at the destination is not an identity:
+// it is the participant's latest answer to the address question, so it is
+// kept and the adopted installation's stays where it was set aside.
 func (a *adoption) identity(t *bundleTxn) error {
 	srcState, srcCreds := filepath.Join(a.src, "state"), filepath.Join(a.src, credentialsFile)
 	dstState, dstCreds := filepath.Join(a.dst, "state"), filepath.Join(a.dst, credentialsFile)
+	srcJournal, dstJournal := filepath.Join(a.src, registrationJournalFile), filepath.Join(a.dst, registrationJournalFile)
+	srcPayout, dstPayout := filepath.Join(a.src, payoutRecordFile), filepath.Join(a.dst, payoutRecordFile)
+	srcClaim, dstClaim := filepath.Join(a.src, claimRecordFile), filepath.Join(a.dst, claimRecordFile)
 	aside := a.aside("state.unenrolled")
-	hasState, hasCreds := lexists(srcState), lexists(srcCreds)
-	if !hasState && !hasCreds {
+	hasState, hasCreds, hasJournal, hasClaim := lexists(srcState), lexists(srcCreds), lexists(srcJournal), lexists(srcClaim)
+	hasPayout := lexists(srcPayout) && !lexists(dstPayout)
+	if lexists(srcPayout) && !hasPayout {
+		a.say("kept the payout address on file in %s; the one in %s is left there", a.dst, a.src)
+	}
+	if !hasState && !hasCreds && !hasJournal && !hasPayout && !hasClaim {
 		return nil
 	}
-	for _, p := range []string{srcState, srcCreds} {
+	moving := []string{srcState, srcCreds, srcJournal, srcClaim}
+	if hasPayout {
+		// A source payout record left in place, because the destination
+		// keeps its own, is not moved and so not judged: refusing the whole
+		// adoption over a file it leaves where it is would be a refusal
+		// about nothing it does.
+		moving = append(moving, srcPayout)
+	}
+	for _, p := range moving {
 		if !lexists(p) {
 			continue
 		}
@@ -390,8 +441,10 @@ func (a *adoption) identity(t *bundleTxn) error {
 	conflict := func(evidence string) *identityConflict {
 		return &identityConflict{Destination: a.dst, Evidence: evidence, Source: a.src}
 	}
-	if lexists(dstCreds) {
-		return conflict(dstCreds)
+	for _, p := range []string{dstCreds, dstJournal, dstClaim} {
+		if lexists(p) {
+			return conflict(p)
+		}
 	}
 	setAside := false
 	if lexists(dstState) {
@@ -433,6 +486,21 @@ func (a *adoption) identity(t *bundleTxn) error {
 		// Half an identity is worse than none: a failure here puts the state
 		// back too.
 		if err := t.move(srcCreds, dstCreds); err != nil {
+			return t.fail(identityBundle, err)
+		}
+	}
+	if hasJournal {
+		if err := t.move(srcJournal, dstJournal); err != nil {
+			return t.fail(identityBundle, err)
+		}
+	}
+	if hasPayout {
+		if err := t.move(srcPayout, dstPayout); err != nil {
+			return t.fail(identityBundle, err)
+		}
+	}
+	if hasClaim {
+		if err := t.move(srcClaim, dstClaim); err != nil {
 			return t.fail(identityBundle, err)
 		}
 	}
@@ -497,6 +565,10 @@ func (a *adoption) merge(name string) {
 		a.say("not adopting %s: %s is not a directory", name, src)
 		return
 	}
+	if err := adoptionOwnerCheck(src, info); err != nil {
+		a.say("not adopting %s: %v", name, err)
+		return
+	}
 	var moved, kept, refused int
 	a.mergeDir(src, dst, &moved, &kept, &refused)
 	if moved+kept+refused == 0 {
@@ -507,7 +579,7 @@ func (a *adoption) merge(name string) {
 		msg += fmt.Sprintf(", %d already present kept", kept)
 	}
 	if refused > 0 {
-		msg += fmt.Sprintf(", %d not a regular file or directory and left in place", refused)
+		msg += fmt.Sprintf(", %d not a regular file or directory this user owns, or not movable, and left in place", refused)
 	}
 	a.say("%s)", msg)
 }
@@ -528,7 +600,7 @@ func (a *adoption) mergeDir(src, dst string, moved, kept, refused *int) {
 	for _, e := range entries {
 		from, to := filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())
 		info, err := os.Lstat(from)
-		if err != nil || (info.Mode()&fs.ModeSymlink != 0) || (!info.IsDir() && !info.Mode().IsRegular()) {
+		if err != nil || (info.Mode()&fs.ModeSymlink != 0) || (!info.IsDir() && !info.Mode().IsRegular()) || adoptionOwnerCheck(from, info) != nil {
 			*refused++
 			continue
 		}

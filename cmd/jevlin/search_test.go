@@ -8,11 +8,13 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -105,6 +107,7 @@ func fixedSearchOps(cwd string) *searchHarness {
 	h.ops = searchOps{
 		getppid:  func() int { return 4242 },
 		hostname: func() (string, error) { return "fictional-host", nil },
+		traceKey: func(string) ([]byte, error) { return []byte("fictional-trace-key-0123456789ab"), nil },
 		getwd:    func() (string, error) { return cwd, nil },
 		spawnFlush: func(cfg string) error {
 			h.flushes = append(h.flushes, cfg)
@@ -507,5 +510,269 @@ func TestSearchUsageErrors(t *testing.T) {
 	}
 	if code, _, _ := runSearch(t, h, nil, "-config", cfg, "-format", "xml", "q"); code != exitUsage {
 		t.Errorf("bad format: exit %d", code)
+	}
+}
+
+// With no hook, the per-shell session id is keyed with the installation's
+// trace key: the router cannot recover the hostname by hashing guesses of
+// host|ppid, and a missing key yields a one-off id rather than a bare hash.
+func TestFallbackSessionIDIsKeyed(t *testing.T) {
+	getenv := envOf(map[string]string{})
+	sid := func(key []byte, keyErr error) string {
+		h := fixedSearchOps(t.TempDir())
+		h.ops.traceKey = func(string) ([]byte, error) { return key, keyErr }
+		env, _ := searchTrace(h.ops, config.Miner{}, "", getenv)
+		if env == nil {
+			t.Fatal("no trace")
+		}
+		return env.SessionID
+	}
+	keyA := []byte("installation-a-trace-key-0123456")
+	keyB := []byte("installation-b-trace-key-0123456")
+	bare := traceHash("fictional-host|4242")
+
+	a1, a2, b := sid(keyA, nil), sid(keyA, nil), sid(keyB, nil)
+	if a1 != traceKeyedHash(keyA, "fictional-host|4242") || len(a1) != 32 {
+		t.Fatalf("session id %q is not the keyed hash of host|ppid", a1)
+	}
+	if a1 != a2 {
+		t.Errorf("one shell, one key: ids differ %q %q", a1, a2)
+	}
+	if a1 == b {
+		t.Errorf("two installations share a session id %q", a1)
+	}
+	if a1 == bare || b == bare {
+		t.Errorf("session id is the unkeyed hash of host|ppid")
+	}
+
+	n1, n2 := sid(nil, errors.New("no state dir")), sid(nil, errors.New("no state dir"))
+	if n1 == "" || n1 == bare || n1 == n2 {
+		t.Errorf("without a key: %q %q, want distinct one-off ids", n1, n2)
+	}
+}
+
+// TestFallbackSessionIDIsKeyed calls searchTrace with the key and the state
+// directory handed to it, and every other search test stubs traceKey, so none
+// of them sees whether searchMain hands searchTrace the state directory the
+// config names, or whether realSearchOps wires loadTraceKey in at all. This
+// one runs searchMain with the real loadTraceKey against a fixture state
+// directory and reads what the router was sent: two searches carry one
+// X-Session-Id, and it is the keyed hash of the key on disk and host|ppid.
+// The second case has no key yet, so the first search makes it; the second
+// reads it.
+func TestASearchSendsTheSessionIDKeyedByTheStateDirsKey(t *testing.T) {
+	const fixtureKey = "fixture-key-on-disk-0123456789ab"
+	for _, tc := range []struct {
+		name   string
+		onDisk bool
+	}{
+		{"a key already on disk", true},
+		{"no key yet, so the first search makes it", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(routerBody))
+			})
+			keyPath := auth.TraceKeyPath(filepath.Join(root, "state"))
+			if tc.onDisk {
+				if err := os.WriteFile(keyPath, []byte(fixtureKey), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			} else if lexists(keyPath) {
+				t.Fatal("the fixture state directory already holds a trace key")
+			}
+
+			ids := make([]string, 2)
+			for i := range ids {
+				h := fixedSearchOps(root)
+				h.ops.traceKey = realSearchOps().traceKey
+				code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "-no-flush", "q")
+				if code != exitOK {
+					t.Fatalf("search %d exited %d\n%s\n%s", i, code, out, errOut)
+				}
+				req, _ := fr.last(t)
+				if ids[i] = req.Header.Get("X-Session-Id"); ids[i] == "" {
+					t.Fatalf("search %d sent no X-Session-Id", i)
+				}
+			}
+
+			onDisk, err := os.ReadFile(keyPath) // #nosec G304 -- a path in this test's own temp dir
+			if err != nil {
+				t.Fatalf("no trace key in the state directory after two searches: %v", err)
+			}
+			if len(onDisk) != 32 || (tc.onDisk && string(onDisk) != fixtureKey) {
+				t.Fatalf("the key on disk is %q; want %d bytes, and the fixture's own when it was put there", onDisk, 32)
+			}
+			want := traceKeyedHash(onDisk, fixtureHostPpid)
+			if ids[0] != want || ids[1] != want {
+				t.Errorf("X-Session-Id %q and %q; want both %q, the keyed hash of the key on disk and host|ppid", ids[0], ids[1], want)
+			}
+			if bare := traceHash(fixtureHostPpid); ids[0] == bare {
+				t.Errorf("X-Session-Id is the unkeyed hash of host|ppid")
+			}
+		})
+	}
+}
+
+// docs/reference.md says what a search with no usable key does: it sends a
+// one-off id, different on every search, and does not touch the key it
+// refused. A link, a key open to others and a key of the wrong length are the
+// three it names. Each is left exactly as it lay, so the next setup or the
+// participant sees it rather than a replacement, and no id the hostname
+// could be recovered from ever stands in.
+func TestASearchThatRefusesTheKeyOnDiskSendsAOneOffIDAndLeavesTheKeyAlone(t *testing.T) {
+	good := bytes.Repeat([]byte{'k'}, 32)
+	type plant func(t *testing.T, path string) (describe func() string)
+	cases := map[string]plant{
+		"a link": func(t *testing.T, path string) func() string {
+			target := filepath.Join(t.TempDir(), "elsewhere")
+			if err := os.WriteFile(target, good, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(target, path); err != nil {
+				skipPermissionTest(t, "cannot plant a link here: "+err.Error())
+			}
+			return func() string {
+				got, err := os.Readlink(path)
+				return "link to " + got + errString(err)
+			}
+		},
+		"the wrong length": func(t *testing.T, path string) func() string {
+			if err := os.WriteFile(path, good[:31], 0o600); err != nil {
+				t.Fatal(err)
+			}
+			return func() string { return fileDescription(path) }
+		},
+	}
+	if runtime.GOOS != "windows" {
+		cases["open to others"] = func(t *testing.T, path string) func() string {
+			if err := os.WriteFile(path, good, 0o644); err != nil { // #nosec G306 -- deliberately open to others: the case under test
+				t.Fatal(err)
+			}
+			if err := os.Chmod(path, 0o644); err != nil { // #nosec G302 -- as above, in case umask narrowed it
+				t.Fatal(err)
+			}
+			return func() string { return fileDescription(path) }
+		}
+	}
+	for name, plantKey := range cases {
+		t.Run(name, func(t *testing.T) {
+			fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(routerBody))
+			})
+			keyPath := auth.TraceKeyPath(filepath.Join(root, "state"))
+			describe := plantKey(t, keyPath)
+			before := describe()
+
+			ids := make([]string, 2)
+			for i := range ids {
+				h := fixedSearchOps(root)
+				h.ops.traceKey = realSearchOps().traceKey
+				code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "-no-flush", "q")
+				if code != exitOK {
+					t.Fatalf("search %d exited %d: a key it refuses must not fail the search\n%s\n%s", i, code, out, errOut)
+				}
+				req, _ := fr.last(t)
+				if ids[i] = req.Header.Get("X-Session-Id"); ids[i] == "" {
+					t.Fatalf("search %d sent no X-Session-Id", i)
+				}
+			}
+			if ids[0] == ids[1] {
+				t.Errorf("both searches sent %q; with no usable key each sends a one-off id", ids[0])
+			}
+			if bare := traceHash(fixtureHostPpid); ids[0] == bare || ids[1] == bare {
+				t.Errorf("a search sent the unkeyed hash of host|ppid")
+			}
+			if after := describe(); after != before {
+				t.Errorf("the key it refused was changed:\n before %s\n after  %s", before, after)
+			}
+		})
+	}
+}
+
+func errString(err error) string {
+	if err != nil {
+		return " (" + err.Error() + ")"
+	}
+	return ""
+}
+
+// fileDescription is a file's mode, size and bytes in one comparable string.
+func fileDescription(path string) string {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err.Error()
+	}
+	b, _ := os.ReadFile(path) // #nosec G304 -- a path in this test's own temp dir
+	return info.Mode().String() + " " + string(b)
+}
+
+// The Claude Code allow rule is a prefix ending after this installation's
+// `-config <path>`, so whatever follows it runs unprompted. A second
+// -config must not be able to swap in another config's router and send it
+// this installation's key, so search refuses any repeat — same path or not,
+// in every spelling the flag package accepts — before reading either.
+func TestSearchRefusesASecondConfig(t *testing.T) {
+	ours, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(routerBody))
+	})
+	theirs, evil, _ := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(routerBody))
+	})
+	env := map[string]string{"JEVLIN_API_KEY": "k"}
+	for name, args := range map[string][]string{
+		"differing":        {"-config", cfg, "-config", evil, "q"},
+		"same path":        {"-config", cfg, "-config", cfg, "q"},
+		"equals spelling":  {"-config", cfg, "-config=" + evil, "q"},
+		"double dash":      {"-config", cfg, "--config", evil, "q"},
+		"after other flag": {"-config", cfg, "-format", "model", "-config", evil, "q"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := fixedSearchOps(root)
+			code, out, errOut := runSearch(t, h, env, args...)
+			if code != exitUsage {
+				t.Fatalf("exit %d, want %d (out %q)", code, exitUsage, out)
+			}
+			if !strings.Contains(errOut, "-config") {
+				t.Errorf("stderr does not name -config: %q", errOut)
+			}
+		})
+	}
+	t.Run("machine", func(t *testing.T) {
+		h := fixedSearchOps(root)
+		code, out, _ := runSearchStdin(t, h, env, `{"version":1,"query":"q"}`,
+			"-config", cfg, "-config", evil, "--stdin")
+		if code != exitUsage {
+			t.Fatalf("exit %d, want %d (%s)", code, exitUsage, out)
+		}
+		if got := envField(t, decodeEnvelope(t, out), "code"); got != codeInvalidFlags {
+			t.Errorf("code %q, want %q", got, codeInvalidFlags)
+		}
+	})
+	for who, fr := range map[string]*fakeRouter{"installed": ours, "second": theirs} {
+		fr.mu.Lock()
+		if n := len(fr.reqs); n != 0 {
+			t.Errorf("the %s config's router got %d requests", who, n)
+		}
+		fr.mu.Unlock()
+	}
+
+	// One -config is still the ordinary search.
+	h := fixedSearchOps(root)
+	if code, out, errOut := runSearch(t, h, env, "-config", cfg, "q"); code != exitOK {
+		t.Fatalf("single -config: exit %d (%s %s)", code, out, errOut)
+	}
+}
+
+// loadTraceKey answers a state directory it cannot open with an error, and
+// the search sends a one-off id. Deleting that check made a search whose
+// state_dir did not exist dereference a nil store (invariant 1: a
+// mining-side failure never fails the search).
+func TestATraceKeyFromAStateDirThatIsNotThereIsAnErrorNotAPanic(t *testing.T) {
+	for _, dir := range []string{filepath.Join(t.TempDir(), "no-such-state-dir"), ""} {
+		key, err := loadTraceKey(dir)
+		if err == nil || key != nil {
+			t.Fatalf("loadTraceKey(%q) = %v, %v; want an error and no key", dir, key, err)
+		}
 	}
 }

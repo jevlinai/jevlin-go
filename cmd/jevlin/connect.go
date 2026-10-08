@@ -42,11 +42,13 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/jevlinai/jevlin-go/pkg/auth"
 	"github.com/jevlinai/jevlin-go/pkg/config"
+	"github.com/jevlinai/jevlin-go/pkg/fsx"
 	"github.com/jevlinai/jevlin-go/pkg/platform"
 )
 
@@ -84,20 +86,38 @@ var (
 // (describeConfigSource) found no config file at all, not even the
 // installation's own, so there is nothing here connect may register
 // against.
-var errConnectNoConfig = errors.New("no config file found — looked at -config, JEVLIN_CONFIG, " +
-	"./jevlin.toml and the installation's own config; run `jevlin setup` first")
+var errConnectNoConfig = errors.New("no config file found — looked at -config, JEVLIN_CONFIG " +
+	"and the installation's own config; run `jevlin setup` first")
 
 func connectLockPath(stateDir string) string { return filepath.Join(stateDir, "connect.lock") }
 func resumeStampPath(stateDir string) string { return filepath.Join(stateDir, "connect_resume.json") }
 
-// unclaimedNoLinkMessage (B.3) is what a foreground run prints in place
-// of the ordinary print-and-wait narration when the stored registration
-// is unclaimed but carries no claim link — a rebuild that recovered an
-// identity from GET /v1/agents/me before the platform served the claim
-// bootstrap fields for it (B.1's known gap), or any later run against
-// that same durable state. Never printed alongside the bare (empty) URL.
-const unclaimedNoLinkMessage = "registration recovered but it is unclaimed and its claim link is not retrievable " +
-	"from the platform; run `jevlin connect -force` to register a fresh agent, or wait for this one to expire"
+// unclaimedNoLinkMessage is what a foreground run says when it has no claim
+// link to print and the platform did not issue a fresh one. It used to send
+// the participant to `jevlin connect -force`, which registers nothing while a
+// registration is on file: the advice was the command they had just run.
+const unclaimedNoLinkMessage = "this agent is unclaimed, and no claim link is on file for it: the platform did not issue " +
+	"a fresh one (see above). Run `jevlin connect` again to retry, or wait for this registration to expire and " +
+	"connect again for a new one"
+
+// printableClaimURL returns a stored claim URL only when it still passes
+// invariant 12 against the configured platform.base_url, which may have
+// changed since the link was stored; a copy that fails is treated as
+// absent, and the rejected value itself is never echoed. The link comes
+// from the claim record beside credentials.json (claimFor), never from
+// agent.json. stderr may be nil.
+func printableClaimURL(raw, baseURL string, stderr io.Writer) string {
+	if raw == "" {
+		return ""
+	}
+	if platform.ValidateStoredClaimURL(raw, baseURL) != nil {
+		if stderr != nil {
+			fmt.Fprintf(stderr, "jevlin: the stored claim link is not on the configured platform.base_url (%s); not printing it\n", baseURL)
+		}
+		return ""
+	}
+	return raw
+}
 
 // remintClaimLink asks the platform for a fresh claim link for a still-
 // unclaimed registration whose link is gone (B.1/B.3), persists it, and
@@ -113,20 +133,106 @@ const unclaimedNoLinkMessage = "registration recovered but it is unclaimed and i
 // On any failure the caller falls back to exactly the B.3 dead end this
 // closes — against a platform without the route (404) nothing changes but
 // one line on stderr.
-func remintClaimLink(ctx context.Context, client *platform.Client, store *auth.Store, reg *auth.AgentRegistration, key string, stderr io.Writer) bool {
+func remintClaimLink(ctx context.Context, client *platform.Client, store *auth.Store, m config.Miner, reg *auth.AgentRegistration, key string, stderr io.Writer) (auth.ClaimBootstrap, bool) {
 	fresh, err := client.ClaimCode(ctx, reg.AgentID, key)
 	if err != nil {
 		fmt.Fprintln(stderr, "jevlin: could not mint a fresh claim link:", err)
-		return false
+		return auth.ClaimBootstrap{}, false
+	}
+	claim := auth.ClaimBootstrap{AgentID: reg.AgentID, ClaimURL: fresh.ClaimURL, ClaimCode: fresh.ClaimCode, ClaimExpiresAt: fresh.ClaimExpiresAt}
+	if err := saveClaim(m, claim); err != nil {
+		fmt.Fprintln(stderr, "jevlin: persist the fresh claim link:", err)
+		return auth.ClaimBootstrap{}, false
 	}
 	updated := *reg
-	updated.ClaimURL, updated.ClaimCode, updated.ClaimExpiresAt = fresh.ClaimURL, fresh.ClaimCode, fresh.ClaimExpiresAt
+	updated.ClaimExpiresAt = fresh.ClaimExpiresAt
 	if err := store.SaveAgentRegistration(updated); err != nil {
-		fmt.Fprintln(stderr, "jevlin: persist the fresh claim link:", err)
-		return false
+		fmt.Fprintln(stderr, "jevlin: persist the fresh claim link's expiry:", err)
+		return auth.ClaimBootstrap{}, false
 	}
 	*reg = updated
-	return true
+	return claim, true
+}
+
+// publishRebuiltRegistration writes the record a rebuild takes from what
+// GET /v1/agents/me answered (B.3): the platform's own state in agent.json,
+// and, while the agent is unclaimed, its claim link in the claim record
+// beside credentials.json. When /me carried no link for an unclaimed agent
+// (B.1's known gap) it mints one (B.4): one deliberate foreground attempt,
+// and on failure this run is exactly the B.3 dead end it always was. stop
+// reports that the run ends here, with code. A record that could not be
+// persisted is retried from scratch by the next run, which is why nothing
+// else is written first.
+func publishRebuiltRegistration(ctx context.Context, client *platform.Client, store *auth.Store, m config.Miner, identity *platform.AgentIdentity, credKey string, stdout, stderr io.Writer) (reg auth.AgentRegistration, code int, stop bool) {
+	reg = auth.AgentRegistration{
+		AgentID:            identity.AgentID,
+		Status:             identity.Status,
+		Scopes:             identity.Scopes,
+		ClaimExpiresAt:     identity.ClaimExpiresAt,
+		LastEnrollmentSlot: identity.LastEnrollmentSlot,
+		LastEnrollmentAt:   identity.LastEnrollmentAt,
+	}
+	if serr := store.SaveAgentRegistration(reg); serr != nil {
+		fmt.Fprintln(stderr, "jevlin: rebuilt registration from the platform but could not persist it:", serr)
+		return auth.AgentRegistration{}, exitTransport, true
+	}
+	if identity.Status != "unclaimed" {
+		return reg, exitOK, false
+	}
+	if identity.ClaimURL != "" {
+		claim := auth.ClaimBootstrap{AgentID: identity.AgentID, ClaimURL: identity.ClaimURL, ClaimCode: identity.ClaimCode, ClaimExpiresAt: identity.ClaimExpiresAt}
+		if err := saveClaim(m, claim); err != nil {
+			// Not printed unless persisted: the print below finds no
+			// record for this agent and re-mints, or says it has none.
+			fmt.Fprintln(stderr, "jevlin: could not persist the claim link the platform returned:", err)
+		}
+		return reg, exitOK, false
+	}
+	if _, ok := remintClaimLink(ctx, client, store, m, &reg, credKey, stderr); !ok {
+		fmt.Fprintln(stdout, unclaimedNoLinkMessage)
+		return reg, exitOK, true
+	}
+	// The claim record holds a live link now; the ordinary narration and
+	// poll treat this like any other unclaimed registration.
+	return reg, exitOK, false
+}
+
+// rebuildUnknownRegistration is B.3's rebuild for a record that decodes but
+// names an agent the platform does not know for the stored key (hard
+// invariant 13: a record the platform does not recognize is rebuilt like
+// a lost one). The platform resolves a key to its own agent and answers
+// not found for any other id, so the record and the key disagree: an older
+// build crashed between writing a replacement's key and its record, or a
+// sandboxed command rewrote agent.json to name another agent. The key is
+// the authority (it lives beside credentials.json, outside every writable
+// root), and /v1/agents/me says which agent it is. Nothing local changes
+// before /me answers. ok=false is nothing to rebuild from: /me failed,
+// found no agent for the key, or named the very agent the status call did
+// not know, and the caller keeps the behavior it had before. Never called
+// by -resume or under -force, which replaces rather than recovers.
+func rebuildUnknownRegistration(ctx context.Context, client *platform.Client, store *auth.Store, m config.Miner, old auth.AgentRegistration, credKey string, stdout, stderr io.Writer) (reg auth.AgentRegistration, code int, stop, ok bool) {
+	identity, err := client.Me(ctx, credKey)
+	if err != nil {
+		if !errors.Is(err, platform.ErrAgentNotFound) {
+			fmt.Fprintln(stderr, "jevlin: could not ask the platform which agent the stored key belongs to:", err)
+		}
+		return old, exitOK, false, false
+	}
+	if identity.AgentID == old.AgentID {
+		return old, exitOK, false, false
+	}
+	reg, code, stop = publishRebuiltRegistration(ctx, client, store, m, identity, credKey, stdout, stderr)
+	if reg.AgentID != "" {
+		// Only the id /me returned is named, once persisted: the id agent.json
+		// held came from a directory a sandboxed command can write, and a
+		// message never repeats what a record there says.
+		fmt.Fprintf(stderr, "jevlin: agent.json named an agent the platform does not know for the stored key; "+
+			"rebuilt the registration from the platform (agent %s)\n", reg.AgentID)
+	}
+	if stop {
+		return reg, code, true, true
+	}
+	return reg, exitOK, false, true
 }
 
 // resumeStamp records the last time -resume was attempted (successfully
@@ -137,7 +243,7 @@ type resumeStamp struct {
 }
 
 func readResumeStamp(path string) resumeStamp {
-	data, err := os.ReadFile(path) // #nosec G304 -- our own state dir
+	data, err := fsx.ReadRegular(path, stampMaxBytes)
 	if err != nil {
 		return resumeStamp{}
 	}
@@ -154,18 +260,16 @@ func writeResumeStamp(path string, st resumeStamp) error {
 	if err != nil {
 		return err
 	}
-	tmp := fmt.Sprintf("%s.%d.tmp", path, os.Getpid())
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	// The state dir is a writable root of Codex's sandbox: fsx stages under
+	// a random name it creates exclusively, so no link at a predictable
+	// temporary name is written through (the old "<path>.<pid>.tmp" was).
+	return fsx.WriteFileAtomic(filepath.Dir(path), filepath.Base(path), data, 0o600)
 }
 
 type registrationPublicationOptions struct {
 	force                bool
 	replacingExpired     bool
 	allowCorruptPreserve bool
-	previousAgentID      string
 	previousPlatformKey  string
 }
 
@@ -184,16 +288,17 @@ func pendingRegistrationFromPlatform(reg *platform.Registration) auth.PendingReg
 func agentRegistrationFromPending(reg auth.PendingRegistration) auth.AgentRegistration {
 	return auth.AgentRegistration{
 		AgentID:        reg.AgentID,
-		ClaimURL:       reg.ClaimURL,
-		ClaimCode:      reg.ClaimCode,
 		Status:         reg.Status,
 		ClaimExpiresAt: reg.ClaimExpiresAt,
 	}
 }
 
+func claimFromPending(reg auth.PendingRegistration) auth.ClaimBootstrap {
+	return auth.ClaimBootstrap{AgentID: reg.AgentID, ClaimURL: reg.ClaimURL, ClaimCode: reg.ClaimCode, ClaimExpiresAt: reg.ClaimExpiresAt}
+}
+
 func sameAgentRegistration(a auth.AgentRegistration, p auth.PendingRegistration) bool {
-	return a.AgentID == p.AgentID && a.ClaimURL == p.ClaimURL && a.ClaimCode == p.ClaimCode &&
-		a.Status == p.Status && a.ClaimExpiresAt == p.ClaimExpiresAt
+	return a.AgentID == p.AgentID && a.Status == p.Status && a.ClaimExpiresAt == p.ClaimExpiresAt
 }
 
 func credentialFileState(path string) (exists bool, key string, err error) {
@@ -252,22 +357,49 @@ func publishPendingRegistration(store *auth.Store, m config.Miner, pending auth.
 	if err := publishPlatformCredential(credentialsPath(m), pending.Key, opts); err != nil {
 		return auth.AgentRegistration{}, err
 	}
+	// The claim link goes beside the credential, before agent.json: the
+	// record that tells a person which link to open is written only here,
+	// by the rebuild and by the re-mint, never by anything that runs in a
+	// sandbox.
+	if pending.ClaimURL != "" {
+		if err := saveClaim(m, claimFromPending(pending)); err != nil {
+			return auth.AgentRegistration{}, fmt.Errorf("cannot publish the claim link: %w", err)
+		}
+	}
 
 	reg, ok, err := store.LoadAgentRegistration()
 	if err != nil {
-		if !errors.Is(err, auth.ErrAgentRegistrationCorrupt) || !opts.allowCorruptPreserve {
+		if !opts.allowCorruptPreserve {
 			return auth.AgentRegistration{}, fmt.Errorf("cannot publish agent registration: %w", err)
 		}
-		if err := store.PreserveCorruptAgentRegistration(); err != nil {
+		// Not only a record that does not decode: a link, a directory, a FIFO
+		// or a file others can read at agent.json refuses to load too, and a
+		// sandboxed command can leave any of them there. Refusing on them left
+		// the journal unfinished and every later run failing the same way,
+		// with the journal's key already published. The name is renamed aside,
+		// never opened or followed, and the journal's record published.
+		setAside := store.SetAsideUnreadableAgentRegistration
+		if errors.Is(err, auth.ErrAgentRegistrationCorrupt) {
+			setAside = store.PreserveCorruptAgentRegistration
+		}
+		if err := setAside(); err != nil {
 			return auth.AgentRegistration{}, err
 		}
 		ok = false
 	}
-	if ok && !sameAgentRegistration(reg, pending) {
-		replacesExpectedExpired := opts.replacingExpired && reg.Status == "expired" && reg.AgentID == opts.previousAgentID
-		if !opts.force && !replacesExpectedExpired {
-			return auth.AgentRegistration{}, errors.New("cannot publish agent registration: agent.json contains a different identity")
+	// credentials.json holds the journal's key now: publishPlatformCredential
+	// refused anything else. So agent.json must describe that key's agent,
+	// and one naming another agent is the state directory's word against
+	// the journal's and the credential's, both outside it. It used to win:
+	// publication refused "a different identity" after the key was already
+	// published, the journal stayed, and every later run failed the same
+	// way, the planted record holding the registration hostage. Now it is
+	// set aside, kept as evidence, and the journal's record is published.
+	if ok && reg.AgentID != pending.AgentID {
+		if err := store.SetAsideAgentRegistration(); err != nil {
+			return auth.AgentRegistration{}, fmt.Errorf("cannot set aside agent.json, which names another agent: %w", err)
 		}
+		ok = false
 	}
 	if !ok || !sameAgentRegistration(reg, pending) {
 		if err := store.SaveAgentRegistration(agentRegistrationFromPending(pending)); err != nil {
@@ -282,6 +414,11 @@ func publishPendingRegistration(store *auth.Store, m config.Miner, pending auth.
 	verifiedReg, ok, err := store.LoadAgentRegistration()
 	if err != nil || !ok || !sameAgentRegistration(verifiedReg, pending) {
 		return auth.AgentRegistration{}, errors.New("cannot verify published agent registration")
+	}
+	if pending.ClaimURL != "" {
+		if claim, ok := claimFor(m, pending.AgentID, nil); !ok || claim != claimFromPending(pending) {
+			return auth.AgentRegistration{}, errors.New("cannot verify the published claim link")
+		}
 	}
 	return verifiedReg, nil
 }
@@ -385,6 +522,20 @@ func connectCommand(args []string, stdin io.Reader, stdout, stderr io.Writer, ge
 		})
 		return exitTransport
 	}
+	if code == exitForceDoesNotRebuild {
+		// -force met a record naming another agent than the stored key's,
+		// and -force does not rebuild: the same command can never succeed,
+		// so the instruction is to change the input, not to retry it.
+		emitMachine(stdout, commandEnvelope{
+			machineHeader: newMachineHeader("connect", exitUsage, "force_does_not_rebuild", false, actionFixInput),
+			Error: &machineError{
+				Message: "agent.json names another agent than the stored key's, and -force does not rebuild a " +
+					"registration; run `jevlin connect` without -force to rebuild it from the platform",
+				Source: "client",
+			},
+		})
+		return exitUsage
+	}
 	if code == exitHumanDecisionRequired {
 		// Reached mid-run, past the pre-check above: a rebuild (B.3) can
 		// only learn a recovered identity is expired AFTER calling
@@ -445,6 +596,13 @@ func connectNeedsHumanDecision(cfgPath string, force bool, getenv func(string) s
 	if cfg.MiningEnabledExplicit {
 		return false // the file answered: the scripted path stays open
 	}
+	if journal, jerr := registrationJournal(cfg.Miner); jerr == nil {
+		if _, ok, perr := journal.Load(); perr == nil && ok {
+			// Register already happened for this one; recovery republishes it
+			// and asks nothing. Blocking it here would break the journal.
+			return false
+		}
+	}
 	store, err := auth.OpenStoreExisting(cfg.Mining.StateDir)
 	if err != nil {
 		// No state directory at all is a first run: undecided, and a
@@ -453,11 +611,6 @@ func connectNeedsHumanDecision(cfgPath string, force bool, getenv func(string) s
 	}
 	if store.ReadMiningDecision().State != auth.MiningUndecided {
 		return false // a persisted decision is authoritative, as always
-	}
-	if _, ok, perr := store.LoadPendingRegistration(); perr == nil && ok {
-		// Register already happened for this one; recovery republishes it
-		// and asks nothing. Blocking it here would break the journal.
-		return false
 	}
 
 	reg, ok, rerr := store.LoadAgentRegistration()
@@ -600,6 +753,11 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 		fmt.Fprintln(stderr, "jevlin:", err)
 		return exitTransport
 	}
+	// The trace key is made here, outside any sandbox and in a directory this
+	// run writes anyway, so a search that cannot write there only has to read
+	// it and keeps one session id instead of sending a new one each time. Best
+	// effort and silent: a search makes the key itself where it can write.
+	_, _ = store.EnsureTraceKey()
 
 	if *resume {
 		// Pace attempts before anything else — including before the lock
@@ -674,7 +832,19 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 	var existed bool
 	var key string
 
-	pending, hasPending, err := store.LoadPendingRegistration()
+	// A journal in the state directory is from an older release, or forged by
+	// a sandboxed command: either way it is not trusted to publish a key.
+	if discarded, derr := store.DiscardLegacyPendingRegistration(); derr != nil {
+		fmt.Fprintln(stderr, "jevlin: ignoring registration_pending.json in the state directory:", derr)
+	} else if discarded {
+		fmt.Fprintln(stderr, "jevlin: discarded registration_pending.json from the state directory unread; a sandboxed command can write there")
+	}
+	journal, err := registrationJournal(cfg.Miner)
+	if err != nil {
+		fmt.Fprintln(stderr, "jevlin:", err)
+		return exitTransport
+	}
+	pending, hasPending, err := journal.Load()
 	if err != nil {
 		fmt.Fprintln(stderr, "jevlin:", err)
 		return exitTransport
@@ -683,14 +853,13 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 		reg, err = publishPendingRegistration(store, cfg.Miner, pending, registrationPublicationOptions{
 			allowCorruptPreserve: true,
 			replacingExpired:     pending.ReplaceExpired,
-			previousAgentID:      pending.PreviousAgentID,
 			previousPlatformKey:  pending.PreviousKey,
 		})
 		if err != nil {
 			fmt.Fprintln(stderr, "jevlin: pending registration recovery:", err)
 			return exitTransport
 		}
-		if err := store.ClearPendingRegistration(); err != nil {
+		if err := journal.Clear(); err != nil {
 			fmt.Fprintln(stderr, "jevlin: clear pending registration:", err)
 			return exitTransport
 		}
@@ -700,6 +869,12 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 	} else {
 		var loadErr error
 		reg, existed, loadErr = store.LoadAgentRegistration()
+		// loaded is a record read from disk this run, as opposed to one
+		// rebuilt from the platform below or published from the journal
+		// above: only a record from disk can have been rewritten by a
+		// sandboxed command, so only it is asked about before anything is
+		// printed.
+		loaded := existed
 		wasCorrupt := false
 		if loadErr != nil {
 			if !errors.Is(loadErr, auth.ErrAgentRegistrationCorrupt) {
@@ -756,59 +931,85 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 							return exitTransport
 						}
 					}
-					rebuilt := auth.AgentRegistration{
-						AgentID:            identity.AgentID,
-						Status:             identity.Status,
-						Scopes:             identity.Scopes,
-						ClaimExpiresAt:     identity.ClaimExpiresAt,
-						LastEnrollmentSlot: identity.LastEnrollmentSlot,
-						LastEnrollmentAt:   identity.LastEnrollmentAt,
-					}
-					if identity.Status == "unclaimed" {
-						rebuilt.ClaimURL = identity.ClaimURL
-						rebuilt.ClaimCode = identity.ClaimCode
-					}
-					if serr := store.SaveAgentRegistration(rebuilt); serr != nil {
-						// The next run retries the rebuild from scratch — this
-						// is why an absent record is handled identically to a
-						// corrupt one above; there is nothing else to persist
-						// that would make the retry redundant.
-						fmt.Fprintln(stderr, "jevlin: rebuilt registration from the platform but could not persist it:", serr)
-						return exitTransport
+					rebuilt, code, stop := publishRebuiltRegistration(ctx, client, store, cfg.Miner, identity, credKey, stdout, stderr)
+					if stop {
+						return code
 					}
 					reg, existed = rebuilt, true
-
-					if identity.Status == "unclaimed" && identity.ClaimURL == "" {
-						// B.4: /me still carries no claim bootstrap (B.1), but
-						// the platform now mints a fresh link on request. One
-						// deliberate foreground attempt; on failure this run
-						// is exactly the B.3 dead end it always was.
-						if !remintClaimLink(ctx, client, store, &reg, credKey, stderr) {
-							fmt.Fprintln(stdout, unclaimedNoLinkMessage)
-							return exitOK
-						}
-						// reg carries a live link now; the ordinary narration
-						// and poll below treat it like any other unclaimed
-						// registration.
-					}
 				}
 			}
 		}
 
-		if existed && !*resume && reg.Status == "unclaimed" {
-			// A foreground connect must discover a live expiry before it
-			// prints or follows the old claim target. Detached resume keeps
-			// the ordinary one-poll behavior below and never replaces an
-			// identity in the background.
-			if statusKey, keyErr := platformKey(cfg.Miner); keyErr == nil {
-				if st, statusErr := client.Status(ctx, reg.AgentID, statusKey); statusErr == nil && st.Status == "expired" {
-					reg.Status = st.Status
-					reg.Scopes = st.Scopes
-					reg.ClaimExpiresAt = st.ClaimExpiresAt
-					if err := store.SaveAgentRegistration(reg); err != nil {
-						fmt.Fprintln(stderr, "jevlin:", err)
-						return exitTransport
+		// A foreground connect asks the platform about a record read from
+		// disk before it prints a claim link, polls or replaces anything.
+		// agent.json is in the state directory, which a sandboxed command
+		// can write, and an older build that crashed while replacing an
+		// expired registration left a record naming the old agent beside
+		// the new agent's key. The key is the authority (it lives beside
+		// credentials.json, outside every writable root), and GET
+		// /v1/agents/me says which agent it belongs to and what state that
+		// agent is in. So the question is /me, not the status of whatever id
+		// the record names: an id the key does not own answered not-found
+		// and was rebuilt, but an id it does own with a planted link, or a
+		// record naming "me" itself, passed. The platform's answer is
+		// applied before anything is printed: a claimed agent prints no
+		// link, an expired one goes to the replacement below.
+		//
+		// A record just rebuilt from /me or published from the journal is
+		// the platform's answer already and is not asked again (loaded is
+		// false for it); nor is a record that already says expired, which
+		// the replacement below asks about. Detached resume never asks, and
+		// never rebuilds or replaces an identity in the background. -force
+		// does not rebuild either: it replaces only an absent, unreadable or
+		// expired registration, and says so for a record naming another
+		// agent rather than polling an agent the key does not own.
+		if existed && loaded && !*resume && reg.Status != "expired" {
+			if meKey, keyErr := platformKey(cfg.Miner); keyErr == nil {
+				identity, meErr := client.Me(ctx, meKey)
+				switch {
+				case meErr == nil && identity.AgentID == reg.AgentID:
+					if identity.Status != reg.Status || !slices.Equal(identity.Scopes, reg.Scopes) || identity.ClaimExpiresAt != reg.ClaimExpiresAt {
+						reg.Status, reg.Scopes, reg.ClaimExpiresAt = identity.Status, identity.Scopes, identity.ClaimExpiresAt
+						if err := store.SaveAgentRegistration(reg); err != nil {
+							fmt.Fprintln(stderr, "jevlin:", err)
+							return exitTransport
+						}
 					}
+				case meErr == nil && *force:
+					fmt.Fprintf(stderr, "jevlin: agent.json names another agent than the stored key's (agent %s); "+
+						"-force does not rebuild a registration. Run `jevlin connect` without -force to rebuild it from the platform\n",
+						identity.AgentID)
+					if machine {
+						return exitForceDoesNotRebuild
+					}
+					return exitTransport
+				case meErr == nil:
+					rebuilt, code, stop := publishRebuiltRegistration(ctx, client, store, cfg.Miner, identity, meKey, stdout, stderr)
+					if rebuilt.AgentID != "" {
+						// Only the id /me returned is named, once persisted:
+						// a message never repeats what agent.json, in a
+						// directory a sandboxed command can write, says.
+						fmt.Fprintf(stderr, "jevlin: agent.json named an agent the stored key does not belong to; "+
+							"rebuilt the registration from the platform (agent %s)\n", rebuilt.AgentID)
+					}
+					if stop {
+						return code
+					}
+					reg = rebuilt
+				case errors.Is(meErr, platform.ErrAgentNotFound):
+					// The key itself is unknown or revoked, or the platform
+					// has no /me: nothing to rebuild from. The poll below
+					// says what the platform says about the record's
+					// agent, as it always has.
+				case reg.Status == "unclaimed":
+					// Fail closed: the check that would show the link is
+					// this agent's could not be made, so no link is shown,
+					// and none is minted.
+					fmt.Fprintln(stderr, "jevlin: could not ask the platform which agent the stored key belongs to, so no claim link is shown:", meErr)
+					return exitTransport
+				default:
+					// A claimed record prints no link; the poll below
+					// reports what the platform says about it.
 				}
 			}
 		}
@@ -836,6 +1037,21 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 						return exitTransport
 					}
 				case errors.Is(statusErr, platform.ErrAgentNotFound):
+					// Not known is not expired, so nothing is replaced. But
+					// the stored key may belong to another agent: an older
+					// build that crashed mid-replacement wrote the new key
+					// and never the new record. /v1/agents/me says which,
+					// and that answer is rebuilt, not a new registration.
+					if !*force {
+						rebuilt, code, stop, ok := rebuildUnknownRegistration(ctx, client, store, cfg.Miner, oldReg, oldKey, stdout, stderr)
+						if stop {
+							return code
+						}
+						if ok {
+							reg = rebuilt
+							break
+						}
+					}
 					fmt.Fprintln(stderr, "jevlin: expired registration is no longer known to the platform; refusing automatic replacement")
 					return exitTransport
 				default:
@@ -877,7 +1093,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 				pending.ReplaceExpired = true
 				pending.PreviousAgentID = oldReg.AgentID
 				pending.PreviousKey = oldKey
-				if err := store.SavePendingRegistration(pending); err != nil {
+				if err := journal.Save(pending); err != nil {
 					fmt.Fprintln(stderr, "jevlin: persist pending registration:", err)
 					return exitTransport
 				}
@@ -885,14 +1101,13 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 					force:                *force,
 					replacingExpired:     true,
 					allowCorruptPreserve: true,
-					previousAgentID:      oldReg.AgentID,
 					previousPlatformKey:  oldKey,
 				})
 				if err != nil {
 					fmt.Fprintln(stderr, "jevlin: publish replacement registration:", err)
 					return exitTransport
 				}
-				if err := store.ClearPendingRegistration(); err != nil {
+				if err := journal.Clear(); err != nil {
 					fmt.Fprintln(stderr, "jevlin: clear pending registration:", err)
 					return exitTransport
 				}
@@ -922,7 +1137,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 				return exitTransport
 			}
 			pending = pendingRegistrationFromPlatform(fresh)
-			if err := store.SavePendingRegistration(pending); err != nil {
+			if err := journal.Save(pending); err != nil {
 				fmt.Fprintln(stderr, "jevlin: persist pending registration:", err)
 				return exitTransport
 			}
@@ -934,7 +1149,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 				fmt.Fprintln(stderr, "jevlin: publish registration:", err)
 				return exitTransport
 			}
-			if err := store.ClearPendingRegistration(); err != nil {
+			if err := journal.Clear(); err != nil {
 				fmt.Fprintln(stderr, "jevlin: clear pending registration:", err)
 				return exitTransport
 			}
@@ -963,20 +1178,30 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 		// this run or any later one, until the platform reports claimed
 		// or expired, -force replaces it, or the mint below (B.4) hands
 		// this foreground run a fresh link.
-		if reg.ClaimURL == "" && !remintClaimLink(ctx, client, store, &reg, key, stderr) {
+		// A stored link that fails invariant 12 (agent.json is sandbox-
+		// writable) is handled exactly like a missing one: re-minted, which
+		// also overwrites the bad copy on disk, or not printed at all.
+		claim, _ := claimFor(cfg.Miner, reg.AgentID, stderr)
+		claimURL, claimCode := printableClaimURL(claim.ClaimURL, cfg.Platform.BaseURL, stderr), claim.ClaimCode
+		if claimURL == "" {
+			if fresh, ok := remintClaimLink(ctx, client, store, cfg.Miner, &reg, key, stderr); ok {
+				claimURL, claimCode = fresh.ClaimURL, fresh.ClaimCode
+			}
+		}
+		if claimURL == "" {
 			fmt.Fprintln(stdout, unclaimedNoLinkMessage)
 		} else {
 			fmt.Fprintln(stdout, "claim this agent:")
-			fmt.Fprintln(stdout, "  "+reg.ClaimURL)
-			if reg.ClaimCode != "" {
-				fmt.Fprintln(stdout, "code:", reg.ClaimCode)
+			fmt.Fprintln(stdout, "  "+claimURL)
+			if claimCode != "" {
+				fmt.Fprintln(stdout, "code:", claimCode)
 			}
 		}
 	}
 
 	if *resume {
 		callCtx, callCancel := context.WithTimeout(ctx, roundTrip)
-		_, code := pollOnce(callCtx, stdout, stderr, client, store, cfg, &reg, key)
+		_, code := pollOnce(callCtx, stdout, stderr, client, store, cfg, &reg, key, getenv)
 		callCancel()
 		return code
 	}
@@ -984,7 +1209,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 	deadline := time.Now().Add(connectPollBudget)
 	for {
 		callCtx, callCancel := context.WithTimeout(ctx, roundTrip)
-		done, code := pollOnce(callCtx, stdout, stderr, client, store, cfg, &reg, key)
+		done, code := pollOnce(callCtx, stdout, stderr, client, store, cfg, &reg, key, getenv)
 		callCancel()
 		if done {
 			return code
@@ -996,7 +1221,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 			// so this local reg is already current — a registration
 			// recovered without a claim link stays durable through the
 			// timeout narration too, not just the initial print.
-			if reg.Status == "unclaimed" && reg.ClaimURL == "" {
+			if claim, _ := claimFor(cfg.Miner, reg.AgentID, nil); reg.Status == "unclaimed" && printableClaimURL(claim.ClaimURL, cfg.Platform.BaseURL, nil) == "" {
 				fmt.Fprintln(stdout, "\n"+unclaimedNoLinkMessage)
 			} else {
 				fmt.Fprintln(stdout, "\nnot claimed yet. Approve it at the URL above, then run `jevlin connect` again")
@@ -1061,7 +1286,7 @@ func decideRegistrationOutcome(stdin io.Reader, br *bufio.Reader, stdout, stderr
 		fmt.Fprintln(stderr, "jevlin: mining decision is degraded; run `mining enable` or `mining disable` to repair it explicitly")
 		return miningEnableOutcome{}, exitTransport
 	case auth.MiningEnabled:
-		if address, ok, err := store.LoadPayoutAddress(); err == nil && ok {
+		if address, ok, err := loadPayoutAddress(cfg.Miner); err == nil && ok {
 			return miningEnableOutcome{enabled: true, payoutAddress: address}, exitOK
 		}
 		return finishMiningEnabled(stdin, br, stdout, stderr, getenv, cfg, store, interactive)
@@ -1106,7 +1331,7 @@ func registrationHint(outcome miningEnableOutcome) []string {
 // done=false means "keep polling" (still unclaimed, or a transient
 // error worth retrying in the foreground — a resume does not retry,
 // it simply exits and lets the next resume try again).
-func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Client, store *auth.Store, cfg *config.Config, reg *auth.AgentRegistration, key string) (done bool, code int) {
+func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Client, store *auth.Store, cfg *config.Config, reg *auth.AgentRegistration, key string, getenv func(string) string) (done bool, code int) {
 	// WP2-adversarial-review finding 6: re-read the on-disk record before
 	// mutating it — reg may be stale relative to whatever the most recent
 	// write actually persisted (this function is called repeatedly across
@@ -1170,21 +1395,22 @@ func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Cl
 			return true, exitOK
 		}
 
-		slot, errText := chooseSlot(st.MiningSlots, cfg.Mining.PlatformSlot)
+		slot, refusal := chooseSlot(st.MiningSlots, cfg.Mining.PlatformSlot)
 		if slot == "" {
-			if errText == "" {
-				errText = "mining scope granted, but the platform offered no slot"
+			if refusal == "" {
+				refusal = auth.SlotRefusalNoSlot
 			}
 			// WP2-adversarial-review finding 15: persisted so shouldResume
 			// stops spawning a resume that can only hit this same wall
 			// again, and so status can name it explicitly. Best-effort —
-			// the refusal is reported to the caller either way.
-			reg.SlotRefusal = errText
+			// the refusal is reported to the caller either way. A code and
+			// the slots offered, never the sentence.
+			reg.SlotRefusal, reg.OfferedSlots = refusal, st.MiningSlots
 			_ = store.SaveAgentRegistration(*reg)
-			fmt.Fprintln(stderr, "jevlin:", errText)
+			fmt.Fprintln(stderr, "jevlin:", slotRefusalText(refusal, st.MiningSlots, cfg.Mining.PlatformSlot))
 			return true, exitTransport
 		}
-		reg.SlotRefusal = ""
+		reg.SlotRefusal, reg.OfferedSlots = "", nil
 		token, err := client.Enroll(ctx, reg.AgentID, key, slot)
 		if err != nil {
 			fmt.Fprintln(stderr, "jevlin: enroll:", err)
@@ -1221,7 +1447,14 @@ func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Cl
 	// this exactly as it gates enrollment above — an installation that
 	// opted out after enrolling once must not keep declaring.
 	if miningActive(store) {
-		if address, ok, aerr := store.LoadPayoutAddress(); aerr == nil && ok && !addressSettled(store, address) {
+		address, source, aerr := payoutAddressToDeclare(cfg, store, getenv)
+		if aerr == nil && source == payoutNone {
+			if _, legacy, _ := store.LoadLegacyPayoutAddress(); legacy {
+				fmt.Fprintln(stdout, legacyPayoutNotice)
+			}
+		}
+		recordPayoutAddress(cfg, store, address, source, stdout)
+		if aerr == nil && source != payoutNone && !addressSettled(store, address) {
 			_, miningClient, err := buildMiningClient(ctx, cfg.Mining)
 			if err != nil {
 				fmt.Fprintln(stderr, "jevlin:", err)
@@ -1231,6 +1464,80 @@ func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Cl
 		}
 	}
 	return true, exitOK
+}
+
+// legacyPayoutNotice is what a run says about a payout.json in the state
+// directory it will not use. It never repeats the address: the file may be
+// a sandboxed command's, and an address in jevlin's own output reads as the
+// participant's.
+const legacyPayoutNotice = "payout: no address is on file beside credentials.json, and the payout.json in the state " +
+	"directory is not used (it is not this installation's own wallet address). Run `jevlin mining enable` at a " +
+	"terminal to choose the address to be paid at."
+
+// payoutSource says where payoutAddressToDeclare found an address.
+type payoutSource int
+
+const (
+	payoutNone     payoutSource = iota
+	payoutRecorded              // the record beside credentials.json
+	payoutConfig                // [mining] payout_address, not yet recorded
+	payoutWallet                // a state-directory payout.json that is this installation's own wallet address
+)
+
+// payoutAddressToDeclare is the address this installation would declare,
+// read with no side effect, so the poll, shouldResume, status and doctor's
+// held-note gate all answer the one question the same way: the record beside
+// credentials.json; else the config's [mining] payout_address, the
+// participant's scripted answer (the config's directory is outside every
+// writable root), when it is a twilight address; else a payout.json an older
+// version left in the state directory, only when it is this installation's
+// own wallet address, which lives beside credentials.json too. An invalid
+// config address does not hide the wallet's.
+//
+// The legacy rule used to be "the AS already has that address in force",
+// and the review showed a sandboxed command can make that true by itself: it
+// runs `jevlin payout set` with its own address in the window before the
+// participant's first declaration and plants a matching payout.json. The
+// wallet is evidence nothing in the state directory can forge; anything
+// else in the file is never recorded, never declared and never repeated.
+func payoutAddressToDeclare(cfg *config.Config, store *auth.Store, getenv func(string) string) (string, payoutSource, error) {
+	if address, ok, err := loadPayoutAddress(cfg.Miner); err != nil || ok {
+		if err != nil {
+			return "", payoutNone, err
+		}
+		return address, payoutRecorded, nil
+	}
+	if a := cfg.Mining.PayoutAddress; a != "" && isTwilightAddress(a) {
+		return a, payoutConfig, nil
+	}
+	if legacy, ok, err := store.LoadLegacyPayoutAddress(); err == nil && ok && legacy == walletAddressOnFile(getenv) {
+		return legacy, payoutWallet, nil
+	}
+	return "", payoutNone, nil
+}
+
+// recordPayoutAddress records an address payoutAddressToDeclare found
+// outside the record, best effort: a resume Codex's sandbox started cannot
+// write beside credentials.json, the address is the participant's either
+// way and is still declared, and the next foreground run records it. The
+// state directory's copy is removed only once its address is recorded.
+func recordPayoutAddress(cfg *config.Config, store *auth.Store, address string, source payoutSource, stdout io.Writer) {
+	if source != payoutConfig && source != payoutWallet {
+		return
+	}
+	if savePayoutAddress(cfg.Miner, address) != nil || source != payoutWallet {
+		return
+	}
+	_ = store.RemoveLegacyPayoutAddress()
+	fmt.Fprintln(stdout, "payout: the payout.json an older version kept in the state directory names this "+
+		"installation's own wallet; it is now recorded beside credentials.json")
+}
+
+// isTwilightAddress is the rule every payout address this client records
+// meets: twilight bech32.
+func isTwilightAddress(a string) bool {
+	hrp, _, err := auth.DecodeBech32Address(a)
+	return err == nil && hrp == auth.TwilightHRP
 }
 
 // declarePayoutIfSafe is §5.5's read-before-declare rule (design f0ddb69):
@@ -1328,12 +1635,11 @@ func addressSettled(store *auth.Store, address string) bool {
 // WP2-review ruling on judgment call 1: one slot offered, take it. More
 // than one, refuse and require mining.platform_slot naming which one —
 // automatic matching against the AS's own audience is a question for the
-// AS discovery document, not something this client guesses at. errText is
+// AS discovery document, not something this client guesses at. refusal is
 // empty unless a genuine refusal happened (more than one slot, and either
-// no platform_slot configured or one that names none of them), in which
-// case it names what was offered so the message the caller prints is
-// actionable.
-func chooseSlot(slots []string, platformSlot string) (slot, errText string) {
+// no platform_slot configured or one that names none of them): it is the
+// code agent.json records (auth.SlotRefusal*), and slotRefusalText says it.
+func chooseSlot(slots []string, platformSlot string) (slot, refusal string) {
 	switch len(slots) {
 	case 0:
 		return "", ""
@@ -1346,11 +1652,27 @@ func chooseSlot(slots []string, platformSlot string) (slot, errText string) {
 				return s, ""
 			}
 		}
-		return "", fmt.Sprintf("mining.platform_slot %q does not match any slot the platform offered (%s)",
-			platformSlot, strings.Join(slots, ", "))
+		return "", auth.SlotRefusalUnmatched
 	}
-	return "", fmt.Sprintf("the platform offered more than one mining slot (%s); set mining.platform_slot to name which one",
-		strings.Join(slots, ", "))
+	return "", auth.SlotRefusalAmbiguous
+}
+
+// slotRefusalText is the client's own sentence for a slot refusal agent.json
+// records as a code, naming the slots offered (tokens, auth.ValidSlotName)
+// and the configured platform_slot, so a refusal names what was offered and
+// the message is actionable without the record carrying any text of its own.
+func slotRefusalText(refusal string, offered []string, platformSlot string) string {
+	switch refusal {
+	case auth.SlotRefusalNoSlot:
+		return "mining scope granted, but the platform offered no slot"
+	case auth.SlotRefusalUnmatched:
+		return fmt.Sprintf("mining.platform_slot %q does not match any slot the platform offered (%s)",
+			platformSlot, strings.Join(offered, ", "))
+	case auth.SlotRefusalAmbiguous:
+		return fmt.Sprintf("the platform offered more than one mining slot (%s); set mining.platform_slot to name which one",
+			strings.Join(offered, ", "))
+	}
+	return ""
 }
 
 // buildMiningClient constructs the AS mining client from an
@@ -1419,7 +1741,7 @@ func buildMiningClient(ctx context.Context, m config.Mining) (*auth.OAuthClient,
 // never run connect and never will. The os.Stat below is read-only and
 // costs nothing when there is nothing to resume — the overwhelmingly
 // common case.
-func shouldResume(cfg *config.Config) bool {
+func shouldResume(cfg *config.Config, getenv func(string) string) bool {
 	stateDir := cfg.Mining.StateDir
 	if stateDir == "" {
 		return false
@@ -1460,8 +1782,11 @@ func shouldResume(cfg *config.Config) bool {
 		if !miningActive(store) {
 			return false
 		}
-		address, hasAddr, aerr := store.LoadPayoutAddress()
-		if aerr != nil || !hasAddr {
+		// The resume records and declares only what payoutAddressToDeclare
+		// finds; with nothing there, a resume has nothing to do, so none is
+		// spawned for it.
+		address, source, aerr := payoutAddressToDeclare(cfg, store, getenv)
+		if aerr != nil || source == payoutNone {
 			return false // enrolled, nothing to declare
 		}
 		return !addressSettled(store, address)

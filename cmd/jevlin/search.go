@@ -64,6 +64,9 @@ func intakeWriteBlocked(err error) bool {
 type searchOps struct {
 	getppid  func() int
 	hostname func() (string, error)
+	// traceKey returns the installation's trace key from the state dir,
+	// creating it on first use. nil or an error means there is none.
+	traceKey func(stateDir string) ([]byte, error)
 	getwd    func() (string, error)
 	// spawnFlush starts the detached flush after a served search; nil
 	// means "do not" (tests, or -no-flush).
@@ -86,12 +89,21 @@ func realSearchOps() searchOps {
 	return searchOps{
 		getppid:            os.Getppid,
 		hostname:           os.Hostname,
+		traceKey:           loadTraceKey,
 		getwd:              os.Getwd,
 		spawnFlush:         startFlush,
 		spawnConnectResume: startConnectResume,
 		now:                time.Now,
 		hook:               realHookOps(),
 	}
+}
+
+func loadTraceKey(stateDir string) ([]byte, error) {
+	store, err := auth.OpenStoreExisting(stateDir)
+	if err != nil {
+		return nil, err
+	}
+	return store.TraceKey()
 }
 
 func cmdSearch(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
@@ -201,7 +213,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	}
 
 	fs := newFlagSet("search", stderr)
-	cfgPath := fs.String("config", "", "path to TOML config file")
+	cfgPath := onceStringFlag(fs, "config", "path to TOML config file; given at most once")
 	tier := fs.String("tier", "", "search tier accepted by the router, e.g. fast; empty = the router's default")
 	format := fs.String("format", "json", "output: json (the router's bytes, verbatim) or model (compact text for an agent)")
 	viewFlag := fs.String("view", "", `router view: "merged" adds the router's own cross-provider merged list and per-arm indexes to the raw response; empty or "full" asks for none`)
@@ -311,7 +323,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	ctx, cancel := searchDeadline(*timeout)
 	defer cancel()
 
-	trace, foreignBridge := searchTrace(ops, cfg.Miner, getenv)
+	trace, foreignBridge := searchTrace(ops, cfg.Miner, cfg.Mining.StateDir, getenv)
 	if foreignBridge {
 		// Said on stderr, and only there. `-format json` prints the router's
 		// own bytes, so there is no envelope of ours to put it in without
@@ -364,7 +376,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	// reached. shouldResume itself is unchanged — it is still the cheap
 	// local disk check — but it is not consulted for a search that never
 	// got an answer.
-	if out.ResponseComplete && ops.spawnConnectResume != nil && shouldResume(cfg) {
+	if out.ResponseComplete && ops.spawnConnectResume != nil && shouldResume(cfg, getenv) {
 		_ = ops.spawnConnectResume(*cfgPath) // best effort; the next search resumes it if this one could not even start
 	}
 
@@ -745,7 +757,7 @@ func postSearch(ctx context.Context, client *http.Client, call searchCall, body 
 // is that a search never reaches the router labeled with a harness other
 // than the one its host declared. H-R4 (an adapter replaces a bridge it did
 // not write) is untouched: it governs hosts whose channel IS the bridge.
-func searchTrace(ops searchOps, m config.Miner, getenv func(string) string) (env *traceEnvelope, foreignBridge bool) {
+func searchTrace(ops searchOps, m config.Miner, stateDir string, getenv func(string) string) (env *traceEnvelope, foreignBridge bool) {
 	switch strings.ToLower(getenv("JEVLIN_TRACE")) {
 	case "off", "0", "false":
 		return nil, false
@@ -816,12 +828,23 @@ func searchTrace(ops searchOps, m config.Miner, getenv func(string) string) (env
 
 	// No hook anywhere: the parent shell stands in for the session. One
 	// agent session keeps one shell, so its pid is stable across calls.
-	// Hashed like every other identifier — the raw pid/host never travel.
-	host, _ := ops.hostname()
+	// Host and pid are guessable, so they are keyed with the installation's
+	// trace key, never hashed bare: a plain hash of them could be enumerated
+	// back to the hostname. With no key the search gets a one-off id.
+	sessionID := ""
+	if ops.traceKey != nil {
+		if key, err := ops.traceKey(stateDir); err == nil {
+			host, _ := ops.hostname()
+			sessionID = traceKeyedHash(key, host+"|"+strconv.Itoa(ops.getppid()))
+		}
+	}
+	if sessionID == "" {
+		sessionID = traceRandomID()
+	}
 	return capTrace(&traceEnvelope{
 		V:         traceVersion,
 		Harness:   orString(harness, "cli"),
-		SessionID: traceHash(host + "|" + strconv.Itoa(ops.getppid())),
+		SessionID: sessionID,
 		CallID:    traceRandomID(),
 	}), foreignBridge
 }

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"crypto/elliptic"
 	"os"
 	"path/filepath"
@@ -59,6 +60,95 @@ func TestDPoPKeyGeneratedOnceAndStable(t *testing.T) {
 	}
 }
 
+// The trace key is created once, owner-only, and reused; a symlinked or
+// malformed key is refused rather than trusted.
+func TestTraceKeyGeneratedOnceAndStable(t *testing.T) {
+	s, dir := newStore(t)
+	k1, err := s.TraceKey()
+	if err != nil || len(k1) != traceKeyLen {
+		t.Fatalf("TraceKey: %d bytes, %v", len(k1), err)
+	}
+	k2, err := s.TraceKey()
+	if err != nil || !bytes.Equal(k1, k2) {
+		t.Fatalf("reload produced a different key: %v", err)
+	}
+	info, err := os.Stat(filepath.Join(dir, traceKeyFile))
+	if err != nil || (posixModes && info.Mode().Perm() != 0o600) {
+		t.Fatalf("trace.key perms = %v, %v; want 0600", info.Mode().Perm(), err)
+	}
+	other, _ := newStore(t)
+	if k3, err := other.TraceKey(); err != nil || bytes.Equal(k1, k3) {
+		t.Fatalf("distinct installations share a trace key: %v", err)
+	}
+
+	short, shortDir := newStore(t)
+	if err := os.WriteFile(filepath.Join(shortDir, traceKeyFile), []byte("short"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := short.TraceKey(); err == nil {
+		t.Fatal("malformed trace.key accepted")
+	}
+
+	target := filepath.Join(t.TempDir(), "elsewhere")
+	if err := os.WriteFile(target, bytes.Repeat([]byte("k"), traceKeyLen), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	linked, linkedDir := newStore(t)
+	if err := os.Symlink(target, filepath.Join(linkedDir, traceKeyFile)); err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+	if _, err := linked.TraceKey(); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("symlinked trace.key not refused: %v", err)
+	}
+}
+
+// EnsureTraceKey is what setup and connect call, outside any sandbox, so that
+// a search which cannot write the state directory finds the key and only
+// reads it. It must say truthfully whether it made the key (setup reports a
+// change from it), leave an existing key's bytes alone, and refuse what
+// TraceKey refuses rather than replace it.
+func TestEnsureTraceKeyMakesTheKeyOnceAndSaysSo(t *testing.T) {
+	s, dir := newStore(t)
+	path := TraceKeyPath(dir)
+	if path != filepath.Join(dir, "trace.key") {
+		t.Fatalf("TraceKeyPath = %q, want trace.key in the state directory", path)
+	}
+	created, err := s.EnsureTraceKey()
+	if err != nil || !created {
+		t.Fatalf("first EnsureTraceKey = %v, %v; want created", created, err)
+	}
+	first, err := os.ReadFile(path) // #nosec G304 -- the test's own state directory
+	if err != nil || len(first) != traceKeyLen {
+		t.Fatalf("trace.key is %d bytes, %v; want %d", len(first), err, traceKeyLen)
+	}
+	if info, err := os.Stat(path); err != nil || (posixModes && info.Mode().Perm() != 0o600) {
+		t.Fatalf("trace.key perms = %v, %v; want 0600", info.Mode().Perm(), err)
+	}
+	created, err = s.EnsureTraceKey()
+	if err != nil || created {
+		t.Fatalf("second EnsureTraceKey = %v, %v; want not created", created, err)
+	}
+	if again, _ := os.ReadFile(path); !bytes.Equal(first, again) { // #nosec G304 -- same path
+		t.Fatal("EnsureTraceKey rewrote an existing key")
+	}
+	if key, err := s.TraceKey(); err != nil || !bytes.Equal(key, first) {
+		t.Fatalf("TraceKey after EnsureTraceKey = %x, %v; want the key on disk", key, err)
+	}
+
+	// A key that is not 32 bytes is refused and left where it lies.
+	bad, badDir := newStore(t)
+	badPath := TraceKeyPath(badDir)
+	if err := os.WriteFile(badPath, []byte("short"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if created, err := bad.EnsureTraceKey(); err == nil || created {
+		t.Fatalf("EnsureTraceKey over a short key = %v, %v; want a refusal", created, err)
+	}
+	if kept, _ := os.ReadFile(badPath); string(kept) != "short" { // #nosec G304 -- same path
+		t.Fatalf("EnsureTraceKey replaced a key it refused: %q", kept)
+	}
+}
+
 // PRIV-008 permission assertion: loose modes refuse the mining plane.
 func TestPermissionHazardsRefused(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -82,9 +172,14 @@ func TestPermissionHazardsRefused(t *testing.T) {
 		t.Fatalf("restored perms still refused: %v", err)
 	}
 
-	// Loose state directory refuses OpenStore entirely.
+	// Loose state directory refuses OpenStore entirely. The hazard is set with
+	// Chmod, not the mode MkdirAll is given: that passes through the umask,
+	// and under 0077 it would leave a 0700 directory with nothing to refuse.
 	looseDir := filepath.Join(t.TempDir(), "loose")
-	if err := os.MkdirAll(looseDir, 0o755); err != nil { // #nosec G301 -- deliberately loose: the test proves refusal
+	if err := os.MkdirAll(looseDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(looseDir, 0o755); err != nil { // #nosec G302 -- deliberately loose: the test proves refusal
 		t.Fatal(err)
 	}
 	if _, err := OpenStore(looseDir); err == nil {
@@ -148,8 +243,6 @@ func TestSaveLoadAgentRegistrationRoundTrips(t *testing.T) {
 	}
 	want := AgentRegistration{
 		AgentID:        "agent-1",
-		ClaimURL:       "https://platform.nyks.dev/claim/AB12-CD34",
-		ClaimCode:      "AB12-CD34",
 		Status:         "unclaimed",
 		ClaimExpiresAt: "2026-09-16T00:00:00Z",
 	}
@@ -157,8 +250,8 @@ func TestSaveLoadAgentRegistrationRoundTrips(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, ok, err := s.LoadAgentRegistration()
-	if err != nil || !ok || got.AgentID != want.AgentID || got.ClaimURL != want.ClaimURL ||
-		got.ClaimCode != want.ClaimCode || got.Status != want.Status || got.ClaimExpiresAt != want.ClaimExpiresAt ||
+	if err != nil || !ok || got.AgentID != want.AgentID ||
+		got.Status != want.Status || got.ClaimExpiresAt != want.ClaimExpiresAt ||
 		len(got.Scopes) != 0 {
 		t.Fatalf("got %+v ok=%v err=%v, want %+v", got, ok, err, want)
 	}
@@ -210,7 +303,11 @@ func TestAgentRegistrationSurvivesAcrossStoreReopens(t *testing.T) {
 }
 
 func TestPendingRegistrationJournalIsStrictAndOwnerOnly(t *testing.T) {
-	s, dir := newStore(t)
+	dir := t.TempDir()
+	s, err := OpenRegistrationJournal(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := PendingRegistration{
 		AgentID:        "agent-journal",
 		Key:            "sr-journal-key",
@@ -220,10 +317,10 @@ func TestPendingRegistrationJournalIsStrictAndOwnerOnly(t *testing.T) {
 		Status:         "unclaimed",
 		PollIntervalMS: 2000,
 	}
-	if err := s.SavePendingRegistration(want); err != nil {
+	if err := s.Save(want); err != nil {
 		t.Fatal(err)
 	}
-	got, ok, err := s.LoadPendingRegistration()
+	got, ok, err := s.Load()
 	if err != nil || !ok || got.AgentID != want.AgentID || got.Key != want.Key || got.ClaimURL != want.ClaimURL || got.PollIntervalMS != want.PollIntervalMS {
 		t.Fatalf("got %+v ok=%v err=%v, want %+v", got, ok, err, want)
 	}
@@ -231,10 +328,10 @@ func TestPendingRegistrationJournalIsStrictAndOwnerOnly(t *testing.T) {
 	if err != nil || (posixModes && info.Mode().Perm() != 0o600) {
 		t.Fatalf("registration journal perms = %v, want 0600", info.Mode().Perm())
 	}
-	if err := s.ClearPendingRegistration(); err != nil {
+	if err := s.Clear(); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := s.LoadPendingRegistration(); err != nil || ok {
+	if _, ok, err := s.Load(); err != nil || ok {
 		t.Fatalf("cleared journal still loads: ok=%v err=%v", ok, err)
 	}
 
@@ -243,13 +340,16 @@ func TestPendingRegistrationJournalIsStrictAndOwnerOnly(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "registration_pending.json"), []byte(`{"v":1,"agent_id":"a","key":"sr-k","claim_url":"https://platform.nyks.dev/c","claim_code":"c","claim_expires_at":"","status":"unclaimed","unexpected":true}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := s.LoadPendingRegistration(); err == nil || ok || !strings.Contains(err.Error(), "unknown field") {
+	if _, ok, err := s.Load(); err == nil || ok || !strings.Contains(err.Error(), "a field this client does not write") {
 		t.Fatalf("journal with unknown field accepted: ok=%v err=%v", ok, err)
 	}
 }
 
 func TestPendingExpiredReplacementJournalBindsPreviousIdentity(t *testing.T) {
-	s, _ := newStore(t)
+	s, err := OpenRegistrationJournal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := PendingRegistration{
 		AgentID:         "agent-new",
 		Key:             "sr-new-key",
@@ -261,31 +361,48 @@ func TestPendingExpiredReplacementJournalBindsPreviousIdentity(t *testing.T) {
 		PreviousAgentID: "agent-old",
 		PreviousKey:     "sr-old-key",
 	}
-	if err := s.SavePendingRegistration(want); err != nil {
+	if err := s.Save(want); err != nil {
 		t.Fatal(err)
 	}
-	got, ok, err := s.LoadPendingRegistration()
+	got, ok, err := s.Load()
 	if err != nil || !ok || !got.ReplaceExpired || got.PreviousAgentID != want.PreviousAgentID || got.PreviousKey != want.PreviousKey {
 		t.Fatalf("replacement journal lost previous binding: got=%+v ok=%v err=%v", got, ok, err)
 	}
 }
 
-// SavePayoutAddress/LoadPayoutAddress round-trip independently of the
-// agent registration — the address is a local mining preference the
-// client owns, not platform state a poll can overwrite.
-func TestSaveLoadPayoutAddressRoundTrips(t *testing.T) {
-	s, _ := newStore(t)
-	if _, ok, err := s.LoadPayoutAddress(); err != nil || ok {
-		t.Fatalf("fresh store: ok=%v err=%v, want ok=false err=nil", ok, err)
-	}
-	if err := s.SavePayoutAddress("twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n"); err != nil {
+// newPayoutRecord is a payout record in a fresh directory standing for the
+// jevlin home, with a state directory beside it that it never touches.
+func newPayoutRecord(t *testing.T) (*PayoutRecord, string) {
+	t.Helper()
+	home := filepath.Join(t.TempDir(), "home")
+	p, err := OpenPayoutRecord(home)
+	if err != nil {
 		t.Fatal(err)
 	}
-	got, ok, err := s.LoadPayoutAddress()
+	return p, home
+}
+
+// The payout record round-trips independently of the agent registration —
+// the address is a local mining preference the client owns, not platform
+// state a poll can overwrite — owner-only, in the directory it was opened
+// on and nowhere else.
+func TestSaveLoadPayoutAddressRoundTrips(t *testing.T) {
+	p, home := newPayoutRecord(t)
+	if _, ok, err := p.Load(); err != nil || ok {
+		t.Fatalf("fresh record: ok=%v err=%v, want ok=false err=nil", ok, err)
+	}
+	if err := p.Save("twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n"); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := p.Load()
 	if err != nil || !ok || got != "twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n" {
 		t.Fatalf("got %q ok=%v err=%v", got, ok, err)
 	}
-	if err := s.SavePayoutAddress(""); err == nil {
+	info, err := os.Stat(filepath.Join(home, "payout.json"))
+	if err != nil || (posixModes && info.Mode().Perm() != 0o600) {
+		t.Fatalf("payout.json perms = %v err=%v, want 0600", info, err)
+	}
+	if err := p.Save(""); err == nil {
 		t.Fatal("empty payout address accepted")
 	}
 }
@@ -351,11 +468,12 @@ func TestSaveLoadPayoutBindingHeldRoundTrips(t *testing.T) {
 	if _, ok, err := s.LoadPayoutBindingHeld(); err != nil || ok {
 		t.Fatalf("fresh store: ok=%v err=%v, want ok=false err=nil", ok, err)
 	}
-	if err := s.SavePayoutBindingHeld("twilight1local", "twilight1active", HeldReplacesActive); err != nil {
+	const local, active = "twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh", "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn"
+	if err := s.SavePayoutBindingHeld(local, active, HeldReplacesActive); err != nil {
 		t.Fatal(err)
 	}
 	got, ok, err := s.LoadPayoutBindingHeld()
-	if err != nil || !ok || got.Local != "twilight1local" || got.Active != "twilight1active" {
+	if err != nil || !ok || got.Local != local || got.Active != active {
 		t.Fatalf("got %+v ok=%v err=%v", got, ok, err)
 	}
 	if err := s.ClearPayoutBindingHeld(); err != nil {
@@ -390,23 +508,23 @@ func TestSaveLoadClearRevokePendingRoundTrips(t *testing.T) {
 	}
 }
 
-// WP2-adversarial-review finding 9: SavePayoutAddress is the one place
+// WP2-adversarial-review finding 9: PayoutRecord.Save is the one place
 // every payout address in the agent-onboarding flow is validated.
 func TestSavePayoutAddressRejectsNonBech32(t *testing.T) {
-	s, _ := newStore(t)
+	p, _ := newPayoutRecord(t)
 	for _, bad := range []string{"twilight1abc", "not-an-address", "twilight1", ""} {
-		if err := s.SavePayoutAddress(bad); err == nil {
-			t.Errorf("SavePayoutAddress(%q) accepted, want a bech32-decode refusal", bad)
+		if err := p.Save(bad); err == nil {
+			t.Errorf("Save(%q) accepted, want a bech32-decode refusal", bad)
 		}
 	}
 }
 
 func TestSavePayoutAddressRejectsWrongHRP(t *testing.T) {
-	s, _ := newStore(t)
+	p, _ := newPayoutRecord(t)
 	// A syntactically valid bech32 string, but for a different chain's
 	// prefix — the HRP check is a separate rejection from the decode
 	// check above, and needs its own input to exercise it.
-	if err := s.SavePayoutAddress("cosmos1qqnfjqxr5w5c60x5xw24k5zqe0shsrtj04kagr"); err == nil {
+	if err := p.Save("cosmos1qqnfjqxr5w5c60x5xw24k5zqe0shsrtj04kagr"); err == nil {
 		t.Fatal("an address with the wrong HRP was accepted")
 	}
 }

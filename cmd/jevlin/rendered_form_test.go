@@ -145,24 +145,41 @@ func TestRecognizerRefusesAFormRenderedForAnotherShell(t *testing.T) {
 	}
 }
 
-// The identity check is the file, not the spelling: a path that reaches this
-// same binary another way is still recognized.
-func TestRecognizerFollowsTheBinaryNotItsSpelling(t *testing.T) {
+// The identity check is the rendered spelling, not the file: the path this
+// hook was started by is recognized even when it is a link, and another path
+// that reaches the same binary is not, since what a path names to the hook is
+// not always what it names to the shell that runs the command.
+func TestRecognizerTakesOnlyTheBinaryPathTheSkillRenders(t *testing.T) {
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	link := filepath.Join(t.TempDir(), exeName("linked"))
-	if err := os.Symlink(self, link); err != nil {
-		t.Skip("this environment does not allow symlinks: " + err.Error())
+	dir := t.TempDir()
+	link := filepath.Join(dir, exeName("linked"))
+	other := filepath.Join(dir, exeName("other"))
+	for _, l := range []string{link, other} {
+		if err := os.Symlink(self, l); err != nil {
+			t.Skip("this environment does not allow symlinks: " + err.Error())
+		}
 	}
-	f := recognizerFixture{
-		entry:  binEntry{command: link, cfg: filepath.Join(t.TempDir(), "jevlin.toml")},
-		shells: []shellKind{shellPOSIX},
-		exe:    func() (string, error) { return self, nil },
-	}
-	if got := f.recognize(f.renderedSearch(t, shellPOSIX, `{"version":1,"query":"q"}`)); got == nil {
-		t.Fatal("a link to this binary was not recognized as this binary")
+	cfg := filepath.Join(t.TempDir(), "jevlin.toml")
+	for _, c := range []struct {
+		rendered, running string
+		want              bool
+	}{
+		{link, link, true},
+		{self, self, true},
+		{link, self, false},
+		{other, link, false},
+	} {
+		f := recognizerFixture{
+			entry:  binEntry{command: c.rendered, cfg: cfg},
+			shells: []shellKind{shellPOSIX},
+			exe:    func() (string, error) { return c.running, nil },
+		}
+		if got := f.recognize(f.renderedSearch(t, shellPOSIX, `{"version":1,"query":"q"}`)) != nil; got != c.want {
+			t.Errorf("a search naming %q, from a hook started as %q: recognized %v, want %v", c.rendered, c.running, got, c.want)
+		}
 	}
 }
 

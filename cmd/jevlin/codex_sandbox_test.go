@@ -218,3 +218,63 @@ func TestCodexInstallWithNoReadableConfigWritesNoBlock(t *testing.T) {
 		t.Errorf("wrote a config.toml with no readable config:\n%s", b)
 	}
 }
+
+// A layout that nests the installation's own directory (credentials.json,
+// flush.lock) or the config's directory inside a directory the block would
+// grant gets no block at all, and install says why: hard invariant 19 rests on
+// those two never being writable from the sandbox.
+func TestCodexInstallRefusesALayoutThatNestsTheInstallationInARoot(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		layout func(home string) (cfgPath string, doc string)
+	}{
+		{"intake_dir inside state_dir", func(home string) (string, string) {
+			st := filepath.Join(home, "state")
+			return filepath.Join(home, "jevlin.toml"), nestedDoc(st, filepath.Join(home, "spool"), filepath.Join(st, "intake"), filepath.Join(home, "sessions"))
+		}},
+		{"the config inside state_dir", func(home string) (string, string) {
+			st := filepath.Join(home, "state")
+			return filepath.Join(st, "jevlin.toml"), nestedDoc(st, filepath.Join(home, "spool"), filepath.Join(home, "intake"), filepath.Join(home, "sessions"))
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			cfgPath, doc := tc.layout(home)
+			if err := os.MkdirAll(filepath.Dir(cfgPath), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(cfgPath, []byte(doc), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			m, ops := newFakeMachine("codex")
+			code, out, _ := runAgents(t, ops, nil, "install", "-config", cfgPath, "-yes")
+			if code != exitOK {
+				t.Fatalf("install: %d\n%s", code, out)
+			}
+			if b := m.files["/home/u/.codex/config.toml"]; strings.Contains(string(b), "writable_roots") {
+				t.Fatalf("granted writable roots to a layout that nests the installation:\n%s", b)
+			}
+			if !strings.Contains(out, "not widening the sandbox") {
+				t.Fatalf("install did not say why it wrote no block:\n%s", out)
+			}
+		})
+	}
+}
+
+func nestedDoc(state, spool, intake, sessions string) string {
+	return fmt.Sprintf(`
+[mining]
+enabled = true
+as_url = "https://as.example.invalid"
+chain_id = "twilight-1"
+slot_id = 7
+state_dir = %q
+spool_dir = %q
+
+[miner]
+enabled = true
+router_url = "https://router.example.invalid"
+intake_dir = %q
+sessions_dir = %q
+`, filepath.ToSlash(state), filepath.ToSlash(spool), filepath.ToSlash(intake), filepath.ToSlash(sessions))
+}

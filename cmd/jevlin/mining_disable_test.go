@@ -42,7 +42,7 @@ func fullyEnrolledInstall(t *testing.T) (cfgPath, stateDir string, platform *stu
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SavePayoutAddress("twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n"); err != nil {
+	if err := testPayoutRecord(t, stateDir).Save("twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n"); err != nil {
 		t.Fatal(err)
 	}
 	platform.claim("credits", "mining")
@@ -138,7 +138,7 @@ func TestMiningDisablePersistsOffForRegisteredUnclaimedAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-1", Status: "unclaimed", ClaimURL: "https://platform.example/claim",
+		AgentID: "agent-1", Status: "unclaimed",
 	}); err != nil {
 		t.Fatal(err)
 	}

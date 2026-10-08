@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/jevlinai/jevlin-go/internal/netdial"
+	"github.com/jevlinai/jevlin-go/internal/termtext"
 	"github.com/jevlinai/jevlin-go/pkg/auth"
 )
 
@@ -199,11 +200,28 @@ func (c *Client) Register(ctx context.Context, name, client string, requestedSco
 	if wire.AgentID == "" || wire.Key == "" || wire.ClaimURL == "" {
 		return nil, errors.New("platform: register response missing agent_id, key or claim_url")
 	}
+	// Refused here, before connect journals the response: a field the
+	// client would not save later wedges the journal it has already
+	// written, and the key in it is published first.
+	if err := auth.ValidAgentID(wire.AgentID); err != nil {
+		return nil, fmt.Errorf("platform: register response: %w; refusing", err)
+	}
+	// The key goes into credentials.json, which readCredentials refuses
+	// when it is blank, and into an Authorization header: a key that is
+	// whitespace, or holds a blank or a control character anywhere, is not
+	// one this client could publish, and journaling it first wedged the
+	// journal on a publication that could never verify.
+	if strings.TrimSpace(wire.Key) == "" || strings.ContainsAny(wire.Key, " \t") || hasControlChar(wire.Key) {
+		return nil, errors.New("platform: register response's key is blank or holds a blank or a control character; refusing")
+	}
 	if err := validatePlatformURL(wire.ClaimURL, c.portalBaseURL); err != nil {
 		return nil, err
 	}
 	if hasControlChar(wire.ClaimCode) {
 		return nil, errors.New("platform: claim_code contains a control character; refusing")
+	}
+	if err := auth.ValidTimestamp(wire.ClaimExpiresAt); err != nil {
+		return nil, fmt.Errorf("platform: register response: claim_expires_at: %w; refusing", err)
 	}
 	return &Registration{
 		AgentID:        wire.AgentID,
@@ -226,19 +244,14 @@ func clampPollInterval(d time.Duration) time.Duration {
 	return d
 }
 
-// controlCharPattern is any C0 control character (including \n, \r, \t)
-// or DEL — none legitimately appears in a claim URL, a claim code, or a
-// slot name. Not a full sanitizer: a REFUSAL, not a strip, because a
-// platform response containing one is not a shape this client trusts
-// enough to guess what was meant (WP2-adversarial-review finding 12).
-func hasControlChar(s string) bool {
-	for _, r := range s {
-		if r < 0x20 || r == 0x7f {
-			return true
-		}
-	}
-	return false
-}
+// hasControlChar is internal/termtext's rule: any control, format or line
+// separator character. None legitimately appears in an agent id, a claim
+// URL, a claim code, a claim time, a scope, a slot name or a refusal message.
+// A REFUSAL, not a strip, because a platform response containing one is
+// not a shape this client trusts enough to guess what was meant
+// (WP2-adversarial-review finding 12). pkg/auth reads its records back
+// through the same rule, which is why the rule is not kept here.
+func hasControlChar(s string) bool { return termtext.HasControlChar(s) }
 
 // isLoopbackHostname mirrors pkg/config's and pkg/auth's own
 // isLoopbackHost — each package that validates a URL's host keeps this
@@ -261,9 +274,23 @@ func isLoopbackHostname(host string) bool {
 // actually this platform's. Absolute HTTPS (or loopback, matching this
 // codebase's http(s)-or-loopback convention elsewhere), origin exactly
 // equal to baseURL's own.
+//
+// The origin is not the whole of what is printed. url.Parse accepts a space,
+// U+3000 or any other non-ASCII rune in a path, so "<origin>/claim/X
+// https://evil.example/claim" has the right origin, and a terminal that
+// turns URLs into links makes the second one clickable on the line the
+// participant is told to open. So every byte must be printable ASCII
+// without the space, the URL must name no user (a "user@" before the host
+// is shown first and opens the platform anyway), and it must re-serialize
+// to exactly the text given: what is checked is what is printed.
 func validatePlatformURL(raw, baseURL string) error {
 	if hasControlChar(raw) {
 		return errors.New("platform: claim_url contains a control character; refusing")
+	}
+	for i := 0; i < len(raw); i++ {
+		if raw[i] < 0x21 || raw[i] > 0x7e {
+			return errors.New("platform: claim_url holds a space or a character outside printable ASCII; refusing")
+		}
 	}
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -271,6 +298,12 @@ func validatePlatformURL(raw, baseURL string) error {
 	}
 	if !u.IsAbs() {
 		return errors.New("platform: claim_url is not an absolute URL")
+	}
+	if u.User != nil {
+		return errors.New("platform: claim_url names a user before its host; refusing")
+	}
+	if u.String() != raw {
+		return errors.New("platform: claim_url does not read back as the text it was given; refusing")
 	}
 	httpsOrLoopback := u.Scheme == "https" || (u.Scheme == "http" && isLoopbackHostname(u.Hostname()))
 	if !httpsOrLoopback {
@@ -285,6 +318,15 @@ func validatePlatformURL(raw, baseURL string) error {
 			u.Scheme, u.Host, base.Scheme, base.Host)
 	}
 	return nil
+}
+
+// ValidateStoredClaimURL applies validatePlatformURL to a claim_url read
+// back from local state rather than straight off the wire. agent.json lives
+// in a sandbox-writable state_dir, so the copy there is only as trustworthy
+// as the last thing that wrote the file: it must pass the same check
+// against the configured platform.base_url before it is shown to anyone.
+func ValidateStoredClaimURL(raw, baseURL string) error {
+	return validatePlatformURL(raw, strings.TrimRight(baseURL, "/"))
 }
 
 // AgentStatus is what Status returns (§5.2), flattened.
@@ -414,10 +456,24 @@ func decodeAgentStatusWire(data []byte, portalBaseURL string) (AgentStatus, erro
 		wire.Status = "unclaimed"
 		wire.Scopes = nil
 	}
+	// Every identifier here lands in agent.json, which status prints, so each
+	// is held to the shape a record holds it to (auth.ValidSlotName and the
+	// rest): a token, never a sentence, and never a control character.
 	for _, slot := range wire.Mining.Slots {
-		if hasControlChar(slot) {
-			return AgentStatus{}, errors.New("platform: a slot name in the status response contains a control character; refusing")
+		if auth.ValidSlotName(slot) != nil {
+			return AgentStatus{}, errors.New("platform: a slot name in the status response is not an identifier; refusing")
 		}
+	}
+	for _, sc := range wire.Scopes {
+		if auth.ValidScope(sc) != nil {
+			return AgentStatus{}, errors.New("platform: a scope in the status response is not an identifier; refusing")
+		}
+	}
+	if le := wire.Mining.LastEnrollment; le != nil && (auth.ValidSlotName(le.Slot) != nil || auth.ValidTimestamp(le.MintedAt) != nil) {
+		return AgentStatus{}, errors.New("platform: last_enrollment in the status response is not a slot name and a time; refusing")
+	}
+	if auth.ValidTimestamp(wire.ClaimExpiresAt) != nil || auth.ValidTimestamp(wire.ClaimedAt) != nil {
+		return AgentStatus{}, errors.New("platform: a claim time in the status response is not a timestamp; refusing")
 	}
 	// console_url gets the same origin-lock and control-character check
 	// as register's claim_url (invariant 12) — but dropped, not failed,
@@ -511,6 +567,9 @@ func (c *Client) Me(ctx context.Context, key string) (*AgentIdentity, error) {
 	if wire.AgentID == "" {
 		return nil, errors.New("platform: self-lookup response carried no agent_id")
 	}
+	if err := auth.ValidAgentID(wire.AgentID); err != nil {
+		return nil, fmt.Errorf("platform: self-lookup response: %w; refusing", err)
+	}
 	if hasControlChar(wire.ClaimCode) {
 		return nil, errors.New("platform: claim_code contains a control character; refusing")
 	}
@@ -589,6 +648,9 @@ func (c *Client) ClaimCode(ctx context.Context, agentID, key string) (*ClaimBoot
 	}
 	if hasControlChar(wire.ClaimCode) {
 		return nil, errors.New("platform: claim_code contains a control character; refusing")
+	}
+	if err := auth.ValidTimestamp(wire.ClaimExpiresAt); err != nil {
+		return nil, fmt.Errorf("platform: claim-code response: claim_expires_at: %w; refusing", err)
 	}
 	return &ClaimBootstrap{
 		ClaimURL:       wire.ClaimURL,
@@ -692,8 +754,15 @@ func refusal(status int, raw []byte) error {
 		if code == "" {
 			code = env.Error.Code
 		}
-		if code != "" {
-			return &RefusalError{Status: status, Code: code, Message: env.Error.Message}
+		// Both are printed verbatim by Error(): a code carrying a control
+		// character is no code at all, and such a message is dropped
+		// (the code alone still classifies the refusal).
+		if code != "" && !hasControlChar(code) {
+			msg := env.Error.Message
+			if hasControlChar(msg) {
+				msg = ""
+			}
+			return &RefusalError{Status: status, Code: code, Message: msg}
 		}
 	}
 	return &RefusalError{Status: status}

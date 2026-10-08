@@ -1045,7 +1045,7 @@ func (r *uninstallRun) purgeSet() (inside, outside []string) {
 	join := func(name string) string { return filepath.Join(r.home, name) }
 	first := []string{
 		join("wallet"), join("sessions"), join("intake"), join("spool"),
-		join(credentialsFile), join(setupConfigFile), join(preferFile),
+		join(credentialsFile), join(registrationJournalFile), join(payoutRecordFile), join(claimRecordFile), join(setupConfigFile), join(preferFile),
 	}
 	if entries, err := os.ReadDir(r.home); err == nil {
 		for _, e := range entries {
@@ -1140,8 +1140,9 @@ type configuredPath struct {
 
 // configuredStatePaths is every participant path a config names — state,
 // spool, intake, sessions — and the ones derived from them: the flush stamp
-// in the state directory, and beside the intake the stored credentials and
-// the flush lock.
+// in the state directory, and beside the intake the stored credentials, the
+// registration journal (which can hold a platform key), the payout record,
+// the claim record and the flush lock.
 func configuredStatePaths(cfg *config.Config) []configuredPath {
 	m, mn := cfg.Mining, cfg.Miner
 	out := []configuredPath{
@@ -1152,6 +1153,9 @@ func configuredStatePaths(cfg *config.Config) []configuredPath {
 	if mn.IntakeDir != "" {
 		out = append(out,
 			configuredPath{"the stored credentials beside miner.intake_dir", filepath.Join(minerRoot(mn), credentialsFile)},
+			configuredPath{"the registration journal beside miner.intake_dir", filepath.Join(minerRoot(mn), registrationJournalFile)},
+			configuredPath{"the payout record beside miner.intake_dir", filepath.Join(minerRoot(mn), payoutRecordFile)},
+			configuredPath{"the claim record beside miner.intake_dir", filepath.Join(minerRoot(mn), claimRecordFile)},
 			configuredPath{"the flush lock beside miner.intake_dir", flushLockPath(mn)})
 	}
 	var named []configuredPath

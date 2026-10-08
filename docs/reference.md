@@ -24,10 +24,14 @@ Values to look up. Every flag is in `jevlin help` and `jevlin <command> -h`.
 | `version`, `help` | The version, and the full usage text. |
 
 Every command takes `-config <file>`. Without it, the config is the first of: `JEVLIN_CONFIG`,
-`./jevlin.toml`, the installation's own (`$JEVLIN_HOME/jevlin.toml`, else
-`~/.jevlin/jevlin.toml`) when that file exists, and built-in defaults. `status` and `doctor`
+the installation's own (`$JEVLIN_HOME/jevlin.toml`, else `~/.jevlin/jevlin.toml`) when that
+file exists, and built-in defaults. A `jevlin.toml` in the working directory is never read
+unless you name it, so a cloned repo cannot choose where your keys are sent. `status` and `doctor`
 name the file they used. `connect` refuses to run with no config file, and says to run
 `jevlin setup`.
+`search` refuses a second `-config`, even one naming the same file: the Claude Code allow rule
+ends after the installed `-config <file>`, so a second one could otherwise send the key to
+another config's router without a prompt.
 
 ## The `--stdin` request
 
@@ -163,8 +167,25 @@ an opt-out `connect` does not re-ask. Setup writes `enabled = true` only with no
 `as_url` says an authorization server exists. An unreadable decision counts as degraded, which
 also stops mining.
 
+**Who can open the state directory, on Windows.** `jevlin setup` gives `<home>\state` an access
+list that names only you. A `state_dir` that `setup` (when it is outside the installation), `connect`, `enroll`, `mining
+enable` or `mining disable` creates gets the same list, with you as its owner, and so does each directory it had to create on the way to
+it; if a list cannot be set, what was created is removed rather than left to be opened as it is. A directory that already exists is left as it is by
+those commands, and so is any entry another program has added to it, because an agent's sandbox
+is meant to reach this directory: nothing refuses a state directory over who else is on its
+list. `jevlin setup` is the exception for `<home>\state` and its siblings: it gives them an
+owner-only list on every run, which removes such an entry until the sandbox's own setup adds it
+again. `doctor`'s `state access` line says whose the directory is and names anyone else the list
+admits.
+
 `[miner]`'s two directories default beside the state directory, and `intake_dir`'s parent is
-where `credentials.json` and `flush.lock` are looked for. `base_url` is never dialed: a printed
+where `credentials.json`, `flush.lock`, the payout address you chose (`payout.json`), the claim
+link (`claim.json`) and an unfinished registration (`registration_pending.json`) are kept: never
+the state directory, which an agent's sandbox may write. A `payout.json` an older version left in
+the state directory is never declared from there; `connect` records it beside `credentials.json`
+only when it is this installation's own wallet address, and records `[mining] payout_address`
+instead when the config sets one. A claim link an older version kept in `state/agent.json` is not
+read; the next `jevlin connect` mints a fresh one. `base_url` is never dialed: a printed
 claim link must point there. `agents_api_url` is where `connect` and `mining enable` send
 requests. A non-default, non-loopback `base_url` without `agents_api_url` is refused; a
 loopback one alone defaults `agents_api_url` to it. Every URL must be https, or http on
@@ -210,6 +231,9 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 |---|---|---|---|
 | `jevlin.toml` | The config. | setup | No. |
 | `credentials.json` | The search key, owner-only. Refused if a symlink or readable by others. | connect, login | Only to forget the key: `login -forget`. |
+| `payout.json` | The payout address you chose, which connect declares for you once mining is approved. | connect, mining enable | No, until `jevlin payout show` says it is in force. |
+| `registration_pending.json` | A registration the platform answered that is not yet saved; finished by the next connect. | connect | No: it holds the new key. |
+| `claim.json` | The claim link and code for this installation's agent, while it is unclaimed. | connect | Yes; the next `jevlin connect` mints a fresh link, which ends the old one. |
 | `search-default` | `agents prefer`'s choice. | agents prefer | Yes; the skill default returns. |
 | `bin/jevlin` | A native binary, and `jevlin.previous` after an upgrade. | setup, upgrade | Through `uninstall -binary`. |
 | `state/` | Identity, authorization, the mining decision, health records, the flush stamp. | connect, flush | No: it is your registration. |
@@ -241,6 +265,7 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | intake writable | This process can write where a search records. Probes with one inert non-`.json` file, then removes it. |
 | recording | Recorded searches are waiting, queued, or verified at the AS; or nothing ran recently. |
 | wallet access | Windows only: nobody but you can read the wallet. |
+| state access | Windows only: the state directory and its credentials have an access list and an owner, who is you, SYSTEM or Administrators. Anyone else the list names is shown, and is `OK`: an agent's sandbox is expected there. |
 
 `NO` is a fact and a successful diagnosis; `UNKNOWN` is the absence of one. `doctor` exits
 non-zero only when every check came back `UNKNOWN`. It opens existing state only and creates no
@@ -394,12 +419,18 @@ base64url-encoded in `JEVLIN_TRACE_BRIDGE`, written in the syntax of the shell t
 command, and only inside the search request — and only onto a command where that syntax
 actually reaches the search. A loop, a list or a pipeline with the search anywhere but first is
 left exactly as written; the search still runs, carrying the hashed per-shell identity instead.
-With no hook, a search carries that same per-shell identity. The hashed `session_id` is also
-mirrored as the request's own top-level `session_id` and `X-Session-Id` header — the router
-groups quick reformulations by it there, and reads the trajectory from the envelope; the same
-identifier in both places, sent only while an envelope rides, and dropped with the envelope on
-the one compatibility retry. The trace is unauthenticated metadata: nothing treats it as proof
-of origin. `JEVLIN_TRACE=off` sends none.
+With no hook, a search carries that same per-shell identity: the hostname and the parent shell's
+pid, keyed with a random `trace.key` in `state_dir` that `setup` and `connect` create and that is
+never sent, so the router cannot guess its way back to the hostname. A search that finds no key
+makes one if it can write `state_dir`; that is why a sandbox that denies the write still keeps one
+id once setup has made the key. A search with no usable key that cannot make one (`state_dir` is
+read-only and holds none, or the key is a link, open to others or not 32 bytes) sends a one-off id,
+different on every search, rather than any id the hostname could be recovered from. The hashed
+`session_id` is also mirrored as the request's own top-level `session_id` and `X-Session-Id`
+header — the router groups quick reformulations by it there, and reads the trajectory from the
+envelope; the same identifier in both places, sent only while an envelope rides, and dropped with
+the envelope on the one compatibility retry. The trace is unauthenticated metadata: nothing
+treats it as proof of origin. `JEVLIN_TRACE=off` sends none.
 
 ## The turn end
 
