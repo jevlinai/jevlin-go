@@ -257,9 +257,23 @@ func isLoopbackHostname(host string) bool {
 // actually this platform's. Absolute HTTPS (or loopback, matching this
 // codebase's http(s)-or-loopback convention elsewhere), origin exactly
 // equal to baseURL's own.
+//
+// The origin is not the whole of what is printed. url.Parse accepts a space,
+// U+3000 or any other non-ASCII rune in a path, so "<origin>/claim/X
+// https://evil.example/claim" has the right origin, and a terminal that
+// turns URLs into links makes the second one clickable on the line the
+// participant is told to open. So every byte must be printable ASCII
+// without the space, the URL must name no user (a "user@" before the host
+// is shown first and opens the platform anyway), and it must re-serialize
+// to exactly the text given: what is checked is what is printed.
 func validatePlatformURL(raw, baseURL string) error {
 	if hasControlChar(raw) {
 		return errors.New("platform: claim_url contains a control character; refusing")
+	}
+	for i := 0; i < len(raw); i++ {
+		if raw[i] < 0x21 || raw[i] > 0x7e {
+			return errors.New("platform: claim_url holds a space or a character outside printable ASCII; refusing")
+		}
 	}
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -267,6 +281,12 @@ func validatePlatformURL(raw, baseURL string) error {
 	}
 	if !u.IsAbs() {
 		return errors.New("platform: claim_url is not an absolute URL")
+	}
+	if u.User != nil {
+		return errors.New("platform: claim_url names a user before its host; refusing")
+	}
+	if u.String() != raw {
+		return errors.New("platform: claim_url does not read back as the text it was given; refusing")
 	}
 	httpsOrLoopback := u.Scheme == "https" || (u.Scheme == "http" && isLoopbackHostname(u.Hostname()))
 	if !httpsOrLoopback {

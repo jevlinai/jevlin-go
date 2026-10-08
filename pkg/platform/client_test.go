@@ -801,3 +801,41 @@ func TestRefusalIgnoresAControlCharacterCode(t *testing.T) {
 		t.Fatalf("refusal = %+v (%q), want a bare status refusal", refusal, err.Error())
 	}
 }
+
+// The origin check compared only scheme and host, and url.Parse accepts a
+// space or U+3000 in a path: an on-origin link followed by a second,
+// off-origin URL passed, and a terminal that turns URLs into links made the
+// second one clickable. What is checked must be all of what is printed,
+// fresh off the wire and read back from agent.json alike.
+func TestAClaimURLCarriesNothingAfterItsOwnText(t *testing.T) {
+	const base = "https://platform.example"
+	for name, raw := range map[string]string{
+		"a space, then another URL":    base + "/claim/AB12-CD34 https://evil.example/claim",
+		"U+3000, then another URL":     base + "/claim/AB12-CD34　https://evil.example/claim",
+		"a non-ASCII rune in the path": base + "/claim/AB12-CD34é",
+		"a user before the host":       "https://evil.example@platform.example/claim/AB12-CD34",
+		"a tab":                        base + "/claim/AB12\tCD34",
+	} {
+		if err := ValidateStoredClaimURL(raw, base); err == nil {
+			t.Errorf("%s: %q accepted", name, raw)
+		}
+	}
+	for _, raw := range []string{
+		base + "/claim/AB12-CD34",
+		base + "/claim/AB12-CD34?ref=cli",
+		base + "/claim/AB%2012",
+	} {
+		if err := ValidateStoredClaimURL(raw, base); err != nil {
+			t.Errorf("%q refused: %v", raw, err)
+		}
+	}
+	stub := newStubPlatform(t)
+	stub.register = func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusCreated, map[string]any{
+			"agent_id": "a", "key": "sr-1", "claim_url": stub.srv.URL + "/claim/X https://evil.example/claim",
+		})
+	}
+	if _, err := New(stub.srv.URL, stub.srv.URL).Register(context.Background(), "", "", nil); err == nil {
+		t.Fatal("a register claim_url with a second URL after a space was accepted")
+	}
+}
