@@ -229,11 +229,11 @@ func rebuildUnknownRegistration(ctx context.Context, client *platform.Client, st
 	}
 	reg, code, stop = publishRebuiltRegistration(ctx, client, store, m, identity, credKey, stdout, stderr)
 	if reg.AgentID != "" {
-		// Named only once persisted: SaveAgentRegistration holds the id
-		// to what a terminal may be handed, and the old one passed the
-		// same rule when it was loaded.
-		fmt.Fprintf(stderr, "jevlin: agent.json named agent %s, which the platform does not know for the stored key; "+
-			"rebuilt the registration from the platform (agent %s)\n", old.AgentID, reg.AgentID)
+		// Only the id /me returned is named, once persisted: the id agent.json
+		// held came from a directory a sandboxed command can write, and a
+		// message never repeats what a record there says.
+		fmt.Fprintf(stderr, "jevlin: agent.json named an agent the platform does not know for the stored key; "+
+			"rebuilt the registration from the platform (agent %s)\n", reg.AgentID)
 	}
 	if stop {
 		return reg, code, true, true
@@ -403,7 +403,7 @@ func publishPendingRegistration(store *auth.Store, m config.Miner, pending auth.
 	// set aside, kept as evidence, and the journal's record is published.
 	if ok && reg.AgentID != pending.AgentID {
 		if err := store.SetAsideAgentRegistration(); err != nil {
-			return auth.AgentRegistration{}, fmt.Errorf("cannot set aside agent.json naming agent %s: %w", reg.AgentID, err)
+			return auth.AgentRegistration{}, fmt.Errorf("cannot set aside agent.json, which names another agent: %w", err)
 		}
 		ok = false
 	}
@@ -968,18 +968,18 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 						}
 					}
 				case meErr == nil && *force:
-					fmt.Fprintf(stderr, "jevlin: agent.json names agent %s, but the stored key belongs to agent %s; "+
+					fmt.Fprintf(stderr, "jevlin: agent.json names another agent than the stored key's (agent %s); "+
 						"-force does not rebuild a registration. Run `jevlin connect` without -force to rebuild it from the platform\n",
-						reg.AgentID, identity.AgentID)
+						identity.AgentID)
 					return exitTransport
 				case meErr == nil:
 					rebuilt, code, stop := publishRebuiltRegistration(ctx, client, store, cfg.Miner, identity, meKey, stdout, stderr)
 					if rebuilt.AgentID != "" {
-						// Named only once persisted: SaveAgentRegistration
-						// holds the id to ValidAgentID, and the old one
-						// passed it when it was loaded.
-						fmt.Fprintf(stderr, "jevlin: agent.json named agent %s, which the stored key does not belong to; "+
-							"rebuilt the registration from the platform (agent %s)\n", reg.AgentID, rebuilt.AgentID)
+						// Only the id /me returned is named, once persisted:
+						// a message never repeats what agent.json, in a
+						// directory a sandboxed command can write, says.
+						fmt.Fprintf(stderr, "jevlin: agent.json named an agent the stored key does not belong to; "+
+							"rebuilt the registration from the platform (agent %s)\n", rebuilt.AgentID)
 					}
 					if stop {
 						return code

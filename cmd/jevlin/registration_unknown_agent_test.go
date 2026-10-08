@@ -170,3 +170,30 @@ func TestAnUnknownAgentWithADeadKeyStillRefuses(t *testing.T) {
 		t.Fatalf("agent.json changed: %+v ok=%v", reg, ok)
 	}
 }
+
+// A message never repeats the agent id agent.json held: that id came from a
+// directory a sandboxed command can write. The rebuild names only the id the
+// platform's /v1/agents/me returned, in every status the planted record
+// claims.
+func TestTheRebuildNamesOnlyThePlatformsAgent(t *testing.T) {
+	for _, status := range []string{"unclaimed", "claimed", "expired"} {
+		t.Run(status, func(t *testing.T) {
+			platform, cfgPath, _, ownID, otherID := unknownAgentFixture(t, map[string]any{"status": status})
+			if status == "expired" {
+				platform.mu.Lock()
+				platform.statusByAgent[otherID] = "expired"
+				platform.mu.Unlock()
+			}
+			code, out, errOut := runConnect(t, cfgPath, nil)
+			if code != exitOK {
+				t.Fatalf("connect exited %d\nstdout=%s\nstderr=%s", code, out, errOut)
+			}
+			if !strings.Contains(errOut, "(agent "+ownID+")") {
+				t.Fatalf("the rebuild did not name the platform's agent:\n%s", errOut)
+			}
+			if strings.Contains(out+errOut, otherID) {
+				t.Fatalf("a message repeated the agent id agent.json held (%s):\nstdout=%s\nstderr=%s", otherID, out, errOut)
+			}
+		})
+	}
+}
