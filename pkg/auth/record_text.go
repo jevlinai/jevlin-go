@@ -21,9 +21,12 @@ import (
 
 // recordTextProblem names the first string in rec, a struct or a pointer to
 // one, that holds a character termtext refuses: its JSON name, or "" when
-// there is none. It walks every exported string, string slice and nested
-// struct by reflection rather than a list of fields, so a string field added
-// to a record later is checked without anyone remembering to add it.
+// there is none. It walks by reflection rather than a list of fields every
+// string encoding/json can fill: exported fields, pointers and interfaces,
+// slices and arrays, nested and embedded structs (an embedded one's fields
+// promote even when the embedded type is unexported), and both the keys and
+// the values of maps. A string field added to a record later is checked
+// without anyone remembering to add it.
 func recordTextProblem(rec any) string {
 	return textProblemIn(reflect.ValueOf(rec), "")
 }
@@ -45,14 +48,33 @@ func textProblemIn(v reflect.Value, name string) string {
 				return p
 			}
 		}
+	case reflect.Map:
+		// encoding/json fills a map's keys and its values from the file;
+		// both are text a record could print.
+		iter := v.MapRange()
+		for iter.Next() {
+			if p := textProblemIn(iter.Key(), name); p != "" {
+				return p
+			}
+			if p := textProblemIn(iter.Value(), name); p != "" {
+				return p
+			}
+		}
 	case reflect.Struct:
 		t := v.Type()
 		for i := 0; i < t.NumField(); i++ {
 			f := t.Field(i)
-			if !f.IsExported() {
+			// An unexported field is not decoded, unless it is an embedded
+			// struct: encoding/json promotes an embedded struct's exported
+			// fields whatever the embedded type's own name is.
+			if !f.IsExported() && !f.Anonymous {
 				continue
 			}
-			if p := textProblemIn(v.Field(i), jsonName(f)); p != "" {
+			fieldName := jsonName(f)
+			if f.Anonymous {
+				fieldName = name
+			}
+			if p := textProblemIn(v.Field(i), fieldName); p != "" {
 				return p
 			}
 		}

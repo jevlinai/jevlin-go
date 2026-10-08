@@ -38,7 +38,13 @@ func stringFieldsOf(t *testing.T, typ reflect.Type) []string {
 		}
 		k := f.Type.Kind()
 		if k == reflect.String || (k == reflect.Slice && f.Type.Elem().Kind() == reflect.String) {
-			names = append(names, jsonName(f))
+			// The test's own reading of the tag, not production's jsonName:
+			// an oracle that is the code under test cannot catch it.
+			name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+			if name == "" {
+				name = f.Name
+			}
+			names = append(names, name)
 		}
 	}
 	if len(names) == 0 {
@@ -275,5 +281,53 @@ func TestPayoutRecordsRefuseToWriteWhatTheyWouldRefuseToLoad(t *testing.T) {
 		if _, err := os.Lstat(filepath.Join(dir, name)); !os.IsNotExist(err) {
 			t.Fatalf("%s was written: %v", name, err)
 		}
+	}
+}
+
+type recordTextEmbedded struct {
+	Note string `json:"note"`
+}
+
+type recordTextShapes struct {
+	recordTextEmbedded
+	Labels map[string]string `json:"labels"`
+	Ptr    *string           `json:"ptr"`
+	Iface  any               `json:"iface"`
+	Nested struct {
+		Deep []string `json:"deep"`
+	} `json:"nested"`
+	Fixed [2]string `json:"fixed"`
+}
+
+// Every shape encoding/json can fill with text from a file is walked, and
+// the problem is named by the JSON name a reader of the file would know,
+// written out here rather than computed by the code under test. A map key
+// counts as much as a map value: both came from the file.
+func TestRecordTextProblemWalksEveryShapeJSONFills(t *testing.T) {
+	for want, raw := range map[string]string{
+		"note":   `{"note":"x\u001b]2;y"}`,
+		"labels": `{"labels":{"k\u202e":"v"}}`,
+		"ptr":    `{"ptr":"x\u200by"}`,
+		"iface":  `{"iface":["a",{"b":"x\u2028y"}]}`,
+		"deep":   `{"nested":{"deep":["ok","x\u009by"]}}`,
+		"fixed":  `{"fixed":["ok","x\u0007y"]}`,
+	} {
+		var rec recordTextShapes
+		if err := json.Unmarshal([]byte(raw), &rec); err != nil {
+			t.Fatal(err)
+		}
+		if got := recordTextProblem(rec); got != want {
+			t.Errorf("%s: recordTextProblem = %q, want %q", raw, got, want)
+		}
+		if got := recordTextProblem(&rec); got == "" {
+			t.Errorf("%s: a pointer to the record was not walked", raw)
+		}
+	}
+	key := recordTextShapes{Labels: map[string]string{"k\x1b": "v"}}
+	if got := recordTextProblem(key); got != "labels" {
+		t.Errorf("a map key holding ESC: recordTextProblem = %q, want labels", got)
+	}
+	if got := recordTextProblem(recordTextShapes{}); got != "" {
+		t.Errorf("an empty record has a problem: %q", got)
 	}
 }
