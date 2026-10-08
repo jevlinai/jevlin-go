@@ -591,6 +591,14 @@ func agentsPrefer(ops agentOps, args []string, stdout, stderr io.Writer, getenv 
 		fmt.Fprintf(stdout, "search default: %s\n", preferLabel(current))
 		return exitOK
 	}
+	// The skills it rewrites name the running binary, exactly as install
+	// writes them, so the same location is refused here before anything is
+	// written: run from somewhere else, prefer would repoint every installed
+	// skill at that copy.
+	if err := vetBinaryLocation(ops.binaryLocationFn(), entry.command, "jevlin agents prefer", stderr); err != nil {
+		fmt.Fprintln(stderr, "jevlin agents prefer:", err)
+		return exitUsage
+	}
 	next := preferOn
 	if want == "off" {
 		next = preferOff

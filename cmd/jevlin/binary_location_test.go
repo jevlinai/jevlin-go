@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -100,5 +101,38 @@ func TestAgentsInstallWarnsAndContinuesOnAGroupWritableLocation(t *testing.T) {
 	}
 	if len(m.files) == 0 {
 		t.Error("a warned install wrote nothing")
+	}
+}
+
+// prefer rewrites every installed skill with the running binary's path, so it
+// is held to install's rule: refused before the preference file or a skill
+// is written, warned and carried on otherwise. status still answers.
+func TestAgentsPreferRefusesUnsafeBinaryLocation(t *testing.T) {
+	m, ops := newFakeMachine("claude", "codex")
+	if code, out, errOut := runAgents(t, ops, nil, "install", "-yes", "-config", testCfg); code != exitOK {
+		t.Fatalf("install: %d\n%s%s", code, out, errOut)
+	}
+	before := maps.Clone(m.files)
+	ops.binaryLocation = func(exe string) ([]string, error) {
+		return nil, errors.New(exe + " is writable by every user; " + errUnsafeBinaryLocation.Error())
+	}
+	code, _, errOut := runAgents(t, ops, nil, "prefer", "off", "-config", testCfg)
+	if code != exitUsage || !strings.Contains(errOut, "jevlin agents prefer: ") || !strings.Contains(errOut, "writable by every user") {
+		t.Fatalf("prefer from an unsafe location was not refused: exit %d\n%s", code, errOut)
+	}
+	if !reflect.DeepEqual(before, m.files) {
+		t.Error("a refused prefer changed a file")
+	}
+	if code, out, errOut := runAgents(t, ops, nil, "prefer", "status", "-config", testCfg); code != exitOK || !strings.Contains(out, "search default: on") {
+		t.Errorf("prefer status refused too: exit %d\n%s%s", code, out, errOut)
+	}
+
+	ops.binaryLocation = groupWarning("/home/u/.jevlin/bin/jevlin")
+	code, out, errOut := runAgents(t, ops, nil, "prefer", "off", "-config", testCfg)
+	if code != exitOK || !strings.Contains(out, "search default: off") {
+		t.Fatalf("a warned location stopped prefer: exit %d\n%s%s", code, out, errOut)
+	}
+	if !strings.Contains(errOut, "jevlin agents prefer: warning: /usr/local is writable by its group staff") {
+		t.Errorf("prefer did not print the warning:\n%s", errOut)
 	}
 }
