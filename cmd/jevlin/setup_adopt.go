@@ -416,7 +416,15 @@ func (a *adoption) identity(t *bundleTxn) error {
 	if !hasState && !hasCreds && !hasJournal && !hasPayout && !hasClaim {
 		return nil
 	}
-	for _, p := range []string{srcState, srcCreds, srcJournal, srcPayout, srcClaim} {
+	moving := []string{srcState, srcCreds, srcJournal, srcClaim}
+	if hasPayout {
+		// A source payout record left in place, because the destination
+		// keeps its own, is not moved and so not judged: refusing the whole
+		// adoption over a file it leaves where it is would be a refusal
+		// about nothing it does.
+		moving = append(moving, srcPayout)
+	}
+	for _, p := range moving {
 		if !lexists(p) {
 			continue
 		}

@@ -117,6 +117,27 @@ func TestTheIdentityBundleHoldsThePayoutAndClaimRecordsToItsRules(t *testing.T) 
 			t.Fatalf("moved %v despite the refusal", a.moved)
 		}
 	})
+	t.Run("a link in the source that is left in place", func(t *testing.T) {
+		root := t.TempDir()
+		src, dst := filepath.Join(root, "src"), filepath.Join(root, "dst")
+		writeInstallation(t, src, "identity")
+		target := filepath.Join(root, "elsewhere.json")
+		writeFileT(t, target, `{"address":"`+participantAddress+`"}`)
+		if err := os.Symlink(target, filepath.Join(src, payoutRecordFile)); err != nil {
+			if os.Getenv("CI") == "true" {
+				t.Fatalf("cannot make a symlink on this runner, and CI does not let this test skip: %v", err)
+			}
+			t.Skipf("cannot make a symlink here: %v", err)
+		}
+		writeFileT(t, filepath.Join(dst, payoutRecordFile), `{"address":"`+plantedAddress+`"}`)
+		a := &adoption{src: src, dst: dst, now: time.Now(), out: &bytes.Buffer{}, restrict: restrictToOwner}
+		if err := a.run(); err != nil {
+			t.Fatalf("the adoption refused over a payout.json it leaves in place: %v", err)
+		}
+		if !lexists(filepath.Join(dst, credentialsFile)) {
+			t.Fatal("the identity was not adopted")
+		}
+	})
 	t.Run("a failure after the records moved", func(t *testing.T) {
 		root := t.TempDir()
 		src, dst := filepath.Join(root, "src"), filepath.Join(root, "dst")
