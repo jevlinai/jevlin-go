@@ -394,6 +394,26 @@ func (s *Store) LoadAgentRegistration() (rec AgentRegistration, ok bool, err err
 // key no longer forces a refusal on its own; it only means the rename must
 // wait for that confirmation first.
 func (s *Store) PreserveCorruptAgentRegistration() error {
+	return s.setAsideAgentRegistration("corrupt")
+}
+
+// SetAsideAgentRegistration moves a readable agent record that names a
+// different identity from the one being published aside, without deleting
+// it: the registration journal and the credential beside it, both outside
+// the state directory, have decided which agent this installation is.
+func (s *Store) SetAsideAgentRegistration() error {
+	return s.setAsideAgentRegistration("replaced")
+}
+
+// setAsideAgentRegistration renames agent.json to agent.json.<why>. An
+// earlier copy at that name is replaced: it is evidence of an earlier
+// record in a directory a sandboxed command can write, and refusing on it,
+// as this once did, made every later rebuild fail the same way, with
+// nothing saying what to do. A name held by anything but a regular file
+// (a directory, a link) gets a fresh, timestamped name instead, so nothing
+// planted there blocks the rename either. A rename replaces a name, never
+// what it pointed at.
+func (s *Store) setAsideAgentRegistration(why string) error {
 	path := filepath.Join(s.dir, "agent.json")
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -405,14 +425,14 @@ func (s *Store) PreserveCorruptAgentRegistration() error {
 	if posixModes && info.Mode().Perm()&0o077 != 0 {
 		return fmt.Errorf("auth: agent registration is readable by others (%04o); refusing", info.Mode().Perm())
 	}
-	backup := filepath.Join(s.dir, "agent.json.corrupt")
-	if _, err := os.Lstat(backup); err == nil {
-		return errors.New("auth: corrupt agent registration evidence already exists")
-	} else if !errors.Is(err, fs.ErrNotExist) {
+	backup := filepath.Join(s.dir, "agent.json."+why)
+	if held, err := os.Lstat(backup); err == nil && !held.Mode().IsRegular() {
+		backup = fmt.Sprintf("%s-%d", backup, time.Now().UnixNano())
+	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	if err := os.Rename(path, backup); err != nil {
-		return fmt.Errorf("auth: preserve corrupt agent registration: %w", err)
+		return fmt.Errorf("auth: set the agent registration aside: %w", err)
 	}
 	return nil
 }

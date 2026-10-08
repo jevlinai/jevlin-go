@@ -205,7 +205,7 @@ var classifiedFileCalls = map[fileCallSite]fileCallClass{
 	{"pkg/auth/store.go", "Store.DiscardLegacyPendingRegistration", "os.Remove"}:        {1, "root: removes the legacy journal's name in the state dir, never read"},
 	{"pkg/auth/store.go", "Store.ClearRevokePending", "os.Remove"}:                      {1, "root: removes a name"},
 	{"pkg/auth/store.go", "Store.DeleteRefreshToken", "os.Remove"}:                      {1, "root: removes a name"},
-	{"pkg/auth/store.go", "Store.PreserveCorruptAgentRegistration", "os.Rename"}:        {1, "root: renames agent.json aside; a rename replaces the name, never what it pointed at"},
+	{"pkg/auth/store.go", "Store.setAsideAgentRegistration", "os.Rename"}:               {1, "root: renames agent.json aside; a rename replaces the name, never what it pointed at"},
 	{"pkg/auth/store.go", "Store.SaveRefreshToken", "fsx.WriteFileAtomic"}:              {1, "root: staged under an exclusive random name"},
 	{"pkg/auth/store.go", "Store.createExclusive", "fsx.WriteFileExclusive"}:            {1, "root: staged under an exclusive random name, published without replacing"},
 	{"pkg/auth/store.go", "Store.readSecret", "fsx.ReadRegularNoFollow"}:                {1, "root: the state dir's records, one no-follow open, mode checked on it"},

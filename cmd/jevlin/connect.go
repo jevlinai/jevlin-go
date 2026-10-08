@@ -276,7 +276,6 @@ type registrationPublicationOptions struct {
 	force                bool
 	replacingExpired     bool
 	allowCorruptPreserve bool
-	previousAgentID      string
 	previousPlatformKey  string
 }
 
@@ -384,11 +383,19 @@ func publishPendingRegistration(store *auth.Store, m config.Miner, pending auth.
 		}
 		ok = false
 	}
-	if ok && !sameAgentRegistration(reg, pending) {
-		replacesExpectedExpired := opts.replacingExpired && reg.Status == "expired" && reg.AgentID == opts.previousAgentID
-		if !opts.force && !replacesExpectedExpired {
-			return auth.AgentRegistration{}, errors.New("cannot publish agent registration: agent.json contains a different identity")
+	// credentials.json holds the journal's key now: publishPlatformCredential
+	// refused anything else. So agent.json must describe that key's agent,
+	// and one naming another agent is the state directory's word against
+	// the journal's and the credential's, both outside it. It used to win:
+	// publication refused "a different identity" after the key was already
+	// published, the journal stayed, and every later run failed the same
+	// way, the planted record holding the registration hostage. Now it is
+	// set aside, kept as evidence, and the journal's record is published.
+	if ok && reg.AgentID != pending.AgentID {
+		if err := store.SetAsideAgentRegistration(); err != nil {
+			return auth.AgentRegistration{}, fmt.Errorf("cannot set aside agent.json naming agent %s: %w", reg.AgentID, err)
 		}
+		ok = false
 	}
 	if !ok || !sameAgentRegistration(reg, pending) {
 		if err := store.SaveAgentRegistration(agentRegistrationFromPending(pending)); err != nil {
@@ -823,7 +830,6 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 		reg, err = publishPendingRegistration(store, cfg.Miner, pending, registrationPublicationOptions{
 			allowCorruptPreserve: true,
 			replacingExpired:     pending.ReplaceExpired,
-			previousAgentID:      pending.PreviousAgentID,
 			previousPlatformKey:  pending.PreviousKey,
 		})
 		if err != nil {
@@ -1069,7 +1075,6 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 					force:                *force,
 					replacingExpired:     true,
 					allowCorruptPreserve: true,
-					previousAgentID:      oldReg.AgentID,
 					previousPlatformKey:  oldKey,
 				})
 				if err != nil {

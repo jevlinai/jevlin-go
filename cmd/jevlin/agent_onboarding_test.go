@@ -2875,10 +2875,11 @@ func TestConnectResumeNeverRebuildsOrRegistersOnLostRegistration(t *testing.T) {
 // obstruct anything there. Instead this only ever ADDS a new sibling
 // entry inside the state directory, never touching the directory or
 // connect.lock:
-//   - corrupt: pre-creates agent.json.corrupt so
-//     PreserveCorruptAgentRegistration's own existing safety check
-//     (os.Lstat(backup) succeeding refuses outright, whatever backup is)
-//     refuses deterministically, before ever touching agent.json itself.
+//   - corrupt: moves the corrupt agent.json aside (outside the state
+//     directory) and puts a directory at its name, so
+//     PreserveCorruptAgentRegistration's own check (agent.json must be a
+//     regular file) refuses deterministically. An existing
+//     agent.json.corrupt no longer obstructs anything: it is replaced.
 //   - absent: pre-creates agent.json as a directory, so
 //     SaveAgentRegistration's rename-onto-that-path fails deterministically
 //     on every OS (renaming a file onto an existing directory is refused
@@ -2901,9 +2902,7 @@ func TestConnectRebuildRetriesAfterATransientPersistFailure(t *testing.T) {
 			registerCallsBefore, _, _ := platform.counts()
 
 			obstructionPath := filepath.Join(stateDir, "agent.json")
-			if corrupt {
-				obstructionPath = filepath.Join(stateDir, "agent.json.corrupt")
-			}
+			heldAside := filepath.Join(t.TempDir(), "agent.json")
 
 			// Armed for exactly the first successful /v1/agents/me answer.
 			armed := true
@@ -2913,10 +2912,9 @@ func TestConnectRebuildRetriesAfterATransientPersistFailure(t *testing.T) {
 				}
 				armed = false
 				if corrupt {
-					_ = os.WriteFile(obstructionPath, nil, 0o600) // #nosec G306 -- test fixture, not a secret
-				} else {
-					_ = os.Mkdir(obstructionPath, 0o700)
+					_ = os.Rename(obstructionPath, heldAside)
 				}
+				_ = os.Mkdir(obstructionPath, 0o700)
 			})
 
 			code, _, errOut := runConnect(t, cfgPath, nil)
@@ -2927,18 +2925,24 @@ func TestConnectRebuildRetriesAfterATransientPersistFailure(t *testing.T) {
 				t.Fatalf("Register calls = %d, want unchanged from %d — a failed persist must never fall through to Register", registerCalls, registerCallsBefore)
 			}
 			if corrupt {
-				got, err := os.ReadFile(filepath.Join(stateDir, "agent.json")) // #nosec G304 -- test controls its temporary state directory
+				got, err := os.ReadFile(heldAside) // #nosec G304 -- test controls its temporary directory
 				if err != nil || string(got) != string(corruptBytes) {
 					t.Fatalf("corrupt starting bytes were disturbed despite Preserve refusing: err=%v contents=%q", err, got)
 				}
+				if lexists(filepath.Join(stateDir, "agent.json.corrupt")) {
+					t.Fatal("a refused Preserve still wrote evidence")
+				}
 			}
 
-			// Remove the obstruction; nothing else needs restoring — the
-			// corrupt starting bytes (when this case has any) were never
-			// reached by the failed run, since Preserve refused before ever
-			// touching agent.json.
+			// Remove the obstruction and, in the corrupt case, put the
+			// corrupt starting bytes back where the failed run found them.
 			if err := os.Remove(obstructionPath); err != nil {
 				t.Fatal(err)
+			}
+			if corrupt {
+				if err := os.Rename(heldAside, obstructionPath); err != nil {
+					t.Fatal(err)
+				}
 			}
 			platform.setMeHook(nil)
 
@@ -3455,19 +3459,25 @@ func TestPendingRegistrationConflictDoesNotOverwriteOrRegister(t *testing.T) {
 	}
 }
 
-func TestPendingRegistrationAgentConflictDoesNotOverwriteOrRegister(t *testing.T) {
+// The journal and the credential beside it are outside the state
+// directory; agent.json is inside it. A record there naming another agent
+// used to win: publication refused "a different identity" after the key was
+// already published, the journal stayed, and every later run failed the same
+// way. The review planted exactly that record. Now the journal's record is
+// published and the other is set aside as evidence, with no new Register.
+func TestAJournalWinsOverAnAgentRecordNamingAnotherAgent(t *testing.T) {
 	platform := newStubPlatform(t)
 	cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
+	cfg := mustLoadConfig(t, cfgPath)
 	store, err := auth.OpenStore(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-other", Status: "unclaimed",
+		AgentID: "agent-other", Status: "claimed",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	seedClaim(t, cfgPath, "agent-other", platform.srv.URL+"/claim/OTHER", "OTHER")
 	if err := testJournal(t, cfgPath).Save(auth.PendingRegistration{
 		AgentID:        "agent-journal",
 		Key:            "sr-journal-key",
@@ -3479,20 +3489,21 @@ func TestPendingRegistrationAgentConflictDoesNotOverwriteOrRegister(t *testing.T
 		t.Fatal(err)
 	}
 
-	if code, _, errOut := runConnect(t, cfgPath, nil); code == exitOK {
-		t.Fatal("connect overwrote a conflicting agent registration during journal recovery")
-	} else if !strings.Contains(errOut, "different identity") {
-		t.Fatalf("missing agent conflict diagnostic: %q", errOut)
-	}
+	runConnect(t, cfgPath, nil, "-resume")
 	if registerCalls, _, _ := platform.counts(); registerCalls != 0 {
-		t.Fatalf("agent conflict issued a new Register: %d", registerCalls)
+		t.Fatalf("journal recovery issued a new Register: %d", registerCalls)
 	}
-	reg, ok := loadAgent(t, stateDir)
-	if !ok || reg.AgentID != "agent-other" {
-		t.Fatalf("conflicting agent registration was overwritten: %+v ok=%v", reg, ok)
+	if reg, ok := loadAgent(t, stateDir); !ok || reg.AgentID != "agent-journal" {
+		t.Fatalf("the journal's registration was not published over the other record: %+v ok=%v", reg, ok)
 	}
-	if _, ok, err := testJournal(t, cfgPath).Load(); err != nil || !ok {
-		t.Fatalf("journal was lost after an agent publication conflict: ok=%v err=%v", ok, err)
+	if got, err := os.ReadFile(filepath.Join(stateDir, "agent.json.replaced")); err != nil || !strings.Contains(string(got), "agent-other") { // #nosec G304 -- the test's own state dir
+		t.Fatalf("the other record was not kept as evidence: %q %v", got, err)
+	}
+	if _, ok, err := testJournal(t, cfgPath).Load(); err != nil || ok {
+		t.Fatalf("the journal was not finished: ok=%v err=%v", ok, err)
+	}
+	if got, err := readCredentials(credentialsPath(cfg.Miner)); err != nil || got.APIKey != "sr-journal-key" {
+		t.Fatalf("credentials.json = %+v %v", got, err)
 	}
 }
 
