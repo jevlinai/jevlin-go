@@ -238,7 +238,7 @@ func TestUserEnvironmentJournalRecordsDeltas(t *testing.T) {
 }
 
 func TestIdentityBundleConflictsWithADestinationAgentJSON(t *testing.T) {
-	for _, existing := range []string{"agent.json", "refresh.token", "registration_pending.json", "participation.secret", credentialsFile} {
+	for _, existing := range []string{"agent.json", "refresh.token", "registration_pending.json", "participation.secret", credentialsFile, "home/" + registrationJournalFile} {
 		t.Run(existing, func(t *testing.T) {
 			root := t.TempDir()
 			src, dst := filepath.Join(root, "src"), filepath.Join(root, "dst")
@@ -246,6 +246,9 @@ func TestIdentityBundleConflictsWithADestinationAgentJSON(t *testing.T) {
 			rel := filepath.Join("state", existing)
 			if existing == credentialsFile {
 				rel = existing
+			}
+			if existing == "home/"+registrationJournalFile {
+				rel = registrationJournalFile
 			}
 			p := filepath.Join(dst, rel)
 			if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {

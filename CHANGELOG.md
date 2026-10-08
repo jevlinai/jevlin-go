@@ -26,6 +26,16 @@ The first release replaces this heading with its own.
   for your approval and reaches the router without Cursor's label. The skill
   says to write an apostrophe as `\u0027`, which reaches the router as the
   same query.
+- **The registration journal moved beside `credentials.json`.** `connect`
+  used to keep `registration_pending.json` in the state directory, which a
+  Codex-sandboxed command can write, so a forged journal could make the next
+  `connect` swap your stored platform key for someone else's. It now lives in
+  the jevlin home, and one left in the state directory is discarded unread.
+  A registration an older build left half-finished is not resumed; run
+  `jevlin connect` again. If that build was replacing an expired registration
+  and `connect` now refuses with "expired registration is no longer known to
+  the platform", move `agent.json` out of the state directory and run
+  `jevlin connect` once more: it rebuilds the record from the platform.
 - **Files an agent's sandbox leaves in jevlin's directories no longer reach
   your own files.** Codex's sandbox may write jevlin's state, intake, sessions
   and spool directories. A link left there could make a hook, a flush or

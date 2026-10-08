@@ -120,7 +120,9 @@ the named tests.
 13. **Registration is one journaled transaction.** A complete `register` response is journaled
     (`registration_pending.json`) before `agent.json` or the credential is written, and finished
     from the journal on the next run, never by a second `register`. The journal is consulted before
-    anything else. A lost or unreadable record beside a stored credential is rebuilt through
+    anything else. It lives beside `credentials.json`, never in the state dir: a sandboxed agent can
+    write the state dir, and the journal can authorize replacing the credential. A
+    `registration_pending.json` found in the state dir is discarded unread. A lost or unreadable record beside a stored credential is rebuilt through
     `GET /v1/agents/me` with nothing local changed before a valid answer. `-force` bypasses
     recovery and authorizes deliberate replacement where local state would otherwise refuse a
     fresh registration. Separately and without `-force`, an ordinary foreground `connect` may
@@ -217,9 +219,9 @@ the named tests.
     there or reads past a bound (`fsx.ReadRegular`, `ReadRegularNoFollow` where a check on the
     name came first), no lock follows a link (`fsx.OpenLock`), and the spool, which can be nested,
     does every operation through `fsx.Root` held to the directory it opened on. The premise is
-    that the installation's own directory (credentials.json, flush.lock) and the config's
-    directory are writable from no sandbox: `agents install` grants Codex nothing when a layout
-    would put either inside a root (`codexRootsProblem`), and nothing here can help if Codex's
+    that the installation's own directory (credentials.json, the registration journal, flush.lock)
+    and the config's directory are writable from no sandbox: `agents install` grants Codex
+    nothing when a layout would put either inside a root (`codexRootsProblem`), and nothing here can help if Codex's
     own workspace is the installation or above it. `pkg/fsx/confined.go` owns the operations.
     `cmd/jevlin/writable_roots_guard_test.go` resolves every file's imports and classifies each
     reference to a file operation in os, io/ioutil, syscall, x/sys/unix, x/sys/windows and
@@ -271,12 +273,16 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   re-registered), `TestConnectRebuildsClaimedRegistrationFromThePlatform` (the `/v1/agents/me`
   rebuild), `TestForegroundConnectReplacesExpiredRegistrationAndPropagatesNewIdentity` (the
   no-flag replacement of a positively-verified expired identity),
+  `TestForgedStateDirJournalCannotReplaceCredential` (a journal in the state dir, which a
+  sandboxed command can write, is discarded unread and publishes nothing),
   `TestConnectRefusesCorruptRegistrationWithExistingPlatformCredential` (the refusal that
   `-force` exists to override), and the claim-code re-mint pair —
   `TestForegroundConnectMintsAFreshClaimLinkForALostOne` and `TestResumeNeverMintsAClaimLink`
   (`remintClaimLink`: minting kills the old code, so only a deliberate foreground connect asks,
   the fresh link is persisted before it is printed, and every failure is exactly the old
-  no-link dead end). For participants: [guide, The claim link](docs/guide.md#the-claim-link).
+  no-link dead end). The journal can hold a platform key, so `-purge-state` removes it with
+  the credential (`registration_journal_purge_test.go`). For participants:
+  [guide, The claim link](docs/guide.md#the-claim-link).
 - **The prompt rule** — `cmd/jevlin/prompt.go` owns what counts as an answer and the two
   readers that ask; every prompt in the binary goes through one of them.
   `prompt_abort_test.go` drives each real command to each real question, under both an interrupted
