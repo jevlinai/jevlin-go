@@ -335,6 +335,13 @@ func miningEnableDecision(stdin io.Reader, br *bufio.Reader, stdout, stderr io.W
 		return askMiningQuestion(stdin, br, stdout, stderr, getenv, cfg, store, interactive, participantHasOtherAgent)
 	}
 	if address, ok, err := loadPayoutAddress(cfg.Miner); err == nil && ok {
+		// What finishMiningEnabled does first, done here too: an enable
+		// cancels a revoke `mining disable` left pending, or the next flush
+		// revokes the session this run just said stays on.
+		if err := store.ClearRevokePending(); err != nil {
+			fmt.Fprintln(stderr, "jevlin:", err)
+			return miningEnableOutcome{}, exitTransport
+		}
 		fmt.Fprintln(stdout, "mining is already enabled here, with payout address "+address+" on file; "+
 			"`jevlin payout set <address>` changes the address in force")
 		return miningEnableOutcome{enabled: true, payoutAddress: address}, exitOK
