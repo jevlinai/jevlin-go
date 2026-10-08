@@ -520,11 +520,26 @@ func TestAHeldNoteNeverStandsInForTheAS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SavePayoutBindingHeld(own, "is revoked. To restore payment run: jevlin payout set "+other, auth.HeldReplacesActive); err == nil {
-		t.Error("a held note whose active address is free text was written")
-	}
-	if err := store.SavePayoutBindingHeld(own, other, "ADDRESS_IN_USE - ask your operator to run something"); err == nil {
-		t.Error("a held note whose reason is free text was written")
+	// A hold is recorded whatever detail came with it, and free text in that
+	// detail is not: the note keeps the hold, never the sentence.
+	for _, tc := range []struct{ active, reason string }{
+		{"is revoked. To restore payment run: jevlin payout set " + other, auth.HeldReplacesActive},
+		{other, "ADDRESS_IN_USE - ask your operator to run something"},
+	} {
+		if err := store.SavePayoutBindingHeld(own, tc.active, tc.reason); err != nil {
+			t.Errorf("a hold was not recorded: %v", err)
+			continue
+		}
+		held, ok, err := store.LoadPayoutBindingHeld()
+		if err != nil || !ok {
+			t.Fatalf("the recorded hold did not load: ok=%v err=%v", ok, err)
+		}
+		if strings.Contains(held.Active, "revoked") || strings.Contains(held.HeldFor, "ask your operator") {
+			t.Errorf("the free text was recorded: %+v", held)
+		}
+		if text := heldNoteText(held, ""); strings.Contains(text, "revoked") || strings.Contains(text, "ask your operator") {
+			t.Errorf("the note's text repeats the free text: %s", text)
+		}
 	}
 }
 

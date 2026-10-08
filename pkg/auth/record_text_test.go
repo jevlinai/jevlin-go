@@ -274,13 +274,17 @@ func TestPayoutRecordsRefuseToWriteWhatTheyWouldRefuseToLoad(t *testing.T) {
 	if err := s.SavePayoutDeclared("twilight1notanaddress"); err == nil {
 		t.Fatal("an invalid declared address was written")
 	}
-	if err := s.SavePayoutBindingHeld(validTestAddress, plantedText, HeldReplacesActive); err == nil {
-		t.Fatal("a held binding naming a planted active address was written")
+	if _, err := os.Lstat(filepath.Join(dir, "payout_declared.json")); !os.IsNotExist(err) {
+		t.Fatalf("payout_declared.json was written: %v", err)
 	}
-	for _, name := range []string{"payout_declared.json", "payout_binding_held.json"} {
-		if _, err := os.Lstat(filepath.Join(dir, name)); !os.IsNotExist(err) {
-			t.Fatalf("%s was written: %v", name, err)
-		}
+	// A hold is the fact and is recorded; a planted active address or a
+	// reason this client does not know is its detail and is not.
+	if err := s.SavePayoutBindingHeld(validTestAddress, plantedText, "SOMETHING_NEW"); err != nil {
+		t.Fatalf("a hold was not recorded: %v", err)
+	}
+	held, ok, err := s.LoadPayoutBindingHeld()
+	if err != nil || !ok || held.Local != validTestAddress || held.Active != "" || held.HeldFor != "" {
+		t.Fatalf("the hold = %+v ok=%v err=%v; want the local address alone", held, ok, err)
 	}
 }
 
@@ -389,5 +393,34 @@ func TestARefusedHealthDetailStillHasItsReason(t *testing.T) {
 	}
 	if rec.Reason != HealthFlushStateUnavailable || rec.Detail != "" {
 		t.Fatalf("record = %+v; want the reason and no detail", rec)
+	}
+}
+
+// A planted note can name any upper-case token as its reason, and an
+// imperative one ("REVOKED_RUN_JEVLIN_PAYOUT_SET_WITH_THE_ACTIVE_ADDRESS")
+// reads as the AS's instruction. Only the reasons this client knows are
+// notes it wrote; any other is refused on load, and so never shown.
+func TestAHeldNoteWithAReasonThisClientDoesNotKnowIsRefusedOnLoad(t *testing.T) {
+	for _, reason := range []string{"REVOKED_RUN_JEVLIN_PAYOUT_SET_WITH_THE_ACTIVE_ADDRESS", "replaces_active", "UNKNOWN"} {
+		s, dir := newStore(t)
+		raw, err := json.Marshal(PayoutBindingHeld{Local: validTestAddress, Active: validTestAddress, HeldFor: reason})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "payout_binding_held.json"), raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok, err := s.LoadPayoutBindingHeld(); ok || err == nil {
+			t.Errorf("a note whose reason is %q loaded", reason)
+		}
+	}
+	for _, reason := range []string{HeldReplacesActive, HeldAddressInUse, ""} {
+		s, _ := newStore(t)
+		if err := s.SavePayoutBindingHeld(validTestAddress, validTestAddress, reason); err != nil {
+			t.Fatalf("reason %q: %v", reason, err)
+		}
+		if held, ok, err := s.LoadPayoutBindingHeld(); err != nil || !ok || held.HeldFor != reason {
+			t.Errorf("reason %q came back as %+v ok=%v err=%v", reason, held, ok, err)
+		}
 	}
 }

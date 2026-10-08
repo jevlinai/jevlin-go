@@ -369,15 +369,16 @@ func doctorPayoutCheck(f doctorFacts) doctorCheck {
 		// and an AS-reported Active in force this run would otherwise read
 		// as "your rewards go where you expect", which is exactly the
 		// claim a held binding makes false.
-		reason := f.PayoutHeld.HeldFor
-		if reason == "" {
-			reason = "REPLACES_ACTIVE" // this client's own read-before-declare pre-check, not an AS-returned reason
+		live := ""
+		if asAnswered && f.Standing != nil && f.Standing.Active != nil {
+			live = payoutShown(f.Standing.Active)
 		}
 		c.Verdict = verdictNo
-		c.Detail = fmt.Sprintf("HELD (%s) — the AS has %s active for this participant; this installation "+
-			"would declare %s. Changing the active binding is an operator-activated change.",
-			reason, f.PayoutHeld.Active, f.PayoutHeld.Local)
+		c.Detail = heldNoteText(f.PayoutHeld, live)
 		c.Fix = "a Slot operator must activate the change; no command here can"
+		if f.PayoutHeld.HeldFor == auth.HeldAddressInUse {
+			c.Fix = "set a different address, or talk to your Slot operator; waiting will not activate this one"
+		}
 		return c
 	}
 	switch {

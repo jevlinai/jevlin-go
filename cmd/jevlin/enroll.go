@@ -659,6 +659,36 @@ func (f agentIdentityFacts) needsMining() bool {
 	return f.Decision.State == auth.MiningEnabled && miningASConfigured(f.Mining)
 }
 
+// heldNoteText is the client's own sentence for a held-binding note. Agent
+// onboarding design §5.5 has status report both addresses, and the note is
+// in a directory a sandboxed command can rewrite, so nothing in it is said as
+// the AS's word of this moment: the reason is shown only when it is one this
+// client knows (a note holding another is refused on load), and the address
+// in force is the AS's answer from this run when there is one (liveActive),
+// else the one the note recorded, said as what the AS answered when this
+// installation last asked. Local is the address this installation would
+// declare, the only note status and doctor show.
+func heldNoteText(held auth.PayoutBindingHeld, liveActive string) string {
+	switch held.HeldFor {
+	case auth.HeldAddressInUse:
+		return fmt.Sprintf("HELD (%s) — %s is registered to another participant, so waiting will not activate it; "+
+			"set a different address, or talk to your Slot operator.", auth.HeldAddressInUse, held.Local)
+	case auth.HeldReplacesActive:
+		inForce := "a different address in force"
+		switch {
+		case liveActive != "":
+			inForce = liveActive + " in force"
+		case held.Active != "":
+			inForce = held.Active + " in force when this installation last asked"
+		}
+		return fmt.Sprintf("HELD (%s) — the AS has %s for this participant; this installation "+
+			"would declare %s. Changing the address in force is an operator-activated change; `jevlin payout show` names both.",
+			auth.HeldReplacesActive, inForce, held.Local)
+	}
+	return fmt.Sprintf("HELD — the AS did not put %s in force, for a reason this version does not recognize; "+
+		"`jevlin payout show` has the AS's own answer.", held.Local)
+}
+
 func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 	printConfigSource(stdout, f.ConfigSource, f.StateDir)
 	if f.StoreMissing {
@@ -760,13 +790,7 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 	}
 
 	if f.HasHeld {
-		reason := f.Held.HeldFor
-		if reason == "" {
-			reason = "REPLACES_ACTIVE" // this client's own read-before-declare pre-check, not an AS-returned reason
-		}
-		fmt.Fprintf(stdout, "payout: HELD (%s) — the AS has %s active for this participant; this installation "+
-			"would declare %s. Changing the active binding is an operator-activated change.\n",
-			reason, f.Held.Active, f.Held.Local)
+		fmt.Fprintln(stdout, "payout: "+heldNoteText(f.Held, ""))
 	}
 	for _, c := range f.Conflicts {
 		fmt.Fprintf(stdout, "mining: another installation of this participant holds slot %d epoch %d; "+

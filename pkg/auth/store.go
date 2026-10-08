@@ -23,7 +23,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"time"
 
 	"github.com/jevlinai/jevlin-go/pkg/fsx"
@@ -918,17 +917,35 @@ func (s *Store) loadEpochConflicts() ([]ConflictedEpoch, error) {
 type PayoutBindingHeld struct {
 	Local  string `json:"local"`
 	Active string `json:"active"`
-	// HeldFor is the AS's reason (HeldReplacesActive, HeldAddressInUse —
-	// payout.go), or empty when this hold came from connect's own
-	// read-before-declare pre-check (PayoutStanding showing a different
-	// active address) rather than the declare call's own response.
+	// HeldFor is one of the AS's known reasons (HeldReplacesActive,
+	// HeldAddressInUse — payout.go), or empty when the AS gave none or one
+	// this version does not know. A reason is a word this client can say
+	// something true about, and this file is in a directory a sandboxed
+	// command can rewrite: a reason that is not one of those words is not
+	// stored, and on load is not a note this client wrote.
 	HeldFor string `json:"held_for,omitempty"`
+}
+
+// knownHoldReason reports a hold reason this client can explain.
+func knownHoldReason(reason string) bool {
+	return reason == HeldReplacesActive || reason == HeldAddressInUse
 }
 
 // SavePayoutBindingHeld records that declaration was skipped because the
 // AS's active address differs from the one this installation would
 // declare.
+//
+// A hold is recorded whatever the AS said about it: a reason this version
+// does not know, or an active address that is not a twilight address, is
+// left out of the note rather than keeping the note from being written,
+// since the hold is the fact and those are its detail.
 func (s *Store) SavePayoutBindingHeld(local, active string, heldFor string) error {
+	if !knownHoldReason(heldFor) {
+		heldFor = ""
+	}
+	if active != "" && validatePayoutAddress(active) != nil {
+		active = ""
+	}
 	rec := PayoutBindingHeld{Local: local, Active: active, HeldFor: heldFor}
 	if err := checkPayoutBindingHeld(rec); err != nil {
 		return err
@@ -978,18 +995,14 @@ func checkPayoutBindingHeld(rec PayoutBindingHeld) error {
 			return fmt.Errorf("auth: payout binding held: the active address: %w", err)
 		}
 	}
-	if rec.HeldFor != "" && !heldReasonShape.MatchString(rec.HeldFor) {
-		return errors.New("auth: payout binding held: the reason is not an upper-case token")
+	if rec.HeldFor != "" && !knownHoldReason(rec.HeldFor) {
+		return errors.New("auth: payout binding held: the reason is not one this client records")
 	}
 	if field := recordTextProblem(rec); field != "" {
-		return fmt.Errorf("auth: payout binding held: its %s holds a control, C1 or bidi character", field)
+		return fmt.Errorf("auth: payout binding held: its %s holds a control, format or separator character", field)
 	}
 	return nil
 }
-
-// heldReasonShape is every hold reason the AS sends: REPLACES_ACTIVE,
-// ADDRESS_IN_USE and whatever it adds in the same form.
-var heldReasonShape = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
 
 // ClearPayoutBindingHeld removes the held-binding note once the addresses
 // agree again.
