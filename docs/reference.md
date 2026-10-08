@@ -171,7 +171,8 @@ also stops mining.
 where `credentials.json`, `flush.lock`, the payout address you chose (`payout.json`) and an
 unfinished registration (`registration_pending.json`) are kept: never the state directory, which
 an agent's sandbox may write. A `payout.json` an older version left in the state directory is
-never declared. `base_url` is never dialed: a printed
+never declared; `connect` moves it beside `credentials.json` only when the rewards service
+already has that address in force. `base_url` is never dialed: a printed
 claim link must point there. `agents_api_url` is where `connect` and `mining enable` send
 requests. A non-default, non-loopback `base_url` without `agents_api_url` is refused; a
 loopback one alone defaults `agents_api_url` to it. Every URL must be https, or http on

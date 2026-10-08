@@ -71,6 +71,67 @@ func TestTheResumeNeverDeclaresAnAddressOnlyTheStateDirNames(t *testing.T) {
 	if n := as.declarationAttempts(); n != 0 {
 		t.Fatalf("the resume declared %q from the state directory (%d attempts)", as.declaredAddress(), n)
 	}
+	if !lexists(filepath.Join(stateDir, "payout.json")) {
+		t.Fatal("a payout.json that was not adopted was removed")
+	}
+	if _, ok, _ := testPayoutRecord(t, stateDir).Load(); ok {
+		t.Fatal("an address the AS does not have in force was adopted")
+	}
+}
+
+// A participant who upgraded has their address in the state directory and,
+// usually, already in force at the AS. That one is adopted: it changes
+// nothing at the AS, and saves them choosing it again.
+func TestALegacyAddressAlreadyInForceIsAdopted(t *testing.T) {
+	_, as, cfgPath, stateDir := enrolledButUndeclared(t)
+	legacy := plantStatePayout(t, stateDir, participantAddress)
+	as.setActiveAddress(participantAddress)
+
+	code, out, errOut := runConnect(t, cfgPath, nil)
+	if code != exitOK {
+		t.Fatalf("connect exited %d\n%s\n%s", code, out, errOut)
+	}
+	if n := as.declarationAttempts(); n != 0 {
+		t.Fatalf("adoption declared (%d attempts); it must only compare", n)
+	}
+	if got, ok, err := testPayoutRecord(t, stateDir).Load(); err != nil || !ok || got != participantAddress {
+		t.Fatalf("record beside credentials.json = %q ok=%v err=%v", got, ok, err)
+	}
+	store := mustStore(t, stateDir)
+	if got, ok, err := store.LoadPayoutDeclared(); err != nil || !ok || got != participantAddress {
+		t.Fatalf("declared record = %q ok=%v err=%v", got, ok, err)
+	}
+	if lexists(legacy) {
+		t.Fatal("the adopted address is still in the state directory")
+	}
+	if !strings.Contains(out, "already in force") {
+		t.Fatalf("connect did not say it adopted the address:\n%s", out)
+	}
+}
+
+// An address in the state directory that is not the one in force is never
+// declared and never adopted, whatever else is in force.
+func TestALegacyAddressNotInForceIsNeverDeclared(t *testing.T) {
+	_, as, cfgPath, stateDir := enrolledButUndeclared(t)
+	legacy := plantStatePayout(t, stateDir, plantedAddress)
+	as.setActiveAddress(participantAddress)
+
+	code, out, errOut := runConnect(t, cfgPath, nil)
+	if code != exitOK {
+		t.Fatalf("connect exited %d\n%s\n%s", code, out, errOut)
+	}
+	if n := as.declarationAttempts(); n != 0 {
+		t.Fatalf("declared %q (%d attempts)", as.declaredAddress(), n)
+	}
+	if _, ok, _ := testPayoutRecord(t, stateDir).Load(); ok {
+		t.Fatal("an address not in force was adopted")
+	}
+	if !lexists(legacy) {
+		t.Fatal("an address that was not adopted was removed")
+	}
+	if !strings.Contains(out, "is not in force and is not declared") || !strings.Contains(out, "jevlin mining enable") {
+		t.Fatalf("connect did not say what to do:\n%s", out)
+	}
 }
 
 // The participant's own address, beside credentials.json, is still

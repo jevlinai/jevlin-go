@@ -637,6 +637,16 @@ func (s *Store) LoadLegacyPayoutAddress() (address string, ok bool, err error) {
 	return s.loadAddressRecord(payoutRecordFile)
 }
 
+// RemoveLegacyPayoutAddress removes the state directory's payout.json by
+// name, never what a link there points at. Called once its address is in
+// the record beside credentials.json.
+func (s *Store) RemoveLegacyPayoutAddress() error {
+	if err := os.Remove(filepath.Join(s.dir, payoutRecordFile)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("auth: remove legacy payout address: %w", err)
+	}
+	return nil
+}
+
 // loadAddressRecord reads one of the {"address": ...} records and refuses an
 // address that is not a twilight bech32 address, which also refuses every
 // character a terminal would act on: bech32 has none.

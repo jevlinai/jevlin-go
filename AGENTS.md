@@ -298,10 +298,15 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   a first declaration takes effect on arrival (`pkg/auth/payout.go`), and a `payout.json` a
   sandboxed command planted in the state dir was declared by the next resume. It does not
   stop a sandboxed command that declares with the installation's AS authority itself, which it
-  can read in the state dir; that is the AS's question, and it is open. `cmd/jevlin/payout_record_test.go`
-  (`TestTheResumeNeverDeclaresAnAddressOnlyTheStateDirNames` and the participant's own address
-  still declared unattended), `payout_record_purge_test.go`, and the adoption cases in
-  `setup_units_test.go`. For participants:
+  can read in the state dir; that is the AS's question, and it is open. A `payout.json` an older
+  version left in the state dir is never declared (`adoptLegacyPayoutAddress`): it is moved
+  beside the credential only when the AS's standing already shows that exact address in force,
+  which changes nothing at the AS, and its state-dir copy is then removed; otherwise it is left
+  and nothing acts on it. `cmd/jevlin/payout_record_test.go`
+  (`TestTheResumeNeverDeclaresAnAddressOnlyTheStateDirNames`, the participant's own address still
+  declared unattended, the two legacy outcomes) and `payout_record_unix_test.go` (a resume that
+  cannot write the home leaves the adoption to the next foreground run),
+  `payout_record_purge_test.go`, and the adoption cases in `setup_units_test.go`. For participants:
   [guide, Changing the payout address](docs/guide.md#changing-the-payout-address).
 - **The prompt rule** — `cmd/jevlin/prompt.go` owns what counts as an answer and the two
   readers that ask; every prompt in the binary goes through one of them.

@@ -1342,16 +1342,66 @@ func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Cl
 	// this exactly as it gates enrollment above — an installation that
 	// opted out after enrolling once must not keep declaring.
 	if miningActive(store) {
-		if address, ok, aerr := loadPayoutAddress(cfg.Miner); aerr == nil && ok && !addressSettled(store, address) {
+		address, ok, aerr := loadPayoutAddress(cfg.Miner)
+		switch {
+		case aerr == nil && ok && !addressSettled(store, address):
 			_, miningClient, err := buildMiningClient(ctx, cfg.Mining)
 			if err != nil {
 				fmt.Fprintln(stderr, "jevlin:", err)
 				return true, exitOK // enrollment (if any, this call) already succeeded; a declare failure is not fatal to this poll
 			}
 			declarePayoutIfSafe(ctx, miningClient, store, address, stdout, stderr)
+		case aerr == nil && !ok:
+			adoptLegacyPayoutAddress(ctx, cfg, store, stdout, stderr)
 		}
 	}
 	return true, exitOK
+}
+
+// adoptLegacyPayoutAddress decides what a payout.json an older version left
+// in the state directory is worth, when none is on file beside
+// credentials.json. It is never declared: the state directory is where a
+// sandboxed command plants one. It is adopted into the payout record only
+// when the AS already has that exact address in force for this participant,
+// which changes nothing at the AS and saves a participant who upgraded from
+// choosing their address again. Anything else leaves it unread by anything
+// that declares, and the participant chooses with `jevlin mining enable`.
+//
+// After an adoption the state directory's copy is removed: it would be a
+// second record of the address, in the one place it can be rewritten, read
+// by nothing here and trusted by an older version run against the same
+// installation. Not adopted, it is left: it may be the only record of what
+// the participant once chose, and nothing here acts on it.
+//
+// A resume Codex's sandbox started cannot write beside credentials.json; it
+// fails quietly, and the next foreground run adopts.
+func adoptLegacyPayoutAddress(ctx context.Context, cfg *config.Config, store *auth.Store, stdout, stderr io.Writer) {
+	legacy, ok, err := store.LoadLegacyPayoutAddress()
+	if err != nil || !ok {
+		return
+	}
+	_, miningClient, err := buildMiningClient(ctx, cfg.Mining)
+	if err != nil {
+		fmt.Fprintln(stderr, "jevlin:", err)
+		return
+	}
+	standing, err := miningClient.PayoutStanding(ctx)
+	if err != nil {
+		fmt.Fprintln(stderr, "jevlin: payout standing:", err)
+		return
+	}
+	if standing == nil || standing.Active == nil || standing.Active.Address != legacy {
+		fmt.Fprintf(stdout, "payout address %s, which an older version kept in the state directory, is not in force "+
+			"and is not declared from there. Run `jevlin mining enable` to choose the address to declare.\n", legacy)
+		return
+	}
+	if err := savePayoutAddress(cfg.Miner, legacy); err != nil {
+		return
+	}
+	_ = store.ClearPayoutBindingHeld()
+	_ = store.SavePayoutDeclared(legacy)
+	_ = store.RemoveLegacyPayoutAddress()
+	fmt.Fprintln(stdout, "payout address", legacy, "is already in force; it is now recorded beside credentials.json")
 }
 
 // declarePayoutIfSafe is §5.5's read-before-declare rule (design f0ddb69):

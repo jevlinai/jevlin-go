@@ -23,7 +23,9 @@ The first release replaces this heading with its own.
   which a Codex-sandboxed command can write, and the background resume declared
   whatever address it found there: a planted one could become your first,
   effective payout address. It now lives in the jevlin home, and an address
-  left in the state directory is never declared. An agent in Codex's sandbox
+  left in the state directory is never declared: `connect` moves one there
+  only when the rewards service already has that exact address in force, and
+  otherwise asks you to run `jevlin mining enable`. An agent in Codex's sandbox
   can still reach the rewards service with this installation's access in the
   moments before your address is in force; `jevlin payout show` says which
   address is.
