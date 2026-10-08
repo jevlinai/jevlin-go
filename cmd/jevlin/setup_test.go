@@ -980,6 +980,27 @@ func TestSetupAdoptsASourceHoldingOnlyAPendingRegistration(t *testing.T) {
 	}
 }
 
+// The payout record is the participant's decision about where they are
+// paid, and the address the next resume declares: a set-aside directory
+// holding only that is still an installation, and it is adopted.
+func TestSetupAdoptsASourceHoldingOnlyAPayoutRecord(t *testing.T) {
+	s := newSetupSandbox(t)
+	sibling := s.home + ".bak"
+	if err := os.MkdirAll(sibling, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sibling, payoutRecordFile), []byte(`{"address":"twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, out, _ := s.run(tty("y", "n"), true, "-no-agents", "-no-profile")
+	if !strings.Contains(out, "A previous installation is set aside at "+sibling) {
+		t.Fatalf("a payout record did not count as an installation:\n%s", out)
+	}
+	if !lexists(filepath.Join(s.home, payoutRecordFile)) || lexists(filepath.Join(sibling, payoutRecordFile)) {
+		t.Errorf("the payout record was not adopted:\n%s", out)
+	}
+}
+
 // A destination state/ that holds only an unfinished enrollment's DPoP key is
 // set aside whole, and the adopted identity takes its place.
 func TestSetupSetsAsideAnUnenrolledDestinationState(t *testing.T) {

@@ -47,13 +47,16 @@ import (
 // installation. registration_pending.json is one: an interrupted
 // registration is durable state, and ignoring it would mint a second
 // identity for the same participant. It sits beside credentials.json; the
-// state/ copy is an older release's and connect discards it unread.
+// state/ copy is an older release's and connect discards it unread. The
+// payout record is one too: it is the address the next resume declares,
+// and a directory holding it holds a participant's decision.
 var installationMarkers = []string{
 	filepath.Join("wallet", walletKeyFile),
 	filepath.Join("state", "refresh.token"),
 	filepath.Join("state", "agent.json"),
 	filepath.Join("state", "registration_pending.json"),
 	registrationJournalFile,
+	payoutRecordFile,
 	credentialsFile,
 }
 
@@ -140,6 +143,9 @@ func describeInstallation(dir string) string {
 	}
 	if lexists(filepath.Join(dir, credentialsFile)) {
 		parts = append(parts, "stored API key")
+	}
+	if lexists(filepath.Join(dir, payoutRecordFile)) {
+		parts = append(parts, "a payout address")
 	}
 	if treeHasFiles(filepath.Join(dir, "spool")) {
 		parts = append(parts, "unsent spool")
