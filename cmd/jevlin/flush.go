@@ -72,8 +72,8 @@ func clearCurrentTargetHealth(store *auth.Store) {
 	if store == nil {
 		return
 	}
-	record, ok, err := store.LoadHealth(auth.HealthFlush)
-	if err != nil || !ok || !strings.HasPrefix(record.Detail, currentTargetHealthPrefix) {
+	record, ok, detailKnown := loadFlushHealth(store)
+	if !ok || (detailKnown && !strings.HasPrefix(record.Detail, currentTargetHealthPrefix)) {
 		return
 	}
 	if record.Reason == auth.HealthAuthUnavailable || record.Reason == auth.HealthSubmissionFailed {
@@ -95,8 +95,27 @@ func clearAuthUnavailableHealth(store *auth.Store) {
 	if store == nil {
 		return
 	}
-	if record, ok, err := store.LoadHealth(auth.HealthFlush); err == nil && ok && record.Reason == auth.HealthAuthUnavailable {
+	if record, ok, _ := loadFlushHealth(store); ok && record.Reason == auth.HealthAuthUnavailable {
 		_ = store.ClearHealth(auth.HealthFlush)
+	}
+}
+
+// loadFlushHealth is LoadHealth for the flush's own bookkeeping. A record
+// whose detail was refused (planted, or an older version's error text) still
+// has a valid reason, so the rules that decide on the reason still apply to
+// it: without this the clear helpers never touched it, and it stayed until
+// an accepted delivery or the next mark. detailKnown says whether the
+// detail could be read; a rule that also needs the detail treats an unknown
+// one as matching, since a record that comes back is just marked again.
+func loadFlushHealth(store *auth.Store) (record auth.HealthRecord, ok, detailKnown bool) {
+	record, ok, err := store.LoadHealth(auth.HealthFlush)
+	switch {
+	case err == nil:
+		return record, ok, true
+	case errors.Is(err, auth.ErrHealthDetailRefused):
+		return record, true, false
+	default:
+		return auth.HealthRecord{}, false, false
 	}
 }
 
@@ -122,8 +141,8 @@ func clearFlushStateHealth(store *auth.Store, prefix string) {
 	if store == nil {
 		return
 	}
-	record, ok, err := store.LoadHealth(auth.HealthFlush)
-	if err == nil && ok && record.Reason == auth.HealthFlushStateUnavailable && strings.HasPrefix(record.Detail, prefix) {
+	record, ok, detailKnown := loadFlushHealth(store)
+	if ok && record.Reason == auth.HealthFlushStateUnavailable && (!detailKnown || strings.HasPrefix(record.Detail, prefix)) {
 		_ = store.ClearHealth(auth.HealthFlush)
 	}
 }
@@ -468,7 +487,7 @@ func updateFlushDeliveryHealth(store *auth.Store, health collector.Health, befor
 			detail = "the authorization server did not accept a queued observation"
 		}
 		reason := auth.HealthSubmissionFailed
-		if previous, ok, _ := store.LoadHealth(auth.HealthFlush); ok && after > 0 &&
+		if previous, ok, _ := loadFlushHealth(store); ok && after > 0 &&
 			(previous.Reason == auth.HealthSubmissionFailed || previous.Reason == auth.HealthSpoolBacklog) {
 			reason = auth.HealthSpoolBacklog
 			detail = fmt.Sprintf("%d queued observation(s) remain after failed delivery: %s", after, detail)
@@ -491,7 +510,7 @@ func updateFlushDeliveryHealth(store *auth.Store, health collector.Health, befor
 	// failed delivery is already on record and no queued item progressed, the
 	// unresolved condition is now accurately described as spool backlog.
 	if before > 0 && after == before {
-		if previous, ok, _ := store.LoadHealth(auth.HealthFlush); ok &&
+		if previous, ok, _ := loadFlushHealth(store); ok &&
 			(previous.Reason == auth.HealthSubmissionFailed || previous.Reason == auth.HealthSpoolBacklog) {
 			_ = store.MarkHealth(auth.HealthFlush, auth.HealthSpoolBacklog,
 				fmt.Sprintf("%d queued observation(s) remain after failed progress", after))

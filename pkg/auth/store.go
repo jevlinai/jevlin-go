@@ -374,7 +374,7 @@ func (s *Store) LoadAgentRegistration() (rec AgentRegistration, ok bool, err err
 		return AgentRegistration{}, false, err
 	}
 	if err := json.Unmarshal(raw, &rec); err != nil {
-		return AgentRegistration{}, false, fmt.Errorf("%w: %v", ErrAgentRegistrationCorrupt, err)
+		return AgentRegistration{}, false, fmt.Errorf("%w: %s", ErrAgentRegistrationCorrupt, decodeProblem(err))
 	}
 	if field := recordTextProblem(rec); field != "" {
 		return AgentRegistration{}, false, fmt.Errorf("%w: its %s holds a control, C1 or bidi character", ErrAgentRegistrationCorrupt, field)
@@ -693,7 +693,7 @@ func (s *Store) loadAddressRecord(name string) (string, bool, error) {
 		Address string `json:"address"`
 	}
 	if err := json.Unmarshal(raw, &rec); err != nil {
-		return "", false, fmt.Errorf("auth: decode %s: %w", name, err)
+		return "", false, &decodeError{what: name, err: err}
 	}
 	if err := validatePayoutAddress(rec.Address); err != nil {
 		return "", false, fmt.Errorf("auth: %s: %w", name, err)
@@ -837,7 +837,7 @@ func (s *Store) loadEpochConflicts() ([]ConflictedEpoch, error) {
 	}
 	var set []ConflictedEpoch
 	if err := json.Unmarshal(raw, &set); err != nil {
-		return nil, fmt.Errorf("auth: decode epoch conflicts: %w", err)
+		return nil, &decodeError{what: "epoch conflicts", err: err}
 	}
 	return set, nil
 }
@@ -887,7 +887,7 @@ func (s *Store) LoadPayoutBindingHeld() (rec PayoutBindingHeld, ok bool, err err
 		return PayoutBindingHeld{}, false, err
 	}
 	if err := json.Unmarshal(raw, &rec); err != nil {
-		return PayoutBindingHeld{}, false, fmt.Errorf("auth: decode payout binding held: %w", err)
+		return PayoutBindingHeld{}, false, &decodeError{what: "payout binding held", err: err}
 	}
 	if err := checkPayoutBindingHeld(rec); err != nil {
 		return PayoutBindingHeld{}, false, err
