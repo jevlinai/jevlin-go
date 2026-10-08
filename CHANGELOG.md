@@ -176,6 +176,13 @@ The first release replaces this heading with its own.
   it is sent only while a trace envelope rides, and `JEVLIN_TRACE=off` still
   sends none of it. `connect` also names the build (`jevlin/<version>`) when it
   registers an agent.
+- **A bridge the hooks did not write is removed only when its value is one.**
+  Before replacing a `JEVLIN_TRACE_BRIDGE` assignment already on a command, the
+  hooks and the opencode and Pi adapters now require its value to be base64url,
+  the only shape a real bridge has. A value that opened a quote used to be cut
+  at its first blank, which could turn text the shell would have read as a
+  quoted string into commands it ran. Such a command is now left exactly as
+  written.
 - **The trace prefix no longer edits a command it cannot carry.** The bridge's
   POSIX prefix binds to the first command of a line, so the hooks now write it
   only when that command is the search itself. Before, a loop around a search

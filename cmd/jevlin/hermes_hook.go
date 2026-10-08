@@ -11,9 +11,16 @@ package main
 //
 // OBSERVER, NEVER AN AUTHORITY. Hermes' pre_tool_call vocabulary has exactly
 // two verbs, `block` and `modify`, and blocking is also reachable by exiting
-// 2. We emit `modify` and only `modify`, and we exit 0 on every path: this
-// hook rewrites a command Hermes has already decided to run. Recognizing our
-// own search command tells us where a trace belongs; it is not a judgement
+// 2. We emit `modify` and only `modify`, and we exit 0 on every path. This
+// hook runs BEFORE Hermes decides whether the command may run, not after: at
+// NousResearch/hermes-agent e6757f20292b, pre_tool_call fires in
+// model_tools.py's _pre_dispatch_guards, which replaces the tool's arguments
+// with the modified ones, and only then does the terminal tool run its own
+// guard (_run_approval_guards in tools/terminal_tool.py), on the command as
+// we rewrote it. The guard sees our rewrite, not the model's command, so the
+// rewrite is held to what it may change: a prefix on our own search and a
+// foreign bridge assignment removed, and a command we cannot prove left
+// exactly as it came. Recognizing our own search command tells us where a trace belongs; it is not a judgement
 // about whether that command may execute, and the moment a lineage adapter
 // starts answering that second question it has become a security control
 // nobody reviewed it as. Hermes' own escalation verb (`approve`, with its
