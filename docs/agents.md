@@ -89,6 +89,13 @@ non-ASCII query reached the router intact under both profiles. Once, on Cursor 3
 question. Git Bash was never affected; use it, or ASCII queries, to rule this out. Cursor's hook
 wrapper re-encodes non-ASCII text, so such a search runs without Cursor's label.
 
+**Windows, an apostrophe in a PowerShell-form search.** Git Bash reads the PowerShell form's
+here-string as an ordinary single-quoted string, which an apostrophe in the request closes, and
+an interactive terminal then runs the rest of that line. The hooks cannot tell which terminal you
+picked, so they allow that form without asking only when its request holds no `'`. One that holds
+it waits for your approval and reaches the router without Cursor's label. The skill says to write
+an apostrophe as `\u0027`, which the router receives as the same query.
+
 **Windows: the command-line agent started from Git Bash cannot run any hook, so no search.**
 Cursor runs its PowerShell hook wrapper with bash `eval`, which cannot parse it. Start the agent
 from PowerShell instead; the editor is unaffected. Reported to Cursor (forum thread 172789).
