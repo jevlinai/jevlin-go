@@ -951,7 +951,26 @@ func cmdPayout(args []string) int {
 		return 1
 	}
 	printDeclaration(doc)
+	recordDeclaredPayout(*cfgPath, address, doc)
 	return 0
+}
+
+// recordDeclaredPayout makes the address `payout set` just declared the one
+// this installation would declare: the record beside credentials.json that
+// the poll, the resume and status read. Without it the record kept the old
+// address after a change, status named the old one, and once
+// payout_declared.json was gone a resume reported the participant's own
+// change as a hold. Best effort: the AS has the declaration whatever
+// happens here, and a failure only leaves the record as it was.
+func recordDeclaredPayout(cfgPath, address string, doc *auth.PayoutDeclaration) {
+	cfg, _, err := loadConfig(cfgPath, os.Getenv)
+	if err != nil || savePayoutAddress(cfg.Miner, address) != nil || !doc.Effective {
+		return
+	}
+	if store, err := auth.OpenStoreExisting(cfg.Mining.StateDir); err == nil {
+		_ = store.ClearPayoutBindingHeld()
+		_ = store.SavePayoutDeclared(address)
+	}
 }
 
 // printDeclaration reports what the AS recorded, and — when it did not take
