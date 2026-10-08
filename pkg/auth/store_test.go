@@ -243,8 +243,6 @@ func TestSaveLoadAgentRegistrationRoundTrips(t *testing.T) {
 	}
 	want := AgentRegistration{
 		AgentID:        "agent-1",
-		ClaimURL:       "https://platform.nyks.dev/claim/AB12-CD34",
-		ClaimCode:      "AB12-CD34",
 		Status:         "unclaimed",
 		ClaimExpiresAt: "2026-09-16T00:00:00Z",
 	}
@@ -252,8 +250,8 @@ func TestSaveLoadAgentRegistrationRoundTrips(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, ok, err := s.LoadAgentRegistration()
-	if err != nil || !ok || got.AgentID != want.AgentID || got.ClaimURL != want.ClaimURL ||
-		got.ClaimCode != want.ClaimCode || got.Status != want.Status || got.ClaimExpiresAt != want.ClaimExpiresAt ||
+	if err != nil || !ok || got.AgentID != want.AgentID ||
+		got.Status != want.Status || got.ClaimExpiresAt != want.ClaimExpiresAt ||
 		len(got.Scopes) != 0 {
 		t.Fatalf("got %+v ok=%v err=%v, want %+v", got, ok, err, want)
 	}
@@ -342,7 +340,7 @@ func TestPendingRegistrationJournalIsStrictAndOwnerOnly(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "registration_pending.json"), []byte(`{"v":1,"agent_id":"a","key":"sr-k","claim_url":"https://platform.nyks.dev/c","claim_code":"c","claim_expires_at":"","status":"unclaimed","unexpected":true}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := s.Load(); err == nil || ok || !strings.Contains(err.Error(), "unknown field") {
+	if _, ok, err := s.Load(); err == nil || ok || !strings.Contains(err.Error(), "a field this client does not write") {
 		t.Fatalf("journal with unknown field accepted: ok=%v err=%v", ok, err)
 	}
 }
@@ -372,22 +370,39 @@ func TestPendingExpiredReplacementJournalBindsPreviousIdentity(t *testing.T) {
 	}
 }
 
-// SavePayoutAddress/LoadPayoutAddress round-trip independently of the
-// agent registration — the address is a local mining preference the
-// client owns, not platform state a poll can overwrite.
-func TestSaveLoadPayoutAddressRoundTrips(t *testing.T) {
-	s, _ := newStore(t)
-	if _, ok, err := s.LoadPayoutAddress(); err != nil || ok {
-		t.Fatalf("fresh store: ok=%v err=%v, want ok=false err=nil", ok, err)
-	}
-	if err := s.SavePayoutAddress("twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n"); err != nil {
+// newPayoutRecord is a payout record in a fresh directory standing for the
+// jevlin home, with a state directory beside it that it never touches.
+func newPayoutRecord(t *testing.T) (*PayoutRecord, string) {
+	t.Helper()
+	home := filepath.Join(t.TempDir(), "home")
+	p, err := OpenPayoutRecord(home)
+	if err != nil {
 		t.Fatal(err)
 	}
-	got, ok, err := s.LoadPayoutAddress()
+	return p, home
+}
+
+// The payout record round-trips independently of the agent registration —
+// the address is a local mining preference the client owns, not platform
+// state a poll can overwrite — owner-only, in the directory it was opened
+// on and nowhere else.
+func TestSaveLoadPayoutAddressRoundTrips(t *testing.T) {
+	p, home := newPayoutRecord(t)
+	if _, ok, err := p.Load(); err != nil || ok {
+		t.Fatalf("fresh record: ok=%v err=%v, want ok=false err=nil", ok, err)
+	}
+	if err := p.Save("twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n"); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := p.Load()
 	if err != nil || !ok || got != "twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n" {
 		t.Fatalf("got %q ok=%v err=%v", got, ok, err)
 	}
-	if err := s.SavePayoutAddress(""); err == nil {
+	info, err := os.Stat(filepath.Join(home, "payout.json"))
+	if err != nil || (posixModes && info.Mode().Perm() != 0o600) {
+		t.Fatalf("payout.json perms = %v err=%v, want 0600", info, err)
+	}
+	if err := p.Save(""); err == nil {
 		t.Fatal("empty payout address accepted")
 	}
 }
@@ -453,11 +468,12 @@ func TestSaveLoadPayoutBindingHeldRoundTrips(t *testing.T) {
 	if _, ok, err := s.LoadPayoutBindingHeld(); err != nil || ok {
 		t.Fatalf("fresh store: ok=%v err=%v, want ok=false err=nil", ok, err)
 	}
-	if err := s.SavePayoutBindingHeld("twilight1local", "twilight1active", HeldReplacesActive); err != nil {
+	const local, active = "twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh", "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn"
+	if err := s.SavePayoutBindingHeld(local, active, HeldReplacesActive); err != nil {
 		t.Fatal(err)
 	}
 	got, ok, err := s.LoadPayoutBindingHeld()
-	if err != nil || !ok || got.Local != "twilight1local" || got.Active != "twilight1active" {
+	if err != nil || !ok || got.Local != local || got.Active != active {
 		t.Fatalf("got %+v ok=%v err=%v", got, ok, err)
 	}
 	if err := s.ClearPayoutBindingHeld(); err != nil {
@@ -492,23 +508,23 @@ func TestSaveLoadClearRevokePendingRoundTrips(t *testing.T) {
 	}
 }
 
-// WP2-adversarial-review finding 9: SavePayoutAddress is the one place
+// WP2-adversarial-review finding 9: PayoutRecord.Save is the one place
 // every payout address in the agent-onboarding flow is validated.
 func TestSavePayoutAddressRejectsNonBech32(t *testing.T) {
-	s, _ := newStore(t)
+	p, _ := newPayoutRecord(t)
 	for _, bad := range []string{"twilight1abc", "not-an-address", "twilight1", ""} {
-		if err := s.SavePayoutAddress(bad); err == nil {
-			t.Errorf("SavePayoutAddress(%q) accepted, want a bech32-decode refusal", bad)
+		if err := p.Save(bad); err == nil {
+			t.Errorf("Save(%q) accepted, want a bech32-decode refusal", bad)
 		}
 	}
 }
 
 func TestSavePayoutAddressRejectsWrongHRP(t *testing.T) {
-	s, _ := newStore(t)
+	p, _ := newPayoutRecord(t)
 	// A syntactically valid bech32 string, but for a different chain's
 	// prefix — the HRP check is a separate rejection from the decode
 	// check above, and needs its own input to exercise it.
-	if err := s.SavePayoutAddress("cosmos1qqnfjqxr5w5c60x5xw24k5zqe0shsrtj04kagr"); err == nil {
+	if err := p.Save("cosmos1qqnfjqxr5w5c60x5xw24k5zqe0shsrtj04kagr"); err == nil {
 		t.Fatal("an address with the wrong HRP was accepted")
 	}
 }

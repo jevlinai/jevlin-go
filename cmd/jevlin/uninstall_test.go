@@ -105,6 +105,11 @@ func installed(t *testing.T) *setupSandbox {
 		preferFile:                                          "builtin\n",
 		filepath.Join("state.unenrolled-20260101", "x.key"): "half",
 		filepath.Join("wallet.incomplete-20260101", "junk"): "partial",
+		// Beside credentials.json: each holds the participant's own
+		// decision or a platform key, so a default uninstall keeps them
+		// byte for byte and a purge removes them.
+		payoutRecordFile:        `{"address":"twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh"}`,
+		registrationJournalFile: `{"v":1}`,
 	} {
 		writeFileT(t, filepath.Join(s.home, rel), body)
 	}
@@ -190,6 +195,7 @@ func writeWalletFixture(t *testing.T, dir string) {
 func participantState(s *setupSandbox) []string {
 	h := func(rel string) string { return filepath.Join(s.home, rel) }
 	return []string{h("wallet"), h("state"), h("spool"), h("intake"), h("sessions"), h(credentialsFile),
+		h(registrationJournalFile), h(payoutRecordFile), h(claimRecordFile),
 		h(setupConfigFile), h(preferFile), h("state.unenrolled-20260101"), h("wallet.incomplete-20260101")}
 }
 

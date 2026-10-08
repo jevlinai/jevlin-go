@@ -785,9 +785,10 @@ func (r *setupRun) flushLock() int {
 // that is not set up through here, and a search still makes one where it can
 // write: this step is what makes a search's id stable where it cannot.
 //
-// A failure here is said and does not stop setup: the key serves a stable id,
-// not mining, and connect, which reads the same directory, stops on the
-// problems that matter.
+// A failure to make the key is said and does not stop setup: the key serves
+// a stable id, not mining, and connect, which reads the same directory,
+// stops on the problems that matter. A config that does not load does stop
+// it here, since nothing after this step could run on it either.
 func (r *setupRun) traceKey() int {
 	stateDir := filepath.Join(r.home, "state")
 	if lexists(r.cfgPath) {

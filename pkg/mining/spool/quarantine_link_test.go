@@ -1,6 +1,7 @@
 package spool
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -143,5 +144,28 @@ func TestASpoolDirThatIsALinkIsRefusedWithWhatToDo(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "name the real directory") {
 		t.Fatalf("the refusal does not say what to do: %v", err)
+	}
+}
+
+// Two records with one client_record_id stop Open, and the error names the
+// id. The id is read from a file a sandboxed command can write, and the
+// error reaches a foreground flush's terminal, so it is quoted.
+func TestADuplicateIdentityErrorQuotesTheID(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "spool")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"a.json", "b.json"} {
+		raw := `{"client_record_id":"x\u001b]52;c;ZXZpbA==\u0007\u202ey","slot_id":7,"target_epoch":1,"observation":{}}`
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(raw), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err := Open(dir)
+	if !errors.Is(err, ErrDuplicateIdentity) {
+		t.Fatalf("Open = %v, want ErrDuplicateIdentity", err)
+	}
+	if strings.ContainsAny(err.Error(), "\x1b\a\u202e") {
+		t.Fatalf("the error carries the planted bytes: %q", err)
 	}
 }

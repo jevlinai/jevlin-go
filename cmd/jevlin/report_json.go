@@ -154,6 +154,9 @@ type statusAgentJSON struct {
 	EnrolledAt     string   `json:"enrolled_at,omitempty"`
 	PayoutAddress  string   `json:"payout_address,omitempty"`
 	SlotRefusal    string   `json:"slot_refusal,omitempty"`
+	// LegacyPayoutUnused: a payout.json in the state directory and none on
+	// file beside credentials.json. Its address is never reported.
+	LegacyPayoutUnused bool `json:"legacy_payout_unused,omitempty"`
 }
 
 type statusPayoutHoldJSON struct {
@@ -217,21 +220,23 @@ func statusEnvelope(f agentIdentityFacts, as *statusASFacts) commandEnvelope {
 		report.AgentErr = boundMessage(f.RegistrationErr.Error())
 	} else if f.HasRegistration {
 		reg := f.Registration
+		claimURL, claimCode := printableClaimArtifacts(f.Claim, f.PlatformBaseURL)
 		agent := &statusAgentJSON{
 			AgentID:        reg.AgentID,
 			Status:         reg.Status,
 			Claimed:        reg.Status == "claimed",
 			Scopes:         reg.Scopes,
-			ClaimURL:       reg.ClaimURL,
-			ClaimCode:      reg.ClaimCode,
+			ClaimURL:       claimURL,
+			ClaimCode:      claimCode,
 			ClaimExpiresAt: reg.ClaimExpiresAt,
 			EnrolledSlot:   reg.LastEnrollmentSlot,
 			EnrolledAt:     reg.LastEnrollmentAt,
-			SlotRefusal:    reg.SlotRefusal,
+			SlotRefusal:    slotRefusalText(reg.SlotRefusal, reg.OfferedSlots, f.Mining.PlatformSlot),
 		}
 		if f.PayoutAddressErr == nil && f.HasPayoutAddress {
 			agent.PayoutAddress = f.PayoutAddress
 		}
+		agent.LegacyPayoutUnused = f.LegacyPayout
 		report.Agent = agent
 	}
 	if f.HasHeld {
@@ -334,11 +339,17 @@ func connectEnvelope(cfgPath string, getenv func(string) string, exitCode int, n
 				report.Status = reg.Status
 				report.Claimed = reg.Status == "claimed"
 				report.Scopes = reg.Scopes
-				report.ClaimURL = reg.ClaimURL
-				report.ClaimCode = reg.ClaimCode
+				// A run that did not finish carries no claim link: it may have
+				// withheld the link (the platform could not say whose the
+				// stored key is), and the envelope must not show what the run
+				// said it would not.
+				if exitCode == exitOK {
+					claim, _ := claimFor(cfg.Miner, reg.AgentID, nil)
+					report.ClaimURL, report.ClaimCode = printableClaimArtifacts(claim, cfg.Platform.BaseURL)
+				}
 				report.ClaimExpiresAt = reg.ClaimExpiresAt
 				report.EnrolledSlot = reg.LastEnrollmentSlot
-				report.SlotRefusal = reg.SlotRefusal
+				report.SlotRefusal = slotRefusalText(reg.SlotRefusal, reg.OfferedSlots, cfg.Mining.PlatformSlot)
 			}
 		}
 	}
@@ -378,4 +389,15 @@ func connectOutcome(exitCode int, status string) (code string, retryable bool, a
 	default:
 		return "ok", false, actionNone
 	}
+}
+
+// printableClaimArtifacts is the claim URL and code on file beside
+// credentials.json as a report may show them: both dropped together when
+// the URL fails invariant 12, since a code is only meaningful beside the
+// link it was issued with.
+func printableClaimArtifacts(claim auth.ClaimBootstrap, baseURL string) (claimURL, claimCode string) {
+	if printableClaimURL(claim.ClaimURL, baseURL, nil) == "" {
+		return "", ""
+	}
+	return claim.ClaimURL, claim.ClaimCode
 }

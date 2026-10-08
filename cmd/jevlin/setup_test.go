@@ -994,6 +994,34 @@ func TestSetupAdoptsASourceHoldingOnlyAPendingRegistration(t *testing.T) {
 	}
 }
 
+// A home holding only payout.json is what a first connect leaves when the
+// participant answered the address question and Register then failed. It
+// is not an installation: setup used to report "a payout address" as the
+// previous installation and never offer the one set aside beside it. Now
+// the set-aside identity is offered and adopted, and the home's payout
+// record, the participant's latest answer, is kept.
+func TestALonePayoutRecordDoesNotHideASetAsideInstallation(t *testing.T) {
+	s := newSetupSandbox(t)
+	sibling := s.home + ".bak"
+	writeInstallation(t, sibling, "identity")
+	const homeAddress = `{"address":"twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh"}`
+	writeFileT(t, filepath.Join(sibling, payoutRecordFile), `{"address":"twilight1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc"}`)
+	writeFileT(t, filepath.Join(s.home, payoutRecordFile), homeAddress)
+	_, out, _ := s.run(tty("y", "n"), true, "-no-agents", "-no-profile")
+	if !strings.Contains(out, "A previous installation is set aside at "+sibling) {
+		t.Fatalf("the set-aside installation was not offered:\n%s", out)
+	}
+	if !lexists(filepath.Join(s.home, credentialsFile)) {
+		t.Fatalf("the set-aside identity was not adopted:\n%s", out)
+	}
+	if got, _ := os.ReadFile(filepath.Join(s.home, payoutRecordFile)); string(got) != homeAddress { // #nosec G304 -- the test's own sandbox
+		t.Errorf("the home's own payout record was replaced: %s", got)
+	}
+	if !lexists(filepath.Join(sibling, payoutRecordFile)) {
+		t.Error("the set-aside installation's payout record was not left where it was")
+	}
+}
+
 // A destination state/ that holds only an unfinished enrollment's DPoP key is
 // set aside whole, and the adopted identity takes its place.
 func TestSetupSetsAsideAnUnenrolledDestinationState(t *testing.T) {

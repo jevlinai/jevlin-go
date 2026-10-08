@@ -37,6 +37,7 @@ const (
 	participationSecretFile = "participation.secret"
 	refreshTokenFile        = "refresh.token"
 	registrationPendingFile = "registration_pending.json"
+	payoutRecordFile        = "payout.json"
 	traceKeyFile            = "trace.key"
 	traceKeyLen             = 32
 )
@@ -359,10 +360,14 @@ func (s *Store) LoadReceipt(slotID, targetEpoch uint64) (string, bool, error) {
 // client's cache of the platform's own state, re-verified against
 // GET /v1/agents/{id} on every poll — never trusted as an authority on
 // its own, only as what to resume from.
+//
+// It carries no claim link. Older versions kept claim_url and claim_code
+// here; they decode as unknown fields and are ignored, because this file is
+// in a state directory a sandboxed command can rewrite and the link is what
+// a person is told to open. The link lives in ClaimRecord, beside
+// credentials.json.
 type AgentRegistration struct {
 	AgentID            string   `json:"agent_id"`
-	ClaimURL           string   `json:"claim_url"`
-	ClaimCode          string   `json:"claim_code"`
 	Status             string   `json:"status"` // "unclaimed" | "claimed" | "expired"
 	Scopes             []string `json:"scopes,omitempty"`
 	ClaimExpiresAt     string   `json:"claim_expires_at,omitempty"`
@@ -375,15 +380,26 @@ type AgentRegistration struct {
 	// can name it explicitly instead of the participant discovering it
 	// only from a resume's silent no-op. Cleared the moment a slot
 	// actually resolves (config changes, or the platform stops offering
-	// more than one).
-	SlotRefusal string `json:"slot_refusal,omitempty"`
+	// more than one). It is a code (SlotRefusalNoSlot, SlotRefusalAmbiguous,
+	// SlotRefusalUnmatched) and OfferedSlots the slot names offered: the
+	// sentence is rendered where it is shown, never stored, so this record
+	// cannot carry one.
+	SlotRefusal  string   `json:"slot_refusal,omitempty"`
+	OfferedSlots []string `json:"offered_slots,omitempty"`
 }
 
 // SaveAgentRegistration persists the platform identity, overwriting
 // whatever was there. Like SaveEnrollment, this record legitimately
 // advances through unclaimed -> claimed -> enrolled, so it is
-// write-and-rename rather than createExclusive.
+// write-and-rename rather than createExclusive. A record
+// LoadAgentRegistration would refuse is not written.
 func (s *Store) SaveAgentRegistration(rec AgentRegistration) error {
+	if err := checkAgentRegistrationShapes(rec); err != nil {
+		return fmt.Errorf("auth: refusing to store an agent registration: %w", err)
+	}
+	if field := recordTextProblem(rec); field != "" {
+		return fmt.Errorf("auth: refusing to store an agent registration whose %s holds a control, format or separator character", field)
+	}
 	raw, err := json.Marshal(rec)
 	if err != nil {
 		return fmt.Errorf("auth: encode agent registration: %w", err)
@@ -393,6 +409,16 @@ func (s *Store) SaveAgentRegistration(rec AgentRegistration) error {
 
 // LoadAgentRegistration returns the stored platform identity, ok=false
 // when this installation has never registered.
+//
+// agent.json is in the state directory, which a sandboxed command can
+// rewrite (record_text.go), and its strings reach a terminal: status prints
+// the scopes, the slot and the refusal. A record holding a control, format or
+// separator character in any string, or an identifier that is not a token
+// (agent_id.go), is ErrAgentRegistrationCorrupt, exactly like one
+// that does not decode, so the one path that already handles a record that
+// cannot be trusted handles this one too: a foreground connect sets it aside
+// and rebuilds it from GET /v1/agents/me, and nothing else acts on it. The
+// error names the field and never repeats its bytes.
 func (s *Store) LoadAgentRegistration() (rec AgentRegistration, ok bool, err error) {
 	raw, err := s.readSecret("agent.json")
 	if errors.Is(err, fs.ErrNotExist) {
@@ -402,6 +428,12 @@ func (s *Store) LoadAgentRegistration() (rec AgentRegistration, ok bool, err err
 		return AgentRegistration{}, false, err
 	}
 	if err := json.Unmarshal(raw, &rec); err != nil {
+		return AgentRegistration{}, false, fmt.Errorf("%w: %s", ErrAgentRegistrationCorrupt, decodeProblem(err))
+	}
+	if field := recordTextProblem(rec); field != "" {
+		return AgentRegistration{}, false, fmt.Errorf("%w: its %s holds a control, format or separator character", ErrAgentRegistrationCorrupt, field)
+	}
+	if err := checkAgentRegistrationShapes(rec); err != nil {
 		return AgentRegistration{}, false, fmt.Errorf("%w: %v", ErrAgentRegistrationCorrupt, err)
 	}
 	return rec, true, nil
@@ -416,26 +448,61 @@ func (s *Store) LoadAgentRegistration() (rec AgentRegistration, ok bool, err err
 // confirmed the key still names a real identity there. An existing platform
 // key no longer forces a refusal on its own; it only means the rename must
 // wait for that confirmation first.
+//
+// It moves only a regular file: the record it was asked to preserve is one
+// that was read and found corrupt, and anything else at the name since is
+// not that record.
 func (s *Store) PreserveCorruptAgentRegistration() error {
+	return s.setAsideAgentRegistration("corrupt", false)
+}
+
+// SetAsideAgentRegistration moves a readable agent record that names a
+// different identity from the one being published aside, without deleting
+// it: the registration journal and the credential beside it, both outside
+// the state directory, have decided which agent this installation is.
+func (s *Store) SetAsideAgentRegistration() error {
+	return s.setAsideAgentRegistration("replaced", true)
+}
+
+// SetAsideUnreadableAgentRegistration moves aside whatever is at agent.json
+// that would not load: a link, a directory, a FIFO or a file others can
+// read, any of which a sandboxed command can leave there. Publication calls
+// it once credentials.json holds the registration journal's key, when the
+// journal has decided which agent this installation is.
+func (s *Store) SetAsideUnreadableAgentRegistration() error {
+	return s.setAsideAgentRegistration("unreadable", true)
+}
+
+// setAsideAgentRegistration renames agent.json to agent.json.<why>. With
+// anyShape it moves whatever is there: a record, or a link, a directory, a
+// FIFO or a file others can read, which a sandboxed command can leave at
+// that name. A rename moves a name and never opens or follows what it names,
+// so none of those is a reason to refuse where the journal has already
+// decided which agent this is; refusing, as this once did, left that
+// registration wedged behind whatever was planted. Without anyShape only a
+// regular file is moved. An earlier copy at the backup name is replaced: it is evidence
+// of an earlier record in a directory a sandboxed command can write, and
+// refusing on it made every later rebuild fail the same way. Where either
+// name holds anything but a regular file the backup gets a fresh,
+// timestamped name instead, since a rename cannot put a directory over a
+// file or a file over a directory.
+func (s *Store) setAsideAgentRegistration(why string, anyShape bool) error {
 	path := filepath.Join(s.dir, "agent.json")
 	info, err := os.Lstat(path)
 	if err != nil {
 		return err
 	}
-	if info.Mode()&fs.ModeSymlink != 0 || !info.Mode().IsRegular() {
+	if !anyShape && !info.Mode().IsRegular() {
 		return errors.New("auth: agent registration is not a regular file")
 	}
-	if posixModes && info.Mode().Perm()&0o077 != 0 {
-		return fmt.Errorf("auth: agent registration is readable by others (%04o); refusing", info.Mode().Perm())
-	}
-	backup := filepath.Join(s.dir, "agent.json.corrupt")
-	if _, err := os.Lstat(backup); err == nil {
-		return errors.New("auth: corrupt agent registration evidence already exists")
-	} else if !errors.Is(err, fs.ErrNotExist) {
+	backup := filepath.Join(s.dir, "agent.json."+why)
+	if held, err := os.Lstat(backup); err == nil && (!held.Mode().IsRegular() || !info.Mode().IsRegular()) {
+		backup = fmt.Sprintf("%s-%d", backup, time.Now().UnixNano())
+	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	if err := os.Rename(path, backup); err != nil {
-		return fmt.Errorf("auth: preserve corrupt agent registration: %w", err)
+		return fmt.Errorf("auth: set the agent registration aside: %w", err)
 	}
 	return nil
 }
@@ -508,14 +575,11 @@ func (j *RegistrationJournal) Load() (rec PendingRegistration, ok bool, err erro
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&rec); err != nil {
-		return PendingRegistration{}, false, fmt.Errorf("auth: decode pending registration: %w", err)
+		return PendingRegistration{}, false, &decodeError{what: "pending registration", err: err}
 	}
 	var extra any
 	if err := dec.Decode(&extra); err != io.EOF {
-		if err == nil {
-			return PendingRegistration{}, false, errors.New("auth: decode pending registration: trailing data")
-		}
-		return PendingRegistration{}, false, fmt.Errorf("auth: decode pending registration: trailing data: %w", err)
+		return PendingRegistration{}, false, errors.New("auth: decode pending registration: trailing data")
 	}
 	if err := validatePendingRegistration(rec); err != nil {
 		return PendingRegistration{}, false, err
@@ -581,22 +645,14 @@ func boundedNonEmpty(value string, min, max int) bool {
 	return bounded(value, min, max)
 }
 
-// SavePayoutAddress persists the payout address decided at the terminal
-// (agent onboarding design §5.5): typed directly, or the address of a
-// wallet just created. It is kept in its own file rather than folded into
-// agent.json — one concern per file, matching dpop.key/refresh.token/
-// enrollment.json/receipt-*.jws — because the address is a local mining
-// preference the client owns outright, while agent.json mirrors platform
-// state that a poll can overwrite. A detached resume reads this file as
-// the one thing it needs to declare a payout unattended once enrollment
-// succeeds; it never needs to know how the address was decided.
 // validatePayoutAddress is the one place every payout address in this
 // flow is checked (WP2-adversarial-review finding 9): a terminal-typed
 // answer, mining.payout_address from config, and — redundantly but
 // harmlessly, since it is already valid by construction — a freshly
-// created wallet's own address all funnel through SavePayoutAddress, so
+// created wallet's own address all funnel through PayoutRecord.Save, so
 // validating here structurally covers all three without relying on each
-// call site to remember to.
+// call site to remember to. Every load of a record naming an address
+// applies it again (#51).
 func validatePayoutAddress(address string) error {
 	hrp, _, err := DecodeBech32Address(address)
 	if err != nil {
@@ -608,7 +664,42 @@ func validatePayoutAddress(address string) error {
 	return nil
 }
 
-func (s *Store) SavePayoutAddress(address string) error {
+// PayoutRecord holds payout.json, the payout address decided at the
+// terminal (agent onboarding design §5.5): typed directly, the address of
+// a wallet created there, or mining.payout_address. It is its own file
+// rather than part of agent.json — one concern per file — because the
+// address is a local mining preference the client owns outright, while
+// agent.json mirrors platform state a poll can overwrite. A detached resume
+// declares what this file says once enrollment succeeds, without knowing
+// how it was decided.
+//
+// That is why it is not in the state directory (#51). The state directory
+// is a writable root of Codex's sandbox, and a first declaration takes
+// effect on arrival (payout.go): a payout.json planted there was declared
+// by the next resume, the participant's own authority sending the money
+// somewhere else. Beside credentials.json, whoever can rewrite this file
+// could already rewrite the credential. It is not a defense against a
+// sandboxed command that declares with the installation's AS authority
+// directly — that is the AS's to answer — only against jevlin declaring
+// an address nobody decided.
+type PayoutRecord struct {
+	dir string
+}
+
+// OpenPayoutRecord names payout.json in dir, the directory holding
+// credentials.json. Nothing is created until Save.
+func OpenPayoutRecord(dir string) (*PayoutRecord, error) {
+	if dir == "" {
+		return nil, errors.New("auth: payout record directory is empty")
+	}
+	return &PayoutRecord{dir: dir}, nil
+}
+
+func (p *PayoutRecord) store() *Store { return &Store{dir: p.dir} }
+
+// Save writes the address, refusing one that is not a twilight bech32
+// address.
+func (p *PayoutRecord) Save(address string) error {
 	if address == "" {
 		return errors.New("auth: refusing to store an empty payout address")
 	}
@@ -621,13 +712,43 @@ func (s *Store) SavePayoutAddress(address string) error {
 	if err != nil {
 		return fmt.Errorf("auth: encode payout address: %w", err)
 	}
-	return s.saveStateFile("payout.json", raw)
+	if err := os.MkdirAll(p.dir, 0o700); err != nil { // #nosec G703 -- the jevlin home, beside credentials.json
+		return fmt.Errorf("auth: create payout record dir: %w", err)
+	}
+	return p.store().saveStateFile(payoutRecordFile, raw)
 }
 
-// LoadPayoutAddress returns the stored address, ok=false when none has
-// been decided yet.
-func (s *Store) LoadPayoutAddress() (address string, ok bool, err error) {
-	raw, err := s.readSecret("payout.json")
+// Load returns the stored address, ok=false when none has been decided
+// yet. The address is validated on the way back in as well as on the way
+// out: a resume declares what it says, and status prints it.
+func (p *PayoutRecord) Load() (address string, ok bool, err error) {
+	return p.store().loadAddressRecord(payoutRecordFile)
+}
+
+// LoadLegacyPayoutAddress reads a payout.json in the state directory, where
+// releases before PayoutRecord kept it. Anything there may have been
+// written by a sandboxed command, so the address is never declared from
+// here; a caller may only compare it with the binding the AS already has
+// active.
+func (s *Store) LoadLegacyPayoutAddress() (address string, ok bool, err error) {
+	return s.loadAddressRecord(payoutRecordFile)
+}
+
+// RemoveLegacyPayoutAddress removes the state directory's payout.json by
+// name, never what a link there points at. Called once its address is in
+// the record beside credentials.json.
+func (s *Store) RemoveLegacyPayoutAddress() error {
+	if err := os.Remove(filepath.Join(s.dir, payoutRecordFile)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("auth: remove legacy payout address: %w", err)
+	}
+	return nil
+}
+
+// loadAddressRecord reads one of the {"address": ...} records and refuses an
+// address that is not a twilight bech32 address, which also refuses every
+// character a terminal would act on: bech32 has none.
+func (s *Store) loadAddressRecord(name string) (string, bool, error) {
+	raw, err := s.readSecret(name)
 	if errors.Is(err, fs.ErrNotExist) {
 		return "", false, nil
 	}
@@ -638,7 +759,10 @@ func (s *Store) LoadPayoutAddress() (address string, ok bool, err error) {
 		Address string `json:"address"`
 	}
 	if err := json.Unmarshal(raw, &rec); err != nil {
-		return "", false, fmt.Errorf("auth: decode payout address: %w", err)
+		return "", false, &decodeError{what: name, err: err}
+	}
+	if err := validatePayoutAddress(rec.Address); err != nil {
+		return "", false, fmt.Errorf("auth: %s: %w", name, err)
 	}
 	return rec.Address, true, nil
 }
@@ -779,7 +903,7 @@ func (s *Store) loadEpochConflicts() ([]ConflictedEpoch, error) {
 	}
 	var set []ConflictedEpoch
 	if err := json.Unmarshal(raw, &set); err != nil {
-		return nil, fmt.Errorf("auth: decode epoch conflicts: %w", err)
+		return nil, &decodeError{what: "epoch conflicts", err: err}
 	}
 	return set, nil
 }
@@ -794,18 +918,40 @@ func (s *Store) loadEpochConflicts() ([]ConflictedEpoch, error) {
 type PayoutBindingHeld struct {
 	Local  string `json:"local"`
 	Active string `json:"active"`
-	// HeldFor is the AS's reason (HeldReplacesActive, HeldAddressInUse —
-	// payout.go), or empty when this hold came from connect's own
-	// read-before-declare pre-check (PayoutStanding showing a different
-	// active address) rather than the declare call's own response.
+	// HeldFor is one of the AS's known reasons (HeldReplacesActive,
+	// HeldAddressInUse — payout.go), or empty when the AS gave none or one
+	// this version does not know. A reason is a word this client can say
+	// something true about, and this file is in a directory a sandboxed
+	// command can rewrite: a reason that is not one of those words is not
+	// stored, and on load is not a note this client wrote.
 	HeldFor string `json:"held_for,omitempty"`
+}
+
+// knownHoldReason reports a hold reason this client can explain.
+func knownHoldReason(reason string) bool {
+	return reason == HeldReplacesActive || reason == HeldAddressInUse
 }
 
 // SavePayoutBindingHeld records that declaration was skipped because the
 // AS's active address differs from the one this installation would
 // declare.
+//
+// A hold is recorded whatever the AS said about it: a reason this version
+// does not know, or an active address that is not a twilight address, is
+// left out of the note rather than keeping the note from being written,
+// since the hold is the fact and those are its detail.
 func (s *Store) SavePayoutBindingHeld(local, active string, heldFor string) error {
-	raw, err := json.Marshal(PayoutBindingHeld{Local: local, Active: active, HeldFor: heldFor})
+	if !knownHoldReason(heldFor) {
+		heldFor = ""
+	}
+	if active != "" && validatePayoutAddress(active) != nil {
+		active = ""
+	}
+	rec := PayoutBindingHeld{Local: local, Active: active, HeldFor: heldFor}
+	if err := checkPayoutBindingHeld(rec); err != nil {
+		return err
+	}
+	raw, err := json.Marshal(rec)
 	if err != nil {
 		return fmt.Errorf("auth: encode payout binding held: %w", err)
 	}
@@ -814,6 +960,8 @@ func (s *Store) SavePayoutBindingHeld(local, active string, heldFor string) erro
 
 // LoadPayoutBindingHeld returns the stored held-binding note, ok=false
 // when declaration has never been held (or the hold has been cleared).
+// status and doctor print all three of its strings, so a record that
+// fails checkPayoutBindingHeld is an error rather than a note.
 func (s *Store) LoadPayoutBindingHeld() (rec PayoutBindingHeld, ok bool, err error) {
 	raw, err := s.readSecret("payout_binding_held.json")
 	if errors.Is(err, fs.ErrNotExist) {
@@ -823,9 +971,38 @@ func (s *Store) LoadPayoutBindingHeld() (rec PayoutBindingHeld, ok bool, err err
 		return PayoutBindingHeld{}, false, err
 	}
 	if err := json.Unmarshal(raw, &rec); err != nil {
-		return PayoutBindingHeld{}, false, fmt.Errorf("auth: decode payout binding held: %w", err)
+		return PayoutBindingHeld{}, false, &decodeError{what: "payout binding held", err: err}
+	}
+	if err := checkPayoutBindingHeld(rec); err != nil {
+		return PayoutBindingHeld{}, false, err
 	}
 	return rec, true, nil
+}
+
+// checkPayoutBindingHeld holds the note to what this client writes into it.
+// Both addresses are ones the AS returned or this client declared, so both
+// are twilight bech32: the review planted an "active address" of free text
+// ("…is revoked. To restore payment run: jevlin payout set <theirs>") and
+// status and doctor printed it as the AS's word. The reason is the AS's,
+// and its hold vocabulary is open (payout.go: a client prints a reason it
+// does not know), so it is held to the shape every reason has, an
+// upper-case token, rather than to a list.
+func checkPayoutBindingHeld(rec PayoutBindingHeld) error {
+	if err := validatePayoutAddress(rec.Local); err != nil {
+		return fmt.Errorf("auth: payout binding held: %w", err)
+	}
+	if rec.Active != "" {
+		if err := validatePayoutAddress(rec.Active); err != nil {
+			return fmt.Errorf("auth: payout binding held: the active address: %w", err)
+		}
+	}
+	if rec.HeldFor != "" && !knownHoldReason(rec.HeldFor) {
+		return errors.New("auth: payout binding held: the reason is not one this client records")
+	}
+	if field := recordTextProblem(rec); field != "" {
+		return fmt.Errorf("auth: payout binding held: its %s holds a control, format or separator character", field)
+	}
+	return nil
 }
 
 // ClearPayoutBindingHeld removes the held-binding note once the addresses
@@ -850,6 +1027,9 @@ func (s *Store) SavePayoutDeclared(address string) error {
 	if address == "" {
 		return errors.New("auth: refusing to record an empty address as declared")
 	}
+	if err := validatePayoutAddress(address); err != nil {
+		return err
+	}
 	raw, err := json.Marshal(struct {
 		Address string `json:"address"`
 	}{Address: address})
@@ -861,21 +1041,10 @@ func (s *Store) SavePayoutDeclared(address string) error {
 
 // LoadPayoutDeclared returns the address last confirmed active, ok=false
 // when nothing has ever been declared or confirmed from this installation.
+// An address that is not a twilight bech32 address is an error, which
+// addressSettled reads as "not settled": the next poll asks the AS again.
 func (s *Store) LoadPayoutDeclared() (address string, ok bool, err error) {
-	raw, err := s.readSecret("payout_declared.json")
-	if errors.Is(err, fs.ErrNotExist) {
-		return "", false, nil
-	}
-	if err != nil {
-		return "", false, err
-	}
-	var rec struct {
-		Address string `json:"address"`
-	}
-	if err := json.Unmarshal(raw, &rec); err != nil {
-		return "", false, fmt.Errorf("auth: decode payout declared: %w", err)
-	}
-	return rec.Address, true, nil
+	return s.loadAddressRecord("payout_declared.json")
 }
 
 // SaveMiningEnabled persists the explicit runtime mining decision. The
