@@ -375,9 +375,15 @@ func publishPendingRegistration(store *auth.Store, m config.Miner, pending auth.
 
 	reg, ok, err := store.LoadAgentRegistration()
 	if err != nil {
-		if !errors.Is(err, auth.ErrAgentRegistrationCorrupt) || !opts.allowCorruptPreserve {
+		if !opts.allowCorruptPreserve {
 			return auth.AgentRegistration{}, fmt.Errorf("cannot publish agent registration: %w", err)
 		}
+		// Not only a record that does not decode: a link, a directory, a FIFO
+		// or a file others can read at agent.json refuses to load too, and a
+		// sandboxed command can leave any of them there. Refusing on them left
+		// the journal unfinished and every later run failing the same way,
+		// with the journal's key already published. The name is renamed aside,
+		// never opened or followed, and the journal's record published.
 		if err := store.PreserveCorruptAgentRegistration(); err != nil {
 			return auth.AgentRegistration{}, err
 		}

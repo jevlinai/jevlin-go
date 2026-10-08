@@ -457,28 +457,26 @@ func (s *Store) SetAsideAgentRegistration() error {
 	return s.setAsideAgentRegistration("replaced")
 }
 
-// setAsideAgentRegistration renames agent.json to agent.json.<why>. An
-// earlier copy at that name is replaced: it is evidence of an earlier
-// record in a directory a sandboxed command can write, and refusing on it,
-// as this once did, made every later rebuild fail the same way, with
-// nothing saying what to do. A name held by anything but a regular file
-// (a directory, a link) gets a fresh, timestamped name instead, so nothing
-// planted there blocks the rename either. A rename replaces a name, never
-// what it pointed at.
+// setAsideAgentRegistration renames whatever is at agent.json to
+// agent.json.<why>: a record, or a link, a directory, a FIFO or a file
+// others can read, which a sandboxed command can leave at that name. A
+// rename moves a name and never opens or follows what it names, so none of
+// those is a reason to refuse; refusing, as this once did, left a
+// registration the journal had already decided wedged behind whatever was
+// planted. An earlier copy at the backup name is replaced: it is evidence
+// of an earlier record in a directory a sandboxed command can write, and
+// refusing on it made every later rebuild fail the same way. Where either
+// name holds anything but a regular file the backup gets a fresh,
+// timestamped name instead, since a rename cannot put a directory over a
+// file or a file over a directory.
 func (s *Store) setAsideAgentRegistration(why string) error {
 	path := filepath.Join(s.dir, "agent.json")
 	info, err := os.Lstat(path)
 	if err != nil {
 		return err
 	}
-	if info.Mode()&fs.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return errors.New("auth: agent registration is not a regular file")
-	}
-	if posixModes && info.Mode().Perm()&0o077 != 0 {
-		return fmt.Errorf("auth: agent registration is readable by others (%04o); refusing", info.Mode().Perm())
-	}
 	backup := filepath.Join(s.dir, "agent.json."+why)
-	if held, err := os.Lstat(backup); err == nil && !held.Mode().IsRegular() {
+	if held, err := os.Lstat(backup); err == nil && (!held.Mode().IsRegular() || !info.Mode().IsRegular()) {
 		backup = fmt.Sprintf("%s-%d", backup, time.Now().UnixNano())
 	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
