@@ -651,3 +651,59 @@ func TestCursorWindowsSkillWritesApostrophesEscaped(t *testing.T) {
 		t.Errorf("Cursor's macOS skill carries the Git Bash apostrophe note")
 	}
 }
+
+// TestCursorPreToolUseAllowsOnlyWhatBeforeShellExecutionAllows: preToolUse
+// answers "permission":"allow" as well, so it is held to the same decision.
+// For every cell and every body, preToolUse allows exactly when
+// beforeShellExecution allows, the command it hands back is one
+// beforeShellExecution allows too, and a form refused there gets no answer
+// from preToolUse at all, so Cursor asks.
+func TestCursorPreToolUseAllowsOnlyWhatBeforeShellExecutionAllows(t *testing.T) {
+	c := newGitBashCase(t)
+	type cell struct{ tool, runners []shellKind }
+	cells := map[string]cell{}
+	for _, goos := range []string{"darwin", "linux", "windows"} {
+		tool, runners := cursorShellsFor(t, goos)
+		cells[goos] = cell{tool, runners}
+	}
+	cells["windows, PowerShell only"] = cell{[]shellKind{shellPowerShell}, cells["windows"].runners}
+	refused := 0
+	for name, cl := range cells {
+		for _, sh := range cl.tool {
+			for bodyName, body := range map[string]string{"apostrophe": c.breakout, `'`: c.escaped} {
+				gitBashBreaksOut := sh == shellPowerShell && slices.Contains(cl.tool, shellPOSIX) && body == c.breakout
+				want := !gitBashBreaksOut
+				if gitBashBreaksOut {
+					refused++
+				}
+				cmd := c.render(t, sh, body)
+				if got := cursorShellRecognizes(c.ops, c.hc, cmd, cl.tool, cl.runners) != nil; got != want {
+					t.Errorf("%s, %s form, %s: beforeShellExecution allowed %v, want %v", name, sh, bodyName, got, want)
+				}
+				var out bytes.Buffer
+				cursorPreToolUse(c.ops, c.hc, cursorPreToolUsePayload(t, cmd), cl.tool, cl.runners, &out, io.Discard)
+				if !want {
+					if out.Len() != 0 {
+						t.Errorf("%s, %s form, %s: preToolUse answered for a search beforeShellExecution refuses: %s", name, sh, bodyName, out.String())
+					}
+					continue
+				}
+				var got cursorAnswer
+				var rewritten string
+				if json.Unmarshal(out.Bytes(), &got) != nil || json.Unmarshal(got.UpdatedInput["command"], &rewritten) != nil {
+					t.Errorf("%s, %s form, %s: preToolUse gave no rewrite: %q", name, sh, bodyName, out.String())
+					continue
+				}
+				if got.Permission != "allow" || rewritten != expectedCursorCommand(t, sh, c.env, cmd) {
+					t.Errorf("%s, %s form, %s: preToolUse answered %q with\n%s", name, sh, bodyName, got.Permission, rewritten)
+				}
+				if cursorShellRecognizes(c.ops, c.hc, rewritten, cl.tool, cl.runners) == nil {
+					t.Errorf("%s, %s form, %s: preToolUse allowed a command beforeShellExecution refuses:\n%s", name, sh, bodyName, rewritten)
+				}
+			}
+		}
+	}
+	if refused != 1 {
+		t.Fatalf("the domain holds %d refused cases, want the one this is about: the PowerShell form with a ' where Git Bash may run it", refused)
+	}
+}

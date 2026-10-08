@@ -21,9 +21,11 @@ The first release replaces this heading with its own.
 - **Cursor on Windows asks before a PowerShell search with an apostrophe in
   it.** The participant picks Cursor's terminal there, and Git Bash reads the
   PowerShell form's here-string as an ordinary quoted string that an
-  apostrophe in the request ends, running whatever follows. Cursor's hook now
-  allows that form only when the request holds no `'`, and the skill says to
-  write one as `\u0027`, which reaches the router as the same query.
+  apostrophe in the request ends, running whatever follows. Cursor's hooks now
+  allow that form only when the request holds no `'`; one that holds it waits
+  for your approval and reaches the router without Cursor's label. The skill
+  says to write an apostrophe as `\u0027`, which reaches the router as the
+  same query.
 - **Files an agent's sandbox leaves in jevlin's directories no longer reach
   your own files.** Codex's sandbox may write jevlin's state, intake, sessions
   and spool directories. A link left there could make a hook, a flush or

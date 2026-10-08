@@ -1232,28 +1232,38 @@ func recognizeCursorCommand(ops hookOps, hc hookContext, command string, shells 
 // cursorShellRecognizes is beforeShellExecution's allow decision, with the
 // shells Cursor runs and the runners it starts its hooks with as parameters,
 // so every OS's answer is exercised on every runner.
+func cursorShellRecognizes(ops hookOps, hc hookContext, command string, shells, runners []shellKind) *recognizedForm {
+	f := recognizeCursorCommand(ops, hc, command, shells)
+	if !cursorAllows(f, shells, runners) {
+		return nil
+	}
+	return f
+}
+
+// cursorAllows is the one decision both of Cursor's allowing hooks answer
+// with, beforeShellExecution's `{"permission":"allow"}` and preToolUse's: a
+// form the recognizer matched may run without asking only when it holds
+// here. shells is the whole cell Cursor may run the command in, never just
+// the shell the form was rendered for, because inertUnderEveryShell is about
+// the shells the form was NOT rendered for.
 //
-// Where those runners hand the hook the payload re-encoded (Windows,
+// Where the runners hand the hook the payload re-encoded (Windows,
 // dropin-miner#113), the command this hook reads is not the command the shell
 // will run: every byte above ASCII arrives as other characters. A typographic
 // quote, which PowerShell ends a single-quoted string at, arrives as three
 // characters readRenderedPath has no reason to refuse. So there, a binary or
 // config path that is not ASCII is not allowed. The query in the request
-// body may still be anything: the body must be one JSON object, and no line
-// of a JSON object begins with a quote, so it cannot end the here-string it
-// sits in.
-func cursorShellRecognizes(ops hookOps, hc hookContext, command string, shells, runners []shellKind) *recognizedForm {
-	f := recognizeCursorCommand(ops, hc, command, shells)
+// body may still be anything PowerShell reads: the body must be one JSON
+// object, and no line of a JSON object begins with a quote, so it cannot end
+// the here-string it sits in.
+func cursorAllows(f *recognizedForm, shells, runners []shellKind) bool {
 	if f == nil {
-		return nil
+		return false
 	}
 	if !hookInputIntact(runners) && (!isASCII(f.bin) || !isASCII(f.cfg)) {
-		return nil
+		return false
 	}
-	if !inertUnderEveryShell(f, shells) {
-		return nil
-	}
-	return f
+	return inertUnderEveryShell(f, shells)
 }
 
 // inertUnderEveryShell reports whether a recognized command does nothing but
@@ -1328,7 +1338,8 @@ func cursorPreToolUse(ops hookOps, hc hookContext, payload []byte, shells, runne
 		return
 	}
 	for _, sh := range shells {
-		if !isSearchForm(recognizeRenderedForm(command, ops.executable, hc.cfgPath, []shellKind{sh})) {
+		f := recognizeRenderedForm(command, ops.executable, hc.cfgPath, []shellKind{sh})
+		if !isSearchForm(f) {
 			continue
 		}
 		// The command goes back to Cursor as the command it will run. If the
@@ -1337,6 +1348,15 @@ func cursorPreToolUse(ops hookOps, hc hookContext, payload []byte, shells, runne
 		// and a lost label is the only acceptable cost of that doubt.
 		if !isASCII(command) && !hookInputIntact(runners) {
 			fmt.Fprintln(stderr, "jevlin hook: search not labeled: its command carries non-ASCII text, and Cursor's hook runner on this OS re-encodes it")
+			return
+		}
+		// The answer carries "permission":"allow", so it is held to the
+		// same decision as beforeShellExecution's: what this hook would let
+		// run unasked, it also labels, and nothing else. A form refused there
+		// gets no answer here, as an unrecognized command gets none, and
+		// Cursor asks.
+		if !cursorAllows(f, shells, runners) {
+			fmt.Fprintln(stderr, "jevlin hook: search not labeled: a terminal Cursor may run it in would not read it as the search; write an apostrophe in the request as \\u0027")
 			return
 		}
 		prefix, ok := cursorIdentityPrefix(sh, id)
