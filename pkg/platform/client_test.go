@@ -815,6 +815,12 @@ func TestAClaimURLCarriesNothingAfterItsOwnText(t *testing.T) {
 		"a non-ASCII rune in the path": base + "/claim/AB12-CD34é",
 		"a user before the host":       "https://evil.example@platform.example/claim/AB12-CD34",
 		"a tab":                        base + "/claim/AB12\tCD34",
+		// Each of the two checks alone: url.Parse keeps a query's bytes as
+		// given, so only the ASCII rule refuses non-ASCII there; and it
+		// lower-cases a scheme, so only the read-back refuses one written
+		// in capitals, which is not the text that was checked.
+		"non-ASCII in the query": base + "/claim/AB12?ref=\u00e9",
+		"a scheme in capitals":   "HTTPS://platform.example/claim/AB12-CD34",
 	} {
 		if err := ValidateStoredClaimURL(raw, base); err == nil {
 			t.Errorf("%s: %q accepted", name, raw)

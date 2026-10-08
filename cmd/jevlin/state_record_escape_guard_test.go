@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jevlinai/jevlin-go/internal/termtext"
 	"github.com/jevlinai/jevlin-go/pkg/auth"
 )
 
@@ -159,13 +158,15 @@ var plantedClasses = map[string]string{
 	"line separator":    "x\u2028y",
 }
 
-// requireNothingPlanted fails if any refused character of planted came out.
-// In JSON, ESC and BEL come out escaped as text, which is not an escape;
-// every other class would come out raw.
+// requireNothingPlanted fails if any character of planted outside printable
+// ASCII came out raw. In JSON, ESC and BEL come out escaped as text, which
+// is not an escape; every other class would come out raw. The test is its
+// own oracle, never internal/termtext: a guard that asked the rule it
+// guards stayed green when that rule was narrowed to ESC alone.
 func requireNothingPlanted(t *testing.T, what, out, planted string) {
 	t.Helper()
 	for _, r := range planted {
-		if termtext.HasControlChar(string(r)) && strings.ContainsRune(out, r) {
+		if (r < 0x20 || r >= 0x7f) && strings.ContainsRune(out, r) {
 			t.Fatalf("%s carried U+%04X to the terminal:\n%q", what, r, out)
 		}
 	}
