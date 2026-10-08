@@ -1037,7 +1037,9 @@ func doctorFlushStamp(path string) (flushStamp, bool, error) {
 //
 // readFlushStamp itself is untouched.
 func readFlushStampForDoctor(path string) (flushStamp, bool, error) {
-	data, err := os.ReadFile(path) // #nosec G304 -- our own state dir
+	// The state dir is a writable root of Codex's sandbox: a FIFO at the
+	// stamp's name must cost this check, not hang doctor (fsx.ReadRegular).
+	data, err := fsx.ReadRegular(path, stampMaxBytes)
 	if errors.Is(err, fs.ErrNotExist) {
 		return flushStamp{}, false, nil
 	}

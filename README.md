@@ -17,7 +17,10 @@ and hooks, and npm throws away an `npx` cache or a project's `node_modules`.
 
 Without Node, download the archive for your OS and architecture from the
 [releases page](https://github.com/jevlinai/jevlin-go/releases) and verify it against that
-release's `checksums.txt`. Put `jevlin` on your PATH and run `jevlin setup`.
+release's `checksums.txt`. Put `jevlin` in a directory only you can write, such as
+`~/.local/bin`, and run `jevlin setup` from there. Setup and `agents install` refuse a binary
+under the temp directory, or in a directory another user owns or every user can write, and
+warn about one a shared group can write. On Windows only the temp-directory rule is checked.
 
 ## What setup asks
 

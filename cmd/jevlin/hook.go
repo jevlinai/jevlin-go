@@ -49,23 +49,36 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/jevlinai/jevlin-go/pkg/fsx"
 )
 
 const (
 	hookTailBytes     = 256 << 10
 	hookMaxTranscript = 64 << 20
-	hookStateFile     = "window.json"
+	// hookFileMaxBytes bounds every file the hook reads back from its own
+	// directories (lineage files, window state, turn marks). A lineage file
+	// holds at most traceHistoryCap of history and the user's message under
+	// the same cap, escaped, a few hundred KiB at most. The largest is the
+	// window state, which keeps about 70 bytes for every session it has seen
+	// and is never pruned: 16 MiB is some 240,000 sessions. A file past the
+	// bound is not read, and the window state is then left as it is.
+	hookFileMaxBytes = 16 << 20
+	hookStateFile    = "window.json"
 	// bridgeEnv is how a rewritten shell command hands `search` its
 	// envelope: one environment assignment in front of the command.
 	bridgeEnv = "JEVLIN_TRACE_BRIDGE"
@@ -100,16 +113,22 @@ type hookOps struct {
 	spawnFlush func(cfgPath string) error
 	// spawnTurnEnd starts the detached sender of one queued turn end.
 	spawnTurnEnd func(cfgPath, file string) error
-	now          func() time.Time
-	pid          int
+	// tempSuffix is the unpredictable part of a temporary or queued file's
+	// name (tempNameFor). Tests set it to plant a file at the exact name.
+	tempSuffix func() string
+	now        func() time.Time
+	pid        int
 }
 
 func realHookOps() hookOps {
 	return hookOps{
-		executable:   os.Executable,
-		getenv:       os.Getenv,
-		readFile:     os.ReadFile,
-		writeFile:    os.WriteFile,
+		executable: os.Executable,
+		getenv:     os.Getenv,
+		// The sessions and state directories are writable roots of Codex's
+		// sandbox (pkg/fsx/confined.go): a read never waits on what a
+		// sandboxed command left at a name, and a write never opens one.
+		readFile:     func(path string) ([]byte, error) { return fsx.ReadRegular(path, hookFileMaxBytes) },
+		writeFile:    fsx.CreateNew,
 		mkdirAll:     os.MkdirAll,
 		rename:       os.Rename,
 		remove:       os.Remove,
@@ -117,6 +136,7 @@ func realHookOps() hookOps {
 		readTail:     readFileTail,
 		spawnFlush:   startFlush,
 		spawnTurnEnd: startTurnEnd,
+		tempSuffix:   traceRandomID,
 		now:          time.Now,
 		pid:          os.Getpid(),
 	}
@@ -680,23 +700,31 @@ func hookStatePath(ops hookOps, hc hookContext) string {
 	if root := ops.getenv("CLAUDE_PLUGIN_ROOT"); root != "" {
 		return filepath.Join(root, hookStateFile)
 	}
-	if tmp := ops.getenv("TMPDIR"); tmp != "" {
-		return filepath.Join(tmp, "jevlin-"+hookStateFile)
-	}
-	return filepath.Join(os.TempDir(), "jevlin-"+hookStateFile)
+	// No temporary directory: /tmp is shared with every other account on
+	// the machine, any of which can leave a link at a predictable name
+	// there first. With neither directory the window is not kept, and
+	// hookWindowID answers "none".
+	return ""
 }
 
-func hookReadState(ops hookOps, path string) hookWindowState {
-	state := hookWindowState{Version: 1, Sessions: map[string]hookWindowEntry{}}
+// hookReadState reads the window state. ok is false when a file is there and
+// could not be read (past its bound, a FIFO, no permission): the caller must
+// then not write, because a write would replace every session's window with
+// this one's. An absent file, or one that does not parse, is a fresh state.
+func hookReadState(ops hookOps, path string) (state hookWindowState, ok bool) {
+	state = hookWindowState{Version: 1, Sessions: map[string]hookWindowEntry{}}
+	if path == "" {
+		return state, true
+	}
 	b, err := ops.readFile(path)
 	if err != nil {
-		return state
+		return state, errors.Is(err, fs.ErrNotExist)
 	}
 	var loaded hookWindowState
 	if json.Unmarshal(b, &loaded) == nil && loaded.Sessions != nil {
-		return loaded
+		return loaded, true
 	}
-	return state
+	return state, true
 }
 
 // hookWindow applies one phase event. Never fails; a state-file problem must
@@ -709,7 +737,13 @@ func hookWindow(ops hookOps, hc hookContext, phase string, payload []byte) {
 		return
 	}
 	path := hookStatePath(ops, hc)
-	state := hookReadState(ops, path)
+	if path == "" {
+		return
+	}
+	state, ok := hookReadState(ops, path)
+	if !ok {
+		return
+	}
 	entry, existed := state.Sessions[p.SessionID]
 
 	switch phase {
@@ -747,14 +781,14 @@ func hookWindow(ops hookOps, hc hookContext, phase string, payload []byte) {
 	// session start or a compaction — but a failed rename no longer leaves
 	// its temporary file behind (dropin-miner#100). Only this file's own leftovers are
 	// swept: with no sessions directory configured the state file lives in
-	// the plugin root or TMPDIR, which are not this client's to tidy.
+	// the plugin root, which is not this client's to tidy.
 	_ = replaceViaTemp(ops, path, b, ops.now(), false)
 }
 
 // hookWindowID is what lineage stamps into the envelope: "none" until the
 // first compaction, then the generation number.
 func hookWindowID(ops hookOps, hc hookContext, sessionID string) string {
-	state := hookReadState(ops, hookStatePath(ops, hc))
+	state, _ := hookReadState(ops, hookStatePath(ops, hc))
 	entry := state.Sessions[sessionID]
 	if entry.Generation == 0 {
 		return "none"
@@ -1198,25 +1232,59 @@ func recognizeCursorCommand(ops hookOps, hc hookContext, command string, shells 
 // cursorShellRecognizes is beforeShellExecution's allow decision, with the
 // shells Cursor runs and the runners it starts its hooks with as parameters,
 // so every OS's answer is exercised on every runner.
+func cursorShellRecognizes(ops hookOps, hc hookContext, command string, shells, runners []shellKind) *recognizedForm {
+	f := recognizeCursorCommand(ops, hc, command, shells)
+	if !cursorAllows(f, shells, runners) {
+		return nil
+	}
+	return f
+}
+
+// cursorAllows is the one decision both of Cursor's allowing hooks answer
+// with, beforeShellExecution's `{"permission":"allow"}` and preToolUse's: a
+// form the recognizer matched may run without asking only when it holds
+// here. shells is the whole cell Cursor may run the command in, never just
+// the shell the form was rendered for, because inertUnderEveryShell is about
+// the shells the form was NOT rendered for.
 //
-// Where those runners hand the hook the payload re-encoded (Windows,
+// Where the runners hand the hook the payload re-encoded (Windows,
 // dropin-miner#113), the command this hook reads is not the command the shell
 // will run: every byte above ASCII arrives as other characters. A typographic
 // quote, which PowerShell ends a single-quoted string at, arrives as three
 // characters readRenderedPath has no reason to refuse. So there, a binary or
 // config path that is not ASCII is not allowed. The query in the request
-// body may still be anything: the body must be one JSON object, and no line
-// of a JSON object begins with a quote, so it cannot end the here-string it
-// sits in.
-func cursorShellRecognizes(ops hookOps, hc hookContext, command string, shells, runners []shellKind) *recognizedForm {
-	f := recognizeCursorCommand(ops, hc, command, shells)
+// body may still be anything PowerShell reads: the body must be one JSON
+// object, and no line of a JSON object begins with a quote, so it cannot end
+// the here-string it sits in.
+func cursorAllows(f *recognizedForm, shells, runners []shellKind) bool {
 	if f == nil {
-		return nil
+		return false
 	}
 	if !hookInputIntact(runners) && (!isASCII(f.bin) || !isASCII(f.cfg)) {
-		return nil
+		return false
 	}
-	return f
+	return inertUnderEveryShell(f, shells)
+}
+
+// inertUnderEveryShell reports whether a recognized command does nothing but
+// our search under every shell Cursor may run it in, not only the one it was
+// rendered for. Where the participant picks the terminal (Windows: PowerShell
+// or Git Bash), this hook cannot know which one will read the command.
+//
+// The POSIX heredoc is inert under PowerShell: PowerShell parses the whole
+// script before it runs any of it, and `<<` does not parse. The PowerShell
+// here-string is not inert under Bash: `@'` opens an ordinary single-quoted
+// string there, so the first `'` in the body closes it and the rest of that
+// line runs as commands; an interactive terminal goes on past line 1's syntax
+// error to do it. A body without `'` stays inside that one quoted word, which
+// the line after it cannot run (`| &` does not parse). So that form is allowed
+// only when its body holds no `'`; the skill writes one as the JSON escape
+// \u0027, which decodes to the same query.
+func inertUnderEveryShell(f *recognizedForm, shells []shellKind) bool {
+	if f.shell == shellPowerShell && slices.Contains(shells, shellPOSIX) && strings.ContainsRune(f.body, '\'') {
+		return false
+	}
+	return true
 }
 
 func isSearchForm(f *recognizedForm) bool {
@@ -1270,7 +1338,8 @@ func cursorPreToolUse(ops hookOps, hc hookContext, payload []byte, shells, runne
 		return
 	}
 	for _, sh := range shells {
-		if !isSearchForm(recognizeRenderedForm(command, ops.executable, hc.cfgPath, []shellKind{sh})) {
+		f := recognizeRenderedForm(command, ops.executable, hc.cfgPath, []shellKind{sh})
+		if !isSearchForm(f) {
 			continue
 		}
 		// The command goes back to Cursor as the command it will run. If the
@@ -1279,6 +1348,15 @@ func cursorPreToolUse(ops hookOps, hc hookContext, payload []byte, shells, runne
 		// and a lost label is the only acceptable cost of that doubt.
 		if !isASCII(command) && !hookInputIntact(runners) {
 			fmt.Fprintln(stderr, "jevlin hook: search not labeled: its command carries non-ASCII text, and Cursor's hook runner on this OS re-encodes it")
+			return
+		}
+		// The answer carries "permission":"allow", so it is held to the
+		// same decision as beforeShellExecution's: what this hook would let
+		// run unasked, it also labels, and nothing else. A form refused there
+		// gets no answer here, as an unrecognized command gets none, and
+		// Cursor asks.
+		if !cursorAllows(f, shells, runners) {
+			fmt.Fprintln(stderr, "jevlin hook: search not labeled: a terminal Cursor may run it in would not read it as the search; write an apostrophe in the request as \\u0027")
 			return
 		}
 		prefix, ok := cursorIdentityPrefix(sh, id)

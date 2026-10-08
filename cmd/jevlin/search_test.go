@@ -549,3 +549,60 @@ func TestFallbackSessionIDIsKeyed(t *testing.T) {
 		t.Errorf("without a key: %q %q, want distinct one-off ids", n1, n2)
 	}
 }
+
+// The Claude Code allow rule is a prefix ending after this installation's
+// `-config <path>`, so whatever follows it runs unprompted. A second
+// -config must not be able to swap in another config's router and send it
+// this installation's key, so search refuses any repeat — same path or not,
+// in every spelling the flag package accepts — before reading either.
+func TestSearchRefusesASecondConfig(t *testing.T) {
+	ours, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(routerBody))
+	})
+	theirs, evil, _ := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(routerBody))
+	})
+	env := map[string]string{"JEVLIN_API_KEY": "k"}
+	for name, args := range map[string][]string{
+		"differing":        {"-config", cfg, "-config", evil, "q"},
+		"same path":        {"-config", cfg, "-config", cfg, "q"},
+		"equals spelling":  {"-config", cfg, "-config=" + evil, "q"},
+		"double dash":      {"-config", cfg, "--config", evil, "q"},
+		"after other flag": {"-config", cfg, "-format", "model", "-config", evil, "q"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := fixedSearchOps(root)
+			code, out, errOut := runSearch(t, h, env, args...)
+			if code != exitUsage {
+				t.Fatalf("exit %d, want %d (out %q)", code, exitUsage, out)
+			}
+			if !strings.Contains(errOut, "-config") {
+				t.Errorf("stderr does not name -config: %q", errOut)
+			}
+		})
+	}
+	t.Run("machine", func(t *testing.T) {
+		h := fixedSearchOps(root)
+		code, out, _ := runSearchStdin(t, h, env, `{"version":1,"query":"q"}`,
+			"-config", cfg, "-config", evil, "--stdin")
+		if code != exitUsage {
+			t.Fatalf("exit %d, want %d (%s)", code, exitUsage, out)
+		}
+		if got := envField(t, decodeEnvelope(t, out), "code"); got != codeInvalidFlags {
+			t.Errorf("code %q, want %q", got, codeInvalidFlags)
+		}
+	})
+	for who, fr := range map[string]*fakeRouter{"installed": ours, "second": theirs} {
+		fr.mu.Lock()
+		if n := len(fr.reqs); n != 0 {
+			t.Errorf("the %s config's router got %d requests", who, n)
+		}
+		fr.mu.Unlock()
+	}
+
+	// One -config is still the ordinary search.
+	h := fixedSearchOps(root)
+	if code, out, errOut := runSearch(t, h, env, "-config", cfg, "q"); code != exitOK {
+		t.Fatalf("single -config: exit %d (%s %s)", code, out, errOut)
+	}
+}

@@ -570,6 +570,8 @@ func (t codexTarget) PlanInstall(ops agentOps, paths agentPaths, entry binEntry,
 	blockChanged, blockLeft := false, false
 	if roots := codexSandboxRoots(entry, getenv); len(roots) > 0 {
 		blockChanged, blockLeft = planCodexSandbox(ops, t.Label(), paths.codexConfig, roots, entry, getenv, p)
+	} else if why := codexSandboxProblem(entry, getenv); why != "" {
+		p.notes = append(p.notes, t.Label()+": not widening the sandbox: "+why)
 	} else {
 		p.notes = append(p.notes, t.Label()+": shell commands run sandboxed; if searches record nothing, allow this command network access and let it write to your jevlin home")
 	}

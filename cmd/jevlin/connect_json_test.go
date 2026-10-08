@@ -470,11 +470,13 @@ func TestTheGateAroundACorruptRegistration(t *testing.T) {
 			name: "corrupt but a valid pending registration exists",
 			setup: func(t *testing.T, dir string) {
 				writeCorruptRegistration(t, dir)
-				store, err := auth.OpenStore(dir)
+				// Beside credentials.json: the fixture's jevlin home is the
+				// state dir's parent.
+				journal, err := auth.OpenRegistrationJournal(filepath.Dir(dir))
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err := store.SavePendingRegistration(auth.PendingRegistration{
+				if err := journal.Save(auth.PendingRegistration{
 					AgentID: "agent-pending", Key: "sr-pending", Status: "unclaimed",
 					ClaimURL: "https://portal.fictional.test/c",
 				}); err != nil {

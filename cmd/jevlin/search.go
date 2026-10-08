@@ -213,7 +213,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	}
 
 	fs := newFlagSet("search", stderr)
-	cfgPath := fs.String("config", "", "path to TOML config file")
+	cfgPath := onceStringFlag(fs, "config", "path to TOML config file; given at most once")
 	tier := fs.String("tier", "", "search tier accepted by the router, e.g. fast; empty = the router's default")
 	format := fs.String("format", "json", "output: json (the router's bytes, verbatim) or model (compact text for an agent)")
 	viewFlag := fs.String("view", "", `router view: "merged" adds the router's own cross-provider merged list and per-arm indexes to the raw response; empty or "full" asks for none`)

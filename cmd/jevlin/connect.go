@@ -47,6 +47,7 @@ import (
 
 	"github.com/jevlinai/jevlin-go/pkg/auth"
 	"github.com/jevlinai/jevlin-go/pkg/config"
+	"github.com/jevlinai/jevlin-go/pkg/fsx"
 	"github.com/jevlinai/jevlin-go/pkg/platform"
 )
 
@@ -84,8 +85,8 @@ var (
 // (describeConfigSource) found no config file at all, not even the
 // installation's own, so there is nothing here connect may register
 // against.
-var errConnectNoConfig = errors.New("no config file found — looked at -config, JEVLIN_CONFIG, " +
-	"./jevlin.toml and the installation's own config; run `jevlin setup` first")
+var errConnectNoConfig = errors.New("no config file found — looked at -config, JEVLIN_CONFIG " +
+	"and the installation's own config; run `jevlin setup` first")
 
 func connectLockPath(stateDir string) string { return filepath.Join(stateDir, "connect.lock") }
 func resumeStampPath(stateDir string) string { return filepath.Join(stateDir, "connect_resume.json") }
@@ -137,7 +138,7 @@ type resumeStamp struct {
 }
 
 func readResumeStamp(path string) resumeStamp {
-	data, err := os.ReadFile(path) // #nosec G304 -- our own state dir
+	data, err := fsx.ReadRegular(path, stampMaxBytes)
 	if err != nil {
 		return resumeStamp{}
 	}
@@ -154,11 +155,10 @@ func writeResumeStamp(path string, st resumeStamp) error {
 	if err != nil {
 		return err
 	}
-	tmp := fmt.Sprintf("%s.%d.tmp", path, os.Getpid())
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	// The state dir is a writable root of Codex's sandbox: fsx stages under
+	// a random name it creates exclusively, so no link at a predictable
+	// temporary name is written through (the old "<path>.<pid>.tmp" was).
+	return fsx.WriteFileAtomic(filepath.Dir(path), filepath.Base(path), data, 0o600)
 }
 
 type registrationPublicationOptions struct {
@@ -445,6 +445,13 @@ func connectNeedsHumanDecision(cfgPath string, force bool, getenv func(string) s
 	if cfg.MiningEnabledExplicit {
 		return false // the file answered: the scripted path stays open
 	}
+	if journal, jerr := registrationJournal(cfg.Miner); jerr == nil {
+		if _, ok, perr := journal.Load(); perr == nil && ok {
+			// Register already happened for this one; recovery republishes it
+			// and asks nothing. Blocking it here would break the journal.
+			return false
+		}
+	}
 	store, err := auth.OpenStoreExisting(cfg.Mining.StateDir)
 	if err != nil {
 		// No state directory at all is a first run: undecided, and a
@@ -453,11 +460,6 @@ func connectNeedsHumanDecision(cfgPath string, force bool, getenv func(string) s
 	}
 	if store.ReadMiningDecision().State != auth.MiningUndecided {
 		return false // a persisted decision is authoritative, as always
-	}
-	if _, ok, perr := store.LoadPendingRegistration(); perr == nil && ok {
-		// Register already happened for this one; recovery republishes it
-		// and asks nothing. Blocking it here would break the journal.
-		return false
 	}
 
 	reg, ok, rerr := store.LoadAgentRegistration()
@@ -674,7 +676,19 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 	var existed bool
 	var key string
 
-	pending, hasPending, err := store.LoadPendingRegistration()
+	// A journal in the state directory is from an older release, or forged by
+	// a sandboxed command: either way it is not trusted to publish a key.
+	if discarded, derr := store.DiscardLegacyPendingRegistration(); derr != nil {
+		fmt.Fprintln(stderr, "jevlin: ignoring registration_pending.json in the state directory:", derr)
+	} else if discarded {
+		fmt.Fprintln(stderr, "jevlin: discarded registration_pending.json from the state directory unread; a sandboxed command can write there")
+	}
+	journal, err := registrationJournal(cfg.Miner)
+	if err != nil {
+		fmt.Fprintln(stderr, "jevlin:", err)
+		return exitTransport
+	}
+	pending, hasPending, err := journal.Load()
 	if err != nil {
 		fmt.Fprintln(stderr, "jevlin:", err)
 		return exitTransport
@@ -690,7 +704,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 			fmt.Fprintln(stderr, "jevlin: pending registration recovery:", err)
 			return exitTransport
 		}
-		if err := store.ClearPendingRegistration(); err != nil {
+		if err := journal.Clear(); err != nil {
 			fmt.Fprintln(stderr, "jevlin: clear pending registration:", err)
 			return exitTransport
 		}
@@ -877,7 +891,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 				pending.ReplaceExpired = true
 				pending.PreviousAgentID = oldReg.AgentID
 				pending.PreviousKey = oldKey
-				if err := store.SavePendingRegistration(pending); err != nil {
+				if err := journal.Save(pending); err != nil {
 					fmt.Fprintln(stderr, "jevlin: persist pending registration:", err)
 					return exitTransport
 				}
@@ -892,7 +906,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 					fmt.Fprintln(stderr, "jevlin: publish replacement registration:", err)
 					return exitTransport
 				}
-				if err := store.ClearPendingRegistration(); err != nil {
+				if err := journal.Clear(); err != nil {
 					fmt.Fprintln(stderr, "jevlin: clear pending registration:", err)
 					return exitTransport
 				}
@@ -922,7 +936,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 				return exitTransport
 			}
 			pending = pendingRegistrationFromPlatform(fresh)
-			if err := store.SavePendingRegistration(pending); err != nil {
+			if err := journal.Save(pending); err != nil {
 				fmt.Fprintln(stderr, "jevlin: persist pending registration:", err)
 				return exitTransport
 			}
@@ -934,7 +948,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 				fmt.Fprintln(stderr, "jevlin: publish registration:", err)
 				return exitTransport
 			}
-			if err := store.ClearPendingRegistration(); err != nil {
+			if err := journal.Clear(); err != nil {
 				fmt.Fprintln(stderr, "jevlin: clear pending registration:", err)
 				return exitTransport
 			}

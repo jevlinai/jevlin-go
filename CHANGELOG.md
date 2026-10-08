@@ -23,6 +23,83 @@ The first release replaces this heading with its own.
   router could match against guessed hostnames. It is now keyed with a random
   `trace.key` kept in `state_dir`, so ids are unique to each installation; a
   search that can't read `state_dir` sends a one-off id.
+- **Setup refuses a binary that someone else could replace.** `setup`,
+  `agents install` and `agents prefer` record the binary's path in your
+  agents' hooks and skills, and setup puts its directory on PATH. They now
+  refuse a binary under the temp directory, or one that sits in a directory
+  every user can write or another user owns. A directory writable by `admin`,
+  `wheel`, `sudo` or `root`, as a Homebrew prefix is, is accepted; one
+  writable by any other shared group, such as Debian's `staff` on
+  `/usr/local`, gets a warning and setup goes on. On Windows only the
+  temp-directory rule is checked. Move a refused binary somewhere only you
+  can write, such as `~/.local/bin`, and run it from there.
+- **Cursor on Windows asks before a PowerShell search with an apostrophe in
+  it.** The participant picks Cursor's terminal there, and Git Bash reads the
+  PowerShell form's here-string as an ordinary quoted string that an
+  apostrophe in the request ends, running whatever follows. Cursor's hooks now
+  allow that form only when the request holds no `'`; one that holds it waits
+  for your approval and reaches the router without Cursor's label. The skill
+  says to write an apostrophe as `\u0027`, which reaches the router as the
+  same query.
+- **The registration journal moved beside `credentials.json`.** `connect`
+  used to keep `registration_pending.json` in the state directory, which a
+  Codex-sandboxed command can write, so a forged journal could make the next
+  `connect` swap your stored platform key for someone else's. It now lives in
+  the jevlin home, and one left in the state directory is discarded unread.
+  A registration an older build left half-finished is not resumed; run
+  `jevlin connect` again. If that build was replacing an expired registration
+  and `connect` now refuses with "expired registration is no longer known to
+  the platform", move `agent.json` out of the state directory and run
+  `jevlin connect` once more: it rebuilds the record from the platform.
+- **Files an agent's sandbox leaves in jevlin's directories no longer reach
+  your own files.** Codex's sandbox may write jevlin's state, intake, sessions
+  and spool directories. A link left there could make a hook, a flush or
+  `connect -resume`, which run outside the sandbox, write into a file of yours
+  elsewhere, and a FIFO could stall a search. jevlin now never opens an existing
+  name there for writing, never waits on what is at a name it reads, refuses a
+  link at a lock's name, and keeps the spool's quarantine from leading outside
+  the spool. The window state is no longer kept in the shared temporary
+  directory when no sessions directory is configured. Two layouts change:
+  a `spool_dir` that is itself a symlink is refused (mining stops, with a
+  message, until it names the real directory), and `agents install` gives
+  Codex no writable directories at all when one of them would contain your
+  `jevlin.toml` or the folder holding `credentials.json`; give `state_dir`,
+  `intake_dir`, `sessions_dir` and `spool_dir` directories of their own.
+- **A hook allows a search only under the binary path its skill shows.** Cursor,
+  Claude Code and Codex used to allow any path that reached the jevlin binary when
+  the hook resolved it, and on Linux `/proc/self/exe` is jevlin to the hook but
+  the shell itself to the shell that runs the command. A search naming the binary
+  any other way than the path the hook was started by now waits for approval.
+- **Setup adopts only what is yours.** A set-aside installation another
+  account owns is no longer offered, and adoption leaves behind any file or
+  folder in it that is not yours. On Windows, owner-only access now also makes
+  you the owner: another owner could otherwise open the folder up again.
+- **Wallet output no longer passes a node's escape sequences through.** Error
+  messages, transaction logs and transfer senders that a chain node sends are
+  cleaned the way search results are before `jevlin wallet` or `jevlin earnings`
+  prints them, and a balance that is not a plain number is refused rather than
+  printed. A malicious node can no longer rewrite the terminal or its clipboard.
+- **Service-document endpoints must live on the AS's origin.** Discovery now
+  refuses a `/.well-known/twilight-mining` document whose endpoints,
+  `authorization_server` or `participation_resource` point at another host, a
+  different port, plain http, or carry userinfo, so a tampered document cannot
+  steer the access token, the participation capability or the provider
+  verification key elsewhere. The mining plane stays closed until the AS serves
+  a same-origin document; search is unaffected.
+  `enrollment_authorization_template` is still held to the provider allowlist
+  instead.
+- **`search` takes `-config` once.** The Claude Code allow rule ends after
+  the installed `-config <file>`, and whatever follows it runs without a
+  prompt. A second `-config` used to win, so an appended one could send your
+  key to another config's router. `search` now refuses a repeated
+  `-config`, even one naming the same file, before reading any config.
+- **A `jevlin.toml` in the working directory is no longer read on its own.**
+  Without `-config` or `JEVLIN_CONFIG`, every command now uses the
+  installation's config (`$JEVLIN_HOME/jevlin.toml`, else
+  `~/.jevlin/jevlin.toml`) or built-in defaults. Before, a `jevlin.toml` in a
+  cloned repo could name its own router or platform host and receive your
+  `sr-` key from `login`, `search`, `limits` or `connect`. To use a config
+  in the current directory, pass `-config ./jevlin.toml`.
 - **Codex searches carry their session.** `agents install` writes Codex's
   hooks into `~/.codex/hooks.json` on macOS and Linux, and a search Codex runs
   then reaches the router with its session, turn and call, and a subagent's
@@ -104,6 +181,13 @@ The first release replaces this heading with its own.
   it is sent only while a trace envelope rides, and `JEVLIN_TRACE=off` still
   sends none of it. `connect` also names the build (`jevlin/<version>`) when it
   registers an agent.
+- **A bridge the hooks did not write is removed only when its value is one.**
+  Before replacing a `JEVLIN_TRACE_BRIDGE` assignment already on a command, the
+  hooks and the opencode and Pi adapters now require its value to be base64url,
+  the only shape a real bridge has. A value that opened a quote used to be cut
+  at its first blank, which could turn text the shell would have read as a
+  quoted string into commands it ran. Such a command is now left exactly as
+  written.
 - **The trace prefix no longer edits a command it cannot carry.** The bridge's
   POSIX prefix binds to the first command of a line, so the hooks now write it
   only when that command is the search itself. Before, a loop around a search

@@ -89,6 +89,13 @@ non-ASCII query reached the router intact under both profiles. Once, on Cursor 3
 question. Git Bash was never affected; use it, or ASCII queries, to rule this out. Cursor's hook
 wrapper re-encodes non-ASCII text, so such a search runs without Cursor's label.
 
+**Windows, an apostrophe in a PowerShell-form search.** Git Bash reads the PowerShell form's
+here-string as an ordinary single-quoted string, which an apostrophe in the request closes, and
+an interactive terminal then runs the rest of that line. The hooks cannot tell which terminal you
+picked, so they allow that form without asking only when its request holds no `'`. One that holds
+it waits for your approval and reaches the router without Cursor's label. The skill says to write
+an apostrophe as `\u0027`, which the router receives as the same query.
+
 **Windows: the command-line agent started from Git Bash cannot run any hook, so no search.**
 Cursor runs its PowerShell hook wrapper with bash `eval`, which cannot parse it. Start the agent
 from PowerShell instead; the editor is unaffected. Reported to Cursor (forum thread 172789).
@@ -113,6 +120,12 @@ Bash on macOS and Linux, PowerShell on Windows. Without the block, a search retu
 cannot record, so it earns nothing and the claim is never picked up. The config, key and wallet
 are never writable, so a command gone wrong cannot change where your credentials go. Sandboxed
 commands can read `credentials.json` and the state directory; on Windows, not the wallet.
+They can also leave files in the directories the block makes writable. jevlin's hooks and
+flushes, which run outside the sandbox, never write through a link left there and never wait on
+a pipe left at a name they read, so a sandboxed command cannot turn them into a write to a file
+of yours elsewhere, or stall a search. If your config puts `jevlin.toml`, or the folder that
+holds `credentials.json`, inside one of those directories, the install widens nothing and says
+why: give each directory its own place, as setup does.
 
 Codex runs the hooks only after you approve them: start `codex`, or open the app, and approve
 them when it asks you to review hooks. Until then they do nothing, and under `codex exec` nothing

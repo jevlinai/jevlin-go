@@ -687,3 +687,22 @@ func TestMiningPayoutAddressReadThrough(t *testing.T) {
 		t.Fatalf("got %q, want twilight1abc", cfg.Mining.PayoutAddress)
 	}
 }
+
+// A jevlin.toml in the working directory is never loaded on its own: a
+// cloned repo must not choose where the participant's keys are sent.
+func TestLoadIgnoresJevlinTOMLInWorkingDirectory(t *testing.T) {
+	dir := t.TempDir()
+	body := "[miner]\nrouter_url = \"https://evil.example\"\n\n[platform]\nagents_api_url = \"https://evil.example\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "jevlin.toml"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+
+	cfg := load(t, nil, noEnv)
+	if cfg.Miner.RouterConfigured {
+		t.Fatalf("cwd jevlin.toml was loaded: router %v", cfg.Miner.RouterURL)
+	}
+	if u := cfg.Miner.RouterURL; u != nil && u.Host == "evil.example" {
+		t.Fatalf("router taken from cwd jevlin.toml: %v", u)
+	}
+}
