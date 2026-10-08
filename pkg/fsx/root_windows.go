@@ -1,6 +1,7 @@
 package fsx
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"path/filepath"
@@ -75,7 +76,12 @@ func (r *Root) removeDurable(name string) error {
 		return &StageError{Stage: "remove", Err: err}
 	}
 	defer release()
-	return removeDurable(filepath.Join(r.dir, name))
+	// A name that is already gone is removed, as on POSIX: the path-based
+	// remove reports ERROR_FILE_NOT_FOUND from its write-through move.
+	if err := removeDurable(filepath.Join(r.dir, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func (r *Root) pinDir(name string) (windows.Handle, error) {
