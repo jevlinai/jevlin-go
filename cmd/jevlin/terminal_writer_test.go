@@ -2,10 +2,9 @@ package main
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"unicode/utf8"
-
-	"github.com/jevlinai/jevlin-go/internal/termtext"
 )
 
 // The writer keeps a command's own lines and removes what a planted name or
@@ -19,8 +18,10 @@ func TestTerminalSafeWriterRemovesWhatATerminalActsOn(t *testing.T) {
 		t.Fatalf("Write = %d, %v; want %d, nil", n, err, len(in))
 	}
 	out := b.String()
-	for _, r := range out {
-		if r != '\n' && r != '\t' && termtext.HasControlChar(string(r)) {
+	// Each planted character named, never asked of termtext: an oracle that
+	// is the rule under test stays green when the rule is narrowed.
+	for _, r := range []rune{0x1b, 0x07, 0x9b, 0x202e, 0xe0049, 0x200b, 0x2028} {
+		if strings.ContainsRune(out, r) {
 			t.Errorf("U+%04X came through: %q", r, out)
 		}
 	}

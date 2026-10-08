@@ -763,3 +763,16 @@ func TestSearchRefusesASecondConfig(t *testing.T) {
 		t.Fatalf("single -config: exit %d (%s %s)", code, out, errOut)
 	}
 }
+
+// loadTraceKey answers a state directory it cannot open with an error, and
+// the search sends a one-off id. Deleting that check made a search whose
+// state_dir did not exist dereference a nil store (invariant 1: a
+// mining-side failure never fails the search).
+func TestATraceKeyFromAStateDirThatIsNotThereIsAnErrorNotAPanic(t *testing.T) {
+	for _, dir := range []string{filepath.Join(t.TempDir(), "no-such-state-dir"), ""} {
+		key, err := loadTraceKey(dir)
+		if err == nil || key != nil {
+			t.Fatalf("loadTraceKey(%q) = %v, %v; want an error and no key", dir, key, err)
+		}
+	}
+}
