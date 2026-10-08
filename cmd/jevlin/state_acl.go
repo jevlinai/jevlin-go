@@ -245,7 +245,8 @@ func doctorStateCheck(f stateAccessFacts) doctorCheck {
 		c.Detail = "no state directory in " + f.Dir + " yet"
 	case others != "":
 		c.Verdict = verdictOK
-		c.Detail = others + "; an agent's sandbox is meant to reach this directory, so an entry for one is expected and jevlin leaves it alone — " +
+		c.Detail = others + "; an agent's sandbox is meant to reach this directory, so an entry for one is expected — the store and doctor leave it, " +
+			"but jevlin setup resets <home>\\state to an owner-only list on every run, which removes it — " +
 			"if you do not recognize who is named, give " + f.Dir + " an access list that only you hold"
 	default:
 		c.Verdict = verdictOK

@@ -127,7 +127,9 @@ of yours elsewhere, or stall a search. If your config puts `jevlin.toml`, or the
 holds `credentials.json`, inside one of those directories, the install widens nothing and says
 why: give each directory its own place, as setup does. On Windows a sandbox's setup may
 add its own group to the state directory's access list; `doctor`'s `state access` line names
-whoever besides you is on it, and does not call that a problem.
+whoever besides you is on it, and does not call that a problem. Running `jevlin setup` again
+gives `<home>\state` an owner-only list, which removes that entry until the sandbox's setup
+adds it again.
 
 Codex runs the hooks only after you approve them: start `codex`, or open the app, and approve
 them when it asks you to review hooks. Until then they do nothing, and under `codex exec` nothing

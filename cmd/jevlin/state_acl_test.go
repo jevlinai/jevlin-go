@@ -196,7 +196,7 @@ func TestDoctorStateAccessCheck(t *testing.T) {
 		{"another principal, on the directory and what inherits it: one clause",
 			stateAccessFacts{Checked: true, Dir: dir, Present: true, Objects: []stateObject{
 				{Path: dir, Others: []string{`BUILTIN\Users`}}, {Path: key, Others: []string{`BUILTIN\Users`}}, {Path: agent, Others: []string{`BUILTIN\Users`}}}},
-			verdictOK, []string{"the access list on " + dir + ", " + key + ", " + agent + " also names BUILTIN\\Users", "is meant to reach this directory", "do not recognize"}, nil, []string{"only you can open"}},
+			verdictOK, []string{"the access list on " + dir + ", " + key + ", " + agent + " also names BUILTIN\\Users", "is meant to reach this directory", "the store and doctor leave it", "jevlin setup resets", "do not recognize"}, nil, []string{"only you can open"}},
 		{"two different sets are two clauses",
 			stateAccessFacts{Checked: true, Dir: dir, Present: true, Objects: []stateObject{
 				{Path: dir, Others: []string{`BUILTIN\Users`}}, {Path: key, Others: []string{`BUILTIN\Users`, `HOST\Bob`}}}},

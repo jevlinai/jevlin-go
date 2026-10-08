@@ -402,11 +402,14 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   cannot express. `wallet_acl_test.go` proves the walk and the repair decision on every OS;
   `wallet_acl_windows_test.go` proves, as a second principal holding an inherited read entry on
   the installation, that `credentials.json` opens and the wallet does not.
-- **The state directory's access list, and the Windows ACL helpers** — `state\` is left to
-  inherit because a sandbox's entry on it is intended, so no open of the store and no load of a
-  secret reads an access list, refuses one, or resolves an account name: that would turn mining
-  DEGRADED after every search on an installation that uses a sandbox, and put a DACL read on the
-  search path (invariant 1). `pkg/auth/perm.go` says so where `posixModes` is read;
+- **The state directory's access list, and the Windows ACL helpers** — a sandbox's entry on
+  `state\` is intended, so no open of the store and no load of a secret reads an access list,
+  refuses one, or resolves an account name: that would turn mining DEGRADED after every search on
+  an installation that uses a sandbox, and put a DACL read on the search path (invariant 1). The
+  store and `doctor` leave such an entry as they find it; `jevlin setup` does not: it gives
+  `<home>` and `state`, `spool`, `intake` and `sessions` beneath it a protected owner-only list on
+  every run (`directories()`), which removes an entry a sandbox's setup added to any of them, until
+  that setup adds it again. That is setup's long-standing behavior and not this change's to alter. `pkg/auth/perm.go` says so where `posixModes` is read;
   `perm_reads_test.go` parses every source file in the package, Windows-tagged ones included,
   and fails on a descriptor read, an account lookup or any `winacl` call but `RestrictToOwner`;
   `perm_windows_test.go` adds `BUILTIN\Users` to the directory and every credential and goes

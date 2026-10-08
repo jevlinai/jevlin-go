@@ -170,10 +170,13 @@ also stops mining.
 **Who can open the state directory, on Windows.** `jevlin setup` gives `<home>\state` an access
 list that names only you. A `state_dir` that `connect`, `enroll` or `mining enable` creates gets
 the same list, with you as its owner, and so does each directory it had to create on the way to
-it; if a list cannot be set, what was created is removed rather than left to be opened as it is. A directory that already exists is left as it is, and so
-is any entry another program has added to it, because an agent's sandbox is meant to reach this
-directory: nothing refuses a state directory over who else is on its list. `doctor`'s `state
-access` line says whose it is and names anyone else the list admits.
+it; if a list cannot be set, what was created is removed rather than left to be opened as it is. A directory that already exists is left as it is by
+those commands, and so is any entry another program has added to it, because an agent's sandbox
+is meant to reach this directory: nothing refuses a state directory over who else is on its
+list. `jevlin setup` is the exception for `<home>\state` and its siblings: it gives them an
+owner-only list on every run, which removes such an entry until the sandbox's own setup adds it
+again. `doctor`'s `state access` line says whose the directory is and names anyone else the list
+admits.
 
 `[miner]`'s two directories default beside the state directory, and `intake_dir`'s parent is
 where `credentials.json` and `flush.lock` are looked for. `base_url` is never dialed: a printed

@@ -68,6 +68,36 @@ func TestDoctorStateAccessNamesAnotherPrincipalOnARealDACL(t *testing.T) {
 	}
 }
 
+// What the documentation says about setup is true: it gives <home>\state an
+// owner-only list on every run, so an entry another program granted there is
+// gone afterwards, and doctor goes back to saying only you. The store and
+// doctor never do this; setup always has, and the docs name it as the exception.
+func TestSetupResetsTheStateDirectoryToOwnerOnlyAndDoctorSaysSo(t *testing.T) {
+	s := newSetupSandbox(t)
+	firstSetup(t, s)
+	state := filepath.Join(s.home, "state")
+	sid := logonSessionSID(t)
+	grantRead(t, state, sid, true)
+	if found, _ := entryFor(t, state, sid); !found {
+		t.Fatalf("fixture: %s does not carry the entry", state)
+	}
+	before := doctorStateCheckFor(t, s.cfgPath())
+	if detail, _ := before["detail"].(string); !strings.Contains(detail, winacl.PrincipalName(sid.String())) {
+		t.Fatalf("fixture: doctor does not name the principal before setup: %v", before["detail"])
+	}
+
+	if code, out, errOut := s.run(tty(), true, "-yes", "-no-agents", "-no-profile"); code != exitOK {
+		t.Fatalf("setup exited %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
+	}
+	if found, _ := entryFor(t, state, sid); found {
+		t.Errorf("%s still carries the entry after setup: setup resets it to owner-only on every run", state)
+	}
+	check := doctorStateCheckFor(t, s.cfgPath())
+	if detail, _ := check["detail"].(string); check["verdict"] != string(verdictOK) || !strings.Contains(detail, "only you can open") {
+		t.Errorf("after setup: verdict %v, detail %q; want OK and only you", check["verdict"], detail)
+	}
+}
+
 // A directory with no access list is open to everyone, which no setup of this
 // client produces and no participant would intend: doctor says NO and what to
 // do. The directory is one the participant pointed state_dir at, not setup's.
