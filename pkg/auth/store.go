@@ -331,8 +331,12 @@ type AgentRegistration struct {
 // SaveAgentRegistration persists the platform identity, overwriting
 // whatever was there. Like SaveEnrollment, this record legitimately
 // advances through unclaimed -> claimed -> enrolled, so it is
-// write-and-rename rather than createExclusive.
+// write-and-rename rather than createExclusive. A record
+// LoadAgentRegistration would refuse is not written.
 func (s *Store) SaveAgentRegistration(rec AgentRegistration) error {
+	if field := recordTextProblem(rec); field != "" {
+		return fmt.Errorf("auth: refusing to store an agent registration whose %s holds a control, C1 or bidi character", field)
+	}
 	raw, err := json.Marshal(rec)
 	if err != nil {
 		return fmt.Errorf("auth: encode agent registration: %w", err)
@@ -342,6 +346,16 @@ func (s *Store) SaveAgentRegistration(rec AgentRegistration) error {
 
 // LoadAgentRegistration returns the stored platform identity, ok=false
 // when this installation has never registered.
+//
+// agent.json is in the state directory, which a sandboxed command can
+// rewrite (record_text.go), and every string in it reaches a terminal:
+// status prints the claim link, the scopes, the slot and the refusal,
+// connect the link and its code. A record holding a control, C1 or bidi
+// character in any string is ErrAgentRegistrationCorrupt, exactly like one
+// that does not decode, so the one path that already handles a record that
+// cannot be trusted handles this one too: a foreground connect sets it aside
+// and rebuilds it from GET /v1/agents/me, and nothing else acts on it. The
+// error names the field and never repeats its bytes.
 func (s *Store) LoadAgentRegistration() (rec AgentRegistration, ok bool, err error) {
 	raw, err := s.readSecret("agent.json")
 	if errors.Is(err, fs.ErrNotExist) {
@@ -352,6 +366,9 @@ func (s *Store) LoadAgentRegistration() (rec AgentRegistration, ok bool, err err
 	}
 	if err := json.Unmarshal(raw, &rec); err != nil {
 		return AgentRegistration{}, false, fmt.Errorf("%w: %v", ErrAgentRegistrationCorrupt, err)
+	}
+	if field := recordTextProblem(rec); field != "" {
+		return AgentRegistration{}, false, fmt.Errorf("%w: its %s holds a control, C1 or bidi character", ErrAgentRegistrationCorrupt, field)
 	}
 	return rec, true, nil
 }

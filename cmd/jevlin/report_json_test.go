@@ -344,12 +344,15 @@ func TestAStoredClaimURLOffThePlatformOriginIsNeverReported(t *testing.T) {
 		"https://platform.nyks.dev.evil.example/claim/abc123",
 		"https://platform.nyks.dev/claim/\x1b]8;;https://evil.example\x07x",
 	} {
-		cfgPath, _, store := statusFixture(t)
-		if err := store.SaveAgentRegistration(auth.AgentRegistration{
-			AgentID: "agent-fictional-9", Status: "unclaimed", ClaimURL: bad, ClaimCode: "ABC-123",
-		}); err != nil {
-			t.Fatal(err)
-		}
+		cfgPath, root, _ := statusFixture(t)
+		// Written the way a sandboxed command would, not through
+		// SaveAgentRegistration, which refuses a control character itself.
+		writeAgentRecordRaw(t, filepath.Join(root, "state"), map[string]any{
+			"agent_id": "agent-fictional-9", "status": "unclaimed", "claim_url": bad, "claim_code": "ABC-123",
+		})
+		// A control character makes the whole record unreadable
+		// (LoadAgentRegistration); an off-origin link alone hides the link.
+		hasEscape := strings.ContainsAny(bad, "\x1b\x07")
 
 		var text, textErr bytes.Buffer
 		if code := statusMain([]string{"-config", cfgPath}, &text, &textErr, noEnv); code != exitOK {
@@ -362,9 +365,13 @@ func TestAStoredClaimURLOffThePlatformOriginIsNeverReported(t *testing.T) {
 		var connectJSON bytes.Buffer
 		emitMachine(&connectJSON, connectEnvelope(cfgPath, noEnv, exitOK, ""))
 
-		if !strings.Contains(text.String(), "agent:  unclaimed") {
+		switch {
+		case hasEscape && !strings.Contains(textErr.String(), "registration on file could not be read"):
+			t.Errorf("status did not say the record cannot be read:\n%s", textErr.String())
+		case !hasEscape && !strings.Contains(text.String(), "agent:  unclaimed"):
 			t.Errorf("status no longer reports the unclaimed agent:\n%s", text.String())
 		}
+		requireNoPlantedEscape(t, "status", text.String()+textErr.String()+statusJSON.String()+statusJSONErr.String()+connectJSON.String())
 		for name, out := range map[string]string{
 			"status":        text.String() + textErr.String(),
 			"status -json":  statusJSON.String() + statusJSONErr.String(),
