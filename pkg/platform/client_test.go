@@ -908,6 +908,9 @@ func TestTheFieldsARecordRefusesAreRefusedOnTheWire(t *testing.T) {
 		"agent_id with a slash":       {"agent_id": "a/b"},
 		"claim_expires_at with ESC":   {"claim_expires_at": "2026-09-16\x1b[2J"},
 		"claim_expires_at with a tag": {"claim_expires_at": "2026-09-16\U000e0049"},
+		"a whitespace key":            {"key": "   "},
+		"a key with a blank":          {"key": "sr-1 sr-2"},
+		"a key with a control":        {"key": "sr-1\r\nX-Injected: 1"},
 	} {
 		if err := registerWith(t, fields); err == nil {
 			t.Errorf("register: %s accepted", name)

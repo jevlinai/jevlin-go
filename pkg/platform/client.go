@@ -206,6 +206,14 @@ func (c *Client) Register(ctx context.Context, name, client string, requestedSco
 	if err := auth.ValidAgentID(wire.AgentID); err != nil {
 		return nil, fmt.Errorf("platform: register response: %w; refusing", err)
 	}
+	// The key goes into credentials.json, which readCredentials refuses
+	// when it is blank, and into an Authorization header: a key that is
+	// whitespace, or holds a blank or a control character anywhere, is not
+	// one this client could publish, and journaling it first wedged the
+	// journal on a publication that could never verify.
+	if strings.TrimSpace(wire.Key) == "" || strings.ContainsAny(wire.Key, " \t") || hasControlChar(wire.Key) {
+		return nil, errors.New("platform: register response's key is blank or holds a blank or a control character; refusing")
+	}
 	if err := validatePlatformURL(wire.ClaimURL, c.portalBaseURL); err != nil {
 		return nil, err
 	}
