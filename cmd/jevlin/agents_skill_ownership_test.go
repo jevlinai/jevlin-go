@@ -38,7 +38,7 @@ func newTwoInstallations(t *testing.T) *twoInstallations {
 	ops.home = filepath.Join(root, "user")
 	ops.lookPath = func(string) (string, error) { return "", errors.New("not found") }
 	ops.executable = func() (string, error) { return filepath.Join(root, "user", ".jevlin", "bin", "jevlin"), nil }
-	ops.binaryLocation = func(string) error { return nil } // the sandbox is in the temp dir
+	ops.binaryLocation = func(string) ([]string, error) { return nil, nil } // the sandbox is in the temp dir
 	ops.isTerminal = func() bool { return false }
 	m := &twoInstallations{
 		t: t, ops: ops, paths: ops.paths(noEnv),

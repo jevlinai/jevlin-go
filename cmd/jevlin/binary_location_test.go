@@ -16,11 +16,11 @@ func TestBinaryLocationRefusesTempDir(t *testing.T) {
 	if err := os.WriteFile(exe, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	err := checkBinaryLocation(exe)
+	_, err := checkBinaryLocation(exe)
 	if !errors.Is(err, errUnsafeBinaryLocation) || !strings.Contains(err.Error(), "temporary directory") {
 		t.Fatalf("checkBinaryLocation(%q) = %v, want the temp-directory refusal", exe, err)
 	}
-	if err := checkBinaryLocation("jevlin"); !errors.Is(err, errUnsafeBinaryLocation) {
+	if _, err := checkBinaryLocation("jevlin"); !errors.Is(err, errUnsafeBinaryLocation) {
 		t.Fatalf("a relative path was accepted: %v", err)
 	}
 }
@@ -49,8 +49,8 @@ func TestSetupRefusesBinaryInTempDir(t *testing.T) {
 // agents install refuses before planning anything; status still reports.
 func TestAgentsInstallRefusesUnsafeBinaryLocation(t *testing.T) {
 	m, ops := newFakeMachine("claude", "cursor")
-	ops.binaryLocation = func(exe string) error {
-		return errors.New(exe + " is writable by every user; " + errUnsafeBinaryLocation.Error())
+	ops.binaryLocation = func(exe string) ([]string, error) {
+		return nil, errors.New(exe + " is writable by every user; " + errUnsafeBinaryLocation.Error())
 	}
 	code, _, errOut := runAgents(t, ops, nil, "install", "-yes", "-config", testCfg)
 	if code != exitUsage || !strings.Contains(errOut, "writable by every user") {
@@ -61,5 +61,44 @@ func TestAgentsInstallRefusesUnsafeBinaryLocation(t *testing.T) {
 	}
 	if code, _, errOut := runAgents(t, ops, nil, "status", "-config", testCfg); code != exitOK {
 		t.Errorf("status refused too: exit %d\n%s", code, errOut)
+	}
+}
+
+// groupWarning is what checkBinaryLocation returns for a directory a group
+// that is not root-equivalent can write.
+func groupWarning(exe string) binaryLocationCheck {
+	return func(string) ([]string, error) {
+		return []string{"/usr/local is writable by its group staff (gid 50), so its members could replace " + exe}, nil
+	}
+}
+
+// A warning is printed and setup goes on: a group-writable prefix such as
+// Debian's /usr/local is where a binary is commonly put, and whether anyone
+// else is in its group is not something a mode says.
+func TestSetupWarnsAndContinuesOnAGroupWritableLocation(t *testing.T) {
+	s := newSetupSandbox(t)
+	s.platform.claim("credits")
+	s.binaryLocation = groupWarning(s.exe)
+	code, out, errOut := s.run(tty("n"), true, "-yes", "-no-agents")
+	if code != exitOK {
+		t.Fatalf("a warned location stopped setup: exit %d\n%s\n%s", code, out, errOut)
+	}
+	if !strings.Contains(errOut, "jevlin setup: warning: /usr/local is writable by its group staff") {
+		t.Errorf("setup did not print the warning:\n%s", errOut)
+	}
+}
+
+func TestAgentsInstallWarnsAndContinuesOnAGroupWritableLocation(t *testing.T) {
+	m, ops := newFakeMachine("claude")
+	ops.binaryLocation = groupWarning("/home/u/.jevlin/bin/jevlin")
+	code, _, errOut := runAgents(t, ops, nil, "install", "-yes", "-config", testCfg)
+	if code != exitOK {
+		t.Fatalf("a warned location stopped agents install: exit %d\n%s", code, errOut)
+	}
+	if !strings.Contains(errOut, "jevlin agents: warning: /usr/local is writable by its group staff") {
+		t.Errorf("agents install did not print the warning:\n%s", errOut)
+	}
+	if len(m.files) == 0 {
+		t.Error("a warned install wrote nothing")
 	}
 }

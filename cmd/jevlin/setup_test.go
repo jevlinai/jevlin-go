@@ -62,7 +62,7 @@ type setupSandbox struct {
 	restrict func(path string, dir bool) error
 	// binaryLocation, when set, replaces the sandbox's accept-all stand-in
 	// for checkBinaryLocation.
-	binaryLocation func(exe string) error
+	binaryLocation binaryLocationCheck
 	// agentPlanObserver, when set, is threaded through to setupDeps: a case
 	// wanting the plan agentsStep actually built sets this before calling
 	// run.
@@ -131,11 +131,11 @@ func (s *setupSandbox) agentOps(interactive bool) agentOps {
 
 // binaryLocationCheck is the sandbox's stand-in for checkBinaryLocation:
 // the sandbox lives in a temp directory the real check refuses.
-func (s *setupSandbox) binaryLocationCheck() func(string) error {
+func (s *setupSandbox) binaryLocationCheck() binaryLocationCheck {
 	if s.binaryLocation != nil {
 		return s.binaryLocation
 	}
-	return func(string) error { return nil }
+	return func(string) ([]string, error) { return nil, nil }
 }
 
 func (s *setupSandbox) deps(stdin io.Reader, stdout, stderr io.Writer, interactive bool) setupDeps {

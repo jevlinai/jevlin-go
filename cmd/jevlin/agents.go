@@ -182,10 +182,10 @@ type agentOps struct {
 	isTerminal func() bool
 	// binaryLocation vets the binary install records; nil means
 	// checkBinaryLocation.
-	binaryLocation func(exe string) error
+	binaryLocation binaryLocationCheck
 }
 
-func (ops agentOps) binaryLocationFn() func(string) error {
+func (ops agentOps) binaryLocationFn() binaryLocationCheck {
 	if ops.binaryLocation != nil {
 		return ops.binaryLocation
 	}
@@ -475,7 +475,7 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 		return exitTransport
 	}
 	if sub == "install" {
-		if err := ops.binaryLocationFn()(entry.command); err != nil {
+		if err := vetBinaryLocation(ops.binaryLocationFn(), entry.command, "jevlin agents", stderr); err != nil {
 			fmt.Fprintln(stderr, "jevlin agents:", err)
 			return exitUsage
 		}

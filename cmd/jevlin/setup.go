@@ -89,7 +89,7 @@ type setupDeps struct {
 	// binaryLocation vets the directory setup records the binary by; nil
 	// means checkBinaryLocation. Tests whose binary sits in a temp sandbox
 	// replace it.
-	binaryLocation func(exe string) error
+	binaryLocation binaryLocationCheck
 	// agentPlanObserver, when non-nil, is called with the plan agentsStep
 	// builds — after buildInstallPlan, before anything is printed or
 	// committed — so a test can inspect exactly what production code
@@ -106,7 +106,7 @@ func (d setupDeps) restrictFn() func(string, bool) error {
 	return restrictToOwner
 }
 
-func (d setupDeps) binaryLocationFn() func(string) error {
+func (d setupDeps) binaryLocationFn() binaryLocationCheck {
 	if d.binaryLocation != nil {
 		return d.binaryLocation
 	}
@@ -311,7 +311,7 @@ func (r *setupRun) run(homeFlag string, with []string) int {
 		return exitUsage
 	}
 	// The hooks, the skills and the profile's PATH all name this path.
-	if err := d.binaryLocationFn()(exe); err != nil {
+	if err := vetBinaryLocation(d.binaryLocationFn(), exe, "jevlin setup", d.stderr); err != nil {
 		fmt.Fprintln(d.stderr, "jevlin setup:", err)
 		return exitUsage
 	}
