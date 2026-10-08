@@ -18,12 +18,16 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
-- **Setup refuses a binary that someone else could replace.** `setup` and
-  `agents install` record the binary's path in your agents' hooks and skills,
-  and setup puts its directory on PATH. They now refuse a binary under the
-  temp directory, or one that another user can write, or that sits in a
-  directory another user can write or owns. Move it somewhere only you can
-  write, such as `~/.local/bin`, and run it from there.
+- **Setup refuses a binary that someone else could replace.** `setup`,
+  `agents install` and `agents prefer` record the binary's path in your
+  agents' hooks and skills, and setup puts its directory on PATH. They now
+  refuse a binary under the temp directory, or one that sits in a directory
+  every user can write or another user owns. A directory writable by `admin`,
+  `wheel`, `sudo` or `root`, as a Homebrew prefix is, is accepted; one
+  writable by any other shared group, such as Debian's `staff` on
+  `/usr/local`, gets a warning and setup goes on. On Windows only the
+  temp-directory rule is checked. Move a refused binary somewhere only you
+  can write, such as `~/.local/bin`, and run it from there.
 - **Files an agent's sandbox leaves in jevlin's directories no longer reach
   your own files.** Codex's sandbox may write jevlin's state, intake, sessions
   and spool directories. A link left there could make a hook, a flush or

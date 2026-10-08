@@ -33,6 +33,9 @@ type binaryLocationCheck func(exe string) (warnings []string, err error)
 // shared prefixes set up that way (Debian's /usr/local, Linuxbrew) are where
 // package managers put binaries. The warnings are
 // returned whether or not the check then refuses.
+//
+// On Windows only the temp-directory rule applies: writableByOthers has no
+// owner or access list to read there (binary_location_windows.go).
 func checkBinaryLocation(exe string) (warnings []string, err error) {
 	if !filepath.IsAbs(exe) {
 		return nil, fmt.Errorf("%s is not an absolute path; %w", exe, errUnsafeBinaryLocation)
