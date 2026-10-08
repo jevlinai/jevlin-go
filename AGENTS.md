@@ -402,6 +402,29 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   cannot express. `wallet_acl_test.go` proves the walk and the repair decision on every OS;
   `wallet_acl_windows_test.go` proves, as a second principal holding an inherited read entry on
   the installation, that `credentials.json` opens and the wallet does not.
+- **The state directory's access list, and the Windows ACL helpers** — `state\` is left to
+  inherit because a sandbox's entry on it is intended, so no open of the store and no load of a
+  secret reads an access list, refuses one, or resolves an account name: that would turn mining
+  DEGRADED after every search on an installation that uses a sandbox, and put a DACL read on the
+  search path (invariant 1). `pkg/auth/perm.go` says so where `posixModes` is read;
+  `perm_reads_test.go` parses every source file in the package, Windows-tagged ones included,
+  and fails on a descriptor read, an account lookup or any `winacl` call but `RestrictToOwner`;
+  `perm_windows_test.go` adds `BUILTIN\Users` to the directory and every credential and goes
+  through each way in. The one thing the store does is at creation: a `state_dir` `OpenStore`
+  creates gets `setup`'s own protected owner-only DACL and owner (`restrictStateDir`, the same
+  function), and is removed again if that fails, so the next run restricts a directory it
+  creates instead of opening one it did not. `store_create_test.go` holds that wiring on every OS
+  through `restrictCreatedStateDir`, a variable for the reason `secretCheckedHook` is one: the
+  real call does nothing on POSIX, so deleting it there would otherwise change no result.
+  What a participant is told is `doctor`'s `state access` (`cmd/jevlin/state_acl.go`): it asks
+  for the directory and `auth.CredentialFiles()` by name, never lists the directory, reads
+  nothing through a link, names other principals as information (`OK`) and calls only a NULL DACL
+  or an owner other than the user, SYSTEM or Administrators a problem (`NO`).
+  `judgeStateDescriptor` is pure, so `state_acl_test.go` runs on every OS, including through
+  `cmdDoctor` with a fake backend; `state_acl_windows_test.go` runs the real reader. The reader,
+  the namer and `RestrictToOwner` live in `internal/winacl` because `pkg/` cannot import `cmd/`
+  (invariant 8) and the wallet check needs the same ones; the package imports nothing of the
+  module and judges nothing, and its descriptor-string parser is tested on every OS.
 - **Durable evidence delivery** — `pkg/fsx` owns the atomic, fsync'd write (Windows included);
   `pkg/mining/spool` owns the queue and its quarantine; `pkg/mining/collector` owns attempts and
   the next-attempt time; `pkg/auth/submit.go` owns the AS exchange and what counts as an ack.

@@ -141,3 +141,44 @@ func TestAFailedRestrictionThatCannotBeUndoneSaysSo(t *testing.T) {
 		t.Errorf("a directory that was not empty was removed anyway: %v", statErr)
 	}
 }
+
+// CredentialFiles is what doctor asks Windows about, by name. It is held to
+// the store's own writes, so a rename in one place cannot leave the report
+// looking at a file that no longer exists: each name the store writes for a
+// key, a token, a secret or the registration is on the list, and the list holds
+// nothing the store does not write.
+func TestCredentialFilesAreTheFilesTheStoreWritesForCredentials(t *testing.T) {
+	s, dir := newStore(t)
+	if _, err := s.DPoPKey(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveRefreshToken("t"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ParticipationSecret(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveAgentRegistration(AgentRegistration{AgentID: "a", ClaimCode: "c", Status: "unclaimed"}); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	written := map[string]bool{}
+	for _, e := range entries {
+		written[e.Name()] = true
+	}
+	listed := map[string]bool{}
+	for _, name := range CredentialFiles() {
+		listed[name] = true
+		if !written[name] {
+			t.Errorf("CredentialFiles names %s, which the store did not write; wrote %v", name, written)
+		}
+	}
+	for name := range written {
+		if !listed[name] {
+			t.Errorf("the store wrote %s for a credential and CredentialFiles does not name it", name)
+		}
+	}
+}

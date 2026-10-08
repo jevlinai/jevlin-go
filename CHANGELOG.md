@@ -23,9 +23,12 @@ The first release replaces this heading with its own.
   gets a protected access list that names only you, and you as its owner, as
   `jevlin setup` gives `<home>\state`, instead of inheriting its parent's. If
   the list cannot be set, the new directory is removed rather than left to be
-  opened as it is next time. Nothing refuses a state
-  directory afterwards: an agent's sandbox is meant to be able to reach it, so
-  another principal on its list is not an error.
+  opened as it is next time. Nothing refuses a state directory afterwards: an
+  agent's sandbox is meant to be able to reach it, so another principal on its
+  list is not an error. `doctor` has a new Windows-only `state access` line:
+  it says whether the directory and its credentials are yours, names anyone
+  else their access lists admit, and calls only a directory or credential with
+  no access list, or owned by someone else, a problem.
 - **Setup refuses a binary that someone else could replace.** `setup`,
   `agents install` and `agents prefer` record the binary's path in your
   agents' hooks and skills, and setup puts its directory on PATH. They now

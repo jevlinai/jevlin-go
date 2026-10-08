@@ -167,6 +167,14 @@ an opt-out `connect` does not re-ask. Setup writes `enabled = true` only with no
 `as_url` says an authorization server exists. An unreadable decision counts as degraded, which
 also stops mining.
 
+**Who can open the state directory, on Windows.** `jevlin setup` gives `<home>\state` an access
+list that names only you. A `state_dir` that `connect`, `enroll` or `mining enable` creates gets
+the same list, with you as its owner; if the list cannot be set, the new directory is removed
+rather than left to be opened as it is. A directory that already exists is left as it is, and so
+is any entry another program has added to it, because an agent's sandbox is meant to reach this
+directory: nothing refuses a state directory over who else is on its list. `doctor`'s `state
+access` line says whose it is and names anyone else the list admits.
+
 `[miner]`'s two directories default beside the state directory, and `intake_dir`'s parent is
 where `credentials.json` and `flush.lock` are looked for. `base_url` is never dialed: a printed
 claim link must point there. `agents_api_url` is where `connect` and `mining enable` send
@@ -245,6 +253,7 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | intake writable | This process can write where a search records. Probes with one inert non-`.json` file, then removes it. |
 | recording | Recorded searches are waiting, queued, or verified at the AS; or nothing ran recently. |
 | wallet access | Windows only: nobody but you can read the wallet. |
+| state access | Windows only: the state directory and its credentials have an access list and are owned by you or SYSTEM or Administrators. Anyone else the list names is shown, and is `OK`: an agent's sandbox is expected there. |
 
 `NO` is a fact and a successful diagnosis; `UNKNOWN` is the absence of one. `doctor` exits
 non-zero only when every check came back `UNKNOWN`. It opens existing state only and creates no

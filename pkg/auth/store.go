@@ -39,6 +39,18 @@ const (
 	registrationPendingFile = "registration_pending.json"
 )
 
+// agentRegistrationFile holds the platform identity, claim code included.
+const agentRegistrationFile = "agent.json"
+
+// CredentialFiles names the files in the state directory whose content
+// authorizes someone: the DPoP key, the refresh token, the participation
+// secret and the agent registration with its claim code. It is a closed list
+// on purpose. doctor reports who else can open them, and a directory a sandbox
+// can write is not one to enumerate, so the report asks for these by name.
+func CredentialFiles() []string {
+	return []string{dpopKeyFile, refreshTokenFile, participationSecretFile, agentRegistrationFile}
+}
+
 // ErrAgentRegistrationCorrupt identifies an undecodable agent.json whose
 // contents may still represent a live platform identity.
 var ErrAgentRegistrationCorrupt = errors.New("auth: agent registration is corrupt")
@@ -356,13 +368,13 @@ func (s *Store) SaveAgentRegistration(rec AgentRegistration) error {
 	if err != nil {
 		return fmt.Errorf("auth: encode agent registration: %w", err)
 	}
-	return s.saveStateFile("agent.json", raw)
+	return s.saveStateFile(agentRegistrationFile, raw)
 }
 
 // LoadAgentRegistration returns the stored platform identity, ok=false
 // when this installation has never registered.
 func (s *Store) LoadAgentRegistration() (rec AgentRegistration, ok bool, err error) {
-	raw, err := s.readSecret("agent.json")
+	raw, err := s.readSecret(agentRegistrationFile)
 	if errors.Is(err, fs.ErrNotExist) {
 		return AgentRegistration{}, false, nil
 	}
@@ -385,7 +397,7 @@ func (s *Store) LoadAgentRegistration() (rec AgentRegistration, ok bool, err err
 // key no longer forces a refusal on its own; it only means the rename must
 // wait for that confirmation first.
 func (s *Store) PreserveCorruptAgentRegistration() error {
-	path := filepath.Join(s.dir, "agent.json")
+	path := filepath.Join(s.dir, agentRegistrationFile)
 	info, err := os.Lstat(path)
 	if err != nil {
 		return err
