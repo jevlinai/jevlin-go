@@ -188,7 +188,8 @@ directory, which an agent's sandbox may write, so nothing an agent leaves there 
 older version did keep it there: after upgrading, that address is used only when it is this
 installation's own wallet address, or when your config sets `[mining] payout_address`. Otherwise
 `status` says no address is on file and to run `jevlin mining enable` at a terminal; with mining
-already on, that asks only for the address. An agent in Codex's sandbox can still use this
+already on, that asks only for the address, and never turns mining off. `jevlin payout set`
+records the address it declares here too. An agent in Codex's sandbox can still use this
 installation's access to the rewards service directly, though, and could declare an address of
 its own in the moments before yours is in force. After you approve mining, `jevlin payout show`
 should name your address.

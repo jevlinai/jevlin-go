@@ -143,7 +143,9 @@ func savePayoutAddress(m config.Miner, address string) error {
 }
 
 // claimRecord is claim.json beside credentials.json: the claim link and
-// code, which only an unsandboxed foreground run writes (auth.ClaimRecord).
+// code (auth.ClaimRecord), written only from the platform's answer or the
+// registration journal beside it, by a foreground run or by a resume
+// finishing that journal; a resume in Codex's sandbox cannot write here.
 func claimRecord(m config.Miner) (*auth.ClaimRecord, error) {
 	if m.IntakeDir == "" {
 		return nil, errors.New("no miner.intake_dir, so no directory for the claim record")

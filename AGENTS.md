@@ -119,8 +119,10 @@ the named tests.
     URL must match (`validatePlatformURL`): every byte printable ASCII, no user before the host,
     and the URL must read back as exactly the text given, so what is checked is all of what is
     printed. Every request goes to `agents_api_url`. The claim link lives in `claim.json` beside
-    `credentials.json` (`auth.ClaimRecord`), bound to its agent and written only by a foreground
-    run, never in the sandbox-writable `agent.json`; it is checked again before it is printed
+    `credentials.json` (`auth.ClaimRecord`), bound to its agent and written only from the
+    platform's answer or the registration journal beside it: by a foreground run, or by a resume
+    finishing that journal (which, in a sandbox, cannot write there and leaves it to the next
+    foreground run), never in the sandbox-writable `agent.json`; it is checked again before it is printed
     (`platform.ValidateStoredClaimURL`), because `platform.base_url` may have changed since.
 13. **Registration is one journaled transaction.** A complete `register` response is journaled
     (`registration_pending.json`) before `agent.json` or the credential is written, and finished
@@ -250,8 +252,13 @@ the named tests.
     a command prints is held on load to what this client writes: a string holding a control,
     format or line-separator character (`internal/termtext`, Unicode Cc, Cf, Zl and Zp, found by
     reflection over every string `encoding/json` fills in `pkg/auth/record_text.go`) makes
-    `agent.json` corrupt and any other record unreadable, an address must be twilight bech32, a
-    held-binding note is shown only for the address on file, and a decode error repeats none of
+    `agent.json` corrupt and any other record unreadable; an identifier a record carries (an
+    agent id, a scope, a slot name, a time) is a token, never a sentence (`pkg/auth/agent_id.go`,
+    held on the platform's wire as well, before anything is journaled), and a slot refusal is
+    stored as a code the client renders in its own words; an address must be twilight bech32; a
+    held-binding note is shown only for the address this installation would declare, with a
+    reason only when it is one the client knows; no message repeats the agent id `agent.json`
+    held; and a decode error repeats none of
     the record (`auth.DecodeProblem`: the state dir's records, the flush stamp, and the journal
     and claim record beside the credential alike). What a foreground `flush` prints, which names intake and spool files, goes
     through `terminalSafeWriter`. And `agent.json` naming an agent the stored credential does not
@@ -320,10 +327,14 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   own agent, as the router does. The claim link is `claim.json` beside the credential
   (`pkg/auth/claim_record.go`): `claim_link_test.go` plants another agent's on-origin link in
   `agent.json` and holds connect, status, both JSON reports and mining enable to never printing
-  it, a claimed agent to showing none, a `/me` failure to showing none, and a record naming
-  `me` to being rebuilt. `TestAJournalWinsOverAnAgentRecordNamingAnotherAgent` and
-  `registration_set_aside_test.go` hold a planted record or old evidence to never wedging
-  recovery. For participants:
+  it, a claimed agent to showing none, a `/me` failure to showing none (in `connect -json` too,
+  `TestConnectJSONCarriesNoLinkTheRunWithheld`), and a record naming `me` to being rebuilt;
+  `TestTheRebuildNamesOnlyThePlatformsAgent` holds every message to the id `/me` returned, and
+  `TestForceOnARecordNamingAnotherAgentAsksForDifferentInput` machine mode's `-force` to
+  `fix_input`. `TestAJournalWinsOverAnAgentRecordNamingAnotherAgent`,
+  `TestAJournalPublishesOverWhateverIsAtTheAgentRecordsName` (a loose-mode record, a link, a
+  directory, a FIFO) and `registration_set_aside_test.go` hold a planted record or old evidence
+  to never wedging recovery. For participants:
   [guide, The claim link](docs/guide.md#the-claim-link).
 - **The payout record** — `pkg/auth/store.go`'s `PayoutRecord` owns `payout.json`, the address a
   resume declares unattended, and keeps it beside `credentials.json`, never in the state dir:

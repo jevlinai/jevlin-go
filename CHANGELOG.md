@@ -73,10 +73,12 @@ The first release replaces this heading with its own.
   `agent.json`, in the state directory an agent's sandbox can write: a
   planted record could keep your agent's id and carry another agent's link,
   on the platform's own address. The link now lives in `claim.json` in the
-  jevlin home, written only by a `connect` you run, and bound to its agent;
-  `connect`, `status` and `mining enable` print only that one, only for an
-  agent the platform last said is unclaimed, and only while it is exactly a
-  link on `platform.base_url`. Before printing anything, a `jevlin connect`
+  jevlin home, written only from the platform's answer or the registration
+  journal beside your key, and bound to its agent. `connect`, `status` and
+  `mining enable` print only that one, only while it is exactly a link on
+  `platform.base_url`, and only for an unclaimed agent: as the platform has
+  just said, for `connect`, and as the registration on file says, for
+  `status` and `mining enable`, which do not ask. Before printing anything, a `jevlin connect`
   you run asks the platform which agent your stored key belongs to: a record
   naming another agent is rebuilt from the answer, a claimed agent shows no
   link, and if the platform cannot answer no link is shown at all. A link an
@@ -195,19 +197,31 @@ The first release replaces this heading with its own.
   which of your messages it answers to, so a session's searches group into
   turns on the router as they do for Claude Code.
 - **Nothing an agent's sandbox writes into the state directory reaches your
-  terminal as an escape sequence.** An `agent.json` with a control, format or
-  line-separator character in any field, or an agent id that names a route
-  such as `me`, is treated as damaged: `status` says it cannot be read and to
+  terminal as an escape sequence, or as jevlin's own words.** An `agent.json`
+  with a control, format or line-separator character in any field, or an
+  identifier (agent id, scope, slot name, time) that is not a plain token, such
+  as a sentence or the route `me`, is treated as damaged: `status` says it cannot be read and to
   run `jevlin connect`, which rebuilds it from the platform. The payout
   records must hold real payout addresses, a held-binding note is shown only
-  for the address on file and never over what the rewards service just
-  answered, a health record's detail is written without such characters and
+  for the address this installation would declare, with a reason only when it
+  is one jevlin knows, and never over what the rewards service just answered;
+  no message repeats the agent id `agent.json` held; a health record's detail is written without such characters and
   refused with them, and a record that does not decode, in the state
   directory or beside `credentials.json`, is reported without repeating its
   text. What `jevlin flush` prints is filtered the same way,
   since its errors name files an agent's sandbox can write. A registration
-  interrupted mid-publish is finished even if the state directory holds a
-  record naming another agent, which is set aside.
+  interrupted mid-publish is finished whatever the state directory holds at
+  `agent.json` (a record naming another agent, a link, a directory), which is
+  set aside. `connect -json -force` on a record naming another agent answers
+  `fix_input` (`force_does_not_rebuild`) rather than telling a caller to retry.
+- **`jevlin mining enable` never turns mining off when it is on.** With mining
+  already enabled it asks only for a missing payout address, at a terminal,
+  and without one records `[mining] payout_address` or says it is missing; it
+  used to write the config's `[mining] enabled` without a terminal, which a
+  config made at a terminal does not set, turning mining off with no output.
+- **`jevlin payout set` records the address it declared** beside your key, so
+  `status` and the background resume follow your change instead of naming the
+  old address.
 - **A lost claim link is replaced, not mourned.** For a registration rebuilt from
   the platform that is still unclaimed with no claim link, a foreground
   `jevlin connect` now asks the platform for a fresh link and prints it. The old

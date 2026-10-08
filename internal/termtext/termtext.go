@@ -26,6 +26,14 @@ import "unicode"
 // hide what a terminal shows. Letters, marks and the no-break space are
 // left alone: a participant's name is "José", a path can be in Japanese.
 //
+// The cost is stated, not hidden: Cf includes the zero-width joiner and
+// non-joiner (U+200D, U+200C), which Persian and Indic text and emoji
+// sequences use. A health detail quoting such a path shows a space where the
+// joiner was, and a refusal message from the platform holding one is
+// dropped and its code kept. Records hold identifiers and addresses, never
+// natural language, and zero-width characters are a known way to smuggle
+// text to a model reading the output, so the rule keeps them.
+//
 // It is a test for a REFUSAL, not a sanitizer: a value holding one is not a
 // shape this client trusts enough to guess what was meant.
 func HasControlChar(s string) bool {
