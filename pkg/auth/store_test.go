@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"crypto/elliptic"
 	"os"
 	"path/filepath"
@@ -59,6 +60,95 @@ func TestDPoPKeyGeneratedOnceAndStable(t *testing.T) {
 	}
 }
 
+// The trace key is created once, owner-only, and reused; a symlinked or
+// malformed key is refused rather than trusted.
+func TestTraceKeyGeneratedOnceAndStable(t *testing.T) {
+	s, dir := newStore(t)
+	k1, err := s.TraceKey()
+	if err != nil || len(k1) != traceKeyLen {
+		t.Fatalf("TraceKey: %d bytes, %v", len(k1), err)
+	}
+	k2, err := s.TraceKey()
+	if err != nil || !bytes.Equal(k1, k2) {
+		t.Fatalf("reload produced a different key: %v", err)
+	}
+	info, err := os.Stat(filepath.Join(dir, traceKeyFile))
+	if err != nil || (posixModes && info.Mode().Perm() != 0o600) {
+		t.Fatalf("trace.key perms = %v, %v; want 0600", info.Mode().Perm(), err)
+	}
+	other, _ := newStore(t)
+	if k3, err := other.TraceKey(); err != nil || bytes.Equal(k1, k3) {
+		t.Fatalf("distinct installations share a trace key: %v", err)
+	}
+
+	short, shortDir := newStore(t)
+	if err := os.WriteFile(filepath.Join(shortDir, traceKeyFile), []byte("short"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := short.TraceKey(); err == nil {
+		t.Fatal("malformed trace.key accepted")
+	}
+
+	target := filepath.Join(t.TempDir(), "elsewhere")
+	if err := os.WriteFile(target, bytes.Repeat([]byte("k"), traceKeyLen), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	linked, linkedDir := newStore(t)
+	if err := os.Symlink(target, filepath.Join(linkedDir, traceKeyFile)); err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+	if _, err := linked.TraceKey(); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("symlinked trace.key not refused: %v", err)
+	}
+}
+
+// EnsureTraceKey is what setup and connect call, outside any sandbox, so that
+// a search which cannot write the state directory finds the key and only
+// reads it. It must say truthfully whether it made the key (setup reports a
+// change from it), leave an existing key's bytes alone, and refuse what
+// TraceKey refuses rather than replace it.
+func TestEnsureTraceKeyMakesTheKeyOnceAndSaysSo(t *testing.T) {
+	s, dir := newStore(t)
+	path := TraceKeyPath(dir)
+	if path != filepath.Join(dir, "trace.key") {
+		t.Fatalf("TraceKeyPath = %q, want trace.key in the state directory", path)
+	}
+	created, err := s.EnsureTraceKey()
+	if err != nil || !created {
+		t.Fatalf("first EnsureTraceKey = %v, %v; want created", created, err)
+	}
+	first, err := os.ReadFile(path) // #nosec G304 -- the test's own state directory
+	if err != nil || len(first) != traceKeyLen {
+		t.Fatalf("trace.key is %d bytes, %v; want %d", len(first), err, traceKeyLen)
+	}
+	if info, err := os.Stat(path); err != nil || (posixModes && info.Mode().Perm() != 0o600) {
+		t.Fatalf("trace.key perms = %v, %v; want 0600", info.Mode().Perm(), err)
+	}
+	created, err = s.EnsureTraceKey()
+	if err != nil || created {
+		t.Fatalf("second EnsureTraceKey = %v, %v; want not created", created, err)
+	}
+	if again, _ := os.ReadFile(path); !bytes.Equal(first, again) { // #nosec G304 -- same path
+		t.Fatal("EnsureTraceKey rewrote an existing key")
+	}
+	if key, err := s.TraceKey(); err != nil || !bytes.Equal(key, first) {
+		t.Fatalf("TraceKey after EnsureTraceKey = %x, %v; want the key on disk", key, err)
+	}
+
+	// A key that is not 32 bytes is refused and left where it lies.
+	bad, badDir := newStore(t)
+	badPath := TraceKeyPath(badDir)
+	if err := os.WriteFile(badPath, []byte("short"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if created, err := bad.EnsureTraceKey(); err == nil || created {
+		t.Fatalf("EnsureTraceKey over a short key = %v, %v; want a refusal", created, err)
+	}
+	if kept, _ := os.ReadFile(badPath); string(kept) != "short" { // #nosec G304 -- same path
+		t.Fatalf("EnsureTraceKey replaced a key it refused: %q", kept)
+	}
+}
+
 // PRIV-008 permission assertion: loose modes refuse the mining plane.
 func TestPermissionHazardsRefused(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -82,9 +172,14 @@ func TestPermissionHazardsRefused(t *testing.T) {
 		t.Fatalf("restored perms still refused: %v", err)
 	}
 
-	// Loose state directory refuses OpenStore entirely.
+	// Loose state directory refuses OpenStore entirely. The hazard is set with
+	// Chmod, not the mode MkdirAll is given: that passes through the umask,
+	// and under 0077 it would leave a 0700 directory with nothing to refuse.
 	looseDir := filepath.Join(t.TempDir(), "loose")
-	if err := os.MkdirAll(looseDir, 0o755); err != nil { // #nosec G301 -- deliberately loose: the test proves refusal
+	if err := os.MkdirAll(looseDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(looseDir, 0o755); err != nil { // #nosec G302 -- deliberately loose: the test proves refusal
 		t.Fatal(err)
 	}
 	if _, err := OpenStore(looseDir); err == nil {

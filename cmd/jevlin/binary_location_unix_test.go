@@ -12,17 +12,28 @@ import (
 	"testing"
 )
 
+// layoutRoot is a fresh temporary directory with the mode every layout under
+// it assumes. testing creates t.TempDir() with os.Mkdir(dir, 0o777), so its
+// mode is whatever the umask leaves: 0755 under CI's 022, but 0777 under 0 —
+// a directory the walk refuses at before it reaches the modes a test set — and
+// 0700 under 0077. It is resolved too, so the paths a refusal names match on
+// macOS, where the temp directory is under the /var -> /private/var link.
+func layoutRoot(t *testing.T) string {
+	t.Helper()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	chmod(t, root, 0o755)
+	return root
+}
+
 // layout is root/bin/jevlin with TMPDIR moved away from root, so only the
 // modes decide. The walk reports the nearest offending component first, so a
 // refusal that names neither bin nor the file came from above root.
 func binaryLayout(t *testing.T) (root, bin, exe string) {
 	t.Helper()
-	// Resolved, so the paths a refusal names match on macOS, where the temp
-	// directory is under the /var -> /private/var link.
-	root, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	root = layoutRoot(t)
 	t.Setenv("TMPDIR", filepath.Join(root, "elsewhere"))
 	bin = filepath.Join(root, "bin")
 	exe = filepath.Join(bin, "jevlin")
@@ -99,10 +110,7 @@ func warnedAt(warnings []string, p string) bool {
 // the prefix and the two paths a hook could record: the link and the file.
 func homebrewLayout(t *testing.T) (prefix, link, exe string) {
 	t.Helper()
-	root, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	root := layoutRoot(t)
 	t.Setenv("TMPDIR", filepath.Join(root, "elsewhere"))
 	prefix = filepath.Join(root, "homebrew")
 	pkgBin := filepath.Join(prefix, "lib", "node_modules", "jevlin", "bin")
