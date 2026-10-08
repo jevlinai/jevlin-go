@@ -411,10 +411,10 @@ func (s *Store) SaveAgentRegistration(rec AgentRegistration) error {
 // when this installation has never registered.
 //
 // agent.json is in the state directory, which a sandboxed command can
-// rewrite (record_text.go), and every string in it reaches a terminal:
-// status prints the claim link, the scopes, the slot and the refusal,
-// connect the link and its code. A record holding a control, C1 or bidi
-// character in any string is ErrAgentRegistrationCorrupt, exactly like one
+// rewrite (record_text.go), and its strings reach a terminal: status prints
+// the scopes, the slot and the refusal. A record holding a control, format or
+// separator character in any string, or an identifier that is not a token
+// (agent_id.go), is ErrAgentRegistrationCorrupt, exactly like one
 // that does not decode, so the one path that already handles a record that
 // cannot be trusted handles this one too: a foreground connect sets it aside
 // and rebuilds it from GET /v1/agents/me, and nothing else acts on it. The

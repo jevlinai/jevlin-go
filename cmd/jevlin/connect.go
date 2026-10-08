@@ -92,12 +92,6 @@ var errConnectNoConfig = errors.New("no config file found — looked at -config,
 func connectLockPath(stateDir string) string { return filepath.Join(stateDir, "connect.lock") }
 func resumeStampPath(stateDir string) string { return filepath.Join(stateDir, "connect_resume.json") }
 
-// unclaimedNoLinkMessage (B.3) is what a foreground run prints in place
-// of the ordinary print-and-wait narration when the stored registration
-// is unclaimed but carries no claim link — a rebuild that recovered an
-// identity from GET /v1/agents/me before the platform served the claim
-// bootstrap fields for it (B.1's known gap), or any later run against
-// that same durable state. Never printed alongside the bare (empty) URL.
 // unclaimedNoLinkMessage is what a foreground run says when it has no claim
 // link to print and the platform did not issue a fresh one. It used to send
 // the participant to `jevlin connect -force`, which registers nothing while a

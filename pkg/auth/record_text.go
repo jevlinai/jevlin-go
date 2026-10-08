@@ -15,8 +15,9 @@ import (
 // The state directory is a writable root of Codex's sandbox (hard invariant
 // 19), so a record read back from it is only what the last writer left
 // there. status, doctor, connect and mining enable print these records'
-// strings to the participant's terminal; a control, C1 or bidi character in
-// one is a terminal escape or a reordered line in jevlin's own output, with
+// strings to the participant's terminal; a control, format or separator
+// character in one (termtext's rule, which takes in C1 and bidi) is a
+// terminal escape or a reordered line in jevlin's own output, with
 // jevlin's authority behind it. The platform client refuses those
 // characters in every field of what it receives that reaches a record
 // (pkg/platform: the agent id, the claim link, code and times, the scopes,
@@ -75,11 +76,10 @@ func textProblemIn(v reflect.Value, name string) string {
 			if !f.IsExported() && !f.Anonymous {
 				continue
 			}
-			fieldName := jsonName(f)
-			if f.Anonymous {
-				fieldName = name
-			}
-			if p := textProblemIn(v.Field(i), fieldName); p != "" {
+			// An embedded struct's own name is never used: its fields
+			// recurse under their own names. An embedded non-struct is a
+			// field encoding/json names after its type, which jsonName is.
+			if p := textProblemIn(v.Field(i), jsonName(f)); p != "" {
 				return p
 			}
 		}

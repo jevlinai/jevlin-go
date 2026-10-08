@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 // plantedText carries what a sandboxed command would plant to act on the
@@ -460,6 +461,49 @@ func TestTheRecordsBesideTheCredentialSayTheirDecodeErrorsInTheClientsWords(t *t
 		}
 		if strings.Contains(err.Error(), "SECURITY NOTICE") || !strings.Contains(err.Error(), "a field this client does not write") {
 			t.Fatalf("%s: %v", name, err)
+		}
+	}
+}
+
+// A field with no json tag is named after the Go field, as encoding/json
+// names it, so the refusal points at the key a reader would look for.
+func TestARecordFieldWithNoTagIsNamedAfterItsGoName(t *testing.T) {
+	type untagged struct {
+		Note   string
+		Tagged string `json:"tagged,omitempty"`
+	}
+	if got := recordTextProblem(untagged{Note: plantedText}); got != "Note" {
+		t.Fatalf("an untagged field was named %q, want Note", got)
+	}
+	if got := recordTextProblem(untagged{Tagged: plantedText}); got != "tagged" {
+		t.Fatalf("a tagged field was named %q, want tagged", got)
+	}
+}
+
+// Each way a record can fail to decode has the client's own words, and
+// none repeats a byte of the record.
+func TestEachDecodeProblemHasItsOwnWords(t *testing.T) {
+	type rec struct {
+		N  int       `json:"n"`
+		At time.Time `json:"at"`
+	}
+	for want, raw := range map[string]string{
+		"it is not JSON (at byte":                     `{"n": SECURITY NOTICE}`,
+		"a field has the wrong type":                  `{"n": "SECURITY NOTICE"}`,
+		"a time in it does not parse":                 `{"at": "SECURITY NOTICE"}`,
+		"it holds a field this client does not write": `{"SECURITY NOTICE": 1}`,
+		"it is cut short":                             `{"n": 1`,
+	} {
+		var r rec
+		dec := json.NewDecoder(strings.NewReader(raw))
+		dec.DisallowUnknownFields()
+		err := dec.Decode(&r)
+		if err == nil {
+			t.Fatalf("%s decoded", raw)
+		}
+		got := decodeProblem(err)
+		if !strings.Contains(got, want) || strings.Contains(got, "SECURITY") {
+			t.Errorf("%s: decodeProblem = %q, want %q and nothing of the record", raw, got, want)
 		}
 	}
 }
