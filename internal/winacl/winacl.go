@@ -24,6 +24,12 @@ import (
 	"strings"
 )
 
+// ErrReparsePoint is what Read reports for a name that is a symlink, a
+// junction or any other reparse point: it is never read through, because what
+// a reparse point leads to is not the object the caller named, and in a
+// directory a sandboxed command can write it can lead anywhere.
+var ErrReparsePoint = errors.New("is a link or other reparse point")
+
 // The two principals every default Windows access list names besides the
 // user, and the two that can take ownership of any object whatever its list
 // says.

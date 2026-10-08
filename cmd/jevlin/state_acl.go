@@ -54,6 +54,18 @@ type stateACLBackend struct {
 // stateACL is the running platform's backend; tests substitute a fake.
 var stateACL = systemStateACL()
 
+// stateCheckedHook runs between inspect's checks on a name and the read of its
+// access list, when a test sets it: the seam a test uses to replace the object
+// at exactly that moment, as secretCheckedHook does for readSecret. Nil in
+// production.
+var stateCheckedHook func(path string)
+
+// stateNotRead is what is said of an object whose access list was not read
+// because it is a link, or not the kind of object it should be.
+func stateNotRead(path string) error {
+	return fmt.Errorf("%s is a link or not the kind of object it should be, so its access list was not read", path)
+}
+
 // stateCreatorPlaceholders are the SIDs that stand for "whoever creates an
 // object here" in an access list a directory hands down. They name nobody: an
 // inheritable CREATOR OWNER entry on a parent reaches a child as an effective
@@ -159,10 +171,22 @@ func inspectStateAccess(dir string, files []string) stateAccessFacts {
 			problems = append(problems, err)
 			return true, false
 		case stateACL.isLink(info) || info.IsDir() != wantDir || (!wantDir && !info.Mode().IsRegular()):
-			problems = append(problems, fmt.Errorf("%s is a link or not the kind of object it should be, so its access list was not read", path))
+			problems = append(problems, stateNotRead(path))
 			return true, false
 		}
+		if stateCheckedHook != nil {
+			stateCheckedHook(path)
+		}
+		// The check above only classifies early. The name is in a directory a
+		// sandboxed command can write, so it can be replaced between that check
+		// and this read; the read therefore opens the object once, refuses a
+		// reparse point on the handle itself, and reads from the handle
+		// (winacl.Read), and that refusal is what keeps a link from being read.
 		d, err := stateACL.read(path)
+		if errors.Is(err, winacl.ErrReparsePoint) {
+			problems = append(problems, stateNotRead(path))
+			return true, false
+		}
 		if err != nil {
 			problems = append(problems, fmt.Errorf("%s: %w", path, err))
 			return true, false

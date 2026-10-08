@@ -3,7 +3,10 @@
 package winacl
 
 import (
+	"errors"
+	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -154,5 +157,47 @@ func TestPrincipalName(t *testing.T) {
 		if got := PrincipalName(s); got != s {
 			t.Errorf("PrincipalName(%q) = %q, want it returned as it came", s, got)
 		}
+	}
+}
+
+// Read does not read through a reparse point: a junction is reported as one,
+// whatever its target's list says, and is not an object whose list is
+// returned. The target here has no access list, which Read would return as
+// NullDACL if it followed the junction. A runner that cannot make a junction
+// fails under CI=true instead of skipping, as the repository's permission
+// tests do.
+func TestReadRefusesAReparsePointAndDoesNotFollowIt(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "target")
+	if err := os.Mkdir(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := windows.SetNamedSecurityInfo(target, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION, nil, nil, nil, nil); err != nil {
+		t.Fatalf("fixture: no NULL DACL on the target: %v", err)
+	}
+	if d, err := Read(target); err != nil || !d.NullDACL {
+		t.Fatalf("fixture: the target does not read as a NULL DACL (err %v): %+v", err, d)
+	}
+	link := filepath.Join(root, "link")
+	if out, err := exec.Command("cmd", "/c", "mklink", "/J", link, target).CombinedOutput(); err != nil { // #nosec G204 -- cmd's mklink on this test's own paths
+		if os.Getenv("CI") == "true" {
+			t.Fatalf("a permission test cannot run on this CI runner, and CI does not let it skip: create a junction: %v: %s", err, out)
+		}
+		t.Skipf("create a junction: %v: %s", err, out)
+	}
+	d, err := Read(link)
+	if !errors.Is(err, ErrReparsePoint) {
+		t.Fatalf("Read(junction) = %+v, %v; want ErrReparsePoint", d, err)
+	}
+	if d.NullDACL || d.Owner != "" || len(d.ACEs) != 0 {
+		t.Errorf("a descriptor came back with the error: %+v", d)
+	}
+}
+
+// A name that is not there is still reported as absent, through the handle's
+// open, so a caller that tells an absent credential from a refused one can.
+func TestReadOfAnAbsentNameIsNotExist(t *testing.T) {
+	if _, err := Read(filepath.Join(t.TempDir(), "absent")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("Read(absent) err = %v, want fs.ErrNotExist", err)
 	}
 }

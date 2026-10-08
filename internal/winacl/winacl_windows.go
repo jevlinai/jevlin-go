@@ -4,6 +4,7 @@ package winacl
 
 import (
 	"fmt"
+	"io/fs"
 
 	"golang.org/x/sys/windows"
 )
@@ -20,15 +21,26 @@ func CurrentUser() (string, error) {
 // Read returns path's owner and DACL. Each entry's type, flags and mask come
 // from the binary ACE; its trustee comes from the same-index entry of the
 // descriptor's string form (SDDLTrustees), which names a SID without the
-// pointer arithmetic the binary ACE would need. It reads by name, and a name
-// can be a link that reading follows: a caller that must not follow one checks
-// first.
+// pointer arithmetic the binary ACE would need.
+//
+// It opens the object once, without following a reparse point, refuses it
+// (ErrReparsePoint) if the handle's own attributes say it is one, and reads the
+// descriptor from that same handle. Reading by name instead, after a check on
+// the name, leaves a gap in which the name can be replaced: a junction or a
+// hard link would have the caller report another object's list under this
+// object's name, and a symlink could send the read to a network path. One
+// handle has no gap, because what was checked is what is read.
 func Read(path string) (Descriptor, error) {
 	var d Descriptor
-	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
-		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+	h, err := openNoFollow(path)
 	if err != nil {
 		return d, err
+	}
+	defer func() { _ = windows.CloseHandle(h) }()
+	sd, err := windows.GetSecurityInfo(h, windows.SE_FILE_OBJECT,
+		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return d, &fs.PathError{Op: "read the access list of", Path: path, Err: err}
 	}
 	owner, _, err := sd.Owner()
 	if err != nil {
@@ -75,6 +87,40 @@ func Read(path string) (Descriptor, error) {
 		})
 	}
 	return d, nil
+}
+
+// openNoFollow opens path for reading its security descriptor and attributes
+// and nothing else: READ_CONTROL for the descriptor, FILE_READ_ATTRIBUTES so
+// the handle can be asked what it is. FILE_FLAG_OPEN_REPARSE_POINT opens a
+// symlink or junction at the name as itself instead of following it, and the
+// attribute check on the handle then refuses it. FILE_FLAG_BACKUP_SEMANTICS is
+// what lets a directory be opened at all. The share mode admits every other
+// opener, so this never makes a writer wait.
+func openNoFollow(path string) (windows.Handle, error) {
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return 0, err
+	}
+	h, err := windows.CreateFile(name,
+		windows.READ_CONTROL|windows.FILE_READ_ATTRIBUTES,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil,
+		windows.OPEN_EXISTING,
+		windows.FILE_FLAG_OPEN_REPARSE_POINT|windows.FILE_FLAG_BACKUP_SEMANTICS,
+		0)
+	if err != nil {
+		return 0, &fs.PathError{Op: "open", Path: path, Err: err}
+	}
+	var info windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(h, &info); err != nil {
+		_ = windows.CloseHandle(h)
+		return 0, &fs.PathError{Op: "open", Path: path, Err: err}
+	}
+	if info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+		_ = windows.CloseHandle(h)
+		return 0, &fs.PathError{Op: "open", Path: path, Err: ErrReparsePoint}
+	}
+	return h, nil
 }
 
 // PrincipalName is DOMAIN\name where the SID resolves, else the SID itself. It

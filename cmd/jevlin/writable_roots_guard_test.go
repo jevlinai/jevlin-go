@@ -195,6 +195,7 @@ var classifiedFileCalls = map[fileCallSite]fileCallClass{
 	{"pkg/auth/health.go", "removeStateFile", "os.Remove"}:                              {1, "root: removes a health record's name"},
 	{"pkg/auth/refreshlock_unix.go", "tryLockRefreshFile", "fsx.OpenLock"}:              {1, "root: refresh.token.lock in the state dir; no link followed"},
 	{"pkg/auth/refreshlock_windows.go", "tryLockRefreshFile", "fsx.OpenLock"}:           {1, "root: refresh.token.lock in the state dir; no reparse point followed, share mode 0"},
+	{"internal/winacl/winacl_windows.go", "openNoFollow", "windows.CreateFile"}:         {1, "root and outside: the state dir and the wallet, for doctor; READ_CONTROL and FILE_READ_ATTRIBUTES only, FILE_FLAG_OPEN_REPARSE_POINT, the attributes checked on the handle, every share mode so it never makes a writer wait"},
 	{"pkg/auth/store.go", "OpenStore", "os.MkdirAll"}:                                   {1, "root: creates the state dir itself"},
 	{"pkg/auth/store.go", "undoCreated", "os.Remove"}:                                   {1, "root: removes, innermost first, the directories OpenStore created a moment ago when it could not make or restrict them; Remove follows no link and fails on a directory that is no longer empty"},
 	{"pkg/auth/store.go", "Store.ClearPayoutBindingHeld", "os.Remove"}:                  {1, "root: removes a name"},

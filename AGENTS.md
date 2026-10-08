@@ -418,9 +418,18 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   through `restrictCreatedStateDir`, a variable for the reason `secretCheckedHook` is one: the
   real call does nothing on POSIX, so deleting it there would otherwise change no result.
   What a participant is told is `doctor`'s `state access` (`cmd/jevlin/state_acl.go`): it asks
-  for the directory and `auth.CredentialFiles()` by name, never lists the directory, reads
-  nothing through a link, names other principals as information (`OK`) and calls only a NULL DACL
-  or an owner other than the user, SYSTEM or Administrators a problem (`NO`).
+  for the directory and `auth.CredentialFiles()` by name, never lists the directory, names other
+  principals as information (`OK`) and calls only a NULL DACL or an owner other than the user,
+  SYSTEM or Administrators a problem (`NO`). It reads nothing through a link, and a check on a
+  name is not what guarantees that, because the name is in a directory a sandboxed command can
+  write and can be replaced between the check and the read: `winacl.Read` opens the object once
+  with `FILE_FLAG_OPEN_REPARSE_POINT`, refuses a reparse point on the handle's own attributes
+  (`ErrReparsePoint`) and reads the descriptor from that handle, so what was checked is what is
+  read. The `Lstat` before it only classifies early. `stateCheckedHook` is the seam between the
+  two, and `state_acl_windows_test.go` swaps a credential for a junction there. What one handle
+  per object does not close is a directory replaced after it was read and before its credentials
+  were. Invariant 19 records that a top-level root could not be removed from inside Codex's macOS
+  sandbox; nothing here establishes that for a Windows sandbox.
   `judgeStateDescriptor` is pure, so `state_acl_test.go` runs on every OS, including through
   `cmdDoctor` with a fake backend; `state_acl_windows_test.go` runs the real reader. The reader,
   the namer and `RestrictToOwner` live in `internal/winacl` because `pkg/` cannot import `cmd/`

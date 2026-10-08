@@ -179,3 +179,64 @@ func TestDoctorStateAccessDoesNotReadThroughAJunctionAtACredentialName(t *testin
 		t.Errorf("the junction's target was read through it: %q", detail)
 	}
 }
+
+// The read is by handle, so replacing a credential with a junction between the
+// check on its name and the read does not make doctor report another object's
+// list under the credential's path. The target has no access list: read by
+// name through the junction, this would be a NO against dpop.key, and the
+// assertion is that it is the refusal of a link instead. A junction is made and
+// removed first to establish that this runner can make one, so the swap itself
+// cannot be what skips.
+func TestDoctorStateAccessReadsWhatItCheckedNotWhatIsThereByThen(t *testing.T) {
+	root := t.TempDir()
+	stateDir := filepath.Join(root, "state")
+	if err := os.Mkdir(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := winacl.RestrictToOwner(stateDir, true); err != nil {
+		t.Fatal(err)
+	}
+	key := filepath.Join(stateDir, "dpop.key")
+	writeFileT(t, key, "x")
+	target := filepath.Join(root, "elsewhere")
+	if err := os.Mkdir(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	setNullDACL(t, target)
+	probe := filepath.Join(root, "probe")
+	makeJunction(t, probe, target)
+	if err := os.Remove(probe); err != nil {
+		t.Fatal(err)
+	}
+
+	var swapped bool
+	saved := stateCheckedHook
+	stateCheckedHook = func(path string) {
+		if path != key {
+			return
+		}
+		if err := os.Remove(key); err != nil {
+			t.Errorf("swap: %v", err)
+			return
+		}
+		if out, err := exec.Command("cmd", "/c", "mklink", "/J", key, target).CombinedOutput(); err != nil { // #nosec G204 -- cmd's mklink on this test's own paths
+			t.Errorf("swap: %v: %s", err, out)
+			return
+		}
+		swapped = true
+	}
+	t.Cleanup(func() { stateCheckedHook = saved })
+
+	f := inspectStateAccess(stateDir, []string{"dpop.key"})
+	if !swapped {
+		t.Fatal("the credential was not replaced between the check and the read, so this proved nothing")
+	}
+	if f.Err == nil || f.Err.Error() != stateNotRead(key).Error() {
+		t.Errorf("err = %v, want the refusal of a link at %s", f.Err, key)
+	}
+	for _, o := range f.Objects {
+		if o.Path == key {
+			t.Errorf("a list was reported under %s although it was a junction by the time it was read: %+v", key, o)
+		}
+	}
+}

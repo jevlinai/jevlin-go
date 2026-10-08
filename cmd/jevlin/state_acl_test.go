@@ -9,10 +9,12 @@ package main
 import (
 	"bytes"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -334,6 +336,55 @@ func TestInspectStateAccessDoesNotFollowALink(t *testing.T) {
 			t.Errorf("read %v through a directory that is a link", fake.read)
 		}
 	})
+}
+
+// The check on a name only classifies early. A name in a directory a sandboxed
+// command can write can be replaced between that check and the read, so the
+// read itself refuses a reparse point, on its handle (winacl.Read), and doctor
+// says of it what it says of a link it saw first: not read, and no list
+// reported under the credential's name.
+func TestInspectStateAccessRefusesWhatTheReadFindsIsALink(t *testing.T) {
+	fake := useFakeStateACL(t)
+	dir := filepath.Join(t.TempDir(), "state")
+	key := filepath.Join(dir, "dpop.key")
+	writeFileT(t, key, "x")
+	fake.failOn[key] = &fs.PathError{Op: "open", Path: key, Err: winacl.ErrReparsePoint}
+
+	f := inspectStateAccess(dir, auth.CredentialFiles())
+	if f.Err == nil || f.Err.Error() != stateNotRead(key).Error() {
+		t.Errorf("err = %v, want %q", f.Err, stateNotRead(key))
+	}
+	for _, o := range f.Objects {
+		if o.Path == key {
+			t.Errorf("an access list was reported under %s: %+v", key, o)
+		}
+	}
+	// Any other failure of the read is still its own sentence, with the cause.
+	fake.failOn[key] = errors.New("injected: access denied")
+	if f := inspectStateAccess(dir, auth.CredentialFiles()); f.Err == nil || !strings.Contains(f.Err.Error(), "injected: access denied") {
+		t.Errorf("err = %v, want the cause of a read that failed for another reason", f.Err)
+	}
+}
+
+// stateCheckedHook sits between the check on a name and the read of it, for
+// each object, which is where a test replaces the object. The test that uses it
+// on Windows proves the read is by handle; this one proves the seam is where it
+// is said to be, so that test cannot pass by swapping at the wrong moment.
+func TestStateCheckedHookRunsAfterTheCheckAndBeforeTheRead(t *testing.T) {
+	fake := useFakeStateACL(t)
+	dir := filepath.Join(t.TempDir(), "state")
+	key := filepath.Join(dir, "dpop.key")
+	writeFileT(t, key, "x")
+	var events []string
+	saved := stateCheckedHook
+	stateCheckedHook = func(path string) { events = append(events, "hook "+path+" after reads "+strconv.Itoa(len(fake.read))) }
+	t.Cleanup(func() { stateCheckedHook = saved })
+
+	inspectStateAccess(dir, []string{"dpop.key", "absent.key"})
+	want := []string{"hook " + dir + " after reads 0", "hook " + key + " after reads 1"}
+	if !reflect.DeepEqual(events, want) {
+		t.Errorf("events = %q, want %q: once per object that exists, each before its own read and after the previous one's", events, want)
+	}
 }
 
 func listNames(t *testing.T, dir string) []string {
