@@ -19,7 +19,7 @@ import (
 // unquoted, so the wiring is held through one. POSIX only: Windows refuses
 // these characters in a file name.
 func TestEverythingAForegroundFlushPrintsPassesTheTerminalSafeWriter(t *testing.T) {
-	cfg := filepath.Join(t.TempDir(), "x\x1b]52;c;ZXZpbA==\a‮\U000e0049.toml")
+	cfg := filepath.Join(t.TempDir(), "x\x1b]52;c;ZXZpbA==\a\u202e\U000e0049.toml")
 	if err := os.WriteFile(cfg, []byte("this is = not [valid toml"), 0o600); err != nil {
 		t.Fatal(err)
 	}
