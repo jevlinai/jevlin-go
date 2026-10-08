@@ -412,8 +412,9 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   that setup adds it again. That is setup's long-standing behavior and not this change's to alter. `pkg/auth/perm.go` says so where `posixModes` is read;
   `perm_reads_test.go` parses every source file in the package, Windows-tagged ones included,
   and fails on a descriptor read, an account lookup or any `winacl` call but `RestrictToOwner`;
-  `perm_windows_test.go` adds `BUILTIN\Users` to the directory and every credential and goes
-  through each way in. The one thing the store does is at creation: every directory `OpenStore`
+  `perm_windows_test.go` adds `BUILTIN\Users` to the directory and to each of
+  `CredentialFiles()` (all five, `agent.json` and `trace.key` included) and goes through each way
+  in. The one thing the store does is at creation: every directory `OpenStore`
   makes on the way to a `state_dir` (`MkdirAll` can make several, each inheriting its parent's
   list) gets `setup`'s own protected owner-only DACL and owner (`restrictStateDir`, the same
   function), and all of them are removed again if any step fails, so the next run restricts
@@ -422,8 +423,8 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   real call does nothing on POSIX, so deleting it there would otherwise change no result.
   What a participant is told is `doctor`'s `state access` (`cmd/jevlin/state_acl.go`): it asks
   for the directory and `auth.CredentialFiles()` by name, never lists the directory, names other
-  principals as information (`OK`) and calls only a NULL DACL or an owner other than the user,
-  SYSTEM or Administrators a problem (`NO`). It reads nothing through a link, and a check on a
+  principals as information (`OK`) and calls only a NULL DACL, an owner other than the user,
+  SYSTEM or Administrators, or no owner on record a problem (`NO`). It reads nothing through a link, and a check on a
   name is not what guarantees that, because the name is in a directory a sandboxed command can
   write and can be replaced between the check and the read: `winacl.Read` opens the object once
   with `FILE_FLAG_OPEN_REPARSE_POINT`, refuses a reparse point on the handle's own attributes

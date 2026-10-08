@@ -19,7 +19,8 @@ hygiene PR — imported as one commit. Everything before that is in
 The first release replaces this heading with its own.
 
 - **Windows: a state directory jevlin creates is owner-only.** A
-  `[mining] state_dir` that `connect`, `enroll` or `mining enable` creates now
+  `[mining] state_dir` that `setup` (for one outside the installation),
+  `connect`, `enroll`, `mining enable` or `mining disable` creates now
   gets a protected access list that names only you, and you as its owner, as
   `jevlin setup` gives `<home>\state`, instead of inheriting its parent's, and
   so does every directory it had to create on the way to it. If a list cannot
@@ -29,7 +30,8 @@ The first release replaces this heading with its own.
   list is not an error. `doctor` has a new Windows-only `state access` line:
   it says whether the directory and its credentials are yours, names anyone
   else their access lists admit, and calls only a directory or credential with
-  no access list, or owned by someone else, a problem.
+  no access list, or with an owner who is not you, SYSTEM or Administrators
+  (or none on record), a problem.
 - **The per-shell trace id no longer gives away your hostname.** A search with
   no hook used to send a plain hash of the hostname and parent pid, which the
   router could match against guessed hostnames. It is now keyed with a random
