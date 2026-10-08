@@ -47,18 +47,20 @@ import (
 // installation. registration_pending.json is one: an interrupted
 // registration is durable state, and ignoring it would mint a second
 // identity for the same participant. It sits beside credentials.json; the
-// state/ copy is an older release's and connect discards it unread. The
-// payout record is one too: it is the address the next resume declares,
-// and a directory holding it holds a participant's decision. The claim
-// record is not: it moves with the identity, but it is only ever written
-// beside a credential, which is a marker already.
+// state/ copy is an older release's and connect discards it unread.
+//
+// The payout record and the claim record are not markers, though they move
+// with the identity. A home holding only payout.json is what a first connect
+// leaves when the participant answered the address question and Register
+// then failed; counting it as an installation made setup report "a payout
+// address" as the previous installation and never offer the one actually
+// set aside beside it.
 var installationMarkers = []string{
 	filepath.Join("wallet", walletKeyFile),
 	filepath.Join("state", "refresh.token"),
 	filepath.Join("state", "agent.json"),
 	filepath.Join("state", "registration_pending.json"),
 	registrationJournalFile,
-	payoutRecordFile,
 	credentialsFile,
 }
 
@@ -396,7 +398,9 @@ func (a *adoption) aside(prefix string) string {
 // record and the claim record that sit beside the credential, or none of
 // them. A destination that already holds an identity is returned as a
 // conflict; it is found before this stage moves anything, and this stage is
-// the first.
+// the first. A payout record already at the destination is not an identity:
+// it is the participant's latest answer to the address question, so it is
+// kept and the adopted installation's stays where it was set aside.
 func (a *adoption) identity(t *bundleTxn) error {
 	srcState, srcCreds := filepath.Join(a.src, "state"), filepath.Join(a.src, credentialsFile)
 	dstState, dstCreds := filepath.Join(a.dst, "state"), filepath.Join(a.dst, credentialsFile)
@@ -404,7 +408,11 @@ func (a *adoption) identity(t *bundleTxn) error {
 	srcPayout, dstPayout := filepath.Join(a.src, payoutRecordFile), filepath.Join(a.dst, payoutRecordFile)
 	srcClaim, dstClaim := filepath.Join(a.src, claimRecordFile), filepath.Join(a.dst, claimRecordFile)
 	aside := a.aside("state.unenrolled")
-	hasState, hasCreds, hasJournal, hasPayout, hasClaim := lexists(srcState), lexists(srcCreds), lexists(srcJournal), lexists(srcPayout), lexists(srcClaim)
+	hasState, hasCreds, hasJournal, hasClaim := lexists(srcState), lexists(srcCreds), lexists(srcJournal), lexists(srcClaim)
+	hasPayout := lexists(srcPayout) && !lexists(dstPayout)
+	if lexists(srcPayout) && !hasPayout {
+		a.say("kept the payout address on file in %s; the one in %s is left there", a.dst, a.src)
+	}
 	if !hasState && !hasCreds && !hasJournal && !hasPayout && !hasClaim {
 		return nil
 	}
@@ -425,10 +433,7 @@ func (a *adoption) identity(t *bundleTxn) error {
 	conflict := func(evidence string) *identityConflict {
 		return &identityConflict{Destination: a.dst, Evidence: evidence, Source: a.src}
 	}
-	// The payout record is the address the next resume declares: one at the
-	// destination is that installation's choice, never overwritten by the
-	// adopted one's.
-	for _, p := range []string{dstCreds, dstJournal, dstPayout, dstClaim} {
+	for _, p := range []string{dstCreds, dstJournal, dstClaim} {
 		if lexists(p) {
 			return conflict(p)
 		}
