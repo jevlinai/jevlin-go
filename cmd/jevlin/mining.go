@@ -318,16 +318,20 @@ type miningEnableOutcome struct {
 
 // miningEnableDecision is what `mining enable` decides. When this
 // installation's decision is already enabled, the command's own name has
-// answered "Enable mining rewards?", so at a terminal it is not asked
-// again: a participant sent here to choose a payout address (status, or the
-// notice about a payout.json in the state directory) met a question that
-// defaults to No, and pressing Enter turned mining off with exit 0. Only
-// the missing address is asked, through finishMiningEnabled's own reader
-// (invariant 18); with an address already on file nothing is asked, and
-// `jevlin payout set` is how the address in force changes. Anything else,
-// and every non-interactive run, is askMiningQuestion as before.
+// answered "Enable mining rewards?", and nothing here changes that decision:
+// a participant sent here to choose a payout address (status, or the notice
+// about a payout.json in the state directory) met a question that defaults
+// to No, and pressing Enter turned mining off with exit 0; and without a
+// terminal the scripted path wrote the config's [mining] enabled, which a
+// config setup made at a terminal does not carry, so the same run turned it
+// off silently. Only the missing address is finished: asked at a terminal,
+// through finishMiningEnabled's own reader (invariant 18), and without one
+// recorded from the config's payout_address or said to be missing. With an
+// address already on file nothing is asked, and `jevlin payout set` is how
+// the address in force changes. A decision that is not enabled is
+// askMiningQuestion as before.
 func miningEnableDecision(stdin io.Reader, br *bufio.Reader, stdout, stderr io.Writer, getenv func(string) string, cfg *config.Config, store *auth.Store, interactive, participantHasOtherAgent bool) (miningEnableOutcome, int) {
-	if !interactive || store.ReadMiningDecision().State != auth.MiningEnabled {
+	if store.ReadMiningDecision().State != auth.MiningEnabled {
 		return askMiningQuestion(stdin, br, stdout, stderr, getenv, cfg, store, interactive, participantHasOtherAgent)
 	}
 	if address, ok, err := loadPayoutAddress(cfg.Miner); err == nil && ok {
@@ -335,7 +339,7 @@ func miningEnableDecision(stdin io.Reader, br *bufio.Reader, stdout, stderr io.W
 			"`jevlin payout set <address>` changes the address in force")
 		return miningEnableOutcome{enabled: true, payoutAddress: address}, exitOK
 	}
-	return finishMiningEnabled(stdin, br, stdout, stderr, getenv, cfg, store, true)
+	return finishMiningEnabled(stdin, br, stdout, stderr, getenv, cfg, store, interactive)
 }
 
 // askMiningQuestion is the one place "enable mining rewards?" is
@@ -457,7 +461,7 @@ func finishMiningEnabled(stdin io.Reader, br *bufio.Reader, stdout, stderr io.Wr
 
 	if !interactive {
 		if cfg.Mining.PayoutAddress == "" {
-			fmt.Fprintln(stdout, "mining is enabled in the config, but no payout_address was given and no terminal is "+
+			fmt.Fprintln(stdout, "mining is enabled, but no payout_address was given and no terminal is "+
 				"available to create a wallet; no wallet was created. Set mining.payout_address, or run "+
 				"`jevlin mining enable` at a terminal.")
 			return miningEnableOutcome{enabled: true}, exitOK
@@ -484,7 +488,7 @@ func finishMiningEnabled(stdin io.Reader, br *bufio.Reader, stdout, stderr io.Wr
 		addrLine, err := promptBufio(stderr, "Payout address (leave empty to create a wallet here): ", br)
 		if err != nil {
 			fmt.Fprintf(stderr, "\njevlin: %s; no payout address was recorded and no wallet was created. "+
-				"Mining stays enabled from your answer above; run `jevlin mining enable` to give it an address.\n", promptAbortedReason)
+				"Mining stays enabled; run `jevlin mining enable` to give it an address.\n", promptAbortedReason)
 			return miningEnableOutcome{}, exitUsage
 		}
 		address = strings.TrimSpace(addrLine)

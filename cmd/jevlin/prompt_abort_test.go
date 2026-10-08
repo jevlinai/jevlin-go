@@ -275,6 +275,56 @@ func TestMiningEnableOnAnEnabledInstallationAsksOnlyTheAddress(t *testing.T) {
 	})
 }
 
+// Without a terminal, `mining enable` on an installation whose decision is
+// already enabled used to run the scripted path, which writes the config's
+// [mining] enabled: a config setup made at a terminal carries no such key,
+// so the run turned mining off with exit 0 and no output, the command the
+// status hint sends a participant to. Now an enabled decision is never
+// changed: the address is recorded from the config's payout_address, or
+// said to be missing.
+func TestMiningEnableWithoutATerminalNeverTurnsAnEnabledDecisionOff(t *testing.T) {
+	for _, tc := range []struct {
+		name, address string
+	}{
+		{"no address in the config", ""},
+		{"an address in the config", participantAddress},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			platform := newStubPlatform(t)
+			cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
+			cfg, _, err := loadConfig(cfgPath, noEnv)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// What a config setup wrote at a terminal says about mining:
+			// nothing. The decision is the store's.
+			cfg.Mining.Enabled, cfg.MiningEnabledExplicit, cfg.Mining.PayoutAddress = false, false, tc.address
+			store, err := auth.OpenStore(stateDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.SaveMiningEnabled(true); err != nil {
+				t.Fatal(err)
+			}
+			var out, errOut bytes.Buffer
+			outcome, code := miningEnableDecision(strings.NewReader(""), bufio.NewReader(strings.NewReader("")), &out, &errOut, os.Getenv, cfg, store, false, false)
+			if code != exitOK || !outcome.enabled {
+				t.Fatalf("exit %d, outcome %+v\n%s%s", code, outcome, out.String(), errOut.String())
+			}
+			if got := store.ReadMiningDecision().State; got != auth.MiningEnabled {
+				t.Fatalf("mining decision is %q after a non-interactive `mining enable`, want still enabled", got)
+			}
+			got, ok, err := testPayoutRecord(t, stateDir).Load()
+			switch {
+			case tc.address == "" && (ok || !strings.Contains(out.String(), "no payout_address was given")):
+				t.Fatalf("with no address anywhere: recorded=%v %q, said %q", ok, got, out.String())
+			case tc.address != "" && (err != nil || !ok || got != tc.address):
+				t.Fatalf("the config's address was not recorded: %q ok=%v err=%v", got, ok, err)
+			}
+		})
+	}
+}
+
 // ── agents install's Proceed? [Y/n] ─────────────────────────────────────
 
 // The opposite default, and so the worse half: an empty line here means
