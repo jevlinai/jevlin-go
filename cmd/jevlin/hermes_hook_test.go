@@ -239,8 +239,9 @@ func TestHermesHookLeavesEverythingElseAlone(t *testing.T) {
 	}
 }
 
-// This hook rewrites a command Hermes has ALREADY decided to run.
-// Recognizing our own search tells us where a trace belongs and says
+// This hook runs before Hermes' terminal guard, which then judges the
+// command as modified; whether it may run is that guard's question, never
+// ours. Recognizing our own search tells us where a trace belongs and says
 // nothing about whether that command may execute — so the output carries
 // `modify` and nothing that could be read as permission, for every input,
 // whether we recognized the command or not. Hermes' own escalation verb
