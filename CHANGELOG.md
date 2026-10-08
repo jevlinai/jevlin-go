@@ -18,6 +18,14 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **Cursor on Windows asks before a PowerShell search with an apostrophe in
+  it.** The participant picks Cursor's terminal there, and Git Bash reads the
+  PowerShell form's here-string as an ordinary quoted string that an
+  apostrophe in the request ends, running whatever follows. Cursor's hooks now
+  allow that form only when the request holds no `'`; one that holds it waits
+  for your approval and reaches the router without Cursor's label. The skill
+  says to write an apostrophe as `\u0027`, which reaches the router as the
+  same query.
 - **The registration journal moved beside `credentials.json`.** `connect`
   used to keep `registration_pending.json` in the state directory, which a
   Codex-sandboxed command can write, so a forged journal could make the next
