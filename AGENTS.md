@@ -434,11 +434,12 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   per object does not close is a directory replaced after it was read and before its credentials
   were. Invariant 19 records that a top-level root could not be removed from inside Codex's macOS
   sandbox; nothing here establishes that for a Windows sandbox.
-  Only `doctor.go`, `state_acl*.go`, `wallet_acl*.go` and `setup_env_windows.go` (the owner's
-  name in an adoption refusal) may reference `inspectStateAccess`, `stateACL`, `winacl.Read` or
-  `winacl.PrincipalName`: naming a SID can reach a domain controller, so `acl_reach_test.go` fails
-  on a call from anywhere a search or a hook runs, `loadTraceKey` included, and
-  `perm_reads_test.go` holds `pkg/auth` to calling nothing from `winacl` but `RestrictToOwner`.
+  Only `doctor.go`, the state and wallet access files (`state_acl.go`, `wallet_acl.go` and their
+  per-platform halves) and `setup_env_windows.go` (the owner's name in an adoption refusal) may
+  reference `inspectStateAccess`, `stateACL`, `winacl.Read` or `winacl.PrincipalName`: naming a SID
+  can reach a domain controller, so `acl_reach_test.go` fails on a call from anywhere a search or a
+  hook runs, `loadTraceKey` included, and `perm_reads_test.go` holds `pkg/auth` to calling nothing
+  from `winacl` but `RestrictToOwner`.
   `judgeStateDescriptor` is pure, so `state_acl_test.go` runs on every OS, including through
   `cmdDoctor` with a fake backend; `state_acl_windows_test.go` runs the real reader. The reader,
   the namer and `RestrictToOwner` live in `internal/winacl` because `pkg/` cannot import `cmd/`
