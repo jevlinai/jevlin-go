@@ -364,7 +364,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	// reached. shouldResume itself is unchanged — it is still the cheap
 	// local disk check — but it is not consulted for a search that never
 	// got an answer.
-	if out.ResponseComplete && ops.spawnConnectResume != nil && shouldResume(cfg) {
+	if out.ResponseComplete && ops.spawnConnectResume != nil && shouldResume(cfg, getenv) {
 		_ = ops.spawnConnectResume(*cfgPath) // best effort; the next search resumes it if this one could not even start
 	}
 

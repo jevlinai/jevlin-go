@@ -97,7 +97,7 @@ func cmdMiningEnable(args []string, stdin io.Reader, stdout, stderr io.Writer, g
 	}
 
 	br := bufio.NewReader(stdin)
-	outcome, code := askMiningQuestion(stdin, br, stdout, stderr, getenv, cfg, store, isInteractive(stdin, stdout), participantHasOtherAgent)
+	outcome, code := miningEnableDecision(stdin, br, stdout, stderr, getenv, cfg, store, isInteractive(stdin, stdout), participantHasOtherAgent)
 	if code != exitOK {
 		return code
 	}
@@ -160,7 +160,7 @@ func cmdMiningEnable(args []string, stdin io.Reader, stdout, stderr io.Writer, g
 	}
 
 	// Already granted: act now rather than waiting for the next search.
-	_, code = pollOnce(ctx, stdout, stderr, client, store, cfg, &reg, key)
+	_, code = pollOnce(ctx, stdout, stderr, client, store, cfg, &reg, key, getenv)
 	return code
 }
 
@@ -314,6 +314,28 @@ func retryPendingRevoke(ctx context.Context, store *auth.Store, oauthClient *aut
 type miningEnableOutcome struct {
 	enabled       bool   // the participant chose (or config said) to enable mining
 	payoutAddress string // set only when enabled and an address exists; "" means "enabled, no wallet/address yet"
+}
+
+// miningEnableDecision is what `mining enable` decides. When this
+// installation's decision is already enabled, the command's own name has
+// answered "Enable mining rewards?", so at a terminal it is not asked
+// again: a participant sent here to choose a payout address (status, or the
+// notice about a payout.json in the state directory) met a question that
+// defaults to No, and pressing Enter turned mining off with exit 0. Only
+// the missing address is asked, through finishMiningEnabled's own reader
+// (invariant 18); with an address already on file nothing is asked, and
+// `jevlin payout set` is how the address in force changes. Anything else,
+// and every non-interactive run, is askMiningQuestion as before.
+func miningEnableDecision(stdin io.Reader, br *bufio.Reader, stdout, stderr io.Writer, getenv func(string) string, cfg *config.Config, store *auth.Store, interactive, participantHasOtherAgent bool) (miningEnableOutcome, int) {
+	if !interactive || store.ReadMiningDecision().State != auth.MiningEnabled {
+		return askMiningQuestion(stdin, br, stdout, stderr, getenv, cfg, store, interactive, participantHasOtherAgent)
+	}
+	if address, ok, err := loadPayoutAddress(cfg.Miner); err == nil && ok {
+		fmt.Fprintln(stdout, "mining is already enabled here, with payout address "+address+" on file; "+
+			"`jevlin payout set <address>` changes the address in force")
+		return miningEnableOutcome{enabled: true, payoutAddress: address}, exitOK
+	}
+	return finishMiningEnabled(stdin, br, stdout, stderr, getenv, cfg, store, true)
 }
 
 // askMiningQuestion is the one place "enable mining rewards?" is

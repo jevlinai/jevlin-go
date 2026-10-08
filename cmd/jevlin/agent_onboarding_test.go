@@ -431,6 +431,7 @@ type stubOnboardingAS struct {
 	declared             string
 	activeAddress        string // "" means no active binding yet (GET answers 404)
 	declareCalls         int
+	standingCalls        int // GET /v1/payout/declaration: the read-before-declare and the adoption's look
 	tokenCalls           int
 	assertionRedemptions int // /oauth/token calls that carried a non-empty assertion (the enrollment grant, as opposed to an ordinary refresh-token grant a second authenticated client needs)
 	// declareOutcome overrides the PUT response's shape for the hold-shape
@@ -503,6 +504,7 @@ func newStubAS(t *testing.T) *stubOnboardingAS {
 	})
 	mux.HandleFunc("GET /v1/payout/declaration", func(w http.ResponseWriter, _ *http.Request) {
 		f.mu.Lock()
+		f.standingCalls++
 		active := f.activeAddress
 		f.mu.Unlock()
 		// "nothing declared yet" is 200 with active: null, not a 404 — the
@@ -567,6 +569,14 @@ func (f *stubOnboardingAS) setRevokeFails(fails bool) {
 	f.mu.Lock()
 	f.revokeFails = fails
 	f.mu.Unlock()
+}
+
+// standingReads is how many times anything asked where this participant is
+// paid.
+func (f *stubOnboardingAS) standingReads() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.standingCalls
 }
 
 // setDeclareOutcome overrides what PUT /v1/payout/declaration answers, for
@@ -1157,10 +1167,10 @@ func TestDetachedResumePollsOnceAndExits(t *testing.T) {
 }
 
 func TestShouldResumeIsALocalCheckWithNoStoredRegistration(t *testing.T) {
-	if shouldResume(&config.Config{Mining: config.Mining{StateDir: filepath.Join(t.TempDir(), "state")}}) {
+	if shouldResume(&config.Config{Mining: config.Mining{StateDir: filepath.Join(t.TempDir(), "state")}}, noEnv) {
 		t.Fatal("shouldResume true with nothing on disk")
 	}
-	if shouldResume(&config.Config{}) {
+	if shouldResume(&config.Config{}, noEnv) {
 		t.Fatal("shouldResume true with an empty state dir")
 	}
 }
@@ -1205,7 +1215,7 @@ func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
 
 	t.Run("unclaimed: still actionable", func(t *testing.T) {
 		stateDir := shouldResumeFixture(t, "unclaimed", nil, false, "")
-		if !shouldResume(&config.Config{Mining: config.Mining{StateDir: stateDir}}) {
+		if !shouldResume(&config.Config{Mining: config.Mining{StateDir: stateDir}}, noEnv) {
 			t.Fatal("shouldResume false for an unclaimed registration still worth polling")
 		}
 	})
@@ -1214,14 +1224,14 @@ func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
 		stateDir := shouldResumeFixture(t, "claimed", []string{"credits"}, false, "")
 		cfg := configured
 		cfg.StateDir = stateDir
-		if shouldResume(resumeConfig(cfg)) {
+		if shouldResume(resumeConfig(cfg), noEnv) {
 			t.Fatal("shouldResume true for a search-only claim")
 		}
 	})
 
 	t.Run("expired: settled", func(t *testing.T) {
 		stateDir := shouldResumeFixture(t, "expired", nil, false, "")
-		if shouldResume(&config.Config{Mining: config.Mining{StateDir: stateDir}}) {
+		if shouldResume(&config.Config{Mining: config.Mining{StateDir: stateDir}}, noEnv) {
 			t.Fatal("shouldResume true for an expired registration")
 		}
 	})
@@ -1243,7 +1253,7 @@ func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
 			t.Fatal(err)
 		}
 		cfg := config.Mining{StateDir: stateDir, ASBaseURL: "https://as.example"}
-		if shouldResume(resumeConfig(cfg)) {
+		if shouldResume(resumeConfig(cfg), noEnv) {
 			t.Fatal("shouldResume true despite a stored decision of mining off")
 		}
 	})
@@ -1251,7 +1261,7 @@ func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
 	t.Run("not enrolled, mining.enabled = true but no as_url: settled", func(t *testing.T) {
 		stateDir := shouldResumeFixture(t, "claimed", []string{"mining"}, false, "")
 		cfg := config.Mining{StateDir: stateDir, Enabled: true, ASBaseURL: ""}
-		if shouldResume(resumeConfig(cfg)) {
+		if shouldResume(resumeConfig(cfg), noEnv) {
 			t.Fatal("shouldResume true with no mining.as_url configured")
 		}
 	})
@@ -1260,7 +1270,7 @@ func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
 		stateDir := shouldResumeFixture(t, "claimed", []string{"mining"}, true, "")
 		cfg := configured
 		cfg.StateDir = stateDir
-		if shouldResume(resumeConfig(cfg)) {
+		if shouldResume(resumeConfig(cfg), noEnv) {
 			t.Fatal("shouldResume true for a fully settled installation")
 		}
 	})
@@ -1276,7 +1286,7 @@ func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
 		}
 		cfg := configured
 		cfg.StateDir = stateDir
-		if shouldResume(resumeConfig(cfg)) {
+		if shouldResume(resumeConfig(cfg), noEnv) {
 			t.Fatal("shouldResume true for an address already confirmed declared")
 		}
 	})
@@ -1296,7 +1306,7 @@ func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
 		}
 		cfg := configured
 		cfg.StateDir = stateDir
-		if !shouldResume(resumeConfig(cfg)) {
+		if !shouldResume(resumeConfig(cfg), noEnv) {
 			t.Fatal("shouldResume false for an installation that can still enroll")
 		}
 	})
@@ -1312,7 +1322,7 @@ func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
 		}
 		cfg := configured
 		cfg.StateDir = stateDir
-		if !shouldResume(resumeConfig(cfg)) {
+		if !shouldResume(resumeConfig(cfg), noEnv) {
 			t.Fatal("shouldResume false for an enrolled installation with an undeclared address")
 		}
 	})
@@ -1725,7 +1735,7 @@ func TestStatusReportsBothAddressesOnBindingConflict(t *testing.T) {
 	withShortConnectTimings(t)
 	platform := newStubPlatform(t)
 	as := newStubAS(t)
-	as.setActiveAddress("twilight1operator")
+	as.setActiveAddress(plantedAddress)
 	cfgPath, stateDir := connectConfig(t, platform.srv.URL, as.srv.URL)
 
 	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
@@ -1748,7 +1758,7 @@ func TestStatusReportsBothAddressesOnBindingConflict(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	printAgentIdentityStatus([]string{"-config", cfgPath}, &stdout, &stderr, os.Getenv)
-	if !strings.Contains(stdout.String(), "twilight1operator") || !strings.Contains(stdout.String(), "twilight1nv60etsw245g8z00h4h322m4vr764z3840swpa") {
+	if !strings.Contains(stdout.String(), plantedAddress) || !strings.Contains(stdout.String(), "twilight1nv60etsw245g8z00h4h322m4vr764z3840swpa") {
 		t.Fatalf("status does not name both addresses:\n%s", stdout.String())
 	}
 	if !strings.Contains(stdout.String(), "HELD") {
@@ -3074,7 +3084,7 @@ func TestDetachedResumePersistsExpiredWithoutReplacing(t *testing.T) {
 	if !ok || reg.AgentID != "agent-1" || reg.Status != "expired" {
 		t.Fatalf("detached resume did not persist the expired identity: %+v ok=%v", reg, ok)
 	}
-	if shouldResume(mustLoadConfig(t, cfgPath)) {
+	if shouldResume(mustLoadConfig(t, cfgPath), noEnv) {
 		t.Fatal("shouldResume approved a replacement for an expired identity")
 	}
 }

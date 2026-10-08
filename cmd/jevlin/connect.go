@@ -1175,7 +1175,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 
 	if *resume {
 		callCtx, callCancel := context.WithTimeout(ctx, roundTrip)
-		_, code := pollOnce(callCtx, stdout, stderr, client, store, cfg, &reg, key)
+		_, code := pollOnce(callCtx, stdout, stderr, client, store, cfg, &reg, key, getenv)
 		callCancel()
 		return code
 	}
@@ -1183,7 +1183,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 	deadline := time.Now().Add(connectPollBudget)
 	for {
 		callCtx, callCancel := context.WithTimeout(ctx, roundTrip)
-		done, code := pollOnce(callCtx, stdout, stderr, client, store, cfg, &reg, key)
+		done, code := pollOnce(callCtx, stdout, stderr, client, store, cfg, &reg, key, getenv)
 		callCancel()
 		if done {
 			return code
@@ -1305,7 +1305,7 @@ func registrationHint(outcome miningEnableOutcome) []string {
 // done=false means "keep polling" (still unclaimed, or a transient
 // error worth retrying in the foreground — a resume does not retry,
 // it simply exits and lets the next resume try again).
-func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Client, store *auth.Store, cfg *config.Config, reg *auth.AgentRegistration, key string) (done bool, code int) {
+func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Client, store *auth.Store, cfg *config.Config, reg *auth.AgentRegistration, key string, getenv func(string) string) (done bool, code int) {
 	// WP2-adversarial-review finding 6: re-read the on-disk record before
 	// mutating it — reg may be stale relative to whatever the most recent
 	// write actually persisted (this function is called repeatedly across
@@ -1421,65 +1421,80 @@ func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Cl
 	// opted out after enrolling once must not keep declaring.
 	if miningActive(store) {
 		address, ok, aerr := loadPayoutAddress(cfg.Miner)
-		switch {
-		case aerr == nil && ok && !addressSettled(store, address):
+		if aerr == nil && !ok {
+			address, ok = payoutAddressToRecord(cfg, store, getenv, stdout)
+		}
+		if aerr == nil && ok && !addressSettled(store, address) {
 			_, miningClient, err := buildMiningClient(ctx, cfg.Mining)
 			if err != nil {
 				fmt.Fprintln(stderr, "jevlin:", err)
 				return true, exitOK // enrollment (if any, this call) already succeeded; a declare failure is not fatal to this poll
 			}
 			declarePayoutIfSafe(ctx, miningClient, store, address, stdout, stderr)
-		case aerr == nil && !ok:
-			adoptLegacyPayoutAddress(ctx, cfg, store, stdout, stderr)
 		}
 	}
 	return true, exitOK
 }
 
-// adoptLegacyPayoutAddress decides what a payout.json an older version left
-// in the state directory is worth, when none is on file beside
-// credentials.json. It is never declared: the state directory is where a
-// sandboxed command plants one. It is adopted into the payout record only
-// when the AS already has that exact address in force for this participant,
-// which changes nothing at the AS and saves a participant who upgraded from
-// choosing their address again. Anything else leaves it unread by anything
-// that declares, and the participant chooses with `jevlin mining enable`.
+// legacyPayoutNotice is what a run says about a payout.json in the state
+// directory it will not use. It never repeats the address: the file may be
+// a sandboxed command's, and an address in jevlin's own output reads as the
+// participant's.
+const legacyPayoutNotice = "payout: no address is on file beside credentials.json, and the payout.json in the state " +
+	"directory is not used (it is not this installation's own wallet address). Run `jevlin mining enable` at a " +
+	"terminal to choose the address to be paid at."
+
+// payoutAddressToRecord is the address to record and declare when none is
+// on file beside credentials.json, taken only from where no sandboxed
+// command can write: the config's [mining] payout_address, the
+// participant's scripted answer (the config's directory is outside every
+// writable root); or a payout.json an older version left in the state
+// directory, only when it is this installation's own wallet address, which
+// lives beside credentials.json too.
 //
-// After an adoption the state directory's copy is removed: it would be a
-// second record of the address, in the one place it can be rewritten, read
-// by nothing here and trusted by an older version run against the same
-// installation. Not adopted, it is left: it may be the only record of what
-// the participant once chose, and nothing here acts on it.
+// The rule used to be "the AS already has that address in force", and the
+// review showed a sandboxed command can make that true by itself: it runs
+// `jevlin payout set` with its own address in the window before the
+// participant's first declaration, plants a matching payout.json, and the
+// next foreground connect recorded the attacker's address as the
+// participant's own, the one later declarations read. The wallet is
+// evidence nothing in the state directory can forge; anything else in the
+// file is never recorded, never declared and never repeated, and the
+// participant chooses with `jevlin mining enable`.
 //
-// A resume Codex's sandbox started cannot write beside credentials.json; it
-// fails quietly, and the next foreground run adopts.
-func adoptLegacyPayoutAddress(ctx context.Context, cfg *config.Config, store *auth.Store, stdout, stderr io.Writer) {
+// Either address is declared even when it cannot be recorded: a resume
+// Codex's sandbox started cannot write beside credentials.json, and the
+// address is the participant's either way. The state directory's copy is
+// removed only once its address is recorded.
+func payoutAddressToRecord(cfg *config.Config, store *auth.Store, getenv func(string) string, stdout io.Writer) (string, bool) {
+	if a := cfg.Mining.PayoutAddress; a != "" {
+		if !isTwilightAddress(a) {
+			return "", false
+		}
+		_ = savePayoutAddress(cfg.Miner, a)
+		return a, true
+	}
 	legacy, ok, err := store.LoadLegacyPayoutAddress()
 	if err != nil || !ok {
-		return
+		return "", false
 	}
-	_, miningClient, err := buildMiningClient(ctx, cfg.Mining)
-	if err != nil {
-		fmt.Fprintln(stderr, "jevlin:", err)
-		return
+	if wallet := walletAddressOnFile(getenv); wallet == "" || wallet != legacy {
+		fmt.Fprintln(stdout, legacyPayoutNotice)
+		return "", false
 	}
-	standing, err := miningClient.PayoutStanding(ctx)
-	if err != nil {
-		fmt.Fprintln(stderr, "jevlin: payout standing:", err)
-		return
+	if err := savePayoutAddress(cfg.Miner, legacy); err == nil {
+		_ = store.RemoveLegacyPayoutAddress()
+		fmt.Fprintln(stdout, "payout: the payout.json an older version kept in the state directory names this "+
+			"installation's own wallet; it is now recorded beside credentials.json")
 	}
-	if standing == nil || standing.Active == nil || standing.Active.Address != legacy {
-		fmt.Fprintf(stdout, "payout address %s, which an older version kept in the state directory, is not in force "+
-			"and is not declared from there. Run `jevlin mining enable` to choose the address to declare.\n", legacy)
-		return
-	}
-	if err := savePayoutAddress(cfg.Miner, legacy); err != nil {
-		return
-	}
-	_ = store.ClearPayoutBindingHeld()
-	_ = store.SavePayoutDeclared(legacy)
-	_ = store.RemoveLegacyPayoutAddress()
-	fmt.Fprintln(stdout, "payout address", legacy, "is already in force; it is now recorded beside credentials.json")
+	return legacy, true
+}
+
+// isTwilightAddress is the rule every payout address this client records
+// meets: twilight bech32.
+func isTwilightAddress(a string) bool {
+	hrp, _, err := auth.DecodeBech32Address(a)
+	return err == nil && hrp == auth.TwilightHRP
 }
 
 // declarePayoutIfSafe is §5.5's read-before-declare rule (design f0ddb69):
@@ -1668,7 +1683,7 @@ func buildMiningClient(ctx context.Context, m config.Mining) (*auth.OAuthClient,
 // never run connect and never will. The os.Stat below is read-only and
 // costs nothing when there is nothing to resume — the overwhelmingly
 // common case.
-func shouldResume(cfg *config.Config) bool {
+func shouldResume(cfg *config.Config, getenv func(string) string) bool {
 	stateDir := cfg.Mining.StateDir
 	if stateDir == "" {
 		return false
@@ -1710,8 +1725,22 @@ func shouldResume(cfg *config.Config) bool {
 			return false
 		}
 		address, hasAddr, aerr := loadPayoutAddress(cfg.Miner)
-		if aerr != nil || !hasAddr {
-			return false // enrolled, nothing to declare
+		if aerr != nil {
+			return false
+		}
+		if !hasAddr {
+			// Nothing on file beside credentials.json: the resume records
+			// and declares only what payoutAddressToRecord would take, the
+			// config's address or a state-directory payout.json that is
+			// this installation's own wallet. Anything else leaves nothing
+			// for a resume to do, so none is spawned for it.
+			if a := cfg.Mining.PayoutAddress; a != "" && isTwilightAddress(a) {
+				address = a
+			} else if legacy, ok, lerr := store.LoadLegacyPayoutAddress(); lerr == nil && ok && legacy == walletAddressOnFile(getenv) {
+				address = legacy
+			} else {
+				return false // enrolled, nothing to declare
+			}
 		}
 		return !addressSettled(store, address)
 	default:

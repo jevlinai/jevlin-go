@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -580,6 +581,9 @@ type agentIdentityFacts struct {
 	PayoutAddress    string
 	HasPayoutAddress bool
 	PayoutAddressErr error
+	// LegacyPayout is a payout.json in the state directory with no record
+	// beside credentials.json: not used, and named without its address.
+	LegacyPayout bool
 
 	Held    auth.PayoutBindingHeld
 	HasHeld bool
@@ -620,6 +624,7 @@ func gatherAgentIdentity(args []string, getenv func(string) string) (agentIdenti
 	if f.HasRegistration {
 		f.Claim, f.HasClaim = claimFor(cfg.Miner, f.Registration.AgentID, nil)
 		f.PayoutAddress, f.HasPayoutAddress, f.PayoutAddressErr = loadPayoutAddress(cfg.Miner)
+		f.LegacyPayout = !f.HasPayoutAddress && lexists(filepath.Join(cfg.Mining.StateDir, payoutRecordFile))
 	}
 	// WP4b (design f0ddb69 §5.5): both of these are read-before-declare /
 	// conflict bookkeeping the store already has, no AS round trip needed.
@@ -718,7 +723,10 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 			if f.PayoutAddressErr == nil && f.HasPayoutAddress {
 				fmt.Fprintf(stdout, "        enrolled on %s, payout address %s\n", reg.LastEnrollmentSlot, f.PayoutAddress)
 			} else {
-				fmt.Fprintf(stdout, "        enrolled on %s, no payout address on file yet\n", reg.LastEnrollmentSlot)
+				fmt.Fprintf(stdout, "        enrolled on %s, no payout address on file yet — run `jevlin mining enable` at a terminal to choose one\n", reg.LastEnrollmentSlot)
+				if f.LegacyPayout {
+					fmt.Fprintln(stdout, "        a payout.json in the state directory is not used; only this installation's own wallet address would be")
+				}
 			}
 		} else if hasScope(reg.Scopes, "mining") {
 			switch f.Decision.State {

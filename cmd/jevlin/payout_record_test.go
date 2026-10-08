@@ -75,46 +75,25 @@ func TestTheResumeNeverDeclaresAnAddressOnlyTheStateDirNames(t *testing.T) {
 		t.Fatal("a payout.json that was not adopted was removed")
 	}
 	if _, ok, _ := testPayoutRecord(t, stateDir).Load(); ok {
-		t.Fatal("an address the AS does not have in force was adopted")
+		t.Fatal("an address from the state directory was recorded")
+	}
+	if strings.Contains(out, plantedAddress) {
+		t.Fatalf("the resume repeated the planted address:\n%s", out)
 	}
 }
 
-// A participant who upgraded has their address in the state directory and,
-// usually, already in force at the AS. That one is adopted: it changes
-// nothing at the AS, and saves them choosing it again.
-func TestALegacyAddressAlreadyInForceIsAdopted(t *testing.T) {
-	_, as, cfgPath, stateDir := enrolledButUndeclared(t)
-	legacy := plantStatePayout(t, stateDir, participantAddress)
-	as.setActiveAddress(participantAddress)
-
-	code, out, errOut := runConnect(t, cfgPath, nil)
-	if code != exitOK {
-		t.Fatalf("connect exited %d\n%s\n%s", code, out, errOut)
-	}
-	if n := as.declarationAttempts(); n != 0 {
-		t.Fatalf("adoption declared (%d attempts); it must only compare", n)
-	}
-	if got, ok, err := testPayoutRecord(t, stateDir).Load(); err != nil || !ok || got != participantAddress {
-		t.Fatalf("record beside credentials.json = %q ok=%v err=%v", got, ok, err)
-	}
-	store := mustStore(t, stateDir)
-	if got, ok, err := store.LoadPayoutDeclared(); err != nil || !ok || got != participantAddress {
-		t.Fatalf("declared record = %q ok=%v err=%v", got, ok, err)
-	}
-	if lexists(legacy) {
-		t.Fatal("the adopted address is still in the state directory")
-	}
-	if !strings.Contains(out, "already in force") {
-		t.Fatalf("connect did not say it adopted the address:\n%s", out)
-	}
-}
-
-// An address in the state directory that is not the one in force is never
-// declared and never adopted, whatever else is in force.
-func TestALegacyAddressNotInForceIsNeverDeclared(t *testing.T) {
+// The review: "the AS has exactly this address in force" was the whole
+// adoption rule, and a sandboxed command can make it true by itself. It runs
+// `jevlin payout set` with its own address in the window before the
+// participant's first declaration, plants a matching payout.json, and the
+// next foreground connect recorded the attacker's address beside
+// credentials.json as the participant's, where later declarations read it
+// and status shows it. Only this installation's own wallet address is
+// adopted now; this one is not recorded, declared or repeated.
+func TestAnAddressTheSandboxMadeActiveIsNotAdopted(t *testing.T) {
 	_, as, cfgPath, stateDir := enrolledButUndeclared(t)
 	legacy := plantStatePayout(t, stateDir, plantedAddress)
-	as.setActiveAddress(participantAddress)
+	as.setActiveAddress(plantedAddress)
 
 	code, out, errOut := runConnect(t, cfgPath, nil)
 	if code != exitOK {
@@ -124,13 +103,105 @@ func TestALegacyAddressNotInForceIsNeverDeclared(t *testing.T) {
 		t.Fatalf("declared %q (%d attempts)", as.declaredAddress(), n)
 	}
 	if _, ok, _ := testPayoutRecord(t, stateDir).Load(); ok {
-		t.Fatal("an address not in force was adopted")
+		t.Fatal("the sandbox's address was recorded as the participant's")
 	}
 	if !lexists(legacy) {
-		t.Fatal("an address that was not adopted was removed")
+		t.Fatal("a payout.json that was not adopted was removed")
 	}
-	if !strings.Contains(out, "is not in force and is not declared") || !strings.Contains(out, "jevlin mining enable") {
+	if strings.Contains(out+errOut, plantedAddress) {
+		t.Fatalf("connect repeated the planted address:\n%s%s", out, errOut)
+	}
+	if !strings.Contains(out, "is not used") || !strings.Contains(out, "jevlin mining enable") {
 		t.Fatalf("connect did not say what to do:\n%s", out)
+	}
+	var text, textErr strings.Builder
+	_ = statusMain([]string{"-config", cfgPath}, &text, &textErr, noEnv)
+	if strings.Contains(text.String(), plantedAddress) || !strings.Contains(text.String(), "jevlin mining enable") {
+		t.Fatalf("status repeated the planted address or gave no next step:\n%s", text.String())
+	}
+}
+
+// A participant who upgraded has, usually, the wallet they made at the
+// terminal: the payout.json an older version kept names it, and the wallet
+// lives beside credentials.json, which the state directory cannot forge.
+// That address is recorded, the state directory's copy removed, and
+// declared if it is not settled yet.
+func TestALegacyAddressThatIsTheInstallationsOwnWalletIsAdopted(t *testing.T) {
+	_, as, cfgPath, stateDir := enrolledButUndeclared(t)
+	walletDir, err := defaultWalletDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeWalletFixture(t, walletDir)
+	own := walletFixtureAddress(t)
+	legacy := plantStatePayout(t, stateDir, own)
+
+	code, out, errOut := runConnect(t, cfgPath, nil)
+	if code != exitOK {
+		t.Fatalf("connect exited %d\n%s\n%s", code, out, errOut)
+	}
+	if got, ok, err := testPayoutRecord(t, stateDir).Load(); err != nil || !ok || got != own {
+		t.Fatalf("record beside credentials.json = %q ok=%v err=%v", got, ok, err)
+	}
+	if lexists(legacy) {
+		t.Fatal("the adopted address is still in the state directory")
+	}
+	if got := as.declaredAddress(); got != own {
+		t.Fatalf("declared %q, want the installation's own wallet %q", got, own)
+	}
+}
+
+// A scripted install's answer is the config's [mining] payout_address, in a
+// directory no sandbox can write. With no record beside credentials.json
+// (an upgrade from a version that kept it in the state directory), the
+// resume records it and declares it, with no terminal and no prompt.
+func TestTheConfigsPayoutAddressIsRecordedAndDeclared(t *testing.T) {
+	_, as, cfgPath, stateDir := enrolledButUndeclared(t)
+	plantStatePayout(t, stateDir, plantedAddress)
+	raw, err := os.ReadFile(cfgPath) // #nosec G304 -- the test's own config
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfgText := strings.Replace(string(raw), "[mining]\n", "[mining]\npayout_address = \""+participantAddress+"\"\n", 1)
+	if cfgText == string(raw) {
+		t.Fatalf("the fixture config has no [mining] table:\n%s", raw)
+	}
+	writeFileT(t, cfgPath, cfgText)
+	// The enrolling resume above stamped its attempt; the next search's
+	// resume comes after the cooldown.
+	if err := os.Remove(resumeStampPath(stateDir)); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if !shouldResume(mustLoadConfig(t, cfgPath), noEnv) {
+		t.Fatal("no resume would be spawned for the config's address")
+	}
+
+	if code, out, errOut := runConnect(t, cfgPath, nil, "-resume"); code != exitOK {
+		t.Fatalf("resume exited %d\n%s\n%s", code, out, errOut)
+	}
+	if got := as.declaredAddress(); got != participantAddress {
+		t.Fatalf("declared %q, want the config's %q", got, participantAddress)
+	}
+	if got, ok, err := testPayoutRecord(t, stateDir).Load(); err != nil || !ok || got != participantAddress {
+		t.Fatalf("record beside credentials.json = %q ok=%v err=%v", got, ok, err)
+	}
+}
+
+// The ordinary state of an enrolled installation with nothing to adopt: no
+// payout.json anywhere. A connect makes no standing call for it and says
+// nothing about an older version's file.
+func TestNothingInTheStateDirectoryMeansNoAdoptionAndNoWords(t *testing.T) {
+	_, as, cfgPath, _ := enrolledButUndeclared(t)
+	before := as.standingReads()
+	code, out, errOut := runConnect(t, cfgPath, nil)
+	if code != exitOK {
+		t.Fatalf("connect exited %d\n%s\n%s", code, out, errOut)
+	}
+	if as.standingReads() != before {
+		t.Fatalf("connect asked the AS where this participant is paid with nothing to adopt (%d calls)", as.standingReads()-before)
+	}
+	if strings.Contains(out+errOut, "payout.json") {
+		t.Fatalf("connect spoke of a payout.json that is not there:\n%s%s", out, errOut)
 	}
 }
 
@@ -181,5 +252,37 @@ func TestTheAddressQuestionWritesBesideTheCredential(t *testing.T) {
 	}
 	if lexists(filepath.Join(stateDir, "payout.json")) {
 		t.Fatal("payout.json was written into the state directory")
+	}
+}
+
+// An older version's held note survives an upgrade beside the payout.json it
+// was about. Once that address is the installation's own wallet and the AS
+// has since put it in force (an operator activated the change), adopting it
+// leaves no stale HELD for status to show for ever.
+func TestAnAdoptionClearsAnOldHeldNote(t *testing.T) {
+	_, as, cfgPath, stateDir := enrolledButUndeclared(t)
+	walletDir, err := defaultWalletDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeWalletFixture(t, walletDir)
+	own := walletFixtureAddress(t)
+	plantStatePayout(t, stateDir, own)
+	store := mustStore(t, stateDir)
+	if err := store.SavePayoutBindingHeld(own, plantedAddress, auth.HeldReplacesActive); err != nil {
+		t.Fatal(err)
+	}
+	as.setActiveAddress(own)
+
+	if code, out, errOut := runConnect(t, cfgPath, nil); code != exitOK {
+		t.Fatalf("connect exited %d\n%s\n%s", code, out, errOut)
+	}
+	if _, ok, err := store.LoadPayoutBindingHeld(); err != nil || ok {
+		t.Fatalf("the old held note survived the adoption: ok=%v err=%v", ok, err)
+	}
+	var text, textErr strings.Builder
+	_ = statusMain([]string{"-config", cfgPath}, &text, &textErr, noEnv)
+	if strings.Contains(text.String(), "HELD") {
+		t.Fatalf("status still shows HELD:\n%s", text.String())
 	}
 }

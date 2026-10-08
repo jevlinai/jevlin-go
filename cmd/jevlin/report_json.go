@@ -154,6 +154,9 @@ type statusAgentJSON struct {
 	EnrolledAt     string   `json:"enrolled_at,omitempty"`
 	PayoutAddress  string   `json:"payout_address,omitempty"`
 	SlotRefusal    string   `json:"slot_refusal,omitempty"`
+	// LegacyPayoutUnused: a payout.json in the state directory and none on
+	// file beside credentials.json. Its address is never reported.
+	LegacyPayoutUnused bool `json:"legacy_payout_unused,omitempty"`
 }
 
 type statusPayoutHoldJSON struct {
@@ -233,6 +236,7 @@ func statusEnvelope(f agentIdentityFacts, as *statusASFacts) commandEnvelope {
 		if f.PayoutAddressErr == nil && f.HasPayoutAddress {
 			agent.PayoutAddress = f.PayoutAddress
 		}
+		agent.LegacyPayoutUnused = f.LegacyPayout
 		report.Agent = agent
 	}
 	if f.HasHeld {

@@ -218,7 +218,7 @@ func seedResumableRegistration(t *testing.T, root string) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if !shouldResume(&config.Config{Mining: config.Mining{StateDir: filepath.Join(root, "state")}}) {
+	if !shouldResume(&config.Config{Mining: config.Mining{StateDir: filepath.Join(root, "state")}}, noEnv) {
 		t.Fatal("the seeded registration is not resumable; the gate under test would prove nothing")
 	}
 }

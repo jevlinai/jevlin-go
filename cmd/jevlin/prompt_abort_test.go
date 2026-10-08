@@ -208,6 +208,73 @@ func TestAnInterruptAtThePayoutAddressCreatesNoWallet(t *testing.T) {
 	})
 }
 
+// `mining enable` on an installation already enabled skips the enable
+// question, which defaulted to No: a participant sent there to choose an
+// address pressed Enter and turned mining off. Only the address question is
+// asked, and an unanswered one leaves the decision enabled, records no
+// address and creates no wallet.
+func TestMiningEnableOnAnEnabledInstallationAsksOnlyTheAddress(t *testing.T) {
+	setup := func(t *testing.T) (store *auth.Store, stateDir, walletDir string, run func(in io.Reader) (miningEnableOutcome, int, string)) {
+		platform := newStubPlatform(t)
+		var cfgPath string
+		cfgPath, stateDir = connectConfig(t, platform.srv.URL, "")
+		cfg, _, err := loadConfig(cfgPath, noEnv)
+		if err != nil {
+			t.Fatal(err)
+		}
+		store, err = auth.OpenStore(stateDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.SaveMiningEnabled(true); err != nil {
+			t.Fatal(err)
+		}
+		walletDir = filepath.Join(t.TempDir(), "wallet")
+		t.Setenv("JEVLIN_WALLET_DIR", walletDir)
+		t.Setenv(walletPassphraseEnv, "correct horse battery staple")
+		return store, stateDir, walletDir, func(in io.Reader) (miningEnableOutcome, int, string) {
+			var errOut bytes.Buffer
+			outcome, code := miningEnableDecision(in, bufio.NewReader(in), &bytes.Buffer{}, &errOut, os.Getenv, cfg, store, true, false)
+			return outcome, code, errOut.String()
+		}
+	}
+	t.Run("an answer", func(t *testing.T) {
+		store, stateDir, _, run := setup(t)
+		outcome, code, errOut := run(strings.NewReader(participantAddress + "\n"))
+		if strings.Contains(errOut, "Enable mining rewards") {
+			t.Fatalf("the enable question was asked of an enabled installation:\n%s", errOut)
+		}
+		if code != exitOK || !outcome.enabled {
+			t.Fatalf("exit %d, outcome %+v", code, outcome)
+		}
+		if got := store.ReadMiningDecision().State; got != auth.MiningEnabled {
+			t.Fatalf("mining decision is %q, want still enabled", got)
+		}
+		if got, ok, err := testPayoutRecord(t, stateDir).Load(); err != nil || !ok || got != participantAddress {
+			t.Fatalf("the typed address was not recorded: %q ok=%v err=%v", got, ok, err)
+		}
+	})
+	endings(t, func(t *testing.T, stdin func(...string) *interruptReader) {
+		store, stateDir, walletDir, run := setup(t)
+		outcome, code, errOut := run(stdin())
+		if code == exitOK {
+			t.Fatalf("an unanswered address question exited %d (got %+v)", code, outcome)
+		}
+		if strings.Contains(errOut, "Enable mining rewards") {
+			t.Fatalf("the enable question was asked of an enabled installation:\n%s", errOut)
+		}
+		if got := store.ReadMiningDecision().State; got != auth.MiningEnabled {
+			t.Fatalf("mining decision is %q after an unanswered address question, want still enabled", got)
+		}
+		if _, ok, _ := testPayoutRecord(t, stateDir).Load(); ok {
+			t.Fatal("a payout address was recorded for a question nobody answered")
+		}
+		if lexists(filepath.Join(walletDir, walletKeyFile)) {
+			t.Fatal("a wallet was created for a question nobody answered")
+		}
+	})
+}
+
 // ── agents install's Proceed? [Y/n] ─────────────────────────────────────
 
 // The opposite default, and so the worse half: an empty line here means
