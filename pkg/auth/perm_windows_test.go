@@ -138,9 +138,17 @@ func TestAnotherPrincipalsEntryRefusesNothingOnLoad(t *testing.T) {
 	if _, err := s.ParticipationSecret(); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := s.EnsureTraceKey(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveAgentRegistration(AgentRegistration{AgentID: "a", ClaimCode: "c", Status: "unclaimed"}); err != nil {
+		t.Fatal(err)
+	}
 
 	grantUsersRead(t, dir, true)
-	for _, name := range []string{dpopKeyFile, refreshTokenFile, participationSecretFile} {
+	// Every credential, from the list doctor asks about: a file added to it
+	// is granted the entry here without this test being touched.
+	for _, name := range CredentialFiles() {
 		path := filepath.Join(dir, name)
 		grantUsersRead(t, path, false)
 		d, err := winacl.Read(path)
@@ -163,5 +171,11 @@ func TestAnotherPrincipalsEntryRefusesNothingOnLoad(t *testing.T) {
 	}
 	if _, err := s.ParticipationSecret(); err != nil {
 		t.Errorf("participation.secret refused: %v", err)
+	}
+	if _, err := s.TraceKey(); err != nil {
+		t.Errorf("trace.key refused: %v", err)
+	}
+	if _, ok, err := s.LoadAgentRegistration(); err != nil || !ok {
+		t.Errorf("agent.json = %v, %v; want it loaded", ok, err)
 	}
 }

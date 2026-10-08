@@ -241,11 +241,12 @@ func TestAMkdirAllThatStopsHalfwayLeavesNothingItMade(t *testing.T) {
 	}
 }
 
-// CredentialFiles is what doctor asks Windows about, by name. It is held to
-// the store's own writes, so a rename in one place cannot leave the report
-// looking at a file that no longer exists: each name the store writes for a
-// key, a token, a secret or the registration is on the list, and the list holds
-// nothing the store does not write.
+// CredentialFiles is what doctor asks Windows about, by name. This test calls
+// the five writers of the credential files and holds the list to what they
+// produce, so a rename in one place cannot leave the report looking at a file
+// that no longer exists. It does not find a writer it does not call: a file
+// added to the store is caught by TestEveryFileTheStoreNamesIsACredentialOrARecord,
+// which reads every call from the source.
 func TestCredentialFilesAreTheFilesTheStoreWritesForCredentials(t *testing.T) {
 	s, dir := newStore(t)
 	if _, err := s.DPoPKey(); err != nil {
@@ -255,6 +256,9 @@ func TestCredentialFilesAreTheFilesTheStoreWritesForCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := s.ParticipationSecret(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.EnsureTraceKey(); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SaveAgentRegistration(AgentRegistration{AgentID: "a", ClaimCode: "c", Status: "unclaimed"}); err != nil {

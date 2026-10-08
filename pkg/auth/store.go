@@ -47,12 +47,15 @@ const (
 const agentRegistrationFile = "agent.json"
 
 // CredentialFiles names the files in the state directory whose content
-// authorizes someone: the DPoP key, the refresh token, the participation
-// secret and the agent registration with its claim code. It is a closed list
-// on purpose. doctor reports who else can open them, and a directory a sandbox
-// can write is not one to enumerate, so the report asks for these by name.
+// authorizes someone or keys something: the DPoP key, the refresh token, the
+// participation secret, the trace key, and the agent registration with its
+// claim code. It is a closed list on purpose. doctor reports who else can open
+// them, and a directory a sandbox can write is not one to enumerate, so the
+// report asks for these by name. A file added to the store is held to this
+// list by credential_files_test.go, which fails until it is classified here or
+// as a record.
 func CredentialFiles() []string {
-	return []string{dpopKeyFile, refreshTokenFile, participationSecretFile, agentRegistrationFile}
+	return []string{dpopKeyFile, refreshTokenFile, participationSecretFile, traceKeyFile, agentRegistrationFile}
 }
 
 // ErrAgentRegistrationCorrupt identifies an undecodable agent.json whose
