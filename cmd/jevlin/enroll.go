@@ -776,7 +776,7 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 					// finding 15: name the refusal explicitly rather than let
 					// a participant discover it only from a resume's silent
 					// no-op.
-					fmt.Fprintln(stdout, "        mining scope granted, but not enrolled: "+reg.SlotRefusal)
+					fmt.Fprintln(stdout, "        mining scope granted, but not enrolled: "+slotRefusalText(reg.SlotRefusal, reg.OfferedSlots, f.Mining.PlatformSlot))
 				} else if !f.HasPayoutAddress {
 					fmt.Fprintln(stdout, "        mining enabled, no wallet yet (no terminal was available at setup) — "+
 						"run `jevlin mining enable` at a terminal, or set mining.payout_address")

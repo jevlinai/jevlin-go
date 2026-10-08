@@ -231,7 +231,7 @@ func statusEnvelope(f agentIdentityFacts, as *statusASFacts) commandEnvelope {
 			ClaimExpiresAt: reg.ClaimExpiresAt,
 			EnrolledSlot:   reg.LastEnrollmentSlot,
 			EnrolledAt:     reg.LastEnrollmentAt,
-			SlotRefusal:    reg.SlotRefusal,
+			SlotRefusal:    slotRefusalText(reg.SlotRefusal, reg.OfferedSlots, f.Mining.PlatformSlot),
 		}
 		if f.PayoutAddressErr == nil && f.HasPayoutAddress {
 			agent.PayoutAddress = f.PayoutAddress
@@ -343,7 +343,7 @@ func connectEnvelope(cfgPath string, getenv func(string) string, exitCode int, n
 				report.ClaimURL, report.ClaimCode = printableClaimArtifacts(claim, cfg.Platform.BaseURL)
 				report.ClaimExpiresAt = reg.ClaimExpiresAt
 				report.EnrolledSlot = reg.LastEnrollmentSlot
-				report.SlotRefusal = reg.SlotRefusal
+				report.SlotRefusal = slotRefusalText(reg.SlotRefusal, reg.OfferedSlots, cfg.Mining.PlatformSlot)
 			}
 		}
 	}

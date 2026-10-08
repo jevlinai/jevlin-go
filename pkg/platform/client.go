@@ -212,8 +212,8 @@ func (c *Client) Register(ctx context.Context, name, client string, requestedSco
 	if hasControlChar(wire.ClaimCode) {
 		return nil, errors.New("platform: claim_code contains a control character; refusing")
 	}
-	if hasControlChar(wire.ClaimExpiresAt) {
-		return nil, errors.New("platform: claim_expires_at contains a control character; refusing")
+	if err := auth.ValidTimestamp(wire.ClaimExpiresAt); err != nil {
+		return nil, fmt.Errorf("platform: register response: claim_expires_at: %w; refusing", err)
 	}
 	return &Registration{
 		AgentID:        wire.AgentID,
@@ -448,21 +448,24 @@ func decodeAgentStatusWire(data []byte, portalBaseURL string) (AgentStatus, erro
 		wire.Status = "unclaimed"
 		wire.Scopes = nil
 	}
+	// Every identifier here lands in agent.json, which status prints, so each
+	// is held to the shape a record holds it to (auth.ValidSlotName and the
+	// rest): a token, never a sentence, and never a control character.
 	for _, slot := range wire.Mining.Slots {
-		if hasControlChar(slot) {
-			return AgentStatus{}, errors.New("platform: a slot name in the status response contains a control character; refusing")
+		if auth.ValidSlotName(slot) != nil {
+			return AgentStatus{}, errors.New("platform: a slot name in the status response is not an identifier; refusing")
 		}
 	}
 	for _, sc := range wire.Scopes {
-		if hasControlChar(sc) {
-			return AgentStatus{}, errors.New("platform: a scope in the status response contains a control character; refusing")
+		if auth.ValidScope(sc) != nil {
+			return AgentStatus{}, errors.New("platform: a scope in the status response is not an identifier; refusing")
 		}
 	}
-	if le := wire.Mining.LastEnrollment; le != nil && (hasControlChar(le.Slot) || hasControlChar(le.MintedAt)) {
-		return AgentStatus{}, errors.New("platform: last_enrollment in the status response contains a control character; refusing")
+	if le := wire.Mining.LastEnrollment; le != nil && (auth.ValidSlotName(le.Slot) != nil || auth.ValidTimestamp(le.MintedAt) != nil) {
+		return AgentStatus{}, errors.New("platform: last_enrollment in the status response is not a slot name and a time; refusing")
 	}
-	if hasControlChar(wire.ClaimExpiresAt) || hasControlChar(wire.ClaimedAt) {
-		return AgentStatus{}, errors.New("platform: a claim time in the status response contains a control character; refusing")
+	if auth.ValidTimestamp(wire.ClaimExpiresAt) != nil || auth.ValidTimestamp(wire.ClaimedAt) != nil {
+		return AgentStatus{}, errors.New("platform: a claim time in the status response is not a timestamp; refusing")
 	}
 	// console_url gets the same origin-lock and control-character check
 	// as register's claim_url (invariant 12) — but dropped, not failed,
@@ -638,8 +641,8 @@ func (c *Client) ClaimCode(ctx context.Context, agentID, key string) (*ClaimBoot
 	if hasControlChar(wire.ClaimCode) {
 		return nil, errors.New("platform: claim_code contains a control character; refusing")
 	}
-	if hasControlChar(wire.ClaimExpiresAt) {
-		return nil, errors.New("platform: claim_expires_at contains a control character; refusing")
+	if err := auth.ValidTimestamp(wire.ClaimExpiresAt); err != nil {
+		return nil, fmt.Errorf("platform: claim-code response: claim_expires_at: %w; refusing", err)
 	}
 	return &ClaimBootstrap{
 		ClaimURL:       wire.ClaimURL,

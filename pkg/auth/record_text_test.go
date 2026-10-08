@@ -59,7 +59,7 @@ func validAgentRegistrationJSON(t *testing.T) map[string]any {
 		AgentID: "agent-1",
 		Status:  "claimed", Scopes: []string{"search", "mining"}, ClaimExpiresAt: "2026-09-16T00:00:00Z",
 		LastEnrollmentSlot: "twilight-slot-3", LastEnrollmentAt: "2026-09-16T00:00:00Z",
-		SlotRefusal: "more than one slot offered",
+		SlotRefusal: SlotRefusalAmbiguous, OfferedSlots: []string{"slot-a", "slot-b"},
 	})
 	if err != nil {
 		t.Fatal(err)

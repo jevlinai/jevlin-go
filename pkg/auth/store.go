@@ -380,8 +380,12 @@ type AgentRegistration struct {
 	// can name it explicitly instead of the participant discovering it
 	// only from a resume's silent no-op. Cleared the moment a slot
 	// actually resolves (config changes, or the platform stops offering
-	// more than one).
-	SlotRefusal string `json:"slot_refusal,omitempty"`
+	// more than one). It is a code (SlotRefusalNoSlot, SlotRefusalAmbiguous,
+	// SlotRefusalUnmatched) and OfferedSlots the slot names offered: the
+	// sentence is rendered where it is shown, never stored, so this record
+	// cannot carry one.
+	SlotRefusal  string   `json:"slot_refusal,omitempty"`
+	OfferedSlots []string `json:"offered_slots,omitempty"`
 }
 
 // SaveAgentRegistration persists the platform identity, overwriting
@@ -390,11 +394,11 @@ type AgentRegistration struct {
 // write-and-rename rather than createExclusive. A record
 // LoadAgentRegistration would refuse is not written.
 func (s *Store) SaveAgentRegistration(rec AgentRegistration) error {
-	if err := ValidAgentID(rec.AgentID); err != nil {
+	if err := checkAgentRegistrationShapes(rec); err != nil {
 		return fmt.Errorf("auth: refusing to store an agent registration: %w", err)
 	}
 	if field := recordTextProblem(rec); field != "" {
-		return fmt.Errorf("auth: refusing to store an agent registration whose %s holds a control, C1 or bidi character", field)
+		return fmt.Errorf("auth: refusing to store an agent registration whose %s holds a control, format or separator character", field)
 	}
 	raw, err := json.Marshal(rec)
 	if err != nil {
@@ -427,9 +431,9 @@ func (s *Store) LoadAgentRegistration() (rec AgentRegistration, ok bool, err err
 		return AgentRegistration{}, false, fmt.Errorf("%w: %s", ErrAgentRegistrationCorrupt, decodeProblem(err))
 	}
 	if field := recordTextProblem(rec); field != "" {
-		return AgentRegistration{}, false, fmt.Errorf("%w: its %s holds a control, C1 or bidi character", ErrAgentRegistrationCorrupt, field)
+		return AgentRegistration{}, false, fmt.Errorf("%w: its %s holds a control, format or separator character", ErrAgentRegistrationCorrupt, field)
 	}
-	if err := ValidAgentID(rec.AgentID); err != nil {
+	if err := checkAgentRegistrationShapes(rec); err != nil {
 		return AgentRegistration{}, false, fmt.Errorf("%w: %v", ErrAgentRegistrationCorrupt, err)
 	}
 	return rec, true, nil

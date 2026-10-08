@@ -1384,21 +1384,22 @@ func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Cl
 			return true, exitOK
 		}
 
-		slot, errText := chooseSlot(st.MiningSlots, cfg.Mining.PlatformSlot)
+		slot, refusal := chooseSlot(st.MiningSlots, cfg.Mining.PlatformSlot)
 		if slot == "" {
-			if errText == "" {
-				errText = "mining scope granted, but the platform offered no slot"
+			if refusal == "" {
+				refusal = auth.SlotRefusalNoSlot
 			}
 			// WP2-adversarial-review finding 15: persisted so shouldResume
 			// stops spawning a resume that can only hit this same wall
 			// again, and so status can name it explicitly. Best-effort —
-			// the refusal is reported to the caller either way.
-			reg.SlotRefusal = errText
+			// the refusal is reported to the caller either way. A code and
+			// the slots offered, never the sentence.
+			reg.SlotRefusal, reg.OfferedSlots = refusal, st.MiningSlots
 			_ = store.SaveAgentRegistration(*reg)
-			fmt.Fprintln(stderr, "jevlin:", errText)
+			fmt.Fprintln(stderr, "jevlin:", slotRefusalText(refusal, st.MiningSlots, cfg.Mining.PlatformSlot))
 			return true, exitTransport
 		}
-		reg.SlotRefusal = ""
+		reg.SlotRefusal, reg.OfferedSlots = "", nil
 		token, err := client.Enroll(ctx, reg.AgentID, key, slot)
 		if err != nil {
 			fmt.Fprintln(stderr, "jevlin: enroll:", err)
@@ -1607,12 +1608,11 @@ func addressSettled(store *auth.Store, address string) bool {
 // WP2-review ruling on judgment call 1: one slot offered, take it. More
 // than one, refuse and require mining.platform_slot naming which one —
 // automatic matching against the AS's own audience is a question for the
-// AS discovery document, not something this client guesses at. errText is
+// AS discovery document, not something this client guesses at. refusal is
 // empty unless a genuine refusal happened (more than one slot, and either
-// no platform_slot configured or one that names none of them), in which
-// case it names what was offered so the message the caller prints is
-// actionable.
-func chooseSlot(slots []string, platformSlot string) (slot, errText string) {
+// no platform_slot configured or one that names none of them): it is the
+// code agent.json records (auth.SlotRefusal*), and slotRefusalText says it.
+func chooseSlot(slots []string, platformSlot string) (slot, refusal string) {
 	switch len(slots) {
 	case 0:
 		return "", ""
@@ -1625,11 +1625,27 @@ func chooseSlot(slots []string, platformSlot string) (slot, errText string) {
 				return s, ""
 			}
 		}
-		return "", fmt.Sprintf("mining.platform_slot %q does not match any slot the platform offered (%s)",
-			platformSlot, strings.Join(slots, ", "))
+		return "", auth.SlotRefusalUnmatched
 	}
-	return "", fmt.Sprintf("the platform offered more than one mining slot (%s); set mining.platform_slot to name which one",
-		strings.Join(slots, ", "))
+	return "", auth.SlotRefusalAmbiguous
+}
+
+// slotRefusalText is the client's own sentence for a slot refusal agent.json
+// records as a code, naming the slots offered (tokens, auth.ValidSlotName)
+// and the configured platform_slot, so a refusal names what was offered and
+// the message is actionable without the record carrying any text of its own.
+func slotRefusalText(refusal string, offered []string, platformSlot string) string {
+	switch refusal {
+	case auth.SlotRefusalNoSlot:
+		return "mining scope granted, but the platform offered no slot"
+	case auth.SlotRefusalUnmatched:
+		return fmt.Sprintf("mining.platform_slot %q does not match any slot the platform offered (%s)",
+			platformSlot, strings.Join(offered, ", "))
+	case auth.SlotRefusalAmbiguous:
+		return fmt.Sprintf("the platform offered more than one mining slot (%s); set mining.platform_slot to name which one",
+			strings.Join(offered, ", "))
+	}
+	return ""
 }
 
 // buildMiningClient constructs the AS mining client from an

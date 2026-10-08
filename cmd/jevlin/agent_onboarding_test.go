@@ -910,15 +910,15 @@ func TestChooseSlot(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			slot, errText := chooseSlot(c.slots, c.platformSlot)
+			slot, refusal := chooseSlot(c.slots, c.platformSlot)
 			if slot != c.wantSlot {
 				t.Errorf("slot = %q, want %q", slot, c.wantSlot)
 			}
-			if c.wantErr && errText == "" {
-				t.Error("wanted a non-empty refusal message, got none")
+			if c.wantErr && slotRefusalText(refusal, c.slots, c.platformSlot) == "" {
+				t.Error("wanted a refusal with a message, got none")
 			}
-			if !c.wantErr && errText != "" {
-				t.Errorf("unexpected refusal message: %q", errText)
+			if !c.wantErr && refusal != "" {
+				t.Errorf("unexpected refusal: %q", refusal)
 			}
 		})
 	}
