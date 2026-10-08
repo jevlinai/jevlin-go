@@ -74,6 +74,9 @@ func renderShellCommand(sh shellKind, tokens []cmdToken) (string, error) {
 			out = append(out, tok.text)
 			continue
 		}
+		if !quotableFor(sh, tok.text) {
+			return "", fmt.Errorf("%s cannot carry a path containing control characters, invalid UTF-8 or unsupported quotes: %q", sh, tok.text)
+		}
 		switch sh {
 		case shellPOSIX:
 			out = append(out, posixQuoteArg(tok.text))
