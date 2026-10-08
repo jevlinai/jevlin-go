@@ -99,9 +99,19 @@ func TestTheIdentityBundleHoldsThePayoutAndClaimRecordsToItsRules(t *testing.T) 
 			}
 			t.Skipf("cannot make a symlink here: %v", err)
 		}
+		// The destination exists, as an installation's own directory does:
+		// without it every adoption failed on its first move, whatever the
+		// source held, and this proved nothing about the link.
+		if err := os.MkdirAll(dst, 0o700); err != nil {
+			t.Fatal(err)
+		}
 		a := &adoption{src: src, dst: dst, now: time.Now(), out: &bytes.Buffer{}, restrict: restrictToOwner}
-		if err := a.run(); err == nil {
+		err := a.run()
+		if err == nil {
 			t.Fatal("a symlinked payout.json was adopted")
+		}
+		if !strings.Contains(err.Error(), filepath.Join(src, payoutRecordFile)+" is a symlink") {
+			t.Fatalf("the refusal is not the link's: %v", err)
 		}
 		if len(a.moved) != 0 || lexists(filepath.Join(dst, credentialsFile)) {
 			t.Fatalf("moved %v despite the refusal", a.moved)
@@ -120,6 +130,9 @@ func TestTheIdentityBundleHoldsThePayoutAndClaimRecordsToItsRules(t *testing.T) 
 		// the identity, the two records beside the credential included.
 		walletErr := errors.New("the wallet would not move")
 		writeWalletFixture(t, filepath.Join(src, "wallet"))
+		if err := os.MkdirAll(dst, 0o700); err != nil {
+			t.Fatal(err)
+		}
 		a := &adoption{src: src, dst: dst, now: time.Now(), out: &bytes.Buffer{}, restrict: restrictToOwner,
 			moveFn: func(from, to string) error {
 				if filepath.Base(from) == "wallet" {
@@ -127,8 +140,11 @@ func TestTheIdentityBundleHoldsThePayoutAndClaimRecordsToItsRules(t *testing.T) 
 				}
 				return os.Rename(from, to)
 			}}
-		if err := a.run(); err == nil {
-			t.Fatal("the adoption succeeded despite the wallet failing")
+		if err := a.run(); err == nil || !strings.Contains(err.Error(), walletErr.Error()) {
+			t.Fatalf("the adoption did not fail at the wallet, so the records were never moved to be put back: %v", err)
+		}
+		if len(a.moved) < 3 {
+			t.Fatalf("only %v moved before the wallet failed; the rollback had nothing to undo", a.moved)
 		}
 		for _, rel := range []string{payoutRecordFile, claimRecordFile, credentialsFile} {
 			if !lexists(filepath.Join(src, rel)) || lexists(filepath.Join(dst, rel)) {
