@@ -1990,7 +1990,14 @@ func TestSetupEditsASymlinkedProfileThroughTheLink(t *testing.T) {
 		t.Fatal(err)
 	}
 	target := filepath.Join(dotfiles, "zshrc")
-	if err := os.WriteFile(target, []byte("alias ll='ls -l'\n"), 0o640); err != nil { // #nosec G306 -- a profile with a deliberate non-default mode, to prove it is kept
+	if err := os.WriteFile(target, []byte("alias ll='ls -l'\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The non-default mode is set with Chmod, not WriteFile: that mode passes
+	// through the umask, and 0077 would hand setup a 0600 profile, which is
+	// also what its replacement file is before any Chmod, so "kept" would prove
+	// nothing.
+	if err := os.Chmod(target, 0o640); err != nil { // #nosec G302 -- a profile with a deliberate non-default mode, to prove it is kept
 		t.Fatal(err)
 	}
 	if err := os.Symlink(target, s.profilePath()); err != nil {
