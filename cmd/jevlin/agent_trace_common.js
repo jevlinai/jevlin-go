@@ -1138,10 +1138,18 @@ const stripBridgeAssignments = (cmd) => {
   }
 }
 
+// The variable's name anywhere, in any ASCII case: PowerShell and cmd read
+// an environment variable's name without regard to case, and PowerShell
+// reaches it through spellings no assignment shape keeps up with (blanks,
+// a backtick continuation or a comment before the =, ${env:...},
+// Set-Item). One rule with bridgeMentionRe in bridge.go, pinned by
+// TestBridgeGuardsAgree.
+const BRIDGE_MENTION_RE = new RegExp(TRACE_BRIDGE_ENV, "i")
+
 // carriesUnremovableBridge: the command still mentions the variable in a
 // position this cannot prove is a standalone assignment. The adapter leaves
 // such a command exactly as it found it.
-const carriesUnremovableBridge = (cmd) => cmd.includes(TRACE_BRIDGE_ENV + "=") || cmd.includes(TRACE_BRIDGE_ENV + " =")
+const carriesUnremovableBridge = (cmd) => BRIDGE_MENTION_RE.test(cmd)
 
 // needsTraceBridge: our search command. A bridge already on it is not a
 // reason to stand down (H-R4); it is a reason to remove it first.

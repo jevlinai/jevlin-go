@@ -98,6 +98,7 @@ func TestBridgeUnwrapsItsOwnPowerShellForm(t *testing.T) {
 // statement. Such a command is left exactly as it was, and no lineage is
 // claimed for it.
 func TestBridgeLeavesWhatItCannotProveStandalone(t *testing.T) {
+	const search = "jevlin search --stdin"
 	for name, cmd := range map[string]string{
 		"inside the request body": `jevlin search --stdin <<'JSON'` + "\n" +
 			`{"version":1,"query":"what does ` + bridgeEnv + `=x do"}` + "\nJSON",
@@ -118,15 +119,45 @@ func TestBridgeLeavesWhatItCannotProveStandalone(t *testing.T) {
 		"PowerShell substitution":    "$env:" + bridgeEnv + " = \"$(touch /tmp/pwned)\"; jevlin search --stdin",
 		"cmd value with a quote":     "set " + bridgeEnv + "=x\" && jevlin search --stdin",
 	} {
-		t.Run(name, func(t *testing.T) {
-			got, ok := withTraceBridge(shellPOSIX, "OURS", cmd)
-			if ok {
-				t.Fatalf("rewrote a command carrying a bridge it could not remove:\n%s", got)
-			}
-			if got != cmd {
-				t.Fatalf("the command was changed anyway:\n got %q\nwant %q", got, cmd)
-			}
-		})
+		t.Run(name, func(t *testing.T) { leftAlone(t, shellPOSIX, cmd) })
+	}
+	// A foreign assignment the strip does not recognize must still be SEEN,
+	// or it rides inside the wrapper and runs after ours. PowerShell reads a
+	// variable's name in any case and allows any blank, a backtick
+	// continuation or a comment before the =, so the detector looks for the
+	// name itself.
+	for name, cmd := range map[string]string{
+		"two blanks before =": "$env:" + bridgeEnv + "  = 'x y'\n" + search,
+		"a tab before =":      "$env:" + bridgeEnv + "\t= 'x y'\n" + search,
+		"lowercase name":      "$env:" + strings.ToLower(bridgeEnv) + " = 'x y'\n" + search,
+		"not leading":         "Get-Date; $env:" + bridgeEnv + "  = '" + foreignBridge + "'; " + search,
+		"backtick continued":  "$env:" + bridgeEnv + " `\n= '" + foreignBridge + "'\n" + search,
+		"comment before =":    "$env:" + bridgeEnv + " <# c #> = '" + foreignBridge + "'; " + search,
+		"braced name":         "${env:" + bridgeEnv + "} = '" + foreignBridge + "'; " + search,
+		"Set-Item":            "Set-Item Env:" + bridgeEnv + " '" + foreignBridge + "'; " + search,
+		"SetEnvironmentVariable": "[Environment]::SetEnvironmentVariable('" + bridgeEnv + "', '" +
+			foreignBridge + "'); " + search,
+	} {
+		t.Run("powershell/"+name, func(t *testing.T) { leftAlone(t, shellPowerShell, cmd) })
+	}
+	// Git Bash on Windows hands a lowercase assignment to a process whose
+	// environment is case-insensitive, so it is the same variable there. The
+	// value is standard base64: outside the strip's alphabet, but plain
+	// enough that the leads guard would let a prefix through.
+	t.Run("lowercase POSIX", func(t *testing.T) {
+		leftAlone(t, shellPOSIX, strings.ToLower(bridgeEnv)+"=eyJ2Ijox+/= "+search)
+	})
+}
+
+// leftAlone asserts the adapter stands down and leaves cmd byte-identical.
+func leftAlone(t *testing.T, sh shellKind, cmd string) {
+	t.Helper()
+	got, ok := withTraceBridge(sh, "OURS", cmd)
+	if ok {
+		t.Fatalf("rewrote a command carrying a bridge it could not remove:\n%s", got)
+	}
+	if got != cmd {
+		t.Fatalf("the command was changed anyway:\n got %q\nwant %q", got, cmd)
 	}
 }
 
@@ -224,27 +255,35 @@ func TestBridgeGuardsAgree(t *testing.T) {
 		cmd   string
 		shell shellKind
 	}{
-		"plain posix":            {search, shellPOSIX},
-		"plain powershell":       {search, shellPowerShell},
-		"foreign posix bridge":   {bridgeEnv + "=" + foreignBridge + " " + search, shellPOSIX},
-		"foreign env bridge":     {"$env:" + bridgeEnv + " = '" + foreignBridge + "'\n" + search, shellPowerShell},
-		"foreign cmd bridge":     {"set " + bridgeEnv + "=" + foreignBridge + " && " + search, shellPOSIX},
-		"two foreign bridges":    {bridgeEnv + "=a " + bridgeEnv + "=b " + search, shellPOSIX},
-		"bridge inside the body": {search + " <<'JSON'\n{\"q\":\"" + bridgeEnv + "=x\"}\nJSON", shellPOSIX},
-		"bridge mid-command":     {search + " ; " + bridgeEnv + "=x", shellPOSIX},
-		"compound command":       {"for q in a b; do " + search + "; done", shellPOSIX},
-		"search after cd":        {"cd /tmp && " + search, shellPOSIX},
-		"search second in pipe":  {"echo x | " + search, shellPOSIX},
-		"search leads a pipe":    {search + " | head", shellPOSIX},
-		"leading assignment":     {"FOO=1 " + search, shellPOSIX},
-		"powershell compound":    {"foreach ($q in 1,2) { " + search + " }", shellPowerShell},
-		"quote-opening value":    {bridgeEnv + `='x ` + search + `; touch /tmp/pwned #' echo ok`, shellPOSIX},
-		"substituting value":     {bridgeEnv + `=$(touch /tmp/pwned) ` + search, shellPOSIX},
-		"blank bash keeps":       {bridgeEnv + "=x\u00a0" + search, shellPOSIX},
-		"kelvin sign value":      {bridgeEnv + "=\u212a " + search, shellPOSIX},
-		"powershell backtick":    {"$env:" + bridgeEnv + " = \"x`\"; " + search + "; \"\"\n" + search, shellPowerShell},
-		"cmd quoted value":       {"set " + bridgeEnv + "=x\" && " + search, shellPOSIX},
-		"base64url value":        {bridgeEnv + "=eyJ2IjoxfQ-_09 " + search, shellPOSIX},
+		"plain posix":             {search, shellPOSIX},
+		"plain powershell":        {search, shellPowerShell},
+		"foreign posix bridge":    {bridgeEnv + "=" + foreignBridge + " " + search, shellPOSIX},
+		"foreign env bridge":      {"$env:" + bridgeEnv + " = '" + foreignBridge + "'\n" + search, shellPowerShell},
+		"foreign cmd bridge":      {"set " + bridgeEnv + "=" + foreignBridge + " && " + search, shellPOSIX},
+		"two foreign bridges":     {bridgeEnv + "=a " + bridgeEnv + "=b " + search, shellPOSIX},
+		"bridge inside the body":  {search + " <<'JSON'\n{\"q\":\"" + bridgeEnv + "=x\"}\nJSON", shellPOSIX},
+		"bridge mid-command":      {search + " ; " + bridgeEnv + "=x", shellPOSIX},
+		"compound command":        {"for q in a b; do " + search + "; done", shellPOSIX},
+		"search after cd":         {"cd /tmp && " + search, shellPOSIX},
+		"search second in pipe":   {"echo x | " + search, shellPOSIX},
+		"search leads a pipe":     {search + " | head", shellPOSIX},
+		"leading assignment":      {"FOO=1 " + search, shellPOSIX},
+		"powershell compound":     {"foreach ($q in 1,2) { " + search + " }", shellPowerShell},
+		"quote-opening value":     {bridgeEnv + `='x ` + search + `; touch /tmp/pwned #' echo ok`, shellPOSIX},
+		"substituting value":      {bridgeEnv + `=$(touch /tmp/pwned) ` + search, shellPOSIX},
+		"blank bash keeps":        {bridgeEnv + "=x\u00a0" + search, shellPOSIX},
+		"kelvin sign value":       {bridgeEnv + "=\u212a " + search, shellPOSIX},
+		"powershell backtick":     {"$env:" + bridgeEnv + " = \"x`\"; " + search + "; \"\"\n" + search, shellPowerShell},
+		"cmd quoted value":        {"set " + bridgeEnv + "=x\" && " + search, shellPOSIX},
+		"base64url value":         {bridgeEnv + "=eyJ2IjoxfQ-_09 " + search, shellPOSIX},
+		"two blanks before =":     {"$env:" + bridgeEnv + "  = 'x y'\n" + search, shellPowerShell},
+		"a tab before =":          {"$env:" + bridgeEnv + "\t= 'x y'\n" + search, shellPowerShell},
+		"lowercase env name":      {"$env:" + strings.ToLower(bridgeEnv) + " = 'x y'\n" + search, shellPowerShell},
+		"lowercase env stripped":  {"$env:" + strings.ToLower(bridgeEnv) + " = '" + foreignBridge + "'\n" + search, shellPowerShell},
+		"not leading, two blanks": {"Get-Date; $env:" + bridgeEnv + "  = '" + foreignBridge + "'; " + search, shellPowerShell},
+		"braced env name":         {"${env:" + bridgeEnv + "} = '" + foreignBridge + "'; " + search, shellPowerShell},
+		"lowercase POSIX":         {strings.ToLower(bridgeEnv) + "=eyJ2Ijox+/= " + search, shellPOSIX},
+		"query names it":          {search + " <<'JSON'\n{\"q\":\"what is " + bridgeEnv + "\"}\nJSON", shellPOSIX},
 	}
 	input := map[string]map[string]string{}
 	for name, c := range cases {

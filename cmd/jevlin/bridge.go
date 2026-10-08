@@ -90,10 +90,22 @@ func stripBridgeAssignments(cmd string) string {
 	}
 }
 
+// bridgeMentionRe is the variable's name anywhere, in any ASCII case. The
+// name alone, not an assignment shape: PowerShell and cmd read an
+// environment variable's name without regard to case, and PowerShell puts
+// any run of blanks, a tab, a backtick line continuation or a <# #> comment
+// between `$env:NAME` and its `=`, and reaches the same variable through
+// ${env:NAME}, Set-Item Env:NAME and [Environment]::SetEnvironmentVariable.
+// An assignment shape would have to follow PowerShell's tokenizer to keep up;
+// the name does not. The cost is a search whose own text names the variable,
+// which runs without lineage. (?i) folds no non-ASCII rune into this name —
+// it has no K or S — so it agrees with the JavaScript copy's i flag.
+var bridgeMentionRe = regexp.MustCompile(`(?i)` + bridgeEnv)
+
 // carriesUnremovableBridge reports whether the command still mentions the
 // bridge somewhere this cannot prove is a standalone assignment.
 func carriesUnremovableBridge(cmd string) bool {
-	return strings.Contains(cmd, bridgeEnv+"=") || strings.Contains(cmd, bridgeEnv+" =")
+	return bridgeMentionRe.MatchString(cmd)
 }
 
 // withTraceBridge returns cmd carrying bridge in sh's syntax, and whether the
