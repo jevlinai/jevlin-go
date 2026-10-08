@@ -29,6 +29,24 @@ The first release replaces this heading with its own.
   can still reach the rewards service with this installation's access in the
   moments before your address is in force; `jevlin payout show` says which
   address is.
+- **Setup refuses a binary that someone else could replace.** `setup`,
+  `agents install` and `agents prefer` record the binary's path in your
+  agents' hooks and skills, and setup puts its directory on PATH. They now
+  refuse a binary under the temp directory, or one that sits in a directory
+  every user can write or another user owns. A directory writable by `admin`,
+  `wheel`, `sudo` or `root`, as a Homebrew prefix is, is accepted; one
+  writable by any other shared group, such as Debian's `staff` on
+  `/usr/local`, gets a warning and setup goes on. On Windows only the
+  temp-directory rule is checked. Move a refused binary somewhere only you
+  can write, such as `~/.local/bin`, and run it from there.
+- **Cursor on Windows asks before a PowerShell search with an apostrophe in
+  it.** The participant picks Cursor's terminal there, and Git Bash reads the
+  PowerShell form's here-string as an ordinary quoted string that an
+  apostrophe in the request ends, running whatever follows. Cursor's hooks now
+  allow that form only when the request holds no `'`; one that holds it waits
+  for your approval and reaches the router without Cursor's label. The skill
+  says to write an apostrophe as `\u0027`, which reaches the router as the
+  same query.
 - **The registration journal moved beside `credentials.json`.** `connect`
   used to keep `registration_pending.json` in the state directory, which a
   Codex-sandboxed command can write, so a forged journal could make the next
@@ -186,6 +204,13 @@ The first release replaces this heading with its own.
   it is sent only while a trace envelope rides, and `JEVLIN_TRACE=off` still
   sends none of it. `connect` also names the build (`jevlin/<version>`) when it
   registers an agent.
+- **A bridge the hooks did not write is removed only when its value is one.**
+  Before replacing a `JEVLIN_TRACE_BRIDGE` assignment already on a command, the
+  hooks and the opencode and Pi adapters now require its value to be base64url,
+  the only shape a real bridge has. A value that opened a quote used to be cut
+  at its first blank, which could turn text the shell would have read as a
+  quoted string into commands it ran. Such a command is now left exactly as
+  written.
 - **The trace prefix no longer edits a command it cannot carry.** The bridge's
   POSIX prefix binds to the first command of a line, so the hooks now write it
   only when that command is the search itself. Before, a loop around a search

@@ -35,19 +35,27 @@ import (
 	"strings"
 )
 
+// bridgeValue is the only value a recognized assignment may carry: the
+// base64url alphabet the bridge is encoded in (encodeTraceBridge), with no
+// quote, escape or shell metacharacter. A quote-unaware cut through any other
+// value can end inside a string the shell would have read as data, and turn
+// that data into code. Case-sensitive even under (?i), which in Go would fold
+// k and s into U+212A and U+017F where JavaScript's i does not.
+const bridgeValue = `(?-i:[A-Za-z0-9_-]*)`
+
 // bridgeAssignmentRe matches one standalone bridge assignment at the START of
 // a command, in each declared shell's syntax. It is pinned to the JavaScript
 // copy in agent_trace_common.js by TestBridgeGuardsAgree.
 var bridgeAssignmentRe = regexp.MustCompile(
 	`(?i)^(?:` +
 		// POSIX: NAME=value as a leading word.
-		bridgeEnv + `=[^\s]*\s+` +
+		bridgeEnv + `=` + bridgeValue + `[ \t\n]+` +
 		`|` +
 		// PowerShell: $env:NAME = … as its own statement.
-		`\$env:` + bridgeEnv + `\s*=\s*(?:'[^']*'|"[^"]*"|[^\s;]*)\s*[;\n]\s*` +
+		`\$env:` + bridgeEnv + `\s*=\s*(?:'` + bridgeValue + `'|"` + bridgeValue + `"|` + bridgeValue + `)\s*[;\n]\s*` +
 		`|` +
 		// cmd: set NAME=value as its own command.
-		`set\s+` + bridgeEnv + `=[^&\n]*(?:&+|\n)\s*` +
+		`set\s+` + bridgeEnv + `=` + bridgeValue + `[ \t]*(?:&+|\n)\s*` +
 		`)`)
 
 // posixSearchLeadsRe proves an assignment prefix would reach the search:
@@ -82,10 +90,22 @@ func stripBridgeAssignments(cmd string) string {
 	}
 }
 
+// bridgeMentionRe is the variable's name anywhere, in any ASCII case. The
+// name alone, not an assignment shape: PowerShell and cmd read an
+// environment variable's name without regard to case, and PowerShell puts
+// any run of blanks, a tab, a backtick line continuation or a <# #> comment
+// between `$env:NAME` and its `=`, and reaches the same variable through
+// ${env:NAME}, Set-Item Env:NAME and [Environment]::SetEnvironmentVariable.
+// An assignment shape would have to follow PowerShell's tokenizer to keep up;
+// the name does not. The cost is a search whose own text names the variable,
+// which runs without lineage. (?i) folds no non-ASCII rune into this name —
+// it has no K or S — so it agrees with the JavaScript copy's i flag.
+var bridgeMentionRe = regexp.MustCompile(`(?i)` + bridgeEnv)
+
 // carriesUnremovableBridge reports whether the command still mentions the
 // bridge somewhere this cannot prove is a standalone assignment.
 func carriesUnremovableBridge(cmd string) bool {
-	return strings.Contains(cmd, bridgeEnv+"=") || strings.Contains(cmd, bridgeEnv+" =")
+	return bridgeMentionRe.MatchString(cmd)
 }
 
 // withTraceBridge returns cmd carrying bridge in sh's syntax, and whether the
