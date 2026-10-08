@@ -6,6 +6,8 @@ import (
 	"errors"
 	"os"
 	"syscall"
+
+	"github.com/jevlinai/jevlin-go/pkg/fsx"
 )
 
 var (
@@ -16,39 +18,25 @@ var (
 // tryLockFile on Windows: an exclusive open (share mode 0) IS the lock,
 // and a sharing violation means another flush holds it.
 func tryLockFile(path string) (*os.File, bool, error) {
-	name, err := syscall.UTF16PtrFromString(path)
-	if err != nil {
-		return nil, false, err
-	}
-	h, err := syscall.CreateFile(
-		name,
-		syscall.GENERIC_READ|syscall.GENERIC_WRITE,
-		0,
-		nil,
-		syscall.OPEN_ALWAYS,
-		syscall.FILE_ATTRIBUTE_NORMAL,
-		0,
-	)
+	// Share mode 0, and the state dir being a writable root of Codex's
+	// sandbox, a link at the name refused rather than followed.
+	f, err := fsx.OpenLock(path)
 	if err != nil {
 		if errors.Is(err, errSharingViolation) || errors.Is(err, errLockViolation) {
 			return nil, false, nil
 		}
 		return nil, false, err
 	}
-	return os.NewFile(uintptr(h), path), true, nil
+	return f, true, nil
 }
 
 // tryFlushLock is tryLockFile with the flush's read-only fallback (see
 // flushlock.go): an access-denied read-write open retries as a share-mode-0
 // read handle on the existing file, which is the same exclusive lock.
 func tryFlushLock(path string) (*os.File, bool, flushLockMode, error) {
-	name, err := syscall.UTF16PtrFromString(path)
-	if err != nil {
-		return nil, false, flushLockReadWrite, err
-	}
 	mode := flushLockReadWrite
-	h, err := syscall.CreateFile(name, syscall.GENERIC_READ|syscall.GENERIC_WRITE, 0, nil,
-		syscall.OPEN_ALWAYS, syscall.FILE_ATTRIBUTE_NORMAL, 0)
+	// Share mode 0 is the lock; fsx refuses a link or junction at the name.
+	f, err := fsx.OpenLock(path)
 	if err != nil {
 		switch classifyFlushLockOpenError(err, false) {
 		case flushOpenBusy:
@@ -58,8 +46,7 @@ func tryFlushLock(path string) (*os.File, bool, flushLockMode, error) {
 			return nil, false, mode, err
 		}
 		mode = flushLockReadOnly
-		h, err = syscall.CreateFile(name, syscall.GENERIC_READ, 0, nil,
-			syscall.OPEN_EXISTING, syscall.FILE_ATTRIBUTE_NORMAL, 0)
+		f, err = fsx.OpenLockExisting(path)
 		if err != nil {
 			switch classifyFlushLockOpenError(err, true) {
 			case flushOpenBusy:
@@ -71,7 +58,7 @@ func tryFlushLock(path string) (*os.File, bool, flushLockMode, error) {
 			}
 		}
 	}
-	return os.NewFile(uintptr(h), path), true, mode, nil
+	return f, true, mode, nil
 }
 
 // classifyFlushLockOpenError is the Windows fallback decision. The exclusive

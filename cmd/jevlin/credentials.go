@@ -48,6 +48,7 @@ import (
 	"github.com/jevlinai/jevlin-go/internal/netdial"
 	"github.com/jevlinai/jevlin-go/pkg/auth"
 	"github.com/jevlinai/jevlin-go/pkg/config"
+	"github.com/jevlinai/jevlin-go/pkg/fsx"
 )
 
 const (
@@ -151,6 +152,14 @@ func resolveAPIKey(getenv func(string) string, m config.Miner) (string, keySourc
 // readCredentials reads and validates the file. Mode checks are gated by
 // posixModes exactly as the wallet's are: Go reports 0777 for every file
 // on Windows, where the directory ACL is the guard.
+// credentialsMaxBytes bounds credentials.json, a version and a key.
+const credentialsMaxBytes = 64 << 10
+
+// credentialsCheckedHook runs between readCredentials' checks on the name and
+// its read, when a test sets it: the seam a test uses to replace the file at
+// exactly that moment. Nil in production.
+var credentialsCheckedHook func(path string)
+
 func readCredentials(path string) (*credentials, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -166,9 +175,19 @@ func readCredentials(path string) (*credentials, error) {
 		return nil, fmt.Errorf("credentials: %s is readable by others (%04o); refusing — chmod 600 it, or re-run: jevlin login",
 			path, info.Mode().Perm())
 	}
-	data, err := os.ReadFile(path) // #nosec G304 -- our own state dir plus a fixed name
+	if credentialsCheckedHook != nil {
+		credentialsCheckedHook(path)
+	}
+	// The checks above name the file; it is read by one open that refuses a
+	// link and does not wait on a FIFO, and the mode is checked again on
+	// what was opened, so the name cannot be replaced between them.
+	data, held, err := fsx.ReadRegularNoFollow(path, credentialsMaxBytes)
 	if err != nil {
 		return nil, err
+	}
+	if posixModes && held.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf("credentials: %s is readable by others (%04o); refusing — chmod 600 it, or re-run: jevlin login",
+			path, held.Mode().Perm())
 	}
 	var c credentials
 	if err := json.Unmarshal(data, &c); err != nil {

@@ -19,10 +19,12 @@ package main
 //
 // Two things keep this honest. The rendered form is built by the same
 // functions the skill uses, so the recognizer cannot drift from what the
-// participant's agent was taught; and the binary in the command is still
-// identified by os.SameFile, not by its spelling, so a path that reaches this
-// same file through a link is recognized while a different program with a
-// similar name is not.
+// participant's agent was taught; and the binary in the command must be
+// spelled exactly as this hook's own path (os.Executable, the spelling
+// `agents install` renders into the skill). A path that reaches the same file
+// another way, through a link or as /proc/self/exe, is not recognized: what a
+// path names can depend on the process resolving it, and the shell that later
+// runs the command is not the hook.
 //
 // This decides whether to auto-allow OUR OWN search and to stamp lineage for
 // it. It is a permission answer, so it stays exact: everything it cannot
@@ -323,14 +325,16 @@ func readRenderedPath(sh shellKind, raw string) (string, bool) {
 }
 
 // binaryPathRunsAsRead reports whether the binary path in a command names, to
-// the system that runs it, the file sameBinary resolves it to.
+// the system that runs it, the file the hook takes it for.
 //
-// sameBinary resolves a symlink before the `..` that follows it, the way a
-// POSIX kernel does, so on macOS and Linux the two agree. Windows does not: it
-// collapses `a\..` as text before it opens anything, whatever `a` is. So with
-// `link` pointing elsewhere, `C:\X\link\..\bin\jevlin.exe` resolves to this
-// binary for sameBinary and runs `C:\X\bin\jevlin.exe` on Windows. Windows
-// also strips the dots and spaces that end an element before it opens it, so
+// It is the second of two guards. sameBinary already requires the exact
+// spelling this hook was started by, so a path reaches this one only if the
+// hook itself was launched by that spelling; what is left is a spelling a
+// Windows runner reads differently. Windows collapses `a\..` as text before it
+// opens anything, whatever `a` is, where a POSIX kernel follows the link `a`
+// first: with `link` pointing elsewhere, `C:\X\link\..\bin\jevlin.exe` reaches
+// this binary through the link and runs `C:\X\bin\jevlin.exe`. Windows also
+// strips the dots and spaces that end an element before it opens it, so
 // an element spelled `...` or `.. ` may be read as one of those two. A binary
 // path holding any element that ends in a dot or a space is therefore not
 // taken on Windows, which covers `.` and `..` themselves. The skill renders
@@ -350,34 +354,28 @@ func binaryPathRunsAsRead(goos, path string) bool {
 	return true
 }
 
-// sameBinary is the identity check: the command's own path, resolved, is the
-// file this process is running from. A different program that happens to be
-// spelled the same way is refused; this file reached through a link is not.
+// sameBinary is the identity check: the command names this binary by exactly
+// the path this process was started by, which is the path the skill renders
+// (agents install spells the binary with os.Executable), and that path is
+// this installation's regular file. Any other spelling is refused, even one
+// that reaches this file when the hook resolves it: a path such as
+// /proc/self/exe or /proc/self/cwd/... names one file to the hook and another
+// to the shell that later runs the command, so resolving a candidate in this
+// process says nothing about what the shell will execute.
 func sameBinary(candidate string, executable func() (string, error)) bool {
 	if candidate == "" || !filepath.IsAbs(candidate) {
 		return false
 	}
 	own, err := executable()
-	if err != nil || !filepath.IsAbs(own) {
+	if err != nil || own != candidate {
 		return false
 	}
-	own, err = filepath.EvalSymlinks(own)
+	resolved, err := filepath.EvalSymlinks(own)
 	if err != nil {
 		return false
 	}
-	resolved, err := filepath.EvalSymlinks(candidate)
-	if err != nil {
-		return false
-	}
-	ownInfo, err := os.Stat(own)
-	if err != nil || !ownInfo.Mode().IsRegular() {
-		return false
-	}
-	candidateInfo, err := os.Stat(resolved)
-	if err != nil {
-		return false
-	}
-	return os.SameFile(ownInfo, candidateInfo)
+	info, err := os.Stat(resolved)
+	return err == nil && info.Mode().IsRegular()
 }
 
 // isOneVersionOneRequest holds the body to the same contract `search --stdin`

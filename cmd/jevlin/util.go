@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -76,4 +77,31 @@ func newFlagSet(name string, stderr io.Writer) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	return fs
+}
+
+// onceString is a string flag that refuses to be set twice. The flag
+// package lets a later occurrence win, and a Claude Code allow rule is a
+// prefix match ending after this installation's `-config <path>`, so
+// anything appended to it — a second -config — would run unprompted with
+// another config's router and the same key.
+type onceString struct {
+	value string
+	set   bool
+}
+
+func (o *onceString) String() string { return o.value }
+
+func (o *onceString) Set(v string) error {
+	if o.set {
+		return errors.New("may be given only once")
+	}
+	o.value, o.set = v, true
+	return nil
+}
+
+// onceStringFlag defines a flag whose value can be given at most once.
+func onceStringFlag(fs *flag.FlagSet, name, usage string) *string {
+	o := &onceString{}
+	fs.Var(o, name, usage)
+	return &o.value
 }
