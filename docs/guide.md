@@ -56,8 +56,11 @@ confirmations and `wallet send`'s: a typed no exits 0, no answer exits non-zero.
 
 Setup ends by printing a claim link and waits a few minutes for you to visit it. You need not do
 it then: search already works, and using an agent later resumes the claim on its own. An interrupted registration is finished on the next run, never registered twice. A lost local
-record is rebuilt from the platform. If the platform no longer recognizes the key, `connect`
-stops, and `jevlin connect -force` replaces the credential: run it only on purpose. An
+record is rebuilt from the platform, and so is one that names an agent the platform does not know
+for your stored key, which is what an agent's sandbox can leave in the state directory, or an
+older version interrupted while it replaced an expired registration. If the platform no longer
+recognizes the key, `connect` stops, and `jevlin connect -force` replaces the credential: run it
+only on purpose. An
 unclaimed registration that expires is replaced by the next `jevlin connect` you run, changing
 only the platform agent and its key; a background resume never replaces one. A lost claim link
 is replaced too: for a rebuilt registration that is still unclaimed, a foreground

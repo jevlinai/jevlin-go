@@ -124,8 +124,12 @@ the named tests.
     from the journal on the next run, never by a second `register`. The journal is consulted before
     anything else. It lives beside `credentials.json`, never in the state dir: a sandboxed agent can
     write the state dir, and the journal can authorize replacing the credential. A
-    `registration_pending.json` found in the state dir is discarded unread. A lost or unreadable record beside a stored credential is rebuilt through
-    `GET /v1/agents/me` with nothing local changed before a valid answer. `-force` bypasses
+    `registration_pending.json` found in the state dir is discarded unread. A lost or unreadable
+    record beside a stored credential, or one naming an agent the platform does not know for that
+    credential, is rebuilt through `GET /v1/agents/me` by a foreground `connect`, with nothing local
+    changed before a valid answer: the credential is the authority, because it lives outside every
+    writable root and `agent.json` does not. Unreadable includes a record holding a character a
+    terminal acts on (`LoadAgentRegistration`). `-force` bypasses
     recovery and authorizes deliberate replacement where local state would otherwise refuse a
     fresh registration. Separately and without `-force`, an ordinary foreground `connect` may
     replace a registration the platform has positively verified as expired; that replacement
@@ -283,7 +287,11 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   (`remintClaimLink`: minting kills the old code, so only a deliberate foreground connect asks,
   the fresh link is persisted before it is printed, and every failure is exactly the old
   no-link dead end). The journal can hold a platform key, so `-purge-state` removes it with
-  the credential (`registration_journal_purge_test.go`). For participants:
+  the credential (`registration_journal_purge_test.go`). A record that names an agent the
+  platform does not know for the stored key is rebuilt by a foreground connect before anything
+  is printed or replaced (`rebuildUnknownRegistration`), never by the resume or under `-force`:
+  `registration_unknown_agent_test.go`, against a stub that answers status only for the key's
+  own agent, as the router does. For participants:
   [guide, The claim link](docs/guide.md#the-claim-link).
 - **The prompt rule** — `cmd/jevlin/prompt.go` owns what counts as an answer and the two
   readers that ask; every prompt in the binary goes through one of them.

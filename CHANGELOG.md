@@ -24,10 +24,16 @@ The first release replaces this heading with its own.
   `connect` swap your stored platform key for someone else's. It now lives in
   the jevlin home, and one left in the state directory is discarded unread.
   A registration an older build left half-finished is not resumed; run
-  `jevlin connect` again. If that build was replacing an expired registration
-  and `connect` now refuses with "expired registration is no longer known to
-  the platform", move `agent.json` out of the state directory and run
-  `jevlin connect` once more: it rebuilds the record from the platform.
+  `jevlin connect` again. If that build was replacing an expired registration,
+  `connect` finds the new agent from your stored key and rebuilds the record
+  from the platform.
+- **`connect` rebuilds a record that names someone else's agent.** When
+  `agent.json` names an agent the platform does not know for your stored key,
+  a `jevlin connect` you run asks the platform which agent the key belongs to
+  and rebuilds the record from its answer, before it prints a claim link or
+  replaces anything. An agent's sandbox can write the state directory, so the
+  link printed is now always your own agent's. The background resume still
+  never rebuilds, and `-force` still replaces instead.
 - **Files an agent's sandbox leaves in jevlin's directories no longer reach
   your own files.** Codex's sandbox may write jevlin's state, intake, sessions
   and spool directories. A link left there could make a hook, a flush or

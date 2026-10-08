@@ -59,15 +59,19 @@ type stubPlatform struct {
 	dropNextRegisterBodies  int
 	statusNotFound          bool
 	statusError             bool
-	statusByAgent           map[string]string
-	scopesByAgent           map[string][]string
-	agentByKey              map[string]string // bearer key -> agent id, for /v1/agents/me
-	claimCodeByAgent        map[string]string
-	meError                 bool // every /v1/agents/me call answers 500
-	meOmitClaimFields       bool // /v1/agents/me never sends claim_url/claim_code, modeling B.1's known gap
-	claimCodeCalls          int  // POST /v1/agents/{id}/claim-code attempts, succeeded or not
-	claimCodeMints          int  // fresh codes actually minted
-	claimCodeDisabled       bool // the route answers 404, modeling a platform without it
+	// statusRequiresOwner makes GET /v1/agents/{id} answer 404 unless the
+	// bearer key is the one this stub minted for that id, as the real
+	// router does: it resolves the key to its own agent first.
+	statusRequiresOwner bool
+	statusByAgent       map[string]string
+	scopesByAgent       map[string][]string
+	agentByKey          map[string]string // bearer key -> agent id, for /v1/agents/me
+	claimCodeByAgent    map[string]string
+	meError             bool // every /v1/agents/me call answers 500
+	meOmitClaimFields   bool // /v1/agents/me never sends claim_url/claim_code, modeling B.1's known gap
+	claimCodeCalls      int  // POST /v1/agents/{id}/claim-code attempts, succeeded or not
+	claimCodeMints      int  // fresh codes actually minted
+	claimCodeDisabled   bool // the route answers 404, modeling a platform without it
 	// meHook, when set, runs synchronously right before a successful
 	// /v1/agents/me answer is written — a deterministic seam for timing a
 	// filesystem side effect (review correction §4) exactly between "the
@@ -153,6 +157,10 @@ func newStubPlatform(t *testing.T) *stubPlatform {
 		id := strings.TrimPrefix(r.URL.Path, "/v1/agents/")
 		st, scopes, slots, consoleURL := f.status, f.scopes, f.slots, f.consoleURL
 		notFound := f.statusNotFound
+		if f.statusRequiresOwner {
+			owner, known := f.agentByKey[strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")]
+			notFound = notFound || !known || owner != id
+		}
 		statusError := f.statusError
 		if agentStatus, ok := f.statusByAgent[id]; ok {
 			st = agentStatus
@@ -296,6 +304,12 @@ func (f *stubPlatform) setStatusNotFound(notFound bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.statusNotFound = notFound
+}
+
+func (f *stubPlatform) setStatusRequiresOwner(requires bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.statusRequiresOwner = requires
 }
 
 func (f *stubPlatform) setStatusError(statusError bool) {
