@@ -18,6 +18,14 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **The per-shell trace id no longer gives away your hostname.** A search with
+  no hook used to send a plain hash of the hostname and parent pid, which the
+  router could match against guessed hostnames. It is now keyed with a random
+  `trace.key` that `setup` and `connect` create in `state_dir`, so ids are
+  unique to each installation and a search in a sandbox that can't write there
+  still keeps one id. A search with no usable key that can't make one sends a
+  one-off id each time. Run `jevlin setup` again to give an existing
+  installation its key; a search makes one itself wherever it can write.
 - **Setup refuses a binary that someone else could replace.** `setup`,
   `agents install` and `agents prefer` record the binary's path in your
   agents' hooks and skills, and setup puts its directory on PATH. They now
