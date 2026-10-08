@@ -58,6 +58,7 @@ var stateRecordFiles = map[string]stateRecordClass{
 	"dpop.key":                 {why: "a PEM key, read by the AS client and never printed"},
 	"refresh.token":            {why: "an opaque token, sent to the AS and never printed"},
 	"participation.secret":     {why: "32 random bytes, never printed"},
+	"trace.key":                {why: "32 random bytes keying the no-hook session id, never printed"},
 	"connect.lock":             {why: "a lock file; its content is never read"},
 	"refresh.token.lock":       {why: "a lock file; its content is never read"},
 }
