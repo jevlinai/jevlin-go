@@ -543,6 +543,35 @@ func TestAHeldNoteNeverStandsInForTheAS(t *testing.T) {
 	}
 }
 
+// A resume in Codex's sandbox declares the config's address and cannot
+// record it beside credentials.json; the held note it writes is for that
+// address. Doctor counts a note whose local address is the one this
+// installation would declare (payoutAddressToDeclare), not only the record,
+// so the client's own note is shown when the race was lost.
+func TestDoctorShowsTheHeldNoteForAConfigAddressNotYetRecorded(t *testing.T) {
+	const own, inForce = "twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh", "twilight1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc"
+	live := &stubAS{
+		doc:      &wire.DiscoveryDocument{ChainID: "twilight-1", SlotID: "7"},
+		standing: &auth.PayoutStanding{Active: &auth.PayoutDeclaration{Address: inForce, Effective: true}},
+	}
+	stateDir := doctorStateDir(t)
+	store, err := auth.OpenStore(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SavePayoutBindingHeld(own, inForce, auth.HeldReplacesActive); err != nil {
+		t.Fatal(err)
+	}
+	miner := config.Miner{IntakeDir: filepath.Join(filepath.Dir(stateDir), "intake")}
+	f := gatherDoctorFactsFor(context.Background(), live, config.Mining{
+		ASBaseURL: "https://as.example.com", StateDir: stateDir, SpoolDir: t.TempDir(), PayoutAddress: own,
+	}, miner, realIntakeProbeOps())
+	got := verdictOf(assembleDoctor(f), "payout address")
+	if got.Verdict != verdictNo || !strings.Contains(got.Detail, "HELD") || !strings.Contains(got.Detail, own) {
+		t.Fatalf("doctor hid the held note for the config's address: %+v", got)
+	}
+}
+
 // A stored refresh token and a recorded enrollment are read from the state
 // directory, not inferred.
 func TestTheLocalCustodyStateIsReadFromDisk(t *testing.T) {
