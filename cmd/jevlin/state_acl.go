@@ -216,10 +216,11 @@ func inspectStateAccess(dir string, files []string) stateAccessFacts {
 // could not be.
 func doctorStateCheck(f stateAccessFacts) doctorCheck {
 	c := doctorCheck{Name: "state access"}
-	var problems []string
+	var problems, targets []string
 	for _, o := range f.Objects {
 		if len(o.Problems) > 0 {
 			problems = append(problems, o.Path+" "+strings.Join(o.Problems, " and "))
+			targets = append(targets, o.Path)
 		}
 	}
 	others := stateOthersDetail(f.Objects)
@@ -233,7 +234,7 @@ func doctorStateCheck(f stateAccessFacts) doctorCheck {
 		if f.Err != nil {
 			c.Detail += " (and some of it could not be checked: " + singleLineError(f.Err) + ")"
 		}
-		c.Fix = "give " + f.Dir + " an access list that only you hold: in its Properties, Security, Advanced, make yourself the owner, turn off inheritance and remove every other entry"
+		c.Fix = stateFix(f.Dir, targets)
 	case f.Err != nil:
 		c.Verdict = verdictUnknown
 		c.Detail = "could not read who can open the state directory " + f.Dir + " — " + singleLineError(f.Err)
@@ -253,6 +254,22 @@ func doctorStateCheck(f stateAccessFacts) doctorCheck {
 		c.Detail = "only you can open " + f.Dir + " and the credentials in it"
 	}
 	return c
+}
+
+// stateFix says what to do about the objects that have a problem, by name: the
+// directory and a credential in it are separate objects with separate owners and
+// lists, and fixing the directory does not reach a file that has its own. A
+// directory's fix says so, and says how to carry the new owner and entries down.
+func stateFix(dir string, targets []string) string {
+	fix := "give " + strings.Join(targets, ", ") + " an access list that only you hold: in each one's Properties, " +
+		"Security, Advanced, make yourself the owner, turn off inheritance and remove every other entry"
+	for _, t := range targets {
+		if t == dir {
+			return fix + "; on " + dir + " also tick \"Replace owner on subcontainers and objects\" and \"Replace all child object " +
+				"permission entries with inheritable permission entries from this object\", so the credentials inside it follow"
+		}
+	}
+	return fix
 }
 
 // stateOthersDetail says who else can open what, one clause per distinct set of

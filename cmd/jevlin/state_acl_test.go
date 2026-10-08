@@ -203,10 +203,14 @@ func TestDoctorStateAccessCheck(t *testing.T) {
 			verdictOK, []string{"the access list on " + dir + " also names BUILTIN\\Users; the access list on " + key + " also names BUILTIN\\Users, HOST\\Bob"}, nil, nil},
 		{"a credential with no access list",
 			stateAccessFacts{Checked: true, Dir: dir, Present: true, Objects: []stateObject{{Path: key, Problems: []string{"has no access list, so everyone can open it"}}}},
-			verdictNo, []string{key + " has no access list, so everyone can open it"}, []string{"access list that only you hold", "make yourself the owner"}, nil},
+			verdictNo, []string{key + " has no access list, so everyone can open it"}, []string{"give " + key + " an access list that only you hold", "make yourself the owner"}, nil},
 		{"a directory owned by someone else",
 			stateAccessFacts{Checked: true, Dir: dir, Present: true, Objects: []stateObject{{Path: dir, Problems: []string{`is owned by HOST\Bob, who can change who may open it`}}}},
-			verdictNo, []string{dir + ` is owned by HOST\Bob`}, []string{dir}, nil},
+			verdictNo, []string{dir + ` is owned by HOST\Bob`}, []string{"give " + dir + " an access list", "Replace owner on subcontainers and objects", "Replace all child object permission entries", "the credentials inside it follow"}, nil},
+		{"two objects, each named in the fix",
+			stateAccessFacts{Checked: true, Dir: dir, Present: true, Objects: []stateObject{
+				{Path: key, Problems: []string{"has no access list, so everyone can open it"}}, {Path: agent, Problems: []string{`is owned by HOST\Bob, who can change who may open it`}}}},
+			verdictNo, []string{key + " has no access list", agent + ` is owned by HOST\Bob`}, []string{"give " + key + ", " + agent + " an access list"}, nil},
 		{"a problem keeps what else was found",
 			stateAccessFacts{Checked: true, Dir: dir, Present: true, Objects: []stateObject{
 				{Path: dir, Others: []string{`BUILTIN\Users`}}, {Path: key, Problems: []string{"has no access list, so everyone can open it"}}}},
@@ -250,6 +254,25 @@ func TestDoctorStateAccessCheck(t *testing.T) {
 				t.Errorf("%s: fix %q missing %q", c.name, got.Fix, want)
 			}
 		}
+	}
+}
+
+// The fix names what has the problem. A credential has its own owner and list,
+// so a fix that names only the directory leaves it as it was; and the step that
+// carries a directory's new owner and entries down to what is inside it is part
+// of fixing the directory, not of fixing a file.
+func TestStateFixNamesTheObjectsAndOnlyAsksForTheChildStepOnTheDirectory(t *testing.T) {
+	dir := filepath.Join("home", "state")
+	key := filepath.Join(dir, "dpop.key")
+	const child = "Replace owner on subcontainers and objects"
+	if fix := stateFix(dir, []string{key}); !strings.Contains(fix, "give "+key+" an access list") || strings.Contains(fix, dir+",") || strings.Contains(fix, child) {
+		t.Errorf("a credential alone: %q; want it to name the file, not the directory, and not ask for the child step", fix)
+	}
+	if fix := stateFix(dir, []string{dir}); !strings.Contains(fix, child) || !strings.Contains(fix, "on "+dir+" also tick") {
+		t.Errorf("the directory: %q; want the child step, on the directory", fix)
+	}
+	if fix := stateFix(dir, []string{dir, key}); !strings.Contains(fix, "give "+dir+", "+key) || !strings.Contains(fix, child) {
+		t.Errorf("both: %q; want both named and the child step", fix)
 	}
 }
 
