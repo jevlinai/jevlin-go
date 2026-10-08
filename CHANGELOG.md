@@ -23,8 +23,11 @@ The first release replaces this heading with its own.
   Codex-sandboxed command can write, so a forged journal could make the next
   `connect` swap your stored platform key for someone else's. It now lives in
   the jevlin home, and one left in the state directory is discarded unread.
-  A registration interrupted mid-publish by an older release is not resumed;
-  run `jevlin connect` again.
+  A registration an older build left half-finished is not resumed; run
+  `jevlin connect` again. If that build was replacing an expired registration
+  and `connect` now refuses with "expired registration is no longer known to
+  the platform", move `agent.json` out of the state directory and run
+  `jevlin connect` once more: it rebuilds the record from the platform.
 - **Files an agent's sandbox leaves in jevlin's directories no longer reach
   your own files.** Codex's sandbox may write jevlin's state, intake, sessions
   and spool directories. A link left there could make a hook, a flush or
