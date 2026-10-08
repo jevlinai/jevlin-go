@@ -24,10 +24,14 @@ Values to look up. Every flag is in `jevlin help` and `jevlin <command> -h`.
 | `version`, `help` | The version, and the full usage text. |
 
 Every command takes `-config <file>`. Without it, the config is the first of: `JEVLIN_CONFIG`,
-`./jevlin.toml`, the installation's own (`$JEVLIN_HOME/jevlin.toml`, else
-`~/.jevlin/jevlin.toml`) when that file exists, and built-in defaults. `status` and `doctor`
+the installation's own (`$JEVLIN_HOME/jevlin.toml`, else `~/.jevlin/jevlin.toml`) when that
+file exists, and built-in defaults. A `jevlin.toml` in the working directory is never read
+unless you name it, so a cloned repo cannot choose where your keys are sent. `status` and `doctor`
 name the file they used. `connect` refuses to run with no config file, and says to run
 `jevlin setup`.
+`search` refuses a second `-config`, even one naming the same file: the Claude Code allow rule
+ends after the installed `-config <file>`, so a second one could otherwise send the key to
+another config's router without a prompt.
 
 ## The `--stdin` request
 

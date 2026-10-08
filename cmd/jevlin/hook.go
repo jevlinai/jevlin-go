@@ -49,8 +49,10 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -60,12 +62,22 @@ import (
 	"time"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/jevlinai/jevlin-go/pkg/fsx"
 )
 
 const (
 	hookTailBytes     = 256 << 10
 	hookMaxTranscript = 64 << 20
-	hookStateFile     = "window.json"
+	// hookFileMaxBytes bounds every file the hook reads back from its own
+	// directories (lineage files, window state, turn marks). A lineage file
+	// holds at most traceHistoryCap of history and the user's message under
+	// the same cap, escaped, a few hundred KiB at most. The largest is the
+	// window state, which keeps about 70 bytes for every session it has seen
+	// and is never pruned: 16 MiB is some 240,000 sessions. A file past the
+	// bound is not read, and the window state is then left as it is.
+	hookFileMaxBytes = 16 << 20
+	hookStateFile    = "window.json"
 	// bridgeEnv is how a rewritten shell command hands `search` its
 	// envelope: one environment assignment in front of the command.
 	bridgeEnv = "JEVLIN_TRACE_BRIDGE"
@@ -100,16 +112,22 @@ type hookOps struct {
 	spawnFlush func(cfgPath string) error
 	// spawnTurnEnd starts the detached sender of one queued turn end.
 	spawnTurnEnd func(cfgPath, file string) error
-	now          func() time.Time
-	pid          int
+	// tempSuffix is the unpredictable part of a temporary or queued file's
+	// name (tempNameFor). Tests set it to plant a file at the exact name.
+	tempSuffix func() string
+	now        func() time.Time
+	pid        int
 }
 
 func realHookOps() hookOps {
 	return hookOps{
-		executable:   os.Executable,
-		getenv:       os.Getenv,
-		readFile:     os.ReadFile,
-		writeFile:    os.WriteFile,
+		executable: os.Executable,
+		getenv:     os.Getenv,
+		// The sessions and state directories are writable roots of Codex's
+		// sandbox (pkg/fsx/confined.go): a read never waits on what a
+		// sandboxed command left at a name, and a write never opens one.
+		readFile:     func(path string) ([]byte, error) { return fsx.ReadRegular(path, hookFileMaxBytes) },
+		writeFile:    fsx.CreateNew,
 		mkdirAll:     os.MkdirAll,
 		rename:       os.Rename,
 		remove:       os.Remove,
@@ -117,6 +135,7 @@ func realHookOps() hookOps {
 		readTail:     readFileTail,
 		spawnFlush:   startFlush,
 		spawnTurnEnd: startTurnEnd,
+		tempSuffix:   traceRandomID,
 		now:          time.Now,
 		pid:          os.Getpid(),
 	}
@@ -680,23 +699,31 @@ func hookStatePath(ops hookOps, hc hookContext) string {
 	if root := ops.getenv("CLAUDE_PLUGIN_ROOT"); root != "" {
 		return filepath.Join(root, hookStateFile)
 	}
-	if tmp := ops.getenv("TMPDIR"); tmp != "" {
-		return filepath.Join(tmp, "jevlin-"+hookStateFile)
-	}
-	return filepath.Join(os.TempDir(), "jevlin-"+hookStateFile)
+	// No temporary directory: /tmp is shared with every other account on
+	// the machine, any of which can leave a link at a predictable name
+	// there first. With neither directory the window is not kept, and
+	// hookWindowID answers "none".
+	return ""
 }
 
-func hookReadState(ops hookOps, path string) hookWindowState {
-	state := hookWindowState{Version: 1, Sessions: map[string]hookWindowEntry{}}
+// hookReadState reads the window state. ok is false when a file is there and
+// could not be read (past its bound, a FIFO, no permission): the caller must
+// then not write, because a write would replace every session's window with
+// this one's. An absent file, or one that does not parse, is a fresh state.
+func hookReadState(ops hookOps, path string) (state hookWindowState, ok bool) {
+	state = hookWindowState{Version: 1, Sessions: map[string]hookWindowEntry{}}
+	if path == "" {
+		return state, true
+	}
 	b, err := ops.readFile(path)
 	if err != nil {
-		return state
+		return state, errors.Is(err, fs.ErrNotExist)
 	}
 	var loaded hookWindowState
 	if json.Unmarshal(b, &loaded) == nil && loaded.Sessions != nil {
-		return loaded
+		return loaded, true
 	}
-	return state
+	return state, true
 }
 
 // hookWindow applies one phase event. Never fails; a state-file problem must
@@ -709,7 +736,13 @@ func hookWindow(ops hookOps, hc hookContext, phase string, payload []byte) {
 		return
 	}
 	path := hookStatePath(ops, hc)
-	state := hookReadState(ops, path)
+	if path == "" {
+		return
+	}
+	state, ok := hookReadState(ops, path)
+	if !ok {
+		return
+	}
 	entry, existed := state.Sessions[p.SessionID]
 
 	switch phase {
@@ -747,14 +780,14 @@ func hookWindow(ops hookOps, hc hookContext, phase string, payload []byte) {
 	// session start or a compaction — but a failed rename no longer leaves
 	// its temporary file behind (dropin-miner#100). Only this file's own leftovers are
 	// swept: with no sessions directory configured the state file lives in
-	// the plugin root or TMPDIR, which are not this client's to tidy.
+	// the plugin root, which is not this client's to tidy.
 	_ = replaceViaTemp(ops, path, b, ops.now(), false)
 }
 
 // hookWindowID is what lineage stamps into the envelope: "none" until the
 // first compaction, then the generation number.
 func hookWindowID(ops hookOps, hc hookContext, sessionID string) string {
-	state := hookReadState(ops, hookStatePath(ops, hc))
+	state, _ := hookReadState(ops, hookStatePath(ops, hc))
 	entry := state.Sessions[sessionID]
 	if entry.Generation == 0 {
 		return "none"

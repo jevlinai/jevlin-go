@@ -205,6 +205,31 @@ the named tests.
     A typed refusal and an unanswered question are different outcomes and must stay
     distinguishable by exit code, which is why the ones that change nothing either way
     (`agents install`'s `Proceed?`, `wallet send`'s confirmation) still differ there.
+19. **A sandboxed agent's files never redirect or stall this client's own.** The state dir, and
+    with mining the intake, sessions and spool dirs, are writable roots of Codex's sandbox
+    (`codexSandboxRoots`), while hooks, hook-spawned flushes and connect's resume work in them
+    from outside it. Live on Codex 0.160.0's macOS sandbox, a command there could leave a symlink
+    out of the root, a hard link to a participant's file outside it, and a FIFO; having emptied a
+    top-level root, it could not `rmdir` it. A root inside another root (the spool's default,
+    `<state_dir>/spool`) can be renamed away and replaced, though. So in those directories no
+    existing name is opened for writing (`fsx.CreateNew`; a replacement is an exclusively
+    created, unpredictably named temporary file renamed into place), no read waits on what is
+    there or reads past a bound (`fsx.ReadRegular`, `ReadRegularNoFollow` where a check on the
+    name came first), no lock follows a link (`fsx.OpenLock`), and the spool, which can be nested,
+    does every operation through `fsx.Root` held to the directory it opened on. The premise is
+    that the installation's own directory (credentials.json, flush.lock) and the config's
+    directory are writable from no sandbox: `agents install` grants Codex nothing when a layout
+    would put either inside a root (`codexRootsProblem`), and nothing here can help if Codex's
+    own workspace is the installation or above it. `pkg/fsx/confined.go` owns the operations.
+    `cmd/jevlin/writable_roots_guard_test.go` resolves every file's imports and classifies each
+    reference to a file operation in os, io/ioutil, syscall, x/sys/unix, x/sys/windows and
+    pkg/fsx by (file, function, call) and count, with the reason it is safe, and fails on a new
+    one until someone classifies it: the forbidden state is not choosing. `writable_roots_test.go`,
+    `codex_sandbox_test.go`, `pkg/fsx/confined_test.go`, `pkg/mining/spool/quarantine_link_test.go`
+    and `pkg/auth/refreshlock_link_test.go` plant the links and FIFOs at the exact names, and swap
+    a file between a check and its read through the test seams in `readSecret` and
+    `readCredentials`. What the records in those directories say is a separate question, not
+    answered here: a sandboxed command can still rewrite them.
 
 ## Subsystems and where their rules live
 A subsystem's authority is one file, and a subsystem nobody has watched fail is a hypothesis — so
@@ -419,9 +444,11 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   session exported climbs past a file of another session to the searching session's own, and
   without one takes the nearest file of the searching harness. `miner.go`'s `replaceViaTemp` is the one writer
   behind the lineage files, the window state and the flush stamp: a failed write or rename removes
-  its temporary file, and the sweep takes only `<file>.<pid>.tmp` of another pid older than
-  `lineageMaxAge` — any lineage file's for a lineage write, only its own for the other two, since
-  the stamp's directory is shared and the window state can live in TMPDIR. Guards:
+  its temporary file, which is `<file>.<pid>-<random>.tmp` and created exclusively (hard
+  invariant 19), and the sweep takes only such a file (or the `<file>.<pid>.tmp` earlier versions
+  wrote) of another pid older than `lineageMaxAge` — any lineage file's for a lineage write, only
+  its own for the other two, since the stamp shares the state dir and the window state can live in
+  a plugin root. Guards:
   `search_channel_test.go`, `lineage_session_test.go`, `lineage_declared_session_test.go` and
   `temp_cleanup_test.go`, all asserted on the bytes the router receives or the files left behind.
 - **Setup** — `setup.go` owns the order (binary, previous
