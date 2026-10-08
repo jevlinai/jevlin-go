@@ -18,6 +18,55 @@ hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
 The first release replaces this heading with its own.
 
+- **Files an agent's sandbox leaves in jevlin's directories no longer reach
+  your own files.** Codex's sandbox may write jevlin's state, intake, sessions
+  and spool directories. A link left there could make a hook, a flush or
+  `connect -resume`, which run outside the sandbox, write into a file of yours
+  elsewhere, and a FIFO could stall a search. jevlin now never opens an existing
+  name there for writing, never waits on what is at a name it reads, refuses a
+  link at a lock's name, and keeps the spool's quarantine from leading outside
+  the spool. The window state is no longer kept in the shared temporary
+  directory when no sessions directory is configured. Two layouts change:
+  a `spool_dir` that is itself a symlink is refused (mining stops, with a
+  message, until it names the real directory), and `agents install` gives
+  Codex no writable directories at all when one of them would contain your
+  `jevlin.toml` or the folder holding `credentials.json`; give `state_dir`,
+  `intake_dir`, `sessions_dir` and `spool_dir` directories of their own.
+- **A hook allows a search only under the binary path its skill shows.** Cursor,
+  Claude Code and Codex used to allow any path that reached the jevlin binary when
+  the hook resolved it, and on Linux `/proc/self/exe` is jevlin to the hook but
+  the shell itself to the shell that runs the command. A search naming the binary
+  any other way than the path the hook was started by now waits for approval.
+- **Setup adopts only what is yours.** A set-aside installation another
+  account owns is no longer offered, and adoption leaves behind any file or
+  folder in it that is not yours. On Windows, owner-only access now also makes
+  you the owner: another owner could otherwise open the folder up again.
+- **Wallet output no longer passes a node's escape sequences through.** Error
+  messages, transaction logs and transfer senders that a chain node sends are
+  cleaned the way search results are before `jevlin wallet` or `jevlin earnings`
+  prints them, and a balance that is not a plain number is refused rather than
+  printed. A malicious node can no longer rewrite the terminal or its clipboard.
+- **Service-document endpoints must live on the AS's origin.** Discovery now
+  refuses a `/.well-known/twilight-mining` document whose endpoints,
+  `authorization_server` or `participation_resource` point at another host, a
+  different port, plain http, or carry userinfo, so a tampered document cannot
+  steer the access token, the participation capability or the provider
+  verification key elsewhere. The mining plane stays closed until the AS serves
+  a same-origin document; search is unaffected.
+  `enrollment_authorization_template` is still held to the provider allowlist
+  instead.
+- **`search` takes `-config` once.** The Claude Code allow rule ends after
+  the installed `-config <file>`, and whatever follows it runs without a
+  prompt. A second `-config` used to win, so an appended one could send your
+  key to another config's router. `search` now refuses a repeated
+  `-config`, even one naming the same file, before reading any config.
+- **A `jevlin.toml` in the working directory is no longer read on its own.**
+  Without `-config` or `JEVLIN_CONFIG`, every command now uses the
+  installation's config (`$JEVLIN_HOME/jevlin.toml`, else
+  `~/.jevlin/jevlin.toml`) or built-in defaults. Before, a `jevlin.toml` in a
+  cloned repo could name its own router or platform host and receive your
+  `sr-` key from `login`, `search`, `limits` or `connect`. To use a config
+  in the current directory, pass `-config ./jevlin.toml`.
 - **Codex searches carry their session.** `agents install` writes Codex's
   hooks into `~/.codex/hooks.json` on macOS and Linux, and a search Codex runs
   then reaches the router with its session, turn and call, and a subagent's

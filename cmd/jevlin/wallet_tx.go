@@ -231,6 +231,17 @@ func newRPCClient(base string) *rpcClient {
 	}
 }
 
+// nodeTextCap bounds any free text a node sends (error messages, logs,
+// event attributes) before it reaches an error string or the terminal.
+const nodeTextCap = 512
+
+// nodeText is the one way node-supplied text enters this package's
+// output: a node is remote input, and its logs and errors are printed
+// straight to an operator's terminal.
+func nodeText(s string) string {
+	return oneLine(s, nodeTextCap)
+}
+
 type rpcError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
@@ -267,7 +278,7 @@ func (c *rpcClient) getLimited(ctx context.Context, path string, params url.Valu
 		return err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("node returned HTTP %s", resp.Status)
+		return fmt.Errorf("node returned HTTP %s", nodeText(resp.Status))
 	}
 	if int64(len(body)) > limit {
 		return fmt.Errorf("node response for %s exceeds %d bytes; ask for fewer results", path, limit)
@@ -280,7 +291,7 @@ func (c *rpcClient) getLimited(ctx context.Context, path string, params url.Valu
 		return fmt.Errorf("node returned unparseable JSON: %w", err)
 	}
 	if envelope.Error != nil {
-		return fmt.Errorf("node error %d: %s %s", envelope.Error.Code, envelope.Error.Message, envelope.Error.Data)
+		return fmt.Errorf("node error %d: %s %s", envelope.Error.Code, nodeText(envelope.Error.Message), nodeText(envelope.Error.Data))
 	}
 	return json.Unmarshal(envelope.Result, out)
 }
@@ -324,7 +335,7 @@ func (c *rpcClient) abciQuery(ctx context.Context, path string, data []byte) ([]
 		return nil, err
 	}
 	if res.Response.Code != 0 {
-		return nil, fmt.Errorf("query %s: code %d: %s", path, res.Response.Code, res.Response.Log)
+		return nil, fmt.Errorf("query %s: code %d: %s", path, res.Response.Code, nodeText(res.Response.Log))
 	}
 	if res.Response.Value == "" {
 		return nil, nil
@@ -394,6 +405,13 @@ func (c *rpcClient) balance(ctx context.Context, address, denom string) (string,
 	if err != nil || len(amount) == 0 {
 		return "0", nil
 	}
+	// Coin.amount is a decimal string on the wire; anything else is not a
+	// balance, and is never echoed back.
+	for _, b := range amount {
+		if b < '0' || b > '9' {
+			return "", errors.New("node returned a balance that is not a decimal number")
+		}
+	}
 	return string(amount), nil
 }
 
@@ -447,6 +465,7 @@ func (c *rpcClient) broadcast(ctx context.Context, txRaw []byte) (*broadcastResu
 	}
 	_ = json.Unmarshal(raw, &presence)
 	res.CodeSet = presence.Code != nil
+	res.Log = nodeText(res.Log)
 	// The response is evidence about THIS transaction only when
 	// its hash matches what was actually sent. A rejection (code != 0)
 	// still needs to match — a node that rejects a DIFFERENT stale
@@ -515,6 +534,7 @@ func (c *rpcClient) queryTxOnce(ctx context.Context, hash string) (res *txResult
 	}
 	_ = json.Unmarshal(raw, &presence)
 	out.TxResult.CodeSet = presence.TxResult.Code != nil
+	out.TxResult.Log = nodeText(out.TxResult.Log)
 	// Parsed fine but did not carry proof of THIS transaction: the same
 	// "not yet" as a literal not-found, not an error and not confirmed.
 	return &out, true, out.confirmed(wantHash), nil
@@ -853,7 +873,7 @@ func receiptsCreditedTo(page *txSearchPage, address, denom string) []chainReceip
 			out = append(out, chainReceipt{
 				Height: height,
 				TxHash: tx.Hash,
-				Sender: ev.attr("sender"),
+				Sender: nodeText(ev.attr("sender")),
 				Denom:  denom,
 				Amount: amount,
 			})
