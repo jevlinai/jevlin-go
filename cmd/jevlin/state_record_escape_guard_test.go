@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jevlinai/jevlin-go/internal/termtext"
 	"github.com/jevlinai/jevlin-go/pkg/auth"
 )
 
@@ -29,6 +30,13 @@ import (
 // stateRecordFiles fails until someone says whether its strings are printed.
 // A record whose Go type is named there is planted in every string field of
 // that type too, so a field the run happened to leave empty is covered.
+//
+// Each string is planted once per character class (plantedClasses), not
+// with one payload holding them all: a load check narrowed to refuse only
+// ESC still refused the combined payload, so the guard passed while a
+// right-to-left override or a tag character went through. The spool, the
+// one subdirectory, is planted too: its records are not printed by status,
+// but a duplicate client_record_id reached a foreground flush's stderr.
 //
 // What it cannot catch: a record the fixture run never writes (add the step
 // that writes it to stateRecordFixture), a record printed only by a command
@@ -99,6 +107,14 @@ func stateRecordFixture(t *testing.T) (cfgPath, stateDir string) {
 	if err := store.SaveRevokePending(); err != nil {
 		t.Fatal(err)
 	}
+	// [miner] on, so a foreground flush runs far enough to read the spool.
+	raw, err := os.ReadFile(cfgPath) // #nosec G304 -- the test's own config
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "[miner]") {
+		writeFileT(t, cfgPath, string(raw)+"\n[miner]\nenabled = true\n")
+	}
 	cfg := mustLoadConfig(t, cfgPath)
 	if err := saveFlushStamp(store, flushStampPath(cfg.Mining), flushStamp{V: 1, SlotID: 7, TargetEpoch: 1042, LastAS: time.Now(), LastFlush: time.Now()}, io.Discard); err != nil {
 		t.Fatal(err)
@@ -125,7 +141,34 @@ func printingCommands(t *testing.T, cfgPath string) map[string]string {
 	out["mining enable"] = mo + me
 	_, co, ce := runConnect(t, cfgPath, nil)
 	out["connect"] = co + ce
+	run("flush", func(o, e io.Writer) { _ = cmdFlush([]string{"-config", cfgPath, "-force"}, o, e, noEnv) })
 	return out
+}
+
+// plantedClasses is one planted value per class of character a terminal
+// acts on or a reader cannot see. A raw invalid byte is not among them: every
+// record here is JSON, and encoding/json decodes an invalid byte as U+FFFD
+// before anything can print it (terminal_writer_test.go covers the raw byte
+// for what flush prints).
+var plantedClasses = map[string]string{
+	"OSC 52 (ESC, BEL)": "x\x1b]52;c;ZXZpbA==\ay",
+	"C1 CSI":            "x\u009b2Jy",
+	"right-to-left":     "x\u202ey",
+	"tag characters":    "x\U000e0049\U000e0047y",
+	"zero-width space":  "x\u200by",
+	"line separator":    "x\u2028y",
+}
+
+// requireNothingPlanted fails if any refused character of planted came out.
+// In JSON, ESC and BEL come out escaped as text, which is not an escape;
+// every other class would come out raw.
+func requireNothingPlanted(t *testing.T, what, out, planted string) {
+	t.Helper()
+	for _, r := range planted {
+		if termtext.HasControlChar(string(r)) && strings.ContainsRune(out, r) {
+			t.Fatalf("%s carried U+%04X to the terminal:\n%q", what, r, out)
+		}
+	}
 }
 
 // jsonLeaf is the path to one string in a decoded record: object keys and
@@ -257,20 +300,22 @@ func TestNoStateRecordCarriesATerminalEscapeToTheOutput(t *testing.T) {
 		}
 		for _, leaf := range leaves {
 			t.Run(rel+"/"+leaf.String(), func(t *testing.T) {
-				restoreStateDir(t, stateDir, snap)
-				var fresh any
-				if err := json.Unmarshal(snap[rel], &fresh); err != nil {
-					t.Fatal(err)
-				}
-				raw, err := json.Marshal(plantAt(fresh, leaf, plantedEscapes))
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(filepath.Join(stateDir, rel), raw, 0o600); err != nil {
-					t.Fatal(err)
-				}
-				for name, out := range printingCommands(t, cfgPath) {
-					requireNoPlantedEscape(t, name+" with "+rel+" "+leaf.String()+" planted", out)
+				for class, planted := range plantedClasses {
+					restoreStateDir(t, stateDir, snap)
+					var fresh any
+					if err := json.Unmarshal(snap[rel], &fresh); err != nil {
+						t.Fatal(err)
+					}
+					raw, err := json.Marshal(plantAt(fresh, leaf, planted))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(filepath.Join(stateDir, rel), raw, 0o600); err != nil {
+						t.Fatal(err)
+					}
+					for name, out := range printingCommands(t, cfgPath) {
+						requireNothingPlanted(t, name+" with "+rel+" "+leaf.String()+" planted with "+class, out, planted)
+					}
 				}
 			})
 			planted++
@@ -278,6 +323,37 @@ func TestNoStateRecordCarriesATerminalEscapeToTheOutput(t *testing.T) {
 	}
 	if planted < 20 {
 		t.Fatalf("only %d strings were planted; the fixture no longer builds the records this guard is for", planted)
+	}
+
+	// The spool: two records with one client_record_id, the duplicate a
+	// flush refuses to deliver and names in its error.
+	spoolDir := mustLoadConfig(t, cfgPath).Mining.SpoolDir
+	for class, planted := range plantedClasses {
+		t.Run("spool/client_record_id/"+class, func(t *testing.T) {
+			restoreStateDir(t, stateDir, snap)
+			for _, name := range []string{"a.json", "b.json"} {
+				raw, err := json.Marshal(map[string]any{
+					"client_record_id": planted, "slot_id": 7, "target_epoch": 1042,
+					"observation": map[string]any{}, "spooled_at": time.Now().UTC(), "attempts": 0,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.MkdirAll(spoolDir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(spoolDir, name), raw, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			outs := printingCommands(t, cfgPath)
+			if !strings.Contains(outs["flush"], "multiple active locations") {
+				t.Fatalf("the planted duplicate did not reach flush's error, so this proves nothing:\n%s", outs["flush"])
+			}
+			for name, out := range outs {
+				requireNothingPlanted(t, name+" with a spool record's client_record_id planted with "+class, out, planted)
+			}
+		})
 	}
 	restoreStateDir(t, stateDir, snap)
 }

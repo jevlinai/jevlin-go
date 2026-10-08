@@ -178,6 +178,13 @@ type flushReport struct {
 }
 
 func cmdFlush(args []string, stdout, stderr io.Writer, getenv func(string) string) int {
+	// A flush reads the intake, the spool and its quarantine, all writable
+	// by a sandboxed command, and its errors carry what it read: a planted
+	// spool record's client_record_id went to stderr with an OSC 52
+	// clipboard write in it, from a command docs/guide.md tells
+	// participants to run by hand. Everything the command prints goes
+	// through one filter instead of each error being remembered.
+	stdout, stderr = terminalSafeWriter{stdout}, terminalSafeWriter{stderr}
 	fs := newFlagSet("flush", stderr)
 	cfgPath := fs.String("config", "", "path to TOML config file")
 	detach := fs.Bool("detach", false, "start the flush in the background and return at once")
