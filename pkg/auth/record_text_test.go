@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -119,6 +120,48 @@ func TestSaveAgentRegistrationRefusesWhatLoadWouldRefuse(t *testing.T) {
 	}
 }
 
+// A health detail is often an error naming a path, which can hold ESC or
+// BEL. MarkHealth writes it without them, and still writes the rest.
+func TestMarkHealthWritesADetailATerminalCanPrint(t *testing.T) {
+	s, _ := newStore(t)
+	if err := s.MarkHealth(HealthCapture, HealthIntakeUnwritable, "open /tmp/"+plantedText+"/intake: denied"); err != nil {
+		t.Fatal(err)
+	}
+	rec, ok, err := s.LoadHealth(HealthCapture)
+	if err != nil || !ok {
+		t.Fatalf("the record MarkHealth wrote does not load: ok=%v err=%v", ok, err)
+	}
+	assertNoPlantedBytes(t, "the stored detail", rec.Detail)
+	if !strings.Contains(rec.Detail, "intake: denied") {
+		t.Fatalf("the detail lost its text: %q", rec.Detail)
+	}
+}
+
+// The detail is printed by status and doctor; LoadHealth checked the
+// version, the component and the reason, and not the detail beside them.
+func TestLoadHealthRefusesADetailMarkHealthNeverWrites(t *testing.T) {
+	for name, detail := range map[string]string{
+		"escape":   plantedText,
+		"over cap": strings.Repeat("d", healthDetailCap+1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, dir := newStore(t)
+			raw, err := json.Marshal(HealthRecord{Version: healthVersion, Component: HealthFlush, Reason: HealthSubmissionFailed, Detail: detail})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, healthFlush), raw, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, ok, err := s.LoadHealth(HealthFlush); ok || err == nil {
+				t.Fatalf("a planted detail loaded: ok=%v err=%v", ok, err)
+			} else {
+				assertNoPlantedBytes(t, "the refusal", err.Error())
+			}
+		})
+	}
+}
+
 const validTestAddress = "twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh"
 
 // status prints the payout address and both halves of a held binding;
@@ -161,7 +204,7 @@ func TestPayoutRecordsRefuseAPlantedValueOnLoad(t *testing.T) {
 			}
 			err = tc.load(s)
 			if err == nil {
-				t.Fatalf("%s loaded %v", tc.file, tc.body)
+				t.Fatalf("%s loaded %q", tc.file, fmt.Sprint(tc.body))
 			}
 			assertNoPlantedBytes(t, "the refusal", err.Error())
 		})

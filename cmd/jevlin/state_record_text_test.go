@@ -122,6 +122,37 @@ func TestStatusNeverPrintsAPlantedAgentRecord(t *testing.T) {
 	}
 }
 
+// The skeptic's probe of #68: a health record's detail went to status raw,
+// because LoadHealth checked the reason beside it and not the detail.
+func TestStatusAndDoctorNeverPrintAPlantedHealthDetail(t *testing.T) {
+	platform := newStubPlatform(t)
+	cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(map[string]any{
+		"version": 1, "component": "capture", "reason": "sandbox_restricted",
+		"detail": plantedEscapes, "at": "2026-10-08T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "health_capture.json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var text, textErr, js, jsErr, doc, docErr bytes.Buffer
+	_ = statusMain([]string{"-config", cfgPath}, &text, &textErr, noEnv)
+	_ = statusMain([]string{"-config", cfgPath, "-json"}, &js, &jsErr, noEnv)
+	_ = cmdDoctor([]string{"-config", cfgPath}, &doc, &docErr)
+	requireNoPlantedEscape(t, "status", text.String()+textErr.String())
+	requireNoPlantedEscape(t, "status -json", js.String()+jsErr.String())
+	requireNoPlantedEscape(t, "doctor", doc.String()+docErr.String())
+	if !strings.Contains(textErr.String(), "could not read persistent component health") {
+		t.Fatalf("status did not say the health record cannot be read:\n%s", textErr.String())
+	}
+}
+
 func mustStore(t *testing.T, stateDir string) *auth.Store {
 	t.Helper()
 	store, err := auth.OpenStoreExisting(stateDir)

@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/jevlinai/jevlin-go/internal/termtext"
 	"github.com/jevlinai/jevlin-go/pkg/redact"
 )
 
@@ -84,7 +85,17 @@ func validHealthReason(reason HealthReason) bool {
 	}
 }
 
+// boundHealthDetail is the one shape a detail is written in: redacted, one
+// line, no character a terminal acts on, at most healthDetailCap bytes.
+// strings.Fields alone did not give the third: ESC and BEL are not spaces,
+// and a detail is often an error naming a path, which can hold either.
 func boundHealthDetail(detail string) string {
+	detail = strings.Map(func(r rune) rune {
+		if termtext.HasControlChar(string(r)) {
+			return ' '
+		}
+		return r
+	}, detail)
 	detail = redact.String(strings.Join(strings.Fields(detail), " "))
 	if len(detail) > healthDetailCap {
 		cut := healthDetailCap
@@ -140,6 +151,13 @@ func (s *Store) LoadHealth(component HealthComponent) (HealthRecord, bool, error
 	}
 	if rec.Version != healthVersion || rec.Component != component || !validHealthReason(rec.Reason) {
 		return HealthRecord{}, false, fmt.Errorf("auth: invalid health record for %s", component)
+	}
+	// status and doctor print the detail. MarkHealth never writes one
+	// longer than the cap or holding a character a terminal acts on, so a
+	// record that does was written by something else, in a directory a
+	// sandboxed command can write.
+	if len(rec.Detail) > healthDetailCap || termtext.HasControlChar(rec.Detail) {
+		return HealthRecord{}, false, fmt.Errorf("auth: invalid health record for %s: its detail is not one MarkHealth writes", component)
 	}
 	return rec, true, nil
 }
