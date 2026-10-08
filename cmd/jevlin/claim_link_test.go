@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -165,5 +166,27 @@ func TestALinkAnOlderVersionKeptInTheAgentRecordIsReplacedByAFreshOne(t *testing
 	}
 	if storedClaim(t, cfgPath, agentID).ClaimURL != platform.srv.URL+"/claim/MINT-01" {
 		t.Fatal("the fresh link was not recorded beside credentials.json")
+	}
+}
+
+// -force with a record naming another agent than the stored key's does not
+// rebuild, so running the same command again can never succeed: machine
+// mode says fix_input, with a code of its own, never retry.
+func TestForceOnARecordNamingAnotherAgentAsksForDifferentInput(t *testing.T) {
+	_, cfgPath, _, _, _ := unknownAgentFixture(t, map[string]any{"status": "claimed"})
+	code, out, _ := runConnect(t, cfgPath, nil, "-json", "-force")
+	if code == exitOK {
+		t.Fatalf("connect -json -force exited 0:\n%s", out)
+	}
+	var env struct {
+		Code      string `json:"code"`
+		Action    string `json:"action"`
+		Retryable bool   `json:"retryable"`
+	}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("not one envelope: %v\n%s", err, out)
+	}
+	if env.Code != "force_does_not_rebuild" || env.Action != actionFixInput || env.Retryable {
+		t.Fatalf("envelope = %+v, want force_does_not_rebuild / fix_input / not retryable\n%s", env, out)
 	}
 }

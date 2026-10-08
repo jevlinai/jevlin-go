@@ -52,6 +52,14 @@ const exitLifecycleBusy = -2
 // range for the same reason as the other two.
 const exitConfigNotFound = -3
 
+// exitForceDoesNotRebuild is connectRun's internal signal, in machine mode
+// only, that -force met a record naming another agent than the stored key's:
+// -force replaces rather than recovers, so the run stops, and only dropping
+// -force can rebuild it. cmdConnect's JSON wrapper translates it to
+// fix_input with code force_does_not_rebuild: retrying the same command
+// can never succeed, so "retry" was the wrong instruction.
+const exitForceDoesNotRebuild = -4
+
 func orDefaults(cfgSource string) string {
 	if cfgSource == "" {
 		return "defaults/env, no config file found"

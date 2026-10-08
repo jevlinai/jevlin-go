@@ -528,6 +528,20 @@ func connectCommand(args []string, stdin io.Reader, stdout, stderr io.Writer, ge
 		})
 		return exitTransport
 	}
+	if code == exitForceDoesNotRebuild {
+		// -force met a record naming another agent than the stored key's,
+		// and -force does not rebuild: the same command can never succeed,
+		// so the instruction is to change the input, not to retry it.
+		emitMachine(stdout, commandEnvelope{
+			machineHeader: newMachineHeader("connect", exitUsage, "force_does_not_rebuild", false, actionFixInput),
+			Error: &machineError{
+				Message: "agent.json names another agent than the stored key's, and -force does not rebuild a " +
+					"registration; run `jevlin connect` without -force to rebuild it from the platform",
+				Source: "client",
+			},
+		})
+		return exitUsage
+	}
 	if code == exitHumanDecisionRequired {
 		// Reached mid-run, past the pre-check above: a rebuild (B.3) can
 		// only learn a recovered identity is expired AFTER calling
@@ -971,6 +985,9 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 					fmt.Fprintf(stderr, "jevlin: agent.json names another agent than the stored key's (agent %s); "+
 						"-force does not rebuild a registration. Run `jevlin connect` without -force to rebuild it from the platform\n",
 						identity.AgentID)
+					if machine {
+						return exitForceDoesNotRebuild
+					}
 					return exitTransport
 				case meErr == nil:
 					rebuilt, code, stop := publishRebuiltRegistration(ctx, client, store, cfg.Miner, identity, meKey, stdout, stderr)
