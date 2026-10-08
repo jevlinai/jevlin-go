@@ -832,12 +832,8 @@ func TestConnectCaseAccountExistsSearchAndMining(t *testing.T) {
 	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
 		t.Fatal("first connect failed")
 	}
-	// Give it a payout address the way a scripted install would: set it
-	// directly on the store, as mining enable would have.
-	_, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Give it a payout address the way a scripted install would: written
+	// beside credentials.json, as mining enable would have.
 	if err := testPayoutRecord(t, stateDir).Save("twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n"); err != nil {
 		t.Fatal(err)
 	}
@@ -882,10 +878,6 @@ func TestConnectCaseMiningGrantedLater(t *testing.T) {
 
 	// Mining granted later, with a payout address already on file
 	// (as if `mining enable` had run in between).
-	_, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err := testPayoutRecord(t, stateDir).Save("twilight1gz3fu9w3jp08jp4qcjj6hsckzktsexd09vz039"); err != nil {
 		t.Fatal(err)
 	}
@@ -1004,10 +996,6 @@ func TestAddressSetAfterEnrollmentIsDeclaredOnTheNextRun(t *testing.T) {
 	}
 
 	// The address arrives afterward, as `mining enable` would leave it.
-	_, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err := testPayoutRecord(t, stateDir).Save("twilight19ltafk0vdyzwtnzjcfwgvlu3ldmvgemdqxsn79"); err != nil {
 		t.Fatal(err)
 	}
@@ -1179,8 +1167,6 @@ func TestShouldResumeIsALocalCheckWithNoStoredRegistration(t *testing.T) {
 // nothing a resume can do, and — the reviewer's specific finding — every
 // condition that decides that needs a test that fails if THAT condition
 // alone is deleted, not just a return value it happens to share with a
-// neighbor. shouldResumeFixture builds a registration and lets each
-// subtest vary exactly one thing.
 // resumeConfig is the config pkg/config would build around m: intake_dir,
 // and with it the directory credentials.json and the payout record sit in,
 // derived from the state dir.
@@ -1188,6 +1174,12 @@ func resumeConfig(m config.Mining) *config.Config {
 	return &config.Config{Mining: m, Miner: config.Miner{IntakeDir: filepath.Join(filepath.Dir(m.StateDir), "intake")}}
 }
 
+// WP2-review defect 3 / coverage gap A: the spawn must stop once there is
+// nothing a resume can do, and — the reviewer's specific finding — every
+// condition that decides that needs a test that fails if THAT condition
+// alone is deleted, not just a return value it happens to share with a
+// neighbor. shouldResumeFixture builds a registration and lets each
+// subtest vary exactly one thing.
 func shouldResumeFixture(t *testing.T, status string, scopes []string, enrolled bool, address string) (stateDir string) {
 	t.Helper()
 	stateDir = filepath.Join(t.TempDir(), "state")
@@ -1634,10 +1626,6 @@ func TestDeclarationRunsUnattendedAfterEnrollment(t *testing.T) {
 	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
 		t.Fatal("connect failed")
 	}
-	_, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err := testPayoutRecord(t, stateDir).Save("twilight1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc"); err != nil {
 		t.Fatal(err)
 	}
@@ -1740,10 +1728,6 @@ func TestStatusReportsBothAddressesOnBindingConflict(t *testing.T) {
 
 	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
 		t.Fatal("connect failed")
-	}
-	_, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
 	}
 	if err := testPayoutRecord(t, stateDir).Save("twilight1nv60etsw245g8z00h4h322m4vr764z3840swpa"); err != nil {
 		t.Fatal(err)
