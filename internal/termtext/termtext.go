@@ -11,22 +11,26 @@
 // results, and is not this rule.
 package termtext
 
-// HasControlChar reports any C0 control character (including \n, \r and
-// \t), DEL, C1 control (U+0080-U+009F, which includes the one-byte CSI
-// U+009B) or bidi formatting character. None of them belongs in a claim
-// URL, a claim code, a scope, a slot name, a refusal message, a payout
-// address or a health record's detail, and each can forge or reorder what
-// a terminal shows. It is a test for a REFUSAL, not a sanitizer: a value
-// holding one is not a shape this client trusts enough to guess what was
-// meant.
+import "unicode"
+
+// HasControlChar reports any character a terminal acts on or a reader cannot
+// see: every control character (Unicode category Cc: C0 including \n, \r and
+// \t, DEL, and C1 including the one-byte CSI U+009B), every format character
+// (Cf: the bidi embeddings, overrides, isolates and marks, the zero-width
+// space and joiners, the byte-order mark and the tag characters U+E0000 to
+// U+E007F, which spell text no terminal shows but a model reading the output
+// does), and the line and paragraph separators (Zl, Zp: U+2028 and U+2029,
+// which some renderers break a line at). None of them belongs in a claim URL,
+// a claim code, an agent id, a scope, a slot name, a refusal message, a
+// payout address or a health record's detail, and each can forge, reorder or
+// hide what a terminal shows. Letters, marks and the no-break space are
+// left alone: a participant's name is "José", a path can be in Japanese.
+//
+// It is a test for a REFUSAL, not a sanitizer: a value holding one is not a
+// shape this client trusts enough to guess what was meant.
 func HasControlChar(s string) bool {
 	for _, r := range s {
-		switch {
-		case r < 0x20, r == 0x7f, r >= 0x80 && r <= 0x9f:
-			return true
-		case r == 0x061c, r == 0x200e, r == 0x200f,
-			r >= 0x202a && r <= 0x202e,
-			r >= 0x2066 && r <= 0x2069:
+		if unicode.In(r, unicode.Cc, unicode.Cf, unicode.Zl, unicode.Zp) {
 			return true
 		}
 	}
