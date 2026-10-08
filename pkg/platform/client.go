@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/jevlinai/jevlin-go/internal/netdial"
+	"github.com/jevlinai/jevlin-go/internal/termtext"
 	"github.com/jevlinai/jevlin-go/pkg/auth"
 )
 
@@ -226,27 +227,14 @@ func clampPollInterval(d time.Duration) time.Duration {
 	return d
 }
 
-// hasControlChar reports any C0 control character (including \n, \r,
-// \t), DEL, C1 control (U+0080–U+009F, which includes the one-byte CSI
-// U+009B) or bidi formatting character — none legitimately appears in a
-// claim URL, a claim code, a scope, a slot name or a refusal message,
-// and each can forge or reorder what the terminal shows. Not a full
-// sanitizer: a REFUSAL, not a strip, because a platform response
-// containing one is not a shape this client trusts enough to guess
-// what was meant (WP2-adversarial-review finding 12).
-func hasControlChar(s string) bool {
-	for _, r := range s {
-		switch {
-		case r < 0x20, r == 0x7f, r >= 0x80 && r <= 0x9f:
-			return true
-		case r == 0x061c, r == 0x200e, r == 0x200f,
-			r >= 0x202a && r <= 0x202e,
-			r >= 0x2066 && r <= 0x2069:
-			return true
-		}
-	}
-	return false
-}
+// hasControlChar is internal/termtext's rule: any C0 control character,
+// DEL, C1 control or bidi formatting character. None legitimately appears
+// in a claim URL, a claim code, a scope, a slot name or a refusal message.
+// A REFUSAL, not a strip, because a platform response containing one is
+// not a shape this client trusts enough to guess what was meant
+// (WP2-adversarial-review finding 12). pkg/auth reads its records back
+// through the same rule, which is why the rule is not kept here.
+func hasControlChar(s string) bool { return termtext.HasControlChar(s) }
 
 // isLoopbackHostname mirrors pkg/config's and pkg/auth's own
 // isLoopbackHost — each package that validates a URL's host keeps this
