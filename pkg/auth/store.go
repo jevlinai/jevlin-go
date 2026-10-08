@@ -65,7 +65,15 @@ func OpenStore(dir string) (*Store, error) {
 	if created {
 		// Before anything is written into it: on Windows MkdirAll sets no
 		// DACL, so the new directory would inherit its parent's.
-		if err := restrictStateDir(dir); err != nil {
+		if err := restrictCreatedStateDir(dir); err != nil {
+			// Left in place, the next OpenStore would find a directory that
+			// exists, take it as it stands and never restrict it: one failed
+			// call would leave the secrets under the parent's list for good.
+			// It was made a moment ago and nothing was written into it, so
+			// it goes, and the next run restricts a directory it creates.
+			if rmErr := os.Remove(dir); rmErr != nil { // #nosec G703 -- the directory created just above
+				return nil, fmt.Errorf("auth: restrict state dir to its owner: %w (and it could not be removed to try again: %v)", err, rmErr)
+			}
 			return nil, fmt.Errorf("auth: restrict state dir to its owner: %w", err)
 		}
 	}

@@ -20,8 +20,10 @@ The first release replaces this heading with its own.
 
 - **Windows: a state directory jevlin creates is owner-only.** A
   `[mining] state_dir` that `connect`, `enroll` or `mining enable` creates now
-  gets a protected access list that names only you, as `jevlin setup` gives
-  `<home>\state`, instead of inheriting its parent's. Nothing refuses a state
+  gets a protected access list that names only you, and you as its owner, as
+  `jevlin setup` gives `<home>\state`, instead of inheriting its parent's. If
+  the list cannot be set, the new directory is removed rather than left to be
+  opened as it is next time. Nothing refuses a state
   directory afterwards: an agent's sandbox is meant to be able to reach it, so
   another principal on its list is not an error.
 - **Setup refuses a binary that someone else could replace.** `setup`,

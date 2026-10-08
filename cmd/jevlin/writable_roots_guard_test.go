@@ -196,6 +196,7 @@ var classifiedFileCalls = map[fileCallSite]fileCallClass{
 	{"pkg/auth/refreshlock_unix.go", "tryLockRefreshFile", "fsx.OpenLock"}:              {1, "root: refresh.token.lock in the state dir; no link followed"},
 	{"pkg/auth/refreshlock_windows.go", "tryLockRefreshFile", "fsx.OpenLock"}:           {1, "root: refresh.token.lock in the state dir; no reparse point followed, share mode 0"},
 	{"pkg/auth/store.go", "OpenStore", "os.MkdirAll"}:                                   {1, "root: creates the state dir itself"},
+	{"pkg/auth/store.go", "OpenStore", "os.Remove"}:                                     {1, "root: removes the state dir it created a moment ago when it could not restrict it; Remove follows no link and fails on a directory that is no longer empty"},
 	{"pkg/auth/store.go", "Store.ClearPayoutBindingHeld", "os.Remove"}:                  {1, "root: removes a name"},
 	{"pkg/auth/store.go", "RegistrationJournal.Clear", "os.Remove"}:                     {1, "outside: the journal's name in the installation's own directory, which agents install keeps out of every writable root; read through readSecret first"},
 	{"pkg/auth/store.go", "RegistrationJournal.Save", "os.MkdirAll"}:                    {1, "outside: creates the installation's own directory, beside credentials.json"},

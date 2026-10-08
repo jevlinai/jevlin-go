@@ -23,3 +23,12 @@ package auth
 // What the participant is told about who else can open the directory is
 // doctor's `state access` line (cmd/jevlin/state_acl.go), which reads and
 // reports and changes nothing.
+
+// restrictCreatedStateDir is restrictStateDir behind a variable. On POSIX
+// restrictStateDir does nothing, so a test there could not tell OpenStore
+// calling it from OpenStore not calling it: deleting the call would change no
+// result on the OS that runs most of the tests, and only the Windows legs
+// would notice. With the seam, store_create_test.go holds the wiring — when
+// OpenStore restricts, what it passes, what a failure does — on every OS, and
+// perm_windows_test.go holds what the real call leaves on a real DACL.
+var restrictCreatedStateDir = restrictStateDir

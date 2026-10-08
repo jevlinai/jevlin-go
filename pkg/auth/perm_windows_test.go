@@ -92,6 +92,12 @@ func TestOpenStoreCreatesOwnerOnlyDACL(t *testing.T) {
 	if !d.Protected {
 		t.Errorf("state dir DACL is not protected: %+v", d)
 	}
+	// The owner matters as much as the list: an owner keeps WRITE_DAC whatever
+	// the list says, and a directory is born with its creator's default owner,
+	// which is BUILTIN\Administrators for an elevated process.
+	if d.Owner != user {
+		t.Errorf("state dir owner = %s, want the current user %s", d.Owner, user)
+	}
 	// Windows splits the one inheritable GENERIC_ALL grant into an effective
 	// FA entry and an inherit-only GA entry, both for the user, so the
 	// assertion is on who the entries are for rather than on how many there are.
