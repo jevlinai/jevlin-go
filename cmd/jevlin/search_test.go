@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -611,6 +612,99 @@ func TestASearchSendsTheSessionIDKeyedByTheStateDirsKey(t *testing.T) {
 			}
 		})
 	}
+}
+
+// docs/reference.md says what a search with no usable key does: it sends a
+// one-off id, different on every search, and does not touch the key it
+// refused. A link, a key open to others and a key of the wrong length are the
+// three it names. Each is left exactly as it lay, so the next setup or the
+// participant sees it rather than a replacement, and no id the hostname
+// could be recovered from ever stands in.
+func TestASearchThatRefusesTheKeyOnDiskSendsAOneOffIDAndLeavesTheKeyAlone(t *testing.T) {
+	good := bytes.Repeat([]byte{'k'}, 32)
+	type plant func(t *testing.T, path string) (describe func() string)
+	cases := map[string]plant{
+		"a link": func(t *testing.T, path string) func() string {
+			target := filepath.Join(t.TempDir(), "elsewhere")
+			if err := os.WriteFile(target, good, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(target, path); err != nil {
+				skipPermissionTest(t, "cannot plant a link here: "+err.Error())
+			}
+			return func() string {
+				got, err := os.Readlink(path)
+				return "link to " + got + errString(err)
+			}
+		},
+		"the wrong length": func(t *testing.T, path string) func() string {
+			if err := os.WriteFile(path, good[:31], 0o600); err != nil {
+				t.Fatal(err)
+			}
+			return func() string { return fileDescription(path) }
+		},
+	}
+	if runtime.GOOS != "windows" {
+		cases["open to others"] = func(t *testing.T, path string) func() string {
+			if err := os.WriteFile(path, good, 0o644); err != nil { // #nosec G306 -- deliberately open to others: the case under test
+				t.Fatal(err)
+			}
+			if err := os.Chmod(path, 0o644); err != nil { // #nosec G302 -- as above, in case umask narrowed it
+				t.Fatal(err)
+			}
+			return func() string { return fileDescription(path) }
+		}
+	}
+	for name, plantKey := range cases {
+		t.Run(name, func(t *testing.T) {
+			fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(routerBody))
+			})
+			keyPath := auth.TraceKeyPath(filepath.Join(root, "state"))
+			describe := plantKey(t, keyPath)
+			before := describe()
+
+			ids := make([]string, 2)
+			for i := range ids {
+				h := fixedSearchOps(root)
+				h.ops.traceKey = realSearchOps().traceKey
+				code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "-no-flush", "q")
+				if code != exitOK {
+					t.Fatalf("search %d exited %d: a key it refuses must not fail the search\n%s\n%s", i, code, out, errOut)
+				}
+				req, _ := fr.last(t)
+				if ids[i] = req.Header.Get("X-Session-Id"); ids[i] == "" {
+					t.Fatalf("search %d sent no X-Session-Id", i)
+				}
+			}
+			if ids[0] == ids[1] {
+				t.Errorf("both searches sent %q; with no usable key each sends a one-off id", ids[0])
+			}
+			if bare := traceHash(fixtureHostPpid); ids[0] == bare || ids[1] == bare {
+				t.Errorf("a search sent the unkeyed hash of host|ppid")
+			}
+			if after := describe(); after != before {
+				t.Errorf("the key it refused was changed:\n before %s\n after  %s", before, after)
+			}
+		})
+	}
+}
+
+func errString(err error) string {
+	if err != nil {
+		return " (" + err.Error() + ")"
+	}
+	return ""
+}
+
+// fileDescription is a file's mode, size and bytes in one comparable string.
+func fileDescription(path string) string {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err.Error()
+	}
+	b, _ := os.ReadFile(path) // #nosec G304 -- a path in this test's own temp dir
+	return info.Mode().String() + " " + string(b)
 }
 
 // The Claude Code allow rule is a prefix ending after this installation's
