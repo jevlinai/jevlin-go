@@ -33,12 +33,13 @@ type dpopTransport struct {
 var dpopDialer = &net.Dialer{}
 
 func newDPoPTransport(proofer *Proofer) *dpopTransport {
-	// Proxy: nil, same discipline as discovery.go's client — no environment
-	// proxy may silently interpose on AS identity. DialContext:
-	// netdial.For(dpopDialer) — dpopDialer's own dial, unless a test
-	// installs netdial.Hook; the dialer itself is unchanged from what this
-	// Transport always used.
-	return &dpopTransport{base: &http.Transport{Proxy: nil, DialContext: netdial.For(dpopDialer)}, proofer: proofer}
+	// Proxy: loopbackProxy, the same rule as discovery.go's client — an
+	// environment proxy only on this machine's loopback, such as the one
+	// Codex's sandbox routes through; any other is ignored and the request
+	// goes direct (proxy.go). DialContext: netdial.For(dpopDialer) —
+	// dpopDialer's own dial, unless a test installs netdial.Hook; the dialer
+	// itself is unchanged from what this Transport always used.
+	return &dpopTransport{base: &http.Transport{Proxy: loopbackProxy, DialContext: netdial.For(dpopDialer)}, proofer: proofer}
 }
 
 func (t *dpopTransport) currentNonce() string {

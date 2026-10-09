@@ -1,9 +1,9 @@
 package auth
 
 // D1c closes the gap D1b left open: pkg/auth's discovery and DPoP/credential
-// transports each build their own *http.Transport with Proxy: nil, which
-// neither a global http.DefaultTransport swap nor an environment-proxy
-// fail-safe can reach — only naming internal/netdial's shared seam
+// transports each build their own *http.Transport (Proxy: loopbackProxy,
+// which uses an environment proxy only on loopback), which neither a global
+// http.DefaultTransport swap nor an environment-proxy fail-safe can reach — only naming internal/netdial's shared seam
 // explicitly, as discovery.go and transport.go now do, closes it. This file
 // is the guard-side proof: TestMain installs the same test fence
 // cmd/jevlin uses, and each test below drives the real, unexported
