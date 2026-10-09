@@ -1,7 +1,7 @@
 package main
 
 // The question install asks before it changes a Codex setting of the
-// participant's own (D3, D4, C5), under every way it can end.
+// participant's own, under every way it can end.
 //
 //   - typed yes: the change is made (TestCodexStartingStatesRenderTheirGoldens)
 //   - typed no: nothing for Codex — no config change, no skill, no hooks —
@@ -171,7 +171,7 @@ func TestTheProfileQuestionListsTheEntries(t *testing.T) {
 }
 
 // A participant profile with its network already open and the proxy off is
-// unrestricted by their choice (C4 ii): only the filesystem lines are asked
+// unrestricted by their choice: only the filesystem lines are asked
 // for, and the proxy is not turned on, which would cut their network down to
 // jevlin's hosts.
 func TestAnOpenProfileIsAskedOnlyForItsRoots(t *testing.T) {

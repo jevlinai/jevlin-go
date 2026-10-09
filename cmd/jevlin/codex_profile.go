@@ -18,7 +18,7 @@ package main
 // finding (codexProfileStatus) and a refresh (planCodexProfile), not a
 // detail.
 //
-// The hosts are derived from the config and from nothing else (D1): the
+// The hosts are derived from the config and from nothing else: the
 // router the search posts to; the AS, which the flush a search spawns
 // reaches for its discovery document, token and submission endpoints, all
 // same-origin checked; and the platform's agents API, which the detached
@@ -62,10 +62,10 @@ type codexProfile struct {
 	roots []string
 	hosts []string
 	// key is false when default_permissions is the participant's own line,
-	// rewritten to name our profile (C5); the region then carries no key.
+	// rewritten to name our profile; the region then carries no key.
 	key bool
 	// proxy is false when the participant's own [features] table already
-	// turns network_proxy on, or was rewritten to (D4); a second
+	// turns network_proxy on, or was rewritten to; a second
 	// definition would be a duplicate key and Codex would refuse the file.
 	proxy bool
 }
@@ -74,7 +74,7 @@ func fullCodexProfile(roots, hosts []string) codexProfile {
 	return codexProfile{roots: roots, hosts: hosts, key: true, proxy: true}
 }
 
-// codexAllowedHosts is D1's list, from the config and nothing else.
+// codexAllowedHosts is the list, from the config and nothing else.
 func codexAllowedHosts(cfg *config.Config) []string {
 	var hosts []string
 	if cfg.Miner.RouterURL != nil {

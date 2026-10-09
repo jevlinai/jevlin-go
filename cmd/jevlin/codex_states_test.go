@@ -1,11 +1,11 @@
 package main
 
 // Every starting state of Codex's config.toml that the maintainer's decisions
-// name (D3–D7, C4–C6), driven through the real `agents install` and
+// name, driven through the real `agents install` and
 // `agents uninstall` on files, each held to a golden of the rendered file.
 //
 // A state's "before" is what a participant writes, so it is typed here; what
-// Codex itself writes is never typed — those cases (C1, C2) read Codex's own
+// Codex itself writes is never typed — those cases read Codex's own
 // output from testdata/codex/, as testdata/hermes keeps Hermes' dumper output.
 //
 // The goldens hold the file with the installation's paths replaced by

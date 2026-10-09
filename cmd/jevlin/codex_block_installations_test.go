@@ -246,7 +246,7 @@ func TestASecondInstallationLeavesTheFirstsCodexSandboxBlock(t *testing.T) {
 
 // The profile is left even when it is the only thing of the first
 // installation's on the host — and, since a Codex can run one profile, the
-// rest of Codex is left with it (C6): a second skill whose searches the
+// rest of Codex is left with it: a second skill whose searches the
 // first's profile would not let record is a host that looks installed and
 // earns nothing. Without this the sentence above could be the skill's alone.
 func TestAnotherInstallationsProfileLeavesCodexWhollyToIt(t *testing.T) {

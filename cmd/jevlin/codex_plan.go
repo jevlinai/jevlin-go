@@ -3,13 +3,13 @@ package main
 // Planning Codex's config.toml: which of the file's starting states this is,
 // what it needs, whom to ask, and what the plan says.
 //
-// The decisions are the maintainer's (D3–D7, C4–C6), in one order:
+// The decisions are the maintainer's, in one order:
 //
-//   - Windows: no profile, the writable roots alone (D6).
+//   - Windows: no profile, the writable roots alone.
 //   - A marked region that cannot be read: left and reported; the skill and
 //     hooks are still written, as before.
 //   - A region whose roots are another installation's: leaveToItsOwner —
-//     nothing for Codex, and the sentence names the owner (C6).
+//     nothing for Codex, and the sentence names the owner.
 //   - A [sandbox_workspace_write] table of the participant's, or a
 //     read-only choice (`sandbox_mode = "read-only"`,
 //     `default_permissions = ":read-only"`): nothing for Codex, with the
@@ -20,11 +20,11 @@ package main
 //     `sandbox_mode = "workspace-write"`: asked; on a typed yes the one line
 //     is rewritten (or commented out), marked, and the profile is written.
 //   - `default_permissions` naming a profile of the participant's: asked;
-//     on a typed yes the missing entries are added to it, marked (D3, C4).
+//     on a typed yes the missing entries are added to it, marked.
 //   - `[features] network_proxy = false`: asked; on yes rewritten to true,
-//     marked, and our region carries no features table (D4).
+//     marked, and our region carries no features table.
 //   - Otherwise: the region, fresh, refreshed, or migrated from the old
-//     block (D7).
+//     block.
 //
 // A typed no installs nothing for Codex and exits 0; an unanswered question
 // stops the whole command, exit 2, with nothing written (hard invariant 18);
@@ -40,7 +40,7 @@ import (
 )
 
 // codexSandboxOS is the OS whose Codex sandbox install and status plan for:
-// a profile everywhere but Windows (D6). A variable so a test on any runner
+// a profile everywhere but Windows. A variable so a test on any runner
 // can plan either answer through the real commands; production never
 // changes it.
 var codexSandboxOS = runtime.GOOS
@@ -177,9 +177,9 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 	}
 	var edits []string // what the participant's own lines get, for the plan
 
-	// A profile of the participant's own: entries into it, never a region
-	// (D3). A profile named jevlin that no marked region of ours holds is
-	// the participant's too.
+	// A profile of the participant's own: entries into it, never a region.
+	// A profile named jevlin that no marked region of ours holds is the
+	// participant's too.
 	if facts.hasDefault && facts.defaultPermissions != ":workspace" && !had {
 		return planCodexParticipantProfile(ops, label, path, entry, facts, roots, hosts, ed, mode, p)
 	}
@@ -309,7 +309,7 @@ func codexRefuse(label, path string, err error, p *agentPlan) codexConfigPlan {
 	return codexConfigPlan{scope: codexNothing, left: true}
 }
 
-// planCodexParticipantProfile is D3: default_permissions names a profile of
+// planCodexParticipantProfile: default_permissions names a profile of
 // the participant's own. The entries it lacks are added to it, marked, after
 // a typed yes; nothing else of ours goes into the file.
 func planCodexParticipantProfile(ops agentOps, label, path string, entry binEntry, facts codexFacts, roots, hosts []string, ed *codexEditor, mode os.FileMode, p *agentPlan) codexConfigPlan {
@@ -394,7 +394,7 @@ func entriesWord(n int) string {
 	return fmt.Sprintf("%d entries", n)
 }
 
-// planCodexWindowsRoots is D6: the old table, without the network key,
+// planCodexWindowsRoots is Windows: the old table, without the network key,
 // where no profile has been seen to work, written where it is found as the
 // old block always was. The note says what the missing network costs.
 func planCodexWindowsRoots(ops agentOps, label, path string, roots []string, entry binEntry, getenv func(string) string, p *agentPlan) (changed, left bool) {

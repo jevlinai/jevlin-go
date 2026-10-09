@@ -37,7 +37,7 @@ func TestUninstallTakesBackOnlyItsOwnMarkedLines(t *testing.T) {
 	}
 }
 
-// C7: a config path that would end the comment cannot be written as one.
+// A config path that would end the comment cannot be written as one.
 func TestAMarkRefusesAPathThatWouldEndTheComment(t *testing.T) {
 	for _, p := range []string{"/home/u/a\nb/jevlin.toml", "/home/u/a\rb/jevlin.toml", "/home/u/a\u2028b/jevlin.toml", "/home/u/a\x00b/jevlin.toml"} {
 		if m, err := codexMark(p, ""); err == nil {

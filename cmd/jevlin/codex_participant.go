@@ -6,10 +6,10 @@ package main
 // Most of what this client writes into config.toml lives between its two
 // markers. Three decisions put a line of ours into a table that is not ours:
 // a profile of the participant's that default_permissions already names gets
-// jevlin's entries added to it (D3); a value of theirs that would otherwise
+// jevlin's entries added to it; a value of theirs that would otherwise
 // fight the profile — `[features] network_proxy = false`,
-// `default_permissions = ":workspace"` — is rewritten (D4, C5); and a bare
-// `sandbox_mode = "workspace-write"` is commented out (C5). Each such line
+// `default_permissions = ":workspace"` — is rewritten; and a bare
+// `sandbox_mode = "workspace-write"` is commented out. Each such line
 // carries a trailing comment naming the installation that wrote it, by its
 // config path, which is ownership_match.go's rule applied one line at a time;
 // and each is written only after the participant typed yes to a question
@@ -29,7 +29,7 @@ import (
 )
 
 // profileEntries is what a participant's profile is missing for the search
-// to work: C4's two cases. network is false in case (ii), a network already
+// to work, in two cases. network is false in the second, a network already
 // on with the proxy off, where only the filesystem lines are added so the
 // participant's open network is not cut down to our hosts.
 type profileEntries struct {
@@ -60,7 +60,7 @@ func missingProfileEntries(f codexFacts, roots, hosts []string) profileEntries {
 	on, _ := netEnabled.(bool)
 	proxyOn := f.proxy == proxyBoolTrue || f.proxy == proxyTableTrue
 	if netPresent && on && !proxyOn {
-		// C4 (ii): their network is unrestricted; the domain lines would
+		// Their network is already unrestricted; the domain lines would
 		// mean nothing, and turning the proxy on would cut their network
 		// down to our hosts.
 		return e
@@ -596,8 +596,8 @@ func removeCodexMarks(text string, entry binEntry) codexMarkRemoval {
 
 // ── the ownership mark on a participant's own line ──────────────────────
 //
-// An entry added to a profile of the participant's (D3), a value of theirs
-// rewritten (D4, C5) or a line of theirs commented out (C5) does not live
+// An entry added to a profile of the participant's, a value of theirs
+// rewritten or a line of theirs commented out does not live
 // between our markers, so each such line names its installation itself, in a
 // trailing comment that carries this installation's config path — the same
 // rule ownership_match.go applies to a hook command or a skill. Uninstall
@@ -606,7 +606,7 @@ func removeCodexMarks(text string, entry binEntry) codexMarkRemoval {
 const codexMarkWord = "jevlin agents install"
 
 // codexMark renders the trailing comment for cfgPath. A path holding a
-// control or line-separator character is refused (C7): a newline would end
+// control or line-separator character is refused: a newline would end
 // the comment and start a line of the participant's file that nobody wrote.
 func codexMark(cfgPath, suffix string) (string, error) {
 	for _, r := range cfgPath {

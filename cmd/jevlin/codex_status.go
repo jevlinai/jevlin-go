@@ -1,17 +1,17 @@
 package main
 
-// What `agents status` says about Codex's sandbox (D5, C2, C3).
+// What `agents status` says about Codex's sandbox.
 //
 // Three things decide what a command Codex runs can reach: which profile
 // default_permissions names, which hosts that profile allows, and whether
 // features.network_proxy is on to enforce them. The third is the one that
 // fails open: `codex features disable network_proxy` deletes our
-// [features.network_proxy] table (seen live, C2), and a profile without it
+// [features.network_proxy] table (seen live), and a profile without it
 // lets every sandboxed command reach any host. So status says that in
 // those words. The hosts are compared with what the config names now, all
 // three of them (router, AS, platform), because a process a sandboxed
 // search spawns contacts the AS and the platform too, and on macOS a denied
-// CONNECT from it fails whichever tool call is running (C3).
+// CONNECT from it fails whichever tool call is running.
 
 import (
 	"fmt"
@@ -76,7 +76,7 @@ func codexPermissionLines(ops agentOps, path string, entry binEntry, getenv func
 		if !had {
 			// A profile of the participant's own with its network on and
 			// the proxy off is unrestricted by their choice, and install
-			// leaves it so (C4 ii).
+			// leaves it so.
 			fix = "that is your profile's own setting, which jevlin leaves"
 		}
 		lines = append(lines, "permissions: network_proxy is off ("+where+"), so the profile's host list is not enforced and every command Codex runs can reach any host; "+fix)

@@ -441,7 +441,7 @@ func TestABlockHoldingATableUnderOurNameIsLeftAlone(t *testing.T) {
 // A key the participant added inside OUR table goes with the table — the
 // table between our markers is ours to render — and is named in the plan
 // first, on both paths, never dropped silently. That is the old block's
-// rule, and Windows still writes the old block (D6).
+// rule, and Windows still writes the old block.
 func TestAKeyAddedInsideOurTableIsNamedBeforeItGoes(t *testing.T) {
 	for _, verb := range []string{"uninstall", "install"} {
 		t.Run(verb, func(t *testing.T) {

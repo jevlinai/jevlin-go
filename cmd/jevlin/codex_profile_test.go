@@ -58,7 +58,7 @@ func capturedCodexConfig(t *testing.T, name string) (m *fakeMachine, ops agentOp
 	return m, ops, cfgPath, state
 }
 
-// C1: what Codex wrote inside the markers is the participant's and is kept —
+// What Codex wrote inside the markers is the participant's and is kept —
 // a root key just above the region, a table just below it — on install,
 // and on uninstall it stays; a second install then writes nothing.
 func TestWhatCodexWritesInsideTheRegionIsKept(t *testing.T) {
@@ -148,7 +148,7 @@ func TestUninstallKeepsWhatCodexWroteInsideTheRegion(t *testing.T) {
 	}
 }
 
-// C2: `codex features disable network_proxy` deletes our proxy table, and
+// `codex features disable network_proxy` deletes our proxy table, and
 // the profile is then open to every host. Status says so in those words;
 // install puts the table back and says why.
 func TestAProxyTableCodexDeletedIsNamedAndRestored(t *testing.T) {
@@ -178,7 +178,7 @@ func TestAProxyTableCodexDeletedIsNamedAndRestored(t *testing.T) {
 	}
 }
 
-// D5 and C3: status names the profile, its hosts against all three the
+// Status names the profile, its hosts against all three the
 // config names, and a stale one.
 func TestStatusComparesTheProfileWithEveryHostTheConfigNames(t *testing.T) {
 	cfgPath, _ := sandboxTestConfig(t)
@@ -221,7 +221,7 @@ func TestStatusComparesTheProfileWithEveryHostTheConfigNames(t *testing.T) {
 	_ = m
 }
 
-// D1: the hosts are the router's, the AS's when as_url is set, and the
+// The hosts are the router's, the AS's when as_url is set, and the
 // platform agents API's, and nothing else — in particular never
 // platform.base_url, which nothing dials (invariant 12).
 func TestTheAllowedHostsAreDerivedFromTheConfig(t *testing.T) {
@@ -250,7 +250,7 @@ func TestTheAllowedHostsAreDerivedFromTheConfig(t *testing.T) {
 	}
 }
 
-// C6: default_permissions naming another installation's profile is left to
+// default_permissions naming another installation's profile is left to
 // it, said so, and the participant is not asked to add anything to it.
 func TestAnotherInstallationsProfileIsNotAskedAbout(t *testing.T) {
 	m := newTwoCodexInstallations(t)

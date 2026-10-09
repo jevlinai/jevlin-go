@@ -142,7 +142,7 @@ func TestCodexInstallWritesTheProfileAndUninstallRemovesIt(t *testing.T) {
 	if strings.Join(roots, "|") != strings.Join(want, "|") {
 		t.Errorf("roots = %q, want %q", roots, want)
 	}
-	// The hosts the config names, and no other (D1).
+	// The hosts the config names, and no other.
 	if strings.Join(hosts, "|") != "agents-v1.nyks.dev|as.example.invalid|router.example.invalid" {
 		t.Errorf("hosts = %q, want the platform, the AS and the router", hosts)
 	}
@@ -180,7 +180,7 @@ func TestCodexInstallWritesTheProfileAndUninstallRemovesIt(t *testing.T) {
 // A [sandbox_workspace_write] table of the participant's own is a sandbox
 // they configured, and Codex does not combine it with a profile: nothing is
 // installed for Codex, the table is left exactly as it was, and the profile
-// is printed to adopt by hand (C5).
+// is printed to adopt by hand.
 func TestCodexInstallLeavesCodexAloneBesideTheParticipantsSandboxTable(t *testing.T) {
 	cfgPath := func() string { c, _ := sandboxTestConfig(t); return c }()
 	m, ops := newFakeMachine("codex")
@@ -224,7 +224,7 @@ func TestCodexWindowsInstallRefusesForeignSandboxTable(t *testing.T) {
 	}
 }
 
-// Windows gets the writable roots and no network (D6), and the plan says a
+// Windows gets the writable roots and no network, and the plan says a
 // search there needs Codex's approval to reach the router.
 func TestCodexWindowsInstallWritesRootsWithoutNetwork(t *testing.T) {
 	cfgPath, home := sandboxTestConfig(t)

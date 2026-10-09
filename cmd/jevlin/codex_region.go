@@ -11,13 +11,13 @@ package main
 // header is a position the file itself defines: uninstall then install is
 // byte-identical for every file, and one decode covers key and tables.
 //
-// Codex writes into the region. Seen live (C1, Codex 0.158.0 Linux and
+// Codex writes into the region. Seen live (Codex 0.158.0 Linux and
 // 0.160.0 macOS, the files are in testdata/codex/): app-server's
 // config/value/write puts a root key directly after our default_permissions,
 // inside the markers; `codex features enable` with no [features] table of
 // the participant's writes `[features]` directly above our
 // [features.network_proxy]. And `codex features disable network_proxy`
-// DELETES our [features.network_proxy] table (C2), leaving the profile open
+// DELETES our [features.network_proxy] table, leaving the profile open
 // to every host. So what is between the markers is split by who wrote it,
 // one level finer than before: a root key that is not default_permissions
 // moves to just above the region, a table that is not one of ours to just
@@ -39,7 +39,7 @@ type codexRegion struct {
 	ourKey      string        // the default_permissions line, "" when absent
 	ourComments string        // comment and blank lines of the preamble: ours, dropped with the region
 	ours        []tomlSection // our tables in file order
-	foreignRoot string        // root-key lines in the preamble that are not ours (C1), their own bytes
+	foreignRoot string        // root-key lines in the preamble that are not ours, their own bytes
 	foreign     []tomlSection // tables that are not ours, their own bytes
 
 	// what ours decodes to
