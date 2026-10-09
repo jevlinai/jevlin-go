@@ -266,3 +266,25 @@ func TestAnotherInstallationsProfileIsNotAskedAbout(t *testing.T) {
 	}
 	m.unchangedSince(before, "the second installation's install at a terminal")
 }
+
+// The net under install, on the one shape where the line work alone would
+// lose a key: a region found below a table header, holding a root key Codex
+// wrote after our default_permissions. Moving the region up takes the
+// marker-to-marker range, and the key with it; in place, that key reads as
+// the table above's. The decoded comparison sees the key gone and refuses,
+// so the file is left exactly as it was and the plan says why.
+func TestInstallNeverLosesAKeyItCannotPlace(t *testing.T) {
+	m, ops, cfgPath, _ := capturedCodexConfig(t, "appserver-model-upsert.toml")
+	below := "[tui]\nscreen_reader_detection_done = true\n\n" + strings.Replace(string(m.files[codexConfigPath]), "\n[tui]\nscreen_reader_detection_done = true\n", "", 1)
+	m.files[codexConfigPath] = []byte(below)
+	if r, had, why := readCodexRegion([]byte(below)); !had || why != "" || r.atTop || r.foreignRoot == "" {
+		t.Fatalf("this case needs a readable region below a header holding a root key of Codex's (had=%v why=%q):\n%s", had, why, below)
+	}
+	_, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-yes")
+	if got := string(m.files[codexConfigPath]); got != below {
+		t.Errorf("install rewrote a file where it could not place a key:\n%s", got)
+	}
+	if !strings.Contains(out, "would change the meaning of something else in the file") {
+		t.Errorf("the plan does not say why nothing was written:\n%s", out)
+	}
+}
