@@ -47,6 +47,8 @@ func codexStates() []codexState {
 		{name: "own-profile-network-open", before: workProfile + "\n[permissions.work.network]\nenabled = true\n", answer: "y"},
 		{name: "features-network-proxy-false", before: "[features]\nmemories = true\nnetwork_proxy = false\n", answer: "y"},
 		{name: "features-network-proxy-true", before: "[features]\nnetwork_proxy = true\n"},
+		{name: "own-profile-proxy-false", before: workProfile + "\n[features]\nnetwork_proxy = false\n", answer: "y"},
+		{name: "default-permissions-workspace-crlf", before: "default_permissions = \":workspace\"\r\nmodel = \"gpt-5\"\r\n\r\n[tui]\r\nscreen_reader_detection_done = true\r\n", answer: "y"},
 		{name: "default-permissions-workspace", before: "default_permissions = \":workspace\"\nmodel = \"gpt-5\"\n", answer: "y"},
 		{name: "sandbox-mode-workspace-write", before: "sandbox_mode = \"workspace-write\"\nmodel = \"gpt-5\"\n", answer: "y"},
 		{name: "sandbox-mode-read-only", before: "sandbox_mode = \"read-only\"\n", exit: exitTransport, nothing: true},
@@ -140,8 +142,11 @@ func TestCodexStartingStatesRoundTrip(t *testing.T) {
 		t.Run(st.name, func(t *testing.T) {
 			m, ops, cfgPath, _, installed, out, _ := stateInstall(t, st)
 			before := strings.ReplaceAll(st.before, "STATEROOTS", quotedRootsOf(t, cfgPath))
-			if code, again := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-yes"); string(m.files[codexConfigPath]) != installed {
-				t.Errorf("a second install changed the file (exit %d)\n%s", code, again)
+			// A second install asks nothing and writes nothing, and exits as
+			// the first did: a refusal it hid behind an unchanged file is the
+			// failure this exists to catch.
+			if code, again := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-yes"); string(m.files[codexConfigPath]) != installed || code != st.exit || strings.Contains(again, "[y/N]") {
+				t.Errorf("a second install was not a no-op (exit %d, want %d)\n%s", code, st.exit, again)
 			}
 			if code, rm := runAgentsAt(t, ops, "", "uninstall", "-config", cfgPath, "-yes"); code != exitOK {
 				t.Fatalf("uninstall: exit %d\n%s", code, rm)

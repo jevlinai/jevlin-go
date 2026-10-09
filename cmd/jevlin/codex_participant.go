@@ -610,7 +610,7 @@ const codexMarkWord = "jevlin agents install"
 // the comment and start a line of the participant's file that nobody wrote.
 func codexMark(cfgPath, suffix string) (string, error) {
 	for _, r := range cfgPath {
-		if unicode.IsControl(r) || r == ' ' || r == ' ' || r == '\u0085' {
+		if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' || r == '\u0085' {
 			return "", fmt.Errorf("the config path %q holds a control or line-separator character and cannot be written as a comment into Codex's config.toml; move the config to a plainer path", cfgPath)
 		}
 	}
