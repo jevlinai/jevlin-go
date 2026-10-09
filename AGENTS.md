@@ -50,7 +50,12 @@ the named tests.
 1. **Fail-open on the earning path.** A mining-side write, spawn, or network failure MUST NOT turn
    a successful search/inference into a client-visible failure, and MUST NOT add latency the user
    notices. The hook emits nothing and exits 0 on any internal error; `search` swallows intake/flush
-   failures. "A mining-side write must never block or fail the search."
+   failures. "A mining-side write must never block or fail the search." Under Codex's permission
+   profile a process a sandboxed search spawns contacts **only hosts the profile lists**
+   (`codexAllowedHosts`: the router, the AS when `as_url` is set, the platform agents API): on
+   macOS a detached child outlives the search, and a CONNECT the profile denies fails whichever
+   Codex tool call is running at that moment, the search's own or a later, unrelated one. A new
+   destination on that path is a new host there, or it breaks this invariant.
 2. **No prompt/completion content as mining evidence.** Prompt, message, completion, reasoning, and
    tool payloads MUST NOT be logged, spooled, hashed, sampled, or sent to the AS as evidence
    (contract PART II). `intakeRecord` is a closed field set — request id, host, status code,
@@ -223,7 +228,8 @@ the named tests.
     (`agents install`'s `Proceed?`, `wallet send`'s confirmation) still differ there.
 19. **A sandboxed agent's files never redirect or stall this client's own.** The state dir, and
     with mining the intake, sessions and spool dirs, are writable roots of Codex's sandbox
-    (`codexSandboxRoots`), while hooks, hook-spawned flushes and connect's resume work in them
+    (`codexSandboxRoots`: the permission profile's filesystem entries, on Windows the roots-only
+    block's `writable_roots`), while hooks, hook-spawned flushes and connect's resume work in them
     from outside it. Live on Codex 0.160.0's macOS sandbox, a command there could leave a symlink
     out of the root, a hard link to a participant's file outside it, and a FIFO; having emptied a
     top-level root, it could not `rmdir` it. A root inside another root (the spool's default,
@@ -375,41 +381,69 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `JEVLIN_HOME` as the way to say a directory elsewhere IS the machine's own.
   `setup_other_home_test.go` snapshots the whole sandbox, since the claim is about what is not
   touched.
-- **Whose content is inside our marked block** — `cmd/jevlin/agents.go` owns the split
-  (`markedRegion`, `splitMarkedBlock`, `splitCodexBlock`) and `targets.go` owns what uninstall
-  does with it (`removeOurSandboxBlock`). It is `ownership_match.go`'s rule one level finer: that
-  rule decides whether a block is *this installation's* by what the renderer wrote into it rather
-  than where it sits; this decides which tables *inside* it are ours the same way, from the one
-  name in `codexSandboxTable`. Neither is about position: Codex appends its own tables to
-  `config.toml`, and when our block is last they land inside our markers, so deleting a
-  marker-to-marker byte range would take Codex's folder trust and `[windows] sandbox` with it. A
-  block that will not decode is left alone and reported, never deleted. The line scan that finds
-  the boundaries is **not trusted**: `oursIsOnlyOurs` decodes whatever was classified as ours and
-  requires exactly our one table with nothing nested in it before a byte is deleted or rewritten,
-  because a header the scan misses is not an error, only a missing boundary, and the text around
-  it still decodes — Codex keys folder trust by path, and a header like
-  `[projects.'/home/u/work [1]']` is exactly what a loose pattern misses. The grammar is fixed;
-  the net is what makes the next miss a refusal instead of a lost table, and the two are tested
-  independently on purpose. `codex_block_ownership_test.go` drives install and uninstall against
-  the shapes Codex produces, its record of hook approvals among them — one
-  `[hooks.state."<hooks.json>:<event>:<i>:<j>"]` table per approved hook, written inside our block
-  whenever the block is last (`TestUninstallKeepsCodexsHookTrustInsideOurBlock`,
-  `TestInstallMovesCodexsHookTrustOutOfOurBlockRatherThanDeletingIt`). This client only ever
-  reads that record, for `agents status` (`codexApprovalLines`), and never writes one: approving
-  is the participant's review of commands that run outside Codex's sandbox
-  (`TestTheClientNeverWritesCodexHookTrust`); `marked_block_sections_test.go` tests the split on its own first,
-  because getting it wrong in the removing direction destroys a participant's settings.
-  **Where the block sits is also ours to preserve**: install writes it **where it finds
-  it** — `replaceBlockInPlace` over `markedRegion`'s own pre and post — and appends only when
-  there is none, so **no byte outside our markers ever moves**, and a change that is only ever to
-  our own table never reorders the file. Tables of Codex's found inside the markers move directly
-  below the block, which also keeps a block that is no longer last from collecting Codex's next
-  append.
-  The position is not recorded anywhere, and that is a decision with a stated cost: uninstall
-  erases it, so an uninstall-then-install round trip is byte-identical only for a block where
-  our own writes put it, at the end. `codex_block_position_test.go` asserts that case by bytes
-  and the other by the guarantee that does hold there — not one line of the participant's own
-  moves relative to any other.
+- **Whose content is inside our marked region** — `cmd/jevlin/codex_region.go` owns the reading
+  (`readCodexRegion`), the placement and the removal; `agents.go` owns the line scan it rests on
+  (`markedRegion`, `splitMarkedBlock`); `targets.go` owns what uninstall does with it
+  (`removeOurSandboxBlock`). On macOS and Linux the region is a Codex permission profile
+  (`codex_profile.go`): `default_permissions`, `[features.network_proxy]`, and
+  `[permissions.jevlin]` with its filesystem roots and network domains. On Windows it is the old
+  `[sandbox_workspace_write]` table with `writable_roots` alone, written where it is found
+  (`planCodexSandbox`), because no profile has been seen to work in Codex's Windows sandbox. It is
+  `ownership_match.go`'s rule one level finer: that rule decides whether a region is *this
+  installation's* by what the renderer wrote into it (its roots, `codexRootsOwner`); this decides
+  which lines *inside* it are ours the same way, from the headers the renderer writes and its one
+  key. Neither is about position: Codex writes into the region — it appends tables to the end of
+  the file, `codex features enable` writes `[features]` inside the markers, app-server's
+  `config/value/write` puts a root key directly after our `default_permissions` (the captures are
+  in `cmd/jevlin/testdata/codex/`, as `cmd/jevlin/testdata/hermes` keeps Hermes' own output). So a root key
+  that is not ours moves to just above the region, a table to just below it, and nothing of
+  anybody's is ever deleted, on install and on uninstall alike. A region that will not decode, or
+  whose own part is not exactly what the renderer writes, is left alone and reported. The line
+  scan is **not trusted**: before a byte is written, the result must decode to the participant's
+  own lines taken in place (ours blanked) plus exactly what the edit adds, so a header the scan
+  misses — Codex keys folder trust by path, and `[projects.'/home/u/work [1]']` is exactly what a
+  loose pattern misses — costs a refusal, never a key. The grammar and the net are tested
+  independently on purpose (`marked_block_sections_test.go` first, because getting the split
+  wrong in the removing direction destroys a participant's settings). Codex's record of hook
+  approvals, one `[hooks.state."<hooks.json>:<event>:<i>:<j>"]` table per hook, is one of those
+  tables (`TestUninstallKeepsCodexsHookTrustInsideOurBlock`,
+  `TestInstallMovesCodexsHookTrustOutOfOurBlockRatherThanDeletingIt`); this client only ever reads
+  it, for `agents status` (`codexApprovalLines`), and never writes one: approving is the
+  participant's review of commands that run outside Codex's sandbox
+  (`TestTheClientNeverWritesCodexHookTrust`).
+  **Where the region sits is the file's to say.** `default_permissions` is a bare key, and TOML
+  gives a bare key to whatever table precedes it, so the region goes **before the file's first
+  table header**, or last in a file with none (`insertBeforeFirstHeader`); found there, it is
+  written where it is; found below a header, it is moved up. No line of the participant's moves
+  relative to another, and because the position is one the file defines rather than one remembered,
+  uninstall then install is byte-identical for every file our writes produced, CRLF included
+  (`joinBlocks` keeps a piece's bytes and undoes its own seam). `codex_block_position_test.go`
+  asserts both.
+  **A setting of the participant's own is changed only on a typed yes** (`codex_plan.go`): their
+  profile named in `default_permissions` gets the entries it lacks (a profile whose network is
+  already on with the proxy off gets only the roots, so it is not cut down to our hosts);
+  `":workspace"` is rewritten to name ours; a bare `sandbox_mode = "workspace-write"` is
+  commented out; `[features] network_proxy = false` is rewritten to true, never shadowed by a
+  second definition, which Codex refuses as a duplicate key. A typed no installs nothing for
+  Codex and exits 0; no line stops the command with nothing written, exit 2 (invariant 18);
+  `-yes` answers none of these. Such a line of ours lives outside the markers, so it names its
+  installation in a trailing comment carrying the config path (`codex_participant.go`'s
+  `codexMark`, refused for a path with a control or line-separator character), and uninstall
+  takes back only lines naming this installation's config. A read-only choice, a
+  `[sandbox_workspace_write]` table of the participant's, or a region that is another
+  installation's installs nothing for Codex at all; full access gets the skill and hooks only.
+  `codex_states_test.go` drives fourteen starting states through the real commands to goldens
+  under `cmd/jevlin/testdata/codex/states/` and back to the participant's bytes;
+  `codex_consent_test.go` runs every question under every ending.
+  **The proxy is part of the profile.** Without `features.network_proxy` Codex does not enforce
+  the domain list and the sandbox network is open to every host; `codex features disable
+  network_proxy` deletes our table (the capture is in `cmd/jevlin/testdata/codex/`), so install restores it and
+  `agents status` says, under Codex's row whatever this installation's state there, that every
+  command Codex runs can reach any host (`codex_status.go`). Status also compares the profile's
+  hosts with all three the config now names. The oldest Codex that reads the region is 0.131.0
+  (`codexProfileFloor`); an older one refuses the file and does not start, which the region's own
+  comment says. No file records Codex's version, and this client does not run codex to ask.
+  For participants: [agents, Codex](docs/agents.md#codex).
 - **Our entry in a Hermes `hooks:` block we did not write** — `cmd/jevlin/hermes_install.go`
   owns it (`findHermesOwnEntry`, `hermesRunIsRenderedExactly`), in the file that already owns the rule it
   follows: there is no YAML parser, so a false-positive refusal is cheap and an ambiguous mutation
@@ -526,6 +560,17 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   the next-attempt time; `pkg/auth/submit.go` owns the AS exchange and what counts as an ack.
   `cmd/jevlin/delivery_health_test.go` proves a quarantine cannot be cleared by an unrelated
   success.
+- **The AS clients' proxy** — `pkg/auth/proxy.go` owns `loopbackProxy`, the Proxy function of
+  both AS-facing transports (discovery and the DPoP credential client): the environment's proxy,
+  used only when its address is a loopback literal (127.0.0.0/8, ::1); any other, a name
+  included, is ignored as every environment proxy used to be, and the request goes direct. The
+  rule "no environment proxy may silently interpose on AS identity" is about a proxy somebody else
+  configured; a proxy on this machine's loopback is the only route out of Codex's sandbox, and a
+  local process can already read `credentials.json`. Only the AS clients follow it: the wallet's
+  chain client keeps `Proxy: nil`, the search and platform clients keep
+  `http.ProxyFromEnvironment`. `pkg/auth/proxy_test.go` drives the package's own transports
+  through an `httptest` CONNECT proxy on loopback, counting tunnels, and the non-loopback cases
+  without a dial.
 - **The search protocol** — `search.go` owns the request and the fail-open intake;
   `search_protocol.go` owns the deadline, the bounded read and the one exact-code retry;
   `search_machine.go` owns search's classification; `machine.go` owns the header, the action set
@@ -661,8 +706,9 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   renderers install writes with, never a hand-kept list, plus the `%q` and bare forms Claude
   Code's allow rules are written in and Hermes' bare POSIX path; the config is compared with
   `samePath`, because `%q` hands Windows doubled separators naming the same file.
-  Codex's sandbox block names directories rather than a config, so `removeOurSandboxBlock`
-  attributes it by its writable roots lying under this installation. **Every artifact this client
+  Codex's marked region names directories rather than a config, so `removeOurSandboxBlock`
+  attributes it by its roots being this installation's (`codexRootsOwner`); a line of ours in a
+  table of the participant's names the config in its mark instead. **Every artifact this client
   writes names the installation that wrote it** — `TestEveryArtifactNamesTheInstallationThatWroteIt`
   — including the JavaScript adapters, through their `INSTALL_CONFIG` line. Pi's extension runs no
   command of ours, and opencode's plugin runs one only to hand a finished turn to `hook turn`, so
