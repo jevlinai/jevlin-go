@@ -580,6 +580,10 @@ func (codexTarget) Detect(ops agentOps, _ agentPaths, _ func(string) string) str
 func (t codexTarget) PlanInstall(ops agentOps, paths agentPaths, entry binEntry, getenv func(string) string, p *agentPlan) {
 	var cp agentPlan
 	cfg := planCodexConfig(ops, t.Label(), paths.codexConfig, entry, getenv, codexSandboxOS, &cp)
+	if cp.aborted != "" {
+		p.aborted = cp.aborted
+		return
+	}
 	if cfg.scope == codexNothing {
 		p.notes = append(p.notes, cp.notes...)
 		p.refused = append(p.refused, cp.refused...)
@@ -708,6 +712,26 @@ func (t codexTarget) PlanUninstall(ops agentOps, paths agentPaths, entry binEntr
 			whys = append(whys, "remove jevlin's block")
 		case r.had:
 			p.notes = append(p.notes, t.Label()+": left the jevlin block in "+paths.codexConfig+": "+r.why)
+		}
+		// Lines of ours in tables of the participant's (codex_participant.go):
+		// only those marked with this installation's config.
+		m := removeCodexMarks(string(next), entry)
+		switch {
+		case m.why != "":
+			p.notes = append(p.notes, t.Label()+": left jevlin's marked lines in "+paths.codexConfig+": "+m.why)
+		case m.changed:
+			next = m.next
+			var parts []string
+			if len(m.removed) > 0 {
+				parts = append(parts, "remove "+entriesWord(len(m.removed))+" jevlin added to your profile")
+			}
+			if len(m.restored) > 0 {
+				parts = append(parts, "restore "+strings.Join(m.restored, ", ")+" as you had it")
+			}
+			whys = append(whys, strings.Join(parts, ", "))
+		}
+		for _, other := range m.foreign {
+			noteOnce(p, t.Label()+": the lines another installation marked in "+paths.codexConfig+" are "+leftForeign(describeOther(nil, []string{other}, refFor(entry))))
 		}
 		if len(whys) > 0 {
 			planWrite(ops, t.Label(), paths.codexConfig, next, mode, strings.Join(whys, "; "), p)

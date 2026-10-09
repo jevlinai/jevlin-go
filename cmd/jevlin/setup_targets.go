@@ -70,7 +70,8 @@ directory — plus the intake, sessions and spool directories — made writable,
 never the config, the stored key or the wallet, and network access to the
 search hosts only, through Codex's proxy, so a search can record itself and
 the claim can resolve. Every other host stays closed to Codex's commands.
-Answering yes here accepts all of that.
+A change to a Codex setting of your own is asked about separately.
+Answering yes here accepts the rest.
 `, joinLabels(labels(targetsByKind(targetHost))), codex)
 }
 
@@ -113,7 +114,15 @@ func (r *setupRun) agentsStep() int {
 			entry.rendered = rendered
 		}
 	}
+	if r.d.interactive && !r.dry {
+		// A change to the participant's own Codex settings is asked about
+		// on its own, and -yes does not answer it (codex_plan.go).
+		ops.consent = func(question string) (string, error) { return promptSetup(r.d.stdout, question, r.lineIn) }
+	}
 	plan := buildInstallPlan(ops, paths, selected, entry, r.d.getenv)
+	if plan.aborted != "" {
+		return r.abort("no coding agent was set up")
+	}
 	if r.d.agentPlanObserver != nil {
 		r.d.agentPlanObserver(plan)
 	}

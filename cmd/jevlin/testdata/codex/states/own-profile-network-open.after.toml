@@ -1,0 +1,14 @@
+default_permissions = "work"
+
+[permissions.work]
+extends = ":workspace"
+
+[permissions.work.filesystem]
+"/home/u/src" = "write"
+"HOME/intake" = "write"  # jevlin agents install ("CONFIG")
+"HOME/sessions" = "write"  # jevlin agents install ("CONFIG")
+"HOME/spool" = "write"  # jevlin agents install ("CONFIG")
+"HOME/state" = "write"  # jevlin agents install ("CONFIG")
+
+[permissions.work.network]
+enabled = true

@@ -1,0 +1,22 @@
+default_permissions = "work"
+
+[permissions.work]
+extends = ":workspace"
+
+[permissions.work.filesystem]
+"/home/u/src" = "write"
+"HOME/intake" = "write"  # jevlin agents install ("CONFIG")
+"HOME/sessions" = "write"  # jevlin agents install ("CONFIG")
+"HOME/spool" = "write"  # jevlin agents install ("CONFIG")
+"HOME/state" = "write"  # jevlin agents install ("CONFIG")
+
+[permissions.work.network]  # jevlin agents install ("CONFIG")
+enabled = true  # jevlin agents install ("CONFIG")
+
+[permissions.work.network.domains]  # jevlin agents install ("CONFIG")
+"agents-v1.nyks.dev" = "allow"  # jevlin agents install ("CONFIG")
+"as.example.invalid" = "allow"  # jevlin agents install ("CONFIG")
+"router.example.invalid" = "allow"  # jevlin agents install ("CONFIG")
+
+[features.network_proxy]  # jevlin agents install ("CONFIG")
+enabled = true  # jevlin agents install ("CONFIG")

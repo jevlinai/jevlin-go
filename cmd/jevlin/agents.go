@@ -180,6 +180,13 @@ type agentOps struct {
 	stat       func(string) (os.FileInfo, error)
 	removeAll  func(string) error
 	isTerminal func() bool
+	// consent asks the participant a question that only a typed line can
+	// answer, and returns that line; an error is no line at all (hard
+	// invariant 18). nil means there is nobody to ask: no terminal, or a
+	// caller that never asks. -yes does not set it, because the questions
+	// it asks are about a participant's own settings, which -yes never
+	// answers.
+	consent func(question string) (string, error)
 	// binaryLocation vets the binary install records; nil means
 	// checkBinaryLocation.
 	binaryLocation binaryLocationCheck
@@ -397,6 +404,10 @@ type agentPlan struct {
 	skipped []string
 	refused []string
 	notes   []string
+	// aborted is set when a question asked while planning got no typed
+	// line. The command then stops, writes nothing and exits non-zero
+	// (hard invariant 18); the sentence is what it says.
+	aborted string
 }
 
 // removedPaths is the plan's removals as plain paths, for the callers that
@@ -486,11 +497,24 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 		return exitOK
 	}
 
+	// One reader for every question this command asks: a pipe delivers
+	// several answers in one chunk, and a second reader over the same stdin
+	// would lose what the first buffered.
+	br := bufio.NewReader(stdin)
+	if sub == "install" && !*dryRun && ops.isTerminal() {
+		// Codex's config may need a change to the participant's own
+		// settings, which only a typed yes allows; -yes is not that answer.
+		ops.consent = func(question string) (string, error) { return promptBufio(stdout, question, br) }
+	}
 	var plan agentPlan
 	if sub == "install" {
 		plan = buildInstallPlan(ops, paths, selected, entry, getenv)
 	} else {
 		plan = buildUninstallPlan(ops, paths, selected, entry, getenv)
+	}
+	if plan.aborted != "" {
+		fmt.Fprintf(stderr, "\njevlin agents: %s\n", plan.aborted)
+		return exitUsage
 	}
 
 	fmt.Fprintf(stdout, "jevlin agents %s\n", sub)
@@ -528,7 +552,7 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 		// half of dropin-miner#81's shape: an empty line here means yes, which made
 		// an interrupt at this prompt write every agent file. Only a
 		// typed line decides now.
-		line, err := promptBufio(stdout, "\nProceed? [Y/n]: ", bufio.NewReader(stdin))
+		line, err := promptBufio(stdout, "\nProceed? [Y/n]: ", br)
 		if err != nil {
 			fmt.Fprintf(stderr, "\njevlin agents: %s; nothing was changed\n", promptAbortedReason)
 			return exitUsage

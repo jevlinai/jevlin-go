@@ -16,16 +16,25 @@ package main
 //     profile printed to add by hand; widening read-only is theirs to do.
 //   - Full access (`danger-full-access`, either spelling): the skill and the
 //     hooks only; there is nothing to widen.
-//   - `default_permissions = ":workspace"`, a bare
-//     `sandbox_mode = "workspace-write"`, `default_permissions` naming a
-//     profile of the participant's, or `[features] network_proxy = false`:
-//     a setting of theirs the profile would have to change, so nothing for
-//     Codex, with the lines to use printed.
+//   - `default_permissions = ":workspace"`, or a bare
+//     `sandbox_mode = "workspace-write"`: asked; on a typed yes the one line
+//     is rewritten (or commented out), marked, and the profile is written.
+//   - `default_permissions` naming a profile of the participant's: asked;
+//     on a typed yes the missing entries are added to it, marked (D3, C4).
+//   - `[features] network_proxy = false`: asked; on yes rewritten to true,
+//     marked, and our region carries no features table (D4).
 //   - Otherwise: the region, fresh, refreshed, or migrated from the old
 //     block (D7).
+//
+// A typed no installs nothing for Codex and exits 0; an unanswered question
+// stops the whole command, exit 2, with nothing written (hard invariant 18);
+// -yes answers none of these questions; with no terminal the Codex part is
+// refused and the lines to add by hand are printed.
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 )
@@ -50,6 +59,33 @@ type codexConfigPlan struct {
 	scope   codexScope
 	changed bool // a write to config.toml was planned
 	left    bool // something in config.toml was left as it is, and said so
+}
+
+// consentAnswer is what asking the participant came to.
+type consentAnswer int
+
+const (
+	consentYes consentAnswer = iota
+	consentNo
+	consentAborted // no line was typed: the command stops
+	consentUnasked // no terminal to ask at
+)
+
+// askConsent puts question to the participant through ops.consent. The
+// question ends with "[y/N]: "; only a typed y or yes is a yes.
+func askConsent(ops agentOps, question string) consentAnswer {
+	if ops.consent == nil {
+		return consentUnasked
+	}
+	line, err := ops.consent(question)
+	if err != nil {
+		return consentAborted
+	}
+	switch strings.ToLower(strings.TrimSpace(line)) {
+	case "y", "yes":
+		return consentYes
+	}
+	return consentNo
 }
 
 // codexWriteWhy is the plan line for the fresh region.
@@ -134,37 +170,107 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 		return codexConfigPlan{scope: codexNothing, left: true}
 	}
 
-	// A setting of the participant's own that the profile would have to
-	// change is theirs to change: nothing is installed for Codex, and the
-	// lines to use are printed.
-	switch {
-	case facts.hasDefault && facts.defaultPermissions == ":workspace":
-		p.refused = append(p.refused, fmt.Sprintf("%s: %s sets default_permissions = \":workspace\"; nothing was installed for Codex. To use jevlin's search there, set default_permissions = %q and add this profile:\n%s", label, path, codexProfileName, byHand))
-		return codexConfigPlan{scope: codexNothing, left: true}
-	case facts.hasDefault:
-		p.refused = append(p.refused, fmt.Sprintf("%s: %s names a permission profile of yours, %q, in default_permissions; nothing was installed for Codex. To use jevlin's search there, give that profile the writable roots and network hosts of this one:\n%s", label, path, facts.defaultPermissions, byHand))
-		return codexConfigPlan{scope: codexNothing, left: true}
-	case facts.hasSandboxMode: // "workspace-write", the only value left
-		p.refused = append(p.refused, fmt.Sprintf("%s: %s sets sandbox_mode = \"workspace-write\", which Codex does not combine with a permission profile; nothing was installed for Codex. To use jevlin's search there, remove sandbox_mode and add this profile:\n%s", label, path, byHand))
-		return codexConfigPlan{scope: codexNothing, left: true}
+	ed, err := newCodexEditor(string(existing), entry.cfg)
+	if err != nil {
+		p.refused = append(p.refused, fmt.Sprintf("%s: %s: %v; nothing was written to it", label, path, err))
+		return codexConfigPlan{left: true}
 	}
+	var edits []string // what the participant's own lines get, for the plan
+
+	// A profile of the participant's own: entries into it, never a region
+	// (D3). A profile named jevlin that no marked region of ours holds is
+	// the participant's too.
+	if facts.hasDefault && facts.defaultPermissions != ":workspace" && !had {
+		return planCodexParticipantProfile(ops, label, path, entry, facts, roots, hosts, ed, mode, p)
+	}
+
+	if facts.hasDefault && facts.defaultPermissions == ":workspace" {
+		q := fmt.Sprintf("\n%s: %s sets default_permissions = \":workspace\", Codex's built-in workspace profile.\njevlin's search needs a profile that extends it with write access to its jevlin home and network\naccess to %s only, through Codex's proxy:\n%s\nReplace \":workspace\" with jevlin's profile %q? The line is marked, and agents uninstall puts \":workspace\" back. [y/N]: ",
+			label, tilde(ops.home, path), joinLabels(hosts), byHand, codexProfileName)
+		switch askConsent(ops, q) {
+		case consentYes:
+			if err := ed.rewriteRootKey("default_permissions", mustTOMLString(codexProfileName), codexProfileName); err != nil {
+				return codexRefuse(label, path, err, p)
+			}
+			profile.key = false
+			edits = append(edits, "default_permissions rewritten from \":workspace\"")
+		case consentNo:
+			p.notes = append(p.notes, label+": nothing installed for Codex: you kept default_permissions = \":workspace\"; the skill and hooks were not written")
+			return codexConfigPlan{scope: codexNothing}
+		case consentAborted:
+			p.aborted = promptAbortedReason + "; nothing was changed"
+			return codexConfigPlan{scope: codexNothing}
+		case consentUnasked:
+			p.refused = append(p.refused, fmt.Sprintf("%s: %s sets default_permissions = \":workspace\", and replacing it needs your yes at a terminal (-yes does not answer it); nothing was installed for Codex. By hand: set default_permissions = %q and add this profile:\n%s", label, path, codexProfileName, byHand))
+			return codexConfigPlan{scope: codexNothing, left: true}
+		}
+	}
+
+	if facts.hasSandboxMode { // "workspace-write", the only value left
+		q := fmt.Sprintf("\n%s: %s sets sandbox_mode = \"workspace-write\", which Codex does not combine with a permission profile.\njevlin's search needs this profile, which keeps workspace writes and adds write access to its jevlin home\nand network access to %s only, through Codex's proxy:\n%s\nComment out sandbox_mode and use jevlin's profile? The line is marked, and agents uninstall restores it. [y/N]: ",
+			label, tilde(ops.home, path), joinLabels(hosts), byHand)
+		switch askConsent(ops, q) {
+		case consentYes:
+			if err := ed.commentOutRootKey("sandbox_mode"); err != nil {
+				return codexRefuse(label, path, err, p)
+			}
+			edits = append(edits, "sandbox_mode commented out")
+		case consentNo:
+			p.notes = append(p.notes, label+": nothing installed for Codex: you kept sandbox_mode = \"workspace-write\"; the skill and hooks were not written")
+			return codexConfigPlan{scope: codexNothing}
+		case consentAborted:
+			p.aborted = promptAbortedReason + "; nothing was changed"
+			return codexConfigPlan{scope: codexNothing}
+		case consentUnasked:
+			p.refused = append(p.refused, fmt.Sprintf("%s: %s sets sandbox_mode = \"workspace-write\", and replacing it needs your yes at a terminal (-yes does not answer it); nothing was installed for Codex. By hand: remove sandbox_mode and add this profile:\n%s", label, path, byHand))
+			return codexConfigPlan{scope: codexNothing, left: true}
+		}
+	}
+
 	switch facts.proxy {
 	case proxyBoolTrue, proxyTableTrue:
 		profile.proxy = false
 	case proxyBoolFalse, proxyTableFalse:
-		p.refused = append(p.refused, fmt.Sprintf("%s: your [features] table in %s turns network_proxy off, and without it a profile opens the sandbox network to every host; nothing was installed for Codex. To use jevlin's search there, set network_proxy = true there and add this profile:\n%s", label, path, indentBlock(codexProfileText(codexProfile{roots: roots, hosts: hosts, key: true}))))
-		return codexConfigPlan{scope: codexNothing, left: true}
+		q := fmt.Sprintf("\n%s: your [features] table in %s turns network_proxy off, so a permission profile's host list is not enforced\nand Codex's sandbox network is open to every host. jevlin's profile needs it on.\nSet network_proxy = true? The line is marked, and agents uninstall puts false back. [y/N]: ", label, tilde(ops.home, path))
+		switch askConsent(ops, q) {
+		case consentYes:
+			var err error
+			if facts.proxy == proxyBoolFalse {
+				err = ed.rewriteInSection([]string{"features"}, "network_proxy", "true", true)
+			} else {
+				err = ed.rewriteInSection([]string{"features", "network_proxy"}, "enabled", "true", true)
+			}
+			if err != nil {
+				return codexRefuse(label, path, err, p)
+			}
+			profile.proxy = false
+			edits = append(edits, "network_proxy rewritten from false")
+		case consentNo:
+			p.notes = append(p.notes, label+": nothing installed for Codex: you kept network_proxy off, and without it the profile would open the sandbox network to every host; the skill and hooks were not written")
+			return codexConfigPlan{scope: codexNothing}
+		case consentAborted:
+			p.aborted = promptAbortedReason + "; nothing was changed"
+			return codexConfigPlan{scope: codexNothing}
+		case consentUnasked:
+			p.refused = append(p.refused, fmt.Sprintf("%s: your [features] table in %s turns network_proxy off, and turning it on needs your yes at a terminal (-yes does not answer it); nothing was installed for Codex. By hand: set network_proxy = true there and add this profile:\n%s", label, path, indentBlock(codexProfileText(codexProfile{roots: roots, hosts: hosts, key: true}))))
+			return codexConfigPlan{scope: codexNothing, left: true}
+		}
 	case proxyOther:
 		p.refused = append(p.refused, fmt.Sprintf("%s: features.network_proxy in %s has a shape this client does not read; nothing was installed for Codex", label, path))
 		return codexConfigPlan{scope: codexNothing, left: true}
 	}
+	if len(edits) > 0 {
+		if err := ed.verify(); err != nil {
+			return codexRefuse(label, path, err, p)
+		}
+	}
 
-	next, change, why := installCodexRegion(existing, codexProfileRegion(profile))
+	next, change, why := installCodexRegion([]byte(ed.text), codexProfileRegion(profile))
 	if why != "" {
 		p.refused = append(p.refused, fmt.Sprintf("%s: %s: %s", label, path, why))
 		return codexConfigPlan{left: true}
 	}
-	if change.unchanged {
+	if change.unchanged && len(edits) == 0 {
 		return codexConfigPlan{}
 	}
 	why = codexWriteWhy(hosts)
@@ -174,6 +280,9 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 			codexProfileName, joinLabels(hosts), codexProfileFloor)
 	case change.proxyRestored:
 		why = fmt.Sprintf("permissions: restore [features.network_proxy], which had been turned off: without it every command Codex runs could reach any host; the profile's hosts, %s, are enforced again", joinLabels(hosts))
+	}
+	if len(edits) > 0 {
+		why += "; " + strings.Join(edits, ", ")
 	}
 	if len(change.droppedKeys) > 0 {
 		p.notes = append(p.notes, droppedKeysNote(label, path, change.droppedKeys))
@@ -193,6 +302,96 @@ func keysWord(n int) string {
 		return "1 key"
 	}
 	return fmt.Sprintf("%d keys", n)
+}
+
+func codexRefuse(label, path string, err error, p *agentPlan) codexConfigPlan {
+	p.refused = append(p.refused, fmt.Sprintf("%s: %s: %v", label, path, err))
+	return codexConfigPlan{scope: codexNothing, left: true}
+}
+
+// planCodexParticipantProfile is D3: default_permissions names a profile of
+// the participant's own. The entries it lacks are added to it, marked, after
+// a typed yes; nothing else of ours goes into the file.
+func planCodexParticipantProfile(ops agentOps, label, path string, entry binEntry, facts codexFacts, roots, hosts []string, ed *codexEditor, mode os.FileMode, p *agentPlan) codexConfigPlan {
+	e := missingProfileEntries(facts, roots, hosts)
+	if e.empty() {
+		return codexConfigPlan{}
+	}
+	if e.proxy && (facts.proxy == proxyBoolFalse) {
+		// Cannot happen: a false bool is case proxyFx. Kept as a guard.
+		return codexRefuse(label, path, errors.New("network_proxy is both false and absent"), p)
+	}
+	q := fmt.Sprintf("\n%s: %s names a permission profile of yours, %q, in default_permissions.\njevlin's search needs these entries in it (each line is marked as jevlin's, and agents uninstall removes only them):\n%s\nAdd these entries to your profile %q? [y/N]: ",
+		label, tilde(ops.home, path), e.name, indentBlock(e.text()), e.name)
+	switch askConsent(ops, q) {
+	case consentNo:
+		p.notes = append(p.notes, fmt.Sprintf("%s: nothing installed for Codex: you declined adding jevlin's entries to profile %q; the skill and hooks were not written", label, e.name))
+		return codexConfigPlan{scope: codexNothing}
+	case consentAborted:
+		p.aborted = promptAbortedReason + "; nothing was changed"
+		return codexConfigPlan{scope: codexNothing}
+	case consentUnasked:
+		p.refused = append(p.refused, fmt.Sprintf("%s: %s names a permission profile of yours, %q, and adding jevlin's entries to it needs your yes at a terminal (-yes does not answer it); nothing was installed for Codex. By hand, add:\n%s", label, path, e.name, indentBlock(e.text())))
+		return codexConfigPlan{scope: codexNothing, left: true}
+	}
+	var err error
+	apply := func(f func() error) {
+		if err == nil {
+			err = f()
+		}
+	}
+	if len(e.roots) > 0 {
+		var entries []tomlEntry
+		for _, r := range e.roots {
+			entries = append(entries, tomlEntry{keyTOML: mustTOMLString(r), valueTOML: `"write"`, key: r, value: "write"})
+		}
+		apply(func() error { return ed.addToSection([]string{"permissions", e.name, "filesystem"}, entries) })
+	}
+	if e.enable {
+		if e.rewrite {
+			apply(func() error {
+				return ed.rewriteInSection([]string{"permissions", e.name, "network"}, "enabled", "true", true)
+			})
+		} else {
+			apply(func() error {
+				return ed.addToSection([]string{"permissions", e.name, "network"}, []tomlEntry{{keyTOML: "enabled", valueTOML: "true", key: "enabled", value: true}})
+			})
+		}
+	}
+	if len(e.hosts) > 0 {
+		var entries []tomlEntry
+		for _, h := range e.hosts {
+			entries = append(entries, tomlEntry{keyTOML: mustTOMLString(h), valueTOML: `"allow"`, key: h, value: "allow"})
+		}
+		apply(func() error { return ed.addToSection([]string{"permissions", e.name, "network", "domains"}, entries) })
+	}
+	if e.proxy {
+		apply(func() error {
+			return ed.addToSection([]string{"features", "network_proxy"}, []tomlEntry{{keyTOML: "enabled", valueTOML: "true", key: "enabled", value: true}})
+		})
+	}
+	if e.proxyFx {
+		apply(func() error { return ed.rewriteInSection([]string{"features"}, "network_proxy", "true", true) })
+	}
+	apply(ed.verify)
+	if err != nil {
+		return codexRefuse(label, path, err, p)
+	}
+	n := len(e.roots) + len(e.hosts)
+	if e.enable {
+		n++
+	}
+	if e.proxy || e.proxyFx {
+		n++
+	}
+	return codexConfigPlan{changed: planWrite(ops, label, path, []byte(ed.text), mode, fmt.Sprintf("permissions: %s added to your profile %q, each marked as jevlin's", entriesWord(n), e.name), p)}
+}
+
+func entriesWord(n int) string {
+	if n == 1 {
+		return "1 entry"
+	}
+	return fmt.Sprintf("%d entries", n)
 }
 
 // planCodexWindowsRoots is D6: the old table, without the network key,
