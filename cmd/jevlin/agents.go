@@ -1571,6 +1571,11 @@ func printAgentStatus(ops agentOps, paths agentPaths, entry binEntry, signals ma
 			found = "found: " + sig
 		}
 		fmt.Fprintf(stdout, "  %-12s %-26s %s\n", t.Label(), found, state)
+		if n, ok := t.(hostNoter); ok {
+			for _, line := range n.HostNotes(ops, paths, entry, getenv) {
+				fmt.Fprintf(stdout, "  %-12s %s\n", "", line)
+			}
+		}
 		if !st.installed {
 			continue
 		}
@@ -1580,7 +1585,7 @@ func printAgentStatus(ops agentOps, paths agentPaths, entry binEntry, signals ma
 		// What only the host can say about its own install, for a host that
 		// is this installation's: Codex's approval of the hooks.
 		if n, ok := t.(statusNoter); ok && !foreign {
-			for _, line := range n.StatusNotes(ops, paths, entry) {
+			for _, line := range n.StatusNotes(ops, paths, entry, getenv) {
 				fmt.Fprintf(stdout, "  %-12s %s\n", "", line)
 			}
 		}
@@ -1985,7 +1990,7 @@ func planCodexSandbox(ops agentOps, label, path string, roots []string, entry bi
 	if bytes.Contains(stripped, []byte("["+codexSandboxTable+"]")) {
 		p.refused = append(p.refused, fmt.Sprintf(
 			"%s: %s already defines [%s]; add these settings to it by hand so searches can record:\n%s",
-			label, path, codexSandboxTable, indentBlock(sandboxSettings(roots))))
+			label, path, codexSandboxTable, indentBlock(codexWindowsSettings(roots))))
 		return false, true
 	}
 
@@ -2021,10 +2026,10 @@ func planCodexSandbox(ops agentOps, label, path string, roots []string, entry bi
 				label, tables(len(have.foreign)), path, strings.Join(have.foreignNames(), ", ")))
 		}
 		next := replaceBlockInPlace(pre, want, have.foreignText(), post)
-		return planWrite(ops, label, path, next, mode, "sandbox: network + writable_roots so searches can record", p), false
+		return planWrite(ops, label, path, next, mode, codexWindowsWhy, p), false
 	}
 	next := appendMarkedBlock(stripped, want)
-	return planWrite(ops, label, path, next, mode, "sandbox: network + writable_roots so searches can record", p), false
+	return planWrite(ops, label, path, next, mode, codexWindowsWhy, p), false
 }
 
 // droppedKeysNote is the one sentence both plans use for a key a participant
@@ -2060,6 +2065,13 @@ func tables(n int) string {
 // no two of them can come to disagree about which table is ours (dropin-miner#82).
 const codexSandboxTable = "sandbox_workspace_write"
 
+// codexWindowsWhy is the plan line for the Windows block (D6).
+const codexWindowsWhy = "sandbox: writable_roots so searches can record; no network: Codex asks before a search reaches the router"
+
+// sandboxSettings is the table every version before the permission profile
+// wrote, network_access included. Nothing renders it any more; it is the
+// definition of which keys inside an old block are ours (keysWeDidNotWrite),
+// so a migration does not call network_access a key the participant added.
 func sandboxSettings(roots []string) string {
 	quoted := make([]string, len(roots))
 	for i, r := range roots {
@@ -2070,10 +2082,10 @@ func sandboxSettings(roots []string) string {
 
 func codexSandboxBlock(roots []string) []byte {
 	return []byte(agentsMarkerBegin + "\n" +
-		"# Lets jevlin's search reach the router and record its mining\n" +
-		"# observation under your jevlin home. Without this, Codex's default\n" +
-		"# sandbox blocks the write and searches earn nothing.\n" +
-		sandboxSettings(roots) +
+		"# Lets jevlin's search record its mining observation under your\n" +
+		"# jevlin home. Without this, Codex's default sandbox blocks the\n" +
+		"# write and searches earn nothing. No network: Codex asks first.\n" +
+		codexWindowsSettings(roots) +
 		agentsMarkerEnd + "\n")
 }
 

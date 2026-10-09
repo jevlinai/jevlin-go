@@ -229,11 +229,18 @@ func (ref installationRef) commandIsOurs(command string) bool {
 // Discovery — an installation running with no config at all — has nothing to
 // compare against, so it keeps the block rather than strand one nothing can
 // attribute.
+//
+// The permission profile that replaced the table names its directories the
+// same way, as the keys of its filesystem table, so one reading answers for
+// both: codexRootsOwner is handed the roots whichever shape held them.
 func codexBlockOwner(ourTable string, entry binEntry, getenv func(string) string) (ours bool, other, why string) {
+	return codexRootsOwner(markedSandboxRoots(ourTable), entry, getenv)
+}
+
+func codexRootsOwner(roots []string, entry binEntry, getenv func(string) string) (ours bool, other, why string) {
 	if entry.cfg == "" {
 		return true, "", ""
 	}
-	roots := markedSandboxRoots(ourTable)
 	if len(roots) == 0 {
 		return false, "", "its writable roots cannot be read, so it cannot be attributed to this installation"
 	}

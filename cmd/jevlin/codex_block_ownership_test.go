@@ -32,7 +32,8 @@ type codexPlacement int
 const (
 	insideOurBlock codexPlacement = iota // what Codex does: append to the end of the file
 	afterOurBlock                        // dropin-miner#88 item 4: restored by hand below the end marker
-	beforeOurBlock                       // our block is not the last thing in the file
+	beforeOurBlock                       // tables above our block: by hand, never by install
+	ourBlockAlone                        // nothing of Codex's at all: our block last
 )
 
 const (
@@ -65,6 +66,8 @@ func installedCodexConfig(t *testing.T, where codexPlacement) (m *fakeMachine, o
 		installed = installed[:i] + host + installed[i:]
 	case afterOurBlock:
 		installed = strings.TrimRight(installed, "\n") + "\n\n" + host
+	case ourBlockAlone:
+		return m, ops, cfgPath, installed
 	case beforeOurBlock:
 		i := strings.Index(installed, agentsMarkerBegin)
 		if i < 0 {
@@ -76,6 +79,12 @@ func installedCodexConfig(t *testing.T, where codexPlacement) (m *fakeMachine, o
 	return m, ops, cfgPath, installed
 }
 
+// holdsOurTable: does the file still hold a table this client writes, the
+// profile or the old block?
+func holdsOurTable(file string) bool {
+	return strings.Contains(file, "["+codexSandboxTable+"]") || strings.Contains(file, "[permissions."+codexProfileName) || strings.Contains(file, "default_permissions")
+}
+
 // keptVerbatim is the assertion dropin-miner#82 is about: the host's tables are still
 // there, byte for byte, and our own is not.
 func keptVerbatim(t *testing.T, got string) {
@@ -85,7 +94,7 @@ func keptVerbatim(t *testing.T, got string) {
 			t.Errorf("Codex's own table did not survive byte-identical.\nwant to find:\n%s\ngot file:\n%s", want, got)
 		}
 	}
-	if strings.Contains(got, agentsMarkerBegin) || strings.Contains(got, "["+codexSandboxTable+"]") {
+	if strings.Contains(got, agentsMarkerBegin) || holdsOurTable(got) {
 		t.Errorf("our own block survived the uninstall:\n%s", got)
 	}
 	if !strings.Contains(got, "model = \"gpt-5\"") {
@@ -157,7 +166,6 @@ func TestASecondInstallHasNothingToDoWhateverFollowsOurBlock(t *testing.T) {
 		where codexPlacement
 	}{
 		{"Codex's tables below our end marker", afterOurBlock},
-		{"our block is not the last thing in the file", beforeOurBlock},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m, ops, cfgPath, before := installedCodexConfig(t, tc.where)
@@ -345,7 +353,7 @@ func TestUninstallKeepsATableWhoseHeaderHoldsABracket(t *testing.T) {
 			if !strings.Contains(got, tc.table) {
 				t.Fatalf("the table was destroyed:\n%s", got)
 			}
-			if strings.Contains(got, agentsMarkerBegin) || strings.Contains(got, "["+codexSandboxTable+"]") {
+			if strings.Contains(got, agentsMarkerBegin) || holdsOurTable(got) {
 				t.Errorf("our own table was not removed — the header was not recognized as a boundary, and only the net saved the table:\n%s\n%s", got, out)
 			}
 			if !strings.Contains(out, "keeping 1 table") {
@@ -424,7 +432,7 @@ func TestABlockHoldingATableUnderOurNameIsLeftAlone(t *testing.T) {
 		if got := string(m.files["/home/u/.codex/config.toml"]); got != seeded {
 			t.Fatalf("%s changed a block it could not attribute:\n%s", verb, got)
 		}
-		if !strings.Contains(out+errOut, "cannot be read as TOML tables") {
+		if !strings.Contains(out+errOut, "defines sandbox_workspace_write; remove the block by hand") {
 			t.Errorf("%s did not say why it left the block:\n%s%s", verb, out, errOut)
 		}
 	}
@@ -432,11 +440,21 @@ func TestABlockHoldingATableUnderOurNameIsLeftAlone(t *testing.T) {
 
 // A key the participant added inside OUR table goes with the table — the
 // table between our markers is ours to render — and is named in the plan
-// first, on both paths, never dropped silently.
+// first, on both paths, never dropped silently. That is the old block's
+// rule, and Windows still writes the old block (D6).
 func TestAKeyAddedInsideOurTableIsNamedBeforeItGoes(t *testing.T) {
 	for _, verb := range []string{"uninstall", "install"} {
 		t.Run(verb, func(t *testing.T) {
-			_, ops, cfgPath, _ := insideOurMarkers(t, "exclude_slash_tmp = true\n")
+			cfgPath, _ := sandboxTestConfig(t)
+			onCodexOS(t, "windows")
+			m, ops := newFakeMachine("codex")
+			m.files[codexConfigPath] = []byte("model = \"gpt-5\"\n")
+			if code, out, errOut := runAgents(t, ops, nil, "install", "-config", cfgPath, "-yes"); code != exitOK {
+				t.Fatalf("install: %d\n%s%s", code, out, errOut)
+			}
+			installed := string(m.files[codexConfigPath])
+			i := strings.LastIndex(installed, agentsMarkerEnd)
+			m.files[codexConfigPath] = []byte(installed[:i] + "exclude_slash_tmp = true\n" + installed[i:])
 			code, out, errOut := runAgents(t, ops, nil, verb, "-config", cfgPath, "-dry-run")
 			if code != exitOK {
 				t.Fatalf("%s -dry-run: %d\n%s%s", verb, code, out, errOut)
@@ -445,6 +463,26 @@ func TestAKeyAddedInsideOurTableIsNamedBeforeItGoes(t *testing.T) {
 				if !strings.Contains(out, want) {
 					t.Errorf("the plan did not say %q:\n%s", want, out)
 				}
+			}
+		})
+	}
+}
+
+// The profile is held to the renderer exactly. A key added inside one of
+// its tables — wherever it lands, here at the end of the domains table — is
+// not something this client wrote, and dropping it would be a guess about
+// whose it is: the block is left as it is, on both paths, and the plan says
+// why.
+func TestAKeyAddedInsideTheProfileLeavesTheBlockAlone(t *testing.T) {
+	for _, verb := range []string{"uninstall", "install"} {
+		t.Run(verb, func(t *testing.T) {
+			m, ops, cfgPath, seeded := insideOurMarkers(t, "exclude_slash_tmp = true\n")
+			_, out, errOut := runAgents(t, ops, nil, verb, "-config", cfgPath, "-yes")
+			if got := string(m.files[codexConfigPath]); got != seeded {
+				t.Errorf("%s changed a profile holding a key jevlin did not write:\n%s", verb, got)
+			}
+			if !strings.Contains(out+errOut, "its profile is not exactly what jevlin writes") {
+				t.Errorf("%s did not say why it left the block:\n%s%s", verb, out, errOut)
 			}
 		})
 	}
@@ -539,7 +577,7 @@ func TestUninstallKeepsCodexsHookTrustInsideOurBlock(t *testing.T) {
 				t.Fatalf("uninstall: %d\n%s%s", code, out, errOut)
 			}
 			got := string(m.files[codexConfigPath])
-			if strings.Contains(got, agentsMarkerBegin) || strings.Contains(got, "["+codexSandboxTable+"]") {
+			if strings.Contains(got, agentsMarkerBegin) || holdsOurTable(got) {
 				t.Errorf("our own block survived the uninstall:\n%s", got)
 			}
 			if !reflect.DeepEqual(hookTrustOf(t, got), want) {
