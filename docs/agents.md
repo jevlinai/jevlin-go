@@ -183,7 +183,10 @@ which case it is left as you have it. Answering no installs nothing for Codex an
 answer stops the install, exit 2, with nothing written except one thing: if jevlin's own block
 still holds an open network from an earlier version, that one line is closed, whatever else
 happens — on a no at `Proceed?` or at setup's agents question too — and the message says so. Without a terminal, `agents install` prints the exact lines to
-change by hand, the block to add with its markers, and exits 2; a file finished that way is
+change by hand and the block to add with its markers, every line flush left so it can be copied as
+printed; where the file already has a block of jevlin's, it says to replace that block, or prints
+it whole to delete when it is the earlier version's or holds lines of yours, which it says where
+to put back. It exits 2; a file finished that way is
 jevlin's, and a later install or uninstall treats it as installed; `setup` reports the agent it could not set up
 and exits 0, because the rest of setup succeeded. A dry run prints the question and plans the
 yes. Whatever the answer, a block of jevlin's own that opens the network is closed: an earlier

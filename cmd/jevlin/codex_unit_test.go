@@ -295,64 +295,196 @@ func TestUninstallNeverLeavesDefaultPermissionsNamingARemovedProfile(t *testing.
 	}
 }
 
-// The by-hand text printed with no terminal can be followed as printed,
-// and a file finished that way is this installation's: a later install at
-// a terminal asks nothing and writes the skill, and uninstall gives the
-// participant's file back as it was.
+// The by-hand text printed with no terminal can be followed as printed —
+// every line copied from its first character, as the text says — from each
+// starting state that reaches it: a file with no block of ours, an
+// installed file that has since gained a line needing a yes, and the old
+// marked [sandbox_workspace_write] block. Followed literally, it gives the
+// file a yes at a terminal writes, byte for byte, so the result is this
+// installation's: a later install at a terminal asks nothing and writes
+// the skill, and uninstall takes it out.
 func TestTheByHandTextCanBeFollowed(t *testing.T) {
-	cfgPath, _ := sandboxTestConfig(t)
-	m, ops := newFakeMachine("codex")
-	before := "default_permissions = \":workspace\"\nmodel = \"gpt-5\"\n\n[tui]\nx = 1\n"
-	m.files[codexConfigPath] = []byte(before)
-	_, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-client", "codex", "-yes")
-	i := strings.Index(out, "By hand:\n")
-	if i < 0 {
-		t.Fatalf("no by-hand text:\n%s", out)
-	}
-	var text []string
-	for _, l := range strings.Split(out[i+len("By hand:\n"):], "\n") {
-		if !strings.HasPrefix(l, "    ") {
-			break
+	oldBlock := ""
+	for _, st := range codexStates() {
+		if st.name == "old-block" {
+			oldBlock = st.before
 		}
-		text = append(text, strings.TrimPrefix(l, "    "))
 	}
-	followed := before
-	var region []string
-	for k := 0; k < len(text); k++ {
-		switch {
-		case text[k] == "replace the line" && k+3 < len(text) && text[k+2] == "with":
-			old, nw := strings.TrimPrefix(text[k+1], "    "), strings.TrimPrefix(text[k+3], "    ")
-			if !strings.Contains(followed, old+"\n") {
-				t.Fatalf("the line to replace is not in the file: %q", old)
+	for _, tc := range []struct {
+		name  string
+		start func(t *testing.T, m *fakeMachine, ops agentOps, cfgPath string) string
+		instr string // the instruction that handles our block
+		bytes bool   // following it gives the very bytes a yes writes
+	}{
+		{"no block", func(t *testing.T, m *fakeMachine, ops agentOps, cfgPath string) string {
+			return "default_permissions = \":workspace\"\nmodel = \"gpt-5\"\n\n[tui]\nx = 1\n"
+		}, "and add these lines", true},
+		{"an installed file that gained a line", func(t *testing.T, m *fakeMachine, ops agentOps, cfgPath string) string {
+			m.files[codexConfigPath] = []byte("model = \"gpt-5\"\n\n[tui]\nx = 1\n")
+			if code, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK {
+				t.Fatalf("first install: exit %d\n%s", code, out)
 			}
-			followed = strings.Replace(followed, old+"\n", nw+"\n", 1)
-			k += 3
-		case strings.HasPrefix(text[k], "and add this block"):
-			region = text[k+1:]
-			k = len(text)
+			return "sandbox_mode = \"workspace-write\"\n" + string(m.files[codexConfigPath])
+		}, "and replace jevlin's block", true},
+		{"the old block", func(t *testing.T, m *fakeMachine, ops agentOps, cfgPath string) string {
+			return "sandbox_mode = \"workspace-write\"\n" + strings.ReplaceAll(oldBlock, "STATEROOTS", quotedRootsOf(t, cfgPath))
+		}, "and delete jevlin's block", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfgPath, _ := sandboxTestConfig(t)
+			m, ops := newFakeMachine("codex")
+			before := tc.start(t, m, ops, cfgPath)
+
+			// What a yes at a terminal writes, for comparison.
+			m.files[codexConfigPath] = []byte(before)
+			m.terminal = true
+			if code, out := runAgentsAt(t, ops, "y\n", "install", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK {
+				t.Fatalf("install with a yes: exit %d\n%s", code, out)
+			}
+			yes := string(m.files[codexConfigPath])
+
+			m.files[codexConfigPath] = []byte(before)
+			m.terminal = false
+			_, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-client", "codex", "-yes")
+			const lead = "By hand, with every line below copied exactly as printed, from its first character:\n"
+			i := strings.Index(out, lead)
+			if i < 0 {
+				t.Fatalf("no by-hand text:\n%s", out)
+			}
+			text := out[i+len(lead):]
+			// The text ends where the plan's own indented lines resume.
+			var lines []string
+			for _, l := range strings.Split(text, "\n") {
+				if strings.HasPrefix(l, "  ") || l == "nothing to do" || strings.HasPrefix(l, "wrote ") {
+					break
+				}
+				lines = append(lines, l)
+			}
+			for len(lines) > 0 && lines[len(lines)-1] == "" {
+				lines = lines[:len(lines)-1]
+			}
+			text = strings.Join(lines, "\n")
+			if !strings.Contains(text, "\n"+tc.instr) {
+				t.Errorf("the text does not say %q:\n%s", tc.instr, text)
+			}
+			// Followed from the file as this run left it: a run with no
+			// terminal still closes our old block's open network.
+			followed := followByHand(t, string(m.files[codexConfigPath]), strings.Split(text, "\n"))
+			if err := codexTOMLError(followed); err != nil {
+				t.Fatalf("following the by-hand text gives a file Codex refuses: %v\n%s", err, followed)
+			}
+			if tc.bytes && followed != yes {
+				t.Fatalf("following the by-hand text does not give the file a yes writes\n got %q\nwant %q", followed, yes)
+			}
+			// Deleting the old block line for line leaves its blank lines
+			// where they were, which install tidies; what the file says is
+			// the same either way.
+			if !tomlDocsEqual(mustDecode(followed), mustDecode(yes)) {
+				t.Fatalf("following the by-hand text does not give the settings a yes writes\n got %q\nwant %q", followed, yes)
+			}
+
+			m.files[codexConfigPath] = []byte(followed)
+			m.terminal = true
+			if code, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK || strings.Contains(out, "[y/N]") {
+				t.Fatalf("install over the file finished by hand did not take it as ours (exit %d):\n%s", code, out)
+			}
+			if _, ok := m.files["/home/u/.codex/skills/jevlin/SKILL.md"]; !ok {
+				t.Errorf("the skill was not written over the file finished by hand")
+			}
+			if code, out := runAgentsAt(t, ops, "", "uninstall", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK || strings.Contains(string(m.files[codexConfigPath]), agentsMarkerBegin) {
+				t.Fatalf("uninstall did not take the block out (exit %d):\n%s\n%s", code, out, m.files[codexConfigPath])
+			}
+		})
+	}
+}
+
+// followByHand does what the by-hand text says, reading each line as
+// printed: the instruction lines are sentences, and every other line is
+// file content, copied from its first character.
+func followByHand(t *testing.T, file string, text []string) string {
+	t.Helper()
+	instr := func(l string) bool {
+		for _, p := range []string{"replace the line", "with", "and add these lines", "and replace jevlin's block", "and delete jevlin's block", "then add these lines", "then put back these lines"} {
+			if strings.HasPrefix(l, p) {
+				return true
+			}
+		}
+		return false
+	}
+	content := func(k int) (string, int) {
+		var c []string
+		for k < len(text) && !instr(text[k]) {
+			c = append(c, text[k])
+			k++
+		}
+		return strings.Join(c, "\n") + "\n", k
+	}
+	// "before your first table, above any comment lines directly over it"
+	firstTable := func(s string) int {
+		lines := strings.SplitAfter(s, "\n")
+		for i, l := range lines {
+			if strings.HasPrefix(l, "[") {
+				for i > 0 && strings.HasPrefix(lines[i-1], "#") {
+					i--
+				}
+				return len(strings.Join(lines[:i], ""))
+			}
+		}
+		return len(s)
+	}
+	for k := 0; k < len(text); {
+		l := text[k]
+		switch {
+		case l == "replace the line":
+			old, next := content(k + 1)
+			if next >= len(text) || text[next] != "with" {
+				t.Fatalf("a replace without its with: %q", text[k:])
+			}
+			nw, after := content(next + 1)
+			if strings.Count(file, old) != 1 {
+				t.Fatalf("the line to replace is not once in the file: %q\n%s", old, file)
+			}
+			file = strings.Replace(file, old, nw, 1)
+			k = after
+		case strings.HasPrefix(l, "and replace jevlin's block"):
+			block, next := content(k + 1)
+			from := strings.Index(file, agentsMarkerBegin+"\n")
+			to := strings.Index(file, agentsMarkerEnd+"\n")
+			if from < 0 || to < from {
+				t.Fatalf("no block to replace:\n%s", file)
+			}
+			file = file[:from] + block + file[to+len(agentsMarkerEnd)+1:]
+			k = next
+		case strings.HasPrefix(l, "and delete jevlin's block"):
+			old, next := content(k + 1)
+			if strings.Count(file, old) != 1 {
+				t.Fatalf("the block to delete is not once in the file: %q\n%s", old, file)
+			}
+			file = strings.Replace(file, old, "", 1)
+			k = next
+		case strings.HasPrefix(l, "and add these lines"), strings.HasPrefix(l, "then add these lines"):
+			block, next := content(k + 1)
+			at := firstTable(file)
+			file = file[:at] + block + file[at:]
+			k = next
+		case strings.HasPrefix(l, "then put back these lines"):
+			lines, next := content(k + 1)
+			switch {
+			case strings.HasSuffix(l, "directly above the new one:"):
+				at := strings.Index(file, agentsMarkerBegin+"\n")
+				file = file[:at] + lines + file[at:]
+			case strings.HasSuffix(l, "directly below the new one:"):
+				at := strings.Index(file, agentsMarkerEnd+"\n") + len(agentsMarkerEnd) + 1
+				file = file[:at] + lines + file[at:]
+			default:
+				t.Fatalf("a put-back that does not say where: %q", l)
+			}
+			k = next
+		default:
+			t.Fatalf("an instruction the follower does not know: %q", l)
 		}
 	}
-	if len(region) == 0 || region[0] != agentsMarkerBegin {
-		t.Fatalf("the by-hand text does not carry the marked block:\n%s", out)
-	}
-	followed = strings.Replace(followed, "[tui]", strings.Join(region, "\n")+"\n[tui]", 1)
-	if err := codexTOMLError(followed); err != nil {
-		t.Fatalf("following the by-hand text gives a file Codex refuses: %v\n%s", err, followed)
-	}
-	m.files[codexConfigPath] = []byte(followed)
-	m.terminal = true
-	if code, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK || strings.Contains(out, "[y/N]") {
-		t.Fatalf("install over the file finished by hand did not take it as ours (exit %d):\n%s", code, out)
-	}
-	if _, ok := m.files["/home/u/.codex/skills/jevlin/SKILL.md"]; !ok {
-		t.Errorf("the skill was not written over the file finished by hand")
-	}
-	if code, out := runAgentsAt(t, ops, "", "uninstall", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK {
-		t.Fatalf("uninstall: exit %d\n%s", code, out)
-	}
-	if got := string(m.files[codexConfigPath]); got != before {
-		t.Errorf("uninstall did not give the participant's file back\n got %q\nwant %q", got, before)
-	}
+	return file
 }
 
 // Closing our old block takes out its network_access = true line and

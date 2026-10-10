@@ -316,10 +316,17 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 			p.unanswerable = true
 			byHand := "  (the changes cannot be shown: the file does not read cleanly)"
 			if handEd, err := newCodexEditor(ed.text, entry.cfg); err == nil && apply(handEd) == nil {
-				byHand = codexByHand(ed.text, handEd.text, profile)
+				// The text is read after this run, which commits the safety
+				// form of our own block: what it says to delete is what the
+				// file will hold then.
+				file := existing
+				if safe, _, ok := codexSafeForm(existing, region, had, facts); ok {
+					file = safe
+				}
+				byHand = codexByHand(string(file), ed.text, handEd.text, profile, region, had)
 			}
-			p.refused = append(p.refused, fmt.Sprintf("%s: %s needs a change to your own settings, which needs your yes at a terminal (-yes does not answer it); nothing was installed for Codex. By hand:\n%s",
-				label, path, indentBlock(byHand)))
+			p.refused = append(p.refused, fmt.Sprintf("%s: %s needs a change to your own settings, which needs your yes at a terminal (-yes does not answer it); nothing was installed for Codex. By hand, with every line below copied exactly as printed, from its first character:\n%s",
+				label, path, strings.TrimRight(byHand, "\n")))
 			planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
 			return codexConfigPlan{scope: codexNothing, left: true}
 		}
@@ -420,19 +427,49 @@ func codexQuestion(label, path, home string, facts codexFacts, profile codexProf
 // lines back. Printed without the marks, it was a profile named "jevlin"
 // that no marker claimed, which every later install refused as the
 // participant's own.
-func codexByHand(before, after string, profile codexProfile) string {
+//
+// Every line is printed flush left, because it is copied as printed: a
+// marker or a header indented by the report's own indentation is not one
+// install recognizes. Where the file already has a block of ours — an
+// installed region, or the old [sandbox_workspace_write] block — the text
+// says what to do with it: a region of ours alone at the top is replaced
+// where it stands; anything else (the old block below a table, a block
+// that has lost a marker, one holding lines of the participant's) is
+// deleted line for line as printed and the new block added before the
+// first table, with the participant's own lines from it put back where
+// install would put them.
+func codexByHand(file, before, after string, profile codexProfile, region codexRegion, had bool) string {
 	var b strings.Builder
 	was := strings.Split(before, "\n")
 	now := strings.Split(after, "\n")
 	if len(was) == len(now) {
 		for i := range was {
 			if was[i] != now[i] {
-				fmt.Fprintf(&b, "replace the line\n    %s\nwith\n    %s\n", strings.TrimRight(was[i], "\r"), strings.TrimRight(now[i], "\r"))
+				fmt.Fprintf(&b, "replace the line\n%s\nwith\n%s\n", strings.TrimRight(was[i], "\r"), strings.TrimRight(now[i], "\r"))
 			}
 		}
 	}
-	b.WriteString("and add this block, markers included, before your first table (default_permissions must come before any table):\n")
-	b.WriteString(string(codexProfileRegion(profile)))
+	block := string(codexProfileRegion(profile))
+	// Codex reads the comments directly over a table as that table's, and
+	// install puts the block above them (firstHeaderStart), so the text
+	// says so rather than "before your first table" alone.
+	first := "before your first table, above any comment lines directly over it (default_permissions must come before any table)"
+	switch {
+	case !had:
+		fmt.Fprintf(&b, "and add these lines, markers included, %s:\n%s", first, block)
+	case region.atTop && !region.legacy && !region.damaged && !region.hasForeign():
+		fmt.Fprintf(&b, "and replace jevlin's block, from the line %s through the line %s, with these lines:\n%s", agentsMarkerBegin, agentsMarkerEnd, block)
+	default:
+		old := strings.ReplaceAll(file[len(region.pre):len(file)-len(region.post)], "\r\n", "\n")
+		fmt.Fprintf(&b, "and delete jevlin's block, which is these lines:\n%s", withFinalNewline(old))
+		fmt.Fprintf(&b, "then add these lines, markers included, %s:\n%s", first, block)
+		if region.foreignRoot != "" {
+			fmt.Fprintf(&b, "then put back these lines of yours from the deleted block, directly above the new one:\n%s", withFinalNewline(strings.ReplaceAll(region.foreignRoot, "\r\n", "\n")))
+		}
+		if t := region.foreignText(); t != "" {
+			fmt.Fprintf(&b, "then put back these lines of yours from the deleted block, directly below the new one:\n%s", withFinalNewline(strings.ReplaceAll(t, "\r\n", "\n")))
+		}
+	}
 	return b.String()
 }
 
