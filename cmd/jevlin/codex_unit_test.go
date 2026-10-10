@@ -837,3 +837,23 @@ func TestTheByHandTextPutsBackTheLineAsChanged(t *testing.T) {
 		t.Errorf("the next install still asks (exit %d):\n%s", code, out)
 	}
 }
+
+// A mark of ours that keeps a line uninstall cannot read back leaves our
+// block with it, and the uninstall says so and does not exit 0: Codex
+// still runs its commands under jevlin's profile.
+func TestUninstallThatCannotPutAMarkedLineBackExitsNonZero(t *testing.T) {
+	m, ops, cfgPath, _ := installedOn(t, "default-permissions-workspace")
+	got := string(m.files[codexConfigPath])
+	broken := strings.Replace(got, "; was: default_permissions = \":workspace\"", "; was: default_permissions =", 1)
+	if broken == got {
+		t.Fatalf("no marked line:\n%s", got)
+	}
+	m.files[codexConfigPath] = []byte(broken)
+	code, out := runAgentsAt(t, ops, "", "uninstall", "-config", cfgPath, "-client", "codex", "-yes")
+	if string(m.files[codexConfigPath]) != broken {
+		t.Errorf("uninstall changed a file whose block it left:\n%s", m.files[codexConfigPath])
+	}
+	if code != exitTransport || !strings.Contains(out, "refused: Codex: left jevlin's block and the lines of yours it changed") || !strings.Contains(out, codexStillUnder) {
+		t.Errorf("an uninstall that left our block exited %d, or did not say what it left:\n%s", code, out)
+	}
+}
