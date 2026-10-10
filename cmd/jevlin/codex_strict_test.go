@@ -157,3 +157,23 @@ func TestTheCollisionNamesTheParticipantsTable(t *testing.T) {
 		}
 	}
 }
+
+// A byte-order mark directly before the first table header: read with the
+// mark, that header is not recognized as one, and the region would land
+// after the tables, where its default_permissions is the last table's key.
+func TestAByteOrderMarkBeforeTheFirstHeader(t *testing.T) {
+	cfgPath, _ := sandboxTestConfig(t)
+	m, ops := newFakeMachine("codex")
+	before := codexBOM + "[tui]\nx = 1\n"
+	m.files[codexConfigPath] = []byte(before)
+	if code, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-yes"); code != exitOK {
+		t.Fatalf("install: exit %d\n%s", code, out)
+	}
+	got := string(m.files[codexConfigPath])
+	if !strings.HasPrefix(got, codexBOM+agentsMarkerBegin) {
+		t.Errorf("the region is not before the first table:\n%q", got)
+	}
+	if doc, ok := decodeTOMLDoc(strings.TrimPrefix(got, codexBOM)); !ok || doc["default_permissions"] != codexProfileName {
+		t.Errorf("default_permissions is not a top-level key:\n%s", got)
+	}
+}
