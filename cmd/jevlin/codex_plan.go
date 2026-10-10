@@ -144,6 +144,9 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 			}
 			return codexConfigPlan{scope: codexNothing, left: true}
 		}
+		if n := staleRootsNote(label, path, region.roots, entry, getenv); n != "" {
+			p.notes = append(p.notes, n)
+		}
 	}
 	// The participant's own settings, read with every root key and table
 	// they or Codex wrote — including what Codex wrote inside our markers,

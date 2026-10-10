@@ -24,6 +24,7 @@ package main
 // how Hermes' hook command names an ordinary POSIX path (hermesQuoteArg).
 
 import (
+	"fmt"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -210,8 +211,12 @@ func (ref installationRef) commandIsOurs(command string) bool {
 // a block their own install wrote and could then no longer recognize, so the
 // refresh their config change had just made necessary printed "it belongs to
 // another installation" and did nothing, and their uninstall left it. The
-// home-prefix reading survives only in describeSandboxOwner, to DESCRIBE a
-// block that is somebody else's — never to decide whether one is ours.
+// home-prefix reading survives in describeSandboxOwner, to DESCRIBE a
+// block that is somebody else's, and decides one case only: a block whose
+// roots this config no longer names, all under the home that holds this
+// very config file, is this installation's after a moved directory
+// (rootsUnderOurConfig) — the one owner it could otherwise name is this
+// installation itself.
 //
 // A partial match is not a match: the renderer writes one config's roots as
 // one list, so a block holding some of ours and some of another
@@ -250,10 +255,53 @@ func codexRootsOwner(roots []string, entry binEntry, getenv func(string) string)
 	}
 	for _, r := range roots {
 		if !dirsInclude(owned, r) {
+			if rootsUnderOurConfig(roots, entry) {
+				return true, "", ""
+			}
 			return false, describeSandboxOwner(roots), ""
 		}
 	}
 	return true, "", ""
+}
+
+// rootsUnderOurConfig: do the roots name this installation after all, as
+// the directories around its own config file? A participant who moves
+// state_dir leaves a block whose roots this config no longer names, and
+// describeSandboxOwner would then name this very config as the owner:
+// install answered "it belongs to the installation configured by" the
+// config it was run with, uninstall the same, and neither could ever
+// refresh or remove it. When the home every root lies under holds this
+// installation's config file, the block is this installation's: install
+// rewrites it with the roots the config names now (codexStaleRoots says
+// which go), and uninstall removes it.
+func rootsUnderOurConfig(roots []string, entry binEntry) bool {
+	home := commonParentDir(roots)
+	return home != "" && entry.cfg != "" && sameConfigFile(filepath.Join(home, setupConfigFile), entry.cfg)
+}
+
+// codexStaleRoots is the roots of a block this installation owns that its
+// config no longer names: what a refresh takes away.
+func codexStaleRoots(roots []string, entry binEntry, getenv func(string) string) []string {
+	owned := codexOwnedRoots(entry, getenv)
+	if len(owned) == 0 {
+		return nil
+	}
+	var stale []string
+	for _, r := range roots {
+		if !dirsInclude(owned, r) {
+			stale = append(stale, r)
+		}
+	}
+	return stale
+}
+
+// staleRootsNote says which roots a refresh drops, or is empty.
+func staleRootsNote(label, path string, roots []string, entry binEntry, getenv func(string) string) string {
+	stale := codexStaleRoots(roots, entry, getenv)
+	if len(stale) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s: the jevlin block in %s grants write access to %s, which this installation's config no longer names; the block is rewritten with the directories it names now, and those are dropped", label, path, joinLabels(stale))
 }
 
 // dirsInclude asks whether one directory is among a set of them, as paths:

@@ -2090,6 +2090,9 @@ func planCodexSandbox(ops agentOps, label, path string, roots []string, entry bi
 			noteOnce(p, label+": "+leftForeign(other))
 			return false, true
 		}
+		if n := staleRootsNote(label, path, markedSandboxRoots(have.oursText()), entry, getenv); n != "" {
+			p.notes = append(p.notes, n)
+		}
 		if extra := keysWeDidNotWrite(have.oursText()); len(extra) > 0 {
 			p.notes = append(p.notes, droppedKeysNote(label, path, extra))
 		}
