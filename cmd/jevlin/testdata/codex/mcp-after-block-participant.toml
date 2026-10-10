@@ -1,0 +1,8 @@
+model = "gpt-5"
+
+[mcp_servers.foo]
+command = "/bin/echo"
+
+# trusted because I own it
+[projects."/x"]
+trust_level = "trusted"

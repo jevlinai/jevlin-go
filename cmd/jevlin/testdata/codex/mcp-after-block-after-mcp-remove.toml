@@ -1,0 +1,32 @@
+model = "gpt-5"
+
+# >>> jevlin agents install >>>
+# Codex permission profile for jevlin's search: write access to its jevlin
+# home and network access to the search hosts only, through Codex's proxy.
+# Supported with Codex 0.158.0 or newer; older versions are not
+# supported, and below 0.131 Codex refuses this file and does not start.
+default_permissions = "jevlin"
+
+[permissions.jevlin]
+extends = ":workspace"
+
+[permissions.jevlin.filesystem]
+"<HOME>/intake" = "write"
+"<HOME>/sessions" = "write"
+"<HOME>/spool" = "write"
+"<HOME>/state" = "write"
+
+[permissions.jevlin.network]
+enabled = true
+
+[permissions.jevlin.network.domains]
+"agents-v1.nyks.dev" = "allow"
+"as.example.invalid" = "allow"
+"router.example.invalid" = "allow"
+
+[features.network_proxy]
+enabled = true
+
+# trusted because I own it
+[projects."/x"]
+trust_level = "trusted"
