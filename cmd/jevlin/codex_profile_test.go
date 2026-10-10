@@ -319,3 +319,36 @@ func TestALoopbackRouterIsNamedInThePlanAndNotListed(t *testing.T) {
 		t.Errorf("the plan does not say the loopback router cannot be reached:\n%s", out)
 	}
 }
+
+// A profile of ours over an open parent adds the roots only, and status
+// says the network is open by the parent's own setting, which is then true.
+func TestStatusSaysAnOpenNetworkIsTheParentsOwn(t *testing.T) {
+	m, ops, cfgPath, _ := installedOn(t, "own-profile-network-open")
+	if openByUs(t, string(m.files[codexConfigPath])) {
+		t.Fatal("the open network is ours, so this case proves nothing")
+	}
+	_, out := runAgentsAt(t, ops, "", "status", "-config", cfgPath)
+	if !strings.Contains(out, `adds writable roots only; the network is open to every host by your profile "work"'s own setting, which jevlin leaves`) {
+		t.Errorf("status does not say whose open network it is:\n%s", out)
+	}
+	if strings.Contains(out, "agents install turns it on") {
+		t.Errorf("status offers to turn the proxy on over the participant's own open network:\n%s", out)
+	}
+}
+
+// A profile of ours with no network over a closed parent says a search
+// cannot reach the router, and does not claim every host is reachable.
+func TestStatusSaysAProfileWithoutNetworkCannotSearch(t *testing.T) {
+	m, ops, cfgPath, _ := installedOn(t, "default-permissions-workspace")
+	got := string(m.files[codexConfigPath])
+	i := strings.Index(got, "\n[permissions.jevlin.network]")
+	j := strings.Index(got, agentsMarkerEnd)
+	if i < 0 || j < i {
+		t.Fatalf("this case needs our network tables:\n%s", got)
+	}
+	m.files[codexConfigPath] = []byte(got[:i+1] + got[j:])
+	_, out := runAgentsAt(t, ops, "", "status", "-config", cfgPath)
+	if !strings.Contains(out, "grants the writable roots and no network, so a search from Codex cannot reach the router") || strings.Contains(out, "can reach any host") {
+		t.Errorf("status misstates a profile with no network:\n%s", out)
+	}
+}

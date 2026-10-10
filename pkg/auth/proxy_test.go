@@ -7,6 +7,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -217,6 +218,8 @@ func TestLoopbackProxyAcceptsOnlyLoopbackLiterals(t *testing.T) {
 		"http://127.9.8.7:1":      true,
 		"http://[::1]:3128":       true,
 		"http://localhost:3128":   false,
+		"http://0.0.0.0:3128":     false,
+		"http://[::]:3128":        false,
 		"http://10.0.0.1:3128":    false,
 		"http://192.168.1.1:3128": false,
 		"":                        false,
@@ -234,5 +237,22 @@ func TestLoopbackProxyAcceptsOnlyLoopbackLiterals(t *testing.T) {
 func TestTheEnvironmentProxyIsNetHTTPs(t *testing.T) {
 	if reflect.ValueOf(environmentProxy).Pointer() != reflect.ValueOf(http.ProxyFromEnvironment).Pointer() {
 		t.Fatal("environmentProxy is not http.ProxyFromEnvironment")
+	}
+}
+
+// An environment proxy that does not parse was ignored before this rule
+// existed, as every environment proxy was, and still is: the request goes
+// direct rather than failing.
+func TestAnUnparsableEnvironmentProxyIsIgnored(t *testing.T) {
+	was := environmentProxy
+	environmentProxy = func(*http.Request) (*url.URL, error) { return nil, errors.New("invalid proxy address") }
+	t.Cleanup(func() { environmentProxy = was })
+	u, err := loopbackProxy(httptest.NewRequest(http.MethodGet, "https://as.example.invalid/", nil))
+	if u != nil || err != nil {
+		t.Fatalf("loopbackProxy = %v, %v; want no proxy and no error", u, err)
+	}
+	srv, hits := tlsAS(t)
+	if _, err := discovererFor(t, srv).Document(context.Background()); err != nil || hits.Load() == 0 {
+		t.Fatalf("the request did not go direct: %v (AS saw %d)", err, hits.Load())
 	}
 }
