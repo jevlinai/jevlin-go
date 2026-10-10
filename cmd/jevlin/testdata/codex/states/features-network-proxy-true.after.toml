@@ -23,6 +23,5 @@ enabled = true
 "as.example.invalid" = "allow"
 "router.example.invalid" = "allow"
 # <<< jevlin agents install <<<
-
 [features]
 network_proxy = true

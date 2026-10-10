@@ -23,6 +23,5 @@ enabled = true
 "as.example.invalid" = "allow"
 "router.example.invalid" = "allow"
 # <<< jevlin agents install <<<
-
 [features.network_proxy]
 enabled = true  # jevlin agents install ("CONFIG"); was: enabled = false

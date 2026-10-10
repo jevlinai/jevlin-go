@@ -156,31 +156,39 @@ func TestReinstallingKeepsACRLFCodexConfigsOwnBytes(t *testing.T) {
 	}
 }
 
-// The round trip is byte-identical wherever our own install put the block,
-// which is now every file: before the first table header, or last in a file
-// with none. Position is defined by the file, not remembered, so an
-// uninstall that took the block out leaves an install nothing to guess.
+// The round trip is byte-identical both ways, for every file whose last
+// line ends in a newline: install splices the block in at a line boundary
+// and adds no byte of its own, uninstall takes exactly those bytes out, and
+// position is defined by the file, not remembered, so an install after an
+// uninstall has nothing to guess.
 func TestUninstallThenInstallRestoresTheCodexConfigByteForByte(t *testing.T) {
-	for _, tc := range []struct {
-		name  string
-		where codexPlacement
-	}{
-		{"our block last, in a file with no table", ourBlockAlone},
-		{"our block above the participant's tables", afterOurBlock},
+	for _, tc := range []struct{ name, file string }{
+		{"no table at all", "model = \"gpt-5\"\n"},
+		{"tables below root keys, a blank line between", "model = \"gpt-5\"\n\n[projects.'/home/u/work']\ntrust_level = \"trusted\"\n"},
+		{"a header directly after a root key", "model = \"gpt-5\"\n[tui]\nscreen_reader_detection_done = true\n"},
+		{"a comment attached to the first header", "model = \"gpt-5\"\n\n# my notes\n[tui]\nx = 1\n"},
+		{"nothing but a table", "[tui]\nx = 1\n"},
+		{"an empty file", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			m, ops, cfgPath, before := installedCodexConfig(t, tc.where)
-			if code, out, errOut := runAgents(t, ops, nil, "uninstall", "-config", cfgPath, "-yes"); code != exitOK {
-				t.Fatalf("uninstall: exit %d\n%s%s", code, out, errOut)
-			}
-			if got := string(m.files[codexConfigPath]); strings.Contains(got, agentsMarkerBegin) {
-				t.Fatalf("the uninstall left our block, so the install below is not the round trip this claims:\n%s", got)
-			}
+			cfgPath, _ := sandboxTestConfig(t)
+			m, ops := newFakeMachine("codex")
+			m.files[codexConfigPath] = []byte(tc.file)
 			if code, out, errOut := runAgents(t, ops, nil, "install", "-config", cfgPath, "-yes"); code != exitOK {
 				t.Fatalf("install: exit %d\n%s%s", code, out, errOut)
 			}
-			if got := string(m.files[codexConfigPath]); got != before {
-				t.Errorf("uninstall then install did not return the file to its prior bytes\n got %q\nwant %q", got, before)
+			installed := string(m.files[codexConfigPath])
+			if code, out, errOut := runAgents(t, ops, nil, "uninstall", "-config", cfgPath, "-yes"); code != exitOK {
+				t.Fatalf("uninstall: exit %d\n%s%s", code, out, errOut)
+			}
+			if got := string(m.files[codexConfigPath]); got != tc.file {
+				t.Errorf("install then uninstall did not return the participant's bytes\n got %q\nwant %q", got, tc.file)
+			}
+			if code, out, errOut := runAgents(t, ops, nil, "install", "-config", cfgPath, "-yes"); code != exitOK {
+				t.Fatalf("install again: exit %d\n%s%s", code, out, errOut)
+			}
+			if got := string(m.files[codexConfigPath]); got != installed {
+				t.Errorf("uninstall then install did not return the installed bytes\n got %q\nwant %q", got, installed)
 			}
 		})
 	}

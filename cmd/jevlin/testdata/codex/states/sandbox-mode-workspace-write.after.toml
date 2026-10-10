@@ -1,6 +1,5 @@
 # sandbox_mode = "workspace-write"  # jevlin agents install ("CONFIG"); replaced by the jevlin profile
 model = "gpt-5"
-
 # >>> jevlin agents install >>>
 # Codex permission profile for jevlin's search: write access to its jevlin
 # home and network access to the search hosts only, through Codex's proxy.

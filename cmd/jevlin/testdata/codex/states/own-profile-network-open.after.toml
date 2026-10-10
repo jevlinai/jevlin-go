@@ -15,7 +15,6 @@ extends = "work"
 "HOME/spool" = "write"
 "HOME/state" = "write"
 # <<< jevlin agents install <<<
-
 [permissions.work]
 extends = ":workspace"
 

@@ -417,7 +417,7 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   written where it is; found below a header, it is moved up. No line of the participant's moves
   relative to another, and because the position is one the file defines rather than one remembered,
   uninstall then install is byte-identical for every file our writes produced, CRLF included
-  (`joinBlocks` keeps a piece's bytes and undoes its own seam). `codex_block_position_test.go`
+  (`insertBeforeFirstHeader` splices the block in at a line boundary with no byte of its own, and uninstall takes exactly its bytes out). `codex_block_position_test.go`
   asserts both.
   **A setting of the participant's own is changed only on a typed yes** (`codex_plan.go`): their
   profile named in `default_permissions` gets the entries it lacks (a profile whose network is

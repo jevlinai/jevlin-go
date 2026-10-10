@@ -345,82 +345,27 @@ func firstHeaderStart(s string) int {
 }
 
 // insertBeforeFirstHeader puts block before the file's first table header,
-// or at the end of a file that has none.
+// or at the end of a file that has none, and adds no byte of its own: the
+// block is spliced in at a line boundary, so taking exactly its bytes out
+// again (removeCodexRegion) gives back the participant's file byte for
+// byte. The one byte it may add is the newline a file without a final one
+// needs before the block can start on a line of its own, which uninstall
+// cannot know it added.
 func insertBeforeFirstHeader(file string, block []byte) []byte {
 	idx := firstHeaderStart(file)
 	if idx < 0 {
-		return joinBlocks(file, string(block))
+		return []byte(withFinalNewline(file) + string(block))
 	}
-	return joinBlocks(file[:idx], string(block), file[idx:])
+	return []byte(file[:idx] + string(block) + file[idx:])
 }
 
-// joinBlocks puts whole pieces of a file one after another with exactly one
-// blank line between them, and touches no byte of a piece beyond that seam:
-// a piece's own line endings, CRLF included, are kept as they are. Where the
-// seam already has a blank line on one side none is added, and where both
-// sides have one, the second is dropped — so taking a piece out of the middle
-// (joinBlocks(pre, post)) undoes putting it there (joinBlocks(pre, piece,
-// post)) byte for byte. A piece that is only whitespace is no piece.
-func joinBlocks(pieces ...string) []byte {
-	var out string
-	for _, piece := range pieces {
-		if strings.TrimSpace(piece) == "" {
-			continue
-		}
-		if out == "" {
-			out = dropLeadingBlankLine(piece)
-			continue
-		}
-		if !strings.HasSuffix(out, "\n") {
-			out += "\n"
-		}
-		switch {
-		case endsWithBlankLine(out) && startsWithBlankLine(piece):
-			piece = dropLeadingBlankLine(piece)
-		case !endsWithBlankLine(out) && !startsWithBlankLine(piece):
-			out += "\n"
-		}
-		out += piece
-	}
-	if out != "" && !strings.HasSuffix(out, "\n") {
-		out += "\n"
-	}
-	return []byte(out)
-}
-
-// endWithOneNewline trims a run of blank lines at the end of b down to the
-// one newline that ends its last line.
-func endWithOneNewline(b []byte) []byte {
-	s := string(b)
-	for endsWithBlankLine(s) {
-		lines := strings.Split(s, "\n")
-		s = strings.Join(lines[:len(lines)-2], "\n") + "\n"
-	}
-	if strings.TrimSpace(s) == "" {
-		return []byte{}
-	}
-	return []byte(s)
-}
-
-func endsWithBlankLine(s string) bool {
-	if !strings.HasSuffix(s, "\n") {
-		return false
-	}
-	lines := strings.Split(s, "\n")
-	return len(lines) >= 2 && strings.TrimSpace(lines[len(lines)-2]) == ""
-}
-
-func startsWithBlankLine(s string) bool {
-	i := strings.Index(s, "\n")
-	return i >= 0 && strings.TrimSpace(s[:i]) == ""
-}
-
-func dropLeadingBlankLine(s string) string {
-	if startsWithBlankLine(s) {
-		return s[strings.Index(s, "\n")+1:]
+func withFinalNewline(s string) string {
+	if s != "" && !strings.HasSuffix(s, "\n") {
+		return s + "\n"
 	}
 	return s
 }
+
 
 // codexRegionChange is what installing the region did to the file, for the
 // plan's sentences.
@@ -471,8 +416,8 @@ func installCodexRegion(existing []byte, want []byte) (next []byte, change codex
 		// re-parent it, the tables go to the end of the file instead,
 		// where nothing can follow them.
 		candidates = append(candidates,
-			joinBlocks(r.pre, r.foreignRoot, string(want), r.foreignText(), r.post),
-			appendTables(joinBlocks(r.pre, r.foreignRoot, string(want), r.post), r.foreignText()),
+			[]byte(r.pre+r.foreignRoot+string(want)+r.foreignText()+r.post),
+			appendTables([]byte(r.pre+r.foreignRoot+string(want)+r.post), r.foreignText()),
 		)
 	}
 	reference := string(existing)
@@ -517,13 +462,9 @@ func removeCodexRegion(existing []byte) codexRegionRemoval {
 	if why != "" {
 		return codexRegionRemoval{next: existing, had: true, why: why}
 	}
-	next := joinBlocks(r.pre, r.foreignRoot, r.post)
-	if strings.TrimSpace(r.post) == "" {
-		// The region was last, and the blank line above it is the seam
-		// install made when it appended; it goes with the region, so the
-		// file ends the way it did before the region was added.
-		next = endWithOneNewline(next)
-	}
+	// Exactly the region's bytes come out, and nothing else moves: install
+	// spliced it in without a byte of its own, so this is its inverse.
+	next := []byte(r.pre + r.foreignRoot + r.post)
 	if len(r.foreign) > 0 {
 		next = appendTables(next, r.foreignText())
 	}

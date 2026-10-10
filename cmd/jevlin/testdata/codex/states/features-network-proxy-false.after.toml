@@ -23,7 +23,6 @@ enabled = true
 "as.example.invalid" = "allow"
 "router.example.invalid" = "allow"
 # <<< jevlin agents install <<<
-
 [features]
 memories = true
 network_proxy = true  # jevlin agents install ("CONFIG"); was: network_proxy = false
