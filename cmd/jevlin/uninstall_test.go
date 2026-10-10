@@ -1562,3 +1562,27 @@ func TestLaunchClassifier(t *testing.T) {
 		}
 	}
 }
+
+// uninstallRefusingTarget refuses the same thing on every plan, as the
+// Codex target does over a block it must leave.
+type uninstallRefusingTarget struct{ uninstallIntegrationTarget }
+
+func (uninstallRefusingTarget) PlanUninstall(_ agentOps, _ agentPaths, _ binEntry, _ func(string) string, p *agentPlan) {
+	p.refused = append(p.refused, "Fake integration: left the one thing it cannot remove")
+}
+
+// A refusal is about a file, not a binary: the top-level uninstall plans
+// every target once per binary candidate, and printed and counted each
+// refusal once per candidate ("finished with 2 problem(s)" for one).
+func TestATargetRefusalIsReportedOnce(t *testing.T) {
+	s := installed(t)
+	d, out, errOut := s.uninstallDeps(nil, false, &revokeRecorder{})
+	d.targets = append(append([]installTarget{}, installTargets...), uninstallRefusingTarget{})
+	code := uninstallMain(d, []string{"-yes"})
+	if code == exitOK || !strings.Contains(out.String(), "finished with 1 problem(s)") {
+		t.Fatalf("uninstall exited %d, or did not count one problem\n%s\n%s", code, out, errOut)
+	}
+	if n := strings.Count(out.String()+errOut.String(), "left the one thing it cannot remove"); n != 2 {
+		t.Errorf("the refusal is reported %d times, want twice (the plan and the failure)\n%s\n%s", n, out, errOut)
+	}
+}
