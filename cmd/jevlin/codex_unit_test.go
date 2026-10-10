@@ -125,6 +125,9 @@ func TestUninstallLeavesTheLinesItChangedWithABlockItLeaves(t *testing.T) {
 	if !strings.Contains(out, "left the jevlin block in /home/u/.codex/config.toml, and the lines of yours it changed") {
 		t.Errorf("the plan does not say the lines stay with the block:\n%s", out)
 	}
+	if code != exitTransport || !strings.Contains(out, "refused: Codex: left the jevlin block") || !strings.Contains(out, codexStillUnder) {
+		t.Errorf("an uninstall that left our block exited %d, or did not say what it left:\n%s", code, out)
+	}
 }
 
 // The unit holds however this installation's uninstall finds its config:
@@ -292,6 +295,9 @@ func TestUninstallNeverLeavesDefaultPermissionsNamingARemovedProfile(t *testing.
 	}
 	if !strings.Contains(out, `default_permissions would still name "jevlin" once the block was gone`) {
 		t.Errorf("the plan does not say why the block stayed:\n%s", out)
+	}
+	if code != exitTransport || !strings.Contains(out, codexStillUnder) {
+		t.Errorf("an uninstall that left our block exited %d, or did not say what it left:\n%s", code, out)
 	}
 }
 

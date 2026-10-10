@@ -744,15 +744,21 @@ func planCodexConfigRemoval(ops agentOps, label, path string, existing []byte, m
 		next = r.next
 		whys = append(whys, "remove jevlin's block")
 		m = restoreCodexMarks(string(next), true, entry)
-	case r.had:
+	case r.had && r.unowned:
 		p.notes = append(p.notes, label+": left the jevlin block in "+path+", and the lines of yours it changed: "+r.why)
+		return false
+	case r.had:
+		// This installation's block, left: Codex still runs every command
+		// under jevlin's profile, so the uninstall did not do what it was
+		// asked, and does not exit 0 as though it had.
+		p.refused = append(p.refused, label+": left the jevlin block in "+path+", and the lines of yours it changed: "+r.why+"; "+codexStillUnder)
 		return false
 	default:
 		m = restoreCodexMarks(string(next), false, entry)
 	}
 	switch {
 	case m.why != "":
-		p.notes = append(p.notes, label+": left jevlin's block and the lines of yours it changed in "+path+": "+m.why)
+		p.refused = append(p.refused, label+": left jevlin's block and the lines of yours it changed in "+path+": "+m.why+"; "+codexStillUnder)
 		return false
 	case m.changed:
 		next = m.next
@@ -772,7 +778,7 @@ func planCodexConfigRemoval(ops agentOps, label, path string, existing []byte, m
 	if doc, ok := decodeTOMLDoc(string(next)); ok && r.had && r.ours {
 		if dp, _ := doc["default_permissions"].(string); dp == codexProfileName {
 			if _, defined := lookupTOMLPath(doc, "permissions", codexProfileName); !defined {
-				p.notes = append(p.notes, fmt.Sprintf("%s: left the jevlin block in %s: default_permissions would still name %q once the block was gone, which Codex refuses; set default_permissions to the profile you want and run this again", label, path, codexProfileName))
+				p.refused = append(p.refused, fmt.Sprintf("%s: left the jevlin block in %s: default_permissions would still name %q once the block was gone, which Codex refuses; set default_permissions to the profile you want and run this again; %s", label, path, codexProfileName, codexStillUnder))
 				return false
 			}
 		}
@@ -784,6 +790,10 @@ func planCodexConfigRemoval(ops agentOps, label, path string, existing []byte, m
 	return !refused
 }
 
+// codexStillUnder ends every sentence that leaves this installation's own
+// block in place.
+const codexStillUnder = "until it is gone, Codex runs its commands under jevlin's profile"
+
 // sandboxRemoval is what uninstall concluded about Codex's config.toml.
 type sandboxRemoval struct {
 	next []byte   // the file with our own tables gone
@@ -791,6 +801,9 @@ type sandboxRemoval struct {
 	ours bool     // it is this installation's, and next may be written
 	kept []string // tables inside the markers this client did not write
 	why  string   // why it was left, when ours is false
+	// unowned: it was left because it is not this installation's (another
+	// installation's, or naming none), which is not a failure of this one.
+	unowned bool
 	// dropped is the keys inside OUR table the renderer does not write,
 	// which go with the table and are named in the plan (keysWeDidNotWrite).
 	dropped []string
@@ -824,7 +837,7 @@ func removeOurSandboxBlock(existing []byte, entry binEntry, getenv func(string) 
 		if other != "" {
 			why = belongsTo(other)
 		}
-		return sandboxRemoval{next: existing, had: true, why: why}
+		return sandboxRemoval{next: existing, had: true, why: why, unowned: true}
 	}
 	return sandboxRemoval{next: r.next, had: true, ours: true, kept: r.kept, dropped: r.dropped}
 }
