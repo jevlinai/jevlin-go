@@ -718,3 +718,51 @@ func TestATypedNoAtProceedClosesTheOldBlockAndSaysSo(t *testing.T) {
 		t.Errorf("a typed no left the old block open:\n%s", got)
 	}
 }
+
+// Installing into a CRLF file writes our block in CRLF too, on either
+// planner, so the file is not left with mixed line endings; a second
+// install writes nothing, and uninstall gives the file back byte for byte.
+// A block an earlier build wrote in LF into a CRLF file is rewritten once
+// in CRLF and then left.
+func TestABlockIsWrittenInTheFilesLineEnding(t *testing.T) {
+	for _, goos := range []string{"linux", "windows"} {
+		t.Run(goos, func(t *testing.T) {
+			cfgPath, _ := sandboxTestConfig(t)
+			onCodexOS(t, goos)
+			m, ops := newFakeMachine("codex")
+			before := "model = \"gpt-5\"\r\n\r\n[tui]\r\nx = 1\r\n"
+			m.files[codexConfigPath] = []byte(before)
+			install := func() string {
+				t.Helper()
+				if code, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK {
+					t.Fatalf("install: exit %d\n%s", code, out)
+				}
+				return string(m.files[codexConfigPath])
+			}
+			lfOnly := func(s string) int { return strings.Count(s, "\n") - strings.Count(s, "\r\n") }
+			got := install()
+			if !strings.Contains(got, agentsMarkerBegin+"\r\n") || lfOnly(got) != 0 {
+				t.Fatalf("the block is not in the file's CRLF (%d LF-only lines):\n%q", lfOnly(got), got)
+			}
+			if again := install(); again != got {
+				t.Errorf("a second install changed the file:\n%q", again)
+			}
+
+			// An LF block in a CRLF file, as an earlier build wrote it.
+			m.files[codexConfigPath] = []byte(strings.Replace(got, got[strings.Index(got, agentsMarkerBegin):strings.Index(got, agentsMarkerEnd)+len(agentsMarkerEnd)+2],
+				strings.ReplaceAll(got[strings.Index(got, agentsMarkerBegin):strings.Index(got, agentsMarkerEnd)+len(agentsMarkerEnd)+2], "\r\n", "\n"), 1))
+			if lfOnly(string(m.files[codexConfigPath])) == 0 {
+				t.Fatal("the mixed file was not made")
+			}
+			if fixed := install(); fixed != got {
+				t.Errorf("the LF block was not rewritten in CRLF:\n%q", fixed)
+			}
+			if code, out := runAgentsAt(t, ops, "", "uninstall", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK {
+				t.Fatalf("uninstall: exit %d\n%s", code, out)
+			}
+			if left := string(m.files[codexConfigPath]); left != before {
+				t.Errorf("uninstall did not give the file back\n got %q\nwant %q", left, before)
+			}
+		})
+	}
+}

@@ -2063,7 +2063,10 @@ func planCodexSandbox(ops agentOps, label, path string, roots []string, entry bi
 		return false, true
 	}
 
-	want := codexSandboxBlock(roots)
+	// In the participant's line ending, as the profile is
+	// (installCodexRegion), so a CRLF file is not given LF lines and the
+	// block read back compares equal on the next run.
+	want := withLineEnding(codexSandboxBlock(roots), fileLineEnding(string(stripped)))
 	if pre, region, post, ok := markedRegion(existing); ok {
 		have, readable := splitCodexBlock(region)
 		if !readable {
@@ -2100,9 +2103,18 @@ func planCodexSandbox(ops agentOps, label, path string, roots []string, entry bi
 	}
 	// Spliced on with no byte of its own, as the profile is, so uninstall's
 	// exact removal gives the file back as it was.
-	next := []byte(withFinalNewline(string(stripped)) + string(want))
+	next := insertAtEnd(string(stripped), want)
 	changed, refused := planCodexWrite(ops, label, path, existing, next, string(stripped), []string{codexSandboxTable}, mode, codexWindowsWhy, p)
 	return changed, refused
+}
+
+// insertAtEnd splices block onto the end of file, ending file's last line
+// first in block's own ending when it has none.
+func insertAtEnd(file string, block []byte) []byte {
+	if strings.HasSuffix(string(block), "\r\n") && file != "" && !strings.HasSuffix(file, "\n") {
+		file += "\r"
+	}
+	return []byte(withFinalNewline(file) + string(block))
 }
 
 // droppedKeysNote is the one sentence both plans use for a key a participant

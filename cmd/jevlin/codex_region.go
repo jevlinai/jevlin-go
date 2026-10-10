@@ -464,15 +464,32 @@ func firstHeaderStart(s string) int {
 // or at the end of a file that has none, and adds no byte of its own: the
 // block is spliced in at a line boundary, so taking exactly its bytes out
 // again (removeCodexRegion) gives back the participant's file byte for
-// byte. The one byte it may add is the newline a file without a final one
-// needs before the block can start on a line of its own, which uninstall
-// cannot know it added.
+// byte. The one thing it may add is the line ending a file without a final
+// one needs before the block can start on a line of its own, which
+// uninstall cannot know it added.
 func insertBeforeFirstHeader(file string, block []byte) []byte {
 	idx := firstHeaderStart(file)
 	if idx < 0 {
-		return []byte(withFinalNewline(file) + string(block))
+		return insertAtEnd(file, block)
 	}
 	return []byte(file[:idx] + string(block) + file[idx:])
+}
+
+// fileLineEnding is the ending of a file's first line: "\r\n" or "\n",
+// and "\n" for a file with no line ending at all.
+func fileLineEnding(s string) string {
+	if i := strings.IndexByte(s, '\n'); i > 0 && s[i-1] == '\r' {
+		return "\r\n"
+	}
+	return "\n"
+}
+
+// withLineEnding is rendered text, which is LF throughout, in eol.
+func withLineEnding(b []byte, eol string) []byte {
+	if eol == "\n" {
+		return b
+	}
+	return []byte(strings.ReplaceAll(string(b), "\n", eol))
 }
 
 func withFinalNewline(s string) string {
@@ -505,6 +522,15 @@ func installCodexRegion(existing []byte, want []byte) (next []byte, change codex
 		return nil, change, why
 	}
 	change.repaired = had && r.damaged
+	// The region is written in the participant's line ending, read from
+	// their own lines rather than ours, so a CRLF file stays one file of
+	// CRLF lines, and a region an earlier build wrote LF into it is
+	// rewritten once and then left.
+	theirs := string(existing)
+	if had && strings.Contains(r.pre+r.post, "\n") {
+		theirs = r.pre + r.post
+	}
+	want = withLineEnding(want, fileLineEnding(theirs))
 	wantInner := mustRegion(want)
 	var candidates [][]byte
 	switch {
