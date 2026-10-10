@@ -177,3 +177,36 @@ func TestAByteOrderMarkBeforeTheFirstHeader(t *testing.T) {
 		t.Errorf("default_permissions is not a top-level key:\n%s", got)
 	}
 }
+
+// A run that commits only the safety form of our old block — no terminal
+// and no -yes, or a typed no at Proceed? — writes the fallback, which is
+// made from the file read without its byte-order mark; the mark Codex
+// loads the file with goes back in front, once.
+func TestTheFallbackKeepsTheByteOrderMark(t *testing.T) {
+	var st codexState
+	for _, s := range codexStates() {
+		if s.name == "old-block" {
+			st = s
+		}
+	}
+	for _, tc := range []struct {
+		name     string
+		terminal bool
+		stdin    string
+	}{
+		{"no terminal and no -yes", false, ""},
+		{"a typed no at Proceed?", true, "n\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, ops, cfgPath, before := seedState(t, st)
+			m.terminal = tc.terminal
+			m.files[codexConfigPath] = []byte(codexBOM + before)
+			runAgentsAt(t, ops, tc.stdin, "install", "-config", cfgPath, "-client", "codex")
+			got := string(m.files[codexConfigPath])
+			want := codexBOM + strings.Replace(before, "network_access = true\n", "", 1)
+			if got != want {
+				t.Errorf("the fallback did not keep the mark, or wrote more than the closed line\n got %q\nwant %q", got, want)
+			}
+		})
+	}
+}
