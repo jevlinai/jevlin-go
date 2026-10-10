@@ -412,11 +412,11 @@ func codexQuestion(label, path, home string, facts codexFacts, profile codexProf
 		}
 		switch {
 		case allowed.every:
-			chain = fmt.Sprintf("That is your profile %s's \"*\": Codex applies the domains of every profile jevlin's extends once jevlin's profile turns the network on.\n", mustTOMLString(allowed.everyFrom))
+			chain = fmt.Sprintf("That is your profile %s's \"*\": Codex applies the domains of every profile in the extends chain once jevlin's profile turns the network on.\n", mustTOMLString(allowed.everyFrom))
 		case len(names) == 1:
-			chain = fmt.Sprintf("That list includes what your profile %s allows: Codex applies the domains of every profile jevlin's extends once jevlin's profile turns the network on.\n", names[0])
+			chain = fmt.Sprintf("That list includes what your profile %s allows: Codex applies the domains of every profile in the extends chain once jevlin's profile turns the network on.\n", names[0])
 		case len(names) > 1:
-			chain = fmt.Sprintf("That list includes what your profiles %s allow: Codex applies the domains of every profile jevlin's extends once jevlin's profile turns the network on.\n", joinLabels(names))
+			chain = fmt.Sprintf("That list includes what your profiles %s allow: Codex applies the domains of every profile in the extends chain once jevlin's profile turns the network on.\n", joinLabels(names))
 		}
 		if profile.proxy {
 			if allowed.every {
