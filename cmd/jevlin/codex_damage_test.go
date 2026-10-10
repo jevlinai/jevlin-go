@@ -356,3 +356,24 @@ func TestALostEndMarkerWithCodexsTableInsideOurBlock(t *testing.T) {
 		t.Errorf("uninstall did not take every table of ours and only those:\n%s", left)
 	}
 }
+
+// `codex features enable chronicle` then `disable chronicle` leaves an
+// empty [features] table (captured on 0.158.0), and install puts our
+// region, whose proxy table is [features.network_proxy], directly above
+// it. Uninstall takes the region out and gives the participant's file back
+// byte for byte; it read the empty table as a change of meaning, left our
+// profile in force, and exited 0.
+func TestUninstallBesideAnEmptyFeaturesTable(t *testing.T) {
+	m, ops, cfgPath := capturedWithHome(t, "features-empty-installed.toml")
+	participant := codexConfigFixture(t, "features-empty-after-enable-disable.toml")
+	if !strings.HasSuffix(participant, "\n[features]\n") || !strings.HasSuffix(string(m.files[codexConfigPath]), agentsMarkerEnd+"\n[features]\n") {
+		t.Fatalf("the captures are not the shape they are named for")
+	}
+	code, out := runAgentsAt(t, ops, "", "uninstall", "-config", cfgPath, "-client", "codex", "-yes")
+	if code != exitOK || strings.Contains(out, "left the jevlin block") {
+		t.Fatalf("uninstall left the block (exit %d):\n%s", code, out)
+	}
+	if got := string(m.files[codexConfigPath]); got != participant {
+		t.Errorf("uninstall did not give the participant's file back\n got %q\nwant %q", got, participant)
+	}
+}

@@ -630,6 +630,13 @@ func removeCodexRegion(existing []byte) codexRegionRemoval {
 		if whole, ok = decodeTOMLDoc(string(existing)); ok {
 			if ours, ok = decodeTOMLDoc(r.oursText()); ok {
 				expected = subtractDoc(whole, ours)
+				// subtractDoc drops a table our keys leave empty; one the
+				// participant's own text declares stays, empty or not
+				// (Codex leaves an empty [features] after enabling and
+				// disabling a feature, and our proxy table is its child).
+				if theirs, ok := decodeTOMLDoc(r.participantInPlace()); ok {
+					keepDeclaredTables(expected, theirs)
+				}
 			}
 		}
 	} else {

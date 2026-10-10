@@ -122,6 +122,27 @@ func sortStrings(s []string) { sort.Strings(s) }
 
 // subtractDoc is doc without every leaf that ours defines, and without a
 // table that taking them out left empty.
+// keepDeclaredTables puts back, empty, every table decl declares that out
+// lacks. A key of another kind where decl has a table is left alone, for
+// the comparison to catch.
+func keepDeclaredTables(out, decl tomlDoc) {
+	for k, v := range decl {
+		child, ok := v.(map[string]any)
+		if !ok {
+			continue
+		}
+		have, ok := out[k].(map[string]any)
+		if !ok {
+			if _, present := out[k]; present {
+				continue
+			}
+			have = map[string]any{}
+			out[k] = have
+		}
+		keepDeclaredTables(have, child)
+	}
+}
+
 func subtractDoc(doc, ours tomlDoc) tomlDoc {
 	out := copyTOMLDoc(doc)
 	var walk func(prefix []string, t tomlDoc)
