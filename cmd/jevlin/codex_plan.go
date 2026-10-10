@@ -706,7 +706,9 @@ func withoutOpenNetworkAccess(existing []byte, region codexRegion) ([]byte, bool
 		if l.start < from || l.end > to {
 			continue
 		}
-		doc, ok := decodeTOMLDoc(s[l.start:l.end])
+		// A CRLF file's line still ends in "\r" here, which TOML does not
+		// take as the end of a value; read without it, delete through "\n".
+		doc, ok := decodeTOMLDoc(strings.TrimRight(s[l.start:l.end], "\r"))
 		if ok && len(doc) == 1 && doc["network_access"] == true {
 			if hit != nil {
 				return nil, false

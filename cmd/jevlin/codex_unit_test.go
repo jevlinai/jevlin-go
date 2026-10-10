@@ -4,6 +4,7 @@ package main
 // own network is never left open.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -518,5 +519,52 @@ func TestAnExtendedProfileThatIsGoneIsNamed(t *testing.T) {
 	}
 	if string(m.files[codexConfigPath]) != gone {
 		t.Errorf("install changed a file it cannot complete:\n%s", m.files[codexConfigPath])
+	}
+}
+
+// The safety write closes our old block whatever its line endings, on
+// every path that makes one, on both planners: an unanswered or declined
+// Codex question (where a question is asked), no terminal without -yes,
+// and an unanswered Proceed?. The one line goes with its own "\r\n".
+func TestTheOldBlockIsClosedUnderEitherLineEnding(t *testing.T) {
+	type path struct {
+		name     string
+		terminal bool
+		stdin    string
+		args     []string
+		ask      bool // needs a question of the participant's to ask
+	}
+	paths := []path{
+		{"typed no at the Codex question", true, "n\n", []string{"-yes"}, true},
+		{"unanswered Codex question", true, "", []string{"-yes"}, true},
+		{"no terminal, no -yes", false, "", nil, false},
+		{"Proceed? unanswered", true, "", nil, false},
+	}
+	for _, eol := range []string{"\n", "\r\n"} {
+		for _, goos := range []string{"linux", "windows"} {
+			for _, pt := range paths {
+				if pt.ask && goos == "windows" {
+					continue // Windows asks no question about the participant's settings
+				}
+				t.Run(fmt.Sprintf("%q/%s/%s", eol, goos, pt.name), func(t *testing.T) {
+					cfgPath, _ := sandboxTestConfig(t)
+					onCodexOS(t, goos)
+					m, ops := newFakeMachine("codex")
+					m.terminal = pt.terminal
+					head := "model = \"gpt-5\"\n"
+					if pt.ask {
+						head = "default_permissions = \":workspace\"\n"
+					}
+					block := head + agentsMarkerBegin + "\n[sandbox_workspace_write]\nnetwork_access = true\nwritable_roots = [" + quotedRootsOf(t, cfgPath) + "]\nexclude_slash_tmp = true\nexclude_tmpdir_env_var = true\n" + agentsMarkerEnd + "\n"
+					before := strings.ReplaceAll(block, "\n", eol)
+					m.files[codexConfigPath] = []byte(before)
+					_, out := runAgentsAt(t, ops, pt.stdin, append([]string{"install", "-config", cfgPath, "-client", "codex"}, pt.args...)...)
+					want := strings.Replace(before, "network_access = true"+eol, "", 1)
+					if got := string(m.files[codexConfigPath]); got != want {
+						t.Errorf("the old block was not closed by its one line\n--- got ---\n%q\n--- want ---\n%q\n%s", got, want, out)
+					}
+				})
+			}
+		}
 	}
 }
