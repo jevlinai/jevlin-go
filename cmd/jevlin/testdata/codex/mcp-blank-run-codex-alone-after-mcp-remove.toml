@@ -1,0 +1,9 @@
+model = "gpt-5"
+
+
+# c1
+
+# c2
+
+[projects."/x"]
+trust_level = "trusted"

@@ -234,8 +234,7 @@ func damagedCodexRegion(s string) (pre, region, post string, ok bool) {
 	case begin >= 0 && end < 0:
 		// The end marker is gone: the region is the run of our tables
 		// directly below the begin marker.
-		stop := len(lines)
-		seen := false
+		stop, last := len(lines), -1
 		for j := begin + 1; j < len(lines); j++ {
 			name, isHeader := header(j)
 			if !isHeader {
@@ -245,37 +244,41 @@ func damagedCodexRegion(s string) (pre, region, post string, ok bool) {
 				stop = j
 				break
 			}
-			seen = true
+			last = j
 		}
-		if !seen {
+		if last < 0 {
 			return "", "", "", false
 		}
-		cut := len(s)
-		if stop < len(lines) {
-			// The comments directly above the participant's table are
-			// that table's, not ours: Codex's editor reads them so, and
-			// counting them in our region would delete them with it. Back
-			// up over the comment and blank run above its header, then
-			// forward over the blank lines, as firstHeaderStart does, so
-			// the region ends after our last table's last key and keeps
-			// the blank lines that followed it.
-			at := stop
-			for at > begin+1 {
-				prev := lines[at-1]
-				if prev.end+1 != lines[at].start {
-					break
-				}
-				t := strings.TrimSpace(s[prev.start:prev.end])
-				if t != "" && !strings.HasPrefix(t, "#") {
-					break
-				}
-				at--
+		// The comments and blank lines directly above the participant's
+		// next table, or at the end of the file, are not ours: Codex's
+		// editor reads them as that table's, or keeps them at the end, and
+		// our renderer writes none after a key. Back up over the run, so
+		// the region ends after our last table's last key; then take at
+		// most one blank line, the one Codex's own removal of the table
+		// that followed us would have taken with it (the captures in
+		// testdata/codex/ show its result with no block of ours).
+		startOf := func(i int) int {
+			if i == len(lines) {
+				return len(s)
 			}
-			for at < stop && strings.TrimSpace(s[lines[at].start:lines[at].end]) == "" {
-				at++
-			}
-			cut = lines[at].start
+			return lines[i].start
 		}
+		at := stop
+		for at > last+1 {
+			prev := lines[at-1]
+			if after(at-1) != startOf(at) {
+				break // a string ends between them: not one run
+			}
+			t := strings.TrimSpace(s[prev.start:prev.end])
+			if t != "" && !strings.HasPrefix(t, "#") {
+				break
+			}
+			at--
+		}
+		if at < stop && strings.TrimSpace(s[lines[at].start:lines[at].end]) == "" {
+			at++
+		}
+		cut := startOf(at)
 		return s[:lines[begin].start], s[after(begin):cut], s[cut:], true
 	}
 	return "", "", "", false

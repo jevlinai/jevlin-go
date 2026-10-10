@@ -224,3 +224,86 @@ func TestALineCodexRewroteUnderOurMarkIsMarkedAgain(t *testing.T) {
 		t.Errorf("another installation's mark was not refused before the question (exit %d):\n%s", code, out)
 	}
 }
+
+// When nothing follows our block, `codex mcp remove` of the participant's
+// last table still takes our end marker, and leaves the participant's
+// comment at the end of the file directly under our last key (captured on
+// 0.158.0). Repair, uninstall and both runs that commit only the safety
+// write keep that comment: the region ends after our last key whether the
+// next thing is a table or the end of the file.
+func TestALostEndMarkerAtTheEndOfTheFileKeepsTheParticipantsComment(t *testing.T) {
+	const note = "# my note at the end of the file\n"
+	t.Run("repair", func(t *testing.T) {
+		m, ops, cfgPath := capturedWithHome(t, "mcp-last-after-mcp-remove.toml")
+		damaged := string(m.files[codexConfigPath])
+		if strings.Contains(damaged, agentsMarkerEnd) || !strings.HasSuffix(damaged, "enabled = true\n"+note) {
+			t.Fatalf("the capture is not the damage it is named for:\n%s", damaged)
+		}
+		if code, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK || !strings.Contains(out, "repair jevlin's block") {
+			t.Fatalf("install did not repair the block (exit %d):\n%s", code, out)
+		}
+		got := string(m.files[codexConfigPath])
+		if !strings.HasSuffix(got, agentsMarkerEnd+"\n"+note) || strings.Count(got, agentsMarkerBegin) != 1 {
+			t.Errorf("the repair did not end our block above the participant's comment:\n%s", got)
+		}
+	})
+	t.Run("uninstall", func(t *testing.T) {
+		m, ops, cfgPath := capturedWithHome(t, "mcp-last-after-mcp-remove.toml")
+		if code, out := runAgentsAt(t, ops, "", "uninstall", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK {
+			t.Fatalf("uninstall: exit %d\n%s", code, out)
+		}
+		// Codex alone keeps "model = ...\n" + the note; the blank line
+		// before our begin marker is the participant's, and stays.
+		if got := string(m.files[codexConfigPath]); got != "model = \"gpt-5\"\n\n"+note {
+			t.Errorf("uninstall did not leave the participant's lines and comment: %q", got)
+		}
+	})
+	// Codex then drops our proxy table on `codex features disable
+	// network_proxy`: the safety form closes our network, and only that.
+	for _, tc := range []struct {
+		name     string
+		terminal bool
+		stdin    string
+	}{
+		{"no terminal and no -yes", false, ""},
+		{"a typed no at Proceed?", true, "n\n"},
+	} {
+		t.Run("safety write, "+tc.name, func(t *testing.T) {
+			m, ops, cfgPath := capturedWithHome(t, "mcp-last-after-mcp-remove-features-disable-network_proxy.toml")
+			before := string(m.files[codexConfigPath])
+			m.terminal = tc.terminal
+			_, out := runAgentsAt(t, ops, tc.stdin, "install", "-config", cfgPath, "-client", "codex")
+			got := string(m.files[codexConfigPath])
+			if got == before || !strings.Contains(out, "only jevlin's own block") {
+				t.Fatalf("the safety write was not committed:\n%s", out)
+			}
+			if !strings.HasSuffix(got, note) || strings.Contains(got, "[permissions.jevlin.network]") {
+				t.Errorf("the safety write did not close our network and keep the comment:\n%s", got)
+			}
+			if !strings.HasPrefix(got, before[:strings.Index(before, agentsMarkerBegin)]) {
+				t.Errorf("the safety write changed lines above our block:\n%s", got)
+			}
+		})
+	}
+}
+
+// After a lost end marker, uninstall gives what `codex mcp remove` alone
+// would have given the participant's file, where a table follows: the
+// comment and blank lines above that table are theirs, and only the one
+// blank line Codex's removal takes goes with our region.
+func TestUninstallAfterALostEndMarkerGivesWhatCodexAloneGives(t *testing.T) {
+	for damaged, alone := range map[string]string{
+		"mcp-after-block-after-mcp-remove.toml": "mcp-after-block-codex-alone-after-mcp-remove.toml",
+		"mcp-blank-run-after-mcp-remove.toml":   "mcp-blank-run-codex-alone-after-mcp-remove.toml",
+	} {
+		t.Run(damaged, func(t *testing.T) {
+			m, ops, cfgPath := capturedWithHome(t, damaged)
+			if code, out := runAgentsAt(t, ops, "", "uninstall", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK {
+				t.Fatalf("uninstall: exit %d\n%s", code, out)
+			}
+			if got, want := string(m.files[codexConfigPath]), codexConfigFixture(t, alone); got != want {
+				t.Errorf("uninstall differs from Codex alone\n got %q\nwant %q", got, want)
+			}
+		})
+	}
+}
