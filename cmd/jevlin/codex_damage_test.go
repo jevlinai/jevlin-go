@@ -399,3 +399,28 @@ func TestAMarkWhoseWasNamesAnotherKeyIsRefused(t *testing.T) {
 		t.Errorf("the refusal does not say why, or the file changed:\n%s", out)
 	}
 }
+
+// The value the question promises back is the one the line had before our
+// first change, not the one Codex wrote over it. In the capture the two
+// are the same (":workspace"), so here the first change was from "work":
+// the question names "work", and uninstall puts "work" back.
+func TestTheQuestionNamesTheValueBeforeOurFirstChange(t *testing.T) {
+	m, ops, cfgPath := capturedWithHome(t, "workspace-switched-appserver-default-permissions.toml")
+	captured := string(m.files[codexConfigPath])
+	first := strings.Replace(captured, "; was: default_permissions = \":workspace\"\n", "; was: default_permissions = \"work\"\n", 1)
+	if first == captured {
+		t.Fatalf("the capture has no was: to change:\n%s", captured)
+	}
+	m.files[codexConfigPath] = []byte(first + "\n[permissions.work]\nextends = \":workspace\"\n")
+	m.terminal = true
+	code, out := runAgentsAt(t, ops, "y\n", "install", "-config", cfgPath, "-client", "codex", "-yes")
+	if code != exitOK || !strings.Contains(out, `default_permissions = ":workspace" becomes "jevlin" (marked; agents uninstall puts "work" back)`) {
+		t.Fatalf("the question does not name the value before our first change (exit %d):\n%s", code, out)
+	}
+	if code, out := runAgentsAt(t, ops, "", "uninstall", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK {
+		t.Fatalf("uninstall: exit %d\n%s", code, out)
+	}
+	if doc, ok := decodeTOMLDoc(string(m.files[codexConfigPath])); !ok || doc["default_permissions"] != "work" {
+		t.Errorf("uninstall did not put back the value before our first change:\n%s", m.files[codexConfigPath])
+	}
+}
