@@ -598,10 +598,16 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 	if failures > 0 {
 		return exitTransport
 	}
+	// A run that refused something exits 1 (refusedExit), and its last
+	// line says so rather than "done" alone.
+	done := "done"
+	if len(plan.refused) > 0 {
+		done = fmt.Sprintf("done, except the %d refused above", len(plan.refused))
+	}
 	if sub == "install" {
-		fmt.Fprintln(stdout, "\ndone. Restart any agent that is already open; check with: jevlin agents status")
+		fmt.Fprintf(stdout, "\n%s. Restart any agent that is already open; check with: jevlin agents status\n", done)
 	} else {
-		fmt.Fprintln(stdout, "\ndone")
+		fmt.Fprintf(stdout, "\n%s\n", done)
 	}
 	if plan.unanswerable {
 		// A question only a terminal can answer was due, and there was

@@ -128,6 +128,9 @@ func TestUninstallLeavesTheLinesItChangedWithABlockItLeaves(t *testing.T) {
 	if code != exitTransport || !strings.Contains(out, "refused: Codex: left the jevlin block") || !strings.Contains(out, codexStillUnder) {
 		t.Errorf("an uninstall that left our block exited %d, or did not say what it left:\n%s", code, out)
 	}
+	if !strings.HasSuffix(out, "\ndone, except the 1 refused above\n") {
+		t.Errorf("the last line does not say the run refused something:\n%s", out)
+	}
 }
 
 // The unit holds however this installation's uninstall finds its config:
