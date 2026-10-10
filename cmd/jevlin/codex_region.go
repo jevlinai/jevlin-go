@@ -33,8 +33,9 @@ import (
 type codexRegion struct {
 	pre, region, post string
 
-	legacy bool // ours is the old [sandbox_workspace_write] table
-	atTop  bool // nothing before the region is a table header
+	legacy  bool // ours is the old [sandbox_workspace_write] table
+	atTop   bool // nothing before the region is a table header
+	damaged bool // one marker is gone; the region was found by our own tables
 
 	ourKey      string        // the default_permissions line, "" when absent
 	ourComments string        // comment and blank lines of the preamble: ours, dropped with the region
@@ -105,10 +106,14 @@ func (r codexRegion) participantInPlace() string {
 // the caller then leaves the file exactly as it is and says so.
 func readCodexRegion(file []byte) (r codexRegion, had bool, why string) {
 	pre, region, post, ok := markedRegion(file)
+	damaged := false
 	if !ok {
-		return codexRegion{}, false, ""
+		if pre, region, post, ok = damagedCodexRegion(string(file)); !ok {
+			return codexRegion{}, false, ""
+		}
+		damaged = true
 	}
-	r = codexRegion{pre: pre, region: region, post: post, atTop: !holdsHeaderLine(pre)}
+	r = codexRegion{pre: pre, region: region, post: post, atTop: !holdsHeaderLine(pre), damaged: damaged}
 	preamble, sections, ok := splitMarkedBlock(region)
 	if !ok {
 		return r, true, "it cannot be read as TOML tables, so which of them are ours cannot be decided; remove it by hand"
@@ -163,6 +168,95 @@ func readCodexRegion(file []byte) (r codexRegion, had bool, why string) {
 		return r, true, "a line inside it that jevlin did not write sets default_permissions; remove the block by hand and run this again"
 	}
 	return r, true, ""
+}
+
+// damagedCodexRegion finds a region one of whose markers is gone: a lone
+// end marker with a run of our own tables directly above it, or a lone
+// begin marker with such a run directly below it. Codex deletes the
+// comments above a table along with the table, and before our proxy table
+// was written last that took our begin marker with it (the captures are in
+// testdata/codex/). Our tables are recognized by their headers, and the
+// region read from them is held to the renderer like any other, so only
+// text that decodes as exactly ours is taken for it.
+func damagedCodexRegion(s string) (pre, region, post string, ok bool) {
+	ours := map[string]bool{}
+	for _, h := range codexProfileHeaders() {
+		ours[h] = true
+	}
+	lines := linesOutsideTOMLStrings(s)
+	text := func(i int) string { return strings.TrimRight(s[lines[i].start:lines[i].end], " \t\r") }
+	header := func(i int) (name string, isHeader bool) {
+		m := tomlHeaderLine.FindStringSubmatch(text(i))
+		if m == nil {
+			return "", false
+		}
+		return strings.Join(headerPath(headerName(m)), "."), true
+	}
+	after := func(i int) int {
+		end := lines[i].end
+		if end < len(s) && s[end] == '\n' {
+			end++
+		}
+		return end
+	}
+	begin, end := -1, -1
+	for i := range lines {
+		switch text(i) {
+		case agentsMarkerBegin:
+			if begin < 0 {
+				begin = i
+			}
+		case agentsMarkerEnd:
+			if end < 0 {
+				end = i
+			}
+		}
+	}
+	switch {
+	case end >= 0 && (begin < 0 || begin > end):
+		// The begin marker is gone: the region is the run of our tables
+		// directly above the end marker.
+		start := -1
+		for j := end - 1; j >= 0; j-- {
+			name, isHeader := header(j)
+			if !isHeader {
+				continue
+			}
+			if !ours[name] {
+				break
+			}
+			start = j
+		}
+		if start < 0 {
+			return "", "", "", false
+		}
+		return s[:lines[start].start], s[lines[start].start:lines[end].start], s[after(end):], true
+	case begin >= 0 && end < 0:
+		// The end marker is gone: the region is the run of our tables
+		// directly below the begin marker.
+		stop := len(lines)
+		seen := false
+		for j := begin + 1; j < len(lines); j++ {
+			name, isHeader := header(j)
+			if !isHeader {
+				continue
+			}
+			if !ours[name] {
+				stop = j
+				break
+			}
+			seen = true
+		}
+		if !seen {
+			return "", "", "", false
+		}
+		cut := len(s)
+		if stop < len(lines) {
+			cut = lines[stop].start
+		}
+		return s[:lines[begin].start], s[after(begin):cut], s[cut:], true
+	}
+	return "", "", "", false
 }
 
 // splitPreamble separates the lines before the region's first table: our
@@ -370,6 +464,7 @@ func withFinalNewline(s string) string {
 // plan's sentences.
 type codexRegionChange struct {
 	unchanged     bool     // the region already reads as the renderer writes it
+	repaired      bool     // one of its markers was gone, and both are back
 	migrated      bool     // the old [sandbox_workspace_write] block was replaced
 	proxyRestored bool     // our [features.network_proxy] table was missing and is back
 	movedRoots    []string // root keys moved to just above the region
@@ -387,6 +482,7 @@ func installCodexRegion(existing []byte, want []byte) (next []byte, change codex
 	if had && why != "" {
 		return nil, change, why
 	}
+	change.repaired = had && r.damaged
 	wantInner := mustRegion(want)
 	var candidates [][]byte
 	switch {

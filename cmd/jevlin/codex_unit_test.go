@@ -88,7 +88,7 @@ func installedOn(t *testing.T, name string) (m *fakeMachine, ops agentOps, cfgPa
 func TestAProxyTableDeletedAfterASwitchIsRestored(t *testing.T) {
 	m, ops, cfgPath, _ := installedOn(t, "own-profile-network-absent")
 	got := string(m.files[codexConfigPath])
-	cut := strings.Replace(got, "[features.network_proxy]\nenabled = true\n\n", "", 1)
+	cut := strings.Replace(got, "\n[features.network_proxy]\nenabled = true\n", "\n", 1)
 	if cut == got {
 		t.Fatalf("this case needs our proxy table, and the switch did not write one:\n%s", got)
 	}

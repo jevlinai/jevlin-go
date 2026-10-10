@@ -203,9 +203,6 @@ func codexProfileText(p codexProfile) string {
 	if p.key {
 		b.WriteString("default_permissions = " + mustTOMLString(codexProfileName) + "\n\n")
 	}
-	if p.proxy {
-		b.WriteString("[features.network_proxy]\nenabled = true\n\n")
-	}
 	extends := p.extends
 	if extends == "" {
 		extends = ":workspace"
@@ -221,6 +218,14 @@ func codexProfileText(p codexProfile) string {
 		for _, h := range p.hosts {
 			b.WriteString(mustTOMLString(h) + " = \"allow\"\n")
 		}
+	}
+	// The proxy table goes last. Codex's editor reads the comments above a
+	// table as that table's own, and `codex features disable network_proxy`
+	// deletes the table with them: written first, it took our begin marker
+	// and left a lone end marker (seen live on 0.158.0 and 0.160.0). Last,
+	// nothing of ours is above it but our own tables, and the markers stay.
+	if p.proxy {
+		b.WriteString("\n[features.network_proxy]\nenabled = true\n")
 	}
 	return b.String()
 }

@@ -328,6 +328,8 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 	}
 	why = codexWriteWhy(profile)
 	switch {
+	case change.repaired:
+		why = "permissions: repair jevlin's block, which had lost a marker (Codex deletes the comments above a table it removes) and would not have been found again; " + strings.TrimPrefix(why, "permissions: ")
 	case change.migrated:
 		why = "permissions: replace the sandbox block, which gave every Codex command open network, with " + strings.TrimPrefix(why, "permissions: ")
 	case change.proxyRestored:

@@ -19,9 +19,14 @@ import (
 )
 
 func codexPermissionLines(ops agentOps, path string, entry binEntry, getenv func(string) string) []string {
+	lines, damaged := codexPermissionLinesBody(ops, path, entry, getenv)
+	return append(damaged, lines...)
+}
+
+func codexPermissionLinesBody(ops agentOps, path string, entry binEntry, getenv func(string) string) (lines, damage []string) {
 	existing, err := ops.readFile(path)
 	if err != nil {
-		return nil
+		return nil, damage
 	}
 	where := tilde(ops.home, path)
 	cfg := configForEntry(entry, getenv)
@@ -31,20 +36,23 @@ func codexPermissionLines(ops agentOps, path string, entry binEntry, getenv func
 	}
 	region, had, why := readCodexRegion(existing)
 	if had && why != "" {
-		return []string{"permissions: the jevlin block in " + where + " cannot be read: " + why}
+		return []string{"permissions: the jevlin block in " + where + " cannot be read: " + why}, damage
 	}
 	if !had {
-		return nil
+		return nil, damage
+	}
+	if region.damaged {
+		damage = append(damage, "permissions: the jevlin block in "+where+" has lost one of its markers (Codex deletes the comments above a table it removes); agents install repairs it, and agents uninstall removes it whole")
 	}
 	if region.legacy {
 		if _, open := lookupTOMLPath(mustDecode(region.oursText()), codexSandboxTable, "network_access"); open {
-			return []string{"permissions: the old sandbox block in " + where + " gives every command Codex runs open network to any host; agents install replaces it with a profile limited to the search hosts"}
+			return []string{"permissions: the old sandbox block in " + where + " gives every command Codex runs open network to any host; agents install replaces it with a profile limited to the search hosts"}, damage
 		}
-		return []string{"permissions: the old sandbox block in " + where + " grants the writable roots and no network; agents install replaces it with a profile"}
+		return []string{"permissions: the old sandbox block in " + where + " grants the writable roots and no network; agents install replaces it with a profile"}, damage
 	}
 	facts, ok := readCodexFacts(region.participantInPlace())
 	if !ok {
-		return []string{"permissions: " + where + " does not read as TOML outside the jevlin block"}
+		return []string{"permissions: " + where + " does not read as TOML outside the jevlin block"}, damage
 	}
 	active := region.keyPresent || (facts.hasDefault && facts.defaultPermissions == codexProfileName)
 	if !active {
@@ -52,14 +60,13 @@ func codexPermissionLines(ops agentOps, path string, entry binEntry, getenv func
 		if facts.hasDefault {
 			name = mustTOMLString(facts.defaultPermissions)
 		}
-		return []string{fmt.Sprintf("permissions: default_permissions in %s names %s, not jevlin's profile; Codex's commands do not run under it", where, name)}
+		return []string{fmt.Sprintf("permissions: default_permissions in %s names %s, not jevlin's profile; Codex's commands do not run under it", where, name)}, damage
 	}
 	proxyOn := region.proxyPresent || facts.proxyOn()
 	state := "on"
 	if !proxyOn {
 		state = "off"
 	}
-	var lines []string
 	switch {
 	case region.network:
 		lines = append(lines, fmt.Sprintf("permissions: profile %q (extends %s) in %s; hosts %s; network_proxy %s", codexProfileName, mustTOMLString(region.extends), where, orNone(region.hosts), state))
@@ -76,7 +83,7 @@ func codexPermissionLines(ops agentOps, path string, entry binEntry, getenv func
 		lines = append(lines, fmt.Sprintf("permissions: profile %q (extends %s) in %s grants the writable roots and no network, so a search from Codex cannot reach the router; agents install asks to add the search hosts",
 			codexProfileName, mustTOMLString(region.extends), where))
 	}
-	return lines
+	return lines, damage
 }
 
 func mustDecode(s string) tomlDoc {

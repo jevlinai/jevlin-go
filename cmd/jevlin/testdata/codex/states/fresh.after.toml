@@ -7,9 +7,6 @@ model = "gpt-5"
 # supported, and below 0.131 Codex refuses this file and does not start.
 default_permissions = "jevlin"
 
-[features.network_proxy]
-enabled = true
-
 [permissions.jevlin]
 extends = ":workspace"
 
@@ -26,6 +23,9 @@ enabled = true
 "agents-v1.nyks.dev" = "allow"
 "as.example.invalid" = "allow"
 "router.example.invalid" = "allow"
+
+[features.network_proxy]
+enabled = true
 # <<< jevlin agents install <<<
 [tui]
 screen_reader_detection_done = true
