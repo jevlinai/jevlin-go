@@ -307,3 +307,52 @@ func TestUninstallAfterALostEndMarkerGivesWhatCodexAloneGives(t *testing.T) {
 		})
 	}
 }
+
+// Codex writes [features] inside our markers, above our proxy table
+// (`codex features enable chronicle`), and a later `codex mcp remove`
+// takes our end marker (captured on 0.158.0). The region still runs to
+// the end of our last table: status names the damage, the repair puts
+// every table of ours back inside the markers and Codex's [features] below
+// them, and uninstall takes every table of ours, proxy table included, and
+// keeps Codex's [features] and the participant's comment.
+func TestALostEndMarkerWithCodexsTableInsideOurBlock(t *testing.T) {
+	const fixture = "mcp-after-block-features-enabled-after-mcp-remove.toml"
+	const chronicle = "[features]\nchronicle = true\n"
+	const comment = "# trusted because I own it\n[projects.\"/x\"]"
+	m, ops, cfgPath := capturedWithHome(t, fixture)
+	damaged := string(m.files[codexConfigPath])
+	if strings.Contains(damaged, agentsMarkerEnd) || !strings.Contains(damaged, chronicle+"\n[features.network_proxy]") {
+		t.Fatalf("the capture is not the damage it is named for:\n%s", damaged)
+	}
+	if _, out := runAgentsAt(t, ops, "", "status", "-config", cfgPath); !strings.Contains(out, "has lost one of its markers") {
+		t.Errorf("status does not name the damage:\n%s", out)
+	}
+	if code, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK {
+		t.Fatalf("install: exit %d\n%s", code, out)
+	}
+	got := string(m.files[codexConfigPath])
+	_, inside, post, ok := markedRegion([]byte(got))
+	if !ok || strings.Count(got, agentsMarkerBegin) != 1 {
+		t.Fatalf("the repair is not one marked block:\n%s", got)
+	}
+	for _, h := range codexProfileHeaders() {
+		if strings.Contains(post, "["+h+"]") {
+			t.Errorf("our [%s] is left outside the markers:\n%s", h, got)
+		}
+	}
+	if strings.Contains(inside, "chronicle") || !strings.Contains(post, chronicle) || !strings.Contains(post, comment) {
+		t.Errorf("Codex's [features] or the participant's comment is not below the block:\n%s", got)
+	}
+	if err := codexTOMLError(got); err != nil {
+		t.Errorf("Codex would refuse the repaired file: %v", err)
+	}
+
+	m.files[codexConfigPath] = []byte(damaged)
+	if code, out := runAgentsAt(t, ops, "", "uninstall", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK {
+		t.Fatalf("uninstall: exit %d\n%s", code, out)
+	}
+	left := string(m.files[codexConfigPath])
+	if strings.Contains(left, "network_proxy") || strings.Contains(left, "jevlin") || !strings.Contains(left, chronicle) || !strings.Contains(left, comment) {
+		t.Errorf("uninstall did not take every table of ours and only those:\n%s", left)
+	}
+}

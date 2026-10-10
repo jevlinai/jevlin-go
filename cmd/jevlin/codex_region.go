@@ -232,22 +232,26 @@ func damagedCodexRegion(s string) (pre, region, post string, ok bool) {
 		}
 		return s[:lines[start].start], s[lines[start].start:lines[end].start], s[after(end):], true
 	case begin >= 0 && end < 0:
-		// The end marker is gone: the region is the run of our tables
-		// directly below the begin marker.
-		stop, last := len(lines), -1
+		// The end marker is gone: the region runs from the begin marker to
+		// the end of the last of our tables below it. A table of Codex's
+		// between ours (it writes [features] inside our markers) is inside
+		// the region, where readCodexRegion names it foreign and install
+		// moves it out; stopping at it would leave our later tables behind.
+		last := -1
 		for j := begin + 1; j < len(lines); j++ {
-			name, isHeader := header(j)
-			if !isHeader {
-				continue
+			if name, isHeader := header(j); isHeader && ours[name] {
+				last = j
 			}
-			if !ours[name] {
-				stop = j
-				break
-			}
-			last = j
 		}
 		if last < 0 {
 			return "", "", "", false
+		}
+		stop := len(lines)
+		for j := last + 1; j < len(lines); j++ {
+			if _, isHeader := header(j); isHeader {
+				stop = j
+				break
+			}
 		}
 		// The comments and blank lines directly above the participant's
 		// next table, or at the end of the file, are not ours: Codex's
