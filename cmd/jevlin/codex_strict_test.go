@@ -63,7 +63,7 @@ func TestInstallRefusesAHeaderThatWouldExtendAnInlineTable(t *testing.T) {
 	if got := string(m.files[codexConfigPath]); got != before {
 		t.Errorf("install wrote a file Codex would refuse:\n%s", got)
 	}
-	if !strings.Contains(out, "your config defines [features.network_proxy] inline or with dotted keys") {
+	if !strings.Contains(out, "your config defines features inline, and adding jevlin's tables beside it") {
 		t.Errorf("the refusal does not name the colliding table:\n%s", out)
 	}
 	if _, ok := m.files["/home/u/.codex/skills/jevlin/SKILL.md"]; ok {
@@ -140,4 +140,20 @@ func TestAByteOrderMarkIsKeptAndNotRefused(t *testing.T) {
 			t.Errorf("uninstall left the region of a file that gained a mark: %q", got)
 		}
 	})
+}
+
+// The refusal names the participant's table that collides, not ours: an
+// inline features table is "features inline"; a network_proxy table made
+// by dotted keys is that table "with dotted keys".
+func TestTheCollisionNamesTheParticipantsTable(t *testing.T) {
+	for _, tc := range []struct{ text, want string }{
+		{"features = { memories = true }\n", "features inline"},
+		{"[features]\nnetwork_proxy.enabled = false\n", "[features.network_proxy] with dotted keys"},
+		{"permissions = { }\n", "permissions inline"},
+	} {
+		got := codexHeaderCollisions(tc.text, codexProfileHeaders())
+		if len(got) == 0 || got[0] != tc.want {
+			t.Errorf("collisions over %q = %q, want %q first", tc.text, got, tc.want)
+		}
+	}
 }

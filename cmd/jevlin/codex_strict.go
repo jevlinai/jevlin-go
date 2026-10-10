@@ -61,19 +61,35 @@ func codexTOMLError(text string) error {
 	return nil
 }
 
-// codexHeaderCollisions names the tables of ours that the participant's own
-// file already defines inline or through dotted keys, so that a header for
-// them would make a file Codex refuses. Each header is tried alone against
-// the participant's text, which is what says which one collides.
+// codexHeaderCollisions names the tables of the participant's that one of
+// our headers would collide with: a table, or an ancestor of one, that they
+// wrote inline or with dotted keys. Each of our headers is tried alone
+// against their text; for one that collides, the shortest prefix under
+// which no new table can be opened is the inline one, and where every
+// prefix takes a new table, the header itself was made by dotted keys.
 func codexHeaderCollisions(participant string, headers []string) []string {
+	if codexTOMLError(participant) != nil {
+		return nil // already refused; codexWriteRefusal says so
+	}
+	opens := func(h string) bool {
+		return codexTOMLError(strings.TrimRight(participant, "\n")+"\n\n["+h+"]\n") == nil
+	}
 	var out []string
 	for _, h := range headers {
-		if codexTOMLError(participant) != nil {
-			return nil // already refused; codexWriteRefusal says so
+		if opens(h) {
+			continue
 		}
-		probe := strings.TrimRight(participant, "\n") + "\n\n[" + h + "]\n"
-		if codexTOMLError(probe) != nil {
-			out = append(out, "["+h+"]")
+		segs := strings.Split(h, ".")
+		named := "[" + h + "] with dotted keys"
+		for i := 1; i <= len(segs); i++ {
+			prefix := strings.Join(segs[:i], ".")
+			if !opens(prefix + ".jevlin_probe") {
+				named = prefix + " inline"
+				break
+			}
+		}
+		if !containsString(out, named) {
+			out = append(out, named)
 		}
 	}
 	return out
@@ -91,7 +107,7 @@ func codexWriteRefusal(existing, next []byte, participant string, headers []stri
 		return fmt.Sprintf("Codex already refuses this file (%v), so nothing was written to it; fix it first", before)
 	}
 	if hit := codexHeaderCollisions(participant, headers); len(hit) > 0 {
-		return fmt.Sprintf("your config defines %s inline or with dotted keys, and adding jevlin's table there would make a file Codex refuses (%v); nothing was written for Codex. Write that table as a [header] of its own and run this again",
+		return fmt.Sprintf("your config defines %s, and adding jevlin's tables beside it would make a file Codex refuses (%v); nothing was written for Codex. Write that table as a [header] of its own and run this again",
 			strings.Join(hit, " and "), err)
 	}
 	return fmt.Sprintf("the result would be a file Codex refuses (%v), so nothing was written to it", err)
