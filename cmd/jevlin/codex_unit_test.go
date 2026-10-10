@@ -228,3 +228,101 @@ func TestTheOldBlockIsClosedWhateverTheAnswer(t *testing.T) {
 		})
 	}
 }
+
+// Our profile with a network of its own loses that network when the
+// participant keeps network_proxy off: here their [features] table turned
+// it on, so ours wrote no proxy table, and then they turned it off again.
+// A typed no to turning it back on keeps their setting and closes ours.
+func TestOurProfileLosesItsNetworkWhenTheProxyStaysOff(t *testing.T) {
+	m, ops, cfgPath, _ := installedOn(t, "features-network-proxy-true")
+	got := string(m.files[codexConfigPath])
+	off := strings.Replace(got, "network_proxy = true", "network_proxy = false", 1)
+	if off == got || !openByUs(t, off) {
+		t.Fatalf("the fixture does not reproduce our open network:\n%s", off)
+	}
+	m.files[codexConfigPath] = []byte(off)
+	code, out := runAgentsAt(t, ops, "n\n", "install", "-config", cfgPath, "-client", "codex", "-yes")
+	after := string(m.files[codexConfigPath])
+	assertNotOpenByUs(t, "after a typed no", after)
+	if code != exitOK || !strings.Contains(out, "drop its network") || !strings.Contains(after, "network_proxy = false") {
+		t.Errorf("the typed no did not keep their setting and close ours (exit %d):\n%s\n%s", code, out, after)
+	}
+}
+
+// Without its region — taken out by hand — a marked line is this
+// installation's when its mark names the same config file, reached here
+// through a link.
+func TestAMarkWithoutItsRegionIsAttributedThroughALink(t *testing.T) {
+	m, ops, cfgPath, _ := installedOn(t, "default-permissions-workspace")
+	got := string(m.files[codexConfigPath])
+	noRegion, had := removeMarkedBlock([]byte(got))
+	if !had {
+		t.Fatalf("no region to take out:\n%s", got)
+	}
+	m.files[codexConfigPath] = noRegion
+	link := filepath.Join(t.TempDir(), "via-link.toml")
+	if err := os.Symlink(cfgPath, link); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	code, out := runAgentsAt(t, ops, "", "uninstall", "-config", link, "-client", "codex", "-yes")
+	if doc, ok := decodeTOMLDoc(string(m.files[codexConfigPath])); !ok || doc["default_permissions"] != ":workspace" {
+		t.Errorf("the marked line was not put back through the link (exit %d):\n%s\n%s", code, out, m.files[codexConfigPath])
+	}
+}
+
+// The region never goes while default_permissions would still name it: a
+// line naming our profile that carries no mark — here the participant
+// deleted ours — cannot be put back, so the region stays, and the plan
+// says why. Codex refuses a default_permissions naming a profile that does
+// not exist.
+func TestUninstallNeverLeavesDefaultPermissionsNamingARemovedProfile(t *testing.T) {
+	m, ops, cfgPath, _ := installedOn(t, "default-permissions-workspace")
+	got := string(m.files[codexConfigPath])
+	i := strings.Index(got, "  # jevlin agents install")
+	j := strings.Index(got[i:], "\n")
+	if i < 0 || j < 0 {
+		t.Fatalf("no marked line:\n%s", got)
+	}
+	unmarked := got[:i] + got[i+j:]
+	m.files[codexConfigPath] = []byte(unmarked)
+	code, out := runAgentsAt(t, ops, "", "uninstall", "-config", cfgPath, "-client", "codex", "-yes")
+	if string(m.files[codexConfigPath]) != unmarked {
+		t.Errorf("uninstall removed the profile a default_permissions line still names (exit %d):\n%s\n%s", code, out, m.files[codexConfigPath])
+	}
+	if !strings.Contains(out, `default_permissions would still name "jevlin" once the block was gone`) {
+		t.Errorf("the plan does not say why the block stayed:\n%s", out)
+	}
+}
+
+// The by-hand text printed with no terminal can be followed as printed:
+// applied to the participant's file, it is a file Codex loads, with our
+// profile active and default_permissions set once.
+func TestTheByHandTextCanBeFollowed(t *testing.T) {
+	cfgPath, _ := sandboxTestConfig(t)
+	m, ops := newFakeMachine("codex")
+	before := "default_permissions = \":workspace\"\nmodel = \"gpt-5\"\n\n[tui]\nx = 1\n"
+	m.files[codexConfigPath] = []byte(before)
+	_, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-client", "codex", "-yes")
+	if !strings.Contains(out, `change default_permissions = ":workspace" to default_permissions = "jevlin",`) {
+		t.Fatalf("the by-hand text does not say which line to change:\n%s", out)
+	}
+	k := strings.Index(out, "and add these lines before your first table")
+	if k < 0 {
+		t.Fatalf("no lines to add:\n%s", out)
+	}
+	var added []string
+	for _, l := range strings.Split(out[k:], "\n")[1:] {
+		if !strings.HasPrefix(l, "    ") {
+			break
+		}
+		added = append(added, strings.TrimPrefix(l, "    "))
+	}
+	followed := strings.Replace(before, `default_permissions = ":workspace"`, `default_permissions = "jevlin"`, 1)
+	followed = strings.Replace(followed, "[tui]", strings.Join(added, "\n")+"\n[tui]", 1)
+	if err := codexTOMLError(followed); err != nil {
+		t.Errorf("following the by-hand text gives a file Codex refuses: %v\n%s", err, followed)
+	}
+	if doc, ok := decodeTOMLDoc(followed); !ok || doc["default_permissions"] != codexProfileName {
+		t.Errorf("following it does not make jevlin's profile the default:\n%s", followed)
+	}
+}
