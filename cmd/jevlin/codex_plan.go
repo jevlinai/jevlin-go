@@ -554,12 +554,11 @@ func codexSafeForm(existing []byte, region codexRegion, had bool, facts codexFac
 		return nil, "", false
 	}
 	if region.legacy {
-		if _, open := lookupTOMLPath(mustDecode(region.oursText()), codexSandboxTable, "network_access"); !open {
+		next, ok = withoutOpenNetworkAccess(existing, region)
+		if !ok {
 			return nil, "", false
 		}
-		want := codexSandboxBlock(region.roots)
-		next = replaceBlockInPlace(region.pre+region.foreignRoot, want, region.foreignText(), region.post)
-		return next, "close the open network jevlin's old sandbox block gave every Codex command: keep its writable roots, drop network_access = true", true
+		return next, "close the open network jevlin's old sandbox block gave every Codex command: remove its network_access = true line, and keep every other line of it as it is", true
 	}
 	if !region.network || region.proxyPresent || facts.proxyOn() {
 		return nil, "", false
@@ -646,4 +645,61 @@ func (a codexAllowed) sentence() string {
 		return fmt.Sprintf("every host, because your profile %s allows \"*\"", mustTOMLString(a.from[len(a.from)-1]))
 	}
 	return joinLabels(a.hosts) + " only"
+}
+
+// legacyNetworkOpen: does our old block's own table set network_access to
+// true? Present and false is closed, and is left alone.
+func legacyNetworkOpen(region codexRegion) bool {
+	v, _ := lookupTOMLPath(mustDecode(region.oursText()), codexSandboxTable, "network_access")
+	on, _ := v.(bool)
+	return on
+}
+
+// withoutOpenNetworkAccess is the file with the one `network_access = true`
+// line of our old block taken out, and nothing else changed: the block's
+// other keys — writable_roots, and exclude_slash_tmp or
+// exclude_tmpdir_env_var a participant may have added, which keep /tmp out
+// of the sandbox's writable set — stay byte for byte. Re-rendering the
+// block from its roots dropped them silently, and with them a /tmp that
+// had been read-only became writable (seen live under codex exec on
+// 0.158.0). The result is held to the decoded file minus exactly that key.
+func withoutOpenNetworkAccess(existing []byte, region codexRegion) ([]byte, bool) {
+	if !legacyNetworkOpen(region) {
+		return nil, false
+	}
+	s := string(existing)
+	from := len(region.pre)
+	to := from + len(agentsMarkerBegin) + len(region.region)
+	var hit *textLine
+	for _, l := range linesOutsideTOMLStrings(s) {
+		if l.start < from || l.end > to {
+			continue
+		}
+		doc, ok := decodeTOMLDoc(s[l.start:l.end])
+		if ok && len(doc) == 1 && doc["network_access"] == true {
+			if hit != nil {
+				return nil, false
+			}
+			l := l
+			hit = &l
+		}
+	}
+	if hit == nil {
+		return nil, false
+	}
+	end := hit.end
+	if end < len(s) && s[end] == '\n' {
+		end++
+	}
+	next := s[:hit.start] + s[end:]
+	before, ok1 := decodeTOMLDoc(s)
+	after, ok2 := decodeTOMLDoc(next)
+	if !ok1 || !ok2 {
+		return nil, false
+	}
+	deleteTOMLPath(before, codexSandboxTable, "network_access")
+	if !tomlDocsEqual(before, after) {
+		return nil, false
+	}
+	return []byte(next), true
 }

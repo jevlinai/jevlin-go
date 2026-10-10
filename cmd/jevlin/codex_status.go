@@ -45,7 +45,7 @@ func codexPermissionLinesBody(ops agentOps, path string, entry binEntry, getenv 
 		damage = append(damage, "permissions: the jevlin block in "+where+" has lost one of its markers (Codex deletes the comments above a table it removes); agents install repairs it, and agents uninstall removes it whole")
 	}
 	if region.legacy {
-		if _, open := lookupTOMLPath(mustDecode(region.oursText()), codexSandboxTable, "network_access"); open {
+		if legacyNetworkOpen(region) {
 			return []string{"permissions: the old sandbox block in " + where + " gives every command Codex runs open network to any host; agents install replaces it with a profile limited to the search hosts"}, damage
 		}
 		return []string{"permissions: the old sandbox block in " + where + " grants the writable roots and no network; agents install replaces it with a profile"}, damage

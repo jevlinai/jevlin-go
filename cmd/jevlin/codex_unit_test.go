@@ -326,3 +326,46 @@ func TestTheByHandTextCanBeFollowed(t *testing.T) {
 		t.Errorf("following it does not make jevlin's profile the default:\n%s", followed)
 	}
 }
+
+// Closing our old block takes out its network_access = true line and
+// nothing else: keys a participant added there, such as the exclude_* keys
+// that keep /tmp out of the sandbox's writable set, stay byte for byte.
+// Re-rendering the block from its roots used to drop them silently, and a
+// /tmp that had been read-only became writable (live under codex exec).
+func TestClosingTheOldBlockKeepsItsOtherKeys(t *testing.T) {
+	cfgPath, _ := sandboxTestConfig(t)
+	m, ops := newFakeMachine("codex")
+	m.terminal = true
+	block := agentsMarkerBegin + "\n[sandbox_workspace_write]\nnetwork_access = true\nwritable_roots = [" + quotedRootsOf(t, cfgPath) + "]\nexclude_slash_tmp = true\nexclude_tmpdir_env_var = true\n" + agentsMarkerEnd + "\n"
+	before := "sandbox_mode = \"workspace-write\"\n\n" + block
+	m.files[codexConfigPath] = []byte(before)
+	code, out := runAgentsAt(t, ops, "n\n", "install", "-config", cfgPath, "-client", "codex", "-yes")
+	if code != exitOK {
+		t.Fatalf("exit %d\n%s", code, out)
+	}
+	want := strings.Replace(before, "network_access = true\n", "", 1)
+	if got := string(m.files[codexConfigPath]); got != want {
+		t.Errorf("closing the old block changed more than its network_access line\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+	if !strings.Contains(out, "remove its network_access = true line, and keep every other line of it as it is") {
+		t.Errorf("the plan does not say what it removed:\n%s", out)
+	}
+}
+
+// An old block whose network_access is already false is closed: it is not
+// rewritten, and status does not call it open.
+func TestAClosedOldBlockIsLeftAndCalledClosed(t *testing.T) {
+	cfgPath, _ := sandboxTestConfig(t)
+	m, ops := newFakeMachine("codex")
+	m.terminal = true
+	before := "sandbox_mode = \"workspace-write\"\n\n" + agentsMarkerBegin + "\n[sandbox_workspace_write]\nnetwork_access = false\nwritable_roots = [" + quotedRootsOf(t, cfgPath) + "]\n" + agentsMarkerEnd + "\n"
+	m.files[codexConfigPath] = []byte(before)
+	_, out := runAgentsAt(t, ops, "n\n", "install", "-config", cfgPath, "-client", "codex", "-yes")
+	if got := string(m.files[codexConfigPath]); got != before || strings.Contains(out, "network_access = true") {
+		t.Errorf("a closed old block was rewritten:\n%s\n%s", out, got)
+	}
+	_, status := runAgentsAt(t, ops, "", "status", "-config", cfgPath)
+	if strings.Contains(status, "open network to any host") || !strings.Contains(status, "grants the writable roots and no network") {
+		t.Errorf("status misreads a closed old block:\n%s", status)
+	}
+}
