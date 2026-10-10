@@ -242,7 +242,7 @@ func (ed *codexEditor) rewriteInSection(path []string, key, valueTOML string, va
 func (ed *codexEditor) rewriteLine(lines []string, i int, key, valueTOML string, value any, path []string) error {
 	orig := strings.TrimRight(lines[i], "\r\n")
 	if _, _, marked := parseCodexMark(orig); marked {
-		was, ok := ourOriginal(orig, ed.cfgPath)
+		was, ok := ourOriginal(orig, ed.cfgPath, key)
 		if !ok {
 			return fmt.Errorf("the line setting %s carries a jevlin mark that is not this installation's, or not one this client writes on a changed line", key)
 		}
@@ -263,11 +263,17 @@ func (ed *codexEditor) rewriteLine(lines []string, i int, key, valueTOML string,
 }
 
 // ourOriginal is the line a marked line replaced, when the mark is this
-// installation's and records one: the line before our first change.
-func ourOriginal(line, cfgPath string) (string, bool) {
+// installation's and records one that sets key, and only key: the line
+// before our first change. A "was:" naming another key is not one this
+// client writes, and reading it would promise back a value uninstall
+// cannot put back.
+func ourOriginal(line, cfgPath, key string) (string, bool) {
 	_, cfg, marked := parseCodexMark(line)
 	was, isWas := strings.CutPrefix(markSuffix(line), "was: ")
 	if !marked || !isWas || !sameConfigFile(cfg, cfgPath) {
+		return "", false
+	}
+	if doc, ok := decodeTOMLDoc(was); !ok || len(doc) != 1 || doc[key] == nil {
 		return "", false
 	}
 	return was, true
@@ -286,7 +292,7 @@ func rootKeyRestores(text, cfgPath, key, now string) string {
 	if err != nil {
 		return now
 	}
-	was, ok := ourOriginal(strings.TrimRight(lines[i], "\r\n"), cfgPath)
+	was, ok := ourOriginal(strings.TrimRight(lines[i], "\r\n"), cfgPath, key)
 	if !ok {
 		return now
 	}

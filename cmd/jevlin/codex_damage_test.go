@@ -377,3 +377,25 @@ func TestUninstallBesideAnEmptyFeaturesTable(t *testing.T) {
 		t.Errorf("uninstall did not give the participant's file back\n got %q\nwant %q", got, participant)
 	}
 }
+
+// A mark of this installation's whose "was:" sets another key is not one
+// this client writes: reading it, the question promised ":workspace" back,
+// and uninstall then could not keep the promise. It is refused before
+// anything is asked, as another installation's mark is.
+func TestAMarkWhoseWasNamesAnotherKeyIsRefused(t *testing.T) {
+	m, ops, cfgPath := capturedWithHome(t, "workspace-switched-appserver-default-permissions.toml")
+	captured := string(m.files[codexConfigPath])
+	forged := strings.Replace(captured, "; was: default_permissions = \":workspace\"\n", "; was: sandbox_mode = \"workspace-write\"\n", 1)
+	if forged == captured {
+		t.Fatalf("the capture has no was: to forge:\n%s", captured)
+	}
+	m.files[codexConfigPath] = []byte(forged)
+	m.terminal = true
+	code, out := runAgentsAt(t, ops, "y\n", "install", "-config", cfgPath, "-client", "codex", "-yes")
+	if code == exitOK || strings.Contains(out, "[y/N]") || strings.Contains(out, "puts \":workspace\" back") {
+		t.Errorf("a was: naming another key was read as ours (exit %d):\n%s", code, out)
+	}
+	if !strings.Contains(out, "not one this client writes on a changed line") || string(m.files[codexConfigPath]) != forged {
+		t.Errorf("the refusal does not say why, or the file changed:\n%s", out)
+	}
+}
