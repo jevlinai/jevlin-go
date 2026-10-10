@@ -24,7 +24,7 @@ func codexPermissionLines(ops agentOps, path string, entry binEntry, getenv func
 }
 
 func codexPermissionLinesBody(ops agentOps, path string, entry binEntry, getenv func(string) string) (lines, damage []string) {
-	existing, err := ops.readFile(path)
+	existing, _, err := readCodexConfig(ops, path)
 	if err != nil {
 		return nil, damage
 	}

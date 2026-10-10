@@ -704,7 +704,7 @@ func (t codexTarget) PlanUninstall(ops agentOps, paths agentPaths, entry binEntr
 			p.notes = append(p.notes, t.Label()+": hooks listed after jevlin's in "+paths.codexHooks+" move up one place, and Codex keys an approval by place; it may ask you to review them again")
 		}
 	}
-	if existing, mode, err := readWithMode(ops, paths.codexConfig); err == nil && existing != nil {
+	if existing, mode, err := readCodexConfig(ops, paths.codexConfig); err == nil && existing != nil {
 		if planCodexConfigRemoval(ops, t.Label(), paths.codexConfig, existing, mode, entry, getenv, p) {
 			removed = true
 		}

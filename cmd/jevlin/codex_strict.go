@@ -24,6 +24,7 @@ package main
 // own to get wrong.
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -32,8 +33,22 @@ import (
 	strict "github.com/pelletier/go-toml/v2"
 )
 
+// codexBOM is the UTF-8 byte-order mark. Codex loads a config.toml that
+// starts with one (seen on 0.160.0), so this client reads such a file
+// without it and writes it back with it (readCodexConfig, planCodexWrite).
+const codexBOM = "\ufeff"
+
+// readCodexConfig is readWithMode for Codex's config.toml, without a
+// leading byte-order mark: every reading of the file — the region, the
+// participant's settings, the strict parse — sees the TOML text alone.
+func readCodexConfig(ops agentOps, path string) ([]byte, os.FileMode, error) {
+	b, mode, err := readWithMode(ops, path)
+	return bytes.TrimPrefix(b, []byte(codexBOM)), mode, err
+}
+
 // codexTOMLError is why Codex's TOML parser would refuse text, or nil.
 func codexTOMLError(text string) error {
+	text = strings.TrimPrefix(text, codexBOM)
 	var v map[string]any
 	if err := strict.Unmarshal([]byte(text), &v); err != nil {
 		var de *strict.DecodeError
@@ -88,6 +103,10 @@ func planCodexWrite(ops agentOps, label, path string, existing, next []byte, par
 	if r := codexWriteRefusal(existing, next, participant, headers); r != "" {
 		p.refused = append(p.refused, fmt.Sprintf("%s: %s: %s", label, path, r))
 		return false, true
+	}
+	// A file that started with a byte-order mark keeps it.
+	if disk, err := ops.readFile(path); err == nil && bytes.HasPrefix(disk, []byte(codexBOM)) && !bytes.HasPrefix(next, []byte(codexBOM)) {
+		next = append([]byte(codexBOM), next...)
 	}
 	return planWrite(ops, label, path, next, mode, why, p), false
 }

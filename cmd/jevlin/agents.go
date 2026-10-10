@@ -2039,7 +2039,7 @@ func cleanDirs(dirs []string) []string {
 // installed" over a host whose sandbox belongs to somebody else — which is
 // exactly what it did, both lines at once, until this returned an answer.
 func planCodexSandbox(ops agentOps, label, path string, roots []string, entry binEntry, getenv func(string) string, p *agentPlan) (changed, left bool) {
-	existing, mode, err := readWithMode(ops, path)
+	existing, mode, err := readCodexConfig(ops, path)
 	if err != nil {
 		p.refused = append(p.refused, fmt.Sprintf("%s: cannot read %s: %v", label, path, err))
 		return false, true
@@ -2087,7 +2087,9 @@ func planCodexSandbox(ops agentOps, label, path string, roots []string, entry bi
 		changed, refused := planCodexWrite(ops, label, path, existing, next, string(stripped), []string{codexSandboxTable}, mode, codexWindowsWhy, p)
 		return changed, refused
 	}
-	next := appendMarkedBlock(stripped, want)
+	// Spliced on with no byte of its own, as the profile is, so uninstall's
+	// exact removal gives the file back as it was.
+	next := []byte(withFinalNewline(string(stripped)) + string(want))
 	changed, refused := planCodexWrite(ops, label, path, existing, next, string(stripped), []string{codexSandboxTable}, mode, codexWindowsWhy, p)
 	return changed, refused
 }

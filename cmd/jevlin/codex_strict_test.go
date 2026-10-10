@@ -97,3 +97,47 @@ func TestEveryRenderedStateParsesAsCodexParsesIt(t *testing.T) {
 		})
 	}
 }
+
+// Codex loads a config.toml that starts with a UTF-8 byte-order mark (seen
+// on 0.160.0), so install writes beside it and keeps it, uninstall gives
+// the file back with it, and an installed file that gained one later is
+// still uninstalled. The Windows block too.
+func TestAByteOrderMarkIsKeptAndNotRefused(t *testing.T) {
+	for _, goos := range []string{"linux", "windows"} {
+		t.Run(goos, func(t *testing.T) {
+			cfgPath, _ := sandboxTestConfig(t)
+			onCodexOS(t, goos)
+			m, ops := newFakeMachine("codex")
+			before := codexBOM + "model = \"gpt-5\"\n\n[tui]\nx = 1\n"
+			m.files[codexConfigPath] = []byte(before)
+			if code, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-yes"); code != exitOK {
+				t.Fatalf("install refused a file Codex loads: exit %d\n%s", code, out)
+			}
+			got := string(m.files[codexConfigPath])
+			if !strings.HasPrefix(got, codexBOM) || strings.Count(got, codexBOM) != 1 || !strings.Contains(got, agentsMarkerBegin) {
+				t.Errorf("install did not write beside the mark and keep it:\n%q", got)
+			}
+			if code, out := runAgentsAt(t, ops, "", "uninstall", "-config", cfgPath, "-yes"); code != exitOK {
+				t.Fatalf("uninstall: exit %d\n%s", code, out)
+			}
+			if got := string(m.files[codexConfigPath]); got != before {
+				t.Errorf("uninstall did not give the file back with its mark\n got %q\nwant %q", got, before)
+			}
+		})
+	}
+	t.Run("a mark gained after install", func(t *testing.T) {
+		cfgPath, _ := sandboxTestConfig(t)
+		m, ops := newFakeMachine("codex")
+		m.files[codexConfigPath] = []byte("model = \"gpt-5\"\n")
+		if code, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-yes"); code != exitOK {
+			t.Fatalf("install: exit %d\n%s", code, out)
+		}
+		m.files[codexConfigPath] = append([]byte(codexBOM), m.files[codexConfigPath]...)
+		if code, out := runAgentsAt(t, ops, "", "uninstall", "-config", cfgPath, "-yes"); code != exitOK {
+			t.Fatalf("uninstall: exit %d\n%s", code, out)
+		}
+		if got := string(m.files[codexConfigPath]); got != codexBOM+"model = \"gpt-5\"\n" {
+			t.Errorf("uninstall left the region of a file that gained a mark: %q", got)
+		}
+	})
+}
