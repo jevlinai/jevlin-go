@@ -433,6 +433,40 @@ func codexPutBackAdvice(text string) string {
 	return "; then put back the lines of yours jevlin changed: " + strings.Join(parts, "; ")
 }
 
+// codexOrphanDefault finds, in a file with no jevlin block, a root-level
+// default_permissions = "jevlin" line carrying jevlin's mark while no table
+// defines that profile: what removing the block by hand without putting
+// the line back leaves, and a file Codex refuses to load. It returns the
+// sentence that says so and names the command that repairs it — the
+// uninstall of the installation the mark names, which puts back the line
+// the mark keeps — or "" when there is no such line.
+func codexOrphanDefault(text, where string) string {
+	doc, ok := decodeTOMLDoc(text)
+	if !ok || doc["default_permissions"] != codexProfileName {
+		return ""
+	}
+	if _, defined := lookupTOMLPath(doc, "permissions", codexProfileName); defined {
+		return ""
+	}
+	lines := strings.Split(text, "\n")
+	for _, m := range codexMarkedLines(text) {
+		if m.path != nil {
+			continue
+		}
+		line := strings.TrimRight(lines[m.index], "\r")
+		before, _, _ := parseCodexMark(line)
+		if now, ok := decodeTOMLDoc(before); !ok || now["default_permissions"] != codexProfileName {
+			continue
+		}
+		was, isWas := strings.CutPrefix(markSuffix(line), "was: ")
+		if !isWas {
+			continue
+		}
+		return fmt.Sprintf("line %d of %s, %s, carries jevlin's mark, but the jevlin profile it names is gone, so Codex cannot load this file; `jevlin agents uninstall -client codex -config %s` puts back %s", m.index+1, where, strings.TrimSpace(before), displayNamedPath(m.cfg), was)
+	}
+	return ""
+}
+
 // codexMarkRemoval is what putting back the participant's own lines comes
 // to.
 type codexMarkRemoval struct {

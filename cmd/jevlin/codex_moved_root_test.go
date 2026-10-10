@@ -207,3 +207,36 @@ func TestStatusNamesTheLineToPutBack(t *testing.T) {
 		t.Errorf("status does not name the line to put back:\n%s", out)
 	}
 }
+
+// Removing the block by hand and nothing else leaves default_permissions =
+// "jevlin" with jevlin's mark and no profile, which Codex refuses to load.
+// Status says so and names the command that repairs it; install refuses
+// with the same sentence instead of taking the line for a profile of the
+// participant's ("Rename yours"); and that command puts the line back, after
+// which install asks and installs as from the start.
+func TestAMarkedLineLeftWithoutItsBlockIsNamedAndRepaired(t *testing.T) {
+	m, ops, cfgA, _, edited := installedByAWithADenyAdded(t)
+	begin := strings.Index(edited, agentsMarkerBegin)
+	end := strings.Index(edited, agentsMarkerEnd) + len(agentsMarkerEnd) + 1
+	orphaned := edited[:begin] + edited[end:]
+	m.files[codexConfigPath] = []byte(orphaned)
+	sentence := "carries jevlin's mark, but the jevlin profile it names is gone, so Codex cannot load this file; `jevlin agents uninstall -client codex -config " + filepath.Clean(cfgA) + "` puts back default_permissions = \":workspace\""
+
+	if _, out := runAgentsAt(t, ops, "", "status", "-config", cfgA); !strings.Contains(out, "permissions: line 1 of ") || !strings.Contains(out, sentence) {
+		t.Errorf("status does not say Codex cannot load the file and what repairs it:\n%s", out)
+	}
+	code, out := runAgentsAt(t, ops, "", "install", "-config", cfgA, "-client", "codex", "-yes")
+	if code == exitOK || strings.Contains(out, "Rename yours") || !strings.Contains(out, sentence) || string(m.files[codexConfigPath]) != orphaned {
+		t.Errorf("install took jevlin's own line for the participant's profile (exit %d):\n%s", code, out)
+	}
+	if code, out := runAgentsAt(t, ops, "", "uninstall", "-config", cfgA, "-client", "codex", "-yes"); code != exitOK {
+		t.Fatalf("the named repair: exit %d\n%s", code, out)
+	}
+	if got := string(m.files[codexConfigPath]); !strings.HasPrefix(got, "default_permissions = \":workspace\"\nmodel = \"gpt-5\"\n") {
+		t.Fatalf("the named repair did not put the line back:\n%s", got)
+	}
+	m.terminal = true
+	if code, out := runAgentsAt(t, ops, "y\n", "install", "-config", cfgA, "-client", "codex", "-yes"); code != exitOK || !strings.Contains(out, "[y/N]") {
+		t.Errorf("install after the repair did not ask and install (exit %d):\n%s", code, out)
+	}
+}

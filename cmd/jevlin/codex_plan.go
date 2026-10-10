@@ -201,7 +201,14 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 
 		return codexConfigPlan{scope: codexNothing, left: true}
 	case facts.hasDefault && facts.defaultPermissions == codexProfileName && !had:
-		p.refused = append(p.refused, fmt.Sprintf("%s: %s names a profile of yours called %q, the name jevlin's own profile uses; nothing was installed for Codex. Rename yours and run this again", label, path, codexProfileName))
+		// A line jevlin marked, left behind by a block removed by hand, is
+		// not a profile of the participant's: say what it is and which
+		// command puts it back, rather than asking them to rename it.
+		if orphan := codexOrphanDefault(string(existing), path); orphan != "" {
+			p.refused = append(p.refused, fmt.Sprintf("%s: %s; nothing was installed for Codex. Run that, then run this again", label, orphan))
+		} else {
+			p.refused = append(p.refused, fmt.Sprintf("%s: %s names a profile of yours called %q, the name jevlin's own profile uses; nothing was installed for Codex. Rename yours and run this again", label, path, codexProfileName))
+		}
 		planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
 
 		return codexConfigPlan{scope: codexNothing, left: true}

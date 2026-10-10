@@ -232,7 +232,9 @@ valid TOML, or whose profile holds anything jevlin did not write, is left and re
 uninstall leaves jevlin's own block, Codex still runs its commands under jevlin's profile, so
 uninstall names the block as what it left, with every line of yours jevlin changed and what to
 put back in its place, and exits 1. Another installation's block is left to that installation, and
-named. Markers
+named. A `default_permissions = "jevlin"` line left behind with jevlin's mark after the block was
+removed by hand is one Codex cannot load: status says so, install refuses over it, and both name
+`jevlin agents uninstall -client codex`, which puts back the line it replaced. Markers
 count only as lines of their own outside a multi-line string, so a comment or a string that
 happens to hold them is yours. jevlin writes its `[features.network_proxy]` table last in its
 block, because `codex features disable network_proxy` deletes the comments above the table it

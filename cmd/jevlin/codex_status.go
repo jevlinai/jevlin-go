@@ -39,6 +39,9 @@ func codexPermissionLinesBody(ops agentOps, path string, entry binEntry, getenv 
 		return []string{"permissions: the jevlin block in " + where + " cannot be read: " + why + codexPutBackAdvice(string(existing))}, damage
 	}
 	if !had {
+		if orphan := codexOrphanDefault(string(existing), where); orphan != "" {
+			return []string{"permissions: " + orphan}, damage
+		}
 		return nil, damage
 	}
 	if region.damaged {
