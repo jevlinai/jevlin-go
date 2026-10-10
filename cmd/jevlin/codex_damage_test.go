@@ -424,3 +424,17 @@ func TestTheQuestionNamesTheValueBeforeOurFirstChange(t *testing.T) {
 		t.Errorf("uninstall did not put back the value before our first change:\n%s", m.files[codexConfigPath])
 	}
 }
+
+// appendTables writes the file's own line ending: a CRLF file gains no LF
+// line.
+func TestAppendTablesKeepsTheFilesLineEnding(t *testing.T) {
+	for _, tc := range []struct{ base, tables, want string }{
+		{"a = 1\r\n", "[t]\r\nk = 1\r\n", "a = 1\r\n\r\n[t]\r\nk = 1\r\n"},
+		{"a = 1\n", "[t]\nk = 1\n", "a = 1\n\n[t]\nk = 1\n"},
+		{"", "[t]\r\nk = 1\r\n\r\n", "[t]\r\nk = 1\r\n"},
+	} {
+		if got := string(appendTables([]byte(tc.base), tc.tables)); got != tc.want {
+			t.Errorf("appendTables(%q, %q) = %q, want %q", tc.base, tc.tables, got, tc.want)
+		}
+	}
+}

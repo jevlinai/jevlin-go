@@ -2672,15 +2672,20 @@ func onlyComments(s string) bool {
 // lines that continue it would re-parent those keys; appended last, nothing
 // can be re-parented, because nothing follows.
 func appendTables(base []byte, tables string) []byte {
-	tables = strings.TrimRight(tables, "\n")
+	// In the file's own line ending, so a CRLF file gains no LF line.
+	eol := fileLineEnding(string(base))
+	if !strings.Contains(string(base), "\n") {
+		eol = fileLineEnding(tables)
+	}
+	tables = strings.TrimRight(tables, "\r\n")
 	if tables == "" {
 		return base
 	}
-	head := strings.TrimRight(string(base), "\n")
+	head := strings.TrimRight(string(base), "\r\n")
 	if head == "" {
-		return []byte(tables + "\n")
+		return []byte(tables + eol)
 	}
-	return []byte(head + "\n\n" + tables + "\n")
+	return []byte(head + eol + eol + tables + eol)
 }
 
 func appendMarkedBlock(b, block []byte) []byte {
