@@ -472,3 +472,26 @@ func TestAnUnanswerableQuestionExitsTwoWithNothingElseToDo(t *testing.T) {
 		})
 	}
 }
+
+// A line uninstall leaves because the participant changed it loses our
+// mark, so it is theirs: a later switch asks about it and goes through,
+// rather than refusing it as a line jevlin already marked.
+func TestALineLeftByUninstallLosesOurMark(t *testing.T) {
+	m, ops, cfgPath, _ := installedOn(t, "own-profile-network-absent")
+	got := string(m.files[codexConfigPath])
+	edited := strings.Replace(got, "default_permissions = \"jevlin\"  # jevlin agents install", "default_permissions = \"work\"  # jevlin agents install", 1)
+	if edited == got {
+		t.Fatalf("this case needs our marked line:\n%s", got)
+	}
+	m.files[codexConfigPath] = []byte(edited)
+	if code, out := runAgentsAt(t, ops, "", "uninstall", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK {
+		t.Fatalf("uninstall: exit %d\n%s", code, out)
+	}
+	left := string(m.files[codexConfigPath])
+	if strings.Contains(left, "jevlin agents install") || !strings.Contains(left, "default_permissions = \"work\"\n") {
+		t.Fatalf("the line kept our mark, or lost its value:\n%s", left)
+	}
+	if code, out := runAgentsAt(t, ops, "y\n", "install", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK || strings.Contains(out, "already carries a jevlin mark") {
+		t.Errorf("a later switch was refused (exit %d):\n%s", code, out)
+	}
+}

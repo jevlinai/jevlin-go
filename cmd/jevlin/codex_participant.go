@@ -417,7 +417,12 @@ func restoreCodexMarks(text string, withRegion bool, entry binEntry) codexMarkRe
 			}
 			key := sortedKeys(kept)[0]
 			if v, has := now[key]; !has || !tomlValueEqual(v, codexMarkWrote(key)) {
+				// The participant's newer choice stays, without our mark:
+				// the line is theirs now, and a mark left on it would make
+				// the next switch refuse it as already ours.
 				out.kept = append(out.kept, key)
+				lines[m.index] = before + cr
+				out.changed = true
 				continue
 			}
 		case suffix == codexMarkReplaced:

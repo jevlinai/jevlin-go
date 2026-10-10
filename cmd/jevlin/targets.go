@@ -756,10 +756,15 @@ func planCodexConfigRemoval(ops agentOps, label, path string, existing []byte, m
 		return false
 	case m.changed:
 		next = m.next
-		whys = append(whys, "restore "+strings.Join(m.restored, ", ")+" as you had it")
+		if len(m.restored) > 0 {
+			whys = append(whys, "restore "+strings.Join(m.restored, ", ")+" as you had it")
+		}
+		if len(m.kept) > 0 {
+			whys = append(whys, "take jevlin's mark off "+strings.Join(m.kept, ", ")+", which you changed")
+		}
 	}
 	for _, k := range m.kept {
-		p.notes = append(p.notes, fmt.Sprintf("%s: %s in %s was changed after jevlin set it, so it is left as you have it", label, k, path))
+		p.notes = append(p.notes, fmt.Sprintf("%s: %s in %s was changed after jevlin set it, so it is left as you have it, without jevlin's mark", label, k, path))
 	}
 	for _, other := range m.foreign {
 		noteOnce(p, label+": the lines another installation marked in "+path+" are "+leftForeign(describeOther(nil, []string{other}, refFor(entry))))
