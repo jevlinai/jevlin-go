@@ -610,7 +610,8 @@ func removeCodexRegion(existing []byte) codexRegionRemoval {
 		return codexRegionRemoval{next: existing}
 	}
 	if why != "" {
-		return codexRegionRemoval{next: existing, had: true, why: why}
+		// The roots, when they could be read, still say whose block it is.
+		return codexRegionRemoval{next: existing, had: true, roots: r.roots, why: why}
 	}
 	// Exactly the region's bytes come out, and nothing else moves: install
 	// spliced it in without a byte of its own, so this is its inverse.

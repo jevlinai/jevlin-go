@@ -130,6 +130,12 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 	}
 	region, had, why := readCodexRegion(existing)
 	if had && why != "" {
+		if len(region.roots) > 0 {
+			if ours, other, _ := codexRootsOwner(region.roots, entry, getenv); !ours && other != "" {
+				noteOnce(p, label+": "+leftForeign(other)+"; nothing else was installed for Codex, whose searches go through that installation")
+				return codexConfigPlan{scope: codexNothing, left: true}
+			}
+		}
 		p.refused = append(p.refused, fmt.Sprintf("%s: the jevlin block in %s is left as it is: %s", label, path, why))
 		return codexConfigPlan{left: true}
 	}

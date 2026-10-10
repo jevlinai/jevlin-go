@@ -90,3 +90,49 @@ func TestAMovedStateDirLeavesTheBlockThisInstallations(t *testing.T) {
 		})
 	}
 }
+
+// installedByAWithADenyAdded is installation A's profile, installed with a
+// yes over a ":workspace" file, with a deny the participant then added
+// inside it: a block no installation can rewrite or remove.
+func installedByAWithADenyAdded(t *testing.T) (m *fakeMachine, ops agentOps, cfgA, cfgB, edited string) {
+	t.Helper()
+	cfgA, _ = sandboxTestConfig(t)
+	cfgB, _ = sandboxTestConfig(t)
+	m, ops = newFakeMachine("codex")
+	m.terminal = true
+	m.files[codexConfigPath] = []byte("default_permissions = \":workspace\"\nmodel = \"gpt-5\"\n\n[mcp_servers.foo]\ncommand = \"/bin/echo\"\n")
+	if code, out := runAgentsAt(t, ops, "y\n", "install", "-config", cfgA, "-client", "codex", "-yes"); code != exitOK {
+		t.Fatalf("A's install: exit %d\n%s", code, out)
+	}
+	m.terminal = false
+	got := string(m.files[codexConfigPath])
+	const domains = "[permissions.jevlin.network.domains]\n"
+	edited = strings.Replace(got, domains, domains+"\"pypi.org\" = \"deny\"\n", 1)
+	if edited == got {
+		t.Fatalf("no domains table to add to:\n%s", got)
+	}
+	m.files[codexConfigPath] = []byte(edited)
+	return m, ops, cfgA, cfgB, edited
+}
+
+// Installation A's block, which the participant changed so that no client
+// can take it out, is still A's: B's install and uninstall name A and
+// leave it, exit 0, and neither refuses over it nor tells the participant
+// to remove it by hand. B's uninstall exited 1 with "remove the block by
+// hand", and following that advice left A's marked default_permissions
+// line naming a profile that was gone, which Codex refuses.
+func TestAnotherInstallationsUnreadableBlockIsNamedNotRefused(t *testing.T) {
+	m, ops, cfgA, cfgB, edited := installedByAWithADenyAdded(t)
+	for _, verb := range []string{"uninstall", "install"} {
+		code, out := runAgentsAt(t, ops, "", verb, "-config", cfgB, "-client", "codex", "-yes")
+		if code != exitOK || strings.Contains(out, "refused") || strings.Contains(out, "by hand") {
+			t.Errorf("B's %s refused over A's block (exit %d):\n%s", verb, code, out)
+		}
+		if !strings.Contains(out, "belongs to the installation configured by") || !strings.Contains(out, filepath.Base(filepath.Dir(cfgA))) {
+			t.Errorf("B's %s does not name A:\n%s", verb, out)
+		}
+		if string(m.files[codexConfigPath]) != edited {
+			t.Errorf("B's %s changed the file:\n%s", verb, m.files[codexConfigPath])
+		}
+	}
+}

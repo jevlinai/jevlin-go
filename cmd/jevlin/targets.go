@@ -829,6 +829,15 @@ func removeOurSandboxBlock(existing []byte, entry binEntry, getenv func(string) 
 		return sandboxRemoval{next: existing}
 	}
 	if r.why != "" {
+		// A block this client cannot take out is still attributed first: if
+		// its roots are another installation's, it is that one's to deal
+		// with, and this uninstall neither refuses over it nor advises
+		// removing it.
+		if len(r.roots) > 0 {
+			if ours, other, _ := codexRootsOwner(r.roots, entry, getenv); !ours && other != "" {
+				return sandboxRemoval{next: existing, had: true, why: belongsTo(other), unowned: true}
+			}
+		}
 		return sandboxRemoval{next: existing, had: true, why: r.why}
 	}
 	// The one reading install refuses by (codexRootsOwner), so a block this
