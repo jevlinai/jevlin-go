@@ -173,3 +173,54 @@ func TestARegionThatLostItsEndMarkerKeepsTheParticipantsComment(t *testing.T) {
 		t.Errorf("uninstall did not leave exactly the participant's lines:\n%q", left)
 	}
 }
+
+// Codex's app server, switching back to ":workspace", rewrites the value
+// of our marked default_permissions line and keeps our mark (captured on
+// 0.158.0). That line is still ours: install asks the one question and on
+// a yes sets it again, keeping what it was before our first change, which
+// uninstall puts back; with no terminal the by-hand text shows that very
+// change. A mark of another installation's is refused before anything is
+// asked. Before, the yes was refused after it was given ("already carries
+// a jevlin mark", exit 1), and the by-hand text said the changes could not
+// be shown.
+func TestALineCodexRewroteUnderOurMarkIsMarkedAgain(t *testing.T) {
+	const fixture = "workspace-switched-appserver-default-permissions.toml"
+	m, ops, cfgPath := capturedWithHome(t, fixture)
+	captured := string(m.files[codexConfigPath])
+	first := strings.SplitAfterN(captured, "\n", 2)[0]
+	if !strings.HasPrefix(first, `default_permissions = ":workspace"  # jevlin agents install (`) || !strings.HasSuffix(first, "; was: default_permissions = \":workspace\"\n") {
+		t.Fatalf("the capture is not the rewrite it is named for: %q", first)
+	}
+
+	code, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-client", "codex", "-yes")
+	if code != exitUsage || strings.Contains(out, "cannot be shown") {
+		t.Fatalf("with no terminal: exit %d, want %d, with the change shown:\n%s", code, exitUsage, out)
+	}
+	if !strings.Contains(out, "replace the line\n"+strings.TrimSuffix(first, "\n")+"\nwith\ndefault_permissions = \"jevlin\"  # jevlin agents install (") {
+		t.Errorf("the by-hand text does not show the change a yes makes:\n%s", out)
+	}
+
+	m.terminal = true
+	code, out = runAgentsAt(t, ops, "y\n", "install", "-config", cfgPath, "-client", "codex", "-yes")
+	got := string(m.files[codexConfigPath])
+	if code != exitOK || !strings.Contains(out, `default_permissions = ":workspace" becomes "jevlin" (marked; agents uninstall puts ":workspace" back)`) {
+		t.Fatalf("a yes was not taken (exit %d):\n%s", code, out)
+	}
+	line := strings.SplitAfterN(got, "\n", 2)[0]
+	if !strings.HasPrefix(line, `default_permissions = "jevlin"  # jevlin agents install (`) || !strings.HasSuffix(line, "; was: default_permissions = \":workspace\"\n") || strings.Count(line, "#") != 1 {
+		t.Errorf("the line is not marked again with what it first was: %q", line)
+	}
+	if code, out := runAgentsAt(t, ops, "", "uninstall", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK {
+		t.Fatalf("uninstall: exit %d\n%s", code, out)
+	}
+	if left := string(m.files[codexConfigPath]); !strings.HasPrefix(left, "default_permissions = \":workspace\"\nmodel = \"gpt-5\"\n") || strings.Contains(left, "jevlin") {
+		t.Errorf("uninstall did not put the participant's line back:\n%s", left)
+	}
+
+	// The same line under another installation's mark.
+	m.files[codexConfigPath] = []byte(strings.Replace(captured, mustTOMLString(cfgPath), mustTOMLString("/elsewhere/jevlin.toml"), 1))
+	code, out = runAgentsAt(t, ops, "y\n", "install", "-config", cfgPath, "-client", "codex", "-yes")
+	if code == exitOK || strings.Contains(out, "[y/N]") || !strings.Contains(out, "carries a jevlin mark that is not this installation's") {
+		t.Errorf("another installation's mark was not refused before the question (exit %d):\n%s", code, out)
+	}
+}

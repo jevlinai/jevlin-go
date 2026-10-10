@@ -242,7 +242,15 @@ func (ed *codexEditor) rewriteInSection(path []string, key, valueTOML string, va
 func (ed *codexEditor) rewriteLine(lines []string, i int, key, valueTOML string, value any, path []string) error {
 	orig := strings.TrimRight(lines[i], "\r\n")
 	if _, _, marked := parseCodexMark(orig); marked {
-		return fmt.Errorf("the line setting %s already carries a jevlin mark", key)
+		was, ok := ourOriginal(orig, ed.cfgPath)
+		if !ok {
+			return fmt.Errorf("the line setting %s carries a jevlin mark that is not this installation's, or not one this client writes on a changed line", key)
+		}
+		// Codex rewrote the value of a line we had marked and kept our
+		// mark (its app server does, switching default_permissions back
+		// to ":workspace"): the line is ours to set again, and what it was
+		// before our first change is still what uninstall puts back.
+		orig = was
 	}
 	m, err := ed.mark("was: " + orig)
 	if err != nil {
@@ -252,6 +260,42 @@ func (ed *codexEditor) rewriteLine(lines []string, i int, key, valueTOML string,
 	ed.text = strings.Join(lines, "")
 	setTOMLPath(ed.expected, value, append(append([]string{}, path...), key)...)
 	return nil
+}
+
+// ourOriginal is the line a marked line replaced, when the mark is this
+// installation's and records one: the line before our first change.
+func ourOriginal(line, cfgPath string) (string, bool) {
+	_, cfg, marked := parseCodexMark(line)
+	was, isWas := strings.CutPrefix(markSuffix(line), "was: ")
+	if !marked || !isWas || !sameConfigFile(cfg, cfgPath) {
+		return "", false
+	}
+	return was, true
+}
+
+// rootKeyRestores is the value uninstall puts back for the root-level key,
+// once install has rewritten its line: the value the line had before our
+// first change when it already carries our mark, else its value now.
+func rootKeyRestores(text, cfgPath, key, now string) string {
+	lines := strings.SplitAfter(text, "\n")
+	rootEnd := len(lines)
+	if idx := firstHeaderStart(text); idx >= 0 {
+		rootEnd = strings.Count(text[:idx], "\n")
+	}
+	i, err := keyLineIn(lines[:rootEnd], key)
+	if err != nil {
+		return now
+	}
+	was, ok := ourOriginal(strings.TrimRight(lines[i], "\r\n"), cfgPath)
+	if !ok {
+		return now
+	}
+	if doc, ok := decodeTOMLDoc(was); ok {
+		if v, ok := doc[key].(string); ok {
+			return v
+		}
+	}
+	return now
 }
 
 // commentOutRootKey turns the root-level line setting key into a comment,

@@ -273,7 +273,8 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 	var changes []string // the participant's lines, as the question lists them
 	switch {
 	case facts.hasDefault && facts.defaultPermissions != codexProfileName:
-		changes = append(changes, fmt.Sprintf("default_permissions = %q becomes %q (marked; agents uninstall puts %q back)", facts.defaultPermissions, codexProfileName, facts.defaultPermissions))
+		back := rootKeyRestores(ed.text, entry.cfg, "default_permissions", facts.defaultPermissions)
+		changes = append(changes, fmt.Sprintf("default_permissions = %q becomes %q (marked; agents uninstall puts %q back)", facts.defaultPermissions, codexProfileName, back))
 	case facts.hasSandboxMode: // "workspace-write", the only value left
 		changes = append(changes, "sandbox_mode = \"workspace-write\" is commented out, since Codex does not combine it with a profile (marked; agents uninstall restores it)")
 	}
@@ -302,6 +303,17 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 			}
 			return err
 		}
+		// The edit is tried before anything is asked: a change that cannot
+		// be made is refused now, rather than after a yes, and the text
+		// for a participant with no terminal is always the real one.
+		trial, err := newCodexEditor(ed.text, entry.cfg)
+		if err == nil {
+			err = apply(trial)
+		}
+		if err != nil {
+			planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
+			return codexRefuse(label, path, err, p)
+		}
 		answer := askConsent(ops, codexQuestion(label, path, ops.home, facts, profile, changes))
 		switch answer {
 		case consentNo:
@@ -314,17 +326,14 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 			return codexConfigPlan{scope: codexNothing}
 		case consentUnasked:
 			p.unanswerable = true
-			byHand := "  (the changes cannot be shown: the file does not read cleanly)"
-			if handEd, err := newCodexEditor(ed.text, entry.cfg); err == nil && apply(handEd) == nil {
-				// The text is read after this run, which commits the safety
-				// form of our own block: what it says to delete is what the
-				// file will hold then.
-				file := existing
-				if safe, _, ok := codexSafeForm(existing, region, had, facts); ok {
-					file = safe
-				}
-				byHand = codexByHand(string(file), ed.text, handEd.text, profile, region, had)
+			// The text is read after this run, which commits the safety
+			// form of our own block: what it says to delete is what the
+			// file will hold then.
+			file := existing
+			if safe, _, ok := codexSafeForm(existing, region, had, facts); ok {
+				file = safe
 			}
+			byHand := codexByHand(string(file), ed.text, trial.text, profile, region, had)
 			p.refused = append(p.refused, fmt.Sprintf("%s: %s needs a change to your own settings, which needs your yes at a terminal (-yes does not answer it); nothing was installed for Codex. By hand, with every line below copied exactly as printed, from its first character:\n%s",
 				label, path, strings.TrimRight(byHand, "\n")))
 			planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
