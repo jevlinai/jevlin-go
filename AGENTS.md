@@ -226,6 +226,14 @@ the named tests.
     A typed refusal and an unanswered question are different outcomes and must stay
     distinguishable by exit code, which is why the ones that change nothing either way
     (`agents install`'s `Proceed?`, `wallet send`'s confirmation) still differ there.
+    **One exception, deliberate:** when `agents install` or `setup` stops without an answer — an
+    unanswered question, no terminal without `-yes`, an unanswered `Proceed?` or agents question —
+    it still commits the plan's safety writes (`commitSafetyOnly`), and nothing else. A safety write
+    only ever removes jevlin's own open network from Codex's config (`codexSafeForm`: the old
+    block's `network_access = true` line, or our profile's own network while the proxy is off),
+    so it changes no setting of the participant's and decides nothing for them; leaving it would
+    keep every command Codex runs able to reach any host, which is the one outcome nobody could
+    have chosen. The run says it closed that block, and still exits non-zero.
 19. **A sandboxed agent's files never redirect or stall this client's own.** The state dir, and
     with mining the intake, sessions and spool dirs, are writable roots of Codex's sandbox
     (`codexSandboxRoots`: the permission profile's filesystem entries, on Windows the roots-only
@@ -370,6 +378,11 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `prompt_abort_test.go` drives each real command to each real question, under both an interrupted
   read and a closed stdin, and asserts the non-zero exit, the unwritten decision and the
   uncontacted platform — and, in the same file, that a typed refusal still declines and exits 0.
+  The one thing an unanswered question still writes is invariant 18's exception, the safety write
+  that closes jevlin's own open network in Codex's config; `codex_unit_test.go`
+  (`TestARunThatWritesNothingStillClosesTheOldBlock`, `TestTheOldBlockIsClosedWhateverTheAnswer`)
+  and `setup_test.go` (`TestSetupClosesTheOldBlockWhenItsAgentsQuestionGoesUnanswered`) hold
+  that it writes that and nothing else.
 - **Which installation the profile and the agents belong to** — `cmd/jevlin/setup.go` owns it
   (`otherInstallation`, `leftForOtherInstallation`). This machine's installation is
   `$JEVLIN_HOME`, else `~/.jevlin`; an explicit `-home` naming any other directory is a
@@ -407,7 +420,8 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   key. **And the decoder is not trusted either**: BurntSushi/toml accepts shapes TOML 1.0 and Codex
   refuse (a header extending an inline table, or reopening one made by dotted keys), so every write
   to Codex's config is parsed again with go-toml/v2 (`codex_strict.go`, `planCodexWrite`) and
-  refused, naming the colliding table, if Codex would not load it; `codex_strict_test.go` holds
+  refused, naming the participant's colliding table, if Codex would not load it; a leading UTF-8
+  byte-order mark, which Codex accepts, is set aside to read and kept on write (`readCodexConfig`); `codex_strict_test.go` holds
   that check to thirteen verdicts taken from Codex itself. The grammar and the nets are tested
   independently on purpose (`marked_block_sections_test.go` first, because getting the split wrong
   in the removing direction destroys a participant's settings). Codex's record of hook approvals,
@@ -417,6 +431,12 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   it, for `agents status` (`codexApprovalLines`), and never writes one: approving is the
   participant's review of commands that run outside Codex's sandbox
   (`TestTheClientNeverWritesCodexHookTrust`).
+  **What Codex deletes with a table.** Codex's editor reads the comments above a table as that
+  table's, and `codex features disable network_proxy` deletes them with it; with our proxy table
+  first, that took our begin marker (captured in `cmd/jevlin/testdata/codex/`). So the proxy table is
+  written last, below our own profile tables, and a region that has lost a marker anyway — a lone
+  end marker with a run of our tables above it, or a lone begin marker with one below it — is still
+  ours (`damagedCodexRegion`): install repairs it, status names it, uninstall removes it whole.
   **Where the region sits is the file's to say.** `default_permissions` is a bare key, and TOML
   gives a bare key to whatever table precedes it, so the region goes **before the file's first
   table header**, or last in a file with none; found there, it is written where it is; found below
@@ -429,13 +449,17 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   profile with the one it `extends` — both profiles' roots and domain lists apply, anything
   neither lists stays closed (seen live on 0.158.0 Linux and 0.160.0 macOS) — so when
   `default_permissions` names a profile of theirs, ours extends it, and only the
-  `default_permissions` line's value changes. If their profile's network is already open (on, with
+  `default_permissions` line's value changes. Codex then applies every domain the chain allows
+  once ours turns the network on, whatever the chain's own `enabled` says, so the question, the plan
+  and status name every host the merged profile allows (`codexAllowedFor`), and say a yes opens
+  every host where the chain allows `"*"`. If their profile's network is already open (on, with
   the proxy off), ours adds only its roots: no hosts and no proxy table, which would cut their
   network down to ours. The other lines that can change are `":workspace"` (rewritten the same
   way), a bare `sandbox_mode = "workspace-write"` (commented out) and `network_proxy = false`
   (rewritten to true, never shadowed by a second definition, a duplicate key Codex refuses).
   Nothing is ever written inside a participant's table. All of it is one question showing every
-  line, changed only on a typed yes; a typed no installs nothing for Codex and exits 0; no line
+  line, changed only on a typed yes (with no terminal, the by-hand text is the exact lines a yes
+  writes, marks and markers included, so a file finished by hand is this installation's); a typed no installs nothing for Codex and exits 0; no line
   stops the command, exit 2 (invariant 18); `-yes` answers none of it, in `agents install` and in
   `setup`; with no terminal `agents install` exits 2 and prints the lines, and a dry run prints
   the question and plans the yes. Each changed line carries a trailing comment naming its config
@@ -445,12 +469,15 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   of its own and network_proxy off (`openByUs` in `codex_unit_test.go`, asserted after install,
   reinstall and uninstall of every starting state under every answer). Whenever install does not
   write the full profile — a typed no, no answer, no terminal, the upgrade re-render, a refusal —
-  our existing block still takes its safe form (`codexSafeForm`): the old block keeps its roots and
-  loses `network_access = true`; our profile with its own network and the proxy off loses its
-  network. That write is marked `safety` and is the only one committed when a question goes
-  unanswered. Uninstall is **one unit**: the region, attributed by its roots, and the lines it
+  our existing block still takes its safe form (`codexSafeForm`): the old block loses its one
+  `network_access = true` line and keeps every other line, a participant's `exclude_*` keys
+  included; our profile with its own network and the proxy off loses its network. That write is
+  marked `safety`; beside a full write that replaces an open block it goes in the plan's
+  `fallback`; and the two are the only writes committed when a run stops without an answer
+  (invariant 18's exception). Uninstall is **one unit**: the region, attributed by its roots, and the lines it
   implies go together, whichever config path the marks spell; a region left keeps its lines; a
-  line whose value is no longer what install wrote is left as the participant has it; and the
+  line whose value is no longer what install wrote is left as the participant has it, without our
+  mark; and the
   region never goes while `default_permissions` would still name it. Without a region, a mark is
   this installation's when it names the same config file through any link.
   `codex_states_test.go` drives every starting state through the real commands to goldens under

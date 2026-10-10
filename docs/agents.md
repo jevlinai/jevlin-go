@@ -171,19 +171,24 @@ with it, is named in the plan, and nothing is written for Codex.
 A setting of your own that the profile would change is asked about first, in one question that
 shows every line it would write, and `-yes` does not answer it: a profile of yours named in
 `default_permissions` (jevlin's profile then extends yours, and Codex merges the two, so your
-hosts and roots still apply; if your profile's network is already open with the proxy off,
-jevlin's adds only its roots and leaves your network as it is), `default_permissions =
+hosts and roots still apply; once jevlin's profile turns the network on, every host your profile
+or the profiles it extends allows is reachable too, even where your own network was off, and the
+question names them all, or says every host where one allows `"*"`; if your profile's network is
+already open with the proxy off, jevlin's adds only its roots and leaves your network as it is), `default_permissions =
 ":workspace"`, a bare `sandbox_mode = "workspace-write"` (commented out), and `network_proxy =
 false` in your `[features]` table (set to true). jevlin never writes a line inside a table of
 yours: it changes only those lines, each marked with a comment naming its config, and `agents
 uninstall` puts each back together with jevlin's block, unless you have changed it since, in
 which case it is left as you have it. Answering no installs nothing for Codex and exits 0. No
-answer stops the install with nothing written, exit 2. Without a terminal, `agents install`
-prints the lines to change by hand and exits 2; `setup` reports the agent it could not set up
+answer stops the install, exit 2, with nothing written except one thing: if jevlin's own block
+still holds an open network from an earlier version, that one line is closed, whatever else
+happens, and the message says so. Without a terminal, `agents install` prints the exact lines to
+change by hand, the block to add with its markers, and exits 2; a file finished that way is
+jevlin's, and a later install or uninstall treats it as installed; `setup` reports the agent it could not set up
 and exits 0, because the rest of setup succeeded. A dry run prints the question and plans the
 yes. Whatever the answer, a block of jevlin's own that opens the network is closed: an earlier
-version's block keeps its writable roots and loses its open network, and jevlin's profile with
-its own network and the proxy off loses its network. A read-only sandbox, or a
+version's block loses its `network_access = true` line and keeps every other line, and jevlin's
+profile with its own network and the proxy off loses its network. A read-only sandbox, or a
 `[sandbox_workspace_write]` table of your own, gets nothing for Codex and the profile to adopt
 printed; widening those is yours to do. With `danger-full-access` there is nothing to widen, and
 only the skill and hooks are written. If the profile in the file is another jevlin installation's,
@@ -217,7 +222,10 @@ and uninstall change only jevlin's own lines, move a setting Codex wrote inside 
 just above them and a table to just below them, and name each in the plan. A block that is not
 valid TOML, or whose profile holds anything jevlin did not write, is left and reported. Markers
 count only as lines of their own outside a multi-line string, so a comment or a string that
-happens to hold them is yours. An earlier version's block, which opened the network to every
+happens to hold them is yours. jevlin writes its `[features.network_proxy]` table last in its
+block, because `codex features disable network_proxy` deletes the comments above the table it
+removes; a block that has lost a marker all the same is still recognized, repaired by the next
+install and removed whole by uninstall. A file that starts with a UTF-8 byte-order mark keeps it. An earlier version's block, which opened the network to every
 host, is replaced by the profile on the next install, and the plan says so.
 
 ### Known limits
