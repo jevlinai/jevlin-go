@@ -757,8 +757,13 @@ func planCodexConfigRemoval(ops agentOps, label, path string, existing []byte, m
 		m = restoreCodexMarks(string(next), false, entry)
 	}
 	switch {
-	case m.why != "":
+	case m.why != "" && r.had:
 		p.refused = append(p.refused, label+": left jevlin's block and the lines of yours it changed in "+path+": "+m.why+"; "+codexStillUnder)
+		return false
+	case m.why != "":
+		// No block: what stays is a line of the participant's that jevlin
+		// changed, not a profile Codex runs under.
+		p.refused = append(p.refused, label+": left the lines of yours jevlin changed in "+path+": "+m.why)
 		return false
 	case m.changed:
 		next = m.next

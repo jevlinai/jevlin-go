@@ -163,3 +163,20 @@ func TestRemovingTheBlockByHandNamesTheLineToPutBack(t *testing.T) {
 	}
 	_ = m
 }
+
+// A marked line uninstall cannot put back, with no block of ours in the
+// file, is refused in words about that line: there is no profile left for
+// Codex to run under, so the block sentence would be untrue.
+func TestAMarkedLineLeftWithNoBlockSaysOnlyThat(t *testing.T) {
+	cfgPath, _ := sandboxTestConfig(t)
+	m, ops := newFakeMachine("codex")
+	text := "default_permissions = \":workspace\"  # jevlin agents install (" + mustTOMLString(cfgPath) + "); was: default_permissions =\nmodel = \"gpt-5\"\n"
+	m.files[codexConfigPath] = []byte(text)
+	code, out := runAgentsAt(t, ops, "", "uninstall", "-config", cfgPath, "-client", "codex", "-yes")
+	if code != exitTransport || !strings.Contains(out, "left the lines of yours jevlin changed") || strings.Contains(out, codexStillUnder) || strings.Contains(out, "left jevlin's block") {
+		t.Errorf("the refusal speaks of a block that is not there (exit %d):\n%s", code, out)
+	}
+	if string(m.files[codexConfigPath]) != text {
+		t.Errorf("the file changed:\n%s", m.files[codexConfigPath])
+	}
+}
