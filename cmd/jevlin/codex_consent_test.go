@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"fmt"
 
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -500,4 +501,65 @@ func TestAWildcardDenyOfTheSearchHosts(t *testing.T) {
 			t.Errorf("status does not name the blocked host:\n%s", status)
 		}
 	})
+}
+
+// Every deny key holding "*" or "?" is a glob to Codex, and case and one
+// trailing dot are ignored on both sides. Each row is a verdict `codex
+// sandbox` gave on 0.158.0 with jevlin's profile allowing www.example.com
+// and example.com exactly and extending "mine", which denies the pattern.
+func TestEveryDenyPatternCodexAppliesIsSeen(t *testing.T) {
+	for _, tc := range []struct {
+		pattern               string
+		wwwClosed, apexClosed bool
+	}{
+		{"*example.com", true, true},
+		{"www.example.*", true, false},
+		{"*.example.com.", true, false},
+		{"**example.com", true, true},
+		{"w*.example.com", true, false},
+		{"*.example.co?", true, false},
+		{"?ww.example.com", true, false},
+		{"*.example.com", true, false},
+		{"**.example.com", true, true},
+		{"*.EXAMPLE.COM", true, false},
+		{"**.com", true, true},
+		{"**.www.example.com", true, false},
+		{".example.com", false, false},
+		{"*.www.example.com", false, false},
+		{"WWW.EXAMPLE.COM.", false, false},
+	} {
+		doc := mustDecode("[permissions.mine]\nextends = \":workspace\"\n[permissions.mine.network.domains]\n" + mustTOMLString(tc.pattern) + " = \"deny\"\n")
+		a := codexAllowedFor(doc, "mine", []string{"www.example.com", "example.com"})
+		for host, closed := range map[string]bool{"www.example.com": tc.wwwClosed, "example.com": tc.apexClosed} {
+			if slices.Contains(a.hosts, host) == closed {
+				t.Errorf("%q: %s reads closed = %v; Codex said %v (hosts %v)", tc.pattern, host, !closed, closed, a.hosts)
+			}
+		}
+	}
+}
+
+// The router's host is compared as Codex compares it: a router_url
+// spelled with capitals and a trailing dot is still closed by a deny of
+// "*.example.invalid".
+func TestTheRouterHostIsComparedAsCodexComparesIt(t *testing.T) {
+	cfgPath, _ := sandboxTestConfig(t)
+	b, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spelled := strings.Replace(string(b), `router_url = "https://router.example.invalid"`, `router_url = "https://Router.Example.Invalid.:8443/v1"`, 1)
+	if spelled == string(b) {
+		t.Fatal("the test config has no router_url to respell")
+	}
+	if err := os.WriteFile(cfgPath, []byte(spelled), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m, ops := newFakeMachine("codex")
+	m.terminal = true
+	before := "default_permissions = \"mine\"\n\n[permissions.mine]\nextends = \":workspace\"\n\n[permissions.mine.network.domains]\n\"*.example.invalid\" = \"deny\"\n"
+	m.files[codexConfigPath] = []byte(before)
+	code, out := runAgentsAt(t, ops, "y\n", "install", "-config", cfgPath, "-client", "codex", "-yes")
+	if code == exitOK || strings.Contains(out, "[y/N]") || string(m.files[codexConfigPath]) != before || !strings.Contains(out, "so a search from Codex could never reach it") {
+		t.Errorf("a deny of the router's host, spelled otherwise, was not refused (exit %d):\n%s", code, out)
+	}
 }

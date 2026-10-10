@@ -752,19 +752,59 @@ type codexAllowed struct {
 // codexBlock is one allowed host a wildcard deny closes.
 type codexBlock struct{ host, pattern, profile string }
 
-// wildcardDenies: does a deny key match host as Codex matches it? "*.d"
-// is every subdomain of d at any depth, "**.d" those and d itself, case
-// aside (seen live on 0.158.0).
+// wildcardDenies: does a deny key match host as Codex matches it? Seen
+// live on 0.158.0, through `codex sandbox`: a key holding "*" or "?" is a
+// glob over the whole host name, "*" any run of characters, dots and none
+// included, and "?" one character ("*example.com", "www.example.*",
+// "w*.example.com", "*.example.co?" all close www.example.com); "*.d" is
+// every subdomain of d at any depth and not d, which the glob says by
+// itself, and "**.d" is those and d as well. Case is ignored, and so is one
+// trailing dot, on the key and on the host.
 func wildcardDenies(pattern, host string) bool {
-	pattern, host = strings.ToLower(pattern), strings.ToLower(host)
-	switch {
-	case strings.HasPrefix(pattern, "**."):
-		d := pattern[3:]
-		return host == d || strings.HasSuffix(host, "."+d)
-	case strings.HasPrefix(pattern, "*."):
-		return strings.HasSuffix(host, "."+pattern[2:])
+	pattern, host = codexHostKey(pattern), codexHostKey(host)
+	if d, ok := strings.CutPrefix(pattern, "**."); ok && host == d {
+		return true
 	}
-	return false
+	return globMatch(pattern, host)
+}
+
+// isDenyGlob: is a domain key one Codex reads as a pattern? A bare "*" is
+// not among them: Codex refuses it as a deny, and as an allow it is every
+// host, which codexAllowedFor reads on its own.
+func isDenyGlob(key string) bool {
+	return key != "*" && strings.ContainsAny(key, "*?")
+}
+
+// codexHostKey is a host name or domain key as Codex compares it.
+func codexHostKey(h string) string {
+	return strings.TrimSuffix(strings.ToLower(h), ".")
+}
+
+// globMatch matches s against a pattern of "*" (any run, possibly empty)
+// and "?" (one byte); every other byte stands for itself.
+func globMatch(pattern, s string) bool {
+	p, i := 0, 0
+	star, mark := -1, 0
+	for i < len(s) {
+		switch {
+		case p < len(pattern) && (pattern[p] == '?' || pattern[p] == s[i]):
+			p++
+			i++
+		case p < len(pattern) && pattern[p] == '*':
+			star, mark = p, i
+			p++
+		case star >= 0:
+			p = star + 1
+			mark++
+			i = mark
+		default:
+			return false
+		}
+	}
+	for p < len(pattern) && pattern[p] == '*' {
+		p++
+	}
+	return p == len(pattern)
 }
 
 func codexAllowedFor(doc tomlDoc, extends string, ours []string) codexAllowed {
@@ -799,7 +839,7 @@ func codexAllowedFor(doc tomlDoc, extends string, ours []string) codexAllowed {
 	var a codexAllowed
 	var denies []string
 	for h, r := range rule {
-		if r == "deny" && (strings.HasPrefix(h, "*.") || strings.HasPrefix(h, "**.")) {
+		if r == "deny" && isDenyGlob(h) {
 			denies = append(denies, h)
 		}
 	}
@@ -860,9 +900,9 @@ func (a codexAllowed) routerBlocked(cfg *config.Config) (codexBlock, bool) {
 	if cfg == nil || cfg.Miner.RouterURL == nil {
 		return codexBlock{}, false
 	}
-	router := strings.ToLower(cfg.Miner.RouterURL.Hostname())
+	router := codexHostKey(cfg.Miner.RouterURL.Hostname())
 	for _, b := range a.blocked {
-		if b.host == router {
+		if codexHostKey(b.host) == router {
 			return b, true
 		}
 	}

@@ -175,9 +175,10 @@ hosts and roots still apply; once jevlin's profile turns the network on, every h
 or the profiles it extends allows is reachable too, even where your own network was off — each
 host decided, as Codex decides it, by the nearest profile that names it, so a deny in yours
 overrides an allow in the one it extends and the other way round — and the question names them
-all, or says every host, but any a profile denies, where one allows `"*"`; a wildcard deny such as
-`"*.example.com" = "deny"` wins over any exact allow, jevlin's included, so the hosts it matches
-are named as blocked, and install refuses for Codex when one of them is the router's; if your profile's network is
+all, or says every host, but any a profile denies, where one allows `"*"`; a wildcard deny — any
+key holding `*` or `?`, such as `"*.example.com"` or `"api.example.*"` — wins over any exact allow,
+jevlin's included, so the hosts it matches are named as blocked, and install refuses for Codex when
+one of them is the router's; if your profile's network is
 already open with the proxy off, jevlin's adds only its roots and leaves your network as it is), `default_permissions =
 ":workspace"`, a bare `sandbox_mode = "workspace-write"` (commented out), and `network_proxy =
 false` in your `[features]` table (set to true). jevlin never writes a line inside a table of
