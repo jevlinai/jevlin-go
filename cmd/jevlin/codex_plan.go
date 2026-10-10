@@ -294,7 +294,11 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 		p.notes = append(p.notes, fmt.Sprintf("%s: moving %s out of the jevlin block in %s, below it, so a later append by Codex lands outside ours: %s",
 			label, tables(len(change.movedTables)), path, strings.Join(change.movedTables, ", ")))
 	}
-	return codexConfigPlan{changed: planWrite(ops, label, path, next, mode, why, p)}
+	changed, refused := planCodexWrite(ops, label, path, existing, next, string(stripped), codexProfileHeaders(), mode, why, p)
+	if refused {
+		return codexConfigPlan{scope: codexNothing, left: true}
+	}
+	return codexConfigPlan{changed: changed}
 }
 
 func keysWord(n int) string {
@@ -384,7 +388,11 @@ func planCodexParticipantProfile(ops agentOps, label, path string, entry binEntr
 	if e.proxy || e.proxyFx {
 		n++
 	}
-	return codexConfigPlan{changed: planWrite(ops, label, path, []byte(ed.text), mode, fmt.Sprintf("permissions: %s added to your profile %q, each marked as jevlin's", entriesWord(n), e.name), p)}
+	changed, refused := planCodexWrite(ops, label, path, []byte(ed.original), []byte(ed.text), ed.original, nil, mode, fmt.Sprintf("permissions: %s added to your profile %q, each marked as jevlin's", entriesWord(n), e.name), p)
+	if refused {
+		return codexConfigPlan{scope: codexNothing, left: true}
+	}
+	return codexConfigPlan{changed: changed}
 }
 
 func entriesWord(n int) string {

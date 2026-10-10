@@ -9,6 +9,7 @@ require (
 	github.com/conductorone/dpop v0.2.7
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1
 	github.com/go-jose/go-jose/v4 v4.1.4
+	github.com/pelletier/go-toml/v2 v2.4.3
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sys v0.47.0
 	golang.org/x/term v0.45.0

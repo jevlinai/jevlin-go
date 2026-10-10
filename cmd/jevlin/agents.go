@@ -2050,10 +2050,12 @@ func planCodexSandbox(ops agentOps, label, path string, roots []string, entry bi
 				label, tables(len(have.foreign)), path, strings.Join(have.foreignNames(), ", ")))
 		}
 		next := replaceBlockInPlace(pre, want, have.foreignText(), post)
-		return planWrite(ops, label, path, next, mode, codexWindowsWhy, p), false
+		changed, refused := planCodexWrite(ops, label, path, existing, next, string(stripped), []string{codexSandboxTable}, mode, codexWindowsWhy, p)
+		return changed, refused
 	}
 	next := appendMarkedBlock(stripped, want)
-	return planWrite(ops, label, path, next, mode, codexWindowsWhy, p), false
+	changed, refused := planCodexWrite(ops, label, path, existing, next, string(stripped), []string{codexSandboxTable}, mode, codexWindowsWhy, p)
+	return changed, refused
 }
 
 // droppedKeysNote is the one sentence both plans use for a key a participant

@@ -132,6 +132,7 @@ func setTOMLPath(doc tomlDoc, value any, path ...string) {
 // codexEditor applies marked edits to a file's text and keeps, beside it,
 // the decoded document the result must equal.
 type codexEditor struct {
+	original string
 	text     string
 	expected tomlDoc
 	cfgPath  string
@@ -142,7 +143,7 @@ func newCodexEditor(text, cfgPath string) (*codexEditor, error) {
 	if !ok {
 		return nil, errors.New("the file does not read as TOML")
 	}
-	return &codexEditor{text: text, expected: doc, cfgPath: cfgPath}, nil
+	return &codexEditor{original: text, text: text, expected: doc, cfgPath: cfgPath}, nil
 }
 
 // verify is the net: the text must decode to exactly what the edits meant.

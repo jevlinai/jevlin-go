@@ -734,8 +734,9 @@ func (t codexTarget) PlanUninstall(ops agentOps, paths agentPaths, entry binEntr
 			noteOnce(p, t.Label()+": the lines another installation marked in "+paths.codexConfig+" are "+leftForeign(describeOther(nil, []string{other}, refFor(entry))))
 		}
 		if len(whys) > 0 {
-			planWrite(ops, t.Label(), paths.codexConfig, next, mode, strings.Join(whys, "; "), p)
-			removed = true
+			if _, refused := planCodexWrite(ops, t.Label(), paths.codexConfig, existing, next, "", nil, mode, strings.Join(whys, "; "), p); !refused {
+				removed = true
+			}
 		}
 	}
 	if !removed {
