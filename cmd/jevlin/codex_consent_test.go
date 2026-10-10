@@ -305,3 +305,43 @@ func TestAProxyTableWithoutEnabledIsNamed(t *testing.T) {
 		t.Errorf("the refusal does not say what is wrong with the table:\n%s", out)
 	}
 }
+
+// A yes to the switch turns on the extended chain's own domains as well as
+// ours (live on 0.158.0), so the question, the plan and status name every
+// host the merged profile allows, and say so plainly when that is every
+// host.
+func TestTheSwitchNamesEveryHostTheMergedProfileAllows(t *testing.T) {
+	for _, tc := range []struct{ state, network string }{
+		{"own-profile-chain-allows-a-host", "agents-v1.nyks.dev, as.example.invalid, example.com and router.example.invalid only"},
+		{"own-profile-chain-allows-every-host", `every host, because your profile "work" allows "*"`},
+	} {
+		t.Run(tc.state, func(t *testing.T) {
+			var st codexState
+			for _, s := range codexStates() {
+				if s.name == tc.state {
+					st = s
+				}
+			}
+			m, ops, cfgPath, _ := seedState(t, st)
+			code, out := runAgentsAt(t, ops, "y\n", "install", "-config", cfgPath, "-client", "codex", "-yes")
+			if code != exitOK {
+				t.Fatalf("install: exit %d\n%s", code, out)
+			}
+			if !strings.Contains(out, "network access to "+tc.network) {
+				t.Errorf("the question does not name every host the switch allows:\n%s", out)
+			}
+			if !strings.Contains(out, "and network to "+tc.network) {
+				t.Errorf("the plan line does not name every host the switch allows:\n%s", out)
+			}
+			if !strings.Contains(out, `That list includes what your profile "work" allows`) {
+				t.Errorf("the question does not say where the other hosts come from:\n%s", out)
+			}
+			_, status := runAgentsAt(t, ops, "", "status", "-config", cfgPath)
+			want := strings.ReplaceAll(strings.TrimSuffix(tc.network, " only"), " and ", ", ")
+			if !strings.Contains(status, "; hosts "+want+"; network_proxy on") {
+				t.Errorf("status does not list every host the profile allows (want %q):\n%s", want, status)
+			}
+			_ = m
+		})
+	}
+}

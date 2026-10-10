@@ -88,10 +88,10 @@ func askConsent(ops agentOps, question string) consentAnswer {
 }
 
 // codexWriteWhy is the plan line for the region.
-func codexWriteWhy(profile codexProfile) string {
+func codexWriteWhy(profile codexProfile, doc tomlDoc) string {
 	base := fmt.Sprintf("permissions: profile %q, extending %s, with the writable roots", codexProfileName, mustTOMLString(profile.extends))
 	if profile.network {
-		base += fmt.Sprintf(", and network to %s only, through Codex's proxy", joinLabels(profile.hosts))
+		base += fmt.Sprintf(", and network to %s, through Codex's proxy", codexAllowedFor(doc, profile.extends, profile.hosts).sentence())
 	} else {
 		base += "; its network is your profile's own, which jevlin leaves open"
 	}
@@ -326,7 +326,7 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 	if string(next) == string(existing) {
 		return codexConfigPlan{}
 	}
-	why = codexWriteWhy(profile)
+	why = codexWriteWhy(profile, facts.doc)
 	switch {
 	case change.repaired:
 		why = "permissions: repair jevlin's block, which had lost a marker (Codex deletes the comments above a table it removes) and would not have been found again; " + strings.TrimPrefix(why, "permissions: ")
@@ -366,13 +366,19 @@ func codexQuestion(label, path, home string, facts codexFacts, profile codexProf
 		what = fmt.Sprintf("jevlin's profile, which extends your profile %s", mustTOMLString(profile.extends))
 	}
 	adds := []string{"write access to " + joinLabels(profile.roots)}
+	chain := ""
 	if profile.network {
-		adds = append(adds, "network access to "+joinLabels(profile.hosts)+" only")
+		allowed := codexAllowedFor(facts.doc, profile.extends, profile.hosts)
+		adds = append(adds, "network access to "+allowed.sentence())
+		if len(allowed.from) > 0 {
+			chain = fmt.Sprintf("That list includes what your profile %s allows: Codex applies the whole chain's domains once jevlin's profile turns the network on.\n", mustTOMLString(profile.extends))
+		}
 	}
 	if profile.proxy {
 		adds = append(adds, "the [features.network_proxy] table, which makes Codex enforce that host list")
 	}
 	fmt.Fprintf(&b, "Switch Codex to %s and adds %s?\n", what, strings.Join(adds, ", and "))
+	b.WriteString(chain)
 	if !profile.network {
 		fmt.Fprintf(&b, "Your profile's network is already open (network on, network_proxy off); jevlin leaves it so.\n")
 	}
@@ -577,4 +583,67 @@ func planCodexSafeForm(ops agentOps, label, path string, existing []byte, mode o
 		p.writes[len(p.writes)-1].safety = true
 		p.notes = append(p.notes, label+": "+why+"; this is jevlin's own block, whatever the answer about your settings")
 	}
+}
+
+// codexAllowed is what a profile of ours allows once Codex merges it with
+// the profiles it extends: every domain any of them allows, minus any one
+// of them denies, and whether one allows "*". Codex applies the whole
+// chain's domains as soon as ours turns the network on, whatever the
+// chain's own `enabled` says (seen live on 0.158.0: a parent with
+// enabled = false and "example.com" allowed let example.com through after
+// the switch, and "*" let every host through).
+type codexAllowed struct {
+	hosts []string // ours and the chain's, sorted
+	every bool     // the chain allows "*"
+	from  []string // the chain's profiles that add hosts or "*", for a sentence
+}
+
+func codexAllowedFor(doc tomlDoc, extends string, ours []string) codexAllowed {
+	allow := map[string]bool{}
+	deny := map[string]bool{}
+	for _, h := range ours {
+		allow[h] = true
+	}
+	var a codexAllowed
+	name := extends
+	for i := 0; i < 16 && name != "" && !strings.HasPrefix(name, ":"); i++ {
+		added := false
+		if v, ok := lookupTOMLPath(doc, "permissions", name, "network", "domains"); ok {
+			if table, ok := v.(map[string]any); ok {
+				for h, rule := range table {
+					switch rule {
+					case "allow":
+						if h == "*" {
+							a.every = true
+						} else {
+							allow[strings.ToLower(h)] = true
+						}
+						added = true
+					case "deny":
+						deny[strings.ToLower(h)] = true
+					}
+				}
+			}
+		}
+		if added {
+			a.from = append(a.from, name)
+		}
+		parent, _ := lookupTOMLPath(doc, "permissions", name, "extends")
+		name, _ = parent.(string)
+	}
+	for h := range allow {
+		if !deny[h] {
+			a.hosts = append(a.hosts, h)
+		}
+	}
+	a.hosts = cleanHosts(a.hosts)
+	return a
+}
+
+// sentence is the allowed network in words: every host, or the list.
+func (a codexAllowed) sentence() string {
+	if a.every {
+		return fmt.Sprintf("every host, because your profile %s allows \"*\"", mustTOMLString(a.from[len(a.from)-1]))
+	}
+	return joinLabels(a.hosts) + " only"
 }

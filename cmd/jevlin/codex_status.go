@@ -69,7 +69,12 @@ func codexPermissionLinesBody(ops agentOps, path string, entry binEntry, getenv 
 	}
 	switch {
 	case region.network:
-		lines = append(lines, fmt.Sprintf("permissions: profile %q (extends %s) in %s; hosts %s; network_proxy %s", codexProfileName, mustTOMLString(region.extends), where, orNone(region.hosts), state))
+		allowed := codexAllowedFor(facts.doc, region.extends, region.hosts)
+		hosts := orNone(allowed.hosts)
+		if allowed.every {
+			hosts = allowed.sentence()
+		}
+		lines = append(lines, fmt.Sprintf("permissions: profile %q (extends %s) in %s; hosts %s; network_proxy %s", codexProfileName, mustTOMLString(region.extends), where, hosts, state))
 		if !proxyOn {
 			lines = append(lines, "permissions: network_proxy is off in "+where+", so the profile's host list is not enforced and every command Codex runs can reach any host; agents install turns it on")
 		}
