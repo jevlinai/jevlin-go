@@ -287,3 +287,21 @@ func TestADryRunPrintsTheCodexQuestionAndExitsZero(t *testing.T) {
 		}
 	}
 }
+
+// A [features.network_proxy] table without `enabled` says nothing about
+// whether Codex enforces a host list, so install refuses with a sentence
+// that names it, rather than leaving the strict parser check to refuse
+// the duplicate table that writing ours beside it would make.
+func TestAProxyTableWithoutEnabledIsNamed(t *testing.T) {
+	cfgPath, _ := sandboxTestConfig(t)
+	m, ops := newFakeMachine("codex")
+	before := "[features.network_proxy]\nallow_local_binding = true\n"
+	m.files[codexConfigPath] = []byte(before)
+	code, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-yes")
+	if code == exitOK || string(m.files[codexConfigPath]) != before {
+		t.Errorf("install wrote over a proxy table it cannot read (exit %d):\n%s", code, out)
+	}
+	if !strings.Contains(out, "is a table without enabled = true or false") {
+		t.Errorf("the refusal does not say what is wrong with the table:\n%s", out)
+	}
+}
