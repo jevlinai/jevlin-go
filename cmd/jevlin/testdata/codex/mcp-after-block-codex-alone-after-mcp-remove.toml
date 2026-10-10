@@ -1,0 +1,5 @@
+model = "gpt-5"
+
+# trusted because I own it
+[projects."/x"]
+trust_level = "trusted"

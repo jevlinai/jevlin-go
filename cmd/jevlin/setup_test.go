@@ -2135,3 +2135,142 @@ func TestSetupFilesNeverImportOSExec(t *testing.T) {
 		t.Fatalf("checked %d setup source files, want at least 6: %v", checked, files)
 	}
 }
+
+// ── Codex's question about the participant's own settings, in setup ──
+
+// seedWorkspaceDefault puts a Codex config whose default_permissions is
+// the built-in ":workspace" on the sandbox's disk: a state setup must ask
+// about before switching it.
+func (s *setupSandbox) seedWorkspaceDefault() (path, before string) {
+	s.t.Helper()
+	path = s.paths().codexConfig
+	before = "default_permissions = \":workspace\"\n"
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		s.t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
+		s.t.Fatal(err)
+	}
+	return path, before
+}
+
+// setup's -yes answers setup's own questions, never Codex's question about
+// the participant's settings: a typed no there leaves Codex as it was, and
+// the other agent is still set up.
+func TestSetupYesDoesNotAnswerTheCodexQuestion(t *testing.T) {
+	s := newSetupSandbox(t)
+	s.platform.claim("credits")
+	path, before := s.seedWorkspaceDefault()
+	code, out, errOut := s.run(tty("n", "n"), true, "-yes", "-no-profile", "-no-agents", "-with", "codex", "-with", "claude")
+	if code != exitOK {
+		t.Fatalf("setup exited %d\n%s\n%s", code, out, errOut)
+	}
+	if !strings.Contains(out, "Switch? [y/N]: ") {
+		t.Errorf("setup -yes did not ask the Codex question:\n%s", out)
+	}
+	if got := string(s.readFile(path)); got != before {
+		t.Errorf("a typed no at setup changed Codex's config:\n%s", got)
+	}
+	if !lexists(s.paths().claudeSkill) {
+		t.Errorf("Claude Code was not set up beside the declined Codex:\n%s", out)
+	}
+}
+
+// No line at Codex's question stops setup before any agent is written
+// (hard invariant 18).
+func TestSetupStopsOnAnUnansweredCodexQuestion(t *testing.T) {
+	s := newSetupSandbox(t)
+	s.platform.claim("credits")
+	path, before := s.seedWorkspaceDefault()
+	code, out, errOut := s.run(tty("n"), true, "-yes", "-no-profile", "-no-agents", "-with", "codex", "-with", "claude")
+	if code != exitUsage {
+		t.Errorf("setup exited %d with Codex's question unanswered, want 2\n%s\n%s", code, out, errOut)
+	}
+	if lexists(s.paths().claudeSkill) || lexists(s.paths().claudeSettings) {
+		t.Errorf("setup wrote Claude Code's files after an unanswered question:\n%s", out)
+	}
+	if got := string(s.readFile(path)); got != before {
+		t.Errorf("setup changed Codex's config after an unanswered question:\n%s", got)
+	}
+}
+
+// A setup dry run shows Codex's question and asks nothing.
+func TestSetupDryRunPrintsTheCodexQuestion(t *testing.T) {
+	s := newSetupSandbox(t)
+	_, before := s.seedWorkspaceDefault()
+	code, out, errOut := s.run(tty(), true, "-dry-run", "-yes", "-no-profile", "-no-agents", "-with", "codex")
+	if code != exitOK {
+		t.Fatalf("setup -dry-run exited %d\n%s\n%s", code, out, errOut)
+	}
+	if !strings.Contains(out, "(dry run: not asked; the plan below is what a yes would write)") || strings.Contains(out, "needs your yes at a terminal") {
+		t.Errorf("the dry run did not show the question:\n%s", out)
+	}
+	if got := string(s.readFile(s.paths().codexConfig)); got != before {
+		t.Errorf("a dry run changed Codex's config:\n%s", got)
+	}
+}
+
+// setup's own agents question unanswered still closes our old open block,
+// and writes nothing else.
+func TestSetupClosesTheOldBlockWhenItsAgentsQuestionGoesUnanswered(t *testing.T) {
+	s := newSetupSandbox(t)
+	s.platform.claim("credits")
+	s.onPath["codex"] = true
+	path := s.paths().codexConfig
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	roots := []string{filepath.Join(s.home, "intake"), filepath.Join(s.home, "sessions"), filepath.Join(s.home, "spool"), filepath.Join(s.home, "state")}
+	q := make([]string, len(roots))
+	for i, r := range roots {
+		q[i] = mustTOMLString(r)
+	}
+	before := "model = \"gpt-5\"\n" + agentsMarkerBegin + "\n[sandbox_workspace_write]\nnetwork_access = true\nwritable_roots = [" + strings.Join(q, ", ") + "]\n" + agentsMarkerEnd + "\n"
+	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut := s.run(tty("n"), true, "-no-profile")
+	if code != exitUsage {
+		t.Errorf("setup exited %d with its agents question unanswered, want 2\n%s\n%s", code, out, errOut)
+	}
+	if got := string(s.readFile(path)); got != strings.Replace(before, "network_access = true\n", "", 1) {
+		t.Errorf("the old block was not closed, or more changed:\n%s\n%s", got, errOut)
+	}
+	if lexists(s.paths().codexSkill) {
+		t.Errorf("setup wrote Codex's skill after an unanswered question")
+	}
+	if !strings.Contains(errOut, "only jevlin's own block in Codex's config was closed") {
+		t.Errorf("setup does not say what it closed:\n%s", errOut)
+	}
+}
+
+// A typed no at setup's agents question also closes our old open block, as
+// no answer does, and exits 0: the two stay apart by exit code.
+func TestSetupClosesTheOldBlockOnATypedNo(t *testing.T) {
+	s := newSetupSandbox(t)
+	s.platform.claim("credits")
+	s.onPath["codex"] = true
+	path := s.paths().codexConfig
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	roots := []string{filepath.Join(s.home, "intake"), filepath.Join(s.home, "sessions"), filepath.Join(s.home, "spool"), filepath.Join(s.home, "state")}
+	q := make([]string, len(roots))
+	for i, r := range roots {
+		q[i] = mustTOMLString(r)
+	}
+	before := "model = \"gpt-5\"\n" + agentsMarkerBegin + "\n[sandbox_workspace_write]\nnetwork_access = true\nwritable_roots = [" + strings.Join(q, ", ") + "]\n" + agentsMarkerEnd + "\n"
+	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut := s.run(tty("n", "n"), true, "-no-profile")
+	if code != exitOK {
+		t.Errorf("setup exited %d after a typed no, want 0\n%s\n%s", code, out, errOut)
+	}
+	if got := string(s.readFile(path)); got != strings.Replace(before, "network_access = true\n", "", 1) {
+		t.Errorf("a typed no left the old block open, or changed more:\n%s", got)
+	}
+	if lexists(s.paths().codexSkill) || !strings.Contains(out, "except that jevlin's own open block in Codex's config was closed") {
+		t.Errorf("setup wrote more than the close, or did not say it closed it:\n%s", out)
+	}
+}

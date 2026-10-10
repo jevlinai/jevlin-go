@@ -1,0 +1,128 @@
+package main
+
+// Every byte this client writes into Codex's config.toml must be a file
+// Codex itself would load.
+//
+// The rest of this client decodes TOML with BurntSushi/toml, which is
+// lenient in exactly the places this file's edits can go wrong: it accepts
+// a [features.network_proxy] header after `features = { ... }` (extending an
+// inline table) and a [permissions.work.filesystem] header after
+// `filesystem."/x" = "write"` inside [permissions.work] (redefining a table
+// made by dotted keys). TOML 1.0 forbids both, and so does Codex: it refuses
+// such a file with "failed to load bootstrap configuration ... TOML parse
+// error" and does not start. An install that decoded its own output with the
+// lenient reader once wrote exactly that file and exited 0.
+//
+// So every planned write to Codex's config is parsed again with
+// pelletier/go-toml/v2, which rejects what TOML 1.0 rejects. Its verdict was
+// checked against Codex's own on every shape this client can produce
+// (codex_strict_test.go, verdicts from `codex features list` on codex-cli
+// 0.158.0); it agreed on all of them, and BurntSushi disagreed on four.
+// Rejected: replacing BurntSushi everywhere, which would change how every
+// config this client reads is decoded, for a check only Codex's file needs;
+// and a hand-written structural check, which would be a TOML parser of our
+// own to get wrong.
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+
+	strict "github.com/pelletier/go-toml/v2"
+)
+
+// codexBOM is the UTF-8 byte-order mark. Codex loads a config.toml that
+// starts with one (seen on 0.160.0), so this client reads such a file
+// without it and writes it back with it (readCodexConfig, planCodexWrite).
+const codexBOM = "\ufeff"
+
+// readCodexConfig is readWithMode for Codex's config.toml, without a
+// leading byte-order mark: every reading of the file — the region, the
+// participant's settings, the strict parse — sees the TOML text alone.
+func readCodexConfig(ops agentOps, path string) ([]byte, os.FileMode, error) {
+	b, mode, err := readWithMode(ops, path)
+	return bytes.TrimPrefix(b, []byte(codexBOM)), mode, err
+}
+
+// codexTOMLError is why Codex's TOML parser would refuse text, or nil.
+func codexTOMLError(text string) error {
+	text = strings.TrimPrefix(text, codexBOM)
+	var v map[string]any
+	if err := strict.Unmarshal([]byte(text), &v); err != nil {
+		var de *strict.DecodeError
+		if errors.As(err, &de) {
+			row, col := de.Position()
+			return fmt.Errorf("line %d, column %d: %s", row, col, de.Error())
+		}
+		return err
+	}
+	return nil
+}
+
+// codexHeaderCollisions names the tables of the participant's that one of
+// our headers would collide with: a table, or an ancestor of one, that they
+// wrote inline or with dotted keys. Each of our headers is tried alone
+// against their text; for one that collides, the shortest prefix under
+// which no new table can be opened is the inline one, and where every
+// prefix takes a new table, the header itself was made by dotted keys.
+func codexHeaderCollisions(participant string, headers []string) []string {
+	if codexTOMLError(participant) != nil {
+		return nil // already refused; codexWriteRefusal says so
+	}
+	opens := func(h string) bool {
+		return codexTOMLError(strings.TrimRight(participant, "\n")+"\n\n["+h+"]\n") == nil
+	}
+	var out []string
+	for _, h := range headers {
+		if opens(h) {
+			continue
+		}
+		segs := strings.Split(h, ".")
+		named := "[" + h + "] with dotted keys"
+		for i := 1; i <= len(segs); i++ {
+			prefix := strings.Join(segs[:i], ".")
+			if !opens(prefix + ".jevlin_probe") {
+				named = prefix + " inline"
+				break
+			}
+		}
+		if !containsString(out, named) {
+			out = append(out, named)
+		}
+	}
+	return out
+}
+
+// codexWriteRefusal is why next must not be written over existing, or "".
+// participant is the participant's own text, used only to name a colliding
+// table in the sentence.
+func codexWriteRefusal(existing, next []byte, participant string, headers []string) string {
+	err := codexTOMLError(string(next))
+	if err == nil {
+		return ""
+	}
+	if before := codexTOMLError(string(existing)); before != nil {
+		return fmt.Sprintf("Codex already refuses this file (%v), so nothing was written to it; fix it first", before)
+	}
+	if hit := codexHeaderCollisions(participant, headers); len(hit) > 0 {
+		return fmt.Sprintf("your config defines %s, and adding jevlin's tables beside it would make a file Codex refuses (%v); nothing was written for Codex. Write that table as a [header] of its own and run this again",
+			strings.Join(hit, " and "), err)
+	}
+	return fmt.Sprintf("the result would be a file Codex refuses (%v), so nothing was written to it", err)
+}
+
+// planCodexWrite is planWrite for Codex's config.toml, held to Codex's
+// parser. It refuses rather than write a file Codex would not load.
+func planCodexWrite(ops agentOps, label, path string, existing, next []byte, participant string, headers []string, mode os.FileMode, why string, p *agentPlan) (changed, refused bool) {
+	if r := codexWriteRefusal(existing, next, participant, headers); r != "" {
+		p.refused = append(p.refused, fmt.Sprintf("%s: %s: %s", label, path, r))
+		return false, true
+	}
+	// A file that started with a byte-order mark keeps it.
+	if disk, err := ops.readFile(path); err == nil && bytes.HasPrefix(disk, []byte(codexBOM)) && !bytes.HasPrefix(next, []byte(codexBOM)) {
+		next = append([]byte(codexBOM), next...)
+	}
+	return planWrite(ops, label, path, next, mode, why, p), false
+}

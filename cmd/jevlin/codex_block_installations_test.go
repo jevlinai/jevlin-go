@@ -43,6 +43,7 @@ type twoCodexInstallations struct {
 
 func newTwoCodexInstallations(t *testing.T) *twoCodexInstallations {
 	t.Helper()
+	onCodexOS(t, "linux")
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -174,33 +175,28 @@ func (m *twoCodexInstallations) leftSentence() string {
 	return "Codex: left in place; it belongs to the installation configured by " + m.first + ", not this installation"
 }
 
-// rootsOf is the writable_roots line as the file carries it, for a failure
-// message that says which installation's roots are in there.
+// rootsOf is the roots the file's jevlin block grants, as the region reader
+// reads them — the profile's filesystem keys or the old block's
+// writable_roots — for a failure message that says which installation's
+// roots are in there.
 func rootsOf(file string) string {
-	for _, l := range strings.Split(file, "\n") {
-		if strings.HasPrefix(l, "writable_roots") {
-			return l
-		}
+	r, had, why := readCodexRegion([]byte(file))
+	if !had || why != "" || len(r.roots) == 0 {
+		return "(no roots)"
 	}
-	return "(no writable_roots line)"
+	return "roots: " + strings.Join(r.roots, ", ")
 }
 
-// rootsLineOf is the writable_roots line one installation's config produces,
-// taken from the renderer rather than from a path written out here.
-//
-// The line carries %q-quoted paths, so on Windows every separator inside it
-// is doubled and the native path the test holds is not a substring of it at
-// all: the first version of this file asked `strings.Contains(line, dir)` and
-// was red on both Windows runners over a file production had written
-// correctly. Asked of the renderer, the comparison is exact and the spelling
-// is whatever this OS's spelling is.
+// rootsLineOf is the roots one installation's config produces, taken from
+// the same function the renderer is handed them by rather than from a path
+// written out here, so the spelling is whatever this OS's spelling is.
 func (m *twoCodexInstallations) rootsLineOf(cfg string) string {
 	m.t.Helper()
 	roots := codexSandboxRoots(binEntry{cfg: cfg}, noEnv)
 	if len(roots) == 0 {
 		m.t.Fatalf("%s names no sandbox roots, so a comparison against its block would prove nothing", cfg)
 	}
-	return rootsOf(sandboxSettings(roots))
+	return "roots: " + strings.Join(roots, ", ")
 }
 
 func TestASecondInstallationLeavesTheFirstsCodexSandboxBlock(t *testing.T) {
@@ -248,10 +244,12 @@ func TestASecondInstallationLeavesTheFirstsCodexSandboxBlock(t *testing.T) {
 	}
 }
 
-// The block is left even when it is the only thing of the first
-// installation's on the host: without this the sentence above could be the
-// skill's alone, and the block's own refusal untested.
-func TestTheCodexBlockIsLeftEvenWhenTheSkillIsGone(t *testing.T) {
+// The profile is left even when it is the only thing of the first
+// installation's on the host — and, since a Codex can run one profile, the
+// rest of Codex is left with it: a second skill whose searches the
+// first's profile would not let record is a host that looks installed and
+// earns nothing. Without this the sentence above could be the skill's alone.
+func TestAnotherInstallationsProfileLeavesCodexWhollyToIt(t *testing.T) {
 	m := newTwoCodexInstallations(t)
 	m.install(m.first)
 	before := m.codexConfig()
@@ -262,18 +260,15 @@ func TestTheCodexBlockIsLeftEvenWhenTheSkillIsGone(t *testing.T) {
 	out := m.install(m.second)
 	m.unchangedSince(before, "the second installation's agents install")
 	if !strings.Contains(out, m.leftSentence()) {
-		t.Errorf("the install plan does not say whose the sandbox block is:\n%s", out)
+		t.Errorf("the install plan does not say whose the profile is:\n%s", out)
 	}
-	// It continued with the rest of the host: the second's own skill is in.
-	b, err := os.ReadFile(m.paths.codexSkill) // #nosec G304 -- this test's own sandbox
-	if err != nil {
-		t.Fatalf("leaving the block must not stop the rest of the host: %v", err)
+	if _, err := os.Stat(m.paths.codexSkill); err == nil {
+		t.Errorf("the second installation wrote a Codex skill beside the first's profile:\n%s", out)
 	}
-	// Read the way production reads an artifact, not by looking for the path
-	// as bytes: the skill renders the config for the shell Codex runs on this
-	// OS, and which quoting that is, is exactly what must not be assumed here.
-	if _, cfgs := namedInArtifact(string(b)); !configsInclude(cfgs, m.second) {
-		t.Errorf("the second installation's skill was not written; it names %q:\n%s", cfgs, b)
+	if _, err := os.Stat(m.paths.codexHooks); err == nil {
+		if b, _ := os.ReadFile(m.paths.codexHooks); strings.Contains(string(b), m.second) { // #nosec G304 -- this test's own sandbox
+			t.Errorf("the second installation wrote Codex hooks beside the first's profile:\n%s", b)
+		}
 	}
 }
 
@@ -305,10 +300,7 @@ func TestAnInstallationWhoseStateDirIsElsewhereStillOwnsItsBlock(t *testing.T) {
 
 	// Something to refresh: the participant's config has not changed, so the
 	// block is made stale the way an earlier version's rendering would be.
-	stale := strings.Replace(installed, "network_access = true", "network_access = false", 1)
-	if stale == installed {
-		t.Fatal("the block fixture did not change, so nothing about a refresh is being tested")
-	}
+	stale := staleOurTable(t, installed)
 	m.files["/home/u/.codex/config.toml"] = []byte(stale)
 
 	_, out, errOut := runAgents(t, ops, nil, "install", "-yes", "-config", cfg)
@@ -356,10 +348,7 @@ func TestAnInstallationStillRefreshesItsOwnCodexSandboxBlock(t *testing.T) {
 	m.install(m.first)
 	fresh := m.codexConfig()
 
-	stale := strings.Replace(fresh, "network_access = true", "network_access = false", 1)
-	if stale == fresh {
-		t.Fatal("the block fixture did not change, so nothing about a refresh is being tested")
-	}
+	stale := staleOurTable(t, fresh)
 	writeFileT(t, m.paths.codexConfig, stale)
 
 	out := m.install(m.first)

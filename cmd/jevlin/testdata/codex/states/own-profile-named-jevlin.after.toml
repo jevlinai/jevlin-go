@@ -1,0 +1,4 @@
+default_permissions = "jevlin"
+
+[permissions.jevlin]
+extends = ":workspace"

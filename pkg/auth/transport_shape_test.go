@@ -2,10 +2,11 @@ package auth
 
 // D1c's second review, applied to this package's two clients: naming
 // internal/netdial's shared seam must not change what discoveryDialer and
-// dpopDialer actually dial with. Both built a bare Transport{Proxy: nil}
-// with no DialContext before this — net/http's zero net.Dialer, no
-// explicit connect timeout, a 15s default keep-alive — and must still,
-// against a fresh zero-value *http.Transport (except DialContext).
+// dpopDialer actually dial with. Both built a bare Transport with no
+// DialContext before this — net/http's zero net.Dialer, no explicit connect
+// timeout, a 15s default keep-alive — and must still, against a fresh
+// *http.Transport whose one set field is the AS proxy rule (proxy.go's
+// loopbackProxy, compared by function).
 
 import (
 	"net"
@@ -25,7 +26,7 @@ func TestProductionTransportsMatchTheirPreD1cShapeExactly(t *testing.T) {
 		if !ok {
 			t.Fatalf("Discoverer's client Transport is a %T, not *http.Transport", d.client.Transport)
 		}
-		networkfence.AssertTransportFieldsMatch(t, transport, &http.Transport{})
+		networkfence.AssertTransportFieldsMatch(t, transport, &http.Transport{Proxy: loopbackProxy})
 		assertZeroValueDialer(t, discoveryDialer)
 	})
 	t.Run("DPoP base transport (was a bare Transport)", func(t *testing.T) {
@@ -34,7 +35,7 @@ func TestProductionTransportsMatchTheirPreD1cShapeExactly(t *testing.T) {
 		if !ok {
 			t.Fatalf("dpopTransport's base is a %T, not *http.Transport", dt.base)
 		}
-		networkfence.AssertTransportFieldsMatch(t, transport, &http.Transport{})
+		networkfence.AssertTransportFieldsMatch(t, transport, &http.Transport{Proxy: loopbackProxy})
 		assertZeroValueDialer(t, dpopDialer)
 	})
 }

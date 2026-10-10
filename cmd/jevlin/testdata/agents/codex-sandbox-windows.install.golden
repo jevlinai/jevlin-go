@@ -1,0 +1,21 @@
+{
+  "writes": [
+    {
+      "surface": "Codex",
+      "path": "/home/u/.codex/skills/jevlin/SKILL.md",
+      "mode": 384,
+      "why": "skill",
+      "content": "\u003cSKILL.md, rendered for this OS; see testdata/hosts/*.golden\u003e"
+    },
+    {
+      "surface": "Codex",
+      "path": "/home/u/.codex/config.toml",
+      "mode": 384,
+      "why": "sandbox: writable_roots so searches can record; no network: Codex asks before a search reaches the router",
+      "content": "# \u003e\u003e\u003e jevlin agents install \u003e\u003e\u003e\n# Lets jevlin's search record its mining observation under your\n# jevlin home. Without this, Codex's default sandbox blocks the\n# write and searches earn nothing. No network: Codex asks first.\n[sandbox_workspace_write]\nwritable_roots = [\"TESTHOME/intake\", \"TESTHOME/sessions\", \"TESTHOME/spool\", \"TESTHOME/state\"]\n# \u003c\u003c\u003c jevlin agents install \u003c\u003c\u003c\n"
+    }
+  ],
+  "notes": [
+    "Codex: on Windows no permission profile has been seen to work in Codex's sandbox, so none is written and the network is not opened: a search there needs Codex's approval to reach the router"
+  ]
+}

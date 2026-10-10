@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -76,9 +77,15 @@ type preferenceTarget interface {
 // statusNoter is the optional capability: lines a host adds under its own
 // row in `agents status`, about something only it can read. Codex is the one
 // host with any: whether it has an approval on record for the hooks.
+// hostNoter is the other optional capability: lines about the host's own
+// settings, printed under its row whatever this installation's state there.
+type hostNoter interface {
+	HostNotes(ops agentOps, paths agentPaths, entry binEntry, getenv func(string) string) []string
+}
+
 type statusNoter interface {
 	installTarget
-	StatusNotes(ops agentOps, paths agentPaths, entry binEntry) []string
+	StatusNotes(ops agentOps, paths agentPaths, entry binEntry, getenv func(string) string) []string
 }
 
 // ── the shell each host runs ─────────────────────────────────────────────
@@ -557,26 +564,47 @@ func (codexTarget) Detect(ops agentOps, _ agentPaths, _ func(string) string) str
 	return detectCommand(ops, "codex")
 }
 
-// Codex has three parts — a skill, the sandbox block and, where a live run
+// Codex has three parts — a skill, its config.toml and, where a live run
 // established what runs them, its hooks — and "already installed" is a claim
 // about all of them. It used to be decided by the skill alone and printed
 // before the block was even planned, so a host whose block is another
 // installation's was reported as already installed AND left in place, in one
 // plan, for one host. Every part answers now, and the line is printed only
 // when none of them had anything to do.
+//
+// The config is planned first, into a plan of its own, because it decides
+// whether the other two are written at all: a participant who declines the
+// change to their own settings gets nothing for Codex, and one whose config
+// is another installation's gets nothing either (codex_plan.go). Its lines
+// are appended after the skill's, so the plan reads in the order it always
+// did.
 func (t codexTarget) PlanInstall(ops agentOps, paths agentPaths, entry binEntry, getenv func(string) string, p *agentPlan) {
+	var cp agentPlan
+	cfg := planCodexConfig(ops, t.Label(), paths.codexConfig, entry, getenv, codexSandboxOS, &cp)
+	p.fallback = append(p.fallback, cp.fallback...)
+	if cp.aborted != "" {
+		// Only a safety write can be in cp now; the caller commits it and
+		// nothing else.
+		p.aborted = cp.aborted
+		p.writes = append(p.writes, cp.writes...)
+		return
+	}
+	p.unanswerable = p.unanswerable || cp.unanswerable
+	if cfg.scope == codexNothing {
+		// A safety write closing our own block's network may be planned
+		// even here; it is ours whatever the answer was.
+		p.writes = append(p.writes, cp.writes...)
+		p.notes = append(p.notes, cp.notes...)
+		p.refused = append(p.refused, cp.refused...)
+		return
+	}
 	prefer := readPrefer(ops, entry)
 	skillChanged, skillLeft := planSkill(ops, t, paths.codexSkill, entry, prefer, "", p)
-	blockChanged, blockLeft := false, false
-	if roots := codexSandboxRoots(entry, getenv); len(roots) > 0 {
-		blockChanged, blockLeft = planCodexSandbox(ops, t.Label(), paths.codexConfig, roots, entry, getenv, p)
-	} else if why := codexSandboxProblem(entry, getenv); why != "" {
-		p.notes = append(p.notes, t.Label()+": not widening the sandbox: "+why)
-	} else {
-		p.notes = append(p.notes, t.Label()+": shell commands run sandboxed; if searches record nothing, allow this command network access and let it write to your jevlin home")
-	}
+	p.writes = append(p.writes, cp.writes...)
+	p.notes = append(p.notes, cp.notes...)
+	p.refused = append(p.refused, cp.refused...)
 	hooksChanged := t.planHooks(ops, paths, entry, runtime.GOOS, p)
-	if !skillChanged && !skillLeft && !blockChanged && !blockLeft && !hooksChanged {
+	if !skillChanged && !skillLeft && !cfg.changed && !cfg.left && !hooksChanged {
 		p.skipped = append(p.skipped, t.Label()+": already installed")
 	}
 }
@@ -677,26 +705,99 @@ func (t codexTarget) PlanUninstall(ops agentOps, paths agentPaths, entry binEntr
 			p.notes = append(p.notes, t.Label()+": hooks listed after jevlin's in "+paths.codexHooks+" move up one place, and Codex keys an approval by place; it may ask you to review them again")
 		}
 	}
-	if existing, mode, err := readWithMode(ops, paths.codexConfig); err == nil && existing != nil {
-		switch r := removeOurSandboxBlock(existing, entry, getenv); {
-		case r.had && r.ours:
-			if len(r.kept) > 0 {
-				p.notes = append(p.notes, fmt.Sprintf("%s: keeping %s in %s that jevlin did not write: %s",
-					t.Label(), tables(len(r.kept)), paths.codexConfig, strings.Join(r.kept, ", ")))
-			}
-			if len(r.dropped) > 0 {
-				p.notes = append(p.notes, droppedKeysNote(t.Label(), paths.codexConfig, r.dropped))
-			}
-			planWrite(ops, t.Label(), paths.codexConfig, r.next, mode, "remove sandbox block", p)
+	if existing, mode, err := readCodexConfig(ops, paths.codexConfig); err == nil && existing != nil {
+		if planCodexConfigRemoval(ops, t.Label(), paths.codexConfig, existing, mode, entry, getenv, p) {
 			removed = true
-		case r.had:
-			p.notes = append(p.notes, t.Label()+": left the sandbox block in "+paths.codexConfig+": "+r.why)
 		}
 	}
 	if !removed {
 		p.skipped = append(p.skipped, t.Label()+": not installed")
 	}
 }
+
+// planCodexConfigRemoval plans uninstall's one edit to Codex's config.toml:
+// our region and the participant's lines it implies, as one unit.
+//
+// The region is attributed by its roots (codexRootsOwner), and the lines
+// install changed outside it go back with it, whichever config path their
+// marks spell, because they are its lines: a default_permissions naming our
+// profile without the profile is a file Codex refuses, and a network_proxy
+// turned back off beside a region that stays would open the region's
+// network to every host. So when the region stays, its lines stay; and the
+// region never goes while a default_permissions line would still name it.
+// Without a region, a marked line goes back only when its mark names this
+// installation's config file.
+func planCodexConfigRemoval(ops agentOps, label, path string, existing []byte, mode os.FileMode, entry binEntry, getenv func(string) string, p *agentPlan) bool {
+	next := existing
+	var whys []string
+	r := removeOurSandboxBlock(existing, entry, getenv)
+	var m codexMarkRemoval
+	switch {
+	case r.had && r.ours:
+		if len(r.kept) > 0 {
+			p.notes = append(p.notes, fmt.Sprintf("%s: keeping %s in %s that jevlin did not write: %s",
+				label, tables(len(r.kept)), path, strings.Join(r.kept, ", ")))
+		}
+		if len(r.dropped) > 0 {
+			p.notes = append(p.notes, droppedKeysNote(label, path, r.dropped))
+		}
+		next = r.next
+		whys = append(whys, "remove jevlin's block")
+		m = restoreCodexMarks(string(next), true, entry)
+	case r.had && r.unowned:
+		p.notes = append(p.notes, label+": left the jevlin block in "+path+", and the lines of yours it changed: "+r.why)
+		return false
+	case r.had:
+		// This installation's block, left: Codex still runs every command
+		// under jevlin's profile, so the uninstall did not do what it was
+		// asked, and does not exit 0 as though it had.
+		p.refused = append(p.refused, label+": left the jevlin block in "+path+", and the lines of yours it changed: "+r.why+codexPutBackAdvice(string(existing))+"; "+codexStillUnder)
+		return false
+	default:
+		m = restoreCodexMarks(string(next), false, entry)
+	}
+	switch {
+	case m.why != "" && r.had:
+		p.refused = append(p.refused, label+": left jevlin's block and the lines of yours it changed in "+path+": "+m.why+"; "+codexStillUnder)
+		return false
+	case m.why != "":
+		// No block: what stays is a line of the participant's that jevlin
+		// changed, not a profile Codex runs under.
+		p.refused = append(p.refused, label+": left the lines of yours jevlin changed in "+path+": "+m.why)
+		return false
+	case m.changed:
+		next = m.next
+		if len(m.restored) > 0 {
+			whys = append(whys, "restore "+strings.Join(m.restored, ", ")+" as you had it")
+		}
+		if len(m.kept) > 0 {
+			whys = append(whys, "take jevlin's mark off "+strings.Join(m.kept, ", ")+", which you changed")
+		}
+	}
+	for _, k := range m.kept {
+		p.notes = append(p.notes, fmt.Sprintf("%s: %s in %s was changed after jevlin set it, so it is left as you have it, without jevlin's mark", label, k, path))
+	}
+	for _, other := range m.foreign {
+		noteOnce(p, label+": the lines another installation marked in "+path+" are "+leftForeign(describeOther(nil, []string{other}, refFor(entry))))
+	}
+	if doc, ok := decodeTOMLDoc(string(next)); ok && r.had && r.ours {
+		if dp, _ := doc["default_permissions"].(string); dp == codexProfileName {
+			if _, defined := lookupTOMLPath(doc, "permissions", codexProfileName); !defined {
+				p.refused = append(p.refused, fmt.Sprintf("%s: left the jevlin block in %s: default_permissions would still name %q once the block was gone, which Codex refuses; set default_permissions to the profile you want and run this again; %s", label, path, codexProfileName, codexStillUnder))
+				return false
+			}
+		}
+	}
+	if len(whys) == 0 {
+		return false
+	}
+	_, refused := planCodexWrite(ops, label, path, existing, next, "", nil, mode, strings.Join(whys, "; "), p)
+	return !refused
+}
+
+// codexStillUnder ends every sentence that leaves this installation's own
+// block in place.
+const codexStillUnder = "until it is gone, Codex runs its commands under jevlin's profile"
 
 // sandboxRemoval is what uninstall concluded about Codex's config.toml.
 type sandboxRemoval struct {
@@ -705,55 +806,54 @@ type sandboxRemoval struct {
 	ours bool     // it is this installation's, and next may be written
 	kept []string // tables inside the markers this client did not write
 	why  string   // why it was left, when ours is false
+	// unowned: it was left because it is not this installation's (another
+	// installation's, or naming none), which is not a failure of this one.
+	unowned bool
 	// dropped is the keys inside OUR table the renderer does not write,
 	// which go with the table and are named in the plan (keysWeDidNotWrite).
 	dropped []string
 }
 
-// removeOurSandboxBlock takes out the marked [sandbox_workspace_write] table
-// only when it is this installation's, and only that table.
+// removeOurSandboxBlock takes out the marked region only when it is this
+// installation's, and only our own lines in it.
 //
-// Attribution is H5's, unchanged: the block names no binary and no config —
-// it names DIRECTORIES — so its writable roots are read, and roots that do
-// not lie under this installation's home belong to another installation
-// whose searches would go silent if this one removed them (dropin-miner#73).
+// Attribution is H5's, unchanged: the region names no binary and no config —
+// it names DIRECTORIES — so its roots are read, the writable_roots of the
+// old table or the filesystem keys of the profile, and roots that are not
+// this installation's belong to another installation whose searches would go
+// silent if this one removed them (dropin-miner#73).
 //
-// What is new is dropin-miner#82. Codex appends its own tables to the end of
-// config.toml, which put them INSIDE our markers whenever our block was last
-// — which install made it — and v0.2.9 deleted the marker-to-marker byte
-// range. The tester's uninstall left a 0-byte file: folder trust and
-// `[windows] sandbox = "unelevated"` gone, and the following setup restored
-// only our own block. So the tables inside the markers are separated by who
-// wrote them, ours go, and every other one survives in its original bytes,
-// appended below where the block was.
+// What is inside the markers is split by who wrote it (codex_region.go):
+// Codex appends its own tables into a block that is last, and writes root
+// keys and a [features] table into one that is not. Ours go; every other
+// table survives in its original bytes at the end of the file, and every
+// other root key where the region was (dropin-miner#82, C1).
 func removeOurSandboxBlock(existing []byte, entry binEntry, getenv func(string) string) sandboxRemoval {
-	stripped, had := removeMarkedBlock(existing)
-	if !had {
+	r := removeCodexRegion(existing)
+	if !r.had {
 		return sandboxRemoval{next: existing}
 	}
-	_, region, _, _ := markedRegion(existing)
-	contents, readable := splitCodexBlock(region)
-	if !readable {
-		return sandboxRemoval{next: existing, had: true,
-			why: "it cannot be read as TOML tables, so which of them are ours cannot be decided; remove it by hand"}
+	if r.why != "" {
+		// A block this client cannot take out is still attributed first: if
+		// its roots are another installation's, it is that one's to deal
+		// with, and this uninstall neither refuses over it nor advises
+		// removing it.
+		if len(r.roots) > 0 {
+			if ours, other, _ := codexRootsOwner(r.roots, entry, getenv); !ours && other != "" {
+				return sandboxRemoval{next: existing, had: true, why: belongsTo(other), unowned: true}
+			}
+		}
+		return sandboxRemoval{next: existing, had: true, why: r.why}
 	}
-	// The one reading install refuses by (codexBlockOwner), so a block this
+	// The one reading install refuses by (codexRootsOwner), so a block this
 	// installation's install left cannot be one its uninstall then removes.
-	// Where the owner can be named, the reason is the sentence the skill's
-	// own refusal uses; where it cannot, it says what it could not read.
-	if ours, other, why := codexBlockOwner(contents.oursText(), entry, getenv); !ours {
+	if ours, other, why := codexRootsOwner(r.roots, entry, getenv); !ours {
 		if other != "" {
 			why = belongsTo(other)
 		}
-		return sandboxRemoval{next: existing, had: true, why: why}
+		return sandboxRemoval{next: existing, had: true, why: why, unowned: true}
 	}
-	return sandboxRemoval{
-		next:    appendTables(stripped, contents.foreignText()),
-		had:     true,
-		ours:    true,
-		kept:    contents.foreignNames(),
-		dropped: keysWeDidNotWrite(contents.oursText()),
-	}
+	return sandboxRemoval{next: r.next, had: true, ours: true, kept: r.kept, dropped: r.dropped}
 }
 
 // markedSandboxRoots reads the writable_roots out of OUR table inside the
@@ -813,11 +913,26 @@ func (t codexTarget) Status(ops agentOps, paths agentPaths, entry binEntry) targ
 
 // StatusNotes says how far Codex has approved this installation's hooks, on
 // an OS where they are written at all.
-func (t codexTarget) StatusNotes(ops agentOps, paths agentPaths, entry binEntry) []string {
+//
+// Before that, on macOS and Linux, what the sandbox lets Codex's commands
+// reach (codexPermissionLines): the profile, its hosts against what the
+// config names now, and whether the proxy that enforces them is on.
+func (t codexTarget) StatusNotes(ops agentOps, paths agentPaths, entry binEntry, getenv func(string) string) []string {
 	if _, err := codexHooksFor(t, entry, runtime.GOOS); err != nil {
 		return nil
 	}
 	return codexApprovalLines(ops, paths, entry)
+}
+
+// HostNotes is what the sandbox lets Codex's commands reach, said whether
+// or not this installation's skill is there: a profile whose proxy table
+// Codex deleted leaves every command able to reach any host, and that is
+// worth saying to whoever asks.
+func (t codexTarget) HostNotes(ops agentOps, paths agentPaths, entry binEntry, getenv func(string) string) []string {
+	if codexSandboxOS == "windows" {
+		return nil
+	}
+	return codexPermissionLines(ops, paths.codexConfig, entry, getenv)
 }
 
 // codexApprovalEvent is an event as Codex spells it in an approval's key,

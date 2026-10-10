@@ -180,6 +180,13 @@ type agentOps struct {
 	stat       func(string) (os.FileInfo, error)
 	removeAll  func(string) error
 	isTerminal func() bool
+	// consent asks the participant a question that only a typed line can
+	// answer, and returns that line; an error is no line at all (hard
+	// invariant 18). nil means there is nobody to ask: no terminal, or a
+	// caller that never asks. -yes does not set it, because the questions
+	// it asks are about a participant's own settings, which -yes never
+	// answers.
+	consent func(question string) (string, error)
 	// binaryLocation vets the binary install records; nil means
 	// checkBinaryLocation.
 	binaryLocation binaryLocationCheck
@@ -372,6 +379,11 @@ type agentWrite struct {
 	contents []byte
 	mode     os.FileMode
 	why      string
+	// safety marks a write that closes a network this client opened
+	// earlier (codexSafeForm). It is committed even when a question went
+	// unanswered and nothing else is, because leaving it is what the
+	// participant could not have chosen.
+	safety bool
 	// slot marks a file the host has exactly one of -- a skill, opencode's
 	// plugin, Pi's extension. It is set by the two planners that go through
 	// leaveToItsOwner, because a single slot is precisely what that rule is
@@ -397,6 +409,18 @@ type agentPlan struct {
 	skipped []string
 	refused []string
 	notes   []string
+	// fallback is the safety form of a write in writes that is not itself
+	// a safety write: closing our own open block, committed in its place
+	// when the plan as a whole is not (no terminal, an unanswered question).
+	fallback []agentWrite
+	// unanswerable is set when a question only a terminal can answer was
+	// due and there was no terminal: the command exits 2, as for an
+	// unanswered question, after writing what needed no answer.
+	unanswerable bool
+	// aborted is set when a question asked while planning got no typed
+	// line. The command then stops, writes nothing and exits non-zero
+	// (hard invariant 18); the sentence is what it says.
+	aborted string
 }
 
 // removedPaths is the plan's removals as plain paths, for the callers that
@@ -432,7 +456,8 @@ var agentsUsage = `usage: jevlin agents install|status|uninstall [-config file] 
               the agent does the same)
   -client     act on this agent only (` + targetIDs(targetHost) + `); repeatable
   -dry-run    print the plan, change nothing
-  -yes        do not ask before writing
+  -yes        answer Proceed? with yes; a question about a Codex setting of
+              your own is still asked, and with no terminal is not answered
 `
 
 func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
@@ -454,7 +479,7 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 	var clients multiFlag
 	fs.Var(&clients, "client", "act on this agent only; repeatable")
 	dryRun := fs.Bool("dry-run", false, "print the plan and change nothing")
-	yes := fs.Bool("yes", false, "do not ask before writing")
+	yes := fs.Bool("yes", false, "answer Proceed? with yes; a question about a Codex setting of your own is still asked")
 	if err := fs.Parse(rest); err != nil {
 		return exitUsage
 	}
@@ -486,11 +511,29 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 		return exitOK
 	}
 
+	// One reader for every question this command asks: a pipe delivers
+	// several answers in one chunk, and a second reader over the same stdin
+	// would lose what the first buffered.
+	br := bufio.NewReader(stdin)
+	switch {
+	case sub == "install" && *dryRun:
+		// A dry run shows the question it would ask and plans the yes,
+		// which it never writes.
+		ops.consent = dryRunConsent(stdout)
+	case sub == "install" && ops.isTerminal():
+		// Codex's config may need a change to the participant's own
+		// settings, which only a typed yes allows; -yes is not that answer.
+		ops.consent = func(question string) (string, error) { return promptBufio(stdout, question, br) }
+	}
 	var plan agentPlan
 	if sub == "install" {
 		plan = buildInstallPlan(ops, paths, selected, entry, getenv)
 	} else {
 		plan = buildUninstallPlan(ops, paths, selected, entry, getenv)
+	}
+	if plan.aborted != "" {
+		fmt.Fprintf(stderr, "\njevlin agents: %s; %s\n", plan.aborted, safetyOutcome(commitSafetyOnly(ops, &plan, stdout, stderr)))
+		return exitUsage
 	}
 
 	fmt.Fprintf(stdout, "jevlin agents %s\n", sub)
@@ -513,6 +556,9 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 	}
 	if plan.empty() {
 		fmt.Fprintln(stdout, "\nnothing to do")
+		if plan.unanswerable {
+			return exitUsage
+		}
 		return refusedExit(&plan)
 	}
 	if *dryRun {
@@ -521,22 +567,29 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 	}
 	if !*yes {
 		if !ops.isTerminal() {
-			fmt.Fprintln(stderr, "jevlin agents: not a terminal, and -yes was not given; nothing was changed")
+			fmt.Fprintf(stderr, "jevlin agents: not a terminal, and -yes was not given; %s\n", safetyOutcome(commitSafetyOnly(ops, &plan, stdout, stderr)))
 			return exitUsage
 		}
 		// The opposite default to the mining question, and so the worse
 		// half of dropin-miner#81's shape: an empty line here means yes, which made
 		// an interrupt at this prompt write every agent file. Only a
 		// typed line decides now.
-		line, err := promptBufio(stdout, "\nProceed? [Y/n]: ", bufio.NewReader(stdin))
+		line, err := promptBufio(stdout, "\nProceed? [Y/n]: ", br)
 		if err != nil {
-			fmt.Fprintf(stderr, "\njevlin agents: %s; nothing was changed\n", promptAbortedReason)
+			fmt.Fprintf(stderr, "\njevlin agents: %s; %s\n", promptAbortedReason, safetyOutcome(commitSafetyOnly(ops, &plan, stdout, stderr)))
 			return exitUsage
 		}
 		switch strings.ToLower(strings.TrimSpace(line)) {
 		case "", "y", "yes":
 		default:
-			fmt.Fprintln(stdout, "left everything as it was")
+			// A no declines every write but the one that closes jevlin's
+			// own open network, as no answer does; the two still differ by
+			// exit code.
+			if commitSafetyOnly(ops, &plan, stdout, stderr) > 0 {
+				fmt.Fprintln(stdout, "left everything else as it was; only jevlin's own block in Codex's config was closed")
+			} else {
+				fmt.Fprintln(stdout, "left everything as it was")
+			}
 			return exitOK
 		}
 	}
@@ -545,12 +598,34 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 	if failures > 0 {
 		return exitTransport
 	}
+	// A run that refused something exits 1 (refusedExit), and its last
+	// line says so rather than "done" alone.
+	done := "done"
+	if len(plan.refused) > 0 {
+		done = fmt.Sprintf("done, except the %d refused above", len(plan.refused))
+	}
 	if sub == "install" {
-		fmt.Fprintln(stdout, "\ndone. Restart any agent that is already open; check with: jevlin agents status")
+		fmt.Fprintf(stdout, "\n%s. Restart any agent that is already open; check with: jevlin agents status\n", done)
 	} else {
-		fmt.Fprintln(stdout, "\ndone")
+		fmt.Fprintf(stdout, "\n%s\n", done)
+	}
+	if plan.unanswerable {
+		// A question only a terminal can answer was due, and there was
+		// none: the same exit as any unanswered question, whatever else
+		// was written beside it.
+		return exitUsage
 	}
 	return refusedExit(&plan)
+}
+
+// dryRunConsent prints the question a real run would ask, says it was not
+// asked, and plans the yes.
+func dryRunConsent(w io.Writer) func(string) (string, error) {
+	return func(question string) (string, error) {
+		fmt.Fprint(w, question)
+		fmt.Fprintln(w, "(dry run: not asked; the plan below is what a yes would write)")
+		return "y", nil
+	}
 }
 
 // agentsPrefer records the search default and rewrites every installed
@@ -1571,6 +1646,11 @@ func printAgentStatus(ops agentOps, paths agentPaths, entry binEntry, signals ma
 			found = "found: " + sig
 		}
 		fmt.Fprintf(stdout, "  %-12s %-26s %s\n", t.Label(), found, state)
+		if n, ok := t.(hostNoter); ok {
+			for _, line := range n.HostNotes(ops, paths, entry, getenv) {
+				fmt.Fprintf(stdout, "  %-12s %s\n", "", line)
+			}
+		}
 		if !st.installed {
 			continue
 		}
@@ -1580,7 +1660,7 @@ func printAgentStatus(ops agentOps, paths agentPaths, entry binEntry, signals ma
 		// What only the host can say about its own install, for a host that
 		// is this installation's: Codex's approval of the hooks.
 		if n, ok := t.(statusNoter); ok && !foreign {
-			for _, line := range n.StatusNotes(ops, paths, entry) {
+			for _, line := range n.StatusNotes(ops, paths, entry, getenv) {
 				fmt.Fprintf(stdout, "  %-12s %s\n", "", line)
 			}
 		}
@@ -1976,7 +2056,7 @@ func cleanDirs(dirs []string) []string {
 // installed" over a host whose sandbox belongs to somebody else — which is
 // exactly what it did, both lines at once, until this returned an answer.
 func planCodexSandbox(ops agentOps, label, path string, roots []string, entry binEntry, getenv func(string) string, p *agentPlan) (changed, left bool) {
-	existing, mode, err := readWithMode(ops, path)
+	existing, mode, err := readCodexConfig(ops, path)
 	if err != nil {
 		p.refused = append(p.refused, fmt.Sprintf("%s: cannot read %s: %v", label, path, err))
 		return false, true
@@ -1985,11 +2065,14 @@ func planCodexSandbox(ops agentOps, label, path string, roots []string, entry bi
 	if bytes.Contains(stripped, []byte("["+codexSandboxTable+"]")) {
 		p.refused = append(p.refused, fmt.Sprintf(
 			"%s: %s already defines [%s]; add these settings to it by hand so searches can record:\n%s",
-			label, path, codexSandboxTable, indentBlock(sandboxSettings(roots))))
+			label, path, codexSandboxTable, indentBlock(codexWindowsSettings(roots))))
 		return false, true
 	}
 
-	want := codexSandboxBlock(roots)
+	// In the participant's line ending, as the profile is
+	// (installCodexRegion), so a CRLF file is not given LF lines and the
+	// block read back compares equal on the next run.
+	want := withLineEnding(codexSandboxBlock(roots), fileLineEnding(string(stripped)))
 	if pre, region, post, ok := markedRegion(existing); ok {
 		have, readable := splitCodexBlock(region)
 		if !readable {
@@ -2013,6 +2096,9 @@ func planCodexSandbox(ops agentOps, label, path string, roots []string, entry bi
 			noteOnce(p, label+": "+leftForeign(other))
 			return false, true
 		}
+		if n := staleRootsNote(label, path, markedSandboxRoots(have.oursText()), entry, getenv); n != "" {
+			p.notes = append(p.notes, n)
+		}
 		if extra := keysWeDidNotWrite(have.oursText()); len(extra) > 0 {
 			p.notes = append(p.notes, droppedKeysNote(label, path, extra))
 		}
@@ -2021,10 +2107,23 @@ func planCodexSandbox(ops agentOps, label, path string, roots []string, entry bi
 				label, tables(len(have.foreign)), path, strings.Join(have.foreignNames(), ", ")))
 		}
 		next := replaceBlockInPlace(pre, want, have.foreignText(), post)
-		return planWrite(ops, label, path, next, mode, "sandbox: network + writable_roots so searches can record", p), false
+		changed, refused := planCodexWrite(ops, label, path, existing, next, string(stripped), []string{codexSandboxTable}, mode, codexWindowsWhy, p)
+		return changed, refused
 	}
-	next := appendMarkedBlock(stripped, want)
-	return planWrite(ops, label, path, next, mode, "sandbox: network + writable_roots so searches can record", p), false
+	// Spliced on with no byte of its own, as the profile is, so uninstall's
+	// exact removal gives the file back as it was.
+	next := insertAtEnd(string(stripped), want)
+	changed, refused := planCodexWrite(ops, label, path, existing, next, string(stripped), []string{codexSandboxTable}, mode, codexWindowsWhy, p)
+	return changed, refused
+}
+
+// insertAtEnd splices block onto the end of file, ending file's last line
+// first in block's own ending when it has none.
+func insertAtEnd(file string, block []byte) []byte {
+	if strings.HasSuffix(string(block), "\r\n") && file != "" && !strings.HasSuffix(file, "\n") {
+		file += "\r"
+	}
+	return []byte(withFinalNewline(file) + string(block))
 }
 
 // droppedKeysNote is the one sentence both plans use for a key a participant
@@ -2060,6 +2159,13 @@ func tables(n int) string {
 // no two of them can come to disagree about which table is ours (dropin-miner#82).
 const codexSandboxTable = "sandbox_workspace_write"
 
+// codexWindowsWhy is the plan line for the Windows block (D6).
+const codexWindowsWhy = "sandbox: writable_roots so searches can record; no network: Codex asks before a search reaches the router"
+
+// sandboxSettings is the table every version before the permission profile
+// wrote, network_access included. Nothing renders it any more; it is the
+// definition of which keys inside an old block are ours (keysWeDidNotWrite),
+// so a migration does not call network_access a key the participant added.
 func sandboxSettings(roots []string) string {
 	quoted := make([]string, len(roots))
 	for i, r := range roots {
@@ -2070,10 +2176,10 @@ func sandboxSettings(roots []string) string {
 
 func codexSandboxBlock(roots []string) []byte {
 	return []byte(agentsMarkerBegin + "\n" +
-		"# Lets jevlin's search reach the router and record its mining\n" +
-		"# observation under your jevlin home. Without this, Codex's default\n" +
-		"# sandbox blocks the write and searches earn nothing.\n" +
-		sandboxSettings(roots) +
+		"# Lets jevlin's search record its mining observation under your\n" +
+		"# jevlin home. Without this, Codex's default sandbox blocks the\n" +
+		"# write and searches earn nothing. No network: Codex asks first.\n" +
+		codexWindowsSettings(roots) +
 		agentsMarkerEnd + "\n")
 }
 
@@ -2125,17 +2231,9 @@ func replaceBlockInPlace(pre string, want []byte, foreign, post string) []byte {
 
 func removeMarkedBlock(b []byte) ([]byte, bool) {
 	s := string(b)
-	i := strings.Index(s, agentsMarkerBegin)
-	if i < 0 {
+	i, _, end, ok := markerSpan(s)
+	if !ok {
 		return b, false
-	}
-	j := strings.Index(s[i:], agentsMarkerEnd)
-	if j < 0 {
-		return b, false
-	}
-	end := i + j + len(agentsMarkerEnd)
-	if end < len(s) && s[end] == '\n' {
-		end++
 	}
 	pre := strings.TrimRight(s[:i], "\n")
 	post := s[end:]
@@ -2160,19 +2258,110 @@ func removeMarkedBlock(b []byte) ([]byte, bool) {
 // ended up inside our markers and the byte-range delete took them with it.
 func markedRegion(b []byte) (pre, region, post string, ok bool) {
 	s := string(b)
-	i := strings.Index(s, agentsMarkerBegin)
-	if i < 0 {
+	i, j, end, ok := markerSpan(s)
+	if !ok {
 		return "", "", "", false
 	}
-	j := strings.Index(s[i:], agentsMarkerEnd)
-	if j < 0 {
-		return "", "", "", false
+	return s[:i], s[i+len(agentsMarkerBegin) : j], s[end:], true
+}
+
+// markerSpan finds our block: begin is where the begin marker's line starts,
+// endLine where the end marker's line starts, after the byte past the end
+// marker's line ending. A marker counts only as a whole line of its own —
+// nothing before it, nothing after it but spaces and the line ending — and
+// only outside a multi-line string. A participant's comment that happens to
+// end in our marker text, or our block's text pasted into a multi-line string, is
+// not our block: the first stranded every later install and uninstall, and
+// the second was rewritten by uninstall.
+func markerSpan(s string) (begin, endLine, after int, ok bool) {
+	begin = -1
+	for _, l := range linesOutsideTOMLStrings(s) {
+		text := strings.TrimRight(s[l.start:l.end], " \t\r")
+		switch {
+		case begin < 0 && text == agentsMarkerBegin:
+			begin = l.start
+		case begin >= 0 && text == agentsMarkerEnd:
+			after = l.end
+			if after < len(s) && s[after] == '\n' {
+				after++
+			}
+			return begin, l.start, after, true
+		}
 	}
-	end := i + j + len(agentsMarkerEnd)
-	if end < len(s) && s[end] == '\n' {
-		end++
+	return 0, 0, 0, false
+}
+
+// textLine is one line of a text by byte offsets, without its "\n".
+type textLine struct{ start, end int }
+
+// linesOutsideTOMLStrings is every line of s that begins outside a
+// multi-line string. It reads TOML's four string forms, comments and escapes
+// just far enough to know where a triple-quoted string opens and closes; a line
+// that starts inside one is not a line of the file's structure.
+func linesOutsideTOMLStrings(s string) []textLine {
+	const (
+		normal = iota
+		mlBasic
+		mlLiteral
+	)
+	var out []textLine
+	state, lineStart, startState := normal, 0, normal
+	for i := 0; i <= len(s); i++ {
+		if i == len(s) || s[i] == '\n' {
+			if startState == normal && (i > lineStart || i < len(s)) {
+				out = append(out, textLine{lineStart, i})
+			}
+			lineStart, startState = i+1, state
+			continue
+		}
+		switch state {
+		case normal:
+			switch {
+			case s[i] == '#':
+				for i+1 < len(s) && s[i+1] != '\n' {
+					i++
+				}
+			case strings.HasPrefix(s[i:], `"""`):
+				state, i = mlBasic, i+2
+			case strings.HasPrefix(s[i:], `'''`):
+				state, i = mlLiteral, i+2
+			case s[i] == '"':
+				i = skipOneLineString(s, i, '"', true)
+			case s[i] == '\'':
+				i = skipOneLineString(s, i, '\'', false)
+			}
+		case mlBasic:
+			switch {
+			case s[i] == '\\':
+				i++
+			case strings.HasPrefix(s[i:], `"""`):
+				state, i = normal, i+2
+			}
+		case mlLiteral:
+			if strings.HasPrefix(s[i:], `'''`) {
+				state, i = normal, i+2
+			}
+		}
 	}
-	return s[:i], s[i+len(agentsMarkerBegin) : i+j], s[end:], true
+	return out
+}
+
+// skipOneLineString returns the index of the quote that closes the string
+// opened at s[open], or the last byte of the line when it does not close.
+func skipOneLineString(s string, open int, quote byte, escapes bool) int {
+	for i := open + 1; i < len(s) && s[i] != '\n'; i++ {
+		switch {
+		case escapes && s[i] == '\\':
+			i++
+		case s[i] == quote:
+			return i
+		}
+	}
+	end := strings.IndexByte(s[open:], '\n')
+	if end < 0 {
+		return len(s) - 1
+	}
+	return open + end - 1
 }
 
 // tomlSection is one top-level table inside a region of TOML text, in its
@@ -2483,15 +2672,20 @@ func onlyComments(s string) bool {
 // lines that continue it would re-parent those keys; appended last, nothing
 // can be re-parented, because nothing follows.
 func appendTables(base []byte, tables string) []byte {
-	tables = strings.TrimRight(tables, "\n")
+	// In the file's own line ending, so a CRLF file gains no LF line.
+	eol := fileLineEnding(string(base))
+	if !strings.Contains(string(base), "\n") {
+		eol = fileLineEnding(tables)
+	}
+	tables = strings.TrimRight(tables, "\r\n")
 	if tables == "" {
 		return base
 	}
-	head := strings.TrimRight(string(base), "\n")
+	head := strings.TrimRight(string(base), "\r\n")
 	if head == "" {
-		return []byte(tables + "\n")
+		return []byte(tables + eol)
 	}
-	return []byte(head + "\n\n" + tables + "\n")
+	return []byte(head + eol + eol + tables + eol)
 }
 
 func appendMarkedBlock(b, block []byte) []byte {
@@ -2586,6 +2780,33 @@ func printPlan(p *agentPlan, home string, w io.Writer) {
 	for _, n := range p.notes {
 		fmt.Fprintf(w, "  %s\n", n)
 	}
+}
+
+// commitSafetyOnly commits the plan's safety writes and nothing else — the
+// writes marked safety, and the safety form of any write that is not
+// (agentPlan.fallback) — and says how many it wrote: what a run that
+// commits nothing else still does.
+func commitSafetyOnly(ops agentOps, p *agentPlan, stdout, stderr io.Writer) int {
+	var only agentPlan
+	for _, w := range p.writes {
+		if w.safety {
+			only.writes = append(only.writes, w)
+		}
+	}
+	only.writes = append(only.writes, p.fallback...)
+	if failures := commitPlan(ops, &only, stdout, stderr); failures > 0 {
+		return len(only.writes) - failures
+	}
+	return len(only.writes)
+}
+
+// safetyOutcome is the end of the sentence a run that commits nothing else
+// says: either nothing changed, or only jevlin's own open block was closed.
+func safetyOutcome(wrote int) string {
+	if wrote > 0 {
+		return "only jevlin's own block in Codex's config was closed, and nothing else was changed"
+	}
+	return "nothing was changed"
 }
 
 func commitPlan(ops agentOps, p *agentPlan, stdout, stderr io.Writer) int {
