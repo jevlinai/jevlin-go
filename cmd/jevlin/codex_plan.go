@@ -482,14 +482,40 @@ func codexQuestion(label, path, home string, facts codexFacts, profile codexProf
 // install would put them.
 func codexByHand(file, before, after string, profile codexProfile, region codexRegion, had bool) string {
 	var b strings.Builder
+	replaceInPlace := had && region.atTop && !region.legacy && !region.damaged && !region.hasForeign()
+	// A line of the participant's that Codex wrote inside our block is put
+	// back from it below, already changed as a yes changes it; a separate
+	// "replace the line" for it would edit a line the next step deletes,
+	// and the put-back would then restore the unchanged one.
+	inBlock := map[string]bool{}
+	if had && !replaceInPlace {
+		for _, l := range strings.Split(region.foreignRoot+region.foreignText(), "\n") {
+			inBlock[strings.TrimRight(l, "\r")] = true
+		}
+	}
+	edited := map[string]string{}
 	was := strings.Split(before, "\n")
 	now := strings.Split(after, "\n")
 	if len(was) == len(now) {
 		for i := range was {
-			if was[i] != now[i] {
-				fmt.Fprintf(&b, "replace the line\n%s\nwith\n%s\n", strings.TrimRight(was[i], "\r"), strings.TrimRight(now[i], "\r"))
+			w, n := strings.TrimRight(was[i], "\r"), strings.TrimRight(now[i], "\r")
+			if w == n {
+				continue
+			}
+			edited[w] = n
+			if !inBlock[w] {
+				fmt.Fprintf(&b, "replace the line\n%s\nwith\n%s\n", w, n)
 			}
 		}
+	}
+	putBack := func(text string) string {
+		lines := strings.Split(strings.TrimRight(strings.ReplaceAll(text, "\r\n", "\n"), "\n"), "\n")
+		for i, l := range lines {
+			if n, ok := edited[l]; ok {
+				lines[i] = n
+			}
+		}
+		return strings.Join(lines, "\n") + "\n"
 	}
 	block := string(codexProfileRegion(profile))
 	// Codex reads the comments directly over a table as that table's, and
@@ -503,17 +529,17 @@ func codexByHand(file, before, after string, profile codexProfile, region codexR
 	switch {
 	case !had:
 		fmt.Fprintf(&b, "and add these lines, markers included, %s:\n%s", first, block)
-	case region.atTop && !region.legacy && !region.damaged && !region.hasForeign():
+	case replaceInPlace:
 		fmt.Fprintf(&b, "and replace jevlin's block, from the line %s through the line %s, with these lines:\n%s", agentsMarkerBegin, agentsMarkerEnd, block)
 	default:
 		old := strings.ReplaceAll(file[len(region.pre):len(file)-len(region.post)], "\r\n", "\n")
 		fmt.Fprintf(&b, "and delete jevlin's block, which is these lines:\n%s", withFinalNewline(old))
 		fmt.Fprintf(&b, "then add these lines, markers included, %s:\n%s", first, block)
 		if region.foreignRoot != "" {
-			fmt.Fprintf(&b, "then put back these lines of yours from the deleted block, directly above the new one:\n%s", withFinalNewline(strings.ReplaceAll(region.foreignRoot, "\r\n", "\n")))
+			fmt.Fprintf(&b, "then put back these lines of yours from the deleted block, directly above the new one:\n%s", putBack(region.foreignRoot))
 		}
 		if t := region.foreignText(); t != "" {
-			fmt.Fprintf(&b, "then put back these lines of yours from the deleted block, directly below the new one:\n%s", withFinalNewline(strings.ReplaceAll(t, "\r\n", "\n")))
+			fmt.Fprintf(&b, "then put back these lines of yours from the deleted block, directly below the new one:\n%s", putBack(t))
 		}
 	}
 	return b.String()

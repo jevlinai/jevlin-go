@@ -778,3 +778,43 @@ func TestABlockIsWrittenInTheFilesLineEnding(t *testing.T) {
 		})
 	}
 }
+
+// Codex's app server writes sandbox_mode inside our markers, under our
+// default_permissions line (captured on 0.158.0). The by-hand text deletes
+// the block and puts that line back above the new one already commented
+// out and marked, as a yes writes it; it said to edit the line, then
+// deleted it with the block, then put it back unchanged, so a participant
+// who followed it was told the same thing on every run. Followed
+// literally, the next install at a terminal asks nothing.
+func TestTheByHandTextPutsBackTheLineAsChanged(t *testing.T) {
+	m, ops, cfgPath := capturedWithHome(t, "appserver-sandbox-mode-inside-block.toml")
+	before := string(m.files[codexConfigPath])
+	if i := strings.Index(before, "sandbox_mode = \"workspace-write\"\n"); i < strings.Index(before, agentsMarkerBegin) {
+		t.Fatalf("the capture is not the shape it is named for:\n%s", before)
+	}
+	_, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-client", "codex", "-yes")
+	const lead = "By hand, with every line below copied exactly as printed, from its first character:\n"
+	i := strings.Index(out, lead)
+	if i < 0 {
+		t.Fatalf("no by-hand text:\n%s", out)
+	}
+	var lines []string
+	for _, l := range strings.Split(out[i+len(lead):], "\n") {
+		if strings.HasPrefix(l, "  ") || l == "nothing to do" || strings.HasPrefix(l, "wrote ") {
+			break
+		}
+		lines = append(lines, l)
+	}
+	for len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	followed := followByHand(t, string(m.files[codexConfigPath]), lines)
+	if !strings.Contains(followed, "# sandbox_mode = \"workspace-write\"  # jevlin agents install (") || strings.Contains(followed, "\nsandbox_mode = ") {
+		t.Fatalf("following the text left sandbox_mode active:\n%s", followed)
+	}
+	m.files[codexConfigPath] = []byte(followed)
+	m.terminal = true
+	if code, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK || strings.Contains(out, "[y/N]") {
+		t.Errorf("the next install still asks (exit %d):\n%s", code, out)
+	}
+}
