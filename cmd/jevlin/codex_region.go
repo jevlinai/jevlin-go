@@ -615,9 +615,19 @@ func removeCodexRegion(existing []byte) codexRegionRemoval {
 	}
 	// Exactly the region's bytes come out, and nothing else moves: install
 	// spliced it in without a byte of its own, so this is its inverse.
-	next := []byte(r.pre + r.foreignRoot + r.post)
+	// Tables Codex wrote inside the region stay where the region was, as
+	// they stand when Codex edits the file with no block of ours (a
+	// comment at the end of the file stays last); only when that would
+	// change what something means do they go to the end of the file.
+	candidates := [][]byte{[]byte(r.pre + r.foreignRoot + r.post)}
 	if len(r.foreign) > 0 {
-		next = appendTables(next, r.foreignText())
+		eol := fileLineEnding(string(existing))
+		// Without the blank lines that separated them from our tables.
+		inPlace := strings.Trim(r.foreignText(), "\r\n") + eol
+		candidates = [][]byte{
+			[]byte(r.pre + r.foreignRoot + inPlace + r.post),
+			appendTables([]byte(r.pre+r.foreignRoot+r.post), r.foreignText()),
+		}
 	}
 	// The reference is the file as it was, decoded, minus exactly the keys
 	// our own part defines: anything else that would change — a string
@@ -646,8 +656,14 @@ func removeCodexRegion(existing []byte) codexRegionRemoval {
 	if !ok {
 		return codexRegionRemoval{next: existing, had: true, roots: r.roots, why: "the file does not read as TOML, so the region cannot be taken out of it safely; remove it by hand"}
 	}
-	got, ok := decodeTOMLDoc(string(next))
-	if !ok || !tomlDocsEqual(expected, got) {
+	var next []byte
+	for _, c := range candidates {
+		if got, ok := decodeTOMLDoc(string(c)); ok && tomlDocsEqual(expected, got) {
+			next = c
+			break
+		}
+	}
+	if next == nil {
 		return codexRegionRemoval{next: existing, had: true, roots: r.roots, why: "taking the region out would change the meaning of something else in the file; remove it by hand"}
 	}
 	out := codexRegionRemoval{next: next, had: true, ours: true, kept: r.foreignNames(), roots: r.roots}

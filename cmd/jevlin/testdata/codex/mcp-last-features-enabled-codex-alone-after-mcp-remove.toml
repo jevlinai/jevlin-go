@@ -1,0 +1,5 @@
+model = "gpt-5"
+
+[features]
+chronicle = true
+# my note at the end of the file

@@ -425,6 +425,35 @@ func TestTheQuestionNamesTheValueBeforeOurFirstChange(t *testing.T) {
 	}
 }
 
+// Tables Codex wrote inside our block stay where the block was when
+// uninstall takes it out, as they stand when Codex edits the file with no
+// block of ours: a comment at the end of the file stays last. They went to
+// the end of the file, after that comment, with two blank lines before
+// them. Captured on 0.158.0: `codex features enable chronicle` writes
+// [features] inside our markers, and `codex mcp remove` then takes our end
+// marker; the same two commands with no block of ours give the reference.
+func TestUninstallKeepsCodexsTablesWhereOurBlockWas(t *testing.T) {
+	t.Run("a lost end marker", func(t *testing.T) {
+		m, ops, cfgPath := capturedWithHome(t, "mcp-last-features-enabled-after-mcp-remove.toml")
+		if code, out := runAgentsAt(t, ops, "", "uninstall", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK {
+			t.Fatalf("uninstall: exit %d\n%s", code, out)
+		}
+		if got, want := string(m.files[codexConfigPath]), codexConfigFixture(t, "mcp-last-features-enabled-codex-alone-after-mcp-remove.toml"); got != want {
+			t.Errorf("uninstall differs from Codex alone\n got %q\nwant %q", got, want)
+		}
+	})
+	t.Run("intact markers", func(t *testing.T) {
+		m, ops, cfgPath := capturedWithHome(t, "mcp-last-features-enabled.toml")
+		if code, out := runAgentsAt(t, ops, "", "uninstall", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK {
+			t.Fatalf("uninstall: exit %d\n%s", code, out)
+		}
+		got := string(m.files[codexConfigPath])
+		if !strings.HasPrefix(got, "model = \"gpt-5\"\n\n[features]\nchronicle = true\n") || !strings.HasSuffix(got, "# my note at the end of the file\n") {
+			t.Errorf("Codex's [features] is not where our block was, or the comment is not last:\n%q", got)
+		}
+	})
+}
+
 // appendTables writes the file's own line ending: a CRLF file gains no LF
 // line.
 func TestAppendTablesKeepsTheFilesLineEnding(t *testing.T) {
