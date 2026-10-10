@@ -366,7 +366,6 @@ func withFinalNewline(s string) string {
 	return s
 }
 
-
 // codexRegionChange is what installing the region did to the file, for the
 // plan's sentences.
 type codexRegionChange struct {
