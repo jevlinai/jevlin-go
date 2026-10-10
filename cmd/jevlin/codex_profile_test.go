@@ -233,6 +233,9 @@ func TestTheAllowedHostsAreDerivedFromTheConfig(t *testing.T) {
 		{"with an AS", "[mining]\nas_url = \"https://AS.example.invalid:8443\"\nchain_id = \"c\"\nslot_id = 1\n[miner]\nrouter_url = \"https://r.example.invalid\"\n", "agents-v1.nyks.dev|as.example.invalid|r.example.invalid"},
 		{"a platform of its own, base_url not dialed", "[platform]\nbase_url = \"https://portal.example.invalid\"\nagents_api_url = \"https://api.example.invalid\"\n[miner]\nrouter_url = \"https://r.example.invalid\"\n", "api.example.invalid|r.example.invalid"},
 		{"a loopback router is never listed", "[miner]\nrouter_url = \"http://127.0.0.1:18780\"\n", "agents-v1.nyks.dev"},
+		{"nor an unspecified address", "[miner]\nrouter_url = \"https://0.0.0.0:8443\"\n", "agents-v1.nyks.dev"},
+		{"nor the IPv6 unspecified address", "[miner]\nrouter_url = \"https://[::]:8443\"\n", "agents-v1.nyks.dev"},
+		{"nor a name under localhost", "[miner]\nrouter_url = \"https://router.localhost\"\n", "agents-v1.nyks.dev"},
 		{"nor a loopback AS or platform", "[platform]\nbase_url = \"http://localhost:9\"\nagents_api_url = \"http://[::1]:9\"\n[mining]\nas_url = \"http://127.0.0.2:9\"\nchain_id = \"c\"\nslot_id = 1\n[miner]\nrouter_url = \"https://r.example.invalid\"\n", "r.example.invalid"},
 		{"one host serving two roles", "[mining]\nas_url = \"https://r.example.invalid\"\nchain_id = \"c\"\nslot_id = 1\n[miner]\nrouter_url = \"https://r.example.invalid\"\n", "agents-v1.nyks.dev|r.example.invalid"},
 	} {
