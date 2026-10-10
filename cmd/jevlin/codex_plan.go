@@ -271,46 +271,50 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 		changes = append(changes, "network_proxy = false becomes true in your [features] table, so Codex enforces the profile's host list (marked; agents uninstall puts false back)")
 	}
 	if len(changes) > 0 {
+		// The participant's lines, changed exactly as a yes changes them.
+		apply := func(ed *codexEditor) error {
+			var err error
+			switch {
+			case facts.hasDefault && facts.defaultPermissions != codexProfileName:
+				err = ed.rewriteRootKey("default_permissions", mustTOMLString(codexProfileName), codexProfileName)
+			case facts.hasSandboxMode:
+				err = ed.commentOutRootKey("sandbox_mode")
+			}
+			if err == nil && needProxyRewrite {
+				if facts.proxy == proxyBoolFalse {
+					err = ed.rewriteInSection([]string{"features"}, "network_proxy", "true", true)
+				} else {
+					err = ed.rewriteInSection([]string{"features", "network_proxy"}, "enabled", "true", true)
+				}
+			}
+			if err == nil {
+				err = ed.verify()
+			}
+			return err
+		}
 		answer := askConsent(ops, codexQuestion(label, path, ops.home, facts, profile, changes))
 		switch answer {
 		case consentNo:
 			p.notes = append(p.notes, label+": nothing installed for Codex: you kept your own settings; the skill and hooks were not written")
 			planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
-
 			return codexConfigPlan{scope: codexNothing}
 		case consentAborted:
 			p.aborted = promptAbortedReason
 			planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
-
 			return codexConfigPlan{scope: codexNothing}
 		case consentUnasked:
 			p.unanswerable = true
+			byHand := "  (the changes cannot be shown: the file does not read cleanly)"
+			if handEd, err := newCodexEditor(ed.text, entry.cfg); err == nil && apply(handEd) == nil {
+				byHand = codexByHand(ed.text, handEd.text, profile)
+			}
 			p.refused = append(p.refused, fmt.Sprintf("%s: %s needs a change to your own settings, which needs your yes at a terminal (-yes does not answer it); nothing was installed for Codex. By hand:\n%s",
-				label, path, indentBlock(codexByHand(facts, profile))))
+				label, path, indentBlock(byHand)))
 			planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
-
 			return codexConfigPlan{scope: codexNothing, left: true}
 		}
-		var err error
-		switch {
-		case facts.hasDefault && facts.defaultPermissions != codexProfileName:
-			err = ed.rewriteRootKey("default_permissions", mustTOMLString(codexProfileName), codexProfileName)
-		case facts.hasSandboxMode:
-			err = ed.commentOutRootKey("sandbox_mode")
-		}
-		if err == nil && needProxyRewrite {
-			if facts.proxy == proxyBoolFalse {
-				err = ed.rewriteInSection([]string{"features"}, "network_proxy", "true", true)
-			} else {
-				err = ed.rewriteInSection([]string{"features", "network_proxy"}, "enabled", "true", true)
-			}
-		}
-		if err == nil {
-			err = ed.verify()
-		}
-		if err != nil {
+		if err := apply(ed); err != nil {
 			planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
-
 			return codexRefuse(label, path, err, p)
 		}
 	}
@@ -398,23 +402,27 @@ func codexQuestion(label, path, home string, facts codexFacts, profile codexProf
 	return b.String()
 }
 
-// codexByHand is what a participant with no terminal is told to do, in an
-// order they can follow as printed.
-func codexByHand(facts codexFacts, profile codexProfile) string {
+// codexByHand is what a participant with no terminal is told to do: the
+// exact lines a yes would write, marks included, and our region with its
+// markers. A file finished by hand that way is the file install would have
+// written, so it reads as this installation's from then on — a later
+// install refreshes it and uninstall takes it out and puts the changed
+// lines back. Printed without the marks, it was a profile named "jevlin"
+// that no marker claimed, which every later install refused as the
+// participant's own.
+func codexByHand(before, after string, profile codexProfile) string {
 	var b strings.Builder
-	switch {
-	case facts.hasDefault:
-		fmt.Fprintf(&b, "change default_permissions = %s to default_permissions = %s,\n", mustTOMLString(facts.defaultPermissions), mustTOMLString(codexProfileName))
-	case facts.hasSandboxMode:
-		b.WriteString("remove sandbox_mode = \"workspace-write\", and jevlin's old [sandbox_workspace_write] block if there is one,\n")
-	}
-	if facts.proxy == proxyBoolFalse || facts.proxy == proxyTableFalse {
-		if profile.network {
-			b.WriteString("set network_proxy to true in your [features] table,\n")
+	was := strings.Split(before, "\n")
+	now := strings.Split(after, "\n")
+	if len(was) == len(now) {
+		for i := range was {
+			if was[i] != now[i] {
+				fmt.Fprintf(&b, "replace the line\n    %s\nwith\n    %s\n", strings.TrimRight(was[i], "\r"), strings.TrimRight(now[i], "\r"))
+			}
 		}
 	}
-	b.WriteString("and add these lines before your first table (default_permissions must come before any table):\n")
-	b.WriteString(codexProfileText(profile))
+	b.WriteString("and add this block, markers included, before your first table (default_permissions must come before any table):\n")
+	b.WriteString(string(codexProfileRegion(profile)))
 	return b.String()
 }
 

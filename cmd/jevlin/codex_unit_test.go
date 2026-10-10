@@ -294,36 +294,63 @@ func TestUninstallNeverLeavesDefaultPermissionsNamingARemovedProfile(t *testing.
 	}
 }
 
-// The by-hand text printed with no terminal can be followed as printed:
-// applied to the participant's file, it is a file Codex loads, with our
-// profile active and default_permissions set once.
+// The by-hand text printed with no terminal can be followed as printed,
+// and a file finished that way is this installation's: a later install at
+// a terminal asks nothing and writes the skill, and uninstall gives the
+// participant's file back as it was.
 func TestTheByHandTextCanBeFollowed(t *testing.T) {
 	cfgPath, _ := sandboxTestConfig(t)
 	m, ops := newFakeMachine("codex")
 	before := "default_permissions = \":workspace\"\nmodel = \"gpt-5\"\n\n[tui]\nx = 1\n"
 	m.files[codexConfigPath] = []byte(before)
 	_, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-client", "codex", "-yes")
-	if !strings.Contains(out, `change default_permissions = ":workspace" to default_permissions = "jevlin",`) {
-		t.Fatalf("the by-hand text does not say which line to change:\n%s", out)
+	i := strings.Index(out, "By hand:\n")
+	if i < 0 {
+		t.Fatalf("no by-hand text:\n%s", out)
 	}
-	k := strings.Index(out, "and add these lines before your first table")
-	if k < 0 {
-		t.Fatalf("no lines to add:\n%s", out)
-	}
-	var added []string
-	for _, l := range strings.Split(out[k:], "\n")[1:] {
+	var text []string
+	for _, l := range strings.Split(out[i+len("By hand:\n"):], "\n") {
 		if !strings.HasPrefix(l, "    ") {
 			break
 		}
-		added = append(added, strings.TrimPrefix(l, "    "))
+		text = append(text, strings.TrimPrefix(l, "    "))
 	}
-	followed := strings.Replace(before, `default_permissions = ":workspace"`, `default_permissions = "jevlin"`, 1)
-	followed = strings.Replace(followed, "[tui]", strings.Join(added, "\n")+"\n[tui]", 1)
+	followed := before
+	var region []string
+	for k := 0; k < len(text); k++ {
+		switch {
+		case text[k] == "replace the line" && k+3 < len(text) && text[k+2] == "with":
+			old, nw := strings.TrimPrefix(text[k+1], "    "), strings.TrimPrefix(text[k+3], "    ")
+			if !strings.Contains(followed, old+"\n") {
+				t.Fatalf("the line to replace is not in the file: %q", old)
+			}
+			followed = strings.Replace(followed, old+"\n", nw+"\n", 1)
+			k += 3
+		case strings.HasPrefix(text[k], "and add this block"):
+			region = text[k+1:]
+			k = len(text)
+		}
+	}
+	if len(region) == 0 || region[0] != agentsMarkerBegin {
+		t.Fatalf("the by-hand text does not carry the marked block:\n%s", out)
+	}
+	followed = strings.Replace(followed, "[tui]", strings.Join(region, "\n")+"\n[tui]", 1)
 	if err := codexTOMLError(followed); err != nil {
-		t.Errorf("following the by-hand text gives a file Codex refuses: %v\n%s", err, followed)
+		t.Fatalf("following the by-hand text gives a file Codex refuses: %v\n%s", err, followed)
 	}
-	if doc, ok := decodeTOMLDoc(followed); !ok || doc["default_permissions"] != codexProfileName {
-		t.Errorf("following it does not make jevlin's profile the default:\n%s", followed)
+	m.files[codexConfigPath] = []byte(followed)
+	m.terminal = true
+	if code, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK || strings.Contains(out, "[y/N]") {
+		t.Fatalf("install over the file finished by hand did not take it as ours (exit %d):\n%s", code, out)
+	}
+	if _, ok := m.files["/home/u/.codex/skills/jevlin/SKILL.md"]; !ok {
+		t.Errorf("the skill was not written over the file finished by hand")
+	}
+	if code, out := runAgentsAt(t, ops, "", "uninstall", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK {
+		t.Fatalf("uninstall: exit %d\n%s", code, out)
+	}
+	if got := string(m.files[codexConfigPath]); got != before {
+		t.Errorf("uninstall did not give the participant's file back\n got %q\nwant %q", got, before)
 	}
 }
 
