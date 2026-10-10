@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"fmt"
 
+	"slices"
 	"strings"
 	"testing"
 )
@@ -342,6 +343,51 @@ func TestTheSwitchNamesEveryHostTheMergedProfileAllows(t *testing.T) {
 				t.Errorf("status does not list every host the profile allows (want %q):\n%s", want, status)
 			}
 			_ = m
+		})
+	}
+}
+
+// Codex resolves each domain key by its nearest definition, ours first and
+// then up the extends chain, and "*" the same way on its own. Each row is a
+// verdict `codex sandbox` gave on 0.158.0 for jevlin's profile extending
+// "work", which extends "base": a host it reached is open, one it refused
+// is closed. Treating a deny anywhere in the chain as final, as this code
+// once did, called rows a, c and f's example.com closed and named a
+// shorter list than Codex enforces.
+func TestTheMergedProfileResolvesEachHostByItsNearestDefinition(t *testing.T) {
+	const ours = "router.example.invalid"
+	for _, tc := range []struct {
+		name, work, base string
+		ours             []string
+		open, closed     []string
+	}{
+		{"a: a parent's deny under a child's allow", `"example.com" = "allow"`, `"example.com" = "deny"`, nil, []string{"example.com"}, nil},
+		{"b: a parent's allow under a child's deny", `"example.com" = "deny"`, `"example.com" = "allow"`, nil, nil, []string{"example.com"}},
+		{"c: our allow over the chain's deny", `"example.com" = "deny"`, ``, []string{"example.com"}, []string{"example.com"}, nil},
+		{"d: a parent's * under a child's deny", `"example.com" = "deny"`, `"*" = "allow"`, nil, []string{"iana.org"}, []string{"example.com"}},
+		{"e: a child's * over a parent's deny", `"*" = "allow"`, `"example.com" = "deny"`, nil, []string{"iana.org"}, []string{"example.com"}},
+		{"f: ours, the child's and the parent's deny", `"iana.org" = "allow"`, `"example.com" = "deny"`, []string{"example.com"}, []string{"example.com", "iana.org"}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := mustDecode("[permissions.work]\nextends = \"base\"\n[permissions.work.network.domains]\n" + tc.work +
+				"\n[permissions.base]\nextends = \":workspace\"\n[permissions.base.network.domains]\n" + tc.base + "\n")
+			a := codexAllowedFor(doc, "work", append([]string{ours}, tc.ours...))
+			reachable := func(h string) bool {
+				return slices.Contains(a.hosts, h) || (a.every && !slices.Contains(a.except, h))
+			}
+			for _, h := range append([]string{ours}, tc.open...) {
+				if !reachable(h) {
+					t.Errorf("%s reads closed; Codex let it through (hosts %v, every %v, except %v)", h, a.hosts, a.every, a.except)
+				}
+			}
+			for _, h := range tc.closed {
+				if reachable(h) {
+					t.Errorf("%s reads open; Codex refused it (hosts %v, every %v, except %v)", h, a.hosts, a.every, a.except)
+				}
+			}
+			if s := a.sentence(); a.every && !strings.Contains(s, "every host but example.com") {
+				t.Errorf("the sentence does not name the host the chain still denies: %s", s)
+			}
 		})
 	}
 }

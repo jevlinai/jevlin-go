@@ -35,6 +35,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"sort"
 	"strings"
 )
 
@@ -389,7 +390,7 @@ func codexQuestion(label, path, home string, facts codexFacts, profile codexProf
 	if profile.network {
 		allowed := codexAllowedFor(facts.doc, profile.extends, profile.hosts)
 		adds = append(adds, "network access to "+allowed.sentence())
-		if len(allowed.from) > 0 {
+		if len(allowed.from) > 0 || allowed.every {
 			chain = fmt.Sprintf("That list includes what your profile %s allows: Codex applies the whole chain's domains once jevlin's profile turns the network on.\n", mustTOMLString(profile.extends))
 		}
 	}
@@ -616,64 +617,90 @@ func planCodexSafeForm(ops agentOps, label, path string, existing []byte, mode o
 }
 
 // codexAllowed is what a profile of ours allows once Codex merges it with
-// the profiles it extends: every domain any of them allows, minus any one
-// of them denies, and whether one allows "*". Codex applies the whole
-// chain's domains as soon as ours turns the network on, whatever the
-// chain's own `enabled` says (seen live on 0.158.0: a parent with
-// enabled = false and "example.com" allowed let example.com through after
-// the switch, and "*" let every host through).
+// the profiles it extends. Codex resolves each domain key by its nearest
+// definition — ours first, then up the extends chain — and "*" the same
+// way, on its own: a host is reachable when its own key resolves to allow,
+// or when "*" resolves to allow and its own key does not resolve to deny.
+// Seen live on 0.158.0: a parent's deny under a child's allow is open, a
+// parent's allow under a child's deny is closed, a child's "*" over a
+// parent's deny of example.com still closes example.com, and a parent's
+// "*" under a child's deny of it opens every host but that one. Codex
+// applies the chain's domains as soon as ours turns the network on,
+// whatever the chain's own `enabled` says.
 type codexAllowed struct {
-	hosts []string // ours and the chain's, sorted
-	every bool     // the chain allows "*"
-	from  []string // the chain's profiles that add hosts or "*", for a sentence
+	hosts     []string // keys that resolve to allow, ours included, sorted
+	every     bool     // "*" resolves to allow
+	everyFrom string   // the profile whose "*" that is
+	except    []string // with every: the keys that resolve to deny, sorted
+	from      []string // the chain's profiles whose allows are in effect
 }
 
 func codexAllowedFor(doc tomlDoc, extends string, ours []string) codexAllowed {
-	allow := map[string]bool{}
-	deny := map[string]bool{}
+	rule := map[string]string{} // key -> its nearest definition
+	by := map[string]string{}   // key -> the profile that defined it
 	for _, h := range ours {
-		allow[h] = true
+		rule[strings.ToLower(h)] = "allow"
 	}
-	var a codexAllowed
 	name := extends
 	for i := 0; i < 16 && name != "" && !strings.HasPrefix(name, ":"); i++ {
-		added := false
 		if v, ok := lookupTOMLPath(doc, "permissions", name, "network", "domains"); ok {
 			if table, ok := v.(map[string]any); ok {
-				for h, rule := range table {
-					switch rule {
-					case "allow":
-						if h == "*" {
-							a.every = true
-						} else {
-							allow[strings.ToLower(h)] = true
-						}
-						added = true
-					case "deny":
-						deny[strings.ToLower(h)] = true
+				level := map[string]string{}
+				for h, r := range table {
+					h = strings.ToLower(h)
+					if r, ok := r.(string); ok && (r == "allow" || r == "deny") && level[h] != "allow" {
+						// Two spellings of one host in one profile: report
+						// the open one, which is the one to warn about.
+						level[h] = r
+					}
+				}
+				for h, r := range level {
+					if _, nearer := rule[h]; !nearer {
+						rule[h], by[h] = r, name
 					}
 				}
 			}
 		}
-		if added {
-			a.from = append(a.from, name)
-		}
 		parent, _ := lookupTOMLPath(doc, "permissions", name, "extends")
 		name, _ = parent.(string)
 	}
-	for h := range allow {
-		if !deny[h] {
+	var a codexAllowed
+	from := map[string]bool{}
+	for h, r := range rule {
+		switch {
+		case h == "*":
+			if r == "allow" {
+				a.every, a.everyFrom = true, by[h]
+			}
+		case r == "allow":
 			a.hosts = append(a.hosts, h)
+			if by[h] != "" {
+				from[by[h]] = true
+			}
+		default:
+			a.except = append(a.except, h)
 		}
 	}
+	for n := range from {
+		a.from = append(a.from, n)
+	}
+	sort.Strings(a.from)
 	a.hosts = cleanHosts(a.hosts)
+	if !a.every {
+		a.except = nil
+	}
+	a.except = cleanHosts(a.except)
 	return a
 }
 
 // sentence is the allowed network in words: every host, or the list.
 func (a codexAllowed) sentence() string {
 	if a.every {
-		return fmt.Sprintf("every host, because your profile %s allows \"*\"", mustTOMLString(a.from[len(a.from)-1]))
+		but := ""
+		if len(a.except) > 0 {
+			but = " but " + joinLabels(a.except)
+		}
+		return fmt.Sprintf("every host%s, because your profile %s allows \"*\"", but, mustTOMLString(a.everyFrom))
 	}
 	return joinLabels(a.hosts) + " only"
 }
