@@ -36,7 +36,7 @@ func codexPermissionLinesBody(ops agentOps, path string, entry binEntry, getenv 
 	}
 	region, had, why := readCodexRegion(existing)
 	if had && why != "" {
-		return []string{"permissions: the jevlin block in " + where + " cannot be read: " + why}, damage
+		return []string{"permissions: the jevlin block in " + where + " cannot be read: " + why + codexPutBackAdvice(string(existing))}, damage
 	}
 	if !had {
 		return nil, damage

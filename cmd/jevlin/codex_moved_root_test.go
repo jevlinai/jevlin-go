@@ -196,3 +196,14 @@ func TestUninstallOverAMarkWhoseWasNamesAnotherKey(t *testing.T) {
 		t.Errorf("the file changed:\n%s", m.files[codexConfigPath])
 	}
 }
+
+// Status's advice to remove an unreadable block by hand names the marked
+// line to put back, as install's and uninstall's do.
+func TestStatusNamesTheLineToPutBack(t *testing.T) {
+	_, ops, cfgA, _, _ := installedByAWithADenyAdded(t)
+	_, out := runAgentsAt(t, ops, "", "status", "-config", cfgA)
+	const advice = `then put back the line of yours jevlin changed: line 1, default_permissions = "jevlin", back to default_permissions = ":workspace"`
+	if !strings.Contains(out, "remove the block by hand") || !strings.Contains(out, advice) {
+		t.Errorf("status does not name the line to put back:\n%s", out)
+	}
+}
