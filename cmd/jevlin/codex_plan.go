@@ -808,6 +808,11 @@ func codexAllowedFor(doc tomlDoc, extends string, ours []string) codexAllowed {
 	for h, r := range rule {
 		switch {
 		case h == "*":
+			// Codex refuses "*" = "deny" ("invalid value for
+			// network.denied_domains: *"), so a file it runs never has
+			// one; the check stays because install and status read files
+			// Codex has not validated, and a deny read as an allow would
+			// call every host open.
 			if r == "allow" {
 				a.every, a.everyFrom = true, by[h]
 			}
