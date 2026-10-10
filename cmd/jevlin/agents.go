@@ -409,6 +409,10 @@ type agentPlan struct {
 	skipped []string
 	refused []string
 	notes   []string
+	// fallback is the safety form of a write in writes that is not itself
+	// a safety write: closing our own open block, committed in its place
+	// when the plan as a whole is not (no terminal, an unanswered question).
+	fallback []agentWrite
 	// unanswerable is set when a question only a terminal can answer was
 	// due and there was no terminal: the command exits 2, as for an
 	// unanswered question, after writing what needed no answer.
@@ -528,8 +532,7 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 		plan = buildUninstallPlan(ops, paths, selected, entry, getenv)
 	}
 	if plan.aborted != "" {
-		commitSafetyOnly(ops, &plan, stdout, stderr)
-		fmt.Fprintf(stderr, "\njevlin agents: %s\n", plan.aborted)
+		fmt.Fprintf(stderr, "\njevlin agents: %s; %s\n", plan.aborted, safetyOutcome(commitSafetyOnly(ops, &plan, stdout, stderr)))
 		return exitUsage
 	}
 
@@ -553,6 +556,9 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 	}
 	if plan.empty() {
 		fmt.Fprintln(stdout, "\nnothing to do")
+		if plan.unanswerable {
+			return exitUsage
+		}
 		return refusedExit(&plan)
 	}
 	if *dryRun {
@@ -561,8 +567,7 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 	}
 	if !*yes {
 		if !ops.isTerminal() {
-			commitSafetyOnly(ops, &plan, stdout, stderr)
-			fmt.Fprintln(stderr, "jevlin agents: not a terminal, and -yes was not given; nothing else was changed")
+			fmt.Fprintf(stderr, "jevlin agents: not a terminal, and -yes was not given; %s\n", safetyOutcome(commitSafetyOnly(ops, &plan, stdout, stderr)))
 			return exitUsage
 		}
 		// The opposite default to the mining question, and so the worse
@@ -571,8 +576,7 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 		// typed line decides now.
 		line, err := promptBufio(stdout, "\nProceed? [Y/n]: ", br)
 		if err != nil {
-			commitSafetyOnly(ops, &plan, stdout, stderr)
-			fmt.Fprintf(stderr, "\njevlin agents: %s; nothing else was changed\n", promptAbortedReason)
+			fmt.Fprintf(stderr, "\njevlin agents: %s; %s\n", promptAbortedReason, safetyOutcome(commitSafetyOnly(ops, &plan, stdout, stderr)))
 			return exitUsage
 		}
 		switch strings.ToLower(strings.TrimSpace(line)) {
@@ -2745,8 +2749,10 @@ func printPlan(p *agentPlan, home string, w io.Writer) {
 	}
 }
 
-// commitSafetyOnly commits the plan's safety writes and nothing else: what
-// an unanswered question still does (agentWrite.safety).
+// commitSafetyOnly commits the plan's safety writes and nothing else — the
+// writes marked safety, and the safety form of any write that is not
+// (agentPlan.fallback) — and says how many it wrote: what a run that
+// commits nothing else still does.
 func commitSafetyOnly(ops agentOps, p *agentPlan, stdout, stderr io.Writer) int {
 	var only agentPlan
 	for _, w := range p.writes {
@@ -2754,7 +2760,20 @@ func commitSafetyOnly(ops agentOps, p *agentPlan, stdout, stderr io.Writer) int 
 			only.writes = append(only.writes, w)
 		}
 	}
-	return commitPlan(ops, &only, stdout, stderr)
+	only.writes = append(only.writes, p.fallback...)
+	if failures := commitPlan(ops, &only, stdout, stderr); failures > 0 {
+		return len(only.writes) - failures
+	}
+	return len(only.writes)
+}
+
+// safetyOutcome is the end of the sentence a run that commits nothing else
+// says: either nothing changed, or only jevlin's own open block was closed.
+func safetyOutcome(wrote int) string {
+	if wrote > 0 {
+		return "only jevlin's own block in Codex's config was closed, and nothing else was changed"
+	}
+	return "nothing was changed"
 }
 
 func commitPlan(ops agentOps, p *agentPlan, stdout, stderr io.Writer) int {

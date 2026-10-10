@@ -369,3 +369,79 @@ func TestAClosedOldBlockIsLeftAndCalledClosed(t *testing.T) {
 		t.Errorf("status misreads a closed old block:\n%s", status)
 	}
 }
+
+// openOldBlock is our old block with network_access = true, alone in the
+// file: a state with nothing of the participant's to ask about.
+func openOldBlock(t *testing.T, cfgPath string) string {
+	t.Helper()
+	return "model = \"gpt-5\"\n" + agentsMarkerBegin + "\n[sandbox_workspace_write]\nnetwork_access = true\nwritable_roots = [" + quotedRootsOf(t, cfgPath) + "]\n" + agentsMarkerEnd + "\n"
+}
+
+// A run that commits nothing else still closes our old open block: with no
+// terminal and no -yes, and when Proceed? goes unanswered. The plan's full
+// migration is the participant's to accept; its safety form is not.
+func TestARunThatWritesNothingStillClosesTheOldBlock(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		terminal bool
+	}{
+		{"no terminal, no -yes", false},
+		{"Proceed? unanswered", true},
+	} {
+		for _, goos := range []string{"linux", "windows"} {
+			t.Run(tc.name+"/"+goos, func(t *testing.T) {
+				cfgPath, _ := sandboxTestConfig(t)
+				onCodexOS(t, goos)
+				m, ops := newFakeMachine("codex")
+				m.terminal = tc.terminal
+				before := openOldBlock(t, cfgPath)
+				m.files[codexConfigPath] = []byte(before)
+				code, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-client", "codex")
+				if code != exitUsage {
+					t.Errorf("exit %d, want 2\n%s", code, out)
+				}
+				if got := string(m.files[codexConfigPath]); got != strings.Replace(before, "network_access = true\n", "", 1) {
+					t.Errorf("the old block was not closed, or more changed:\n%s\n%s", out, got)
+				}
+				if !strings.Contains(out, "only jevlin's own block in Codex's config was closed, and nothing else was changed") {
+					t.Errorf("the run does not say what it closed:\n%s", out)
+				}
+				if _, ok := m.files["/home/u/.codex/skills/jevlin/SKILL.md"]; ok {
+					t.Errorf("the skill was written by a run that committed nothing else")
+				}
+			})
+		}
+	}
+}
+
+// After an unanswered Codex question, the run says what it closed rather
+// than that nothing changed.
+func TestAnUnansweredQuestionSaysWhatItClosed(t *testing.T) {
+	cfgPath, _ := sandboxTestConfig(t)
+	m, ops := newFakeMachine("codex")
+	m.terminal = true
+	m.files[codexConfigPath] = []byte("default_permissions = \":workspace\"\n" + strings.TrimPrefix(openOldBlock(t, cfgPath), "model = \"gpt-5\"\n"))
+	code, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-client", "codex", "-yes")
+	if code != exitUsage || strings.Contains(out, "nothing was changed") || !strings.Contains(out, "only jevlin's own block in Codex's config was closed") {
+		t.Errorf("exit %d; the message does not match what was written:\n%s", code, out)
+	}
+	if strings.Contains(string(m.files[codexConfigPath]), "network_access") {
+		t.Errorf("the old block was not closed:\n%s", m.files[codexConfigPath])
+	}
+}
+
+// An unanswerable question exits 2 even when nothing else is planned.
+func TestAnUnanswerableQuestionExitsTwoWithNothingElseToDo(t *testing.T) {
+	for _, args := range [][]string{{"-yes"}, nil} {
+		t.Run(strings.Join(args, ""), func(t *testing.T) {
+			cfgPath, _ := sandboxTestConfig(t)
+			m, ops := newFakeMachine("codex")
+			before := "default_permissions = \":workspace\"\n"
+			m.files[codexConfigPath] = []byte(before)
+			code, out := runAgentsAt(t, ops, "", append([]string{"install", "-config", cfgPath, "-client", "codex"}, args...)...)
+			if code != exitUsage || string(m.files[codexConfigPath]) != before {
+				t.Errorf("exit %d, want 2 with nothing written:\n%s", code, out)
+			}
+		})
+	}
+}

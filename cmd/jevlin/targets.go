@@ -581,6 +581,7 @@ func (codexTarget) Detect(ops agentOps, _ agentPaths, _ func(string) string) str
 func (t codexTarget) PlanInstall(ops agentOps, paths agentPaths, entry binEntry, getenv func(string) string, p *agentPlan) {
 	var cp agentPlan
 	cfg := planCodexConfig(ops, t.Label(), paths.codexConfig, entry, getenv, codexSandboxOS, &cp)
+	p.fallback = append(p.fallback, cp.fallback...)
 	if cp.aborted != "" {
 		// Only a safety write can be in cp now; the caller commits it and
 		// nothing else.

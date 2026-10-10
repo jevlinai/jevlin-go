@@ -279,7 +279,7 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 
 			return codexConfigPlan{scope: codexNothing}
 		case consentAborted:
-			p.aborted = promptAbortedReason + "; nothing was changed"
+			p.aborted = promptAbortedReason
 			planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
 
 			return codexConfigPlan{scope: codexNothing}
@@ -352,6 +352,12 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 	if refused {
 		planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
 		return codexConfigPlan{scope: codexNothing, left: true}
+	}
+	if changed {
+		// The full write replaces our open block too, but it is the
+		// participant's plan to accept; its safety form goes beside it, for
+		// a run that commits nothing else.
+		planCodexFallback(ops, label, path, existing, mode, region, had, facts, p)
 	}
 	return codexConfigPlan{changed: changed}
 }
@@ -431,6 +437,14 @@ func planCodexWindowsRoots(ops agentOps, label, path string, roots []string, ent
 	changed, left = planCodexSandbox(ops, label, path, roots, entry, getenv, p)
 	if changed {
 		p.notes = append(p.notes, label+": "+codexWindowsNetworkSentence)
+		// The rewrite closes an old open block, but it is part of the plan
+		// the participant accepts; the one-line close goes beside it for a
+		// run that commits nothing else.
+		if existing, mode, err := readCodexConfig(ops, path); err == nil {
+			if region, had, why := readCodexRegion(existing); had && why == "" && region.legacy {
+				planCodexFallback(ops, label, path, existing, mode, region, had, codexFacts{}, p)
+			}
+		}
 	}
 	return changed, left
 }
@@ -702,4 +716,17 @@ func withoutOpenNetworkAccess(existing []byte, region codexRegion) ([]byte, bool
 		return nil, false
 	}
 	return []byte(next), true
+}
+
+// planCodexFallback puts codexSafeForm in p.fallback: committed only when
+// the plan as a whole is not.
+func planCodexFallback(ops agentOps, label, path string, existing []byte, mode os.FileMode, region codexRegion, had bool, facts codexFacts, p *agentPlan) {
+	next, why, ok := codexSafeForm(existing, region, had, facts)
+	if !ok || codexTOMLError(string(next)) != nil {
+		return
+	}
+	if disk, err := ops.readFile(path); err == nil && strings.HasPrefix(string(disk), codexBOM) {
+		next = append([]byte(codexBOM), next...)
+	}
+	p.fallback = append(p.fallback, agentWrite{surface: label, path: path, contents: next, mode: mode, why: why, safety: true})
 }

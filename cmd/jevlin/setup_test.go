@@ -2209,3 +2209,37 @@ func TestSetupDryRunPrintsTheCodexQuestion(t *testing.T) {
 		t.Errorf("a dry run changed Codex's config:\n%s", got)
 	}
 }
+
+// setup's own agents question unanswered still closes our old open block,
+// and writes nothing else.
+func TestSetupClosesTheOldBlockWhenItsAgentsQuestionGoesUnanswered(t *testing.T) {
+	s := newSetupSandbox(t)
+	s.platform.claim("credits")
+	s.onPath["codex"] = true
+	path := s.paths().codexConfig
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	roots := []string{filepath.Join(s.home, "intake"), filepath.Join(s.home, "sessions"), filepath.Join(s.home, "spool"), filepath.Join(s.home, "state")}
+	q := make([]string, len(roots))
+	for i, r := range roots {
+		q[i] = mustTOMLString(r)
+	}
+	before := "model = \"gpt-5\"\n" + agentsMarkerBegin + "\n[sandbox_workspace_write]\nnetwork_access = true\nwritable_roots = [" + strings.Join(q, ", ") + "]\n" + agentsMarkerEnd + "\n"
+	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut := s.run(tty("n"), true, "-no-profile")
+	if code != exitUsage {
+		t.Errorf("setup exited %d with its agents question unanswered, want 2\n%s\n%s", code, out, errOut)
+	}
+	if got := string(s.readFile(path)); got != strings.Replace(before, "network_access = true\n", "", 1) {
+		t.Errorf("the old block was not closed, or more changed:\n%s\n%s", got, errOut)
+	}
+	if lexists(s.paths().codexSkill) {
+		t.Errorf("setup wrote Codex's skill after an unanswered question")
+	}
+	if !strings.Contains(errOut, "only jevlin's own block in Codex's config was closed") {
+		t.Errorf("setup does not say what it closed:\n%s", errOut)
+	}
+}

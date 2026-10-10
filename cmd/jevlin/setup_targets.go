@@ -124,10 +124,7 @@ func (r *setupRun) agentsStep() int {
 	}
 	plan := buildInstallPlan(ops, paths, selected, entry, r.d.getenv)
 	if plan.aborted != "" {
-		if !r.dry {
-			commitSafetyOnly(ops, &plan, r.d.stdout, r.d.stderr)
-		}
-		return r.abort("no coding agent was set up")
+		return r.abort("no coding agent was set up; " + r.safetyOnly(ops, &plan))
 	}
 	if r.d.agentPlanObserver != nil {
 		r.d.agentPlanObserver(plan)
@@ -149,7 +146,7 @@ func (r *setupRun) agentsStep() int {
 	if !r.explicitTargets {
 		set, err := r.ask("Set up the coding agents found on this machine now?")
 		if err != nil {
-			return r.abort("no coding agent was set up")
+			return r.abort("no coding agent was set up; " + r.safetyOnly(ops, &plan))
 		}
 		if !set {
 			r.printf("Left the agents alone. When you change your mind: %s\n", later)
@@ -164,4 +161,13 @@ func (r *setupRun) agentsStep() int {
 		r.printf("Some agent could not be set up; see above.\n")
 	}
 	return exitOK
+}
+
+// safetyOnly commits only the plan's safety writes, as agents install does
+// for a question that goes unanswered, and says what came of it.
+func (r *setupRun) safetyOnly(ops agentOps, plan *agentPlan) string {
+	if r.dry {
+		return "nothing was changed"
+	}
+	return safetyOutcome(commitSafetyOnly(ops, plan, r.d.stdout, r.d.stderr))
 }
