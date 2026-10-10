@@ -240,3 +240,19 @@ func TestAMarkedLineLeftWithoutItsBlockIsNamedAndRepaired(t *testing.T) {
 		t.Errorf("install after the repair did not ask and install (exit %d):\n%s", code, out)
 	}
 }
+
+// With both marker lines deleted but the tables kept, the profile the
+// marked line names is still defined and Codex loads the file: status does
+// not call it a file Codex cannot load, and install does not name the
+// uninstall repair for it.
+func TestAMarkedLineWhoseProfileIsStillDefinedIsNotCalledUnloadable(t *testing.T) {
+	m, ops, cfgA, _, edited := installedByAWithADenyAdded(t)
+	unmarked := strings.Replace(strings.Replace(edited, agentsMarkerBegin+"\n", "", 1), agentsMarkerEnd+"\n", "", 1)
+	m.files[codexConfigPath] = []byte(unmarked)
+	if _, out := runAgentsAt(t, ops, "", "status", "-config", cfgA); strings.Contains(out, "cannot load this file") {
+		t.Errorf("status calls a file Codex loads one it cannot:\n%s", out)
+	}
+	if _, out := runAgentsAt(t, ops, "", "install", "-config", cfgA, "-client", "codex", "-yes"); strings.Contains(out, "cannot load this file") {
+		t.Errorf("install calls a file Codex loads one it cannot:\n%s", out)
+	}
+}
