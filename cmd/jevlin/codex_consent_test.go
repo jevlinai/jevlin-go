@@ -312,9 +312,15 @@ func TestAProxyTableWithoutEnabledIsNamed(t *testing.T) {
 // host the merged profile allows, and say so plainly when that is every
 // host.
 func TestTheSwitchNamesEveryHostTheMergedProfileAllows(t *testing.T) {
-	for _, tc := range []struct{ state, network string }{
-		{"own-profile-chain-allows-a-host", "agents-v1.nyks.dev, as.example.invalid, example.com and router.example.invalid only"},
-		{"own-profile-chain-allows-every-host", `every host, because your profile "work" allows "*"`},
+	for _, tc := range []struct{ state, network, chain, proxy, status string }{
+		{"own-profile-chain-allows-a-host", "agents-v1.nyks.dev, as.example.invalid, example.com and router.example.invalid only",
+			`That list includes what your profile "work" allows`, "which makes Codex enforce that host list",
+			"; hosts agents-v1.nyks.dev, as.example.invalid, example.com, router.example.invalid; network_proxy on"},
+		// With "*" there is no host list: the question and status say the
+		// network is open and where that comes from, not "that host list".
+		{"own-profile-chain-allows-every-host", `every host, because your profile "work" allows "*"`,
+			`That is your profile "work"'s "*"`, "through which Codex applies the profile's domain rules",
+			`; network open to every host, because your profile "work" allows "*"; network_proxy on`},
 	} {
 		t.Run(tc.state, func(t *testing.T) {
 			var st codexState
@@ -334,13 +340,15 @@ func TestTheSwitchNamesEveryHostTheMergedProfileAllows(t *testing.T) {
 			if !strings.Contains(out, "and network to "+tc.network) {
 				t.Errorf("the plan line does not name every host the switch allows:\n%s", out)
 			}
-			if !strings.Contains(out, `That list includes what your profile "work" allows`) {
-				t.Errorf("the question does not say where the other hosts come from:\n%s", out)
+			if !strings.Contains(out, tc.chain) {
+				t.Errorf("the question does not say where the other hosts come from (want %q):\n%s", tc.chain, out)
+			}
+			if !strings.Contains(out, "[features.network_proxy] table, "+tc.proxy+"?") {
+				t.Errorf("the question does not say what the proxy table does here (want %q):\n%s", tc.proxy, out)
 			}
 			_, status := runAgentsAt(t, ops, "", "status", "-config", cfgPath)
-			want := strings.ReplaceAll(strings.TrimSuffix(tc.network, " only"), " and ", ", ")
-			if !strings.Contains(status, "; hosts "+want+"; network_proxy on") {
-				t.Errorf("status does not list every host the profile allows (want %q):\n%s", want, status)
+			if !strings.Contains(status, tc.status) {
+				t.Errorf("status does not say what the profile allows (want %q):\n%s", tc.status, status)
 			}
 			_ = m
 		})
@@ -389,5 +397,32 @@ func TestTheMergedProfileResolvesEachHostByItsNearestDefinition(t *testing.T) {
 				t.Errorf("the sentence does not name the host the chain still denies: %s", s)
 			}
 		})
+	}
+}
+
+// The by-hand text says default_permissions must come before any table
+// only when the block it prints carries that key: from ":workspace" or a
+// profile of the participant's, the key stays on their own line, and the
+// note would be about a line the block does not have.
+func TestTheByHandKeyNoteOnlyWhereTheBlockCarriesTheKey(t *testing.T) {
+	const note = "(default_permissions must come before any table)"
+	for _, tc := range []struct {
+		before string
+		note   bool
+	}{
+		{"default_permissions = \":workspace\"\nmodel = \"gpt-5\"\n", false},
+		{workProfile + "\n[features]\nnetwork_proxy = false\n", false},
+		{"sandbox_mode = \"workspace-write\"\nmodel = \"gpt-5\"\n", true},
+	} {
+		cfgPath, _ := sandboxTestConfig(t)
+		m, ops := newFakeMachine("codex")
+		m.files[codexConfigPath] = []byte(tc.before)
+		_, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-client", "codex", "-yes")
+		if !strings.Contains(out, "By hand") {
+			t.Fatalf("no by-hand text over %q:\n%s", tc.before, out)
+		}
+		if strings.Contains(out, note) != tc.note {
+			t.Errorf("over %q the key note is there: %v, want %v:\n%s", tc.before, !tc.note, tc.note, out)
+		}
 	}
 }

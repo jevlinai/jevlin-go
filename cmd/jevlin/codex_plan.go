@@ -406,12 +406,27 @@ func codexQuestion(label, path, home string, facts codexFacts, profile codexProf
 	if profile.network {
 		allowed := codexAllowedFor(facts.doc, profile.extends, profile.hosts)
 		adds = append(adds, "network access to "+allowed.sentence())
-		if len(allowed.from) > 0 || allowed.every {
-			chain = fmt.Sprintf("That list includes what your profile %s allows: Codex applies the whole chain's domains once jevlin's profile turns the network on.\n", mustTOMLString(profile.extends))
+		var names []string
+		for _, n := range allowed.from {
+			names = append(names, mustTOMLString(n))
 		}
-	}
-	if profile.proxy {
-		adds = append(adds, "the [features.network_proxy] table, which makes Codex enforce that host list")
+		switch {
+		case allowed.every:
+			chain = fmt.Sprintf("That is your profile %s's \"*\": Codex applies the domains of every profile jevlin's extends once jevlin's profile turns the network on.\n", mustTOMLString(allowed.everyFrom))
+		case len(names) == 1:
+			chain = fmt.Sprintf("That list includes what your profile %s allows: Codex applies the domains of every profile jevlin's extends once jevlin's profile turns the network on.\n", names[0])
+		case len(names) > 1:
+			chain = fmt.Sprintf("That list includes what your profiles %s allow: Codex applies the domains of every profile jevlin's extends once jevlin's profile turns the network on.\n", joinLabels(names))
+		}
+		if profile.proxy {
+			if allowed.every {
+				// There is no host list to enforce; the table is what makes
+				// the profile's domain rules apply at all.
+				adds = append(adds, "the [features.network_proxy] table, through which Codex applies the profile's domain rules")
+			} else {
+				adds = append(adds, "the [features.network_proxy] table, which makes Codex enforce that host list")
+			}
+		}
 	}
 	fmt.Fprintf(&b, "Switch Codex to %s and adds %s?\n", what, strings.Join(adds, ", and "))
 	b.WriteString(chain)
@@ -462,7 +477,11 @@ func codexByHand(file, before, after string, profile codexProfile, region codexR
 	// Codex reads the comments directly over a table as that table's, and
 	// install puts the block above them (firstHeaderStart), so the text
 	// says so rather than "before your first table" alone.
-	first := "before your first table, above any comment lines directly over it (default_permissions must come before any table)"
+	first := "before your first table, above any comment lines directly over it"
+	if profile.key {
+		// Only a block that carries the key has a reason to be first.
+		first += " (default_permissions must come before any table)"
+	}
 	switch {
 	case !had:
 		fmt.Fprintf(&b, "and add these lines, markers included, %s:\n%s", first, block)
