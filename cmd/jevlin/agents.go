@@ -452,7 +452,8 @@ var agentsUsage = `usage: jevlin agents install|status|uninstall [-config file] 
               the agent does the same)
   -client     act on this agent only (` + targetIDs(targetHost) + `); repeatable
   -dry-run    print the plan, change nothing
-  -yes        do not ask before writing
+  -yes        answer Proceed? with yes; a question about a Codex setting of
+              your own is still asked, and with no terminal is not answered
 `
 
 func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
@@ -474,7 +475,7 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 	var clients multiFlag
 	fs.Var(&clients, "client", "act on this agent only; repeatable")
 	dryRun := fs.Bool("dry-run", false, "print the plan and change nothing")
-	yes := fs.Bool("yes", false, "do not ask before writing")
+	yes := fs.Bool("yes", false, "answer Proceed? with yes; a question about a Codex setting of your own is still asked")
 	if err := fs.Parse(rest); err != nil {
 		return exitUsage
 	}

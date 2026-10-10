@@ -20,13 +20,15 @@ The first release replaces this heading with its own.
 
 - **Codex commands no longer get open network from jevlin; only the search hosts do.**
   `agents install` used to set `network_access = true` in Codex's sandbox, which let every
-  command Codex runs reach any host. It now writes a Codex permission profile that allows only
-  the router, the authorization server and the platform's agents API, enforced by Codex's
-  network proxy, and the next install replaces the old block. It needs Codex 0.131.0 or newer:
-  an older Codex refuses its config with "invalid type: map, expected a boolean" and does not
-  start until you upgrade it or remove jevlin's block. A Codex setting of your own that the
-  profile would change is asked about first. On Windows the network is no longer opened at all:
-  a search there needs Codex's approval to reach the router.
+  command Codex runs reach any host. On macOS and Linux it now writes a Codex permission profile
+  that allows only the router, the authorization server and the platform's agents API, enforced
+  by Codex's network proxy, and the next install (or `upgrade`) replaces the old block. Supported
+  with Codex 0.158.0 or newer; older versions are not supported, and below 0.131 Codex refuses
+  the file and does not start until you upgrade it or remove jevlin's block. A Codex setting of
+  your own that the profile would change is asked about first, and your own profile is extended,
+  never edited. On Windows the network is no longer opened at all: a search there needs Codex's
+  approval to reach the router.
+
 - **Windows: a state directory jevlin creates is owner-only.** A
   `[mining] state_dir` that `setup` (for one outside the installation),
   `connect`, `enroll`, `mining enable` or `mining disable` creates now

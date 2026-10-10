@@ -80,7 +80,8 @@ the tool (what an agent runs):
              cancel, 2=usage, 3=HTTP 4xx, 4=HTTP 5xx or invalid server response.
   agents     agents install|status|uninstall — find {{HOST_LABELS}} on this machine and give each
              the search skill and the hooks it supports. -dry-run previews,
-             -yes skips the prompt, -client <name> picks one ({{HOST_IDS}}).
+             -client <name> picks one ({{HOST_IDS}}). -yes skips the Proceed?
+             prompt, never a question about a Codex setting of yours.
              agents prefer on|off — whether this search or the agent's own
              is the default (off keeps this one for when you name it);
              in the agent, /jevlin off and /jevlin on do the same
@@ -100,7 +101,8 @@ unattended once claimed.
              the shell profile (PATH, JEVLIN_CONFIG and, when a wallet
              was made here, JEVLIN_WALLET_DIR; Windows: the user PATH and
              JEVLIN_CONFIG only) and the coding agents found here.
-             -yes answers the profile and agents questions, terminal or not
+             -yes answers the profile and agents questions, terminal or not,
+             never a question about a Codex setting of yours
              -yes may come from automated callers
              -yes never answers the mining question or adopts without a terminal
              -no-profile leaves the shell profile (Windows: user environment)
