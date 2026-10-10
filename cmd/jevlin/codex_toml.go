@@ -119,3 +119,22 @@ func sortedKeys(doc tomlDoc) []string {
 }
 
 func sortStrings(s []string) { sort.Strings(s) }
+
+// subtractDoc is doc without every leaf that ours defines, and without a
+// table that taking them out left empty.
+func subtractDoc(doc, ours tomlDoc) tomlDoc {
+	out := copyTOMLDoc(doc)
+	var walk func(prefix []string, t tomlDoc)
+	walk = func(prefix []string, t tomlDoc) {
+		for k, v := range t {
+			path := append(append([]string{}, prefix...), k)
+			if child, ok := v.(map[string]any); ok && len(child) > 0 {
+				walk(path, child)
+				continue
+			}
+			deleteTOMLPath(out, path...)
+		}
+	}
+	walk(nil, ours)
+	return out
+}

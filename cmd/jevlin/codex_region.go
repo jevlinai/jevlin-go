@@ -285,35 +285,41 @@ func definesPath(text string, path ...string) bool {
 	return found
 }
 
-// holdsHeaderLine: does any line of s read as a table header?
+// holdsHeaderLine: does any line of s's own structure read as a table
+// header? A line inside a multi-line string is not one.
 func holdsHeaderLine(s string) bool {
-	for _, line := range strings.Split(s, "\n") {
-		if tomlHeaderLine.MatchString(strings.TrimRight(line, "\r")) {
-			return true
+	return firstHeaderLine(s) >= 0
+}
+
+// firstHeaderLine is the index into linesOutsideTOMLStrings(s) of the first
+// table header, or -1.
+func firstHeaderLine(s string) int {
+	for i, l := range linesOutsideTOMLStrings(s) {
+		if tomlHeaderLine.MatchString(strings.TrimRight(s[l.start:l.end], "\r")) {
+			return i
 		}
 	}
-	return false
+	return -1
 }
 
 // firstHeaderStart is the byte offset where the region goes: the start of
 // the comment run attached to the file's first table header, or -1 when the
-// file has no header.
+// file has no header. Lines inside a multi-line string are neither headers
+// nor comments.
 func firstHeaderStart(s string) int {
-	lines := strings.SplitAfter(s, "\n")
-	header := -1
-	for i, line := range lines {
-		if tomlHeaderLine.MatchString(strings.TrimRight(line, "\r\n")) {
-			header = i
-			break
-		}
-	}
+	lines := linesOutsideTOMLStrings(s)
+	header := firstHeaderLine(s)
 	if header < 0 {
 		return -1
 	}
 	start := header
 	for start > 0 {
-		prev := strings.TrimSpace(lines[start-1])
-		if prev != "" && !strings.HasPrefix(prev, "#") {
+		prev := lines[start-1]
+		if prev.end+1 != lines[start].start {
+			break // a string ends between them: not one comment run
+		}
+		t := strings.TrimSpace(s[prev.start:prev.end])
+		if t != "" && !strings.HasPrefix(t, "#") {
 			break
 		}
 		start--
@@ -321,14 +327,10 @@ func firstHeaderStart(s string) int {
 	// A blank run between the last root key and the header's own comment
 	// stays with the root keys: the region takes the header's comments,
 	// not the gap above them.
-	for start < header && strings.TrimSpace(lines[start]) == "" {
+	for start < header && strings.TrimSpace(s[lines[start].start:lines[start].end]) == "" {
 		start++
 	}
-	off := 0
-	for _, line := range lines[:start] {
-		off += len(line)
-	}
-	return off
+	return lines[start].start
 }
 
 // insertBeforeFirstHeader puts block before the file's first table header,
@@ -514,9 +516,25 @@ func removeCodexRegion(existing []byte) codexRegionRemoval {
 	if len(r.foreign) > 0 {
 		next = appendTables(next, r.foreignText())
 	}
-	expected, ok := decodeTOMLDoc(r.participantInPlace())
+	// The reference is the file as it was, decoded, minus exactly the keys
+	// our own part defines: anything else that would change — a string
+	// that happened to hold our text, a key the line work misplaced — is a
+	// refusal. A region below a table header is the one exception, since
+	// its bare key decodes there as that table's; it is compared in place.
+	var expected tomlDoc
+	var ok bool
+	if r.atTop || r.legacy {
+		var whole, ours tomlDoc
+		if whole, ok = decodeTOMLDoc(string(existing)); ok {
+			if ours, ok = decodeTOMLDoc(r.oursText()); ok {
+				expected = subtractDoc(whole, ours)
+			}
+		}
+	} else {
+		expected, ok = decodeTOMLDoc(r.participantInPlace())
+	}
 	if !ok {
-		return codexRegionRemoval{next: existing, had: true, roots: r.roots, why: "the file does not read as TOML without the region, so the region cannot be taken out of it safely; remove it by hand"}
+		return codexRegionRemoval{next: existing, had: true, roots: r.roots, why: "the file does not read as TOML, so the region cannot be taken out of it safely; remove it by hand"}
 	}
 	got, ok := decodeTOMLDoc(string(next))
 	if !ok || !tomlDocsEqual(expected, got) {

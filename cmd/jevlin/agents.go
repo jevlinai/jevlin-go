@@ -2163,17 +2163,9 @@ func replaceBlockInPlace(pre string, want []byte, foreign, post string) []byte {
 
 func removeMarkedBlock(b []byte) ([]byte, bool) {
 	s := string(b)
-	i := strings.Index(s, agentsMarkerBegin)
-	if i < 0 {
+	i, _, end, ok := markerSpan(s)
+	if !ok {
 		return b, false
-	}
-	j := strings.Index(s[i:], agentsMarkerEnd)
-	if j < 0 {
-		return b, false
-	}
-	end := i + j + len(agentsMarkerEnd)
-	if end < len(s) && s[end] == '\n' {
-		end++
 	}
 	pre := strings.TrimRight(s[:i], "\n")
 	post := s[end:]
@@ -2198,19 +2190,110 @@ func removeMarkedBlock(b []byte) ([]byte, bool) {
 // ended up inside our markers and the byte-range delete took them with it.
 func markedRegion(b []byte) (pre, region, post string, ok bool) {
 	s := string(b)
-	i := strings.Index(s, agentsMarkerBegin)
-	if i < 0 {
+	i, j, end, ok := markerSpan(s)
+	if !ok {
 		return "", "", "", false
 	}
-	j := strings.Index(s[i:], agentsMarkerEnd)
-	if j < 0 {
-		return "", "", "", false
+	return s[:i], s[i+len(agentsMarkerBegin) : j], s[end:], true
+}
+
+// markerSpan finds our block: begin is where the begin marker's line starts,
+// endLine where the end marker's line starts, after the byte past the end
+// marker's line ending. A marker counts only as a whole line of its own —
+// nothing before it, nothing after it but spaces and the line ending — and
+// only outside a multi-line string. A participant's comment that happens to
+// end in our marker text, or our block's text pasted into a multi-line string, is
+// not our block: the first stranded every later install and uninstall, and
+// the second was rewritten by uninstall.
+func markerSpan(s string) (begin, endLine, after int, ok bool) {
+	begin = -1
+	for _, l := range linesOutsideTOMLStrings(s) {
+		text := strings.TrimRight(s[l.start:l.end], " \t\r")
+		switch {
+		case begin < 0 && text == agentsMarkerBegin:
+			begin = l.start
+		case begin >= 0 && text == agentsMarkerEnd:
+			after = l.end
+			if after < len(s) && s[after] == '\n' {
+				after++
+			}
+			return begin, l.start, after, true
+		}
 	}
-	end := i + j + len(agentsMarkerEnd)
-	if end < len(s) && s[end] == '\n' {
-		end++
+	return 0, 0, 0, false
+}
+
+// textLine is one line of a text by byte offsets, without its "\n".
+type textLine struct{ start, end int }
+
+// linesOutsideTOMLStrings is every line of s that begins outside a
+// multi-line string. It reads TOML's four string forms, comments and escapes
+// just far enough to know where a triple-quoted string opens and closes; a line
+// that starts inside one is not a line of the file's structure.
+func linesOutsideTOMLStrings(s string) []textLine {
+	const (
+		normal = iota
+		mlBasic
+		mlLiteral
+	)
+	var out []textLine
+	state, lineStart, startState := normal, 0, normal
+	for i := 0; i <= len(s); i++ {
+		if i == len(s) || s[i] == '\n' {
+			if startState == normal && (i > lineStart || i < len(s)) {
+				out = append(out, textLine{lineStart, i})
+			}
+			lineStart, startState = i+1, state
+			continue
+		}
+		switch state {
+		case normal:
+			switch {
+			case s[i] == '#':
+				for i+1 < len(s) && s[i+1] != '\n' {
+					i++
+				}
+			case strings.HasPrefix(s[i:], `"""`):
+				state, i = mlBasic, i+2
+			case strings.HasPrefix(s[i:], `'''`):
+				state, i = mlLiteral, i+2
+			case s[i] == '"':
+				i = skipOneLineString(s, i, '"', true)
+			case s[i] == '\'':
+				i = skipOneLineString(s, i, '\'', false)
+			}
+		case mlBasic:
+			switch {
+			case s[i] == '\\':
+				i++
+			case strings.HasPrefix(s[i:], `"""`):
+				state, i = normal, i+2
+			}
+		case mlLiteral:
+			if strings.HasPrefix(s[i:], `'''`) {
+				state, i = normal, i+2
+			}
+		}
 	}
-	return s[:i], s[i+len(agentsMarkerBegin) : i+j], s[end:], true
+	return out
+}
+
+// skipOneLineString returns the index of the quote that closes the string
+// opened at s[open], or the last byte of the line when it does not close.
+func skipOneLineString(s string, open int, quote byte, escapes bool) int {
+	for i := open + 1; i < len(s) && s[i] != '\n'; i++ {
+		switch {
+		case escapes && s[i] == '\\':
+			i++
+		case s[i] == quote:
+			return i
+		}
+	}
+	end := strings.IndexByte(s[open:], '\n')
+	if end < 0 {
+		return len(s) - 1
+	}
+	return open + end - 1
 }
 
 // tomlSection is one top-level table inside a region of TOML text, in its
