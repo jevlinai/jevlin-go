@@ -17,6 +17,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"unicode"
@@ -293,7 +294,7 @@ func lineEnding(line string) string {
 
 // ── reading the marks back ──────────────────────────────────────────────
 
-var codexMarkRe = regexp.MustCompile(`^(.*?)[ \t]*#[ \t]*` + regexp.QuoteMeta(codexMarkWord) + ` \(("(?:[^"\\]|\\.)*")\)(?:; (.*?))?[ \t]*$`)
+var codexMarkRe = regexp.MustCompile(`^(.*?)[ \t]*#[ \t]*` + regexp.QuoteMeta(codexMarkWord) + ` \(("(?:[^"\\]|\\.)*")\)(?:; (.*))?$`)
 
 // parseCodexMark reads a marked line: what precedes the mark, the config
 // path it names, and the suffix.
@@ -319,48 +320,71 @@ func markSuffix(line string) string {
 
 // codexMarkedLine is one line of ours found in a participant's table.
 type codexMarkedLine struct {
-	index  int
-	path   []string // the table the line is in; nil at root
-	header bool     // the line is a table header we added
-	cfg    string
+	index int
+	path  []string // the table the line is in; nil at root
+	cfg   string
 }
 
-// codexMarkedLines finds every marked line in text and the table each sits
-// in. The scan is the same header scan the rest of this file uses, and its
-// result is held to the decoded document when the lines are acted on.
+// codexMarkedLines finds every marked line of the file's own structure —
+// never one inside a multi-line string — and the table each sits in.
 func codexMarkedLines(text string) []codexMarkedLine {
 	var out []codexMarkedLine
 	var path []string
-	for i, raw := range strings.Split(text, "\n") {
-		line := strings.TrimRight(raw, "\r")
+	lineNo := map[int]int{} // byte offset of a line's start → its index in strings.Split(text, "\n")
+	n := 0
+	lineNo[0] = 0
+	for i := 0; i < len(text); i++ {
+		if text[i] == '\n' {
+			n++
+			lineNo[i+1] = n
+		}
+	}
+	for _, l := range linesOutsideTOMLStrings(text) {
+		line := strings.TrimRight(text[l.start:l.end], "\r")
 		if m := tomlHeaderLine.FindStringSubmatch(line); m != nil {
 			path = headerPath(headerName(m))
-			if _, cfg, marked := parseCodexMark(line); marked {
-				out = append(out, codexMarkedLine{index: i, path: path, header: true, cfg: cfg})
-			}
 			continue
 		}
 		if _, cfg, marked := parseCodexMark(line); marked {
-			out = append(out, codexMarkedLine{index: i, path: path, cfg: cfg})
+			out = append(out, codexMarkedLine{index: lineNo[l.start], path: path, cfg: cfg})
 		}
 	}
 	return out
 }
 
-// codexMarkRemoval is what taking this installation's marked lines out of
-// the file comes to.
+// codexMarkRemoval is what putting back the participant's own lines comes
+// to.
 type codexMarkRemoval struct {
 	next     []byte
 	changed  bool
 	restored []string // keys put back as they were
+	kept     []string // keys left, because their value changed after install
 	foreign  []string // config paths of marks that are another installation's
 	why      string
 }
 
-// removeCodexMarks takes back exactly the lines marked with this
-// installation's config path: an added entry or header is deleted, a
-// rewritten or commented-out line is restored to the line the mark kept.
-func removeCodexMarks(text string, entry binEntry) codexMarkRemoval {
+// codexMarkWrote is the value install writes over a marked line's key: our
+// profile's name into default_permissions, true into a network_proxy switch.
+func codexMarkWrote(key string) any {
+	if key == "default_permissions" {
+		return codexProfileName
+	}
+	return true
+}
+
+// restoreCodexMarks puts back the participant's own lines that install
+// changed. withRegion is true when our region goes in the same edit: the
+// region and the lines it implies are one unit (a default_permissions
+// naming our profile is meaningless without it, and a network_proxy turned
+// back off beside a region left in place would open its network), so every
+// marked line is put back with it, whichever config path the mark spells.
+// Without a region, a mark is this installation's only when it names this
+// installation's config file — the same file, through any link.
+//
+// A line whose value is no longer what install wrote is the participant's
+// newer choice and stays: putting the old line back over it could widen a
+// sandbox they had since narrowed.
+func restoreCodexMarks(text string, withRegion bool, entry binEntry) codexMarkRemoval {
 	marks := codexMarkedLines(text)
 	if len(marks) == 0 {
 		return codexMarkRemoval{next: []byte(text)}
@@ -371,9 +395,8 @@ func removeCodexMarks(text string, entry binEntry) codexMarkRemoval {
 	}
 	lines := strings.Split(text, "\n")
 	out := codexMarkRemoval{}
-	drop := map[int]bool{}
 	for _, m := range marks {
-		if entry.cfg == "" || !samePath(m.cfg, entry.cfg) {
+		if !withRegion && !sameConfigFile(m.cfg, entry.cfg) {
 			if !containsString(out.foreign, m.cfg) {
 				out.foreign = append(out.foreign, m.cfg)
 			}
@@ -383,49 +406,61 @@ func removeCodexMarks(text string, entry binEntry) codexMarkRemoval {
 		cr := strings.TrimPrefix(lines[m.index], line) // "\r" in a CRLF file
 		before, _, _ := parseCodexMark(line)
 		suffix := markSuffix(line)
+		var orig string
 		switch {
 		case strings.HasPrefix(suffix, "was: "):
-			orig := strings.TrimPrefix(suffix, "was: ")
-			lines[m.index] = orig + cr
-			doc, ok := decodeTOMLDoc(orig)
-			if !ok || len(doc) != 1 {
-				return codexMarkRemoval{next: []byte(text), why: fmt.Sprintf("line %d carries a jevlin mark whose kept line does not read as one key; restore it by hand", m.index+1)}
+			orig = strings.TrimPrefix(suffix, "was: ")
+			now, ok := decodeTOMLDoc(before)
+			kept, okKept := decodeTOMLDoc(orig)
+			if !ok || !okKept || len(now) != 1 || len(kept) != 1 {
+				return codexMarkRemoval{next: []byte(text), why: fmt.Sprintf("line %d carries a jevlin mark that does not read as one key; put it back by hand", m.index+1)}
 			}
-			for k, v := range doc {
-				setTOMLPath(ed.expected, v, append(append([]string{}, m.path...), k)...)
-				out.restored = append(out.restored, k)
+			key := sortedKeys(kept)[0]
+			if v, has := now[key]; !has || !tomlValueEqual(v, codexMarkWrote(key)) {
+				out.kept = append(out.kept, key)
+				continue
 			}
 		case suffix == codexMarkReplaced:
-			orig := strings.TrimPrefix(before, "# ")
-			lines[m.index] = orig + cr
-			doc, ok := decodeTOMLDoc(orig)
-			if !ok || len(doc) != 1 {
-				return codexMarkRemoval{next: []byte(text), why: fmt.Sprintf("line %d carries a jevlin mark whose commented-out line does not read as one key; restore it by hand", m.index+1)}
-			}
-			for k, v := range doc {
-				setTOMLPath(ed.expected, v, append(append([]string{}, m.path...), k)...)
-				out.restored = append(out.restored, k)
-			}
+			orig = strings.TrimPrefix(before, "# ")
 		default:
-			return codexMarkRemoval{next: []byte(text), why: fmt.Sprintf("line %d carries a jevlin mark but keeps no line of yours to put back; remove it by hand", m.index+1)}
+			return codexMarkRemoval{next: []byte(text), why: fmt.Sprintf("line %d carries a jevlin mark but keeps no line of yours to put back; put it back by hand", m.index+1)}
+		}
+		doc, ok := decodeTOMLDoc(orig)
+		if !ok || len(doc) != 1 {
+			return codexMarkRemoval{next: []byte(text), why: fmt.Sprintf("line %d carries a jevlin mark whose kept line does not read as one key; put it back by hand", m.index+1)}
+		}
+		lines[m.index] = orig + cr
+		for k, v := range doc {
+			setTOMLPath(ed.expected, v, append(append([]string{}, m.path...), k)...)
+			out.restored = append(out.restored, k)
 		}
 		out.changed = true
 	}
 	if !out.changed {
-		return codexMarkRemoval{next: []byte(text), foreign: out.foreign}
+		return codexMarkRemoval{next: []byte(text), foreign: out.foreign, kept: out.kept}
 	}
-	var kept []string
-	for i, l := range lines {
-		if !drop[i] {
-			kept = append(kept, l)
-		}
-	}
-	ed.text = strings.Join(kept, "\n")
+	ed.text = strings.Join(lines, "\n")
 	if err := ed.verify(); err != nil {
-		return codexMarkRemoval{next: []byte(text), why: err.Error() + "; remove the marked lines by hand", foreign: out.foreign}
+		return codexMarkRemoval{next: []byte(text), why: err.Error() + "; put the marked lines back by hand", foreign: out.foreign}
 	}
 	out.next = []byte(ed.text)
 	return out
+}
+
+func tomlValueEqual(a, b any) bool { return fmt.Sprint(a) == fmt.Sprint(b) }
+
+// sameConfigFile: do a and b name the same config file, compared as paths
+// and then through any symbolic link? An empty name is no file.
+func sameConfigFile(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	if samePath(a, b) {
+		return true
+	}
+	ra, errA := filepath.EvalSymlinks(a)
+	rb, errB := filepath.EvalSymlinks(b)
+	return errA == nil && errB == nil && samePath(ra, rb)
 }
 
 // ── the ownership mark on a participant's own line ──────────────────────

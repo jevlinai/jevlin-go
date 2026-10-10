@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -581,10 +582,16 @@ func (t codexTarget) PlanInstall(ops agentOps, paths agentPaths, entry binEntry,
 	var cp agentPlan
 	cfg := planCodexConfig(ops, t.Label(), paths.codexConfig, entry, getenv, codexSandboxOS, &cp)
 	if cp.aborted != "" {
+		// Only a safety write can be in cp now; the caller commits it and
+		// nothing else.
 		p.aborted = cp.aborted
+		p.writes = append(p.writes, cp.writes...)
 		return
 	}
 	if cfg.scope == codexNothing {
+		// A safety write closing our own block's network may be planned
+		// even here; it is ours whatever the answer was.
+		p.writes = append(p.writes, cp.writes...)
 		p.notes = append(p.notes, cp.notes...)
 		p.refused = append(p.refused, cp.refused...)
 		return
@@ -697,44 +704,77 @@ func (t codexTarget) PlanUninstall(ops agentOps, paths agentPaths, entry binEntr
 		}
 	}
 	if existing, mode, err := readWithMode(ops, paths.codexConfig); err == nil && existing != nil {
-		next := existing
-		var whys []string
-		switch r := removeOurSandboxBlock(existing, entry, getenv); {
-		case r.had && r.ours:
-			if len(r.kept) > 0 {
-				p.notes = append(p.notes, fmt.Sprintf("%s: keeping %s in %s that jevlin did not write: %s",
-					t.Label(), tables(len(r.kept)), paths.codexConfig, strings.Join(r.kept, ", ")))
-			}
-			if len(r.dropped) > 0 {
-				p.notes = append(p.notes, droppedKeysNote(t.Label(), paths.codexConfig, r.dropped))
-			}
-			next = r.next
-			whys = append(whys, "remove jevlin's block")
-		case r.had:
-			p.notes = append(p.notes, t.Label()+": left the jevlin block in "+paths.codexConfig+": "+r.why)
-		}
-		// Lines of ours in tables of the participant's (codex_participant.go):
-		// only those marked with this installation's config.
-		m := removeCodexMarks(string(next), entry)
-		switch {
-		case m.why != "":
-			p.notes = append(p.notes, t.Label()+": left jevlin's marked lines in "+paths.codexConfig+": "+m.why)
-		case m.changed:
-			next = m.next
-			whys = append(whys, "restore "+strings.Join(m.restored, ", ")+" as you had it")
-		}
-		for _, other := range m.foreign {
-			noteOnce(p, t.Label()+": the lines another installation marked in "+paths.codexConfig+" are "+leftForeign(describeOther(nil, []string{other}, refFor(entry))))
-		}
-		if len(whys) > 0 {
-			if _, refused := planCodexWrite(ops, t.Label(), paths.codexConfig, existing, next, "", nil, mode, strings.Join(whys, "; "), p); !refused {
-				removed = true
-			}
+		if planCodexConfigRemoval(ops, t.Label(), paths.codexConfig, existing, mode, entry, getenv, p) {
+			removed = true
 		}
 	}
 	if !removed {
 		p.skipped = append(p.skipped, t.Label()+": not installed")
 	}
+}
+
+// planCodexConfigRemoval plans uninstall's one edit to Codex's config.toml:
+// our region and the participant's lines it implies, as one unit.
+//
+// The region is attributed by its roots (codexRootsOwner), and the lines
+// install changed outside it go back with it, whichever config path their
+// marks spell, because they are its lines: a default_permissions naming our
+// profile without the profile is a file Codex refuses, and a network_proxy
+// turned back off beside a region that stays would open the region's
+// network to every host. So when the region stays, its lines stay; and the
+// region never goes while a default_permissions line would still name it.
+// Without a region, a marked line goes back only when its mark names this
+// installation's config file.
+func planCodexConfigRemoval(ops agentOps, label, path string, existing []byte, mode os.FileMode, entry binEntry, getenv func(string) string, p *agentPlan) bool {
+	next := existing
+	var whys []string
+	r := removeOurSandboxBlock(existing, entry, getenv)
+	var m codexMarkRemoval
+	switch {
+	case r.had && r.ours:
+		if len(r.kept) > 0 {
+			p.notes = append(p.notes, fmt.Sprintf("%s: keeping %s in %s that jevlin did not write: %s",
+				label, tables(len(r.kept)), path, strings.Join(r.kept, ", ")))
+		}
+		if len(r.dropped) > 0 {
+			p.notes = append(p.notes, droppedKeysNote(label, path, r.dropped))
+		}
+		next = r.next
+		whys = append(whys, "remove jevlin's block")
+		m = restoreCodexMarks(string(next), true, entry)
+	case r.had:
+		p.notes = append(p.notes, label+": left the jevlin block in "+path+", and the lines of yours it changed: "+r.why)
+		return false
+	default:
+		m = restoreCodexMarks(string(next), false, entry)
+	}
+	switch {
+	case m.why != "":
+		p.notes = append(p.notes, label+": left jevlin's block and the lines of yours it changed in "+path+": "+m.why)
+		return false
+	case m.changed:
+		next = m.next
+		whys = append(whys, "restore "+strings.Join(m.restored, ", ")+" as you had it")
+	}
+	for _, k := range m.kept {
+		p.notes = append(p.notes, fmt.Sprintf("%s: %s in %s was changed after jevlin set it, so it is left as you have it", label, k, path))
+	}
+	for _, other := range m.foreign {
+		noteOnce(p, label+": the lines another installation marked in "+path+" are "+leftForeign(describeOther(nil, []string{other}, refFor(entry))))
+	}
+	if doc, ok := decodeTOMLDoc(string(next)); ok && r.had && r.ours {
+		if dp, _ := doc["default_permissions"].(string); dp == codexProfileName {
+			if _, defined := lookupTOMLPath(doc, "permissions", codexProfileName); !defined {
+				p.notes = append(p.notes, fmt.Sprintf("%s: left the jevlin block in %s: default_permissions would still name %q once the block was gone, which Codex refuses; set default_permissions to the profile you want and run this again", label, path, codexProfileName))
+				return false
+			}
+		}
+	}
+	if len(whys) == 0 {
+		return false
+	}
+	_, refused := planCodexWrite(ops, label, path, existing, next, "", nil, mode, strings.Join(whys, "; "), p)
+	return !refused
 }
 
 // sandboxRemoval is what uninstall concluded about Codex's config.toml.

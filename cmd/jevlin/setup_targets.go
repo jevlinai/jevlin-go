@@ -121,6 +121,9 @@ func (r *setupRun) agentsStep() int {
 	}
 	plan := buildInstallPlan(ops, paths, selected, entry, r.d.getenv)
 	if plan.aborted != "" {
+		if !r.dry {
+			commitSafetyOnly(ops, &plan, r.d.stdout, r.d.stderr)
+		}
 		return r.abort("no coding agent was set up")
 	}
 	if r.d.agentPlanObserver != nil {

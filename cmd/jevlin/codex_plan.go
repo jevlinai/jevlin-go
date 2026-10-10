@@ -33,6 +33,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 )
@@ -161,26 +162,40 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 	case facts.wwTable:
 		p.refused = append(p.refused, fmt.Sprintf("%s: %s has a [%s] table of your own, which Codex does not combine with a permission profile; nothing was installed for Codex. To use jevlin's search there, replace that table with this profile, before your first table:\n%s",
 			label, path, codexSandboxTable, indentBlock(codexProfileText(profile))))
+		planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
+
 		return codexConfigPlan{scope: codexNothing, left: true}
 	case facts.hasSandboxMode && facts.sandboxMode == "danger-full-access",
 		facts.hasDefault && facts.defaultPermissions == ":danger-full-access":
 		p.notes = append(p.notes, label+": your Codex sandbox is danger-full-access, so there is nothing to widen; the skill and hooks are enough")
+		planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
+
 		return codexConfigPlan{scope: codexSkillHooksOnly}
 	case facts.hasSandboxMode && facts.sandboxMode == "read-only",
 		facts.hasDefault && facts.defaultPermissions == ":read-only":
 		p.refused = append(p.refused, fmt.Sprintf("%s: %s keeps Codex's sandbox read-only, and widening that is yours to decide; nothing was installed for Codex. To use jevlin's search there, replace it with this profile, before your first table:\n%s", label, path, indentBlock(codexProfileText(profile))))
+		planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
+
 		return codexConfigPlan{scope: codexNothing, left: true}
 	case facts.hasSandboxMode && facts.sandboxMode != "workspace-write":
 		p.refused = append(p.refused, fmt.Sprintf("%s: %s sets sandbox_mode = %q, which this client does not know how to combine with a permission profile; nothing was installed for Codex", label, path, facts.sandboxMode))
+		planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
+
 		return codexConfigPlan{scope: codexNothing, left: true}
 	case facts.hasDefault && strings.HasPrefix(facts.defaultPermissions, ":") && facts.defaultPermissions != ":workspace":
 		p.refused = append(p.refused, fmt.Sprintf("%s: %s names the built-in profile %q in default_permissions, which this client does not know how to extend; nothing was installed for Codex", label, path, facts.defaultPermissions))
+		planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
+
 		return codexConfigPlan{scope: codexNothing, left: true}
 	case facts.hasDefault && facts.defaultPermissions == codexProfileName && !had:
 		p.refused = append(p.refused, fmt.Sprintf("%s: %s names a profile of yours called %q, the name jevlin's own profile uses; nothing was installed for Codex. Rename yours and run this again", label, path, codexProfileName))
+		planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
+
 		return codexConfigPlan{scope: codexNothing, left: true}
 	case facts.proxy == proxyOther:
 		p.refused = append(p.refused, fmt.Sprintf("%s: features.network_proxy in %s is a table without enabled = true or false, or a shape this client does not read, so whether Codex enforces a profile's host list cannot be told; nothing was installed for Codex. Set it to enabled = true and run this again", label, path))
+		planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
+
 		return codexConfigPlan{scope: codexNothing, left: true}
 	}
 
@@ -194,6 +209,8 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 		norm, ch, why := installCodexRegion(existing, codexProfileRegion(region.profile()))
 		if why != "" {
 			p.refused = append(p.refused, fmt.Sprintf("%s: %s: %s", label, path, why))
+			planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
+
 			return codexConfigPlan{scope: codexNothing, left: true}
 		}
 		base, moved = norm, ch
@@ -201,6 +218,8 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 	ed, err := newCodexEditor(string(base), entry.cfg)
 	if err != nil {
 		p.refused = append(p.refused, fmt.Sprintf("%s: %s: %v; nothing was written to it", label, path, err))
+		planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
+
 		return codexConfigPlan{left: true}
 	}
 
@@ -219,6 +238,8 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 	if profile.extends != ":workspace" {
 		if !profileDefined(facts.doc, profile.extends) {
 			p.refused = append(p.refused, fmt.Sprintf("%s: %s names the profile %q in default_permissions, and no [permissions] table defines it; nothing was installed for Codex", label, path, profile.extends))
+			planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
+
 			return codexConfigPlan{scope: codexNothing, left: true}
 		}
 		if profileNetworkOn(facts.doc, profile.extends) && !facts.proxyOn() {
@@ -254,13 +275,19 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 		switch answer {
 		case consentNo:
 			p.notes = append(p.notes, label+": nothing installed for Codex: you kept your own settings; the skill and hooks were not written")
+			planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
+
 			return codexConfigPlan{scope: codexNothing}
 		case consentAborted:
 			p.aborted = promptAbortedReason + "; nothing was changed"
+			planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
+
 			return codexConfigPlan{scope: codexNothing}
 		case consentUnasked:
 			p.refused = append(p.refused, fmt.Sprintf("%s: %s needs a change to your own settings, which needs your yes at a terminal (-yes does not answer it); nothing was installed for Codex. By hand:\n%s",
 				label, path, indentBlock(codexByHand(facts, profile))))
+			planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
+
 			return codexConfigPlan{scope: codexNothing, left: true}
 		}
 		var err error
@@ -281,6 +308,8 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 			err = ed.verify()
 		}
 		if err != nil {
+			planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
+
 			return codexRefuse(label, path, err, p)
 		}
 	}
@@ -288,6 +317,7 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 	next, change, why := installCodexRegion([]byte(ed.text), codexProfileRegion(profile))
 	if why != "" {
 		p.refused = append(p.refused, fmt.Sprintf("%s: %s: %s", label, path, why))
+		planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
 		return codexConfigPlan{scope: codexNothing, left: true}
 	}
 	change.movedRoots = append(moved.movedRoots, change.movedRoots...)
@@ -317,6 +347,7 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 	}
 	changed, refused := planCodexWrite(ops, label, path, existing, next, participant, codexProfileHeaders(), mode, why, p)
 	if refused {
+		planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
 		return codexConfigPlan{scope: codexNothing, left: true}
 	}
 	return codexConfigPlan{changed: changed}
@@ -493,4 +524,54 @@ func profileNetworkOn(doc tomlDoc, name string) bool {
 		name = next
 	}
 	return false
+}
+
+// codexSafeForm is the file with our own region closed: the form it takes
+// whenever install does not write the full profile, on every outcome — a
+// typed no, an unanswered question, no terminal, a refusal. The question
+// governs the participant's lines; our own block is ours, and the open
+// network it may hold is what this client exists to close.
+//
+//   - The old [sandbox_workspace_write] block with network_access = true
+//     keeps its writable roots and loses network_access, as Windows writes
+//     it.
+//   - Our profile with a network of its own and network_proxy off keeps its
+//     roots and loses its network: with the proxy off, its host list opens
+//     every host.
+//
+// ok is false when the region needs nothing.
+func codexSafeForm(existing []byte, region codexRegion, had bool, facts codexFacts) (next []byte, why string, ok bool) {
+	if !had {
+		return nil, "", false
+	}
+	if region.legacy {
+		if _, open := lookupTOMLPath(mustDecode(region.oursText()), codexSandboxTable, "network_access"); !open {
+			return nil, "", false
+		}
+		want := codexSandboxBlock(region.roots)
+		next = replaceBlockInPlace(region.pre+region.foreignRoot, want, region.foreignText(), region.post)
+		return next, "close the open network jevlin's old sandbox block gave every Codex command: keep its writable roots, drop network_access = true", true
+	}
+	if !region.network || region.proxyPresent || facts.proxyOn() {
+		return nil, "", false
+	}
+	prof := region.profile()
+	prof.network, prof.hosts = false, nil
+	next, _, refusal := installCodexRegion(existing, codexProfileRegion(prof))
+	if refusal != "" {
+		return nil, "", false
+	}
+	return next, "close the network jevlin's profile would open while network_proxy is off: keep its writable roots, drop its network", true
+}
+
+// planCodexSafeForm plans codexSafeForm as a safety write, and says so.
+func planCodexSafeForm(ops agentOps, label, path string, existing []byte, mode os.FileMode, region codexRegion, had bool, facts codexFacts, p *agentPlan) {
+	next, why, ok := codexSafeForm(existing, region, had, facts)
+	if !ok {
+		return
+	}
+	if changed, _ := planCodexWrite(ops, label, path, existing, next, region.participantInPlace(), nil, mode, why, p); changed {
+		p.writes[len(p.writes)-1].safety = true
+		p.notes = append(p.notes, label+": "+why+"; this is jevlin's own block, whatever the answer about your settings")
+	}
 }

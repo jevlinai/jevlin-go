@@ -379,6 +379,11 @@ type agentWrite struct {
 	contents []byte
 	mode     os.FileMode
 	why      string
+	// safety marks a write that closes a network this client opened
+	// earlier (codexSafeForm). It is committed even when a question went
+	// unanswered and nothing else is, because leaving it is what the
+	// participant could not have chosen.
+	safety bool
 	// slot marks a file the host has exactly one of -- a skill, opencode's
 	// plugin, Pi's extension. It is set by the two planners that go through
 	// leaveToItsOwner, because a single slot is precisely what that rule is
@@ -513,6 +518,7 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 		plan = buildUninstallPlan(ops, paths, selected, entry, getenv)
 	}
 	if plan.aborted != "" {
+		commitSafetyOnly(ops, &plan, stdout, stderr)
 		fmt.Fprintf(stderr, "\njevlin agents: %s\n", plan.aborted)
 		return exitUsage
 	}
@@ -2707,6 +2713,18 @@ func printPlan(p *agentPlan, home string, w io.Writer) {
 	for _, n := range p.notes {
 		fmt.Fprintf(w, "  %s\n", n)
 	}
+}
+
+// commitSafetyOnly commits the plan's safety writes and nothing else: what
+// an unanswered question still does (agentWrite.safety).
+func commitSafetyOnly(ops agentOps, p *agentPlan, stdout, stderr io.Writer) int {
+	var only agentPlan
+	for _, w := range p.writes {
+		if w.safety {
+			only.writes = append(only.writes, w)
+		}
+	}
+	return commitPlan(ops, &only, stdout, stderr)
 }
 
 func commitPlan(ops agentOps, p *agentPlan, stdout, stderr io.Writer) int {

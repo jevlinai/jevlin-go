@@ -52,6 +52,7 @@ func codexStates() []codexState {
 		{name: "own-profile-quoted-name", before: "default_permissions = \"team.work\"\n\n[permissions.\"team.work\"]\nextends = \":workspace\"\n", answer: "y"},
 		{name: "own-profile-named-jevlin", before: "default_permissions = \"jevlin\"\n\n[permissions.jevlin]\nextends = \":workspace\"\n", exit: exitTransport, nothing: true},
 		{name: "own-profile-proxy-false", before: workProfile + "\n[features]\nnetwork_proxy = false\n", answer: "y"},
+		{name: "default-permissions-workspace-trailing-space", before: "default_permissions = \":workspace\"   \nmodel = \"gpt-5\"\n", answer: "y"},
 		{name: "default-permissions-workspace-crlf", before: "default_permissions = \":workspace\"\r\nmodel = \"gpt-5\"\r\n\r\n[tui]\r\nscreen_reader_detection_done = true\r\n", answer: "y"},
 		{name: "default-permissions-workspace", before: "default_permissions = \":workspace\"\nmodel = \"gpt-5\"\n", answer: "y"},
 		{name: "sandbox-mode-workspace-write", before: "sandbox_mode = \"workspace-write\"\nmodel = \"gpt-5\"\n", answer: "y"},
