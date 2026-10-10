@@ -62,6 +62,9 @@ func codexPermissionLinesBody(ops agentOps, path string, entry binEntry, getenv 
 		}
 		return []string{fmt.Sprintf("permissions: default_permissions in %s names %s, not jevlin's profile; Codex's commands do not run under it", where, name)}, damage
 	}
+	if !profileDefined(facts.doc, region.extends) {
+		return []string{fmt.Sprintf("permissions: jevlin's profile in %s extends %s, which no [permissions] table defines; Codex refuses this file and does not start until that profile is back", where, mustTOMLString(region.extends))}, damage
+	}
 	proxyOn := region.proxyPresent || facts.proxyOn()
 	state := "on"
 	if !proxyOn {

@@ -495,3 +495,28 @@ func TestALineLeftByUninstallLosesOurMark(t *testing.T) {
 		t.Errorf("a later switch was refused (exit %d):\n%s", code, out)
 	}
 }
+
+// Codex refuses a file whose jevlin profile extends a profile that no
+// longer exists (live on 0.158.0: "permissions profile `jevlin` extends
+// undefined profile"). Status says so, and install says which profile and
+// writes nothing for Codex.
+func TestAnExtendedProfileThatIsGoneIsNamed(t *testing.T) {
+	m, ops, cfgPath, _ := installedOn(t, "own-profile-network-absent")
+	got := string(m.files[codexConfigPath])
+	i := strings.Index(got, "[permissions.work]")
+	if i < 0 {
+		t.Fatalf("this case needs the participant's profile:\n%s", got)
+	}
+	gone := got[:i]
+	m.files[codexConfigPath] = []byte(gone)
+	if _, out := runAgentsAt(t, ops, "", "status", "-config", cfgPath); !strings.Contains(out, `extends "work", which no [permissions] table defines; Codex refuses this file and does not start`) {
+		t.Errorf("status does not name the missing profile:\n%s", out)
+	}
+	code, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-yes")
+	if code == exitOK || !strings.Contains(out, `jevlin's profile in /home/u/.codex/config.toml extends your profile "work", which no [permissions] table defines any more`) {
+		t.Errorf("install does not say which profile is gone (exit %d):\n%s", code, out)
+	}
+	if string(m.files[codexConfigPath]) != gone {
+		t.Errorf("install changed a file it cannot complete:\n%s", m.files[codexConfigPath])
+	}
+}

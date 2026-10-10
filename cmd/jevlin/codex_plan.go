@@ -237,7 +237,16 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 	}
 	if profile.extends != ":workspace" {
 		if !profileDefined(facts.doc, profile.extends) {
-			p.refused = append(p.refused, fmt.Sprintf("%s: %s names the profile %q in default_permissions, and no [permissions] table defines it; nothing was installed for Codex", label, path, profile.extends))
+			if had && facts.hasDefault && facts.defaultPermissions == codexProfileName {
+				// Ours already extends it, and it has gone since: Codex
+				// refuses the file and does not start (seen live on
+				// 0.158.0: "permissions profile `jevlin` extends undefined
+				// profile"). Which profile ours should extend now is the
+				// participant's to say.
+				p.refused = append(p.refused, fmt.Sprintf("%s: jevlin's profile in %s extends your profile %s, which no [permissions] table defines any more, and Codex refuses the file and does not start until it does; nothing was installed for Codex. Put that profile back, or run agents uninstall, which puts your default_permissions line back, and set it to the profile you want", label, path, mustTOMLString(profile.extends)))
+			} else {
+				p.refused = append(p.refused, fmt.Sprintf("%s: %s names the profile %q in default_permissions, and no [permissions] table defines it; nothing was installed for Codex", label, path, profile.extends))
+			}
 			planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
 
 			return codexConfigPlan{scope: codexNothing, left: true}
