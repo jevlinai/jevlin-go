@@ -252,7 +252,29 @@ func damagedCodexRegion(s string) (pre, region, post string, ok bool) {
 		}
 		cut := len(s)
 		if stop < len(lines) {
-			cut = lines[stop].start
+			// The comments directly above the participant's table are
+			// that table's, not ours: Codex's editor reads them so, and
+			// counting them in our region would delete them with it. Back
+			// up over the comment and blank run above its header, then
+			// forward over the blank lines, as firstHeaderStart does, so
+			// the region ends after our last table's last key and keeps
+			// the blank lines that followed it.
+			at := stop
+			for at > begin+1 {
+				prev := lines[at-1]
+				if prev.end+1 != lines[at].start {
+					break
+				}
+				t := strings.TrimSpace(s[prev.start:prev.end])
+				if t != "" && !strings.HasPrefix(t, "#") {
+					break
+				}
+				at--
+			}
+			for at < stop && strings.TrimSpace(s[lines[at].start:lines[at].end]) == "" {
+				at++
+			}
+			cut = lines[at].start
 		}
 		return s[:lines[begin].start], s[after(begin):cut], s[cut:], true
 	}

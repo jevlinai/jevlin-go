@@ -136,3 +136,40 @@ func mustLookup(doc tomlDoc, path ...string) any {
 	v, _ := lookupTOMLPath(doc, path...)
 	return v
 }
+
+// Codex reads our end marker as the leading comment of the participant's
+// table right after our block, and removes it with that table (captured:
+// `codex mcp remove foo`). The region with a lone begin marker is still
+// ours, and recovering it must not take the participant's comment above
+// their next table: status names the damage, install repairs it and keeps
+// the comment, and uninstall removes the region whole and keeps it too.
+func TestARegionThatLostItsEndMarkerKeepsTheParticipantsComment(t *testing.T) {
+	const comment = "# trusted because I own it\n[projects.\"/x\"]"
+	m, ops, cfgPath := capturedWithHome(t, "mcp-after-block-after-mcp-remove.toml")
+	damaged := string(m.files[codexConfigPath])
+	if !strings.Contains(damaged, agentsMarkerBegin) || strings.Contains(damaged, agentsMarkerEnd) || !strings.Contains(damaged, comment) {
+		t.Fatalf("the capture is not the damage it is named for:\n%s", damaged)
+	}
+	if _, out := runAgentsAt(t, ops, "", "status", "-config", cfgPath); !strings.Contains(out, "has lost one of its markers") {
+		t.Errorf("status does not name the damage:\n%s", out)
+	}
+	code, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-yes")
+	got := string(m.files[codexConfigPath])
+	if code != exitOK || !strings.Contains(out, "repair jevlin's block") {
+		t.Fatalf("install did not repair the block (exit %d):\n%s", code, out)
+	}
+	if !strings.Contains(got, comment) || strings.Count(got, agentsMarkerBegin) != 1 || strings.Count(got, agentsMarkerEnd) != 1 {
+		t.Errorf("the repair lost the participant's comment, or is not one block:\n%s", got)
+	}
+	if _, again := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-yes"); string(m.files[codexConfigPath]) != got {
+		t.Errorf("a second install changed the repaired file:\n%s", again)
+	}
+
+	m.files[codexConfigPath] = []byte(damaged)
+	if code, out := runAgentsAt(t, ops, "", "uninstall", "-config", cfgPath, "-yes"); code != exitOK {
+		t.Fatalf("uninstall: exit %d\n%s", code, out)
+	}
+	if left := string(m.files[codexConfigPath]); left != "model = \"gpt-5\"\n\n"+comment+"\ntrust_level = \"trusted\"\n" {
+		t.Errorf("uninstall did not leave exactly the participant's lines:\n%q", left)
+	}
+}
