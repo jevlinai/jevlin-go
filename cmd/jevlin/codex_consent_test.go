@@ -543,7 +543,7 @@ func TestEveryDenyPatternCodexAppliesIsSeen(t *testing.T) {
 // "*.example.invalid".
 func TestTheRouterHostIsComparedAsCodexComparesIt(t *testing.T) {
 	cfgPath, _ := sandboxTestConfig(t)
-	b, err := os.ReadFile(cfgPath)
+	b, err := os.ReadFile(cfgPath) // #nosec G304 -- the test's own config, in t.TempDir()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -551,7 +551,7 @@ func TestTheRouterHostIsComparedAsCodexComparesIt(t *testing.T) {
 	if spelled == string(b) {
 		t.Fatal("the test config has no router_url to respell")
 	}
-	if err := os.WriteFile(cfgPath, []byte(spelled), 0o600); err != nil {
+	if err := os.WriteFile(cfgPath, []byte(spelled), 0o600); err != nil { // #nosec G703 -- the test's own config, in t.TempDir()
 		t.Fatal(err)
 	}
 	m, ops := newFakeMachine("codex")
