@@ -158,7 +158,7 @@ func TestAProxyTableCodexDeletedIsNamedAndRestored(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("status: exit %d\n%s", code, out)
 	}
-	if !strings.Contains(out, "network_proxy is off (the [features.network_proxy] table is gone)") ||
+	if !strings.Contains(out, "network_proxy is off in ~/.codex/config.toml, so the profile's host list is not enforced") ||
 		!strings.Contains(out, "every command Codex runs can reach any host") {
 		t.Errorf("status does not say the network is open to every host:\n%s", out)
 	}
@@ -187,7 +187,7 @@ func TestStatusComparesTheProfileWithEveryHostTheConfigNames(t *testing.T) {
 		t.Fatalf("install: exit %d\n%s", code, out)
 	}
 	_, out := runAgentsAt(t, ops, "", "status", "-config", cfgPath)
-	if !strings.Contains(out, `permissions: profile "jevlin"; hosts agents-v1.nyks.dev, as.example.invalid, router.example.invalid; network_proxy on`) {
+	if !strings.Contains(out, `permissions: profile "jevlin" (extends ":workspace") in ~/.codex/config.toml; hosts agents-v1.nyks.dev, as.example.invalid, router.example.invalid; network_proxy on`) {
 		t.Errorf("status does not name the profile and its hosts:\n%s", out)
 	}
 	if strings.Contains(out, "agents install refreshes it") {

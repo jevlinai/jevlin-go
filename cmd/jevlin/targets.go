@@ -721,14 +721,7 @@ func (t codexTarget) PlanUninstall(ops agentOps, paths agentPaths, entry binEntr
 			p.notes = append(p.notes, t.Label()+": left jevlin's marked lines in "+paths.codexConfig+": "+m.why)
 		case m.changed:
 			next = m.next
-			var parts []string
-			if len(m.removed) > 0 {
-				parts = append(parts, "remove "+entriesWord(len(m.removed))+" jevlin added to your profile")
-			}
-			if len(m.restored) > 0 {
-				parts = append(parts, "restore "+strings.Join(m.restored, ", ")+" as you had it")
-			}
-			whys = append(whys, strings.Join(parts, ", "))
+			whys = append(whys, "restore "+strings.Join(m.restored, ", ")+" as you had it")
 		}
 		for _, other := range m.foreign {
 			noteOnce(p, t.Label()+": the lines another installation marked in "+paths.codexConfig+" are "+leftForeign(describeOther(nil, []string{other}, refFor(entry))))

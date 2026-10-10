@@ -23,6 +23,7 @@ func codexPermissionLines(ops agentOps, path string, entry binEntry, getenv func
 	if err != nil {
 		return nil
 	}
+	where := tilde(ops.home, path)
 	cfg := configForEntry(entry, getenv)
 	var want []string
 	if cfg != nil {
@@ -30,78 +31,57 @@ func codexPermissionLines(ops agentOps, path string, entry binEntry, getenv func
 	}
 	region, had, why := readCodexRegion(existing)
 	if had && why != "" {
-		return []string{"permissions: the jevlin block in config.toml cannot be read: " + why}
+		return []string{"permissions: the jevlin block in " + where + " cannot be read: " + why}
 	}
-	stripped, _ := removeMarkedBlock(existing)
-	facts, ok := readCodexFacts(string(stripped))
-	if !ok {
-		return []string{"permissions: config.toml does not read as TOML"}
-	}
-	if had && region.legacy {
-		return []string{"permissions: the old sandbox block gives every command Codex runs open network to any host; agents install replaces it with a profile limited to the search hosts"}
-	}
-	var name string
-	var hosts []string
-	var proxyOn bool
-	switch {
-	case had:
-		name = codexProfileName
-		if !region.keyPresent {
-			name = facts.defaultPermissions
-		}
-		hosts = region.hosts
-		proxyOn = region.proxyPresent || facts.proxy == proxyBoolTrue || facts.proxy == proxyTableTrue
-	case facts.hasDefault && !strings.HasPrefix(facts.defaultPermissions, ":"):
-		name = facts.defaultPermissions
-		hosts = keysWithValue(facts.doc, "allow", "permissions", name, "network", "domains")
-		proxyOn = facts.proxy == proxyBoolTrue || facts.proxy == proxyTableTrue
-	default:
+	if !had {
 		return nil
 	}
-	var lines []string
-	if had && name != codexProfileName {
-		lines = append(lines, fmt.Sprintf("permissions: default_permissions names %q, not jevlin's profile; Codex's commands run under that one", name))
+	if region.legacy {
+		if _, open := lookupTOMLPath(mustDecode(region.oursText()), codexSandboxTable, "network_access"); open {
+			return []string{"permissions: the old sandbox block in " + where + " gives every command Codex runs open network to any host; agents install replaces it with a profile limited to the search hosts"}
+		}
+		return []string{"permissions: the old sandbox block in " + where + " grants the writable roots and no network; agents install replaces it with a profile"}
 	}
+	facts, ok := readCodexFacts(region.participantInPlace())
+	if !ok {
+		return []string{"permissions: " + where + " does not read as TOML outside the jevlin block"}
+	}
+	active := region.keyPresent || (facts.hasDefault && facts.defaultPermissions == codexProfileName)
+	if !active {
+		name := "nothing"
+		if facts.hasDefault {
+			name = mustTOMLString(facts.defaultPermissions)
+		}
+		return []string{fmt.Sprintf("permissions: default_permissions in %s names %s, not jevlin's profile; Codex's commands do not run under it", where, name)}
+	}
+	proxyOn := region.proxyPresent || facts.proxyOn()
 	state := "on"
 	if !proxyOn {
 		state = "off"
 	}
-	lines = append(lines, fmt.Sprintf("permissions: profile %q; hosts %s; network_proxy %s", name, orNone(hosts), state))
-	if !proxyOn {
-		where := "the [features.network_proxy] table is gone"
-		if facts.proxy == proxyBoolFalse || facts.proxy == proxyTableFalse {
-			where = "it is off in your [features] table"
+	var lines []string
+	switch {
+	case region.network:
+		lines = append(lines, fmt.Sprintf("permissions: profile %q (extends %s) in %s; hosts %s; network_proxy %s", codexProfileName, mustTOMLString(region.extends), where, orNone(region.hosts), state))
+		if !proxyOn {
+			lines = append(lines, "permissions: network_proxy is off in "+where+", so the profile's host list is not enforced and every command Codex runs can reach any host; agents install turns it on")
 		}
-		fix := "agents install turns it on"
-		if !had {
-			// A profile of the participant's own with its network on and
-			// the proxy off is unrestricted by their choice, and install
-			// leaves it so.
-			fix = "that is your profile's own setting, which jevlin leaves"
+		if want != nil && !sameStrings(cleanHosts(region.hosts), want) {
+			lines = append(lines, fmt.Sprintf("permissions: the profile allows %s, but the config now names %s; agents install refreshes it", orNone(region.hosts), orNone(want)))
 		}
-		lines = append(lines, "permissions: network_proxy is off ("+where+"), so the profile's host list is not enforced and every command Codex runs can reach any host; "+fix)
-	}
-	if want == nil {
-		return lines
-	}
-	if had {
-		// Ours: exactly the hosts the config names, no more and no fewer.
-		if !sameStrings(cleanHosts(hosts), want) {
-			lines = append(lines, fmt.Sprintf("permissions: the profile allows %s, but the config now names %s; agents install refreshes it", orNone(hosts), orNone(want)))
-		}
-		return lines
-	}
-	// The participant's: their own hosts are theirs; only ours can be missing.
-	var missing []string
-	for _, h := range want {
-		if !containsString(cleanHosts(hosts), h) {
-			missing = append(missing, h)
-		}
-	}
-	if len(missing) > 0 && proxyOn {
-		lines = append(lines, fmt.Sprintf("permissions: the profile does not allow %s, which the config names; agents install asks to add it", strings.Join(missing, ", ")))
+	case profileNetworkOn(facts.doc, region.extends) && !proxyOn:
+		lines = append(lines, fmt.Sprintf("permissions: profile %q (extends %s) in %s adds writable roots only; the network is open to every host by your profile %s's own setting, which jevlin leaves",
+			codexProfileName, mustTOMLString(region.extends), where, mustTOMLString(region.extends)))
+	default:
+		lines = append(lines, fmt.Sprintf("permissions: profile %q (extends %s) in %s grants the writable roots and no network, so a search from Codex cannot reach the router; agents install asks to add the search hosts",
+			codexProfileName, mustTOMLString(region.extends), where))
 	}
 	return lines
+}
+
+func mustDecode(s string) tomlDoc {
+	doc, _ := decodeTOMLDoc(s)
+	return doc
 }
 
 func orNone(list []string) string {

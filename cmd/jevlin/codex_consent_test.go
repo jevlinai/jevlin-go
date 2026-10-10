@@ -147,33 +147,62 @@ func TestWithNoTerminalTheCodexChangeIsRefusedAndPrinted(t *testing.T) {
 	}
 }
 
-// The question shows what it would add. A participant asked about their own
-// profile is told every line, in the form it is written.
-func TestTheProfileQuestionListsTheEntries(t *testing.T) {
-	st := codexStates()[3] // own-profile-network-absent
-	if st.name != "own-profile-network-absent" {
-		t.Fatalf("the table moved: %s", st.name)
-	}
-	_, ops, cfgPath, _ := seedState(t, st)
-	_, out := runAgentsAt(t, ops, "n\n", "install", "-config", cfgPath, "-client", "codex")
-	for _, want := range []string{
-		`names a permission profile of yours, "work", in default_permissions.`,
-		"[permissions.work.filesystem]",
-		"[permissions.work.network.domains]",
-		`"router.example.invalid" = "allow"`,
-		"[features.network_proxy]",
-		`Add these entries to your profile "work"? [y/N]: `,
+// The question shows everything it would write: the switch, what jevlin's
+// profile adds, the participant's lines that change, and the profile itself.
+func TestTheSwitchQuestionShowsEverythingItWrites(t *testing.T) {
+	for _, tc := range []struct {
+		state string
+		want  []string
+	}{
+		{"own-profile-network-absent", []string{
+			`Switch Codex to jevlin's profile, which extends your profile "work" and adds write access to `,
+			`network access to agents-v1.nyks.dev, as.example.invalid and router.example.invalid only`,
+			`the [features.network_proxy] table, which makes Codex enforce that host list`,
+			`default_permissions = "work" becomes "jevlin"`,
+			`extends = "work"`,
+			`[permissions.jevlin.network.domains]`,
+			`Switch? [y/N]: `,
+		}},
+		{"default-permissions-workspace", []string{
+			`Switch Codex to jevlin's profile, which extends Codex's built-in ":workspace" profile`,
+			`default_permissions = ":workspace" becomes "jevlin"`,
+			`extends = ":workspace"`,
+			`[permissions.jevlin.filesystem]`,
+		}},
+		{"sandbox-mode-workspace-write", []string{
+			`sandbox_mode = "workspace-write" is commented out`,
+			`default_permissions = "jevlin"`,
+		}},
+		{"features-network-proxy-false", []string{
+			`network_proxy = false becomes true in your [features] table`,
+			`[permissions.jevlin.network.domains]`,
+		}},
 	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("the question does not show %q:\n%s", want, out)
-		}
+		t.Run(tc.state, func(t *testing.T) {
+			var st codexState
+			for _, s := range codexStates() {
+				if s.name == tc.state {
+					st = s
+				}
+			}
+			if st.name == "" {
+				t.Fatalf("no state %s", tc.state)
+			}
+			_, ops, cfgPath, _ := seedState(t, st)
+			_, out := runAgentsAt(t, ops, "n\n", "install", "-config", cfgPath, "-client", "codex")
+			for _, w := range tc.want {
+				if !strings.Contains(out, w) {
+					t.Errorf("the question does not show %q:\n%s", w, out)
+				}
+			}
+		})
 	}
 }
 
 // A participant profile with its network already open and the proxy off is
-// unrestricted by their choice: only the filesystem lines are asked
-// for, and the proxy is not turned on, which would cut their network down to
-// jevlin's hosts.
+// unrestricted by their choice: jevlin's profile extends it with the roots
+// only, adds no hosts and does not turn the proxy on, which would cut their
+// network down to jevlin's hosts.
 func TestAnOpenProfileIsAskedOnlyForItsRoots(t *testing.T) {
 	var st codexState
 	for _, s := range codexStates() {
@@ -183,12 +212,52 @@ func TestAnOpenProfileIsAskedOnlyForItsRoots(t *testing.T) {
 	}
 	_, ops, cfgPath, _ := seedState(t, st)
 	_, out := runAgentsAt(t, ops, "n\n", "install", "-config", cfgPath, "-client", "codex")
-	if !strings.Contains(out, "[permissions.work.filesystem]") {
-		t.Fatalf("the roots were not asked for:\n%s", out)
+	if !strings.Contains(out, "adds write access to ") || !strings.Contains(out, "Your profile's network is already open") {
+		t.Fatalf("the question does not offer the roots alone:\n%s", out)
 	}
-	for _, unwanted := range []string{"network.domains", "network_proxy", "[permissions.work.network]"} {
+	for _, unwanted := range []string{"network.domains", "[features.network_proxy]", "network access to", "network_proxy = false becomes"} {
 		if strings.Contains(out, unwanted) {
-			t.Errorf("an open profile was asked for %q:\n%s", unwanted, out)
+			t.Errorf("an open profile was offered %q:\n%s", unwanted, out)
 		}
+	}
+}
+
+// An empty line is not a yes. The question's default is no, written [y/N],
+// and Enter alone takes the default.
+func TestAnEmptyLineAtTheCodexQuestionIsANo(t *testing.T) {
+	for _, st := range askingStates(t) {
+		t.Run(st.name, func(t *testing.T) {
+			m, ops, cfgPath, before := seedState(t, st)
+			code, out := runAgentsAt(t, ops, "\n", "install", "-config", cfgPath, "-client", "codex", "-yes")
+			if code != exitOK || string(m.files[codexConfigPath]) != before {
+				t.Errorf("Enter alone changed the participant's settings (exit %d):\n%s", code, out)
+			}
+		})
+	}
+}
+
+// A sandbox_mode Codex wrote inside our markers is the participant's
+// setting like any other, and is asked about on the run that finds it, not
+// moved out silently to be asked about on the next.
+func TestASandboxModeInsideOurBlockIsAskedAbout(t *testing.T) {
+	cfgPath, _ := sandboxTestConfig(t)
+	m, ops := newFakeMachine("codex")
+	m.terminal = true
+	if code, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-yes"); code != exitOK {
+		t.Fatalf("install: exit %d\n%s", code, out)
+	}
+	installed := string(m.files[codexConfigPath])
+	i := strings.Index(installed, "default_permissions")
+	seeded := installed[:i] + "sandbox_mode = \"workspace-write\"\n" + installed[i:]
+	m.files[codexConfigPath] = []byte(seeded)
+	code, out := runAgentsAt(t, ops, "n\n", "install", "-config", cfgPath, "-yes")
+	if !strings.Contains(out, `sandbox_mode = "workspace-write" is commented out`) {
+		t.Fatalf("the sandbox_mode inside our block was not asked about (exit %d):\n%s", code, out)
+	}
+	if code != exitOK {
+		t.Errorf("a typed no exited %d", code)
+	}
+	if _, out = runAgentsAt(t, ops, "y\n", "install", "-config", cfgPath, "-yes"); !strings.Contains(string(m.files[codexConfigPath]), "# sandbox_mode = \"workspace-write\"  # jevlin agents install") {
+		t.Errorf("a typed yes did not comment it out:\n%s\n%s", out, m.files[codexConfigPath])
 	}
 }

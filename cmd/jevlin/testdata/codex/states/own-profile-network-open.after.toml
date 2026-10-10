@@ -1,14 +1,26 @@
-default_permissions = "work"
+default_permissions = "jevlin"  # jevlin agents install ("CONFIG"); was: default_permissions = "work"
+
+# >>> jevlin agents install >>>
+# Codex permission profile for jevlin's search: write access to its jevlin
+# home; its network is the profile it extends, unchanged.
+# Needs Codex 0.131.0 or newer: an older Codex refuses this file with
+# "invalid type: map, expected a boolean" and does not start; remove
+# this block, or upgrade Codex.
+[permissions.jevlin]
+extends = "work"
+
+[permissions.jevlin.filesystem]
+"HOME/intake" = "write"
+"HOME/sessions" = "write"
+"HOME/spool" = "write"
+"HOME/state" = "write"
+# <<< jevlin agents install <<<
 
 [permissions.work]
 extends = ":workspace"
 
 [permissions.work.filesystem]
 "/home/u/src" = "write"
-"HOME/intake" = "write"  # jevlin agents install ("CONFIG")
-"HOME/sessions" = "write"  # jevlin agents install ("CONFIG")
-"HOME/spool" = "write"  # jevlin agents install ("CONFIG")
-"HOME/state" = "write"  # jevlin agents install ("CONFIG")
 
 [permissions.work.network]
 enabled = true

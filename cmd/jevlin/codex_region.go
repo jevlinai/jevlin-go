@@ -44,8 +44,15 @@ type codexRegion struct {
 
 	// what ours decodes to
 	roots, hosts []string
+	extends      string
 	keyPresent   bool
 	proxyPresent bool
+	network      bool // our profile has a network table of its own
+}
+
+// profile is what our part renders from, as read.
+func (r codexRegion) profile() codexProfile {
+	return codexProfile{roots: r.roots, hosts: r.hosts, extends: r.extends, key: r.keyPresent, network: r.network, proxy: r.proxyPresent}
 }
 
 func (r codexRegion) oursText() string {
@@ -231,9 +238,13 @@ func (r *codexRegion) readOurs() string {
 	}
 	_, r.keyPresent = doc["default_permissions"]
 	_, r.proxyPresent = lookupTOMLPath(doc, "features", "network_proxy")
+	_, r.network = lookupTOMLPath(doc, "permissions", codexProfileName, "network")
+	if v, ok := lookupTOMLPath(doc, "permissions", codexProfileName, "extends"); ok {
+		r.extends, _ = v.(string)
+	}
 	r.roots = keysWithValue(doc, "write", "permissions", codexProfileName, "filesystem")
 	r.hosts = keysWithValue(doc, "allow", "permissions", codexProfileName, "network", "domains")
-	rendered, _ := decodeTOMLDoc(codexProfileText(codexProfile{roots: r.roots, hosts: r.hosts, key: r.keyPresent, proxy: r.proxyPresent}))
+	rendered, _ := decodeTOMLDoc(codexProfileText(r.profile()))
 	if !tomlDocsEqual(doc, rendered) {
 		return "its profile is not exactly what jevlin writes (a value was changed or a key added inside it); remove the block by hand and run this again"
 	}

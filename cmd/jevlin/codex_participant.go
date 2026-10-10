@@ -1,22 +1,18 @@
 package main
 
-// Edits to lines of the participant's own in Codex's config.toml, and their
-// undoing.
+// Lines of the participant's own in Codex's config.toml that install
+// changes, and their undoing.
 //
-// Most of what this client writes into config.toml lives between its two
-// markers. Three decisions put a line of ours into a table that is not ours:
-// a profile of the participant's that default_permissions already names gets
-// jevlin's entries added to it; a value of theirs that would otherwise
-// fight the profile — `[features] network_proxy = false`,
-// `default_permissions = ":workspace"` — is rewritten; and a bare
-// `sandbox_mode = "workspace-write"` is commented out. Each such line
-// carries a trailing comment naming the installation that wrote it, by its
-// config path, which is ownership_match.go's rule applied one line at a time;
-// and each is written only after the participant typed yes to a question
-// that showed the lines. Uninstall takes back exactly the lines carrying
-// this installation's mark — deleting an added one, restoring a rewritten
-// or commented-out one — and nothing else, under the same decoded-document
-// net every other edit here is under.
+// Everything this client adds to config.toml lives between its two markers;
+// nothing is ever written inside a table of the participant's. Some lines of
+// theirs would fight our profile, and those are changed in place, only after
+// the participant typed yes to a question that showed them:
+// `default_permissions` is rewritten to name our profile (which then extends
+// the one it named), a bare `sandbox_mode = "workspace-write"` is commented
+// out, and `network_proxy = false` is rewritten to true when our profile has
+// a network of its own. Each such line carries a trailing comment naming the
+// installation that wrote it, by its config path, and keeps the line it
+// replaced; uninstall puts that line back.
 
 import (
 	"errors"
@@ -27,90 +23,6 @@ import (
 
 	"github.com/BurntSushi/toml"
 )
-
-// profileEntries is what a participant's profile is missing for the search
-// to work, in two cases. network is false in the second, a network already
-// on with the proxy off, where only the filesystem lines are added so the
-// participant's open network is not cut down to our hosts.
-type profileEntries struct {
-	name    string
-	roots   []string // filesystem entries to add
-	enable  bool     // network.enabled must become true
-	rewrite bool     // ...by rewriting an existing false (else by adding the key)
-	hosts   []string // domain entries to add
-	proxy   bool     // the [features.network_proxy] table must be added
-	proxyFx bool     // ...or [features] network_proxy = false rewritten to true
-}
-
-func (e profileEntries) empty() bool {
-	return len(e.roots) == 0 && !e.enable && len(e.hosts) == 0 && !e.proxy && !e.proxyFx
-}
-
-// missingProfileEntries compares the participant's profile with what the
-// search needs.
-func missingProfileEntries(f codexFacts, roots, hosts []string) profileEntries {
-	e := profileEntries{name: f.defaultPermissions}
-	have := keysWithValue(f.doc, "write", "permissions", e.name, "filesystem")
-	for _, r := range roots {
-		if !dirsInclude(have, r) {
-			e.roots = append(e.roots, r)
-		}
-	}
-	netEnabled, netPresent := lookupTOMLPath(f.doc, "permissions", e.name, "network", "enabled")
-	on, _ := netEnabled.(bool)
-	proxyOn := f.proxy == proxyBoolTrue || f.proxy == proxyTableTrue
-	if netPresent && on && !proxyOn {
-		// Their network is already unrestricted; the domain lines would
-		// mean nothing, and turning the proxy on would cut their network
-		// down to our hosts.
-		return e
-	}
-	if !on {
-		e.enable = true
-		e.rewrite = netPresent
-	}
-	allowed := keysWithValue(f.doc, "allow", "permissions", e.name, "network", "domains")
-	for _, h := range hosts {
-		if !containsString(allowed, h) {
-			e.hosts = append(e.hosts, h)
-		}
-	}
-	switch f.proxy {
-	case proxyUnset:
-		e.proxy = true
-	case proxyBoolFalse:
-		e.proxyFx = true
-	}
-	return e
-}
-
-// entriesText renders the entries as the participant is shown them, and as
-// they are written (without the marks).
-func (e profileEntries) text() string {
-	var b strings.Builder
-	if len(e.roots) > 0 {
-		b.WriteString("[permissions." + e.name + ".filesystem]\n")
-		for _, r := range e.roots {
-			b.WriteString(mustTOMLString(r) + " = \"write\"\n")
-		}
-	}
-	if e.enable {
-		b.WriteString("[permissions." + e.name + ".network]\nenabled = true\n")
-	}
-	if len(e.hosts) > 0 {
-		b.WriteString("[permissions." + e.name + ".network.domains]\n")
-		for _, h := range e.hosts {
-			b.WriteString(mustTOMLString(h) + " = \"allow\"\n")
-		}
-	}
-	if e.proxy {
-		b.WriteString("[features.network_proxy]\nenabled = true\n")
-	}
-	if e.proxyFx {
-		b.WriteString("[features]\nnetwork_proxy = true\n")
-	}
-	return b.String()
-}
 
 // ── the editor ──────────────────────────────────────────────────────────
 
@@ -379,68 +291,6 @@ func lineEnding(line string) string {
 	return ""
 }
 
-// tomlEntry is one `key = value` line to add: the key and value as TOML
-// text, and the value as it decodes.
-type tomlEntry struct {
-	keyTOML, valueTOML string
-	key                string
-	value              any
-}
-
-// addToSection appends marked entries to the table at path, creating the
-// table at the end of the file — its header marked too — when there is
-// none.
-func (ed *codexEditor) addToSection(path []string, entries []tomlEntry) error {
-	m, err := ed.mark("")
-	if err != nil {
-		return err
-	}
-	var add strings.Builder
-	for _, e := range entries {
-		add.WriteString(e.keyTOML + " = " + e.valueTOML + "  " + m + "\n")
-		setTOMLPath(ed.expected, e.value, append(append([]string{}, path...), e.key)...)
-	}
-	lines, span, found, err := findSection(ed.text, path)
-	if err != nil {
-		return err
-	}
-	if !found {
-		header := "[" + renderHeaderPath(path) + "]  " + m + "\n"
-		ed.text = string(appendTables([]byte(ed.text), header+add.String()))
-		return nil
-	}
-	// Before the blank run that ends the section, so the gap to the next
-	// table stays where the participant left it.
-	end := span.end
-	for end > span.header+1 && strings.TrimSpace(lines[end-1]) == "" {
-		end--
-	}
-	if end > 0 && !strings.HasSuffix(lines[end-1], "\n") {
-		lines[end-1] += "\n"
-	}
-	out := append([]string{}, lines[:end]...)
-	out = append(out, add.String())
-	out = append(out, lines[end:]...)
-	ed.text = strings.Join(out, "")
-	return nil
-}
-
-// renderHeaderPath spells a path as a header name, quoting what TOML's bare
-// key grammar cannot carry.
-func renderHeaderPath(path []string) string {
-	parts := make([]string, len(path))
-	for i, p := range path {
-		if bareKeyRe.MatchString(p) {
-			parts[i] = p
-			continue
-		}
-		parts[i] = mustTOMLString(p)
-	}
-	return strings.Join(parts, ".")
-}
-
-var bareKeyRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
-
 // ── reading the marks back ──────────────────────────────────────────────
 
 var codexMarkRe = regexp.MustCompile(`^(.*?)[ \t]*#[ \t]*` + regexp.QuoteMeta(codexMarkWord) + ` \(("(?:[^"\\]|\\.)*")\)(?:; (.*?))?[ \t]*$`)
@@ -503,7 +353,6 @@ type codexMarkRemoval struct {
 	next     []byte
 	changed  bool
 	restored []string // keys put back as they were
-	removed  []string // entries deleted, as "[table] key"
 	foreign  []string // config paths of marks that are another installation's
 	why      string
 }
@@ -535,14 +384,6 @@ func removeCodexMarks(text string, entry binEntry) codexMarkRemoval {
 		before, _, _ := parseCodexMark(line)
 		suffix := markSuffix(line)
 		switch {
-		case m.header:
-			drop[m.index] = true
-			// appendTables put one blank line above the header it added;
-			// it goes with the header.
-			if m.index > 0 && strings.TrimSpace(lines[m.index-1]) == "" {
-				drop[m.index-1] = true
-			}
-			deleteTOMLPath(ed.expected, m.path...)
 		case strings.HasPrefix(suffix, "was: "):
 			orig := strings.TrimPrefix(suffix, "was: ")
 			lines[m.index] = orig + cr
@@ -566,15 +407,7 @@ func removeCodexMarks(text string, entry binEntry) codexMarkRemoval {
 				out.restored = append(out.restored, k)
 			}
 		default:
-			doc, ok := decodeTOMLDoc(before)
-			if !ok || len(doc) != 1 {
-				return codexMarkRemoval{next: []byte(text), why: fmt.Sprintf("line %d carries a jevlin mark but does not read as one key; remove it by hand", m.index+1)}
-			}
-			drop[m.index] = true
-			for k := range doc {
-				deleteTOMLPath(ed.expected, append(append([]string{}, m.path...), k)...)
-				out.removed = append(out.removed, "["+strings.Join(m.path, ".")+"] "+k)
-			}
+			return codexMarkRemoval{next: []byte(text), why: fmt.Sprintf("line %d carries a jevlin mark but keeps no line of yours to put back; remove it by hand", m.index+1)}
 		}
 		out.changed = true
 	}

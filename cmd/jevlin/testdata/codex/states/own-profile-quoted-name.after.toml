@@ -1,4 +1,4 @@
-default_permissions = "jevlin"  # jevlin agents install ("CONFIG"); was: default_permissions = "work"
+default_permissions = "jevlin"  # jevlin agents install ("CONFIG"); was: default_permissions = "team.work"
 
 # >>> jevlin agents install >>>
 # Codex permission profile for jevlin's search: write access to its jevlin
@@ -10,7 +10,7 @@ default_permissions = "jevlin"  # jevlin agents install ("CONFIG"); was: default
 enabled = true
 
 [permissions.jevlin]
-extends = "work"
+extends = "team.work"
 
 [permissions.jevlin.filesystem]
 "HOME/intake" = "write"
@@ -27,8 +27,5 @@ enabled = true
 "router.example.invalid" = "allow"
 # <<< jevlin agents install <<<
 
-[permissions.work]
+[permissions."team.work"]
 extends = ":workspace"
-
-[permissions.work.filesystem]
-"/home/u/src" = "write"

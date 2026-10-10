@@ -57,22 +57,34 @@ const (
 )
 
 // codexProfile is everything the renderer needs: the directories a sandboxed
-// search must write, the hosts it and its children may reach, and which of
-// the two lines that can also live outside the region are written inside it.
+// search must write, the hosts it and its children may reach, the profile it
+// extends, and which of the lines that can also live outside the region are
+// written inside it.
 type codexProfile struct {
 	roots []string
 	hosts []string
+	// extends is the profile ours builds on: ":workspace", or the
+	// participant's own profile that default_permissions named before they
+	// said yes to switching. Codex merges the two (seen live on 0.158.0
+	// Linux and 0.160.0 macOS): both profiles' writable roots and both
+	// domain lists apply, and anything neither lists stays closed.
+	extends string
 	// key is false when default_permissions is the participant's own line,
 	// rewritten to name our profile; the region then carries no key.
 	key bool
+	// network is false when ours adds no network at all: the profile it
+	// extends already has an open one by the participant's own setting
+	// (network on, proxy off), which ours must not cut down to our hosts;
+	// or a safe form that closes a network this client opened.
+	network bool
 	// proxy is false when the participant's own [features] table already
-	// turns network_proxy on, or was rewritten to; a second
-	// definition would be a duplicate key and Codex would refuse the file.
+	// turns network_proxy on, or was rewritten to; a second definition
+	// would be a duplicate key and Codex would refuse the file.
 	proxy bool
 }
 
 func fullCodexProfile(roots, hosts []string) codexProfile {
-	return codexProfile{roots: roots, hosts: hosts, key: true, proxy: true}
+	return codexProfile{roots: roots, hosts: hosts, extends: ":workspace", key: true, network: true, proxy: true}
 }
 
 // codexAllowedHosts is the list, from the config and nothing else. A
@@ -172,8 +184,13 @@ func codexProfileHeaders() []string {
 func codexProfileRegion(p codexProfile) []byte {
 	var b strings.Builder
 	b.WriteString(agentsMarkerBegin + "\n")
-	b.WriteString("# Codex permission profile for jevlin's search: write access to its jevlin\n")
-	b.WriteString("# home and network access to the search hosts only, through Codex's proxy.\n")
+	if p.network {
+		b.WriteString("# Codex permission profile for jevlin's search: write access to its jevlin\n")
+		b.WriteString("# home and network access to the search hosts only, through Codex's proxy.\n")
+	} else {
+		b.WriteString("# Codex permission profile for jevlin's search: write access to its jevlin\n")
+		b.WriteString("# home; its network is the profile it extends, unchanged.\n")
+	}
 	b.WriteString("# Needs Codex " + codexProfileFloor + " or newer: an older Codex refuses this file with\n")
 	b.WriteString("# \"" + codexProfileFloorError + "\" and does not start; remove\n")
 	b.WriteString("# this block, or upgrade Codex.\n")
@@ -193,15 +210,21 @@ func codexProfileText(p codexProfile) string {
 	if p.proxy {
 		b.WriteString("[features.network_proxy]\nenabled = true\n\n")
 	}
-	b.WriteString("[permissions." + codexProfileName + "]\nextends = \":workspace\"\n\n")
+	extends := p.extends
+	if extends == "" {
+		extends = ":workspace"
+	}
+	b.WriteString("[permissions." + codexProfileName + "]\nextends = " + mustTOMLString(extends) + "\n\n")
 	b.WriteString("[permissions." + codexProfileName + ".filesystem]\n")
 	for _, r := range p.roots {
 		b.WriteString(mustTOMLString(r) + " = \"write\"\n")
 	}
-	b.WriteString("\n[permissions." + codexProfileName + ".network]\nenabled = true\n\n")
-	b.WriteString("[permissions." + codexProfileName + ".network.domains]\n")
-	for _, h := range p.hosts {
-		b.WriteString(mustTOMLString(h) + " = \"allow\"\n")
+	if p.network {
+		b.WriteString("\n[permissions." + codexProfileName + ".network]\nenabled = true\n\n")
+		b.WriteString("[permissions." + codexProfileName + ".network.domains]\n")
+		for _, h := range p.hosts {
+			b.WriteString(mustTOMLString(h) + " = \"allow\"\n")
+		}
 	}
 	return b.String()
 }
