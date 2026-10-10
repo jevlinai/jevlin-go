@@ -149,6 +149,10 @@ func (r *setupRun) agentsStep() int {
 			return r.abort("no coding agent was set up; " + r.safetyOnly(ops, &plan))
 		}
 		if !set {
+			if r.safetyOnly(ops, &plan) != "nothing was changed" {
+				r.printf("Left the agents alone, except that jevlin's own open block in Codex's config was closed. When you change your mind: %s\n", later)
+				return exitOK
+			}
 			r.printf("Left the agents alone. When you change your mind: %s\n", later)
 			return exitOK
 		}

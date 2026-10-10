@@ -182,7 +182,7 @@ uninstall` puts each back together with jevlin's block, unless you have changed 
 which case it is left as you have it. Answering no installs nothing for Codex and exits 0. No
 answer stops the install, exit 2, with nothing written except one thing: if jevlin's own block
 still holds an open network from an earlier version, that one line is closed, whatever else
-happens, and the message says so. Without a terminal, `agents install` prints the exact lines to
+happens — on a no at `Proceed?` or at setup's agents question too — and the message says so. Without a terminal, `agents install` prints the exact lines to
 change by hand, the block to add with its markers, and exits 2; a file finished that way is
 jevlin's, and a later install or uninstall treats it as installed; `setup` reports the agent it could not set up
 and exits 0, because the rest of setup succeeded. A dry run prints the question and plans the

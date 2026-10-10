@@ -226,9 +226,10 @@ the named tests.
     A typed refusal and an unanswered question are different outcomes and must stay
     distinguishable by exit code, which is why the ones that change nothing either way
     (`agents install`'s `Proceed?`, `wallet send`'s confirmation) still differ there.
-    **One exception, deliberate:** when `agents install` or `setup` stops without an answer — an
-    unanswered question, no terminal without `-yes`, an unanswered `Proceed?` or agents question —
-    it still commits the plan's safety writes (`commitSafetyOnly`), and nothing else. A safety write
+    **One exception, deliberate:** when `agents install` or `setup` writes nothing else — an
+    unanswered question, no terminal without `-yes`, an unanswered or declined `Proceed?` or
+    agents question, a declined Codex switch — it still commits the plan's safety writes
+    (`commitSafetyOnly`), and nothing else; a typed no then still exits 0 and no answer non-zero. A safety write
     only ever removes jevlin's own open network from Codex's config (`codexSafeForm`: the old
     block's `network_access = true` line, or our profile's own network while the proxy is off),
     so it changes no setting of the participant's and decides nothing for them; leaving it would
@@ -378,11 +379,12 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `prompt_abort_test.go` drives each real command to each real question, under both an interrupted
   read and a closed stdin, and asserts the non-zero exit, the unwritten decision and the
   uncontacted platform — and, in the same file, that a typed refusal still declines and exits 0.
-  The one thing an unanswered question still writes is invariant 18's exception, the safety write
-  that closes jevlin's own open network in Codex's config; `codex_unit_test.go`
-  (`TestARunThatWritesNothingStillClosesTheOldBlock`, `TestTheOldBlockIsClosedWhateverTheAnswer`)
-  and `setup_test.go` (`TestSetupClosesTheOldBlockWhenItsAgentsQuestionGoesUnanswered`) hold
-  that it writes that and nothing else.
+  The one thing an unanswered or declined question still writes is invariant 18's exception, the
+  safety write that closes jevlin's own open network in Codex's config; `codex_unit_test.go`
+  (`TestARunThatWritesNothingStillClosesTheOldBlock`, `TestTheOldBlockIsClosedWhateverTheAnswer`,
+  `TestATypedNoAtProceedClosesTheOldBlockAndSaysSo`) and `setup_test.go`
+  (`TestSetupClosesTheOldBlockWhenItsAgentsQuestionGoesUnanswered`,
+  `TestSetupClosesTheOldBlockOnATypedNo`) hold that it writes that and nothing else.
 - **Which installation the profile and the agents belong to** — `cmd/jevlin/setup.go` owns it
   (`otherInstallation`, `leftForOtherInstallation`). This machine's installation is
   `$JEVLIN_HOME`, else `~/.jevlin`; an explicit `-home` naming any other directory is a

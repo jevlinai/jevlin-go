@@ -582,7 +582,14 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 		switch strings.ToLower(strings.TrimSpace(line)) {
 		case "", "y", "yes":
 		default:
-			fmt.Fprintln(stdout, "left everything as it was")
+			// A no declines every write but the one that closes jevlin's
+			// own open network, as no answer does; the two still differ by
+			// exit code.
+			if commitSafetyOnly(ops, &plan, stdout, stderr) > 0 {
+				fmt.Fprintln(stdout, "left everything else as it was; only jevlin's own block in Codex's config was closed")
+			} else {
+				fmt.Fprintln(stdout, "left everything as it was")
+			}
 			return exitOK
 		}
 	}

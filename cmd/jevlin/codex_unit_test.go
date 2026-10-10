@@ -539,6 +539,7 @@ func TestTheOldBlockIsClosedUnderEitherLineEnding(t *testing.T) {
 		{"unanswered Codex question", true, "", []string{"-yes"}, true},
 		{"no terminal, no -yes", false, "", nil, false},
 		{"Proceed? unanswered", true, "", nil, false},
+		{"Proceed? typed no", true, "n\n", nil, false},
 	}
 	for _, eol := range []string{"\n", "\r\n"} {
 		for _, goos := range []string{"linux", "windows"} {
@@ -566,5 +567,22 @@ func TestTheOldBlockIsClosedUnderEitherLineEnding(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+// A typed no at Proceed? declines every write but the close, says so, and
+// exits 0 — still apart from no answer, which exits 2.
+func TestATypedNoAtProceedClosesTheOldBlockAndSaysSo(t *testing.T) {
+	cfgPath, _ := sandboxTestConfig(t)
+	m, ops := newFakeMachine("codex")
+	m.terminal = true
+	before := openOldBlock(t, cfgPath)
+	m.files[codexConfigPath] = []byte(before)
+	code, out := runAgentsAt(t, ops, "n\n", "install", "-config", cfgPath, "-client", "codex")
+	if code != exitOK || !strings.Contains(out, "left everything else as it was; only jevlin's own block in Codex's config was closed") {
+		t.Errorf("exit %d; a typed no did not close and say so:\n%s", code, out)
+	}
+	if got := string(m.files[codexConfigPath]); got != strings.Replace(before, "network_access = true\n", "", 1) {
+		t.Errorf("a typed no left the old block open:\n%s", got)
 	}
 }
