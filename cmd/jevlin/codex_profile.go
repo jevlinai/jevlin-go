@@ -43,18 +43,15 @@ import (
 // table are (codexRootsOwner).
 const codexProfileName = "jevlin"
 
-// codexProfileFloor is the oldest Codex whose config loader accepts every
-// key the region carries. `default_permissions` is read from 0.113.0;
-// `[features.network_proxy]` as a table from 0.131.0 — 0.130.0 and older
-// refuse the whole file with codexProfileFloorError, and Codex does not
-// start until the block is removed. No file on disk records the installed
-// version (~/.codex/version.json holds only the update check's answer), and
-// this client does not run codex to ask, so the floor is documented and the
-// error named rather than checked.
-const (
-	codexProfileFloor      = "0.131.0"
-	codexProfileFloorError = "invalid type: map, expected a boolean"
-)
+// codexSupported is the oldest Codex this profile is supported on: the
+// versions it was verified with, 0.158.0 on Linux and 0.160.0 on macOS.
+// Older versions are not supported. Below 0.131.0 Codex refuses the whole
+// file (it reads [features.network_proxy] as a boolean) and does not start
+// until the block is removed; 0.131.0 to 0.157.x is unverified. No file on
+// disk records the installed version (~/.codex/version.json holds only the
+// update check's answer), and this client does not run codex to ask, so the
+// line is said, not checked.
+const codexSupported = "0.158.0"
 
 // codexProfile is everything the renderer needs: the directories a sandboxed
 // search must write, the hosts it and its children may reach, the profile it
@@ -191,9 +188,8 @@ func codexProfileRegion(p codexProfile) []byte {
 		b.WriteString("# Codex permission profile for jevlin's search: write access to its jevlin\n")
 		b.WriteString("# home; its network is the profile it extends, unchanged.\n")
 	}
-	b.WriteString("# Needs Codex " + codexProfileFloor + " or newer: an older Codex refuses this file with\n")
-	b.WriteString("# \"" + codexProfileFloorError + "\" and does not start; remove\n")
-	b.WriteString("# this block, or upgrade Codex.\n")
+	b.WriteString("# Supported with Codex " + codexSupported + " or newer; older versions are not\n")
+	b.WriteString("# supported, and below 0.131 Codex refuses this file and does not start.\n")
 	b.WriteString(codexProfileText(p))
 	b.WriteString(agentsMarkerEnd + "\n")
 	return []byte(b.String())

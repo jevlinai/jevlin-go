@@ -95,7 +95,7 @@ func codexWriteWhy(profile codexProfile) string {
 	} else {
 		base += "; its network is your profile's own, which jevlin leaves open"
 	}
-	return base + fmt.Sprintf(" (needs Codex %s or newer)", codexProfileFloor)
+	return base + fmt.Sprintf(" (supported with Codex %s or newer; older versions are not supported)", codexSupported)
 }
 
 // planCodexConfig plans Codex's config.toml for goos and says how much of

@@ -440,9 +440,9 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   network_proxy` deletes our table (the capture is in `cmd/jevlin/testdata/codex/`), so install restores it and
   `agents status` says, under Codex's row whatever this installation's state there, that every
   command Codex runs can reach any host (`codex_status.go`). Status also compares the profile's
-  hosts with all three the config now names. The oldest Codex that reads the region is 0.131.0
-  (`codexProfileFloor`); an older one refuses the file and does not start, which the region's own
-  comment says. No file records Codex's version, and this client does not run codex to ask.
+  hosts with all three the config now names. Supported Codex is 0.158.0 or newer (`codexSupported`), the versions it was
+  verified on; older versions are not supported: below 0.131 Codex refuses the file and does not
+  start, and 0.131 to 0.157 is unverified, which the region's own comment says. No file records Codex's version, and this client does not run codex to ask.
   For participants: [agents, Codex](docs/agents.md#codex).
 - **Our entry in a Hermes `hooks:` block we did not write** — `cmd/jevlin/hermes_install.go`
   owns it (`findHermesOwnEntry`, `hermesRunIsRenderedExactly`), in the file that already owns the rule it

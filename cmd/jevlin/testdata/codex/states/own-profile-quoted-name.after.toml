@@ -3,9 +3,8 @@ default_permissions = "jevlin"  # jevlin agents install ("CONFIG"); was: default
 # >>> jevlin agents install >>>
 # Codex permission profile for jevlin's search: write access to its jevlin
 # home and network access to the search hosts only, through Codex's proxy.
-# Needs Codex 0.131.0 or newer: an older Codex refuses this file with
-# "invalid type: map, expected a boolean" and does not start; remove
-# this block, or upgrade Codex.
+# Supported with Codex 0.158.0 or newer; older versions are not
+# supported, and below 0.131 Codex refuses this file and does not start.
 [features.network_proxy]
 enabled = true
 
