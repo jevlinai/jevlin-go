@@ -7,11 +7,11 @@ package auth
 
 import (
 	"context"
-	"errors"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
