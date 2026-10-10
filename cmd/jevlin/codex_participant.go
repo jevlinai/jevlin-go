@@ -407,7 +407,7 @@ func codexMarkedLines(text string) []codexMarkedLine {
 type codexMarkRemoval struct {
 	next     []byte
 	changed  bool
-	restored []string // keys put back as they were
+	restored []string // the lines put back as they were, for the plan
 	kept     []string // keys left, because their value changed after install
 	foreign  []string // config paths of marks that are another installation's
 	why      string
@@ -487,8 +487,11 @@ func restoreCodexMarks(text string, withRegion bool, entry binEntry) codexMarkRe
 		lines[m.index] = orig + cr
 		for k, v := range doc {
 			setTOMLPath(ed.expected, v, append(append([]string{}, m.path...), k)...)
-			out.restored = append(out.restored, k)
 		}
+		// The line itself, so the plan names the value it puts back: after
+		// a rewrite Codex made under our mark, that is the value before our
+		// first change, not the one in the file now.
+		out.restored = append(out.restored, strings.TrimSpace(orig))
 		out.changed = true
 	}
 	if !out.changed {

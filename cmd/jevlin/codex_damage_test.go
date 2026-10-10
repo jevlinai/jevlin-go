@@ -417,8 +417,8 @@ func TestTheQuestionNamesTheValueBeforeOurFirstChange(t *testing.T) {
 	if code != exitOK || !strings.Contains(out, `default_permissions = ":workspace" becomes "jevlin" (marked; agents uninstall puts "work" back)`) {
 		t.Fatalf("the question does not name the value before our first change (exit %d):\n%s", code, out)
 	}
-	if code, out := runAgentsAt(t, ops, "", "uninstall", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK {
-		t.Fatalf("uninstall: exit %d\n%s", code, out)
+	if code, out := runAgentsAt(t, ops, "", "uninstall", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK || !strings.Contains(out, `restore default_permissions = "work" as you had it`) {
+		t.Fatalf("uninstall did not name the value it puts back (exit %d):\n%s", code, out)
 	}
 	if doc, ok := decodeTOMLDoc(string(m.files[codexConfigPath])); !ok || doc["default_permissions"] != "work" {
 		t.Errorf("uninstall did not put back the value before our first change:\n%s", m.files[codexConfigPath])
