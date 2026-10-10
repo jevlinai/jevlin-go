@@ -264,9 +264,10 @@ func TestABlockThatCannotBeReadIsLeftAloneAndReported(t *testing.T) {
 	broken := installed[:i] + "[notes]\ntext = \"\"\"\n[windows]\nnot a table\n\"\"\"\n" + installed[i:]
 	m.files["/home/u/.codex/config.toml"] = []byte(broken)
 
+	// Left, so Codex still runs under it: the uninstall says so and exits 1.
 	code, out, errOut := runAgents(t, ops, nil, "uninstall", "-config", cfgPath, "-yes")
-	if code != exitOK {
-		t.Fatalf("uninstall: %d\n%s%s", code, out, errOut)
+	if code != exitTransport {
+		t.Fatalf("uninstall: %d, want %d\n%s%s", code, exitTransport, out, errOut)
 	}
 	if got := string(m.files["/home/u/.codex/config.toml"]); got != broken {
 		t.Errorf("a block that could not be read was changed anyway:\n%s", got)
@@ -426,8 +427,9 @@ func TestABlockHoldingATableUnderOurNameIsLeftAlone(t *testing.T) {
 	m, ops, cfgPath, seeded := insideOurMarkers(t, nested)
 	for _, verb := range []string{"uninstall", "install"} {
 		code, out, errOut := runAgents(t, ops, nil, verb, "-config", cfgPath, "-yes")
-		if code != exitOK && verb == "uninstall" {
-			t.Fatalf("%s: %d\n%s%s", verb, code, out, errOut)
+		// A block left in place still governs Codex, so uninstall exits 1.
+		if code != exitTransport && verb == "uninstall" {
+			t.Fatalf("%s: %d, want %d\n%s%s", verb, code, exitTransport, out, errOut)
 		}
 		if got := string(m.files["/home/u/.codex/config.toml"]); got != seeded {
 			t.Fatalf("%s changed a block it could not attribute:\n%s", verb, got)
