@@ -426,3 +426,78 @@ func TestTheByHandKeyNoteOnlyWhereTheBlockCarriesTheKey(t *testing.T) {
 		}
 	}
 }
+
+// Codex applies a wildcard deny the chain resolves to over any exact
+// allow, at any level, jevlin's own included: "*.d" closes every subdomain
+// of d at any depth, "**.d" those and d itself, case aside. Each row is a
+// verdict `codex sandbox` gave on 0.158.0 with jevlin's profile allowing
+// the hosts exactly and extending "mine".
+func TestAWildcardDenyClosesWhatAnExactAllowOpens(t *testing.T) {
+	for _, tc := range []struct {
+		name, mine   string
+		ours         []string
+		open, closed []string
+	}{
+		{"a parent's *. deny over our allow", `"*.example.com" = "deny"`, []string{"www.example.com", "example.com"}, []string{"example.com"}, []string{"www.example.com"}},
+		{"a parent's exact deny under our allow", `"www.example.com" = "deny"`, []string{"www.example.com", "example.com"}, []string{"www.example.com", "example.com"}, nil},
+		{"*. deny beside an exact allow in one profile", "\"*.example.com\" = \"deny\"\n\"www.example.com\" = \"allow\"", []string{"www.example.com", "example.com"}, []string{"example.com"}, []string{"www.example.com"}},
+		{"a parent's **. deny", `"**.example.com" = "deny"`, []string{"www.example.com", "example.com"}, nil, []string{"www.example.com", "example.com"}},
+		{"*. reaches every depth, case aside", `"*.AmazonAWS.com" = "deny"`, []string{"s3.amazonaws.com", "s3.us-east-1.amazonaws.com"}, nil, []string{"s3.amazonaws.com", "s3.us-east-1.amazonaws.com"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := mustDecode("[permissions.mine]\nextends = \":workspace\"\n[permissions.mine.network.domains]\n" + tc.mine + "\n")
+			a := codexAllowedFor(doc, "mine", tc.ours)
+			for _, h := range tc.open {
+				if !slices.Contains(a.hosts, h) {
+					t.Errorf("%s reads closed; Codex let it through (hosts %v, blocked %v)", h, a.hosts, a.blocked)
+				}
+			}
+			for _, h := range tc.closed {
+				if slices.Contains(a.hosts, h) || !strings.Contains(a.blockedSentence(), h+", which your profile \"mine\" denies") {
+					t.Errorf("%s is not named as closed; Codex refused it (hosts %v, blocked %v)", h, a.hosts, a.blocked)
+				}
+			}
+		})
+	}
+}
+
+// The participant's wildcard deny over the router's host: no yes could
+// make a search from Codex work, so install refuses for Codex before
+// asking and writes nothing for it. Over another of the search hosts it
+// asks as before, and the question and status name the host Codex blocks.
+func TestAWildcardDenyOfTheSearchHosts(t *testing.T) {
+	mine := func(deny string) string {
+		return "default_permissions = \"mine\"\n\n[permissions.mine]\nextends = \":workspace\"\n\n[permissions.mine.network]\nenabled = false\n\n[permissions.mine.network.domains]\n" + deny + "\n\"example.com\" = \"allow\"\n"
+	}
+	t.Run("the router", func(t *testing.T) {
+		cfgPath, _ := sandboxTestConfig(t)
+		m, ops := newFakeMachine("codex")
+		m.terminal = true
+		before := mine(`"*.example.invalid" = "deny"`)
+		m.files[codexConfigPath] = []byte(before)
+		code, out := runAgentsAt(t, ops, "y\n", "install", "-config", cfgPath, "-client", "codex", "-yes")
+		if code == exitOK || strings.Contains(out, "[y/N]") || string(m.files[codexConfigPath]) != before {
+			t.Errorf("install did not refuse before asking (exit %d):\n%s", code, out)
+		}
+		if !strings.Contains(out, `denies "*.example.invalid", which Codex applies over jevlin's allow of the router, router.example.invalid`) {
+			t.Errorf("the refusal does not name the deny and the router:\n%s", out)
+		}
+		if _, ok := m.files["/home/u/.codex/skills/jevlin/SKILL.md"]; ok {
+			t.Errorf("the skill was written for a Codex whose search cannot reach the router")
+		}
+	})
+	t.Run("another search host", func(t *testing.T) {
+		cfgPath, _ := sandboxTestConfig(t)
+		m, ops := newFakeMachine("codex")
+		m.terminal = true
+		m.files[codexConfigPath] = []byte(mine(`"**.as.example.invalid" = "deny"`))
+		code, out := runAgentsAt(t, ops, "y\n", "install", "-config", cfgPath, "-client", "codex", "-yes")
+		const named = `Codex blocks as.example.invalid, which your profile "mine" denies with "**.as.example.invalid"`
+		if code != exitOK || !strings.Contains(out, named) || strings.Contains(out, "network access to agents-v1.nyks.dev, as.example.invalid") {
+			t.Errorf("the question does not take the blocked host out of the list and name it (exit %d):\n%s", code, out)
+		}
+		if _, status := runAgentsAt(t, ops, "", "status", "-config", cfgPath); !strings.Contains(status, named) || strings.Contains(status, "the router is among them") {
+			t.Errorf("status does not name the blocked host:\n%s", status)
+		}
+	})
+}

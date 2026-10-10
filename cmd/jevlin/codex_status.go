@@ -78,6 +78,13 @@ func codexPermissionLinesBody(ops agentOps, path string, entry binEntry, getenv 
 			hosts = "network open to " + allowed.sentence()
 		}
 		lines = append(lines, fmt.Sprintf("permissions: profile %q (extends %s) in %s; %s; network_proxy %s", codexProfileName, mustTOMLString(region.extends), where, hosts, state))
+		if bs := allowed.blockedSentence(); bs != "" {
+			line := "permissions: " + bs
+			if _, router := allowed.routerBlocked(cfg); router {
+				line += "; the router is among them, so a search from Codex cannot reach it"
+			}
+			lines = append(lines, line)
+		}
 		if !proxyOn {
 			lines = append(lines, "permissions: network_proxy is off in "+where+", so the profile's host list is not enforced and every command Codex runs can reach any host; agents install turns it on")
 		}

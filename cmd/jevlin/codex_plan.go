@@ -35,8 +35,11 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
+
+	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
 // codexSandboxOS is the OS whose Codex sandbox install and status plan for:
@@ -267,6 +270,17 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 	if needProxyRewrite {
 		profile.proxy = false
 	}
+	if profile.network {
+		// A search must reach the router: a wildcard deny of the
+		// participant's that closes its host is refused before anything is
+		// asked, because no yes would make the search work.
+		if b, blocked := codexAllowedFor(facts.doc, profile.extends, profile.hosts).routerBlocked(cfg); blocked {
+			p.refused = append(p.refused, fmt.Sprintf("%s: your profile %s in %s denies %s, which Codex applies over jevlin's allow of the router, %s, so a search from Codex could never reach it; nothing was installed for Codex. An exact allow beside the deny does not override it: narrow or remove the deny and run this again",
+				label, mustTOMLString(b.profile), path, mustTOMLString(b.pattern), b.host))
+			planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)
+			return codexConfigPlan{scope: codexNothing, left: true}
+		}
+	}
 
 	// The question, when the participant's own lines must change: one
 	// question for all of them, showing everything that would be written.
@@ -402,10 +416,13 @@ func codexQuestion(label, path, home string, facts codexFacts, profile codexProf
 		what = fmt.Sprintf("jevlin's profile, which extends your profile %s", mustTOMLString(profile.extends))
 	}
 	adds := []string{"write access to " + joinLabels(profile.roots)}
-	chain := ""
+	chain, blocked := "", ""
 	if profile.network {
 		allowed := codexAllowedFor(facts.doc, profile.extends, profile.hosts)
 		adds = append(adds, "network access to "+allowed.sentence())
+		if bs := allowed.blockedSentence(); bs != "" {
+			blocked = bs + ".\n"
+		}
 		var names []string
 		for _, n := range allowed.from {
 			names = append(names, mustTOMLString(n))
@@ -430,6 +447,7 @@ func codexQuestion(label, path, home string, facts codexFacts, profile codexProf
 	}
 	fmt.Fprintf(&b, "Switch Codex to %s and adds %s?\n", what, strings.Join(adds, ", and "))
 	b.WriteString(chain)
+	b.WriteString(blocked)
 	if !profile.network {
 		fmt.Fprintf(&b, "Your profile's network is already open (network on, network_proxy off); jevlin leaves it so.\n")
 	}
@@ -698,6 +716,29 @@ type codexAllowed struct {
 	everyFrom string   // the profile whose "*" that is
 	except    []string // with every: the keys that resolve to deny, sorted
 	from      []string // the chain's profiles whose allows are in effect
+	// blocked is the hosts allowed by exact key, ours included, that a
+	// wildcard deny the chain resolves to closes all the same: Codex
+	// applies a matching "*." or "**." deny over any exact allow, at any
+	// level, the nearer included (seen live on 0.158.0).
+	blocked []codexBlock
+}
+
+// codexBlock is one allowed host a wildcard deny closes.
+type codexBlock struct{ host, pattern, profile string }
+
+// wildcardDenies: does a deny key match host as Codex matches it? "*.d"
+// is every subdomain of d at any depth, "**.d" those and d itself, case
+// aside (seen live on 0.158.0).
+func wildcardDenies(pattern, host string) bool {
+	pattern, host = strings.ToLower(pattern), strings.ToLower(host)
+	switch {
+	case strings.HasPrefix(pattern, "**."):
+		d := pattern[3:]
+		return host == d || strings.HasSuffix(host, "."+d)
+	case strings.HasPrefix(pattern, "*."):
+		return strings.HasSuffix(host, "."+pattern[2:])
+	}
+	return false
 }
 
 func codexAllowedFor(doc tomlDoc, extends string, ours []string) codexAllowed {
@@ -730,6 +771,13 @@ func codexAllowedFor(doc tomlDoc, extends string, ours []string) codexAllowed {
 		name, _ = parent.(string)
 	}
 	var a codexAllowed
+	var denies []string
+	for h, r := range rule {
+		if r == "deny" && (strings.HasPrefix(h, "*.") || strings.HasPrefix(h, "**.")) {
+			denies = append(denies, h)
+		}
+	}
+	sort.Strings(denies)
 	from := map[string]bool{}
 	for h, r := range rule {
 		switch {
@@ -738,6 +786,10 @@ func codexAllowedFor(doc tomlDoc, extends string, ours []string) codexAllowed {
 				a.every, a.everyFrom = true, by[h]
 			}
 		case r == "allow":
+			if i := slices.IndexFunc(denies, func(d string) bool { return wildcardDenies(d, h) }); i >= 0 {
+				a.blocked = append(a.blocked, codexBlock{host: h, pattern: denies[i], profile: by[denies[i]]})
+				continue
+			}
 			a.hosts = append(a.hosts, h)
 			if by[h] != "" {
 				from[by[h]] = true
@@ -746,6 +798,7 @@ func codexAllowedFor(doc tomlDoc, extends string, ours []string) codexAllowed {
 			a.except = append(a.except, h)
 		}
 	}
+	sort.Slice(a.blocked, func(i, j int) bool { return a.blocked[i].host < a.blocked[j].host })
 	for n := range from {
 		a.from = append(a.from, n)
 	}
@@ -756,6 +809,33 @@ func codexAllowedFor(doc tomlDoc, extends string, ours []string) codexAllowed {
 	}
 	a.except = cleanHosts(a.except)
 	return a
+}
+
+// blockedSentence names the allowed hosts a wildcard deny closes, or is
+// empty.
+func (a codexAllowed) blockedSentence() string {
+	if len(a.blocked) == 0 {
+		return ""
+	}
+	var parts []string
+	for _, b := range a.blocked {
+		parts = append(parts, fmt.Sprintf("%s, which your profile %s denies with %s", b.host, mustTOMLString(b.profile), mustTOMLString(b.pattern)))
+	}
+	return "Codex blocks " + strings.Join(parts, "; ") + ": a matching wildcard deny wins over any exact allow, jevlin's included"
+}
+
+// routerBlocked is the block that closes the router's host, if one does.
+func (a codexAllowed) routerBlocked(cfg *config.Config) (codexBlock, bool) {
+	if cfg == nil || cfg.Miner.RouterURL == nil {
+		return codexBlock{}, false
+	}
+	router := strings.ToLower(cfg.Miner.RouterURL.Hostname())
+	for _, b := range a.blocked {
+		if b.host == router {
+			return b, true
+		}
+	}
+	return codexBlock{}, false
 }
 
 // sentence is the allowed network in words: every host, or the list.
