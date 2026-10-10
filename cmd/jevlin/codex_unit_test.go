@@ -332,6 +332,15 @@ func TestTheByHandTextCanBeFollowed(t *testing.T) {
 			}
 			return "sandbox_mode = \"workspace-write\"\n" + string(m.files[codexConfigPath])
 		}, "and replace jevlin's block", true},
+		{"a block that lost its end marker", func(t *testing.T, m *fakeMachine, ops agentOps, cfgPath string) string {
+			// The 0.158.0 capture of `codex mcp remove`, in this
+			// installation's home, with a line that needs a yes.
+			home := filepath.Dir(cfgPath)
+			text := homePlaceholder.ReplaceAllStringFunc(codexConfigFixture(t, "mcp-after-block-after-mcp-remove.toml"), func(q string) string {
+				return mustTOMLString(filepath.Join(home, homePlaceholder.FindStringSubmatch(q)[1]))
+			})
+			return "sandbox_mode = \"workspace-write\"\n" + text
+		}, "and delete jevlin's block", false},
 		{"the old block", func(t *testing.T, m *fakeMachine, ops agentOps, cfgPath string) string {
 			return "sandbox_mode = \"workspace-write\"\n" + strings.ReplaceAll(oldBlock, "STATEROOTS", quotedRootsOf(t, cfgPath))
 		}, "and delete jevlin's block", false},
@@ -737,6 +746,10 @@ func TestABlockIsWrittenInTheFilesLineEnding(t *testing.T) {
 		{"linux", "root keys first", "model = \"gpt-5\"\r\n\r\n[tui]\r\nx = 1\r\n"},
 		{"linux", "a table first", "[tui]\r\nx = 1\r\n"},
 		{"windows", "root keys first", "model = \"gpt-5\"\r\n\r\n[tui]\r\nx = 1\r\n"},
+		// No table and no final line ending: the block goes at the end,
+		// and the line before it is ended in CRLF, the block's own ending.
+		{"linux", "no table and no final line ending", "model = \"gpt-5\"\r\nx = 1"},
+		{"windows", "no table and no final line ending", "model = \"gpt-5\"\r\nx = 1"},
 	} {
 		t.Run(tc.goos+"/"+tc.name, func(t *testing.T) {
 			cfgPath, _ := sandboxTestConfig(t)
@@ -772,8 +785,14 @@ func TestABlockIsWrittenInTheFilesLineEnding(t *testing.T) {
 			if code, out := runAgentsAt(t, ops, "", "uninstall", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK {
 				t.Fatalf("uninstall: exit %d\n%s", code, out)
 			}
-			if left := string(m.files[codexConfigPath]); left != before {
-				t.Errorf("uninstall did not give the file back\n got %q\nwant %q", left, before)
+			// The one byte sequence install may add is the line ending a
+			// last line without one needed; uninstall cannot know it added it.
+			want := before
+			if !strings.HasSuffix(want, "\n") {
+				want += "\r\n"
+			}
+			if left := string(m.files[codexConfigPath]); left != want {
+				t.Errorf("uninstall did not give the file back\n got %q\nwant %q", left, want)
 			}
 		})
 	}
