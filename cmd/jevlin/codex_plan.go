@@ -284,6 +284,7 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 
 			return codexConfigPlan{scope: codexNothing}
 		case consentUnasked:
+			p.unanswerable = true
 			p.refused = append(p.refused, fmt.Sprintf("%s: %s needs a change to your own settings, which needs your yes at a terminal (-yes does not answer it); nothing was installed for Codex. By hand:\n%s",
 				label, path, indentBlock(codexByHand(facts, profile))))
 			planCodexSafeForm(ops, label, path, existing, mode, region, had, facts, p)

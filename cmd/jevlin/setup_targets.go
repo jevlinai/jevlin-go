@@ -114,7 +114,10 @@ func (r *setupRun) agentsStep() int {
 			entry.rendered = rendered
 		}
 	}
-	if r.d.interactive && !r.dry {
+	switch {
+	case r.dry:
+		ops.consent = dryRunConsent(r.d.stdout)
+	case r.d.interactive:
 		// A change to the participant's own Codex settings is asked about
 		// on its own, and -yes does not answer it (codex_plan.go).
 		ops.consent = func(question string) (string, error) { return promptSetup(r.d.stdout, question, r.lineIn) }

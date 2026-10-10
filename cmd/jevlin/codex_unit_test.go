@@ -198,7 +198,8 @@ func TestTheOldBlockIsClosedWhateverTheAnswer(t *testing.T) {
 	}{
 		{"typed no", true, "n\n", []string{"-yes"}, exitOK},
 		{"unanswered", true, "", nil, exitUsage},
-		{"no terminal", false, "", []string{"-yes"}, exitTransport},
+		{"no terminal", false, "", []string{"-yes"}, exitUsage},
+		{"no terminal, no -yes", false, "", nil, exitUsage},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfgPath, _ := sandboxTestConfig(t)

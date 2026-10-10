@@ -588,6 +588,7 @@ func (t codexTarget) PlanInstall(ops agentOps, paths agentPaths, entry binEntry,
 		p.writes = append(p.writes, cp.writes...)
 		return
 	}
+	p.unanswerable = p.unanswerable || cp.unanswerable
 	if cfg.scope == codexNothing {
 		// A safety write closing our own block's network may be planned
 		// even here; it is ours whatever the answer was.

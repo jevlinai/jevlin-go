@@ -9,10 +9,12 @@ package main
 //   - no line (an interrupt, a closed stdin): the whole command stops, writes
 //     nothing for any host, and exits 2 (hard invariant 18)
 //   - -yes: answers nothing here; it is asked anyway at a terminal
-//   - no terminal: refused, the lines to add printed, exit 1
+//   - no terminal: refused, the lines to add printed, and exit 2, as for any
+//     question that could not be answered; what needed no answer is written
 
 import (
 	"bytes"
+	"fmt"
 
 	"strings"
 	"testing"
@@ -131,8 +133,8 @@ func TestWithNoTerminalTheCodexChangeIsRefusedAndPrinted(t *testing.T) {
 			m, ops, cfgPath, before := seedState(t, st)
 			m.terminal = false
 			code, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-yes")
-			if code != exitTransport {
-				t.Fatalf("exit %d, want 1 for a refused host\n%s", code, out)
+			if code != exitUsage {
+				t.Fatalf("exit %d, want 2 for a question with nobody to answer it\n%s", code, out)
 			}
 			if string(m.files[codexConfigPath]) != before {
 				t.Errorf("config.toml changed with nobody to ask:\n%s", m.files[codexConfigPath])
@@ -259,5 +261,29 @@ func TestASandboxModeInsideOurBlockIsAskedAbout(t *testing.T) {
 	}
 	if _, out = runAgentsAt(t, ops, "y\n", "install", "-config", cfgPath, "-yes"); !strings.Contains(string(m.files[codexConfigPath]), "# sandbox_mode = \"workspace-write\"  # jevlin agents install") {
 		t.Errorf("a typed yes did not comment it out:\n%s\n%s", out, m.files[codexConfigPath])
+	}
+}
+
+// A dry run shows the question a real run would ask, plans the yes, writes
+// nothing, and exits 0, at a terminal or not.
+func TestADryRunPrintsTheCodexQuestionAndExitsZero(t *testing.T) {
+	for _, st := range askingStates(t) {
+		for _, terminal := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/terminal=%v", st.name, terminal), func(t *testing.T) {
+				m, ops, cfgPath, _ := seedState(t, st)
+				m.terminal = terminal
+				before := fakeFilesOf(m)
+				code, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-client", "codex", "-dry-run")
+				if code != exitOK {
+					t.Errorf("a dry run exited %d\n%s", code, out)
+				}
+				if !strings.Contains(out, "Switch? [y/N]: (dry run: not asked; the plan below is what a yes would write)") || !strings.Contains(out, "write  ~/.codex/config.toml") {
+					t.Errorf("the dry run does not show the question and the yes it plans:\n%s", out)
+				}
+				if after := fakeFilesOf(m); fmt.Sprint(after) != fmt.Sprint(before) {
+					t.Errorf("a dry run wrote files")
+				}
+			})
+		}
 	}
 }

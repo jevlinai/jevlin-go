@@ -409,6 +409,10 @@ type agentPlan struct {
 	skipped []string
 	refused []string
 	notes   []string
+	// unanswerable is set when a question only a terminal can answer was
+	// due and there was no terminal: the command exits 2, as for an
+	// unanswered question, after writing what needed no answer.
+	unanswerable bool
 	// aborted is set when a question asked while planning got no typed
 	// line. The command then stops, writes nothing and exits non-zero
 	// (hard invariant 18); the sentence is what it says.
@@ -506,7 +510,12 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 	// several answers in one chunk, and a second reader over the same stdin
 	// would lose what the first buffered.
 	br := bufio.NewReader(stdin)
-	if sub == "install" && !*dryRun && ops.isTerminal() {
+	switch {
+	case sub == "install" && *dryRun:
+		// A dry run shows the question it would ask and plans the yes,
+		// which it never writes.
+		ops.consent = dryRunConsent(stdout)
+	case sub == "install" && ops.isTerminal():
 		// Codex's config may need a change to the participant's own
 		// settings, which only a typed yes allows; -yes is not that answer.
 		ops.consent = func(question string) (string, error) { return promptBufio(stdout, question, br) }
@@ -551,7 +560,8 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 	}
 	if !*yes {
 		if !ops.isTerminal() {
-			fmt.Fprintln(stderr, "jevlin agents: not a terminal, and -yes was not given; nothing was changed")
+			commitSafetyOnly(ops, &plan, stdout, stderr)
+			fmt.Fprintln(stderr, "jevlin agents: not a terminal, and -yes was not given; nothing else was changed")
 			return exitUsage
 		}
 		// The opposite default to the mining question, and so the worse
@@ -560,7 +570,8 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 		// typed line decides now.
 		line, err := promptBufio(stdout, "\nProceed? [Y/n]: ", br)
 		if err != nil {
-			fmt.Fprintf(stderr, "\njevlin agents: %s; nothing was changed\n", promptAbortedReason)
+			commitSafetyOnly(ops, &plan, stdout, stderr)
+			fmt.Fprintf(stderr, "\njevlin agents: %s; nothing else was changed\n", promptAbortedReason)
 			return exitUsage
 		}
 		switch strings.ToLower(strings.TrimSpace(line)) {
@@ -580,7 +591,23 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 	} else {
 		fmt.Fprintln(stdout, "\ndone")
 	}
+	if plan.unanswerable {
+		// A question only a terminal can answer was due, and there was
+		// none: the same exit as any unanswered question, whatever else
+		// was written beside it.
+		return exitUsage
+	}
 	return refusedExit(&plan)
+}
+
+// dryRunConsent prints the question a real run would ask, says it was not
+// asked, and plans the yes.
+func dryRunConsent(w io.Writer) func(string) (string, error) {
+	return func(question string) (string, error) {
+		fmt.Fprint(w, question)
+		fmt.Fprintln(w, "(dry run: not asked; the plan below is what a yes would write)")
+		return "y", nil
+	}
 }
 
 // agentsPrefer records the search default and rewrites every installed
