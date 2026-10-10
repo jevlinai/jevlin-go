@@ -723,14 +723,20 @@ func TestATypedNoAtProceedClosesTheOldBlockAndSaysSo(t *testing.T) {
 // planner, so the file is not left with mixed line endings; a second
 // install writes nothing, and uninstall gives the file back byte for byte.
 // A block an earlier build wrote in LF into a CRLF file is rewritten once
-// in CRLF and then left.
+// in CRLF and then left — read from the participant's lines, not the
+// file's first, which is our own begin marker when the file starts with a
+// table.
 func TestABlockIsWrittenInTheFilesLineEnding(t *testing.T) {
-	for _, goos := range []string{"linux", "windows"} {
-		t.Run(goos, func(t *testing.T) {
+	for _, tc := range []struct{ goos, name, before string }{
+		{"linux", "root keys first", "model = \"gpt-5\"\r\n\r\n[tui]\r\nx = 1\r\n"},
+		{"linux", "a table first", "[tui]\r\nx = 1\r\n"},
+		{"windows", "root keys first", "model = \"gpt-5\"\r\n\r\n[tui]\r\nx = 1\r\n"},
+	} {
+		t.Run(tc.goos+"/"+tc.name, func(t *testing.T) {
 			cfgPath, _ := sandboxTestConfig(t)
-			onCodexOS(t, goos)
+			onCodexOS(t, tc.goos)
 			m, ops := newFakeMachine("codex")
-			before := "model = \"gpt-5\"\r\n\r\n[tui]\r\nx = 1\r\n"
+			before := tc.before
 			m.files[codexConfigPath] = []byte(before)
 			install := func() string {
 				t.Helper()
