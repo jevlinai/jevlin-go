@@ -497,7 +497,13 @@ func restoreCodexMarks(text string, withRegion bool, entry binEntry) codexMarkRe
 				return codexMarkRemoval{next: []byte(text), why: fmt.Sprintf("line %d carries a jevlin mark that does not read as one key; put it back by hand", m.index+1)}
 			}
 			key := sortedKeys(kept)[0]
-			if v, has := now[key]; !has || !tomlValueEqual(v, codexMarkWrote(key)) {
+			if _, same := now[key]; !same {
+				// The kept line sets another key than the line carrying the
+				// mark: not a mark this client writes, and neither line is
+				// one to put back or take the mark off by its name.
+				return codexMarkRemoval{next: []byte(text), why: fmt.Sprintf("line %d carries a jevlin mark whose kept line sets another key; put it back by hand", m.index+1)}
+			}
+			if v := now[key]; !tomlValueEqual(v, codexMarkWrote(key)) {
 				// The participant's newer choice stays, without our mark:
 				// the line is theirs now, and a mark left on it would make
 				// the next switch refuse it as already ours.

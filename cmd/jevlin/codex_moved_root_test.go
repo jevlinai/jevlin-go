@@ -180,3 +180,19 @@ func TestAMarkedLineLeftWithNoBlockSaysOnlyThat(t *testing.T) {
 		t.Errorf("the file changed:\n%s", m.files[codexConfigPath])
 	}
 }
+
+// A mark whose was: sets another key than the marked line is not one this
+// client writes. Uninstall said "take jevlin's mark off sandbox_mode" over
+// a default_permissions line; it now leaves the line and says why.
+func TestUninstallOverAMarkWhoseWasNamesAnotherKey(t *testing.T) {
+	m, ops, cfgPath := capturedWithHome(t, "workspace-switched-appserver-default-permissions.toml")
+	forged := strings.Replace(string(m.files[codexConfigPath]), "; was: default_permissions = \":workspace\"\n", "; was: sandbox_mode = \"workspace-write\"\n", 1)
+	m.files[codexConfigPath] = []byte(forged)
+	code, out := runAgentsAt(t, ops, "", "uninstall", "-config", cfgPath, "-client", "codex", "-yes")
+	if code == exitOK || strings.Contains(out, "take jevlin's mark off sandbox_mode") || !strings.Contains(out, "whose kept line sets another key") {
+		t.Errorf("uninstall read a was: naming another key (exit %d):\n%s", code, out)
+	}
+	if string(m.files[codexConfigPath]) != forged {
+		t.Errorf("the file changed:\n%s", m.files[codexConfigPath])
+	}
+}
