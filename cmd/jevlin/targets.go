@@ -751,7 +751,7 @@ func planCodexConfigRemoval(ops agentOps, label, path string, existing []byte, m
 		// This installation's block, left: Codex still runs every command
 		// under jevlin's profile, so the uninstall did not do what it was
 		// asked, and does not exit 0 as though it had.
-		p.refused = append(p.refused, label+": left the jevlin block in "+path+", and the lines of yours it changed: "+r.why+"; "+codexStillUnder)
+		p.refused = append(p.refused, label+": left the jevlin block in "+path+", and the lines of yours it changed: "+r.why+codexPutBackAdvice(string(existing))+"; "+codexStillUnder)
 		return false
 	default:
 		m = restoreCodexMarks(string(next), false, entry)

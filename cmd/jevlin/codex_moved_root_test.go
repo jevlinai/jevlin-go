@@ -136,3 +136,30 @@ func TestAnotherInstallationsUnreadableBlockIsNamedNotRefused(t *testing.T) {
 		}
 	}
 }
+
+// When this installation's own block must be removed by hand, the advice
+// also names the marked line to put back. Removing the block alone leaves
+// default_permissions = "jevlin" naming a profile that is gone, which
+// Codex refuses; the two steps together give back the participant's file.
+func TestRemovingTheBlockByHandNamesTheLineToPutBack(t *testing.T) {
+	m, ops, cfgA, _, edited := installedByAWithADenyAdded(t)
+	for _, verb := range []string{"uninstall", "install"} {
+		code, out := runAgentsAt(t, ops, "", verb, "-config", cfgA, "-client", "codex", "-yes")
+		const advice = `then put back the line of yours jevlin changed: line 1, default_permissions = "jevlin", back to default_permissions = ":workspace"`
+		if code == exitOK || !strings.Contains(out, "by hand") || !strings.Contains(out, advice) {
+			t.Errorf("A's %s does not name the line to put back (exit %d):\n%s", verb, code, out)
+		}
+	}
+	// The advice, followed: the block out, the line back.
+	begin := strings.Index(edited, agentsMarkerBegin)
+	end := strings.Index(edited, agentsMarkerEnd) + len(agentsMarkerEnd) + 1
+	byHand := edited[:begin] + edited[end:]
+	byHand = `default_permissions = ":workspace"` + byHand[strings.Index(byHand, "\n"):]
+	if err := codexTOMLError(byHand); err != nil {
+		t.Errorf("the file with the advice followed is one Codex refuses: %v\n%s", err, byHand)
+	}
+	if want := "default_permissions = \":workspace\"\nmodel = \"gpt-5\"\n\n[mcp_servers.foo]\ncommand = \"/bin/echo\"\n"; byHand != want {
+		t.Errorf("the advice, followed, does not give back the participant's file\n got %q\nwant %q", byHand, want)
+	}
+	_ = m
+}

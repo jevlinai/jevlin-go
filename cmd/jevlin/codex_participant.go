@@ -402,6 +402,37 @@ func codexMarkedLines(text string) []codexMarkedLine {
 	return out
 }
 
+// codexPutBackAdvice is what a participant told to remove our block by
+// hand must also do: put back each line of theirs jevlin changed, which
+// the block's removal alone does not, and without which Codex refuses the
+// file (a default_permissions naming a profile that is gone). Empty when
+// no such line is marked.
+func codexPutBackAdvice(text string) string {
+	lines := strings.Split(text, "\n")
+	var parts []string
+	for _, m := range codexMarkedLines(text) {
+		line := strings.TrimRight(lines[m.index], "\r")
+		before, _, _ := parseCodexMark(line)
+		var orig string
+		switch suffix := markSuffix(line); {
+		case strings.HasPrefix(suffix, "was: "):
+			orig = strings.TrimPrefix(suffix, "was: ")
+		case suffix == codexMarkReplaced:
+			orig = strings.TrimPrefix(before, "# ")
+		default:
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("line %d, %s, back to %s", m.index+1, strings.TrimSpace(before), orig))
+	}
+	switch len(parts) {
+	case 0:
+		return ""
+	case 1:
+		return "; then put back the line of yours jevlin changed: " + parts[0]
+	}
+	return "; then put back the lines of yours jevlin changed: " + strings.Join(parts, "; ")
+}
+
 // codexMarkRemoval is what putting back the participant's own lines comes
 // to.
 type codexMarkRemoval struct {

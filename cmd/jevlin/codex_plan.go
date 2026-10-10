@@ -136,7 +136,7 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 				return codexConfigPlan{scope: codexNothing, left: true}
 			}
 		}
-		p.refused = append(p.refused, fmt.Sprintf("%s: the jevlin block in %s is left as it is: %s", label, path, why))
+		p.refused = append(p.refused, fmt.Sprintf("%s: the jevlin block in %s is left as it is: %s%s", label, path, why, codexPutBackAdvice(string(existing))))
 		return codexConfigPlan{left: true}
 	}
 	if had {
