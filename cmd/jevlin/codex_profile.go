@@ -29,6 +29,7 @@ package main
 // running at that moment, the search's own or a later, unrelated one.
 
 import (
+	"net"
 	"net/url"
 	"sort"
 	"strings"
@@ -74,23 +75,65 @@ func fullCodexProfile(roots, hosts []string) codexProfile {
 	return codexProfile{roots: roots, hosts: hosts, key: true, proxy: true}
 }
 
-// codexAllowedHosts is the list, from the config and nothing else.
+// codexAllowedHosts is the list, from the config and nothing else. A
+// loopback host is never listed: Codex's proxy would then let every
+// sandboxed command reach any port on this machine, and it would not even
+// serve the search, because Go never sends a request for a loopback target
+// through a proxy (codexLoopbackServices names them for the plan).
 func codexAllowedHosts(cfg *config.Config) []string {
 	var hosts []string
+	for _, s := range codexServices(cfg) {
+		if !isLoopbackName(s.host) {
+			hosts = append(hosts, s.host)
+		}
+	}
+	return cleanHosts(hosts)
+}
+
+// codexLoopbackServices names the services the config puts on this
+// machine's loopback, which a sandboxed command cannot reach.
+func codexLoopbackServices(cfg *config.Config) []string {
+	var out []string
+	for _, s := range codexServices(cfg) {
+		if isLoopbackName(s.host) {
+			out = append(out, s.name+" ("+s.host+")")
+		}
+	}
+	return out
+}
+
+type codexService struct{ name, host string }
+
+// codexServices is every destination a sandboxed search and the processes
+// it spawns can reach: the router; the authorization server when as_url is
+// set (the flush); the platform's agents API (the claim resume).
+func codexServices(cfg *config.Config) []codexService {
+	var out []codexService
 	if cfg.Miner.RouterURL != nil {
-		hosts = append(hosts, cfg.Miner.RouterURL.Hostname())
+		out = append(out, codexService{"the router", cfg.Miner.RouterURL.Hostname()})
 	}
 	if cfg.Mining.ASBaseURL != "" {
 		if u, err := url.Parse(cfg.Mining.ASBaseURL); err == nil {
-			hosts = append(hosts, u.Hostname())
+			out = append(out, codexService{"the authorization server", u.Hostname()})
 		}
 	}
 	if cfg.Platform.AgentsAPIURL != "" {
 		if u, err := url.Parse(cfg.Platform.AgentsAPIURL); err == nil {
-			hosts = append(hosts, u.Hostname())
+			out = append(out, codexService{"the platform's agents API", u.Hostname()})
 		}
 	}
-	return cleanHosts(hosts)
+	return out
+}
+
+// isLoopbackName: is host this machine, by name or by any loopback or
+// unspecified address?
+func isLoopbackName(host string) bool {
+	h := strings.ToLower(strings.TrimSuffix(host, "."))
+	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(h, "[]"))
+	return ip != nil && (ip.IsLoopback() || ip.IsUnspecified())
 }
 
 // cleanHosts is one cleaning rule for every host list: lowercased, no empty

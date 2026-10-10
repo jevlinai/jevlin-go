@@ -112,6 +112,9 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 	}
 	cfg := configForEntry(entry, getenv)
 	hosts := codexAllowedHosts(cfg)
+	if lo := codexLoopbackServices(cfg); len(lo) > 0 {
+		p.notes = append(p.notes, label+": "+joinLabels(lo)+" is on this machine's loopback, which no command in Codex's sandbox can reach; it is not listed in the profile, and a search from Codex cannot use it")
+	}
 	existing, mode, err := readWithMode(ops, path)
 	if err != nil {
 		p.refused = append(p.refused, fmt.Sprintf("%s: cannot read %s: %v", label, path, err))

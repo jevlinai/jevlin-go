@@ -232,6 +232,8 @@ func TestTheAllowedHostsAreDerivedFromTheConfig(t *testing.T) {
 		{"router only, platform defaulted", "[miner]\nrouter_url = \"https://r.example.invalid/v1\"\n", "agents-v1.nyks.dev|r.example.invalid"},
 		{"with an AS", "[mining]\nas_url = \"https://AS.example.invalid:8443\"\nchain_id = \"c\"\nslot_id = 1\n[miner]\nrouter_url = \"https://r.example.invalid\"\n", "agents-v1.nyks.dev|as.example.invalid|r.example.invalid"},
 		{"a platform of its own, base_url not dialed", "[platform]\nbase_url = \"https://portal.example.invalid\"\nagents_api_url = \"https://api.example.invalid\"\n[miner]\nrouter_url = \"https://r.example.invalid\"\n", "api.example.invalid|r.example.invalid"},
+		{"a loopback router is never listed", "[miner]\nrouter_url = \"http://127.0.0.1:18780\"\n", "agents-v1.nyks.dev"},
+		{"nor a loopback AS or platform", "[platform]\nbase_url = \"http://localhost:9\"\nagents_api_url = \"http://[::1]:9\"\n[mining]\nas_url = \"http://127.0.0.2:9\"\nchain_id = \"c\"\nslot_id = 1\n[miner]\nrouter_url = \"https://r.example.invalid\"\n", "r.example.invalid"},
 		{"one host serving two roles", "[mining]\nas_url = \"https://r.example.invalid\"\nchain_id = \"c\"\nslot_id = 1\n[miner]\nrouter_url = \"https://r.example.invalid\"\n", "agents-v1.nyks.dev|r.example.invalid"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -286,5 +288,34 @@ func TestInstallNeverLosesAKeyItCannotPlace(t *testing.T) {
 	}
 	if !strings.Contains(out, "would change the meaning of something else in the file") {
 		t.Errorf("the plan does not say why nothing was written:\n%s", out)
+	}
+}
+
+// A loopback service is said, not listed: listing it would let every
+// sandboxed command reach any port on this machine through Codex's proxy,
+// and the search still could not use it, since Go never proxies a loopback
+// target.
+func TestALoopbackRouterIsNamedInThePlanAndNotListed(t *testing.T) {
+	onCodexOS(t, "linux")
+	home := t.TempDir()
+	state := filepath.Join(home, "state")
+	if err := os.MkdirAll(state, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(home, "jevlin.toml")
+	doc := "[mining]\nstate_dir = " + mustTOMLString(state) + "\n\n[miner]\nenabled = false\nrouter_url = \"http://127.0.0.1:18780\"\n"
+	if err := os.WriteFile(cfgPath, []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m, ops := newFakeMachine("codex")
+	code, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-yes")
+	if code != exitOK {
+		t.Fatalf("install: exit %d\n%s", code, out)
+	}
+	if _, hosts, _, _ := profileOf(t, string(m.files[codexConfigPath])); containsString(hosts, "127.0.0.1") {
+		t.Errorf("the profile lists a loopback host: %q", hosts)
+	}
+	if !strings.Contains(out, "the router (127.0.0.1) is on this machine's loopback, which no command in Codex's sandbox can reach") {
+		t.Errorf("the plan does not say the loopback router cannot be reached:\n%s", out)
 	}
 }
