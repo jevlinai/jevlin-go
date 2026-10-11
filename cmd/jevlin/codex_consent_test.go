@@ -279,7 +279,7 @@ func TestADryRunPrintsTheCodexQuestionAndExitsZero(t *testing.T) {
 				if code != exitOK {
 					t.Errorf("a dry run exited %d\n%s", code, out)
 				}
-				if !strings.Contains(out, "Switch? [y/N]: (dry run: not asked; the plan below is what a yes would write)") || !strings.Contains(out, "write  ~/.codex/config.toml") {
+				if !strings.Contains(out, "Switch? [y/N]: (dry run: not asked; the plan below is what a yes would write)") || !strings.Contains(out, "write  "+codexConfigShown(ops)) {
 					t.Errorf("the dry run does not show the question and the yes it plans:\n%s", out)
 				}
 				if after := fakeFilesOf(m); fmt.Sprint(after) != fmt.Sprint(before) {

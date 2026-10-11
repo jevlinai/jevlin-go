@@ -158,7 +158,7 @@ func TestAProxyTableCodexDeletedIsNamedAndRestored(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("status: exit %d\n%s", code, out)
 	}
-	if !strings.Contains(out, "network_proxy is off in ~/.codex/config.toml, so the profile's host list is not enforced") ||
+	if !strings.Contains(out, "network_proxy is off in "+codexConfigShown(ops)+", so the profile's host list is not enforced") ||
 		!strings.Contains(out, "every command Codex runs can reach any host") {
 		t.Errorf("status does not say the network is open to every host:\n%s", out)
 	}
@@ -187,7 +187,7 @@ func TestStatusComparesTheProfileWithEveryHostTheConfigNames(t *testing.T) {
 		t.Fatalf("install: exit %d\n%s", code, out)
 	}
 	_, out := runAgentsAt(t, ops, "", "status", "-config", cfgPath)
-	if !strings.Contains(out, `permissions: profile "jevlin" (extends ":workspace") in ~/.codex/config.toml; hosts agents-v1.nyks.dev, as.example.invalid, router.example.invalid; network_proxy on`) {
+	if !strings.Contains(out, `permissions: profile "jevlin" (extends ":workspace") in `+codexConfigShown(ops)+`; hosts agents-v1.nyks.dev, as.example.invalid, router.example.invalid; network_proxy on`) {
 		t.Errorf("status does not name the profile and its hosts:\n%s", out)
 	}
 	if strings.Contains(out, "agents install refreshes it") {
@@ -355,3 +355,14 @@ func TestStatusSaysAProfileWithoutNetworkCannotSearch(t *testing.T) {
 		t.Errorf("status misstates a profile with no network:\n%s", out)
 	}
 }
+
+// codexConfigFull is Codex's config.toml as a message names it in full,
+// and codexConfigShown as a plan or status line shows it: through the same
+// paths and the same tilde the code uses, so the spelling is this OS's —
+// "~/.codex/config.toml" on POSIX, "\home\u\.codex\config.toml" for the
+// fake home on Windows, where tilde does not apply. A typed POSIX path is
+// never on Windows' output, so an expectation spelled that way fails there,
+// and a negative check spelled that way passes without testing anything.
+func codexConfigFull(ops agentOps) string { return ops.paths(noEnv).codexConfig }
+
+func codexConfigShown(ops agentOps) string { return tilde(ops.home, codexConfigFull(ops)) }

@@ -122,7 +122,7 @@ func TestUninstallLeavesTheLinesItChangedWithABlockItLeaves(t *testing.T) {
 	if after := string(m.files[codexConfigPath]); after != edited {
 		t.Errorf("uninstall changed a file whose block it left (exit %d):\n%s\n%s", code, out, after)
 	}
-	if !strings.Contains(out, "left the jevlin block in /home/u/.codex/config.toml, and the lines of yours it changed") {
+	if !strings.Contains(out, "left the jevlin block in "+codexConfigFull(ops)+", and the lines of yours it changed") {
 		t.Errorf("the plan does not say the lines stay with the block:\n%s", out)
 	}
 	if code != exitTransport || !strings.Contains(out, "refused: Codex: left the jevlin block") || !strings.Contains(out, codexStillUnder) {
@@ -187,7 +187,7 @@ func TestUninstallLeavesALineChangedAfterInstall(t *testing.T) {
 	if doc, ok := decodeTOMLDoc(after); !ok || doc["default_permissions"] != ":read-only" {
 		t.Errorf("uninstall widened a sandbox the participant had narrowed (exit %d):\n%s\n%s", code, out, after)
 	}
-	if !strings.Contains(out, "default_permissions in /home/u/.codex/config.toml was changed after jevlin set it, so it is left as you have it") {
+	if !strings.Contains(out, "default_permissions in "+codexConfigFull(ops)+" was changed after jevlin set it, so it is left as you have it") {
 		t.Errorf("the plan does not say why the line stayed:\n%s", out)
 	}
 }
@@ -664,7 +664,7 @@ func TestAnExtendedProfileThatIsGoneIsNamed(t *testing.T) {
 		t.Errorf("status does not name the missing profile:\n%s", out)
 	}
 	code, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-yes")
-	if code == exitOK || !strings.Contains(out, `jevlin's profile in /home/u/.codex/config.toml extends your profile "work", which no [permissions] table defines any more`) {
+	if code == exitOK || !strings.Contains(out, `jevlin's profile in `+codexConfigFull(ops)+` extends your profile "work", which no [permissions] table defines any more`) {
 		t.Errorf("install does not say which profile is gone (exit %d):\n%s", code, out)
 	}
 	if string(m.files[codexConfigPath]) != gone {
