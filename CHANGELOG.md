@@ -27,7 +27,8 @@ The first release replaces this heading with its own.
   the file and does not start until you upgrade it or remove jevlin's block. A Codex setting of
   your own that the profile would change is asked about first, and your own profile is extended,
   never edited. On Windows the network is no longer opened at all: a search there needs Codex's
-  approval to reach the router.
+  approval to reach the router. The Windows block has not been live-smoked: its tests run on
+  the Windows CI runners, against no real Codex.
 
 - **Windows: a state directory jevlin creates is owner-only.** A
   `[mining] state_dir` that `setup` (for one outside the installation),
