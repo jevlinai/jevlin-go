@@ -281,44 +281,71 @@ func TestAnotherInstallationsProfileLeavesCodexWhollyToIt(t *testing.T) {
 //
 // Driven end to end, both commands, because that is where it was seen.
 func TestAnInstallationWhoseStateDirIsElsewhereStillOwnsItsBlock(t *testing.T) {
-	root, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	home := filepath.Join(root, "user", ".jevlin")
-	state := filepath.Join(root, "elsewhere", "state")
-	cfg := writeRelocatedStateConfig(t, home, state)
+	// Both forms of the block name directories, and ownership is read from
+	// them the same way, so the case holds for each; each is made stale
+	// the way an earlier rendering of it would be.
+	for _, tc := range []struct {
+		goos  string
+		stale func(t *testing.T, file string) string
+	}{
+		{"linux", staleOurTable},
+		{"windows", staleWindowsTable},
+	} {
+		t.Run(tc.goos, func(t *testing.T) {
+			onCodexOS(t, tc.goos)
+			root, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			home := filepath.Join(root, "user", ".jevlin")
+			state := filepath.Join(root, "elsewhere", "state")
+			cfg := writeRelocatedStateConfig(t, home, state)
 
-	m, ops := newFakeMachine("codex")
-	if code, out, errOut := runAgents(t, ops, nil, "install", "-yes", "-config", cfg); code != exitOK {
-		t.Fatalf("install: exit %d\n%s%s", code, out, errOut)
-	}
-	installed := string(m.files["/home/u/.codex/config.toml"])
-	if !strings.Contains(installed, strconv.Quote(state)) {
-		t.Fatalf("this case is about a relocated state_dir and the block does not carry it:\n%s", installed)
-	}
+			m, ops := newFakeMachine("codex")
+			if code, out, errOut := runAgents(t, ops, nil, "install", "-yes", "-config", cfg); code != exitOK {
+				t.Fatalf("install: exit %d\n%s%s", code, out, errOut)
+			}
+			installed := string(m.files["/home/u/.codex/config.toml"])
+			if !strings.Contains(installed, strconv.Quote(state)) {
+				t.Fatalf("this case is about a relocated state_dir and the block does not carry it:\n%s", installed)
+			}
 
-	// Something to refresh: the participant's config has not changed, so the
-	// block is made stale the way an earlier version's rendering would be.
-	stale := staleOurTable(t, installed)
-	m.files["/home/u/.codex/config.toml"] = []byte(stale)
+			// Something to refresh: the participant's config has not changed, so the
+			// block is made stale the way an earlier version's rendering would be.
+			stale := tc.stale(t, installed)
+			m.files["/home/u/.codex/config.toml"] = []byte(stale)
 
-	_, out, errOut := runAgents(t, ops, nil, "install", "-yes", "-config", cfg)
-	plan := out + errOut
-	if got := string(m.files["/home/u/.codex/config.toml"]); got != installed {
-		t.Errorf("the installation was refused its own block\n%s\n--- file ---\n%s", plan, got)
-	}
-	if strings.Contains(plan, "left in place") || strings.Contains(plan, "belongs to") {
-		t.Errorf("an installation's own block was called another's:\n%s", plan)
-	}
+			_, out, errOut := runAgents(t, ops, nil, "install", "-yes", "-config", cfg)
+			plan := out + errOut
+			if got := string(m.files["/home/u/.codex/config.toml"]); got != installed {
+				t.Errorf("the installation was refused its own block\n%s\n--- file ---\n%s", plan, got)
+			}
+			if strings.Contains(plan, "left in place") || strings.Contains(plan, "belongs to") {
+				t.Errorf("an installation's own block was called another's:\n%s", plan)
+			}
 
-	// And its uninstall takes it: what install calls ours, uninstall removes.
-	if code, out, errOut := runAgents(t, ops, nil, "uninstall", "-yes", "-config", cfg); code != exitOK {
-		t.Fatalf("uninstall: exit %d\n%s%s", code, out, errOut)
+			// And its uninstall takes it: what install calls ours, uninstall removes.
+			if code, out, errOut := runAgents(t, ops, nil, "uninstall", "-yes", "-config", cfg); code != exitOK {
+				t.Fatalf("uninstall: exit %d\n%s%s", code, out, errOut)
+			}
+			if left := string(m.files["/home/u/.codex/config.toml"]); strings.Contains(left, agentsMarkerBegin) {
+				t.Errorf("uninstall left this installation's own block behind:\n%s", left)
+			}
+		})
 	}
-	if left := string(m.files["/home/u/.codex/config.toml"]); strings.Contains(left, agentsMarkerBegin) {
-		t.Errorf("uninstall left this installation's own block behind:\n%s", left)
+}
+
+// staleWindowsTable makes the Windows block stale the way the earlier
+// version rendered it: with network_access = true in the table, which the
+// refresh takes out.
+func staleWindowsTable(t *testing.T, file string) string {
+	t.Helper()
+	header := "[" + codexSandboxTable + "]\n"
+	stale := strings.Replace(file, header, header+"network_access = true\n", 1)
+	if stale == file || strings.Count(file, header) != 1 {
+		t.Fatalf("this fixture is meant to make the Windows block stale and found no one [%s] table to change:\n%s", codexSandboxTable, file)
 	}
+	return stale
 }
 
 // One block, one answer. "Already installed" is a claim about the whole host,

@@ -2158,6 +2158,8 @@ func (s *setupSandbox) seedWorkspaceDefault() (path, before string) {
 // the participant's settings: a typed no there leaves Codex as it was, and
 // the other agent is still set up.
 func TestSetupYesDoesNotAnswerTheCodexQuestion(t *testing.T) {
+	// The question is the profile's; the Windows block asks nothing.
+	onCodexOS(t, "linux")
 	s := newSetupSandbox(t)
 	s.platform.claim("credits")
 	path, before := s.seedWorkspaceDefault()
@@ -2179,6 +2181,8 @@ func TestSetupYesDoesNotAnswerTheCodexQuestion(t *testing.T) {
 // No line at Codex's question stops setup before any agent is written
 // (hard invariant 18).
 func TestSetupStopsOnAnUnansweredCodexQuestion(t *testing.T) {
+	// The question is the profile's; the Windows block asks nothing.
+	onCodexOS(t, "linux")
 	s := newSetupSandbox(t)
 	s.platform.claim("credits")
 	path, before := s.seedWorkspaceDefault()
@@ -2196,6 +2200,8 @@ func TestSetupStopsOnAnUnansweredCodexQuestion(t *testing.T) {
 
 // A setup dry run shows Codex's question and asks nothing.
 func TestSetupDryRunPrintsTheCodexQuestion(t *testing.T) {
+	// The question is the profile's; the Windows block asks nothing.
+	onCodexOS(t, "linux")
 	s := newSetupSandbox(t)
 	_, before := s.seedWorkspaceDefault()
 	code, out, errOut := s.run(tty(), true, "-dry-run", "-yes", "-no-profile", "-no-agents", "-with", "codex")
