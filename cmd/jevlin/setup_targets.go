@@ -56,23 +56,38 @@ func joinLabels(ls []string) string {
 
 // agentsParagraph says what answering yes writes, from the registry's own
 // labels, and claims nothing about earning: whether a search earns is the
-// mining decision's business, not the skill's.
+// mining decision's business, not the skill's. What it says of Codex is
+// what the planner for this OS writes (codexSandboxOS): the permission
+// profile off Windows, and on Windows the writable directories alone, with
+// no network.
 func agentsParagraph() string {
-	codex := codexTarget{}.Label()
 	return fmt.Sprintf(`Setup knows these coding agents: %s.
 Each can get a web-search skill that runs jevlin's search through the
 Twilight search router, and — where the agent supports one — the hook, plugin
 or extension that threads each search into the agent's session (an agent with
 no skill directory gets a plugin and a line to paste into its rules instead).
-These are written into the agent's own config directory. For %s it also
+These are written into the agent's own config directory. %s
+Answering yes here accepts the rest.
+`, joinLabels(labels(targetsByKind(targetHost))), codexAgentsSentence(codexSandboxOS))
+}
+
+// codexAgentsSentence is the paragraph's Codex sentence for goos.
+func codexAgentsSentence(goos string) string {
+	codex := codexTarget{}.Label()
+	if goos == "windows" {
+		return fmt.Sprintf(`For %s it also
+writes into its config.toml the jevlin state directory — plus the intake,
+sessions and spool directories — as writable, never the config, the stored
+key or the wallet, so a search can record itself. It opens no network: a
+search from Codex needs Codex's approval to reach the router.`, codex)
+	}
+	return fmt.Sprintf(`For %s it also
 writes a permission profile into its config.toml: the jevlin state
 directory — plus the intake, sessions and spool directories — made writable,
 never the config, the stored key or the wallet, and network access to the
 search hosts only, through Codex's proxy, so a search can record itself and
 the claim can resolve. Every other host stays closed to Codex's commands.
-A change to a Codex setting of your own is asked about separately.
-Answering yes here accepts the rest.
-`, joinLabels(labels(targetsByKind(targetHost))), codex)
+A change to a Codex setting of your own is asked about separately.`, codex)
 }
 
 func (r *setupRun) agentsStep() int {

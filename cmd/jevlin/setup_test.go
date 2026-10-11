@@ -2280,3 +2280,50 @@ func TestSetupClosesTheOldBlockOnATypedNo(t *testing.T) {
 		t.Errorf("setup wrote more than the close, or did not say it closed it:\n%s", out)
 	}
 }
+
+// Setup's agents paragraph says of Codex what the planner for this OS
+// writes: off Windows the permission profile with the search hosts through
+// Codex's proxy, on Windows the writable directories alone and no network.
+// Each form's claim is checked against an install the same form plans.
+func TestTheAgentsParagraphSaysWhatEachCodexFormWrites(t *testing.T) {
+	for _, tc := range []struct {
+		goos          string
+		says, notSays []string
+		writes        string // a line of config.toml that form writes
+		notWrites     string // one it never writes
+	}{
+		{"linux",
+			[]string{"writes a permission profile into its config.toml", "network access to the\nsearch hosts only, through Codex's proxy"},
+			[]string{"opens no network"},
+			"[permissions.jevlin.network.domains]", "[" + codexSandboxTable + "]"},
+		{"windows",
+			[]string{"sessions and spool directories — as writable", "It opens no network: a\nsearch from Codex needs Codex's approval to reach the router."},
+			[]string{"permission profile", "proxy", "network access to"},
+			"[" + codexSandboxTable + "]", "network_access"},
+	} {
+		t.Run(tc.goos, func(t *testing.T) {
+			cfgPath, _ := sandboxTestConfig(t)
+			onCodexOS(t, tc.goos)
+			p := agentsParagraph()
+			for _, w := range tc.says {
+				if !strings.Contains(p, w) {
+					t.Errorf("the paragraph does not say %q:\n%s", w, p)
+				}
+			}
+			for _, w := range tc.notSays {
+				if strings.Contains(p, w) {
+					t.Errorf("the paragraph says %q, which this form does not write:\n%s", w, p)
+				}
+			}
+			m, ops := newFakeMachine("codex")
+			m.files[codexConfigPath] = []byte("model = \"gpt-5\"\n")
+			if code, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK {
+				t.Fatalf("install: exit %d\n%s", code, out)
+			}
+			_, block, _, ok := markedRegion(m.files[codexConfigPath])
+			if !ok || !strings.Contains(block, tc.writes) || strings.Contains(block, tc.notWrites) {
+				t.Errorf("this form's block is not what the paragraph describes:\n%s", m.files[codexConfigPath])
+			}
+		})
+	}
+}
