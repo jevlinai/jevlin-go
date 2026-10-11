@@ -51,15 +51,16 @@ it from there.
 | **Payout address (leave empty to create a wallet here):** | Asked only after yes. Paste an address, or leave it empty: it asks for a keyfile passphrase twice, then prints the 24 words once. Have paper ready. |
 | **Add them to ~/.zshrc? [Y/n]** | Or `~/.bashrc`, whichever your shell reads. One marked block puts the binary on PATH and sets `JEVLIN_CONFIG`, plus `JEVLIN_WALLET_DIR` when a wallet was made here. No just means longer commands. On Windows it asks **Set them for your user?** and sets PATH and `JEVLIN_CONFIG` only. |
 | **Set up the coding agents found on this machine now? [Y/n]** | Writes a skill and, where the agent supports them, hooks into its config. You see the plan first, with what made each agent count as present. |
+| **Switch? [y/N]** | Asked only when Codex's config has a setting of your own that its permission profile would change, such as your own profile in `default_permissions`. It shows every line it would write. A bare Enter is no, which sets up the other agents and leaves Codex as it is. See [Codex](agents.md#codex). |
 
 Only an answer you typed counts. Interrupt a question, or close its input, and setup stops there
 with a non-zero exit, recording and writing nothing; an interrupted **Enable mining rewards?** is
-asked again next time. The same holds for `agents install`'s **Proceed?**, uninstall's
-confirmations and `wallet send`'s: a typed no exits 0, no answer exits non-zero.
+asked again next time. The same holds for `agents install`'s **Proceed?**, Codex's **Switch?**,
+uninstall's confirmations and `wallet send`'s: a typed no exits 0, no answer exits non-zero.
 
 | flag | effect |
 |---|---|
-| `-yes` | Answers yes to the profile and agents questions, terminal or not. Answers **Use it?** only at a terminal. Never answers the mining question. Without `-yes` or a terminal, setup leaves the profile and agents alone and prints the command for each. |
+| `-yes` | Answers yes to the profile and agents questions, terminal or not. Answers **Use it?** only at a terminal. Never answers the mining question or Codex's **Switch?**. Without `-yes` or a terminal, setup leaves the profile and agents alone and prints the command for each. An agent that could not be set up is reported, and setup still exits 0. |
 | `-dry-run` | Lists every file it would write or move, and changes nothing. |
 | `-no-profile` | Leaves the shell profile (Windows: user environment) alone, even with `-yes`. |
 | `-no-agents` | Skips agent detection, even with `-yes`. `-with` still sets up what it names. |
@@ -223,7 +224,11 @@ npm install -g jevlin@latest    # an npm install is updated with npm
 new binary before and after installing it. It keeps the old one as `jevlin.previous`;
 `-rollback` swaps back with no network. It refuses an npm copy and a development build, takes at
 most three minutes, and never touches your wallet, registration or config. The new binary then
-rewrites the skills and hooks this installation set up. If that step fails, the upgrade still
+rewrites the skills and hooks this installation set up, and for Codex the block in
+`~/.codex/config.toml`: an earlier version's block, which opened Codex's network to every host,
+becomes the permission profile without a question, and a setting of your own that the profile
+would change is left and printed for you to change by hand, since nobody is at a terminal to ask.
+The profile is supported with Codex 0.158.0 or newer. If that step fails, the upgrade still
 succeeded, and the message gives the command that finishes it. Restart open agents.
 
 When it fails, the first word after `upgrade:` says what to do:

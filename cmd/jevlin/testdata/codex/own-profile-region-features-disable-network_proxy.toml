@@ -1,0 +1,24 @@
+default_permissions = "jevlin"  # jevlin agents install ("<HOME>/jevlin.toml"); was: default_permissions = "work"
+
+[permissions.jevlin]
+extends = "work"
+
+[permissions.jevlin.filesystem]
+"<HOME>/intake" = "write"
+"<HOME>/sessions" = "write"
+"<HOME>/spool" = "write"
+"<HOME>/state" = "write"
+
+[permissions.jevlin.network]
+enabled = true
+
+[permissions.jevlin.network.domains]
+"agents-v1.nyks.dev" = "allow"
+"as.example.invalid" = "allow"
+"router.example.invalid" = "allow"
+# <<< jevlin agents install <<<
+[permissions.work]
+extends = ":workspace"
+
+[permissions.work.filesystem]
+"/home/u/src" = "write"

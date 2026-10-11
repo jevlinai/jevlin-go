@@ -1,0 +1,5 @@
+model = "gpt-5"
+
+[mcp_servers.foo]
+command = "/bin/echo"
+# my note at the end of the file

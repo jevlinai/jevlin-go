@@ -538,6 +538,9 @@ func (r *uninstallRun) plan() {
 func (r *uninstallRun) uninstallTargets(ops agentOps, apply func(p *agentPlan)) (changed bool, left []string) {
 	paths := ops.paths(r.d.getenv)
 	ref := installationRef{bins: r.candidates, cfg: r.cfgPath}
+	// A refusal is about a file, not a binary: planned once per binary
+	// candidate, it would be printed and counted as a problem once each.
+	refusedOnce := map[string]bool{}
 	for _, t := range r.d.targets {
 		var agnostic agentPlan
 		t.PlanUninstall(ops, paths, binEntry{command: uninstallProbeCommand, cfg: r.cfgPath}, r.d.getenv, &agnostic)
@@ -581,6 +584,14 @@ func (r *uninstallRun) uninstallTargets(ops agentOps, apply func(p *agentPlan)) 
 			var p agentPlan
 			t.PlanUninstall(ops, paths, binEntry{command: c, cfg: r.cfgPath}, r.d.getenv, &p)
 			p = planWithout(p, skip)
+			var refused []string
+			for _, why := range p.refused {
+				if !refusedOnce[why] {
+					refusedOnce[why] = true
+					refused = append(refused, why)
+				}
+			}
+			p.refused = refused
 			if p.empty() && len(p.refused) == 0 {
 				continue
 			}

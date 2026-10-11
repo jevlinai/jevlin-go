@@ -57,7 +57,8 @@ only) and the coding agents found on this machine.
                 coding-agents questions, with or without a terminal; automated
                 callers may pass it. Also yes to reusing a set-aside
                 installation, at a terminal only. Never answers connect's
-                mining question
+                mining question, or a question about a Codex setting of
+                your own
   -no-profile   leave the shell profile (on Windows, the user environment) alone
   -no-agents    do not look for coding agents; -with still sets up what it names
   -with id      set up this target whether or not it was found; repeatable

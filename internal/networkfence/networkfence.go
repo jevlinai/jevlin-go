@@ -135,7 +135,9 @@ func dialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 // client, pkg/platform's client, internal/selfupdate's source) all
 // deliberately preserve that Proxy setting, the same as
 // http.DefaultTransport itself, so the participant's own proxy
-// configuration still applies in production. net/http's own
+// configuration still applies in production; and pkg/auth's two AS
+// transports read it through loopbackProxy, which uses it only when it is
+// a loopback address (Codex's sandbox proxy). net/http's own
 // ProxyFromEnvironment reads only HTTP_PROXY/HTTPS_PROXY/NO_PROXY (and
 // lowercase); ALL_PROXY is cleared too as a second layer, since it is a
 // convention some other HTTP tooling honors even though this module's own
@@ -247,8 +249,10 @@ var transportFieldsSkippedInComparison = map[string]bool{
 // permanent: routing every Transport through one seam must not silently
 // change what ForceAttemptHTTP2, TLSHandshakeTimeout, IdleConnTimeout,
 // MaxIdleConns or ExpectContinueTimeout it carries, for the four clients
-// that clone http.DefaultTransport, or invent a Proxy the three that build
-// a bare Transport never had.
+// that clone http.DefaultTransport, or give a Proxy to a bare Transport
+// that was not built with one: pkg/auth's two AS transports carry
+// loopbackProxy and the wallet's chain client none, and the caller names
+// which in want, compared by function.
 //
 // Iterating exported fields by name (rather than a whole-struct
 // reflect.DeepEqual with a couple of fields zeroed first) is deliberate:

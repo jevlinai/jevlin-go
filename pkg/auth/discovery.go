@@ -102,9 +102,10 @@ func NewDiscoverer(cfg DiscoveryConfig) (*Discoverer, error) {
 	d.client = &http.Client{
 		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
-			// Same discipline as the upstream path: no environment
-			// proxy may silently interpose on AS identity.
-			Proxy: nil,
+			// An environment proxy only on this machine's loopback, as
+			// the DPoP transport: Codex's sandbox reaches the AS through
+			// one, and a proxy anywhere else is ignored (proxy.go).
+			Proxy: loopbackProxy,
 			// netdial.For(discoveryDialer): discoveryDialer's own dial
 			// (the same zero-value net.Dialer this Transport always used —
 			// no explicit connect timeout, net/http's 15s default

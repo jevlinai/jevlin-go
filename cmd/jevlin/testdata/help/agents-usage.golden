@@ -10,4 +10,5 @@ usage: jevlin agents install|status|uninstall [-config file] [-client name]... [
               the agent does the same)
   -client     act on this agent only (claude, codex, cursor, opencode, pi, hermes); repeatable
   -dry-run    print the plan, change nothing
-  -yes        do not ask before writing
+  -yes        answer Proceed? with yes; a question about a Codex setting of
+              your own is still asked, and with no terminal is not answered

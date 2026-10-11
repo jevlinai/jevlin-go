@@ -110,9 +110,24 @@ from PowerShell instead; the editor is unaffected. Reported to Cursor (forum thr
 
 A skill in `~/.codex/skills/jevlin/`; on macOS and Linux, five hooks in `~/.codex/hooks.json`
 (`PreToolUse`, `SessionStart`, `PreCompact`, `PostCompact`, `Stop`), each written where any of
-jevlin's stood before so no other hook moves; and, when `~/.codex/config.toml` exists, a marked
-block in it that widens the sandbox: network on, and writable roots for the state directory
-always, plus the intake, sessions and spool directories when `[miner] enabled` is set.
+jevlin's stood before so no other hook moves; and a marked block in `~/.codex/config.toml`, which
+install creates if it is not there.
+
+On macOS and Linux the block is a Codex permission profile named `jevlin`, made the default with
+`default_permissions`. It extends Codex's `:workspace` profile, or a profile of your own that you
+agreed to switch from, with write access to the state directory, plus the intake, sessions and
+spool directories when `[miner] enabled` is set, and network access to the search hosts only:
+the router, the authorization server when `as_url` is set, and the platform's agents API. A host
+on this machine's loopback is never listed, because no command in Codex's sandbox can reach it
+and listing it would open every local port; the plan says when a service is on loopback. The
+block also turns on Codex's `network_proxy` feature, which is what enforces the host list: with
+it on, a host neither profile lists is closed to the commands Codex runs from this config. The
+block sits before the first table in the file, because `default_permissions` must, and is added
+and taken out without a byte of its own, so uninstall gives your file back exactly as it was.
+
+On Windows no permission profile has been seen to work in Codex's sandbox, so none is written.
+The block makes the same directories writable and opens no network: a search there needs Codex's
+approval to reach the router.
 
 ### What to know
 
@@ -130,6 +145,62 @@ add its own group to the state directory's access list; `doctor`'s `state access
 whoever besides you is on it, and does not call that a problem. Running `jevlin setup` again
 gives `<home>\state` an owner-only list, which removes that entry until the sandbox's setup
 adds it again.
+
+Supported Codex is 0.158.0 or newer. Older versions are not supported: below 0.131 Codex refuses
+the whole file with "invalid type: map, expected a boolean" and does not start (upgrade Codex, or
+remove the block between its two markers), and 0.131 to 0.157 has not been tried. Inside the sandbox Codex routes commands through a proxy on this machine, and jevlin's
+flush and claim resume use it to reach the authorization server; jevlin never uses a proxy that
+is not on this machine for that. A process a search starts contacts only the hosts the profile
+lists, because Codex fails whichever command is running when anything inside the sandbox is
+refused a host. If you change `router_url`, `as_url` or the platform in your config, run
+`jevlin agents install` again; `jevlin agents status` says when the profile names other hosts
+than the config does.
+
+`codex features disable network_proxy` deletes the profile's `[features.network_proxy]` table,
+and the profile then lets every command Codex runs reach any host. `jevlin agents status` says so
+in those words, and `jevlin agents install` puts the table back. Status reads only
+`~/.codex/config.toml`: a trusted project's own `.codex/config.toml`, or `codex -p <name>` with
+`<name>.config.toml`, that sets `network_proxy = false` turns the proxy off for that project or
+profile while jevlin's profile is active, which opens the network there, and status cannot see it.
+Don't turn the proxy off in a project config while jevlin's profile is your default.
+
+Any change to a file that Codex's own parser would refuse is not written: a `features` or
+`permissions` table you wrote inline or with dotted keys, where jevlin's table header would collide
+with it, is named in the plan, and nothing is written for Codex.
+
+A setting of your own that the profile would change is asked about first, in one question that
+shows every line it would write, and `-yes` does not answer it: a profile of yours named in
+`default_permissions` (jevlin's profile then extends yours, and Codex merges the two, so your
+hosts and roots still apply; once jevlin's profile turns the network on, every host your profile
+or the profiles it extends allows is reachable too, even where your own network was off — each
+host decided, as Codex decides it, by the nearest profile that names it, so a deny in yours
+overrides an allow in the one it extends and the other way round — and the question names them
+all, or says every host, but any a profile denies, where one allows `"*"`; a wildcard deny — any
+key holding `*` or `?`, such as `"*.example.com"` or `"api.example.*"` — wins over any exact allow,
+jevlin's included, so the hosts it matches are named as blocked, and install refuses for Codex when
+one of them is the router's; if your profile's network is
+already open with the proxy off, jevlin's adds only its roots and leaves your network as it is), `default_permissions =
+":workspace"`, a bare `sandbox_mode = "workspace-write"` (commented out), and `network_proxy =
+false` in your `[features]` table (set to true). jevlin never writes a line inside a table of
+yours: it changes only those lines, each marked with a comment naming its config, and `agents
+uninstall` puts each back together with jevlin's block, unless you have changed it since, in
+which case it is left as you have it. Answering no installs nothing for Codex and exits 0. No
+answer stops the install, exit 2, with nothing written except one thing: if jevlin's own block
+still holds an open network from an earlier version, that one line is closed, whatever else
+happens — on a no at `Proceed?` or at setup's agents question too — and the message says so. Without a terminal, `agents install` prints the exact lines to
+change by hand and the block to add with its markers, every line flush left so it can be copied as
+printed; where the file already has a block of jevlin's, it says to replace that block, or prints
+it whole to delete when it is the earlier version's or holds lines of yours, which it says where
+to put back. It exits 2; a file finished that way is
+jevlin's, and a later install or uninstall treats it as installed; `setup` reports the agent it could not set up
+and exits 0, because the rest of setup succeeded. A dry run prints the question and plans the
+yes. Whatever the answer, a block of jevlin's own that opens the network is closed: an earlier
+version's block loses its `network_access = true` line and keeps every other line, and jevlin's
+profile with its own network and the proxy off loses its network. A read-only sandbox, or a
+`[sandbox_workspace_write]` table of your own, gets nothing for Codex and the profile to adopt
+printed; widening those is yours to do. With `danger-full-access` there is nothing to widen, and
+only the skill and hooks are written. If the profile in the file is another jevlin installation's,
+nothing is written for Codex and the plan names it.
 
 Codex runs the hooks only after you approve them: start `codex`, or open the app, and approve
 them when it asks you to review hooks. Until then they do nothing, and under `codex exec` nothing
@@ -153,21 +224,33 @@ file: what you asked, what the assistant wrote along the way, its final answer, 
 name and outcome, never a tool's input or output. A subagent's turn sends nothing of its own. Without
 `turn_end`, the hooks read no prompt, no tool's output and none of the assistant's words.
 
-Codex appends its own tables, such as folder trust, `[windows] sandbox` or its record of hook
-approvals (`[hooks.state.…]`), to the end of `config.toml`, where they can land between jevlin's
-markers. Install and uninstall change only jevlin's one table, and move any other table inside the
-markers to just below the block, naming it in the plan. Install writes the block where it sits,
-so nothing else moves (after an uninstall, at the end). A block that is not valid TOML is left and reported; a key you added inside
-jevlin's table goes with it, and the plan says so first. If you keep your own
-`[sandbox_workspace_write]` table, install leaves it and prints the settings to add by hand.
+Codex writes into its own config file: tables at the end, a `[features]` table from `codex features
+enable`, settings from the desktop app. Some of that can land between jevlin's markers. Install
+and uninstall change only jevlin's own lines, move a setting Codex wrote inside the markers to
+just above them and a table to just below them, and name each in the plan. A block that is not
+valid TOML, or whose profile holds anything jevlin did not write, is left and reported; when
+uninstall leaves jevlin's own block, Codex still runs its commands under jevlin's profile, so
+uninstall names the block as what it left, with every line of yours jevlin changed and what to
+put back in its place, and exits 1. Another installation's block is left to that installation, and
+named. A `default_permissions = "jevlin"` line left behind with jevlin's mark after the block was
+removed by hand is one Codex cannot load: status says so, install refuses over it, and both name
+`jevlin agents uninstall -client codex`, which puts back the line it replaced. Markers
+count only as lines of their own outside a multi-line string, so a comment or a string that
+happens to hold them is yours. jevlin writes its `[features.network_proxy]` table last in its
+block, because `codex features disable network_proxy` deletes the comments above the table it
+removes; a block that has lost a marker all the same is still recognized, repaired by the next
+install and removed whole by uninstall. A file that starts with a UTF-8 byte-order mark keeps it. An earlier version's block, which opened the network to every
+host, is replaced by the profile on the next install, and the plan says so.
 
 ### Known limits
 
-On Windows no hooks are written, because what runs a Codex hook there has not been seen; the
-skill and the block are as before. A Codex turn end gives a shell command no duration: the session
-file Codex 0.160.0 writes holds none that is the command's. Whether a search can reach the
-router from inside the desktop app's sandbox has not been established: its sandbox is not the
-CLI's.
+On Windows no hooks are written, because what runs a Codex hook there has not been seen, and no
+profile, for the same reason. A Codex turn end gives a shell command no duration: the session
+file Codex 0.160.0 writes holds none that is the command's. A client of Codex's app server that
+starts a thread with an explicit sandbox mode discards the profile, and the network is then off
+for that thread: the skill cannot help there. On Linux, Codex runs each command in its own
+process namespace, so a flush or claim resume a search starts ends with the search; the hooks,
+which run outside the sandbox, flush instead.
 
 ## opencode
 

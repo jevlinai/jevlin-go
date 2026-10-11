@@ -1,0 +1,24 @@
+approval_policy = "on-request"
+
+# >>> jevlin agents install >>>
+default_permissions = "jevlin"
+model = "gpt-probe"
+
+[features.network_proxy]
+enabled = true
+
+[permissions.jevlin]
+extends = ":workspace"
+
+[permissions.jevlin.filesystem]
+"<STATE_DIR>" = "write"
+
+[permissions.jevlin.network]
+enabled = true
+
+[permissions.jevlin.network.domains]
+"router-api.nyks.dev" = "allow"
+# <<< jevlin agents install <<<
+
+[tui]
+screen_reader_detection_done = true

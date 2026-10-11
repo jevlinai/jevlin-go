@@ -1,0 +1,2 @@
+[features.network_proxy]
+allow_local_binding = true
