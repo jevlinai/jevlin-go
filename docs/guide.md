@@ -217,7 +217,7 @@ describes each.
 jevlin upgrade                  # the latest release
 jevlin upgrade -version X.Y.Z   # exactly that release, never an older one
 jevlin upgrade -rollback        # put back the binary the last upgrade replaced
-npm install -g jevlin@latest    # an npm install is updated with npm
+npm install -g @jevlinsearch/jevlin@latest    # an npm install is updated with npm
 ```
 
 `upgrade` downloads only from the project's GitHub releases, checks the checksum, and runs the
@@ -253,7 +253,7 @@ jevlin uninstall -dry-run       # what would be removed; changes nothing
 jevlin uninstall                # skills, hooks, plugins, and the profile block
 jevlin uninstall -binary        # ...and this installation's binary
 jevlin uninstall -purge-state   # ...and the wallet, identity, key, evidence and config
-npm uninstall -g jevlin         # an npm install is npm's to remove
+npm uninstall -g @jevlinsearch/jevlin         # an npm install is npm's to remove
 ```
 
 A plain `uninstall` removes what setup wrote for this installation (`-home`, default

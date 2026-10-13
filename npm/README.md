@@ -8,7 +8,7 @@ control. There is no daemon, proxy or MCP server: between tool calls nothing is 
 ## Install
 
 ```bash
-npm install -g jevlin
+npm install -g @jevlinsearch/jevlin
 jevlin setup
 ```
 
@@ -93,7 +93,7 @@ safe.
 
 ```bash
 jevlin upgrade                 # a native install: the latest release, verified before it runs
-npm install -g jevlin@latest   # an npm install is updated with npm
+npm install -g @jevlinsearch/jevlin@latest   # an npm install is updated with npm
 jevlin uninstall               # remove the skills, hooks and profile block; keep your wallet
 ```
 

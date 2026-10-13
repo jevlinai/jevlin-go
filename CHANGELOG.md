@@ -10,13 +10,15 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
-## Unreleased
+## v0.1.0 — 2026-10-13
 
 This repository starts from `twilight-project/dropin-miner` at
 `9c547ab0c809244fbb7c6b2138ab61212583f2b3` — the v0.3.0 release plus its pre-import
 hygiene PR — imported as one commit. Everything before that is in
 [dropin-miner's changelog](https://github.com/twilight-project/dropin-miner/blob/main/CHANGELOG.md).
-The first release replaces this heading with its own.
+This is the first release of jevlin-go, published on npm as `@jevlinsearch/jevlin`; there is
+nothing earlier to upgrade from, so `jevlin upgrade` has not been exercised against a
+previous release.
 
 - **Codex commands no longer get open network from jevlin; only the search hosts do.**
   `agents install` used to set `network_access = true` in Codex's sandbox, which let every
@@ -296,7 +298,7 @@ The first release replaces this heading with its own.
   for your OS from the releases page, verify it against `checksums.txt`, put the
   binary on PATH and run `setup`.
 - **Renamed to jevlin.** The binary and the npm package are `jevlin`
-  (`npm install -g jevlin`), `jevlin version` prints `jevlin X.Y.Z`, the release
+  (`npm install -g @jevlinsearch/jevlin`), `jevlin version` prints `jevlin X.Y.Z`, the release
   archives are `jevlin_<version>_<os>_<arch>`, and `jevlin upgrade` fetches only from
   `jevlinai/jevlin-go`'s releases. The npm wrapper's own knobs are `JEVLIN_BINARY`
   and `JEVLIN_SKIP_DOWNLOAD`.
