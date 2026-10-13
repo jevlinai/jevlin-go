@@ -20,7 +20,7 @@ func TestUpgradeRefusesEveryCopyThePackageManagerOwns(t *testing.T) {
 	root := t.TempDir()
 	native := filepath.Join(root, "home", "bin", "jevlin")
 	layout := filepath.Join(root, "pkg")
-	writeFileT(t, filepath.Join(layout, "package.json"), `{"name":"jevlin"}`)
+	writeFileT(t, filepath.Join(layout, "package.json"), `{"name":"@jevlinsearch/jevlin"}`)
 	writeFileT(t, filepath.Join(layout, "install.js"), "")
 	writeFileT(t, filepath.Join(layout, "bin", "jevlin.js"), "")
 	partial := filepath.Join(root, "partial")
@@ -32,7 +32,7 @@ func TestUpgradeRefusesEveryCopyThePackageManagerOwns(t *testing.T) {
 	for name, tc := range map[string]struct {
 		exe, marker, want string
 	}{
-		"npm global":        {native, "npm:global", "npm install -g jevlin@latest"},
+		"npm global":        {native, "npm:global", "npm install -g @jevlinsearch/jevlin@latest"},
 		"npm local":         {native, "npm:local", "that project's dependencies (package.json and its lockfile)"},
 		"npm unknown":       {native, "npm:unknown", "package manager that installed it"},
 		"npm exec cache":    {filepath.Join(root, "_npx", "1", "jevlin"), "", "package manager that installed it"},

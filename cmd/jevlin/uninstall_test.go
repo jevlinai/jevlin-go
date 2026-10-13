@@ -731,7 +731,7 @@ func TestUninstallBinaryRefusesACopyItDoesNotOwn(t *testing.T) {
 		layout       func(s *setupSandbox) string
 		want         string
 	}{
-		{"npm global", "npm:global", func(s *setupSandbox) string { return s.exe }, "npm uninstall -g jevlin"},
+		{"npm global", "npm:global", func(s *setupSandbox) string { return s.exe }, "npm uninstall -g @jevlinsearch/jevlin"},
 		{"npm local", "npm:local", func(s *setupSandbox) string { return s.exe }, "project's dependencies"},
 		{"npm unknown", "npm:unknown", func(s *setupSandbox) string { return s.exe }, "package manager"},
 		{"node_modules run directly", "", func(s *setupSandbox) string {
@@ -739,7 +739,7 @@ func TestUninstallBinaryRefusesACopyItDoesNotOwn(t *testing.T) {
 		}, "package manager"},
 		{"ambiguous npm-like layout", "", func(s *setupSandbox) string {
 			exe := filepath.Join(s.home, "bin", "jevlin")
-			writeFileT(t, filepath.Join(s.home, "package.json"), `{"name":"jevlin"}`)
+			writeFileT(t, filepath.Join(s.home, "package.json"), `{"name":"@jevlinsearch/jevlin"}`)
 			return exe
 		}, "unclear"},
 		{"a native binary that is not the installation's copy", "", func(s *setupSandbox) string { return s.exe }, "is not this installation's own binary"},
@@ -1538,7 +1538,7 @@ func TestUninstallCustomHome(t *testing.T) {
 func TestLaunchClassifier(t *testing.T) {
 	root := t.TempDir()
 	layout := filepath.Join(root, "pkg")
-	writeFileT(t, filepath.Join(layout, "package.json"), `{"name":"jevlin"}`)
+	writeFileT(t, filepath.Join(layout, "package.json"), `{"name":"@jevlinsearch/jevlin"}`)
 	writeFileT(t, filepath.Join(layout, "install.js"), "")
 	writeFileT(t, filepath.Join(layout, "bin", "jevlin.js"), "")
 	partial := filepath.Join(root, "partial")

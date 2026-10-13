@@ -184,7 +184,7 @@ func judgedUnder(t *testing.T, root string, warnings []string, err error) {
 }
 
 // A Homebrew prefix is group-writable by admin, whose members can already
-// become root. `npm install -g jevlin && jevlin setup` with Homebrew's Node
+// become root. `npm install -g @jevlinsearch/jevlin && jevlin setup` with Homebrew's Node
 // is the README's first install path, so a binary there is accepted without
 // a word, whichever root-equivalent group the prefix has.
 func TestBinaryLocationAcceptsAHomebrewPrefix(t *testing.T) {

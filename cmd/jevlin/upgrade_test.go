@@ -365,7 +365,7 @@ func TestUpgradeCommandSendsNpmCopiesToNpmBeforeAnythingElse(t *testing.T) {
 	f := newUpgradeFixture(t, newLocalRelease(t, "0.3.1", map[string]string{"0.3.1": "0.3.1\n"}))
 	f.env["JEVLIN_LAUNCH"] = "npm:global"
 	code, out, errOut := f.run()
-	if code != exitUsage || !strings.HasPrefix(errOut, "jevlin upgrade: ownership: ") || !strings.Contains(errOut, "npm install -g jevlin@latest") {
+	if code != exitUsage || !strings.HasPrefix(errOut, "jevlin upgrade: ownership: ") || !strings.Contains(errOut, "npm install -g @jevlinsearch/jevlin@latest") {
 		t.Errorf("an npm copy gets npm's command: exit %d\n%s\n%s", code, out, errOut)
 	}
 	if len(f.lr.requests) != 0 || f.content(f.exe) != "0.3.0" || lexists(lifecycleGatePath(f.home)) {
@@ -525,7 +525,7 @@ func TestTopLevelHelpNamesTheLifecycleCommands(t *testing.T) {
 			t.Errorf("top-level help must describe%s", command)
 		}
 	}
-	for _, want := range []string{"-purge-state", "-yes never answers it", "-rollback", "npm install -g jevlin@latest"} {
+	for _, want := range []string{"-purge-state", "-yes never answers it", "-rollback", "npm install -g @jevlinsearch/jevlin@latest"} {
 		if !strings.Contains(usageText, want) {
 			t.Errorf("top-level help must say %q", want)
 		}

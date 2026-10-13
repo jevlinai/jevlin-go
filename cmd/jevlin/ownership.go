@@ -44,7 +44,7 @@ const (
 	launchAmbiguous                    // some of npm's package files, not all
 )
 
-const npmPackageName = "jevlin"
+const npmPackageName = "@jevlinsearch/jevlin"
 
 // classifyLaunch decides who owns exe, given the launcher's marker.
 func classifyLaunch(exe, marker string) launchKind {
@@ -111,9 +111,9 @@ func npmRemovalGuidance(kind launchKind, verb string) string {
 	switch kind {
 	case launchNPMGlobal:
 		if verb == "upgrade" {
-			return "npm owns this copy: npm install -g jevlin@latest"
+			return "npm owns this copy: npm install -g @jevlinsearch/jevlin@latest"
 		}
-		return "npm owns this copy: npm uninstall -g jevlin"
+		return "npm owns this copy: npm uninstall -g @jevlinsearch/jevlin"
 	case launchNPMLocal:
 		return "this copy belongs to a project's node_modules: " + verb + " it through that project's dependencies (package.json and its lockfile)"
 	case launchAmbiguous:

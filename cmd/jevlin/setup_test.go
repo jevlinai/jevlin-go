@@ -1924,7 +1924,7 @@ func TestSetupRefusesNpmCopiesThatWillBeDiscarded(t *testing.T) {
 	s.env["JEVLIN_LAUNCH"] = "npm:local"
 	before := snapshotTree(t, s.root)
 	code, _, errOut := s.run(nil, false)
-	if code != exitUsage || !strings.Contains(errOut, "npm install -g jevlin") {
+	if code != exitUsage || !strings.Contains(errOut, "npm install -g @jevlinsearch/jevlin") {
 		t.Fatalf("a project-local npm copy was not refused: exit %d\n%s", code, errOut)
 	}
 	delete(s.env, "JEVLIN_LAUNCH")

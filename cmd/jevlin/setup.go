@@ -264,7 +264,7 @@ func displayPath(p string) string {
 
 // errNpmLaunch is setup's refusal to install from an npm copy other than a
 // global one.
-var errNpmLaunch = errors.New("setup must run from a global npm install: npm install -g jevlin, then jevlin setup")
+var errNpmLaunch = errors.New("setup must run from a global npm install: npm install -g @jevlinsearch/jevlin, then jevlin setup")
 
 // errNpmDirect is a binary inside node_modules run by its own path, around the
 // launcher: nothing then says which kind of install it is, so setup cannot
