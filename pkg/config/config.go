@@ -703,7 +703,9 @@ func (r *rawConfig) finish() (*Config, error) {
 	// before this fix. Three cases, only two of which have a safe
 	// implicit answer:
 	//   - base_url is exactly the real platform's default: agents_api_url
-	//     defaults to the real agents API. The ordinary case.
+	//     defaults to the real agents API. The ordinary case. The pair the
+	//     platform had before jevlin.ai is implied the same way, so a
+	//     config written against it keeps loading.
 	//   - base_url is loopback: assume the same local stub serves both
 	//     roles, matching every existing test's own setup.
 	//   - base_url names anything else (a devnet, a staging portal) and
@@ -716,6 +718,8 @@ func (r *rawConfig) finish() (*Config, error) {
 		switch platformBaseURL {
 		case DefaultPlatformBaseURL:
 			agentsAPIRaw = DefaultAgentsAPIURL
+		case LegacyPlatformBaseURL:
+			agentsAPIRaw = LegacyAgentsAPIURL
 		default:
 			pu, perr := url.Parse(platformBaseURL)
 			if perr != nil || !isLoopbackHost(pu.Hostname()) {

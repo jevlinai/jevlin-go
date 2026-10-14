@@ -20,7 +20,9 @@ rewritten to match newer behaviour; the newer entry says what changed.
   (`rpc.nyks.dev`) are Twilight's and are unchanged.
   **Upgrade note:** `jevlin setup` writes these URLs into `~/.jevlin/jevlin.toml` literally, so
   an existing installation keeps the old hosts until you edit `router_url`, `base_url` and
-  `agents_api_url` there, or run `jevlin setup` again; the old hosts still answer today. A
+  `agents_api_url` there, or run `jevlin setup` again; the old hosts still answer today. A config
+  that names only the old `base_url` keeps loading, with the old agents API implied from it as
+  before. A
   Codex installation also carries the old hosts in its sandbox allowlist until
   `jevlin agents install` runs again with the updated config.
 

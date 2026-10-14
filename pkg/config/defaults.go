@@ -23,8 +23,17 @@ const (
 	// platform.jevlin.ai. One shared origin was this package's original
 	// assumption; the real deployment splits it in two.
 	DefaultAgentsAPIURL = "https://agents-v1.jevlin.ai"
-	DefaultWalletDenom  = "utwlt"
-	DefaultBech32HRP    = "twilight"
+	// LegacyPlatformBaseURL / LegacyAgentsAPIURL are the pair the platform
+	// lived at before jevlin.ai. A config written then may name only the
+	// portal and rely on the agents API being implied from it; it still
+	// is, as this pair, so that config keeps loading after an upgrade
+	// rather than being refused as a custom portal with no API named
+	// (PR #87 review). Both hosts still answer; a participant moves to the
+	// new ones by editing the config or running setup again.
+	LegacyPlatformBaseURL = "https://platform.nyks.dev"
+	LegacyAgentsAPIURL    = "https://agents-v1.nyks.dev"
+	DefaultWalletDenom    = "utwlt"
+	DefaultBech32HRP      = "twilight"
 )
 
 // DefaultWalletNodes is keyed by chain id: the CometBFT RPC node the

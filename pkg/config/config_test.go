@@ -706,3 +706,22 @@ func TestLoadIgnoresJevlinTOMLInWorkingDirectory(t *testing.T) {
 		t.Fatalf("router taken from cwd jevlin.toml: %v", u)
 	}
 }
+
+// A config written before the move to jevlin.ai may name only the old
+// portal and rely on the agents API being implied from it. It still is,
+// as the old pair: an upgrade must not turn a loading config into one
+// refused as "a custom portal with no API named" (PR #87 review).
+func TestLegacyPortalOnlyConfigStillImpliesItsAgentsAPI(t *testing.T) {
+	cfg, _, err := Load([]string{"-config", writeTOML(t, "[platform]\nbase_url = \"https://platform.nyks.dev\"\n")}, noEnv)
+	if err != nil {
+		t.Fatalf("a portal-only config from before the move was refused: %v", err)
+	}
+	if cfg.Platform.BaseURL != "https://platform.nyks.dev" || cfg.Platform.AgentsAPIURL != "https://agents-v1.nyks.dev" {
+		t.Fatalf("legacy pair: base_url %q, agents_api_url %q", cfg.Platform.BaseURL, cfg.Platform.AgentsAPIURL)
+	}
+	// Named explicitly, the old pair is simply two URLs; and a portal that
+	// is neither default still needs its API named.
+	if _, _, err := Load([]string{"-config", writeTOML(t, "[platform]\nbase_url = \"https://platform.staging.example\"\n")}, noEnv); err == nil {
+		t.Fatal("a custom portal with no agents_api_url was accepted")
+	}
+}
