@@ -155,19 +155,27 @@ func (s *Store) RegionRefusalFor(slotID, targetEpoch uint64) (RegionRefusal, boo
 	return RegionRefusal{}, false, nil
 }
 
-// LatestRegionRefusal is the slot's note for its highest epoch: the
-// verdict status repeats, since it is the one the next join will be
-// measured against.
+// LatestRegionRefusal is the slot's most recently recorded note: the AS's
+// latest verdict, which is what status repeats. Recency is the note's own
+// time, not its epoch, since an operator may pin an earlier epoch and be
+// refused there after a later one was. Times are whole seconds, so a tie
+// goes to the higher epoch. Every loaded note's time has already parsed
+// (checkRegionRefusal).
 func (s *Store) LatestRegionRefusal(slotID uint64) (RegionRefusal, bool, error) {
 	set, err := s.loadRegionRefusals()
 	if err != nil {
 		return RegionRefusal{}, false, err
 	}
 	var latest RegionRefusal
+	var latestAt time.Time
 	found := false
 	for _, rec := range set {
-		if rec.SlotID == slotID && (!found || rec.TargetEpoch > latest.TargetEpoch) {
-			latest, found = rec, true
+		if rec.SlotID != slotID {
+			continue
+		}
+		at, _ := time.Parse(time.RFC3339, rec.At)
+		if !found || at.After(latestAt) || (at.Equal(latestAt) && rec.TargetEpoch > latest.TargetEpoch) {
+			latest, latestAt, found = rec, at, true
 		}
 	}
 	return latest, found, nil

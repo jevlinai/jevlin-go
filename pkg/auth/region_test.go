@@ -169,3 +169,38 @@ func TestClearRegionRefusalForClearsOnlyItsOwnEpoch(t *testing.T) {
 		t.Fatalf("prune: %+v", set)
 	}
 }
+
+// Status repeats the AS's most recent verdict, which is the latest note by
+// when it was recorded, not by epoch number: an operator who pins an
+// earlier epoch and is refused there again has a newer verdict than the
+// later epoch's older one. A tie in the one-second timestamps goes to the
+// higher epoch.
+func TestTheLatestRegionRefusalIsTheMostRecentlyRecorded(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "state")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	store, err := OpenStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.saveRegionRefusals([]RegionRefusal{
+		{SlotID: 7, TargetEpoch: 1043, Code: RegionIneligible, At: "2026-10-12T09:00:00Z"},
+		{SlotID: 7, TargetEpoch: 1042, Code: RegionUnverified, At: "2026-10-13T09:00:00Z"},
+		{SlotID: 8, TargetEpoch: 1050, Code: RegionRestricted, At: "2026-10-14T09:00:00Z"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if rec, ok, err := store.LatestRegionRefusal(7); err != nil || !ok || rec.TargetEpoch != 1042 {
+		t.Fatalf("LatestRegionRefusal(7) = %+v ok=%v err=%v, want 1042, refused more recently", rec, ok, err)
+	}
+	if err := store.saveRegionRefusals([]RegionRefusal{
+		{SlotID: 7, TargetEpoch: 1043, Code: RegionIneligible, At: "2026-10-13T09:00:00Z"},
+		{SlotID: 7, TargetEpoch: 1042, Code: RegionUnverified, At: "2026-10-13T09:00:00Z"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if rec, _, _ := store.LatestRegionRefusal(7); rec.TargetEpoch != 1043 {
+		t.Fatalf("a tie went to epoch %d, want the higher, 1043", rec.TargetEpoch)
+	}
+}
