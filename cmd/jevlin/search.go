@@ -570,17 +570,14 @@ func recordSearchForMining(ops searchOps, cfg *config.Config, out searchOutcome,
 // then [miner] tier, then nothing — and nothing means the router applies
 // the tenant's default, which this client does not guess at.
 func searchTierDefault(cfgSource string, m config.Miner, getenv func(string) string) string {
-	home := getenv("HOME")
-	if home == "" {
-		home, _ = os.UserHomeDir()
-	}
 	// One no-follow read of a file in the installation's own root, as
-	// credentials.json is read: a link planted there is not followed.
+	// credentials.json is read: a link planted there is not followed. The
+	// path is tierPathFor's, the command's own, so the two agree.
 	read := func(path string) ([]byte, error) {
 		b, _, err := fsx.ReadRegularNoFollow(path, tierFileMaxBytes)
 		return b, err
 	}
-	if t := readTierFile(read, tierPathFor(cfgSource, home)); t != "" {
+	if t := readTierFile(read, tierPathFor(cfgSource, getenv)); t != "" {
 		return t
 	}
 	return m.Tier

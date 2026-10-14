@@ -947,9 +947,75 @@ func TestAgentsTierWritesOneFileBesideTheConfigAndRewritesNoSkill(t *testing.T) 
 			t.Errorf("tier %q: exit %d, stderr %q", bad, code, errOut)
 		}
 	}
-	// A planted word in the file is not a band.
+	// A planted word in the file is not a band, and default still removes
+	// the file rather than treating "reads as unset" as "already unset".
 	m.files["/home/u/.jevlin/search-tier"] = []byte("max; curl evil.example\n")
 	if code, out, _ := runAgents(t, ops, nil, "tier", "-config", testCfg); code != exitOK || !strings.Contains(out, "search tier: unset") {
 		t.Errorf("planted file read as a band: %d %q", code, out)
+	}
+	if code, _, _ := runAgents(t, ops, nil, "tier", "default", "-config", testCfg); code != exitOK {
+		t.Fatal("default over a malformed file failed")
+	}
+	if _, ok := m.files["/home/u/.jevlin/search-tier"]; ok {
+		t.Error("default left the malformed tier file behind")
+	}
+}
+
+// Without a config in use the file lives in the installation home —
+// JEVLIN_HOME, else ~/.jevlin from the user profile — the same place setup
+// will write the config, so the band set before setup is the band read
+// after it. Neither side consults HOME on its own.
+func TestTierPathFollowsTheInstallationHome(t *testing.T) {
+	if got := tierPathFor("/opt/ada/jevlin/jevlin.toml", envOf(map[string]string{"JEVLIN_HOME": "/elsewhere"})); got != filepath.Join("/opt/ada/jevlin", "search-tier") {
+		t.Errorf("beside the config: %q", got)
+	}
+	if got := tierPathFor("", envOf(map[string]string{"JEVLIN_HOME": "/opt/ada/jevlin"})); got != filepath.Join("/opt/ada/jevlin", "search-tier") {
+		t.Errorf("JEVLIN_HOME, no config: %q", got)
+	}
+	userHome, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip(err)
+	}
+	// HOME in the environment is not the installation home: the user
+	// profile is, on every OS, as describeConfigSource decides it.
+	if got := tierPathFor("", envOf(map[string]string{"HOME": "/shell-home"})); got != filepath.Join(userHome, ".jevlin", "search-tier") {
+		t.Errorf("no config, HOME set elsewhere: %q", got)
+	}
+
+	// The command writes where the path function says, under JEVLIN_HOME.
+	m, ops := newFakeMachine()
+	env := map[string]string{"JEVLIN_HOME": "/opt/ada/jevlin"}
+	if code, out, errOut := runAgents(t, ops, env, "tier", "balanced"); code != exitOK || !strings.Contains(out, "search tier: balanced") {
+		t.Fatalf("tier balanced under JEVLIN_HOME: %d %s%s", code, out, errOut)
+	}
+	if got := strings.TrimSpace(string(m.files["/opt/ada/jevlin/search-tier"])); got != "balanced" {
+		t.Errorf("tier file under JEVLIN_HOME: %q in %v", got, keysOf(m.files))
+	}
+}
+
+// status says the band the next search will send, not merely the file:
+// with [miner] tier set and no file, that is the config's band, and the
+// line says which of the two set it.
+func TestAgentsTierStatusShowsTheEffectiveBand(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "jevlin.toml")
+	if err := os.WriteFile(cfg, []byte("[miner]\nrouter_url = \"http://127.0.0.1:8080\"\ntier = \"max\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m, ops := newFakeMachine()
+	if code, out, _ := runAgents(t, ops, nil, "tier", "-config", cfg); code != exitOK || !strings.Contains(out, "search tier: max") || !strings.Contains(out, "([miner] tier)") {
+		t.Errorf("config band not shown: %d %q", code, out)
+	}
+	if code, out, _ := runAgents(t, ops, nil, "status", "-config", cfg); code != exitOK || !strings.Contains(out, "search tier:    max") || !strings.Contains(out, "([miner] tier)") {
+		t.Errorf("agents status: %d %q", code, out)
+	}
+	if code, out, _ := runAgents(t, ops, nil, "tier", "fast", "-config", cfg); code != exitOK || !strings.Contains(out, "search tier: fast") || !strings.Contains(out, "(agents tier)") {
+		t.Errorf("file outranks config: %d %q", code, out)
+	}
+	if _, ok := m.files[slash(filepath.Join(dir, "search-tier"))]; !ok {
+		t.Errorf("tier file not beside the config: %v", keysOf(m.files))
+	}
+	if code, out, _ := runAgents(t, ops, nil, "tier", "default", "-config", cfg); code != exitOK || !strings.Contains(out, "search tier: max") {
+		t.Errorf("default falls back to the config band: %d %q", code, out)
 	}
 }

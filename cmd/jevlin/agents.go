@@ -357,22 +357,34 @@ func preferLabel(p string) string {
 // config, then nothing — the router applies the tenant's default.
 const tierFile = "search-tier"
 
-// tierPath is beside the config when there is one, else in the standard
-// state directory — preferPath's rule, so the two settings travel together.
-func tierPath(ops agentOps, entry binEntry) string {
-	return tierPathFor(entry.cfg, ops.home)
+// tierPath is beside the config when one is in use, else in the
+// installation home — JEVLIN_HOME, else ~/.jevlin, the same answer
+// describeConfigSource gives for where this installation lives. Both the
+// command and `search` resolve the file through this one function, so
+// they name the same file before and after setup writes the config there,
+// and on Windows, where HOME and the user profile can differ, neither
+// side reads HOME on its own (Devin review, 2026-10-14).
+func tierPath(entry binEntry, getenv func(string) string) string {
+	return tierPathFor(entry.cfg, getenv)
 }
 
-func tierPathFor(cfg, home string) string {
+func tierPathFor(cfg string, getenv func(string) string) string {
 	if cfg != "" {
 		return filepath.Join(filepath.Dir(cfg), tierFile)
 	}
-	return filepath.Join(home, ".jevlin", tierFile)
+	home := defaultJevlinHome(getenv)
+	if home == "" {
+		return ""
+	}
+	return filepath.Join(home, tierFile)
 }
 
 // readTierFile: absent, unreadable, or a word this client cannot name
 // means unset. A planted word is not forwarded to the router.
 func readTierFile(read func(string) ([]byte, error), path string) string {
+	if path == "" {
+		return ""
+	}
 	b, err := read(path)
 	if err != nil {
 		return ""
@@ -384,8 +396,24 @@ func readTierFile(read func(string) ([]byte, error), path string) string {
 	return ""
 }
 
-func readTier(ops agentOps, entry binEntry) string {
-	return readTierFile(ops.readFile, tierPath(ops, entry))
+func readTier(ops agentOps, entry binEntry, getenv func(string) string) string {
+	return readTierFile(ops.readFile, tierPath(entry, getenv))
+}
+
+// effectiveTier is the band the next search will send and where it comes
+// from — the file (`agents tier`), else [miner] tier in the config, else
+// nothing — the same order searchTierDefault applies, so status never
+// says "unset" of a band the config is about to send (Devin review,
+// 2026-10-14). A config that cannot be loaded contributes nothing here;
+// search reports that failure itself.
+func effectiveTier(ops agentOps, entry binEntry, getenv func(string) string) (tier, source string) {
+	if t := readTier(ops, entry, getenv); t != "" {
+		return t, "agents tier"
+	}
+	if cfg, _, err := loadConfig(entry.cfg, getenv); err == nil && cfg.Miner.Tier != "" {
+		return cfg.Miner.Tier, "[miner] tier"
+	}
+	return "", ""
 }
 
 func tierLabel(t string) string {
@@ -398,6 +426,14 @@ func tierLabel(t string) string {
 		return "max — every provider, for corroboration; the widest band"
 	}
 	return "unset — the router's default for this key applies"
+}
+
+// tierStatusLabel names the band in force and what set it.
+func tierStatusLabel(tier, source string) string {
+	if tier == "" {
+		return tierLabel("")
+	}
+	return tierLabel(tier) + " (" + source + ")"
 }
 
 const (
@@ -809,23 +845,30 @@ func agentsTier(ops agentOps, args []string, stdout, stderr io.Writer, getenv fu
 		fmt.Fprintln(stderr, "jevlin agents:", err)
 		return exitTransport
 	}
-	path := tierPath(ops, entry)
-	current := readTier(ops, entry)
+	path := tierPath(entry, getenv)
+	if path == "" {
+		fmt.Fprintln(stderr, "jevlin agents tier: no config and no home directory, so nowhere to keep the setting")
+		return exitTransport
+	}
 	if want == "status" {
-		fmt.Fprintf(stdout, "search tier: %s\n", tierLabel(current))
+		fmt.Fprintf(stdout, "search tier: %s\n", tierStatusLabel(effectiveTier(ops, entry, getenv)))
 		return exitOK
 	}
+	current := readTier(ops, entry, getenv)
 	next := want
 	if want == "default" {
 		next = ""
 	}
 	switch next {
-	case current:
 	case "":
+		// Always removed, never "already unset": a file holding a word
+		// this client cannot name reads as unset yet is still there, and
+		// default is what takes it away (Devin review, 2026-10-14).
 		if err := ops.removeAll(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			fmt.Fprintln(stderr, "jevlin agents tier:", err)
 			return exitTransport
 		}
+	case current:
 	default:
 		if err := ops.mkdirAll(filepath.Dir(path), 0o700); err != nil {
 			fmt.Fprintln(stderr, "jevlin agents tier:", err)
@@ -836,7 +879,7 @@ func agentsTier(ops agentOps, args []string, stdout, stderr io.Writer, getenv fu
 			return exitTransport
 		}
 	}
-	fmt.Fprintf(stdout, "search tier: %s\n", tierLabel(next))
+	fmt.Fprintf(stdout, "search tier: %s\n", tierStatusLabel(effectiveTier(ops, entry, getenv)))
 	fmt.Fprintln(stdout, "in effect from the next search, in every agent")
 	return exitOK
 }
@@ -1753,7 +1796,7 @@ func buildUninstallPlan(ops agentOps, paths agentPaths, selected []installTarget
 func printAgentStatus(ops agentOps, paths agentPaths, entry binEntry, signals map[string]string, getenv func(string) string, stdout io.Writer) {
 	fmt.Fprintln(stdout, "jevlin agents status")
 	fmt.Fprintf(stdout, "  search default: %s\n", preferLabel(readPrefer(ops, entry)))
-	fmt.Fprintf(stdout, "  search tier:    %s\n", tierLabel(readTier(ops, entry)))
+	fmt.Fprintf(stdout, "  search tier:    %s\n", tierStatusLabel(effectiveTier(ops, entry, getenv)))
 	for _, t := range targetsByKind(targetHost) {
 		st := t.Status(ops, paths, entry)
 		state := "not installed"
