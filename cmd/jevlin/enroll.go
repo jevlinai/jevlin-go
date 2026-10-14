@@ -216,6 +216,25 @@ func cmdEnroll(args []string) int {
 	return 0
 }
 
+// joinRegionNote keeps the region note for `jevlin join` as the flush's
+// driver keeps it, so status and doctor say the same thing whichever way
+// the participant joined: a refusal is recorded (code non-empty), and an
+// enrollment in epoch clears a note of that epoch. Neither changes the
+// command's outcome; a note that cannot be written is said on stderr.
+func joinRegionNote(m config.Mining, epoch uint64, code string) {
+	store, err := auth.OpenStoreExisting(m.StateDir)
+	if err == nil {
+		if code != "" {
+			err = store.SaveRegionRefusal(m.SlotID, epoch, code)
+		} else {
+			err = store.ClearRegionRefusalFor(m.SlotID, epoch)
+		}
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "jevlin: region refusal note:", err)
+	}
+}
+
 func cmdJoin(args []string) int {
 	ctx, cancel := operatorContext(2 * time.Minute)
 	defer cancel()
@@ -243,6 +262,7 @@ func cmdJoin(args []string) int {
 	// to send) or enrollment closed without us (a failure flush retries).
 	if auth.JoinHeld(st.JoinStatus) {
 		fmt.Fprintf(os.Stdout, "already joined epoch %s (%s); nothing to send\n", st.TargetEpoch, st.JoinStatus)
+		joinRegionNote(m, epoch, "")
 		return 0
 	}
 	if !st.Joinable {
@@ -252,9 +272,15 @@ func cmdJoin(args []string) int {
 
 	res, err := mining.JoinEpoch(ctx, epoch)
 	if err != nil {
+		if code, ok := auth.RegionRefusalCode(err); ok {
+			fmt.Fprintf(os.Stderr, "jevlin: join refused under the Slot's region policy (%s): %s\n", code, auth.RegionRefusalText(code))
+			joinRegionNote(m, epoch, code)
+			return 1
+		}
 		fmt.Fprintln(os.Stderr, "jevlin: join:", err)
 		return 1
 	}
+	joinRegionNote(m, epoch, "")
 	fmt.Fprintf(os.Stdout, "join %s  draw_id=%s  receipt stored (%d bytes, verified)\n",
 		res.Status, res.DrawID, len(res.Receipt))
 	// The next step depends on the profile, so ASK rather than assert. Under
@@ -593,6 +619,12 @@ type agentIdentityFacts struct {
 	Held    auth.PayoutBindingHeld
 	HasHeld bool
 
+	// Region/HasRegion is the driver's note of the AS's last region
+	// refusal (ADR-MINIS-0026), shown only for the configured slot: a note
+	// for a slot this configuration no longer names is about another life.
+	Region    auth.RegionRefusal
+	HasRegion bool
+
 	Conflicts []auth.ConflictedEpoch
 }
 
@@ -644,6 +676,9 @@ func gatherAgentIdentity(args []string, getenv func(string) string) (agentIdenti
 	}
 	if conflicts, cerr := store.EpochConflicts(); cerr == nil {
 		f.Conflicts = conflicts
+	}
+	if region, ok, rerr := store.LatestRegionRefusal(cfg.Mining.SlotID); rerr == nil && ok {
+		f.Region, f.HasRegion = region, true
 	}
 	return f, true
 }
@@ -757,7 +792,11 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 		return false
 	}
 	if !f.HasRegistration {
-		return true // never ran connect: nothing to report here, legacy report proceeds
+		// Never ran connect: nothing about the platform to report, but a
+		// region refusal is the AS's and reaches a manual `enroll` +
+		// `join` installation the same way (PR #85 review).
+		printRegionLine(stdout, f)
+		return true // legacy report proceeds
 	}
 
 	reg := f.Registration
@@ -819,12 +858,23 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 	if f.HasHeld {
 		fmt.Fprintln(stdout, "payout: "+heldNoteText(f.Held, ""))
 	}
+	printRegionLine(stdout, f)
 	for _, c := range f.Conflicts {
 		fmt.Fprintf(stdout, "mining: another installation of this participant holds slot %d epoch %d; "+
 			"this installation's observations for it are queued until the AS's target moves past it, then dropped\n",
 			c.SlotID, c.TargetEpoch)
 	}
 	return f.needsMining()
+}
+
+// printRegionLine is status's one line for the AS's latest region
+// refusal, in this client's words, whichever way the participant joined.
+func printRegionLine(stdout io.Writer, f agentIdentityFacts) {
+	if !f.HasRegion {
+		return
+	}
+	fmt.Fprintf(stdout, "region: %s (the AS refused epoch %d at %s, code %s)\n",
+		auth.RegionRefusalText(f.Region.Code), f.Region.TargetEpoch, f.Region.At, f.Region.Code)
 }
 
 func printMiningASConfiguration(w io.Writer, m config.Mining) {

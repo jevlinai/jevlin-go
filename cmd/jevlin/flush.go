@@ -406,8 +406,17 @@ func runFlushAdmitted(ctx context.Context, cfg *config.Config, cfgPath string, f
 			clearCurrentTargetHealth(store)
 		}
 		epoch = target.epoch
-		driver.joinIfNeeded(ctx, epoch)
-		driver.ensure(ctx, epoch)
+		// Before the join, which may add this epoch's note. Only when the
+		// AS itself named the target: a pinned mining.target_epoch is the
+		// operator's number, not proof the AS has moved past anything, and
+		// a refused epoch's records may still become deliverable from a
+		// direct connection (PR #85 review).
+		if target.queried {
+			dropRegionRefusedObservationsPastTarget(store, m.SpoolDir, m.SlotID, epoch, stdout)
+		}
+		if !driver.joinIfNeeded(ctx, epoch) {
+			driver.ensure(ctx, epoch)
+		}
 		if holder.Snapshot() != nil {
 			clearAuthUnavailableHealth(store)
 		}
@@ -450,6 +459,7 @@ func runFlushAdmitted(ctx context.Context, cfg *config.Config, cfgPath string, f
 	coll := collector.New(sp, submitter, collector.Options{
 		Interval:    time.Hour, // never fires: Drain is called once
 		MaxAttempts: productionMaxAttempts(m.CollectorMaxAttempts),
+		Skip:        regionRefusedRecords(store, m.SlotID),
 	})
 	coll.Drain(ctx)
 	after, _ := sp.Count()
@@ -596,6 +606,108 @@ func dropConflictedObservationsPastTarget(store *auth.Store, spoolDir string, sl
 	}
 }
 
+// regionRefusedRecords is the collector's Skip for the epoch the AS last
+// refused to enroll this installation in under its region policy, read
+// from the note the driver keeps (nil when there is none, or none for this
+// slot). Without an enrollment there is no capability, so delivering one
+// of those records is an attempt that cannot succeed: it would count
+// toward the attempt limit and quarantine evidence nothing is wrong with,
+// and report a delivery fault the region line has already explained. They
+// wait instead. A later join clears the note and they deliver as usual;
+// dropRegionRefusedObservationsPastTarget settles them if none comes.
+//
+// The note is read after this run's join, so it is the AS's latest word.
+// An unreadable note is no note, as everywhere else it is read.
+func regionRefusedRecords(store *auth.Store, slotID uint64) func(*spool.Record) bool {
+	notes, err := store.RegionRefusals()
+	if err != nil {
+		return nil
+	}
+	held := map[uint64]bool{}
+	for _, note := range notes {
+		if note.SlotID == slotID {
+			held[note.TargetEpoch] = true
+		}
+	}
+	if len(held) == 0 {
+		return nil
+	}
+	return func(rec *spool.Record) bool {
+		return rec.SlotID == slotID && held[rec.TargetEpoch]
+	}
+}
+
+// dropRegionRefusedObservationsPastTarget settles the records
+// regionRefusedRecords holds back, by the rule
+// dropConflictedObservationsPastTarget applies to an epoch another
+// installation holds, and for the same reason: once the AS's current target
+// has moved past the epoch the region note names, this installation can
+// never be enrolled in it, so no capability for it can exist and its
+// records are worthless. They are dropped quietly — an informational line,
+// not an error, because nothing is wrong with them — and the note goes
+// with them, since the epoch it explains is over. Not before: a hold can
+// lift within the epoch, and then they deliver.
+//
+// This is the second exception to removing a record only on the AS's
+// acknowledgement (AGENTS.md invariant 7), argued from the same fact as
+// the first. A record whose removal fails keeps the note in place, so the
+// next flush skips it and tries the removal again instead of submitting it.
+//
+// A note for a slot this configuration no longer names is removed: status
+// and doctor already ignore it, and it could never be settled here.
+func dropRegionRefusedObservationsPastTarget(store *auth.Store, spoolDir string, slotID, currentTarget uint64, stdout io.Writer) {
+	_ = store.PruneRegionRefusalsForOtherSlots(slotID)
+	notes, err := store.RegionRefusals()
+	if err != nil {
+		return
+	}
+	var due []auth.RegionRefusal
+	for _, note := range notes {
+		if note.SlotID == slotID && note.TargetEpoch < currentTarget {
+			due = append(due, note)
+		}
+	}
+	if len(due) == 0 {
+		return
+	}
+	sp, err := spool.Open(spoolDir)
+	if err != nil {
+		return // transient; the notes stay and the next flush tries again
+	}
+	pending, err := sp.Pending()
+	if err != nil {
+		return
+	}
+	settled := map[uint64]bool{}
+	for _, note := range due {
+		settled[note.TargetEpoch] = true
+	}
+	for _, note := range due {
+		dropped := 0
+		for _, rec := range pending {
+			if rec.SlotID != note.SlotID || rec.TargetEpoch != note.TargetEpoch {
+				continue
+			}
+			if err := sp.Remove(rec); err != nil {
+				settled[note.TargetEpoch] = false
+				continue
+			}
+			dropped++
+		}
+		if dropped > 0 {
+			fmt.Fprintf(stdout, "flush: dropped %d observation(s) for slot %d epoch %d — the AS refused this installation's join under its region policy\n",
+				dropped, note.SlotID, note.TargetEpoch)
+		}
+	}
+	// A note whose records could not all be removed stays, so the next
+	// flush skips them and tries the removal again instead of submitting.
+	if err := store.RemoveRegionRefusals(notes, func(rec auth.RegionRefusal) bool {
+		return rec.SlotID == slotID && settled[rec.TargetEpoch]
+	}); err != nil {
+		fmt.Fprintln(stdout, "flush:", err)
+	}
+}
+
 // deliverOnly drains the spool when no target could be resolved this run:
 // records spooled under an epoch joined earlier can still land.
 func deliverOnly(ctx context.Context, cfg *config.Config, mining *auth.MiningClient, caps *auth.CapabilityClient, store *auth.Store, rep *flushReport, stderr io.Writer) int {
@@ -606,7 +718,11 @@ func deliverOnly(ctx context.Context, cfg *config.Config, mining *auth.MiningCli
 		return exitTransport
 	}
 	before, _ := sp.Count()
-	coll := collector.New(sp, auth.NewSubmitter(mining, caps), collector.Options{Interval: time.Hour, MaxAttempts: productionMaxAttempts(cfg.Mining.CollectorMaxAttempts)})
+	coll := collector.New(sp, auth.NewSubmitter(mining, caps), collector.Options{
+		Interval:    time.Hour,
+		MaxAttempts: productionMaxAttempts(cfg.Mining.CollectorMaxAttempts),
+		Skip:        regionRefusedRecords(store, cfg.Mining.SlotID),
+	})
 	coll.Drain(ctx)
 	after, _ := sp.Count()
 	rep.Pending = after

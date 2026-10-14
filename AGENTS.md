@@ -103,7 +103,11 @@ the named tests.
 7. **Durable before visible; remove only on ack.** An observation is persisted (intake→spool, each
    temp-file + atomic rename, fsync'd) before the user sees the result; a spool record leaves delivery
    only on a durable AS ack (PART X). `client_record_id` is minted once per observation, never
-   regenerated on retry.
+   regenerated on retry. Two drops are not acks, and they are the only ones: the records of an
+   epoch another installation of this participant holds (`dropConflictedObservationsPastTarget`)
+   and of an epoch the AS refused to enroll this installation in under its region policy
+   (`dropRegionRefusedObservationsPastTarget`), each only once the AS's current target has moved
+   past it, because no capability for that epoch can exist and no delivery of them can succeed.
 8. **`pkg/` MUST NOT import `cmd/`.** Keeping `pkg/` wrapper-agnostic is what makes it importable and
    is why this repo owns it and can hand it back to the proxy by import, not copy. Enforced by
    `cmd/jevlin/boundary_test.go`.
@@ -618,6 +622,22 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   the next-attempt time; `pkg/auth/submit.go` owns the AS exchange and what counts as an ack.
   `cmd/jevlin/delivery_health_test.go` proves a quarantine cannot be cleared by an unrelated
   success.
+- **The AS's region refusals** — `pkg/auth/region.go` owns the three 451 codes
+  (twilight-minis ADR-MINIS-0026, accepted with its contract question; the §26 text amendment is
+  still to be made upstream), their sentences and the note set, one note per slot and epoch,
+  bounded like the conflict set; `cmd/jevlin/driver.go`'s `regionRefused` owns retrying every
+  attempt, as the ADR asks, and explaining a verdict once by its note rather than by a process's
+  memory, because a flush is a process; `cmd/jevlin/flush.go` owns holding every noted epoch's
+  records back (`regionRefusedRecords`, the collector's `Skip`) and dropping them once the AS
+  itself names a target past them, never on a pinned `target_epoch`
+  (`dropRegionRefusedObservationsPastTarget`, invariant 7's second exception). Every
+  enrollment clears its own epoch's note, never another's (`ClearRegionRefusalFor`). A 451 on
+  submission is `auth.RegionDeferredError`, which the collector defers through `Deferrer`: the
+  next attempt honors Retry-After, no attempt is spent and no fault is recorded.
+  `cmd/jevlin/region_flush_test.go` runs real flushes, two where a claim spans them;
+  `pkg/mining/collector/defer_test.go` and `cmd/jevlin/region_status_test.go` hold the deferral
+  and the status line.
+  For participants: [guide, When your region is refused](docs/guide.md#when-your-region-is-refused).
 - **The AS clients' proxy** — `pkg/auth/proxy.go` owns `loopbackProxy`, the Proxy function of
   both AS-facing transports (discovery and the DPoP credential client): the environment's proxy,
   used only when its address is a loopback literal (127.0.0.0/8, ::1); any other, a name
