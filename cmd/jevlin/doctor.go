@@ -329,10 +329,19 @@ func doctorJoinedCheck(f doctorFacts) doctorCheck {
 		// The AS refused this epoch under its region policy. Not a fault
 		// in this installation and, for two of the three codes, not a fix
 		// either: the address is where it is, and search still works.
+		// The hold's fix is a join, and a join is refused once enrollment
+		// in the epoch has closed, so then it is the closed epoch's fix.
 		c.Verdict = verdictNo
 		c.Detail = fmt.Sprintf("epoch %d%s — %s", f.Epoch, doctorEpochOrigin(f), auth.RegionRefusalText(f.RegionRefusal.Code))
-		if auth.RegionHold(f.RegionRefusal.Code) {
+		if !f.Status.Joinable {
+			c.Detail += fmt.Sprintf("; enrollment in it has since closed (phase %s)", f.Status.Phase)
+		}
+		switch {
+		case !auth.RegionHold(f.RegionRefusal.Code):
+		case f.Status.Joinable:
 			c.Fix = "connect without the VPN or proxy, then: jevlin join -config <file>"
+		default:
+			c.Fix = "connect without the VPN or proxy, wait for the operator to open the next target, then: jevlin join -config <file>"
 		}
 	case f.Status.Joinable:
 		c.Verdict = verdictNo

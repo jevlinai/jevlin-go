@@ -681,6 +681,16 @@ func TestDoctorJoinedExplainsARegionRefusal(t *testing.T) {
 		t.Errorf("hold: %q fix=%q", joined.Detail, joined.Fix)
 	}
 
+	// Enrollment in the epoch has since closed: joining it now is refused
+	// with "not joinable", so the fix is the one for a closed epoch.
+	f.Status = &auth.EpochStatus{JoinStatus: "", Joinable: false, Phase: "SETTLING"}
+	joined = verdictOf(assembleDoctor(f), "joined this epoch")
+	if !strings.Contains(joined.Detail, "VPN") || !strings.Contains(joined.Detail, "closed") ||
+		!strings.Contains(joined.Fix, "wait for the operator to open the next target") {
+		t.Errorf("hold on a closed epoch: %q fix=%q", joined.Detail, joined.Fix)
+	}
+	f.Status = &auth.EpochStatus{JoinStatus: "", Joinable: true, Phase: "ACTIVE"}
+
 	f.RegionRefusal.TargetEpoch = 1041 // last epoch's verdict is not this epoch's
 	joined = verdictOf(assembleDoctor(f), "joined this epoch")
 	if strings.Contains(joined.Detail, "region") {
