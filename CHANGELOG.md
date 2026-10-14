@@ -18,6 +18,20 @@ rewritten to match newer behaviour; the newer entry says what changed.
   `doctor`, `jevlin join` and the flush say so in plain words, searches recorded meanwhile wait
   instead of failing delivery, and search is unaffected. See
   [the guide](docs/guide.md#when-your-region-is-refused).
+- The search platform moved to `jevlin.ai`: the router is `api.jevlin.ai` (was
+  `router-api.nyks.dev`), the portal and claim pages are `platform.jevlin.ai` (was
+  `platform.nyks.dev`), and the agents API is `agents-v1.jevlin.ai` (was `agents-v1.nyks.dev`).
+  The defaults, the help text, the docs and the Codex sandbox allowlist a fresh install writes
+  all name the new hosts. The authorization server (`rewards.nyks.dev`) and the chain RPC
+  (`rpc.nyks.dev`) are Twilight's and are unchanged.
+  **Upgrade note:** `jevlin setup` writes these URLs into `~/.jevlin/jevlin.toml` and never
+  rewrites a config it finds there, so running it again changes nothing: an existing
+  installation keeps the old hosts, which still answer today. A config that names only the old
+  `base_url` keeps loading, with the old agents API implied from it as before. Claim and console
+  links now come on `platform.jevlin.ai`, and an installation configured for `platform.nyks.dev`
+  accepts them. To move an existing installation to the new hosts, edit `router_url`,
+  `base_url` and `agents_api_url` in that file, then run `jevlin agents install` so a Codex
+  sandbox allowlist names them too.
 
 ## v0.1.0 — 2026-10-13
 

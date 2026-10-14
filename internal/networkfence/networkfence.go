@@ -102,7 +102,7 @@ func AllowedHost(host string) bool {
 // network and addr exactly as a Transport would pass them to DialContext,
 // it reports the *RefusedError a live dial would produce, or nil when addr
 // would be allowed through. A guard test uses this to prove a production
-// hostname (agents-v1.nyks.dev, api.github.com, and the like) is classified
+// hostname (agents-v1.jevlin.ai, api.github.com, and the like) is classified
 // as refused without ever dialing it — the string-level half of "prove it
 // is covered" that costs nothing and touches no network at all.
 func Decide(network, addr string) *RefusedError {

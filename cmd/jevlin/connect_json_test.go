@@ -106,7 +106,7 @@ func connectFixture(t *testing.T, explicitMining string) (cfgPath, stateDir stri
 
 	// The platform host is pinned at a local stub that refuses everything.
 	//
-	// Without this the config falls back to the real platform.nyks.dev,
+	// Without this the config falls back to the real platform.jevlin.ai,
 	// and the gate under test is the only thing standing between this test
 	// and a live registration attempt — so the moment a mutation disables
 	// the gate, the test dials a real host. A fixture whose safety depends

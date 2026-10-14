@@ -27,7 +27,7 @@ and consumed elsewhere by import; `cmd/jevlin/` is this client's wrapper. Client
 decisions (retry shapes, the trace envelope, install/agent behaviour) have no upstream home —
 record them in `docs/` here.
 
-The search platform's control plane (`platform.nyks.dev` — `connect`, `mining enable`; `pkg/platform`)
+The search platform's control plane (`platform.jevlin.ai` — `connect`, `mining enable`; `pkg/platform`)
 is a **second, separate contract**, same convention as the AS: owned upstream, this time by
 `search-router`'s own design doc (`tokendrop-auth-server-design/docs/implementation/
 search-platform-agent-onboarding-design.md`, authored for the `search-router` repository and
@@ -127,7 +127,10 @@ the named tests.
 12. **`platform.base_url` is compared against, never dialed.** It is the origin a platform-supplied
     URL must match (`validatePlatformURL`): every byte printable ASCII, no user before the host,
     and the URL must read back as exactly the text given, so what is checked is all of what is
-    printed. Every request goes to `agents_api_url`. The claim link lives in `claim.json` beside
+    printed. A retired portal origin also matches its one compiled successor
+    (`retiredPortalSuccessors`: `platform.nyks.dev` → `platform.jevlin.ai`), because setup never
+    rewrites an existing config and the platform issues links on the new host; nothing else
+    widens. Every request goes to `agents_api_url`. The claim link lives in `claim.json` beside
     `credentials.json` (`auth.ClaimRecord`), bound to its agent and written only from the
     platform's answer or the registration journal beside it: by a foreground run, or by a resume
     finishing that journal (which, in a sandbox, cannot write there and leaves it to the next

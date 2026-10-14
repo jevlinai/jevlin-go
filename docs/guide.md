@@ -6,7 +6,7 @@ jevlin in the order you meet it. Per-agent detail: [agents.md](agents.md); table
 
 | | |
 |---|---|
-| **A moment to claim your agent** | Setup prints a link. Sign in at `platform.nyks.dev` (or create an account) and approve mining. Search works before you do; only the reward waits. |
+| **A moment to claim your agent** | Setup prints a link. Sign in at `platform.jevlin.ai` (or create an account) and approve mining. Search works before you do; only the reward waits. |
 | **Somewhere to be paid** | Setup makes a wallet for you, or you paste a `twilight1…` address you already control, from Keplr for example. |
 
 ### Where rewards land
@@ -198,7 +198,7 @@ re-running `jevlin agents install` fixes a `NO`.
 
 Your first address takes effect when you set it. A different one waits for a Slot operator's
 approval, and you are paid at the old one until then. Ask at
-<https://platform.nyks.dev/contact-us>, naming the new address. Nobody needs your key, your
+<https://platform.jevlin.ai/contact-us>, naming the new address. Nobody needs your key, your
 recovery phrase or the contents of `~/.jevlin` for this, and no operator will ask for them.
 
 The address you give `connect` or `mining enable` is kept in `~/.jevlin/payout.json`, beside your
