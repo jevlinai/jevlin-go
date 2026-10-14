@@ -167,6 +167,9 @@ const (
 	// tick before the join is attempted, so a hold logged there would be
 	// repeated every minute.
 	noteRegion = "region"
+	// noteRegionStore is where a failure to write or remove the region
+	// note is reported, for the same reason: not the join site.
+	noteRegionStore = "region-store"
 )
 
 func newEpochDriver(mining *auth.MiningClient, caps *auth.CapabilityClient, pinned *uint64, logger *slog.Logger, enrolled func() bool) *epochDriver {
@@ -370,7 +373,7 @@ func (d *epochDriver) joinIfNeeded(ctx context.Context, epoch uint64) {
 	if d.store != nil {
 		// The AS accepted this address, so an earlier region note is stale.
 		if cerr := d.store.ClearRegionRefusal(); cerr != nil {
-			d.once(ctx, slog.LevelWarn, noteJoin, "mining: could not clear the region refusal note", cerr)
+			d.once(ctx, slog.LevelWarn, noteRegionStore, "mining: could not clear the region refusal note", cerr)
 		}
 	}
 	// Info, and exactly once per epoch: joining is the event an operator
@@ -389,28 +392,38 @@ func (d *epochDriver) joinIfNeeded(ctx context.Context, epoch uint64) {
 // the Warn-once "join refused" line that says to re-enroll; it says what
 // the participant can do instead, in this client's own words, once.
 //
-// Two of the codes are final for the epoch — the address is where it is —
-// so the epoch is remembered and not re-attempted every tick. The hold
-// (REGION_UNVERIFIED) is not: the participant may drop the VPN mid-epoch,
-// and the AS decides each attempt afresh, so the next tick asks again.
-// Either way the note is persisted so status and doctor can repeat the
-// reason after the log has scrolled.
+// None of the three codes is remembered as final. The ADR (§2, §6) shares
+// 451 among them precisely so a client retries later, and the AS decides
+// every attempt afresh from the address it comes from — a participant who
+// leaves a VPN, or a region, is accepted on the next attempt. "Later" is
+// the flush's own pace: a flush asks the AS at most once per
+// flush_interval, and a flush is a process of its own, so anything kept in
+// this driver is gone by the next one anyway.
+//
+// For the same reason the explanation is not deduplicated in memory: the
+// note on disk is what says this participant has already been told. It
+// is logged when the verdict is new — another epoch, another code, or no
+// note yet — and not again while the same verdict stands.
 func (d *epochDriver) regionRefused(ctx context.Context, epoch uint64, code string, err error) {
 	d.recordJoinFailure(err)
-	if !auth.RegionHold(code) {
-		d.remember(epoch)
+	explain := func() {
+		d.once(ctx, slog.LevelWarn, noteRegion, "mining: "+auth.RegionRefusalText(code), err,
+			slog.Uint64("target_epoch", epoch), slog.String("code", code))
 	}
-	if d.store != nil {
-		if serr := d.store.SaveRegionRefusal(d.mining.SlotID(), epoch, code); serr != nil {
-			d.once(ctx, slog.LevelWarn, noteJoin, "mining: could not persist the region refusal", serr,
-				slog.Uint64("target_epoch", epoch))
-		}
+	if d.store == nil {
+		explain()
+		return
 	}
-	// The message is this client's sentence; err is the AS's own 451 line,
-	// which is what once dedups on, so the hold is explained once per
-	// epoch rather than once per tick.
-	d.once(ctx, slog.LevelWarn, noteRegion, "mining: "+auth.RegionRefusalText(code), err,
-		slog.Uint64("target_epoch", epoch), slog.String("code", code))
+	slot := d.mining.SlotID()
+	if prev, ok, lerr := d.store.LoadRegionRefusal(); lerr == nil && ok &&
+		prev.SlotID == slot && prev.TargetEpoch == epoch && prev.Code == code {
+		return
+	}
+	if serr := d.store.SaveRegionRefusal(slot, epoch, code); serr != nil {
+		d.once(ctx, slog.LevelWarn, noteRegionStore, "mining: could not persist the region refusal", serr,
+			slog.Uint64("target_epoch", epoch))
+	}
+	explain()
 }
 
 // ensure publishes a capability for epoch into the scope holder.

@@ -194,12 +194,16 @@ func newFakeAS(t *testing.T) *fakeAS {
 		}
 		if code := f.get().joinRefusalCode; code != "" {
 			status := f.get().joinRefusalStatus
+			message := "an accepted enrollment for this target belongs to a different installation"
 			if status == 0 {
 				status = http.StatusConflict
 			}
+			if status == http.StatusUnavailableForLegalReasons {
+				message = "this address is refused under the rewards service's region policy"
+			}
 			w.WriteHeader(status)
 			f.writeJSON(t, w, map[string]any{"error": map[string]string{
-				"code": code, "message": "an accepted enrollment for this target belongs to a different installation",
+				"code": code, "message": message,
 			}})
 			return
 		}
@@ -793,11 +797,13 @@ func TestTargetAuthFailureClassifiesByTypeNotText(t *testing.T) {
 }
 
 // The AS's region policy (twilight-minis ADR-MINIS-0026) refuses a join on
-// 451. The two final codes are not credential failures: the epoch is
-// remembered so the next tick does not ask again, the note is persisted
+// 451. Neither final code is a credential failure: the note is persisted
 // for status and doctor, and the log says what the participant can do in
-// this client's words — never the re-enroll line.
-func TestRegionRefusalAtJoinIsRememberedAndExplained(t *testing.T) {
+// this client's words — never the re-enroll line. Nor is either remembered
+// as final: the ADR shares 451 among the three so a client retries later,
+// and the AS decides each attempt afresh (region_flush_test.go holds the
+// same across flush processes, which is what production runs).
+func TestRegionRefusalAtJoinIsExplainedAndRetried(t *testing.T) {
 	for _, code := range []string{auth.RegionRestricted, auth.RegionIneligible} {
 		t.Run(code, func(t *testing.T) {
 			as := newFakeAS(t)
@@ -808,11 +814,14 @@ func TestRegionRefusalAtJoinIsRememberedAndExplained(t *testing.T) {
 			f.tick()
 			f.tick()
 
-			if n := as.joinCalls.Load(); n != 1 {
-				t.Fatalf("join calls = %d, want 1: a final region refusal must not be retried every tick", n)
+			if n := as.joinCalls.Load(); n != 2 {
+				t.Fatalf("join calls = %d, want 2: a region refusal is retried later", n)
 			}
-			if !f.driver.hasJoined(1042) {
-				t.Fatal("epoch 1042 was not remembered")
+			if f.driver.hasJoined(1042) {
+				t.Fatal("a refused epoch was remembered as joined")
+			}
+			if n := f.lines(auth.RegionRefusalText(code)); n != 1 {
+				t.Fatalf("the refusal was explained %d times across two ticks, want once", n)
 			}
 			rec, ok, err := f.store.LoadRegionRefusal()
 			if err != nil || !ok || rec.Code != code || rec.TargetEpoch != 1042 || rec.SlotID != testSlotID {
