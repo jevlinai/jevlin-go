@@ -62,6 +62,9 @@ type asState struct {
 	// this §26 error code instead of accepting — WP4b's
 	// ENROLLMENT_CONFLICT.
 	joinRefusalCode string
+	// joinRefusalStatus, when non-zero, is the status the join refusal is
+	// answered with instead of 409 — 451 for the region codes.
+	joinRefusalStatus int
 	// capabilityTwilightError, when set, makes the capability exchange
 	// (the token endpoint's RFC 8693 branch) refuse with this
 	// twilight_error instead of minting — WP4b's PROXY_BINDING_MISMATCH.
@@ -190,7 +193,11 @@ func newFakeAS(t *testing.T) *fakeAS {
 			t.Errorf("join path epoch %q: %v", r.PathValue("epoch"), err)
 		}
 		if code := f.get().joinRefusalCode; code != "" {
-			w.WriteHeader(http.StatusConflict)
+			status := f.get().joinRefusalStatus
+			if status == 0 {
+				status = http.StatusConflict
+			}
+			w.WriteHeader(status)
 			f.writeJSON(t, w, map[string]any{"error": map[string]string{
 				"code": code, "message": "an accepted enrollment for this target belongs to a different installation",
 			}})
@@ -782,5 +789,77 @@ func TestTargetAuthFailureClassifiesByTypeNotText(t *testing.T) {
 				t.Errorf("targetAuthFailure(%v) = %v, want %v", tc.err, got, tc.want)
 			}
 		})
+	}
+}
+
+// The AS's region policy (twilight-minis ADR-MINIS-0026) refuses a join on
+// 451. The two final codes are not credential failures: the epoch is
+// remembered so the next tick does not ask again, the note is persisted
+// for status and doctor, and the log says what the participant can do in
+// this client's words — never the re-enroll line.
+func TestRegionRefusalAtJoinIsRememberedAndExplained(t *testing.T) {
+	for _, code := range []string{auth.RegionRestricted, auth.RegionIneligible} {
+		t.Run(code, func(t *testing.T) {
+			as := newFakeAS(t)
+			as.set(func(s *asState) {
+				s.epoch, s.joinable, s.joinRefusalCode, s.joinRefusalStatus = 1042, true, code, http.StatusUnavailableForLegalReasons
+			})
+			f := newDriverFixture(t, as, nil)
+			f.tick()
+			f.tick()
+
+			if n := as.joinCalls.Load(); n != 1 {
+				t.Fatalf("join calls = %d, want 1: a final region refusal must not be retried every tick", n)
+			}
+			if !f.driver.hasJoined(1042) {
+				t.Fatal("epoch 1042 was not remembered")
+			}
+			rec, ok, err := f.store.LoadRegionRefusal()
+			if err != nil || !ok || rec.Code != code || rec.TargetEpoch != 1042 || rec.SlotID != testSlotID {
+				t.Fatalf("LoadRegionRefusal() = %+v ok=%v err=%v", rec, ok, err)
+			}
+			log := f.log.String()
+			if strings.Contains(log, "join refused") {
+				t.Fatalf("a region refusal was logged as a credential problem:\n%s", log)
+			}
+			if !strings.Contains(log, "search still works") || !strings.Contains(log, `"code":"`+code+`"`) {
+				t.Fatalf("the log does not say what the participant can do:\n%s", log)
+			}
+		})
+	}
+}
+
+// REGION_UNVERIFIED is a hold, not a verdict: the participant may drop the
+// VPN mid-epoch and the AS decides each attempt afresh, so the epoch is
+// NOT remembered and a later tick joins once the AS allows it — and the
+// note is cleared by that success.
+func TestRegionHoldAtJoinIsRetriedAndClearedOnSuccess(t *testing.T) {
+	as := newFakeAS(t)
+	as.set(func(s *asState) {
+		s.epoch, s.joinable, s.joinRefusalCode, s.joinRefusalStatus = 1042, true, auth.RegionUnverified, http.StatusUnavailableForLegalReasons
+	})
+	f := newDriverFixture(t, as, nil)
+	f.tick()
+	f.tick()
+	if n := as.joinCalls.Load(); n != 2 {
+		t.Fatalf("join calls = %d, want 2: a hold is asked again next tick", n)
+	}
+	if f.driver.hasJoined(1042) {
+		t.Fatal("a held epoch was remembered as final")
+	}
+	if rec, ok, _ := f.store.LoadRegionRefusal(); !ok || rec.Code != auth.RegionUnverified {
+		t.Fatalf("hold note: %+v ok=%v", rec, ok)
+	}
+	if n := f.lines("nothing is forfeited"); n != 1 {
+		t.Fatalf("the hold was explained %d times across two ticks, want once", n)
+	}
+
+	as.set(func(s *asState) { s.joinRefusalCode, s.joinRefusalStatus = "", 0 }) // the VPN is gone
+	f.tick()
+	if _, held := f.heldEpoch(t); !held {
+		t.Fatal("the join after the hold lifted did not publish a capability")
+	}
+	if _, ok, err := f.store.LoadRegionRefusal(); err != nil || ok {
+		t.Fatalf("the note outlived the successful join: ok=%v err=%v", ok, err)
 	}
 }

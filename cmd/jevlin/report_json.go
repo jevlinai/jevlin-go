@@ -117,15 +117,16 @@ func doctorEnvelope(f doctorFacts, checks []doctorCheck, exitCode int) commandEn
 type statusReport struct {
 	// ConfigSource/ConfigDefaulted/StateDir: see doctorReport's fields of
 	// the same name (ruling D-R1).
-	ConfigSource    string                 `json:"config_source,omitempty"`
-	ConfigDefaulted bool                   `json:"config_defaulted"`
-	StateDir        string                 `json:"state_dir,omitempty"`
-	Mining          statusMiningJSON       `json:"mining"`
-	Agent           *statusAgentJSON       `json:"agent,omitempty"`
-	AgentErr        string                 `json:"agent_error,omitempty"`
-	PayoutHold      *statusPayoutHoldJSON  `json:"payout_hold,omitempty"`
-	Conflicts       []auth.ConflictedEpoch `json:"epoch_conflicts,omitempty"`
-	AS              *statusASJSON          `json:"authorization_server,omitempty"`
+	ConfigSource    string                   `json:"config_source,omitempty"`
+	ConfigDefaulted bool                     `json:"config_defaulted"`
+	StateDir        string                   `json:"state_dir,omitempty"`
+	Mining          statusMiningJSON         `json:"mining"`
+	Agent           *statusAgentJSON         `json:"agent,omitempty"`
+	AgentErr        string                   `json:"agent_error,omitempty"`
+	PayoutHold      *statusPayoutHoldJSON    `json:"payout_hold,omitempty"`
+	RegionRefusal   *statusRegionRefusalJSON `json:"region_refusal,omitempty"`
+	Conflicts       []auth.ConflictedEpoch   `json:"epoch_conflicts,omitempty"`
+	AS              *statusASJSON            `json:"authorization_server,omitempty"`
 }
 
 type statusMiningJSON struct {
@@ -163,6 +164,17 @@ type statusPayoutHoldJSON struct {
 	Reason string `json:"reason"`
 	Active string `json:"active"`
 	Local  string `json:"local"`
+}
+
+// statusRegionRefusalJSON is the driver's note of the AS's last region
+// refusal (ADR-MINIS-0026). Hold is true for the temporary code.
+type statusRegionRefusalJSON struct {
+	Code  string `json:"code"`
+	Slot  uint64 `json:"slot_id"`
+	Epoch uint64 `json:"target_epoch"`
+	At    string `json:"at"`
+	Hold  bool   `json:"hold"`
+	Text  string `json:"text"`
 }
 
 type statusASJSON struct {
@@ -245,6 +257,12 @@ func statusEnvelope(f agentIdentityFacts, as *statusASFacts) commandEnvelope {
 			reason = "REPLACES_ACTIVE" // this client's own pre-check, not an AS-returned reason
 		}
 		report.PayoutHold = &statusPayoutHoldJSON{Reason: reason, Active: f.Held.Active, Local: f.Held.Local}
+	}
+	if f.HasRegion {
+		report.RegionRefusal = &statusRegionRefusalJSON{
+			Code: f.Region.Code, Slot: f.Region.SlotID, Epoch: f.Region.TargetEpoch, At: f.Region.At,
+			Hold: auth.RegionHold(f.Region.Code), Text: auth.RegionRefusalText(f.Region.Code),
+		}
 	}
 	if as != nil {
 		report.AS = statusASJSONOf(*as)

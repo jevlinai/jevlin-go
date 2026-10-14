@@ -154,6 +154,12 @@ type doctorFacts struct {
 	// rather than becoming a check of its own.
 	PayoutHeld    auth.PayoutBindingHeld
 	HasPayoutHeld bool
+	// RegionRefusal/HasRegionRefusal is the driver's note of the AS's last
+	// region refusal (ADR-MINIS-0026), read on the same terms as the held
+	// note: corroborating, for the configured slot only, unreadable means
+	// absent.
+	RegionRefusal    auth.RegionRefusal
+	HasRegionRefusal bool
 
 	MiningDecision    auth.MiningDecision
 	LocalStateKnown   bool
@@ -319,6 +325,15 @@ func doctorJoinedCheck(f doctorFacts) doctorCheck {
 	case auth.JoinHeld(f.Status.JoinStatus):
 		c.Verdict = verdictOK
 		c.Detail = fmt.Sprintf("epoch %d%s — %s", f.Epoch, doctorEpochOrigin(f), strings.ToLower(f.Status.JoinStatus))
+	case f.HasRegionRefusal && f.RegionRefusal.TargetEpoch == f.Epoch:
+		// The AS refused this epoch under its region policy. Not a fault
+		// in this installation and, for two of the three codes, not a fix
+		// either: the address is where it is, and search still works.
+		c.Verdict = verdictNo
+		c.Detail = fmt.Sprintf("epoch %d%s — %s", f.Epoch, doctorEpochOrigin(f), auth.RegionRefusalText(f.RegionRefusal.Code))
+		if auth.RegionHold(f.RegionRefusal.Code) {
+			c.Fix = "connect without the VPN or proxy, then: jevlin join -config <file>"
+		}
 	case f.Status.Joinable:
 		c.Verdict = verdictNo
 		c.Detail = fmt.Sprintf("epoch %d%s is open and this installation is not in it", f.Epoch, doctorEpochOrigin(f))
@@ -690,6 +705,9 @@ func gatherDoctorFactsFor(ctx context.Context, as asClient, m config.Mining, min
 			if lerr == nil && source != payoutNone && held.Local == local {
 				f.PayoutHeld, f.HasPayoutHeld = held, true
 			}
+		}
+		if region, ok, err := store.LoadRegionRefusal(); err == nil && ok && region.SlotID == m.SlotID {
+			f.RegionRefusal, f.HasRegionRefusal = region, true
 		}
 	}
 

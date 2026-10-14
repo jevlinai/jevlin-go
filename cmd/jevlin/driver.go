@@ -162,6 +162,11 @@ const (
 	noteTarget     = "target"
 	noteJoin       = "join"
 	noteCapability = "capability"
+	// noteRegion is the region policy's own site: the join site is
+	// cleared by every successful status read, which happens on every
+	// tick before the join is attempted, so a hold logged there would be
+	// repeated every minute.
+	noteRegion = "region"
 )
 
 func newEpochDriver(mining *auth.MiningClient, caps *auth.CapabilityClient, pinned *uint64, logger *slog.Logger, enrolled func() bool) *epochDriver {
@@ -350,6 +355,10 @@ func (d *epochDriver) joinIfNeeded(ctx context.Context, epoch uint64) {
 			d.clear(noteJoin)
 			return
 		}
+		if code, ok := auth.RegionRefusalCode(err); ok {
+			d.regionRefused(ctx, epoch, code, err)
+			return
+		}
 		d.recordJoinFailure(err)
 		d.once(ctx, d.credentialLevel(), noteJoin, "mining: join refused", err,
 			slog.Uint64("target_epoch", epoch))
@@ -357,12 +366,51 @@ func (d *epochDriver) joinIfNeeded(ctx context.Context, epoch uint64) {
 	}
 	d.recordJoinSuccess(epoch)
 	d.remember(epoch)
+	d.clear(noteRegion)
+	if d.store != nil {
+		// The AS accepted this address, so an earlier region note is stale.
+		if cerr := d.store.ClearRegionRefusal(); cerr != nil {
+			d.once(ctx, slog.LevelWarn, noteJoin, "mining: could not clear the region refusal note", cerr)
+		}
+	}
 	// Info, and exactly once per epoch: joining is the event an operator
 	// actually wants in the log.
 	d.logger.Info("mining: joined target epoch",
 		slog.Uint64("target_epoch", epoch),
 		slog.String("status", res.Status),
 		slog.String("mode", st.DistributionMode))
+}
+
+// regionRefused is the join path's answer to the AS's region policy
+// (twilight-minis ADR-MINIS-0026): HTTP 451 with one of three codes.
+//
+// It is NOT the credential path. A refusal here is about the connecting
+// address, not this installation's authorization, so it never escalates to
+// the Warn-once "join refused" line that says to re-enroll; it says what
+// the participant can do instead, in this client's own words, once.
+//
+// Two of the codes are final for the epoch — the address is where it is —
+// so the epoch is remembered and not re-attempted every tick. The hold
+// (REGION_UNVERIFIED) is not: the participant may drop the VPN mid-epoch,
+// and the AS decides each attempt afresh, so the next tick asks again.
+// Either way the note is persisted so status and doctor can repeat the
+// reason after the log has scrolled.
+func (d *epochDriver) regionRefused(ctx context.Context, epoch uint64, code string, err error) {
+	d.recordJoinFailure(err)
+	if !auth.RegionHold(code) {
+		d.remember(epoch)
+	}
+	if d.store != nil {
+		if serr := d.store.SaveRegionRefusal(d.mining.SlotID(), epoch, code); serr != nil {
+			d.once(ctx, slog.LevelWarn, noteJoin, "mining: could not persist the region refusal", serr,
+				slog.Uint64("target_epoch", epoch))
+		}
+	}
+	// The message is this client's sentence; err is the AS's own 451 line,
+	// which is what once dedups on, so the hold is explained once per
+	// epoch rather than once per tick.
+	d.once(ctx, slog.LevelWarn, noteRegion, "mining: "+auth.RegionRefusalText(code), err,
+		slog.Uint64("target_epoch", epoch), slog.String("code", code))
 }
 
 // ensure publishes a capability for epoch into the scope holder.

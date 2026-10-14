@@ -252,6 +252,10 @@ func cmdJoin(args []string) int {
 
 	res, err := mining.JoinEpoch(ctx, epoch)
 	if err != nil {
+		if code, ok := auth.RegionRefusalCode(err); ok {
+			fmt.Fprintf(os.Stderr, "jevlin: join refused under the Slot's region policy (%s): %s\n", code, auth.RegionRefusalText(code))
+			return 1
+		}
 		fmt.Fprintln(os.Stderr, "jevlin: join:", err)
 		return 1
 	}
@@ -593,6 +597,12 @@ type agentIdentityFacts struct {
 	Held    auth.PayoutBindingHeld
 	HasHeld bool
 
+	// Region/HasRegion is the driver's note of the AS's last region
+	// refusal (ADR-MINIS-0026), shown only for the configured slot: a note
+	// for a slot this configuration no longer names is about another life.
+	Region    auth.RegionRefusal
+	HasRegion bool
+
 	Conflicts []auth.ConflictedEpoch
 }
 
@@ -644,6 +654,9 @@ func gatherAgentIdentity(args []string, getenv func(string) string) (agentIdenti
 	}
 	if conflicts, cerr := store.EpochConflicts(); cerr == nil {
 		f.Conflicts = conflicts
+	}
+	if region, ok, rerr := store.LoadRegionRefusal(); rerr == nil && ok && region.SlotID == cfg.Mining.SlotID {
+		f.Region, f.HasRegion = region, true
 	}
 	return f, true
 }
@@ -818,6 +831,10 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 
 	if f.HasHeld {
 		fmt.Fprintln(stdout, "payout: "+heldNoteText(f.Held, ""))
+	}
+	if f.HasRegion {
+		fmt.Fprintf(stdout, "region: %s (the AS refused epoch %d at %s, code %s)\n",
+			auth.RegionRefusalText(f.Region.Code), f.Region.TargetEpoch, f.Region.At, f.Region.Code)
 	}
 	for _, c := range f.Conflicts {
 		fmt.Fprintf(stdout, "mining: another installation of this participant holds slot %d epoch %d; "+

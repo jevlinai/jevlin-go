@@ -183,6 +183,10 @@ func TestPayoutRecordsRefuseAPlantedValueOnLoad(t *testing.T) {
 		_, ok, err := s.LoadPayoutBindingHeld()
 		return refusedUnlessOK(ok, err)
 	}
+	region := func(s *Store) error {
+		_, ok, err := s.LoadRegionRefusal()
+		return refusedUnlessOK(ok, err)
+	}
 	legacy := func(s *Store) error {
 		_, ok, err := s.LoadLegacyPayoutAddress()
 		return refusedUnlessOK(ok, err)
@@ -199,6 +203,8 @@ func TestPayoutRecordsRefuseAPlantedValueOnLoad(t *testing.T) {
 		{"held/local", "payout_binding_held.json", map[string]any{"local": plantedText, "active": validTestAddress}, held},
 		{"held/active", "payout_binding_held.json", map[string]any{"local": validTestAddress, "active": plantedText}, held},
 		{"held/held_for", "payout_binding_held.json", map[string]any{"local": validTestAddress, "active": validTestAddress, "held_for": plantedText}, held},
+		{"region/code", "region_refusal.json", map[string]any{"slot_id": 7, "target_epoch": 1, "code": plantedText, "at": "2026-10-14T00:00:00Z"}, region},
+		{"region/at", "region_refusal.json", map[string]any{"slot_id": 7, "target_epoch": 1, "code": RegionIneligible, "at": plantedText}, region},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, dir := newStore(t)
@@ -348,6 +354,7 @@ func TestADecodeErrorRepeatsNoneOfTheRecord(t *testing.T) {
 		"payout_binding_held.json": `{"local":` + `"` + notice + `"` + `,"active":5}`,
 		"payout_declared.json":     `{"address":["` + notice + `"]}`,
 		"epoch_conflicts.json":     `[{"slot_id":"` + notice + `"}]`,
+		"region_refusal.json":      `{"slot_id":"` + notice + `"}`,
 		"mining_decision.json":     `{"version":"` + notice + `"}`,
 	} {
 		s, dir := newStore(t)
@@ -366,6 +373,8 @@ func TestADecodeErrorRepeatsNoneOfTheRecord(t *testing.T) {
 			_, _, err = s.LoadPayoutDeclared()
 		case "epoch_conflicts.json":
 			_, err = s.EpochConflicts()
+		case "region_refusal.json":
+			_, _, err = s.LoadRegionRefusal()
 		case "mining_decision.json":
 			err = s.ReadMiningDecision().Err
 		}
