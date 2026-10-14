@@ -43,6 +43,12 @@ func TestRegionRefusalCodeIsStrict(t *testing.T) {
 	if !strings.Contains(RegionRefusalText("REGION_X"), "REGION_X") {
 		t.Error("an unknown code's text should at least name the code")
 	}
+	// The hold is retried within the epoch (ADR-MINIS-0026 §2: the next
+	// attempt from an attributable address is decided afresh), so its
+	// sentence must not send the participant to wait for the next epoch.
+	if hold := RegionRefusalText(RegionUnverified); strings.Contains(hold, "next epoch") || !strings.Contains(hold, "next attempt") {
+		t.Errorf("the hold's sentence %q must say the next attempt is decided afresh, not the next epoch", hold)
+	}
 }
 
 func TestRegionRefusalNoteRoundTripsAndRejectsWordsItDidNotWrite(t *testing.T) {

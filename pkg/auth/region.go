@@ -65,7 +65,7 @@ func RegionRefusalText(code string) string {
 		return "mining rewards are not available in your region; search still works"
 	case RegionUnverified:
 		return "rewards are on hold because this connection looks like a VPN, proxy or Tor exit; " +
-			"connect directly and the next epoch is decided afresh — nothing is forfeited"
+			"connect directly and the next attempt is decided afresh — nothing is forfeited"
 	default:
 		return "the AS refused this address under its region policy (" + code + ")"
 	}
