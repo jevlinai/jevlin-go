@@ -462,7 +462,7 @@ func cmdLogin(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv f
 			fmt.Fprintf(stderr, "jevlin login: %s answered HTTP %s, so the key could not be verified\n  nothing was stored; retry, or store unverified with -no-verify\n", router, status)
 			return exitServerErr
 		case outcome == probeRefused:
-			fmt.Fprintf(stderr, "jevlin login: %s refused this key (HTTP %s); nothing was stored\n  keys are minted at platform.nyks.dev → Keys, and must belong to the account you enrolled with\n", router, status)
+			fmt.Fprintf(stderr, "jevlin login: %s refused this key (HTTP %s); nothing was stored\n  keys are minted at platform.jevlin.ai → Keys, and must belong to the account you enrolled with\n", router, status)
 			return exitClientErr
 		}
 	}

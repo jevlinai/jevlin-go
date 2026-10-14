@@ -528,7 +528,7 @@ func TestMiningRejectsUserinfoURL(t *testing.T) {
 // platform.base_url defaults to the real platform, with no file at all.
 func TestPlatformBaseURLDefaults(t *testing.T) {
 	cfg := load(t, nil, noEnv)
-	if cfg.Platform.BaseURL != "https://platform.nyks.dev" {
+	if cfg.Platform.BaseURL != "https://platform.jevlin.ai" {
 		t.Fatalf("got %q, want the default", cfg.Platform.BaseURL)
 	}
 }
@@ -561,7 +561,7 @@ func TestPlatformBaseURLAllowsPlainHTTPOnLoopback(t *testing.T) {
 // different hosts in the real deployment, not one shared origin.
 func TestAgentsAPIURLDefaults(t *testing.T) {
 	cfg := load(t, nil, noEnv)
-	if cfg.Platform.AgentsAPIURL != "https://agents-v1.nyks.dev" {
+	if cfg.Platform.AgentsAPIURL != "https://agents-v1.jevlin.ai" {
 		t.Fatalf("got %q, want the default", cfg.Platform.AgentsAPIURL)
 	}
 	if cfg.Platform.AgentsAPIURL == cfg.Platform.BaseURL {
@@ -608,9 +608,9 @@ func TestAgentsAPIURLDefaultsToBaseURLWhenBaseURLIsLoopback(t *testing.T) {
 // agents_api_url still wins, including pointing a loopback base_url at
 // a real (or a second, differently-loopback) agents API.
 func TestAgentsAPIURLExplicitValueOverridesTheLoopbackDefault(t *testing.T) {
-	body := "[platform]\nbase_url = \"http://127.0.0.1:9999\"\nagents_api_url = \"https://agents-v1.nyks.dev\"\n"
+	body := "[platform]\nbase_url = \"http://127.0.0.1:9999\"\nagents_api_url = \"https://agents-v1.jevlin.ai\"\n"
 	cfg := load(t, []string{"-config", writeTOML(t, body)}, noEnv)
-	if cfg.Platform.AgentsAPIURL != "https://agents-v1.nyks.dev" {
+	if cfg.Platform.AgentsAPIURL != "https://agents-v1.jevlin.ai" {
 		t.Fatalf("got %q, want the explicit value", cfg.Platform.AgentsAPIURL)
 	}
 }
@@ -745,5 +745,24 @@ func TestMinerTierIsNormalizedAndAnUnknownWordIsIgnoredAtLoad(t *testing.T) {
 		if cfg.Miner.Tier != "" || cfg.Miner.UnknownTier != unknown {
 			t.Errorf("tier %q: Tier = %q UnknownTier = %q, want none and the word kept aside", unknown, cfg.Miner.Tier, cfg.Miner.UnknownTier)
 		}
+	}
+}
+
+// A config written before the move to jevlin.ai may name only the old
+// portal and rely on the agents API being implied from it. It still is,
+// as the old pair: an upgrade must not turn a loading config into one
+// refused as "a custom portal with no API named" (PR #87 review).
+func TestLegacyPortalOnlyConfigStillImpliesItsAgentsAPI(t *testing.T) {
+	cfg, _, err := Load([]string{"-config", writeTOML(t, "[platform]\nbase_url = \"https://platform.nyks.dev\"\n")}, noEnv)
+	if err != nil {
+		t.Fatalf("a portal-only config from before the move was refused: %v", err)
+	}
+	if cfg.Platform.BaseURL != "https://platform.nyks.dev" || cfg.Platform.AgentsAPIURL != "https://agents-v1.nyks.dev" {
+		t.Fatalf("legacy pair: base_url %q, agents_api_url %q", cfg.Platform.BaseURL, cfg.Platform.AgentsAPIURL)
+	}
+	// Named explicitly, the old pair is simply two URLs; and a portal that
+	// is neither default still needs its API named.
+	if _, _, err := Load([]string{"-config", writeTOML(t, "[platform]\nbase_url = \"https://platform.staging.example\"\n")}, noEnv); err == nil {
+		t.Fatal("a custom portal with no agents_api_url was accepted")
 	}
 }

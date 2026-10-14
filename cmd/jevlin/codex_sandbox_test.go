@@ -143,7 +143,7 @@ func TestCodexInstallWritesTheProfileAndUninstallRemovesIt(t *testing.T) {
 		t.Errorf("roots = %q, want %q", roots, want)
 	}
 	// The hosts the config names, and no other.
-	if strings.Join(hosts, "|") != "agents-v1.nyks.dev|as.example.invalid|router.example.invalid" {
+	if strings.Join(hosts, "|") != "agents-v1.jevlin.ai|as.example.invalid|router.example.invalid" {
 		t.Errorf("hosts = %q, want the platform, the AS and the router", hosts)
 	}
 	// The old block's open network is gone for good.
