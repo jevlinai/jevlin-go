@@ -220,3 +220,32 @@ func TestRecognizerAcceptsTheCommandTakenFromTheRenderedSkill(t *testing.T) {
 		t.Fatalf("body from the skill's own block\n got %q\nwant %q", got.body, exampleRequest)
 	}
 }
+
+// The tier command the skill teaches is allowed with every band, default
+// and status, and nothing else.
+func TestRecognizerAllowsTheRenderedTierCommand(t *testing.T) {
+	for _, sh := range []shellKind{shellPOSIX, shellPowerShell} {
+		f := newRecognizerFixture(t, sh)
+		tier, err := f.entry.tierCommandForShell(sh)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := f.recognize(tier + " status"); got == nil || len(got.path) != 2 || got.path[0] != "agents" || got.path[1] != "tier" {
+			t.Fatalf("%s: the rendered tier status was not recognized: %+v", sh, got)
+		}
+		// Setting the band is the user's decision, and every band but the
+		// one in force changes what a search costs: Cursor asks for these
+		// as Claude Code and Codex do, rather than the hook allowing an
+		// agent, or a prompt injected into a search result, to set one.
+		for _, arg := range []string{"fast", "balanced", "max", "default"} {
+			if got := f.recognize(tier + " " + arg); got != nil {
+				t.Fatalf("%s: the hook allows %q, which changes the band without asking", sh, arg)
+			}
+		}
+		for _, bad := range []string{"turbo", "max; echo x", ""} {
+			if got := f.recognize(strings.TrimSpace(tier + " " + bad)); got != nil {
+				t.Fatalf("%s: tier argument %q was allowed", sh, bad)
+			}
+		}
+	}
+}

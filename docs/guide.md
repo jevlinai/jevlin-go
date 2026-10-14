@@ -132,6 +132,16 @@ and `/jevlin status` says which is in force; from a shell, `jevlin agents prefer
 The choice is saved beside your config and survives reinstalls. While it is off, asking to
 "search through jevlin" still routes that one search here; other searches earn nothing.
 
+## Choosing a band
+
+Every search carries a tier, the router's cost band: `fast` is one provider, `balanced` is
+several with each source attributed, `max` is every provider, for corroboration. `/jevlin tier
+balanced` in an agent, or `jevlin agents tier balanced` from a shell, sets the band every search
+carries unless the request names one; `/jevlin tier default` unsets it, and `/jevlin tier` says
+what is in force. The skill tells your agent to leave `tier` alone so your band applies, and to
+ask for `balanced` only when you need several sources; it never sends `max` on its own. With no
+band set, the request carries no tier and the router applies the default for your key.
+
 ## What travels with a search
 
 Each search carries a small `trace` so the router can group one task's searches: hashed session

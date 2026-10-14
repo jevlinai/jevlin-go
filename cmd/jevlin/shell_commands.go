@@ -228,6 +228,12 @@ func (e binEntry) hookCommandForRunners(shells []shellKind, sub ...string) (cmd,
 		"); the command is the one proven under cmd, and no single form runs under all of them", nil
 }
 
+// tierCommandForShell is what the skill runs for /jevlin tier <band>.
+func (e binEntry) tierCommandForShell(sh shellKind) (string, error) {
+	tokens := append([]cmdToken{pathToken(e.command), literalToken("agents"), literalToken("tier")}, e.configTokens()...)
+	return renderShellCommand(sh, tokens)
+}
+
 // preferCommandForShell is what the skill runs for /jevlin on|off|status.
 func (e binEntry) preferCommandForShell(sh shellKind) (string, error) {
 	tokens := append([]cmdToken{pathToken(e.command), literalToken("agents"), literalToken("prefer")}, e.configTokens()...)

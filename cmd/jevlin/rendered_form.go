@@ -204,6 +204,15 @@ func renderedFormsForShell(cfg string, sh shellKind) []renderedCommand {
 			out = append(out, renderedCommand{text: placeholders.Replace(prefer) + " " + arg, path: []string{"agents", "prefer"}})
 		}
 	}
+	// Of the tier command, only status: it reads and changes nothing. Every
+	// other argument sets the participant's band, which decides what each
+	// later search costs and is the user's to choose (skill.md). Cursor
+	// asks for those, as Claude Code and Codex do, rather than this hook
+	// letting an agent, or a prompt injected into a search result it read,
+	// set one without a word.
+	if tier, err := entry.tierCommandForShell(sh); err == nil {
+		out = append(out, renderedCommand{text: placeholders.Replace(tier) + " status", path: []string{"agents", "tier"}})
+	}
 	return out
 }
 

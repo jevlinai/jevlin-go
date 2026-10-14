@@ -84,6 +84,10 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 -- fence powershell
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
 -- fence bash
+'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <band>
+-- fence powershell
+& 'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <band>
+-- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
 -- fence powershell
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
@@ -142,6 +146,8 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 -- fence powershell
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
 -- fence powershell
+& 'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <band>
+-- fence powershell
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
 
 == codex: hooks.json commands, as read back from the file
@@ -162,6 +168,10 @@ JSON
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
+-- fence powershell
+& 'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <band>
+-- fence bash
+'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <band>
 -- fence powershell
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
 -- fence bash
@@ -203,6 +213,10 @@ matches the rendered `agents prefer` for powershell
 -- skill block (bash)
 matches the rendered `agents prefer` for posix
 -- skill block (powershell)
+matches the rendered `agents tier` for powershell
+-- skill block (bash)
+matches the rendered `agents tier` for posix
+-- skill block (powershell)
 refused
 -- skill block (bash)
 refused
@@ -234,6 +248,8 @@ JSON
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
 -- fence bash
+'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <band>
+-- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
 
 == pi: the shell its installed adapter is rendered for
@@ -255,6 +271,8 @@ JEVLIN_TRACE_BRIDGE=<BRIDGE> 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 
 JSON
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
+-- fence bash
+'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <band>
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
 

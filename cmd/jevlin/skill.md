@@ -21,10 +21,12 @@ that instead of a shell at all.
 
 ## Tiers
 
-Leave `tier` unset for a routine lookup: the default, `fast`, answers from
-one provider. Ask `"tier":"balanced"` when the user needs to see several
-sources, or when the first result came back thin — several providers,
-attributed.
+Leave `tier` unset for a routine lookup: the request then carries the user's
+own band (set with `/jevlin tier`), or the router's default when the user set
+none. Ask `"tier":"balanced"` when the user needs to see several sources, or
+when the first result came back thin — several providers, attributed. `fast`
+is one provider; `max` is every provider and is the user's to choose, never
+yours: do not send it.
 
 ## Request options
 
@@ -154,6 +156,15 @@ show its output, and follow the new setting for the rest of this session. `off`
 makes the agent's built-in web search the default and keeps this one for when the
 user names it; `on` makes this one the default again. The setting is the user's;
 never change it on your own.
+
+## Tier
+
+If the argument is `tier`, alone or followed by exactly `fast`, `balanced`,
+`max`, `default` or `status`, it is not a query. Run
+{{TIER}}
+with that word (`status` when none was given), show its output, and keep
+leaving `tier` unset in later requests so the new band applies. The setting is
+the user's; never change it on your own.
 
 ## Rules
 

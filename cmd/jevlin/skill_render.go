@@ -200,6 +200,21 @@ func preferSection(entry binEntry, shells skillShells) (string, error) {
 	})
 }
 
+// tierSection is the skill's tier command, per shell.
+func tierSection(entry binEntry, shells skillShells) (string, error) {
+	return perShellSection(shells, false, func(sh shellKind) (string, error) {
+		cmd, err := entry.tierCommandForShell(sh)
+		if err != nil {
+			return "", err
+		}
+		lang := "bash"
+		if sh == shellPowerShell {
+			lang = "powershell"
+		}
+		return fenced(lang, cmd+" <band>"), nil
+	})
+}
+
 // humanSection is the human terminal form, per shell. It keeps the query in
 // argv, which H-R2 leaves alone: it is the form a person types, and it is
 // never what an agent or a machine caller uses.

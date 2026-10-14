@@ -858,6 +858,15 @@ func TestSkillCommandsRunInTheShellTheyAreRenderedFor(t *testing.T) {
 						t.Fatalf("the preference command did not run under %s\n%s", sh.name, out)
 					}
 				})
+				t.Run("tier", func(t *testing.T) {
+					in := newExecInstallation(t)
+					block := skillBlockFor(t, in.renderedSkill(host), sh.kind, "tier")
+					script := strings.Replace(block.body, "<band>", "status", 1)
+					out := runInShell(t, sh, script, nil, in.env)
+					if out.exit != 0 || !strings.Contains(out.stdout, "search tier:") {
+						t.Fatalf("the tier command did not run under %s\n%s", sh.name, out)
+					}
+				})
 				t.Run("human form", func(t *testing.T) {
 					in := newExecInstallation(t)
 					block := skillBlockFor(t, in.renderedSkill(host), sh.kind, "human")

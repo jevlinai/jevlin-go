@@ -707,6 +707,47 @@ func TestLoadIgnoresJevlinTOMLInWorkingDirectory(t *testing.T) {
 	}
 }
 
+// [miner] tier is the participant's own setting, written by hand, and a
+// word the client cannot use must not take the config down with it: a
+// failed load stops search, the flush and mining together (invariant 1),
+// for a value that changes nothing but which band a request asks for. So
+// case and surrounding space are forgiven, and a word that is still not a
+// band loads as no tier, kept aside for status to name, and is never sent,
+// so the router does not answer every search with a 400 either.
+func TestMinerTierIsNormalizedAndAnUnknownWordIsIgnoredAtLoad(t *testing.T) {
+	for raw, want := range map[string]string{
+		"":         "",
+		"fast":     "fast",
+		"balanced": "balanced",
+		"max":      "max",
+		"Fast":     "fast",
+		" max ":    "max",
+	} {
+		body := "[miner]\nrouter_url = \"http://127.0.0.1:8080\"\n"
+		if raw != "" {
+			body += "tier = \"" + raw + "\"\n"
+		}
+		cfg, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv)
+		if err != nil {
+			t.Fatalf("tier %q: %v", raw, err)
+		}
+		if cfg.Miner.Tier != want || cfg.Miner.UnknownTier != "" {
+			t.Errorf("tier %q: Tier = %q UnknownTier = %q, want %q and none", raw, cfg.Miner.Tier, cfg.Miner.UnknownTier, want)
+		}
+	}
+	for _, unknown := range []string{"turbo", "auto", "max; echo x"} {
+		body := "[miner]\nrouter_url = \"http://127.0.0.1:8080\"\ntier = \"" + unknown + "\"\n"
+		cfg, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv)
+		if err != nil {
+			t.Errorf("tier %q stopped the config from loading: %v", unknown, err)
+			continue
+		}
+		if cfg.Miner.Tier != "" || cfg.Miner.UnknownTier != unknown {
+			t.Errorf("tier %q: Tier = %q UnknownTier = %q, want none and the word kept aside", unknown, cfg.Miner.Tier, cfg.Miner.UnknownTier)
+		}
+	}
+}
+
 // A config written before the move to jevlin.ai may name only the old
 // portal and rely on the agents API being implied from it. It still is,
 // as the old pair: an upgrade must not turn a loading config into one

