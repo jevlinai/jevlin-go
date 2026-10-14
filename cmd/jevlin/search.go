@@ -570,14 +570,9 @@ func recordSearchForMining(ops searchOps, cfg *config.Config, out searchOutcome,
 // then [miner] tier, then nothing — and nothing means the router applies
 // the tenant's default, which this client does not guess at.
 func searchTierDefault(cfgSource string, m config.Miner, getenv func(string) string) string {
-	// One no-follow read of a file in the installation's own root, as
-	// credentials.json is read: a link planted there is not followed. The
-	// path is tierPathFor's, the command's own, so the two agree.
-	read := func(path string) ([]byte, error) {
-		b, _, err := fsx.ReadRegularNoFollow(path, tierFileMaxBytes)
-		return b, err
-	}
-	if t := readTierFile(read, tierPathFor(cfgSource, getenv)); t != "" {
+	// The path is tierPathFor's and the read readTierSetting's, both the
+	// command's own, so `agents tier status` and the search agree.
+	if t := readTierFile(readTierSetting, tierPathFor(cfgSource, getenv)); t != "" {
 		return t
 	}
 	return m.Tier
@@ -585,6 +580,15 @@ func searchTierDefault(cfgSource string, m config.Miner, getenv func(string) str
 
 // tierFileMaxBytes bounds the tier file: one band name and a newline.
 const tierFileMaxBytes = 64
+
+// readTierSetting is the one read of the tier file, for the search and for
+// `agents tier`: one no-follow read of a regular file in the installation's
+// own root, bounded, as credentials.json is read. A link planted there is
+// not followed, and a file over the bound is not read.
+func readTierSetting(path string) ([]byte, error) {
+	b, _, err := fsx.ReadRegularNoFollow(path, tierFileMaxBytes)
+	return b, err
+}
 
 // performSearch runs the whole protocol operation under one context: at
 // most two POSTs, the second only on an explicit trace_unsupported, and

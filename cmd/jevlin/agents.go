@@ -74,6 +74,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/jevlinai/jevlin-go/pkg/config"
+	"github.com/jevlinai/jevlin-go/pkg/fsx"
 )
 
 //go:embed skill.md
@@ -194,6 +195,15 @@ type agentOps struct {
 	// binaryLocation vets the binary install records; nil means
 	// checkBinaryLocation.
 	binaryLocation binaryLocationCheck
+	// readSetting, lstat and replaceFile are how the tier file is read,
+	// checked and written: the way search reads it (readTierSetting, which
+	// follows no link and reads a bounded regular file), and so that a link
+	// at its name is removed or replaced as a name, never followed into
+	// whatever it names. nil means readFile, stat and writeFile, which is
+	// what the in-memory machine in the tests offers, having no links.
+	readSetting func(path string) ([]byte, error)
+	lstat       func(path string) (fs.FileInfo, error)
+	replaceFile func(path string, data []byte, perm fs.FileMode) error
 }
 
 func (ops agentOps) binaryLocationFn() binaryLocationCheck {
@@ -201,6 +211,27 @@ func (ops agentOps) binaryLocationFn() binaryLocationCheck {
 		return ops.binaryLocation
 	}
 	return checkBinaryLocation
+}
+
+func (ops agentOps) readSettingFn() func(string) ([]byte, error) {
+	if ops.readSetting != nil {
+		return ops.readSetting
+	}
+	return ops.readFile
+}
+
+func (ops agentOps) lstatFn() func(string) (fs.FileInfo, error) {
+	if ops.lstat != nil {
+		return ops.lstat
+	}
+	return ops.stat
+}
+
+func (ops agentOps) replaceFileFn() func(string, []byte, fs.FileMode) error {
+	if ops.replaceFile != nil {
+		return ops.replaceFile
+	}
+	return ops.writeFile
 }
 
 func realAgentOps() agentOps {
@@ -216,6 +247,11 @@ func realAgentOps() agentOps {
 		removeAll:      os.RemoveAll,
 		remove:         os.Remove,
 		binaryLocation: checkBinaryLocation,
+		readSetting:    readTierSetting,
+		lstat:          os.Lstat,
+		replaceFile: func(path string, data []byte, perm fs.FileMode) error {
+			return fsx.WriteFileAtomic(filepath.Dir(path), filepath.Base(path), data, perm)
+		},
 		isTerminal: func() bool {
 			fi, err := os.Stdin.Stat()
 			return err == nil && fi.Mode()&os.ModeCharDevice != 0
@@ -402,7 +438,7 @@ func readTierFile(read func(string) ([]byte, error), path string) string {
 }
 
 func readTier(ops agentOps, entry binEntry, getenv func(string) string) string {
-	return readTierFile(ops.readFile, tierPath(entry, getenv))
+	return readTierFile(ops.readSettingFn(), tierPath(entry, getenv))
 }
 
 // effectiveTier is the band the next search will send and where it comes
@@ -870,8 +906,10 @@ func agentsTier(ops agentOps, args []string, stdout, stderr io.Writer, getenv fu
 		// this client cannot name reads as unset yet is still there, and
 		// default is what takes it away. Removed by name and never
 		// recursively: a directory planted at the name is refused with
-		// its contents intact (Devin review, 2026-10-14).
-		if info, err := ops.stat(path); err == nil && info.IsDir() {
+		// its contents intact (Devin review, 2026-10-14). The name is what
+		// is checked, not what it names: a link, to a file or a directory,
+		// is removed as the link, and what it named is left alone.
+		if info, err := ops.lstatFn()(path); err == nil && info.IsDir() {
 			fmt.Fprintf(stderr, "jevlin agents tier: %s is a directory, not a setting; nothing was removed\n", path)
 			return exitTransport
 		}
@@ -885,7 +923,9 @@ func agentsTier(ops agentOps, args []string, stdout, stderr io.Writer, getenv fu
 			fmt.Fprintln(stderr, "jevlin agents tier:", err)
 			return exitTransport
 		}
-		if err := ops.writeFile(path, []byte(next+"\n"), 0o600); err != nil {
+		// Replaced by name, so a link there gives way to the setting
+		// instead of having the setting written into what it names.
+		if err := ops.replaceFileFn()(path, []byte(next+"\n"), 0o600); err != nil {
 			fmt.Fprintln(stderr, "jevlin agents tier:", err)
 			return exitTransport
 		}
