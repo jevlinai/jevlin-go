@@ -619,6 +619,16 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   the next-attempt time; `pkg/auth/submit.go` owns the AS exchange and what counts as an ack.
   `cmd/jevlin/delivery_health_test.go` proves a quarantine cannot be cleared by an unrelated
   success.
+- **The AS's region refusals** — `pkg/auth/region.go` owns the three 451 codes
+  (twilight-minis ADR-MINIS-0026, pending a contract §26 amendment), their sentences and the
+  note; `cmd/jevlin/driver.go`'s `regionRefused` owns retrying every attempt, as the ADR asks,
+  and explaining a verdict once by the note rather than by a process's memory, because a flush
+  is a process; `cmd/jevlin/flush.go` owns holding the refused epoch's records back
+  (`regionRefusedRecords`, the collector's `Skip`) and dropping them once the target moves past
+  (`dropRegionRefusedObservationsPastTarget`, invariant 7's second exception). Every
+  enrollment clears its own epoch's note, never another's (`ClearRegionRefusalFor`).
+  `cmd/jevlin/region_flush_test.go` runs real flushes, two where a claim spans them.
+  For participants: [guide, When your region is refused](docs/guide.md#when-your-region-is-refused).
 - **The AS clients' proxy** — `pkg/auth/proxy.go` owns `loopbackProxy`, the Proxy function of
   both AS-facing transports (discovery and the DPoP credential client): the environment's proxy,
   used only when its address is a loopback literal (127.0.0.0/8, ::1); any other, a name
