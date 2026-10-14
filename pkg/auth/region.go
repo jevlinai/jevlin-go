@@ -31,10 +31,16 @@ const (
 )
 
 // RegionRefusalCode reports the region code when err is the AS refusing a
-// join or a submission on HTTP 451 with one of the three codes this client
-// knows. Any other error, status or code is not a region refusal — a 451
-// carrying a code this version cannot explain is left to the generic path,
-// which prints the AS's own message.
+// join on HTTP 451 with one of the three codes this client knows. Any other
+// error, status or code is not a region refusal — a 451 carrying a code
+// this version cannot explain is left to the generic path, which prints the
+// AS's own message.
+//
+// A submission refused the same way never reaches it: Submit returns it as
+// a retryable failure naming the code and honoring the AS's Retry-After,
+// because ADR-MINIS-0026 asks a client to retry a 451 later, and the AS
+// accepts a held observation when it is resubmitted from an attributable
+// address.
 func RegionRefusalCode(err error) (string, bool) {
 	var refused *ASRefusedError
 	if !errors.As(err, &refused) || refused.Status != http.StatusUnavailableForLegalReasons {
