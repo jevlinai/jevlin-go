@@ -37,8 +37,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-
-	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
 // bodyPlaceholder marks where the request body sits in a rendered search
@@ -206,18 +204,16 @@ func renderedFormsForShell(cfg string, sh shellKind) []renderedCommand {
 			out = append(out, renderedCommand{text: placeholders.Replace(prefer) + " " + arg, path: []string{"agents", "prefer"}})
 		}
 	}
+	// Of the tier command, only status: it reads and changes nothing. Every
+	// other argument sets the participant's band, which decides what each
+	// later search costs and is the user's to choose (skill.md). Cursor
+	// asks for those, as Claude Code and Codex do, rather than this hook
+	// letting an agent, or a prompt injected into a search result it read,
+	// set one without a word.
 	if tier, err := entry.tierCommandForShell(sh); err == nil {
-		for _, arg := range tierArguments() {
-			out = append(out, renderedCommand{text: placeholders.Replace(tier) + " " + arg, path: []string{"agents", "tier"}})
-		}
+		out = append(out, renderedCommand{text: placeholders.Replace(tier) + " status", path: []string{"agents", "tier"}})
 	}
 	return out
-}
-
-// tierArguments is every word the skill may put after the tier command:
-// the router's bands, plus default and status.
-func tierArguments() []string {
-	return append(append([]string{}, config.SearchTiers...), "default", "status")
 }
 
 // matched is what a rendered form yielded: the binary path the command

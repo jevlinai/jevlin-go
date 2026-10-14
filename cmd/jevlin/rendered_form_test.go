@@ -230,10 +230,16 @@ func TestRecognizerAllowsTheRenderedTierCommand(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, arg := range []string{"fast", "balanced", "max", "default", "status"} {
-			got := f.recognize(tier + " " + arg)
-			if got == nil || len(got.path) != 2 || got.path[0] != "agents" || got.path[1] != "tier" {
-				t.Fatalf("%s: the rendered tier command %q was not recognized: %+v", sh, arg, got)
+		if got := f.recognize(tier + " status"); got == nil || len(got.path) != 2 || got.path[0] != "agents" || got.path[1] != "tier" {
+			t.Fatalf("%s: the rendered tier status was not recognized: %+v", sh, got)
+		}
+		// Setting the band is the user's decision, and every band but the
+		// one in force changes what a search costs: Cursor asks for these
+		// as Claude Code and Codex do, rather than the hook allowing an
+		// agent, or a prompt injected into a search result, to set one.
+		for _, arg := range []string{"fast", "balanced", "max", "default"} {
+			if got := f.recognize(tier + " " + arg); got != nil {
+				t.Fatalf("%s: the hook allows %q, which changes the band without asking", sh, arg)
 			}
 		}
 		for _, bad := range []string{"turbo", "max; echo x", ""} {
