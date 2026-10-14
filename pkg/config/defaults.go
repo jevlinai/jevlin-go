@@ -17,11 +17,13 @@ const (
 	// requests go — see DefaultAgentsAPIURL for that.
 	DefaultPlatformBaseURL = "https://platform.jevlin.ai"
 	// DefaultAgentsAPIURL is where connect/mining enable actually send
-	// register/status/enroll. Confirmed live: a register call against
-	// platform.jevlin.ai 404s — that route only exists on this separate
-	// host — while the claim_url it returns correctly points back at
-	// platform.jevlin.ai. One shared origin was this package's original
-	// assumption; the real deployment splits it in two.
+	// register/status/enroll. Confirmed live on the nyks.dev deployment: a
+	// register call against the portal (platform.nyks.dev) 404'd — that
+	// route only existed on the separate agents host — while the claim_url
+	// it returned pointed back at the portal. One shared origin was this
+	// package's original assumption; the real deployment splits it in two,
+	// and the jevlin.ai hosts keep the split, with claim links on
+	// platform.jevlin.ai.
 	DefaultAgentsAPIURL = "https://agents-v1.jevlin.ai"
 	// LegacyPlatformBaseURL / LegacyAgentsAPIURL are the pair the platform
 	// lived at before jevlin.ai. A config written then may name only the
