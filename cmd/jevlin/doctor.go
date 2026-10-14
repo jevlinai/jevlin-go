@@ -679,6 +679,7 @@ func gatherDoctorFactsFor(ctx context.Context, as asClient, m config.Mining, min
 
 	// Local first, and unconditionally: it is the half that still answers
 	// when nothing else does.
+	var regionStore *auth.Store
 	if store, err := auth.OpenStoreExisting(m.StateDir); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			f.LocalStateKnown = true
@@ -715,21 +716,13 @@ func gatherDoctorFactsFor(ctx context.Context, as asClient, m config.Mining, min
 				f.PayoutHeld, f.HasPayoutHeld = held, true
 			}
 		}
-		// The note for the epoch doctor is looking at, when it knows one,
-		// else the slot's latest: with one note per epoch, the current
-		// epoch's verdict is what "joined this epoch" should explain.
-		var region auth.RegionRefusal
-		var rok bool
-		var rerr error
-		if f.EpochKnown {
-			region, rok, rerr = store.RegionRefusalFor(m.SlotID, f.Epoch)
-		}
-		if rerr == nil && !rok {
-			region, rok, rerr = store.LatestRegionRefusal(m.SlotID)
-		}
-		if rerr == nil && rok {
+		// The slot's latest note for now; once the epoch is known (below)
+		// it is replaced by that epoch's own, which is the verdict
+		// "joined this epoch" explains.
+		if region, ok, err := store.LatestRegionRefusal(m.SlotID); err == nil && ok {
 			f.RegionRefusal, f.HasRegionRefusal = region, true
 		}
+		regionStore = store
 	}
 
 	// The miner half. The probe is the one write doctor performs, and it
@@ -763,6 +756,11 @@ func gatherDoctorFactsFor(ctx context.Context, as asClient, m config.Mining, min
 	f.Epoch, f.EpochKnown, f.EpochErr = epochFor(ctx, as, m.TargetEpoch)
 	if !f.EpochKnown {
 		return f
+	}
+	if regionStore != nil {
+		if region, ok, err := regionStore.RegionRefusalFor(m.SlotID, f.Epoch); err == nil && ok {
+			f.RegionRefusal, f.HasRegionRefusal = region, true
+		}
 	}
 	f.Status, f.StatusErr = as.Status(ctx, f.Epoch)
 	f.Activity, f.ActivityErr = as.EpochActivity(ctx, f.Epoch)
