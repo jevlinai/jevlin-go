@@ -73,6 +73,8 @@ JSON
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' agents prefer -config '/Users/u/.jevlin/jevlin.toml' <argument>
 -- fence bash
+'/Users/u/.jevlin/bin/jevlin' agents tier -config '/Users/u/.jevlin/jevlin.toml' <band>
+-- fence bash
 '/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' -format model "<query>"
 
 == claude: settings.json hook commands, as read back from the file
@@ -119,6 +121,8 @@ JSON
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' agents prefer -config '/Users/u/.jevlin/jevlin.toml' <argument>
 -- fence bash
+'/Users/u/.jevlin/bin/jevlin' agents tier -config '/Users/u/.jevlin/jevlin.toml' <band>
+-- fence bash
 '/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' -format model "<query>"
 
 == codex: hooks.json commands, as read back from the file
@@ -145,6 +149,8 @@ JSON
 JSON
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' agents prefer -config '/Users/u/.jevlin/jevlin.toml' <argument>
+-- fence bash
+'/Users/u/.jevlin/bin/jevlin' agents tier -config '/Users/u/.jevlin/jevlin.toml' <band>
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' -format model "<query>"
 
@@ -180,6 +186,8 @@ matches the rendered `search` for posix
 -- skill block (bash)
 matches the rendered `agents prefer` for posix
 -- skill block (bash)
+matches the rendered `agents tier` for posix
+-- skill block (bash)
 refused
 -- stdin command alone
 refused
@@ -206,6 +214,8 @@ JSON
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' agents prefer -config '/Users/u/.jevlin/jevlin.toml' <argument>
 -- fence bash
+'/Users/u/.jevlin/bin/jevlin' agents tier -config '/Users/u/.jevlin/jevlin.toml' <band>
+-- fence bash
 '/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' -format model "<query>"
 
 == pi: the shell its installed adapter is rendered for
@@ -227,6 +237,8 @@ JEVLIN_TRACE_BRIDGE=<BRIDGE> '/Users/u/.jevlin/bin/jevlin' search -config '/User
 JSON
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' agents prefer -config '/Users/u/.jevlin/jevlin.toml' <argument>
+-- fence bash
+'/Users/u/.jevlin/bin/jevlin' agents tier -config '/Users/u/.jevlin/jevlin.toml' <band>
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' -format model "<query>"
 

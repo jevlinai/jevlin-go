@@ -37,6 +37,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
 // bodyPlaceholder marks where the request body sits in a rendered search
@@ -204,7 +206,18 @@ func renderedFormsForShell(cfg string, sh shellKind) []renderedCommand {
 			out = append(out, renderedCommand{text: placeholders.Replace(prefer) + " " + arg, path: []string{"agents", "prefer"}})
 		}
 	}
+	if tier, err := entry.tierCommandForShell(sh); err == nil {
+		for _, arg := range tierArguments() {
+			out = append(out, renderedCommand{text: placeholders.Replace(tier) + " " + arg, path: []string{"agents", "tier"}})
+		}
+	}
 	return out
+}
+
+// tierArguments is every word the skill may put after the tier command:
+// the router's bands, plus default and status.
+func tierArguments() []string {
+	return append(append([]string{}, config.SearchTiers...), "default", "status")
 }
 
 // matched is what a rendered form yielded: the binary path the command

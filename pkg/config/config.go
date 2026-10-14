@@ -185,6 +185,28 @@ type Miner struct {
 	// searched ends, the assistant's final message to the router. Off by
 	// default: it is model-written text leaving the machine.
 	TurnEnd bool
+	// Tier is the search tier a request carries when neither the caller
+	// (the -tier flag, the stdin request's "tier") nor the agent named
+	// one: the participant's own default band, set with `jevlin tier`.
+	// Empty means the request carries no tier and the router applies the
+	// tenant's default. One of SearchTiers when set.
+	Tier string
+}
+
+// SearchTiers is the router's tier vocabulary this client knows — the
+// cost bands of search-router internal/tenant. A config naming another
+// word is refused at load rather than sent, so a typo is caught here and
+// not as a 400 on every search.
+var SearchTiers = []string{"fast", "balanced", "max"}
+
+// KnownSearchTier reports whether tier is one this client can name.
+func KnownSearchTier(tier string) bool {
+	for _, t := range SearchTiers {
+		if t == tier {
+			return true
+		}
+	}
+	return false
 }
 
 type Config struct {
@@ -289,6 +311,7 @@ type fileConfig struct {
 		SessionsDir   string   `toml:"sessions_dir"`
 		FlushInterval duration `toml:"flush_interval"`
 		TurnEnd       bool     `toml:"turn_end"`
+		Tier          string   `toml:"tier"`
 	} `toml:"miner"`
 	Platform struct {
 		BaseURL      string `toml:"base_url"`
@@ -467,6 +490,7 @@ type rawConfig struct {
 	minerSessionsDir   string
 	minerFlushInterval time.Duration
 	minerTurnEnd       bool
+	minerTier          string
 
 	platformBaseURL string
 	agentsAPIURL    string
@@ -612,6 +636,7 @@ func (r *rawConfig) applyBytes(source string, data []byte) error {
 	}
 	r.minerEnabled = f.Miner.Enabled
 	r.minerTurnEnd = f.Miner.TurnEnd
+	r.minerTier = f.Miner.Tier
 	if f.Miner.RouterURL != "" {
 		r.minerRouterURL = f.Miner.RouterURL
 	}
@@ -786,6 +811,11 @@ func (r *rawConfig) finishMiner(upstream *url.URL, mining Mining) (Miner, error)
 		SessionsDir:   r.minerSessionsDir,
 		FlushInterval: r.minerFlushInterval,
 		TurnEnd:       r.minerTurnEnd,
+		Tier:          r.minerTier,
+	}
+	if m.Tier != "" && !KnownSearchTier(m.Tier) {
+		return Miner{}, fmt.Errorf("miner.tier: must be one of %s, or unset for the router's default, not %q",
+			strings.Join(SearchTiers, ", "), m.Tier)
 	}
 	if m.FlushInterval == 0 {
 		m.FlushInterval = 3 * time.Minute

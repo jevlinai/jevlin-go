@@ -85,6 +85,9 @@ the tool (what an agent runs):
              agents prefer on|off — whether this search or the agent's own
              is the default (off keeps this one for when you name it);
              in the agent, /jevlin off and /jevlin on do the same
+             agents tier fast|balanced|max|default — the band every search
+             carries unless the request names one; in the agent,
+             /jevlin tier <band> does the same
   hook       internal: the hook runner the agents call around a search;
              JEVLIN_TRACE=off turns traces off entirely
   flush      the mining plane, once: join the open epoch, promote recorded

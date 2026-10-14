@@ -364,7 +364,11 @@ func validateConfigSyntax(data []byte) error {
 // is a symlink or not a regular file is refused: setup publishes by atomic
 // replacement, which would silently turn a link into a file.
 func readExistingConfig(path string) ([]byte, error) {
-	info, err := os.Lstat(path)
+	// Both reads below take the installation's own config path, built from
+	// the home directory and a fixed name (setup.go); gosec's taint pass
+	// (G703) flags them once any env-derived path elsewhere in the package
+	// reaches filepath.Join, which the search tier's lookup does.
+	info, err := os.Lstat(path) // #nosec G703 -- the installation's own config path
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
@@ -374,7 +378,7 @@ func readExistingConfig(path string) ([]byte, error) {
 	if !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("%w: %s is not a regular file", errConfigInvalid, path)
 	}
-	data, err := os.ReadFile(path) // #nosec G304 -- the installation's own config path
+	data, err := os.ReadFile(path) // #nosec G304 G703 -- the installation's own config path
 	if err != nil {
 		return nil, err
 	}

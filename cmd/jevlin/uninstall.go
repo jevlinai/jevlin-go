@@ -631,7 +631,7 @@ const renderedWordRe = `"(?:[^"\\\n]|\\.)*"|'[^'\n]*(?:(?:'\\''|'')[^'\n]*)*'`
 // single-quotes the path (POSIX and PowerShell) or double-quotes it literally
 // (cmd). Matching only some of them would make a file written by a current
 // install look like one that names no binary at all.
-var installedCommand = regexp.MustCompile(`(` + renderedWordRe + `) (?:search|hook|agents prefer)\b`)
+var installedCommand = regexp.MustCompile(`(` + renderedWordRe + `) (?:search|hook|agents prefer|agents tier)\b`)
 
 // installedConfig finds the installation a rendered artifact declares: the
 // `-config <path>` of a command it teaches, or the INSTALL_CONFIG line a
@@ -1056,7 +1056,7 @@ func (r *uninstallRun) purgeSet() (inside, outside []string) {
 	join := func(name string) string { return filepath.Join(r.home, name) }
 	first := []string{
 		join("wallet"), join("sessions"), join("intake"), join("spool"),
-		join(credentialsFile), join(registrationJournalFile), join(payoutRecordFile), join(claimRecordFile), join(setupConfigFile), join(preferFile),
+		join(credentialsFile), join(registrationJournalFile), join(payoutRecordFile), join(claimRecordFile), join(setupConfigFile), join(preferFile), join(tierFile),
 	}
 	if entries, err := os.ReadDir(r.home); err == nil {
 		for _, e := range entries {

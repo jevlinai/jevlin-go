@@ -93,6 +93,7 @@ var classifiedFileCalls = map[fileCallSite]fileCallClass{
 	{"cmd/jevlin/connect.go", "readResumeStamp", "fsx.ReadRegular"}:                     {1, "root: the state dir's resume stamp, read without waiting and bounded"},
 	{"cmd/jevlin/connect.go", "writeResumeStamp", "fsx.WriteFileAtomic"}:                {1, "root: the state dir's resume stamp; fsx stages under an exclusive random name"},
 	{"cmd/jevlin/credentials.go", "cmdLogin", "os.Remove"}:                              {1, "outside: credentials.json, in the installation's own root"},
+	{"cmd/jevlin/search.go", "searchTierDefault", "fsx.ReadRegularNoFollow"}:            {1, "outside: search-tier beside the config, in the installation's own root, as credentials.json; one no-follow open, bounded, and a word this client cannot name is not forwarded"},
 	{"cmd/jevlin/credentials.go", "readCredentials", "fsx.ReadRegularNoFollow"}:         {1, "outside, unless a layout nests the installation in a root (agents install refuses it): one no-follow open, mode checked on it"},
 	{"cmd/jevlin/credentials.go", "writeCredentials", "os.MkdirAll"}:                    {1, "outside: the installation's own root"},
 	{"cmd/jevlin/credentials.go", "writeCredentials", "os.OpenFile"}:                    {1, "outside: credentials.json, in the installation's own root"},

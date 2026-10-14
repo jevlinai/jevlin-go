@@ -706,3 +706,34 @@ func TestLoadIgnoresJevlinTOMLInWorkingDirectory(t *testing.T) {
 		t.Fatalf("router taken from cwd jevlin.toml: %v", u)
 	}
 }
+
+// [miner] tier is the participant's default search band. Unset means the
+// request carries no tier and the router's tenant default applies; a word
+// the router would refuse is refused here, at load, naming the choices.
+func TestMinerTierIsValidatedAtLoad(t *testing.T) {
+	for body, want := range map[string]string{
+		"[miner]\nrouter_url = \"http://127.0.0.1:8080\"\n":                      "",
+		"[miner]\nrouter_url = \"http://127.0.0.1:8080\"\ntier = \"fast\"\n":     "fast",
+		"[miner]\nrouter_url = \"http://127.0.0.1:8080\"\ntier = \"balanced\"\n": "balanced",
+		"[miner]\nrouter_url = \"http://127.0.0.1:8080\"\ntier = \"max\"\n":      "max",
+	} {
+		cfg, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv)
+		if err != nil {
+			t.Fatalf("%q: %v", body, err)
+		}
+		if cfg.Miner.Tier != want {
+			t.Errorf("%q: tier = %q, want %q", body, cfg.Miner.Tier, want)
+		}
+	}
+	for _, bad := range []string{"Fast", "turbo", "auto", " fast"} {
+		body := "[miner]\nrouter_url = \"http://127.0.0.1:8080\"\ntier = \"" + bad + "\"\n"
+		_, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv)
+		if err == nil {
+			t.Errorf("tier %q was accepted at load", bad)
+			continue
+		}
+		if !strings.Contains(err.Error(), "miner.tier") || !strings.Contains(err.Error(), "balanced") {
+			t.Errorf("tier %q: the refusal does not name the key and the choices: %v", bad, err)
+		}
+	}
+}

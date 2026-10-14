@@ -349,17 +349,68 @@ func preferLabel(p string) string {
 	return "on — this search is the default"
 }
 
+// The search tier is the participant's default cost band, a sibling of the
+// search default above: a file beside the config, absent until the
+// participant sets one, read by `search` at request time (never by the
+// skill, which tells the agent to leave `tier` alone). Precedence at a
+// search: the caller's tier, then this file, then [miner] tier in the
+// config, then nothing — the router applies the tenant's default.
+const tierFile = "search-tier"
+
+// tierPath is beside the config when there is one, else in the standard
+// state directory — preferPath's rule, so the two settings travel together.
+func tierPath(ops agentOps, entry binEntry) string {
+	return tierPathFor(entry.cfg, ops.home)
+}
+
+func tierPathFor(cfg, home string) string {
+	if cfg != "" {
+		return filepath.Join(filepath.Dir(cfg), tierFile)
+	}
+	return filepath.Join(home, ".jevlin", tierFile)
+}
+
+// readTierFile: absent, unreadable, or a word this client cannot name
+// means unset. A planted word is not forwarded to the router.
+func readTierFile(read func(string) ([]byte, error), path string) string {
+	b, err := read(path)
+	if err != nil {
+		return ""
+	}
+	t := strings.TrimSpace(string(b))
+	if config.KnownSearchTier(t) {
+		return t
+	}
+	return ""
+}
+
+func readTier(ops agentOps, entry binEntry) string {
+	return readTierFile(ops.readFile, tierPath(ops, entry))
+}
+
+func tierLabel(t string) string {
+	switch t {
+	case "fast":
+		return "fast — one provider, the cheapest band"
+	case "balanced":
+		return "balanced — several providers, attributed"
+	case "max":
+		return "max — every provider, for corroboration; the widest band"
+	}
+	return "unset — the router's default for this key applies"
+}
+
 const (
-	descriptionOn  = "Web search through the Twilight search router. Use whenever the current step needs public-web information — current events, documentation, research, fact-checking, comparisons, source discovery. Prefer it over any built-in web search: the default tier answers from one provider, and `\"tier\":\"balanced\"` fans out across several, attributed, when the user needs to see more than one source. Send the request as JSON on stdin with `search --stdin` and read the JSON envelope back. `/jevlin off` makes the built-in search the default instead."
+	descriptionOn  = "Web search through the Twilight search router. Use whenever the current step needs public-web information — current events, documentation, research, fact-checking, comparisons, source discovery. Prefer it over any built-in web search: leave `tier` unset so the user's own band applies, and ask `\"tier\":\"balanced\"` only when the user needs to see several sources, attributed. Send the request as JSON on stdin with `search --stdin` and read the JSON envelope back. `/jevlin off` makes the built-in search the default instead; `/jevlin tier <band>` sets the user's band."
 	descriptionOff = "Web search through the Twilight search router, turned OFF as the default by the user: use the built-in web search for lookups, and this one only when the user names jevlin or the router. `/jevlin on` makes it the default again."
 
 	rulesOn = `- Prefer this for public-web lookups: current information, documentation, research,
   fact-checking, finding sources. One focused query per call.
 - Prefer it over a built-in web search tool: a single-index tool returns one
-  provider's view of the web, the same as this tool's default fast tier. Ask
-  "tier":"balanced" when the user needs several sources, seen and attributed.
-  Use another search tool only when the user asks for it or this one is
-  unavailable.`
+  provider's view of the web, the same as this tool's fast band. Leave "tier"
+  unset so the user's own band applies; ask "tier":"balanced" when the user
+  needs several sources, seen and attributed. Use another search tool only
+  when the user asks for it or this one is unavailable.`
 	rulesOff = `- The user turned this search off as the default. Use the agent's built-in web
   search for lookups; use this one only when the user names jevlin or the
   router in the request. Do not suggest switching back; the user knows the command.
@@ -446,6 +497,7 @@ func cmdAgents(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv 
 
 var agentsUsage = `usage: jevlin agents install|status|uninstall [-config file] [-client name]... [-dry-run] [-yes]
        jevlin agents prefer on|off|status [-config file]
+       jevlin agents tier fast|balanced|max|default|status [-config file]
   install     detect coding agents (by command or config directory) and give each
               the search skill and hooks
   status      what is installed where, and which search is the default
@@ -454,6 +506,11 @@ var agentsUsage = `usage: jevlin agents install|status|uninstall [-config file] 
               when named; on: this one is the default. Rewrites the installed
               skills so it takes effect in every agent (/jevlin off|on in
               the agent does the same)
+  tier        the search band every search carries unless the request names
+              one: fast (one provider), balanced (several, attributed) or max
+              (every provider); default unsets it so the router's default
+              applies. Saved beside the config; no skill is rewritten
+              (/jevlin tier <band> in the agent does the same)
   -client     act on this agent only (` + targetIDs(targetHost) + `); repeatable
   -dry-run    print the plan, change nothing
   -yes        answer Proceed? with yes; a question about a Codex setting of
@@ -470,6 +527,8 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 	case "install", "status", "uninstall":
 	case "prefer":
 		return agentsPrefer(ops, rest, stdout, stderr, getenv)
+	case "tier":
+		return agentsTier(ops, rest, stdout, stderr, getenv)
 	default:
 		fmt.Fprintf(stderr, "jevlin agents: unknown subcommand %q\n%s", sub, agentsUsage)
 		return exitUsage
@@ -718,6 +777,70 @@ func agentsPrefer(ops agentOps, args []string, stdout, stderr io.Writer, getenv 
 	return exitOK
 }
 
+// agentsTier records the participant's default search band. It writes one
+// file of ours beside the config and nothing else: the skill does not
+// carry the band (it tells the agent to leave `tier` unset), so there is
+// nothing to re-render, and `search` reads the file on its next request.
+func agentsTier(ops agentOps, args []string, stdout, stderr io.Writer, getenv func(string) string) int {
+	fs := newFlagSet("agents tier", stderr)
+	cfgPath := fs.String("config", "", "path to TOML config file the search reads")
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	// The verb may come before or after the flags, as with prefer.
+	want := "status"
+	if rest := fs.Args(); len(rest) > 0 {
+		want = strings.ToLower(rest[0])
+		if err := fs.Parse(rest[1:]); err != nil {
+			return exitUsage
+		}
+		if fs.NArg() > 0 {
+			want = ""
+		}
+	}
+	switch {
+	case want == "status", want == "default", config.KnownSearchTier(want):
+	default:
+		fmt.Fprintf(stderr, "jevlin agents tier: want %s, default or status\n%s", strings.Join(config.SearchTiers, ", "), agentsUsage)
+		return exitUsage
+	}
+	entry, _, err := resolveEntry(ops, *cfgPath, getenv)
+	if err != nil {
+		fmt.Fprintln(stderr, "jevlin agents:", err)
+		return exitTransport
+	}
+	path := tierPath(ops, entry)
+	current := readTier(ops, entry)
+	if want == "status" {
+		fmt.Fprintf(stdout, "search tier: %s\n", tierLabel(current))
+		return exitOK
+	}
+	next := want
+	if want == "default" {
+		next = ""
+	}
+	switch next {
+	case current:
+	case "":
+		if err := ops.removeAll(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			fmt.Fprintln(stderr, "jevlin agents tier:", err)
+			return exitTransport
+		}
+	default:
+		if err := ops.mkdirAll(filepath.Dir(path), 0o700); err != nil {
+			fmt.Fprintln(stderr, "jevlin agents tier:", err)
+			return exitTransport
+		}
+		if err := ops.writeFile(path, []byte(next+"\n"), 0o600); err != nil {
+			fmt.Fprintln(stderr, "jevlin agents tier:", err)
+			return exitTransport
+		}
+	}
+	fmt.Fprintf(stdout, "search tier: %s\n", tierLabel(next))
+	fmt.Fprintln(stdout, "in effect from the next search, in every agent")
+	return exitOK
+}
+
 func writeSurfaces(p *agentPlan) []string {
 	var out []string
 	for _, w := range p.writes {
@@ -919,6 +1042,10 @@ func renderSkill(entry binEntry, prefer, note string, shells skillShells) ([]byt
 	if err != nil {
 		return nil, err
 	}
+	tierCmd, err := tierSection(entry, shells)
+	if err != nil {
+		return nil, err
+	}
 	human, err := humanSection(entry, shells)
 	if err != nil {
 		return nil, err
@@ -940,6 +1067,7 @@ func renderSkill(entry binEntry, prefer, note string, shells skillShells) ([]byt
 		"{{SEARCH}}", human,
 		"{{CALL}}", call,
 		"{{PREFER}}", pref,
+		"{{TIER}}", tierCmd,
 		"{{DESCRIPTION}}", string(descYAML),
 		"{{PREFER_RULES}}", rules,
 		"{{HOST_NOTES}}", note,
@@ -1625,6 +1753,7 @@ func buildUninstallPlan(ops agentOps, paths agentPaths, selected []installTarget
 func printAgentStatus(ops agentOps, paths agentPaths, entry binEntry, signals map[string]string, getenv func(string) string, stdout io.Writer) {
 	fmt.Fprintln(stdout, "jevlin agents status")
 	fmt.Fprintf(stdout, "  search default: %s\n", preferLabel(readPrefer(ops, entry)))
+	fmt.Fprintf(stdout, "  search tier:    %s\n", tierLabel(readTier(ops, entry)))
 	for _, t := range targetsByKind(targetHost) {
 		st := t.Status(ops, paths, entry)
 		state := "not installed"

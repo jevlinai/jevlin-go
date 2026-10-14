@@ -10,6 +10,17 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## Unreleased
+
+- `jevlin agents tier fast|balanced|max|default|status`, and `/jevlin tier <band>` in every
+  agent that has the skill: the band a search carries when the request names none, saved
+  beside the config as `search-tier` and read by `search` on its next request. `[miner] tier`
+  in the config is the same setting one layer down; the request's own `tier` outranks both,
+  and with none set the request carries no tier and the router applies the default for the
+  key. The skill now tells the agent to leave `tier` unset rather than calling `fast` the
+  default, and never to send `max`. `agents status` shows the band in force; purge removes
+  the file.
+
 ## v0.1.0 — 2026-10-13
 
 This repository starts from `twilight-project/dropin-miner` at

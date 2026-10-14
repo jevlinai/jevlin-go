@@ -12,6 +12,7 @@ Values to look up. Every flag is in `jevlin help` and `jevlin <command> -h`.
 | `search` | One web search. `--stdin` for agents (JSON in, JSON out); `<query words>` for a person. |
 | `agents install\|status\|uninstall` | Sets up, reports or removes the skills and hooks of each agent. |
 | `agents prefer on\|off\|status` | Whether this search or the agent's own is the default. |
+| `agents tier fast\|balanced\|max\|default\|status` | The band every search carries unless the request names one; `default` unsets it. |
 | `flush` | One pass of the mining plane: join the open epoch, promote recorded searches, submit. |
 | `connect` | Registers with the search platform, prints the claim link, polls until claimed. |
 | `mining enable\|disable` | Turns mining on (asking for a payout address) or off for this installation. |
@@ -42,7 +43,7 @@ list and needs no shell escaping. A malformed field answers `fix_input` before a
 |---|---|
 | `version` | `1`, required. |
 | `query` | The search, required. |
-| `tier` | `"fast"` (default, one provider) or `"balanced"` (several, attributed). |
+| `tier` | `"fast"` (one provider), `"balanced"` (several, attributed) or `"max"` (every provider). Absent, the request carries the participant's band (`agents tier`, then `[miner] tier`), or no tier at all and the router applies the tenant's default. |
 | `recency` | `"day"`, `"week"`, `"month"` or `"year"`. A preference the router passes to its providers; check each citation if it must hold. |
 | `domain_filter` | Up to 16 bare hostnames. A preference, like `recency`. |
 | `max_results` | 1 to 25. A cap. |
@@ -155,6 +156,7 @@ intake_dir     = "/home/you/.jevlin/intake"     # served request ids, until flus
 sessions_dir   = "/home/you/.jevlin/sessions"   # per-workspace lineage files
 flush_interval = "3m"                              # default 3m: how often a flush re-asks the AS
 turn_end       = false                             # default false: report a searched turn's final answer (see The turn end)
+tier           = ""                                # fast | balanced | max; unset = the router's default. `agents tier` outranks it
 # router_url = "..."   defaults to the [[provider]] upstream
 ```
 
@@ -235,6 +237,7 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | `registration_pending.json` | A registration the platform answered that is not yet saved; finished by the next connect. | connect | No: it holds the new key. |
 | `claim.json` | The claim link and code for this installation's agent, while it is unclaimed. | connect | Yes; the next `jevlin connect` mints a fresh link, which ends the old one. |
 | `search-default` | `agents prefer`'s choice. | agents prefer | Yes; the skill default returns. |
+| `search-tier` | `agents tier`'s choice: the band a search carries when the request names none. | agents tier | Yes; `[miner] tier`, then the router's default, returns. |
 | `bin/jevlin` | A native binary, and `jevlin.previous` after an upgrade. | setup, upgrade | Through `uninstall -binary`. |
 | `state/` | Identity, authorization, the mining decision, health records, the flush stamp. | connect, flush | No: it is your registration. |
 | `intake/` | Served request ids, until a flush takes them. | search | No: unsent evidence. |

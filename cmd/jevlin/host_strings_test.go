@@ -123,6 +123,7 @@ func skillBlockFor(t *testing.T, skill string, sh shellKind, kind string) skillB
 		}
 		isSearch := strings.Contains(blk.body, "--stdin")
 		isPrefer := strings.Contains(blk.body, "agents prefer")
+		isTier := strings.Contains(blk.body, "agents tier")
 		switch kind {
 		case "search":
 			if isSearch {
@@ -132,8 +133,12 @@ func skillBlockFor(t *testing.T, skill string, sh shellKind, kind string) skillB
 			if isPrefer {
 				return blk
 			}
+		case "tier":
+			if isTier {
+				return blk
+			}
 		case "human":
-			if !isSearch && !isPrefer {
+			if !isSearch && !isPrefer && !isTier {
 				return blk
 			}
 		}
@@ -481,6 +486,7 @@ func renderedHostStrings(t *testing.T, goos string) string {
 			for _, blk := range skillCommandBlocks(cursorSkill) {
 				label := "skill block (" + blk.lang + ")"
 				command := strings.Replace(blk.body, "<argument>", "status", 1)
+				command = strings.Replace(command, "<band>", "status", 1)
 				command = strings.Replace(command, "<query>", "exact query text", 1)
 				value(label, recognizerVerdict(command, entry, goos))
 			}
