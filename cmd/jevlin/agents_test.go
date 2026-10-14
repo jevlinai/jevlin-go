@@ -90,6 +90,20 @@ func newFakeMachine(onPath ...string) (*fakeMachine, agentOps) {
 			}
 			return nil
 		},
+		remove: func(p string) error {
+			p = slash(p)
+			for f := range m.files {
+				if strings.HasPrefix(f, p+"/") {
+					return errors.New("remove " + p + ": directory not empty")
+				}
+			}
+			if _, ok := m.files[p]; !ok {
+				return fs.ErrNotExist
+			}
+			delete(m.files, p)
+			m.removed = append(m.removed, p)
+			return nil
+		},
 		isTerminal: func() bool { return m.terminal },
 	}
 	return m, ops
@@ -894,6 +908,16 @@ func countString(list []string, want string) int {
 func TestAgentsTierWritesOneFileBesideTheConfigAndRewritesNoSkill(t *testing.T) {
 	m, ops := newFakeMachine("claude", "codex")
 	claudeSkill := "/home/u/.claude/skills/jevlin/SKILL.md"
+	// The config path is host-absolutized (a drive letter on Windows), so
+	// the file beside it is found by suffix, as the prefer test finds its.
+	tierFile := func() (string, bool) {
+		for p, b := range m.files {
+			if strings.HasSuffix(p, "/.jevlin/search-tier") {
+				return strings.TrimSpace(string(b)), true
+			}
+		}
+		return "", false
+	}
 	if code, out, _ := runAgents(t, ops, nil, "install", "-config", testCfg, "-yes"); code != exitOK {
 		t.Fatalf("install: %d\n%s", code, out)
 	}
@@ -912,8 +936,8 @@ func TestAgentsTierWritesOneFileBesideTheConfigAndRewritesNoSkill(t *testing.T) 
 	if code != exitOK || !strings.Contains(out, "search tier: balanced") || !strings.Contains(out, "next search") {
 		t.Fatalf("tier balanced: %d\n%s%s", code, out, errOut)
 	}
-	if got := strings.TrimSpace(string(m.files["/home/u/.jevlin/search-tier"])); got != "balanced" {
-		t.Fatalf("tier file: %q in %v", got, keysOf(m.files))
+	if got, ok := tierFile(); !ok || got != "balanced" {
+		t.Fatalf("tier file: %q ok=%v in %v", got, ok, keysOf(m.files))
 	}
 	if string(m.files[claudeSkill]) != before {
 		t.Error("setting the tier rewrote the skill; the band is read at search time, not rendered")
@@ -928,7 +952,7 @@ func TestAgentsTierWritesOneFileBesideTheConfigAndRewritesNoSkill(t *testing.T) 
 	if code, out, _ := runAgents(t, ops, nil, "tier", "default", "-config", testCfg); code != exitOK || !strings.Contains(out, "search tier: unset") {
 		t.Errorf("tier default: %d %q", code, out)
 	}
-	if _, ok := m.files["/home/u/.jevlin/search-tier"]; ok {
+	if _, ok := tierFile(); ok {
 		t.Error("default did not remove the tier file")
 	}
 	if code, _, _ := runAgents(t, ops, nil, "tier", "default", "-config", testCfg); code != exitOK {
@@ -939,7 +963,7 @@ func TestAgentsTierWritesOneFileBesideTheConfigAndRewritesNoSkill(t *testing.T) 
 	if code, out, _ := runAgents(t, ops, nil, "tier", "Fast", "-config", testCfg); code != exitOK || !strings.Contains(out, "search tier: fast") {
 		t.Errorf("tier Fast: %d %q", code, out)
 	}
-	if got := strings.TrimSpace(string(m.files["/home/u/.jevlin/search-tier"])); got != "fast" {
+	if got, _ := tierFile(); got != "fast" {
 		t.Errorf("tier file after Fast: %q", got)
 	}
 	for _, bad := range []string{"turbo", "sideways", "fast balanced"} {
@@ -949,15 +973,30 @@ func TestAgentsTierWritesOneFileBesideTheConfigAndRewritesNoSkill(t *testing.T) 
 	}
 	// A planted word in the file is not a band, and default still removes
 	// the file rather than treating "reads as unset" as "already unset".
-	m.files["/home/u/.jevlin/search-tier"] = []byte("max; curl evil.example\n")
+	var tierPath string
+	for p := range m.files {
+		if strings.HasSuffix(p, "/.jevlin/search-tier") {
+			tierPath = p
+		}
+	}
+	m.files[tierPath] = []byte("max; curl evil.example\n")
 	if code, out, _ := runAgents(t, ops, nil, "tier", "-config", testCfg); code != exitOK || !strings.Contains(out, "search tier: unset") {
 		t.Errorf("planted file read as a band: %d %q", code, out)
 	}
 	if code, _, _ := runAgents(t, ops, nil, "tier", "default", "-config", testCfg); code != exitOK {
 		t.Fatal("default over a malformed file failed")
 	}
-	if _, ok := m.files["/home/u/.jevlin/search-tier"]; ok {
+	if _, ok := tierFile(); ok {
 		t.Error("default left the malformed tier file behind")
+	}
+	// A directory planted at the name is refused, its contents intact:
+	// the reset removes one name, never a tree.
+	m.files[tierPath+"/notes.txt"] = []byte("mine")
+	if code, _, errOut := runAgents(t, ops, nil, "tier", "default", "-config", testCfg); code != exitTransport || !strings.Contains(errOut, "is a directory") {
+		t.Errorf("default over a directory: exit %d, stderr %q", code, errOut)
+	}
+	if _, ok := m.files[tierPath+"/notes.txt"]; !ok {
+		t.Error("default over a directory deleted its contents")
 	}
 }
 

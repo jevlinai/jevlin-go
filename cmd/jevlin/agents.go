@@ -179,6 +179,10 @@ type agentOps struct {
 	mkdirAll   func(string, os.FileMode) error
 	stat       func(string) (os.FileInfo, error)
 	removeAll  func(string) error
+	// remove takes one name and never recurses: for a file this command
+	// owns, where removeAll on a directory planted at that name would
+	// take the directory's contents with it (PR #86 review).
+	remove     func(string) error
 	isTerminal func() bool
 	// consent asks the participant a question that only a typed line can
 	// answer, and returns that line; an error is no line at all (hard
@@ -210,6 +214,7 @@ func realAgentOps() agentOps {
 		mkdirAll:       os.MkdirAll,
 		stat:           os.Stat,
 		removeAll:      os.RemoveAll,
+		remove:         os.Remove,
 		binaryLocation: checkBinaryLocation,
 		isTerminal: func() bool {
 			fi, err := os.Stdin.Stat()
@@ -863,8 +868,14 @@ func agentsTier(ops agentOps, args []string, stdout, stderr io.Writer, getenv fu
 	case "":
 		// Always removed, never "already unset": a file holding a word
 		// this client cannot name reads as unset yet is still there, and
-		// default is what takes it away (Devin review, 2026-10-14).
-		if err := ops.removeAll(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		// default is what takes it away. Removed by name and never
+		// recursively: a directory planted at the name is refused with
+		// its contents intact (Devin review, 2026-10-14).
+		if info, err := ops.stat(path); err == nil && info.IsDir() {
+			fmt.Fprintf(stderr, "jevlin agents tier: %s is a directory, not a setting; nothing was removed\n", path)
+			return exitTransport
+		}
+		if err := ops.remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			fmt.Fprintln(stderr, "jevlin agents tier:", err)
 			return exitTransport
 		}

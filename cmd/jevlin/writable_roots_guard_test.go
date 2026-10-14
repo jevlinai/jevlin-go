@@ -89,6 +89,7 @@ var classifiedFileCalls = map[fileCallSite]fileCallClass{
 	{"cmd/jevlin/agents.go", "realAgentOps", "os.MkdirAll"}:                             {1, "outside: host config directories (~/.claude, ~/.codex, ~/.cursor, ...)"},
 	{"cmd/jevlin/agents.go", "realAgentOps", "os.ReadFile"}:                             {1, "outside: host config files"},
 	{"cmd/jevlin/agents.go", "realAgentOps", "os.RemoveAll"}:                            {1, "outside: host skill directories"},
+	{"cmd/jevlin/agents.go", "realAgentOps", "os.Remove"}:                               {1, "outside: one name of ours beside the config (search-tier), stat-checked not to be a directory; never recursive"},
 	{"cmd/jevlin/agents.go", "realAgentOps", "os.WriteFile"}:                            {1, "outside: host config files"},
 	{"cmd/jevlin/connect.go", "readResumeStamp", "fsx.ReadRegular"}:                     {1, "root: the state dir's resume stamp, read without waiting and bounded"},
 	{"cmd/jevlin/connect.go", "writeResumeStamp", "fsx.WriteFileAtomic"}:                {1, "root: the state dir's resume stamp; fsx stages under an exclusive random name"},
