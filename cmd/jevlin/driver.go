@@ -417,8 +417,7 @@ func (d *epochDriver) regionRefused(ctx context.Context, epoch uint64, code stri
 		return
 	}
 	slot := d.mining.SlotID()
-	if prev, ok, lerr := d.store.LoadRegionRefusal(); lerr == nil && ok &&
-		prev.SlotID == slot && prev.TargetEpoch == epoch && prev.Code == code {
+	if prev, ok, lerr := d.store.RegionRefusalFor(slot, epoch); lerr == nil && ok && prev.Code == code {
 		return
 	}
 	if serr := d.store.SaveRegionRefusal(slot, epoch, code); serr != nil {

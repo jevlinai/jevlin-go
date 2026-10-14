@@ -168,15 +168,20 @@ func TestARegionRefusedEpochsRecordsDropOnceTheTargetMovesPast(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			note, ok, err := store.LoadRegionRefusal()
+			notes, err := store.RegionRefusals()
 			if err != nil {
 				t.Fatal(err)
 			}
+			for _, note := range notes {
+				if note.TargetEpoch == 1042 {
+					t.Fatalf("the note for 1042 outlived the epoch it named: %+v", notes)
+				}
+			}
 			switch {
-			case next.refused && (!ok || note.TargetEpoch != 1043):
-				t.Fatalf("note = %+v ok=%v, want the refusal of 1043", note, ok)
-			case !next.refused && ok:
-				t.Fatalf("note = %+v outlived the epoch it named and a successful join", note)
+			case next.refused && (len(notes) != 1 || notes[0].TargetEpoch != 1043):
+				t.Fatalf("notes = %+v, want exactly the refusal of 1043", notes)
+			case !next.refused && len(notes) != 0:
+				t.Fatalf("notes = %+v outlived a successful join", notes)
 			}
 		})
 	}
@@ -188,7 +193,7 @@ func loadRegionNote(t *testing.T, f *flushFixture) (auth.RegionRefusal, bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	note, ok, err := store.LoadRegionRefusal()
+	note, ok, err := store.LatestRegionRefusal(testSlotID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,5 +269,100 @@ func TestJevlinJoinKeepsTheRegionNote(t *testing.T) {
 	}
 	if note, ok := loadRegionNote(t, f); ok {
 		t.Fatalf("the note %+v outlived a join the AS holds", note)
+	}
+}
+
+// A pinned mining.target_epoch is the operator's number, not the AS's: it
+// bypasses the current-target lookup, so it proves nothing about whether
+// the AS has moved past a refused epoch. The refused epoch's records wait
+// across a pinned flush; only an AS-named target settles them.
+func TestAPinnedTargetDoesNotDropARefusedEpochsRecords(t *testing.T) {
+	as := newFakeAS(t)
+	as.set(func(s *asState) {
+		s.epoch, s.joinable = 1042, true
+		s.joinRefusalCode, s.joinRefusalStatus = auth.RegionUnverified, http.StatusUnavailableForLegalReasons
+		s.capabilityTwilightError = "ENROLLMENT_NOT_FOUND"
+	})
+	f := newFlushFixture(t, as)
+	seedIntakeRecord(t, f.cfg.Miner.IntakeDir, "refused-epoch")
+	regionRefusalFlush(t, f) // 1042 refused; its record waits in the spool
+	if n := spoolCount(t, f.cfg.Mining.SpoolDir); n != 1 {
+		t.Fatalf("spool count = %d, want the refused epoch's record waiting", n)
+	}
+
+	pinned := uint64(1043)
+	f.cfg.Mining.TargetEpoch = &pinned // the operator moves ahead of the AS
+	stdout, _ := regionRefusalFlush(t, f)
+	if strings.Contains(stdout, "dropped") {
+		t.Fatalf("a pinned target dropped a refused epoch's records:\n%s", stdout)
+	}
+	if n := spoolCount(t, f.cfg.Mining.SpoolDir); n != 1 {
+		t.Fatalf("spool count = %d after a pinned flush, want the record still waiting", n)
+	}
+	if _, ok := loadRegionNote(t, f); !ok {
+		t.Fatal("the refused epoch's note did not survive a pinned flush")
+	}
+
+	// The AS itself moving past the epoch is what settles it.
+	f.cfg.Mining.TargetEpoch = nil
+	as.set(func(s *asState) {
+		s.epoch = 1043
+		s.joinRefusalCode, s.joinRefusalStatus, s.capabilityTwilightError = "", 0, ""
+	})
+	stdout, _ = regionRefusalFlush(t, f)
+	if !strings.Contains(stdout, "dropped 1 observation") || spoolCount(t, f.cfg.Mining.SpoolDir) != 0 {
+		t.Fatalf("the AS-named target did not settle the refused epoch:\n%s", stdout)
+	}
+}
+
+// Two refused epochs keep two notes: a refusal of the newer one (here by
+// `jevlin join`, ahead of any flush) does not forget the older, so the
+// older epoch's records are still held back — never attempted against an
+// epoch this installation is not in — and are settled by the flush that
+// sees the AS past it, rather than retried into the attempt limit.
+func TestANewerRefusalDoesNotStrandAnOlderEpochsRecords(t *testing.T) {
+	as := newFakeAS(t)
+	as.set(func(s *asState) {
+		s.epoch, s.joinable, s.acceptSubmissions = 1042, true, true
+		s.joinRefusalCode, s.joinRefusalStatus = auth.RegionUnverified, http.StatusUnavailableForLegalReasons
+		s.capabilityTwilightError = "ENROLLMENT_NOT_FOUND"
+	})
+	f := newFlushFixture(t, as)
+	seedIntakeRecord(t, f.cfg.Miner.IntakeDir, "refused-epoch")
+	regionRefusalFlush(t, f)                          // 1042 refused, its record spooled and waiting
+	saveRegionNote(t, f, 1043, auth.RegionUnverified) // `jevlin join` on 1043, refused too
+
+	store, err := auth.OpenStoreExisting(f.cfg.Mining.StateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec, ok, _ := store.RegionRefusalFor(testSlotID, 1042); !ok || rec.Code != auth.RegionUnverified {
+		t.Fatalf("the newer refusal replaced the older epoch's note: %+v ok=%v", rec, ok)
+	}
+	skip := regionRefusedRecords(store, testSlotID)
+	if skip == nil || !skip(&spool.Record{SlotID: testSlotID, TargetEpoch: 1042}) || !skip(&spool.Record{SlotID: testSlotID, TargetEpoch: 1043}) {
+		t.Fatal("the collector would not hold back both refused epochs' records")
+	}
+	if skip(&spool.Record{SlotID: testSlotID, TargetEpoch: 1044}) {
+		t.Fatal("an epoch no note names was held back")
+	}
+
+	// Another flush while the AS still targets 1042: nothing attempted.
+	regionRefusalFlush(t, f)
+	if got := spoolAttempts(t, f.cfg.Mining.SpoolDir); len(got) != 1 || got[0] != 0 || as.submissionCalls.Load() != 0 {
+		t.Fatalf("attempts = %v, submissions = %d; the older epoch's record was retried", got, as.submissionCalls.Load())
+	}
+
+	// The AS moves to 1044 and joins: both earlier epochs are settled.
+	as.set(func(s *asState) {
+		s.epoch = 1044
+		s.joinRefusalCode, s.joinRefusalStatus, s.capabilityTwilightError = "", 0, ""
+	})
+	stdout, _ := regionRefusalFlush(t, f)
+	if !strings.Contains(stdout, "dropped 1 observation") || spoolCount(t, f.cfg.Mining.SpoolDir) != 0 {
+		t.Fatalf("the older epoch's record was not settled:\n%s", stdout)
+	}
+	if set, _ := store.RegionRefusals(); len(set) != 0 {
+		t.Fatalf("notes outlived the epochs they named: %+v", set)
 	}
 }

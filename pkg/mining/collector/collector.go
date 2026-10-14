@@ -26,6 +26,17 @@ import (
 // implementation lives in pkg/auth (it needs the capability and
 // DPoP machinery); this seam keeps the collector free of auth imports
 // and trivially testable.
+// Deferrer is what a Submit error implements to say "not now, and not this
+// record's fault": the AS refused the submission for a reason the record
+// cannot change and that may lift on its own — a region hold on the
+// connecting address (auth.RegionDeferredError). The collector keeps the
+// record, sets its next attempt from Retry-After or its longest backoff,
+// and spends none of its attempts on it, so a hold that outlasts the
+// attempt limit cannot quarantine evidence nothing is wrong with.
+type Deferrer interface {
+	Deferred() bool
+}
+
 type Submitter interface {
 	// Submit returns satisfied=true when the AS durably accepted the
 	// record (ACCEPTED or ALREADY_ACCEPTED). A permanent refusal
@@ -101,6 +112,10 @@ type Collector struct {
 // it happens, so a proxy that has been running for a day reports today.
 type Health struct {
 	RetryBacklog int
+	// Deferred counts submissions the AS held under its region policy
+	// (Deferrer): kept for a later attempt, never a fault and never an
+	// attempt spent.
+	Deferred int
 	// Queued is how many observations are waiting. It is the number that
 	// matters to a participant, because "340 queued and none accepted for
 	// 25 minutes" is the concrete form of being connected and earning
@@ -317,9 +332,34 @@ func (c *Collector) deliver(ctx context.Context, rec *spool.Record) {
 		updated.Attempts++
 		c.markTerminal(&updated, "permanent")
 	default:
+		var d Deferrer
+		if errors.As(err, &d) && d.Deferred() {
+			c.storageFailure(c.deferRetry(rec, retryAfter), false)
+			return
+		}
 		c.recordFailure(err)
 		c.storageFailure(c.scheduleRetry(rec, retryAfter), false)
 	}
+}
+
+// deferRetry persists only a next-attempt deadline: no attempt is counted,
+// no terminal reason can be reached, and health does not record a fault —
+// a deferral is the AS's hold, not a delivery failure.
+func (c *Collector) deferRetry(rec *spool.Record, retryAfter time.Duration) error {
+	updated := *rec
+	wait := retryAfter
+	if wait <= 0 {
+		wait = c.opts.MaxBackoff
+	}
+	updated.NextAttemptAt = c.opts.Now().Add(wait)
+	if err := c.rewrite(&updated); err != nil {
+		return err
+	}
+	*rec = updated
+	c.mu.Lock()
+	c.health.Deferred++
+	c.mu.Unlock()
+	return nil
 }
 
 // scheduleRetry persists one selected deadline and incremented attempt count.

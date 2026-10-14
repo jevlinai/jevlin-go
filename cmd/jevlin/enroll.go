@@ -677,7 +677,7 @@ func gatherAgentIdentity(args []string, getenv func(string) string) (agentIdenti
 	if conflicts, cerr := store.EpochConflicts(); cerr == nil {
 		f.Conflicts = conflicts
 	}
-	if region, ok, rerr := store.LoadRegionRefusal(); rerr == nil && ok && region.SlotID == cfg.Mining.SlotID {
+	if region, ok, rerr := store.LatestRegionRefusal(cfg.Mining.SlotID); rerr == nil && ok {
 		f.Region, f.HasRegion = region, true
 	}
 	return f, true
@@ -792,7 +792,11 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 		return false
 	}
 	if !f.HasRegistration {
-		return true // never ran connect: nothing to report here, legacy report proceeds
+		// Never ran connect: nothing about the platform to report, but a
+		// region refusal is the AS's and reaches a manual `enroll` +
+		// `join` installation the same way (PR #85 review).
+		printRegionLine(stdout, f)
+		return true // legacy report proceeds
 	}
 
 	reg := f.Registration
@@ -854,16 +858,23 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 	if f.HasHeld {
 		fmt.Fprintln(stdout, "payout: "+heldNoteText(f.Held, ""))
 	}
-	if f.HasRegion {
-		fmt.Fprintf(stdout, "region: %s (the AS refused epoch %d at %s, code %s)\n",
-			auth.RegionRefusalText(f.Region.Code), f.Region.TargetEpoch, f.Region.At, f.Region.Code)
-	}
+	printRegionLine(stdout, f)
 	for _, c := range f.Conflicts {
 		fmt.Fprintf(stdout, "mining: another installation of this participant holds slot %d epoch %d; "+
 			"this installation's observations for it are queued until the AS's target moves past it, then dropped\n",
 			c.SlotID, c.TargetEpoch)
 	}
 	return f.needsMining()
+}
+
+// printRegionLine is status's one line for the AS's latest region
+// refusal, in this client's words, whichever way the participant joined.
+func printRegionLine(stdout io.Writer, f agentIdentityFacts) {
+	if !f.HasRegion {
+		return
+	}
+	fmt.Fprintf(stdout, "region: %s (the AS refused epoch %d at %s, code %s)\n",
+		auth.RegionRefusalText(f.Region.Code), f.Region.TargetEpoch, f.Region.At, f.Region.Code)
 }
 
 func printMiningASConfiguration(w io.Writer, m config.Mining) {

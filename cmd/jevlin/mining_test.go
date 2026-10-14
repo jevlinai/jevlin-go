@@ -823,9 +823,9 @@ func TestRegionRefusalAtJoinIsExplainedAndRetried(t *testing.T) {
 			if n := f.lines(auth.RegionRefusalText(code)); n != 1 {
 				t.Fatalf("the refusal was explained %d times across two ticks, want once", n)
 			}
-			rec, ok, err := f.store.LoadRegionRefusal()
-			if err != nil || !ok || rec.Code != code || rec.TargetEpoch != 1042 || rec.SlotID != testSlotID {
-				t.Fatalf("LoadRegionRefusal() = %+v ok=%v err=%v", rec, ok, err)
+			rec, ok, err := f.store.RegionRefusalFor(testSlotID, 1042)
+			if err != nil || !ok || rec.Code != code {
+				t.Fatalf("RegionRefusalFor(1042) = %+v ok=%v err=%v", rec, ok, err)
 			}
 			log := f.log.String()
 			if strings.Contains(log, "join refused") {
@@ -856,7 +856,7 @@ func TestRegionHoldAtJoinIsRetriedAndClearedOnSuccess(t *testing.T) {
 	if f.driver.hasJoined(1042) {
 		t.Fatal("a held epoch was remembered as final")
 	}
-	if rec, ok, _ := f.store.LoadRegionRefusal(); !ok || rec.Code != auth.RegionUnverified {
+	if rec, ok, _ := f.store.RegionRefusalFor(testSlotID, 1042); !ok || rec.Code != auth.RegionUnverified {
 		t.Fatalf("hold note: %+v ok=%v", rec, ok)
 	}
 	if n := f.lines("nothing is forfeited"); n != 1 {
@@ -868,7 +868,7 @@ func TestRegionHoldAtJoinIsRetriedAndClearedOnSuccess(t *testing.T) {
 	if _, held := f.heldEpoch(t); !held {
 		t.Fatal("the join after the hold lifted did not publish a capability")
 	}
-	if _, ok, err := f.store.LoadRegionRefusal(); err != nil || ok {
-		t.Fatalf("the note outlived the successful join: ok=%v err=%v", ok, err)
+	if set, err := f.store.RegionRefusals(); err != nil || len(set) != 0 {
+		t.Fatalf("the note outlived the successful join: %+v err=%v", set, err)
 	}
 }

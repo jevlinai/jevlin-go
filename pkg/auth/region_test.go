@@ -51,7 +51,11 @@ func TestRegionRefusalCodeIsStrict(t *testing.T) {
 	}
 }
 
-func TestRegionRefusalNoteRoundTripsAndRejectsWordsItDidNotWrite(t *testing.T) {
+// One note per (slot, epoch), kept together: a refusal of a newer epoch
+// does not forget an older one whose records are still waiting, the same
+// epoch's verdict is replaced in place, and a word this client cannot name
+// is neither written nor read back as a note.
+func TestRegionRefusalNotesAreKeptPerEpochAndRejectWordsTheClientDidNotWrite(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "state")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
@@ -60,50 +64,68 @@ func TestRegionRefusalNoteRoundTripsAndRejectsWordsItDidNotWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := store.LoadRegionRefusal(); err != nil || ok {
-		t.Fatalf("fresh store: ok=%v err=%v", ok, err)
+	if set, err := store.RegionRefusals(); err != nil || len(set) != 0 {
+		t.Fatalf("fresh store: %+v err=%v", set, err)
+	}
+	if _, ok, err := store.LatestRegionRefusal(7); err != nil || ok {
+		t.Fatalf("fresh store latest: ok=%v err=%v", ok, err)
 	}
 	if err := store.SaveRegionRefusal(7, 1042, RegionIneligible); err != nil {
 		t.Fatal(err)
 	}
-	rec, ok, err := store.LoadRegionRefusal()
-	if err != nil || !ok || rec.SlotID != 7 || rec.TargetEpoch != 1042 || rec.Code != RegionIneligible || rec.At == "" {
-		t.Fatalf("round trip: %+v ok=%v err=%v", rec, ok, err)
-	}
-	// Replaced, not appended: the latest verdict is the one status repeats.
 	if err := store.SaveRegionRefusal(7, 1043, RegionUnverified); err != nil {
 		t.Fatal(err)
 	}
-	if rec, _, _ := store.LoadRegionRefusal(); rec.TargetEpoch != 1043 || rec.Code != RegionUnverified {
-		t.Fatalf("not replaced: %+v", rec)
+	set, err := store.RegionRefusals()
+	if err != nil || len(set) != 2 || set[0].TargetEpoch != 1042 || set[1].TargetEpoch != 1043 || set[0].At == "" {
+		t.Fatalf("two epochs: %+v err=%v", set, err)
+	}
+	if rec, ok, _ := store.RegionRefusalFor(7, 1042); !ok || rec.Code != RegionIneligible {
+		t.Fatalf("the older epoch's note was lost: %+v ok=%v", rec, ok)
+	}
+	if rec, ok, _ := store.LatestRegionRefusal(7); !ok || rec.TargetEpoch != 1043 {
+		t.Fatalf("latest: %+v ok=%v", rec, ok)
+	}
+	// The same epoch's verdict is replaced, not duplicated.
+	if err := store.SaveRegionRefusal(7, 1043, RegionRestricted); err != nil {
+		t.Fatal(err)
+	}
+	if set, _ := store.RegionRefusals(); len(set) != 2 || set[1].Code != RegionRestricted {
+		t.Fatalf("not replaced in place: %+v", set)
 	}
 	// A code this client cannot explain is never written...
 	if err := store.SaveRegionRefusal(7, 1044, "REGION_PLANTED"); err == nil {
 		t.Fatal("unknown code saved")
 	}
 	// ...and one planted on disk is not a note on load.
-	if err := os.WriteFile(filepath.Join(dir, regionRefusalFile),
-		[]byte(`{"slot_id":7,"target_epoch":1,"code":"see https://evil.example","at":"2026-10-14T00:00:00Z"}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, regionRefusalsFile),
+		[]byte(`[{"slot_id":7,"target_epoch":1,"code":"see https://evil.example","at":"2026-10-14T00:00:00Z"}]`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := store.LoadRegionRefusal(); err == nil || ok {
-		t.Fatalf("planted note accepted: ok=%v err=%v", ok, err)
+	if set, err := store.RegionRefusals(); err == nil || len(set) != 0 {
+		t.Fatalf("planted note accepted: %+v err=%v", set, err)
 	}
-	if err := store.ClearRegionRefusal(); err != nil {
+	if _, ok, err := store.LatestRegionRefusal(7); err == nil || ok {
+		t.Fatalf("planted note read as latest: ok=%v err=%v", ok, err)
+	}
+	// The bound: the oldest entries go first.
+	if err := os.WriteFile(filepath.Join(dir, regionRefusalsFile), []byte("[]"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.ClearRegionRefusal(); err != nil {
-		t.Fatalf("clearing twice: %v", err)
+	for e := uint64(1); e <= maxRegionRefusals+3; e++ {
+		if err := store.SaveRegionRefusal(7, e, RegionUnverified); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if _, ok, err := store.LoadRegionRefusal(); err != nil || ok {
-		t.Fatalf("after clear: ok=%v err=%v", ok, err)
+	if set, _ := store.RegionRefusals(); len(set) != maxRegionRefusals || set[0].TargetEpoch != 4 {
+		t.Fatalf("bound: %d entries, first epoch %d", len(set), set[0].TargetEpoch)
 	}
 }
 
-// An enrollment in an epoch clears only a note naming that slot and epoch:
+// An enrollment in an epoch clears only the note for that slot and epoch:
 // a note for another epoch may still be holding back records the flush has
 // not settled, and dropping it early would send them into the attempt
-// limit.
+// limit. A slot this configuration no longer names is pruned as a whole.
 func TestClearRegionRefusalForClearsOnlyItsOwnEpoch(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "state")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -116,21 +138,27 @@ func TestClearRegionRefusalForClearsOnlyItsOwnEpoch(t *testing.T) {
 	if err := store.ClearRegionRefusalFor(7, 1042); err != nil {
 		t.Fatalf("no note: %v", err)
 	}
-	if err := store.SaveRegionRefusal(7, 1042, RegionUnverified); err != nil {
-		t.Fatal(err)
-	}
-	for _, other := range []struct{ slot, epoch uint64 }{{7, 1043}, {8, 1042}} {
-		if err := store.ClearRegionRefusalFor(other.slot, other.epoch); err != nil {
+	for _, n := range []struct{ slot, epoch uint64 }{{7, 1042}, {7, 1043}, {8, 1042}} {
+		if err := store.SaveRegionRefusal(n.slot, n.epoch, RegionUnverified); err != nil {
 			t.Fatal(err)
-		}
-		if _, ok, _ := store.LoadRegionRefusal(); !ok {
-			t.Fatalf("an enrollment in slot %d epoch %d cleared the note for slot 7 epoch 1042", other.slot, other.epoch)
 		}
 	}
 	if err := store.ClearRegionRefusalFor(7, 1042); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, _ := store.LoadRegionRefusal(); ok {
-		t.Fatal("an enrollment in the note's own epoch left it in place")
+	set, _ := store.RegionRefusals()
+	if len(set) != 2 {
+		t.Fatalf("clearing one epoch touched the others: %+v", set)
+	}
+	for _, rec := range set {
+		if rec.SlotID == 7 && rec.TargetEpoch == 1042 {
+			t.Fatal("an enrollment in the note's own epoch left it in place")
+		}
+	}
+	if err := store.PruneRegionRefusalsForOtherSlots(7); err != nil {
+		t.Fatal(err)
+	}
+	if set, _ := store.RegionRefusals(); len(set) != 1 || set[0].SlotID != 7 || set[0].TargetEpoch != 1043 {
+		t.Fatalf("prune: %+v", set)
 	}
 }

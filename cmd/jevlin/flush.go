@@ -406,8 +406,14 @@ func runFlushAdmitted(ctx context.Context, cfg *config.Config, cfgPath string, f
 			clearCurrentTargetHealth(store)
 		}
 		epoch = target.epoch
-		// Before the join, which may replace the note with this epoch's.
-		dropRegionRefusedObservationsPastTarget(store, m.SpoolDir, m.SlotID, epoch, stdout)
+		// Before the join, which may add this epoch's note. Only when the
+		// AS itself named the target: a pinned mining.target_epoch is the
+		// operator's number, not proof the AS has moved past anything, and
+		// a refused epoch's records may still become deliverable from a
+		// direct connection (PR #85 review).
+		if target.queried {
+			dropRegionRefusedObservationsPastTarget(store, m.SpoolDir, m.SlotID, epoch, stdout)
+		}
 		if !driver.joinIfNeeded(ctx, epoch) {
 			driver.ensure(ctx, epoch)
 		}
@@ -613,12 +619,21 @@ func dropConflictedObservationsPastTarget(store *auth.Store, spoolDir string, sl
 // The note is read after this run's join, so it is the AS's latest word.
 // An unreadable note is no note, as everywhere else it is read.
 func regionRefusedRecords(store *auth.Store, slotID uint64) func(*spool.Record) bool {
-	note, ok, err := store.LoadRegionRefusal()
-	if err != nil || !ok || note.SlotID != slotID {
+	notes, err := store.RegionRefusals()
+	if err != nil {
+		return nil
+	}
+	held := map[uint64]bool{}
+	for _, note := range notes {
+		if note.SlotID == slotID {
+			held[note.TargetEpoch] = true
+		}
+	}
+	if len(held) == 0 {
 		return nil
 	}
 	return func(rec *spool.Record) bool {
-		return rec.SlotID == note.SlotID && rec.TargetEpoch == note.TargetEpoch
+		return rec.SlotID == slotID && held[rec.TargetEpoch]
 	}
 }
 
@@ -641,29 +656,40 @@ func regionRefusedRecords(store *auth.Store, slotID uint64) func(*spool.Record) 
 // A note for a slot this configuration no longer names is removed: status
 // and doctor already ignore it, and it could never be settled here.
 func dropRegionRefusedObservationsPastTarget(store *auth.Store, spoolDir string, slotID, currentTarget uint64, stdout io.Writer) {
-	note, ok, err := store.LoadRegionRefusal()
-	if err != nil || !ok {
+	_ = store.PruneRegionRefusalsForOtherSlots(slotID)
+	notes, err := store.RegionRefusals()
+	if err != nil {
 		return
 	}
-	if note.SlotID == slotID && note.TargetEpoch >= currentTarget {
+	var due []auth.RegionRefusal
+	for _, note := range notes {
+		if note.SlotID == slotID && note.TargetEpoch < currentTarget {
+			due = append(due, note)
+		}
+	}
+	if len(due) == 0 {
 		return
 	}
-	if note.SlotID == slotID {
-		sp, err := spool.Open(spoolDir)
-		if err != nil {
-			return // transient; the note stays and the next flush tries again
-		}
-		pending, err := sp.Pending()
-		if err != nil {
-			return
-		}
-		dropped, failed := 0, 0
+	sp, err := spool.Open(spoolDir)
+	if err != nil {
+		return // transient; the notes stay and the next flush tries again
+	}
+	pending, err := sp.Pending()
+	if err != nil {
+		return
+	}
+	settled := map[uint64]bool{}
+	for _, note := range due {
+		settled[note.TargetEpoch] = true
+	}
+	for _, note := range due {
+		dropped := 0
 		for _, rec := range pending {
 			if rec.SlotID != note.SlotID || rec.TargetEpoch != note.TargetEpoch {
 				continue
 			}
 			if err := sp.Remove(rec); err != nil {
-				failed++
+				settled[note.TargetEpoch] = false
 				continue
 			}
 			dropped++
@@ -672,11 +698,12 @@ func dropRegionRefusedObservationsPastTarget(store *auth.Store, spoolDir string,
 			fmt.Fprintf(stdout, "flush: dropped %d observation(s) for slot %d epoch %d — the AS refused this installation's join under its region policy\n",
 				dropped, note.SlotID, note.TargetEpoch)
 		}
-		if failed > 0 {
-			return
-		}
 	}
-	if err := store.ClearRegionRefusal(); err != nil {
+	// A note whose records could not all be removed stays, so the next
+	// flush skips them and tries the removal again instead of submitting.
+	if err := store.RemoveRegionRefusals(notes, func(rec auth.RegionRefusal) bool {
+		return rec.SlotID == slotID && settled[rec.TargetEpoch]
+	}); err != nil {
 		fmt.Fprintln(stdout, "flush:", err)
 	}
 }

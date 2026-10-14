@@ -199,7 +199,6 @@ var classifiedFileCalls = map[fileCallSite]fileCallClass{
 	{"pkg/auth/store.go", "OpenStore", "os.MkdirAll"}:                                   {1, "root: creates the state dir itself"},
 	{"pkg/auth/store.go", "undoCreated", "os.Remove"}:                                   {1, "root: removes, innermost first, the directories OpenStore created a moment ago when it could not make or restrict them; Remove follows no link and fails on a directory that is no longer empty"},
 	{"pkg/auth/store.go", "Store.ClearPayoutBindingHeld", "os.Remove"}:                  {1, "root: removes a name"},
-	{"pkg/auth/region.go", "Store.ClearRegionRefusal", "os.Remove"}:                     {1, "root: removes a name"},
 	{"pkg/auth/store.go", "RegistrationJournal.Clear", "os.Remove"}:                     {1, "outside: the journal's name in the installation's own directory, which agents install keeps out of every writable root; read through readSecret first"},
 	{"pkg/auth/store.go", "RegistrationJournal.Save", "os.MkdirAll"}:                    {1, "outside: creates the installation's own directory, beside credentials.json"},
 	{"pkg/auth/store.go", "Store.RemoveLegacyPayoutAddress", "os.Remove"}:               {1, "root: removes the legacy payout.json's name in the state dir; a remove takes the name, never what a link there points at"},

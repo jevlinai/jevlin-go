@@ -715,7 +715,19 @@ func gatherDoctorFactsFor(ctx context.Context, as asClient, m config.Mining, min
 				f.PayoutHeld, f.HasPayoutHeld = held, true
 			}
 		}
-		if region, ok, err := store.LoadRegionRefusal(); err == nil && ok && region.SlotID == m.SlotID {
+		// The note for the epoch doctor is looking at, when it knows one,
+		// else the slot's latest: with one note per epoch, the current
+		// epoch's verdict is what "joined this epoch" should explain.
+		var region auth.RegionRefusal
+		var rok bool
+		var rerr error
+		if f.EpochKnown {
+			region, rok, rerr = store.RegionRefusalFor(m.SlotID, f.Epoch)
+		}
+		if rerr == nil && !rok {
+			region, rok, rerr = store.LatestRegionRefusal(m.SlotID)
+		}
+		if rerr == nil && rok {
 			f.RegionRefusal, f.HasRegionRefusal = region, true
 		}
 	}

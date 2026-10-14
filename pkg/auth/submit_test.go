@@ -252,6 +252,12 @@ func TestARegionRefusedSubmissionIsRetriedAfterTheASsDelay(t *testing.T) {
 			if !strings.Contains(err.Error(), code) {
 				t.Fatalf("the error %q does not name the code", err)
 			}
+			// And deferred, not merely retryable: the collector keeps the
+			// record without spending an attempt on the AS's hold.
+			var deferred interface{ Deferred() bool }
+			if !errors.As(err, &deferred) || !deferred.Deferred() {
+				t.Fatalf("the error %T is not a deferral the collector recognizes", err)
+			}
 		})
 	}
 }

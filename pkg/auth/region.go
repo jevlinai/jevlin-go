@@ -11,8 +11,6 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
-	"os"
-	"path/filepath"
 	"time"
 )
 
@@ -36,11 +34,11 @@ const (
 // this version cannot explain is left to the generic path, which prints the
 // AS's own message.
 //
-// A submission refused the same way never reaches it: Submit returns it as
-// a retryable failure naming the code and honoring the AS's Retry-After,
+// A submission refused the same way never reaches it: Submit returns a
+// RegionDeferredError naming the code and honoring the AS's Retry-After,
 // because ADR-MINIS-0026 asks a client to retry a 451 later, and the AS
 // accepts a held observation when it is resubmitted from an attributable
-// address.
+// address — and the collector defers it rather than counting an attempt.
 func RegionRefusalCode(err error) (string, bool) {
 	var refused *ASRefusedError
 	if !errors.As(err, &refused) || refused.Status != http.StatusUnavailableForLegalReasons {
@@ -77,9 +75,14 @@ func RegionRefusalText(code string) string {
 	}
 }
 
-// RegionRefusal is the note the driver leaves when the AS refuses a join
+// RegionRefusal is one note the driver leaves when the AS refuses a join
 // under its region policy, so status and doctor can say why this
-// installation is not in the epoch after the log line has scrolled away.
+// installation is not in the epoch after the log line has scrolled away,
+// and so the flush can hold back and later settle that epoch's records.
+//
+// One per (slot, epoch), kept together: a refusal of a newer epoch must
+// not forget an older one whose records are still waiting, or those
+// records lose their skip and run into the attempt limit (PR #85 review).
 type RegionRefusal struct {
 	SlotID      uint64 `json:"slot_id"`
 	TargetEpoch uint64 `json:"target_epoch"`
@@ -88,65 +91,157 @@ type RegionRefusal struct {
 	At string `json:"at"`
 }
 
-const regionRefusalFile = "region_refusal.json"
+const regionRefusalsFile = "region_refusals.json"
 
-// SaveRegionRefusal records the refusal, replacing any earlier note: the
-// latest verdict is the one status should repeat. An unknown code is an
-// error rather than a note, so a word this client cannot explain is never
-// written to be printed later.
+// maxRegionRefusals bounds the set the way maxEpochConflicts bounds the
+// conflict set: an entry leaves as soon as a flush settles its epoch or an
+// enrollment clears it, so only a slot this configuration no longer
+// names could accumulate, and PruneRegionRefusalsForOtherSlots handles
+// that; the cap is the backstop.
+const maxRegionRefusals = 64
+
+// SaveRegionRefusal records the AS's verdict for (slotID, targetEpoch),
+// replacing an earlier verdict for the same epoch and leaving every other
+// epoch's note alone. An unknown code is an error rather than a note, so
+// a word this client cannot explain is never written to be printed later.
 func (s *Store) SaveRegionRefusal(slotID, targetEpoch uint64, code string) error {
 	rec := RegionRefusal{SlotID: slotID, TargetEpoch: targetEpoch, Code: code, At: time.Now().UTC().Format(time.RFC3339)}
 	if err := checkRegionRefusal(rec); err != nil {
 		return err
 	}
-	raw, err := json.Marshal(rec)
+	set, err := s.loadRegionRefusals()
 	if err != nil {
-		return fmt.Errorf("auth: encode region refusal: %w", err)
+		return err
 	}
-	return s.saveStateFile(regionRefusalFile, raw)
+	replaced := false
+	for i := range set {
+		if set[i].SlotID == slotID && set[i].TargetEpoch == targetEpoch {
+			set[i] = rec
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		set = append(set, rec)
+	}
+	if len(set) > maxRegionRefusals {
+		set = set[len(set)-maxRegionRefusals:]
+	}
+	return s.saveRegionRefusals(set)
 }
 
-// LoadRegionRefusal returns the stored note, ok=false when there is none.
-// A note that fails checkRegionRefusal is an error, not a note: status and
-// doctor print its code's sentence, so a code this client does not know is
-// not one it wrote.
-func (s *Store) LoadRegionRefusal() (rec RegionRefusal, ok bool, err error) {
-	raw, err := s.readSecret(regionRefusalFile)
-	if errors.Is(err, fs.ErrNotExist) {
-		return RegionRefusal{}, false, nil
-	}
+// RegionRefusals returns every note on file. A file that does not decode,
+// or holds a note that fails checkRegionRefusal, is an error, not a set:
+// status and doctor print a code's sentence, so a code this client does
+// not know is not one it wrote.
+func (s *Store) RegionRefusals() ([]RegionRefusal, error) {
+	return s.loadRegionRefusals()
+}
+
+// RegionRefusalFor returns the note for one (slot, epoch), ok=false when
+// there is none.
+func (s *Store) RegionRefusalFor(slotID, targetEpoch uint64) (RegionRefusal, bool, error) {
+	set, err := s.loadRegionRefusals()
 	if err != nil {
 		return RegionRefusal{}, false, err
 	}
-	if err := json.Unmarshal(raw, &rec); err != nil {
-		return RegionRefusal{}, false, &decodeError{what: "region refusal", err: err}
+	for _, rec := range set {
+		if rec.SlotID == slotID && rec.TargetEpoch == targetEpoch {
+			return rec, true, nil
+		}
 	}
-	if err := checkRegionRefusal(rec); err != nil {
+	return RegionRefusal{}, false, nil
+}
+
+// LatestRegionRefusal is the slot's note for its highest epoch: the
+// verdict status repeats, since it is the one the next join will be
+// measured against.
+func (s *Store) LatestRegionRefusal(slotID uint64) (RegionRefusal, bool, error) {
+	set, err := s.loadRegionRefusals()
+	if err != nil {
 		return RegionRefusal{}, false, err
 	}
-	return rec, true, nil
-}
-
-// ClearRegionRefusal removes the note, whatever it names.
-func (s *Store) ClearRegionRefusal() error {
-	err := os.Remove(filepath.Join(s.dir, regionRefusalFile))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
+	var latest RegionRefusal
+	found := false
+	for _, rec := range set {
+		if rec.SlotID == slotID && (!found || rec.TargetEpoch > latest.TargetEpoch) {
+			latest, found = rec, true
+		}
 	}
-	return err
+	return latest, found, nil
 }
 
-// ClearRegionRefusalFor removes the note only when it names this slot and
-// epoch: the AS has enrolled this installation in that epoch, so the note
-// explaining why it was not is stale. A note for another epoch is left —
-// its records may still be waiting for the flush to settle them — and so
-// is one that cannot be read, since nothing in it can be matched.
+// ClearRegionRefusalFor removes the note for this slot and epoch: the AS
+// has enrolled this installation in that epoch, so the note explaining
+// why it was not is stale. Every other epoch's note is left — its records
+// may still be waiting for the flush to settle them. A set that cannot be
+// read is left too, since nothing in it can be matched.
 func (s *Store) ClearRegionRefusalFor(slotID, targetEpoch uint64) error {
-	rec, ok, err := s.LoadRegionRefusal()
-	if err != nil || !ok || rec.SlotID != slotID || rec.TargetEpoch != targetEpoch {
+	set, err := s.loadRegionRefusals()
+	if err != nil {
 		return nil
 	}
-	return s.ClearRegionRefusal()
+	return s.RemoveRegionRefusals(set, func(rec RegionRefusal) bool {
+		return rec.SlotID == slotID && rec.TargetEpoch == targetEpoch
+	})
+}
+
+// PruneRegionRefusalsForOtherSlots drops every note whose slot is not
+// currentSlotID, as PruneEpochConflictsForOtherSlots does: the flush only
+// ever settles the current slot's epochs, so a note for another slot could
+// sit on file forever.
+func (s *Store) PruneRegionRefusalsForOtherSlots(currentSlotID uint64) error {
+	set, err := s.loadRegionRefusals()
+	if err != nil {
+		return err
+	}
+	return s.RemoveRegionRefusals(set, func(rec RegionRefusal) bool { return rec.SlotID != currentSlotID })
+}
+
+// RemoveRegionRefusals writes set back without the notes drop selects.
+// Nothing is written when nothing is dropped.
+func (s *Store) RemoveRegionRefusals(set []RegionRefusal, drop func(RegionRefusal) bool) error {
+	kept := make([]RegionRefusal, 0, len(set))
+	for _, rec := range set {
+		if !drop(rec) {
+			kept = append(kept, rec)
+		}
+	}
+	if len(kept) == len(set) {
+		return nil
+	}
+	return s.saveRegionRefusals(kept)
+}
+
+func (s *Store) saveRegionRefusals(set []RegionRefusal) error {
+	if set == nil {
+		set = []RegionRefusal{}
+	}
+	raw, err := json.Marshal(set)
+	if err != nil {
+		return fmt.Errorf("auth: encode region refusals: %w", err)
+	}
+	return s.saveStateFile(regionRefusalsFile, raw)
+}
+
+func (s *Store) loadRegionRefusals() ([]RegionRefusal, error) {
+	raw, err := s.readSecret(regionRefusalsFile)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var set []RegionRefusal
+	if err := json.Unmarshal(raw, &set); err != nil {
+		return nil, &decodeError{what: "region refusals", err: err}
+	}
+	for _, rec := range set {
+		if err := checkRegionRefusal(rec); err != nil {
+			return nil, err
+		}
+	}
+	return set, nil
 }
 
 func checkRegionRefusal(rec RegionRefusal) error {
@@ -160,3 +255,22 @@ func checkRegionRefusal(rec RegionRefusal) error {
 	}
 	return nil
 }
+
+// RegionDeferredError is Submit's answer to a 451 carrying one of the
+// three region codes: the record is not this installation's fault and not
+// permanent, so the collector keeps it without spending an attempt on it
+// (Deferred), and tries again after the AS's Retry-After or its own
+// longest backoff. A hold that lifts — the VPN comes off — then delivers
+// the record instead of finding it quarantined (PR #85 review). The text
+// is the same line a retryable refusal has always carried.
+type RegionDeferredError struct {
+	Status int
+	Code   string
+}
+
+func (e *RegionDeferredError) Error() string {
+	return fmt.Sprintf("auth: submission refused with status %d (%s)", e.Status, e.Code)
+}
+
+// Deferred is the collector's signal (collector.Deferrer).
+func (e *RegionDeferredError) Deferred() bool { return true }
