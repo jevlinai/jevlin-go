@@ -401,7 +401,7 @@ func TestClaimURLOffOriginIsRefused(t *testing.T) {
 }
 
 // The real deployment splits this across two hosts (confirmed live
-// against agents-v1.nyks.dev/platform.nyks.dev, via search-router's own
+// against agents-v1.jevlin.ai/platform.jevlin.ai, via search-router's own
 // skill file): register/status/enroll go to the API host, but the
 // claim_url they return legitimately points at a DIFFERENT portal host.
 // New's two-argument split exists for exactly this — a claim_url must

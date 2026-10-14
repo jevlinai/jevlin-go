@@ -128,7 +128,7 @@ the key out.
 
 ```toml
 [[provider]]
-upstream = "https://router-api.nyks.dev"   # https only; the router_url fallback
+upstream = "https://api.jevlin.ai"   # https only; the router_url fallback
 
 [mining]
 enabled        = true                            # only a scripted first answer — see below
@@ -146,8 +146,8 @@ spool_dir      = "/home/you/.jevlin/spool"    # default: <state_dir>/spool
 # collector_max_attempts = 0          0 means no attempt ceiling on delivery
 
 [platform]
-base_url       = "https://platform.nyks.dev"    # the human portal and claim pages
-agents_api_url = "https://agents-v1.nyks.dev"    # register/status/enroll — a separate host
+base_url       = "https://platform.jevlin.ai"    # the human portal and claim pages
+agents_api_url = "https://agents-v1.jevlin.ai"    # register/status/enroll — a separate host
 
 [miner]
 enabled        = true                              # default false

@@ -11,7 +11,7 @@ extends = ":workspace"
 enabled = true
 
 [permissions.jevlin.network.domains]
-"router-api.nyks.dev" = "allow"
+"api.jevlin.ai" = "allow"
 # <<< jevlin agents install <<<
 
 [tui]

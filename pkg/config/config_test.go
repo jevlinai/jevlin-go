@@ -528,7 +528,7 @@ func TestMiningRejectsUserinfoURL(t *testing.T) {
 // platform.base_url defaults to the real platform, with no file at all.
 func TestPlatformBaseURLDefaults(t *testing.T) {
 	cfg := load(t, nil, noEnv)
-	if cfg.Platform.BaseURL != "https://platform.nyks.dev" {
+	if cfg.Platform.BaseURL != "https://platform.jevlin.ai" {
 		t.Fatalf("got %q, want the default", cfg.Platform.BaseURL)
 	}
 }
@@ -561,7 +561,7 @@ func TestPlatformBaseURLAllowsPlainHTTPOnLoopback(t *testing.T) {
 // different hosts in the real deployment, not one shared origin.
 func TestAgentsAPIURLDefaults(t *testing.T) {
 	cfg := load(t, nil, noEnv)
-	if cfg.Platform.AgentsAPIURL != "https://agents-v1.nyks.dev" {
+	if cfg.Platform.AgentsAPIURL != "https://agents-v1.jevlin.ai" {
 		t.Fatalf("got %q, want the default", cfg.Platform.AgentsAPIURL)
 	}
 	if cfg.Platform.AgentsAPIURL == cfg.Platform.BaseURL {
@@ -608,9 +608,9 @@ func TestAgentsAPIURLDefaultsToBaseURLWhenBaseURLIsLoopback(t *testing.T) {
 // agents_api_url still wins, including pointing a loopback base_url at
 // a real (or a second, differently-loopback) agents API.
 func TestAgentsAPIURLExplicitValueOverridesTheLoopbackDefault(t *testing.T) {
-	body := "[platform]\nbase_url = \"http://127.0.0.1:9999\"\nagents_api_url = \"https://agents-v1.nyks.dev\"\n"
+	body := "[platform]\nbase_url = \"http://127.0.0.1:9999\"\nagents_api_url = \"https://agents-v1.jevlin.ai\"\n"
 	cfg := load(t, []string{"-config", writeTOML(t, body)}, noEnv)
-	if cfg.Platform.AgentsAPIURL != "https://agents-v1.nyks.dev" {
+	if cfg.Platform.AgentsAPIURL != "https://agents-v1.jevlin.ai" {
 		t.Fatalf("got %q, want the explicit value", cfg.Platform.AgentsAPIURL)
 	}
 }

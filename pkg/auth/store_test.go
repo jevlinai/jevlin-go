@@ -311,7 +311,7 @@ func TestPendingRegistrationJournalIsStrictAndOwnerOnly(t *testing.T) {
 	want := PendingRegistration{
 		AgentID:        "agent-journal",
 		Key:            "sr-journal-key",
-		ClaimURL:       "https://platform.nyks.dev/claim/JOURNAL-1",
+		ClaimURL:       "https://platform.jevlin.ai/claim/JOURNAL-1",
 		ClaimCode:      "JOURNAL-1",
 		ClaimExpiresAt: "2026-09-16T00:00:00Z",
 		Status:         "unclaimed",
@@ -337,7 +337,7 @@ func TestPendingRegistrationJournalIsStrictAndOwnerOnly(t *testing.T) {
 
 	// Unknown fields are rejected rather than silently becoming an
 	// unreviewed recovery input.
-	if err := os.WriteFile(filepath.Join(dir, "registration_pending.json"), []byte(`{"v":1,"agent_id":"a","key":"sr-k","claim_url":"https://platform.nyks.dev/c","claim_code":"c","claim_expires_at":"","status":"unclaimed","unexpected":true}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "registration_pending.json"), []byte(`{"v":1,"agent_id":"a","key":"sr-k","claim_url":"https://platform.jevlin.ai/c","claim_code":"c","claim_expires_at":"","status":"unclaimed","unexpected":true}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok, err := s.Load(); err == nil || ok || !strings.Contains(err.Error(), "a field this client does not write") {
@@ -353,7 +353,7 @@ func TestPendingExpiredReplacementJournalBindsPreviousIdentity(t *testing.T) {
 	want := PendingRegistration{
 		AgentID:         "agent-new",
 		Key:             "sr-new-key",
-		ClaimURL:        "https://platform.nyks.dev/claim/NEW",
+		ClaimURL:        "https://platform.jevlin.ai/claim/NEW",
 		ClaimCode:       "NEW",
 		ClaimExpiresAt:  "2026-09-16T00:00:00Z",
 		Status:          "unclaimed",

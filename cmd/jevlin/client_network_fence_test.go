@@ -17,7 +17,7 @@ package main
 // prevent.
 //
 // TestFenceClassifiesProductionHostnamesAsRefused separately proves the
-// module's real default hostnames — router-api.nyks.dev, agents-v1.nyks.dev,
+// module's real default hostnames — api.jevlin.ai, agents-v1.jevlin.ai,
 // rpc.nyks.dev, api.github.com, rewards.nyks.dev — are classified as refused
 // by the fence's decision function, as plain strings, with no dial and no
 // network of any kind. That is the half of "prove it is covered" this file

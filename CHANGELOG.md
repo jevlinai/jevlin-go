@@ -10,6 +10,20 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## Unreleased
+
+- The search platform moved to `jevlin.ai`: the router is `api.jevlin.ai` (was
+  `router-api.nyks.dev`), the portal and claim pages are `platform.jevlin.ai` (was
+  `platform.nyks.dev`), and the agents API is `agents-v1.jevlin.ai` (was `agents-v1.nyks.dev`).
+  The defaults, the help text, the docs and the Codex sandbox allowlist a fresh install writes
+  all name the new hosts. The authorization server (`rewards.nyks.dev`) and the chain RPC
+  (`rpc.nyks.dev`) are Twilight's and are unchanged.
+  **Upgrade note:** `jevlin setup` writes these URLs into `~/.jevlin/jevlin.toml` literally, so
+  an existing installation keeps the old hosts until you edit `router_url`, `base_url` and
+  `agents_api_url` there, or run `jevlin setup` again; the old hosts still answer today. A
+  Codex installation also carries the old hosts in its sandbox allowlist until
+  `jevlin agents install` runs again with the updated config.
+
 ## v0.1.0 — 2026-10-13
 
 This repository starts from `twilight-project/dropin-miner` at

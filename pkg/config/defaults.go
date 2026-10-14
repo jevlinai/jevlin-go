@@ -10,19 +10,19 @@ const (
 	DefaultChainID   = "twilight-testnet-1"
 	DefaultSlotID    = 3
 	DefaultASBaseURL = "https://rewards.nyks.dev"
-	DefaultRouterURL = "https://router-api.nyks.dev"
+	DefaultRouterURL = "https://api.jevlin.ai"
 	// DefaultPlatformBaseURL is the search platform's human-facing portal
 	// and claim pages: what a printed claim_url is checked against
 	// (invariant 12). It is NOT where connect/mining enable's own
 	// requests go — see DefaultAgentsAPIURL for that.
-	DefaultPlatformBaseURL = "https://platform.nyks.dev"
+	DefaultPlatformBaseURL = "https://platform.jevlin.ai"
 	// DefaultAgentsAPIURL is where connect/mining enable actually send
 	// register/status/enroll. Confirmed live: a register call against
-	// platform.nyks.dev 404s — that route only exists on this separate
+	// platform.jevlin.ai 404s — that route only exists on this separate
 	// host — while the claim_url it returns correctly points back at
-	// platform.nyks.dev. One shared origin was this package's original
+	// platform.jevlin.ai. One shared origin was this package's original
 	// assumption; the real deployment splits it in two.
-	DefaultAgentsAPIURL = "https://agents-v1.nyks.dev"
+	DefaultAgentsAPIURL = "https://agents-v1.jevlin.ai"
 	DefaultWalletDenom  = "utwlt"
 	DefaultBech32HRP    = "twilight"
 )

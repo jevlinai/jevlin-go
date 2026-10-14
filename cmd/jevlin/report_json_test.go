@@ -344,10 +344,10 @@ func TestConnectJSONExposesClaimArtifactsAndNoCredential(t *testing.T) {
 func TestAStoredClaimURLOffThePlatformOriginIsNeverReported(t *testing.T) {
 	for _, bad := range []string{
 		"https://evil.example/claim/abc123",
-		"http://platform.nyks.dev/claim/abc123",
-		"https://platform.nyks.dev.evil.example/claim/abc123",
-		"https://platform.nyks.dev/claim/abc123 https://evil.example/claim",
-		"https://platform.nyks.dev/claim/\x1b]8;;https://evil.example\x07x",
+		"http://platform.jevlin.ai/claim/abc123",
+		"https://platform.jevlin.ai.evil.example/claim/abc123",
+		"https://platform.jevlin.ai/claim/abc123 https://evil.example/claim",
+		"https://platform.jevlin.ai/claim/\x1b]8;;https://evil.example\x07x",
 	} {
 		cfgPath, root, _ := statusFixture(t)
 		writeAgentRecordRaw(t, filepath.Join(root, "state"), map[string]any{

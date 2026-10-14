@@ -27,7 +27,7 @@ and consumed elsewhere by import; `cmd/jevlin/` is this client's wrapper. Client
 decisions (retry shapes, the trace envelope, install/agent behaviour) have no upstream home —
 record them in `docs/` here.
 
-The search platform's control plane (`platform.nyks.dev` — `connect`, `mining enable`; `pkg/platform`)
+The search platform's control plane (`platform.jevlin.ai` — `connect`, `mining enable`; `pkg/platform`)
 is a **second, separate contract**, same convention as the AS: owned upstream, this time by
 `search-router`'s own design doc (`tokendrop-auth-server-design/docs/implementation/
 search-platform-agent-onboarding-design.md`, authored for the `search-router` repository and

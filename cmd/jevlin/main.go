@@ -205,8 +205,8 @@ The [mining] block names the AS, chain and slot; the
 [miner] block says router intake is configured (whether mining is ON is the
 persisted decision, not a config key); [platform] names two hosts — base_url,
 the portal a printed claim URL is checked against and nothing dials
-(platform.nyks.dev), and agents_api_url, where connect and mining enable
-actually send register/status/enroll (agents-v1.nyks.dev). Searches take
+(platform.jevlin.ai), and agents_api_url, where connect and mining enable
+actually send register/status/enroll (agents-v1.jevlin.ai). Searches take
 your sr- key from JEVLIN_API_KEY if it is set, else from the file
 login (or connect) wrote. Otherwise run connect or login to set up search.
 `

@@ -5,8 +5,8 @@
 // pkg/auth implements the AS contract (owned by
 // tokendrop-auth-server-design); this implements search-router's own
 // contract, this design doc. Two hosts, not one — live testing found
-// agents-v1.nyks.dev serves register/status/enroll while
-// platform.nyks.dev is the human portal a claim_url/console_url points
+// agents-v1.jevlin.ai serves register/status/enroll while
+// platform.jevlin.ai is the human portal a claim_url/console_url points
 // at; see Client's own doc comment. Nothing here touches the AS;
 // RedeemEnrollmentAssertion (pkg/auth) still does that, unchanged, once
 // this package hands back a token.

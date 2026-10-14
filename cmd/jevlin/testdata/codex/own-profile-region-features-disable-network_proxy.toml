@@ -13,7 +13,7 @@ extends = "work"
 enabled = true
 
 [permissions.jevlin.network.domains]
-"agents-v1.nyks.dev" = "allow"
+"agents-v1.jevlin.ai" = "allow"
 "as.example.invalid" = "allow"
 "router.example.invalid" = "allow"
 # <<< jevlin agents install <<<
