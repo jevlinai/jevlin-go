@@ -123,7 +123,10 @@ the named tests.
 12. **`platform.base_url` is compared against, never dialed.** It is the origin a platform-supplied
     URL must match (`validatePlatformURL`): every byte printable ASCII, no user before the host,
     and the URL must read back as exactly the text given, so what is checked is all of what is
-    printed. Every request goes to `agents_api_url`. The claim link lives in `claim.json` beside
+    printed. A retired portal origin also matches its one compiled successor
+    (`retiredPortalSuccessors`: `platform.nyks.dev` → `platform.jevlin.ai`), because setup never
+    rewrites an existing config and the platform issues links on the new host; nothing else
+    widens. Every request goes to `agents_api_url`. The claim link lives in `claim.json` beside
     `credentials.json` (`auth.ClaimRecord`), bound to its agent and written only from the
     platform's answer or the registration journal beside it: by a foreground run, or by a resume
     finishing that journal (which, in a sandbox, cannot write there and leaves it to the next
