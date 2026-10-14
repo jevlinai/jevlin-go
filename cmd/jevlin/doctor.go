@@ -154,6 +154,12 @@ type doctorFacts struct {
 	// rather than becoming a check of its own.
 	PayoutHeld    auth.PayoutBindingHeld
 	HasPayoutHeld bool
+	// RegionRefusal/HasRegionRefusal is the driver's note of the AS's last
+	// region refusal (ADR-MINIS-0026), read on the same terms as the held
+	// note: corroborating, for the configured slot only, unreadable means
+	// absent.
+	RegionRefusal    auth.RegionRefusal
+	HasRegionRefusal bool
 
 	MiningDecision    auth.MiningDecision
 	LocalStateKnown   bool
@@ -319,6 +325,24 @@ func doctorJoinedCheck(f doctorFacts) doctorCheck {
 	case auth.JoinHeld(f.Status.JoinStatus):
 		c.Verdict = verdictOK
 		c.Detail = fmt.Sprintf("epoch %d%s — %s", f.Epoch, doctorEpochOrigin(f), strings.ToLower(f.Status.JoinStatus))
+	case f.HasRegionRefusal && f.RegionRefusal.TargetEpoch == f.Epoch:
+		// The AS refused this epoch under its region policy. Not a fault
+		// in this installation and, for two of the three codes, not a fix
+		// either: the address is where it is, and search still works.
+		// The hold's fix is a join, and a join is refused once enrollment
+		// in the epoch has closed, so then it is the closed epoch's fix.
+		c.Verdict = verdictNo
+		c.Detail = fmt.Sprintf("epoch %d%s — %s", f.Epoch, doctorEpochOrigin(f), auth.RegionRefusalText(f.RegionRefusal.Code))
+		if !f.Status.Joinable {
+			c.Detail += fmt.Sprintf("; enrollment in it has since closed (phase %s)", f.Status.Phase)
+		}
+		switch {
+		case !auth.RegionHold(f.RegionRefusal.Code):
+		case f.Status.Joinable:
+			c.Fix = "connect without the VPN or proxy, then: jevlin join -config <file>"
+		default:
+			c.Fix = "connect without the VPN or proxy, wait for the operator to open the next target, then: jevlin join -config <file>"
+		}
 	case f.Status.Joinable:
 		c.Verdict = verdictNo
 		c.Detail = fmt.Sprintf("epoch %d%s is open and this installation is not in it", f.Epoch, doctorEpochOrigin(f))
@@ -655,6 +679,7 @@ func gatherDoctorFactsFor(ctx context.Context, as asClient, m config.Mining, min
 
 	// Local first, and unconditionally: it is the half that still answers
 	// when nothing else does.
+	var regionStore *auth.Store
 	if store, err := auth.OpenStoreExisting(m.StateDir); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			f.LocalStateKnown = true
@@ -691,6 +716,13 @@ func gatherDoctorFactsFor(ctx context.Context, as asClient, m config.Mining, min
 				f.PayoutHeld, f.HasPayoutHeld = held, true
 			}
 		}
+		// The slot's latest note for now; once the epoch is known (below)
+		// it is replaced by that epoch's own, which is the verdict
+		// "joined this epoch" explains.
+		if region, ok, err := store.LatestRegionRefusal(m.SlotID); err == nil && ok {
+			f.RegionRefusal, f.HasRegionRefusal = region, true
+		}
+		regionStore = store
 	}
 
 	// The miner half. The probe is the one write doctor performs, and it
@@ -724,6 +756,11 @@ func gatherDoctorFactsFor(ctx context.Context, as asClient, m config.Mining, min
 	f.Epoch, f.EpochKnown, f.EpochErr = epochFor(ctx, as, m.TargetEpoch)
 	if !f.EpochKnown {
 		return f
+	}
+	if regionStore != nil {
+		if region, ok, err := regionStore.RegionRefusalFor(m.SlotID, f.Epoch); err == nil && ok {
+			f.RegionRefusal, f.HasRegionRefusal = region, true
+		}
 	}
 	f.Status, f.StatusErr = as.Status(ctx, f.Epoch)
 	f.Activity, f.ActivityErr = as.EpochActivity(ctx, f.Epoch)

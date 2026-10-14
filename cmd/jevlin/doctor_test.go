@@ -658,3 +658,42 @@ func TestStatusShowsAHeldNoteOnlyForTheRecordOnFile(t *testing.T) {
 		}
 	}
 }
+
+// A region note for THIS epoch turns "joined this epoch" into a plain
+// explanation with no fix for the final codes and a concrete one for the
+// hold; a note for an earlier epoch is history and changes nothing.
+func TestDoctorJoinedExplainsARegionRefusal(t *testing.T) {
+	f := healthyFacts()
+	f.Status = &auth.EpochStatus{JoinStatus: "", Joinable: true, Phase: "ACTIVE"}
+	f.HasRegionRefusal = true
+	f.RegionRefusal = auth.RegionRefusal{SlotID: 7, TargetEpoch: 1042, Code: auth.RegionIneligible, At: "2026-10-14T00:00:00Z"}
+	joined := verdictOf(assembleDoctor(f), "joined this epoch")
+	if joined.Verdict != verdictNo || !strings.Contains(joined.Detail, "rewards are not available in your region") {
+		t.Errorf("ineligible: %s %q", joined.Verdict, joined.Detail)
+	}
+	if joined.Fix != "" {
+		t.Errorf("a final region refusal offered a fix: %q", joined.Fix)
+	}
+
+	f.RegionRefusal.Code = auth.RegionUnverified
+	joined = verdictOf(assembleDoctor(f), "joined this epoch")
+	if !strings.Contains(joined.Detail, "VPN") || !strings.Contains(joined.Fix, "jevlin join") {
+		t.Errorf("hold: %q fix=%q", joined.Detail, joined.Fix)
+	}
+
+	// Enrollment in the epoch has since closed: joining it now is refused
+	// with "not joinable", so the fix is the one for a closed epoch.
+	f.Status = &auth.EpochStatus{JoinStatus: "", Joinable: false, Phase: "SETTLING"}
+	joined = verdictOf(assembleDoctor(f), "joined this epoch")
+	if !strings.Contains(joined.Detail, "VPN") || !strings.Contains(joined.Detail, "closed") ||
+		!strings.Contains(joined.Fix, "wait for the operator to open the next target") {
+		t.Errorf("hold on a closed epoch: %q fix=%q", joined.Detail, joined.Fix)
+	}
+	f.Status = &auth.EpochStatus{JoinStatus: "", Joinable: true, Phase: "ACTIVE"}
+
+	f.RegionRefusal.TargetEpoch = 1041 // last epoch's verdict is not this epoch's
+	joined = verdictOf(assembleDoctor(f), "joined this epoch")
+	if strings.Contains(joined.Detail, "region") {
+		t.Errorf("a stale note was presented as this epoch's: %q", joined.Detail)
+	}
+}
