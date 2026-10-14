@@ -236,7 +236,7 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | `claim.json` | The claim link and code for this installation's agent, while it is unclaimed. | connect | Yes; the next `jevlin connect` mints a fresh link, which ends the old one. |
 | `search-default` | `agents prefer`'s choice. | agents prefer | Yes; the skill default returns. |
 | `bin/jevlin` | A native binary, and `jevlin.previous` after an upgrade. | setup, upgrade | Through `uninstall -binary`. |
-| `state/` | Identity, authorization, the mining decision, health records, the flush stamp. | connect, flush | No: it is your registration. |
+| `state/` | Identity, authorization, the mining decision, health records, the flush stamp, the last region refusal. | connect, flush, join | No: it is your registration. |
 | `intake/` | Served request ids, until a flush takes them. | search | No: unsent evidence. |
 | `spool/` | Evidence waiting for the rewards service to acknowledge it. | flush | No: unsent evidence. |
 | `sessions/` | Lineage files, one per workspace or Cursor conversation; with `turn_end` on, an empty mark per searched turn and a turn's final answer for the moment before it is sent. | hooks | Yes, with no agent running; the hooks write them again. |
@@ -259,7 +259,7 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 |---|---|
 | authorization server | The configured AS answers. |
 | enrolled | The AS accepts this installation's authorization. |
-| joined this epoch | This installation is in the open epoch. |
+| joined this epoch | This installation is in the open epoch. When the rewards service refused the join under its region policy, `NO` says which refusal; only a VPN or proxy hold offers a fix. |
 | payout address | An address is in force. |
 | earning | This epoch has enough verified searches to qualify. |
 | intake writable | This process can write where a search records. Probes with one inert non-`.json` file, then removes it. |

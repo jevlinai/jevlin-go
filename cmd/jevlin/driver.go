@@ -162,6 +162,14 @@ const (
 	noteTarget     = "target"
 	noteJoin       = "join"
 	noteCapability = "capability"
+	// noteRegion is the region policy's own site: the join site is
+	// cleared by every successful status read, which happens on every
+	// tick before the join is attempted, so a hold logged there would be
+	// repeated every minute.
+	noteRegion = "region"
+	// noteRegionStore is where a failure to write or remove the region
+	// note is reported, for the same reason: not the join site.
+	noteRegionStore = "region-store"
 )
 
 func newEpochDriver(mining *auth.MiningClient, caps *auth.CapabilityClient, pinned *uint64, logger *slog.Logger, enrolled func() bool) *epochDriver {
@@ -198,7 +206,9 @@ func (d *epochDriver) tick(ctx context.Context) {
 	if target.state != targetResolved {
 		return
 	}
-	d.joinIfNeeded(reqCtx, target.epoch)
+	if d.joinIfNeeded(reqCtx, target.epoch) {
+		return
+	}
 	d.ensure(reqCtx, target.epoch)
 }
 
@@ -298,16 +308,18 @@ func (d *epochDriver) target(ctx context.Context) targetResult {
 	return targetResult{state: targetResolved, epoch: t.TargetEpoch, queried: true}
 }
 
-// joinIfNeeded enrolls for epoch, at most once.
+// joinIfNeeded enrolls for epoch, at most once. It reports whether the AS
+// refused the join under its region policy, in which case there is no
+// enrollment to ask a capability for and the caller does not ask.
 //
 // The AS is ASKED whether the target is joinable, never told. After a
 // successful join it reports joinable=false with join_status ACCEPTED,
 // which is the same shape as "enrollment closed and we are not in" — only
 // join_status separates them, so inferring from joinable alone would
 // either re-join forever or give up on a target we hold.
-func (d *epochDriver) joinIfNeeded(ctx context.Context, epoch uint64) {
+func (d *epochDriver) joinIfNeeded(ctx context.Context, epoch uint64) (regionRefused bool) {
 	if d.hasJoined(epoch) {
-		return
+		return false
 	}
 	st, err := d.mining.Status(ctx, epoch)
 	if err != nil {
@@ -317,17 +329,20 @@ func (d *epochDriver) joinIfNeeded(ctx context.Context, epoch uint64) {
 		// target() never queried the AS at all.
 		d.once(ctx, d.credentialLevel(), noteJoin, "mining: epoch status unavailable", err,
 			slog.Uint64("target_epoch", epoch))
-		return
+		return false
 	}
 	d.clear(noteJoin)
 	if !st.Joinable {
 		if auth.JoinHeld(st.JoinStatus) {
 			d.remember(epoch)
+			// Joined some other way since a refusal — `jevlin join`, or an
+			// earlier run — so a note explaining why it was not is stale.
+			d.clearRegionNote(ctx, epoch)
 		}
 		// Not joinable and not held means this target closed without
 		// us. There is nothing to retry, and the next target will come
 		// from the AS like any other.
-		return
+		return false
 	}
 	res, err := d.mining.JoinEpoch(ctx, epoch)
 	if err != nil {
@@ -348,21 +363,81 @@ func (d *epochDriver) joinIfNeeded(ctx context.Context, epoch uint64) {
 				}
 			}
 			d.clear(noteJoin)
-			return
+			return false
+		}
+		if code, ok := auth.RegionRefusalCode(err); ok {
+			d.regionRefused(ctx, epoch, code, err)
+			return true
 		}
 		d.recordJoinFailure(err)
 		d.once(ctx, d.credentialLevel(), noteJoin, "mining: join refused", err,
 			slog.Uint64("target_epoch", epoch))
-		return
+		return false
 	}
 	d.recordJoinSuccess(epoch)
 	d.remember(epoch)
+	d.clearRegionNote(ctx, epoch)
 	// Info, and exactly once per epoch: joining is the event an operator
 	// actually wants in the log.
 	d.logger.Info("mining: joined target epoch",
 		slog.Uint64("target_epoch", epoch),
 		slog.String("status", res.Status),
 		slog.String("mode", st.DistributionMode))
+	return false
+}
+
+// regionRefused is the join path's answer to the AS's region policy
+// (twilight-minis ADR-MINIS-0026): HTTP 451 with one of three codes.
+//
+// It is NOT the credential path. A refusal here is about the connecting
+// address, not this installation's authorization, so it never escalates to
+// the Warn-once "join refused" line that says to re-enroll; it says what
+// the participant can do instead, in this client's own words, once.
+//
+// None of the three codes is remembered as final. The ADR (§2, §6) shares
+// 451 among them precisely so a client retries later, and the AS decides
+// every attempt afresh from the address it comes from — a participant who
+// leaves a VPN, or a region, is accepted on the next attempt. "Later" is
+// the flush's own pace: a flush asks the AS at most once per
+// flush_interval, and a flush is a process of its own, so anything kept in
+// this driver is gone by the next one anyway.
+//
+// For the same reason the explanation is not deduplicated in memory: the
+// note on disk is what says this participant has already been told. It
+// is logged when the verdict is new — another epoch, another code, or no
+// note yet — and not again while the same verdict stands.
+func (d *epochDriver) regionRefused(ctx context.Context, epoch uint64, code string, err error) {
+	d.recordJoinFailure(err)
+	explain := func() {
+		d.once(ctx, slog.LevelWarn, noteRegion, "mining: "+auth.RegionRefusalText(code), err,
+			slog.Uint64("target_epoch", epoch), slog.String("code", code))
+	}
+	if d.store == nil {
+		explain()
+		return
+	}
+	slot := d.mining.SlotID()
+	if prev, ok, lerr := d.store.RegionRefusalFor(slot, epoch); lerr == nil && ok && prev.Code == code {
+		return
+	}
+	if serr := d.store.SaveRegionRefusal(slot, epoch, code); serr != nil {
+		d.once(ctx, slog.LevelWarn, noteRegionStore, "mining: could not persist the region refusal", serr,
+			slog.Uint64("target_epoch", epoch))
+	}
+	explain()
+}
+
+// clearRegionNote forgets a region refusal of epoch once the AS has
+// enrolled this installation in it. Only that epoch's: a note for an
+// earlier one still holds back records the flush has yet to settle.
+func (d *epochDriver) clearRegionNote(ctx context.Context, epoch uint64) {
+	d.clear(noteRegion)
+	if d.store == nil {
+		return
+	}
+	if err := d.store.ClearRegionRefusalFor(d.mining.SlotID(), epoch); err != nil {
+		d.once(ctx, slog.LevelWarn, noteRegionStore, "mining: could not clear the region refusal note", err)
+	}
 }
 
 // ensure publishes a capability for epoch into the scope holder.

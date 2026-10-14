@@ -170,6 +170,16 @@ func (s *Submitter) Submit(ctx context.Context, rec *spool.Record) (bool, bool, 
 		if resp.StatusCode == http.StatusUnauthorized {
 			s.caps.Clear()
 		}
+		if code := refusalCode(raw); code != "unknown" {
+			if resp.StatusCode == http.StatusUnavailableForLegalReasons && knownRegionCode(code) {
+				// Not this record's fault and not permanent: deferred, so
+				// the collector keeps it without spending an attempt.
+				return false, false, retryAfter(resp), &RegionDeferredError{Status: resp.StatusCode, Code: code}
+			}
+			// The code is the part an operator can act on — a region hold
+			// (451 REGION_UNVERIFIED) reads differently from a 503.
+			return false, false, retryAfter(resp), fmt.Errorf("auth: submission refused with status %d (%s)", resp.StatusCode, code)
+		}
 		return false, false, retryAfter(resp), fmt.Errorf("auth: submission refused with status %d", resp.StatusCode)
 	}
 }

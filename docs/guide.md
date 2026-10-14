@@ -163,6 +163,24 @@ The rewards service checks each recorded request id with the search provider, ne
 client's word for volume. The envelope's `mining` object says whether a search was recorded;
 `jevlin earnings` lists what the chain has paid to your payout address.
 
+## When your region is refused
+
+The rewards service can refuse mining by the address you connect from. Search is never
+affected. A refusal is one of three:
+
+- **`REGION_RESTRICTED`**: the address is in a jurisdiction the rewards service cannot serve,
+  or one it could not determine.
+- **`REGION_INELIGIBLE`**: mining rewards are not available there.
+- **`REGION_UNVERIFIED`**: the address looks like a VPN, proxy or Tor exit, so its region
+  cannot be told. This one is a hold, not a refusal: connect directly and the next attempt is
+  decided afresh, and nothing is forfeited.
+
+`status` shows a `region:` line for the last refusal (`region_refusal` in `status -json`), and
+`doctor`'s `joined this epoch` says which one kept you out. A flush asks again each time it
+talks to the rewards service, and `jevlin join` asks at once. Searches recorded meanwhile wait
+rather than being submitted. If a later join in the same epoch is accepted, they are submitted
+as usual; once that epoch is over, they are dropped, with one line from the flush.
+
 ## When doctor is unsure
 
 **`recording UNKNOWN`** with "recent miner activity, but nothing is queued locally or verified

@@ -10,6 +10,15 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## Unreleased
+
+- **A region refusal from the rewards service is explained, not reported as a broken
+  credential.** When the rewards service refuses mining from your address (`REGION_RESTRICTED`,
+  `REGION_INELIGIBLE`, or the `REGION_UNVERIFIED` hold for a VPN, proxy or Tor exit), `status`,
+  `doctor`, `jevlin join` and the flush say so in plain words, searches recorded meanwhile wait
+  instead of failing delivery, and search is unaffected. See
+  [the guide](docs/guide.md#when-your-region-is-refused).
+
 ## v0.1.0 — 2026-10-13
 
 This repository starts from `twilight-project/dropin-miner` at

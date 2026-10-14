@@ -22,6 +22,7 @@ var storeRecords = map[string]string{
 	"payout_binding_held.json":  "connect's read-before-declare note",
 	"payout_declared.json":      "the payout address connect declared",
 	"epoch_conflicts.json":      "epochs the AS reported as conflicting",
+	"region_refusals.json":      "the AS's region refusals, one note per (slot, epoch) (ADR-MINIS-0026)",
 	"revoke_pending.json":       "a marker that a revocation is owed",
 	"receipt-%d-%d.jws":         "an enrollment receipt, signed by the AS and kept as evidence",
 	"registration_pending.json": "the registration journal, which lives in the installation directory beside credentials.json and not in the state dir (invariant 13)",
