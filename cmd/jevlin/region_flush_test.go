@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jevlinai/jevlin-go/pkg/auth"
+	"github.com/jevlinai/jevlin-go/pkg/mining/spool"
 )
 
 func regionRefusalFlush(t *testing.T, f *flushFixture) (stdout, stderr string) {
@@ -49,6 +50,73 @@ func TestARegionRefusalIsRetriedEachFlushAndExplainedOnce(t *testing.T) {
 			text := auth.RegionRefusalText(code)
 			if n := strings.Count(first+second, text); n != 1 {
 				t.Fatalf("the refusal was explained %d times across two flushes, want once\nfirst: %s\nsecond: %s", n, first, second)
+			}
+		})
+	}
+}
+
+func spoolAttempts(t *testing.T, spoolDir string) []int {
+	t.Helper()
+	sp, err := spool.Open(spoolDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := sp.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var attempts []int
+	for _, rec := range pending {
+		attempts = append(attempts, rec.Attempts)
+	}
+	return attempts
+}
+
+// An epoch the AS refused to enroll this installation in has no
+// capability to give its observations, so asking for one is a credential
+// complaint about nothing and delivering them is an attempt that cannot
+// succeed — fifty of those and the record is quarantined, with a delivery
+// fault on status, though nothing about the record is wrong. So after a
+// refusal the flush asks for no capability, and the epoch's records wait
+// untouched. When a later join succeeds — the hold lifted — they deliver.
+func TestARegionRefusedEpochsRecordsWaitAndDeliverOnceJoined(t *testing.T) {
+	for _, code := range []string{auth.RegionRestricted, auth.RegionIneligible, auth.RegionUnverified} {
+		t.Run(code, func(t *testing.T) {
+			as := newFakeAS(t)
+			as.set(func(s *asState) {
+				s.epoch, s.joinable, s.acceptSubmissions = 1042, true, true
+				s.joinRefusalCode, s.joinRefusalStatus = code, http.StatusUnavailableForLegalReasons
+				// Contract §34: no accepted enrollment, no capability.
+				s.capabilityTwilightError = "ENROLLMENT_NOT_FOUND"
+			})
+			f := newFlushFixture(t, as)
+			seedIntakeRecord(t, f.cfg.Miner.IntakeDir, "refused-epoch")
+
+			for range 2 {
+				_, stderr := regionRefusalFlush(t, f)
+				if strings.Contains(stderr, "no participation capability") {
+					t.Fatalf("a region refusal was followed by a capability complaint:\n%s", stderr)
+				}
+			}
+			if got := spoolAttempts(t, f.cfg.Mining.SpoolDir); len(got) != 1 || got[0] != 0 {
+				t.Fatalf("spooled records' attempts = %v, want one record never attempted", got)
+			}
+			if n := as.submissionCalls.Load(); n != 0 {
+				t.Fatalf("%d submission(s) for an epoch this installation is not in", n)
+			}
+			store, err := auth.OpenStoreExisting(f.cfg.Mining.StateDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if h, ok, _ := store.LoadHealth(auth.HealthFlush); ok {
+				t.Fatalf("a refused epoch's waiting records were reported as a delivery fault: %+v", h)
+			}
+
+			as.set(func(s *asState) { s.joinRefusalCode, s.joinRefusalStatus, s.capabilityTwilightError = "", 0, "" })
+			regionRefusalFlush(t, f)
+			if n := spoolCount(t, f.cfg.Mining.SpoolDir); n != 0 || as.submissionCalls.Load() != 1 {
+				t.Fatalf("after the join the spool holds %d and the AS saw %d submission(s), want 0 and 1",
+					n, as.submissionCalls.Load())
 			}
 		})
 	}

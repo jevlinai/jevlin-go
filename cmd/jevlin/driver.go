@@ -206,7 +206,9 @@ func (d *epochDriver) tick(ctx context.Context) {
 	if target.state != targetResolved {
 		return
 	}
-	d.joinIfNeeded(reqCtx, target.epoch)
+	if d.joinIfNeeded(reqCtx, target.epoch) {
+		return
+	}
 	d.ensure(reqCtx, target.epoch)
 }
 
@@ -306,16 +308,18 @@ func (d *epochDriver) target(ctx context.Context) targetResult {
 	return targetResult{state: targetResolved, epoch: t.TargetEpoch, queried: true}
 }
 
-// joinIfNeeded enrolls for epoch, at most once.
+// joinIfNeeded enrolls for epoch, at most once. It reports whether the AS
+// refused the join under its region policy, in which case there is no
+// enrollment to ask a capability for and the caller does not ask.
 //
 // The AS is ASKED whether the target is joinable, never told. After a
 // successful join it reports joinable=false with join_status ACCEPTED,
 // which is the same shape as "enrollment closed and we are not in" — only
 // join_status separates them, so inferring from joinable alone would
 // either re-join forever or give up on a target we hold.
-func (d *epochDriver) joinIfNeeded(ctx context.Context, epoch uint64) {
+func (d *epochDriver) joinIfNeeded(ctx context.Context, epoch uint64) (regionRefused bool) {
 	if d.hasJoined(epoch) {
-		return
+		return false
 	}
 	st, err := d.mining.Status(ctx, epoch)
 	if err != nil {
@@ -325,7 +329,7 @@ func (d *epochDriver) joinIfNeeded(ctx context.Context, epoch uint64) {
 		// target() never queried the AS at all.
 		d.once(ctx, d.credentialLevel(), noteJoin, "mining: epoch status unavailable", err,
 			slog.Uint64("target_epoch", epoch))
-		return
+		return false
 	}
 	d.clear(noteJoin)
 	if !st.Joinable {
@@ -335,7 +339,7 @@ func (d *epochDriver) joinIfNeeded(ctx context.Context, epoch uint64) {
 		// Not joinable and not held means this target closed without
 		// us. There is nothing to retry, and the next target will come
 		// from the AS like any other.
-		return
+		return false
 	}
 	res, err := d.mining.JoinEpoch(ctx, epoch)
 	if err != nil {
@@ -356,16 +360,16 @@ func (d *epochDriver) joinIfNeeded(ctx context.Context, epoch uint64) {
 				}
 			}
 			d.clear(noteJoin)
-			return
+			return false
 		}
 		if code, ok := auth.RegionRefusalCode(err); ok {
 			d.regionRefused(ctx, epoch, code, err)
-			return
+			return true
 		}
 		d.recordJoinFailure(err)
 		d.once(ctx, d.credentialLevel(), noteJoin, "mining: join refused", err,
 			slog.Uint64("target_epoch", epoch))
-		return
+		return false
 	}
 	d.recordJoinSuccess(epoch)
 	d.remember(epoch)
@@ -382,6 +386,7 @@ func (d *epochDriver) joinIfNeeded(ctx context.Context, epoch uint64) {
 		slog.Uint64("target_epoch", epoch),
 		slog.String("status", res.Status),
 		slog.String("mode", st.DistributionMode))
+	return false
 }
 
 // regionRefused is the join path's answer to the AS's region policy

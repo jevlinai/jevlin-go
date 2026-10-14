@@ -406,8 +406,9 @@ func runFlushAdmitted(ctx context.Context, cfg *config.Config, cfgPath string, f
 			clearCurrentTargetHealth(store)
 		}
 		epoch = target.epoch
-		driver.joinIfNeeded(ctx, epoch)
-		driver.ensure(ctx, epoch)
+		if !driver.joinIfNeeded(ctx, epoch) {
+			driver.ensure(ctx, epoch)
+		}
 		if holder.Snapshot() != nil {
 			clearAuthUnavailableHealth(store)
 		}
@@ -450,6 +451,7 @@ func runFlushAdmitted(ctx context.Context, cfg *config.Config, cfgPath string, f
 	coll := collector.New(sp, submitter, collector.Options{
 		Interval:    time.Hour, // never fires: Drain is called once
 		MaxAttempts: productionMaxAttempts(m.CollectorMaxAttempts),
+		Skip:        regionRefusedRecords(store, m.SlotID),
 	})
 	coll.Drain(ctx)
 	after, _ := sp.Count()
@@ -596,6 +598,27 @@ func dropConflictedObservationsPastTarget(store *auth.Store, spoolDir string, sl
 	}
 }
 
+// regionRefusedRecords is the collector's Skip for the epoch the AS last
+// refused to enroll this installation in under its region policy, read
+// from the note the driver keeps (nil when there is none, or none for this
+// slot). Without an enrollment there is no capability, so delivering one
+// of those records is an attempt that cannot succeed: it would count
+// toward the attempt limit and quarantine evidence nothing is wrong with,
+// and report a delivery fault the region line has already explained. They
+// wait instead. A later join clears the note and they deliver as usual.
+//
+// The note is read after this run's join, so it is the AS's latest word.
+// An unreadable note is no note, as everywhere else it is read.
+func regionRefusedRecords(store *auth.Store, slotID uint64) func(*spool.Record) bool {
+	note, ok, err := store.LoadRegionRefusal()
+	if err != nil || !ok || note.SlotID != slotID {
+		return nil
+	}
+	return func(rec *spool.Record) bool {
+		return rec.SlotID == note.SlotID && rec.TargetEpoch == note.TargetEpoch
+	}
+}
+
 // deliverOnly drains the spool when no target could be resolved this run:
 // records spooled under an epoch joined earlier can still land.
 func deliverOnly(ctx context.Context, cfg *config.Config, mining *auth.MiningClient, caps *auth.CapabilityClient, store *auth.Store, rep *flushReport, stderr io.Writer) int {
@@ -606,7 +629,11 @@ func deliverOnly(ctx context.Context, cfg *config.Config, mining *auth.MiningCli
 		return exitTransport
 	}
 	before, _ := sp.Count()
-	coll := collector.New(sp, auth.NewSubmitter(mining, caps), collector.Options{Interval: time.Hour, MaxAttempts: productionMaxAttempts(cfg.Mining.CollectorMaxAttempts)})
+	coll := collector.New(sp, auth.NewSubmitter(mining, caps), collector.Options{
+		Interval:    time.Hour,
+		MaxAttempts: productionMaxAttempts(cfg.Mining.CollectorMaxAttempts),
+		Skip:        regionRefusedRecords(store, cfg.Mining.SlotID),
+	})
 	coll.Drain(ctx)
 	after, _ := sp.Count()
 	rep.Pending = after

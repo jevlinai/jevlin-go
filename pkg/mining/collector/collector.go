@@ -48,6 +48,13 @@ type Options struct {
 	MaxAttempts int
 	// Now is the retry/health clock. Nil uses the real wall clock.
 	Now func() time.Time
+	// Skip, when set, names records the caller knows cannot be delivered
+	// yet for a reason that is no fault of theirs — an epoch the AS has not
+	// enrolled this installation in. A skipped record is left exactly as
+	// it is: not submitted, no attempt counted, no failure recorded, no
+	// backoff written. Terminal and acknowledged records are cleanup work
+	// and are never skipped.
+	Skip func(*spool.Record) bool
 }
 
 func (o *Options) withDefaults() {
@@ -248,6 +255,9 @@ func (c *Collector) drain(ctx context.Context) {
 		}
 		if rec.RemovalPending {
 			c.finishRemoval(rec, false)
+			continue
+		}
+		if c.opts.Skip != nil && c.opts.Skip(rec) {
 			continue
 		}
 		if c.opts.MaxAttempts > 0 && rec.Attempts >= c.opts.MaxAttempts {
