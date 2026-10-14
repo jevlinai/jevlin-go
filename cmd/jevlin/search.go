@@ -304,10 +304,11 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	}
 	// The caller's tier wins (the -tier flag, or the stdin request's
 	// "tier"); when neither named one, the participant's own default from
-	// `jevlin tier` is sent; when that is unset too, the request carries
-	// no tier and the router applies the tenant's default. The agent is
-	// told to leave the field alone (skill.md), so in practice this is the
-	// participant's setting unless the agent escalated.
+	// `jevlin agents tier`, then [miner] tier, is sent; when both are
+	// unset, the request carries no tier and the router applies the
+	// tenant's default. The agent is told to leave the field alone
+	// (skill.md), so in practice this is the participant's setting unless
+	// the agent escalated.
 	if *tier == "" {
 		*tier = searchTierDefault(cfgSource, cfg.Miner, getenv)
 	}

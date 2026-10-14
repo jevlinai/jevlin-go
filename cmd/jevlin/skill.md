@@ -160,7 +160,7 @@ never change it on your own.
 ## Tier
 
 If the argument is `tier`, alone or followed by exactly `fast`, `balanced`,
-`max` or `default`, it is not a query. Run
+`max`, `default` or `status`, it is not a query. Run
 {{TIER}}
 with that word (`status` when none was given), show its output, and keep
 leaving `tier` unset in later requests so the new band applies. The setting is
