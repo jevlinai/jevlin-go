@@ -121,14 +121,26 @@ func (s *Store) LoadRegionRefusal() (rec RegionRefusal, ok bool, err error) {
 	return rec, true, nil
 }
 
-// ClearRegionRefusal removes the note; called on a successful join, which
-// is the AS saying the address is acceptable now.
+// ClearRegionRefusal removes the note, whatever it names.
 func (s *Store) ClearRegionRefusal() error {
 	err := os.Remove(filepath.Join(s.dir, regionRefusalFile))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
 	return err
+}
+
+// ClearRegionRefusalFor removes the note only when it names this slot and
+// epoch: the AS has enrolled this installation in that epoch, so the note
+// explaining why it was not is stale. A note for another epoch is left —
+// its records may still be waiting for the flush to settle them — and so
+// is one that cannot be read, since nothing in it can be matched.
+func (s *Store) ClearRegionRefusalFor(slotID, targetEpoch uint64) error {
+	rec, ok, err := s.LoadRegionRefusal()
+	if err != nil || !ok || rec.SlotID != slotID || rec.TargetEpoch != targetEpoch {
+		return nil
+	}
+	return s.ClearRegionRefusal()
 }
 
 func checkRegionRefusal(rec RegionRefusal) error {

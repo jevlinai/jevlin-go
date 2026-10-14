@@ -216,6 +216,25 @@ func cmdEnroll(args []string) int {
 	return 0
 }
 
+// joinRegionNote keeps the region note for `jevlin join` as the flush's
+// driver keeps it, so status and doctor say the same thing whichever way
+// the participant joined: a refusal is recorded (code non-empty), and an
+// enrollment in epoch clears a note of that epoch. Neither changes the
+// command's outcome; a note that cannot be written is said on stderr.
+func joinRegionNote(m config.Mining, epoch uint64, code string) {
+	store, err := auth.OpenStoreExisting(m.StateDir)
+	if err == nil {
+		if code != "" {
+			err = store.SaveRegionRefusal(m.SlotID, epoch, code)
+		} else {
+			err = store.ClearRegionRefusalFor(m.SlotID, epoch)
+		}
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "jevlin: region refusal note:", err)
+	}
+}
+
 func cmdJoin(args []string) int {
 	ctx, cancel := operatorContext(2 * time.Minute)
 	defer cancel()
@@ -243,6 +262,7 @@ func cmdJoin(args []string) int {
 	// to send) or enrollment closed without us (a failure flush retries).
 	if auth.JoinHeld(st.JoinStatus) {
 		fmt.Fprintf(os.Stdout, "already joined epoch %s (%s); nothing to send\n", st.TargetEpoch, st.JoinStatus)
+		joinRegionNote(m, epoch, "")
 		return 0
 	}
 	if !st.Joinable {
@@ -254,11 +274,13 @@ func cmdJoin(args []string) int {
 	if err != nil {
 		if code, ok := auth.RegionRefusalCode(err); ok {
 			fmt.Fprintf(os.Stderr, "jevlin: join refused under the Slot's region policy (%s): %s\n", code, auth.RegionRefusalText(code))
+			joinRegionNote(m, epoch, code)
 			return 1
 		}
 		fmt.Fprintln(os.Stderr, "jevlin: join:", err)
 		return 1
 	}
+	joinRegionNote(m, epoch, "")
 	fmt.Fprintf(os.Stdout, "join %s  draw_id=%s  receipt stored (%d bytes, verified)\n",
 		res.Status, res.DrawID, len(res.Receipt))
 	// The next step depends on the profile, so ASK rather than assert. Under

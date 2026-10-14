@@ -99,3 +99,38 @@ func TestRegionRefusalNoteRoundTripsAndRejectsWordsItDidNotWrite(t *testing.T) {
 		t.Fatalf("after clear: ok=%v err=%v", ok, err)
 	}
 }
+
+// An enrollment in an epoch clears only a note naming that slot and epoch:
+// a note for another epoch may still be holding back records the flush has
+// not settled, and dropping it early would send them into the attempt
+// limit.
+func TestClearRegionRefusalForClearsOnlyItsOwnEpoch(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "state")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	store, err := OpenStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ClearRegionRefusalFor(7, 1042); err != nil {
+		t.Fatalf("no note: %v", err)
+	}
+	if err := store.SaveRegionRefusal(7, 1042, RegionUnverified); err != nil {
+		t.Fatal(err)
+	}
+	for _, other := range []struct{ slot, epoch uint64 }{{7, 1043}, {8, 1042}} {
+		if err := store.ClearRegionRefusalFor(other.slot, other.epoch); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok, _ := store.LoadRegionRefusal(); !ok {
+			t.Fatalf("an enrollment in slot %d epoch %d cleared the note for slot 7 epoch 1042", other.slot, other.epoch)
+		}
+	}
+	if err := store.ClearRegionRefusalFor(7, 1042); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := store.LoadRegionRefusal(); ok {
+		t.Fatal("an enrollment in the note's own epoch left it in place")
+	}
+}

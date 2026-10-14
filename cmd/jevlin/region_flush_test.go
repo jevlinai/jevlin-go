@@ -181,3 +181,88 @@ func TestARegionRefusedEpochsRecordsDropOnceTheTargetMovesPast(t *testing.T) {
 		})
 	}
 }
+
+func loadRegionNote(t *testing.T, f *flushFixture) (auth.RegionRefusal, bool) {
+	t.Helper()
+	store, err := auth.OpenStoreExisting(f.cfg.Mining.StateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	note, ok, err := store.LoadRegionRefusal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return note, ok
+}
+
+func saveRegionNote(t *testing.T, f *flushFixture, epoch uint64, code string) {
+	t.Helper()
+	store, err := auth.OpenStoreExisting(f.cfg.Mining.StateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveRegionRefusal(testSlotID, epoch, code); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A refusal is followed by a join made some other way — `jevlin join`
+// once the VPN is off, or another run — and the AS now reports this
+// installation in the epoch. The note names that epoch, so it is stale: a
+// flush that finds the join held clears it, or status would go on saying
+// rewards are on hold while doctor says the installation is in.
+func TestAJoinTheASAlreadyHoldsClearsThatEpochsRegionNote(t *testing.T) {
+	as := newFakeAS(t)
+	as.set(func(s *asState) { s.epoch, s.joinable, s.joinStatus = 1042, false, auth.JoinAccepted })
+	f := newFlushFixture(t, as)
+	saveRegionNote(t, f, 1042, auth.RegionUnverified)
+
+	regionRefusalFlush(t, f)
+	if note, ok := loadRegionNote(t, f); ok {
+		t.Fatalf("the note %+v outlived a join the AS holds", note)
+	}
+}
+
+// `jevlin join` is the other way a participant joins, and the one doctor's
+// fix names. It keeps the same note the flush keeps: a refusal is recorded
+// for status and doctor to repeat, and a join the AS accepts, or already
+// holds, clears it.
+func TestJevlinJoinKeepsTheRegionNote(t *testing.T) {
+	as := newFakeAS(t)
+	as.set(func(s *asState) {
+		s.epoch, s.joinable = 1042, true
+		s.joinRefusalCode, s.joinRefusalStatus = auth.RegionUnverified, http.StatusUnavailableForLegalReasons
+	})
+	f := newFlushFixture(t, as)
+	join := func() (int, string) {
+		var code int
+		stderr := captureStderr(t, func() {
+			captureStdout(t, func() { code = cmdJoin([]string{"-config", f.cfgPath}) })
+		})
+		return code, stderr
+	}
+
+	if code, stderr := join(); code == 0 || !strings.Contains(stderr, auth.RegionUnverified) {
+		t.Fatalf("a refused join exited %d with stderr %q", code, stderr)
+	}
+	if note, ok := loadRegionNote(t, f); !ok || note.TargetEpoch != 1042 || note.Code != auth.RegionUnverified {
+		t.Fatalf("after a refused join the note is %+v ok=%v", note, ok)
+	}
+
+	as.set(func(s *asState) { s.joinRefusalCode, s.joinRefusalStatus = "", 0 })
+	if code, stderr := join(); code != 0 {
+		t.Fatalf("an accepted join exited %d: %s", code, stderr)
+	}
+	if note, ok := loadRegionNote(t, f); ok {
+		t.Fatalf("the note %+v outlived an accepted join", note)
+	}
+
+	saveRegionNote(t, f, 1042, auth.RegionUnverified)
+	as.set(func(s *asState) { s.joinable, s.joinStatus = false, auth.JoinAccepted })
+	if code, stderr := join(); code != 0 {
+		t.Fatalf("a join the AS already holds exited %d: %s", code, stderr)
+	}
+	if note, ok := loadRegionNote(t, f); ok {
+		t.Fatalf("the note %+v outlived a join the AS holds", note)
+	}
+}

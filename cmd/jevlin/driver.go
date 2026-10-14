@@ -335,6 +335,9 @@ func (d *epochDriver) joinIfNeeded(ctx context.Context, epoch uint64) (regionRef
 	if !st.Joinable {
 		if auth.JoinHeld(st.JoinStatus) {
 			d.remember(epoch)
+			// Joined some other way since a refusal — `jevlin join`, or an
+			// earlier run — so a note explaining why it was not is stale.
+			d.clearRegionNote(ctx, epoch)
 		}
 		// Not joinable and not held means this target closed without
 		// us. There is nothing to retry, and the next target will come
@@ -373,13 +376,7 @@ func (d *epochDriver) joinIfNeeded(ctx context.Context, epoch uint64) (regionRef
 	}
 	d.recordJoinSuccess(epoch)
 	d.remember(epoch)
-	d.clear(noteRegion)
-	if d.store != nil {
-		// The AS accepted this address, so an earlier region note is stale.
-		if cerr := d.store.ClearRegionRefusal(); cerr != nil {
-			d.once(ctx, slog.LevelWarn, noteRegionStore, "mining: could not clear the region refusal note", cerr)
-		}
-	}
+	d.clearRegionNote(ctx, epoch)
 	// Info, and exactly once per epoch: joining is the event an operator
 	// actually wants in the log.
 	d.logger.Info("mining: joined target epoch",
@@ -429,6 +426,19 @@ func (d *epochDriver) regionRefused(ctx context.Context, epoch uint64, code stri
 			slog.Uint64("target_epoch", epoch))
 	}
 	explain()
+}
+
+// clearRegionNote forgets a region refusal of epoch once the AS has
+// enrolled this installation in it. Only that epoch's: a note for an
+// earlier one still holds back records the flush has yet to settle.
+func (d *epochDriver) clearRegionNote(ctx context.Context, epoch uint64) {
+	d.clear(noteRegion)
+	if d.store == nil {
+		return
+	}
+	if err := d.store.ClearRegionRefusalFor(d.mining.SlotID(), epoch); err != nil {
+		d.once(ctx, slog.LevelWarn, noteRegionStore, "mining: could not clear the region refusal note", err)
+	}
 }
 
 // ensure publishes a capability for epoch into the scope holder.
