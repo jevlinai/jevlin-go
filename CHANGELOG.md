@@ -10,7 +10,13 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
-## Unreleased
+## v0.2.0 — 2026-10-14
+
+The search platform's hosts move to `jevlin.ai`, and claim links now come from
+`platform.jevlin.ai`, which v0.1.0 refuses: an installation on v0.1.0 cannot show its claim link
+until it upgrades (`jevlin upgrade`, or `npm install -g @jevlinsearch/jevlin@latest` for an npm
+install). This release also explains the rewards service's region refusals and adds a
+participant-level search band.
 
 - **A region refusal from the rewards service is explained, not reported as a broken
   credential.** When the rewards service refuses mining from your address (`REGION_RESTRICTED`,
@@ -39,7 +45,9 @@ rewritten to match newer behaviour; the newer entry says what changed.
   and with none set the request carries no tier and the router applies the default for the
   key. The skill now tells the agent to leave `tier` unset rather than calling `fast` the
   default, and never to send `max`. `agents status` shows the band in force; purge removes
-  the file.
+  the file. Setting a band asks first in Cursor, as it does in Claude Code and Codex, and a
+  `[miner] tier` this version cannot use is ignored and named by `agents tier status` rather
+  than stopping the config from loading.
 
 ## v0.1.0 — 2026-10-13
 
