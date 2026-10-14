@@ -168,7 +168,8 @@ client's word for volume. The envelope's `mining` object says whether a search w
 The rewards service can refuse mining by the address you connect from. Search is never
 affected. A refusal is one of three:
 
-- **`REGION_RESTRICTED`**: the address is in a sanctioned jurisdiction.
+- **`REGION_RESTRICTED`**: the address is in a jurisdiction the rewards service cannot serve,
+  or one it could not determine.
 - **`REGION_INELIGIBLE`**: mining rewards are not available there.
 - **`REGION_UNVERIFIED`**: the address looks like a VPN, proxy or Tor exit, so its region
   cannot be told. This one is a hold, not a refusal: connect directly and the next attempt is

@@ -40,6 +40,13 @@ func TestRegionRefusalCodeIsStrict(t *testing.T) {
 			t.Errorf("%s: text %q should be a sentence, not the code", code, text)
 		}
 	}
+	// The AS answers REGION_RESTRICTED for a sanctioned jurisdiction and,
+	// under an `unknown_country: refuse` policy, for an address whose
+	// country it could not tell (twilight-minis #54). The sentence must be
+	// true of both, so it accuses nobody of being in a sanctioned place.
+	if text := RegionRefusalText(RegionRestricted); strings.Contains(text, "sanction") {
+		t.Errorf("REGION_RESTRICTED's sentence %q claims a sanctioned region; the AS also sends it for an unknown one", text)
+	}
 	if !strings.Contains(RegionRefusalText("REGION_X"), "REGION_X") {
 		t.Error("an unknown code's text should at least name the code")
 	}

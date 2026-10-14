@@ -16,7 +16,9 @@ import (
 
 const (
 	// RegionRestricted: the connecting address is in a jurisdiction the
-	// Slot cannot serve. Mining is refused from it.
+	// Slot cannot serve, or — under an `unknown_country: refuse` policy —
+	// one whose country the AS could not determine. Mining is refused from
+	// it.
 	RegionRestricted = "REGION_RESTRICTED"
 	// RegionIneligible: mining rewards are not available in the address's
 	// jurisdiction. Search is unaffected.
@@ -64,7 +66,7 @@ func RegionHold(code string) bool { return code == RegionUnverified }
 func RegionRefusalText(code string) string {
 	switch code {
 	case RegionRestricted:
-		return "mining is not available from your region (the AS refused this address as sanctioned); search still works"
+		return "mining is not available from this address's region, or from an address whose region the AS could not determine; search still works"
 	case RegionIneligible:
 		return "mining rewards are not available in your region; search still works"
 	case RegionUnverified:
