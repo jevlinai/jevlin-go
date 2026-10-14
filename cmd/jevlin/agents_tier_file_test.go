@@ -57,3 +57,28 @@ func configMinerFor(t *testing.T, cfgPath string) config.Miner {
 	}
 	return cfg.Miner
 }
+
+// A [miner] tier this client cannot use loads as no tier (pkg/config), is
+// never sent, and is named by status, so a participant who wrote one sees
+// why the router's default applies instead of a bare "unset".
+func TestAnUnknownConfigTierIsNamedByStatusAndNotSent(t *testing.T) {
+	cfg, run := tierOnDisk(t)
+	raw, err := os.ReadFile(cfg) // #nosec G304 -- a path in this test's own temp dir
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := strings.Replace(string(raw), "[miner]\n", "[miner]\ntier = \"turbo\"\n", 1)
+	if body == string(raw) {
+		t.Fatalf("precondition: no [miner] table in %q", raw)
+	}
+	if err := os.WriteFile(cfg, []byte(body), 0o600); err != nil { // #nosec G703 -- a path in this test's own temp dir
+		t.Fatal(err)
+	}
+	if got := searchTierDefault(cfg, configMinerFor(t, cfg), os.Getenv); got != "" {
+		t.Fatalf("search would send %q for an unknown [miner] tier", got)
+	}
+	code, out, errOut := run("status")
+	if code != exitOK || !strings.Contains(out, "unset") || !strings.Contains(out, `"turbo"`) {
+		t.Fatalf("status with an unknown [miner] tier: %d %q %q, want unset and the word named", code, out, errOut)
+	}
+}

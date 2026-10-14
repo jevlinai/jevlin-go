@@ -451,8 +451,13 @@ func effectiveTier(ops agentOps, entry binEntry, getenv func(string) string) (ti
 	if t := readTier(ops, entry, getenv); t != "" {
 		return t, "agents tier"
 	}
-	if cfg, _, err := loadConfig(entry.cfg, getenv); err == nil && cfg.Miner.Tier != "" {
-		return cfg.Miner.Tier, "[miner] tier"
+	if cfg, _, err := loadConfig(entry.cfg, getenv); err == nil {
+		if cfg.Miner.Tier != "" {
+			return cfg.Miner.Tier, "[miner] tier"
+		}
+		if cfg.Miner.UnknownTier != "" {
+			return "", fmt.Sprintf("[miner] tier %q is not a band this client knows, so it is not sent", cfg.Miner.UnknownTier)
+		}
 	}
 	return "", ""
 }
@@ -469,9 +474,13 @@ func tierLabel(t string) string {
 	return "unset — the router's default for this key applies"
 }
 
-// tierStatusLabel names the band in force and what set it.
+// tierStatusLabel names the band in force and what set it, or, with no
+// band, why a setting that exists is not one.
 func tierStatusLabel(tier, source string) string {
 	if tier == "" {
+		if source != "" {
+			return tierLabel("") + "; " + source
+		}
 		return tierLabel("")
 	}
 	return tierLabel(tier) + " (" + source + ")"

@@ -186,11 +186,18 @@ type Miner struct {
 	// default: it is model-written text leaving the machine.
 	TurnEnd bool
 	// Tier is the search tier a request carries when neither the caller
-	// (the -tier flag, the stdin request's "tier") nor the agent named
-	// one: the participant's own default band, set with `jevlin tier`.
+	// (the -tier flag, the stdin request's "tier") nor the participant's
+	// `jevlin agents tier` file named one: [miner] tier, written by hand.
 	// Empty means the request carries no tier and the router applies the
-	// tenant's default. One of SearchTiers when set.
+	// tenant's default. One of SearchTiers when set, lower-cased and
+	// trimmed at load.
 	Tier string
+	// UnknownTier is a [miner] tier that is not one of SearchTiers even
+	// after that: kept aside so status can say why the router's default
+	// applies, and never sent. A word this client cannot use does not stop
+	// the config from loading, because that would stop search, the flush
+	// and mining together over a value that only chooses a band.
+	UnknownTier string
 }
 
 // SearchTiers is the router's tier vocabulary this client knows — the
@@ -811,11 +818,11 @@ func (r *rawConfig) finishMiner(upstream *url.URL, mining Mining) (Miner, error)
 		SessionsDir:   r.minerSessionsDir,
 		FlushInterval: r.minerFlushInterval,
 		TurnEnd:       r.minerTurnEnd,
-		Tier:          r.minerTier,
 	}
-	if m.Tier != "" && !KnownSearchTier(m.Tier) {
-		return Miner{}, fmt.Errorf("miner.tier: must be one of %s, or unset for the router's default, not %q",
-			strings.Join(SearchTiers, ", "), m.Tier)
+	if tier := strings.ToLower(strings.TrimSpace(r.minerTier)); KnownSearchTier(tier) {
+		m.Tier = tier
+	} else if tier != "" {
+		m.UnknownTier = r.minerTier
 	}
 	if m.FlushInterval == 0 {
 		m.FlushInterval = 3 * time.Minute

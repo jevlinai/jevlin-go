@@ -707,33 +707,43 @@ func TestLoadIgnoresJevlinTOMLInWorkingDirectory(t *testing.T) {
 	}
 }
 
-// [miner] tier is the participant's default search band. Unset means the
-// request carries no tier and the router's tenant default applies; a word
-// the router would refuse is refused here, at load, naming the choices.
-func TestMinerTierIsValidatedAtLoad(t *testing.T) {
-	for body, want := range map[string]string{
-		"[miner]\nrouter_url = \"http://127.0.0.1:8080\"\n":                      "",
-		"[miner]\nrouter_url = \"http://127.0.0.1:8080\"\ntier = \"fast\"\n":     "fast",
-		"[miner]\nrouter_url = \"http://127.0.0.1:8080\"\ntier = \"balanced\"\n": "balanced",
-		"[miner]\nrouter_url = \"http://127.0.0.1:8080\"\ntier = \"max\"\n":      "max",
+// [miner] tier is the participant's own setting, written by hand, and a
+// word the client cannot use must not take the config down with it: a
+// failed load stops search, the flush and mining together (invariant 1),
+// for a value that changes nothing but which band a request asks for. So
+// case and surrounding space are forgiven, and a word that is still not a
+// band loads as no tier, kept aside for status to name, and is never sent,
+// so the router does not answer every search with a 400 either.
+func TestMinerTierIsNormalizedAndAnUnknownWordIsIgnoredAtLoad(t *testing.T) {
+	for raw, want := range map[string]string{
+		"":         "",
+		"fast":     "fast",
+		"balanced": "balanced",
+		"max":      "max",
+		"Fast":     "fast",
+		" max ":    "max",
 	} {
+		body := "[miner]\nrouter_url = \"http://127.0.0.1:8080\"\n"
+		if raw != "" {
+			body += "tier = \"" + raw + "\"\n"
+		}
 		cfg, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv)
 		if err != nil {
-			t.Fatalf("%q: %v", body, err)
+			t.Fatalf("tier %q: %v", raw, err)
 		}
-		if cfg.Miner.Tier != want {
-			t.Errorf("%q: tier = %q, want %q", body, cfg.Miner.Tier, want)
+		if cfg.Miner.Tier != want || cfg.Miner.UnknownTier != "" {
+			t.Errorf("tier %q: Tier = %q UnknownTier = %q, want %q and none", raw, cfg.Miner.Tier, cfg.Miner.UnknownTier, want)
 		}
 	}
-	for _, bad := range []string{"Fast", "turbo", "auto", " fast"} {
-		body := "[miner]\nrouter_url = \"http://127.0.0.1:8080\"\ntier = \"" + bad + "\"\n"
-		_, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv)
-		if err == nil {
-			t.Errorf("tier %q was accepted at load", bad)
+	for _, unknown := range []string{"turbo", "auto", "max; echo x"} {
+		body := "[miner]\nrouter_url = \"http://127.0.0.1:8080\"\ntier = \"" + unknown + "\"\n"
+		cfg, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv)
+		if err != nil {
+			t.Errorf("tier %q stopped the config from loading: %v", unknown, err)
 			continue
 		}
-		if !strings.Contains(err.Error(), "miner.tier") || !strings.Contains(err.Error(), "balanced") {
-			t.Errorf("tier %q: the refusal does not name the key and the choices: %v", bad, err)
+		if cfg.Miner.Tier != "" || cfg.Miner.UnknownTier != unknown {
+			t.Errorf("tier %q: Tier = %q UnknownTier = %q, want none and the word kept aside", unknown, cfg.Miner.Tier, cfg.Miner.UnknownTier)
 		}
 	}
 }

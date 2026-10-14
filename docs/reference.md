@@ -156,7 +156,7 @@ intake_dir     = "/home/you/.jevlin/intake"     # served request ids, until flus
 sessions_dir   = "/home/you/.jevlin/sessions"   # per-workspace lineage files
 flush_interval = "3m"                              # default 3m: how often a flush re-asks the AS
 turn_end       = false                             # default false: report a searched turn's final answer (see The turn end)
-tier           = ""                                # fast | balanced | max; unset = the router's default. `agents tier` outranks it
+tier           = ""                                # fast | balanced | max; unset = the router's default. `agents tier` outranks it; another word is ignored and named by `agents tier status`
 # router_url = "..."   defaults to the [[provider]] upstream
 ```
 
