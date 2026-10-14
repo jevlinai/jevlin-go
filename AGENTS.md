@@ -103,7 +103,11 @@ the named tests.
 7. **Durable before visible; remove only on ack.** An observation is persisted (intake→spool, each
    temp-file + atomic rename, fsync'd) before the user sees the result; a spool record leaves delivery
    only on a durable AS ack (PART X). `client_record_id` is minted once per observation, never
-   regenerated on retry.
+   regenerated on retry. Two drops are not acks, and they are the only ones: the records of an
+   epoch another installation of this participant holds (`dropConflictedObservationsPastTarget`)
+   and of an epoch the AS refused to enroll this installation in under its region policy
+   (`dropRegionRefusedObservationsPastTarget`), each only once the AS's current target has moved
+   past it, because no capability for that epoch can exist and no delivery of them can succeed.
 8. **`pkg/` MUST NOT import `cmd/`.** Keeping `pkg/` wrapper-agnostic is what makes it importable and
    is why this repo owns it and can hand it back to the proxy by import, not copy. Enforced by
    `cmd/jevlin/boundary_test.go`.

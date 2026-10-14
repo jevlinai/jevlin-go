@@ -121,3 +121,63 @@ func TestARegionRefusedEpochsRecordsWaitAndDeliverOnceJoined(t *testing.T) {
 		})
 	}
 }
+
+// Once the AS's current target has moved past an epoch it refused to
+// enroll this installation in, no capability for that epoch can ever
+// exist, and the records waiting on it are dropped quietly — the rule
+// dropConflictedObservationsPastTarget applies to an epoch another
+// installation holds. Not before: a hold may still lift within the epoch.
+// The drop runs before this run's join, which may replace the note with a
+// refusal of the new epoch, so a second refusal cannot strand the first
+// epoch's records behind a note that no longer names them.
+func TestARegionRefusedEpochsRecordsDropOnceTheTargetMovesPast(t *testing.T) {
+	for _, next := range []struct {
+		name    string
+		refused bool
+	}{{"the next epoch is joined", false}, {"the next epoch is refused too", true}} {
+		t.Run(next.name, func(t *testing.T) {
+			as := newFakeAS(t)
+			as.set(func(s *asState) {
+				s.epoch, s.joinable = 1042, true
+				s.joinRefusalCode, s.joinRefusalStatus = auth.RegionRestricted, http.StatusUnavailableForLegalReasons
+				s.capabilityTwilightError = "ENROLLMENT_NOT_FOUND"
+			})
+			f := newFlushFixture(t, as)
+			seedIntakeRecord(t, f.cfg.Miner.IntakeDir, "refused-epoch")
+			if stdout, _ := regionRefusalFlush(t, f); strings.Contains(stdout, "dropped") {
+				t.Fatalf("dropped while the target is still the refused epoch:\n%s", stdout)
+			}
+			if n := spoolCount(t, f.cfg.Mining.SpoolDir); n != 1 {
+				t.Fatalf("spool count = %d, want the refused epoch's record waiting", n)
+			}
+
+			as.set(func(s *asState) {
+				s.epoch = 1043
+				if !next.refused {
+					s.joinRefusalCode, s.joinRefusalStatus, s.capabilityTwilightError = "", 0, ""
+				}
+			})
+			stdout, stderr := regionRefusalFlush(t, f)
+			if n := spoolCount(t, f.cfg.Mining.SpoolDir); n != 0 {
+				t.Fatalf("spool count = %d after the target moved past the refused epoch, want 0", n)
+			}
+			if !strings.Contains(stdout, "dropped 1 observation") || strings.Contains(stderr, "dropped") {
+				t.Fatalf("the drop should be one informational stdout line\nstdout: %s\nstderr: %s", stdout, stderr)
+			}
+			store, err := auth.OpenStoreExisting(f.cfg.Mining.StateDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			note, ok, err := store.LoadRegionRefusal()
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch {
+			case next.refused && (!ok || note.TargetEpoch != 1043):
+				t.Fatalf("note = %+v ok=%v, want the refusal of 1043", note, ok)
+			case !next.refused && ok:
+				t.Fatalf("note = %+v outlived the epoch it named and a successful join", note)
+			}
+		})
+	}
+}

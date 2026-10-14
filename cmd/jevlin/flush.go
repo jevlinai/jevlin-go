@@ -406,6 +406,8 @@ func runFlushAdmitted(ctx context.Context, cfg *config.Config, cfgPath string, f
 			clearCurrentTargetHealth(store)
 		}
 		epoch = target.epoch
+		// Before the join, which may replace the note with this epoch's.
+		dropRegionRefusedObservationsPastTarget(store, m.SpoolDir, m.SlotID, epoch, stdout)
 		if !driver.joinIfNeeded(ctx, epoch) {
 			driver.ensure(ctx, epoch)
 		}
@@ -605,7 +607,8 @@ func dropConflictedObservationsPastTarget(store *auth.Store, spoolDir string, sl
 // of those records is an attempt that cannot succeed: it would count
 // toward the attempt limit and quarantine evidence nothing is wrong with,
 // and report a delivery fault the region line has already explained. They
-// wait instead. A later join clears the note and they deliver as usual.
+// wait instead. A later join clears the note and they deliver as usual;
+// dropRegionRefusedObservationsPastTarget settles them if none comes.
 //
 // The note is read after this run's join, so it is the AS's latest word.
 // An unreadable note is no note, as everywhere else it is read.
@@ -616,6 +619,65 @@ func regionRefusedRecords(store *auth.Store, slotID uint64) func(*spool.Record) 
 	}
 	return func(rec *spool.Record) bool {
 		return rec.SlotID == note.SlotID && rec.TargetEpoch == note.TargetEpoch
+	}
+}
+
+// dropRegionRefusedObservationsPastTarget settles the records
+// regionRefusedRecords holds back, by the rule
+// dropConflictedObservationsPastTarget applies to an epoch another
+// installation holds, and for the same reason: once the AS's current target
+// has moved past the epoch the region note names, this installation can
+// never be enrolled in it, so no capability for it can exist and its
+// records are worthless. They are dropped quietly — an informational line,
+// not an error, because nothing is wrong with them — and the note goes
+// with them, since the epoch it explains is over. Not before: a hold can
+// lift within the epoch, and then they deliver.
+//
+// This is the second exception to removing a record only on the AS's
+// acknowledgement (AGENTS.md invariant 7), argued from the same fact as
+// the first. A record whose removal fails keeps the note in place, so the
+// next flush skips it and tries the removal again instead of submitting it.
+//
+// A note for a slot this configuration no longer names is removed: status
+// and doctor already ignore it, and it could never be settled here.
+func dropRegionRefusedObservationsPastTarget(store *auth.Store, spoolDir string, slotID, currentTarget uint64, stdout io.Writer) {
+	note, ok, err := store.LoadRegionRefusal()
+	if err != nil || !ok {
+		return
+	}
+	if note.SlotID == slotID && note.TargetEpoch >= currentTarget {
+		return
+	}
+	if note.SlotID == slotID {
+		sp, err := spool.Open(spoolDir)
+		if err != nil {
+			return // transient; the note stays and the next flush tries again
+		}
+		pending, err := sp.Pending()
+		if err != nil {
+			return
+		}
+		dropped, failed := 0, 0
+		for _, rec := range pending {
+			if rec.SlotID != note.SlotID || rec.TargetEpoch != note.TargetEpoch {
+				continue
+			}
+			if err := sp.Remove(rec); err != nil {
+				failed++
+				continue
+			}
+			dropped++
+		}
+		if dropped > 0 {
+			fmt.Fprintf(stdout, "flush: dropped %d observation(s) for slot %d epoch %d — the AS refused this installation's join under its region policy\n",
+				dropped, note.SlotID, note.TargetEpoch)
+		}
+		if failed > 0 {
+			return
+		}
+	}
+	if err := store.ClearRegionRefusal(); err != nil {
+		fmt.Fprintln(stdout, "flush:", err)
 	}
 }
 
