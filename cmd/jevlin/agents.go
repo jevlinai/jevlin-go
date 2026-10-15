@@ -1487,38 +1487,106 @@ func cursorHooksFor(t installTarget, entry binEntry, goos string) (hooksSpec, st
 	return cursorHooks(entry, shells)
 }
 
-// entryIsOurs: does this hook entry (a Claude group or a Cursor entry)
-// run this binary? Matching on the binary path is what makes uninstall
-// exact and install idempotent. The match is against a set of exact
-// PREFIXES — hookCommandIsOurs — never a raw substring test. A substring
-// test breaks on Windows: a command quoted with %q doubles every
-// backslash, so bin's own single-backslash path never appears as a
-// contiguous run inside the quoted text, and a second install or an
-// uninstall never recognizes its own entry.
+// hookOwnership is how much of one hook entry is this installation's.
+// Ownership is decided per handler: a group jevlin wrote can come to hold a
+// participant's handler too (Claude Code's /hooks adds one to the group
+// already under the same matcher), and that handler is theirs whatever group
+// it sits in (issue #32).
+type hookOwnership int
+
+const (
+	// hookNotOurs: no handler of this installation's.
+	hookNotOurs hookOwnership = iota
+	// hookOurs: ours entirely — a Cursor entry that runs our command, or a
+	// group every handler of which does. Install replaces it, uninstall
+	// removes it.
+	hookOurs
+	// hookMixed: a group holding a handler of ours beside one that is not.
+	// Only our handlers are taken out of it; the group, its other handlers
+	// in their order, and its matcher stay where they are.
+	hookMixed
+)
+
+// entryOwnership classifies a hook entry (a Claude Code or Codex group, or a
+// Cursor entry) by the handlers that run this installation's command.
+// Matching is against a set of exact PREFIXES — hookCommandIsOurs — never a
+// raw substring test. A substring test breaks on Windows: a command quoted
+// with %q doubles every backslash, so bin's own single-backslash path never
+// appears as a contiguous run inside the quoted text, and a second install
+// or an uninstall never recognizes its own entry.
 //
 // The prefix set is plural because a hook command is quoted for the runner
 // its host declares, and one binary is spelled a different way in each
 // (binaryPrefixes). An entry of ours in a spelling install does not write
 // for that host now is still recognized, so it is replaced and removed
 // rather than left beside the current one.
-func entryIsOurs(e any, ref installationRef) bool {
+func entryOwnership(e any, ref installationRef) hookOwnership {
 	m, ok := e.(map[string]any)
+	if !ok {
+		return hookNotOurs
+	}
+	if c, ok := m["command"].(string); ok && hookCommandIsOurs(c, ref) {
+		return hookOurs
+	}
+	hs, ok := m["hooks"].([]any)
+	if !ok {
+		return hookNotOurs
+	}
+	ours, others := 0, 0
+	for _, h := range hs {
+		if handlerIsOurs(h, ref) {
+			ours++
+		} else {
+			others++
+		}
+	}
+	switch {
+	case ours == 0:
+		return hookNotOurs
+	case others == 0:
+		return hookOurs
+	}
+	return hookMixed
+}
+
+// entryIsOurs: is this hook entry ours entirely, to replace or remove whole?
+func entryIsOurs(e any, ref installationRef) bool {
+	return entryOwnership(e, ref) == hookOurs
+}
+
+// entryHoldsOurs: does this hook entry run a handler of ours at all?
+func entryHoldsOurs(e any, ref installationRef) bool {
+	return entryOwnership(e, ref) != hookNotOurs
+}
+
+func handlerIsOurs(h any, ref installationRef) bool {
+	hm, ok := h.(map[string]any)
 	if !ok {
 		return false
 	}
-	if c, ok := m["command"].(string); ok && hookCommandIsOurs(c, ref) {
-		return true
+	c, ok := hm["command"].(string)
+	return ok && hookCommandIsOurs(c, ref)
+}
+
+// withoutOurHandlers is a mixed group with this installation's handlers
+// taken out, and every other key — the participant's handlers in their
+// order, the matcher, anything else — as it was. It is a copy: the decoded
+// file is only ever changed by assigning the event's new list.
+func withoutOurHandlers(e any, ref installationRef) any {
+	m := e.(map[string]any)
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
 	}
-	if hs, ok := m["hooks"].([]any); ok {
-		for _, h := range hs {
-			if hm, ok := h.(map[string]any); ok {
-				if c, ok := hm["command"].(string); ok && hookCommandIsOurs(c, ref) {
-					return true
-				}
-			}
+	hs, _ := m["hooks"].([]any)
+	kept := make([]any, 0, len(hs))
+	for _, h := range hs {
+		if !handlerIsOurs(h, ref) {
+			kept = append(kept, h)
 		}
 	}
-	return false
+	out["hooks"] = kept
+	return out
 }
 
 // hookCommandIsOurs recognizes every spelling this client writes a command
@@ -1575,26 +1643,44 @@ func planHooksMerge(ops agentOps, label, path string, p *agentPlan, entry binEnt
 		// parse where it runs (dropin-miner#69) exactly as it was. Recognizing every
 		// spelling (hookCommandIsOurs) is what makes the replacement
 		// possible.
+		//
+		// A group that holds a participant's handler beside ours is theirs as
+		// much as ours (issue #32): only our handler comes out of it, and the
+		// group keeps its place, its other handlers and its matcher. Ours gets
+		// a group of its own, as a fresh install writes it, rather than being
+		// rewritten inside theirs, where our matcher would decide when their
+		// handler runs.
+		ref := refFor(entry)
 		kept := make([]any, 0, len(list))
-		ours, current := 0, false
+		cleaned := make([]any, 0, len(list))
+		ours, split, current := 0, 0, false
 		for _, e := range list {
-			if entryIsOurs(e, refFor(entry)) {
+			switch entryOwnership(e, ref) {
+			case hookOurs:
 				ours++
 				if sameJSONValue(e, spec.entries[ev]) {
 					current = true
 				}
+				cleaned = append(cleaned, e)
 				continue
+			case hookMixed:
+				split++
+				e = withoutOurHandlers(e, ref)
 			}
 			kept = append(kept, e)
+			cleaned = append(cleaned, e)
 		}
-		if ours == 1 && current {
+		if split > 0 {
+			p.notes = append(p.notes, fmt.Sprintf("%s: under %s in %s, a hook of yours shared a group with jevlin's; yours stays where it is, and jevlin's gets a group of its own", label, ev, path))
+		}
+		if ours == 1 && current && split == 0 {
 			// Exactly our entry, exactly once, already saying what we would
 			// say. Left in place rather than moved to the end, so a second
 			// install is a no-op byte for byte.
 			continue
 		}
 		if spec.replaceInPlace && ours > 0 {
-			hooks[ev] = replaceFirstOfOurs(list, spec.entries[ev], refFor(entry))
+			hooks[ev] = replaceFirstOfOurs(cleaned, spec.entries[ev], ref)
 		} else {
 			hooks[ev] = append(kept, spec.entries[ev])
 		}
@@ -1762,9 +1848,16 @@ func planHooksRemove(ops agentOps, label, path string, p *agentPlan, entry binEn
 		}
 		kept := make([]any, 0, len(list))
 		for _, e := range list {
-			if entryIsOurs(e, ref) {
+			switch entryOwnership(e, ref) {
+			case hookOurs:
 				changed = true
 				continue
+			case hookMixed:
+				// Only our handler goes; the group is the participant's too,
+				// and keeps the file (issue #32).
+				changed = true
+				e = withoutOurHandlers(e, ref)
+				p.notes = append(p.notes, fmt.Sprintf("%s: under %s in %s, a hook of yours shared a group with jevlin's; only jevlin's is removed", label, ev, path))
 			}
 			kept = append(kept, e)
 		}
@@ -1819,7 +1912,8 @@ func hooksFileIsNowOnlyOurs(m map[string]any, root string, ownsVersion bool) boo
 // PlanUninstall removes its skill directory because it is there; whether it is
 // THIS installation's is decided here, once, for every host, by the reading
 // install's refusal uses (foreignOwner). Hook entries need none of this: they
-// were always removed entry by entry, by the command each one runs.
+// are removed handler by handler, by the command each one runs
+// (entryOwnership).
 func buildUninstallPlan(ops agentOps, paths agentPaths, selected []installTarget, entry binEntry, getenv func(string) string) agentPlan {
 	var p agentPlan
 	for _, t := range selected {
