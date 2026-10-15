@@ -59,6 +59,11 @@ func TestAHandlerSharingOurGroupIsKeptByInstallAndUninstall(t *testing.T) {
 		{"codex", "/home/u/.codex/hooks.json"},
 	} {
 		t.Run(host.client, func(t *testing.T) {
+			if host.client == "codex" {
+				if _, err := codexHooksFor(codexTarget{}, goldenEntry(), runtime.GOOS); err != nil {
+					t.Skipf("no Codex hooks are written here: %v", err)
+				}
+			}
 			m, ops := newFakeMachine(host.client)
 			if code, out, _ := runAgents(t, ops, nil, "install", "-client", host.client, "-config", testCfg, "-yes"); code != exitOK {
 				t.Fatalf("install: %d\n%s", code, out)
