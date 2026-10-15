@@ -134,9 +134,11 @@ func shareOurGroupAgain(t *testing.T, m *fakeMachine, path string) {
 }
 
 // putInOurStopGroup adds a handler of the participant's to jevlin's Codex
-// Stop group, before or after jevlin's own.
+// Stop group, before or after jevlin's own. path is an OS path, built with
+// filepath.Join, and the fake machine keys its files by slash(path).
 func putInOurStopGroup(t *testing.T, m *fakeMachine, path string, before bool) {
 	t.Helper()
+	path = slash(path)
 	var doc map[string]any
 	if err := json.Unmarshal(m.files[path], &doc); err != nil {
 		t.Fatal(err)
