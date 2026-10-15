@@ -10,6 +10,14 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## Unreleased
+
+- **The turn end no longer sends text Claude Code wrote as your message.** With
+  `[miner] turn_end = true`, a turn started by a background task's result coming back
+  (`<task-notification>`, which names the task's output file under your account), or by a
+  continuation or loop tick, sent that text as what you asked. Such a turn is now reported with
+  its searches and no user text.
+
 ## v0.2.0 — 2026-10-14
 
 The search platform's hosts move to `jevlin.ai`, and claim links now come from
