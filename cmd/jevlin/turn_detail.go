@@ -31,6 +31,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"regexp"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -114,6 +115,7 @@ func claudeTurnDetail(ops hookOps, p claudeStopPayload) *turnDetail {
 		PromptID        string          `json:"promptId"`
 		Timestamp       string          `json:"timestamp"`
 		IsSidechain     bool            `json:"isSidechain"`
+		IsMeta          bool            `json:"isMeta"`
 		ToolUseResult   json.RawMessage `json:"toolUseResult"`
 		SourceToolUseID string          `json:"sourceToolUseID"`
 		Message         struct {
@@ -204,6 +206,16 @@ func claudeTurnDetail(ops hookOps, p claudeStopPayload) *turnDetail {
 			}
 		}
 	}
+	// The turn end promises the router "the user's message" (invariant 2),
+	// and a `user` record the harness wrote is not one, even where it starts
+	// the turn (issue #70): a continuation or an autonomous-loop tick, which
+	// Claude Code marks isMeta, and a background task's result, which it
+	// hands back as a user record wrapped in <task-notification> and which
+	// names the task's output file under the participant's account. Such a
+	// turn is still reported, with its searches, and with no user text.
+	if entries[start].IsMeta || harnessWroteUserText(userRaw) {
+		userRaw = ""
+	}
 	d.UserText, d.UserChars, d.UserTruncated = headText(userRaw, traceHistoryCap)
 
 	when := func(s string) time.Time {
@@ -280,6 +292,24 @@ func claudeTurnDetail(ops hookOps, p claudeStopPayload) *turnDetail {
 		d.Usage = &usage
 	}
 	return d
+}
+
+// harnessUserTags are the envelopes Claude Code wraps around a message it
+// writes into the session as a `user` record without marking it isMeta. A
+// record whose text opens with one is the harness speaking, not the
+// participant. A closed list, grown when a capture shows another: a
+// participant's own message can begin with "<", and only a tag the harness
+// is seen to write is taken as its mark.
+var harnessUserTags = []string{"<task-notification>"}
+
+func harnessWroteUserText(text string) bool {
+	text = strings.TrimSpace(text)
+	for _, tag := range harnessUserTags {
+		if strings.HasPrefix(text, tag) {
+			return true
+		}
+	}
+	return false
 }
 
 // withoutClosingText drops the assistant text after the last tool call: that
