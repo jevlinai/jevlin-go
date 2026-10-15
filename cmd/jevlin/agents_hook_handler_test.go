@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -173,6 +174,79 @@ func TestCodexNamesTheRenumberingAndTheUnknownApprovalInASharedGroup(t *testing.
 			lines := codexApprovalLines(ops, paths, entry)
 			if len(lines) != 1 || !strings.Contains(lines[0], "shares a group") {
 				t.Errorf("approval lines = %q, want the shared group named as unknown", lines)
+			}
+		})
+	}
+}
+
+// shareEveryGroup puts a handler of the participant's into every group in
+// the hook file at path, beside whatever is there, so no group is jevlin's
+// alone.
+func shareEveryGroup(t *testing.T, m *fakeMachine, path string) {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal(m.files[path], &doc); err != nil {
+		t.Fatalf("%s: %v", path, err)
+	}
+	groups := 0
+	for _, list := range doc["hooks"].(map[string]any) {
+		for _, g := range list.([]any) {
+			group := g.(map[string]any)
+			group["hooks"] = append(group["hooks"].([]any), map[string]any{"type": "command", "command": "say done"})
+			groups++
+		}
+	}
+	if groups == 0 {
+		t.Fatalf("precondition: %s holds no group to share", path)
+	}
+	b, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.files[path] = b
+}
+
+// statusRow is the row `agents status` prints for the host labeled label.
+func statusRow(t *testing.T, out, label string) string {
+	t.Helper()
+	for _, l := range strings.Split(out, "\n") {
+		if strings.HasPrefix(l, "  "+label+" ") {
+			return l
+		}
+	}
+	t.Fatalf("no %s row in:\n%s", label, out)
+	return ""
+}
+
+// `agents status` says a host's hooks are installed when every handler of
+// jevlin's sits in a group it shares with a handler of the participant's:
+// the hook is there and runs. Every group is shared, so no group of
+// jevlin's alone can answer for it. Claude Code and Codex group their
+// handlers; Cursor's entries hold one command each and are never shared.
+// On an OS where Codex's hook runner is not declared, Codex gets no hooks
+// and its half does not apply.
+func TestStatusCountsJevlinsHooksInGroupsItSharesAsInstalled(t *testing.T) {
+	for _, host := range []struct{ client, label, path string }{
+		{"claude", "Claude Code", "/home/u/.claude/settings.json"},
+		{"codex", "Codex", "/home/u/.codex/hooks.json"},
+	} {
+		t.Run(host.client, func(t *testing.T) {
+			if host.client == "codex" {
+				if _, err := codexHooksFor(codexTarget{}, goldenEntry(), runtime.GOOS); err != nil {
+					t.Skipf("no Codex hooks are written here: %v", err)
+				}
+			}
+			m, ops := newFakeMachine(host.client)
+			if code, out, _ := runAgents(t, ops, nil, "install", "-client", host.client, "-config", testCfg, "-yes"); code != exitOK {
+				t.Fatalf("install: %d\n%s", code, out)
+			}
+			shareEveryGroup(t, m, host.path)
+			code, out, _ := runAgents(t, ops, nil, "status", "-config", testCfg)
+			if code != exitOK {
+				t.Fatalf("status: %d\n%s", code, out)
+			}
+			if row := statusRow(t, out, host.label); !strings.Contains(row, "installed (skill+hooks)") {
+				t.Fatalf("%s row = %q, want installed (skill+hooks)", host.label, row)
 			}
 		})
 	}
