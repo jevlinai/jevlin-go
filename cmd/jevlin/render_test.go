@@ -297,3 +297,39 @@ func TestTheBudgetCutIsRuneSafe(t *testing.T) {
 		t.Fatal("the budget cut produced invalid UTF-8")
 	}
 }
+
+// Everything the shared rule refuses must also be replaced by the renderer.
+// The two policies differ on purpose — termtext refuses a value, oneLine
+// replaces the rune — but the set of runes is the same, and letting each
+// keep its own hand-written list is how one of them stops covering a range
+// the other covers.
+//
+// The test is its own oracle, never termtext itself: a guard that asked the
+// rule it guards stayed green when that rule was narrowed. So the ranges are
+// enumerated here, and oneLine has to remove every one of them.
+func TestOneLineReplacesEveryRuneTheSharedRuleRefuses(t *testing.T) {
+	refused := []struct {
+		name string
+		r    rune
+	}{
+		{"C0", 0x01}, {"TAB", '\t'}, {"CR", '\r'}, {"DEL", 0x7f},
+		{"C1 CSI", 0x9b}, {"C1 other", 0x80},
+		{"ALM", 0x061c},
+		{"LRM", 0x200e}, {"RLM", 0x200f},
+		{"ZWSP", 0x200b}, {"ZWNJ", 0x200c}, {"ZWJ", 0x200d},
+		{"LRE", 0x202a}, {"RLO", 0x202e}, {"LRI", 0x2066}, {"PDI", 0x2069},
+		{"word joiner", 0x2060}, {"invisible times", 0x2062},
+		{"soft hyphen", 0x00ad},
+		{"line separator", 0x2028}, {"paragraph separator", 0x2029},
+		{"BOM", 0xfeff},
+		{"tag character", 0xE0041}, {"tag terminator", 0xE007F},
+	}
+	for _, tc := range refused {
+		t.Run(tc.name, func(t *testing.T) {
+			got := oneLine("a"+string(tc.r)+"b", 1000)
+			if strings.ContainsRune(got, tc.r) {
+				t.Errorf("U+%04X reached the terminal raw: %q", tc.r, got)
+			}
+		})
+	}
+}

@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -70,10 +71,15 @@ func unsafeForTerminal(r rune) bool {
 		return true
 	case r == 0x061c: // Arabic letter mark
 		return true
-	case r == 0xfeff: // zero-width no-break space, used as an invisible joiner
-		return true
 	default:
-		return false
+		// Everything else the reader cannot see: every remaining format
+		// character (Cf — the tag characters, the zero-width space and
+		// joiners the named cases above do not cover, the soft hyphen)
+		// and the line and paragraph separators (Zl, Zp). Enumerating
+		// these by hand is how a range gets missed; the category is the
+		// list. unicode.In subsumes the named cases above, which are
+		// kept because they say what the range is for.
+		return unicode.In(r, unicode.Cf, unicode.Zl, unicode.Zp)
 	}
 }
 
