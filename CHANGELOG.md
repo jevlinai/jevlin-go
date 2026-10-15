@@ -10,6 +10,15 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## Unreleased
+
+- **A hook of yours in the same group as jevlin's is no longer removed with it.** Claude Code's
+  `/hooks` adds a hook to the group already under the same matcher, which can be the one jevlin
+  wrote. `agents install`, `uninstall` and the re-render an upgrade runs used to treat that whole
+  group as jevlin's, replacing or deleting your hook without a word, and an uninstall could
+  delete the file. Now only jevlin's own hook is touched, yours stays where it was, and the plan
+  says so. Affects Claude Code and Codex.
+
 ## v0.2.0 — 2026-10-14
 
 The search platform's hosts move to `jevlin.ai`, and claim links now come from
