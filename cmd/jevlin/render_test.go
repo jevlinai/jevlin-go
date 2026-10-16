@@ -311,24 +311,33 @@ func TestOneLineReplacesEveryRuneTheSharedRuleRefuses(t *testing.T) {
 	refused := []struct {
 		name string
 		r    rune
+		// What oneLine("a"+r+"b") must be. Whitespace runes are collapsed
+		// by strings.Fields into a single space, every other refused rune
+		// is replaced with U+FFFD. Asserting the exact output keeps a
+		// renderer that silently deletes the character from passing: the
+		// replacement is the visible part of the policy.
+		want string
 	}{
-		{"C0", 0x01}, {"TAB", '\t'}, {"CR", '\r'}, {"DEL", 0x7f},
-		{"C1 CSI", 0x9b}, {"C1 other", 0x80},
-		{"ALM", 0x061c},
-		{"LRM", 0x200e}, {"RLM", 0x200f},
-		{"ZWSP", 0x200b}, {"ZWNJ", 0x200c}, {"ZWJ", 0x200d},
-		{"LRE", 0x202a}, {"RLO", 0x202e}, {"LRI", 0x2066}, {"PDI", 0x2069},
-		{"word joiner", 0x2060}, {"invisible times", 0x2062},
-		{"soft hyphen", 0x00ad},
-		{"line separator", 0x2028}, {"paragraph separator", 0x2029},
-		{"BOM", 0xfeff},
-		{"tag character", 0xE0041}, {"tag terminator", 0xE007F},
+		{"C0", 0x01, "a\ufffdb"}, {"TAB", '	', "a b"}, {"CR", '\r', "a b"},
+		{"DEL", 0x7f, "a\ufffdb"},
+		{"C1 CSI", 0x9b, "a\ufffdb"}, {"C1 other", 0x80, "a\ufffdb"},
+		{"ALM", 0x061c, "a\ufffdb"},
+		{"LRM", 0x200e, "a\ufffdb"}, {"RLM", 0x200f, "a\ufffdb"},
+		{"ZWSP", 0x200b, "a\ufffdb"}, {"ZWNJ", 0x200c, "a\ufffdb"},
+		{"ZWJ", 0x200d, "a\ufffdb"},
+		{"LRE", 0x202a, "a\ufffdb"}, {"RLO", 0x202e, "a\ufffdb"},
+		{"LRI", 0x2066, "a\ufffdb"}, {"PDI", 0x2069, "a\ufffdb"},
+		{"word joiner", 0x2060, "a\ufffdb"}, {"invisible times", 0x2062, "a\ufffdb"},
+		{"soft hyphen", 0x00ad, "a\ufffdb"},
+		{"line separator", 0x2028, "a b"}, {"paragraph separator", 0x2029, "a b"},
+		{"BOM", 0xfeff, "a\ufffdb"},
+		{"tag character", 0xE0041, "a\ufffdb"}, {"tag terminator", 0xE007F, "a\ufffdb"},
 	}
 	for _, tc := range refused {
 		t.Run(tc.name, func(t *testing.T) {
 			got := oneLine("a"+string(tc.r)+"b", 1000)
-			if strings.ContainsRune(got, tc.r) {
-				t.Errorf("U+%04X reached the terminal raw: %q", tc.r, got)
+			if got != tc.want {
+				t.Errorf("U+%04X: got %q, want %q", tc.r, got, tc.want)
 			}
 		})
 	}
