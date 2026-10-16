@@ -67,8 +67,9 @@ The router runs the request against the arms and answers once, with everything t
   millionths of a dollar; **`latency`**, per provider; **`request_id`**, so a search can be
   found again.
 
-Agents call `jevlin search --stdin` with one JSON request and read one JSON object back. The
-query never touches the command line. A person can type `jevlin search "<query words>"`.
+Agents call `jevlin search --stdin` with one JSON request and read one JSON object back, so
+the query never touches the command line. A person can type `jevlin search "<query words>"`,
+which does put it there.
 
 ```bash
 jevlin search -format model "what is proof of authority consensus"
@@ -231,9 +232,11 @@ shell at install; the installed copy is at `~/.claude/skills/jevlin/`, `~/.curso
 ## What leaves the machine
 
 The trace and the turn end go only to the search router, inside the search request and the
-turn record. Nothing else reads them. The query goes in the JSON, never in a command line, so
-it is in neither `ps` nor your shell history. With mining on, the rewards service receives
-metadata only, never the query, the results or the text; see below.
+turn record. Nothing else reads them. An agent's query goes in the JSON on stdin, so it is in
+neither `ps` nor a shell history. The human form, `jevlin search "<query words>"`, puts the
+query on the command line, where both can see it; use `--stdin` for anything sensitive. With
+mining on, the rewards service receives metadata only, never the query, the results or the
+text; see below.
 
 ## Upgrading and removing
 
