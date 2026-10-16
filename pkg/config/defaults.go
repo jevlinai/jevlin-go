@@ -7,9 +7,15 @@ package config
 // TestDefaultsAreTestnet asserts every value here is still the testnet
 // one and every URL is https.
 const (
-	DefaultChainID   = "twilight-testnet-1"
-	DefaultSlotID    = 3
-	DefaultASBaseURL = "https://rewards.nyks.dev"
+	DefaultChainID = "twilight-testnet-1"
+	DefaultSlotID  = 3
+	// DefaultASBaseURL moved from https://rewards.nyks.dev on 2026-10-16.
+	// The AS origin is configured, never discovered (invariant 5), and
+	// setup writes it into the config, which nothing rewrites: an
+	// installation set up before then keeps the old origin until its
+	// as_url line is changed by hand, and the old host's documents now
+	// name this one, which that installation refuses as a different AS.
+	DefaultASBaseURL = "https://rewards-testnet.jevlin.ai"
 	DefaultRouterURL = "https://api.jevlin.ai"
 	// DefaultPlatformBaseURL is the search platform's human-facing portal
 	// and claim pages: what a printed claim_url is checked against
