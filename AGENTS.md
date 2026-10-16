@@ -809,6 +809,13 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   than "installed", because `Status` answers from the file existing and a host another
   installation set up would read as this one's. `agents_skill_ownership_test.go` guards it on real
   files, with `TestUninstallingOneInstallationLeavesAnothersIntegrations`.
+  **A hook is owned per handler, not per group** (`entryOwnership`, `agents.go`): Claude Code's
+  `/hooks` adds a participant's handler to the group already under the same matcher, often ours,
+  and deciding ownership per group took that handler with ours on install, on uninstall and on an
+  upgrade's re-render (issue #32). Out of a mixed group only our handler comes; the group keeps
+  its place, its other handlers and its matcher, ours gets a group of its own on install, and the
+  plan says so. `agents_hook_handler_test.go` drives it through the real commands for Claude Code
+  and Codex, and holds Codex's renumbering note and its unknown-approval line to the shared group.
   **Codex numbers its hooks by place.** It keys an approval by an entry's index in its event's
   list, so `planHooksMerge` rewrites a Codex entry of ours where the first one stands
   (`replaceInPlace`) instead of appending it, and appends only to an event that has none of ours:

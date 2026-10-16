@@ -12,6 +12,12 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
+- **A hook of yours in the same group as jevlin's is no longer removed with it.** Claude Code's
+  `/hooks` adds a hook to the group already under the same matcher, which can be the one jevlin
+  wrote. `agents install`, `uninstall` and the re-render an upgrade runs used to treat that whole
+  group as jevlin's, replacing or deleting your hook without a word, and an uninstall could
+  delete the file. Now only jevlin's own hook is touched, yours stays where it was, and the plan
+  says so. Affects Claude Code and Codex.
 - **The turn end no longer sends text Claude Code wrote as your message.** With
   `[miner] turn_end = true`, a turn started by a background task's result coming back
   (`<task-notification>`, which names the task's output file under your account), or by a

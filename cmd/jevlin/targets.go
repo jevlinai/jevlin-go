@@ -426,7 +426,7 @@ func hooksHaveOurs(ops agentOps, path string, entry binEntry) bool {
 	for _, v := range hooks {
 		if list, ok := v.([]any); ok {
 			for _, e := range list {
-				if entryIsOurs(e, refFor(entry)) {
+				if entryHoldsOurs(e, refFor(entry)) {
 					return true
 				}
 			}
@@ -674,17 +674,35 @@ func codexHooksHoldOthers(ops agentOps, path string, entry binEntry) bool {
 	return false
 }
 
-// codexHooksAfterOurs: does any event list an entry that is not ours after
-// one that is? Removing ours moves those up one place.
+// codexHooksAfterOurs: does removing ours move a hook of anyone else's up a
+// place? It does for an entry listed after a group of ours, and, inside a
+// group ours shares, for a handler listed after ours: Codex keys an approval
+// by both places (issue #32).
 func codexHooksAfterOurs(ops agentOps, path string, entry binEntry) bool {
+	ref := refFor(entry)
 	for _, list := range codexHookLists(ops, path) {
 		seen := false
 		for _, e := range list {
-			switch {
-			case entryIsOurs(e, refFor(entry)):
+			switch entryOwnership(e, ref) {
+			case hookOurs:
 				seen = true
-			case seen:
-				return true
+			case hookMixed:
+				hs, _ := e.(map[string]any)["hooks"].([]any)
+				ourHandler := false
+				for _, h := range hs {
+					if handlerIsOurs(h, ref) {
+						ourHandler = true
+					} else if ourHandler {
+						return true
+					}
+				}
+				if seen {
+					return true
+				}
+			default:
+				if seen {
+					return true
+				}
 			}
 		}
 	}
@@ -956,10 +974,12 @@ var codexApprovalEvent = map[string]string{
 func codexApprovalLines(ops agentOps, paths agentPaths, entry binEntry) []string {
 	lists := codexHookLists(ops, paths.codexHooks)
 	ours := map[string]int{}
+	shared := map[string]bool{}
 	for _, ev := range codexEvents {
 		for i, e := range lists[ev] {
-			if entryIsOurs(e, refFor(entry)) {
+			if o := entryOwnership(e, refFor(entry)); o != hookNotOurs {
 				ours[ev] = i
+				shared[ev] = o == hookMixed
 				break
 			}
 		}
@@ -970,6 +990,9 @@ func codexApprovalLines(ops agentOps, paths agentPaths, entry binEntry) []string
 	for _, ev := range codexEvents {
 		if i, ok := ours[ev]; ok && i != 0 {
 			return []string{"hooks: approval unknown; jevlin's " + ev + " hook is not the first listed for that event, and how Codex numbers a later one is not established"}
+		}
+		if shared[ev] {
+			return []string{"hooks: approval unknown; jevlin's " + ev + " hook shares a group with another, and its place in that group decides how Codex numbers it; run jevlin agents install to give it a group of its own"}
 		}
 	}
 	state := map[string]any{}
