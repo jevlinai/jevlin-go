@@ -254,6 +254,13 @@ differently named workflow cannot authenticate even with `id-token: write`, and 
 workflow file or the environment breaks publishing until the record is changed to match.
 Trusted publishing needs npm 11.5.1 or later, so the job installs a pinned npm.
 
+The record is created on npmjs.com under the package's settings, and a package has to exist
+before it can carry one. `@jevlinsearch/jevlin@0.2.0`, the first version on the registry, was
+therefore published by hand from the `v0.2.0` tag's `npm/` directory with the account's 2FA
+(`npm publish ./npm --access public --ignore-scripts`), without provenance; the workflow's
+publish job then saw it present and identical and went on to the smoke. No npm token is
+stored anywhere in this repository's settings.
+
 ## Outside the automation, deliberately
 
 - **The version bump.** CI does not commit to this repository; the number belongs in a
