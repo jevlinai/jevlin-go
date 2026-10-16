@@ -9,15 +9,16 @@
   <a href="https://docs.twilight.org"><img src="https://img.shields.io/badge/twilight-docs-E8552F" alt="Twilight docs"></a>
 </p>
 
-Multi-provider web search for coding agents, with the trajectory behind every search. One
-binary gives Claude Code, Cursor, Codex, opencode, Pi and Hermes a `search` that fans a query
-out across several web indexes at once, merges what they return into one attributed list, and
-carries enough of the agent's context that the router can see the task a search belongs to,
-not just the query string. There is no daemon, proxy or MCP server: between tool calls nothing
-is running.
+Free multi-provider web search for coding agents, with the trajectory behind every search.
+One binary gives Claude Code, Cursor, Codex, opencode, Pi and Hermes a `search` that fans a
+query out across twelve search providers at once, merges what they return into one attributed
+list, and carries enough of the agent's context that the router can see the task a search
+belongs to, not just the query string. There is no daemon, proxy or MCP server: between tool
+calls nothing is running.
 
-Searches can also count as mining on the Twilight testnet. That is optional, off by default,
-and described [at the end](#mining-on-the-twilight-testnet).
+Search is free for agents: setup registers you with the router and gets a key, there is no
+card and nothing to top up. What funds it is described [at the end](#mining-on-the-twilight-testnet).
+
 
 ## Install
 
@@ -36,10 +37,25 @@ release's `checksums.txt`. Put `jevlin` in a directory only you can write, such 
 under the temp directory, or in a directory another user owns or every user can write, and
 warn about one a shared group can write. On Windows only the temp-directory rule is checked.
 
+## The providers
+
+One request goes to the router at `api.jevlin.ai`, which holds the provider keys. Twelve
+arms run on every fan-out, under a per-query cost ceiling:
+
+| kind | arms |
+|---|---|
+| web indexes | Exa, Brave, You.com, Serper, SerpAPI, Telem, Parallel search, TinyFish |
+| answer engines | OpenAI web search, Perplexity, Perplexity search |
+| research agents | Parallel (slow lane: it keeps working after the response and lands on the trace) |
+
+Thirteen more fire only when a request names them in `providers`: Tavily and Tavily
+research, Linkup and Linkup answer, Valyu, Kagi, Mojeek, Gemini, Grok, Exa answer, Brave
+answer, the Perplexity agent and Octen. The set is the router's and changes without a client
+release; `decision` in every response says which arms ran.
+
 ## What a search returns
 
-One request goes to the router at `api.jevlin.ai`; the router runs it against its providers
-and answers once, with everything they returned:
+The router runs the request against the arms and answers once, with everything they returned:
 
 - **`result.merged`**: the citations of every provider that answered, deduplicated by page.
   Each entry carries `found_by`, how many providers agree on that page, and `best_rank`, the
@@ -61,7 +77,7 @@ jevlin search -format model "what is proof of authority consensus"
 ## Tiers and request options
 
 Every search carries a band, the router's cost tier: `fast` is one provider, `balanced` is
-several with each source attributed, `max` is every provider, for corroboration. `/jevlin tier
+several with each source attributed, `max` is every core arm, for corroboration. `/jevlin tier
 balanced` in an agent, or `jevlin agents tier balanced` from a shell, sets the band every
 search carries unless a request names one. The skill tells the agent to leave the tier alone
 so your band applies, to ask for `balanced` when it needs several sources, and never to send
@@ -163,10 +179,12 @@ The guide covers [upgrading](docs/guide.md#upgrading) and
 
 ## Mining on the Twilight testnet
 
-Jevlin runs a Slot on [Twilight](https://docs.twilight.org), a proof-of-work chain whose work
-is defined by Slots rather than by a puzzle. On that Slot, a search served by the router is a
-unit of work. If you say yes to mining at setup, or run `jevlin mining enable` later, each
-search is recorded on your machine and reported to the Slot's verifier after the fact:
+Search is free because router traffic is proof of work. Jevlin runs a Slot on
+[Twilight](https://docs.twilight.org), a chain whose work is defined by Slots rather than by a
+puzzle, and on that Slot a search served by the router is a unit of work: the chain pays the
+Slot, and the Slot's share is what funds the searches. If you say yes to mining at setup, or
+run `jevlin mining enable` later, your searches earn you a part of that share too. Each search
+is recorded on your machine and reported to the Slot's verifier after the fact:
 
 - **One verified search per epoch makes you eligible**, and the epoch's share is split equally
   among everyone eligible. More searches do not earn more.
