@@ -294,19 +294,18 @@ jobs:
       # from the package while the OIDC-issued credential is live; the
       # package's own postinstall still ships and still runs for whoever
       # installs it. --provenance attests the published package back to
-      # this workflow run and commit, using the id-token permission
-      # above instead of a stored NPM_TOKEN.
-      # The first publish of a package cannot use npm's trusted publishing
-      # (that is configured on a package that already exists), so this
-      # authenticates with the NPM_TOKEN secret of the release environment.
-      # --provenance still attests the package to this workflow run.
+      # this workflow run and commit.
+      #
+      # No stored token. npm's trusted publishing mints a short-lived
+      # credential from the job's OIDC token when the run's repository,
+      # workflow file and environment match the trusted-publisher record
+      # on the package (docs/RELEASING.md, "npm trusted publishing").
+      # The first version, 0.2.0, was published by hand with 2FA because
+      # that record can only be created on a package that already exists;
+      # every version after it publishes this way.
       - name: npm publish
         if: steps.registry.outputs.published == 'false'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          printf '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}\n' > "$HOME/.npmrc"
-          npm publish ./npm --access public --ignore-scripts --provenance
+        run: npm publish ./npm --access public --ignore-scripts --provenance
 
   smoke-npm:
     name: clean install (${{ matrix.os }})
