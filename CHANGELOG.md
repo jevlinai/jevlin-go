@@ -10,6 +10,22 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## Unreleased
+
+- **The rewards service moved, and an installation set up before the move has to be told.**
+  It is now at `https://rewards-testnet.jevlin.ai`, and a new installation is set up with that
+  address. An installation set up earlier keeps `https://rewards.nyks.dev` in its config,
+  because jevlin never rewrites your config, and since the move it refuses the old address's
+  answers as coming from a different service: searches work, but nothing earns, and
+  `jevlin doctor` says it cannot reach the authorization server, which is "off-origin". To fix
+  it, change one line in your config's `[mining]` table to
+  `as_url = "https://rewards-testnet.jevlin.ai"`, then run `jevlin flush` and `jevlin doctor`.
+  Your authorization, wallet and payout address carry over.
+  If you use Codex, also run `jevlin agents install -client codex` and answer yes, so that
+  Codex's sandbox lets the flush reach the new address.
+- **The wallet's default chain node is `https://rpc-testnet.twilight.org`**, the same node under
+  its new name. This needs nothing from you; `-node` and `JEVLIN_WALLET_NODE` still override it.
+
 ## v0.3.0 — 2026-10-16
 
 Two fixes to how the client lives inside a coding agent's hooks. Nothing changes on the
