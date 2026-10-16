@@ -74,16 +74,32 @@ query never touches the command line. A person can type `jevlin search "<query w
 jevlin search -format model "what is proof of authority consensus"
 ```
 
-## Tiers and request options
+## Three tiers
 
-Every search carries a band, the router's cost tier: `fast` is one provider, `balanced` is
-several with each source attributed, `max` is every core arm, for corroboration. `/jevlin tier
-balanced` in an agent, or `jevlin agents tier balanced` from a shell, sets the band every
-search carries unless a request names one. The skill tells the agent to leave the tier alone
-so your band applies, to ask for `balanced` when it needs several sources, and never to send
-`max` on its own.
+Every search runs in one of three tiers. A tier is a per-query cost ceiling on the router; it
+decides how many of the core arms a search fans out to, and a set that would exceed the
+ceiling is trimmed rather than refused, with `decision.trimmed` naming what went.
 
-Four more fields pass straight through to the router: `recency` (`day`, `week`, `month`,
+| tier | what runs | for |
+|---|---|---|
+| `fast` | one answer engine plus the cheap retrieval arm | a routine lookup, the default for a new key |
+| `balanced` | several core arms, each result attributed to its source | when the agent needs more than one source, or the first answer came back thin |
+| `max` | every core arm | corroboration: the same page found by independent indexes |
+
+Who chooses:
+
+- **You**, out of band: `/jevlin tier balanced` in an agent, or `jevlin agents tier balanced`
+  from a shell, sets the band every search carries unless a request names one. `/jevlin tier
+  default` unsets it and `/jevlin tier` says what is in force.
+- **The agent**, one step at a time: the skill tells it to leave `tier` alone so your band
+  applies, to ask for `balanced` when it needs several sources, and never to send `max` on
+  its own. `max` is yours to choose.
+- **The router**, when nobody did: a request with no tier and no band set carries none, and
+  the router applies the default for your key.
+
+## Request options
+
+Four fields pass straight through to the router: `recency` (`day`, `week`, `month`,
 `year`), `domain_filter` (up to 16 hostnames), `max_results` (1 to 25) and `providers` (up to
 16 names, to restrict the fan-out or reach an arm that fires only when named). The
 [skill](cmd/jevlin/skill.md) is what the agent reads; the
@@ -203,7 +219,7 @@ is at [docs.twilight.org](https://docs.twilight.org).
 
 ## Documentation
 
-- [Jevlin guide](docs/guide.md): setup in detail, bands, the trace, the wallet, earning,
+- [Jevlin guide](docs/guide.md): setup in detail, tiers, the trace, the wallet, earning,
   upgrading, removing.
 - [Agents](docs/agents.md): what is written into each coding agent, and its known limits.
 - [Reference](docs/reference.md): commands, the `--stdin` envelope, config, environment
