@@ -339,7 +339,7 @@ func TestANewerRefusalDoesNotStrandAnOlderEpochsRecords(t *testing.T) {
 	if rec, ok, _ := store.RegionRefusalFor(testSlotID, 1042); !ok || rec.Code != auth.RegionUnverified {
 		t.Fatalf("the newer refusal replaced the older epoch's note: %+v ok=%v", rec, ok)
 	}
-	skip := regionRefusedRecords(store, testSlotID)
+	skip := undeliverableRecords(store, testSlotID)
 	if skip == nil || !skip(&spool.Record{SlotID: testSlotID, TargetEpoch: 1042}) || !skip(&spool.Record{SlotID: testSlotID, TargetEpoch: 1043}) {
 		t.Fatal("the collector would not hold back both refused epochs' records")
 	}

@@ -628,7 +628,8 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   bounded like the conflict set; `cmd/jevlin/driver.go`'s `regionRefused` owns retrying every
   attempt, as the ADR asks, and explaining a verdict once by its note rather than by a process's
   memory, because a flush is a process; `cmd/jevlin/flush.go` owns holding every noted epoch's
-  records back (`regionRefusedRecords`, the collector's `Skip`) and dropping them once the AS
+  records back (`undeliverableRecords`, the collector's `Skip`, which holds back an epoch another
+  installation holds the same way, issue #88) and dropping them once the AS
   itself names a target past them, never on a pinned `target_epoch`
   (`dropRegionRefusedObservationsPastTarget`, invariant 7's second exception). Every
   enrollment clears its own epoch's note, never another's (`ClearRegionRefusalFor`). A 451 on

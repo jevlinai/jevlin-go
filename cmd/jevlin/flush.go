@@ -459,7 +459,7 @@ func runFlushAdmitted(ctx context.Context, cfg *config.Config, cfgPath string, f
 	coll := collector.New(sp, submitter, collector.Options{
 		Interval:    time.Hour, // never fires: Drain is called once
 		MaxAttempts: productionMaxAttempts(m.CollectorMaxAttempts),
-		Skip:        regionRefusedRecords(store, m.SlotID),
+		Skip:        undeliverableRecords(store, m.SlotID),
 	})
 	coll.Drain(ctx)
 	after, _ := sp.Count()
@@ -606,27 +606,39 @@ func dropConflictedObservationsPastTarget(store *auth.Store, spoolDir string, sl
 	}
 }
 
-// regionRefusedRecords is the collector's Skip for the epoch the AS last
-// refused to enroll this installation in under its region policy, read
-// from the note the driver keeps (nil when there is none, or none for this
-// slot). Without an enrollment there is no capability, so delivering one
-// of those records is an attempt that cannot succeed: it would count
-// toward the attempt limit and quarantine evidence nothing is wrong with,
-// and report a delivery fault the region line has already explained. They
-// wait instead. A later join clears the note and they deliver as usual;
-// dropRegionRefusedObservationsPastTarget settles them if none comes.
+// undeliverableRecords is the collector's Skip: the records of an epoch
+// this installation cannot get a capability for, read from what the
+// driver keeps (nil when there is nothing, or nothing for this slot).
+// Delivering one is an attempt that cannot succeed: it counts toward the
+// attempt limit, quarantines evidence nothing is wrong with, and reports a
+// delivery fault, so they wait instead. Two kinds of epoch, each settled by
+// its own drop once the AS's target moves past it:
 //
-// The note is read after this run's join, so it is the AS's latest word.
-// An unreadable note is no note, as everywhere else it is read.
-func regionRefusedRecords(store *auth.Store, slotID uint64) func(*spool.Record) bool {
-	notes, err := store.RegionRefusals()
-	if err != nil {
-		return nil
-	}
+//   - one the AS refused to enroll this installation in under its region
+//     policy (the region notes). A later join clears the note and its
+//     records deliver as usual; dropRegionRefusedObservationsPastTarget
+//     settles them if none comes;
+//   - one another installation of this participant holds (the conflict
+//     set, from ENROLLMENT_CONFLICT on join or PROXY_BINDING_MISMATCH on
+//     the exchange). It never becomes this installation's, and
+//     dropConflictedObservationsPastTarget settles its records (issue #88).
+//
+// Both are read after this run's join, so they are the AS's latest word.
+// An unreadable record is none, as everywhere else they are read.
+func undeliverableRecords(store *auth.Store, slotID uint64) func(*spool.Record) bool {
 	held := map[uint64]bool{}
-	for _, note := range notes {
-		if note.SlotID == slotID {
-			held[note.TargetEpoch] = true
+	if notes, err := store.RegionRefusals(); err == nil {
+		for _, note := range notes {
+			if note.SlotID == slotID {
+				held[note.TargetEpoch] = true
+			}
+		}
+	}
+	if conflicts, err := store.EpochConflicts(); err == nil {
+		for _, c := range conflicts {
+			if c.SlotID == slotID {
+				held[c.TargetEpoch] = true
+			}
 		}
 	}
 	if len(held) == 0 {
@@ -638,7 +650,7 @@ func regionRefusedRecords(store *auth.Store, slotID uint64) func(*spool.Record) 
 }
 
 // dropRegionRefusedObservationsPastTarget settles the records
-// regionRefusedRecords holds back, by the rule
+// undeliverableRecords holds back for a region note, by the rule
 // dropConflictedObservationsPastTarget applies to an epoch another
 // installation holds, and for the same reason: once the AS's current target
 // has moved past the epoch the region note names, this installation can
@@ -721,7 +733,7 @@ func deliverOnly(ctx context.Context, cfg *config.Config, mining *auth.MiningCli
 	coll := collector.New(sp, auth.NewSubmitter(mining, caps), collector.Options{
 		Interval:    time.Hour,
 		MaxAttempts: productionMaxAttempts(cfg.Mining.CollectorMaxAttempts),
-		Skip:        regionRefusedRecords(store, cfg.Mining.SlotID),
+		Skip:        undeliverableRecords(store, cfg.Mining.SlotID),
 	})
 	coll.Drain(ctx)
 	after, _ := sp.Count()
