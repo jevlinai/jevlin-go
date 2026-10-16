@@ -10,7 +10,11 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
-## Unreleased
+## v0.3.0 — 2026-10-16
+
+Two fixes to how the client lives inside a coding agent's hooks. Nothing changes on the
+search or rewards side, and `jevlin upgrade` from v0.2.0 is the first upgrade this
+repository's updater performs against a previous release of its own.
 
 - **A hook of yours in the same group as jevlin's is no longer removed with it.** Claude Code's
   `/hooks` adds a hook to the group already under the same matcher, which can be the one jevlin
