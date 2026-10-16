@@ -1,4 +1,4 @@
-# jevlin
+<p><img src="https://raw.githubusercontent.com/jevlinai/jevlin-go/main/docs/assets/jevlin-logo.png" alt="jevlin" width="220"></p>
 
 Multi-provider web search for coding agents, with the trajectory behind every search. One
 binary gives Claude Code, Cursor, Codex, opencode, Pi and Hermes a `search` that fans a query
