@@ -24,6 +24,11 @@ rewritten to match newer behaviour; the newer entry says what changed.
   under your account), a continuation or loop tick, a message from another session, the output
   of a `!` command, or the summary written when the conversation is compacted. Such a turn is
   now reported with its searches and no user text.
+- **Running jevlin on two machines no longer shows a delivery fault on the one not earning.**
+  When another installation of yours holds an epoch, this one's searches for it can never be
+  delivered. They were retried until they were quarantined, and `status` reported a delivery
+  fault for the whole time. They now wait without a fault, and are dropped once the epoch is
+  over, as before.
 
 ## v0.2.0 — 2026-10-14
 
