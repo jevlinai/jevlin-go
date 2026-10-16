@@ -175,7 +175,7 @@ Any other agent: [agents.md](docs/agents.md#any-other-agent) says what to paste.
 prefer off` makes the agent's own search the default again; naming jevlin in a request still
 routes that one search here.
 
-## The skill and its slash commands
+## Commands: in the agent, and in a shell
 
 Setup installs one skill, `jevlin`, into each agent that has skills (Claude Code, Cursor,
 Codex, Pi, Hermes; opencode gets a plugin and a rules line instead). The skill is what the
@@ -194,9 +194,34 @@ with jevlin goes through that one skill.
 | `/jevlin tier` | The band in force. |
 
 The settings are yours: the skill tells the agent never to change the default or the band on
-its own. The same commands exist from a shell, which is what the agent runs underneath:
-`jevlin agents prefer on|off|status` and `jevlin agents tier <band>|default|status`.
-`/jevlin off` does not reach opencode, whose rules line carries no preference.
+its own. `/jevlin off` does not reach opencode, whose rules line carries no preference.
+
+Those are the only forms the skill teaches, because they are the only ones an agent needs
+mid-task. Everything else is the `jevlin` command in a shell. The agent can run these too when
+you ask it to; the skill points it at `status` and `doctor` when a search succeeds but mining
+says it is not earning.
+
+| command | what it does |
+|---|---|
+| `jevlin search` | One search. `--stdin` for agents (JSON in, JSON out); `<query words>` for a person. |
+| `jevlin setup` | Everything after the binary: previous installation, config, registration, profile, agents. |
+| `jevlin status` | What this installation has and has not completed. `-json` for one envelope. |
+| `jevlin doctor` | Whether searches are recorded and earning, check by check, and the one thing to fix. `-json` too. |
+| `jevlin limits` | This key's spend caps and today's spend, read from the router. |
+| `jevlin agents install\|status\|uninstall` | Sets up, reports or removes the skills and hooks of each agent. |
+| `jevlin agents prefer on\|off\|status` | What `/jevlin on|off|status` runs: which search is the default. |
+| `jevlin agents tier <band>\|default\|status` | What `/jevlin tier` runs: the band every search carries. |
+| `jevlin mining enable\|disable` | Turns Twilight mining on, asking for a payout address, or off. |
+| `jevlin earnings` | What the chain has paid to your payout address. |
+| `jevlin wallet init\|address\|register\|balance\|send` | The wallet setup made, or one you make here. |
+| `jevlin flush` | One pass of the mining plane by hand: join the open epoch, submit recorded searches. |
+| `jevlin connect` | Registers with the search platform, prints the claim link, polls until claimed. |
+| `jevlin upgrade` | A native install: the latest release, verified before it runs; `-rollback` swaps back. |
+| `jevlin uninstall` | Removes what setup wrote; `-binary` and `-purge-state` go further. |
+| `jevlin version`, `jevlin help` | The version, and the full usage text. |
+
+`login`, `enroll`, `payout`, `join` and `provider` are the portal's older manual path. Every
+command takes `-config <file>`; the [reference](docs/reference.md#commands) has every flag.
 
 The skill's text is [`cmd/jevlin/skill.md`](cmd/jevlin/skill.md), rendered per agent and per
 shell at install; the installed copy is at `~/.claude/skills/jevlin/`, `~/.cursor/skills/jevlin/`,
