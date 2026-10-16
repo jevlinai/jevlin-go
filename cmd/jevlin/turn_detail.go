@@ -111,11 +111,11 @@ func claudeTurnDetail(ops hookOps, p claudeStopPayload) *turnDetail {
 		return nil
 	}
 	type entry struct {
-		Type            string          `json:"type"`
-		PromptID        string          `json:"promptId"`
-		Timestamp       string          `json:"timestamp"`
-		IsSidechain     bool            `json:"isSidechain"`
-		IsMeta          bool            `json:"isMeta"`
+		Type        string `json:"type"`
+		PromptID    string `json:"promptId"`
+		Timestamp   string `json:"timestamp"`
+		IsSidechain bool   `json:"isSidechain"`
+		startMarks
 		ToolUseResult   json.RawMessage `json:"toolUseResult"`
 		SourceToolUseID string          `json:"sourceToolUseID"`
 		Message         struct {
@@ -207,13 +207,13 @@ func claudeTurnDetail(ops hookOps, p claudeStopPayload) *turnDetail {
 		}
 	}
 	// The turn end promises the router "the user's message" (invariant 2),
-	// and a `user` record the harness wrote is not one, even where it starts
-	// the turn (issue #70): a continuation or an autonomous-loop tick, which
-	// Claude Code marks isMeta, and a background task's result, which it
-	// hands back as a user record wrapped in <task-notification> and which
-	// names the task's output file under the participant's account. Such a
-	// turn is still reported, with its searches, and with no user text.
-	if entries[start].IsMeta || harnessWroteUserText(userRaw) {
+	// and a `user` record Claude Code wrote is not one, even where it starts
+	// the turn (issue #70). participantWrote decides; such a turn is still
+	// reported, with its searches, and with no user text. A turn whose start
+	// is the summary written when the conversation is compacted loses the
+	// participant's message from before the compaction; this does not try to
+	// recover it.
+	if !participantWrote(entries[start].startMarks, userRaw) {
 		userRaw = ""
 	}
 	d.UserText, d.UserChars, d.UserTruncated = headText(userRaw, traceHistoryCap)
@@ -294,13 +294,56 @@ func claudeTurnDetail(ops hookOps, p claudeStopPayload) *turnDetail {
 	return d
 }
 
+// startMarks are the fields of a Claude Code `user` record that say who
+// wrote it. Origin is kept raw: the whole record is decoded at once, and a
+// field of the wrong type would fail that decode and drop the record, so an
+// earlier user record would become the turn's start. Its shape is judged in
+// participantWrote instead.
+type startMarks struct {
+	Origin                    json.RawMessage `json:"origin"`
+	IsMeta                    bool            `json:"isMeta"`
+	IsCompactSummary          bool            `json:"isCompactSummary"`
+	IsVisibleInTranscriptOnly bool            `json:"isVisibleInTranscriptOnly"`
+}
+
+// participantWrote: is the text of the record that starts a turn the
+// participant's own, to be sent as the user's message? Only when all three
+// signals say so, and each can only withhold:
+//
+//   - origin is absent, or an object whose kind is exactly "human". A typed
+//     message carries {"kind":"human"}; a headless `claude -p` prompt carries
+//     no origin at all, which is why "origin.kind is human" cannot be the
+//     rule alone. Every other kind (task-notification, peer, ...) and every
+//     other shape is the harness;
+//   - none of the flags Claude Code sets on a record it wrote: isMeta (a
+//     continuation, a loop tick, another session's message),
+//     isCompactSummary and isVisibleInTranscriptOnly (the compaction
+//     summary);
+//   - the text does not open with a harnessUserTags envelope.
+func participantWrote(m startMarks, text string) bool {
+	if len(m.Origin) > 0 {
+		var origin map[string]any
+		if json.Unmarshal(m.Origin, &origin) != nil {
+			return false
+		}
+		if kind, _ := origin["kind"].(string); kind != "human" {
+			return false
+		}
+	}
+	if m.IsMeta || m.IsCompactSummary || m.IsVisibleInTranscriptOnly {
+		return false
+	}
+	return !harnessWroteUserText(text)
+}
+
 // harnessUserTags are the envelopes Claude Code wraps around a message it
-// writes into the session as a `user` record without marking it isMeta. A
-// record whose text opens with one is the harness speaking, not the
-// participant. A closed list, grown when a capture shows another: a
-// participant's own message can begin with "<", and only a tag the harness
-// is seen to write is taken as its mark.
-var harnessUserTags = []string{"<task-notification>"}
+// writes into the session as a `user` record without a flag that says so.
+// Each was seen starting an answered turn in a capture: a background task's
+// result, the output of a `!` command, and a local command's output. A
+// closed list, grown on evidence: a participant's own message can begin
+// with "<", and <bash-input>, <command-name> and <local-command-caveat>
+// were never seen starting an answered turn, so they are not here.
+var harnessUserTags = []string{"<task-notification>", "<bash-stdout>", "<local-command-stdout>"}
 
 func harnessWroteUserText(text string) bool {
 	text = strings.TrimSpace(text)
