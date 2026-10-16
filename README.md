@@ -175,6 +175,34 @@ Any other agent: [agents.md](docs/agents.md#any-other-agent) says what to paste.
 prefer off` makes the agent's own search the default again; naming jevlin in a request still
 routes that one search here.
 
+## The skill and its slash commands
+
+Setup installs one skill, `jevlin`, into each agent that has skills (Claude Code, Cursor,
+Codex, Pi, Hermes; opencode gets a plugin and a rules line instead). The skill is what the
+agent reads: it tells the agent to prefer this search over its built-in one, how to build the
+request, how to read the envelope, and what the commands below do. Everything the agent can do
+with jevlin goes through that one skill.
+
+| in the agent | what it does |
+|---|---|
+| `/jevlin <question>` | One search, as the skill specifies: the query goes as JSON on stdin, the merged list comes back, the agent answers from it. Naming jevlin in an ordinary request does the same. |
+| `/jevlin off` | The agent's built-in web search becomes the default again; this one runs only when you name it. The skill is rewritten to say so, in every agent, from its next start. |
+| `/jevlin on` | This search is the default again. |
+| `/jevlin status` | Which of the two is the default right now. |
+| `/jevlin tier fast\|balanced\|max` | Sets the band every search carries unless a request names one. |
+| `/jevlin tier default` | Unsets it; the router's default for your key applies. |
+| `/jevlin tier` | The band in force. |
+
+The settings are yours: the skill tells the agent never to change the default or the band on
+its own. The same commands exist from a shell, which is what the agent runs underneath:
+`jevlin agents prefer on|off|status` and `jevlin agents tier <band>|default|status`.
+`/jevlin off` does not reach opencode, whose rules line carries no preference.
+
+The skill's text is [`cmd/jevlin/skill.md`](cmd/jevlin/skill.md), rendered per agent and per
+shell at install; the installed copy is at `~/.claude/skills/jevlin/`, `~/.cursor/skills/jevlin/`,
+`~/.codex/skills/jevlin/`, `~/.pi/agent/skills/jevlin/` or `~/.hermes/skills/jevlin/`.
+[Agents](docs/agents.md) says what else is written into each one.
+
 ## What leaves the machine
 
 The trace and the turn end go only to the search router, inside the search request and the
