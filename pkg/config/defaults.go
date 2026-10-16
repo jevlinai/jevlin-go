@@ -62,5 +62,5 @@ const (
 // later testnets, and mainnet: the client can never sign for a node
 // whose chain id is not the one it was configured for.
 var DefaultWalletNodes = map[string]string{
-	DefaultChainID: "https://rpc.nyks.dev",
+	DefaultChainID: "https://rpc-testnet.twilight.org",
 }
