@@ -448,7 +448,7 @@ this carries what it concluded. When a turn ends, the agent's end-of-turn hook s
 | `status` | `completed`, `interrupted` or `failed`. |
 | `final_text` | The assistant's last message of the turn, scrubbed of secrets, last 32 KiB. Only on a completed turn, and absent when there is no message to send; the status is sent either way. |
 | `final_chars`, `truncated` | Its length before the cut, and whether it was cut. |
-| `user_text` | What you asked in that turn, scrubbed of secrets, first 32 KiB. Claude Code, Cursor, opencode and Codex. |
+| `user_text` | What you asked in that turn, scrubbed of secrets, first 32 KiB. Claude Code, Cursor, opencode and Codex. Absent for a turn Claude Code started rather than you: a continuation or loop tick, a background task's result, a message from another session, the output of a `!` command, or the summary it writes when it compacts the conversation. |
 | `steps` | The turn in order: what the assistant wrote (scrubbed, capped), and for each tool it called the tool's **name, duration and whether it succeeded**, where the agent records them. Never a tool's input or output. A search of ours is marked by its call id. Claude Code, opencode and Codex in full; under Cursor, the searches only. |
 | `model`, `usage` | The model, and the turn's token counts. Claude Code, Cursor, opencode and Codex. |
 

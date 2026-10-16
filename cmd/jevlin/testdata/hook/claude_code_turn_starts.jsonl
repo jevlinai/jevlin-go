@@ -1,0 +1,8 @@
+{"type":"user","entrypoint":"cli","version":"2.1.289","origin":{"kind":"human"},"message":{"role":"user","content":"PARTICIPANT TEXT"}}
+{"type":"user","entrypoint":"sdk-cli","version":"2.1.292","message":{"role":"user","content":"PARTICIPANT TEXT"}}
+{"type":"user","entrypoint":"cli","version":"2.1.289","origin":{"kind":"task-notification"},"message":{"role":"user","content":"<task-notification>HARNESS TEXT</task-notification>"}}
+{"type":"user","isMeta":true,"entrypoint":"cli","version":"2.1.289","origin":{"kind":"peer"},"message":{"role":"user","content":"HARNESS TEXT"}}
+{"type":"user","isMeta":true,"entrypoint":"cli","version":"2.1.289","message":{"role":"user","content":[{"type":"text","text":"HARNESS TEXT"},{"type":"text","text":"HARNESS TEXT"}]}}
+{"type":"user","isCompactSummary":true,"isVisibleInTranscriptOnly":true,"entrypoint":"cli","version":"2.1.289","message":{"role":"user","content":"HARNESS TEXT"}}
+{"type":"user","entrypoint":"cli","version":"2.1.289","message":{"role":"user","content":"<bash-stdout>HARNESS TEXT</bash-stdout>"}}
+{"type":"user","entrypoint":"cli","version":"2.1.263","message":{"role":"user","content":"<local-command-stdout>HARNESS TEXT</local-command-stdout>"}}

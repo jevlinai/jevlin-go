@@ -18,6 +18,12 @@ rewritten to match newer behaviour; the newer entry says what changed.
   group as jevlin's, replacing or deleting your hook without a word, and an uninstall could
   delete the file. Now only jevlin's own hook is touched, yours stays where it was, and the plan
   says so. Affects Claude Code and Codex.
+- **The turn end no longer sends text Claude Code wrote as your message.** With
+  `[miner] turn_end = true`, a turn Claude Code started itself sent what it wrote as what you
+  asked: a background task's result (`<task-notification>`, which names the task's output file
+  under your account), a continuation or loop tick, a message from another session, the output
+  of a `!` command, or the summary written when the conversation is compacted. Such a turn is
+  now reported with its searches and no user text.
 
 ## v0.2.0 — 2026-10-14
 
