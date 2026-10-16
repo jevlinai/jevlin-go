@@ -1,4 +1,13 @@
 <p align="center"><img src="docs/assets/jevlin-logo.png" alt="jevlin" width="220"></p>
+<p align="center">
+  <a href="https://www.npmjs.com/package/@jevlinsearch/jevlin"><img src="https://img.shields.io/npm/v/@jevlinsearch/jevlin?label=npm&color=cb3837" alt="npm"></a>
+  <a href="https://github.com/jevlinai/jevlin-go/releases"><img src="https://img.shields.io/github/v/release/jevlinai/jevlin-go?label=release" alt="release"></a>
+  <a href="https://github.com/jevlinai/jevlin-go/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/jevlinai/jevlin-go/ci.yml?branch=main&label=ci" alt="ci"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="license"></a>
+  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs welcome"></a>
+  <a href="https://jevlin.ai"><img src="https://img.shields.io/badge/jevlin.ai-site-111" alt="jevlin.ai"></a>
+  <a href="https://docs.twilight.org"><img src="https://img.shields.io/badge/twilight-docs-E8552F" alt="Twilight docs"></a>
+</p>
 
 Multi-provider web search for coding agents, with the trajectory behind every search. One
 binary gives Claude Code, Cursor, Codex, opencode, Pi and Hermes a `search` that fans a query
