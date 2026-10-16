@@ -1,10 +1,10 @@
-<p align="center"><img src="docs/assets/jevlin-logo.png" alt="jevlin" width="220"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/jevlinai/jevlin-go/734aba4f98c8d484a0bcb26c4f2b25ffccca41a1/docs/assets/jevlin-logo.png" alt="jevlin" width="220"></p>
 <p align="center">
   <a href="https://www.npmjs.com/package/@jevlinsearch/jevlin"><img src="https://img.shields.io/npm/v/@jevlinsearch/jevlin?label=npm&color=cb3837" alt="npm"></a>
   <a href="https://github.com/jevlinai/jevlin-go/releases"><img src="https://img.shields.io/github/v/release/jevlinai/jevlin-go?label=release" alt="release"></a>
   <a href="https://github.com/jevlinai/jevlin-go/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/jevlinai/jevlin-go/ci.yml?branch=main&label=ci" alt="ci"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="license"></a>
-  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs welcome"></a>
+  <a href="https://github.com/jevlinai/jevlin-go/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="license"></a>
+  <a href="https://github.com/jevlinai/jevlin-go/blob/main/CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs welcome"></a>
   <a href="https://jevlin.ai"><img src="https://img.shields.io/badge/jevlin.ai-site-111" alt="jevlin.ai"></a>
   <a href="https://docs.twilight.org"><img src="https://img.shields.io/badge/twilight-docs-E8552F" alt="Twilight docs"></a>
 </p>
@@ -103,8 +103,8 @@ Who chooses:
 Four fields pass straight through to the router: `recency` (`day`, `week`, `month`,
 `year`), `domain_filter` (up to 16 hostnames), `max_results` (1 to 25) and `providers` (up to
 16 names, to restrict the fan-out or reach an arm that fires only when named). The
-[skill](cmd/jevlin/skill.md) is what the agent reads; the
-[reference](docs/reference.md#the---stdin-request) has the envelope.
+[skill](https://github.com/jevlinai/jevlin-go/blob/main/cmd/jevlin/skill.md) is what the agent reads; the
+[reference](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#the---stdin-request) has the envelope.
 
 ## Trajectory observability
 
@@ -128,8 +128,8 @@ The hooks keep a lineage file per workspace under `~/.jevlin/sessions`, so the s
 task line up even across context compactions and subagents, and only the agent that wrote a
 file reads it. The scrub removes anything shaped like a credential, PEM blocks, email
 addresses, the account name in a home path, and any value under a name like `password`,
-`token` or `api_key`. [The trace](docs/reference.md#the-trace) and
-[the turn end](docs/reference.md#the-turn-end) list every field and every scrub rule.
+`token` or `api_key`. [The trace](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#the-trace) and
+[the turn end](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#the-turn-end) list every field and every scrub rule.
 
 `export JEVLIN_TRACE=off` sends no trace and no turn end; searches work the same without them.
 
@@ -147,7 +147,7 @@ to copy or paste. Then it asks, in this order:
 | **Set up the coding agents found on this machine now?** | Writes a skill and hooks into each agent's own config, after showing you what. |
 
 Then it prints a link where you claim your agent on `platform.jevlin.ai`. The
-[guide](docs/guide.md#setup) says what each answer does and which flags answer them for you.
+[guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#setup) says what each answer does and which flags answer them for you.
 
 ## Then check
 
@@ -165,14 +165,14 @@ installed. Restart any agent that was already open.
 
 | agent | what is written | one thing to know |
 |---|---|---|
-| [Claude Code](docs/agents.md#claude-code) | a skill; hooks and allow rules in `~/.claude/settings.json` | On Windows, a search through its PowerShell tool asks for approval. |
-| [Cursor](docs/agents.md#cursor) | a skill; hooks in `~/.cursor/hooks.json` | Cursor also runs Claude Code's hooks, which stand aside for it. |
-| [Codex](docs/agents.md#codex) | a skill; on macOS and Linux, hooks in `~/.codex/hooks.json` and a permission profile in `~/.codex/config.toml` that opens only the search hosts; on Windows, writable directories in that file and no network | Its hooks run only once you approve them in Codex. Supported with Codex 0.158.0 or newer; older versions are not supported. |
-| [opencode](docs/agents.md#opencode) | a plugin, and a line for you to paste into `AGENTS.md` | `/jevlin off` does not reach it. |
-| [Pi](docs/agents.md#pi) | a skill and an extension under `~/.pi/agent/` | A resumed session keeps its place in the trace. |
-| [Hermes](docs/agents.md#hermes) | a skill; a hook in `config.yaml` | Approve the hook once; it loads next session. |
+| [Claude Code](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#claude-code) | a skill; hooks and allow rules in `~/.claude/settings.json` | On Windows, a search through its PowerShell tool asks for approval. |
+| [Cursor](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#cursor) | a skill; hooks in `~/.cursor/hooks.json` | Cursor also runs Claude Code's hooks, which stand aside for it. |
+| [Codex](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#codex) | a skill; on macOS and Linux, hooks in `~/.codex/hooks.json` and a permission profile in `~/.codex/config.toml` that opens only the search hosts; on Windows, writable directories in that file and no network | Its hooks run only once you approve them in Codex. Supported with Codex 0.158.0 or newer; older versions are not supported. |
+| [opencode](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#opencode) | a plugin, and a line for you to paste into `AGENTS.md` | `/jevlin off` does not reach it. |
+| [Pi](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#pi) | a skill and an extension under `~/.pi/agent/` | A resumed session keeps its place in the trace. |
+| [Hermes](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#hermes) | a skill; a hook in `config.yaml` | Approve the hook once; it loads next session. |
 
-Any other agent: [agents.md](docs/agents.md#any-other-agent) says what to paste. `jevlin agents
+Any other agent: [agents.md](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#any-other-agent) says what to paste. `jevlin agents
 prefer off` makes the agent's own search the default again; naming jevlin in a request still
 routes that one search here.
 
@@ -222,12 +222,12 @@ says it is not earning.
 | `jevlin version`, `jevlin help` | The version, and the full usage text. |
 
 `login`, `enroll`, `payout`, `join` and `provider` are the portal's older manual path. Every
-command takes `-config <file>`; the [reference](docs/reference.md#commands) has every flag.
+command takes `-config <file>`; the [reference](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#commands) has every flag.
 
-The skill's text is [`cmd/jevlin/skill.md`](cmd/jevlin/skill.md), rendered per agent and per
+The skill's text is [`cmd/jevlin/skill.md`](https://github.com/jevlinai/jevlin-go/blob/main/cmd/jevlin/skill.md), rendered per agent and per
 shell at install; the installed copy is at `~/.claude/skills/jevlin/`, `~/.cursor/skills/jevlin/`,
 `~/.codex/skills/jevlin/`, `~/.pi/agent/skills/jevlin/` or `~/.hermes/skills/jevlin/`.
-[Agents](docs/agents.md) says what else is written into each one.
+[Agents](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md) says what else is written into each one.
 
 ## What leaves the machine
 
@@ -246,8 +246,8 @@ npm install -g @jevlinsearch/jevlin@latest   # an npm install is updated with np
 jevlin uninstall               # remove the skills, hooks and profile block; keep your wallet
 ```
 
-The guide covers [upgrading](docs/guide.md#upgrading) and
-[removing it and coming back](docs/guide.md#removing-it-and-coming-back).
+The guide covers [upgrading](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#upgrading) and
+[removing it and coming back](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#removing-it-and-coming-back).
 
 ## Mining on the Twilight testnet
 
@@ -270,19 +270,19 @@ is recorded on your machine and reported to the Slot's verifier after the fact:
 
 `jevlin doctor` says whether searches are recorded and earning, check by check, and `jevlin
 earnings` reads what the chain has paid. Search works before you claim your agent, and with
-mining off. The [guide](docs/guide.md#earning) has the detail; how the chain and its Slots work
+mining off. The [guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#earning) has the detail; how the chain and its Slots work
 is at [docs.twilight.org](https://docs.twilight.org).
 
 ## Documentation
 
-- [Jevlin guide](docs/guide.md): setup in detail, tiers, the trace, the wallet, earning,
+- [Jevlin guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md): setup in detail, tiers, the trace, the wallet, earning,
   upgrading, removing.
-- [Agents](docs/agents.md): what is written into each coding agent, and its known limits.
-- [Reference](docs/reference.md): commands, the `--stdin` envelope, config, environment
+- [Agents](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md): what is written into each coding agent, and its known limits.
+- [Reference](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md): commands, the `--stdin` envelope, config, environment
   variables, files, the trace, the turn end, `doctor`'s checks.
-- [CHANGELOG.md](CHANGELOG.md): what changed in each release.
-- [SECURITY.md](SECURITY.md): how to report a vulnerability.
-- [CONTRIBUTING.md](CONTRIBUTING.md): how to propose a change.
+- [CHANGELOG.md](https://github.com/jevlinai/jevlin-go/blob/main/CHANGELOG.md): what changed in each release.
+- [SECURITY.md](https://github.com/jevlinai/jevlin-go/blob/main/SECURITY.md): how to report a vulnerability.
+- [CONTRIBUTING.md](https://github.com/jevlinai/jevlin-go/blob/main/CONTRIBUTING.md): how to propose a change.
 
 ## License
 
