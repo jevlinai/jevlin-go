@@ -359,7 +359,7 @@ jobs:
               echo "${PKG}@${VERSION} was not observable on the registry within 600s ($attempt attempts)." >&2
               echo "The publish step reported success, so this is a registry or a package-state problem," >&2
               echo "not something to fix by publishing again: the version is immutable." >&2
-              npm view jevlin versions --json >&2 || true
+              npm view "${PKG}" versions --json >&2 || true
               exit 1
             fi
             echo "attempt ${attempt}: not visible yet, waiting"
