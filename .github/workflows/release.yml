@@ -157,10 +157,15 @@ jobs:
           echo "A complete GitHub Release for ${GITHUB_REF_NAME} already exists; goreleaser is skipped."
           echo "Re-running it would replace assets a published npm package may already be downloading."
 
+      # The action is pinned by SHA, and so is the goreleaser it runs: the
+      # action downloads the goreleaser binary named here at run time, and
+      # a range would fetch whatever release is newest, in the one job
+      # that can write to the repository. v2.18.3 built v0.3.0. A bump is
+      # a deliberate PR, like an action's.
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         if: needs.preflight.outputs.release_state == 'absent'
         with:
-          version: "~> v2"
+          version: "v2.18.3"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -359,7 +364,7 @@ jobs:
               echo "${PKG}@${VERSION} was not observable on the registry within 600s ($attempt attempts)." >&2
               echo "The publish step reported success, so this is a registry or a package-state problem," >&2
               echo "not something to fix by publishing again: the version is immutable." >&2
-              npm view jevlin versions --json >&2 || true
+              npm view "${PKG}" versions --json >&2 || true
               exit 1
             fi
             echo "attempt ${attempt}: not visible yet, waiting"
