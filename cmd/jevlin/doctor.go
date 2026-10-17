@@ -206,6 +206,10 @@ type doctorFacts struct {
 	// checked and there is no state access check.
 	State stateAccessFacts
 
+	// Update is the daily release check's stamp and mode (update_check.go),
+	// for `up to date`. Gathered by cmdDoctor beside the config facts.
+	Update updateFacts
+
 	// Now is sampled once, by the gatherer. Nothing downstream calls
 	// time.Now(), so a judgment over these facts is reproducible.
 	Now time.Time
@@ -224,6 +228,7 @@ func assembleDoctor(f doctorFacts) []doctorCheck {
 		doctorEarningCheck(f),
 		doctorIntakeCheck(f),
 		doctorRecordingCheck(f),
+		doctorUpdateCheck(f),
 	}
 	if f.Wallet.Checked {
 		checks = append(checks, doctorWalletCheck(f.Wallet))
@@ -545,6 +550,7 @@ func cmdDoctor(args []string, stdout, stderr io.Writer) int {
 	f.ASConfigKnown = true
 	f.ConfigSource = src
 	f.StateDir = cfg.Mining.StateDir
+	f.Update = gatherUpdateFacts(cfg, os.Getenv)
 	if walletACL.managed {
 		f.Wallet = inspectWalletAccess(doctorWalletDir(src, os.Getenv))
 	}
@@ -1144,6 +1150,79 @@ func countIntakeJSON(dir string) (int, error) {
 		n++
 	}
 	return n, nil
+}
+
+// doctorUpdateCheck reads the daily release check's stamp (update_check.go).
+//
+// NO is one fact: a newer release exists and this copy is not it, with the
+// one command that applies it here. A check that never ran is OK with a
+// date — a new installation's first check is a day away, and that is not a
+// fault — but one that has not run for three days is UNKNOWN: the hooks
+// that start it may not be running, and this check cannot tell. A failed,
+// unfinished, unreadable or future-dated stamp is UNKNOWN with the reason,
+// and a stamp from a development build has nothing to compare.
+func doctorUpdateCheck(f doctorFacts) doctorCheck {
+	c := doctorCheck{Name: "up to date"}
+	u := f.Update
+	undetermined := func(reason string) doctorCheck {
+		c.Verdict, c.Detail = verdictUnknown, "could not determine — "+reason
+		return c
+	}
+	modeNote := ""
+	if u.UnknownMode != "" {
+		modeNote = "; [update] mode names a word this version does not know, so it checks and notifies only"
+	}
+	if u.Mode == config.UpdateOff {
+		c.Verdict, c.Detail = verdictOK, "automatic release checks are off ([update] mode)"
+		return c
+	}
+	if u.Err != nil {
+		return undetermined("the update stamp could not be read: " + redact.Error(u.Err).Error())
+	}
+	if !u.Present {
+		c.Verdict, c.Detail = verdictOK, "no release check has run yet; the agent hooks start one daily"+modeNote
+		return c
+	}
+	st := u.Stamp
+	age := f.Now.Sub(st.CheckedAt)
+	if !u.thisCopy() {
+		c.Verdict, c.Detail = verdictOK, fmt.Sprintf("no release check has run yet for this copy; the last, %s, was by another copy of jevlin", ageText(age))
+		return c
+	}
+	switch {
+	case age < 0:
+		return undetermined("the update stamp is in the future")
+	case age >= updateStaleAfter:
+		c.Verdict = verdictUnknown
+		c.Detail = fmt.Sprintf("could not determine — the last check ran %s; a check runs daily when an agent session starts", ageText(age))
+		c.Fix = u.Fix
+		return c
+	}
+	switch st.Outcome {
+	case updateCurrent:
+		c.Verdict, c.Detail = verdictOK, fmt.Sprintf("%s is the latest release (checked %s)%s", st.Running, ageText(age), modeNote)
+	case updateUpgraded:
+		c.Verdict, c.Detail = verdictOK, fmt.Sprintf("upgraded to %s %s; restart open agents", st.Latest, ageText(age))
+	case updateAvailable:
+		c.Verdict, c.Detail = verdictNo, fmt.Sprintf("%s is available and this copy is %s (checked %s)", st.Latest, st.Running, ageText(age))
+		c.Fix = u.Fix
+	case updateFailed:
+		if len(u.Recovery) > 0 {
+			c.Verdict = verdictNo
+			c.Detail = fmt.Sprintf("the last automatic upgrade %s could not put the binary back; these copies survive beside it: %s", ageText(age), strings.Join(u.Recovery, ", "))
+			c.Fix = "jevlin upgrade -rollback, or reinstall from the releases page; none of the copies is deleted"
+			return c
+		}
+		return undetermined(fmt.Sprintf("the last check failed (%s) %s; the next runs in a day", st.Failure, ageText(age)))
+	case updateNotRelease:
+		c.Verdict, c.Detail = verdictOK, fmt.Sprintf("not a release build; nothing to compare (checked %s)", ageText(age))
+	default: // started
+		if age < updateStartedGrace {
+			return undetermined(fmt.Sprintf("a check started %s and is still running", ageText(age)))
+		}
+		return undetermined(fmt.Sprintf("a check started %s and never reported; the next runs in a day", ageText(age)))
+	}
+	return c
 }
 
 // doctorRecordingCheck is a heuristic and says so in its own wording.

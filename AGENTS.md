@@ -216,7 +216,11 @@ the named tests.
     `manual_intervention`, reports every surviving copy, and cleanup preserves every reported path.
     Upgrade never moves to an older release: only `upgrade -rollback` does, by validating a fresh
     copy of that one local `.previous` — never running it in place — with no network, and swapping
-    one level. An npm-managed copy is never replaced. Participant state is removed only by
+    one level. An npm-managed copy is never replaced. The daily check the hooks start,
+    `upgrade -auto` (`cmd/jevlin/update_check.go`), is this same transaction under the same locks,
+    taken in one attempt, or one release lookup for a copy it may not replace; it is started only
+    by a hook, never by a search or anything a search spawns, so the one host it reaches stays off
+    the sandboxed path invariant 1 fences, and its stamp in the state dir is held to tokens on load. Participant state is removed only by
     `uninstall -purge-state` after an interactive typed confirmation, the wallet address or the
     installation path, that `-yes` cannot supply and a non-terminal cannot reach: protection against
     accidents and non-interactive automation, not against a program driving a terminal.
