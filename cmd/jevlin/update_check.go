@@ -17,7 +17,13 @@ package main
 //
 // Hooks run outside an agent's sandbox, which is what lets the child reach a
 // host Codex's permission profile does not list (invariant 1): the search
-// path, and the processes a search spawns, are not touched.
+// path, and the processes a search spawns, are not touched. Not every hook,
+// though: a host started as a shell command inside Codex's sandbox (claude
+// -p, opencode run, pi) runs its hooks there, with Codex's loopback proxy as
+// its only route out, and a check started from it would ask that proxy for
+// GitHub, a host the profile does not list, failing whatever Codex command
+// is running. A hook whose environment says so starts no check
+// (hookInsideASandbox); its flush still starts, as it always did.
 //
 // The stamp and its lock live in the installation's own directory, beside
 // credentials.json, and never in the state directory. A sandboxed command
@@ -43,6 +49,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -311,6 +318,51 @@ func updateCheckDue(read func(string) ([]byte, error), root, mode, build, binary
 		mode == config.UpdateApply && native != nil && native()
 }
 
+// hookInsideASandbox reports whether a hook's own environment says it runs
+// inside an agent's sandbox: Codex's sandbox markers, or a proxy on this
+// machine's loopback, the one route out of Codex's sandbox
+// (pkg/auth/proxy.go). A check is not started from there. The cost is a
+// person whose own proxy listens on loopback: their hooks start no check,
+// doctor says so after three days, and `jevlin upgrade` by hand still works.
+func hookInsideASandbox(getenv func(string) string) bool {
+	if getenv == nil {
+		return false
+	}
+	for _, k := range []string{"CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED"} {
+		if getenv(k) != "" {
+			return true
+		}
+	}
+	for _, k := range []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"} {
+		if proxyOnLoopback(getenv(k)) {
+			return true
+		}
+	}
+	return false
+}
+
+func proxyOnLoopback(v string) bool {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return false
+	}
+	if !strings.Contains(v, "://") {
+		v = "http://" + v
+	}
+	u, err := url.Parse(v)
+	return err == nil && isLoopbackName(u.Hostname())
+}
+
+// updateCheckArgs is the command line the detached check runs with, held in
+// one place so a test reads the same words a hook spawns.
+func updateCheckArgs(cfgPath string) []string {
+	args := []string{"upgrade", "-auto"}
+	if cfgPath != "" {
+		args = append(args, "-config", cfgPath)
+	}
+	return args
+}
+
 // startUpdateCheck launches `upgrade -auto` as a detached child, the exact
 // shape of startFlush: best effort, output goes nowhere, the next hook tries
 // again if this one could not even start.
@@ -319,11 +371,7 @@ func startUpdateCheck(cfgPath string) error {
 	if err != nil {
 		return err
 	}
-	args := []string{"upgrade", "-auto"}
-	if cfgPath != "" {
-		args = append(args, "-config", cfgPath)
-	}
-	return spawnDetached(exe, args)
+	return spawnDetached(exe, updateCheckArgs(cfgPath))
 }
 
 // ── what status and doctor read ─────────────────────────────────────────

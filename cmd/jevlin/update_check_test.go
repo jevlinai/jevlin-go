@@ -268,6 +268,21 @@ func TestStartUpdateCheckNamesTheDetachedCommand(t *testing.T) {
 	if code != exitUsage || !strings.Contains(out.String(), "-auto takes neither") {
 		t.Errorf("-auto -rollback: exit %d\n%s", code, out.String())
 	}
+
+	// The words a hook spawns, run as upgradeMain runs them: the check, under
+	// the hook's config, writing its stamp. Before, nothing read the spawned
+	// command line, and dropping -auto from it stayed green.
+	f, cfgPath, stamp := autoFixture(t, newLocalRelease(t, "0.3.0", map[string]string{"0.3.0": "0.3.0\n"}), "")
+	args := updateCheckArgs(cfgPath)
+	if len(args) == 0 || args[0] != "upgrade" {
+		t.Fatalf("the check's command line %v is not an upgrade", args)
+	}
+	if code, o, e := f.run(args[1:]...); code != exitOK {
+		t.Fatalf("%v: exit %d\n%s\n%s", args, code, o, e)
+	}
+	if st := readStampT(t, stamp); st.Outcome != updateCurrent {
+		t.Errorf("%v did not run the check: stamp %+v", args, st)
+	}
 }
 
 // ── upgrade -auto ───────────────────────────────────────────────────────

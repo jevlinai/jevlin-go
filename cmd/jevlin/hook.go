@@ -206,7 +206,7 @@ func (ops hookOps) startBackground(hc hookContext) {
 	if ops.spawnFlush != nil {
 		_ = ops.spawnFlush(hc.cfgPath)
 	}
-	if ops.spawnUpdateCheck == nil || ops.readFile == nil {
+	if ops.spawnUpdateCheck == nil || ops.readFile == nil || hookInsideASandbox(ops.getenv) {
 		return
 	}
 	now := time.Now()
