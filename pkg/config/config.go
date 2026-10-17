@@ -166,7 +166,9 @@ const (
 // origin, with no credential (invariant 5's one exception); a copy npm
 // installed is never replaced, whatever Mode says, and is only noted.
 type Update struct {
-	// Mode is apply (the default), notify or off.
+	// Mode is notify (the default), apply or off. Notify until releases are
+	// signed: apply replaces a binary unattended, on the strength of a
+	// checksums.txt from the same release.
 	Mode string
 	// UnknownMode is a word the file set that this version cannot name; Mode
 	// is then notify — never off, which would silence the check by a typo,
@@ -824,7 +826,7 @@ func (r *rawConfig) finish() (*Config, error) {
 func (r *rawConfig) finishUpdate() Update {
 	switch mode := strings.ToLower(strings.TrimSpace(r.updateMode)); mode {
 	case "":
-		return Update{Mode: UpdateApply}
+		return Update{Mode: UpdateNotify}
 	case UpdateApply, UpdateNotify, UpdateOff:
 		return Update{Mode: mode}
 	default:

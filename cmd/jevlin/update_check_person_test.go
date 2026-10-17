@@ -199,7 +199,7 @@ func TestACheckNeverReplacesAnotherInstallationsBinary(t *testing.T) {
 		t.Fatal(err)
 	}
 	otherCfg := filepath.Join(other, setupConfigFile)
-	writeFileT(t, otherCfg, "[mining]\nstate_dir = \""+filepath.ToSlash(filepath.Join(other, "state"))+"\"\n")
+	writeFileT(t, otherCfg, "[mining]\nstate_dir = \""+filepath.ToSlash(filepath.Join(other, "state"))+"\"\n[update]\nmode = \"apply\"\n")
 	code, out, errOut := f.runAuto(otherCfg)
 	if code != exitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
@@ -219,7 +219,7 @@ func TestAnAutomaticUpgradeRecordsAFailedRefresh(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(m.home, "state"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	writeFileT(t, m.cfg, "[mining]\nstate_dir = \""+filepath.ToSlash(filepath.Join(m.home, "state"))+"\"\n")
+	writeFileT(t, m.cfg, "[mining]\nstate_dir = \""+filepath.ToSlash(filepath.Join(m.home, "state"))+"\"\n[update]\nmode = \"apply\"\n")
 	m.runner.fail = true
 	if code, out, errOut := m.run("-auto", "-config", m.cfg); code != exitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
@@ -325,5 +325,33 @@ func TestACheckThatCannotWriteItsStampMakesNoRequest(t *testing.T) {
 	}
 	if lexists(stamp) {
 		t.Errorf("a stamp appeared in a directory that could not be written")
+	}
+}
+
+// With no [update] key, the check only tells: a native copy is not replaced
+// until the participant writes mode = "apply". Releases are not signed yet,
+// and apply would replace the binary unattended on the strength of a
+// checksums.txt from the same release.
+func TestTheDefaultModeOnlyTells(t *testing.T) {
+	f := newUpgradeFixture(t, newLocalRelease(t, "0.3.1", map[string]string{"0.3.1": "0.3.1\n"}))
+	f.env["JEVLIN_HOME"] = f.home
+	stateDir := filepath.Join(f.home, "state")
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(f.home, setupConfigFile)
+	writeFileT(t, cfgPath, "[mining]\nstate_dir = \""+filepath.ToSlash(stateDir)+"\"\n")
+	if mode := mustLoadConfig(t, cfgPath).Update.Mode; mode != config.UpdateNotify {
+		t.Fatalf("the default mode is %q, want notify", mode)
+	}
+	code, out, errOut := f.runAuto(cfgPath)
+	if code != exitOK {
+		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
+	}
+	if f.content(f.exe) != "0.3.0" {
+		t.Fatalf("the default mode replaced the binary: %s", f.content(f.exe))
+	}
+	if st := readStampT(t, updateStampPath(f.home)); st.Outcome != updateAvailable || st.Latest != "0.3.1" || st.Mode != config.UpdateNotify {
+		t.Errorf("stamp %+v", st)
 	}
 }

@@ -253,9 +253,11 @@ npm install -g @jevlinsearch/jevlin@latest   # an npm install is updated with np
 jevlin uninstall               # remove the skills, hooks and profile block; keep your wallet
 ```
 
-A native install also checks for a release once a day, when an agent session starts or ends,
-and applies it with the same verification. An npm install is only told; `jevlin status` says
-what the last check found. `[update] mode = "notify"` or `"off"` in the config changes that.
+Once a day, when an agent session starts or ends, jevlin also checks for a newer release, and
+`jevlin status` says what it found. It only tells you, unless the config says
+`[update] mode = "apply"`: then a native install replaces its own binary, with the same
+verification as `jevlin upgrade`. An npm install is only ever told. `mode = "off"` stops the
+check.
 
 The guide covers [upgrading](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#upgrading) and
 [removing it and coming back](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#removing-it-and-coming-back).

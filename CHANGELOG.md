@@ -12,21 +12,22 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
-- **A native install keeps itself current.** Once a day, when an agent session starts or ends
-  (Claude Code, Cursor and Codex; opencode's plugin and Pi's extension now start the flush at a
+- **A daily check for a new release.** Once a day, when an agent session starts or ends (Claude
+  Code, Cursor and Codex; opencode's plugin and Pi's extension now start the flush at a
   session's start too; Hermes does not), the hooks start a detached check against the project's
-  GitHub releases, and a newer release is installed the way `jevlin upgrade` installs it:
-  verified, run before and after, the old binary kept as `jevlin.previous`. An npm install is
-  never replaced this way and is only told; `jevlin status` and `jevlin doctor`'s new
-  `up to date` line say what the last check found and the one command that applies it. The check
-  contacts nothing but GitHub, sends no credential, and is never started from inside an agent's
-  sandbox. It never undoes you: after `jevlin upgrade -rollback` the release you left is not
-  installed again, only a newer one, and if an automatic upgrade could not put the old binary
-  back, status and doctor list what survives and no check runs until you upgrade. Its record is
-  `update_check.json` beside your credentials. A new `[update] mode` key — `apply` (the
-  default), `notify` or `off` — changes what it may do; a config without the key behaves as
-  `apply`. An older jevlin refuses a config that names the key, as it refuses any key it does
-  not know, so add it only once this release is installed.
+  GitHub releases. By default it only tells you: `jevlin status` and `jevlin doctor`'s new
+  `up to date` line say what it found and the one command that installs it. With
+  `[update] mode = "apply"` a native install installs a newer release itself, the way
+  `jevlin upgrade` does: verified, run before and after, the old binary kept as
+  `jevlin.previous`. An npm install is never replaced this way. The default is to tell until
+  releases are signed. The check contacts nothing but GitHub, sends no credential, and is
+  never started from inside an agent's sandbox. It never undoes you: after
+  `jevlin upgrade -rollback` the release you left is not installed again, only a newer one, and
+  if an automatic upgrade could not put the old binary back, status and doctor list what
+  survives and no check runs until you upgrade. Its record is `update_check.json` beside your
+  credentials. `mode = "off"` stops the check. An older jevlin refuses a config that names
+  `[update]`, as it refuses any key it does not know, so add it only once this release is
+  installed.
 
 ## v0.3.2 — 2026-10-17
 

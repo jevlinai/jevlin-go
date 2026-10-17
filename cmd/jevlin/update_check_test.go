@@ -298,6 +298,10 @@ func autoFixture(t *testing.T, lr *localRelease, extra string) (*upgradeFixture,
 		t.Fatal(err)
 	}
 	cfgPath := filepath.Join(f.home, setupConfigFile)
+	if !strings.Contains(extra, "[update]") {
+		// The default is notify; these tests are about replacing.
+		extra += "[update]\nmode = \"apply\"\n"
+	}
 	writeFileT(t, cfgPath, "[mining]\nstate_dir = \""+filepath.ToSlash(stateDir)+"\"\n"+extra)
 	return f, cfgPath, updateStampPath(f.home)
 }
@@ -585,7 +589,7 @@ func TestAutoCheckHoldsTheSameGateAsAManualUpgrade(t *testing.T) {
 		t.Fatal(err)
 	}
 	otherCfg := filepath.Join(other, setupConfigFile)
-	writeFileT(t, otherCfg, "[mining]\nstate_dir = \""+filepath.ToSlash(filepath.Join(f.home, "state"))+"\"\n")
+	writeFileT(t, otherCfg, "[mining]\nstate_dir = \""+filepath.ToSlash(filepath.Join(f.home, "state"))+"\"\n[update]\nmode = \"apply\"\n")
 	gate, err := acquireLifecycleGate(lifecycleGatePath(f.home), 0)
 	if err != nil {
 		t.Fatal(err)
@@ -667,7 +671,7 @@ func TestStatusReportsTheReleaseCheckInTextAndJSON(t *testing.T) {
 		t.Fatalf("status -json exit %d: %s", code, errOut.String())
 	}
 	update, _ := dataOf(t, decodeCommandEnvelope(t, jsonOut.String(), "status"))["update"].(map[string]any)
-	if update["mode"] != config.UpdateApply || update["checked"] != true || update["outcome"] != string(updateAvailable) ||
+	if update["mode"] != config.UpdateNotify || update["checked"] != true || update["outcome"] != string(updateAvailable) ||
 		update["running"] != "0.3.1" || update["latest"] != "0.3.2" || update["fix"] == "" || update["checked_at"] == "" {
 		t.Errorf("update: %v", update)
 	}
