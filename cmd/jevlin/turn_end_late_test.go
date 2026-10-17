@@ -247,3 +247,30 @@ func TestAMarkBesideAnEndedMarkIsNotASecondEnd(t *testing.T) {
 		t.Error("the mark beside the ended mark was left in place")
 	}
 }
+
+// A mark's name is built from the ids a trace carries, and a trace is
+// written by whatever ran the search, so only an id of traceHash's shape
+// names a mark. A turn id of "ended|<turn>" would otherwise write that
+// turn's ended mark, and the turn's own served search would then mark
+// nothing and its end would never be sent.
+func TestAnIDThatIsNotAHashNamesNoMark(t *testing.T) {
+	victim := traceHash("sess|p9")
+	for name, trace := range map[string]*traceEnvelope{
+		"a turn id naming another turn's ended mark": {Harness: "claude-code", TurnID: "ended|" + victim},
+		"a turn id naming a session's mark":          {Harness: "claude-code", TurnID: "subagent|" + traceHash("sess")},
+		"a turn id that is no hash":                  {Harness: "claude-code", TurnID: "turn-1"},
+		"a turn id in capitals":                      {Harness: "claude-code", TurnID: strings.ToUpper(victim)},
+		"a parent session that is no hash":           {Harness: "claude-code", SessionID: traceHash("sess|a"), ParentSessionID: "ended|" + victim, TurnID: victim},
+	} {
+		h := newTurnEndHarness(nil, true)
+		markTurnSearched(h.ops, config.Miner{TurnEnd: true, SessionsDir: h.hc.sessionsDir}, trace)
+		if len(h.fs.files) != 0 {
+			t.Errorf("%s: wrote %d marks, want none", name, len(h.fs.files))
+		}
+		h.served(victim)
+		runHook(t, h.ops, h.hc, "flush", claudeStop(map[string]any{"prompt_id": "p9"}))
+		if len(h.queued) != 1 {
+			t.Errorf("%s: p9's own served search was reported %d times, want once", name, len(h.queued))
+		}
+	}
+}

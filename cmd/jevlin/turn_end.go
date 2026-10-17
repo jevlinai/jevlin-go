@@ -127,7 +127,10 @@ func turnSearchedPath(dir, turnID string) string {
 // turnEndedPath is the mark that a turn's end was queued, and
 // sessionSearchedPath the mark that a subagent of the session searched. Both
 // carry the turn marks' suffix, so the same sweep removes them, and neither
-// name can be a turn mark's: a turn id is a hash, with no "|" in it.
+// name can be a turn mark's: an id is a hash, with no "|" in it. That is
+// checked, not assumed (hashedIDRe, before any mark is written or read for
+// an id): a turn id arrives in a trace, which any command can write, and
+// "ended|<turn>" taken as a turn id would name that turn's ended mark.
 func turnEndedPath(dir, turnID string) string {
 	return turnSearchedPath(dir, "ended|"+turnID)
 }
@@ -155,10 +158,10 @@ func sessionSearchedPath(dir, sessionID string) string {
 // (issue #70, case 3): it carries its own thread's turn, which no Stop of
 // ours ever ends.
 func markTurnSearched(ops hookOps, m config.Miner, trace *traceEnvelope) {
-	if !m.TurnEnd || m.SessionsDir == "" || trace == nil || trace.TurnID == "" {
+	if !m.TurnEnd || m.SessionsDir == "" || trace == nil || !hashedIDRe.MatchString(trace.TurnID) {
 		return
 	}
-	if trace.ParentSessionID != "" && trace.Harness == "codex" {
+	if trace.ParentSessionID != "" && (trace.Harness == "codex" || !hashedIDRe.MatchString(trace.ParentSessionID)) {
 		return
 	}
 	if err := ops.mkdirAll(m.SessionsDir, 0o700); err != nil {
@@ -205,6 +208,9 @@ func sweepTurnMarks(dir string, now time.Time) {
 // still leave its mark just after; a mark found beside the ended mark is
 // that one, and it is removed without a second end.
 func takeTurnSearched(ops hookOps, dir, turnID string) bool {
+	if !hashedIDRe.MatchString(turnID) {
+		return false
+	}
 	path := turnSearchedPath(dir, turnID)
 	if _, err := ops.readFile(path); err != nil {
 		return false
@@ -224,6 +230,9 @@ func takeTurnSearched(ops hookOps, dir, turnID string) bool {
 // the turns are looked at, so a search that lands while they are leaves it
 // again for the next Stop.
 func takeSessionSearched(ops hookOps, dir, sessionID string) bool {
+	if !hashedIDRe.MatchString(sessionID) {
+		return false
+	}
 	path := sessionSearchedPath(dir, sessionID)
 	if _, err := ops.readFile(path); err != nil {
 		return false
