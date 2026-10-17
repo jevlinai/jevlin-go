@@ -124,15 +124,20 @@ func turnSearchedPath(dir, turnID string) string {
 	return filepath.Join(dir, traceHash("turn-searched|"+turnID)+turnSearchedSuffix)
 }
 
-// turnEndedPath is the mark that a turn's end was queued, and
-// sessionSearchedPath the mark that a subagent of the session searched. Both
-// carry the turn marks' suffix, so the same sweep removes them, and neither
-// name can be a turn mark's: an id is a hash, with no "|" in it. That is
+// turnEndedPath is the mark that a turn's end was queued, turnSubagentPath
+// the mark that a subagent's search was served in the turn, and
+// sessionSearchedPath the mark that a subagent of the session searched. All
+// carry the turn marks' suffix, so the same sweep removes them, and no name
+// can be another's: an id is a hash, with no "|" in it. That is
 // checked, not assumed (hashedIDRe, before any mark is written or read for
 // an id): a turn id arrives in a trace, which any command can write, and
 // "ended|<turn>" taken as a turn id would name that turn's ended mark.
 func turnEndedPath(dir, turnID string) string {
 	return turnSearchedPath(dir, "ended|"+turnID)
+}
+
+func turnSubagentPath(dir, turnID string) string {
+	return turnSearchedPath(dir, "subagent-turn|"+turnID)
 }
 
 func sessionSearchedPath(dir, sessionID string) string {
@@ -150,11 +155,13 @@ func sessionSearchedPath(dir, sessionID string) string {
 // that launched it long after that turn's Stop, and a second end for the
 // same turn would not be the turn's end.
 //
-// A subagent's search also marks its session (sessionSearchedPath), the one
-// way a search lands in a turn other than the one now running: Claude Code
+// A subagent's search also marks the turn as a subagent's
+// (turnSubagentPath) and its session (sessionSearchedPath): it is the one
+// way a search lands in a turn other than the one now running. Claude Code
 // gives a subagent the turn that launched it, and a background subagent
-// outlives that turn. The next Stop in the session that finds the mark looks
-// for such turns (claudeTurnEnd).
+// outlives that turn. The next Stop in the session that finds the session's
+// mark looks for such turns, and reports only a turn that carries the
+// subagent's mark (claudeTurnEnd).
 //
 // Only a Claude Code subagent's search marks anything (issue #70, case 3).
 // Codex and opencode give a subagent a turn of its own — Codex its own
@@ -179,9 +186,10 @@ func markTurnSearched(ops hookOps, m config.Miner, trace *traceEnvelope) {
 	}
 	_ = ops.writeFile(turnSearchedPath(m.SessionsDir, trace.TurnID), nil, 0o600)
 	if trace.ParentSessionID != "" {
-		// Written after the turn's mark, so a Stop that finds this finds
-		// that; and written afresh, so the sweep counts from the latest
-		// search rather than the first.
+		// Written after the turn's mark, each, so a Stop that finds one
+		// finds those before it; and the session's written afresh, so the
+		// sweep counts from the latest search rather than the first.
+		_ = ops.writeFile(turnSubagentPath(m.SessionsDir, trace.TurnID), nil, 0o600)
 		path := sessionSearchedPath(m.SessionsDir, trace.ParentSessionID)
 		_ = ops.remove(path)
 		_ = ops.writeFile(path, nil, 0o600)
@@ -206,8 +214,9 @@ func sweepTurnMarks(dir string, now time.Time) {
 }
 
 // takeTurnSearched reports whether a search was served in the turn, and
-// removes the mark: a turn ends once, and the ended mark it leaves keeps a
-// later search from marking the turn again.
+// removes the mark, and a subagent's mark on the turn with it: a turn ends
+// once, and the ended mark it leaves keeps a later search from marking the
+// turn again.
 //
 // The ended mark is written before the mark is removed, so a search that
 // lands while the mark is taken finds the turn ended and marks nothing. A
@@ -229,7 +238,24 @@ func takeTurnSearched(ops hookOps, dir, turnID string) bool {
 		_ = ops.writeFile(ended, nil, 0o600)
 	}
 	_ = ops.remove(path)
+	_ = ops.remove(turnSubagentPath(dir, turnID))
 	return first
+}
+
+// takeSubagentTurn takes the mark of a turn that is not the one ending, and
+// only when a subagent's search left it: only a subagent's search lands in a
+// turn after that turn's Stop. A mark a main agent left on an earlier turn
+// is one whose Stop never came — the turn was interrupted — and reporting it
+// now would report it as completed, with an answer it may never have given.
+// It is left for the sweep, as it always was.
+func takeSubagentTurn(ops hookOps, dir, turnID string) bool {
+	if !hashedIDRe.MatchString(turnID) {
+		return false
+	}
+	if _, err := ops.readFile(turnSubagentPath(dir, turnID)); err != nil {
+		return false
+	}
+	return takeTurnSearched(ops, dir, turnID)
 }
 
 // takeSessionSearched reports whether a subagent of the session searched
@@ -311,9 +337,9 @@ type claudeStopPayload struct {
 // a background subagent searches under the turn that launched it, and that
 // turn's Stop came first and found nothing. When a subagent of the session
 // has searched, this Stop reports every earlier turn of the transcript that
-// holds a mark, late, before its own: the participant's message, the steps,
-// and the turn's last assistant text from the transcript, scrubbed as the
-// payload's would be.
+// a subagent's search marked (takeSubagentTurn), late, before its own: the
+// participant's message, the steps, and the turn's last assistant text from
+// the transcript, scrubbed as the payload's would be.
 func claudeTurnEnd(ops hookOps, hc hookContext, payload []byte) {
 	if !turnEndEnabled(ops, hc) {
 		return
@@ -337,7 +363,7 @@ func claudeTurnEnd(ops hookOps, hc hookContext, payload []byte) {
 	if late {
 		for _, t := range earlier {
 			id := traceHash(p.SessionID + "|" + t.PromptID)
-			if !takeTurnSearched(ops, hc.sessionsDir, id) {
+			if !takeSubagentTurn(ops, hc.sessionsDir, id) {
 				continue
 			}
 			rec := turnEndRecord{SessionID: session, TurnID: id, Harness: harness, Status: turnCompleted}

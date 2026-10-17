@@ -168,34 +168,77 @@ func TestOnlyASubagentsSearchSendsAStopLookingAtEarlierTurns(t *testing.T) {
 // opencode subagent's its child session's, and no turn end of ours is sent
 // for either, so they leave no mark to dangle; neither does a subagent of a
 // host not known to share its turn. A main agent's search marks its turn
-// under every host, and only a Claude Code subagent marks its session.
+// under every host, and only a Claude Code subagent marks the turn as a
+// subagent's and marks its session.
 func TestOnlyAClaudeCodeSubagentsSearchLeavesAMark(t *testing.T) {
 	m := config.Miner{TurnEnd: true, SessionsDir: "/home/sessions"}
 	turn := traceHash("thread|t1")
 	for name, tc := range map[string]struct {
-		trace       *traceEnvelope
-		turn, owner bool
+		trace            *traceEnvelope
+		turn, sub, owner bool
 	}{
-		"a Codex subagent":         {&traceEnvelope{Harness: "codex", SessionID: traceHash("agent"), ParentSessionID: traceHash("thread"), TurnID: turn}, false, false},
-		"a Codex main agent":       {&traceEnvelope{Harness: "codex", SessionID: traceHash("thread"), TurnID: turn}, true, false},
-		"an opencode subagent":     {&traceEnvelope{Harness: "opencode", SessionID: traceHash("ses_child"), ParentSessionID: traceHash("thread"), TurnID: turn}, false, false},
-		"an opencode main agent":   {&traceEnvelope{Harness: "opencode", SessionID: traceHash("thread"), TurnID: turn}, true, false},
-		"another host's subagent":  {&traceEnvelope{Harness: "pi", SessionID: traceHash("thread|a"), ParentSessionID: traceHash("thread"), TurnID: turn}, false, false},
-		"a Claude Code subagent":   {&traceEnvelope{Harness: "claude-code", SessionID: traceHash("thread|a"), ParentSessionID: traceHash("thread"), TurnID: turn}, true, true},
-		"a Claude Code main agent": {&traceEnvelope{Harness: "claude-code", SessionID: traceHash("thread"), TurnID: turn}, true, false},
+		"a Codex subagent":         {&traceEnvelope{Harness: "codex", SessionID: traceHash("agent"), ParentSessionID: traceHash("thread"), TurnID: turn}, false, false, false},
+		"a Codex main agent":       {&traceEnvelope{Harness: "codex", SessionID: traceHash("thread"), TurnID: turn}, true, false, false},
+		"an opencode subagent":     {&traceEnvelope{Harness: "opencode", SessionID: traceHash("ses_child"), ParentSessionID: traceHash("thread"), TurnID: turn}, false, false, false},
+		"an opencode main agent":   {&traceEnvelope{Harness: "opencode", SessionID: traceHash("thread"), TurnID: turn}, true, false, false},
+		"another host's subagent":  {&traceEnvelope{Harness: "pi", SessionID: traceHash("thread|a"), ParentSessionID: traceHash("thread"), TurnID: turn}, false, false, false},
+		"a Claude Code subagent":   {&traceEnvelope{Harness: "claude-code", SessionID: traceHash("thread|a"), ParentSessionID: traceHash("thread"), TurnID: turn}, true, true, true},
+		"a Claude Code main agent": {&traceEnvelope{Harness: "claude-code", SessionID: traceHash("thread"), TurnID: turn}, true, false, false},
 	} {
 		fs, ops := newFakeHookOps(nil)
 		markTurnSearched(ops, m, tc.trace)
 		_, marked := fs.files[turnSearchedPath(m.SessionsDir, turn)]
+		_, sub := fs.files[turnSubagentPath(m.SessionsDir, turn)]
 		_, owner := fs.files[sessionSearchedPath(m.SessionsDir, traceHash("thread"))]
 		want := 0
-		for _, b := range []bool{tc.turn, tc.owner} {
+		for _, b := range []bool{tc.turn, tc.sub, tc.owner} {
 			if b {
 				want++
 			}
 		}
-		if marked != tc.turn || owner != tc.owner || len(fs.files) != want {
-			t.Errorf("%s: turn marked %v, session marked %v (%d files); want %v and %v", name, marked, owner, len(fs.files), tc.turn, tc.owner)
+		if marked != tc.turn || sub != tc.sub || owner != tc.owner || len(fs.files) != want {
+			t.Errorf("%s: turn marked %v, as a subagent's %v, session marked %v (%d files); want %v, %v and %v",
+				name, marked, sub, owner, len(fs.files), tc.turn, tc.sub, tc.owner)
+		}
+	}
+}
+
+// A turn whose own Stop never came — interrupted — keeps the mark its main
+// agent's search left. A later Stop that looks at earlier turns because a
+// subagent of the session searched reports only the turn that subagent
+// searched in, and leaves the interrupted turn's mark for the sweep: that
+// turn did not complete, and reporting it late would say it had, with an
+// answer it may never have given.
+func TestAnInterruptedTurnsOwnMarkIsNotReportedLate(t *testing.T) {
+	h := newTurnEndHarness(nil, true)
+	h.served(traceHash("sess|p2")) // p2's main agent searched; p2 was interrupted, and no Stop came
+	h.subagentServed("p3")
+	h.fs.files["/t/sess.jsonl"] = []byte(backgroundTurns(true, false))
+	runHook(t, h.ops, h.hc, "flush", claudeStop(map[string]any{"prompt_id": "p4",
+		"transcript_path": "/t/sess.jsonl", "last_assistant_message": "The subagent found the release date."}))
+	if rec := h.record(t); rec.TurnID != traceHash("sess|p3") {
+		t.Errorf("reported turn %s, want p3's alone", rec.TurnID)
+	}
+	if _, ok := h.fs.files[turnSearchedPath(h.hc.sessionsDir, traceHash("sess|p2"))]; !ok {
+		t.Error("the interrupted turn's mark was taken by a Stop that was not its own")
+	}
+}
+
+// A foreground subagent runs inside the turn, so its search is the turn's
+// own and the turn's Stop takes it, with every mark it left: the turn's, the
+// subagent's on the turn, and the session's. Only the ended mark stays.
+func TestATurnsStopTakesEveryMarkItsSubagentLeft(t *testing.T) {
+	h := newTurnEndHarness(nil, true)
+	h.subagentServed("p3")
+	h.fs.files["/t/sess.jsonl"] = []byte(backgroundTurns(false, false))
+	runHook(t, h.ops, h.hc, "flush", claudeStop(map[string]any{"prompt_id": "p3",
+		"transcript_path": "/t/sess.jsonl", "last_assistant_message": "I started a subagent on it."}))
+	if rec := h.record(t); rec.TurnID != traceHash("sess|p3") {
+		t.Fatalf("reported turn %s, want p3's", rec.TurnID)
+	}
+	for p := range h.fs.files {
+		if strings.HasSuffix(p, turnSearchedSuffix) && p != turnEndedPath(h.hc.sessionsDir, traceHash("sess|p3")) {
+			t.Errorf("p3's Stop left %s", p)
 		}
 	}
 }
