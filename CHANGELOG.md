@@ -28,6 +28,11 @@ rewritten to match newer behaviour; the newer entry says what changed.
   credentials. `mode = "off"` stops the check. An older jevlin refuses a config that names
   `[update]`, as it refuses any key it does not know, so add it only once this release is
   installed.
+- **On Linux, jevlin now says when your Codex searches are not being delivered.** Codex's Linux
+  sandbox ends the flush a search starts, so evidence from Codex waits for a jevlin run outside
+  it, which Codex's hooks provide once you approve them. With mining on and neither `SessionStart`
+  nor `Stop` approved, `agents status`, `status` and `agents install` now say so, and `status`
+  (and `status -json`, under `delivery`) counts the searches waiting and when the oldest was made.
 - **Running jevlin on two machines no longer shows a delivery fault on the one not earning.**
   When another installation of yours holds an epoch, this one's searches for it can never be
   delivered. They were retried until they were quarantined, and `status` reported a delivery
