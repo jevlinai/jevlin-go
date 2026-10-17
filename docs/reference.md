@@ -261,9 +261,10 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | `wallet/wallet.lock` | Key creation, and a send from its journal check to its first broadcast. | Yes, when no wallet command runs. |
 | `state/refresh.token.lock` | Rotation of the authorization's refresh token. | Yes, when none runs. |
 
-**The daily release check.** Every hook that starts a flush — a session's start and end, on
-every agent — reads `state/update_check.json` and, when no check has run in the last day,
-starts `jevlin upgrade -auto` as a detached child; the hook itself contacts nothing. The child
+**The daily release check.** Every hook that starts a flush — a session's start and end for
+Claude Code, Cursor and Codex, and the `hook start` that opencode's plugin and Pi's extension
+run when a session starts — reads `state/update_check.json` and, when no check has run in the
+last day, starts `jevlin upgrade -auto` as a detached child; the hook itself contacts nothing. The child
 asks the project's GitHub releases for the latest version, with no credential, and under
 `[update] mode = "apply"` (the default) replaces a native binary through the same verified
 transaction as `jevlin upgrade`, holding the same locks; under `"notify"`, or for a copy npm

@@ -146,6 +146,44 @@ func TestHooksStartTheReleaseCheckOnceADay(t *testing.T) {
 	}
 }
 
+// opencode's plugin and Pi's extension have no session-start hook of the
+// host's: each starts `hook start <host>` itself, which starts the flush
+// and, when due, the check — the same path as Claude Code's session-start.
+func TestHookStartIsTheJavaScriptHostsSessionStart(t *testing.T) {
+	fs, ops := newFakeHookOps(nil)
+	var checks []string
+	hc := hookContext{cfgPath: "/c.toml", sessionsDir: "/sessions", stateDir: "/state", updateMode: config.UpdateApply}
+	ops.spawnUpdateCheck = func(cfg string) error {
+		// The child claims the stamp; the next start of the day finds it.
+		checks = append(checks, cfg)
+		fs.files[filepath.Join(hc.stateDir, updateStampFile)] = stampBytes(t, updateStamp{CheckedAt: checkNow, Running: "0.3.1", Outcome: updateStarted})
+		return nil
+	}
+	ops.now = func() time.Time { return checkNow }
+	for _, host := range []string{"opencode", "pi"} {
+		runHook(t, ops, hc, "start "+host, nil)
+	}
+	if len(fs.flushes) != 2 || len(checks) != 1 {
+		t.Fatalf("flushes %v checks %v; want a flush per start and one check", fs.flushes, checks)
+	}
+	// Rendered for an installation, both adapters name the binary and the
+	// start they hand it; rendered with none, neither starts anything.
+	for name, tpl := range map[string]string{"pi": piExtensionTS, "opencode": opencodePluginJS} {
+		out := renderAgentScriptFor(tpl, "bash", "/home/u/.jevlin/jevlin.toml", "/home/u/.jevlin/bin/jevlin")
+		for _, want := range []string{`const JEVLIN_BIN = "/home/u/.jevlin/bin/jevlin"`, `args.push("start", "` + name + `")`, `child.unref()`} {
+			if !strings.Contains(out, want) {
+				t.Errorf("%s adapter lacks %q", name, want)
+			}
+		}
+		if !strings.Contains(renderAgentScriptFor(tpl, "bash", "/c", ""), `const JEVLIN_BIN = ""`) {
+			t.Errorf("%s adapter rendered with no binary still names one", name)
+		}
+	}
+	if !strings.Contains(piExtensionTS, `pi.on("session_start"`) || !strings.Contains(opencodePluginJS, `event.type === "session.created"`) {
+		t.Error("an adapter no longer listens for the session's start")
+	}
+}
+
 // A test that gives the hook no spawner, as every existing hook test does,
 // must not have the hook read the stamp or fail: the fake's files are the
 // test's own.

@@ -13,7 +13,9 @@ rewritten to match newer behaviour; the newer entry says what changed.
 ## Unreleased
 
 - **A native install keeps itself current.** Once a day, when an agent session starts or
-  ends, the hooks start a detached check against the project's GitHub releases, and a newer
+  ends — on every supported agent; opencode's plugin and Pi's extension now start the flush at
+  a session's start as well — the hooks start a detached check against the project's GitHub
+  releases, and a newer
   release is installed the way `jevlin upgrade` installs it: verified, run before and after,
   the old binary kept as `jevlin.previous`. An npm install is never replaced this way and is
   only told; `jevlin status` and `jevlin doctor`'s new `up to date` line say what the last

@@ -261,7 +261,8 @@ which run outside the sandbox, flush instead.
 ### What is written and where
 
 An in-process plugin, `~/.config/opencode/plugins/jevlin.js`, that threads each search into the
-trace. There is no skill directory: install prints a rules block to paste into `AGENTS.md`.
+trace and, when a session starts, starts the flush and the daily release check. There is no
+skill directory: install prints a rules block to paste into `AGENTS.md`.
 
 ### What to know
 
@@ -292,7 +293,9 @@ A skill in `~/.pi/agent/skills/jevlin/`; an auto-discovered extension, `~/.pi/ag
 
 It runs Bash everywhere, Git Bash on Windows. The extension rewrites the search command with
 the session, the call, the assistant text that led to that search, and the compaction count,
-read back from the session Pi saved, so a resumed session keeps its place.
+read back from the session Pi saved, so a resumed session keeps its place. When a session
+starts it also starts the flush and the daily release check, as Claude Code's session-start
+hook does; it pipes nothing to that process and reads nothing back.
 
 ### Known limits
 

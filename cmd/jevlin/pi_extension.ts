@@ -46,6 +46,24 @@ const HOST_SHELL = "{{HOST_SHELL}}"
 // have the extension with no skill (dropin-miner#73).
 const INSTALL_CONFIG = "{{INSTALL_CONFIG}}"
 
+// The binary of the installation above, for the one process this extension
+// starts: `hook start pi` when a session begins, which starts the flush
+// and, once a day, the release check — what Claude Code's session-start
+// hook does. Empty when the file was rendered with none, and then nothing
+// is started. Nothing is piped and nothing is read back.
+const JEVLIN_BIN = "{{JEVLIN_BIN}}"
+
+const startSession = async () => {
+  if (!JEVLIN_BIN) return
+  const { spawn } = await import("node:child_process")
+  const args = ["hook"]
+  if (INSTALL_CONFIG) args.push("-config", INSTALL_CONFIG)
+  args.push("start", "pi")
+  const child = spawn(JEVLIN_BIN, args, { stdio: "ignore", windowsHide: true })
+  child.on("error", () => {})
+  child.unref()
+}
+
 // The text parts of one Pi session entry, in the shape the shared
 // preparation takes. An assistant message's content is always an array of
 // parts (packages/ai/src/types.ts: AssistantMessage.content is
@@ -132,6 +150,16 @@ const windowGeneration = (entries) => {
 }
 
 export default function (pi) {
+  pi.on("session_start", async () => {
+    try {
+      await startSession()
+    } catch {
+      // fail-open, and never a thrown error: Pi treats one as a reason to
+      // block (see the header). A session that could not start the check
+      // is checked at the next one.
+    }
+  })
+
   pi.on("tool_call", async (event, ctx) => {
     try {
       if (!event || event.toolName !== "bash") return

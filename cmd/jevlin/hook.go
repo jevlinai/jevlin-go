@@ -26,6 +26,10 @@ package main
 //	    preCompact (bump the window), stop (flush).
 //	hook [-config file] flush
 //	    Claude Code Stop. Start a detached flush.
+//	hook [-config file] start <host>
+//	    A JavaScript host's adapter (opencode's plugin, Pi's extension) at a
+//	    session's start. Reads nothing: starts the flush and, when due, the
+//	    daily release check, exactly as session-start does for Claude Code.
 //	hook [-config file] codex <Event>
 //	    Codex hooks, the event in Codex's own spelling (codex_hook.go):
 //	    PreToolUse (put the trace bridge on this installation's exact
@@ -216,7 +220,7 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 		cfgPath, args = args[1], args[2:]
 	}
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: jevlin hook [-config file] lineage | window <phase> | cursor <event> | codex <event> | turn <host> | flush")
+		fmt.Fprintln(stderr, "usage: jevlin hook [-config file] lineage | window <phase> | cursor <event> | codex <event> | turn <host> | start <host> | flush")
 		return exitUsage
 	}
 	hc := hookContext{cfgPath: cfgPath}
@@ -271,6 +275,13 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 		// A JavaScript host's plugin, at the end of a turn (turn_hosts.go).
 		if len(args) > 1 {
 			hookHostTurn(ops, hc, args[1], payload)
+		}
+	case "start":
+		// A JavaScript host's adapter at a session's start (opencode_plugin.js,
+		// pi_extension.ts): the payload is not read. The host name is taken
+		// for the command line's sake and nothing is keyed on it.
+		if len(args) > 1 {
+			ops.startBackground(hc)
 		}
 	case "flush":
 		// Claude Code's Stop: the turn is over. Its final message is queued

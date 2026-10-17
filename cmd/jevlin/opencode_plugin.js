@@ -42,6 +42,22 @@ const INSTALL_CONFIG = "{{INSTALL_CONFIG}}"
 // rendered with none, and then no turn is reported.
 const JEVLIN_BIN = "{{JEVLIN_BIN}}"
 
+// startSession hands the binary a session's start: `hook start opencode`,
+// which starts the flush and, once a day, the release check — what Claude
+// Code's session-start hook does. Nothing is piped and nothing is read back.
+// Fire and forget, and only for a top-level session: a subagent's child
+// session is the same person's same day.
+const startSession = async () => {
+  if (!JEVLIN_BIN) return
+  const { spawn } = await import("node:child_process")
+  const args = ["hook"]
+  if (INSTALL_CONFIG) args.push("-config", INSTALL_CONFIG)
+  args.push("start", "opencode")
+  const child = spawn(JEVLIN_BIN, args, { stdio: "ignore", windowsHide: true })
+  child.on("error", () => {})
+  child.unref()
+}
+
 // What a tool part's state says about how the call went.
 const toolOutcome = (state) => (state?.status === "completed" ? true : state?.status === "error" ? false : undefined)
 const toolMillis = (state) => {
@@ -211,6 +227,7 @@ export const JevlinLineage = async ({ client }) => {
         if (event?.type === "session.created" || event?.type === "session.updated") {
           const info = event?.properties?.info
           if (typeof info?.id === "string" && info.id) parents.set(info.id, typeof info.parentID === "string" ? info.parentID : "")
+          if (event.type === "session.created" && !(typeof info?.parentID === "string" && info.parentID)) await startSession()
         }
         if (event?.type === "session.compacted") {
           const sid = event?.properties?.sessionID ?? event?.properties?.info?.id
