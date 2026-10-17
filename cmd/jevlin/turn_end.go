@@ -358,24 +358,25 @@ func claudeTurnEnd(ops hookOps, hc hookContext, payload []byte) {
 	if !searched && !late {
 		return
 	}
-	current, earlier := claudeTranscriptTurns(ops, p)
+	// The transcript is parsed once, and a turn in it is read — scrubbed —
+	// only when it is reported. Earlier turns are looked for only when a
+	// subagent of the session searched.
+	current, earlier := claudeTranscriptTurns(ops, p, late)
 	harness := orString(ops.getenv("JEVLIN_HARNESS"), "claude-code")
-	if late {
-		for _, t := range earlier {
-			id := traceHash(p.SessionID + "|" + t.PromptID)
-			if !takeSubagentTurn(ops, hc.sessionsDir, id) {
-				continue
-			}
-			rec := turnEndRecord{SessionID: session, TurnID: id, Harness: harness, Status: turnCompleted}
-			if t.Detail != nil {
-				withClaudeTurn(&rec, t.Detail.lastText, t.Detail)
-			}
-			queueTurnEnd(ops, hc, rec)
+	for _, t := range earlier {
+		id := traceHash(p.SessionID + "|" + t.PromptID)
+		if !takeSubagentTurn(ops, hc.sessionsDir, id) {
+			continue
 		}
+		rec := turnEndRecord{SessionID: session, TurnID: id, Harness: harness, Status: turnCompleted}
+		if d := t.detail(); d != nil {
+			withClaudeTurn(&rec, d.lastText, d)
+		}
+		queueTurnEnd(ops, hc, rec)
 	}
 	if searched {
 		rec := turnEndRecord{SessionID: session, TurnID: turn, Harness: harness, Status: turnCompleted}
-		withClaudeTurn(&rec, p.LastAssistantMessage, current)
+		withClaudeTurn(&rec, p.LastAssistantMessage, current.detail())
 		queueTurnEnd(ops, hc, rec)
 	}
 }

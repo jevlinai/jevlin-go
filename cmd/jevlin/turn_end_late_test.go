@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -362,5 +363,61 @@ func TestATakeOfAnIDThatIsNotAHashTouchesNothing(t *testing.T) {
 	}
 	if len(fs.files) != 2 {
 		t.Errorf("the takes left %d of the 2 marks planted", len(fs.files))
+	}
+}
+
+// A Stop reads a turn out of the transcript — scrubs every message in it —
+// only to report it: its own turn when it searched, and an earlier turn only
+// when a subagent's search marked it. A Stop with no subagent's mark in the
+// session does what a Stop did before earlier turns were looked for: it
+// reads its own turn and looks at no earlier one, though one holds a mark.
+func TestAStopReadsOnlyTheTurnsItReports(t *testing.T) {
+	for name, tc := range map[string]struct {
+		own  bool     // p4's own search was served
+		sub  string   // the turn a subagent's search marked, or ""
+		main []string // earlier turns a main agent's search marked
+		want []string // the turns read, in order
+	}{
+		"its own turn searched, and no subagent": {own: true, main: []string{"p2", "p3"}, want: []string{"p4"}},
+		"a subagent searched in an earlier turn": {sub: "p3", main: []string{"p2"}, want: []string{"p3"}},
+		"both":                                   {own: true, sub: "p3", main: []string{"p2"}, want: []string{"p3", "p4"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var read []string
+			claudeTurnRead = func(id string) { read = append(read, id) }
+			t.Cleanup(func() { claudeTurnRead = nil })
+			h := newTurnEndHarness(nil, true)
+			h.fs.files["/t/sess.jsonl"] = []byte(backgroundTurns(true, true))
+			for _, p := range tc.main {
+				h.served(traceHash("sess|" + p))
+			}
+			if tc.sub != "" {
+				h.subagentServed(tc.sub)
+			}
+			if tc.own {
+				h.served(traceHash("sess|p4"))
+			}
+			var looked []string
+			readFile := h.ops.readFile
+			h.ops.readFile = func(p string) ([]byte, error) {
+				for _, id := range []string{"p2", "p3"} {
+					if p == turnSubagentPath(h.hc.sessionsDir, traceHash("sess|"+id)) {
+						looked = append(looked, id)
+					}
+				}
+				return readFile(p)
+			}
+			runHook(t, h.ops, h.hc, "flush", claudeStop(map[string]any{"prompt_id": "p4",
+				"transcript_path": "/t/sess.jsonl", "last_assistant_message": "The subagent found the release date."}))
+			if !reflect.DeepEqual(read, tc.want) {
+				t.Errorf("read turns %v, want %v", read, tc.want)
+			}
+			if len(h.queued) != len(tc.want) {
+				t.Errorf("queued %d turn ends, want %d", len(h.queued), len(tc.want))
+			}
+			if tc.sub == "" && len(looked) != 0 {
+				t.Errorf("with no subagent's search in the session, the Stop looked for earlier turns %v", looked)
+			}
+		})
 	}
 }

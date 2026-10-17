@@ -76,17 +76,33 @@ type turnDetail struct {
 	Usage         *turnUsage
 	Steps         []turnStep
 	// lastText is the turn's last assistant text, unscrubbed: the final
-	// message of a turn whose own Stop has long gone (priorTurn), scrubbed
-	// by prepareFinalText as the payload's would be.
+	// message of an earlier turn, whose own Stop has long gone, scrubbed by
+	// prepareFinalText as the payload's would be.
 	lastText string
 }
 
-// priorTurn is a turn of the session before the one that is ending,
-// read from the same transcript.
-type priorTurn struct {
+// claudeTurn is one turn of a Claude Code transcript: its prompt id, and
+// how to read its conversation out of the part of the transcript read.
+// Reading is the cost — every message in the turn is scrubbed — so it is
+// done only for a turn that is reported.
+type claudeTurn struct {
 	PromptID string
-	Detail   *turnDetail
+	read     func() *turnDetail
 }
+
+// detail reads the turn. nil means the turn is not in the transcript whole,
+// and nothing of it is sent.
+func (t claudeTurn) detail() *turnDetail {
+	if t.read == nil {
+		return nil
+	}
+	return t.read()
+}
+
+// claudeTurnRead, when set, is told the prompt id of every turn read out of
+// a transcript, as the read begins. A test seam: a turn read that nothing
+// reports is the cost to rule out, and nothing else observes it.
+var claudeTurnRead func(promptID string)
 
 // A tool's name as it may be sent: an identifier. Anything else — a name
 // with a space in it is not a name — is sent as the word "tool".
@@ -111,19 +127,21 @@ func headText(text string, limit int) (out string, chars int, truncated bool) {
 	return out[:end], chars, true
 }
 
-// claudeTranscriptTurns reads the ending turn out of Claude Code's
-// transcript, and every earlier turn of the session in the part of it read,
-// each from the record that starts it up to the start of the next. A nil
-// turn could not be found whole, and nothing of it is sent. An earlier turn is one a background
+// claudeTranscriptTurns parses the end of Claude Code's transcript once and
+// finds the turn that is ending in it; with withEarlier, also every earlier
+// turn of the session in the part read, each from the record that starts it
+// up to the start of the next. An earlier turn is one a background
 // subagent's searches can still land in after the turn's own Stop (issue
-// #70, case 1), and claudeTurnEnd reports it late.
-func claudeTranscriptTurns(ops hookOps, p claudeStopPayload) (*turnDetail, []priorTurn) {
+// #70, case 1), and claudeTurnEnd reports it late. Nothing is scrubbed
+// here: a turn is read only when its detail is asked for.
+func claudeTranscriptTurns(ops hookOps, p claudeStopPayload, withEarlier bool) (current claudeTurn, earlier []claudeTurn) {
+	current.PromptID = p.PromptID
 	if p.TranscriptPath == "" || ops.readTail == nil {
-		return nil, nil
+		return current, nil
 	}
 	tail, err := ops.readTail(p.TranscriptPath, turnDetailTail)
 	if err != nil {
-		return nil, nil
+		return current, nil
 	}
 	type entry struct {
 		Type        string `json:"type"`
@@ -194,6 +212,9 @@ func claudeTranscriptTurns(ops hookOps, p claudeStopPayload) (*turnDetail, []pri
 		return false
 	}
 	detailOf := func(start, end int) *turnDetail {
+		if claudeTurnRead != nil {
+			claudeTurnRead(entries[start].PromptID)
+		}
 		d := &turnDetail{}
 		userRaw := ""
 		if c := entries[start].Message.Content; len(c) > 0 && c[0] == '"' {
@@ -301,6 +322,22 @@ func claudeTranscriptTurns(ops hookOps, p claudeStopPayload) (*turnDetail, []pri
 		return d
 	}
 
+	// The turn that is ending: the last user turn, and — where the transcript
+	// names prompts — the one this Stop names. A transcript whose last user
+	// turn belongs to another prompt is not this turn's, and is not read.
+	// Found from the end, as before there were earlier turns to look for: a
+	// Stop that looks for none does no more than that.
+	if !withEarlier {
+		for i := len(entries) - 1; i >= 0; i-- {
+			if isUserTurn(entries[i]) {
+				if entries[i].PromptID == "" || p.PromptID == "" || entries[i].PromptID == p.PromptID {
+					current.read = func() *turnDetail { return detailOf(i, len(entries)) }
+				}
+				break
+			}
+		}
+		return current, nil
+	}
 	var starts []int
 	for i, e := range entries {
 		if isUserTurn(e) {
@@ -308,19 +345,14 @@ func claudeTranscriptTurns(ops hookOps, p claudeStopPayload) (*turnDetail, []pri
 		}
 	}
 	if len(starts) == 0 {
-		return nil, nil
+		return current, nil
 	}
-	// The turn that is ending: the last user turn, and — where the transcript
-	// names prompts — the one this Stop names. A transcript whose last user
-	// turn belongs to another prompt is not this turn's, and is not read.
-	var current *turnDetail
 	if last := starts[len(starts)-1]; entries[last].PromptID == "" || p.PromptID == "" || entries[last].PromptID == p.PromptID {
-		current = detailOf(last, len(entries))
+		current.read = func() *turnDetail { return detailOf(last, len(entries)) }
 	}
 	// Every earlier turn that names its prompt: from its first start to the
 	// next start of another prompt. A turn with no prompt id cannot be
 	// joined to a search's mark, and is not read.
-	var earlier []priorTurn
 	for k, at := range starts {
 		id := entries[at].PromptID
 		if id == "" || id == p.PromptID || (k > 0 && entries[starts[k-1]].PromptID == id) {
@@ -333,7 +365,7 @@ func claudeTranscriptTurns(ops hookOps, p claudeStopPayload) (*turnDetail, []pri
 				break
 			}
 		}
-		earlier = append(earlier, priorTurn{PromptID: id, Detail: detailOf(at, end)})
+		earlier = append(earlier, claudeTurn{PromptID: id, read: func() *turnDetail { return detailOf(at, end) }})
 	}
 	return current, earlier
 }
