@@ -136,8 +136,8 @@ func (r *readOnlyOnCanonicalRun) Run(ctx context.Context, path string, args, env
 // path read the record as another copy's, doctor said OK, and the next check
 // wrote "current" over it.
 func TestAFailedRestoreWaitsForAPerson(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("root writes through a read-only directory")
+	if !posixModes || os.Geteuid() == 0 {
+		t.Skip("needs POSIX mode bits and a non-root uid to make a dir unwritable")
 	}
 	f, cfgPath, stamp := autoFixture(t, newLocalRelease(t, "0.3.1", map[string]string{"0.3.1": "0.3.1\n"}), "")
 	f.write(selfupdate.PreviousPath(f.exe), "0.2.9")
@@ -307,8 +307,8 @@ func TestADevelopmentBuildTakesNoLockBesideTheBinary(t *testing.T) {
 // postpone it, every session would check again. Before, a stamp that could
 // not be written cost nothing but a note, and the lookup went ahead.
 func TestACheckThatCannotWriteItsStampMakesNoRequest(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("root writes through a read-only directory")
+	if !posixModes || os.Geteuid() == 0 {
+		t.Skip("needs POSIX mode bits and a non-root uid to make a dir unwritable")
 	}
 	f, cfgPath, stamp := autoFixture(t, newLocalRelease(t, "0.3.1", map[string]string{"0.3.1": "0.3.1\n"}), "")
 	if err := os.Chmod(f.home, 0o500); err != nil { // #nosec G302 -- the test's own directory
