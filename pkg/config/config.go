@@ -154,6 +154,26 @@ type Platform struct {
 	AgentsAPIURL string
 }
 
+// The words [update] mode takes (cmd/jevlin/update_check.go).
+const (
+	UpdateApply  = "apply"  // a native copy replaces itself with a newer verified release
+	UpdateNotify = "notify" // the check runs; status and doctor say when a newer release exists
+	UpdateOff    = "off"    // no check at all
+)
+
+// Update is the [update] block: what the daily release check the agent hooks
+// start may do. The check contacts only the compiled-in GitHub release
+// origin, with no credential (invariant 5's one exception); a copy npm
+// installed is never replaced, whatever Mode says, and is only noted.
+type Update struct {
+	// Mode is apply (the default), notify or off.
+	Mode string
+	// UnknownMode is a word the file set that this version cannot name; Mode
+	// is then notify — never off, which would silence the check by a typo,
+	// and never apply, which would replace a binary on a word nobody chose.
+	UnknownMode string
+}
+
 // Config is the resolved, immutable configuration.
 // Miner is the drop-in miner: no daemon, no proxy. When enabled, the
 // `search` command posts straight to the router, records the served
@@ -241,6 +261,7 @@ type Config struct {
 	Mining   Mining
 	Miner    Miner
 	Platform Platform
+	Update   Update
 
 	// MiningEnabledExplicit is true when the config file itself wrote
 	// `[mining] enabled` (true or false) — distinct from Mining.Enabled
@@ -324,6 +345,9 @@ type fileConfig struct {
 		BaseURL      string `toml:"base_url"`
 		AgentsAPIURL string `toml:"agents_api_url"`
 	} `toml:"platform"`
+	Update struct {
+		Mode string `toml:"mode"`
+	} `toml:"update"`
 }
 
 type duration struct{ time.Duration }
@@ -501,6 +525,8 @@ type rawConfig struct {
 
 	platformBaseURL string
 	agentsAPIURL    string
+
+	updateMode string
 }
 
 func (r *rawConfig) applyFile(path string) error {
@@ -662,6 +688,9 @@ func (r *rawConfig) applyBytes(source string, data []byte) error {
 	if f.Platform.AgentsAPIURL != "" {
 		r.agentsAPIURL = f.Platform.AgentsAPIURL
 	}
+	if f.Update.Mode != "" {
+		r.updateMode = f.Update.Mode
+	}
 	return nil
 }
 
@@ -783,8 +812,24 @@ func (r *rawConfig) finish() (*Config, error) {
 		Mining:                mining,
 		Miner:                 miner,
 		Platform:              Platform{BaseURL: platformBaseURL, AgentsAPIURL: agentsAPIURL},
+		Update:                r.finishUpdate(),
 		MiningEnabledExplicit: r.miningEnabledExplicit,
 	}, nil
+}
+
+// finishUpdate resolves the [update] block the way [miner] tier is resolved:
+// the word is lowercased and trimmed, and one this version cannot name does
+// not stop the config from loading — a typo must not cost every search. It
+// is kept aside for doctor to name, and the mode falls to notify.
+func (r *rawConfig) finishUpdate() Update {
+	switch mode := strings.ToLower(strings.TrimSpace(r.updateMode)); mode {
+	case "":
+		return Update{Mode: UpdateApply}
+	case UpdateApply, UpdateNotify, UpdateOff:
+		return Update{Mode: mode}
+	default:
+		return Update{Mode: UpdateNotify, UnknownMode: r.updateMode}
+	}
 }
 
 // parsePlatformURL validates a [platform] URL (base_url or

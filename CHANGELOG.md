@@ -10,6 +10,20 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## Unreleased
+
+- **A native install keeps itself current.** Once a day, when an agent session starts or
+  ends, the hooks start a detached check against the project's GitHub releases, and a newer
+  release is installed the way `jevlin upgrade` installs it: verified, run before and after,
+  the old binary kept as `jevlin.previous`. An npm install is never replaced this way and is
+  only told; `jevlin status` and `jevlin doctor`'s new `up to date` line say what the last
+  check found and the one command that applies it. The check contacts nothing but GitHub,
+  sends no credential, and reads one small stamp, `state/update_check.json`, so a hook costs
+  one file read on the days it starts nothing. A new `[update] mode` key — `apply` (the
+  default), `notify` or `off` — changes what it may do; a config without the key behaves as
+  `apply`. An older jevlin refuses a config that names the key, as it refuses any key it does
+  not know, so add it only once this release is installed.
+
 ## v0.3.1 — 2026-10-17
 
 The rewards service moved to a new address on 16 October, and an installation set up before

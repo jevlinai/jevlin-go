@@ -11,6 +11,7 @@ package main
 
 import (
 	"strings"
+	"time"
 
 	"github.com/jevlinai/jevlin-go/pkg/auth"
 	"github.com/jevlinai/jevlin-go/pkg/redact"
@@ -127,6 +128,40 @@ type statusReport struct {
 	RegionRefusal   *statusRegionRefusalJSON `json:"region_refusal,omitempty"`
 	Conflicts       []auth.ConflictedEpoch   `json:"epoch_conflicts,omitempty"`
 	AS              *statusASJSON            `json:"authorization_server,omitempty"`
+	Update          statusUpdateJSON         `json:"update"`
+}
+
+// statusUpdateJSON is the daily release check (update_check.go): the mode
+// in force, and the stamp's tokens when one is on file. Error is the
+// client's own sentence for a stamp it refused, never the stamp's text.
+type statusUpdateJSON struct {
+	Mode      string `json:"mode"`
+	Checked   bool   `json:"checked"`
+	CheckedAt string `json:"checked_at,omitempty"`
+	Running   string `json:"running,omitempty"`
+	Latest    string `json:"latest,omitempty"`
+	Outcome   string `json:"outcome,omitempty"`
+	Failure   string `json:"failure,omitempty"`
+	Fix       string `json:"fix,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+func statusUpdateJSONOf(f updateFacts) statusUpdateJSON {
+	out := statusUpdateJSON{Mode: f.Mode, Checked: f.Present}
+	if f.Err != nil {
+		out.Error = boundMessage(f.Err.Error())
+		return out
+	}
+	if !f.Present {
+		return out
+	}
+	st := f.Stamp
+	out.CheckedAt = st.CheckedAt.UTC().Format(time.RFC3339)
+	out.Running, out.Latest, out.Outcome, out.Failure = st.Running, st.Latest, string(st.Outcome), st.Failure
+	if st.Outcome == updateAvailable {
+		out.Fix = f.Fix
+	}
+	return out
 }
 
 type statusMiningJSON struct {
@@ -221,6 +256,7 @@ func statusEnvelope(f agentIdentityFacts, as *statusASFacts) commandEnvelope {
 			Health:                healthOf(f.Health),
 		},
 		Conflicts: f.Conflicts,
+		Update:    statusUpdateJSONOf(f.Update),
 	}
 	if f.Decision.Err != nil {
 		report.Mining.Detail = boundMessage(f.Decision.Err.Error())

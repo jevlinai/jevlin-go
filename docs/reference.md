@@ -8,7 +8,7 @@ Values to look up. Every flag is in `jevlin help` and `jevlin <command> -h`.
 |---|---|
 | `setup` | Everything after the binary: previous installation, config, `connect`, profile, agents. |
 | `uninstall` | Removes what setup wrote for one installation; `-binary` and `-purge-state` go further. |
-| `upgrade` | Replaces a native binary with a verified release; `-rollback` swaps back. |
+| `upgrade` | Replaces a native binary with a verified release; `-rollback` swaps back. `-auto` is the daily check the hooks start, not a command a person runs. |
 | `search` | One web search. `--stdin` for agents (JSON in, JSON out); `<query words>` for a person. |
 | `agents install\|status\|uninstall` | Sets up, reports or removes the skills and hooks of each agent. |
 | `agents prefer on\|off\|status` | Whether this search or the agent's own is the default. |
@@ -160,6 +160,9 @@ flush_interval = "3m"                              # default 3m: how often a flu
 turn_end       = false                             # default false: report a searched turn's final answer (see The turn end)
 tier           = ""                                # fast | balanced | max; unset = the router's default. `agents tier` outranks it; another word is ignored and named by `agents tier status`
 # router_url = "..."   defaults to the [[provider]] upstream
+
+[update]
+mode           = "apply"                           # apply | notify | off; the daily release check (see Files and locks). Another word checks and notifies only, and doctor names it
 ```
 
 **`[mining] enabled` is not the switch.** Whether mining is on is the decision `connect`,
@@ -241,7 +244,7 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | `search-default` | `agents prefer`'s choice. | agents prefer | Yes; the skill default returns. |
 | `search-tier` | `agents tier`'s choice: the band a search carries when the request names none. | agents tier | Yes; `[miner] tier`, then the router's default, returns. |
 | `bin/jevlin` | A native binary, and `jevlin.previous` after an upgrade. | setup, upgrade | Through `uninstall -binary`. |
-| `state/` | Identity, authorization, the mining decision, health records, the flush stamp, the last region refusal. | connect, flush, join | No: it is your registration. |
+| `state/` | Identity, authorization, the mining decision, health records, the flush stamp, the last region refusal, the release check's stamp. | connect, flush, join, upgrade -auto | No: it is your registration. |
 | `intake/` | Served request ids, until a flush takes them. | search | No: unsent evidence. |
 | `spool/` | Evidence waiting for the rewards service to acknowledge it. | flush | No: unsent evidence. |
 | `sessions/` | Lineage files, one per workspace or Cursor conversation; with `turn_end` on, an empty mark per searched turn and a turn's final answer for the moment before it is sent. | hooks | Yes, with no agent running; the hooks write them again. |
@@ -258,6 +261,20 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | `wallet/wallet.lock` | Key creation, and a send from its journal check to its first broadcast. | Yes, when no wallet command runs. |
 | `state/refresh.token.lock` | Rotation of the authorization's refresh token. | Yes, when none runs. |
 
+**The daily release check.** Every hook that starts a flush — a session's start and end, on
+every agent — reads `state/update_check.json` and, when no check has run in the last day,
+starts `jevlin upgrade -auto` as a detached child; the hook itself contacts nothing. The child
+asks the project's GitHub releases for the latest version, with no credential, and under
+`[update] mode = "apply"` (the default) replaces a native binary through the same verified
+transaction as `jevlin upgrade`, holding the same locks; under `"notify"`, or for a copy npm
+installed, which is never replaced, it only records that a newer release exists. It never
+moves to an older release and never runs while a setup, uninstall or upgrade holds the
+installation. The stamp records when it ran, the version that ran it, the release it found and
+the outcome (`started`, `current`, `available`, `upgraded`, `failed` with the failure word
+`upgrade` would print, or `not_release` for a development build); `status` and `doctor` read it
+and nothing else. A stamp dated in the future, from a clock that was set back, counts as due.
+Deleting it is safe: the next agent session checks again.
+
 ## Doctor's checks
 
 | check | OK when |
@@ -269,6 +286,7 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | earning | This epoch has enough verified searches to qualify. |
 | intake writable | This process can write where a search records. Probes with one inert non-`.json` file, then removes it. |
 | recording | Recorded searches are waiting, queued, or verified at the AS; or nothing ran recently. |
+| up to date | The daily release check found this copy current, or has not run yet. `NO` names the newer release and the one command that applies it here. `UNKNOWN` when the last check failed, is still running, could not be read, is dated in the future, or ran more than three days ago, which says the hooks that start it may not be running. |
 | wallet access | Windows only: nobody but you can read the wallet. |
 | state access | Windows only: the state directory and its credentials have an access list and an owner, who is you, SYSTEM or Administrators. Anyone else the list names is shown, and is `OK`: an agent's sandbox is expected there. |
 

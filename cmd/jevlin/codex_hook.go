@@ -103,11 +103,7 @@ func hookCodexOn(ops hookOps, hc hookContext, goos, event string, payload []byte
 	if runners, err := declaredShells(codexTarget{}, goos, channelHook); err != nil || len(runners) == 0 {
 		return
 	}
-	flush := func() {
-		if ops.spawnFlush != nil {
-			_ = ops.spawnFlush(hc.cfgPath)
-		}
-	}
+	flush := func() { ops.startBackground(hc) }
 	switch event {
 	case "PreToolUse":
 		codexLineage(ops, hc, goos, payload, stdout)

@@ -30,13 +30,16 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 
 	"github.com/jevlinai/jevlin-go/internal/selfupdate"
+	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
 const upgradeUsage = `usage: jevlin upgrade [-version X.Y.Z | -rollback] [-home dir]
+       jevlin upgrade -auto [-config file] [-home dir]
 
 Replaces this native binary with the latest canonical Jevlin release, or
 with -version exactly that release, after verifying its checksum, inspecting
@@ -48,6 +51,12 @@ replaces is kept as <binary>.previous. A copy npm installed is updated with npm.
                   rollback replaced; no network
   -home dir       the installation whose lifecycle lock is held (default as
                   uninstall resolves it)
+  -auto           the daily check the agent hooks start, not a command a
+                  person runs: with [update] mode = "apply" (the default) a
+                  native copy is replaced by a newer release; a copy npm
+                  installed, or mode "notify", only records that one exists.
+                  Exits quietly; jevlin status and doctor report the result
+  -config file    with -auto: the config the hook runs with
 `
 
 // upgradeClass is what a participant can do about a failed upgrade.
@@ -122,6 +131,15 @@ type upgradeDeps struct {
 	// them runs with.
 	agents  agentOps
 	environ func() []string
+	// now is the clock -auto stamps with; nil means time.Now.
+	now func() time.Time
+}
+
+func (d upgradeDeps) clock() time.Time {
+	if d.now != nil {
+		return d.now()
+	}
+	return time.Now()
 }
 
 func cmdUpgrade(args []string, stdout, stderr io.Writer, getenv func(string) string) int {
@@ -140,6 +158,7 @@ func cmdUpgrade(args []string, stdout, stderr io.Writer, getenv func(string) str
 		operationTimeout: selfupdate.OperationTimeout,
 		agents:           realAgentOps(),
 		environ:          upgradeEnviron,
+		now:              time.Now,
 	}, args)
 }
 
@@ -150,6 +169,8 @@ func upgradeMain(d upgradeDeps, args []string) int {
 	versionFlag := fs.String("version", "", "upgrade to exactly this release")
 	rollback := fs.Bool("rollback", false, "put back the previous binary")
 	homeFlag := fs.String("home", "", "the installation directory")
+	auto := fs.Bool("auto", false, "the daily check the hooks start")
+	cfgFlag := fs.String("config", "", "with -auto: the config to read")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			fmt.Fprint(d.stdout, upgradeUsage)
@@ -164,6 +185,17 @@ func upgradeMain(d upgradeDeps, args []string) int {
 	}
 	if *rollback && *versionFlag != "" {
 		fmt.Fprintf(d.stderr, "jevlin upgrade: -version and -rollback cannot be combined: -rollback restores the one previous binary, whatever its version\n%s", upgradeUsage)
+		return exitUsage
+	}
+	if *auto {
+		if *rollback || *versionFlag != "" {
+			fmt.Fprintf(d.stderr, "jevlin upgrade: -auto takes neither -version nor -rollback: it checks for the latest release and never moves backwards\n%s", upgradeUsage)
+			return exitUsage
+		}
+		return upgradeAuto(d, *cfgFlag, *homeFlag)
+	}
+	if *cfgFlag != "" {
+		fmt.Fprintf(d.stderr, "jevlin upgrade: -config is read only with -auto; an upgrade takes -home\n%s", upgradeUsage)
 		return exitUsage
 	}
 	var requested *selfupdate.Version
@@ -247,15 +279,22 @@ func upgradeRun(d upgradeDeps, homeFlag string, requested *selfupdate.Version, r
 		fmt.Fprintf(d.stdout, "jevlin %s is already the %s release; nothing to do\n", prepared.From, selectedRelease(requested))
 		return exitOK
 	}
-	err = updater.Install(ctx, prepared)
-	prepared.DiscardAfterInstall(err)
-	if err != nil {
+	if err := installPrepared(ctx, updater, prepared); err != nil {
 		return fail(err)
 	}
 	fmt.Fprintf(d.stdout, "upgraded %s from %s to %s\nthe binary it replaced is kept as %s; `jevlin upgrade -rollback` restores it\n",
 		prepared.Executable, prepared.From, prepared.To, selfupdate.PreviousPath(prepared.Executable))
 	d.rerenderOwned(ctx, exe, resolved, home)
 	return exitOK
+}
+
+// installPrepared is the one place a replacement is attempted: every
+// Install is followed by Prepared.DiscardAfterInstall(err), so a copy an
+// error reports as surviving is never removed.
+func installPrepared(ctx context.Context, updater selfupdate.Updater, prepared selfupdate.Prepared) error {
+	err := updater.Install(ctx, prepared)
+	prepared.DiscardAfterInstall(err)
+	return err
 }
 
 // ensureUpgradeFlushLock creates the installation's flush lock when it is
@@ -271,6 +310,160 @@ func ensureUpgradeFlushLock(home string, getenv func(string) string, stderr io.W
 	if err != nil {
 		fmt.Fprintf(stderr, "jevlin upgrade: note: the flush lock could not be created (%v); a flush inside an agent's sandbox will not run until one outside it has\n", err)
 	}
+}
+
+// upgradeAuto is the daily check (update_check.go): the detached child a
+// hook starts. Nobody is at the terminal, so it says what it did on stderr,
+// records it in the stamp, which status and doctor read, and exits 0 on
+// every outcome but a config it cannot load. It takes the locks an upgrade
+// takes, in one attempt, so it never waits on a setup, uninstall or upgrade
+// a person is running and never runs beside another check of the same
+// binary; the stamp is read under them, so two hooks that both found it
+// stale make one request, not two. The stamp is claimed before the network
+// is touched: a child that dies mid-way postpones the next check a day
+// rather than running one every session.
+func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
+	say := func(format string, a ...any) {
+		fmt.Fprintf(d.stderr, "jevlin upgrade -auto: "+format+"\n", a...)
+	}
+	cfg, src, err := loadConfig(cfgPath, d.getenv)
+	if err != nil {
+		say("config (%s): %v", orDefaults(src), err)
+		return exitTransport
+	}
+	if cfg.Update.Mode == config.UpdateOff {
+		say("[update] mode is off; nothing checked")
+		return exitOK
+	}
+	stateDir := cfg.Mining.StateDir
+	if stateDir == "" {
+		say("no state directory; nothing checked")
+		return exitOK
+	}
+	exe, err := d.executable()
+	if err != nil {
+		say("cannot determine my own path: %v", err)
+		return exitOK
+	}
+	resolved, err := selfupdate.ResolveExecutable(exe)
+	if err != nil {
+		say("%v", err)
+		return exitOK
+	}
+	native := classifyLaunch(resolved, d.getenv("JEVLIN_LAUNCH")) == launchNative
+	home := ""
+	if native {
+		home, err = autoInstallationHome(d, homeFlag, src, exe)
+		if err != nil {
+			say("%v", err)
+			return exitOK
+		}
+		ex, err := excludeForUpgrade(home, resolved, 0)
+		if err != nil {
+			say("%v; not checking now", err)
+			return exitOK
+		}
+		defer ex.release()
+	}
+
+	now := d.clock()
+	stampPath := updateStampPath(stateDir)
+	if st, ok, rerr := readUpdateStamp(readUpdateStampFile, stampPath); rerr == nil && ok && updateStampFresh(st, now) {
+		say("checked %s; not due", ageText(now.Sub(st.CheckedAt)))
+		return exitOK
+	}
+	record := func(st updateStamp) {
+		if werr := writeUpdateStamp(stampPath, st); werr != nil {
+			say("the stamp could not be written (%v); the next session checks again", werr)
+		}
+	}
+	stamp := updateStamp{CheckedAt: now, Outcome: updateStarted}
+	current := d.build()
+	v, perr := selfupdate.ParseVersion(current)
+	if perr != nil || current != v.String() {
+		stamp.Outcome = updateNotRelease
+		record(stamp)
+		say("this binary reports %q, not a release version; nothing to compare", current)
+		return exitOK
+	}
+	stamp.Running = current
+	record(stamp)
+	failed := func(err error) int {
+		stamp.Outcome, stamp.Failure = updateFailed, string(autoFailureClass(err))
+		record(stamp)
+		say("%s: %v", stamp.Failure, err)
+		return exitOK
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), d.operationTimeout)
+	defer cancel()
+
+	if native && cfg.Update.Mode == config.UpdateApply {
+		ensureUpgradeFlushLock(home, d.getenv, d.stderr)
+		updater := selfupdate.Updater{Source: d.source(), Runner: d.runner, GOOS: d.goos, GOARCH: d.goarch}
+		prepared, err := updater.Prepare(ctx, resolved, current, nil)
+		if selfupdate.KindOf(err) == selfupdate.KindDowngrade {
+			// GitHub's latest is older than this copy — a release was
+			// withdrawn. Nothing to apply, and not a failure of the check.
+			prepared, err = selfupdate.Prepared{From: v, To: v, NoChange: true}, nil
+		}
+		if err != nil {
+			return failed(err)
+		}
+		if prepared.NoChange {
+			stamp.Outcome, stamp.Latest = updateCurrent, current
+			record(stamp)
+			say("%s is the latest release", current)
+			return exitOK
+		}
+		if err := installPrepared(ctx, updater, prepared); err != nil {
+			return failed(err)
+		}
+		stamp.Outcome, stamp.Latest = updateUpgraded, prepared.To.String()
+		record(stamp)
+		say("upgraded %s from %s to %s; the binary it replaced is kept as %s", prepared.Executable, prepared.From, prepared.To, selfupdate.PreviousPath(prepared.Executable))
+		d.rerenderOwned(ctx, exe, resolved, home)
+		return exitOK
+	}
+
+	// notify, or a copy this command never replaces: one request, no download.
+	release, err := d.source().Release(ctx, nil)
+	if err != nil {
+		return failed(err)
+	}
+	if release.Version.Compare(v) > 0 {
+		stamp.Outcome, stamp.Latest = updateAvailable, release.Version.String()
+		record(stamp)
+		say("%s is available; this copy is %s and is not replaced here", stamp.Latest, current)
+		return exitOK
+	}
+	stamp.Outcome, stamp.Latest = updateCurrent, current
+	record(stamp)
+	say("%s is the latest release", current)
+	return exitOK
+}
+
+// autoInstallationHome is the installation -auto holds the gate of: the
+// directory of the config the hook named, when that file is jevlin.toml —
+// the hook knows the config and nothing else — and otherwise what upgrade
+// resolves for a person.
+func autoInstallationHome(d upgradeDeps, homeFlag, cfgSource, exe string) (string, error) {
+	if homeFlag == "" && cfgSource != "" && filepath.Base(cfgSource) == setupConfigFile {
+		return lifecycleIdentity(filepath.Dir(cfgSource))
+	}
+	return resolveInstallationHome(homeFlag, d.getenv, d.userHome, exe)
+}
+
+// autoFailureClass is classifyUpgrade for the check, where an error with no
+// kind is the network — a release lookup that could not be made — and so
+// retry, never the filesystem.
+func autoFailureClass(err error) upgradeClass {
+	var typed *selfupdate.Error
+	var active *lifecycleActiveError
+	if !errors.As(err, &typed) && !errors.As(err, &active) && !errors.Is(err, errLifecycleBusy) && !errors.Is(err, errUpgradeOwnership) {
+		return upgradeRetry
+	}
+	return classifyUpgrade(err)
 }
 
 func selectedRelease(requested *selfupdate.Version) string {

@@ -111,6 +111,9 @@ type hookOps struct {
 	readTail func(path string, max int64) ([]byte, error)
 	// spawnFlush starts a detached flush. Best effort.
 	spawnFlush func(cfgPath string) error
+	// spawnUpdateCheck starts the detached daily release check, when
+	// startBackground finds it due (update_check.go). Best effort.
+	spawnUpdateCheck func(cfgPath string) error
 	// spawnTurnEnd starts the detached sender of one queued turn end.
 	spawnTurnEnd func(cfgPath, file string) error
 	// tempSuffix is the unpredictable part of a temporary or queued file's
@@ -127,18 +130,19 @@ func realHookOps() hookOps {
 		// The sessions and state directories are writable roots of Codex's
 		// sandbox (pkg/fsx/confined.go): a read never waits on what a
 		// sandboxed command left at a name, and a write never opens one.
-		readFile:     func(path string) ([]byte, error) { return fsx.ReadRegular(path, hookFileMaxBytes) },
-		writeFile:    fsx.CreateNew,
-		mkdirAll:     os.MkdirAll,
-		rename:       os.Rename,
-		remove:       os.Remove,
-		listTemps:    listTempFiles,
-		readTail:     readFileTail,
-		spawnFlush:   startFlush,
-		spawnTurnEnd: startTurnEnd,
-		tempSuffix:   traceRandomID,
-		now:          time.Now,
-		pid:          os.Getpid(),
+		readFile:         func(path string) ([]byte, error) { return fsx.ReadRegular(path, hookFileMaxBytes) },
+		writeFile:        fsx.CreateNew,
+		mkdirAll:         os.MkdirAll,
+		rename:           os.Rename,
+		remove:           os.Remove,
+		listTemps:        listTempFiles,
+		readTail:         readFileTail,
+		spawnFlush:       startFlush,
+		spawnUpdateCheck: startUpdateCheck,
+		spawnTurnEnd:     startTurnEnd,
+		tempSuffix:       traceRandomID,
+		now:              time.Now,
+		pid:              os.Getpid(),
 	}
 }
 
@@ -179,6 +183,31 @@ type hookContext struct {
 	// turnEnd is [miner] turn_end: this installation reports a turn's final
 	// message. See turn_end.go.
 	turnEnd bool
+	// stateDir and updateMode are what the daily release check's decision
+	// reads: where its stamp is, and whether [update] mode turned it off.
+	stateDir   string
+	updateMode string
+}
+
+// startBackground starts what a hook leaves running after it exits: the
+// flush, and, when the day's release check is due, that check. Both are
+// best effort and neither is waited on. The stamp is read only when there
+// is something to start, and through the hook's own read, which never
+// waits on what a sandboxed command left at the name.
+func (ops hookOps) startBackground(hc hookContext) {
+	if ops.spawnFlush != nil {
+		_ = ops.spawnFlush(hc.cfgPath)
+	}
+	if ops.spawnUpdateCheck == nil || ops.readFile == nil {
+		return
+	}
+	now := time.Now()
+	if ops.now != nil {
+		now = ops.now()
+	}
+	if updateCheckDue(ops.readFile, hc.stateDir, hc.updateMode, now) {
+		_ = ops.spawnUpdateCheck(hc.cfgPath)
+	}
 }
 
 func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -196,6 +225,8 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 	if cfg, _, err := loadConfig(cfgPath, ops.getenv); err == nil {
 		hc.sessionsDir = cfg.Miner.SessionsDir
 		hc.turnEnd = cfg.Miner.TurnEnd
+		hc.stateDir = cfg.Mining.StateDir
+		hc.updateMode = cfg.Update.Mode
 	}
 	// One leading byte-order mark is tolerated here for the same reason as on
 	// `search --stdin`: the shell in front of a hook is the host's choice,
@@ -220,8 +251,8 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 	case "window":
 		if len(args) > 1 {
 			hookWindow(ops, hc, args[1], payload)
-			if args[1] == "session-start" && ops.spawnFlush != nil {
-				_ = ops.spawnFlush(hc.cfgPath)
+			if args[1] == "session-start" {
+				ops.startBackground(hc)
 			}
 		}
 	case "cursor":
@@ -246,9 +277,7 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 		// first — when the installation opted in and the turn searched — and
 		// then the flush starts, as before.
 		claudeTurnEnd(ops, hc, payload)
-		if ops.spawnFlush != nil {
-			_ = ops.spawnFlush(hc.cfgPath)
-		}
+		ops.startBackground(hc)
 	default:
 		fmt.Fprintf(stderr, "jevlin hook: unknown subcommand %q\n", args[0])
 		return exitUsage
@@ -865,11 +894,7 @@ func hookCursorOn(goos string, ops hookOps, hc hookContext, event string, payloa
 			apply(l)
 		})
 	}
-	flush := func() {
-		if ops.spawnFlush != nil {
-			_ = ops.spawnFlush(hc.cfgPath)
-		}
-	}
+	flush := func() { ops.startBackground(hc) }
 
 	switch event {
 	case "sessionStart":

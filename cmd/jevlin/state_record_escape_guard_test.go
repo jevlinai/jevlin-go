@@ -55,6 +55,7 @@ var stateRecordFiles = map[string]stateRecordClass{
 	"revoke_pending.json":      {json: true},
 	"connect_resume.json":      {json: true},
 	"flush.json":               {json: true},
+	"update_check.json":        {json: true, typ: reflect.TypeOf(updateStamp{})},
 	"dpop.key":                 {why: "a PEM key, read by the AS client and never printed"},
 	"refresh.token":            {why: "an opaque token, sent to the AS and never printed"},
 	"participation.secret":     {why: "32 random bytes, never printed"},
@@ -117,6 +118,9 @@ func stateRecordFixture(t *testing.T) (cfgPath, stateDir string) {
 	}
 	cfg := mustLoadConfig(t, cfgPath)
 	if err := saveFlushStamp(store, flushStampPath(cfg.Mining), flushStamp{V: 1, SlotID: 7, TargetEpoch: 1042, LastAS: time.Now(), LastFlush: time.Now()}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeUpdateStamp(updateStampPath(stateDir), updateStamp{CheckedAt: time.Now(), Running: "0.3.1", Latest: "0.3.2", Outcome: updateAvailable}); err != nil {
 		t.Fatal(err)
 	}
 	return cfgPath, stateDir

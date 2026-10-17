@@ -242,6 +242,23 @@ describes each.
 
 ## Upgrading
 
+A native install keeps itself current. Once a day, when an agent session starts or ends,
+jevlin checks the project's GitHub releases and, if there is a newer one, replaces its binary
+the same careful way `jevlin upgrade` does: checksum verified, the new binary run before and
+after, the old one kept as `jevlin.previous`. Nothing else is touched. An npm install is never
+replaced this way; the check only notes that a release exists, and `jevlin status` and
+`jevlin doctor` tell you to run npm's command. To only be told, or to turn the check off, add
+to your config:
+
+```toml
+[update]
+mode = "notify"   # or "off"; the default is "apply"
+```
+
+`jevlin status` says when it last checked and what it found; `jevlin doctor`'s `up to date`
+line says the same, and says so when the check has not run for three days, which usually means
+no agent with the hooks has been opened. Restart open agents after an upgrade.
+
 ```bash
 jevlin upgrade                  # the latest release
 jevlin upgrade -version X.Y.Z   # exactly that release, never an older one
