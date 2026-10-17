@@ -10,7 +10,11 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
-## Unreleased
+## v0.3.2 — 2026-10-17
+
+A fix for installing from npm: `jevlin setup` refused every global npm install, so the README's
+first install path did not work. A native install is unaffected and needs nothing from this
+release beyond the skill's new wording.
 
 - **`jevlin setup` works from a global npm install.** Until now it refused every one, with
   "setup must run from a global npm install … npm could not say where this copy is
