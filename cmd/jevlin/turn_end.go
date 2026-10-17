@@ -124,11 +124,34 @@ func turnSearchedPath(dir, turnID string) string {
 	return filepath.Join(dir, traceHash("turn-searched|"+turnID)+turnSearchedSuffix)
 }
 
+// turnEndedPath is the mark that a turn's end was queued, and
+// sessionSearchedPath the mark that a subagent of the session searched. Both
+// carry the turn marks' suffix, so the same sweep removes them, and neither
+// name can be a turn mark's: a turn id is a hash, with no "|" in it.
+func turnEndedPath(dir, turnID string) string {
+	return turnSearchedPath(dir, "ended|"+turnID)
+}
+
+func sessionSearchedPath(dir, sessionID string) string {
+	return turnSearchedPath(dir, "subagent|"+sessionID)
+}
+
 // markTurnSearched records that a search was served in the trace's turn. It
 // is the evidence the turn end asks for, and it is written only AFTER the
 // router answered: the lineage hook stamps a turn before the command runs,
 // which says a search was proposed, not that one happened. Best effort, and
 // nothing at all unless the installation opted in.
+//
+// A turn ends once. A search that lands in a turn whose end was already
+// queued leaves no mark: a background subagent's search can carry the turn
+// that launched it long after that turn's Stop, and a second end for the
+// same turn would not be the turn's end.
+//
+// A subagent's search also marks its session (sessionSearchedPath), the one
+// way a search lands in a turn other than the one now running: Claude Code
+// gives a subagent the turn that launched it, and a background subagent
+// outlives that turn. The next Stop in the session that finds the mark looks
+// for such turns (claudeTurnEnd).
 func markTurnSearched(ops hookOps, m config.Miner, trace *traceEnvelope) {
 	if !m.TurnEnd || m.SessionsDir == "" || trace == nil || trace.TurnID == "" {
 		return
@@ -136,7 +159,18 @@ func markTurnSearched(ops hookOps, m config.Miner, trace *traceEnvelope) {
 	if err := ops.mkdirAll(m.SessionsDir, 0o700); err != nil {
 		return
 	}
+	if _, err := ops.readFile(turnEndedPath(m.SessionsDir, trace.TurnID)); err == nil {
+		return
+	}
 	_ = ops.writeFile(turnSearchedPath(m.SessionsDir, trace.TurnID), nil, 0o600)
+	if trace.ParentSessionID != "" {
+		// Written after the turn's mark, so a Stop that finds this finds
+		// that; and written afresh, so the sweep counts from the latest
+		// search rather than the first.
+		path := sessionSearchedPath(m.SessionsDir, trace.ParentSessionID)
+		_ = ops.remove(path)
+		_ = ops.writeFile(path, nil, 0o600)
+	}
 	sweepTurnMarks(m.SessionsDir, ops.now())
 }
 
@@ -157,9 +191,24 @@ func sweepTurnMarks(dir string, now time.Time) {
 }
 
 // takeTurnSearched reports whether a search was served in the turn, and
-// removes the mark: a turn ends once.
+// removes the mark: a turn ends once, and the ended mark it leaves keeps a
+// later search from marking the turn again.
 func takeTurnSearched(ops hookOps, dir, turnID string) bool {
 	path := turnSearchedPath(dir, turnID)
+	if _, err := ops.readFile(path); err != nil {
+		return false
+	}
+	_ = ops.remove(path)
+	_ = ops.writeFile(turnEndedPath(dir, turnID), nil, 0o600)
+	return true
+}
+
+// takeSessionSearched reports whether a subagent of the session searched
+// since the last Stop that looked, and removes the mark. It is removed before
+// the turns are looked at, so a search that lands while they are leaves it
+// again for the next Stop.
+func takeSessionSearched(ops hookOps, dir, sessionID string) bool {
+	path := sessionSearchedPath(dir, sessionID)
 	if _, err := ops.readFile(path); err != nil {
 		return false
 	}
@@ -225,6 +274,14 @@ type claudeStopPayload struct {
 // A turn that searched and has no message to send — none in the payload, or
 // one too large to scrub whole — is still reported, as completed and without
 // text: the router keeps how a turn ended either way.
+//
+// An earlier turn can have searched since its own Stop (issue #70, case 1):
+// a background subagent searches under the turn that launched it, and that
+// turn's Stop came first and found nothing. When a subagent of the session
+// has searched, this Stop reports every earlier turn of the transcript that
+// holds a mark, late, before its own: the participant's message, the steps,
+// and the turn's last assistant text from the transcript, scrubbed as the
+// payload's would be.
 func claudeTurnEnd(ops hookOps, hc hookContext, payload []byte) {
 	if !turnEndEnabled(ops, hc) {
 		return
@@ -236,28 +293,50 @@ func claudeTurnEnd(ops hookOps, hc hookContext, payload []byte) {
 	if p.HookEventName != "Stop" || p.StopHookActive || p.SessionID == "" || p.PromptID == "" {
 		return
 	}
+	session := traceHash(p.SessionID)
 	turn := traceHash(p.SessionID + "|" + p.PromptID)
-	if !takeTurnSearched(ops, hc.sessionsDir, turn) {
+	searched := takeTurnSearched(ops, hc.sessionsDir, turn)
+	late := takeSessionSearched(ops, hc.sessionsDir, session)
+	if !searched && !late {
 		return
 	}
-	rec := turnEndRecord{
-		SessionID: traceHash(p.SessionID),
-		TurnID:    turn,
-		Harness:   orString(ops.getenv("JEVLIN_HARNESS"), "claude-code"),
-		Status:    turnCompleted,
-	}
-	if text, chars, truncated := prepareFinalText(p.LastAssistantMessage); text != "" {
-		rec.FinalText, rec.FinalChars, rec.Truncated = text, chars, truncated
-	}
-	if d := claudeTurnDetail(ops, p); d != nil {
-		rec.UserText, rec.UserChars, rec.UserTruncated = d.UserText, d.UserChars, d.UserTruncated
-		rec.Model, rec.Usage = d.Model, d.Usage
-		rec.Steps = d.Steps
-		if rec.FinalText != "" {
-			rec.Steps = withoutClosingText(rec.Steps)
+	current, earlier := claudeTranscriptTurns(ops, p)
+	harness := orString(ops.getenv("JEVLIN_HARNESS"), "claude-code")
+	if late {
+		for _, t := range earlier {
+			id := traceHash(p.SessionID + "|" + t.PromptID)
+			if !takeTurnSearched(ops, hc.sessionsDir, id) {
+				continue
+			}
+			rec := turnEndRecord{SessionID: session, TurnID: id, Harness: harness, Status: turnCompleted}
+			if t.Detail != nil {
+				withClaudeTurn(&rec, t.Detail.lastText, t.Detail)
+			}
+			queueTurnEnd(ops, hc, rec)
 		}
 	}
-	queueTurnEnd(ops, hc, rec)
+	if searched {
+		rec := turnEndRecord{SessionID: session, TurnID: turn, Harness: harness, Status: turnCompleted}
+		withClaudeTurn(&rec, p.LastAssistantMessage, current)
+		queueTurnEnd(ops, hc, rec)
+	}
+}
+
+// withClaudeTurn fills a Claude Code turn end with its final message and,
+// where the transcript held the turn whole, its conversation.
+func withClaudeTurn(rec *turnEndRecord, final string, d *turnDetail) {
+	if text, chars, truncated := prepareFinalText(final); text != "" {
+		rec.FinalText, rec.FinalChars, rec.Truncated = text, chars, truncated
+	}
+	if d == nil {
+		return
+	}
+	rec.UserText, rec.UserChars, rec.UserTruncated = d.UserText, d.UserChars, d.UserTruncated
+	rec.Model, rec.Usage = d.Model, d.Usage
+	rec.Steps = d.Steps
+	if rec.FinalText != "" {
+		rec.Steps = withoutClosingText(rec.Steps)
+	}
 }
 
 // ── Cursor: the stop hook ───────────────────────────────────────────────

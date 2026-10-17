@@ -10,6 +10,14 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## Unreleased
+
+- **A Claude Code turn whose background subagent searched is now reported.** With `turn_end` on, a
+  subagent launched in the background searches under the turn that launched it, usually after
+  that turn has ended, so the turn's end had already found nothing to report and the search was
+  never joined to a turn end. The next turn end in the session now reports that turn, once, with
+  what you asked and its last message.
+
 ## v0.3.0 — 2026-10-16
 
 Two fixes to how the client lives inside a coding agent's hooks. Nothing changes on the

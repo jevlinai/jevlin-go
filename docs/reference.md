@@ -454,7 +454,11 @@ this carries what it concluded. When a turn ends, the agent's end-of-turn hook s
 
 Only for a turn in which a jevlin search was served: `search` marks the turn after the router
 answers, so a search you refused, or one that failed, does not count, and a turn with no served
-search sends nothing. Only to the router `miner.router_url` names; without that line nothing is
+search sends nothing. Under Claude Code, a background subagent searches under the turn that
+launched it and can do so after that turn has ended; that turn is then reported late, by the next
+turn end in the session, with what you asked, its steps and its last message as the transcript
+holds them. A turn is reported once: a search under a turn already reported does not report it
+again. Only to the router `miner.router_url` names; without that line nothing is
 sent. With it on, what you typed in a searched turn is sent; what your tools read and wrote never is: not a file's contents, not a command, not its output. The model's private reasoning and a subagent's own steps are not sent either. The hook writes the record to an owner-only file in
 `sessions/` and a detached `jevlin turn-end` sends it once and deletes the file, sent or not.
 `JEVLIN_TRACE=off` turns it off too. Claude Code (2.1.196 or later), Cursor, opencode, and Codex
