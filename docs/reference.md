@@ -24,9 +24,11 @@ Values to look up. Every flag is in `jevlin help` and `jevlin <command> -h`.
 | `login`, `enroll`, `payout`, `join`, `provider` | The portal's older manual path. |
 | `version`, `help` | The version, and the full usage text. |
 
-Every command takes `-config <file>`. Without it, the config is the first of: `JEVLIN_CONFIG`,
-the installation's own (`$JEVLIN_HOME/jevlin.toml`, else `~/.jevlin/jevlin.toml`) when that
-file exists, and built-in defaults. A `jevlin.toml` in the working directory is never read
+A command that reads the config takes `-config <file>`; `setup`, `upgrade` and `uninstall` take
+`-home <dir>` instead, and `wallet init` and `wallet address` take only `-dir`. Without
+`-config`, the config is the first of: `JEVLIN_CONFIG`, the installation's own
+(`$JEVLIN_HOME/jevlin.toml`, else `~/.jevlin/jevlin.toml`) when that file exists, and built-in
+defaults. A `jevlin.toml` in the working directory is never read
 unless you name it, so a cloned repo cannot choose where your keys are sent. `status` and `doctor`
 name the file they used. `connect` refuses to run with no config file, and says to run
 `jevlin setup`.
