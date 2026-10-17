@@ -334,9 +334,9 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 		say("[update] mode is off; nothing checked")
 		return exitOK
 	}
-	stateDir := cfg.Mining.StateDir
-	if stateDir == "" {
-		say("no state directory; nothing checked")
+	root := updateRoot(cfg.Miner)
+	if root == "" {
+		say("the config names no installation directory (miner.intake_dir); nothing checked")
 		return exitOK
 	}
 	exe, err := d.executable()
@@ -368,13 +368,13 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 		}
 		defer ex.release()
 	}
-	// One check at a time per state directory, whatever the copy: a lookup
-	// for a copy this command never replaces holds this and nothing beside
-	// the binary. A lock that cannot be opened is a state directory the
-	// stamp cannot be written to either; the check goes on without it.
-	if lock, held, lerr := tryLockFile(updateLockPath(stateDir)); lerr == nil {
+	// One check at a time per installation, whatever the copy: a lookup for
+	// a copy this command never replaces holds this and nothing beside the
+	// binary. A lock that cannot be opened is a directory the stamp cannot
+	// be written to either; the check goes on without it.
+	if lock, held, lerr := tryLockFile(updateLockPath(root)); lerr == nil {
 		if !held {
-			say("another check holds %s; not checking now", updateLockPath(stateDir))
+			say("another check holds %s; not checking now", updateLockPath(root))
 			return exitOK
 		}
 		defer func() { _ = unlockFile(lock) }()
@@ -382,8 +382,8 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 
 	now := d.clock()
 	current := d.build()
-	stampPath := updateStampPath(stateDir)
-	if !updateCheckDue(readUpdateStampFile, stateDir, cfg.Update.Mode, current, now, func() bool { return native }) {
+	stampPath := updateStampPath(root)
+	if !updateCheckDue(readUpdateStampFile, root, cfg.Update.Mode, current, now, func() bool { return native }) {
 		say("checked today; not due")
 		return exitOK
 	}

@@ -1057,6 +1057,7 @@ func (r *uninstallRun) purgeSet() (inside, outside []string) {
 	first := []string{
 		join("wallet"), join("sessions"), join("intake"), join("spool"),
 		join(credentialsFile), join(registrationJournalFile), join(payoutRecordFile), join(claimRecordFile), join(setupConfigFile), join(preferFile), join(tierFile),
+		join(updateStampFile),
 	}
 	if entries, err := os.ReadDir(r.home); err == nil {
 		for _, e := range entries {
@@ -1068,7 +1069,7 @@ func (r *uninstallRun) purgeSet() (inside, outside []string) {
 	if !r.envKept {
 		first = append(first, join(setupEnvJournalFile))
 	}
-	last := []string{join("state"), join("flush.lock"), join(setupLockFile)}
+	last := []string{join("state"), join("flush.lock"), join(updateLockFile), join(setupLockFile)}
 
 	if r.cfg != nil {
 		journal := join(setupEnvJournalFile)
@@ -1591,12 +1592,13 @@ func (r *uninstallRun) sayLeftoverLocks() {
 const refreshTokenLockFile = "refresh.token.lock"
 
 // leftoverLocks is the lock files that still exist for this installation:
-// first in lock order the gate, setup.lock, connect.lock, flush.lock and the
-// binary's update lock, then the two that belong to other subsystems and to
-// no lock order -- the refresh-token lock beside connect.lock in the state
-// directory, and the wallet's creation lock (dropin-miner#136). All seven are the same
-// kind of file: empty, held only while their command runs, made again by the
-// next one. A path that is gone -- uninstall -binary takes the update lock
+// first in lock order the gate, setup.lock, connect.lock, flush.lock, the
+// binary's update lock and the release check's lock beside it in the
+// installation's own directory, then the two that belong to other subsystems
+// and to no lock order -- the refresh-token lock beside connect.lock in the
+// state directory, and the wallet's creation lock (dropin-miner#136). All
+// eight are the same kind of file: empty, held only while their command
+// runs, made again by the next one. A path that is gone -- uninstall -binary takes the update lock
 // with the binary -- is left out rather than named.
 func (r *uninstallRun) leftoverLocks() []string {
 	candidates := []string{lifecycleGatePath(r.home), filepath.Join(r.home, setupLockFile)}
@@ -1610,6 +1612,7 @@ func (r *uninstallRun) leftoverLocks() []string {
 	if owned := r.ownedBinary(); owned != "" {
 		candidates = append(candidates, owned+updateLockSuffix)
 	}
+	candidates = append(candidates, filepath.Join(r.home, updateLockFile))
 	if stateDir != "" {
 		candidates = append(candidates, filepath.Join(stateDir, refreshTokenLockFile))
 	}

@@ -3,7 +3,7 @@ package main
 // The daily release check (docs/guide.md "Upgrading").
 //
 // Every hook that starts a flush — a session's start and end, on every host
-// — also reads one stamp in the state directory, update_check.json, and when
+// — also reads one stamp, update_check.json beside credentials.json, and when
 // no check has run in the last day starts `jevlin upgrade -auto` as a
 // detached child, the exact shape of the flush. The hook reads one bounded
 // file and starts at most one process; it contacts nothing. The child is the
@@ -19,12 +19,15 @@ package main
 // host Codex's permission profile does not list (invariant 1): the search
 // path, and the processes a search spawns, are not touched.
 //
-// The stamp lives in the state directory, which a sandboxed command can
-// write (invariant 19): it is read without waiting and bounded, every word
-// in it is held on load to a token this client writes — a version, an
-// outcome, a failure class — and a record that is not is refused unread, so
-// nothing a writer put there is acted on or shown. The worst a forged stamp
-// can do is postpone a check by a day.
+// The stamp and its lock live in the installation's own directory, beside
+// credentials.json, and never in the state directory. A sandboxed command
+// can write the state directory (invariant 19), and the stamp is a record
+// this client acts on and shows: whether a check runs, whether a release is
+// held after a rollback, which copies survive a failed replacement. In the
+// state directory a planted directory at its name made every hook a
+// request, a hard link at the lock's name stopped every check, and a forged
+// failure made doctor advise a rollback. It is still read bounded, and every
+// word in it is held on load to a token this client writes.
 
 import (
 	"encoding/json"
@@ -89,8 +92,19 @@ type updateStamp struct {
 	Failure   string        `json:"failure,omitempty"` // an upgradeClass, with Outcome failed
 }
 
-func updateStampPath(stateDir string) string { return filepath.Join(stateDir, updateStampFile) }
-func updateLockPath(stateDir string) string  { return filepath.Join(stateDir, updateLockFile) }
+func updateStampPath(root string) string { return filepath.Join(root, updateStampFile) }
+func updateLockPath(root string) string  { return filepath.Join(root, updateLockFile) }
+
+// updateRoot is the installation's own directory, where the stamp and its
+// lock live: beside credentials.json (minerRoot), which no sandbox may write.
+// A config naming no intake directory has none, and then no check runs:
+// minerRoot would be ".", wherever the command happened to run.
+func updateRoot(m config.Miner) string {
+	if m.IntakeDir == "" {
+		return ""
+	}
+	return minerRoot(m)
+}
 
 // isReleaseVersion reports whether build is a release version in its
 // canonical spelling, as the stamp records it.
@@ -164,17 +178,16 @@ func readUpdateStamp(read func(string) ([]byte, error), path string) (updateStam
 	return st, true, nil
 }
 
-// readUpdateStampFile is the production read: the state dir is a writable
-// root of Codex's sandbox, so a FIFO or a huge file at the name must cost
-// the check, never hang the command (fsx.ReadRegular).
+// readUpdateStampFile is the production read: bounded, and never waiting on
+// a FIFO (fsx.ReadRegular), though no sandbox can write where the stamp is.
 func readUpdateStampFile(path string) ([]byte, error) {
 	return fsx.ReadRegular(path, stampMaxBytes)
 }
 
 // writeUpdateStamp replaces the stamp. fsx stages under an exclusive random
 // name it creates, so no link at a predictable name is written through. The
-// state directory is not created here: setup makes it, and a check on a
-// machine without one simply runs again at the next session.
+// directory is not created here: it is the installation's, which setup
+// makes.
 func writeUpdateStamp(path string, st updateStamp) error {
 	st.V = 1
 	data, err := json.Marshal(st)
@@ -193,19 +206,19 @@ func updateStampFresh(st updateStamp, now time.Time) bool {
 }
 
 // updateCheckDue is the hook's whole decision, and the child's again under
-// its lock: the mode is not off, the state directory is known, and the
-// stamp is absent, unreadable, another copy's, a day old or in the future.
+// its lock: the mode is not off, the installation's directory is known, and
+// the stamp is absent, unreadable, another copy's, a day old or in the future.
 // One more case is due within the day: a stamp that found a release
 // available without applying it, when the mode is now apply and this is a
 // native copy — the participant who switched from notify should not wait a
 // day for a release the check already knows. native is asked only then: it
 // may read beside the binary. An unreadable stamp runs the check, which
 // rewrites it.
-func updateCheckDue(read func(string) ([]byte, error), stateDir, mode, build string, now time.Time, native func() bool) bool {
-	if mode == config.UpdateOff || stateDir == "" {
+func updateCheckDue(read func(string) ([]byte, error), root, mode, build string, now time.Time, native func() bool) bool {
+	if mode == config.UpdateOff || root == "" {
 		return false
 	}
-	st, ok, err := readUpdateStamp(read, updateStampPath(stateDir))
+	st, ok, err := readUpdateStamp(read, updateStampPath(root))
 	if err != nil || !ok || !stampIsThisCopy(st, build) || !updateStampFresh(st, now) {
 		return true
 	}
@@ -262,8 +275,8 @@ func gatherUpdateFacts(cfg *config.Config, getenv func(string) string) updateFac
 			f.Fix = npmRemovalGuidance(kind, "upgrade")
 		}
 	}
-	if cfg.Mining.StateDir != "" {
-		f.Stamp, f.Present, f.Err = readUpdateStamp(readUpdateStampFile, updateStampPath(cfg.Mining.StateDir))
+	if root := updateRoot(cfg.Miner); root != "" {
+		f.Stamp, f.Present, f.Err = readUpdateStamp(readUpdateStampFile, updateStampPath(root))
 	}
 	if err == nil && f.thisCopy() && f.Stamp.Outcome == updateFailed && f.Stamp.Failure == string(upgradeManual) {
 		f.Recovery = updateRecoveryPaths(exe)

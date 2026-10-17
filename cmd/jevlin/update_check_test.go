@@ -98,8 +98,8 @@ func TestHooksStartTheReleaseCheckOnceADay(t *testing.T) {
 	ops.spawnUpdateCheck = func(cfg string) error { checks = append(checks, cfg); return nil }
 	ops.now = func() time.Time { return checkNow }
 	ops.build = func() string { return "0.3.1" }
-	hc := hookContext{cfgPath: "/c.toml", sessionsDir: "/sessions", stateDir: "/state", updateMode: config.UpdateApply}
-	stamp := filepath.Join("/state", updateStampFile)
+	hc := hookContext{cfgPath: "/c.toml", sessionsDir: "/sessions", updateRoot: "/home", updateMode: config.UpdateApply}
+	stamp := filepath.Join("/home", updateStampFile)
 	sess := map[string]any{"session_id": "s"}
 
 	runHook(t, ops, hc, "window session-start", sess)
@@ -179,10 +179,10 @@ func TestHooksStartTheReleaseCheckOnceADay(t *testing.T) {
 		t.Fatalf("mode off: checks %v; want none", checks)
 	}
 	none := hc
-	none.stateDir = ""
+	none.updateRoot = ""
 	runHook(t, ops, none, "window session-start", sess)
 	if len(checks) != 6 {
-		t.Fatalf("no state dir: checks %v; want none", checks)
+		t.Fatalf("no installation directory: checks %v; want none", checks)
 	}
 }
 
@@ -192,11 +192,11 @@ func TestHooksStartTheReleaseCheckOnceADay(t *testing.T) {
 func TestHookStartIsTheJavaScriptHostsSessionStart(t *testing.T) {
 	fs, ops := newFakeHookOps(nil)
 	var checks []string
-	hc := hookContext{cfgPath: "/c.toml", sessionsDir: "/sessions", stateDir: "/state", updateMode: config.UpdateApply}
+	hc := hookContext{cfgPath: "/c.toml", sessionsDir: "/sessions", updateRoot: "/home", updateMode: config.UpdateApply}
 	ops.spawnUpdateCheck = func(cfg string) error {
 		// The child claims the stamp; the next start of the day finds it.
 		checks = append(checks, cfg)
-		fs.files[filepath.Join(hc.stateDir, updateStampFile)] = stampBytes(t, updateStamp{CheckedAt: checkNow, Running: "0.3.1", Outcome: updateStarted})
+		fs.files[filepath.Join(hc.updateRoot, updateStampFile)] = stampBytes(t, updateStamp{CheckedAt: checkNow, Running: "0.3.1", Outcome: updateStarted})
 		return nil
 	}
 	ops.now = func() time.Time { return checkNow }
@@ -235,7 +235,7 @@ func TestHookStartIsTheJavaScriptHostsSessionStart(t *testing.T) {
 // test's own.
 func TestAHookWithoutACheckSpawnerStartsOnlyTheFlush(t *testing.T) {
 	fs, ops := newFakeHookOps(nil)
-	hc := hookContext{cfgPath: "/c.toml", sessionsDir: "/sessions", stateDir: "/state", updateMode: config.UpdateApply}
+	hc := hookContext{cfgPath: "/c.toml", sessionsDir: "/sessions", updateRoot: "/home", updateMode: config.UpdateApply}
 	runHook(t, ops, hc, "window session-start", map[string]any{"session_id": "s"})
 	if len(fs.flushes) != 1 {
 		t.Fatalf("flushes %v", fs.flushes)
@@ -271,7 +271,7 @@ func autoFixture(t *testing.T, lr *localRelease, extra string) (*upgradeFixture,
 	}
 	cfgPath := filepath.Join(f.home, setupConfigFile)
 	writeFileT(t, cfgPath, "[mining]\nstate_dir = \""+filepath.ToSlash(stateDir)+"\"\n"+extra)
-	return f, cfgPath, updateStampPath(stateDir)
+	return f, cfgPath, updateStampPath(f.home)
 }
 
 func (f *upgradeFixture) runAuto(cfgPath string) (int, string, string) {
@@ -305,6 +305,30 @@ func TestAutoCheckReplacesANativeCopyWithTheLatestRelease(t *testing.T) {
 		t.Errorf("stderr:\n%s", errOut)
 	}
 	f.noStagingLeftovers()
+}
+
+// The stamp and the check's lock are records this client acts on, so they
+// live beside credentials.json, in the installation's own directory, and
+// never in the state directory a sandboxed command can write (invariant 19):
+// there a planted directory at the stamp's name made every hook a request,
+// and a hard link at the lock's name stopped every check.
+func TestTheCheckKeepsItsStampAndLockBesideTheCredential(t *testing.T) {
+	f, cfgPath, _ := autoFixture(t, newLocalRelease(t, "0.3.0", map[string]string{"0.3.0": "0.3.0\n"}), "")
+	if code, out, errOut := f.runAuto(cfgPath); code != exitOK {
+		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
+	}
+	root := updateRoot(mustLoadConfig(t, cfgPath).Miner)
+	if root != f.home {
+		t.Fatalf("the check's directory is %s, want the installation's own, %s", root, f.home)
+	}
+	for _, name := range []string{updateStampFile, updateLockFile} {
+		if !lexists(filepath.Join(f.home, name)) {
+			t.Errorf("%s is not beside the credential", name)
+		}
+		if lexists(filepath.Join(f.home, "state", name)) {
+			t.Errorf("%s is in the state directory", name)
+		}
+	}
 }
 
 func TestAutoCheckStampsCurrentWhenThereIsNothingNewer(t *testing.T) {
@@ -581,7 +605,7 @@ func TestRecoveryPathsAreListedFromTheBinarysDirectory(t *testing.T) {
 func TestStatusReportsTheReleaseCheckInTextAndJSON(t *testing.T) {
 	withBuild(t, "0.3.1")
 	cfgPath, root, _ := statusFixture(t)
-	stamp := updateStampPath(filepath.Join(root, "state"))
+	stamp := updateStampPath(root)
 
 	var text, errOut bytes.Buffer
 	if code := statusMain([]string{"-config", cfgPath}, &text, &errOut, noEnv); code != exitOK {
@@ -726,7 +750,7 @@ func TestDoctorUpToDateVerdicts(t *testing.T) {
 func TestDoctorCarriesTheUpToDateCheckInBothRenderers(t *testing.T) {
 	withBuild(t, "0.3.1")
 	cfgPath, root, _ := statusFixture(t)
-	if err := writeUpdateStamp(updateStampPath(filepath.Join(root, "state")), updateStamp{CheckedAt: time.Now().Add(-time.Hour), Running: "0.3.1", Latest: "0.3.2", Outcome: updateAvailable}); err != nil {
+	if err := writeUpdateStamp(updateStampPath(root), updateStamp{CheckedAt: time.Now().Add(-time.Hour), Running: "0.3.1", Latest: "0.3.2", Outcome: updateAvailable}); err != nil {
 		t.Fatal(err)
 	}
 	var text, errOut bytes.Buffer

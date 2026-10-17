@@ -243,8 +243,9 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | `claim.json` | The claim link and code for this installation's agent, while it is unclaimed. | connect | Yes; the next `jevlin connect` mints a fresh link, which ends the old one. |
 | `search-default` | `agents prefer`'s choice. | agents prefer | Yes; the skill default returns. |
 | `search-tier` | `agents tier`'s choice: the band a search carries when the request names none. | agents tier | Yes; `[miner] tier`, then the router's default, returns. |
+| `update_check.json` | The daily release check's stamp: when it ran and what it found. | upgrade | Yes; the next agent session checks again. |
 | `bin/jevlin` | A native binary, and `jevlin.previous` after an upgrade. | setup, upgrade | Through `uninstall -binary`. |
-| `state/` | Identity, authorization, the mining decision, health records, the flush stamp, the last region refusal, the release check's stamp. | connect, flush, join, upgrade -auto | No: it is your registration. |
+| `state/` | Identity, authorization, the mining decision, health records, the flush stamp, the last region refusal. | connect, flush, join | No: it is your registration. |
 | `intake/` | Served request ids, until a flush takes them. | search | No: unsent evidence. |
 | `spool/` | Evidence waiting for the rewards service to acknowledge it. | flush | No: unsent evidence. |
 | `sessions/` | Lineage files, one per workspace or Cursor conversation; with `turn_end` on, an empty mark per searched turn and a turn's final answer for the moment before it is sent. | hooks | Yes, with no agent running; the hooks write them again. |
@@ -260,11 +261,11 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | `bin/<binary>.update.lock` | One upgrade of that binary at a time. | Yes, when none runs. |
 | `wallet/wallet.lock` | Key creation, and a send from its journal check to its first broadcast. | Yes, when no wallet command runs. |
 | `state/refresh.token.lock` | Rotation of the authorization's refresh token. | Yes, when none runs. |
-| `state/update_check.lock` | One release check at a time for the state directory, whichever copy runs it. | Yes, when none runs. |
+| `update_check.lock` | One release check at a time for the installation, whichever copy runs it. | Yes, when none runs. |
 
 **The daily release check.** Every hook that starts a flush — a session's start and end for
 Claude Code, Cursor and Codex, and the `hook start` that opencode's plugin and Pi's extension
-run when a session starts — reads `state/update_check.json` and, when no check has run in the
+run when a session starts — reads `update_check.json` and, when no check has run in the
 last day, starts `jevlin upgrade -auto` as a detached child; the hook itself contacts nothing. The child
 asks the project's GitHub releases for the latest version, with no credential, and under
 `[update] mode = "apply"` (the default) replaces a native binary through the same verified

@@ -190,9 +190,10 @@ type hookContext struct {
 	// turnEnd is [miner] turn_end: this installation reports a turn's final
 	// message. See turn_end.go.
 	turnEnd bool
-	// stateDir and updateMode are what the daily release check's decision
-	// reads: where its stamp is, and whether [update] mode turned it off.
-	stateDir   string
+	// updateRoot and updateMode are what the daily release check's decision
+	// reads: the installation's own directory, where its stamp is
+	// (updateRoot), and whether [update] mode turned it off.
+	updateRoot string
 	updateMode string
 }
 
@@ -223,7 +224,7 @@ func (ops hookOps) startBackground(hc hookContext) {
 		exe, err := ops.executable()
 		return err == nil && classifyLaunch(exe, ops.getenv("JEVLIN_LAUNCH")) == launchNative
 	}
-	if updateCheckDue(ops.readFile, hc.stateDir, hc.updateMode, build(), now, native) {
+	if updateCheckDue(ops.readFile, hc.updateRoot, hc.updateMode, build(), now, native) {
 		_ = ops.spawnUpdateCheck(hc.cfgPath)
 	}
 }
@@ -243,7 +244,7 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 	if cfg, _, err := loadConfig(cfgPath, ops.getenv); err == nil {
 		hc.sessionsDir = cfg.Miner.SessionsDir
 		hc.turnEnd = cfg.Miner.TurnEnd
-		hc.stateDir = cfg.Mining.StateDir
+		hc.updateRoot = updateRoot(cfg.Miner)
 		hc.updateMode = cfg.Update.Mode
 	}
 	// One leading byte-order mark is tolerated here for the same reason as on

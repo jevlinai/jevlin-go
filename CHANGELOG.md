@@ -20,7 +20,7 @@ rewritten to match newer behaviour; the newer entry says what changed.
   the old binary kept as `jevlin.previous`. An npm install is never replaced this way and is
   only told; `jevlin status` and `jevlin doctor`'s new `up to date` line say what the last
   check found and the one command that applies it. The check contacts nothing but GitHub,
-  sends no credential, and reads one small stamp, `state/update_check.json`, so a hook costs
+  sends no credential, and reads one small stamp, `update_check.json` beside your credentials, so a hook costs
   one file read on the days it starts nothing. A new `[update] mode` key — `apply` (the
   default), `notify` or `off` — changes what it may do; a config without the key behaves as
   `apply`. An older jevlin refuses a config that names the key, as it refuses any key it does
