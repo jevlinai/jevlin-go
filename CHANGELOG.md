@@ -33,6 +33,13 @@ rewritten to match newer behaviour; the newer entry says what changed.
   it, which Codex's hooks provide once you approve them. With mining on and neither `SessionStart`
   nor `Stop` approved, `agents status`, `status` and `agents install` now say so, and `status`
   (and `status -json`, under `delivery`) counts the searches waiting and when the oldest was made.
+- **A Claude Code turn whose background subagent searched is now reported.** With `turn_end` on, a
+  subagent launched in the background searches under the turn that launched it, usually after
+  that turn has ended, so the turn's end had already found nothing to report and the search was
+  never joined to a turn end. The next turn end in the session now reports that turn, once, with
+  what you asked and its last message. Only a subagent's search does this: a turn you interrupted
+  after the agent's own search still sends nothing. A Codex or opencode subagent's search no
+  longer leaves a mark that nothing takes.
 
 ## v0.3.2 — 2026-10-17
 
