@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -212,9 +213,14 @@ func TestStatusCountsTheSearchesWaitingWhateverTheRegistration(t *testing.T) {
 // An intake that cannot be read is an unknown count where the count is
 // taken, not only where it is printed: the gatherer keeps the read error,
 // and status -json says waiting_unknown, never "waiting": 0. A regular file
-// where the directory should be makes the read fail with something other
-// than not-found on every OS.
+// where the directory should be makes the read fail with ENOTDIR on Linux
+// and macOS. Not on Windows: there Go's syscall.ENOTDIR is
+// ERROR_PATH_NOT_FOUND, which is fs.ErrNotExist, so readIntake reads the
+// file as an intake not yet created. The gatherer is the same code there.
 func TestStatusKeepsTheErrorOfAnIntakeItCannotRead(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("on Windows a file read as a directory is ERROR_PATH_NOT_FOUND, which readIntake takes for no intake yet")
+	}
 	was := statusCodexUndelivered
 	statusCodexUndelivered = func(string, func(string) string) bool { return false }
 	t.Cleanup(func() { statusCodexUndelivered = was })
@@ -224,6 +230,9 @@ func TestStatusKeepsTheErrorOfAnIntakeItCannotRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFileT(t, f.cfg.Miner.IntakeDir, "not a directory")
+	if _, err := os.ReadDir(f.cfg.Miner.IntakeDir); err == nil || errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("fixture: reading the intake gives %v; want an error other than not-found", err)
+	}
 	facts, ok := gatherAgentIdentity([]string{"-config", f.cfgPath}, os.Getenv)
 	if !ok {
 		t.Fatal("status gathered nothing")
