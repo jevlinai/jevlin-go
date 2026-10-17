@@ -626,6 +626,27 @@ type agentIdentityFacts struct {
 	HasRegion bool
 
 	Conflicts []auth.ConflictedEpoch
+
+	// Waiting is how many searches are recorded in intake and not yet
+	// taken by a flush, and OldestWaiting when the first of them was made;
+	// read only while mining is on. CodexUndelivered is codexDeliveryUnapproved
+	// for this installation: on Linux, searches made in Codex wait for a run
+	// outside it (issue #80).
+	Waiting          int
+	OldestWaiting    time.Time
+	CodexUndelivered bool
+}
+
+// statusCodexUndelivered is codexDeliveryUnapproved for the installation
+// cfgPath names, on this machine's Codex. A variable so status's tests can
+// say so without a Codex home.
+var statusCodexUndelivered = func(cfgPath string, getenv func(string) string) bool {
+	ops := realAgentOps()
+	entry, _, err := resolveEntry(ops, cfgPath, getenv)
+	if err != nil {
+		return false
+	}
+	return codexDeliveryUnapproved(ops, ops.paths(getenv), entry, codexSandboxOS)
 }
 
 func gatherAgentIdentity(args []string, getenv func(string) string) (agentIdentityFacts, bool) {
@@ -679,6 +700,17 @@ func gatherAgentIdentity(args []string, getenv func(string) string) (agentIdenti
 	}
 	if region, ok, rerr := store.LatestRegionRefusal(cfg.Mining.SlotID); rerr == nil && ok {
 		f.Region, f.HasRegion = region, true
+	}
+	if f.Decision.State == auth.MiningEnabled {
+		if records, _, ierr := readIntake(cfg.Miner.IntakeDir); ierr == nil {
+			for _, r := range records {
+				f.Waiting++
+				if at := r.rec.StartedAt; f.OldestWaiting.IsZero() || at.Before(f.OldestWaiting) {
+					f.OldestWaiting = at
+				}
+			}
+		}
+		f.CodexUndelivered = statusCodexUndelivered(src, getenv)
 	}
 	return f, true
 }
@@ -796,6 +828,7 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 		// region refusal is the AS's and reaches a manual `enroll` +
 		// `join` installation the same way (PR #85 review).
 		printRegionLine(stdout, f)
+		printDeliveryLines(stdout, f)
 		return true // legacy report proceeds
 	}
 
@@ -859,12 +892,26 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 		fmt.Fprintln(stdout, "payout: "+heldNoteText(f.Held, ""))
 	}
 	printRegionLine(stdout, f)
+	printDeliveryLines(stdout, f)
 	for _, c := range f.Conflicts {
 		fmt.Fprintf(stdout, "mining: another installation of this participant holds slot %d epoch %d; "+
 			"this installation's observations for it are queued until the AS's target moves past it, then dropped\n",
 			c.SlotID, c.TargetEpoch)
 	}
 	return f.needsMining()
+}
+
+// printDeliveryLines is status's word on evidence that is recorded and not
+// yet delivered: how much is waiting and since when, and, when Codex on
+// Linux is why, the same sentence agents status prints (issue #80).
+func printDeliveryLines(stdout io.Writer, f agentIdentityFacts) {
+	if f.Waiting > 0 {
+		fmt.Fprintf(stdout, "waiting: %d search(es) recorded and not yet delivered, the oldest made %s\n",
+			f.Waiting, f.OldestWaiting.UTC().Format(time.RFC3339))
+	}
+	if f.CodexUndelivered {
+		fmt.Fprintln(stdout, "delivery: "+codexUndeliveredLine)
+	}
 }
 
 // printRegionLine is status's one line for the AS's latest region

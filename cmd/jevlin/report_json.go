@@ -11,6 +11,7 @@ package main
 
 import (
 	"strings"
+	"time"
 
 	"github.com/jevlinai/jevlin-go/pkg/auth"
 	"github.com/jevlinai/jevlin-go/pkg/redact"
@@ -125,6 +126,7 @@ type statusReport struct {
 	AgentErr        string                   `json:"agent_error,omitempty"`
 	PayoutHold      *statusPayoutHoldJSON    `json:"payout_hold,omitempty"`
 	RegionRefusal   *statusRegionRefusalJSON `json:"region_refusal,omitempty"`
+	Delivery        *statusDeliveryJSON      `json:"delivery,omitempty"`
 	Conflicts       []auth.ConflictedEpoch   `json:"epoch_conflicts,omitempty"`
 	AS              *statusASJSON            `json:"authorization_server,omitempty"`
 }
@@ -168,6 +170,15 @@ type statusPayoutHoldJSON struct {
 
 // statusRegionRefusalJSON is the driver's note of the AS's last region
 // refusal (ADR-MINIS-0026). Hold is true for the temporary code.
+// statusDeliveryJSON is evidence recorded and not yet delivered, present
+// while mining is on: the count, when the oldest was made, and whether
+// Codex on Linux is holding it (codexDeliveryUnapproved, issue #80).
+type statusDeliveryJSON struct {
+	Waiting              int    `json:"waiting"`
+	OldestWaiting        string `json:"oldest_waiting_at,omitempty"`
+	CodexHooksUnapproved bool   `json:"codex_hooks_unapproved"`
+}
+
 type statusRegionRefusalJSON struct {
 	Code  string `json:"code"`
 	Slot  uint64 `json:"slot_id"`
@@ -257,6 +268,13 @@ func statusEnvelope(f agentIdentityFacts, as *statusASFacts) commandEnvelope {
 			reason = "REPLACES_ACTIVE" // this client's own pre-check, not an AS-returned reason
 		}
 		report.PayoutHold = &statusPayoutHoldJSON{Reason: reason, Active: f.Held.Active, Local: f.Held.Local}
+	}
+	if f.Decision.State == auth.MiningEnabled {
+		d := &statusDeliveryJSON{Waiting: f.Waiting, CodexHooksUnapproved: f.CodexUndelivered}
+		if !f.OldestWaiting.IsZero() {
+			d.OldestWaiting = f.OldestWaiting.UTC().Format(time.RFC3339)
+		}
+		report.Delivery = d
 	}
 	if f.HasRegion {
 		report.RegionRefusal = &statusRegionRefusalJSON{
