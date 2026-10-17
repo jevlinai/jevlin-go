@@ -225,6 +225,10 @@ export const JevlinLineage = async ({ client }) => {
                   await reportTurn({ session: sid, ...turn })
                 }
               }
+            } catch {
+              // A turn that could not be read is left unreported, to be
+              // tried again at the next idle; it does not cost the session
+              // start below.
             } finally {
               reporting.delete(key)
             }
