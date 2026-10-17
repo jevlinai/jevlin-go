@@ -22,6 +22,21 @@ func miningActive(store *auth.Store) bool {
 	return store.ReadMiningDecision().State == auth.MiningEnabled
 }
 
+// codexMiningOn reads whether mining is on for the installation cfgPath
+// names, from its mining decision. A variable so a test can say so without
+// building an installation.
+var codexMiningOn = func(cfgPath string, getenv func(string) string) bool {
+	cfg, _, err := loadConfig(cfgPath, getenv)
+	if err != nil {
+		return false
+	}
+	store, err := auth.OpenStoreExisting(cfg.Mining.StateDir)
+	if err != nil {
+		return false
+	}
+	return miningActive(store)
+}
+
 func miningDecisionText(d auth.MiningDecision) string {
 	switch d.State {
 	case auth.MiningEnabled:

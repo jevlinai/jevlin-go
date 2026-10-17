@@ -126,6 +126,7 @@ type statusReport struct {
 	AgentErr        string                   `json:"agent_error,omitempty"`
 	PayoutHold      *statusPayoutHoldJSON    `json:"payout_hold,omitempty"`
 	RegionRefusal   *statusRegionRefusalJSON `json:"region_refusal,omitempty"`
+	Delivery        *statusDeliveryJSON      `json:"delivery,omitempty"`
 	Conflicts       []auth.ConflictedEpoch   `json:"epoch_conflicts,omitempty"`
 	AS              *statusASJSON            `json:"authorization_server,omitempty"`
 	Update          statusUpdateJSON         `json:"update"`
@@ -211,6 +212,18 @@ type statusPayoutHoldJSON struct {
 	Reason string `json:"reason"`
 	Active string `json:"active"`
 	Local  string `json:"local"`
+}
+
+// statusDeliveryJSON is evidence recorded and not yet delivered, present
+// while mining is on: the count, when the oldest was made, and whether
+// Codex on Linux is holding it (codexDeliveryUnapproved, issue #80). A
+// count that could not be taken is absent, with WaitingUnknown, never 0:
+// a model reads 0 as "nothing waiting".
+type statusDeliveryJSON struct {
+	Waiting              *int   `json:"waiting,omitempty"`
+	WaitingUnknown       bool   `json:"waiting_unknown,omitempty"`
+	OldestWaiting        string `json:"oldest_waiting_at,omitempty"`
+	CodexHooksUnapproved bool   `json:"codex_hooks_unapproved"`
 }
 
 // statusRegionRefusalJSON is the driver's note of the AS's last region
@@ -305,6 +318,19 @@ func statusEnvelope(f agentIdentityFacts, as *statusASFacts) commandEnvelope {
 			reason = "REPLACES_ACTIVE" // this client's own pre-check, not an AS-returned reason
 		}
 		report.PayoutHold = &statusPayoutHoldJSON{Reason: reason, Active: f.Held.Active, Local: f.Held.Local}
+	}
+	if f.Decision.State == auth.MiningEnabled {
+		d := &statusDeliveryJSON{CodexHooksUnapproved: f.CodexUndelivered}
+		if f.WaitingErr != nil {
+			d.WaitingUnknown = true
+		} else {
+			n := f.Waiting
+			d.Waiting = &n
+		}
+		if !f.OldestWaiting.IsZero() {
+			d.OldestWaiting = f.OldestWaiting.UTC().Format(time.RFC3339)
+		}
+		report.Delivery = d
 	}
 	if f.HasRegion {
 		report.RegionRefusal = &statusRegionRefusalJSON{
