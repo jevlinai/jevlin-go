@@ -302,3 +302,28 @@ func TestADevelopmentBuildTakesNoLockBesideTheBinary(t *testing.T) {
 		t.Errorf("a development build created %s", f.exe+updateLockSuffix)
 	}
 }
+
+// A check that cannot claim its stamp makes no request: without a stamp to
+// postpone it, every session would check again. Before, a stamp that could
+// not be written cost nothing but a note, and the lookup went ahead.
+func TestACheckThatCannotWriteItsStampMakesNoRequest(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes through a read-only directory")
+	}
+	f, cfgPath, stamp := autoFixture(t, newLocalRelease(t, "0.3.1", map[string]string{"0.3.1": "0.3.1\n"}), "")
+	if err := os.Chmod(f.home, 0o500); err != nil { // #nosec G302 -- the test's own directory
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(f.home, 0o700) }) // #nosec G302 -- the test's own directory
+	code, out, errOut := f.runAuto(cfgPath)
+	_ = os.Chmod(f.home, 0o700) // #nosec G302 -- the test's own directory
+	if code != exitOK {
+		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
+	}
+	if len(f.lr.requests) != 0 || f.content(f.exe) != "0.3.0" {
+		t.Errorf("requests %v, binary %s: a check with no stamp reached the network", f.lr.requests, f.content(f.exe))
+	}
+	if lexists(stamp) {
+		t.Errorf("a stamp appeared in a directory that could not be written")
+	}
+}
