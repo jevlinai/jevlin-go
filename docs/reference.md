@@ -243,7 +243,7 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | `claim.json` | The claim link and code for this installation's agent, while it is unclaimed. | connect | Yes; the next `jevlin connect` mints a fresh link, which ends the old one. |
 | `search-default` | `agents prefer`'s choice. | agents prefer | Yes; the skill default returns. |
 | `search-tier` | `agents tier`'s choice: the band a search carries when the request names none. | agents tier | Yes; `[miner] tier`, then the router's default, returns. |
-| `update_check.json` | The daily release check's stamp: when it ran and what it found. | upgrade | Yes; the next agent session checks again. |
+| `update_check.json` | The daily release check's record: when it ran, what it found, and a release a rollback holds. | upgrade | Yes; the next agent session checks again, though a rollback's hold is forgotten. |
 | `bin/jevlin` | A native binary, and `jevlin.previous` after an upgrade. | setup, upgrade | Through `uninstall -binary`. |
 | `state/` | Identity, authorization, the mining decision, health records, the flush stamp, the last region refusal. | connect, flush, join | No: it is your registration. |
 | `intake/` | Served request ids, until a flush takes them. | search | No: unsent evidence. |
@@ -263,25 +263,45 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | `state/refresh.token.lock` | Rotation of the authorization's refresh token. | Yes, when none runs. |
 | `update_check.lock` | One release check at a time for the installation, whichever copy runs it. | Yes, when none runs. |
 
-**The daily release check.** Every hook that starts a flush — a session's start and end for
-Claude Code, Cursor and Codex, and the `hook start` that opencode's plugin and Pi's extension
-run when a session starts — reads `update_check.json` and, when no check has run in the
-last day, starts `jevlin upgrade -auto` as a detached child; the hook itself contacts nothing. The child
-asks the project's GitHub releases for the latest version, with no credential, and under
-`[update] mode = "apply"` (the default) replaces a native binary through the same verified
-transaction as `jevlin upgrade`, holding the same locks; under `"notify"`, or for a copy npm
-installed, which is never replaced, it only records that a newer release exists. It never
-moves to an older release and never runs while a setup, uninstall or upgrade holds the
-installation. The stamp records when it ran, the version that ran it, the release it found and
-the outcome (`started`, `current`, `available`, `upgraded`, `failed` with the failure word
-`upgrade` would print, or `not_release` for a development build); `status` and `doctor` read it
-and nothing else. A stamp is evidence only for the copy that wrote it: two copies sharing one
-state directory each check for themselves, and a stamp by another version counts as none. A
-stamp dated in the future, from a clock that was set back, counts as due, and so does one that
-found a release `available` once the mode is switched to `apply` on a native copy. When an
-automatic replacement could not put the binary back, `status` and `doctor` list every copy that
-survives beside it, read from the binary's directory; none is deleted. Deleting the stamp is
-safe: the next agent session checks again.
+**The daily release check.** The hooks that start a flush start it too: a session's start and
+stop for Claude Code, Cursor and Codex; for opencode, `hook start` when the plugin loads, when
+a top-level session is created and at each of its idles (opencode reports one idle as two
+events, so the second start finds the flush already running and the check not due); for Pi,
+`hook start` when a session starts. Hermes starts none. Each reads `update_check.json`, beside
+`credentials.json`, and when no check has run in the last day starts `jevlin upgrade -auto` as
+a detached child; the hook itself contacts nothing. A hook running inside an agent's sandbox
+starts no check: one whose environment carries Codex's sandbox markers, or a proxy on this
+machine's loopback, the only route out of Codex's sandbox, because the check's request would
+go through that proxy to a host Codex's profile does not list and fail the Codex command that
+is running. Its flush starts as before.
+
+The child takes the installation's check lock in one attempt, records the check before it
+touches the network (a check that cannot write its record makes no request), and asks the
+project's GitHub releases for the latest version, with no credential. Under
+`[update] mode = "apply"` (the default) it replaces a native binary through the same verified
+transaction as `jevlin upgrade`, taking the installation's own locks only then and in one
+attempt: when a setup, uninstall or upgrade holds them it records `lifecycle_busy` and checks
+again the next day. Under `"notify"`, or for a copy npm installed, which is never replaced, it
+only records that a newer release exists. A word `mode` does not know counts as `notify`, and
+`doctor` names it. It never moves to an older release, never installs a release a person rolled
+back from (below), and never replaces a binary that belongs to another installation than the
+config that started it.
+
+The record is about one binary, the resolved path it names, at the version its outcome left
+there: the release an upgrade installed, the one a rollback restored, the one a check ran as.
+A record about another binary or version counts as none. Its outcome is `started`, `current`,
+`available`, `upgraded` (with `refresh = "failed"` when the agent integrations could not be
+refreshed afterwards), `rolled_back`, `failed` with the failure word `upgrade` would print, or
+`not_release` for a development build; `status` and `doctor` read it and nothing else. Two
+records outlast a day because a person has to act on them. `jevlin upgrade -rollback` holds the
+release it left: no check installs that release, or an older one, again; a newer one it does,
+and `jevlin upgrade` by hand lifts the hold. An automatic replacement that could not put the
+binary back (`manual_intervention`) is never overwritten by a check: `status` and `doctor` list
+every copy that survives beside the binary, read from the binary's directory, until a person's
+`jevlin upgrade` succeeds; none is deleted. A record dated in the future, from a clock that was
+set back, counts as due, and so does one that found a release under `"notify"` once the mode
+is `"apply"` on a native copy. Deleting the record is safe: the next agent session checks again,
+though it also forgets a hold.
 
 ## Doctor's checks
 

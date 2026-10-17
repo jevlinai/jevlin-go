@@ -261,8 +261,10 @@ which run outside the sandbox, flush instead.
 ### What is written and where
 
 An in-process plugin, `~/.config/opencode/plugins/jevlin.js`, that threads each search into the
-trace and, when a session starts, starts the flush and the daily release check. There is no
-skill directory: install prints a rules block to paste into `AGENTS.md`.
+trace and starts the flush and the daily release check: when the plugin loads, when a
+top-level session is created and at each of its idles (opencode reports an idle twice, and the
+second start finds the flush running and the check not due). There is no skill directory:
+install prints a rules block to paste into `AGENTS.md`.
 
 ### What to know
 

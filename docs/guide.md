@@ -257,7 +257,16 @@ mode = "notify"   # or "off"; the default is "apply"
 
 `jevlin status` says when it last checked and what it found; `jevlin doctor`'s `up to date`
 line says the same, and says so when the check has not run for three days, which usually means
-no agent with the hooks has been opened. Restart open agents after an upgrade.
+no agent with the hooks has been opened, or that your agents' hooks reach the network through a
+proxy on this machine, where no check is started (Codex's sandbox does that, and a check from
+inside it would break the Codex command running). Restart open agents after an upgrade.
+
+If a release misbehaves, `jevlin upgrade -rollback` puts the previous binary back, and the
+daily check then leaves the release you rolled back from alone; it installs the next newer one,
+and `jevlin upgrade` installs any release you ask for. If an automatic upgrade ever fails so
+badly that the old binary could not be put back, `jevlin status` and `jevlin doctor` say so and
+list the copies left beside the binary, none of them deleted; reinstall from the releases page
+or put one back by hand, and no automatic check runs until `jevlin upgrade` succeeds.
 
 ```bash
 jevlin upgrade                  # the latest release
