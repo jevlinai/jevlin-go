@@ -16,7 +16,8 @@ rewritten to match newer behaviour; the newer entry says what changed.
   subagent launched in the background searches under the turn that launched it, usually after
   that turn has ended, so the turn's end had already found nothing to report and the search was
   never joined to a turn end. The next turn end in the session now reports that turn, once, with
-  what you asked and its last message.
+  what you asked and its last message. A Codex subagent's search no longer leaves a mark that
+  nothing takes.
 
 ## v0.3.0 — 2026-10-16
 

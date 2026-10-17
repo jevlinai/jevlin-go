@@ -160,3 +160,34 @@ func TestOnlyASubagentsSearchSendsAStopLookingAtEarlierTurns(t *testing.T) {
 		t.Errorf("the earlier turn's mark was taken by a Stop that was not its own")
 	}
 }
+
+// Issue #70, case 3. A Codex subagent's search carries its own thread's
+// turn, which no Stop of ours ever ends, so it leaves no mark to dangle; a
+// Codex main agent's search and a Claude Code subagent's still mark theirs,
+// and only the subagent marks its session.
+func TestACodexSubagentsSearchLeavesNoMark(t *testing.T) {
+	m := config.Miner{TurnEnd: true, SessionsDir: "/home/sessions"}
+	turn := traceHash("thread|t1")
+	for name, tc := range map[string]struct {
+		trace       *traceEnvelope
+		turn, owner bool
+	}{
+		"a Codex subagent":       {&traceEnvelope{Harness: "codex", SessionID: traceHash("agent"), ParentSessionID: traceHash("thread"), TurnID: turn}, false, false},
+		"a Codex main agent":     {&traceEnvelope{Harness: "codex", SessionID: traceHash("thread"), TurnID: turn}, true, false},
+		"a Claude Code subagent": {&traceEnvelope{Harness: "claude-code", SessionID: traceHash("thread|a"), ParentSessionID: traceHash("thread"), TurnID: turn}, true, true},
+	} {
+		fs, ops := newFakeHookOps(nil)
+		markTurnSearched(ops, m, tc.trace)
+		_, marked := fs.files[turnSearchedPath(m.SessionsDir, turn)]
+		_, owner := fs.files[sessionSearchedPath(m.SessionsDir, traceHash("thread"))]
+		want := 0
+		for _, b := range []bool{tc.turn, tc.owner} {
+			if b {
+				want++
+			}
+		}
+		if marked != tc.turn || owner != tc.owner || len(fs.files) != want {
+			t.Errorf("%s: turn marked %v, session marked %v (%d files); want %v and %v", name, marked, owner, len(fs.files), tc.turn, tc.owner)
+		}
+	}
+}
