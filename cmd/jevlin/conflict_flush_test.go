@@ -38,13 +38,19 @@ func TestAConflictedEpochsRecordsWaitWithoutAttemptsOrAFault(t *testing.T) {
 			seedIntakeRecord(t, f.cfg.Miner.IntakeDir, "conflicted-epoch")
 
 			for range 3 {
+				// Delivering a record starts with asking the AS for its
+				// epoch's capability, and stops at the refusal before
+				// anything is posted, so the exchange is what the AS sees
+				// of a delivery attempt. The driver asks once a flush;
+				// a second request is the record being submitted.
+				exchanged := as.exchangesFor(1042)
 				regionRefusalFlush(t, f)
+				if n := as.exchangesFor(1042) - exchanged; n > 1 {
+					t.Fatalf("a flush asked %d times for a capability for an epoch another installation holds: its record was submitted", n)
+				}
 			}
 			if got := spoolAttempts(t, f.cfg.Mining.SpoolDir); len(got) != 1 || got[0] != 0 {
 				t.Fatalf("spooled records' attempts = %v, want one record never attempted", got)
-			}
-			if n := as.submissionCalls.Load(); n != 0 {
-				t.Fatalf("%d submission(s) for an epoch another installation holds", n)
 			}
 			store, err := auth.OpenStoreExisting(f.cfg.Mining.StateDir)
 			if err != nil {
