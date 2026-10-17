@@ -68,8 +68,9 @@ uninstall's confirmations and `wallet send`'s: a typed no exits 0, no answer exi
 
 ## The claim link
 
-Setup ends by printing a claim link and waits a few minutes for you to visit it. You need not do
-it then: search already works, and using an agent later resumes the claim on its own. The link
+Setup prints a claim link after the mining questions, before the shell profile, and waits up to
+three minutes for you to visit it. You need not do it then: search already works, and using an
+agent later resumes the claim on its own. The link
 is kept in `~/.jevlin/claim.json`, beside your stored key, and only for the agent it was issued
 to; it is never read from the state directory, which an agent's sandbox may write. Before
 `jevlin connect` prints it, it asks the platform which agent your key belongs to: a claimed agent

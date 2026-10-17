@@ -276,7 +276,7 @@ tool by name, time and outcome, and the model. A tool's input and output are nev
 
 ### Known limits
 
-`/jevlin off` and `agents prefer` do not reach it: its `AGENTS.md` line carries no preference.
+`/jevlin off` and `agents prefer` do not reach it: its `AGENTS.md` block carries no preference.
 
 ## Pi
 
