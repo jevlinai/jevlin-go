@@ -270,7 +270,10 @@ which run outside the sandbox, flush instead.
 ### What is written and where
 
 An in-process plugin, `~/.config/opencode/plugins/jevlin.js`, that threads each search into the
-trace. There is no skill directory: install prints a rules block to paste into `AGENTS.md`.
+trace and starts the flush and the daily release check: when the plugin loads, when a
+top-level session is created and at each of its idles (opencode reports an idle twice, and the
+second start finds the flush running and the check not due). There is no skill directory:
+install prints a rules block to paste into `AGENTS.md`.
 
 ### What to know
 
@@ -285,7 +288,7 @@ tool by name, time and outcome, and the model. A tool's input and output are nev
 
 ### Known limits
 
-`/jevlin off` and `agents prefer` do not reach it: its `AGENTS.md` line carries no preference.
+`/jevlin off` and `agents prefer` do not reach it: its `AGENTS.md` block carries no preference.
 
 ## Pi
 
@@ -301,7 +304,9 @@ A skill in `~/.pi/agent/skills/jevlin/`; an auto-discovered extension, `~/.pi/ag
 
 It runs Bash everywhere, Git Bash on Windows. The extension rewrites the search command with
 the session, the call, the assistant text that led to that search, and the compaction count,
-read back from the session Pi saved, so a resumed session keeps its place.
+read back from the session Pi saved, so a resumed session keeps its place. When a session
+starts it also starts the flush and the daily release check, as Claude Code's session-start
+hook does; it pipes nothing to that process and reads nothing back.
 
 ### Known limits
 

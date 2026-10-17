@@ -26,6 +26,10 @@ package main
 //	    preCompact (bump the window), stop (flush).
 //	hook [-config file] flush
 //	    Claude Code Stop. Start a detached flush.
+//	hook [-config file] start <host>
+//	    A JavaScript host's adapter (opencode's plugin, Pi's extension) at a
+//	    session's start. Reads nothing: starts the flush and, when due, the
+//	    daily release check, exactly as session-start does for Claude Code.
 //	hook [-config file] codex <Event>
 //	    Codex hooks, the event in Codex's own spelling (codex_hook.go):
 //	    PreToolUse (put the trace bridge on this installation's exact
@@ -111,6 +115,12 @@ type hookOps struct {
 	readTail func(path string, max int64) ([]byte, error)
 	// spawnFlush starts a detached flush. Best effort.
 	spawnFlush func(cfgPath string) error
+	// spawnUpdateCheck starts the detached daily release check, when
+	// startBackground finds it due (update_check.go). Best effort.
+	spawnUpdateCheck func(cfgPath string) error
+	// build is this copy's version, which a stamp must have been written by
+	// to postpone its check (stampIsThisCopy). Nil means buildVersion.
+	build func() string
 	// spawnTurnEnd starts the detached sender of one queued turn end.
 	spawnTurnEnd func(cfgPath, file string) error
 	// tempSuffix is the unpredictable part of a temporary or queued file's
@@ -127,18 +137,19 @@ func realHookOps() hookOps {
 		// The sessions and state directories are writable roots of Codex's
 		// sandbox (pkg/fsx/confined.go): a read never waits on what a
 		// sandboxed command left at a name, and a write never opens one.
-		readFile:     func(path string) ([]byte, error) { return fsx.ReadRegular(path, hookFileMaxBytes) },
-		writeFile:    fsx.CreateNew,
-		mkdirAll:     os.MkdirAll,
-		rename:       os.Rename,
-		remove:       os.Remove,
-		listTemps:    listTempFiles,
-		readTail:     readFileTail,
-		spawnFlush:   startFlush,
-		spawnTurnEnd: startTurnEnd,
-		tempSuffix:   traceRandomID,
-		now:          time.Now,
-		pid:          os.Getpid(),
+		readFile:         func(path string) ([]byte, error) { return fsx.ReadRegular(path, hookFileMaxBytes) },
+		writeFile:        fsx.CreateNew,
+		mkdirAll:         os.MkdirAll,
+		rename:           os.Rename,
+		remove:           os.Remove,
+		listTemps:        listTempFiles,
+		readTail:         readFileTail,
+		spawnFlush:       startFlush,
+		spawnUpdateCheck: startUpdateCheck,
+		spawnTurnEnd:     startTurnEnd,
+		tempSuffix:       traceRandomID,
+		now:              time.Now,
+		pid:              os.Getpid(),
 	}
 }
 
@@ -179,6 +190,49 @@ type hookContext struct {
 	// turnEnd is [miner] turn_end: this installation reports a turn's final
 	// message. See turn_end.go.
 	turnEnd bool
+	// updateRoot and updateMode are what the daily release check's decision
+	// reads: the installation's own directory, where its stamp is
+	// (updateRoot), and whether [update] mode turned it off.
+	updateRoot string
+	updateMode string
+}
+
+// startBackground starts what a hook leaves running after it exits: the
+// flush, and, when the day's release check is due, that check. Both are
+// best effort and neither is waited on. The stamp is read only when there
+// is something to start, and through the hook's own read, which never
+// waits on what a sandboxed command left at the name.
+func (ops hookOps) startBackground(hc hookContext) {
+	if ops.spawnFlush != nil {
+		_ = ops.spawnFlush(hc.cfgPath)
+	}
+	if ops.spawnUpdateCheck == nil || ops.readFile == nil || hookInsideASandbox(ops.getenv) {
+		return
+	}
+	now := time.Now()
+	if ops.now != nil {
+		now = ops.now()
+	}
+	build := buildVersion
+	if ops.build != nil {
+		build = ops.build
+	}
+	exe := ""
+	if ops.executable != nil {
+		if e, err := ops.executable(); err == nil {
+			exe = e
+		}
+	}
+	native := func() bool {
+		return exe != "" && classifyLaunch(exe, ops.getenv("JEVLIN_LAUNCH")) == launchNative
+	}
+	binary := ""
+	if exe != "" {
+		binary = stampBinary(exe)
+	}
+	if updateCheckDue(ops.readFile, hc.updateRoot, hc.updateMode, build(), binary, now, native) {
+		_ = ops.spawnUpdateCheck(hc.cfgPath)
+	}
 }
 
 func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -187,7 +241,7 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 		cfgPath, args = args[1], args[2:]
 	}
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: jevlin hook [-config file] lineage | window <phase> | cursor <event> | codex <event> | turn <host> | flush")
+		fmt.Fprintln(stderr, "usage: jevlin hook [-config file] lineage | window <phase> | cursor <event> | codex <event> | turn <host> | start <host> | flush")
 		return exitUsage
 	}
 	hc := hookContext{cfgPath: cfgPath}
@@ -196,6 +250,8 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 	if cfg, _, err := loadConfig(cfgPath, ops.getenv); err == nil {
 		hc.sessionsDir = cfg.Miner.SessionsDir
 		hc.turnEnd = cfg.Miner.TurnEnd
+		hc.updateRoot = updateRoot(cfg.Miner)
+		hc.updateMode = cfg.Update.Mode
 	}
 	// One leading byte-order mark is tolerated here for the same reason as on
 	// `search --stdin`: the shell in front of a hook is the host's choice,
@@ -220,8 +276,8 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 	case "window":
 		if len(args) > 1 {
 			hookWindow(ops, hc, args[1], payload)
-			if args[1] == "session-start" && ops.spawnFlush != nil {
-				_ = ops.spawnFlush(hc.cfgPath)
+			if args[1] == "session-start" {
+				ops.startBackground(hc)
 			}
 		}
 	case "cursor":
@@ -241,14 +297,19 @@ func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Wri
 		if len(args) > 1 {
 			hookHostTurn(ops, hc, args[1], payload)
 		}
+	case "start":
+		// A JavaScript host's adapter at a session's start (opencode_plugin.js,
+		// pi_extension.ts): the payload is not read. The host name is taken
+		// for the command line's sake and nothing is keyed on it.
+		if len(args) > 1 {
+			ops.startBackground(hc)
+		}
 	case "flush":
 		// Claude Code's Stop: the turn is over. Its final message is queued
 		// first — when the installation opted in and the turn searched — and
 		// then the flush starts, as before.
 		claudeTurnEnd(ops, hc, payload)
-		if ops.spawnFlush != nil {
-			_ = ops.spawnFlush(hc.cfgPath)
-		}
+		ops.startBackground(hc)
 	default:
 		fmt.Fprintf(stderr, "jevlin hook: unknown subcommand %q\n", args[0])
 		return exitUsage
@@ -865,11 +926,7 @@ func hookCursorOn(goos string, ops hookOps, hc hookContext, event string, payloa
 			apply(l)
 		})
 	}
-	flush := func() {
-		if ops.spawnFlush != nil {
-			_ = ops.spawnFlush(hc.cfgPath)
-		}
-	}
+	flush := func() { ops.startBackground(hc) }
 
 	switch event {
 	case "sessionStart":

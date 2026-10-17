@@ -297,3 +297,48 @@ func TestTheBudgetCutIsRuneSafe(t *testing.T) {
 		t.Fatal("the budget cut produced invalid UTF-8")
 	}
 }
+
+// Everything the shared rule refuses must also be replaced by the renderer.
+// The two policies differ on purpose — termtext refuses a value, oneLine
+// replaces the rune — but the set of runes is the same, and letting each
+// keep its own hand-written list is how one of them stops covering a range
+// the other covers.
+//
+// The test is its own oracle, never termtext itself: a guard that asked the
+// rule it guards stayed green when that rule was narrowed. So the ranges are
+// enumerated here, and oneLine has to remove every one of them.
+func TestOneLineReplacesEveryRuneTheSharedRuleRefuses(t *testing.T) {
+	refused := []struct {
+		name string
+		r    rune
+		// What oneLine("a"+r+"b") must be. Whitespace runes are collapsed
+		// by strings.Fields into a single space, every other refused rune
+		// is replaced with U+FFFD. Asserting the exact output keeps a
+		// renderer that silently deletes the character from passing: the
+		// replacement is the visible part of the policy.
+		want string
+	}{
+		{"C0", 0x01, "a\ufffdb"}, {"TAB", '	', "a b"}, {"CR", '\r', "a b"},
+		{"DEL", 0x7f, "a\ufffdb"},
+		{"C1 CSI", 0x9b, "a\ufffdb"}, {"C1 other", 0x80, "a\ufffdb"},
+		{"ALM", 0x061c, "a\ufffdb"},
+		{"LRM", 0x200e, "a\ufffdb"}, {"RLM", 0x200f, "a\ufffdb"},
+		{"ZWSP", 0x200b, "a\ufffdb"}, {"ZWNJ", 0x200c, "a\ufffdb"},
+		{"ZWJ", 0x200d, "a\ufffdb"},
+		{"LRE", 0x202a, "a\ufffdb"}, {"RLO", 0x202e, "a\ufffdb"},
+		{"LRI", 0x2066, "a\ufffdb"}, {"PDI", 0x2069, "a\ufffdb"},
+		{"word joiner", 0x2060, "a\ufffdb"}, {"invisible times", 0x2062, "a\ufffdb"},
+		{"soft hyphen", 0x00ad, "a\ufffdb"},
+		{"line separator", 0x2028, "a b"}, {"paragraph separator", 0x2029, "a b"},
+		{"BOM", 0xfeff, "a\ufffdb"},
+		{"tag character", 0xE0041, "a\ufffdb"}, {"tag terminator", 0xE007F, "a\ufffdb"},
+	}
+	for _, tc := range refused {
+		t.Run(tc.name, func(t *testing.T) {
+			got := oneLine("a"+string(tc.r)+"b", 1000)
+			if got != tc.want {
+				t.Errorf("U+%04X: got %q, want %q", tc.r, got, tc.want)
+			}
+		})
+	}
+}

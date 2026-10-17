@@ -10,6 +10,73 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## Unreleased
+
+- **A daily check for a new release.** Once a day, when an agent session starts or ends (Claude
+  Code, Cursor and Codex; opencode's plugin and Pi's extension now start the flush at a
+  session's start too; Hermes does not), the hooks start a detached check against the project's
+  GitHub releases. By default it only tells you: `jevlin status` and `jevlin doctor`'s new
+  `up to date` line say what it found and the one command that installs it. With
+  `[update] mode = "apply"` a native install installs a newer release itself, the way
+  `jevlin upgrade` does: verified, run before and after, the old binary kept as
+  `jevlin.previous`. An npm install is never replaced this way. The default is to tell until
+  releases are signed. The check contacts nothing but GitHub, sends no credential, and is
+  never started from inside an agent's sandbox. It never undoes you: after
+  `jevlin upgrade -rollback` the release you left is not installed again, only a newer one, and
+  if an automatic upgrade could not put the old binary back, status and doctor list what
+  survives and no check runs until you upgrade. Its record is `update_check.json` beside your
+  credentials. `mode = "off"` stops the check. An older jevlin refuses a config that names
+  `[update]`, as it refuses any key it does not know, so add it only once this release is
+  installed.
+- **On Linux, jevlin now says when your Codex searches are not being delivered.** Codex's Linux
+  sandbox ends the flush a search starts, so evidence from Codex waits for a jevlin run outside
+  it, which Codex's hooks provide once you approve them. With mining on and neither `SessionStart`
+  nor `Stop` approved, `agents status`, `status` and `agents install` now say so, and `status`
+  (and `status -json`, under `delivery`) counts the searches waiting and when the oldest was made.
+
+## v0.3.2 — 2026-10-17
+
+A fix for installing from npm: `jevlin setup` refused every global npm install, so the README's
+first install path did not work. A native install is unaffected and needs nothing from this
+release beyond the skill's new wording.
+
+- **`jevlin setup` works from a global npm install.** Until now it refused every one, with
+  "setup must run from a global npm install … npm could not say where this copy is
+  installed": the npm launcher misread where npm puts a scoped package. Run
+  `npm install -g @jevlinsearch/jevlin@latest`, then `jevlin setup`. If you got past it by
+  running the binary with `JEVLIN_LAUNCH=npm:global`, the installation it set up is the same
+  one and needs nothing redone.
+- **The skill and setup call the router the Jevlin search router.** An agent's installed skill
+  picks up the new description at the next install, setup or upgrade.
+
+## v0.3.1 — 2026-10-17
+
+The rewards service moved to a new address on 16 October, and an installation set up before
+then stops earning until it is told. The first entry says the one line to change, and what an
+installation from v0.1.0 or earlier has to do instead. A new installation is set up with the
+new address, and searching is unaffected either way.
+
+- **The rewards service moved, and an installation set up before the move has to be told.**
+  It is now at `https://rewards-testnet.jevlin.ai`, and a new installation is set up with that
+  address. An installation set up earlier keeps `https://rewards.nyks.dev` in its config,
+  because jevlin never rewrites your config, and since the move it refuses the old address's
+  answers as coming from a different service: searches work, but nothing earns, and
+  `jevlin doctor` says it cannot reach the authorization server, which is "off-origin". To fix
+  it, change one line in your config's `[mining]` table to
+  `as_url = "https://rewards-testnet.jevlin.ai"`, then run `jevlin flush` and `jevlin doctor`.
+  Your authorization, wallet and payout address carry over.
+  If you use Codex, also run `jevlin agents install -client codex` and answer yes, so that
+  Codex's sandbox lets the flush reach the new address.
+
+  An installation set up with v0.1.0 or earlier needs more than that line. Its config also
+  names `router-api.nyks.dev` and the nyks.dev platform, whose key the jevlin.ai router does
+  not accept, and when this was checked the moved service rejected a search served by the old
+  router. To earn again it registers on jevlin.ai: keep the wallet's recovery phrase or move
+  its funds out, remove the installation with `jevlin uninstall -purge-state`, and set this
+  release up fresh.
+- **The wallet's default chain node is `https://rpc-testnet.twilight.org`**, the same node under
+  its new name. This needs nothing from you; `-node` and `JEVLIN_WALLET_NODE` still override it.
+
 ## v0.3.0 — 2026-10-16
 
 Two fixes to how the client lives inside a coding agent's hooks. Nothing changes on the
@@ -28,11 +95,6 @@ repository's updater performs against a previous release of its own.
   under your account), a continuation or loop tick, a message from another session, the output
   of a `!` command, or the summary written when the conversation is compacted. Such a turn is
   now reported with its searches and no user text.
-- **On Linux, jevlin now says when your Codex searches are not being delivered.** Codex's Linux
-  sandbox ends the flush a search starts, so evidence from Codex waits for a jevlin run outside
-  it, which Codex's hooks provide once you approve them. With mining on and neither `SessionStart`
-  nor `Stop` approved, `agents status`, `status` and `agents install` now say so, and `status`
-  (and `status -json`, under `delivery`) counts the searches waiting and when the oldest was made.
 
 ## v0.2.0 — 2026-10-14
 

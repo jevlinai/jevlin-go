@@ -216,7 +216,15 @@ the named tests.
     `manual_intervention`, reports every surviving copy, and cleanup preserves every reported path.
     Upgrade never moves to an older release: only `upgrade -rollback` does, by validating a fresh
     copy of that one local `.previous` — never running it in place — with no network, and swapping
-    one level. An npm-managed copy is never replaced. Participant state is removed only by
+    one level. An npm-managed copy is never replaced. The daily check the hooks start,
+    `upgrade -auto` (`cmd/jevlin/update_check.go`), is one release lookup under its own check
+    lock, and only for a replacement this same transaction under the same locks, taken in one
+    attempt. It is started only by a hook, never by a search or anything a search spawns, and never
+    by a hook whose environment says it runs inside a sandbox (Codex's markers, or a proxy on
+    loopback), so the one host it reaches stays off the sandboxed path invariant 1 fences. Its
+    record lives beside `credentials.json`, where no sandbox writes, and it never undoes a person:
+    a release `upgrade -rollback` left is held, a `manual_intervention` waits for a person's
+    upgrade, and a binary another installation owns is that installation's to update. Participant state is removed only by
     `uninstall -purge-state` after an interactive typed confirmation, the wallet address or the
     installation path, that `-yes` cannot supply and a non-terminal cannot reach: protection against
     accidents and non-interactive automation, not against a program driving a terminal.
@@ -555,7 +563,8 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `TestSetupConnectsUnderItsOwnAdmission` exists to forbid. So the destructive exclusion is the
   only place a lock file can be removed, and the locks an upgrade, a setup or a connect leaves are
   named instead: `uninstall`'s `sayLeftoverLocks` lists the gate, `setup.lock`, `connect.lock`,
-  `flush.lock` and the binary's update lock that still exist, as safe to delete, in both modes.
+  `flush.lock`, the binary's update lock and the release check's `update_check.lock` that still
+  exist, as safe to delete, in both modes.
   `lock_leftover_test.go` holds it to the invariant either way round — a lock still on disk is
   named, one the run removed is not — and scopes its search to that section, because a purge plan
   prints the full path of everything it removes. `lifecycle_created_locks_test.go` guards the
@@ -770,7 +779,9 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   (a sibling of the installation, never inside it and never deleted), the one lock order
   (gate → `setup.lock` → `connect.lock` → `flush.lock`; for `uninstall -binary` the same sequence
   then `<resolved binary>.update.lock`, the same update-lock identity an upgrade holds after
-  gate → `setup.lock`), how setup, connect and flush pass the gate
+  gate → `setup.lock`; the daily check takes its own `update_check.lock` first, in one attempt,
+  and the upgrade's locks after it only to replace the binary, also in one attempt, so it can
+  neither wait nor deadlock), how setup, connect and flush pass the gate
   (a person's command waits at most five seconds; a detached child, marked by `spawnDetached`,
   makes one attempt and exits 0 recording nothing) and the exclusion a destructive operation holds:
   the gate, then every operation lock, located from the config only once the gate is held.

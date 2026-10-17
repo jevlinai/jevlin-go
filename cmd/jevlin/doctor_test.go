@@ -106,6 +106,12 @@ func healthyFacts() doctorFacts {
 		StampPresent:       true,
 		SearchEpoch:        1042,
 		SearchEpochPresent: true,
+
+		// And a release check that ran this morning and found this copy
+		// current.
+		Update: updateFacts{Mode: "apply", Build: "0.3.1", Present: true, Fix: "jevlin upgrade", Stamp: updateStamp{
+			V: 1, CheckedAt: healthyNow.Add(-time.Hour), Running: "0.3.1", Latest: "0.3.1", Outcome: updateCurrent,
+		}},
 	}
 }
 
@@ -119,7 +125,7 @@ func TestAHealthyInstallationHasAllChecksOK(t *testing.T) {
 	checks := assembleDoctor(healthyFacts())
 	want := []string{
 		"authorization server", "enrolled", "joined this epoch",
-		"payout address", "earning", "intake writable", "recording",
+		"payout address", "earning", "intake writable", "recording", "up to date",
 	}
 	if len(checks) != len(want) {
 		t.Fatalf("%d checks, want %d", len(checks), len(want))

@@ -32,28 +32,34 @@ function npmGlobalRoots(execPath, env, platform) {
 // launchKind classifies the package directory (the directory holding this
 // package's package.json) as a global install, a local one, or neither.
 //
+// The package is scoped, @jevlinsearch/jevlin, so npm puts it in its scope's
+// directory: node_modules/@jevlinsearch/jevlin. The node_modules that says
+// which install this is sits above the scope, not directly above the package.
+//
 // A prefix set in ~/.npmrc (prefix=~/.npm-global, the usual no-sudo setup)
 // is invisible from here without running npm, so the global layout itself is
 // the second witness: a global install puts its command shim at the prefix —
 // <prefix>/bin/jevlin beside <prefix>/lib/node_modules on POSIX,
 // <prefix>\jevlin.cmd beside <prefix>\node_modules on Windows — where a
-// project install puts it under node_modules/.bin instead.
+// project install puts it under node_modules/.bin instead. The shim is named
+// after the command package.json's bin declares, not after the package.
 function launchKind(packageDir, execPath, env, platform, exists) {
   const p = platform === "win32" ? path.win32 : path.posix
   const norm = (s) => {
     const r = p.resolve(s)
     return platform === "win32" ? r.toLowerCase() : r
   }
-  const modules = p.dirname(packageDir)
+  let modules = p.dirname(packageDir)
+  if (p.basename(modules).startsWith("@")) modules = p.dirname(modules)
   for (const root of npmGlobalRoots(execPath, env, platform)) {
     if (norm(root) === norm(modules)) return "global"
   }
   if (p.basename(modules) !== "node_modules") return "unknown"
-  const name = p.basename(packageDir)
+  const command = "jevlin"
   if (platform === "win32") {
-    if (exists(p.join(p.dirname(modules), name + ".cmd"))) return "global"
+    if (exists(p.join(p.dirname(modules), command + ".cmd"))) return "global"
   } else if (p.basename(p.dirname(modules)) === "lib") {
-    if (exists(p.join(p.dirname(p.dirname(modules)), "bin", name))) return "global"
+    if (exists(p.join(p.dirname(p.dirname(modules)), "bin", command))) return "global"
   }
   return "local"
 }

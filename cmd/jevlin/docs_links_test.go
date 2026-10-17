@@ -1,6 +1,7 @@
 package main
 
-// Every relative link in the human documents resolves, anchor included.
+// Every link into the repository from the human documents resolves,
+// anchor included: a relative one, and the README's absolute ones.
 //
 // The documentation is four files that link into each other by heading:
 // the README points at sections of the guide, the guide at the reference,
@@ -121,8 +122,17 @@ type docLink struct {
 	target string
 }
 
+// repoBlobOnMain is this repository's own file URL on main. The README
+// links into the repository through it rather than by relative path,
+// because npm/README.md is the same text and a relative link is dead on
+// npmjs.com; such a link is still a link into the repository, and is
+// checked as one, from the module root.
+const repoBlobOnMain = "https://github.com/jevlinai/jevlin-go/blob/main/"
+
 // relativeLinks is every link in a document that points into the
-// repository: not a URL with a scheme, not a mail address.
+// repository: a relative path, or a repoBlobOnMain URL, which comes back
+// as the root-relative path it names. Any other URL with a scheme, and a
+// mail address, is not one.
 func relativeLinks(body []byte) []docLink {
 	var out []docLink
 	markdownLines(body, func(n int, line string) {
@@ -136,6 +146,9 @@ func relativeLinks(body []byte) []docLink {
 		}
 		for _, target := range targets {
 			target = strings.Trim(target, "<>")
+			if rest, ok := strings.CutPrefix(target, repoBlobOnMain); ok {
+				target = "/" + rest
+			}
 			if strings.Contains(target, "://") || strings.HasPrefix(target, "mailto:") {
 				continue
 			}

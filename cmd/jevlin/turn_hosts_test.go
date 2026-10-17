@@ -179,7 +179,10 @@ func TestOpencodePluginReportsTheTurn(t *testing.T) {
 	argv := filepath.Join(dir, "argv.txt")
 	bin := filepath.Join(dir, "jevlin")
 	count := filepath.Join(dir, "count.txt")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > '"+argv+"'\ncat > '"+got+".tmp' && mv '"+got+".tmp' '"+got+"'\necho x >> '"+count+"'\n"), 0o700); err != nil { // #nosec G306 -- a test stand-in that must be executable
+	starts := filepath.Join(dir, "starts.txt")
+	// The stand-in answers two commands: `hook ... start opencode`, which it
+	// only counts, and `hook ... turn opencode`, whose stdin it keeps.
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\ncase \"$*\" in *' start opencode') echo x >> '"+starts+"'; exit 0;; esac\nprintf '%s\\n' \"$@\" > '"+argv+"'\ncat > '"+got+".tmp' && mv '"+got+".tmp' '"+got+"'\necho x >> '"+count+"'\n"), 0o700); err != nil { // #nosec G306 -- a test stand-in that must be executable
 		t.Fatal(err)
 	}
 	script := `
@@ -198,7 +201,8 @@ func TestOpencodePluginReportsTheTurn(t *testing.T) {
   ]},
   {info:{id:'m_a2',role:'assistant',modelID:'claude-opus-5-5',tokens:{input:50,output:10,cache:{read:0,write:0}}}, parts:[{type:'text',text:'Populous designed it.'}]},
  ];
- const client = {session:{ messages: async()=>({data:messages}), get: async({path})=>{
+ let rejectMessages = false;
+ const client = {session:{ messages: async()=>{ if (rejectMessages) throw new Error('messages unavailable'); return {data:messages}; }, get: async({path})=>{
   if (path.id==='ses_unknown') throw new Error('unreachable');
   return {data:{id:path.id, ...(path.id==='ses_child2'?{parentID:'ses_1'}:{})}};
  } }};
@@ -243,8 +247,21 @@ func TestOpencodePluginReportsTheTurn(t *testing.T) {
  ]);
  await new Promise(r=>setTimeout(r,500));
  result.concurrent = reports() - before;
+ // The session start: once when the plugin loaded, and again at each idle of
+ // a session known to be top-level (ses_1, once its parent was learned).
+ await new Promise(r=>setTimeout(r,300));
+ const starts = () => fs.existsSync(input.starts) ? fs.readFileSync(input.starts,'utf8').trim().split('\n').length : 0;
+ result.starts = starts();
+ // A turn whose messages cannot be read is left unreported, and the session
+ // start still runs for the top-level session.
+ rejectMessages = true;
+ await hooks['tool.execute.before']({tool:'bash',sessionID:'ses_1',callID:'c_again'},{args:{command:'jevlin search stadium'}});
+ const startsBefore = starts();
+ await hooks.event({event:{type:'session.idle',properties:{sessionID:'ses_1'}}});
+ await new Promise(r=>setTimeout(r,300));
+ result.startsAfterRejection = starts() - startsBefore;
  process.stdout.write(JSON.stringify(result));`
-	in, _ := json.Marshal(map[string]any{"plugin": renderAgentScriptFor(opencodePluginJS, shellPOSIX, "/etc/jevlin.toml", bin), "got": got, "argv": argv, "count": count})
+	in, _ := json.Marshal(map[string]any{"plugin": renderAgentScriptFor(opencodePluginJS, shellPOSIX, "/etc/jevlin.toml", bin), "got": got, "argv": argv, "count": count, "starts": starts})
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, node, "--input-type=module", "-e", script) // #nosec G204 -- fixed test script and local Node runtime; synthetic input on stdin
@@ -254,13 +271,15 @@ func TestOpencodePluginReportsTheTurn(t *testing.T) {
 		t.Fatalf("plugin: %v %s", err, out)
 	}
 	var res struct {
-		Before, Again bool
-		Children      map[string]bool
-		Concurrent    int
-		Env           traceEnvelope
-		Raw           string
-		Argv          []string
-		Turn          hostTurn
+		Before, Again        bool
+		Children             map[string]bool
+		Concurrent           int
+		Starts               int
+		StartsAfterRejection int
+		Env                  traceEnvelope
+		Raw                  string
+		Argv                 []string
+		Turn                 hostTurn
 	}
 	if err := json.Unmarshal(out, &res); err != nil {
 		t.Fatalf("%v: %s", err, out)
@@ -273,6 +292,12 @@ func TestOpencodePluginReportsTheTurn(t *testing.T) {
 	}
 	if res.Concurrent != 1 {
 		t.Errorf("two idle events at once reported the turn %d times, want once", res.Concurrent)
+	}
+	if res.Starts < 2 {
+		t.Errorf("the session start ran %d times, want at load and at a top-level session's idle", res.Starts)
+	}
+	if res.StartsAfterRejection != 1 {
+		t.Errorf("a turn report that failed cost the session start: %d starts, want 1", res.StartsAfterRejection)
 	}
 	for sid, reported := range res.Children {
 		if reported {
