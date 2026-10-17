@@ -10,7 +10,12 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
-## Unreleased
+## v0.3.1 — 2026-10-17
+
+The rewards service moved to a new address on 16 October, and an installation set up before
+then stops earning until it is told. The first entry says the one line to change, and what an
+installation from v0.1.0 or earlier has to do instead. A new installation is set up with the
+new address, and searching is unaffected either way.
 
 - **The rewards service moved, and an installation set up before the move has to be told.**
   It is now at `https://rewards-testnet.jevlin.ai`, and a new installation is set up with that
