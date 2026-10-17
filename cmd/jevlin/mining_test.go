@@ -82,6 +82,11 @@ type fakeAS struct {
 
 	mu    sync.Mutex
 	state asState
+	// exchanges counts capability exchanges (the token endpoint's RFC 8693
+	// branch) by the target epoch they asked for, minted or refused. It is
+	// the AS's view of a delivery attempt: Submit asks for its record's
+	// epoch's capability before anything is posted.
+	exchanges map[string]int
 
 	currentCalls    atomic.Int64
 	statusCalls     atomic.Int64
@@ -103,6 +108,13 @@ func (f *fakeAS) get() asState {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.state
+}
+
+// exchangesFor is how many capability exchanges asked for epoch.
+func (f *fakeAS) exchangesFor(epoch uint64) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.exchanges[strconv.FormatUint(epoch, 10)]
 }
 
 func newFakeAS(t *testing.T) *fakeAS {
@@ -305,6 +317,12 @@ func (f *fakeAS) token(t *testing.T, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	epoch := r.PostFormValue("twilight_target_epoch")
+	f.mu.Lock()
+	if f.exchanges == nil {
+		f.exchanges = map[string]int{}
+	}
+	f.exchanges[epoch]++
+	f.mu.Unlock()
 	st := f.get()
 	if st.capabilityTwilightError != "" {
 		w.WriteHeader(http.StatusBadRequest)

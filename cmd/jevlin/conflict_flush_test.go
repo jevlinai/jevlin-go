@@ -1,7 +1,9 @@
 package main
 
 import (
+	"net/http"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/jevlinai/jevlin-go/pkg/auth"
@@ -113,5 +115,55 @@ func TestAConflictedRecordTheDropCouldNotRemoveStaysHeldUntilItIsRemoved(t *test
 	if n := spoolCount(t, spoolDir); n != 0 {
 		t.Fatalf("the spool holds %d record(s) of an epoch the AS has moved past, attempts = %v; want the drop retried",
 			n, spoolAttempts(t, spoolDir))
+	}
+}
+
+// A flush that resolves no target (the AS has nothing open, as at every
+// epoch boundary, or the lookup failed) still delivers what is spooled,
+// through deliverOnly, and it holds back the same records the ordinary
+// pass does: an epoch another installation holds, and one the AS refused
+// to enroll this installation in. Without the hold there, every boundary
+// spent an attempt, and a capability exchange, on records that cannot be
+// delivered. The exchange is counted at the AS: deliverOnly's driver asks
+// for no capability, so any exchange for the held epoch is a delivery.
+func TestAFlushWithNoTargetHoldsBackTheRecordsItCannotDeliver(t *testing.T) {
+	for name, set := range map[string]func(*asState){
+		"another installation holds the epoch": func(s *asState) {
+			s.epoch, s.joinable, s.acceptSubmissions = 1042, true, true
+			s.capabilityTwilightError = "PROXY_BINDING_MISMATCH"
+		},
+		"the AS refused the join under its region policy": func(s *asState) {
+			s.epoch, s.joinable, s.acceptSubmissions = 1042, true, true
+			s.joinRefusalCode, s.joinRefusalStatus = auth.RegionRestricted, http.StatusUnavailableForLegalReasons
+			s.capabilityTwilightError = "ENROLLMENT_NOT_FOUND"
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			as := newFakeAS(t)
+			as.set(set)
+			f := newFlushFixture(t, as)
+			seedIntakeRecord(t, f.cfg.Miner.IntakeDir, "held-epoch")
+			regionRefusalFlush(t, f)
+
+			as.set(func(s *asState) { s.epoch = -1 })
+			exchanged := as.exchangesFor(1042)
+			_, stderr := regionRefusalFlush(t, f)
+			if !strings.Contains(stderr, "no target epoch this run") {
+				t.Fatalf("the second flush did not go through deliverOnly:\n%s", stderr)
+			}
+			if n := as.exchangesFor(1042) - exchanged; n != 0 {
+				t.Fatalf("a flush with no target asked %d time(s) for a capability for a held epoch", n)
+			}
+			if got := spoolAttempts(t, f.cfg.Mining.SpoolDir); len(got) != 1 || got[0] != 0 {
+				t.Fatalf("spooled records' attempts = %v, want one record never attempted", got)
+			}
+			store, err := auth.OpenStoreExisting(f.cfg.Mining.StateDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if h, ok, _ := store.LoadHealth(auth.HealthFlush); ok {
+				t.Fatalf("a held record was reported as a delivery fault by a flush with no target: %+v", h)
+			}
+		})
 	}
 }
