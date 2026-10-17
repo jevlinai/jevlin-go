@@ -1,6 +1,6 @@
 {
   "name": "@jevlinsearch/jevlin",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Multi-provider web search for coding agents, with the trajectory behind every search. npm wrapper around the jevlin Go binary.",
   "license": "Apache-2.0",
   "repository": {

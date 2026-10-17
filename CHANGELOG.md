@@ -26,6 +26,21 @@ rewritten to match newer behaviour; the newer entry says what changed.
   `apply`. An older jevlin refuses a config that names the key, as it refuses any key it does
   not know, so add it only once this release is installed.
 
+## v0.3.2 — 2026-10-17
+
+A fix for installing from npm: `jevlin setup` refused every global npm install, so the README's
+first install path did not work. A native install is unaffected and needs nothing from this
+release beyond the skill's new wording.
+
+- **`jevlin setup` works from a global npm install.** Until now it refused every one, with
+  "setup must run from a global npm install … npm could not say where this copy is
+  installed": the npm launcher misread where npm puts a scoped package. Run
+  `npm install -g @jevlinsearch/jevlin@latest`, then `jevlin setup`. If you got past it by
+  running the binary with `JEVLIN_LAUNCH=npm:global`, the installation it set up is the same
+  one and needs nothing redone.
+- **The skill and setup call the router the Jevlin search router.** An agent's installed skill
+  picks up the new description at the next install, setup or upgrade.
+
 ## v0.3.1 — 2026-10-17
 
 The rewards service moved to a new address on 16 October, and an installation set up before
