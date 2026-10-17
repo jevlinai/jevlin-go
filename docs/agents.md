@@ -215,8 +215,8 @@ need approving again; an upgrade in place does not change the commands.
 **On Linux, approving the hooks is what delivers your Codex searches.** Codex runs each command
 in its own process namespace there, so the flush a search starts to deliver its evidence ends
 with the search. The evidence is kept, and goes out with the next jevlin run outside Codex: the
-`SessionStart` or `Stop` hook once approved, another agent's hooks, or any `jevlin` command from
-your own shell. With mining on and neither of those two hooks approved, `jevlin agents status`
+`SessionStart` or `Stop` hook once approved, another agent's hooks, or a `jevlin search` or
+`jevlin flush` from your own shell. With mining on and neither of those two hooks approved, `jevlin agents status`
 and `jevlin status` say so, `status` counts the searches waiting and when the oldest was made,
 and `agents install` says it when it writes the hooks. Until something delivers them, searches
 made only in Codex may miss their epoch and earn nothing. macOS is not affected.

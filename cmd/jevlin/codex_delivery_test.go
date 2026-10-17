@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -82,6 +84,13 @@ func TestAgentsStatusWarnsWhenCodexSearchesCannotBeDelivered(t *testing.T) {
 func TestStatusSaysWhatIsWaitingAndWhenCodexIsHoldingIt(t *testing.T) {
 	oldest := time.Date(2026, 10, 16, 13, 45, 25, 0, time.UTC)
 	enabled := auth.MiningDecision{State: auth.MiningEnabled}
+	// A connected participant's status takes the claimed-registration path,
+	// which prints the lines from its own place; both paths are held.
+	claimed := func(f agentIdentityFacts) agentIdentityFacts {
+		f.HasRegistration = true
+		f.Registration = auth.AgentRegistration{AgentID: "agent-1", Status: "claimed", Scopes: []string{"credits", "mining"}}
+		return f
+	}
 	for _, c := range []struct {
 		name          string
 		f             agentIdentityFacts
@@ -90,6 +99,8 @@ func TestStatusSaysWhatIsWaitingAndWhenCodexIsHoldingIt(t *testing.T) {
 		{"waiting, held by Codex", agentIdentityFacts{Decision: enabled, Waiting: 3, OldestWaiting: oldest, CodexUndelivered: true}, true, true},
 		{"waiting, nothing holding it", agentIdentityFacts{Decision: enabled, Waiting: 3, OldestWaiting: oldest}, true, false},
 		{"nothing waiting", agentIdentityFacts{Decision: enabled}, false, false},
+		{"claimed, waiting, held by Codex", claimed(agentIdentityFacts{Decision: enabled, Waiting: 3, OldestWaiting: oldest, CodexUndelivered: true}), true, true},
+		{"claimed, nothing waiting", claimed(agentIdentityFacts{Decision: enabled}), false, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			var out, errOut bytes.Buffer
@@ -114,10 +125,34 @@ func TestStatusSaysWhatIsWaitingAndWhenCodexIsHoldingIt(t *testing.T) {
 				t.Fatal(err)
 			}
 			d := env.Data.Delivery
-			if d == nil || d.Waiting != c.f.Waiting || d.CodexHooksUnapproved != c.held {
+			if d == nil || d.Waiting == nil || *d.Waiting != c.f.Waiting || d.WaitingUnknown || d.CodexHooksUnapproved != c.held {
 				t.Fatalf("status -json delivery = %+v, want waiting %d and unapproved %v", d, c.f.Waiting, c.held)
 			}
 		})
+	}
+
+	// An intake that could not be read is an unknown count, said as such,
+	// never 0: a model reads 0 as nothing waiting.
+	unread := agentIdentityFacts{Decision: enabled, WaitingErr: errors.New("injected")}
+	var out, errOut bytes.Buffer
+	renderAgentIdentity(unread, &out, &errOut)
+	if !strings.Contains(out.String(), "waiting: unknown: the intake directory could not be read") {
+		t.Errorf("an unread intake:\n%s", out.String())
+	}
+	b, err := json.Marshal(statusEnvelope(unread, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var env struct {
+		Data struct {
+			Delivery map[string]any `json:"delivery"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(b, &env); err != nil {
+		t.Fatal(err)
+	}
+	if _, has := env.Data.Delivery["waiting"]; has || env.Data.Delivery["waiting_unknown"] != true {
+		t.Errorf("status -json for an unread intake: %v", env.Data.Delivery)
 	}
 }
 
@@ -149,6 +184,27 @@ func TestStatusCountsTheSearchesWaitingInIntake(t *testing.T) {
 	facts, _ = gatherAgentIdentity([]string{"-config", f.cfgPath}, os.Getenv)
 	if facts.Waiting != 0 || facts.CodexUndelivered {
 		t.Fatalf("with mining off: Waiting = %d, CodexUndelivered = %v; want neither read", facts.Waiting, facts.CodexUndelivered)
+	}
+}
+
+// The count does not depend on the registration: an agent.json that cannot
+// be read still leaves what waits in intake counted. Before, status returned
+// before the count, and status -json said "waiting": 0.
+func TestStatusCountsTheSearchesWaitingWhateverTheRegistration(t *testing.T) {
+	was := statusCodexUndelivered
+	statusCodexUndelivered = func(string, func(string) string) bool { return false }
+	t.Cleanup(func() { statusCodexUndelivered = was })
+
+	f := newFlushFixture(t, newFakeAS(t))
+	seedIntakeRecord(t, f.cfg.Miner.IntakeDir, "waiting-1")
+	seedIntakeRecord(t, f.cfg.Miner.IntakeDir, "waiting-2")
+	writeFileT(t, filepath.Join(f.cfg.Mining.StateDir, "agent.json"), "{not json")
+	facts, ok := gatherAgentIdentity([]string{"-config", f.cfgPath}, os.Getenv)
+	if !ok || facts.RegistrationErr == nil {
+		t.Fatalf("setup: ok=%v, registration error %v; want a corrupt registration", ok, facts.RegistrationErr)
+	}
+	if facts.Waiting != 2 || facts.WaitingErr != nil {
+		t.Errorf("with agent.json corrupt: Waiting = %d, WaitingErr = %v; want 2 counted", facts.Waiting, facts.WaitingErr)
 	}
 }
 

@@ -632,7 +632,10 @@ type agentIdentityFacts struct {
 	// read only while mining is on. CodexUndelivered is codexDeliveryUnapproved
 	// for this installation: on Linux, searches made in Codex wait for a run
 	// outside it (issue #80).
+	// WaitingErr is why intake could not be read, when it could not: the
+	// count is then unknown, never zero.
 	Waiting          int
+	WaitingErr       error
 	OldestWaiting    time.Time
 	CodexUndelivered bool
 	// Update is the daily release check's stamp and mode (update_check.go),
@@ -683,6 +686,21 @@ func gatherAgentIdentity(args []string, getenv func(string) string) (agentIdenti
 	}
 	f.Decision = store.ReadMiningDecision()
 	f.Health, f.HealthErr = store.HealthRecords()
+	// What waits in intake does not depend on the registration, so it is
+	// counted before a registration that cannot be read ends the gathering.
+	if f.Decision.State == auth.MiningEnabled {
+		records, _, ierr := readIntake(cfg.Miner.IntakeDir)
+		f.WaitingErr = ierr
+		for _, r := range records {
+			f.Waiting++
+			// A record with no time says nothing about the oldest; only a
+			// file planted in the sandbox-writable intake has none.
+			if at := r.rec.StartedAt; !at.IsZero() && (f.OldestWaiting.IsZero() || at.Before(f.OldestWaiting)) {
+				f.OldestWaiting = at
+			}
+		}
+		f.CodexUndelivered = statusCodexUndelivered(src, getenv)
+	}
 	f.Registration, f.HasRegistration, f.RegistrationErr = store.LoadAgentRegistration()
 	if f.RegistrationErr != nil {
 		return f, true
@@ -708,17 +726,6 @@ func gatherAgentIdentity(args []string, getenv func(string) string) (agentIdenti
 	}
 	if region, ok, rerr := store.LatestRegionRefusal(cfg.Mining.SlotID); rerr == nil && ok {
 		f.Region, f.HasRegion = region, true
-	}
-	if f.Decision.State == auth.MiningEnabled {
-		if records, _, ierr := readIntake(cfg.Miner.IntakeDir); ierr == nil {
-			for _, r := range records {
-				f.Waiting++
-				if at := r.rec.StartedAt; f.OldestWaiting.IsZero() || at.Before(f.OldestWaiting) {
-					f.OldestWaiting = at
-				}
-			}
-		}
-		f.CodexUndelivered = statusCodexUndelivered(src, getenv)
 	}
 	return f, true
 }
@@ -914,7 +921,9 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 // yet delivered: how much is waiting and since when, and, when Codex on
 // Linux is why, the same sentence agents status prints (issue #80).
 func printDeliveryLines(stdout io.Writer, f agentIdentityFacts) {
-	if f.Waiting > 0 {
+	if f.WaitingErr != nil {
+		fmt.Fprintln(stdout, "waiting: unknown: the intake directory could not be read")
+	} else if f.Waiting > 0 {
 		fmt.Fprintf(stdout, "waiting: %d search(es) recorded and not yet delivered, the oldest made %s\n",
 			f.Waiting, f.OldestWaiting.UTC().Format(time.RFC3339))
 	}

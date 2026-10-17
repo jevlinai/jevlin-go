@@ -214,17 +214,20 @@ type statusPayoutHoldJSON struct {
 	Local  string `json:"local"`
 }
 
-// statusRegionRefusalJSON is the driver's note of the AS's last region
-// refusal (ADR-MINIS-0026). Hold is true for the temporary code.
 // statusDeliveryJSON is evidence recorded and not yet delivered, present
 // while mining is on: the count, when the oldest was made, and whether
-// Codex on Linux is holding it (codexDeliveryUnapproved, issue #80).
+// Codex on Linux is holding it (codexDeliveryUnapproved, issue #80). A
+// count that could not be taken is absent, with WaitingUnknown, never 0:
+// a model reads 0 as "nothing waiting".
 type statusDeliveryJSON struct {
-	Waiting              int    `json:"waiting"`
+	Waiting              *int   `json:"waiting,omitempty"`
+	WaitingUnknown       bool   `json:"waiting_unknown,omitempty"`
 	OldestWaiting        string `json:"oldest_waiting_at,omitempty"`
 	CodexHooksUnapproved bool   `json:"codex_hooks_unapproved"`
 }
 
+// statusRegionRefusalJSON is the driver's note of the AS's last region
+// refusal (ADR-MINIS-0026). Hold is true for the temporary code.
 type statusRegionRefusalJSON struct {
 	Code  string `json:"code"`
 	Slot  uint64 `json:"slot_id"`
@@ -317,7 +320,13 @@ func statusEnvelope(f agentIdentityFacts, as *statusASFacts) commandEnvelope {
 		report.PayoutHold = &statusPayoutHoldJSON{Reason: reason, Active: f.Held.Active, Local: f.Held.Local}
 	}
 	if f.Decision.State == auth.MiningEnabled {
-		d := &statusDeliveryJSON{Waiting: f.Waiting, CodexHooksUnapproved: f.CodexUndelivered}
+		d := &statusDeliveryJSON{CodexHooksUnapproved: f.CodexUndelivered}
+		if f.WaitingErr != nil {
+			d.WaitingUnknown = true
+		} else {
+			n := f.Waiting
+			d.Waiting = &n
+		}
 		if !f.OldestWaiting.IsZero() {
 			d.OldestWaiting = f.OldestWaiting.UTC().Format(time.RFC3339)
 		}
