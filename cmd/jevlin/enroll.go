@@ -626,6 +626,14 @@ type agentIdentityFacts struct {
 	HasRegion bool
 
 	Conflicts []auth.ConflictedEpoch
+
+	// Update is the daily release check's stamp and mode (update_check.go),
+	// read whenever the state directory is known: it is about the binary,
+	// not about mining, so it is reported before the store is opened.
+	Update updateFacts
+	// Now is sampled once by the gatherer, so the age the renderers print
+	// for the stamp is one instant.
+	Now time.Time
 }
 
 func gatherAgentIdentity(args []string, getenv func(string) string) (agentIdentityFacts, bool) {
@@ -641,6 +649,7 @@ func gatherAgentIdentity(args []string, getenv func(string) string) (agentIdenti
 		return agentIdentityFacts{}, false
 	}
 	f := agentIdentityFacts{Mining: cfg.Mining, ConfigSource: src, StateDir: cfg.Mining.StateDir, PlatformBaseURL: cfg.Platform.BaseURL}
+	f.Update, f.Now = gatherUpdateFacts(cfg, getenv), time.Now()
 	store, err := auth.OpenStoreExisting(cfg.Mining.StateDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -745,6 +754,7 @@ func heldNoteText(held auth.PayoutBindingHeld, liveActive string) string {
 
 func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 	printConfigSource(stdout, f.ConfigSource, f.StateDir)
+	fmt.Fprintf(stdout, "update:  %s\n", updateLineText(f.Update, f.Now))
 	if f.StoreMissing {
 		fmt.Fprintln(stdout, "mining: NOT DECIDED")
 		printMiningASConfiguration(stdout, f.Mining)

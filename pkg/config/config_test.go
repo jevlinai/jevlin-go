@@ -707,6 +707,43 @@ func TestLoadIgnoresJevlinTOMLInWorkingDirectory(t *testing.T) {
 	}
 }
 
+// [update] mode: absent is notify, the three words are normalized, and a
+// word this version cannot name falls to notify — never off, which would
+// silence the check by a typo, and never apply — with the word kept aside.
+func TestUpdateModeDefaultsToNotifyAndAnUnknownWordFallsToNotify(t *testing.T) {
+	for raw, want := range map[string]string{
+		"":        UpdateNotify,
+		"apply":   UpdateApply,
+		"notify":  UpdateNotify,
+		"off":     UpdateOff,
+		"Off":     UpdateOff,
+		" apply ": UpdateApply,
+	} {
+		body := "[miner]\nrouter_url = \"http://127.0.0.1:8080\"\n"
+		if raw != "" {
+			body += "[update]\nmode = \"" + raw + "\"\n"
+		}
+		cfg, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv)
+		if err != nil {
+			t.Fatalf("mode %q: %v", raw, err)
+		}
+		if cfg.Update.Mode != want || cfg.Update.UnknownMode != "" {
+			t.Errorf("mode %q: Mode = %q UnknownMode = %q, want %q and none", raw, cfg.Update.Mode, cfg.Update.UnknownMode, want)
+		}
+	}
+	for _, unknown := range []string{"auto", "of", "apply; echo x"} {
+		body := "[update]\nmode = \"" + unknown + "\"\n"
+		cfg, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv)
+		if err != nil {
+			t.Errorf("mode %q stopped the config from loading: %v", unknown, err)
+			continue
+		}
+		if cfg.Update.Mode != UpdateNotify || cfg.Update.UnknownMode != unknown {
+			t.Errorf("mode %q: Mode = %q UnknownMode = %q, want notify and the word kept aside", unknown, cfg.Update.Mode, cfg.Update.UnknownMode)
+		}
+	}
+}
+
 // [miner] tier is the participant's own setting, written by hand, and a
 // word the client cannot use must not take the config down with it: a
 // failed load stops search, the flush and mining together (invariant 1),

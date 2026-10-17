@@ -22,6 +22,12 @@ package main
 //	H.lifecycle.lock → setup.lock → connect.lock → flush.lock
 //	H.lifecycle.lock → setup.lock → <resolved binary>.update.lock   (upgrade)
 //	H.lifecycle.lock → setup.lock → connect.lock → flush.lock → <resolved binary>.update.lock   (uninstall -binary)
+//	update_check.lock → H.lifecycle.lock → setup.lock → <resolved binary>.update.lock   (upgrade -auto)
+//
+// The daily check's update_check.lock, in the installation's own directory,
+// comes first, and every lock after it is taken in one attempt, only to
+// replace the binary. A person's upgrade or rollback takes it only after
+// letting go of its own locks, to write the check's record.
 //
 // The update lock uninstall -binary takes last is the same identity an
 // upgrade holds, <ResolveExecutable(binary)>.update.lock, so the two never

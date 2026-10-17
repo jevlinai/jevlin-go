@@ -242,6 +242,36 @@ describes each.
 
 ## Upgrading
 
+Once a day, when an agent session starts or ends, jevlin checks the project's GitHub releases
+for a newer one. By default it only tells you: `jevlin status` and `jevlin doctor` say a release
+is available and give the command that installs it. To have a native install replace its own
+binary when a release appears, the same careful way `jevlin upgrade` does (checksum verified,
+the new binary run before and after, the old one kept as `jevlin.previous`, nothing else
+touched), add to your config:
+
+```toml
+[update]
+mode = "apply"   # or "off" to stop the check; the default is "notify"
+```
+
+The default is to tell, not to replace, until releases are signed: `apply` installs a release
+nobody has looked at, trusting the checksums that come with it. An npm install is never
+replaced this way; the check only notes that a release exists, and `jevlin status` and
+`jevlin doctor` tell you to run npm's command.
+
+`jevlin status` says when it last checked and what it found; `jevlin doctor`'s `up to date`
+line says the same, and says so when the check has not run for three days, which usually means
+no agent with the hooks has been opened, or that your agents' hooks reach the network through a
+proxy on this machine, where no check is started (Codex's sandbox does that, and a check from
+inside it would break the Codex command running). Restart open agents after an upgrade.
+
+If a release misbehaves, `jevlin upgrade -rollback` puts the previous binary back, and the
+daily check then leaves the release you rolled back from alone; it installs the next newer one,
+and `jevlin upgrade` installs any release you ask for. If an automatic upgrade ever fails so
+badly that the old binary could not be put back, `jevlin status` and `jevlin doctor` say so and
+list the copies left beside the binary, none of them deleted; reinstall from the releases page
+or put one back by hand, and no automatic check runs until `jevlin upgrade` succeeds.
+
 ```bash
 jevlin upgrade                  # the latest release
 jevlin upgrade -version X.Y.Z   # exactly that release, never an older one
