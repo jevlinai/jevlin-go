@@ -404,7 +404,7 @@ func (r *setupRun) run(homeFlag string, with []string) int {
 
 	// ── 5. connect ──
 	r.say("Search context")
-	r.printf("Recent agent context may accompany search to the Twilight search router as part of the trajectory/search product.\n")
+	r.printf("Recent agent context may accompany search to the Jevlin search router as part of the trajectory/search product.\n")
 	r.printf("JEVLIN_TRACE=off disables trace transmission. Mining/AS receives metadata observations only.\n")
 	r.say("Connecting")
 	if r.dry {
