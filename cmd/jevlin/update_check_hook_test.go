@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
+	"time"
 )
 
 // The real hook entry points start the daily check, through hookMain itself,
@@ -79,5 +84,52 @@ func TestTheRealHooksStartTheCheckOnlyOutsideASandbox(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, updateStampFile)); err == nil {
 		t.Error("a hook wrote the stamp; only the check it starts may")
+	}
+}
+
+// Pi's extension, rendered as install writes it, starts `hook start pi`
+// when Pi fires session_start: the handler itself, run in Node, with a
+// stand-in binary that records the command line it was started with.
+// Before, only the install golden held it: deleting the handler's call
+// failed nothing but the golden.
+func TestPisSessionStartRunsHookStart(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in binary is a shell script; the handler's logic is the same JavaScript everywhere")
+	}
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatal("node is required to verify the embedded Pi extension")
+	}
+	dir := t.TempDir()
+	argv := filepath.Join(dir, "argv.txt")
+	bin := filepath.Join(dir, "jevlin")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\nprintf '%s ' \"$@\" > '"+argv+".tmp' && mv '"+argv+".tmp' '"+argv+"'\n"), 0o700); err != nil { // #nosec G306 -- a test stand-in that must be executable
+		t.Fatal(err)
+	}
+	script := `
+ const fs = await import('node:fs');
+ const input = JSON.parse(fs.readFileSync(0,'utf8'));
+ const mod = await import('data:text/javascript;base64,'+Buffer.from(input.extension).toString('base64'));
+ const handlers = {};
+ mod.default({ on: (ev, fn) => { handlers[ev] = fn; } });
+ if (!handlers.session_start) { process.stdout.write('no session_start handler'); process.exit(0); }
+ await handlers.session_start({ type: 'session_start' }, {});
+ const deadline = Date.now() + 5000;
+ while (Date.now() < deadline && !fs.existsSync(input.argv)) await new Promise((r) => setTimeout(r, 50));
+ process.stdout.write(fs.existsSync(input.argv) ? fs.readFileSync(input.argv, 'utf8') : 'nothing started');`
+	input, err := json.Marshal(map[string]any{"extension": renderAgentScriptFor(piExtensionTS, shellPOSIX, "/etc/jevlin.toml", bin), "argv": argv})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, node, "--input-type=module", "-e", script) // #nosec G204 -- fixed test script and local Node runtime; synthetic input on stdin
+	cmd.Stdin = strings.NewReader(string(input))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("extension: %v\n%s", err, out)
+	}
+	if got := strings.TrimSpace(string(out)); got != "hook -config /etc/jevlin.toml start pi" {
+		t.Errorf("session_start started %q, want `hook -config /etc/jevlin.toml start pi`", got)
 	}
 }

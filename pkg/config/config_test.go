@@ -707,13 +707,6 @@ func TestLoadIgnoresJevlinTOMLInWorkingDirectory(t *testing.T) {
 	}
 }
 
-// [miner] tier is the participant's own setting, written by hand, and a
-// word the client cannot use must not take the config down with it: a
-// failed load stops search, the flush and mining together (invariant 1),
-// for a value that changes nothing but which band a request asks for. So
-// case and surrounding space are forgiven, and a word that is still not a
-// band loads as no tier, kept aside for status to name, and is never sent,
-// so the router does not answer every search with a 400 either.
 // [update] mode: absent is apply, the three words are normalized, and a
 // word this version cannot name falls to notify — never off, which would
 // silence the check by a typo, and never apply — with the word kept aside.
@@ -751,6 +744,13 @@ func TestUpdateModeDefaultsToApplyAndAnUnknownWordFallsToNotify(t *testing.T) {
 	}
 }
 
+// [miner] tier is the participant's own setting, written by hand, and a
+// word the client cannot use must not take the config down with it: a
+// failed load stops search, the flush and mining together (invariant 1),
+// for a value that changes nothing but which band a request asks for. So
+// case and surrounding space are forgiven, and a word that is still not a
+// band loads as no tier, kept aside for status to name, and is never sent,
+// so the router does not answer every search with a 400 either.
 func TestMinerTierIsNormalizedAndAnUnknownWordIsIgnoredAtLoad(t *testing.T) {
 	for raw, want := range map[string]string{
 		"":         "",
