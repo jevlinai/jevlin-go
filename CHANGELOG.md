@@ -28,6 +28,11 @@ repository's updater performs against a previous release of its own.
   under your account), a continuation or loop tick, a message from another session, the output
   of a `!` command, or the summary written when the conversation is compacted. Such a turn is
   now reported with its searches and no user text.
+- **On Linux, jevlin now says when your Codex searches are not being delivered.** Codex's Linux
+  sandbox ends the flush a search starts, so evidence from Codex waits for a jevlin run outside
+  it, which Codex's hooks provide once you approve them. With mining on and neither `SessionStart`
+  nor `Stop` approved, `agents status`, `status` and `agents install` now say so, and `status`
+  (and `status -json`, under `delivery`) counts the searches waiting and when the oldest was made.
 
 ## v0.2.0 — 2026-10-14
 
