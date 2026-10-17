@@ -21,6 +21,7 @@ package main
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"go/parser"
 	"go/token"
@@ -1938,27 +1939,53 @@ func TestSetupRefusesNpmCopiesThatWillBeDiscarded(t *testing.T) {
 	}
 }
 
-// The JS launcher's side of the marker, against fixture paths.
+// The JS launcher's side of the marker, against fixture paths. Every package
+// directory is built from the name npm/package.json publishes, because npm
+// puts a scoped package one directory deeper than an unscoped one: these
+// fixtures once spelled the predecessor's unscoped name, and passed while
+// every real global install of @jevlinsearch/jevlin was classified unknown
+// and refused by setup.
 func TestNpmLauncherClassifiesItsInstall(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Fatal("node is required to verify the npm launcher")
 	}
+	manifest, err := os.ReadFile(filepath.Join("..", "..", "npm", "package.json")) // #nosec G304 -- a fixed file in this repository
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pkg struct {
+		Name string            `json:"name"`
+		Bin  map[string]string `json:"bin"`
+	}
+	if err := json.Unmarshal(manifest, &pkg); err != nil {
+		t.Fatal(err)
+	}
+	if pkg.Name != npmPackageName {
+		t.Fatalf("npm/package.json names %q, the binary expects %q", pkg.Name, npmPackageName)
+	}
+	// The launcher looks for npm's global shim by the command's name.
+	if len(pkg.Bin) != 1 || pkg.Bin["jevlin"] == "" {
+		t.Fatalf("npm/package.json's bin is %v; the launcher looks for npm's shim as jevlin", pkg.Bin)
+	}
 	script := `
 const m = require(process.argv[1]);
+const name = process.argv[2];
+const posix = (dir) => dir + "/" + name;
+const win = (dir) => dir + "\\" + name.split("/").join("\\");
 const has = (set) => (f) => set.includes(f);
 const cases = [
-  ["/usr/local/lib/node_modules/jevlin", "/usr/local/bin/node", {}, "linux", has([]), "global"],
-  ["/home/u/.nvm/versions/node/v22/lib/node_modules/jevlin", "/home/u/.nvm/versions/node/v22/bin/node", {}, "linux", has([]), "global"],
-  ["/home/u/.npm-global/lib/node_modules/jevlin", "/usr/bin/node", {npm_config_prefix: "/home/u/.npm-global"}, "linux", has([]), "global"],
-  ["/home/u/.npm-global/lib/node_modules/jevlin", "/usr/bin/node", {}, "linux", has(["/home/u/.npm-global/bin/jevlin"]), "global"],
-  ["/home/u/proj/node_modules/jevlin", "/usr/local/bin/node", {}, "linux", has([]), "local"],
-  ["/home/u/lib/node_modules/jevlin", "/usr/local/bin/node", {}, "linux", has([]), "local"],
-  ["/home/u/.npm/_npx/9f/node_modules/jevlin", "/usr/local/bin/node", {}, "linux", has([]), "local"],
-  ["/opt/unpacked/jevlin", "/usr/local/bin/node", {}, "linux", has([]), "unknown"],
-  ["C:\\Users\\u\\AppData\\Roaming\\npm\\node_modules\\jevlin", "C:\\Program Files\\nodejs\\node.exe", {}, "win32", has(["C:\\Users\\u\\AppData\\Roaming\\npm\\jevlin.cmd"]), "global"],
-  ["C:\\Program Files\\nodejs\\node_modules\\jevlin", "C:\\Program Files\\nodejs\\node.exe", {}, "win32", has([]), "global"],
-  ["C:\\src\\proj\\node_modules\\jevlin", "C:\\Program Files\\nodejs\\node.exe", {}, "win32", has([]), "local"],
+  [posix("/usr/local/lib/node_modules"), "/usr/local/bin/node", {}, "linux", has([]), "global"],
+  [posix("/home/u/.nvm/versions/node/v22/lib/node_modules"), "/home/u/.nvm/versions/node/v22/bin/node", {}, "darwin", has([]), "global"],
+  [posix("/home/u/.npm-global/lib/node_modules"), "/usr/bin/node", {npm_config_prefix: "/home/u/.npm-global"}, "linux", has([]), "global"],
+  [posix("/home/u/.npm-global/lib/node_modules"), "/usr/bin/node", {}, "linux", has(["/home/u/.npm-global/bin/jevlin"]), "global"],
+  [posix("/home/u/proj/node_modules"), "/usr/local/bin/node", {}, "linux", has([]), "local"],
+  [posix("/home/u/lib/node_modules"), "/usr/local/bin/node", {}, "linux", has([]), "local"],
+  [posix("/home/u/.npm/_npx/9f/node_modules"), "/usr/local/bin/node", {}, "linux", has([]), "local"],
+  [posix("/opt/unpacked"), "/usr/local/bin/node", {}, "linux", has([]), "unknown"],
+  [win("C:\\Users\\u\\AppData\\Roaming\\npm\\node_modules"), "C:\\Program Files\\nodejs\\node.exe", {}, "win32", has(["C:\\Users\\u\\AppData\\Roaming\\npm\\jevlin.cmd"]), "global"],
+  [win("C:\\Program Files\\nodejs\\node_modules"), "C:\\Program Files\\nodejs\\node.exe", {}, "win32", has([]), "global"],
+  [win("C:\\src\\proj\\node_modules"), "C:\\Program Files\\nodejs\\node.exe", {}, "win32", has([]), "local"],
 ];
 const bad = [];
 for (const [pkg, exec, env, platform, exists, want] of cases) {
@@ -1971,7 +1998,7 @@ if (bad.length) { console.log(bad.join("\n")); process.exit(1); }
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := exec.Command(node, "-e", script, launcher).CombinedOutput() // #nosec G204 -- node from PATH running a fixed script against this repo's launcher
+	out, err := exec.Command(node, "-e", script, launcher, pkg.Name).CombinedOutput() // #nosec G204 -- node from PATH running a fixed script against this repo's launcher
 	if err != nil {
 		t.Fatalf("launcher classification: %v\n%s", err, out)
 	}
