@@ -30,7 +30,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"runtime"
 	"time"
 
@@ -353,7 +352,11 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 	native := classifyLaunch(resolved, d.getenv("JEVLIN_LAUNCH")) == launchNative
 	home := ""
 	if native {
-		home, err = autoInstallationHome(d, homeFlag, src, exe)
+		// The installation a manual upgrade would hold, by the same rule
+		// (resolveInstallationHome), so the two never hold different gates
+		// for one binary. The hook's config names the state directory, not
+		// the installation.
+		home, err = resolveInstallationHome(homeFlag, d.getenv, d.userHome, exe)
 		if err != nil {
 			say("%v", err)
 			return exitOK
@@ -365,11 +368,23 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 		}
 		defer ex.release()
 	}
+	// One check at a time per state directory, whatever the copy: a lookup
+	// for a copy this command never replaces holds this and nothing beside
+	// the binary. A lock that cannot be opened is a state directory the
+	// stamp cannot be written to either; the check goes on without it.
+	if lock, held, lerr := tryLockFile(updateLockPath(stateDir)); lerr == nil {
+		if !held {
+			say("another check holds %s; not checking now", updateLockPath(stateDir))
+			return exitOK
+		}
+		defer func() { _ = unlockFile(lock) }()
+	}
 
 	now := d.clock()
+	current := d.build()
 	stampPath := updateStampPath(stateDir)
-	if st, ok, rerr := readUpdateStamp(readUpdateStampFile, stampPath); rerr == nil && ok && updateStampFresh(st, now) {
-		say("checked %s; not due", ageText(now.Sub(st.CheckedAt)))
+	if !updateCheckDue(readUpdateStampFile, stateDir, cfg.Update.Mode, current, now, func() bool { return native }) {
+		say("checked today; not due")
 		return exitOK
 	}
 	record := func(st updateStamp) {
@@ -378,7 +393,6 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 		}
 	}
 	stamp := updateStamp{CheckedAt: now, Outcome: updateStarted}
-	current := d.build()
 	v, perr := selfupdate.ParseVersion(current)
 	if perr != nil || current != v.String() {
 		stamp.Outcome = updateNotRelease
@@ -392,6 +406,15 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 		stamp.Outcome, stamp.Failure = updateFailed, string(autoFailureClass(err))
 		record(stamp)
 		say("%s: %v", stamp.Failure, err)
+		// The surviving copies a replacement reports go to a stderr nobody
+		// reads; status and doctor list them from the binary's directory
+		// (updateRecoveryPaths) for as long as the stamp says so.
+		var typed *selfupdate.Error
+		if errors.As(err, &typed) {
+			for _, p := range typed.Paths {
+				say("  %s", p)
+			}
+		}
 		return exitOK
 	}
 
@@ -441,17 +464,6 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 	record(stamp)
 	say("%s is the latest release", current)
 	return exitOK
-}
-
-// autoInstallationHome is the installation -auto holds the gate of: the
-// directory of the config the hook named, when that file is jevlin.toml —
-// the hook knows the config and nothing else — and otherwise what upgrade
-// resolves for a person.
-func autoInstallationHome(d upgradeDeps, homeFlag, cfgSource, exe string) (string, error) {
-	if homeFlag == "" && cfgSource != "" && filepath.Base(cfgSource) == setupConfigFile {
-		return lifecycleIdentity(filepath.Dir(cfgSource))
-	}
-	return resolveInstallationHome(homeFlag, d.getenv, d.userHome, exe)
 }
 
 // autoFailureClass is classifyUpgrade for the check, where an error with no

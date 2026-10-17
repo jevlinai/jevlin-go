@@ -118,6 +118,9 @@ type hookOps struct {
 	// spawnUpdateCheck starts the detached daily release check, when
 	// startBackground finds it due (update_check.go). Best effort.
 	spawnUpdateCheck func(cfgPath string) error
+	// build is this copy's version, which a stamp must have been written by
+	// to postpone its check (stampIsThisCopy). Nil means buildVersion.
+	build func() string
 	// spawnTurnEnd starts the detached sender of one queued turn end.
 	spawnTurnEnd func(cfgPath, file string) error
 	// tempSuffix is the unpredictable part of a temporary or queued file's
@@ -209,7 +212,18 @@ func (ops hookOps) startBackground(hc hookContext) {
 	if ops.now != nil {
 		now = ops.now()
 	}
-	if updateCheckDue(ops.readFile, hc.stateDir, hc.updateMode, now) {
+	build := buildVersion
+	if ops.build != nil {
+		build = ops.build
+	}
+	native := func() bool {
+		if ops.executable == nil {
+			return false
+		}
+		exe, err := ops.executable()
+		return err == nil && classifyLaunch(exe, ops.getenv("JEVLIN_LAUNCH")) == launchNative
+	}
+	if updateCheckDue(ops.readFile, hc.stateDir, hc.updateMode, build(), now, native) {
 		_ = ops.spawnUpdateCheck(hc.cfgPath)
 	}
 }

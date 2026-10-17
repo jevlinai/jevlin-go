@@ -260,6 +260,7 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | `bin/<binary>.update.lock` | One upgrade of that binary at a time. | Yes, when none runs. |
 | `wallet/wallet.lock` | Key creation, and a send from its journal check to its first broadcast. | Yes, when no wallet command runs. |
 | `state/refresh.token.lock` | Rotation of the authorization's refresh token. | Yes, when none runs. |
+| `state/update_check.lock` | One release check at a time for the state directory, whichever copy runs it. | Yes, when none runs. |
 
 **The daily release check.** Every hook that starts a flush — a session's start and end for
 Claude Code, Cursor and Codex, and the `hook start` that opencode's plugin and Pi's extension
@@ -273,8 +274,13 @@ moves to an older release and never runs while a setup, uninstall or upgrade hol
 installation. The stamp records when it ran, the version that ran it, the release it found and
 the outcome (`started`, `current`, `available`, `upgraded`, `failed` with the failure word
 `upgrade` would print, or `not_release` for a development build); `status` and `doctor` read it
-and nothing else. A stamp dated in the future, from a clock that was set back, counts as due.
-Deleting it is safe: the next agent session checks again.
+and nothing else. A stamp is evidence only for the copy that wrote it: two copies sharing one
+state directory each check for themselves, and a stamp by another version counts as none. A
+stamp dated in the future, from a clock that was set back, counts as due, and so does one that
+found a release `available` once the mode is switched to `apply` on a native copy. When an
+automatic replacement could not put the binary back, `status` and `doctor` list every copy that
+survives beside it, read from the binary's directory; none is deleted. Deleting the stamp is
+safe: the next agent session checks again.
 
 ## Doctor's checks
 

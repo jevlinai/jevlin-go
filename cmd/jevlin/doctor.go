@@ -1185,6 +1185,10 @@ func doctorUpdateCheck(f doctorFacts) doctorCheck {
 	}
 	st := u.Stamp
 	age := f.Now.Sub(st.CheckedAt)
+	if !u.thisCopy() {
+		c.Verdict, c.Detail = verdictOK, fmt.Sprintf("no release check has run yet for this copy; the last, %s, was by another copy of jevlin", ageText(age))
+		return c
+	}
 	switch {
 	case age < 0:
 		return undetermined("the update stamp is in the future")
@@ -1203,6 +1207,12 @@ func doctorUpdateCheck(f doctorFacts) doctorCheck {
 		c.Verdict, c.Detail = verdictNo, fmt.Sprintf("%s is available and this copy is %s (checked %s)", st.Latest, st.Running, ageText(age))
 		c.Fix = u.Fix
 	case updateFailed:
+		if len(u.Recovery) > 0 {
+			c.Verdict = verdictNo
+			c.Detail = fmt.Sprintf("the last automatic upgrade %s could not put the binary back; these copies survive beside it: %s", ageText(age), strings.Join(u.Recovery, ", "))
+			c.Fix = "jevlin upgrade -rollback, or reinstall from the releases page; none of the copies is deleted"
+			return c
+		}
 		return undetermined(fmt.Sprintf("the last check failed (%s) %s; the next runs in a day", st.Failure, ageText(age)))
 	case updateNotRelease:
 		c.Verdict, c.Detail = verdictOK, fmt.Sprintf("not a release build; nothing to compare (checked %s)", ageText(age))

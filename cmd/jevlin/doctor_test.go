@@ -109,7 +109,7 @@ func healthyFacts() doctorFacts {
 
 		// And a release check that ran this morning and found this copy
 		// current.
-		Update: updateFacts{Mode: "apply", Present: true, Fix: "jevlin upgrade", Stamp: updateStamp{
+		Update: updateFacts{Mode: "apply", Build: "0.3.1", Present: true, Fix: "jevlin upgrade", Stamp: updateStamp{
 			V: 1, CheckedAt: healthyNow.Add(-time.Hour), Running: "0.3.1", Latest: "0.3.1", Outcome: updateCurrent,
 		}},
 	}

@@ -97,6 +97,7 @@ func TestHooksStartTheReleaseCheckOnceADay(t *testing.T) {
 	var checks []string
 	ops.spawnUpdateCheck = func(cfg string) error { checks = append(checks, cfg); return nil }
 	ops.now = func() time.Time { return checkNow }
+	ops.build = func() string { return "0.3.1" }
 	hc := hookContext{cfgPath: "/c.toml", sessionsDir: "/sessions", stateDir: "/state", updateMode: config.UpdateApply}
 	stamp := filepath.Join("/state", updateStampFile)
 	sess := map[string]any{"session_id": "s"}
@@ -131,17 +132,56 @@ func TestHooksStartTheReleaseCheckOnceADay(t *testing.T) {
 		t.Fatalf("a stamp this version did not write: checks %v; want a fourth, which rewrites it", checks)
 	}
 
+	// Another copy's fresh stamp is no evidence about this one (two copies
+	// can share a state directory), so the check runs; the stamp of the
+	// check that installed this very version is this copy's.
+	fs.files[stamp] = stampBytes(t, updateStamp{CheckedAt: checkNow.Add(-time.Hour), Running: "0.3.2", Latest: "0.3.2", Outcome: updateCurrent})
+	runHook(t, ops, hc, "window session-start", sess)
+	if len(checks) != 5 {
+		t.Fatalf("another copy's stamp: checks %v; want a fifth", checks)
+	}
+	fs.files[stamp] = stampBytes(t, updateStamp{CheckedAt: checkNow.Add(-time.Hour), Running: "0.3.0", Latest: "0.3.1", Outcome: updateUpgraded})
+	runHook(t, ops, hc, "window session-start", sess)
+	if len(checks) != 5 {
+		t.Fatalf("the stamp of the upgrade that installed this copy: checks %v; want none", checks)
+	}
+
+	// A fresh stamp that found a release without applying it is due again
+	// the moment the mode is apply on a native copy, and not otherwise.
+	fs.files[stamp] = stampBytes(t, updateStamp{CheckedAt: checkNow.Add(-time.Hour), Running: "0.3.1", Latest: "0.3.2", Outcome: updateAvailable})
+	notify := hc
+	notify.updateMode = config.UpdateNotify
+	runHook(t, ops, notify, "window session-start", sess)
+	if len(checks) != 5 {
+		t.Fatalf("available under notify: checks %v; want none", checks)
+	}
+	runHook(t, ops, hc, "window session-start", sess)
+	if len(checks) != 6 {
+		t.Fatalf("available under apply: checks %v; want a sixth", checks)
+	}
+	npm := ops
+	npm.getenv = func(k string) string {
+		if k == "JEVLIN_LAUNCH" {
+			return "npm:global"
+		}
+		return ""
+	}
+	runHook(t, npm, hc, "window session-start", sess)
+	if len(checks) != 6 {
+		t.Fatalf("available under apply for an npm copy: checks %v; want none", checks)
+	}
+
 	off := hc
 	off.updateMode = config.UpdateOff
 	delete(fs.files, stamp)
 	runHook(t, ops, off, "window session-start", sess)
-	if len(checks) != 4 {
+	if len(checks) != 6 {
 		t.Fatalf("mode off: checks %v; want none", checks)
 	}
 	none := hc
 	none.stateDir = ""
 	runHook(t, ops, none, "window session-start", sess)
-	if len(checks) != 4 {
+	if len(checks) != 6 {
 		t.Fatalf("no state dir: checks %v; want none", checks)
 	}
 }
@@ -160,6 +200,7 @@ func TestHookStartIsTheJavaScriptHostsSessionStart(t *testing.T) {
 		return nil
 	}
 	ops.now = func() time.Time { return checkNow }
+	ops.build = func() string { return "0.3.1" }
 	for _, host := range []string{"opencode", "pi"} {
 		runHook(t, ops, hc, "start "+host, nil)
 	}
@@ -408,9 +449,132 @@ func TestAutoCheckLeavesQuietlyWhenAnUpgradeHoldsTheLock(t *testing.T) {
 	}
 }
 
+// A stamp that found a release available under notify is due again the
+// moment the mode is apply: the participant who switched does not wait a
+// day for a release the check already knows.
+func TestAutoCheckAppliesAKnownReleaseOnceTheModeIsApply(t *testing.T) {
+	f, cfgPath, stamp := autoFixture(t, newLocalRelease(t, "0.3.1", map[string]string{"0.3.1": "0.3.1\n"}), "")
+	if err := writeUpdateStamp(stamp, updateStamp{CheckedAt: time.Now().Add(-time.Hour), Running: "0.3.0", Latest: "0.3.1", Outcome: updateAvailable}); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, errOut := f.runAuto(cfgPath); code != exitOK {
+		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
+	}
+	if f.content(f.exe) != "0.3.1" {
+		t.Errorf("the known release was not applied: %s", f.content(f.exe))
+	}
+	if st := readStampT(t, stamp); st.Outcome != updateUpgraded {
+		t.Errorf("stamp %+v", st)
+	}
+}
+
+// Another copy's fresh stamp in a shared state directory postpones nothing
+// for this one.
+func TestAutoCheckIgnoresAnotherCopysStamp(t *testing.T) {
+	f, cfgPath, stamp := autoFixture(t, newLocalRelease(t, "0.3.0", map[string]string{"0.3.0": "0.3.0\n"}), "")
+	if err := writeUpdateStamp(stamp, updateStamp{CheckedAt: time.Now().Add(-time.Hour), Running: "0.3.2", Latest: "0.3.2", Outcome: updateCurrent}); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, errOut := f.runAuto(cfgPath); code != exitOK {
+		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
+	}
+	if st := readStampT(t, stamp); st.Running != "0.3.0" || st.Outcome != updateCurrent {
+		t.Errorf("stamp %+v; want this copy's own", st)
+	}
+	if len(f.lr.requests) != 1 {
+		t.Errorf("requests %v; want this copy's one lookup", f.lr.requests)
+	}
+}
+
+// Every check, a lookup for an npm copy included, holds the state
+// directory's check lock in one attempt, so two hooks that both found the
+// stamp stale make one request.
+func TestAutoCheckHoldsOneCheckLockForEveryCopy(t *testing.T) {
+	f, cfgPath, stamp := autoFixture(t, newLocalRelease(t, "0.3.1", map[string]string{"0.3.1": "0.3.1\n"}), "")
+	f.env["JEVLIN_LAUNCH"] = "npm:global"
+	lock, held, err := tryLockFile(updateLockPath(filepath.Dir(stamp)))
+	if err != nil || !held {
+		t.Fatalf("take the check lock: held=%v err=%v", held, err)
+	}
+	defer func() { _ = unlockFile(lock) }()
+	code, out, errOut := f.runAuto(cfgPath)
+	if code != exitOK || !strings.Contains(errOut, "another check holds") {
+		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
+	}
+	if len(f.lr.requests) != 0 {
+		t.Errorf("a check that lost the lock still made %v", f.lr.requests)
+	}
+	if _, err := os.Lstat(stamp); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("a check that lost the lock wrote a stamp")
+	}
+}
+
+// The gate -auto holds is the installation a manual upgrade would hold, by
+// the same rule: JEVLIN_HOME outranks the config the hook named, so a setup
+// holding that installation's gate excludes the automatic replacement too.
+func TestAutoCheckHoldsTheSameGateAsAManualUpgrade(t *testing.T) {
+	f, _, _ := autoFixture(t, newLocalRelease(t, "0.3.1", map[string]string{"0.3.1": "0.3.1\n"}), "")
+	other := filepath.Join(filepath.Dir(f.home), "elsewhere")
+	if err := os.MkdirAll(other, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	otherCfg := filepath.Join(other, setupConfigFile)
+	writeFileT(t, otherCfg, "[mining]\nstate_dir = \""+filepath.ToSlash(filepath.Join(f.home, "state"))+"\"\n")
+	gate, err := acquireLifecycleGate(lifecycleGatePath(f.home), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gate.release()
+	var out, errOut bytes.Buffer
+	d := upgradeDeps{
+		stdout: &out, stderr: &errOut, getenv: envOf(f.env), userHome: filepath.Dir(f.home),
+		executable: func() (string, error) { return f.exe, nil },
+		build:      func() string { return f.build },
+		source:     func() selfupdate.ReleaseSource { f.sourcesMade++; return f.lr.source() },
+		runner:     f.runner, goos: "linux", goarch: "amd64", operationTimeout: f.timeout,
+		agents: f.agents, environ: func() []string { return nil },
+	}
+	code := upgradeMain(d, []string{"-auto", "-config", otherCfg})
+	if code != exitOK || !strings.Contains(errOut.String(), "not checking now") {
+		t.Fatalf("exit %d\n%s\n%s", code, out.String(), errOut.String())
+	}
+	if f.sourcesMade != 0 || f.content(f.exe) != "0.3.0" {
+		t.Errorf("the held gate did not exclude the check")
+	}
+}
+
 // ── status and doctor ───────────────────────────────────────────────────
 
+// withBuild makes the test binary report a release version for the
+// duration of a test, so a stamp a release wrote is this copy's.
+func withBuild(t *testing.T, v string) {
+	t.Helper()
+	was := version
+	version = v
+	t.Cleanup(func() { version = was })
+}
+
+func TestRecoveryPathsAreListedFromTheBinarysDirectory(t *testing.T) {
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(dir, "jevlin")
+	writeFileT(t, exe, "0.3.0\n")
+	if got := updateRecoveryPaths(exe); len(got) != 0 {
+		t.Errorf("nothing beside the binary, got %v", got)
+	}
+	writeFileT(t, selfupdate.PreviousPath(exe), "0.2.9\n")
+	writeFileT(t, filepath.Join(dir, ".jevlin.snapshot-abc"), "0.3.0\n")
+	writeFileT(t, filepath.Join(dir, "unrelated"), "x\n")
+	got := updateRecoveryPaths(exe)
+	if len(got) != 2 || got[0] != selfupdate.PreviousPath(exe) || got[1] != filepath.Join(dir, ".jevlin.snapshot-abc") {
+		t.Errorf("recovery paths %v", got)
+	}
+}
+
 func TestStatusReportsTheReleaseCheckInTextAndJSON(t *testing.T) {
+	withBuild(t, "0.3.1")
 	cfgPath, root, _ := statusFixture(t)
 	stamp := updateStampPath(filepath.Join(root, "state"))
 
@@ -442,6 +606,16 @@ func TestStatusReportsTheReleaseCheckInTextAndJSON(t *testing.T) {
 		t.Errorf("update: %v", update)
 	}
 
+	// Another copy's stamp says nothing about this one.
+	if err := writeUpdateStamp(stamp, updateStamp{CheckedAt: time.Now().Add(-3 * time.Hour), Running: "0.3.2", Latest: "0.3.2", Outcome: updateCurrent}); err != nil {
+		t.Fatal(err)
+	}
+	text.Reset()
+	_ = statusMain([]string{"-config", cfgPath}, &text, &errOut, noEnv)
+	if !strings.Contains(text.String(), "update:  no release check has run yet for this copy; the last, 3h ago, was by another copy of jevlin") {
+		t.Errorf("another copy's stamp:\n%s", text.String())
+	}
+
 	// A stamp this version did not write is refused in the client's words.
 	writeFileT(t, stamp, `{"v":1,"checked_at":"2026-10-17T12:00:00Z","outcome":"SECURITY NOTICE"}`)
 	text.Reset()
@@ -454,7 +628,7 @@ func TestStatusReportsTheReleaseCheckInTextAndJSON(t *testing.T) {
 func TestDoctorUpToDateVerdicts(t *testing.T) {
 	base := func(st updateStamp) doctorFacts {
 		f := healthyFacts()
-		f.Update = updateFacts{Mode: config.UpdateApply, Present: true, Fix: "jevlin upgrade", Stamp: st}
+		f.Update = updateFacts{Mode: config.UpdateApply, Build: "0.3.1", Present: true, Fix: "jevlin upgrade", Stamp: st}
 		return f
 	}
 	at := func(age time.Duration) time.Time { return healthyNow.Add(-age) }
@@ -465,13 +639,27 @@ func TestDoctorUpToDateVerdicts(t *testing.T) {
 		detail  string
 		fix     string
 	}{
+		{"another copy", func() doctorFacts {
+			f := base(updateStamp{CheckedAt: at(time.Hour), Running: "0.3.2", Latest: "0.3.2", Outcome: updateCurrent})
+			return f
+		}(), verdictOK, "no release check has run yet for this copy; the last, 1h ago, was by another copy of jevlin", ""},
+		{"installed by the last check", base(updateStamp{CheckedAt: at(time.Hour), Running: "0.3.0", Latest: "0.3.1", Outcome: updateUpgraded}), verdictOK, "upgraded to 0.3.1 1h ago; restart open agents", ""},
+		{"could not put the binary back", func() doctorFacts {
+			f := base(updateStamp{CheckedAt: at(time.Hour), Running: "0.3.1", Outcome: updateFailed, Failure: "manual_intervention"})
+			f.Update.Recovery = []string{"/i/bin/jevlin.previous", "/i/bin/.jevlin.snapshot-1"}
+			return f
+		}(), verdictNo, "the last automatic upgrade 1h ago could not put the binary back; these copies survive beside it: /i/bin/jevlin.previous, /i/bin/.jevlin.snapshot-1", "jevlin upgrade -rollback, or reinstall from the releases page; none of the copies is deleted"},
 		{"current", base(updateStamp{CheckedAt: at(time.Hour), Running: "0.3.1", Latest: "0.3.1", Outcome: updateCurrent}), verdictOK, "0.3.1 is the latest release (checked 1h ago)", ""},
 		{"upgraded", base(updateStamp{CheckedAt: at(5 * time.Minute), Running: "0.3.0", Latest: "0.3.1", Outcome: updateUpgraded}), verdictOK, "upgraded to 0.3.1 5m ago; restart open agents", ""},
 		{"available", base(updateStamp{CheckedAt: at(2 * time.Hour), Running: "0.3.1", Latest: "0.3.2", Outcome: updateAvailable}), verdictNo, "0.3.2 is available and this copy is 0.3.1 (checked 2h ago)", "jevlin upgrade"},
 		{"failed", base(updateStamp{CheckedAt: at(time.Hour), Running: "0.3.1", Outcome: updateFailed, Failure: "retry"}), verdictUnknown, "could not determine — the last check failed (retry) 1h ago; the next runs in a day", ""},
 		{"still running", base(updateStamp{CheckedAt: at(time.Minute), Running: "0.3.1", Outcome: updateStarted}), verdictUnknown, "could not determine — a check started 1m ago and is still running", ""},
 		{"never reported", base(updateStamp{CheckedAt: at(time.Hour), Running: "0.3.1", Outcome: updateStarted}), verdictUnknown, "could not determine — a check started 1h ago and never reported; the next runs in a day", ""},
-		{"not a release", base(updateStamp{CheckedAt: at(time.Hour), Outcome: updateNotRelease}), verdictOK, "not a release build; nothing to compare (checked 1h ago)", ""},
+		{"not a release", func() doctorFacts {
+			f := base(updateStamp{CheckedAt: at(time.Hour), Outcome: updateNotRelease})
+			f.Update.Build = "dev (abc123def456)"
+			return f
+		}(), verdictOK, "not a release build; nothing to compare (checked 1h ago)", ""},
 		{"future", base(updateStamp{CheckedAt: healthyNow.Add(time.Hour), Running: "0.3.1", Outcome: updateCurrent}), verdictUnknown, "could not determine — the update stamp is in the future", ""},
 		{"stale", base(updateStamp{CheckedAt: at(4 * 24 * time.Hour), Running: "0.3.1", Latest: "0.3.1", Outcome: updateCurrent}), verdictUnknown, "could not determine — the last check ran 4d ago; a check runs daily when an agent session starts", "jevlin upgrade"},
 	}
@@ -531,6 +719,7 @@ func TestDoctorUpToDateVerdicts(t *testing.T) {
 }
 
 func TestDoctorCarriesTheUpToDateCheckInBothRenderers(t *testing.T) {
+	withBuild(t, "0.3.1")
 	cfgPath, root, _ := statusFixture(t)
 	if err := writeUpdateStamp(updateStampPath(filepath.Join(root, "state")), updateStamp{CheckedAt: time.Now().Add(-time.Hour), Running: "0.3.1", Latest: "0.3.2", Outcome: updateAvailable}); err != nil {
 		t.Fatal(err)
