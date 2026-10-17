@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -205,6 +206,77 @@ func TestStatusCountsTheSearchesWaitingWhateverTheRegistration(t *testing.T) {
 	}
 	if facts.Waiting != 2 || facts.WaitingErr != nil {
 		t.Errorf("with agent.json corrupt: Waiting = %d, WaitingErr = %v; want 2 counted", facts.Waiting, facts.WaitingErr)
+	}
+}
+
+// An intake that cannot be read is an unknown count where the count is
+// taken, not only where it is printed: the gatherer keeps the read error,
+// and status -json says waiting_unknown, never "waiting": 0. A regular file
+// where the directory should be makes the read fail with something other
+// than not-found on every OS.
+func TestStatusKeepsTheErrorOfAnIntakeItCannotRead(t *testing.T) {
+	was := statusCodexUndelivered
+	statusCodexUndelivered = func(string, func(string) string) bool { return false }
+	t.Cleanup(func() { statusCodexUndelivered = was })
+
+	f := newFlushFixture(t, newFakeAS(t))
+	if err := os.RemoveAll(f.cfg.Miner.IntakeDir); err != nil {
+		t.Fatal(err)
+	}
+	writeFileT(t, f.cfg.Miner.IntakeDir, "not a directory")
+	facts, ok := gatherAgentIdentity([]string{"-config", f.cfgPath}, os.Getenv)
+	if !ok {
+		t.Fatal("status gathered nothing")
+	}
+	if facts.WaitingErr == nil {
+		t.Fatalf("an intake that is a file: Waiting = %d and no error kept; want the count unknown", facts.Waiting)
+	}
+	b, err := json.Marshal(statusEnvelope(facts, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var env struct {
+		Data struct {
+			Delivery map[string]any `json:"delivery"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(b, &env); err != nil {
+		t.Fatal(err)
+	}
+	if _, has := env.Data.Delivery["waiting"]; has || env.Data.Delivery["waiting_unknown"] != true {
+		t.Errorf("status -json for an intake that is a file: %v", env.Data.Delivery)
+	}
+}
+
+// A record with no time says nothing about when the oldest search was made.
+// Read after a timed record, it used to put no time in that record's place.
+// writeIntake names a record by when it finished, so the untimed one finishes
+// later to be read last, and the test checks that it is.
+func TestTheOldestWaitingTimeSkipsARecordWithNoTime(t *testing.T) {
+	was := statusCodexUndelivered
+	statusCodexUndelivered = func(string, func(string) string) bool { return false }
+	t.Cleanup(func() { statusCodexUndelivered = was })
+
+	f := newFlushFixture(t, newFakeAS(t))
+	timed := time.Date(2026, 10, 16, 13, 45, 25, 0, time.UTC)
+	for _, rec := range []intakeRecord{
+		{RequestID: "timed", StatusCode: http.StatusOK, StartedAt: timed, FinishedAt: timed},
+		{RequestID: "untimed", StatusCode: http.StatusOK, FinishedAt: timed.Add(time.Minute)},
+	} {
+		if _, err := writeIntake(f.cfg.Miner.IntakeDir, rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	records, _, err := readIntake(f.cfg.Miner.IntakeDir)
+	if err != nil || len(records) != 2 || records[1].rec.RequestID != "untimed" {
+		t.Fatalf("fixture: %d record(s), err %v; want two, the untimed one read last", len(records), err)
+	}
+	facts, ok := gatherAgentIdentity([]string{"-config", f.cfgPath}, os.Getenv)
+	if !ok {
+		t.Fatal("status gathered nothing")
+	}
+	if facts.Waiting != 2 || !facts.OldestWaiting.Equal(timed) {
+		t.Fatalf("Waiting = %d, OldestWaiting = %v; want 2, and %v from the one timed record", facts.Waiting, facts.OldestWaiting, timed)
 	}
 }
 
