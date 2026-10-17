@@ -216,10 +216,11 @@ need approving again; an upgrade in place does not change the commands.
 in its own process namespace there, so the flush a search starts to deliver its evidence ends
 with the search. The evidence is kept, and goes out with the next jevlin run outside Codex: the
 `SessionStart` or `Stop` hook once approved, another agent's hooks, or a `jevlin search` or
-`jevlin flush` from your own shell. With mining on and neither of those two hooks approved, `jevlin agents status`
-and `jevlin status` say so, `status` counts the searches waiting and when the oldest was made,
-and `agents install` says it when it writes the hooks. Until something delivers them, searches
-made only in Codex may miss their epoch and earn nothing. macOS is not affected.
+`jevlin flush` from your own shell. With mining on and neither of those two hooks approved,
+`jevlin agents status` and `jevlin status` say so, `status` counts the searches waiting and when
+the oldest was made, and `agents install` says it when it writes the hooks. Until something
+delivers them, searches made only in Codex may miss their epoch and earn nothing. macOS is not
+affected.
 
 With the hooks approved, a search Codex runs carries its session, turn and call, and a
 subagent's search names the session that started it. Only the search command the skill shows is
