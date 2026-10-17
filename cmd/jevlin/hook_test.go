@@ -124,7 +124,7 @@ func hookMainWith(ops hookOps, hc hookContext, args []string, stdin *bytes.Reade
 	case "window":
 		hookWindow(ops, hc, args[1], payload)
 		if args[1] == "session-start" {
-			_ = ops.spawnFlush(hc.cfgPath)
+			ops.startBackground(hc)
 		}
 	case "cursor":
 		hookCursor(ops, hc, args[1], payload, stdout, stderr)
@@ -132,9 +132,13 @@ func hookMainWith(ops hookOps, hc hookContext, args []string, stdin *bytes.Reade
 		hookHermes(args[1], payload, stdout)
 	case "turn":
 		hookHostTurn(ops, hc, args[1], payload)
+	case "start":
+		if len(args) > 1 {
+			ops.startBackground(hc)
+		}
 	case "flush":
 		claudeTurnEnd(ops, hc, payload) // as hookMain does, before the flush
-		_ = ops.spawnFlush(hc.cfgPath)
+		ops.startBackground(hc)
 	default:
 		return exitUsage
 	}

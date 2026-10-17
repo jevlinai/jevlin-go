@@ -197,8 +197,9 @@ wallet (a reward address this installation controls):
   wallet balance   what the chain says this address holds
   wallet send      move funds to another twilight address: -to and -amount
 
-Every command takes -config <file>, falling back to JEVLIN_CONFIG, then
-the installation's own config ($JEVLIN_HOME/jevlin.toml, else
+A command that reads the config takes -config <file> (setup, upgrade and
+uninstall take -home instead), falling back to JEVLIN_CONFIG, then the
+installation's own config ($JEVLIN_HOME/jevlin.toml, else
 ~/.jevlin/jevlin.toml, when that file exists). A jevlin.toml in the
 working directory is never read unless named.
 status and doctor name the file they resolved, or say plainly that none was

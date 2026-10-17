@@ -10,14 +10,15 @@
 </p>
 
 Free multi-provider web search for coding agents, with the trajectory behind every search.
-One binary gives Claude Code, Cursor, Codex, opencode, Pi and Hermes a `search` that fans a
+One binary gives Claude Code, Cursor, Codex, opencode, Pi and Hermes a `search` that can fan a
 query out across twelve search providers at once, merges what they return into one attributed
 list, and carries enough of the agent's context that the router can see the task a search
 belongs to, not just the query string. There is no daemon, proxy or MCP server: between tool
 calls nothing is running.
 
-Search is free for agents: setup registers you with the router and gets a key, there is no
-card and nothing to top up. What funds it is described [at the end](#mining-on-the-twilight-testnet).
+Search is free for agents: setup registers you with the search platform and gets a key, there
+is no card and nothing to top up. What funds it is described
+[at the end](#mining-on-the-twilight-testnet).
 
 
 ## Install
@@ -39,8 +40,9 @@ warn about one a shared group can write. On Windows only the temp-directory rule
 
 ## The providers
 
-One request goes to the router at `api.jevlin.ai`, which holds the provider keys. Twelve
-arms run on every fan-out, under a per-query cost ceiling:
+One request goes to the router at `api.jevlin.ai`, which holds the provider keys. In the
+`balanced` and `max` [tiers](#three-tiers), twelve arms run on every fan-out, under a
+per-query cost ceiling; `fast` asks one provider instead:
 
 | kind | arms |
 |---|---|
@@ -58,14 +60,14 @@ release; `decision` in every response says which arms ran.
 The router runs the request against the arms and answers once, with everything they returned:
 
 - **`result.merged`**: the citations of every provider that answered, deduplicated by page.
-  Each entry carries `found_by`, how many providers agree on that page, and `best_rank`, the
-  best position any of them gave it. Agreement between independent indexes is the fan-out's
+  Each entry carries `found_by`, the providers that found that page, and `best_rank`, the best
+  position any of them gave it. Agreement between independent indexes is the fan-out's
   own evidence, and the skill tells the agent to read this list first.
 - **`result.candidates`**: each provider's answer as it came back, so a disagreement can be
   inspected rather than averaged away. `"view":"merged"` drops this when tokens matter.
 - **`decision`**, which providers ran; **`usage.cost_micros`**, what the search cost, in
-  millionths of a dollar; **`latency`**, per provider; **`request_id`**, so a search can be
-  found again.
+  millionths of a dollar; **`latency_ms`**, for the search and for each provider;
+  **`request_id`**, so a search can be found again.
 
 Agents call `jevlin search --stdin` with one JSON request and read one JSON object back, so
 the query never touches the command line. A person can type `jevlin search "<query words>"`,
@@ -77,14 +79,15 @@ jevlin search -format model "what is proof of authority consensus"
 
 ## Three tiers
 
-Every search runs in one of three tiers. A tier is a per-query cost ceiling on the router; it
-decides how many of the core arms a search fans out to, and a set that would exceed the
-ceiling is trimmed rather than refused, with `decision.trimmed` naming what went.
+Every search runs in one of three tiers. `fast` asks one provider, which the search platform
+chooses; `balanced` and `max` fan out to the twelve core arms. A tier is also a per-query cost
+ceiling on the router, and a set that would exceed the ceiling is trimmed rather than refused,
+with `decision.trimmed` naming what went.
 
 | tier | what runs | for |
 |---|---|---|
-| `fast` | one answer engine plus the cheap retrieval arm | a routine lookup, the default for a new key |
-| `balanced` | several core arms, each result attributed to its source | when the agent needs more than one source, or the first answer came back thin |
+| `fast` | one provider, chosen by the search platform | a routine lookup, the default for a new key |
+| `balanced` | the core arms, each result attributed to its source | when the agent needs more than one source, or the first answer came back thin |
 | `max` | every core arm | corroboration: the same page found by independent indexes |
 
 Who chooses:
@@ -115,20 +118,20 @@ agent was doing when it asked:
 | field | carries |
 |---|---|
 | `harness` | Which agent: `claude-code`, `codex`, `cursor`, and so on. |
-| `session_id`, `turn_id`, `call_id` | The agent's ids, hashed with SHA-256 before they leave the machine. A subagent carries its own session id and its parent's. |
+| `session_id`, `turn_id`, `call_id` | The agent's ids, hashed with SHA-256 before they leave the machine. A subagent has a session id of its own, and from Claude Code, Codex and opencode it also carries its parent's. |
 | `window`, `seq` | Which context window of the session, after compactions, and a call counter. |
-| `history` | The assistant text just before the search, scrubbed of secrets, last 32 KiB. |
+| `history` | The assistant text just before the search, scrubbed of secrets, last 32 KiB. Codex and Hermes send none. |
 
 With `[miner] turn_end = true`, the agent's end-of-turn hook also sends what the turn
 concluded: the final message, what you asked, the sequence of tools called with name, duration
 and outcome (never a tool's input or output), the model and the token counts. Only for turns
 in which a search was served.
 
-The hooks keep a lineage file per workspace under `~/.jevlin/sessions`, so the searches of one
-task line up even across context compactions and subagents, and only the agent that wrote a
-file reads it. The scrub removes anything shaped like a credential, PEM blocks, email
-addresses, the account name in a home path, and any value under a name like `password`,
-`token` or `api_key`. [The trace](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#the-trace) and
+The hooks keep a lineage file per workspace (in Cursor, per conversation) under
+`~/.jevlin/sessions`, so the searches of one task line up even across context compactions and
+subagents, and only the agent that wrote a file reads it. The scrub removes anything shaped
+like a credential, PEM blocks, email addresses, the account name in a home path, and any value
+under a name like `password`, `token` or `api_key`. [The trace](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#the-trace) and
 [the turn end](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#the-turn-end) list every field and every scrub rule.
 
 `export JEVLIN_TRACE=off` sends no trace and no turn end; searches work the same without them.
@@ -145,8 +148,11 @@ to copy or paste. Then it asks, in this order:
 | **Payout address** | Only if mining is on: a `twilight1…` address you control, or empty to create a wallet here. |
 | **Add them to ~/.zshrc?** | Or whichever profile your shell reads. Puts `jevlin` on PATH and sets `JEVLIN_CONFIG`. On Windows it asks **Set them for your user?** instead. |
 | **Set up the coding agents found on this machine now?** | Writes a skill and hooks into each agent's own config, after showing you what. |
+| **Switch?** | Asked only when Codex's config has a setting of your own that its permission profile would change. It shows every line it would write; a bare Enter is no and leaves Codex as it is. |
 
-Then it prints a link where you claim your agent on `platform.jevlin.ai`. The
+After the mining questions, and before the shell profile, it prints a link where you claim
+your agent on `platform.jevlin.ai` and waits up to three minutes for you to. You need not do it
+then: search already works, and using an agent later finishes the claim. The
 [guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#setup) says what each answer does and which flags answer them for you.
 
 ## Then check
@@ -168,7 +174,7 @@ installed. Restart any agent that was already open.
 | [Claude Code](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#claude-code) | a skill; hooks and allow rules in `~/.claude/settings.json` | On Windows, a search through its PowerShell tool asks for approval. |
 | [Cursor](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#cursor) | a skill; hooks in `~/.cursor/hooks.json` | Cursor also runs Claude Code's hooks, which stand aside for it. |
 | [Codex](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#codex) | a skill; on macOS and Linux, hooks in `~/.codex/hooks.json` and a permission profile in `~/.codex/config.toml` that opens only the search hosts; on Windows, writable directories in that file and no network | Its hooks run only once you approve them in Codex. Supported with Codex 0.158.0 or newer; older versions are not supported. |
-| [opencode](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#opencode) | a plugin, and a line for you to paste into `AGENTS.md` | `/jevlin off` does not reach it. |
+| [opencode](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#opencode) | a plugin, and a block for you to paste into `AGENTS.md` | `/jevlin off` does not reach it. |
 | [Pi](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#pi) | a skill and an extension under `~/.pi/agent/` | A resumed session keeps its place in the trace. |
 | [Hermes](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#hermes) | a skill; a hook in `config.yaml` | Approve the hook once; it loads next session. |
 
@@ -179,7 +185,7 @@ routes that one search here.
 ## Commands: in the agent, and in a shell
 
 Setup installs one skill, `jevlin`, into each agent that has skills (Claude Code, Cursor,
-Codex, Pi, Hermes; opencode gets a plugin and a rules line instead). The skill is what the
+Codex, Pi, Hermes; opencode gets a plugin and a rules block instead). The skill is what the
 agent reads: it tells the agent to prefer this search over its built-in one, how to build the
 request, how to read the envelope, and what the commands below do. Everything the agent can do
 with jevlin goes through that one skill.
@@ -191,11 +197,11 @@ with jevlin goes through that one skill.
 | `/jevlin on` | This search is the default again. |
 | `/jevlin status` | Which of the two is the default right now. |
 | `/jevlin tier fast\|balanced\|max` | Sets the band every search carries unless a request names one. |
-| `/jevlin tier default` | Unsets it; the router's default for your key applies. |
+| `/jevlin tier default` | Unsets it; `[miner] tier` in your config applies if set, else the router's default for your key. |
 | `/jevlin tier` | The band in force. |
 
 The settings are yours: the skill tells the agent never to change the default or the band on
-its own. `/jevlin off` does not reach opencode, whose rules line carries no preference.
+its own. `/jevlin off` does not reach opencode, whose rules block carries no preference.
 
 Those are the only forms the skill teaches, because they are the only ones an agent needs
 mid-task. Everything else is the `jevlin` command in a shell. The agent can run these too when
@@ -210,7 +216,7 @@ says it is not earning.
 | `jevlin doctor` | Whether searches are recorded and earning, check by check, and the one thing to fix. `-json` too. |
 | `jevlin limits` | This key's spend caps and today's spend, read from the router. |
 | `jevlin agents install\|status\|uninstall` | Sets up, reports or removes the skills and hooks of each agent. |
-| `jevlin agents prefer on\|off\|status` | What `/jevlin on|off|status` runs: which search is the default. |
+| `jevlin agents prefer on\|off\|status` | What `/jevlin on\|off\|status` runs: which search is the default. |
 | `jevlin agents tier <band>\|default\|status` | What `/jevlin tier` runs: the band every search carries. |
 | `jevlin mining enable\|disable` | Turns Twilight mining on, asking for a payout address, or off. |
 | `jevlin earnings` | What the chain has paid to your payout address. |
@@ -221,8 +227,9 @@ says it is not earning.
 | `jevlin uninstall` | Removes what setup wrote; `-binary` and `-purge-state` go further. |
 | `jevlin version`, `jevlin help` | The version, and the full usage text. |
 
-`login`, `enroll`, `payout`, `join` and `provider` are the portal's older manual path. Every
-command takes `-config <file>`; the [reference](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#commands) has every flag.
+`login`, `enroll`, `payout`, `join` and `provider` are the portal's older manual path. A
+command that reads the config takes `-config <file>`; `setup`, `upgrade` and `uninstall` take
+`-home <dir>` instead, the installation. The [reference](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#commands) has every flag.
 
 The skill's text is [`cmd/jevlin/skill.md`](https://github.com/jevlinai/jevlin-go/blob/main/cmd/jevlin/skill.md), rendered per agent and per
 shell at install; the installed copy is at `~/.claude/skills/jevlin/`, `~/.cursor/skills/jevlin/`,
@@ -245,6 +252,12 @@ jevlin upgrade                 # a native install: the latest release, verified 
 npm install -g @jevlinsearch/jevlin@latest   # an npm install is updated with npm
 jevlin uninstall               # remove the skills, hooks and profile block; keep your wallet
 ```
+
+Once a day, when an agent session starts or ends, jevlin also checks for a newer release, and
+`jevlin status` says what it found. It only tells you, unless the config says
+`[update] mode = "apply"`: then a native install replaces its own binary, with the same
+verification as `jevlin upgrade`. An npm install is only ever told. `mode = "off"` stops the
+check.
 
 The guide covers [upgrading](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#upgrading) and
 [removing it and coming back](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#removing-it-and-coming-back).

@@ -11,6 +11,7 @@ package main
 
 import (
 	"strings"
+	"time"
 
 	"github.com/jevlinai/jevlin-go/pkg/auth"
 	"github.com/jevlinai/jevlin-go/pkg/redact"
@@ -127,6 +128,52 @@ type statusReport struct {
 	RegionRefusal   *statusRegionRefusalJSON `json:"region_refusal,omitempty"`
 	Conflicts       []auth.ConflictedEpoch   `json:"epoch_conflicts,omitempty"`
 	AS              *statusASJSON            `json:"authorization_server,omitempty"`
+	Update          statusUpdateJSON         `json:"update"`
+}
+
+// statusUpdateJSON is the daily release check (update_check.go): the mode
+// in force, and the stamp's tokens when one is on file. Error is the
+// client's own sentence for a stamp it refused, never the stamp's text.
+type statusUpdateJSON struct {
+	Mode        string `json:"mode"`
+	UnknownMode bool   `json:"unknown_mode,omitempty"`
+	// Checked is whether a check has run for this copy: a stamp about another
+	// binary or version says nothing here, as in the text report.
+	Checked   bool     `json:"checked"`
+	CheckedAt string   `json:"checked_at,omitempty"`
+	Running   string   `json:"running,omitempty"`
+	Latest    string   `json:"latest,omitempty"`
+	Held      string   `json:"held,omitempty"`
+	Outcome   string   `json:"outcome,omitempty"`
+	Failure   string   `json:"failure,omitempty"`
+	Refresh   string   `json:"refresh,omitempty"`
+	Recovery  []string `json:"recovery,omitempty"`
+	Fix       string   `json:"fix,omitempty"`
+	Error     string   `json:"error,omitempty"`
+}
+
+func statusUpdateJSONOf(f updateFacts) statusUpdateJSON {
+	out := statusUpdateJSON{Mode: f.Mode, UnknownMode: f.UnknownMode != ""}
+	if f.Err != nil {
+		out.Error = boundMessage(f.Err.Error())
+		return out
+	}
+	if !f.thisCopy() {
+		return out
+	}
+	st := f.Stamp
+	out.Checked = true
+	out.CheckedAt = st.CheckedAt.UTC().Format(time.RFC3339)
+	out.Running, out.Latest, out.Held, out.Outcome, out.Failure, out.Refresh = st.Running, st.Latest, st.Held, string(st.Outcome), st.Failure, st.Refresh
+	switch {
+	case stampNeedsAPerson(st):
+		out.Recovery, out.Fix = f.Recovery, manualInterventionFix
+	case st.Outcome == updateAvailable:
+		out.Fix = f.Fix
+	case st.Outcome == updateUpgraded && st.Refresh == refreshFailed:
+		out.Fix = "jevlin agents install"
+	}
+	return out
 }
 
 type statusMiningJSON struct {
@@ -221,6 +268,7 @@ func statusEnvelope(f agentIdentityFacts, as *statusASFacts) commandEnvelope {
 			Health:                healthOf(f.Health),
 		},
 		Conflicts: f.Conflicts,
+		Update:    statusUpdateJSONOf(f.Update),
 	}
 	if f.Decision.Err != nil {
 		report.Mining.Detail = boundMessage(f.Decision.Err.Error())
