@@ -163,20 +163,26 @@ func TestOnlyASubagentsSearchSendsAStopLookingAtEarlierTurns(t *testing.T) {
 	}
 }
 
-// Issue #70, case 3. A Codex subagent's search carries its own thread's
-// turn, which no Stop of ours ever ends, so it leaves no mark to dangle; a
-// Codex main agent's search and a Claude Code subagent's still mark theirs,
-// and only the subagent marks its session.
-func TestACodexSubagentsSearchLeavesNoMark(t *testing.T) {
+// Issue #70, case 3. Only Claude Code gives a subagent the turn that
+// launched it. A Codex subagent's search carries its own thread's turn and an
+// opencode subagent's its child session's, and no turn end of ours is sent
+// for either, so they leave no mark to dangle; neither does a subagent of a
+// host not known to share its turn. A main agent's search marks its turn
+// under every host, and only a Claude Code subagent marks its session.
+func TestOnlyAClaudeCodeSubagentsSearchLeavesAMark(t *testing.T) {
 	m := config.Miner{TurnEnd: true, SessionsDir: "/home/sessions"}
 	turn := traceHash("thread|t1")
 	for name, tc := range map[string]struct {
 		trace       *traceEnvelope
 		turn, owner bool
 	}{
-		"a Codex subagent":       {&traceEnvelope{Harness: "codex", SessionID: traceHash("agent"), ParentSessionID: traceHash("thread"), TurnID: turn}, false, false},
-		"a Codex main agent":     {&traceEnvelope{Harness: "codex", SessionID: traceHash("thread"), TurnID: turn}, true, false},
-		"a Claude Code subagent": {&traceEnvelope{Harness: "claude-code", SessionID: traceHash("thread|a"), ParentSessionID: traceHash("thread"), TurnID: turn}, true, true},
+		"a Codex subagent":         {&traceEnvelope{Harness: "codex", SessionID: traceHash("agent"), ParentSessionID: traceHash("thread"), TurnID: turn}, false, false},
+		"a Codex main agent":       {&traceEnvelope{Harness: "codex", SessionID: traceHash("thread"), TurnID: turn}, true, false},
+		"an opencode subagent":     {&traceEnvelope{Harness: "opencode", SessionID: traceHash("ses_child"), ParentSessionID: traceHash("thread"), TurnID: turn}, false, false},
+		"an opencode main agent":   {&traceEnvelope{Harness: "opencode", SessionID: traceHash("thread"), TurnID: turn}, true, false},
+		"another host's subagent":  {&traceEnvelope{Harness: "pi", SessionID: traceHash("thread|a"), ParentSessionID: traceHash("thread"), TurnID: turn}, false, false},
+		"a Claude Code subagent":   {&traceEnvelope{Harness: "claude-code", SessionID: traceHash("thread|a"), ParentSessionID: traceHash("thread"), TurnID: turn}, true, true},
+		"a Claude Code main agent": {&traceEnvelope{Harness: "claude-code", SessionID: traceHash("thread"), TurnID: turn}, true, false},
 	} {
 		fs, ops := newFakeHookOps(nil)
 		markTurnSearched(ops, m, tc.trace)
@@ -190,6 +196,27 @@ func TestACodexSubagentsSearchLeavesNoMark(t *testing.T) {
 		}
 		if marked != tc.turn || owner != tc.owner || len(fs.files) != want {
 			t.Errorf("%s: turn marked %v, session marked %v (%d files); want %v and %v", name, marked, owner, len(fs.files), tc.turn, tc.owner)
+		}
+	}
+}
+
+// What an opencode session leaves once its turn has ended, when a subagent
+// it started searched as well as the session itself: the turn's ended mark,
+// and nothing that waits for a turn end that will not come.
+func TestAnOpencodeTurnWithASubagentsSearchLeavesOnlyItsEndedMark(t *testing.T) {
+	h := newTurnEndHarness(nil, true)
+	markTurnSearched(h.ops, config.Miner{TurnEnd: true, SessionsDir: h.hc.sessionsDir}, &traceEnvelope{
+		Harness: "opencode", SessionID: traceHash("ses_child"), ParentSessionID: traceHash("ses_1"),
+		TurnID: traceHash("ses_child|msg_c1"),
+	})
+	h.served(traceHash("ses_1|msg_u1"))
+	runHook(t, h.ops, h.hc, "turn opencode", map[string]any{"session": "ses_1", "turn": "msg_u1", "status": "completed", "final_text": "done"})
+	if rec := h.record(t); rec.TurnID != traceHash("ses_1|msg_u1") {
+		t.Fatalf("reported turn %s, want the session's own", rec.TurnID)
+	}
+	for p := range h.fs.files {
+		if strings.HasSuffix(p, turnSearchedSuffix) && p != turnEndedPath(h.hc.sessionsDir, traceHash("ses_1|msg_u1")) {
+			t.Errorf("left %s, a mark no turn end will take", p)
 		}
 	}
 }

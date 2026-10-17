@@ -154,14 +154,21 @@ func sessionSearchedPath(dir, sessionID string) string {
 // way a search lands in a turn other than the one now running: Claude Code
 // gives a subagent the turn that launched it, and a background subagent
 // outlives that turn. The next Stop in the session that finds the mark looks
-// for such turns (claudeTurnEnd). A Codex subagent's search marks nothing
-// (issue #70, case 3): it carries its own thread's turn, which no Stop of
-// ours ever ends.
+// for such turns (claudeTurnEnd).
+//
+// Only a Claude Code subagent's search marks anything (issue #70, case 3).
+// Codex and opencode give a subagent a turn of its own — Codex its own
+// thread's, opencode its child session's — and no turn end of ours is ever
+// sent for a subagent's turn: Codex runs no Stop of ours for a subagent's
+// thread, and opencode's plugin reports only a session with no parent. Their
+// marks were never taken. A host this client does not know to share a turn
+// with its subagent is treated the same way, so a mark is never left that
+// nothing will take.
 func markTurnSearched(ops hookOps, m config.Miner, trace *traceEnvelope) {
 	if !m.TurnEnd || m.SessionsDir == "" || trace == nil || !hashedIDRe.MatchString(trace.TurnID) {
 		return
 	}
-	if trace.ParentSessionID != "" && (trace.Harness == "codex" || !hashedIDRe.MatchString(trace.ParentSessionID)) {
+	if trace.ParentSessionID != "" && (trace.Harness != "claude-code" || !hashedIDRe.MatchString(trace.ParentSessionID)) {
 		return
 	}
 	if err := ops.mkdirAll(m.SessionsDir, 0o700); err != nil {
