@@ -73,7 +73,7 @@ func asciiSetupValues(home string) setupValues {
 		router:       "https://api.jevlin.ai",
 		platformURL:  "https://platform.jevlin.ai",
 		agentsAPIURL: "https://agents-v1.jevlin.ai",
-		asURL:        "https://rewards.nyks.dev",
+		asURL:        "https://rewards-testnet.jevlin.ai",
 		chainID:      "twilight-testnet-1",
 		slotID:       3,
 	}

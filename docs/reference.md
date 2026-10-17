@@ -24,9 +24,11 @@ Values to look up. Every flag is in `jevlin help` and `jevlin <command> -h`.
 | `login`, `enroll`, `payout`, `join`, `provider` | The portal's older manual path. |
 | `version`, `help` | The version, and the full usage text. |
 
-Every command takes `-config <file>`. Without it, the config is the first of: `JEVLIN_CONFIG`,
-the installation's own (`$JEVLIN_HOME/jevlin.toml`, else `~/.jevlin/jevlin.toml`) when that
-file exists, and built-in defaults. A `jevlin.toml` in the working directory is never read
+A command that reads the config takes `-config <file>`; `setup`, `upgrade` and `uninstall` take
+`-home <dir>` instead, and `wallet init` and `wallet address` take only `-dir`. Without
+`-config`, the config is the first of: `JEVLIN_CONFIG`, the installation's own
+(`$JEVLIN_HOME/jevlin.toml`, else `~/.jevlin/jevlin.toml`) when that file exists, and built-in
+defaults. A `jevlin.toml` in the working directory is never read
 unless you name it, so a cloned repo cannot choose where your keys are sent. `status` and `doctor`
 name the file they used. `connect` refuses to run with no config file, and says to run
 `jevlin setup`.
@@ -133,7 +135,7 @@ upstream = "https://api.jevlin.ai"   # https only; the router_url fallback
 
 [mining]
 enabled        = true                            # only a scripted first answer — see below
-as_url         = "https://rewards.nyks.dev"      # unset: no AS, so no mining work at all
+as_url         = "https://rewards-testnet.jevlin.ai"  # unset: no AS, so no mining work at all
 chain_id       = "twilight-testnet-1"            # required once as_url is set
 slot_id        = 3                               # required once as_url is set
 state_dir      = "/home/you/.jevlin/state"    # default: <user config dir>/jevlin/state
@@ -448,7 +450,7 @@ this carries what it concluded. When a turn ends, the agent's end-of-turn hook s
 | `status` | `completed`, `interrupted` or `failed`. |
 | `final_text` | The assistant's last message of the turn, scrubbed of secrets, last 32 KiB. Only on a completed turn, and absent when there is no message to send; the status is sent either way. |
 | `final_chars`, `truncated` | Its length before the cut, and whether it was cut. |
-| `user_text` | What you asked in that turn, scrubbed of secrets, first 32 KiB. Claude Code, Cursor, opencode and Codex. |
+| `user_text` | What you asked in that turn, scrubbed of secrets, first 32 KiB. Claude Code, Cursor, opencode and Codex. Absent for a turn Claude Code started rather than you: a continuation or loop tick, a background task's result, a message from another session, the output of a `!` command, or the summary it writes when it compacts the conversation. |
 | `steps` | The turn in order: what the assistant wrote (scrubbed, capped), and for each tool it called the tool's **name, duration and whether it succeeded**, where the agent records them. Never a tool's input or output. A search of ours is marked by its call id. Claude Code, opencode and Codex in full; under Cursor, the searches only. |
 | `model`, `usage` | The model, and the turn's token counts. Claude Code, Cursor, opencode and Codex. |
 

@@ -68,8 +68,9 @@ uninstall's confirmations and `wallet send`'s: a typed no exits 0, no answer exi
 
 ## The claim link
 
-Setup ends by printing a claim link and waits a few minutes for you to visit it. You need not do
-it then: search already works, and using an agent later resumes the claim on its own. The link
+Setup prints a claim link after the mining questions, before the shell profile, and waits up to
+three minutes for you to visit it. You need not do it then: search already works, and using an
+agent later resumes the claim on its own. The link
 is kept in `~/.jevlin/claim.json`, beside your stored key, and only for the agent it was issued
 to; it is never read from the state directory, which an agent's sandbox may write. Before
 `jevlin connect` prints it, it asks the platform which agent your key belongs to: a claimed agent
@@ -286,7 +287,10 @@ npm uninstall -g @jevlinsearch/jevlin         # an npm install is npm's to remov
 
 A plain `uninstall` removes what setup wrote for this installation (`-home`, default
 `~/.jevlin`). On Windows it reverts PATH and `JEVLIN_CONFIG` only where they still hold setup's
-values. Another installation's files are left and reported. Your wallet, registration, key,
+values. Another installation's files are left and reported, and so is a hook of yours: one you
+added to the group jevlin's hook sits in (Claude Code's `/hooks` puts a new hook there when the
+matcher is the same) stays, and only jevlin's handler is taken out, by `uninstall` and by every
+`agents install` or upgrade that rewrites it. Your wallet, registration, key,
 unsent searches and config stay, and nothing is revoked. `-binary` also removes the binary, its
 `.previous` and an interrupted upgrade's leftovers, never an npm copy; on Windows it moves the
 running binary aside and names the file to delete later. `uninstall` lists leftover `.lock`

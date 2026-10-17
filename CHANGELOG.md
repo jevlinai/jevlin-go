@@ -10,6 +10,53 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## v0.3.1 — 2026-10-17
+
+The rewards service moved to a new address on 16 October, and an installation set up before
+then stops earning until it is told. The first entry says the one line to change, and what an
+installation from v0.1.0 or earlier has to do instead. A new installation is set up with the
+new address, and searching is unaffected either way.
+
+- **The rewards service moved, and an installation set up before the move has to be told.**
+  It is now at `https://rewards-testnet.jevlin.ai`, and a new installation is set up with that
+  address. An installation set up earlier keeps `https://rewards.nyks.dev` in its config,
+  because jevlin never rewrites your config, and since the move it refuses the old address's
+  answers as coming from a different service: searches work, but nothing earns, and
+  `jevlin doctor` says it cannot reach the authorization server, which is "off-origin". To fix
+  it, change one line in your config's `[mining]` table to
+  `as_url = "https://rewards-testnet.jevlin.ai"`, then run `jevlin flush` and `jevlin doctor`.
+  Your authorization, wallet and payout address carry over.
+  If you use Codex, also run `jevlin agents install -client codex` and answer yes, so that
+  Codex's sandbox lets the flush reach the new address.
+
+  An installation set up with v0.1.0 or earlier needs more than that line. Its config also
+  names `router-api.nyks.dev` and the nyks.dev platform, whose key the jevlin.ai router does
+  not accept, and when this was checked the moved service rejected a search served by the old
+  router. To earn again it registers on jevlin.ai: keep the wallet's recovery phrase or move
+  its funds out, remove the installation with `jevlin uninstall -purge-state`, and set this
+  release up fresh.
+- **The wallet's default chain node is `https://rpc-testnet.twilight.org`**, the same node under
+  its new name. This needs nothing from you; `-node` and `JEVLIN_WALLET_NODE` still override it.
+
+## v0.3.0 — 2026-10-16
+
+Two fixes to how the client lives inside a coding agent's hooks. Nothing changes on the
+search or rewards side, and `jevlin upgrade` from v0.2.0 is the first upgrade this
+repository's updater performs against a previous release of its own.
+
+- **A hook of yours in the same group as jevlin's is no longer removed with it.** Claude Code's
+  `/hooks` adds a hook to the group already under the same matcher, which can be the one jevlin
+  wrote. `agents install`, `uninstall` and the re-render an upgrade runs used to treat that whole
+  group as jevlin's, replacing or deleting your hook without a word, and an uninstall could
+  delete the file. Now only jevlin's own hook is touched, yours stays where it was, and the plan
+  says so. Affects Claude Code and Codex.
+- **The turn end no longer sends text Claude Code wrote as your message.** With
+  `[miner] turn_end = true`, a turn Claude Code started itself sent what it wrote as what you
+  asked: a background task's result (`<task-notification>`, which names the task's output file
+  under your account), a continuation or loop tick, a message from another session, the output
+  of a `!` command, or the summary written when the conversation is compacted. Such a turn is
+  now reported with its searches and no user text.
+
 ## v0.2.0 — 2026-10-14
 
 The search platform's hosts move to `jevlin.ai`, and claim links now come from

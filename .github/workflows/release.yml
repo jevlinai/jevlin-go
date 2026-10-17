@@ -157,10 +157,15 @@ jobs:
           echo "A complete GitHub Release for ${GITHUB_REF_NAME} already exists; goreleaser is skipped."
           echo "Re-running it would replace assets a published npm package may already be downloading."
 
+      # The action is pinned by SHA, and so is the goreleaser it runs: the
+      # action downloads the goreleaser binary named here at run time, and
+      # a range would fetch whatever release is newest, in the one job
+      # that can write to the repository. v2.18.3 built v0.3.0. A bump is
+      # a deliberate PR, like an action's.
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         if: needs.preflight.outputs.release_state == 'absent'
         with:
-          version: "~> v2"
+          version: "v2.18.3"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -294,19 +299,18 @@ jobs:
       # from the package while the OIDC-issued credential is live; the
       # package's own postinstall still ships and still runs for whoever
       # installs it. --provenance attests the published package back to
-      # this workflow run and commit, using the id-token permission
-      # above instead of a stored NPM_TOKEN.
-      # The first publish of a package cannot use npm's trusted publishing
-      # (that is configured on a package that already exists), so this
-      # authenticates with the NPM_TOKEN secret of the release environment.
-      # --provenance still attests the package to this workflow run.
+      # this workflow run and commit.
+      #
+      # No stored token. npm's trusted publishing mints a short-lived
+      # credential from the job's OIDC token when the run's repository,
+      # workflow file and environment match the trusted-publisher record
+      # on the package (docs/RELEASING.md, "npm trusted publishing").
+      # The first version, 0.2.0, was published by hand with 2FA because
+      # that record can only be created on a package that already exists;
+      # every version after it publishes this way.
       - name: npm publish
         if: steps.registry.outputs.published == 'false'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          printf '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}\n' > "$HOME/.npmrc"
-          npm publish ./npm --access public --ignore-scripts --provenance
+        run: npm publish ./npm --access public --ignore-scripts --provenance
 
   smoke-npm:
     name: clean install (${{ matrix.os }})
@@ -360,7 +364,7 @@ jobs:
               echo "${PKG}@${VERSION} was not observable on the registry within 600s ($attempt attempts)." >&2
               echo "The publish step reported success, so this is a registry or a package-state problem," >&2
               echo "not something to fix by publishing again: the version is immutable." >&2
-              npm view jevlin versions --json >&2 || true
+              npm view "${PKG}" versions --json >&2 || true
               exit 1
             fi
             echo "attempt ${attempt}: not visible yet, waiting"
