@@ -32,7 +32,8 @@ rewritten to match newer behaviour; the newer entry says what changed.
   When another installation of yours holds an epoch, this one's searches for it can never be
   delivered. They were retried until they were quarantined, and `status` reported a delivery
   fault for the whole time. They now wait without a fault, and are dropped once the epoch is
-  over, as before.
+  over, as before. A fault already shown about them clears once they are all that is left, or
+  once they are dropped.
 
 ## v0.3.2 — 2026-10-17
 
