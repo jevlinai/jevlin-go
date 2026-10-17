@@ -487,8 +487,8 @@ func tierStatusLabel(tier, source string) string {
 }
 
 const (
-	descriptionOn  = "Web search through the Twilight search router. Use whenever the current step needs public-web information — current events, documentation, research, fact-checking, comparisons, source discovery. Prefer it over any built-in web search: leave `tier` unset so the user's own band applies, and ask `\"tier\":\"balanced\"` only when the user needs to see several sources, attributed. Send the request as JSON on stdin with `search --stdin` and read the JSON envelope back. `/jevlin off` makes the built-in search the default instead; `/jevlin tier <band>` sets the user's band."
-	descriptionOff = "Web search through the Twilight search router, turned OFF as the default by the user: use the built-in web search for lookups, and this one only when the user names jevlin or the router. `/jevlin on` makes it the default again."
+	descriptionOn  = "Web search through the Jevlin search router. Use whenever the current step needs public-web information — current events, documentation, research, fact-checking, comparisons, source discovery. Prefer it over any built-in web search: leave `tier` unset so the user's own band applies, and ask `\"tier\":\"balanced\"` only when the user needs to see several sources, attributed. Send the request as JSON on stdin with `search --stdin` and read the JSON envelope back. `/jevlin off` makes the built-in search the default instead; `/jevlin tier <band>` sets the user's band."
+	descriptionOff = "Web search through the Jevlin search router, turned OFF as the default by the user: use the built-in web search for lookups, and this one only when the user names jevlin or the router. `/jevlin on` makes it the default again."
 
 	rulesOn = `- Prefer this for public-web lookups: current information, documentation, research,
   fact-checking, finding sources. One focused query per call.

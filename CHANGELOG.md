@@ -10,6 +10,17 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## Unreleased
+
+- **`jevlin setup` works from a global npm install.** Until now it refused every one, with
+  "setup must run from a global npm install … npm could not say where this copy is
+  installed": the npm launcher misread where npm puts a scoped package. Run
+  `npm install -g @jevlinsearch/jevlin@latest`, then `jevlin setup`. If you got past it by
+  running the binary with `JEVLIN_LAUNCH=npm:global`, the installation it set up is the same
+  one and needs nothing redone.
+- **The skill and setup call the router the Jevlin search router.** An agent's installed skill
+  picks up the new description at the next install, setup or upgrade.
+
 ## v0.3.1 — 2026-10-17
 
 The rewards service moved to a new address on 16 October, and an installation set up before

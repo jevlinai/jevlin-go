@@ -63,7 +63,7 @@ func joinLabels(ls []string) string {
 func agentsParagraph() string {
 	return fmt.Sprintf(`Setup knows these coding agents: %s.
 Each can get a web-search skill that runs jevlin's search through the
-Twilight search router, and — where the agent supports one — the hook, plugin
+Jevlin search router, and — where the agent supports one — the hook, plugin
 or extension that threads each search into the agent's session (an agent with
 no skill directory gets a plugin and a line to paste into its rules instead).
 These are written into the agent's own config directory. %s
