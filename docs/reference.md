@@ -430,7 +430,10 @@ and `${env:}`) and cmd write it.
 This machine's names: the hostname's first label wherever it stands as a word, and your
 account name only where the text uses it as an account. That is the value of `USER`,
 `USERNAME`, `LOGNAME` or `SUDO_USER`, directly before `@` (`ssh name@host`, a prompt), and a
-home path, including `/mnt/c/Users/` and an account name with a space in it. Anywhere else your
+home path, including `/mnt/c/Users/` and an account name with a space in it, and the same path
+in the dashed form Claude Code names a project's folder with (`-Users-<account>-`,
+`-home-<account>-`, `C--Users-<account>-`, every character but a letter or digit written as `-`,
+so `first.last` is `first-last` there). Anywhere else your
 account name is left, because it is often an ordinary word. The account is the one `USERNAME`
 names on Windows, `USER` or else `LOGNAME` elsewhere, or else the home directory's name, and is
 searched for only when it is ASCII, so that both scrubbers fold its case alike; a non-ASCII name

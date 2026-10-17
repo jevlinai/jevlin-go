@@ -21,7 +21,9 @@ import (
 //     (any letter case, spaces around `=`, optionally quoted);
 //   - immediately before `@`: ssh name@host, a prompt name@host:~$;
 //   - after a home directory prefix: /home/, /Users/, C:\Users\, also
-//     inside /mnt/c/Users/, and with a space in it (C:\Users\John Smith).
+//     inside /mnt/c/Users/, and with a space in it (C:\Users\John Smith);
+//   - after the same prefix in the dashed form Claude Code names a project's
+//     folder with: -Users-, -home-, C--Users- (redactAccountDashed).
 //
 // cmd/jevlin/agent_trace_common.js implements the same rules; the shared
 // table in testdata/trace_cases.json holds the two to the same bytes.
@@ -67,6 +69,11 @@ type localNames struct {
 	host        *regexp.Regexp // the hostname's first label
 	account     *regexp.Regexp // the account name
 	accountHome *regexp.Regexp // a home directory prefix, then the account name
+	// accountDashed is a home directory prefix, then the account name, as
+	// Claude Code spells a path in a folder's name: every character that is
+	// not an ASCII letter or digit becomes `-`, so /Users/first.last/ is
+	// -Users-first-last- and C:\Users\John Smith is C--Users-John-Smith.
+	accountDashed *regexp.Regexp
 }
 
 var (
@@ -109,6 +116,8 @@ func compileIdentity(host, account string) localNames {
 		quoted := regexp.QuoteMeta(account)
 		out.account = regexp.MustCompile(`(?i)` + quoted)
 		out.accountHome = regexp.MustCompile(`(/Users/|/home/|(?i:[A-Z]:\\+Users\\+))(?i:` + quoted + `)`)
+		dashed := regexp.QuoteMeta(nonAlnumToDash(account))
+		out.accountDashed = regexp.MustCompile(`(-Users-|-home-|(?i:[A-Z]--Users-))(?i:` + dashed + `)`)
 	}
 	return out
 }
@@ -255,3 +264,48 @@ func redactAccountHomes(s string) string {
 }
 
 func isAccountChar(c byte) bool { return isNameChar(c) }
+
+// nonAlnumToDash spells a name as Claude Code spells a path in a folder's
+// name: every byte that is not an ASCII letter or digit becomes `-`.
+func nonAlnumToDash(name string) string {
+	b := []byte(name)
+	for i, c := range b {
+		if alnum := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'); !alnum {
+			b[i] = '-'
+		}
+	}
+	return string(b)
+}
+
+// redactAccountDashed replaces the account name after a home directory
+// prefix in the dashed form Claude Code names a project's folder with
+// (-Users-<account>-proj, under ~/.claude/projects/ and in a background
+// task's output path). Nothing else turns a separator into a dash, so the
+// prefix is what says the name is used as an account here, as the slash
+// does in redactAccountHomes. The name must end the dashed component: a
+// dash, or anything that is not a letter, digit, `_` or `.`, follows it, so
+// -Users-alicea- is another account and is left.
+func redactAccountDashed(s string) string {
+	re := localIdentity().accountDashed
+	if re == nil || !re.MatchString(s) {
+		return s
+	}
+	var b strings.Builder
+	last, pos := 0, 0
+	for pos < len(s) {
+		m := re.FindStringSubmatchIndex(s[pos:])
+		if m == nil {
+			break
+		}
+		start, end, prefixEnd := pos+m[0], pos+m[1], pos+m[3]
+		if end < len(s) && (isWordChar(s[end]) || s[end] == '.') {
+			pos = start + 1
+			continue
+		}
+		b.WriteString(s[last:prefixEnd])
+		b.WriteString(placeholder)
+		last, pos = end, end
+	}
+	b.WriteString(s[last:])
+	return b.String()
+}

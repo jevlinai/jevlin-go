@@ -227,6 +227,7 @@ func TraceText(s string) string {
 	s = redactEnvTables(s)
 	s = redactEmails(s)
 	s = redactAccountHomes(s)
+	s = redactAccountDashed(s)
 	s = redactHomePaths(s)
 	s = redactLocalIdentity(s)
 	return s
