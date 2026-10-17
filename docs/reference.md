@@ -133,7 +133,7 @@ upstream = "https://api.jevlin.ai"   # https only; the router_url fallback
 
 [mining]
 enabled        = true                            # only a scripted first answer — see below
-as_url         = "https://rewards.nyks.dev"      # unset: no AS, so no mining work at all
+as_url         = "https://rewards-testnet.jevlin.ai"  # unset: no AS, so no mining work at all
 chain_id       = "twilight-testnet-1"            # required once as_url is set
 slot_id        = 3                               # required once as_url is set
 state_dir      = "/home/you/.jevlin/state"    # default: <user config dir>/jevlin/state
