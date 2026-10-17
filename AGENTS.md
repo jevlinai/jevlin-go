@@ -644,7 +644,10 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   enrollment clears its own epoch's note, never another's (`ClearRegionRefusalFor`). A 451 on
   submission is `auth.RegionDeferredError`, which the collector defers through `Deferrer`: the
   next attempt honors Retry-After, no attempt is spent and no fault is recorded.
-  `cmd/jevlin/region_flush_test.go` runs real flushes, two where a claim spans them;
+  `cmd/jevlin/region_flush_test.go` runs real flushes, two where a claim spans them, and
+  `cmd/jevlin/conflict_flush_test.go` runs them for a conflicted epoch: its records held without
+  an attempt or a fault, in deliverOnly too, its entry kept while a removal fails, and a fault
+  about them cleared once they are all that is left or are dropped;
   `pkg/mining/collector/defer_test.go` and `cmd/jevlin/region_status_test.go` hold the deferral
   and the status line.
   For participants: [guide, When your region is refused](docs/guide.md#when-your-region-is-refused).
