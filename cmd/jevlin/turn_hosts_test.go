@@ -179,7 +179,10 @@ func TestOpencodePluginReportsTheTurn(t *testing.T) {
 	argv := filepath.Join(dir, "argv.txt")
 	bin := filepath.Join(dir, "jevlin")
 	count := filepath.Join(dir, "count.txt")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > '"+argv+"'\ncat > '"+got+".tmp' && mv '"+got+".tmp' '"+got+"'\necho x >> '"+count+"'\n"), 0o700); err != nil { // #nosec G306 -- a test stand-in that must be executable
+	starts := filepath.Join(dir, "starts.txt")
+	// The stand-in answers two commands: `hook ... start opencode`, which it
+	// only counts, and `hook ... turn opencode`, whose stdin it keeps.
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\ncase \"$*\" in *' start opencode') echo x >> '"+starts+"'; exit 0;; esac\nprintf '%s\\n' \"$@\" > '"+argv+"'\ncat > '"+got+".tmp' && mv '"+got+".tmp' '"+got+"'\necho x >> '"+count+"'\n"), 0o700); err != nil { // #nosec G306 -- a test stand-in that must be executable
 		t.Fatal(err)
 	}
 	script := `
@@ -243,8 +246,12 @@ func TestOpencodePluginReportsTheTurn(t *testing.T) {
  ]);
  await new Promise(r=>setTimeout(r,500));
  result.concurrent = reports() - before;
+ // The session start: once when the plugin loaded, and again at each idle of
+ // a session known to be top-level (ses_1, once its parent was learned).
+ await new Promise(r=>setTimeout(r,300));
+ result.starts = fs.existsSync(input.starts) ? fs.readFileSync(input.starts,'utf8').trim().split('\n').length : 0;
  process.stdout.write(JSON.stringify(result));`
-	in, _ := json.Marshal(map[string]any{"plugin": renderAgentScriptFor(opencodePluginJS, shellPOSIX, "/etc/jevlin.toml", bin), "got": got, "argv": argv, "count": count})
+	in, _ := json.Marshal(map[string]any{"plugin": renderAgentScriptFor(opencodePluginJS, shellPOSIX, "/etc/jevlin.toml", bin), "got": got, "argv": argv, "count": count, "starts": starts})
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, node, "--input-type=module", "-e", script) // #nosec G204 -- fixed test script and local Node runtime; synthetic input on stdin
@@ -257,6 +264,7 @@ func TestOpencodePluginReportsTheTurn(t *testing.T) {
 		Before, Again bool
 		Children      map[string]bool
 		Concurrent    int
+		Starts        int
 		Env           traceEnvelope
 		Raw           string
 		Argv          []string
@@ -273,6 +281,9 @@ func TestOpencodePluginReportsTheTurn(t *testing.T) {
 	}
 	if res.Concurrent != 1 {
 		t.Errorf("two idle events at once reported the turn %d times, want once", res.Concurrent)
+	}
+	if res.Starts < 2 {
+		t.Errorf("the session start ran %d times, want at load and at a top-level session's idle", res.Starts)
 	}
 	for sid, reported := range res.Children {
 		if reported {

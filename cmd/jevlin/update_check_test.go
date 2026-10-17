@@ -220,8 +220,13 @@ func TestHookStartIsTheJavaScriptHostsSessionStart(t *testing.T) {
 			t.Errorf("%s adapter rendered with no binary still names one", name)
 		}
 	}
-	if !strings.Contains(piExtensionTS, `pi.on("session_start"`) || !strings.Contains(opencodePluginJS, `event.type === "session.created"`) {
-		t.Error("an adapter no longer listens for the session's start")
+	if !strings.Contains(piExtensionTS, `pi.on("session_start"`) {
+		t.Error("Pi's extension no longer listens for the session's start")
+	}
+	// opencode: at the plugin's load, at a top-level session's creation and
+	// at its idle — a resumed session is never created again.
+	if strings.Count(opencodePluginJS, "await startSession()") != 2 || !strings.Contains(opencodePluginJS, "startSession().catch(() => {})") {
+		t.Error("opencode's plugin no longer starts the session start at load, creation and idle")
 	}
 }
 

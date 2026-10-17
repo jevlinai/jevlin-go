@@ -44,9 +44,14 @@ const JEVLIN_BIN = "{{JEVLIN_BIN}}"
 
 // startSession hands the binary a session's start: `hook start opencode`,
 // which starts the flush and, once a day, the release check — what Claude
-// Code's session-start hook does. Nothing is piped and nothing is read back.
-// Fire and forget, and only for a top-level session: a subagent's child
-// session is the same person's same day.
+// Code's session-start and Stop hooks do between them. Nothing is piped and
+// nothing is read back. Fire and forget. It runs when this plugin loads
+// (opencode started, whatever session it opens), when a top-level session is
+// created, and when a top-level session goes idle: a session resumed day
+// after day is never created again, and its idle is the one event it still
+// sends. The binary's stamp decides whether anything but the flush runs, so
+// the extra starts cost one process each and no request. A subagent's child
+// session is the same person's same day and starts nothing.
 const startSession = async () => {
   if (!JEVLIN_BIN) return
   const { spawn } = await import("node:child_process")
@@ -189,6 +194,7 @@ export const JevlinLineage = async ({ client }) => {
     }
     return parent
   }
+  startSession().catch(() => {})
   return {
     event: async ({ event }) => {
       try {
@@ -223,6 +229,10 @@ export const JevlinLineage = async ({ client }) => {
               reporting.delete(key)
             }
           }
+          // A session known to be top-level starts the binary's session
+          // start at every idle; one whose parent is not yet known is left to
+          // its creation or the plugin's load, never asked about here.
+          if (typeof sid === "string" && parents.get(sid) === "") await startSession()
         }
         if (event?.type === "session.created" || event?.type === "session.updated") {
           const info = event?.properties?.info
