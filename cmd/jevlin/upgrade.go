@@ -250,6 +250,17 @@ func upgradeRun(d upgradeDeps, homeFlag string, requested *selfupdate.Version, r
 	ctx, cancel := context.WithTimeout(context.Background(), d.operationTimeout)
 	defer cancel()
 
+	// What this run did goes into the daily check's record (recordManual)
+	// once the upgrade's own locks are let go: the check takes its lock
+	// before those, and the one lock order is never taken backwards
+	// (lifecycle.go). Deferred before the release below, so it runs after it.
+	var record *updateStamp
+	defer func() {
+		if record != nil {
+			d.recordManual(ctx, home, *record)
+		}
+	}()
+
 	ex, err := excludeForUpgrade(home, resolved, lifecycleForegroundWait)
 	if err != nil {
 		return fail(err)
@@ -265,7 +276,7 @@ func upgradeRun(d upgradeDeps, homeFlag string, requested *selfupdate.Version, r
 		}
 		fmt.Fprintf(d.stdout, "rolled back %s from %s to %s\nthe binary it replaced is now %s; run `jevlin upgrade -rollback` again to swap back\n",
 			rolled.Executable, rolled.From, rolled.To, selfupdate.PreviousPath(rolled.Executable))
-		d.recordManual(ctx, home, updateStamp{Binary: resolved, Running: rolled.To.String(), Held: rolled.From.String(), Outcome: updateRolledBack})
+		record = &updateStamp{Binary: resolved, Running: rolled.To.String(), Held: rolled.From.String(), Outcome: updateRolledBack}
 		d.rerenderOwned(ctx, exe, resolved, home)
 		return exitOK
 	}
@@ -280,7 +291,7 @@ func upgradeRun(d upgradeDeps, homeFlag string, requested *selfupdate.Version, r
 		// A person ran the binary at the path and it answered: a record that
 		// was waiting for them (a hold, a failed restore) has had its answer.
 		if requested == nil {
-			d.recordManual(ctx, home, updateStamp{Binary: resolved, Running: current, Latest: current, Outcome: updateCurrent})
+			record = &updateStamp{Binary: resolved, Running: current, Latest: current, Outcome: updateCurrent}
 		}
 		return exitOK
 	}
@@ -289,7 +300,7 @@ func upgradeRun(d upgradeDeps, homeFlag string, requested *selfupdate.Version, r
 	}
 	fmt.Fprintf(d.stdout, "upgraded %s from %s to %s\nthe binary it replaced is kept as %s; `jevlin upgrade -rollback` restores it\n",
 		prepared.Executable, prepared.From, prepared.To, selfupdate.PreviousPath(prepared.Executable))
-	d.recordManual(ctx, home, updateStamp{Binary: resolved, Running: prepared.From.String(), Latest: prepared.To.String(), Outcome: updateUpgraded})
+	record = &updateStamp{Binary: resolved, Running: prepared.From.String(), Latest: prepared.To.String(), Outcome: updateUpgraded}
 	d.rerenderOwned(ctx, exe, resolved, home)
 	return exitOK
 }
@@ -301,7 +312,8 @@ func upgradeRun(d upgradeDeps, homeFlag string, requested *selfupdate.Version, r
 // waits for the check's lock, which a check holds for its whole run, so a
 // lookup that started before this cannot write over it afterwards. Best
 // effort: the replacement has committed, and a record that cannot be
-// written is said, never a failure.
+// written is said, never a failure. It runs after the upgrade's own locks
+// are released, so taking the check's lock keeps the one lock order.
 func (d upgradeDeps) recordManual(ctx context.Context, home string, st updateStamp) {
 	root := installationUpdateRoot(home, d.getenv)
 	if root == "" || !lexists(root) {
