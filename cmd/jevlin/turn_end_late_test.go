@@ -274,3 +274,23 @@ func TestAnIDThatIsNotAHashNamesNoMark(t *testing.T) {
 		}
 	}
 }
+
+// The takes hold an id to the same shape. Every caller hashes its id, so
+// this is the guard on a future caller that does not: taking "ended|<turn>"
+// would read that turn's ended mark as a mark of its own and remove it,
+// and the turn could then be marked, and reported, again.
+func TestATakeOfAnIDThatIsNotAHashTouchesNothing(t *testing.T) {
+	fs, ops := newFakeHookOps(nil)
+	dir, victim := "/home/sessions", traceHash("sess|p9")
+	fs.files[turnEndedPath(dir, victim)] = nil
+	fs.files[sessionSearchedPath(dir, "sess")] = nil // what a check-free mark of an unhashed session would leave
+	if takeTurnSearched(ops, dir, "ended|"+victim) {
+		t.Error(`a take of "ended|<turn>" took that turn's ended mark for a mark`)
+	}
+	if takeSessionSearched(ops, dir, "sess") {
+		t.Error("a take of a session id that is no hash found a mark")
+	}
+	if len(fs.files) != 2 {
+		t.Errorf("the takes left %d of the 2 marks planted", len(fs.files))
+	}
+}
