@@ -647,6 +647,17 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `pkg/mining/collector/defer_test.go` and `cmd/jevlin/region_status_test.go` hold the deferral
   and the status line.
   For participants: [guide, When your region is refused](docs/guide.md#when-your-region-is-refused).
+- **Codex on Linux: what delivers a search's evidence** — `cmd/jevlin/targets.go`'s
+  `codexDeliveryUnapproved` owns the rule. Codex's Linux sandbox is a PID namespace, so the
+  flush a sandboxed search starts dies with it (issue #80, seen live with jevlin's own binary on
+  0.158.0), and only a hook outside the sandbox delivers: `SessionStart` or `Stop`
+  (`codexDeliveringHooks`). With mining on, one of ours installed and neither approved on record,
+  `agents status` (Codex's `StatusNotes`), `status` (`printDeliveryLines`, and `delivery` in
+  `status -json`) and `agents install` say so; where the record cannot be told
+  (`readCodexApprovals`' problem), nothing is claimed. Delivering inline from the search was
+  rejected: it would put the AS's round trips on the search path (invariant 1).
+  `codex_delivery_test.go` holds the rule and every place it is said.
+  For participants: [agents, Codex](docs/agents.md#codex).
 - **The AS clients' proxy** — `pkg/auth/proxy.go` owns `loopbackProxy`, the Proxy function of
   both AS-facing transports (discovery and the DPoP credential client): the environment's proxy,
   used only when its address is a loopback literal (127.0.0.0/8, ::1); any other, a name

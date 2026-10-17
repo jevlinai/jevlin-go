@@ -627,6 +627,17 @@ type agentIdentityFacts struct {
 
 	Conflicts []auth.ConflictedEpoch
 
+	// Waiting is how many searches are recorded in intake and not yet
+	// taken by a flush, and OldestWaiting when the first of them was made;
+	// read only while mining is on. CodexUndelivered is codexDeliveryUnapproved
+	// for this installation: on Linux, searches made in Codex wait for a run
+	// outside it (issue #80).
+	// WaitingErr is why intake could not be read, when it could not: the
+	// count is then unknown, never zero.
+	Waiting          int
+	WaitingErr       error
+	OldestWaiting    time.Time
+	CodexUndelivered bool
 	// Update is the daily release check's stamp and mode (update_check.go),
 	// read whenever the state directory is known: it is about the binary,
 	// not about mining, so it is reported before the store is opened.
@@ -634,6 +645,18 @@ type agentIdentityFacts struct {
 	// Now is sampled once by the gatherer, so the age the renderers print
 	// for the stamp is one instant.
 	Now time.Time
+}
+
+// statusCodexUndelivered is codexDeliveryUnapproved for the installation
+// cfgPath names, on this machine's Codex. A variable so status's tests can
+// say so without a Codex home.
+var statusCodexUndelivered = func(cfgPath string, getenv func(string) string) bool {
+	ops := realAgentOps()
+	entry, _, err := resolveEntry(ops, cfgPath, getenv)
+	if err != nil {
+		return false
+	}
+	return codexDeliveryUnapproved(ops, ops.paths(getenv), entry, codexSandboxOS)
 }
 
 func gatherAgentIdentity(args []string, getenv func(string) string) (agentIdentityFacts, bool) {
@@ -663,6 +686,21 @@ func gatherAgentIdentity(args []string, getenv func(string) string) (agentIdenti
 	}
 	f.Decision = store.ReadMiningDecision()
 	f.Health, f.HealthErr = store.HealthRecords()
+	// What waits in intake does not depend on the registration, so it is
+	// counted before a registration that cannot be read ends the gathering.
+	if f.Decision.State == auth.MiningEnabled {
+		records, _, ierr := readIntake(cfg.Miner.IntakeDir)
+		f.WaitingErr = ierr
+		for _, r := range records {
+			f.Waiting++
+			// A record with no time says nothing about the oldest; only a
+			// file planted in the sandbox-writable intake has none.
+			if at := r.rec.StartedAt; !at.IsZero() && (f.OldestWaiting.IsZero() || at.Before(f.OldestWaiting)) {
+				f.OldestWaiting = at
+			}
+		}
+		f.CodexUndelivered = statusCodexUndelivered(src, getenv)
+	}
 	f.Registration, f.HasRegistration, f.RegistrationErr = store.LoadAgentRegistration()
 	if f.RegistrationErr != nil {
 		return f, true
@@ -806,6 +844,7 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 		// region refusal is the AS's and reaches a manual `enroll` +
 		// `join` installation the same way (PR #85 review).
 		printRegionLine(stdout, f)
+		printDeliveryLines(stdout, f)
 		return true // legacy report proceeds
 	}
 
@@ -869,12 +908,28 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 		fmt.Fprintln(stdout, "payout: "+heldNoteText(f.Held, ""))
 	}
 	printRegionLine(stdout, f)
+	printDeliveryLines(stdout, f)
 	for _, c := range f.Conflicts {
 		fmt.Fprintf(stdout, "mining: another installation of this participant holds slot %d epoch %d; "+
 			"this installation's observations for it are queued until the AS's target moves past it, then dropped\n",
 			c.SlotID, c.TargetEpoch)
 	}
 	return f.needsMining()
+}
+
+// printDeliveryLines is status's word on evidence that is recorded and not
+// yet delivered: how much is waiting and since when, and, when Codex on
+// Linux is why, the same sentence agents status prints (issue #80).
+func printDeliveryLines(stdout io.Writer, f agentIdentityFacts) {
+	if f.WaitingErr != nil {
+		fmt.Fprintln(stdout, "waiting: unknown: the intake directory could not be read")
+	} else if f.Waiting > 0 {
+		fmt.Fprintf(stdout, "waiting: %d search(es) recorded and not yet delivered, the oldest made %s\n",
+			f.Waiting, f.OldestWaiting.UTC().Format(time.RFC3339))
+	}
+	if f.CodexUndelivered {
+		fmt.Fprintln(stdout, "delivery: "+codexUndeliveredLine)
+	}
 }
 
 // printRegionLine is status's one line for the AS's latest region
