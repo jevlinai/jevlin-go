@@ -1164,13 +1164,10 @@ func countIntakeJSON(dir string) (int, error) {
 func doctorUpdateCheck(f doctorFacts) doctorCheck {
 	c := doctorCheck{Name: "up to date"}
 	u := f.Update
+	modeNote := unknownModeNote(u.UnknownMode)
 	undetermined := func(reason string) doctorCheck {
-		c.Verdict, c.Detail = verdictUnknown, "could not determine — "+reason
+		c.Verdict, c.Detail = verdictUnknown, "could not determine — "+reason+modeNote
 		return c
-	}
-	modeNote := ""
-	if u.UnknownMode != "" {
-		modeNote = "; [update] mode names a word this version does not know, so it checks and notifies only"
 	}
 	if u.Mode == config.UpdateOff {
 		c.Verdict, c.Detail = verdictOK, "automatic release checks are off ([update] mode)"
@@ -1186,7 +1183,13 @@ func doctorUpdateCheck(f doctorFacts) doctorCheck {
 	st := u.Stamp
 	age := f.Now.Sub(st.CheckedAt)
 	if !u.thisCopy() {
-		c.Verdict, c.Detail = verdictOK, fmt.Sprintf("no release check has run yet for this copy; the last, %s, was by another copy of jevlin", ageText(age))
+		c.Verdict, c.Detail = verdictOK, fmt.Sprintf("no release check has run yet for this copy; the last, %s, was by another copy of jevlin%s", ageText(age), modeNote)
+		return c
+	}
+	// Before the staleness rule: no check runs after this record, by design,
+	// so its age says nothing about the hooks.
+	if stampNeedsAPerson(st) {
+		c.Verdict, c.Detail, c.Fix = verdictNo, manualInterventionDetail(ageText(age), u.Recovery), manualInterventionFix
 		return c
 	}
 	switch {
@@ -1194,7 +1197,7 @@ func doctorUpdateCheck(f doctorFacts) doctorCheck {
 		return undetermined("the update stamp is in the future")
 	case age >= updateStaleAfter:
 		c.Verdict = verdictUnknown
-		c.Detail = fmt.Sprintf("could not determine — the last check ran %s; a check runs daily when an agent session starts", ageText(age))
+		c.Detail = fmt.Sprintf("could not determine — the last check ran %s; a check runs daily when an agent session starts%s", ageText(age), modeNote)
 		c.Fix = u.Fix
 		return c
 	}
@@ -1202,17 +1205,22 @@ func doctorUpdateCheck(f doctorFacts) doctorCheck {
 	case updateCurrent:
 		c.Verdict, c.Detail = verdictOK, fmt.Sprintf("%s is the latest release (checked %s)%s", st.Running, ageText(age), modeNote)
 	case updateUpgraded:
-		c.Verdict, c.Detail = verdictOK, fmt.Sprintf("upgraded to %s %s; restart open agents", st.Latest, ageText(age))
-	case updateAvailable:
-		c.Verdict, c.Detail = verdictNo, fmt.Sprintf("%s is available and this copy is %s (checked %s)", st.Latest, st.Running, ageText(age))
-		c.Fix = u.Fix
-	case updateFailed:
-		if len(u.Recovery) > 0 {
-			c.Verdict = verdictNo
-			c.Detail = fmt.Sprintf("the last automatic upgrade %s could not put the binary back; these copies survive beside it: %s", ageText(age), strings.Join(u.Recovery, ", "))
-			c.Fix = "jevlin upgrade -rollback, or reinstall from the releases page; none of the copies is deleted"
+		if st.Refresh == refreshFailed {
+			c.Verdict, c.Detail = verdictNo, fmt.Sprintf("upgraded to %s %s, but the agent integrations could not be refreshed", st.Latest, ageText(age))
+			c.Fix = "jevlin agents install, then restart open agents"
 			return c
 		}
+		c.Verdict, c.Detail = verdictOK, fmt.Sprintf("upgraded to %s %s; restart open agents%s", st.Latest, ageText(age), modeNote)
+	case updateRolledBack:
+		c.Verdict, c.Detail = verdictOK, fmt.Sprintf("rolled back from %s to %s %s; %s is not installed again automatically, a newer release is%s", st.Held, st.Running, ageText(age), st.Held, modeNote)
+	case updateAvailable:
+		if st.Held != "" {
+			c.Verdict, c.Detail = verdictOK, fmt.Sprintf("%s is the latest release, and this copy was rolled back from %s, so it is not installed automatically (checked %s); %s installs it%s", st.Latest, st.Held, ageText(age), u.Fix, modeNote)
+			return c
+		}
+		c.Verdict, c.Detail = verdictNo, fmt.Sprintf("%s is available and this copy is %s (checked %s)%s", st.Latest, st.Running, ageText(age), modeNote)
+		c.Fix = u.Fix
+	case updateFailed:
 		return undetermined(fmt.Sprintf("the last check failed (%s) %s; the next runs in a day", st.Failure, ageText(age)))
 	case updateNotRelease:
 		c.Verdict, c.Detail = verdictOK, fmt.Sprintf("not a release build; nothing to compare (checked %s)", ageText(age))

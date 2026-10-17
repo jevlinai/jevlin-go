@@ -63,13 +63,17 @@ const rerenderTimeout = 30 * time.Second
 // as, because os.Executable is what `agents install` spelled the binary with
 // when it wrote the host files, and a child started under another spelling
 // would not recognize its own hook entries and would add beside them.
-func (d upgradeDeps) rerenderOwned(ctx context.Context, exe, resolved, home string) {
+//
+// It reports whether the integrations are as the new binary renders them:
+// false only when the child it started failed. The automatic upgrade has no
+// terminal to say so on and records it in the stamp instead.
+func (d upgradeDeps) rerenderOwned(ctx context.Context, exe, resolved, home string) bool {
 	cfg := filepath.Join(home, setupConfigFile)
 	if !lexists(cfg) {
 		// No config of its own: what the child would resolve instead depends
 		// on its working directory and environment, not on this installation,
 		// so which host files are "this installation's" has no answer here.
-		return
+		return true
 	}
 	bins := []string{exe}
 	if resolved != exe {
@@ -81,7 +85,7 @@ func (d upgradeDeps) rerenderOwned(ctx context.Context, exe, resolved, home stri
 		fmt.Fprintf(d.stdout, "  %s\n", l)
 	}
 	if len(owned) == 0 {
-		return
+		return true
 	}
 
 	args := []string{"agents", "install", "-yes", "-config", cfg}
@@ -98,7 +102,9 @@ func (d upgradeDeps) rerenderOwned(ctx context.Context, exe, resolved, home stri
 	if err != nil {
 		_, _ = d.stderr.Write(stderr)
 		fmt.Fprintf(d.stderr, "jevlin upgrade: the binary was replaced, but the agent integrations were not all refreshed (%v)\n  finish with: %s\n", err, finish)
+		return false
 	}
+	return true
 }
 
 // displayArgs joins argument groups for a command a participant is asked to

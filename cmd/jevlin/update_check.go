@@ -28,6 +28,15 @@ package main
 // request, a hard link at the lock's name stopped every check, and a forged
 // failure made doctor advise a rollback. It is still read bounded, and every
 // word in it is held on load to a token this client writes.
+//
+// A stamp is about one binary, the resolved path it names, and two records
+// on it outlast a day because a person has to act on them. A rollback holds
+// the release it rolled back from: `jevlin upgrade -rollback` writes it, and
+// the check never installs that release, or an older one, again; a newer one
+// it does, and `jevlin upgrade` by hand lifts the hold. A replacement that
+// could not put the binary back (manual_intervention) is never overwritten by
+// the check: status and doctor show it, with the copies that survive beside
+// the binary, until a person's upgrade or rollback replaces the record.
 
 import (
 	"encoding/json"
@@ -40,6 +49,7 @@ import (
 	"time"
 
 	"github.com/jevlinai/jevlin-go/internal/selfupdate"
+	"github.com/jevlinai/jevlin-go/internal/termtext"
 	"github.com/jevlinai/jevlin-go/pkg/config"
 	"github.com/jevlinai/jevlin-go/pkg/fsx"
 )
@@ -71,26 +81,44 @@ const (
 	updateUpgraded   updateOutcome = "upgraded"    // a native copy was replaced
 	updateFailed     updateOutcome = "failed"      // Failure says what class
 	updateNotRelease updateOutcome = "not_release" // a development build; nothing to compare
+	updateRolledBack updateOutcome = "rolled_back" // a person rolled back from Held; never installed again automatically
 )
 
 func knownUpdateOutcome(o updateOutcome) bool {
 	switch o {
-	case updateStarted, updateCurrent, updateAvailable, updateUpgraded, updateFailed, updateNotRelease:
+	case updateStarted, updateCurrent, updateAvailable, updateUpgraded, updateFailed, updateNotRelease, updateRolledBack:
 		return true
 	}
 	return false
 }
 
-// updateStamp is update_check.json. Every string is a token: a release
-// version in its canonical spelling, an outcome, a failure class.
+// updateStamp is update_check.json. Every string but Binary is a token: a
+// release version in its canonical spelling, an outcome, a failure class.
+// Binary is a path, compared and never printed.
 type updateStamp struct {
-	V         int           `json:"v"`
-	CheckedAt time.Time     `json:"checked_at"`
-	Running   string        `json:"running,omitempty"` // the version that ran the check
-	Latest    string        `json:"latest,omitempty"`  // the release the check found
-	Outcome   updateOutcome `json:"outcome"`
-	Failure   string        `json:"failure,omitempty"` // an upgradeClass, with Outcome failed
+	V         int       `json:"v"`
+	CheckedAt time.Time `json:"checked_at"`
+	// Binary is the resolved path of the binary the check was about: a
+	// stamp is evidence only about that file.
+	Binary  string        `json:"binary,omitempty"`
+	Running string        `json:"running,omitempty"` // the version that ran the check
+	Latest  string        `json:"latest,omitempty"`  // the release the check found
+	Outcome updateOutcome `json:"outcome"`
+	Failure string        `json:"failure,omitempty"` // an upgradeClass, with Outcome failed
+	// Held is a release a person rolled back from, carried by every check
+	// after it: neither it nor an older release is installed automatically.
+	Held string `json:"held,omitempty"`
+	// Refresh is "failed" when an automatic upgrade replaced the binary but
+	// could not refresh the agent integrations it owns.
+	Refresh string `json:"refresh,omitempty"`
+	// Mode is the [update] mode the check ran under, so a release it found
+	// under notify is applied as soon as the mode is apply, and one it kept
+	// for any other reason is not looked up again within the day.
+	Mode string `json:"mode,omitempty"`
 }
+
+// refreshFailed is updateStamp.Refresh's one value.
+const refreshFailed = "failed"
 
 func updateStampPath(root string) string { return filepath.Join(root, updateStampFile) }
 func updateLockPath(root string) string  { return filepath.Join(root, updateLockFile) }
@@ -106,6 +134,31 @@ func updateRoot(m config.Miner) string {
 	return minerRoot(m)
 }
 
+// installationUpdateRoot is updateRoot for a command that knows the
+// installation's directory rather than a config: its own jevlin.toml says
+// where the stamp is, and an installation without one keeps it in the
+// directory itself, the default layout.
+func installationUpdateRoot(home string, getenv func(string) string) string {
+	cfgPath := filepath.Join(home, setupConfigFile)
+	if !lexists(cfgPath) {
+		return home
+	}
+	cfg, _, err := loadConfig(cfgPath, getenv)
+	if err != nil {
+		return ""
+	}
+	return updateRoot(cfg.Miner)
+}
+
+// stampBinary is the path a stamp names for the running binary: resolved,
+// so a stamp written through a link and one written through the file agree.
+func stampBinary(exe string) string {
+	if resolved, err := selfupdate.ResolveExecutable(exe); err == nil {
+		return resolved
+	}
+	return exe
+}
+
 // isReleaseVersion reports whether build is a release version in its
 // canonical spelling, as the stamp records it.
 func isReleaseVersion(build string) bool {
@@ -113,15 +166,34 @@ func isReleaseVersion(build string) bool {
 	return err == nil && build == v.String()
 }
 
-// stampIsThisCopy reports whether st was written by the copy that reports
-// build, or by the check that installed it. Two copies may share one state
-// directory (a shared mining participant), and one copy's stamp is no
-// evidence about the other: a stamp by another version is read as none.
-func stampIsThisCopy(st updateStamp, build string) bool {
-	if st.Outcome == updateNotRelease {
-		return !isReleaseVersion(build)
+// stampIsThisCopy reports whether st is about the binary at binary, which
+// reports build. A stamp naming another binary is no evidence about this
+// one: two copies may share an installation. Then the version must be the
+// one the outcome leaves at the path: the release an upgrade installed, the
+// one a rollback restored, the one a check ran as. A binary since replaced
+// by hand reads its old stamp as none. A manual_intervention is the
+// exception: the replacement could not put the binary back, so either
+// version may be at the path, and the record belongs to the path.
+func stampIsThisCopy(st updateStamp, build, binary string) bool {
+	if st.Binary != "" && binary != "" && !samePath(st.Binary, binary) {
+		return false
 	}
-	return st.Running == build || (st.Outcome == updateUpgraded && st.Latest == build)
+	switch {
+	case st.Outcome == updateNotRelease:
+		return !isReleaseVersion(build)
+	case stampNeedsAPerson(st):
+		return st.Binary != "" && binary != ""
+	case st.Outcome == updateUpgraded:
+		return st.Latest == build
+	default:
+		return st.Running == build
+	}
+}
+
+// stampNeedsAPerson is the record a check never overwrites: a replacement
+// that could not put the binary back.
+func stampNeedsAPerson(st updateStamp) bool {
+	return st.Outcome == updateFailed && st.Failure == string(upgradeManual)
 }
 
 // errUpdateStampForeign is every way the stamp can fail to be one this
@@ -135,7 +207,9 @@ func decodeUpdateStamp(data []byte) (updateStamp, error) {
 		return updateStamp{}, errUpdateStampForeign
 	}
 	if st.V != 1 || st.CheckedAt.IsZero() || !knownUpdateOutcome(st.Outcome) ||
-		!versionToken(st.Running) || !versionToken(st.Latest) || !failureToken(st.Failure) {
+		!versionToken(st.Running) || !versionToken(st.Latest) || !versionToken(st.Held) ||
+		!failureToken(st.Failure) || (st.Refresh != "" && st.Refresh != refreshFailed) || !binaryToken(st.Binary) ||
+		(st.Mode != "" && st.Mode != config.UpdateApply && st.Mode != config.UpdateNotify) {
 		return updateStamp{}, errUpdateStampForeign
 	}
 	return st, nil
@@ -149,6 +223,12 @@ func versionToken(s string) bool {
 	}
 	v, err := selfupdate.ParseVersion(s)
 	return err == nil && v.String() == s
+}
+
+// binaryToken accepts the empty string and an absolute path with no
+// character a terminal acts on. The path is only ever compared.
+func binaryToken(s string) bool {
+	return s == "" || (filepath.IsAbs(s) && !termtext.HasControlChar(s))
 }
 
 func failureToken(s string) bool {
@@ -207,22 +287,28 @@ func updateStampFresh(st updateStamp, now time.Time) bool {
 
 // updateCheckDue is the hook's whole decision, and the child's again under
 // its lock: the mode is not off, the installation's directory is known, and
-// the stamp is absent, unreadable, another copy's, a day old or in the future.
+// the stamp is absent, unreadable, another copy's, a day old or in the future
+// — unless it is this binary's manual_intervention, which waits for a person.
 // One more case is due within the day: a stamp that found a release
-// available without applying it, when the mode is now apply and this is a
-// native copy — the participant who switched from notify should not wait a
-// day for a release the check already knows. native is asked only then: it
-// may read beside the binary. An unreadable stamp runs the check, which
-// rewrites it.
-func updateCheckDue(read func(string) ([]byte, error), root, mode, build string, now time.Time, native func() bool) bool {
+// available under notify, when the mode is now apply and this is a native
+// copy — the participant who switched should not wait a day for a release
+// the check already knows. A release kept for another reason (a rollback's
+// hold, another installation's binary) is not looked up again within the
+// day. native is asked only then: it may read beside the binary. An
+// unreadable stamp runs the check, which rewrites it.
+func updateCheckDue(read func(string) ([]byte, error), root, mode, build, binary string, now time.Time, native func() bool) bool {
 	if mode == config.UpdateOff || root == "" {
 		return false
 	}
 	st, ok, err := readUpdateStamp(read, updateStampPath(root))
-	if err != nil || !ok || !stampIsThisCopy(st, build) || !updateStampFresh(st, now) {
+	if err == nil && ok && stampNeedsAPerson(st) && stampIsThisCopy(st, build, binary) {
+		return false
+	}
+	if err != nil || !ok || !stampIsThisCopy(st, build, binary) || !updateStampFresh(st, now) {
 		return true
 	}
-	return st.Outcome == updateAvailable && mode == config.UpdateApply && native != nil && native()
+	return st.Outcome == updateAvailable && st.Mode == config.UpdateNotify && st.Held == "" &&
+		mode == config.UpdateApply && native != nil && native()
 }
 
 // startUpdateCheck launches `upgrade -auto` as a detached child, the exact
@@ -248,9 +334,10 @@ func startUpdateCheck(cfgPath string) error {
 type updateFacts struct {
 	Mode        string
 	UnknownMode string
-	// Build is this copy's version, which a stamp must have been written by
-	// (stampIsThisCopy) to say anything about it.
+	// Build and Binary are this copy's version and resolved path, which a
+	// stamp must be about (stampIsThisCopy) to say anything about it.
 	Build   string
+	Binary  string
 	Stamp   updateStamp
 	Present bool
 	Err     error
@@ -265,12 +352,20 @@ type updateFacts struct {
 }
 
 // thisCopy reports whether the stamp on file is this copy's own.
-func (f updateFacts) thisCopy() bool { return f.Present && stampIsThisCopy(f.Stamp, f.Build) }
+func (f updateFacts) thisCopy() bool { return f.Present && stampIsThisCopy(f.Stamp, f.Build, f.Binary) }
 
 func gatherUpdateFacts(cfg *config.Config, getenv func(string) string) updateFacts {
-	f := updateFacts{Mode: cfg.Update.Mode, UnknownMode: cfg.Update.UnknownMode, Build: buildVersion(), Fix: "jevlin upgrade"}
 	exe, err := os.Executable()
+	return updateFactsFor(cfg, exe, err, getenv)
+}
+
+// updateFactsFor is gatherUpdateFacts for the binary at exe (or none, when
+// exeErr says it could not be found).
+func updateFactsFor(cfg *config.Config, exe string, exeErr error, getenv func(string) string) updateFacts {
+	f := updateFacts{Mode: cfg.Update.Mode, UnknownMode: cfg.Update.UnknownMode, Build: buildVersion(), Fix: "jevlin upgrade"}
+	err := exeErr
 	if err == nil {
+		f.Binary = stampBinary(exe)
 		if kind := classifyLaunch(exe, getenv("JEVLIN_LAUNCH")); kind != launchNative {
 			f.Fix = npmRemovalGuidance(kind, "upgrade")
 		}
@@ -278,7 +373,7 @@ func gatherUpdateFacts(cfg *config.Config, getenv func(string) string) updateFac
 	if root := updateRoot(cfg.Miner); root != "" {
 		f.Stamp, f.Present, f.Err = readUpdateStamp(readUpdateStampFile, updateStampPath(root))
 	}
-	if err == nil && f.thisCopy() && f.Stamp.Outcome == updateFailed && f.Stamp.Failure == string(upgradeManual) {
+	if err == nil && f.thisCopy() && stampNeedsAPerson(f.Stamp) {
 		f.Recovery = updateRecoveryPaths(exe)
 	}
 	return f
@@ -340,18 +435,54 @@ func updateLineText(f updateFacts, now time.Time) string {
 	case updateCurrent:
 		return fmt.Sprintf("%s is the latest release (checked %s)", st.Running, age)
 	case updateUpgraded:
+		if st.Refresh == refreshFailed {
+			return fmt.Sprintf("upgraded to %s %s, but the agent integrations could not be refreshed: run `jevlin agents install`, then restart open agents", st.Latest, age)
+		}
 		return fmt.Sprintf("upgraded to %s %s; restart open agents", st.Latest, age)
+	case updateRolledBack:
+		return fmt.Sprintf("rolled back from %s to %s %s; %s is not installed again automatically, a newer release is", st.Held, st.Running, age, st.Held)
 	case updateAvailable:
+		if st.Held != "" {
+			return fmt.Sprintf("%s is the latest release, and this copy was rolled back from %s, so it is not installed automatically (checked %s) — %s installs it", st.Latest, st.Held, age, f.Fix)
+		}
 		return fmt.Sprintf("%s is available and this copy is %s (checked %s) — %s", st.Latest, st.Running, age, f.Fix)
 	case updateFailed:
-		line := fmt.Sprintf("the last check failed (%s) %s; the next runs in a day", st.Failure, age)
-		if len(f.Recovery) > 0 {
-			line += "; the binary could not be put back, and these copies survive beside it: " + strings.Join(f.Recovery, ", ")
+		if stampNeedsAPerson(st) {
+			return manualInterventionDetail(age, f.Recovery) + "; " + manualInterventionFix
 		}
-		return line
+		return fmt.Sprintf("the last check failed (%s) %s; the next runs in a day", st.Failure, age)
 	case updateNotRelease:
 		return fmt.Sprintf("not a release build; nothing to compare (checked %s)", age)
 	default: // started
 		return fmt.Sprintf("a check started %s", age)
 	}
+}
+
+// manualInterventionDetail and manualInterventionFix are what status and
+// doctor say about a replacement that could not put the binary back. The
+// surviving copies are listed from the binary's own directory, never from
+// the stamp. No rollback is offered: .previous is the binary before the last
+// completed upgrade, not the one this replacement displaced, so
+// `upgrade -rollback` would move further back.
+func manualInterventionDetail(age string, recovery []string) string {
+	line := "the last automatic upgrade " + age + " could not put the binary back"
+	if len(recovery) > 0 {
+		line += "; these copies survive beside it: " + strings.Join(recovery, ", ")
+	}
+	return line
+}
+
+const manualInterventionFix = "reinstall from the releases page, or put one of those copies back by hand; none is deleted, and no check runs until `jevlin upgrade` succeeds"
+
+// unknownModeNote names an [update] mode word this version does not know,
+// quoted, and says what the check does instead. A word holding a character
+// a terminal acts on is not repeated.
+func unknownModeNote(word string) string {
+	if word == "" {
+		return ""
+	}
+	if termtext.HasControlChar(word) || len(word) > 32 {
+		return "; [update] mode names a word this version does not know, so it checks and notifies only"
+	}
+	return fmt.Sprintf("; [update] mode %q is a word this version does not know, so it checks and notifies only", word)
 }

@@ -265,6 +265,7 @@ func upgradeRun(d upgradeDeps, homeFlag string, requested *selfupdate.Version, r
 		}
 		fmt.Fprintf(d.stdout, "rolled back %s from %s to %s\nthe binary it replaced is now %s; run `jevlin upgrade -rollback` again to swap back\n",
 			rolled.Executable, rolled.From, rolled.To, selfupdate.PreviousPath(rolled.Executable))
+		d.recordManual(ctx, home, updateStamp{Binary: resolved, Running: rolled.To.String(), Held: rolled.From.String(), Outcome: updateRolledBack})
 		d.rerenderOwned(ctx, exe, resolved, home)
 		return exitOK
 	}
@@ -276,6 +277,11 @@ func upgradeRun(d upgradeDeps, homeFlag string, requested *selfupdate.Version, r
 	}
 	if prepared.NoChange {
 		fmt.Fprintf(d.stdout, "jevlin %s is already the %s release; nothing to do\n", prepared.From, selectedRelease(requested))
+		// A person ran the binary at the path and it answered: a record that
+		// was waiting for them (a hold, a failed restore) has had its answer.
+		if requested == nil {
+			d.recordManual(ctx, home, updateStamp{Binary: resolved, Running: current, Latest: current, Outcome: updateCurrent})
+		}
 		return exitOK
 	}
 	if err := installPrepared(ctx, updater, prepared); err != nil {
@@ -283,8 +289,57 @@ func upgradeRun(d upgradeDeps, homeFlag string, requested *selfupdate.Version, r
 	}
 	fmt.Fprintf(d.stdout, "upgraded %s from %s to %s\nthe binary it replaced is kept as %s; `jevlin upgrade -rollback` restores it\n",
 		prepared.Executable, prepared.From, prepared.To, selfupdate.PreviousPath(prepared.Executable))
+	d.recordManual(ctx, home, updateStamp{Binary: resolved, Running: prepared.From.String(), Latest: prepared.To.String(), Outcome: updateUpgraded})
 	d.rerenderOwned(ctx, exe, resolved, home)
 	return exitOK
+}
+
+// recordManual writes what a person's upgrade or rollback did into the
+// daily check's stamp (update_check.go). A rollback holds the release it
+// left, so the check does not install it again the next day; an upgrade
+// lifts any hold and replaces a record that was waiting for a person. It
+// waits for the check's lock, which a check holds for its whole run, so a
+// lookup that started before this cannot write over it afterwards. Best
+// effort: the replacement has committed, and a record that cannot be
+// written is said, never a failure.
+func (d upgradeDeps) recordManual(ctx context.Context, home string, st updateStamp) {
+	root := installationUpdateRoot(home, d.getenv)
+	if root == "" || !lexists(root) {
+		// No directory, so no stamp and no check to tell.
+		return
+	}
+	note := func(err error) {
+		fmt.Fprintf(d.stderr, "jevlin upgrade: note: the daily release check's record could not be updated (%v)\n", err)
+	}
+	lock, err := waitLockFile(ctx, updateLockPath(root))
+	if err != nil {
+		note(err)
+		return
+	}
+	defer func() { _ = unlockFile(lock) }()
+	st.CheckedAt = d.clock()
+	if err := writeUpdateStamp(updateStampPath(root), st); err != nil {
+		note(err)
+	}
+}
+
+// waitLockFile takes path's lock, trying again until ctx ends: a person's
+// command waits out a check's lookup rather than racing it.
+func waitLockFile(ctx context.Context, path string) (*os.File, error) {
+	for {
+		lock, held, err := tryLockFile(path)
+		if err != nil {
+			return nil, err
+		}
+		if held {
+			return lock, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("another release check still holds %s", path)
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
 }
 
 // installPrepared is the one place a replacement is attempted: every
@@ -314,13 +369,21 @@ func ensureUpgradeFlushLock(home string, getenv func(string) string, stderr io.W
 // upgradeAuto is the daily check (update_check.go): the detached child a
 // hook starts. Nobody is at the terminal, so it says what it did on stderr,
 // records it in the stamp, which status and doctor read, and exits 0 on
-// every outcome but a config it cannot load. It takes the locks an upgrade
-// takes, in one attempt, so it never waits on a setup, uninstall or upgrade
-// a person is running and never runs beside another check of the same
-// binary; the stamp is read under them, so two hooks that both found it
-// stale make one request, not two. The stamp is claimed before the network
-// is touched: a child that dies mid-way postpones the next check a day
-// rather than running one every session.
+// every outcome but a config it cannot load.
+//
+// The order is what keeps it cheap for everything else. It takes the
+// installation's check lock first, in one attempt, so two hooks that both
+// found the stamp stale make one request; a lookup holds that lock and
+// nothing else, so it never keeps a flush, a connect or a setup waiting. It
+// claims the stamp before the network is touched, and makes no request when
+// it cannot: a stamp that cannot be written would make every session check
+// again. Only a replacement takes the locks an upgrade takes, again in one
+// attempt, so it never waits on a setup, uninstall or upgrade a person runs.
+//
+// What it never replaces: an npm copy (invariant 17), a copy under
+// [update] mode = "notify", a release a person rolled back from or an older
+// one (the stamp's hold), and a binary whose own installation is not the
+// one whose config started the check.
 func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 	say := func(format string, a ...any) {
 		fmt.Fprintf(d.stderr, "jevlin upgrade -auto: "+format+"\n", a...)
@@ -350,28 +413,10 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 		return exitOK
 	}
 	native := classifyLaunch(resolved, d.getenv("JEVLIN_LAUNCH")) == launchNative
-	home := ""
-	if native {
-		// The installation a manual upgrade would hold, by the same rule
-		// (resolveInstallationHome), so the two never hold different gates
-		// for one binary. The hook's config names the state directory, not
-		// the installation.
-		home, err = resolveInstallationHome(homeFlag, d.getenv, d.userHome, exe)
-		if err != nil {
-			say("%v", err)
-			return exitOK
-		}
-		ex, err := excludeForUpgrade(home, resolved, 0)
-		if err != nil {
-			say("%v; not checking now", err)
-			return exitOK
-		}
-		defer ex.release()
-	}
-	// One check at a time per installation, whatever the copy: a lookup for
-	// a copy this command never replaces holds this and nothing beside the
-	// binary. A lock that cannot be opened is a directory the stamp cannot
-	// be written to either; the check goes on without it.
+
+	// One check at a time per installation, whatever the copy. A lock that
+	// cannot be opened is a directory the stamp cannot be written to either,
+	// and the claim below stops the check.
 	if lock, held, lerr := tryLockFile(updateLockPath(root)); lerr == nil {
 		if !held {
 			say("another check holds %s; not checking now", updateLockPath(root))
@@ -383,16 +428,22 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 	now := d.clock()
 	current := d.build()
 	stampPath := updateStampPath(root)
-	if !updateCheckDue(readUpdateStampFile, root, cfg.Update.Mode, current, now, func() bool { return native }) {
-		say("checked today; not due")
+	if !updateCheckDue(readUpdateStampFile, root, cfg.Update.Mode, current, resolved, now, func() bool { return native }) {
+		say("not due: checked within the day, or the last automatic upgrade needs a person (jevlin status)")
 		return exitOK
 	}
-	record := func(st updateStamp) {
-		if werr := writeUpdateStamp(stampPath, st); werr != nil {
-			say("the stamp could not be written (%v); the next session checks again", werr)
-		}
+	held := ""
+	if prev, ok, perr := readUpdateStamp(readUpdateStampFile, stampPath); perr == nil && ok && stampIsThisCopy(prev, current, resolved) {
+		held = prev.Held
 	}
-	stamp := updateStamp{CheckedAt: now, Outcome: updateStarted}
+	stamp := updateStamp{CheckedAt: now, Binary: resolved, Held: held, Mode: cfg.Update.Mode, Outcome: updateStarted}
+	record := func(st updateStamp) bool {
+		if werr := writeUpdateStamp(stampPath, st); werr != nil {
+			say("the stamp could not be written (%v)", werr)
+			return false
+		}
+		return true
+	}
 	v, perr := selfupdate.ParseVersion(current)
 	if perr != nil || current != v.String() {
 		stamp.Outcome = updateNotRelease
@@ -401,7 +452,10 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 		return exitOK
 	}
 	stamp.Running = current
-	record(stamp)
+	if !record(stamp) {
+		say("not checking: without a stamp, every session would check again")
+		return exitOK
+	}
 	failed := func(err error) int {
 		stamp.Outcome, stamp.Failure = updateFailed, string(autoFailureClass(err))
 		record(stamp)
@@ -421,49 +475,78 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), d.operationTimeout)
 	defer cancel()
 
-	if native && cfg.Update.Mode == config.UpdateApply {
-		ensureUpgradeFlushLock(home, d.getenv, d.stderr)
-		updater := selfupdate.Updater{Source: d.source(), Runner: d.runner, GOOS: d.goos, GOARCH: d.goarch}
-		prepared, err := updater.Prepare(ctx, resolved, current, nil)
-		if selfupdate.KindOf(err) == selfupdate.KindDowngrade {
-			// GitHub's latest is older than this copy — a release was
-			// withdrawn. Nothing to apply, and not a failure of the check.
-			prepared, err = selfupdate.Prepared{From: v, To: v, NoChange: true}, nil
-		}
-		if err != nil {
-			return failed(err)
-		}
-		if prepared.NoChange {
-			stamp.Outcome, stamp.Latest = updateCurrent, current
-			record(stamp)
-			say("%s is the latest release", current)
-			return exitOK
-		}
-		if err := installPrepared(ctx, updater, prepared); err != nil {
-			return failed(err)
-		}
-		stamp.Outcome, stamp.Latest = updateUpgraded, prepared.To.String()
-		record(stamp)
-		say("upgraded %s from %s to %s; the binary it replaced is kept as %s", prepared.Executable, prepared.From, prepared.To, selfupdate.PreviousPath(prepared.Executable))
-		d.rerenderOwned(ctx, exe, resolved, home)
-		return exitOK
-	}
-
-	// notify, or a copy this command never replaces: one request, no download.
 	release, err := d.source().Release(ctx, nil)
 	if err != nil {
 		return failed(err)
 	}
-	if release.Version.Compare(v) > 0 {
-		stamp.Outcome, stamp.Latest = updateAvailable, release.Version.String()
+	latest := release.Version
+	if latest.Compare(v) <= 0 {
+		// The latest release, or GitHub's latest is older than this copy
+		// because a release was withdrawn: nothing to apply either way.
+		stamp.Outcome, stamp.Latest = updateCurrent, current
 		record(stamp)
-		say("%s is available; this copy is %s and is not replaced here", stamp.Latest, current)
+		say("%s is the latest release", current)
 		return exitOK
 	}
-	stamp.Outcome, stamp.Latest = updateCurrent, current
+	stamp.Latest = latest.String()
+	keep := ""
+	home := ""
+	switch {
+	case held != "" && !versionAbove(latest, held):
+		keep = "this copy was rolled back from " + held
+	case !native:
+		keep = "this copy is not replaced here"
+	case cfg.Update.Mode != config.UpdateApply:
+		keep = "[update] mode is notify"
+	default:
+		home, err = resolveInstallationHome(homeFlag, d.getenv, d.userHome, exe)
+		if err != nil || !samePath(home, root) {
+			// A binary another installation shares is that installation's to
+			// update, under its own config's mode.
+			keep = "the binary belongs to another installation, whose own config decides"
+		}
+	}
+	if keep != "" {
+		stamp.Outcome = updateAvailable
+		record(stamp)
+		say("%s is available; %s", stamp.Latest, keep)
+		return exitOK
+	}
+
+	ex, err := excludeForUpgrade(home, resolved, 0)
+	if err != nil {
+		return failed(err)
+	}
+	defer ex.release()
+	ensureUpgradeFlushLock(home, d.getenv, d.stderr)
+	updater := selfupdate.Updater{Source: d.source(), Runner: d.runner, GOOS: d.goos, GOARCH: d.goarch}
+	prepared, err := updater.Prepare(ctx, resolved, current, &latest)
+	if err != nil {
+		return failed(err)
+	}
+	if prepared.NoChange {
+		stamp.Outcome, stamp.Latest = updateCurrent, current
+		record(stamp)
+		say("%s is the latest release", current)
+		return exitOK
+	}
+	if err := installPrepared(ctx, updater, prepared); err != nil {
+		return failed(err)
+	}
+	stamp.Outcome, stamp.Latest, stamp.Held = updateUpgraded, prepared.To.String(), ""
 	record(stamp)
-	say("%s is the latest release", current)
+	say("upgraded %s from %s to %s; the binary it replaced is kept as %s", prepared.Executable, prepared.From, prepared.To, selfupdate.PreviousPath(prepared.Executable))
+	if !d.rerenderOwned(ctx, exe, resolved, home) {
+		stamp.Refresh = refreshFailed
+		record(stamp)
+	}
 	return exitOK
+}
+
+// versionAbove reports whether v is newer than the release token held.
+func versionAbove(v selfupdate.Version, held string) bool {
+	h, err := selfupdate.ParseVersion(held)
+	return err != nil || v.Compare(h) > 0
 }
 
 // autoFailureClass is classifyUpgrade for the check, where an error with no

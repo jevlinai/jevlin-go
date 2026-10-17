@@ -135,31 +135,43 @@ type statusReport struct {
 // in force, and the stamp's tokens when one is on file. Error is the
 // client's own sentence for a stamp it refused, never the stamp's text.
 type statusUpdateJSON struct {
-	Mode      string `json:"mode"`
-	Checked   bool   `json:"checked"`
-	CheckedAt string `json:"checked_at,omitempty"`
-	Running   string `json:"running,omitempty"`
-	Latest    string `json:"latest,omitempty"`
-	Outcome   string `json:"outcome,omitempty"`
-	Failure   string `json:"failure,omitempty"`
-	Fix       string `json:"fix,omitempty"`
-	Error     string `json:"error,omitempty"`
+	Mode        string `json:"mode"`
+	UnknownMode bool   `json:"unknown_mode,omitempty"`
+	// Checked is whether a check has run for this copy: a stamp about another
+	// binary or version says nothing here, as in the text report.
+	Checked   bool     `json:"checked"`
+	CheckedAt string   `json:"checked_at,omitempty"`
+	Running   string   `json:"running,omitempty"`
+	Latest    string   `json:"latest,omitempty"`
+	Held      string   `json:"held,omitempty"`
+	Outcome   string   `json:"outcome,omitempty"`
+	Failure   string   `json:"failure,omitempty"`
+	Refresh   string   `json:"refresh,omitempty"`
+	Recovery  []string `json:"recovery,omitempty"`
+	Fix       string   `json:"fix,omitempty"`
+	Error     string   `json:"error,omitempty"`
 }
 
 func statusUpdateJSONOf(f updateFacts) statusUpdateJSON {
-	out := statusUpdateJSON{Mode: f.Mode, Checked: f.Present}
+	out := statusUpdateJSON{Mode: f.Mode, UnknownMode: f.UnknownMode != ""}
 	if f.Err != nil {
 		out.Error = boundMessage(f.Err.Error())
 		return out
 	}
-	if !f.Present {
+	if !f.thisCopy() {
 		return out
 	}
 	st := f.Stamp
+	out.Checked = true
 	out.CheckedAt = st.CheckedAt.UTC().Format(time.RFC3339)
-	out.Running, out.Latest, out.Outcome, out.Failure = st.Running, st.Latest, string(st.Outcome), st.Failure
-	if st.Outcome == updateAvailable {
+	out.Running, out.Latest, out.Held, out.Outcome, out.Failure, out.Refresh = st.Running, st.Latest, st.Held, string(st.Outcome), st.Failure, st.Refresh
+	switch {
+	case stampNeedsAPerson(st):
+		out.Recovery, out.Fix = f.Recovery, manualInterventionFix
+	case st.Outcome == updateAvailable:
 		out.Fix = f.Fix
+	case st.Outcome == updateUpgraded && st.Refresh == refreshFailed:
+		out.Fix = "jevlin agents install"
 	}
 	return out
 }

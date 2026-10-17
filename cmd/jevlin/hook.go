@@ -217,14 +217,20 @@ func (ops hookOps) startBackground(hc hookContext) {
 	if ops.build != nil {
 		build = ops.build
 	}
-	native := func() bool {
-		if ops.executable == nil {
-			return false
+	exe := ""
+	if ops.executable != nil {
+		if e, err := ops.executable(); err == nil {
+			exe = e
 		}
-		exe, err := ops.executable()
-		return err == nil && classifyLaunch(exe, ops.getenv("JEVLIN_LAUNCH")) == launchNative
 	}
-	if updateCheckDue(ops.readFile, hc.updateRoot, hc.updateMode, build(), now, native) {
+	native := func() bool {
+		return exe != "" && classifyLaunch(exe, ops.getenv("JEVLIN_LAUNCH")) == launchNative
+	}
+	binary := ""
+	if exe != "" {
+		binary = stampBinary(exe)
+	}
+	if updateCheckDue(ops.readFile, hc.updateRoot, hc.updateMode, build(), binary, now, native) {
 		_ = ops.spawnUpdateCheck(hc.cfgPath)
 	}
 }
