@@ -193,3 +193,57 @@ func TestACodexSubagentsSearchLeavesNoMark(t *testing.T) {
 		}
 	}
 }
+
+// A search that lands while a Stop takes its turn's mark finds the turn
+// already ended and marks nothing: the ended mark is written before the
+// mark is removed. Here a subagent's search under p3 runs at the moment
+// p3's own Stop removes p3's mark.
+func TestASearchLandingWhileTheTurnIsTakenMarksNothing(t *testing.T) {
+	h := newTurnEndHarness(nil, true)
+	h.served(traceHash("sess|p3"))
+	h.fs.files["/t/sess.jsonl"] = []byte(backgroundTurns(false, false))
+	mark := turnSearchedPath(h.hc.sessionsDir, traceHash("sess|p3"))
+	remove := h.ops.remove
+	landed := false
+	h.ops.remove = func(p string) error {
+		err := remove(p)
+		if p == mark && !landed {
+			landed = true
+			h.subagentServed("p3")
+		}
+		return err
+	}
+	runHook(t, h.ops, h.hc, "flush", claudeStop(map[string]any{"prompt_id": "p3",
+		"transcript_path": "/t/sess.jsonl", "last_assistant_message": "I started a subagent on it."}))
+	if !landed {
+		t.Fatal("p3's Stop never removed p3's mark; the search did not land during the take")
+	}
+	if rec := h.record(t); rec.TurnID != traceHash("sess|p3") {
+		t.Fatalf("reported turn %s, want p3's", rec.TurnID)
+	}
+	for p := range h.fs.files {
+		if p == mark || p == sessionSearchedPath(h.hc.sessionsDir, traceHash("sess")) {
+			t.Errorf("a search landing while p3's mark was taken left %s, which a later Stop would take for a second end", p)
+		}
+	}
+}
+
+// A mark beside the turn's ended mark is not a second end. A search that
+// looked for the ended mark just before the turn's Stop wrote it leaves its
+// mark just after; the next take finds that mark and the ended mark both,
+// removes the mark, and reports nothing.
+func TestAMarkBesideAnEndedMarkIsNotASecondEnd(t *testing.T) {
+	fs, ops := newFakeHookOps(nil)
+	dir, turn := "/home/sessions", traceHash("sess|p3")
+	markTurnSearched(ops, config.Miner{TurnEnd: true, SessionsDir: dir}, &traceEnvelope{TurnID: turn})
+	if !takeTurnSearched(ops, dir, turn) {
+		t.Fatal("the turn's own take found no mark")
+	}
+	fs.files[turnSearchedPath(dir, turn)] = nil // the late search's mark
+	if takeTurnSearched(ops, dir, turn) {
+		t.Error("a mark beside the ended mark was taken as a second end of the turn")
+	}
+	if _, ok := fs.files[turnSearchedPath(dir, turn)]; ok {
+		t.Error("the mark beside the ended mark was left in place")
+	}
+}

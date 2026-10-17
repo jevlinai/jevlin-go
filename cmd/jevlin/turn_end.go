@@ -198,14 +198,25 @@ func sweepTurnMarks(dir string, now time.Time) {
 // takeTurnSearched reports whether a search was served in the turn, and
 // removes the mark: a turn ends once, and the ended mark it leaves keeps a
 // later search from marking the turn again.
+//
+// The ended mark is written before the mark is removed, so a search that
+// lands while the mark is taken finds the turn ended and marks nothing. A
+// search that looked for the ended mark just before it was written can
+// still leave its mark just after; a mark found beside the ended mark is
+// that one, and it is removed without a second end.
 func takeTurnSearched(ops hookOps, dir, turnID string) bool {
 	path := turnSearchedPath(dir, turnID)
 	if _, err := ops.readFile(path); err != nil {
 		return false
 	}
+	ended := turnEndedPath(dir, turnID)
+	_, err := ops.readFile(ended)
+	first := err != nil
+	if first {
+		_ = ops.writeFile(ended, nil, 0o600)
+	}
 	_ = ops.remove(path)
-	_ = ops.writeFile(turnEndedPath(dir, turnID), nil, 0o600)
-	return true
+	return first
 }
 
 // takeSessionSearched reports whether a subagent of the session searched
