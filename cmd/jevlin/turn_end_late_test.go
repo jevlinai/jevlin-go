@@ -147,14 +147,16 @@ func TestALateTurnAndTheEndingTurnAreBothReported(t *testing.T) {
 // only a subagent's search marks the session, and a Stop with no such mark
 // does not look at earlier turns: a main-agent mark left on an earlier turn
 // (one whose Stop never came, an interrupted turn) is not reported by a
-// later turn's Stop.
+// later turn's Stop, even one whose own turn searched and so reads the
+// transcript.
 func TestOnlyASubagentsSearchSendsAStopLookingAtEarlierTurns(t *testing.T) {
 	h := newTurnEndHarness(nil, true)
 	h.served(traceHash("sess|p3"))
-	h.fs.files["/t/sess.jsonl"] = []byte(backgroundTurns(true, false))
+	h.served(traceHash("sess|p4"))
+	h.fs.files["/t/sess.jsonl"] = []byte(backgroundTurns(true, true))
 	runHook(t, h.ops, h.hc, "flush", claudeStop(map[string]any{"prompt_id": "p4", "transcript_path": "/t/sess.jsonl"}))
-	if len(h.queued) != 0 {
-		t.Errorf("queued %d turn ends from a main agent's earlier mark", len(h.queued))
+	if rec := h.record(t); rec.TurnID != traceHash("sess|p4") {
+		t.Errorf("reported turn %s, want p4's own alone", rec.TurnID)
 	}
 	if _, ok := h.fs.files[turnSearchedPath(h.hc.sessionsDir, traceHash("sess|p3"))]; !ok {
 		t.Errorf("the earlier turn's mark was taken by a Stop that was not its own")
