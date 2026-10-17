@@ -23,6 +23,13 @@ rewritten to match newer behaviour; the newer entry says what changed.
   Your authorization, wallet and payout address carry over.
   If you use Codex, also run `jevlin agents install -client codex` and answer yes, so that
   Codex's sandbox lets the flush reach the new address.
+
+  An installation set up with v0.1.0 or earlier needs more than that line. Its config also
+  names `router-api.nyks.dev` and the nyks.dev platform, whose key the jevlin.ai router does
+  not accept, and when this was checked the moved service rejected a search served by the old
+  router. To earn again it registers on jevlin.ai: keep the wallet's recovery phrase or move
+  its funds out, remove the installation with `jevlin uninstall -purge-state`, and set this
+  release up fresh.
 - **The wallet's default chain node is `https://rpc-testnet.twilight.org`**, the same node under
   its new name. This needs nothing from you; `-node` and `JEVLIN_WALLET_NODE` still override it.
 
