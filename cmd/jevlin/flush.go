@@ -553,6 +553,12 @@ func updateFlushDeliveryHealth(store *auth.Store, health collector.Health, befor
 // case; only the rarer "held it, then lost it to ErrProxyBindingMismatch"
 // case had a deadline to compare against. The current-target comparison
 // covers both.
+//
+// An entry is what makes undeliverableRecords hold its epoch's records
+// back, so it goes only with them: a record whose removal fails keeps the
+// entry in place, so the next flush skips it and tries the removal again
+// instead of submitting it, as dropRegionRefusedObservationsPastTarget
+// keeps its note.
 func dropConflictedObservationsPastTarget(store *auth.Store, spoolDir string, slotID, currentTarget uint64, stdout io.Writer) {
 	// WP2-adversarial-review finding 18: an entry for a DIFFERENT slot
 	// than the one currently configured can never reach the
@@ -583,11 +589,17 @@ func dropConflictedObservationsPastTarget(store *auth.Store, spoolDir string, sl
 	if err != nil {
 		return
 	}
+	settled := map[uint64]bool{}
+	for _, c := range due {
+		settled[c.TargetEpoch] = true
+	}
 	dropped := 0
 	for _, prec := range pending {
 		for _, c := range due {
 			if prec.SlotID == c.SlotID && prec.TargetEpoch == c.TargetEpoch {
-				if err := sp.Remove(prec); err == nil {
+				if err := sp.Remove(prec); err != nil {
+					settled[c.TargetEpoch] = false
+				} else {
 					dropped++
 				}
 				break
@@ -598,10 +610,18 @@ func dropConflictedObservationsPastTarget(store *auth.Store, spoolDir string, sl
 		fmt.Fprintf(stdout, "flush: dropped %d observation(s) across %d conflicted epoch(s) for slot %d — another installation of this participant held them\n",
 			dropped, len(due), slotID)
 	}
-	// Removed once processed, whether or not anything was actually left to
-	// drop (already delivered, or never spooled at all) — the pair has
-	// been acted on either way, and the AS will never re-open it.
-	if err := store.RemoveEpochConflicts(due); err != nil {
+	// An entry whose records all went, or that had none left to drop
+	// (already delivered, or never spooled at all), has been acted on, and
+	// the AS will never re-open it. An entry whose records could not all be
+	// removed stays, so the next flush skips them and tries the removal
+	// again instead of submitting.
+	var done []auth.ConflictedEpoch
+	for _, c := range due {
+		if settled[c.TargetEpoch] {
+			done = append(done, c)
+		}
+	}
+	if err := store.RemoveEpochConflicts(done); err != nil {
 		fmt.Fprintln(stdout, "flush:", err)
 	}
 }
