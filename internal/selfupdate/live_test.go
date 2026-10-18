@@ -10,9 +10,11 @@ import (
 )
 
 // TestLiveReleaseVerification runs the real pipeline against the published
-// v0.2.8 release, which predates release signing: discovery and selection
-// succeed, and the updater must then refuse it for carrying no
-// checksums.txt.sig, before downloading or staging anything. Nothing is
+// v0.3.2 release, which predates release signing: discovery and selection
+// succeed, and the updater must then refuse it before downloading or staging
+// anything, for carrying no checksums.txt.sig. This package's tests trust a
+// test key (signature_test.go's init), so the refusal is the missing
+// signature, not the missing key a build with no release key would give. Nothing is
 // replaced, and the "installed binary" is a placeholder in a temporary
 // directory. It is opt-in, because ordinary tests must not depend on GitHub:
 //
@@ -21,7 +23,7 @@ func TestLiveReleaseVerification(t *testing.T) {
 	if os.Getenv("JEVLIN_LIVE_RELEASE") != "1" {
 		t.Skip("set JEVLIN_LIVE_RELEASE=1 to verify against the published release")
 	}
-	v, err := ParseVersion("0.2.8")
+	v, err := ParseVersion("0.3.2")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,8 +48,8 @@ func TestLiveReleaseVerification(t *testing.T) {
 	if err := os.WriteFile(placeholder, []byte("placeholder"), 0o700); err != nil { // #nosec G306 -- a placeholder binary
 		t.Fatal(err)
 	}
-	// A fictional older build, so the real v0.2.8 is the upgrade target.
-	_, err = Updater{Source: source, GOOS: runtime.GOOS, GOARCH: runtime.GOARCH}.Prepare(ctx, placeholder, "0.2.7", &v)
+	// A fictional older build, so the real v0.3.2 is the upgrade target.
+	_, err = Updater{Source: source, GOOS: runtime.GOOS, GOARCH: runtime.GOARCH}.Prepare(ctx, placeholder, "0.3.1", &v)
 	if KindOf(err) != KindReleaseInvalid || !strings.Contains(err.Error(), SignatureAssetName) {
 		t.Fatalf("an unsigned release must be refused for its missing %s, got %v", SignatureAssetName, err)
 	}
