@@ -29,6 +29,7 @@ import (
 const (
 	MaxReleaseJSONBytes int64  = 1 << 20   // GitHub release metadata
 	MaxChecksumBytes    int64  = 64 << 10  // checksums.txt
+	MaxSignatureBytes   int64  = 1 << 10   // checksums.txt.sig
 	MaxArchiveBytes     int64  = 64 << 20  // the compressed archive
 	MaxExecutableBytes  int64  = 64 << 20  // the one executable member
 	MaxExpandedBytes    uint64 = 128 << 20 // every member's declared size, summed

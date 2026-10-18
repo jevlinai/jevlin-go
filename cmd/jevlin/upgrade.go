@@ -124,6 +124,7 @@ type upgradeDeps struct {
 	build            func() string
 	source           func() selfupdate.ReleaseSource
 	runner           selfupdate.CommandRunner
+	verifier         selfupdate.ReleaseVerifier // nil: the compiled-in release keys
 	goos, goarch     string
 	operationTimeout time.Duration
 	// agents and environ serve the re-render that follows a committed
@@ -269,7 +270,7 @@ func upgradeRun(d upgradeDeps, homeFlag string, requested *selfupdate.Version, r
 	defer ex.release()
 	ensureUpgradeFlushLock(home, d.getenv, d.stderr)
 
-	updater := selfupdate.Updater{Runner: d.runner, GOOS: d.goos, GOARCH: d.goarch}
+	updater := selfupdate.Updater{Verifier: d.verifier, Runner: d.runner, GOOS: d.goos, GOARCH: d.goarch}
 	if rollback {
 		rolled, err := updater.Rollback(ctx, resolved, current)
 		if err != nil {
@@ -532,7 +533,7 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 	}
 	defer ex.release()
 	ensureUpgradeFlushLock(home, d.getenv, d.stderr)
-	updater := selfupdate.Updater{Source: d.source(), Runner: d.runner, GOOS: d.goos, GOARCH: d.goarch}
+	updater := selfupdate.Updater{Source: d.source(), Verifier: d.verifier, Runner: d.runner, GOOS: d.goos, GOARCH: d.goarch}
 	prepared, err := updater.Prepare(ctx, resolved, current, &latest)
 	if err != nil {
 		return failed(err)

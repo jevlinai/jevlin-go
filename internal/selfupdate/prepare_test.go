@@ -49,14 +49,17 @@ func release030(t *testing.T, body string) *fakeReleaseSource {
 	artifact, _ := ArtifactFor(v, "linux", "amd64")
 	archive := makeTarGz(t, archiveEntry{name: "jevlin", body: body})
 	sum := sha256.Sum256(archive)
+	sums := []byte(fmt.Sprintf("%x  %s\n", sum, artifact.ArchiveName))
 	return &fakeReleaseSource{
 		release: ReleaseInfo{Version: v, Assets: map[string]ReleaseAsset{
 			artifact.ArchiveName: {Name: artifact.ArchiveName, Size: int64(len(archive))},
 			ChecksumAssetName:    {Name: ChecksumAssetName, Size: 100},
+			SignatureAssetName:   {Name: SignatureAssetName, Size: 89},
 		}},
 		assets: map[string][]byte{
 			artifact.ArchiveName: archive,
-			ChecksumAssetName:    []byte(fmt.Sprintf("%x  %s\n", sum, artifact.ArchiveName)),
+			ChecksumAssetName:    sums,
+			SignatureAssetName:   SignChecksums(testReleaseKey, sums),
 		},
 	}
 }
@@ -152,6 +155,17 @@ func TestPrepareRejectsWhatDoesNotVerify(t *testing.T) {
 		},
 		"missing checksum entry": func(s *fakeReleaseSource) {
 			s.assets[ChecksumAssetName] = []byte(strings.Repeat("0", 64) + "  other\n")
+			s.assets[SignatureAssetName] = SignChecksums(testReleaseKey, s.assets[ChecksumAssetName])
+		},
+		"unsigned": func(s *fakeReleaseSource) { delete(s.assets, SignatureAssetName) },
+		"archive and checksums replaced together, signature kept": func(s *fakeReleaseSource) {
+			for name := range s.assets {
+				if strings.HasSuffix(name, ".tar.gz") {
+					evil := makeTarGz(t, archiveEntry{name: "jevlin", body: "0.3.0\n#evil"})
+					s.assets[name] = evil
+					s.assets[ChecksumAssetName] = []byte(fmt.Sprintf("%x  %s\n", sha256.Sum256(evil), name))
+				}
+			}
 		},
 	}
 	for name, mutate := range cases {

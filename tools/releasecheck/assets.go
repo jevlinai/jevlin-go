@@ -34,6 +34,10 @@ type NamingContract struct {
 	ChecksumName    string
 }
 
+// signatureSuffix is what signs[0].signature appends to the checksum file's
+// name: the release signature an installed updater requires.
+const signatureSuffix = ".sig"
+
 // goreleaserConfig models only the keys the naming contract depends on.
 //
 // Deliberately not KnownFields(true): the file legitimately carries
@@ -69,6 +73,10 @@ type goreleaserConfig struct {
 		NameTemplate string `yaml:"name_template"`
 		Disable      bool   `yaml:"disable"`
 	} `yaml:"checksum"`
+	Signs []struct {
+		Artifacts string `yaml:"artifacts"`
+		Signature string `yaml:"signature"`
+	} `yaml:"signs"`
 }
 
 // ParseNamingContract reads .goreleaser.yaml and refuses anything it
@@ -144,6 +152,15 @@ func checkNamingShape(cfg goreleaserConfig) error {
 	if cfg.Checksum.NameTemplate == "" {
 		return fmt.Errorf(".goreleaser.yaml has no checksum.name_template; this check will not assume goreleaser's default")
 	}
+	if len(cfg.Signs) != 1 {
+		return fmt.Errorf(".goreleaser.yaml has %d signs entries, and this check models exactly 1: "+
+			"the checksum signature every installed updater requires", len(cfg.Signs))
+	}
+	if sign := cfg.Signs[0]; sign.Artifacts != "checksum" || sign.Signature != "${artifact}"+signatureSuffix {
+		return fmt.Errorf(".goreleaser.yaml signs[0] must sign artifacts: checksum into signature: \"${artifact}%s\", "+
+			"the one signature asset installed updaters fetch; it has artifacts %q, signature %q",
+			signatureSuffix, sign.Artifacts, sign.Signature)
+	}
 	return nil
 }
 
@@ -206,9 +223,26 @@ func (c NamingContract) ExpectedAssets(v ReleaseVersion) ([]string, error) {
 		}
 	}
 
+	sums, err := c.checksumName(v)
+	if err != nil {
+		return nil, err
+	}
+	names = append(names, sums, sums+signatureSuffix)
+
+	sort.Strings(names)
+	return names, nil
+}
+
+// SignatureName is the release signature asset for v.
+func (c NamingContract) SignatureName(v ReleaseVersion) (string, error) {
+	sums, err := c.checksumName(v)
+	return sums + signatureSuffix, err
+}
+
+func (c NamingContract) checksumName(v ReleaseVersion) (string, error) {
 	sums, err := template.New("checksum").Parse(c.ChecksumName)
 	if err != nil {
-		return nil, fmt.Errorf("checksum.name_template does not parse: %w", err)
+		return "", fmt.Errorf("checksum.name_template does not parse: %w", err)
 	}
 	var b strings.Builder
 	if err := sums.Execute(&b, templateFields{
@@ -217,12 +251,9 @@ func (c NamingContract) ExpectedAssets(v ReleaseVersion) ([]string, error) {
 		Version:     v.String(),
 		Tag:         v.Tag(),
 	}); err != nil {
-		return nil, fmt.Errorf("checksum.name_template refers to something this check cannot resolve: %w", err)
+		return "", fmt.Errorf("checksum.name_template refers to something this check cannot resolve: %w", err)
 	}
-	names = append(names, b.String())
-
-	sort.Strings(names)
-	return names, nil
+	return b.String(), nil
 }
 
 // AssetDiff is the comparison between what a release should carry and

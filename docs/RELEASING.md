@@ -38,8 +38,9 @@ preflight exists because a release of the predecessor project shipped without it
    Annotated, because it records who cut the release and when. `origin` is
    `jevlinai/jevlin-go`, where `npm/install.js` and the self-updater look for releases.
 5. **Watch the run.** Read preflight's output even when it passes: it prints the tagged
-   commit, canonical `main` and the asset names it expects. `publish-npm` waits for one of
-   the `release` environment's reviewers to approve it.
+   commit, canonical `main` and the asset names it expects. `GitHub Release` waits for one
+   of the `release-signing` environment's reviewers to approve it, because it is the job
+   that reads the signing key, and `publish-npm` for one of the `release` environment's.
 6. **Accept the upgrade by hand.** On real native installations of the previous release,
    `jevlin upgrade` lands on the new one (`jevlin version` says so) and
    `jevlin upgrade -rollback` puts the previous one back. One of them is a Windows desktop
@@ -114,7 +115,12 @@ carries; a later fix on `main` does not make a wrong tag right.
    statements of what a release file is called. The expected names are derived from
    `.goreleaser.yaml` at the tag, not hard-coded, and a shape the tool does not model — a
    second build, `targets:`, `ignore:`, a template field it cannot resolve — stops the release.
-7. **`npm pack ./npm --dry-run` succeeds.** Not `npm --prefix npm pack`: `--prefix` sets the
+7. **`internal/selfupdate/signature.go` at the tag compiles in at least one release key**,
+   each a standard base64 Ed25519 public key. An updater built from a tag with none refuses
+   every release, and goreleaser's sign step would refuse it only after the tag is pushed and
+   the version spent. The list is parsed from the tag's source, like every file here, not taken
+   from the release tool's own build.
+8. **`npm pack ./npm --dry-run` succeeds.** Not `npm --prefix npm pack`: `--prefix` sets the
    install prefix, not the pack target, and that form fails on the root's missing
    `package.json`.
 
@@ -125,9 +131,15 @@ is what makes a rerun safe.
 
 Six static binaries (linux, darwin and windows, each amd64 and arm64), each archived with
 `LICENSE`, `NOTICE` and `README.md` — `tar.gz`, `zip` on Windows — and checksummed into
-`checksums.txt`, published as a GitHub Release whose body is the commit log since the last
-tag, opened by a link to `CHANGELOG.md` at this one. It is the only job with
-`contents: write`, and goreleaser runs only when the release is `absent`.
+`checksums.txt`, which is signed into `checksums.txt.sig`, published as a GitHub Release whose
+body is the commit log since the last tag, opened by a link to `CHANGELOG.md` at this one. It is
+the only job with `contents: write` and the only one that names the `release-signing`
+environment, and goreleaser runs only when the release is `absent`.
+
+goreleaser's `signs` step runs `go run ./tools/releasecheck sign` with the environment's
+`JEVLIN_RELEASE_SIGNING_KEY`. It signs only with a key whose public half the tagged
+`internal/selfupdate` compiles in, so a release no installed updater could verify stops here,
+before anything is published.
 
 goreleaser creates the release as a draft, uploads every asset to it, and publishes it last.
 Publishing is the moment the repository's immutable releases take hold: from then on GitHub
@@ -137,11 +149,12 @@ the self-updater download under a version is fixed the moment anyone can see it.
 
 ### `verify-release` — read it back
 
-The release is read back from the API and must carry **exactly** the six archives and
-`checksums.txt`, no more and no fewer. An unexpected asset fails as a missing one does: it
+The release is read back from the API and must carry **exactly** the six archives,
+`checksums.txt` and `checksums.txt.sig`, no more and no fewer. An unexpected asset fails as a missing one does: it
 means the configuration grew an artifact the check cannot name, and a verifier that shrugs at
 files it does not understand is not verifying. goreleaser exiting zero is not proof it
-published.
+published. The published `checksums.txt.sig` is then downloaded and checked by the updater's
+own verifier, `releasecheck verify-signature`, against the keys this tag compiles in.
 
 ### `publish-npm` — the package
 
@@ -220,6 +233,13 @@ for copies already out there, so each is a contract with a test that fails in CI
   `checksums.txt`, computed by a small checked-in function rather than goreleaser's templates.
   `tools/releasecheck`'s `TestSelfUpdaterAssetNamesMatchGoReleaser` derives the matrix from
   `.goreleaser.yaml` and requires the two to agree.
+- **A signed `checksums.txt`**: `checksums.txt.sig` is one line of standard base64, the
+  Ed25519 signature over `jevlin release checksums.txt v1\n` followed by `checksums.txt`'s
+  exact bytes, by a key in `internal/selfupdate`'s compiled-in `releasePublicKeys`. The
+  updater checks it before it reads a checksum, so someone who can replace release assets but
+  does not hold the key cannot get a binary run or installed: a matching `checksums.txt` is
+  integrity, the signature is authenticity. An updater with no compiled-in key refuses every
+  release. `internal/selfupdate`'s `signature_test.go` guards it.
 - **A stable, published release from the canonical origin, under the frozen bounds**: GitHub's
   latest release, or exactly `vX.Y.Z` when asked, from the compiled-in `jevlinai/jevlin-go`;
   no drafts, pre-releases or non-canonical tags; redirects only to GitHub's own hosts; at most
@@ -229,6 +249,27 @@ for copies already out there, so each is a contract with a test that fails in CI
   `TestReleaseRejectsWhatIsNotAStableCanonicalRelease`,
   `TestRedirectPolicyIsHTTPSHostBoundedAndHopBounded` and `TestFrozenBounds` guard it. A
   release approaching half a bound is a question for review, not a reason to raise it.
+
+## The release signing key
+
+Installed updaters trust exactly the public keys compiled into them, so the key outlives any
+one release. To create one, on a trusted machine:
+
+```sh
+go run ./tools/releasecheck keygen -out release-signing.key
+```
+
+It prints the public key and writes the private seed to the new file, mode 0600, and nowhere
+else. Store the file's contents as the `JEVLIN_RELEASE_SIGNING_KEY` secret of the
+`release-signing` environment, keep an offline backup if you want one, delete the file, and
+add the public key to `releasePublicKeys` in a reviewed pull request. Until that pull request
+is on `main` and in the tag, `releasecheck sign` refuses and nothing is published.
+
+To rotate, add the new public key alongside the old one and release; once installations have
+had time to upgrade, swap the secret and drop the old key. A copy that never took a release
+carrying the new key cannot verify releases signed only by it, and has to be reinstalled. If
+the key leaks, remove its public half from `releasePublicKeys` and release under a new key
+at once: installations still trusting the leaked key are exposed until they upgrade.
 
 ## Repository settings this relies on
 
@@ -241,9 +282,13 @@ for copies already out there, so each is a contract with a test that fails in CI
   are refused, and nobody can bypass it.
 - **`release` environment**: deployments need a required reviewer's approval and are allowed
   only from `main` and `v*` tags.
+- **`release-signing` environment**: deployments need a required reviewer's approval and are
+  allowed only from `v*` tags; it holds the one secret, `JEVLIN_RELEASE_SIGNING_KEY`, which
+  no run reads until a reviewer has approved it.
 - **Immutable releases**: a published release's assets and tag cannot change.
 - **Actions pinned to a full commit SHA**, required for every action a workflow uses.
-- **No secrets**, in the repository or the environment; npm authenticates by OIDC.
+- **No other secrets**, in the repository or the `release` environment; npm authenticates by
+  OIDC.
 
 Three controls, because each covers a case the others do not. A tag push runs the workflow as
 it exists at the tagged commit, so a crafted commit could carry a `release.yml` without the

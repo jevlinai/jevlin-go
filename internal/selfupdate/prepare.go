@@ -11,7 +11,7 @@ import (
 // Source, which a command sets to NewHTTPSource(nil).
 type Updater struct {
 	Source   ReleaseSource
-	Verifier ReleaseVerifier // nil: SHA256Verifier
+	Verifier ReleaseVerifier // nil: SignedVerifier{}, the compiled-in release keys
 	Runner   CommandRunner   // nil: ExecRunner
 	GOOS     string
 	GOARCH   string
@@ -78,7 +78,7 @@ func (u Updater) Prepare(ctx context.Context, executable, currentBuild string, r
 	}
 	verifier := u.Verifier
 	if verifier == nil {
-		verifier = SHA256Verifier{}
+		verifier = SignedVerifier{}
 	}
 	resolved, err := ResolveExecutable(executable)
 	if err != nil {

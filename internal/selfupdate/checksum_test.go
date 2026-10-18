@@ -83,6 +83,7 @@ func TestFrozenBounds(t *testing.T) {
 	for name, pair := range map[string][2]int64{
 		"release json":   {MaxReleaseJSONBytes, 1 << 20},
 		"checksums":      {MaxChecksumBytes, 64 << 10},
+		"signature":      {MaxSignatureBytes, 1 << 10},
 		"archive":        {MaxArchiveBytes, 64 << 20},
 		"executable":     {MaxExecutableBytes, 64 << 20},
 		"expanded":       {int64(MaxExpandedBytes), 128 << 20},

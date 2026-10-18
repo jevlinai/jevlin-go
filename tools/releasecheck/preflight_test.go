@@ -37,6 +37,7 @@ func newReleaseRepo(t *testing.T, version string) *releaseRepo {
 	dir := newRepo(t)
 	copyFromRepo(t, dir, ".goreleaser.yaml")
 	copyFromRepo(t, dir, "npm/install.js")
+	copyFromRepo(t, dir, releaseKeysFile)
 	write(t, dir, "npm/package.json", `{"name":"jevlin","version":"`+version+`"}`+"\n")
 	write(t, dir, "CHANGELOG.md", "# Changelog\n\n## v"+version+" — 2026-09-20\n\n- something a participant should know\n")
 	commit(t, dir, "release "+version)

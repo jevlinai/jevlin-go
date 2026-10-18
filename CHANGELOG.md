@@ -10,6 +10,16 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## Unreleased
+
+- **`jevlin upgrade` installs only releases signed by the project.** A release now carries
+  `checksums.txt.sig`, a signature over `checksums.txt` by the project's release key, and the
+  updater checks it against the key built into it before it trusts a checksum. Someone able to
+  replace a release's files can no longer get a binary of their own installed by publishing a
+  checksum that matches it. The automatic upgrade under `[update] mode = "apply"` checks the
+  same way. This release itself is installed by the copy you have now, which checks only the
+  checksum; the signature is checked from the next upgrade on.
+
 ## v0.4.0 — 2026-10-18
 
 A daily check for a new release, and four fixes. By default the check only tells you that
