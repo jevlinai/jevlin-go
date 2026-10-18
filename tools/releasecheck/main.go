@@ -231,6 +231,10 @@ func runPreflight(args []string, out io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(out, "ok  %s at the tag compiles in %d release signing key(s)\n", releaseKeysFile, keys)
+	if _, err := CheckInstallerTrustsTheReleaseKeys(installJS, keysSource); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "ok  npm/install.js at the tag trusts the same release key(s)\n")
 
 	if err := setOutput("version", v.String()); err != nil {
 		return err

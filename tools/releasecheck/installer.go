@@ -33,6 +33,7 @@ var installerFragments = []string{
 	"const name = `jevlin_${pkg.version}_${osName}_${arch}.${ext}`",
 	"const base = `https://github.com/${REPO}/releases/download/v${pkg.version}`",
 	"get(`${base}/checksums.txt`)",
+	"get(`${base}/checksums.txt.sig`)",
 }
 
 // installerPlatforms is install.js's os map read in the direction that
@@ -66,7 +67,7 @@ func InstallerAssetNames(installJS []byte, v ReleaseVersion) ([]string, error) {
 			names = append(names, fmt.Sprintf("jevlin_%s_%s_%s%s", v.String(), goos, goarch, ext))
 		}
 	}
-	names = append(names, "checksums.txt")
+	names = append(names, "checksums.txt", "checksums.txt.sig")
 	sort.Strings(names)
 	return names, nil
 }
@@ -85,21 +86,12 @@ func CheckNamingContractsAgree(goreleaserYAML, installJS []byte, v ReleaseVersio
 	if err != nil {
 		return err
 	}
-	all, err := contract.ExpectedAssets(v)
+	// The checksum signature is the wrapper's as much as the updater's:
+	// npm attests install.js, not the archive it downloads, so install.js
+	// trusts checksums.txt only under the signature (RELEASE_PUBLIC_KEYS).
+	fromConfig, err := contract.ExpectedAssets(v)
 	if err != nil {
 		return err
-	}
-	// The checksum signature is the self-updater's, not the wrapper's: npm
-	// already attests the package, and install.js never fetches it.
-	signature, err := contract.SignatureName(v)
-	if err != nil {
-		return err
-	}
-	var fromConfig []string
-	for _, name := range all {
-		if name != signature {
-			fromConfig = append(fromConfig, name)
-		}
 	}
 	fromInstaller, err := InstallerAssetNames(installJS, v)
 	if err != nil {

@@ -219,6 +219,24 @@ jobs:
           go run ./tools/releasecheck verify-signature \
             -sums signed/checksums.txt -sig signed/checksums.txt.sig
 
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+
+      # What npm runs at a participant's install, run here before the
+      # package is published: this tag's npm/install.js downloads its
+      # platform's archive, refuses it unless checksums.txt carries a
+      # signature by a key the script itself carries, checks the archive
+      # against checksums.txt and unpacks the binary, which must report
+      # this version. A published npm version cannot be withdrawn, so an
+      # installer that cannot install this release stops the run here,
+      # not at every participant's npm install.
+      - name: The npm installer installs this release
+        run: |
+          node npm/install.js
+          test "$(./npm/bin/jevlin version)" = "jevlin ${GITHUB_REF_NAME#v}"
+
   publish-npm:
     name: publish to npm
     needs: [preflight, verify-release]

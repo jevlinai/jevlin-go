@@ -39,9 +39,10 @@ release:
   draft: false
 `
 
-// wantInstallerAssets028 is what npm/install.js fetches: everything but the
-// self-updater's checksum signature.
-var wantInstallerAssets028 = append(wantAssets028[:1:1], wantAssets028[2:]...)
+// wantInstallerAssets028 is what npm/install.js fetches: every asset, the
+// checksum signature included, since the wrapper verifies it as the
+// self-updater does.
+var wantInstallerAssets028 = wantAssets028
 
 var wantAssets028 = []string{
 	"checksums.txt",

@@ -10,6 +10,14 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## Unreleased
+
+- **`npm install` installs only releases signed by the project.** The npm package's installer
+  now checks `checksums.txt.sig` against the project's release key, which the package carries,
+  before it trusts a checksum, as `jevlin upgrade` does since v0.4.1. A release that was never
+  signed, or whose files do not match what the key signed, installs nothing. The check applies
+  from the npm install of this release itself, because npm runs the new package's own installer.
+
 ## v0.4.1 — 2026-10-19
 
 Releases are now signed, and a native install upgrades itself by default. From v0.4.0, run
