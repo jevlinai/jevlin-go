@@ -235,7 +235,23 @@ func (ops hookOps) startBackground(hc hookContext) {
 	}
 }
 
-func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+// hookMain is FAIL-OPEN for a panic as for an error (#48): a panic anywhere
+// in a hook, the trace's scrubber above all, exits 0, and the host runs the
+// command as written. Uncaught, Go's runtime exits 2, and Claude Code reads
+// exit 2 from a PreToolUse hook as a block: the search the hook was
+// preparing would not run, and the panic would be shown to the model. Every
+// hook writes its one answer last, after the trace is prepared, so a panic
+// there leaves nothing written.
+func hookMain(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Writer) (code int) {
+	defer func() {
+		if recover() != nil {
+			code = exitOK
+		}
+	}()
+	return hookDispatch(ops, args, stdin, stdout, stderr)
+}
+
+func hookDispatch(ops hookOps, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	cfgPath := ""
 	if len(args) >= 2 && args[0] == "-config" {
 		cfgPath, args = args[1], args[2:]

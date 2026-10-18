@@ -138,11 +138,19 @@ func capTrace(env *traceEnvelope) *traceEnvelope {
 	return nil
 }
 
+// traceScrubTestHook, when set, runs on every text prepareTraceText is about
+// to scrub. Tests set it to panic, standing in for a scrubber bug, to hold
+// search and the hooks to failing open when one happens (#48).
+var traceScrubTestHook func(text string)
+
 // prepareTraceText accepts complete bounded entries and retains a UTF-8 tail
 // only after scrubbing. Oversize entries are omitted without slicing them.
 func prepareTraceText(text string) string {
 	if len(text) > hookTailBytes {
 		return ""
+	}
+	if traceScrubTestHook != nil {
+		traceScrubTestHook(text)
 	}
 	text = redact.TraceText(text)
 	if len(text) > traceHistoryCap {

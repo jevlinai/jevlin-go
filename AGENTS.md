@@ -49,8 +49,9 @@ the named tests.
 ## Hard invariants — a change that violates one is wrong even if it compiles and every test passes
 1. **Fail-open on the earning path.** A mining-side write, spawn, or network failure MUST NOT turn
    a successful search/inference into a client-visible failure, and MUST NOT add latency the user
-   notices. The hook emits nothing and exits 0 on any internal error; `search` swallows intake/flush
-   failures. "A mining-side write must never block or fail the search." Under Codex's permission
+   notices. The hook emits nothing and exits 0 on any internal error, a panic included (`hookMain`);
+   `search` swallows intake/flush failures, and a panic while preparing the trace sends the search
+   with none (`searchTraceFailingOpen`). "A mining-side write must never block or fail the search." Under Codex's permission
    profile a process a sandboxed search spawns contacts **only hosts the profile lists**
    (`codexAllowedHosts`: the router, the AS when `as_url` is set, the platform agents API): on
    macOS a detached child outlives the search, and a CONNECT the profile denies fails whichever

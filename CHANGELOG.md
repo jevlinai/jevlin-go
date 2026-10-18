@@ -12,6 +12,11 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
+- **A bug in preparing the trace can no longer stop a search.** Had the code that scrubs and
+  caps the text sent with a search ever crashed, `jevlin search` crashed with it and sent
+  nothing, and under Claude Code the hook that adds the trace exited in the way Claude Code reads
+  as blocking the command, so the search did not run. The search now goes without its trace,
+  and `jevlin search` says so on stderr; the hook exits quietly and the command runs as written.
 - **`npm install` installs only releases signed by the project.** The npm package's installer
   now checks `checksums.txt.sig` against the project's release key, which the package carries,
   before it trusts a checksum, as `jevlin upgrade` does since v0.4.1. A release that was never
