@@ -13,12 +13,13 @@ leading zeros, no pre-release or build suffix.
 
 The npm package carries no binary. Its postinstall, `npm/install.js`, downloads the archive
 for its platform from `releases/download/v<version>`, where the version is the package's own,
-and checks it against that release's `checksums.txt`. So the wrapper's version *is* the
-release tag it fetches, and a mismatch is a package that can never install. The failure is
-silent on the side that gets watched — goreleaser never reads `npm/package.json`, so the
-GitHub Release is perfect — and surfaces at a participant's `npm install`, in a version that
-cannot be withdrawn. That is why it is checked before anything is built. Each check in
-preflight exists because a release of the predecessor project shipped without it.
+checks that release's `checksums.txt` against `checksums.txt.sig` and the archive against
+`checksums.txt`. So the wrapper's version *is* the release tag it fetches, and a mismatch is a
+package that can never install. The failure is silent on the side that gets watched —
+goreleaser never reads `npm/package.json`, so the GitHub Release is perfect — and surfaces at
+a participant's `npm install`, in a version that cannot be withdrawn. That is why it is
+checked before anything is built. Each check in preflight exists because a release of the
+predecessor project shipped without it.
 
 ## The human half
 
@@ -119,7 +120,9 @@ carries; a later fix on `main` does not make a wrong tag right.
    each a standard base64 Ed25519 public key. An updater built from a tag with none refuses
    every release, and goreleaser's sign step would refuse it only after the tag is pushed and
    the version spent. The list is parsed from the tag's source, like every file here, not taken
-   from the release tool's own build.
+   from the release tool's own build. `npm/install.js`'s `RELEASE_PUBLIC_KEYS` at the tag must
+   name the same keys: each npm version installs only its own release, so a list that differs
+   is a package that refuses the release the workflow signs, at every install.
 8. **`npm pack ./npm --dry-run` succeeds.** Not `npm --prefix npm pack`: `--prefix` sets the
    install prefix, not the pack target, and that form fails on the root's missing
    `package.json`.
@@ -155,6 +158,12 @@ means the configuration grew an artifact the check cannot name, and a verifier t
 files it does not understand is not verifying. goreleaser exiting zero is not proof it
 published. The published `checksums.txt.sig` is then downloaded and checked by the updater's
 own verifier, `releasecheck verify-signature`, against the keys this tag compiles in.
+
+Last, the tag's `npm/install.js` runs as npm's postinstall would, against the published
+release: it must verify the signature with its own keys, unpack the binary, and get the tag's
+version back from it. The clean-install jobs run it too, but after the publish, and a
+published npm version cannot be withdrawn; an installer that cannot install its own release
+stops the run here instead.
 
 ### `publish-npm` — the package
 
@@ -236,7 +245,8 @@ for copies already out there, so each is a contract with a test that fails in CI
 - **A signed `checksums.txt`**: `checksums.txt.sig` is one line of standard base64, the
   Ed25519 signature over `jevlin release checksums.txt v1\n` followed by `checksums.txt`'s
   exact bytes, by a key in `internal/selfupdate`'s compiled-in `releasePublicKeys`. The
-  updater checks it before it reads a checksum, so someone who can replace release assets but
+  updater checks it before it reads a checksum, and so does `npm/install.js`, with the same
+  keys in `RELEASE_PUBLIC_KEYS`, so someone who can replace release assets but
   does not hold the key cannot get a binary run or installed: a matching `checksums.txt` is
   integrity, the signature is authenticity. An updater with no compiled-in key refuses every
   release. `internal/selfupdate`'s `signature_test.go` guards it.
@@ -262,14 +272,16 @@ go run ./tools/releasecheck keygen -out release-signing.key
 It prints the public key and writes the private seed to the new file, mode 0600, and nowhere
 else. Store the file's contents as the `JEVLIN_RELEASE_SIGNING_KEY` secret of the
 `release-signing` environment, keep an offline backup if you want one, delete the file, and
-add the public key to `releasePublicKeys` in a reviewed pull request. Until that pull request
-is on `main` and in the tag, `releasecheck sign` refuses and nothing is published.
+add the public key to `releasePublicKeys` and to `npm/install.js`'s `RELEASE_PUBLIC_KEYS` in a
+reviewed pull request. Until that pull request is on `main` and in the tag, `releasecheck sign`
+refuses and nothing is published; preflight refuses a tag where the two lists differ.
 
-To rotate, add the new public key alongside the old one and release; once installations have
-had time to upgrade, swap the secret and drop the old key. A copy that never took a release
-carrying the new key cannot verify releases signed only by it, and has to be reinstalled. If
-the key leaks, remove its public half from `releasePublicKeys` and release under a new key
-at once: installations still trusting the leaked key are exposed until they upgrade.
+Every change below is made to both lists in one commit. To rotate, add the new public key
+alongside the old one and release; once installations have had time to upgrade, swap the
+secret and drop the old key. A copy that never took a release carrying the new key cannot
+verify releases signed only by it, and has to be reinstalled. If the key leaks, remove its
+public half from the lists and release under a new key at once: installations still trusting
+the leaked key are exposed until they upgrade.
 
 ## Repository settings this relies on
 
