@@ -334,7 +334,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	ctx, cancel := searchDeadline(*timeout)
 	defer cancel()
 
-	trace, foreignBridge := searchTrace(ops, cfg.Miner, cfg.Mining.StateDir, getenv)
+	trace, foreignBridge := searchTraceFailingOpen(ops, cfg.Miner, cfg.Mining.StateDir, getenv, stderr)
 	if foreignBridge {
 		// Said on stderr, and only there. `-format json` prints the router's
 		// own bytes, so there is no envelope of ours to put it in without
@@ -793,6 +793,25 @@ func postSearch(ctx context.Context, client *http.Client, call searchCall, body 
 // is that a search never reaches the router labeled with a harness other
 // than the one its host declared. H-R4 (an adapter replaces a bridge it did
 // not write) is untouched: it governs hosts whose channel IS the bridge.
+// searchTraceFailingOpen is searchTrace, with a panic anywhere in it, from
+// the scrubber or anything else that builds, scrubs or caps the envelope,
+// costing the trace and never the search (hard invariant 1, #48): the
+// search goes with no trace, as under JEVLIN_TRACE=off. Every step returns
+// and checks its errors; a panic is what nothing checked, and the scrubber
+// is a large and growing set of rules over text the model writes. It is
+// said on stderr only, as a foreign bridge is: the machine envelope is what
+// the model reads. The panic's value is not repeated, because it can quote
+// the text being scrubbed.
+func searchTraceFailingOpen(ops searchOps, m config.Miner, stateDir string, getenv func(string) string, stderr io.Writer) (env *traceEnvelope, foreignBridge bool) {
+	defer func() {
+		if recover() != nil {
+			env, foreignBridge = nil, false
+			fmt.Fprintln(stderr, "jevlin search: sending this search without a trace: preparing the trace failed")
+		}
+	}()
+	return searchTrace(ops, m, stateDir, getenv)
+}
+
 func searchTrace(ops searchOps, m config.Miner, stateDir string, getenv func(string) string) (env *traceEnvelope, foreignBridge bool) {
 	switch strings.ToLower(getenv("JEVLIN_TRACE")) {
 	case "off", "0", "false":
