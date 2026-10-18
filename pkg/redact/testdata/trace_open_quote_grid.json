@@ -1,0 +1,42 @@
+{
+ "prefixes": [
+  "",
+  "export ",
+  "set ",
+  "declare ",
+  "local -r ",
+  "readonly ",
+  "ENV ",
+  "const ",
+  "let ",
+  "var ",
+  "1. ",
+  "2) ",
+  "- ",
+  "* ",
+  "> ",
+  "$"
+ ],
+ "firsts": [
+  "API_TOKEN=\"your token",
+  "API_TOKEN='your token",
+  "API_TOKEN=\""
+ ],
+ "gaps": [
+  "",
+  "Restart the server.\n",
+  "\n",
+  "Then:\n  run it\n"
+ ],
+ "laters": [
+  "DB_PASSWORD=\"correct horse battery\"",
+  "export DB_PASSWORD='correct horse battery'",
+  "password = \"correct horse battery\"",
+  "3. Then set CLIENT_SECRET=\"correct horse battery\""
+ ],
+ "secret_words": [
+  "your",
+  "horse",
+  "battery"
+ ]
+}

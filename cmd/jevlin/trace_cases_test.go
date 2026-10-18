@@ -105,6 +105,54 @@ func TestSharedTraceSourceAgreesOnEveryTraceCase(t *testing.T) {
 	}
 }
 
+// The open-quote grid of pkg/redact's TestAnOpenQuoteNeverReachesALaterSecret
+// through the JavaScript scrubber: every input gives the Go scrubber's
+// answer, which that test holds to keeping no word of either secret.
+func TestTheSharedSourceAgreesOnTheOpenQuoteGrid(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "pkg", "redact", "testdata", "trace_open_quote_grid.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var g struct {
+		Prefixes, Firsts, Gaps, Laters []string
+	}
+	if err := json.Unmarshal(raw, &g); err != nil {
+		t.Fatal(err)
+	}
+	var inputs []string
+	for _, p := range g.Prefixes {
+		for _, f := range g.Firsts {
+			for _, gap := range g.Gaps {
+				for _, l := range g.Laters {
+					inputs = append(inputs, p+f+"\n"+gap+l)
+				}
+			}
+		}
+	}
+	if len(inputs) < 500 {
+		t.Fatalf("fixture: the grid has %d inputs", len(inputs))
+	}
+	script := `
+ const out = input.input.map((text) => m.prepareTraceHistory([{ type: 'text', text }], m.traceIdentityPatterns('', '')));
+ process.stdout.write(JSON.stringify(out));`
+	var js []*string
+	runSharedTraceSource(t, script, inputs, &js)
+	if len(js) != len(inputs) {
+		t.Fatalf("%d answers for %d inputs", len(js), len(inputs))
+	}
+	restore := redact.SetLocalIdentity("", "")
+	defer restore()
+	for i, in := range inputs {
+		if want := redact.TraceText(in); js[i] == nil || *js[i] != want {
+			got := "<omitted>"
+			if js[i] != nil {
+				got = *js[i]
+			}
+			t.Errorf("%q: the JavaScript scrubber differs from the Go one\n%s", in, traceDifference(got, want))
+		}
+	}
+}
+
 // The bridge this client writes, in each shell's syntax, loses its value in
 // both scrubbers. The commands come from the renderers themselves (Go's
 // withTraceBridge and the shared source's), never typed here, so the test
