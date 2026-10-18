@@ -533,7 +533,7 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 	}
 	defer ex.release()
 	ensureUpgradeFlushLock(home, d.getenv, d.stderr)
-	updater := selfupdate.Updater{Source: d.source(), Runner: d.runner, GOOS: d.goos, GOARCH: d.goarch}
+	updater := selfupdate.Updater{Source: d.source(), Verifier: d.verifier, Runner: d.runner, GOOS: d.goos, GOARCH: d.goarch}
 	prepared, err := updater.Prepare(ctx, resolved, current, &latest)
 	if err != nil {
 		return failed(err)
