@@ -17,9 +17,11 @@ import (
 // window: a signature by any of them is accepted. Run
 // `go run ./tools/releasecheck keygen` to provision one (docs/RELEASING.md).
 //
-// While the list is empty this build verifies no release, and the release
-// workflow refuses to sign, so nothing is published that it would accept.
-var releasePublicKeys = []string{}
+// With the list empty a build verifies no release, and the release workflow
+// refuses to sign, so nothing is published that it would accept.
+var releasePublicKeys = []string{
+	"NQZgr4RzDpDvJwHmnnQhsssZ0G4TDSFuotlWmT05fmc=", // provisioned 2026-10-18
+}
 
 // signatureDomain prefixes every signed message, so a signature made for
 // this purpose is never valid for any other use of the same key.
