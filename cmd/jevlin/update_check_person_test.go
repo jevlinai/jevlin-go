@@ -328,11 +328,11 @@ func TestACheckThatCannotWriteItsStampMakesNoRequest(t *testing.T) {
 	}
 }
 
-// With no [update] key, the check only tells: a native copy is not replaced
-// until the participant writes mode = "apply". Releases are not signed yet,
-// and apply would replace the binary unattended on the strength of a
-// checksums.txt from the same release.
-func TestTheDefaultModeOnlyTells(t *testing.T) {
+// With no [update] key, a native copy replaces itself: apply is the default
+// now that a release is installed only under the project's signature. A
+// participant who wants to be told instead writes mode = "notify"
+// (TestAutoCheckWithModeNotifyNeverReplaces).
+func TestTheDefaultModeReplacesANativeCopy(t *testing.T) {
 	f := newUpgradeFixture(t, newLocalRelease(t, "0.3.1", map[string]string{"0.3.1": "0.3.1\n"}))
 	f.env["JEVLIN_HOME"] = f.home
 	stateDir := filepath.Join(f.home, "state")
@@ -341,17 +341,17 @@ func TestTheDefaultModeOnlyTells(t *testing.T) {
 	}
 	cfgPath := filepath.Join(f.home, setupConfigFile)
 	writeFileT(t, cfgPath, "[mining]\nstate_dir = \""+filepath.ToSlash(stateDir)+"\"\n")
-	if mode := mustLoadConfig(t, cfgPath).Update.Mode; mode != config.UpdateNotify {
-		t.Fatalf("the default mode is %q, want notify", mode)
+	if mode := mustLoadConfig(t, cfgPath).Update.Mode; mode != config.UpdateApply {
+		t.Fatalf("the default mode is %q, want apply", mode)
 	}
 	code, out, errOut := f.runAuto(cfgPath)
 	if code != exitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
 	}
-	if f.content(f.exe) != "0.3.0" {
-		t.Fatalf("the default mode replaced the binary: %s", f.content(f.exe))
+	if f.content(f.exe) != "0.3.1" {
+		t.Fatalf("the default mode left the binary at %s, want 0.3.1", f.content(f.exe))
 	}
-	if st := readStampT(t, updateStampPath(f.home)); st.Outcome != updateAvailable || st.Latest != "0.3.1" || st.Mode != config.UpdateNotify {
+	if st := readStampT(t, updateStampPath(f.home)); st.Outcome != updateUpgraded || st.Latest != "0.3.1" || st.Mode != config.UpdateApply {
 		t.Errorf("stamp %+v", st)
 	}
 }

@@ -9,11 +9,11 @@ package main
 // file and starts at most one process; it contacts nothing. The child is the
 // one process a day that reaches the compiled-in GitHub release origin, with
 // no credential: the self-updater's own path, invariant 5's one exception,
-// and no new destination. With [update] mode = "apply" a native copy
-// replaces itself through the same verified transaction `jevlin upgrade`
-// runs (invariant 17). With "notify", the default,
-// or for a copy npm installed, which is never replaced, it only records that
-// a newer release exists, which `jevlin status` and `jevlin doctor` then say.
+// and no new destination. Under [update] mode = "apply", the default, a
+// native copy replaces itself through the same verified transaction
+// `jevlin upgrade` runs (invariant 17). Under "notify", or for a copy npm
+// installed, which is never replaced, it only records that a newer release
+// exists, which `jevlin status` and `jevlin doctor` then say.
 //
 // Hooks run outside an agent's sandbox, which is what lets the child reach a
 // host Codex's permission profile does not list (invariant 1): the search

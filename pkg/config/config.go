@@ -166,9 +166,10 @@ const (
 // origin, with no credential (invariant 5's one exception); a copy npm
 // installed is never replaced, whatever Mode says, and is only noted.
 type Update struct {
-	// Mode is notify (the default), apply or off. Notify until releases are
-	// signed: apply replaces a binary unattended, on the strength of a
-	// checksums.txt from the same release.
+	// Mode is apply (the default), notify or off. Apply is the default
+	// because a release is installed only under the project's signature over
+	// its checksums.txt, checked against a key compiled into the binary doing
+	// the installing (internal/selfupdate's SignedVerifier).
 	Mode string
 	// UnknownMode is a word the file set that this version cannot name; Mode
 	// is then notify — never off, which would silence the check by a typo,
@@ -822,11 +823,13 @@ func (r *rawConfig) finish() (*Config, error) {
 // finishUpdate resolves the [update] block the way [miner] tier is resolved:
 // the word is lowercased and trimmed, and one this version cannot name does
 // not stop the config from loading — a typo must not cost every search. It
-// is kept aside for doctor to name, and the mode falls to notify.
+// is kept aside for doctor to name, and the mode falls to notify, not to the
+// default: a word the participant wrote is a choice this version cannot
+// read, and a binary is not replaced on it.
 func (r *rawConfig) finishUpdate() Update {
 	switch mode := strings.ToLower(strings.TrimSpace(r.updateMode)); mode {
 	case "":
-		return Update{Mode: UpdateNotify}
+		return Update{Mode: UpdateApply}
 	case UpdateApply, UpdateNotify, UpdateOff:
 		return Update{Mode: mode}
 	default:
