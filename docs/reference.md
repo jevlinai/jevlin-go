@@ -281,7 +281,7 @@ project's GitHub releases for the latest version, with no credential. Under
 `[update] mode = "apply"` it replaces a native binary through the same verified
 transaction as `jevlin upgrade`, taking the installation's own locks only then and in one
 attempt: when a setup, uninstall or upgrade holds them it records `lifecycle_busy` and checks
-again the next day. Under `"notify"`, the default until releases are signed, or for a copy npm
+again the next day. Under `"notify"`, the default, or for a copy npm
 installed, which is never replaced, it only records that a newer release exists. A word `mode` does not know counts as `notify`, and
 `doctor` names it. It never moves to an older release, never installs a release a person rolled
 back from (below), and never replaces a binary that belongs to another installation than the

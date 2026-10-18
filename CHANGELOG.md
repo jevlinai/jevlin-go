@@ -12,6 +12,13 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
+- **`jevlin upgrade` installs only releases signed by the project.** A release now carries
+  `checksums.txt.sig`, a signature over `checksums.txt` by the project's release key, and the
+  updater checks it against the key built into it before it trusts a checksum. Someone able to
+  replace a release's files can no longer get a binary of their own installed by publishing a
+  checksum that matches it. The automatic upgrade under `[update] mode = "apply"` checks the
+  same way. This release itself is installed by the copy you have now, which checks only the
+  checksum; the signature is checked from the next upgrade on.
 - **A daily check for a new release.** Once a day, when an agent session starts or ends (Claude
   Code, Cursor and Codex; opencode's plugin and Pi's extension now start the flush at a
   session's start too; Hermes does not), the hooks start a detached check against the project's

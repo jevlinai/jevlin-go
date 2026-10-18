@@ -245,8 +245,8 @@ describes each.
 Once a day, when an agent session starts or ends, jevlin checks the project's GitHub releases
 for a newer one. By default it only tells you: `jevlin status` and `jevlin doctor` say a release
 is available and give the command that installs it. To have a native install replace its own
-binary when a release appears, the same careful way `jevlin upgrade` does (checksum verified,
-the new binary run before and after, the old one kept as `jevlin.previous`, nothing else
+binary when a release appears, the same careful way `jevlin upgrade` does (signature and
+checksum verified, the new binary run before and after, the old one kept as `jevlin.previous`, nothing else
 touched), add to your config:
 
 ```toml
@@ -254,8 +254,8 @@ touched), add to your config:
 mode = "apply"   # or "off" to stop the check; the default is "notify"
 ```
 
-The default is to tell, not to replace, until releases are signed: `apply` installs a release
-nobody has looked at, trusting the checksums that come with it. An npm install is never
+The default is to tell, not to replace: `apply` installs a release nobody on this machine has
+looked at, on the strength of the project's release signature alone. An npm install is never
 replaced this way; the check only notes that a release exists, and `jevlin status` and
 `jevlin doctor` tell you to run npm's command.
 
@@ -279,8 +279,11 @@ jevlin upgrade -rollback        # put back the binary the last upgrade replaced
 npm install -g @jevlinsearch/jevlin@latest    # an npm install is updated with npm
 ```
 
-`upgrade` downloads only from the project's GitHub releases, checks the checksum, and runs the
-new binary before and after installing it. It keeps the old one as `jevlin.previous`;
+`upgrade` downloads only from the project's GitHub releases, checks that `checksums.txt` is
+signed by the project's release key and that the download matches it, and runs the new binary
+before and after installing it. A release without that signature is refused. The release that
+first carries the check is installed by your current copy, which checks the checksum only; every
+upgrade after it checks the signature too. It keeps the old one as `jevlin.previous`;
 `-rollback` swaps back with no network. It refuses an npm copy and a development build, takes at
 most three minutes, and never touches your wallet, registration or config. The new binary then
 rewrites the skills and hooks this installation set up, and for Codex the block in
