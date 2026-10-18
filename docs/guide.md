@@ -243,21 +243,22 @@ describes each.
 ## Upgrading
 
 Once a day, when an agent session starts or ends, jevlin checks the project's GitHub releases
-for a newer one. By default it only tells you: `jevlin status` and `jevlin doctor` say a release
-is available and give the command that installs it. To have a native install replace its own
-binary when a release appears, the same careful way `jevlin upgrade` does (signature and
-checksum verified, the new binary run before and after, the old one kept as
-`jevlin.previous`, nothing else touched), add to your config:
+for a newer one, and a native install replaces its own binary with it, the same careful way
+`jevlin upgrade` does: signature and checksum verified, the new binary run before and after,
+the old one kept as `jevlin.previous`, nothing else touched. To be told instead, add to your
+config:
 
 ```toml
 [update]
-mode = "apply"   # or "off" to stop the check; the default is "notify"
+mode = "notify"   # or "off" to stop the check; the default is "apply"
 ```
 
-The default is to tell, not to replace: `apply` installs a release nobody on this machine has
-looked at, on the strength of the project's release signature alone. An npm install is never
-replaced this way; the check only notes that a release exists, and `jevlin status` and
-`jevlin doctor` tell you to run npm's command.
+Under `notify`, `jevlin status` and `jevlin doctor` say a release is available and give the
+command that installs it. The default installs a release nobody on this machine has looked at,
+on the strength of the project's release signature, checked against a key built into the copy
+you already have; choose `notify` where you would rather pick the moment yourself. An npm
+install is never replaced this way; the check only notes that a release exists, and
+`jevlin status` and `jevlin doctor` tell you to run npm's command.
 
 `jevlin status` says when it last checked and what it found; `jevlin doctor`'s `up to date`
 line says the same, and says so when the check has not run for three days, which usually means
