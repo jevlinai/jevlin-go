@@ -114,7 +114,12 @@ carries; a later fix on `main` does not make a wrong tag right.
    statements of what a release file is called. The expected names are derived from
    `.goreleaser.yaml` at the tag, not hard-coded, and a shape the tool does not model — a
    second build, `targets:`, `ignore:`, a template field it cannot resolve — stops the release.
-7. **`npm pack ./npm --dry-run` succeeds.** Not `npm --prefix npm pack`: `--prefix` sets the
+7. **`internal/selfupdate/signature.go` at the tag compiles in at least one release key**,
+   each a standard base64 Ed25519 public key. An updater built from a tag with none refuses
+   every release, and goreleaser's sign step would refuse it only after the tag is pushed and
+   the version spent. The list is parsed from the tag's source, like every file here, not taken
+   from the release tool's own build.
+8. **`npm pack ./npm --dry-run` succeeds.** Not `npm --prefix npm pack`: `--prefix` sets the
    install prefix, not the pack target, and that form fails on the root's missing
    `package.json`.
 

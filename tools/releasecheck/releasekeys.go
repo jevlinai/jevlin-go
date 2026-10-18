@@ -1,0 +1,80 @@
+package main
+
+import (
+	"crypto/ed25519"
+	"encoding/base64"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"strconv"
+)
+
+// releaseKeysFile is where the updater's trusted release keys are written.
+const releaseKeysFile = "internal/selfupdate/signature.go"
+
+// CheckReleaseKeys reads releasePublicKeys out of signature.go's source as
+// the tag carries it, and requires at least one entry, each a standard
+// base64 Ed25519 public key, by the rule selfupdate.ReleasePublicKeys
+// applies.
+//
+// A tag whose list is empty builds an updater that refuses every release,
+// and releasecheck sign, at goreleaser's sign step, refuses to sign for it.
+// That failure comes after the tag is pushed, and tags are immutable, so
+// the version is spent. Here it stops before anything is pushed.
+//
+// The source is parsed rather than the list taken from this tool's own
+// build, because preflight runs from whatever checkout the maintainer or
+// the workflow has, and every file it judges is the tag's (docs/RELEASING.md).
+func CheckReleaseKeys(src []byte) (int, error) {
+	f, err := parser.ParseFile(token.NewFileSet(), releaseKeysFile, src, parser.SkipObjectResolution)
+	if err != nil {
+		return 0, fmt.Errorf("%s at the tag does not parse: %w", releaseKeysFile, err)
+	}
+	var list *ast.CompositeLit
+	found := 0
+	for _, decl := range f.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.VAR {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			vs, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			for i, name := range vs.Names {
+				if name.Name != "releasePublicKeys" {
+					continue
+				}
+				found++
+				if i < len(vs.Values) {
+					list, _ = vs.Values[i].(*ast.CompositeLit)
+				}
+			}
+		}
+	}
+	if found != 1 || list == nil {
+		return 0, fmt.Errorf("%s at the tag has no releasePublicKeys = []string{...} this check can read", releaseKeysFile)
+	}
+	for i, elt := range list.Elts {
+		lit, ok := elt.(*ast.BasicLit)
+		if !ok || lit.Kind != token.STRING {
+			return 0, fmt.Errorf("%s at the tag: releasePublicKeys entry %d is not a string literal", releaseKeysFile, i)
+		}
+		encoded, err := strconv.Unquote(lit.Value)
+		if err != nil {
+			return 0, fmt.Errorf("%s at the tag: releasePublicKeys entry %d does not unquote: %w", releaseKeysFile, i, err)
+		}
+		raw, err := base64.StdEncoding.Strict().DecodeString(encoded)
+		if err != nil || len(raw) != ed25519.PublicKeySize {
+			return 0, fmt.Errorf("%s at the tag: releasePublicKeys entry %d is not a base64 Ed25519 public key", releaseKeysFile, i)
+		}
+	}
+	if len(list.Elts) == 0 {
+		return 0, fmt.Errorf("%s at the tag compiles in no release signing key: an updater built from it refuses every "+
+			"release, and goreleaser's sign step would refuse after the tag is pushed (docs/RELEASING.md, "+
+			"\"The release signing key\")", releaseKeysFile)
+	}
+	return len(list.Elts), nil
+}

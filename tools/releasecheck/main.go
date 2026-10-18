@@ -222,6 +222,16 @@ func runPreflight(args []string, out io.Writer) error {
 		fmt.Fprintf(out, "      %s\n", name)
 	}
 
+	keysSource, err := g.FileAtRev(*tag, releaseKeysFile)
+	if err != nil {
+		return err
+	}
+	keys, err := CheckReleaseKeys(keysSource)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "ok  %s at the tag compiles in %d release signing key(s)\n", releaseKeysFile, keys)
+
 	if err := setOutput("version", v.String()); err != nil {
 		return err
 	}
