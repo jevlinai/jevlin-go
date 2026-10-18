@@ -956,7 +956,8 @@ const redactTraceHomePaths = (text) => text
 // only where the text uses it as an account, because an account is often a
 // word (will, max, claude): as the value of USER, USERNAME, LOGNAME or
 // SUDO_USER; directly before `@` (ssh name@host, a prompt); and after a home
-// directory prefix, /mnt/c/Users/ and a name with a space included. A
+// directory prefix, /mnt/c/Users/ and a name with a space included, also in
+// the dashed form Claude Code names a project's folder with. A
 // generic name identifies nobody and is not searched for, nor is one under
 // three characters or with anything but ASCII in it, so both languages fold
 // case the same way.
@@ -974,7 +975,7 @@ const traceIdentityPatterns = (host, account) => {
   account = String(account || '')
   if (host.includes('.')) host = host.slice(0, host.indexOf('.'))
   if (account.includes('\\')) account = account.slice(account.lastIndexOf('\\') + 1)
-  const out = { host: null, account: null, accountHome: null }
+  const out = { host: null, account: null, accountHome: null, accountDashed: null }
   if (/^[A-Za-z0-9._-]{3,}$/.test(host) && !TRACE_GENERIC_IDENTITY.has(host.toLowerCase())) {
     out.host = new RegExp('(?<![A-Za-z0-9_])' + traceFold(host) + '(?![A-Za-z0-9_])', 'g')
   }
@@ -982,6 +983,11 @@ const traceIdentityPatterns = (host, account) => {
     out.account = new RegExp('(?<![A-Za-z0-9_])' + traceFold(account) + '(?![A-Za-z0-9_])', 'g')
     out.accountHome = new RegExp('(\\/Users\\/|\\/home\\/|[A-Za-z\\u212A\\u017F]:\\\\+[Uu][Ss\\u017F][Ee][Rr][Ss\\u017F]\\\\+)' +
       traceFold(account) + '(?![A-Za-z0-9_.-])', 'g')
+    // The same prefix and name as Claude Code spells a path in a folder's
+    // name, every character but an ASCII letter or digit turned into `-`
+    // (pkg/redact's accountDashed). Here a dash may follow the name.
+    out.accountDashed = new RegExp('(-Users-|-home-|[A-Za-z\\u212A\\u017F]--[Uu][Ss\\u017F][Ee][Rr][Ss\\u017F]-)' +
+      traceFold(account.replace(/[^A-Za-z0-9]/g, '-')) + '(?![A-Za-z0-9_.])', 'g')
   }
   return out
 }
@@ -1020,6 +1026,10 @@ const traceNamesAnAccount = (s, start, end) => {
 // redactTraceHomePaths cuts the segment at a space.
 const redactTraceAccountHomes = (text, identity) =>
   identity.accountHome ? text.replace(identity.accountHome, (match, prefix) => prefix + TRACE_REDACTED) : text
+// redactAccountDashed: the same, in the dashed form of a Claude Code
+// project folder's name.
+const redactTraceAccountDashed = (text, identity) =>
+  identity.accountDashed ? text.replace(identity.accountDashed, (match, prefix) => prefix + TRACE_REDACTED) : text
 const redactTraceLocalIdentity = (text, identity) => {
   if (identity.host) text = text.replace(identity.host, TRACE_REDACTED)
   if (identity.account) {
@@ -1030,7 +1040,7 @@ const redactTraceLocalIdentity = (text, identity) => {
 }
 
 const scrubTraceText = (text, identity = TRACE_LOCAL_IDENTITY) =>
-  redactTraceLocalIdentity(redactTraceHomePaths(redactTraceAccountHomes(redactTraceEmails(redactTraceEnvTables(redactTraceEnvDumps(redactTraceSecretAssignments(redactTraceSecretKeys(redactTraceSecretFlags(scrubTraceCommon(redactTracePrivateKeyBlocks(text)))))))), identity)), identity)
+  redactTraceLocalIdentity(redactTraceHomePaths(redactTraceAccountDashed(redactTraceAccountHomes(redactTraceEmails(redactTraceEnvTables(redactTraceEnvDumps(redactTraceSecretAssignments(redactTraceSecretKeys(redactTraceSecretFlags(scrubTraceCommon(redactTracePrivateKeyBlocks(text)))))))), identity), identity)), identity)
 
 // prepareTraceHistory takes the COMPLETE text parts of one assistant
 // message — `{type: 'text', text}` entries, the shape opencode's message

@@ -132,6 +132,8 @@ unattended once claimed.
              the replaced binary is kept as <binary>.previous. -rollback
              puts that one back, with no network. An npm copy is updated
              with npm install -g @jevlinsearch/jevlin@latest
+             -auto [-config file] is internal: the daily release check the
+             hooks start; jevlin upgrade -h says what it does
   connect    ask whether to mine, then register [-name …] (the answer hints
              the claim page's mining pre-tick); prints the claim URL and
              code and polls (bounded) until claimed. A second run resumes;
