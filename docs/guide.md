@@ -246,8 +246,8 @@ Once a day, when an agent session starts or ends, jevlin checks the project's Gi
 for a newer one. By default it only tells you: `jevlin status` and `jevlin doctor` say a release
 is available and give the command that installs it. To have a native install replace its own
 binary when a release appears, the same careful way `jevlin upgrade` does (signature and
-checksum verified, the new binary run before and after, the old one kept as `jevlin.previous`, nothing else
-touched), add to your config:
+checksum verified, the new binary run before and after, the old one kept as
+`jevlin.previous`, nothing else touched), add to your config:
 
 ```toml
 [update]
