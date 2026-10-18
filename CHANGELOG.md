@@ -17,6 +17,16 @@ rewritten to match newer behaviour; the newer entry says what changed.
   before it trusts a checksum, as `jevlin upgrade` does since v0.4.1. A release that was never
   signed, or whose files do not match what the key signed, installs nothing. The check applies
   from the npm install of this release itself, because npm runs the new package's own installer.
+- **The trace no longer sends an `Authorization` header's credential, or the end of a secret
+  after an unclosed quote.** The assistant text sent with a search is scrubbed of secrets, and
+  two gaps in that scrub are closed. The credential after `Authorization: Bearer` (or `Basic` or
+  `Token`, and in `Proxy-Authorization`), as `curl -H` writes it, is removed whatever its
+  shape; before, only a token of a known shape was, and an opaque one went as written. A
+  variable (`$TOKEN`) or a placeholder (`<token>`) there stays. And a quote left open on a line
+  that starts an assignment, as step-by-step instructions leave one (`1. Set API_TOKEN="your
+  token`), no longer runs into a secret assigned on a later line and leaves most of its value
+  behind. opencode's plugin and Pi's extension carry their own copy of the scrub:
+  `jevlin upgrade` rewrites them, and after an npm update `jevlin agents install` does.
 
 ## v0.4.1 — 2026-10-19
 

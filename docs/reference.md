@@ -344,7 +344,10 @@ degradation.
 | `host_meta` | Agent-specific metadata. |
 
 The scrub removes what has a credential's shape (API keys, Stripe secret keys, GitHub and AWS
-tokens, JWTs, a password inside a URL), a PEM private key block whole, markers included, quoted
+tokens, JWTs, a password inside a URL), the credential after an `Authorization` or
+`Proxy-Authorization` header's `Bearer`, `Basic` or `Token` scheme whatever its shape (a header
+line, `curl -H '…'`, a JSON or JavaScript key; a variable such as `$TOKEN` or `${TOKEN}` and a
+placeholder such as `<token>` stay), a PEM private key block whole, markers included, quoted
 or not (one cut short goes from its BEGIN marker through the lines that still look like a key's
 body: base64 and armor headers, indented, blockquoted or not), email addresses, and the
 account name in a home path: after `/home/`, `/Users/` or `C:\Users\`, also with every separator
@@ -400,9 +403,12 @@ and characters joined to it, so PowerShell's `'it''s …'`, POSIX's `'it'\''s �
 `"""…"""` go whole. Its first part may run across at most 100 line breaks only when the name
 starts its line: after indentation, and after nothing on the line but a run of declaration words
 (`export`, `set`, `declare`, `typeset`, `local`, `readonly`, `env`, Dockerfile's `ENV` and
-`ARG`, `const`, `let`, `var`, a word of flags such as `-x`), list markers (`-`, `*`, `+`, `1.`)
-and quote markers (`>`), and directly after `$`, `$env:` or `${env:`. Only there is the quote
-sure to open a value. Anywhere else it closes on its own line, because in `print("password=", pw)` or `"PASSWORD=" + pw` the quote closes a string,
+`ARG`, `const`, `let`, `var`, a word of flags such as `-x`), list markers (`-`, `*`, `+`, `1.`,
+`1)`) and quote markers (`>`), and directly after `$`, `$env:` or `${env:`. Only there is the
+quote sure to open a value, and even there it does not run past a later secret: a line it
+crosses into that assigns a secret before the quote closes (`3. Then set DB_PASSWORD="…"`)
+means the quote never closed, its value is the rest of its own line, and the later secret is
+read as its own. Anywhere else it closes on its own line, because in `print("password=", pw)` or `"PASSWORD=" + pw` the quote closes a string,
 and read as an opening one it would run into the next line's value. A backslash escapes the next
 character only when that reading closes the quote on its own line, so `'C:\keys\'` closes where
 a POSIX shell closes it; a quote that does not close takes the rest of its line. An unquoted value
@@ -448,14 +454,16 @@ written after other words, keeps the tail of a value with spaces; a flag's value
 letters only, or after a flag whose last word is not a secret's (`--auth …`); a flag's quoted
 value broken across lines; a quoted value after `=` in the middle of a line that runs across
 lines keeps every line after the one its quote opens on, which is the whole value when the quote
-ends its line (`docker run -e API_TOKEN="` and a line break); a secret of capitals and digits
+ends its line (`docker run -e API_TOKEN="` and a line break); a value quoted across lines keeps
+its lines from the first one that assigns a secret inside it (`PASSWORD=…`), where it ends; a secret of capitals and digits
 after `$` (`password: $ECRET123`), read as a variable; a Spring default that starts with a digit
 (`${DB_PASSWORD:1234…}`), read as bash's substring; JSON
 escaped inside a quoted string, such as a `curl -d "{\"password\": \"…\"}"` body;
 NUL-separated `env -0` output; a PowerShell table row whose name fills its column, and the rows
 after a one-word line that follows a table, which reads as a name with no value; and a Windows
 name with spaces at the very end of a path keeps all but its first word. In return, a line that
-begins `Password: …` loses the rest of the line, a call at a line's start (`apiKey: getKey(),`)
+begins `Password: …` loses the rest of the line, prose that writes a header with its scheme
+(`send Authorization: Bearer token`) loses the word after it, a call at a line's start (`apiKey: getKey(),`)
 loses its value, a variable named with lowercase letters and digits (`$token2`) or a template
 that names another by a quoted string (`{{ include "chart.name" . }}`) after a secret's key
 loses it, as does bash's substring with a named offset (`${TOKEN:start}`), `--key-value` and
