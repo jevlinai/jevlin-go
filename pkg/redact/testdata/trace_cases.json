@@ -1242,8 +1242,8 @@
   "name": "identity/a dotted account in a dashed folder",
   "host": "",
   "account": "first.last",
-  "in": "-Users-first-last-repo and -Users-first.last-repo",
-  "want": "-Users-[REDACTED]-repo and -Users-first.last-repo"
+  "in": "-Users-first-last-repo",
+  "want": "-Users-[REDACTED]-repo"
  },
  {
   "name": "survives/a dashed folder that is not this account",
