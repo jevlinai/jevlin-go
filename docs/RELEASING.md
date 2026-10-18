@@ -38,8 +38,9 @@ preflight exists because a release of the predecessor project shipped without it
    Annotated, because it records who cut the release and when. `origin` is
    `jevlinai/jevlin-go`, where `npm/install.js` and the self-updater look for releases.
 5. **Watch the run.** Read preflight's output even when it passes: it prints the tagged
-   commit, canonical `main` and the asset names it expects. `publish-npm` waits for one of
-   the `release` environment's reviewers to approve it.
+   commit, canonical `main` and the asset names it expects. `GitHub Release` waits for one
+   of the `release-signing` environment's reviewers to approve it, because it is the job
+   that reads the signing key, and `publish-npm` for one of the `release` environment's.
 6. **Accept the upgrade by hand.** On real native installations of the previous release,
    `jevlin upgrade` lands on the new one (`jevlin version` says so) and
    `jevlin upgrade -rollback` puts the previous one back. One of them is a Windows desktop
@@ -281,8 +282,9 @@ at once: installations still trusting the leaked key are exposed until they upgr
   are refused, and nobody can bypass it.
 - **`release` environment**: deployments need a required reviewer's approval and are allowed
   only from `main` and `v*` tags.
-- **`release-signing` environment**: allowed only from `v*` tags, holding the one secret,
-  `JEVLIN_RELEASE_SIGNING_KEY`.
+- **`release-signing` environment**: deployments need a required reviewer's approval and are
+  allowed only from `v*` tags; it holds the one secret, `JEVLIN_RELEASE_SIGNING_KEY`, which
+  no run reads until a reviewer has approved it.
 - **Immutable releases**: a published release's assets and tag cannot change.
 - **Actions pinned to a full commit SHA**, required for every action a workflow uses.
 - **No other secrets**, in the repository or the `release` environment; npm authenticates by
