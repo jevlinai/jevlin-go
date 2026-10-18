@@ -40,6 +40,12 @@ rewritten to match newer behaviour; the newer entry says what changed.
   what you asked and its last message. Only a subagent's search does this: a turn you interrupted
   after the agent's own search still sends nothing. A Codex or opencode subagent's search no
   longer leaves a mark that nothing takes.
+- **Running jevlin on two machines no longer shows a delivery fault on the one not earning.**
+  When another installation of yours holds an epoch, this one's searches for it can never be
+  delivered. They were retried until they were quarantined, and `status` reported a delivery
+  fault for the whole time. They now wait without a fault, and are dropped once the epoch is
+  over, as before. A fault already shown about them clears once they are all that is left, or
+  once they are dropped.
 
 ## v0.3.2 — 2026-10-17
 

@@ -3,12 +3,14 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/jevlinai/jevlin-go/pkg/auth"
+	"github.com/jevlinai/jevlin-go/pkg/mining/collector"
 )
 
 // A sandboxed command can rewrite any record in the state directory. These
@@ -149,6 +151,10 @@ func TestAFlushRecordWithARefusedDetailIsStillCleared(t *testing.T) {
 	}{
 		{auth.HealthFlushStateUnavailable, func(s *auth.Store) { clearFlushStateHealth(s, flushLockHealthPrefix) }},
 		{auth.HealthAuthUnavailable, clearAuthUnavailableHealth},
+		// A delivery fault, once every queued record is held back.
+		{auth.HealthSpoolBacklog, func(s *auth.Store) {
+			updateFlushDeliveryHealth(s, collector.Health{}, 1, 1, 0, heldBack{records: 1}, io.Discard)
+		}},
 	} {
 		stateDir := filepath.Join(t.TempDir(), "state")
 		store, err := auth.OpenStore(stateDir)
