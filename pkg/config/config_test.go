@@ -707,12 +707,13 @@ func TestLoadIgnoresJevlinTOMLInWorkingDirectory(t *testing.T) {
 	}
 }
 
-// [update] mode: absent is notify, the three words are normalized, and a
+// [update] mode: absent is apply, the three words are normalized, and a
 // word this version cannot name falls to notify — never off, which would
-// silence the check by a typo, and never apply — with the word kept aside.
-func TestUpdateModeDefaultsToNotifyAndAnUnknownWordFallsToNotify(t *testing.T) {
+// silence the check by a typo, and never apply, the default, which would
+// replace a binary on a word nobody chose — with the word kept aside.
+func TestUpdateModeDefaultsToApplyAndAnUnknownWordFallsToNotify(t *testing.T) {
 	for raw, want := range map[string]string{
-		"":        UpdateNotify,
+		"":        UpdateApply,
 		"apply":   UpdateApply,
 		"notify":  UpdateNotify,
 		"off":     UpdateOff,

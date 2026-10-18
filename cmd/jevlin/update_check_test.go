@@ -299,7 +299,9 @@ func autoFixture(t *testing.T, lr *localRelease, extra string) (*upgradeFixture,
 	}
 	cfgPath := filepath.Join(f.home, setupConfigFile)
 	if !strings.Contains(extra, "[update]") {
-		// The default is notify; these tests are about replacing.
+		// These tests are about replacing, so they name apply rather than
+		// lean on the default, which TestTheDefaultModeReplacesANativeCopy
+		// holds.
 		extra += "[update]\nmode = \"apply\"\n"
 	}
 	writeFileT(t, cfgPath, "[mining]\nstate_dir = \""+filepath.ToSlash(stateDir)+"\"\n"+extra)
@@ -671,7 +673,8 @@ func TestStatusReportsTheReleaseCheckInTextAndJSON(t *testing.T) {
 		t.Fatalf("status -json exit %d: %s", code, errOut.String())
 	}
 	update, _ := dataOf(t, decodeCommandEnvelope(t, jsonOut.String(), "status"))["update"].(map[string]any)
-	if update["mode"] != config.UpdateNotify || update["checked"] != true || update["outcome"] != string(updateAvailable) ||
+	// The fixture's config names no [update] mode, so it is the default.
+	if update["mode"] != config.UpdateApply || update["checked"] != true || update["outcome"] != string(updateAvailable) ||
 		update["running"] != "0.3.1" || update["latest"] != "0.3.2" || update["fix"] == "" || update["checked_at"] == "" {
 		t.Errorf("update: %v", update)
 	}

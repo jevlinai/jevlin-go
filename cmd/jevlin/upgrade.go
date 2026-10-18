@@ -51,10 +51,10 @@ replaces is kept as <binary>.previous. A copy npm installed is updated with npm.
   -home dir       the installation whose lifecycle lock is held (default as
                   uninstall resolves it)
   -auto           the daily check the agent hooks start, not a command a
-                  person runs: with [update] mode = "apply" a native copy
-                  is replaced by a newer release; under "notify", the
-                  default, or for a copy npm installed, it only records
-                  that one exists.
+                  person runs: under [update] mode = "apply", the
+                  default, a native copy is replaced by a newer release;
+                  under "notify", or for a copy npm installed, it only
+                  records that one exists.
                   Exits quietly; jevlin status and doctor report the result
   -config file    with -auto: the config the hook runs with
 `

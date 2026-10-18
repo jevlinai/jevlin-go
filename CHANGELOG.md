@@ -19,6 +19,12 @@ rewritten to match newer behaviour; the newer entry says what changed.
   checksum that matches it. The automatic upgrade under `[update] mode = "apply"` checks the
   same way. This release itself is installed by the copy you have now, which checks only the
   checksum; the signature is checked from the next upgrade on.
+- **A native install now upgrades itself by default.** `[update] mode` defaults to `"apply"`:
+  at the daily check, a native install that finds a newer release replaces itself through the
+  same verified transaction as `jevlin upgrade`, signature included. To be told instead, set
+  `[update] mode = "notify"`. An npm install is still only told, and a release you rolled back
+  from is still left alone. A copy on v0.4.0 keeps that release's default and only tells you
+  about this one; once `jevlin upgrade` has installed it, it upgrades itself from then on.
 
 ## v0.4.0 — 2026-10-18
 
