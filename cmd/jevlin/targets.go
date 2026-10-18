@@ -604,6 +604,11 @@ func (t codexTarget) PlanInstall(ops agentOps, paths agentPaths, entry binEntry,
 	p.notes = append(p.notes, cp.notes...)
 	p.refused = append(p.refused, cp.refused...)
 	hooksChanged := t.planHooks(ops, paths, entry, runtime.GOOS, p)
+	if hooksChanged && codexSandboxOS == "linux" && codexMiningOn(entry.cfg, getenv) {
+		// Said at install, where the participant acts on it, as well as by
+		// status afterwards (issue #80).
+		p.notes = append(p.notes, t.Label()+": on Linux, until you approve these hooks in Codex, a search made only in Codex is not delivered, and earns nothing")
+	}
 	if !skillChanged && !skillLeft && !cfg.changed && !cfg.left && !hooksChanged {
 		p.skipped = append(p.skipped, t.Label()+": already installed")
 	}
@@ -939,7 +944,11 @@ func (t codexTarget) StatusNotes(ops agentOps, paths agentPaths, entry binEntry,
 	if _, err := codexHooksFor(t, entry, runtime.GOOS); err != nil {
 		return nil
 	}
-	return codexApprovalLines(ops, paths, entry)
+	lines := codexApprovalLines(ops, paths, entry)
+	if codexDeliveryUnapproved(ops, paths, entry, codexSandboxOS) && codexMiningOn(entry.cfg, getenv) {
+		lines = append(lines, "delivery: "+codexUndeliveredLine)
+	}
+	return lines
 }
 
 // HostNotes is what the sandbox lets Codex's commands reach, said whether
@@ -972,44 +981,12 @@ var codexApprovalEvent = map[string]string{
 // ours that is not the first of its event, when only first places were ever
 // seen numbered — it says so rather than guess an index.
 func codexApprovalLines(ops agentOps, paths agentPaths, entry binEntry) []string {
-	lists := codexHookLists(ops, paths.codexHooks)
-	ours := map[string]int{}
-	shared := map[string]bool{}
-	for _, ev := range codexEvents {
-		for i, e := range lists[ev] {
-			if o := entryOwnership(e, refFor(entry)); o != hookNotOurs {
-				ours[ev] = i
-				shared[ev] = o == hookMixed
-				break
-			}
-		}
-	}
+	ours, state, problem := readCodexApprovals(ops, paths, entry)
 	if len(ours) == 0 {
 		return nil
 	}
-	for _, ev := range codexEvents {
-		if i, ok := ours[ev]; ok && i != 0 {
-			return []string{"hooks: approval unknown; jevlin's " + ev + " hook is not the first listed for that event, and how Codex numbers a later one is not established"}
-		}
-		if shared[ev] {
-			return []string{"hooks: approval unknown; jevlin's " + ev + " hook shares a group with another, and its place in that group decides how Codex numbers it; run jevlin agents install to give it a group of its own"}
-		}
-	}
-	state := map[string]any{}
-	switch b, err := ops.readFile(paths.codexConfig); {
-	case errors.Is(err, fs.ErrNotExist):
-	case err != nil:
-		return []string{"hooks: approval unknown; " + paths.codexConfig + " cannot be read: " + err.Error()}
-	default:
-		// Into a map, not a struct: the decoder matches a struct's fields
-		// without regard to case, and Codex reads `hooks.state` exactly.
-		var doc map[string]any
-		if _, err := toml.Decode(string(b), &doc); err != nil {
-			return []string{"hooks: approval unknown; " + paths.codexConfig + " does not read as TOML"}
-		}
-		if hooks, ok := doc["hooks"].(map[string]any); ok {
-			state, _ = hooks["state"].(map[string]any)
-		}
+	if problem != "" {
+		return []string{problem}
 	}
 	onRecord := 0
 	for ev := range ours {
@@ -1025,6 +1002,93 @@ func codexApprovalLines(ops agentOps, paths agentPaths, entry binEntry) []string
 	}
 	return []string{fmt.Sprintf("hooks: an approval is on record for %d of %d; whether it is for the commands as they read now is Codex's to decide", onRecord, len(ours))}
 }
+
+// readCodexApprovals finds this installation's hook under each Codex event,
+// by its place in the event's list, and reads Codex's record of approvals
+// from config.toml. problem is a line saying why the record cannot be told
+// for these hooks; when it is set, or no hook of ours is found, state is nil.
+func readCodexApprovals(ops agentOps, paths agentPaths, entry binEntry) (ours map[string]int, state map[string]any, problem string) {
+	lists := codexHookLists(ops, paths.codexHooks)
+	ours = map[string]int{}
+	shared := map[string]bool{}
+	for _, ev := range codexEvents {
+		for i, e := range lists[ev] {
+			if o := entryOwnership(e, refFor(entry)); o != hookNotOurs {
+				ours[ev] = i
+				shared[ev] = o == hookMixed
+				break
+			}
+		}
+	}
+	if len(ours) == 0 {
+		return ours, nil, ""
+	}
+	for _, ev := range codexEvents {
+		if i, ok := ours[ev]; ok && i != 0 {
+			return ours, nil, "hooks: approval unknown; jevlin's " + ev + " hook is not the first listed for that event, and how Codex numbers a later one is not established"
+		}
+		if shared[ev] {
+			return ours, nil, "hooks: approval unknown; jevlin's " + ev + " hook shares a group with another, and its place in that group decides how Codex numbers it; run jevlin agents install to give it a group of its own"
+		}
+	}
+	state = map[string]any{}
+	switch b, err := ops.readFile(paths.codexConfig); {
+	case errors.Is(err, fs.ErrNotExist):
+	case err != nil:
+		return ours, nil, "hooks: approval unknown; " + paths.codexConfig + " cannot be read: " + err.Error()
+	default:
+		// Into a map, not a struct: the decoder matches a struct's fields
+		// without regard to case, and Codex reads `hooks.state` exactly.
+		var doc map[string]any
+		if _, err := toml.Decode(string(b), &doc); err != nil {
+			return ours, nil, "hooks: approval unknown; " + paths.codexConfig + " does not read as TOML"
+		}
+		if hooks, ok := doc["hooks"].(map[string]any); ok {
+			state, _ = hooks["state"].(map[string]any)
+		}
+	}
+	return ours, state, ""
+}
+
+// codexDeliveringHooks are the Codex events whose hook starts a flush
+// (codex_hook.go): the two that deliver, from outside Codex's sandbox, what
+// a search inside it recorded.
+var codexDeliveringHooks = []string{"SessionStart", "Stop"}
+
+// codexDeliveryUnapproved: is this installation's evidence from a search
+// made in Codex left with no way out of the sandbox? On Linux Codex runs a
+// command in its own PID namespace, so the flush a search starts dies with
+// the search (issue #80, seen live on 0.158.0), and only a hook running
+// outside the sandbox delivers. True when goos is linux, a delivering hook
+// of ours is installed, and the record shows neither approved. Where the
+// record cannot be told, it is not claimed: readCodexApprovals' problem
+// says why, and that line is shown instead.
+func codexDeliveryUnapproved(ops agentOps, paths agentPaths, entry binEntry, goos string) bool {
+	if goos != "linux" {
+		return false
+	}
+	ours, state, problem := readCodexApprovals(ops, paths, entry)
+	if problem != "" {
+		return false
+	}
+	installed := false
+	for _, ev := range codexDeliveringHooks {
+		if _, ok := ours[ev]; !ok {
+			continue
+		}
+		installed = true
+		if codexApprovalOnRecord(state, paths.codexHooks, codexApprovalEvent[ev]) {
+			return false
+		}
+	}
+	return installed
+}
+
+// codexUndeliveredLine is what agents status and status say when
+// codexDeliveryUnapproved holds and mining is on.
+const codexUndeliveredLine = "on Linux, a search made in Codex is delivered only by a jevlin run outside Codex, " +
+	"and neither of Codex's hooks that would do it (SessionStart, Stop) is approved. " +
+	"Until you approve them in Codex, searches made only in Codex wait, and may miss their epoch and earn nothing"
 
 // codexApprovalOnRecord: does state hold an approval of the first hook of
 // the first group under event, in this hooks.json? The key is split from the

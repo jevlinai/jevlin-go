@@ -28,7 +28,7 @@ func TestNoHookReadWaitsOnAFIFO(t *testing.T) {
 	dir, _ := rootAndCanary(t)
 	ops := fixedSuffixOps()
 	lineage := lineagePath(dir, "/w")
-	for _, name := range []string{lineage, filepath.Join(dir, hookStateFile), turnSearchedPath(dir, "turn-1")} {
+	for _, name := range []string{lineage, filepath.Join(dir, hookStateFile), turnSearchedPath(dir, traceHash("turn-1"))} {
 		if err := syscall.Mkfifo(name, 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -40,7 +40,7 @@ func TestNoHookReadWaitsOnAFIFO(t *testing.T) {
 	})
 	returnsWithin(t, "hookWindowID", func() { _ = hookWindowID(ops, hookContext{sessionsDir: dir}, "s") })
 	returnsWithin(t, "takeTurnSearched", func() {
-		if takeTurnSearched(ops, dir, "turn-1") {
+		if takeTurnSearched(ops, dir, traceHash("turn-1")) {
 			t.Error("a FIFO was taken as a turn mark")
 		}
 	})

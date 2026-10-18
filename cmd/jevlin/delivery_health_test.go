@@ -48,7 +48,7 @@ func TestDurableQuarantineHealthCannotRecoverFromUnrelatedSuccess(t *testing.T) 
 	}), collector.Options{MaxAttempts: 1})
 	c.Drain(context.Background())
 	h := c.Health()
-	updateFlushDeliveryHealth(store, h, 1, 0, h.Delivered, io.Discard)
+	updateFlushDeliveryHealth(store, h, 1, 0, h.Delivered, heldBack{}, io.Discard)
 	if h.Delivered != 0 {
 		t.Fatal("quarantine counted as delivery")
 	}
@@ -78,7 +78,7 @@ func TestDurableQuarantineHealthCannotRecoverFromUnrelatedSuccess(t *testing.T) 
 	if h.Delivered != 1 || h.Quarantined != 1 {
 		t.Fatalf("mixed outcome: %+v", h)
 	}
-	updateFlushDeliveryHealth(store, h, 1, 0, h.Delivered, io.Discard)
+	updateFlushDeliveryHealth(store, h, 1, 0, h.Delivered, heldBack{}, io.Discard)
 	check()
 }
 
@@ -91,7 +91,7 @@ func TestAcknowledgedCleanupUsesBacklogHealth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	updateFlushDeliveryHealth(store, collector.Health{LocalRemovalFailures: 1, StorageError: "unlink failed"}, 1, 1, 0, io.Discard)
+	updateFlushDeliveryHealth(store, collector.Health{LocalRemovalFailures: 1, StorageError: "unlink failed"}, 1, 1, 0, heldBack{}, io.Discard)
 	rec, ok, err := store.LoadHealth(auth.HealthFlush)
 	if err != nil || !ok || rec.Reason != auth.HealthSpoolBacklog {
 		t.Fatalf("local ACK cleanup treated as AS failure: %+v %t %v", rec, ok, err)
@@ -111,7 +111,7 @@ func TestBadSubmissionUsesSubmissionFailedHealth(t *testing.T) {
 		SubmissionFailures:  1,
 		ConsecutiveFailures: 1,
 		LastFailureNote:     "bad acknowledgement",
-	}, 1, 1, 0, io.Discard)
+	}, 1, 1, 0, heldBack{}, io.Discard)
 	rec, ok, err := store.LoadHealth(auth.HealthFlush)
 	if err != nil || !ok || rec.Reason != auth.HealthSubmissionFailed {
 		t.Fatalf("bad acknowledgement health = %+v ok=%t err=%v", rec, ok, err)

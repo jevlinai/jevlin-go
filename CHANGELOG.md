@@ -35,6 +35,24 @@ rewritten to match newer behaviour; the newer entry says what changed.
   credentials. `mode = "off"` stops the check. An older jevlin refuses a config that names
   `[update]`, as it refuses any key it does not know, so add it only once this release is
   installed.
+- **On Linux, jevlin now says when your Codex searches are not being delivered.** Codex's Linux
+  sandbox ends the flush a search starts, so evidence from Codex waits for a jevlin run outside
+  it, which Codex's hooks provide once you approve them. With mining on and neither `SessionStart`
+  nor `Stop` approved, `agents status`, `status` and `agents install` now say so, and `status`
+  (and `status -json`, under `delivery`) counts the searches waiting and when the oldest was made.
+- **A Claude Code turn whose background subagent searched is now reported.** With `turn_end` on, a
+  subagent launched in the background searches under the turn that launched it, usually after
+  that turn has ended, so the turn's end had already found nothing to report and the search was
+  never joined to a turn end. The next turn end in the session now reports that turn, once, with
+  what you asked and its last message. Only a subagent's search does this: a turn you interrupted
+  after the agent's own search still sends nothing. A Codex or opencode subagent's search no
+  longer leaves a mark that nothing takes.
+- **Running jevlin on two machines no longer shows a delivery fault on the one not earning.**
+  When another installation of yours holds an epoch, this one's searches for it can never be
+  delivered. They were retried until they were quarantined, and `status` reported a delivery
+  fault for the whole time. They now wait without a fault, and are dropped once the epoch is
+  over, as before. A fault already shown about them clears once they are all that is left, or
+  once they are dropped.
 
 ## v0.3.2 — 2026-10-17
 
