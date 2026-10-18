@@ -118,6 +118,11 @@ func TestARewrittenInstallerRuleStopsTheCheck(t *testing.T) {
 			from: "get(`${base}/checksums.txt`)",
 			to:   "get(`${base}/SHA256SUMS`)",
 		},
+		{
+			name: "the signature download",
+			from: "get(`${base}/checksums.txt.sig`)",
+			to:   "get(`${base}/checksums.sig`)",
+		},
 	} {
 		src := string(realInstallJS(t))
 		if !strings.Contains(src, tc.from) {

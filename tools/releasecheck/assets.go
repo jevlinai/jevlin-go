@@ -233,12 +233,6 @@ func (c NamingContract) ExpectedAssets(v ReleaseVersion) ([]string, error) {
 	return names, nil
 }
 
-// SignatureName is the release signature asset for v.
-func (c NamingContract) SignatureName(v ReleaseVersion) (string, error) {
-	sums, err := c.checksumName(v)
-	return sums + signatureSuffix, err
-}
-
 func (c NamingContract) checksumName(v ReleaseVersion) (string, error) {
 	sums, err := template.New("checksum").Parse(c.ChecksumName)
 	if err != nil {

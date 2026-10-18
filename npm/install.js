@@ -3,7 +3,8 @@
 //
 // The npm package carries no binary of its own. Its version is the release
 // tag; this script downloads exactly that tag's archive from GitHub
-// Releases, verifies it against checksums.txt, and unpacks the binary
+// Releases, checks that checksums.txt is signed by a release key this
+// package carries and that the archive matches it, and unpacks the binary
 // beside this file. Nothing is executed from the download, and no
 // credential is involved: the release assets are public.
 //
@@ -20,6 +21,51 @@ const { execFileSync } = require("node:child_process")
 
 const pkg = require("./package.json")
 const REPO = "jevlinai/jevlin-go"
+
+// RELEASE_PUBLIC_KEYS are the Ed25519 public keys, standard base64, whose
+// signature over checksums.txt makes a release authentic: exactly the list
+// internal/selfupdate/signature.go compiles into the binary at the same tag,
+// which tools/releasecheck's preflight holds this one to. npm's provenance
+// covers this script, not the archive it downloads; the signature is what
+// ties the archive to the project's key. A package installs only its own
+// release, so it needs only the keys that release was signed under.
+const RELEASE_PUBLIC_KEYS = [
+  "NQZgr4RzDpDvJwHmnnQhsssZ0G4TDSFuotlWmT05fmc=", // provisioned 2026-10-18
+]
+
+// SIGNATURE_DOMAIN prefixes the signed message, as selfupdate's
+// signatureDomain does, so the signature is valid for nothing else.
+const SIGNATURE_DOMAIN = "jevlin release checksums.txt v1\n"
+
+// An Ed25519 SubjectPublicKeyInfo is this DER prefix and the key's 32 bytes.
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex")
+
+// strictBase64 decodes text only when it is canonical, padded standard
+// base64 of exactly size bytes: Buffer.from skips what it cannot read, so the
+// decoding must encode back to the same text.
+function strictBase64(text, size) {
+  const raw = Buffer.from(text, "base64")
+  return raw.length === size && raw.toString("base64") === text ? raw : null
+}
+
+// verifyChecksumsSignature is selfupdate.VerifyChecksumsSignature's rule:
+// sig is one line of standard base64, an Ed25519 signature by one of keys
+// over SIGNATURE_DOMAIN and checksums.txt's exact bytes.
+function verifyChecksumsSignature(sums, sig, keys = RELEASE_PUBLIC_KEYS) {
+  if (keys.length === 0) throw new Error("this package carries no release signing key, so it cannot verify any release")
+  let text = sig.toString("latin1")
+  if (text.endsWith("\n")) text = text.slice(0, -1)
+  const raw = strictBase64(text, 64)
+  if (!raw) throw new Error("checksums.txt.sig is not one base64 Ed25519 signature — refusing to unpack")
+  const message = Buffer.concat([Buffer.from(SIGNATURE_DOMAIN, "utf8"), sums])
+  for (const [i, encoded] of keys.entries()) {
+    const key = strictBase64(encoded, 32)
+    if (!key) throw new Error(`release key ${i} is not a base64 Ed25519 public key`)
+    const publicKey = crypto.createPublicKey({ key: Buffer.concat([ED25519_SPKI_PREFIX, key]), format: "der", type: "spki" })
+    if (crypto.verify(null, message, publicKey, raw)) return
+  }
+  throw new Error("checksums.txt is not signed by a release key this package trusts — refusing to unpack")
+}
 
 function platform() {
   const osName = { darwin: "darwin", linux: "linux", win32: "windows" }[process.platform]
@@ -60,7 +106,12 @@ async function main() {
   const name = `jevlin_${pkg.version}_${osName}_${arch}.${ext}`
   const base = `https://github.com/${REPO}/releases/download/v${pkg.version}`
 
-  const [archive, sums] = await Promise.all([get(`${base}/${name}`), get(`${base}/checksums.txt`)])
+  const [archive, sums, sig] = await Promise.all([
+    get(`${base}/${name}`),
+    get(`${base}/checksums.txt`),
+    get(`${base}/checksums.txt.sig`),
+  ])
+  verifyChecksumsSignature(sums, sig)
   const line = sums.toString("utf8").split("\n").find((l) => l.trim().endsWith(name))
   if (!line) throw new Error(`checksums.txt has no entry for ${name}`)
   const expected = line.trim().split(/\s+/)[0]
@@ -83,8 +134,14 @@ async function main() {
   console.log(`jevlin ${pkg.version} installed for ${osName}/${arch}`)
 }
 
-main().catch((err) => {
-  console.error(`jevlin: ${err.message}`)
-  console.error("You can install the binary another way and set JEVLIN_BINARY to its path.")
-  process.exit(1)
-})
+// npm runs this file as the postinstall; tools/releasecheck's tests require
+// it to drive verifyChecksumsSignature, and nothing is downloaded then.
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(`jevlin: ${err.message}`)
+    console.error("You can install the binary another way and set JEVLIN_BINARY to its path.")
+    process.exit(1)
+  })
+}
+
+module.exports = { verifyChecksumsSignature }
