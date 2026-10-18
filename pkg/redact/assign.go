@@ -560,9 +560,10 @@ func opensThreeQuotes(s string, v int) bool {
 }
 
 // tripleQuoteEnd returns the index just past the three quotes that close the
-// three at v, or -1 when they do not close within maxLines line breaks.
+// three at v, or -1 when they do not close within maxLines line breaks or a
+// line they cross into assigns a secret first (crossedSecretAssignment).
 func tripleQuoteEnd(s string, v, maxLines int) int {
-	q, lines := s[v], 0
+	q, lines, line := s[v], 0, v
 	for i := v + 3; i+2 < len(s); i++ {
 		switch s[i] {
 		case q:
@@ -573,6 +574,11 @@ func tripleQuoteEnd(s string, v, maxLines int) int {
 			if lines++; lines > maxLines {
 				return -1
 			}
+			line = i + 1
+		case '=':
+			if lines > 0 && crossedSecretAssignment(s, line, i) {
+				return -1
+			}
 		}
 	}
 	return -1
@@ -580,7 +586,8 @@ func tripleQuoteEnd(s string, v, maxLines int) int {
 
 // closingQuote (quoteCloser's close) returns the index just past the quote
 // that closes the one at v, or -1 when there is none within maxLines line
-// breaks.
+// breaks, or a line it crosses into assigns a secret before it
+// (crossedSecretAssignment).
 //
 // Whether a backslash escapes depends on the language, and the text does not
 // say which it is: in Python, JSON and a POSIX double-quoted string it does,
@@ -617,7 +624,7 @@ func (c *quoteCloser) close(s string, v, maxLines int) int {
 		}
 		c.failed[k], c.from[k], c.stop[k] = true, v, stop
 	}
-	q, lines := s[v], 0
+	q, lines, line := s[v], 0, v
 	for i := v + 1; i < len(s); i++ {
 		switch s[i] {
 		case q:
@@ -626,9 +633,44 @@ func (c *quoteCloser) close(s string, v, maxLines int) int {
 			if lines++; lines > maxLines {
 				return -1
 			}
+			line = i + 1
+		case '=':
+			if lines > 0 && crossedSecretAssignment(s, line, i) {
+				return -1
+			}
 		}
 	}
 	return -1
+}
+
+// crossedSecretAssignment reports whether the `=` at e, on a line that a
+// search for a closing quote has crossed into (line is where that line
+// starts), assigns a secret: a name secretName or isBridgeName accepts,
+// read back from e as secretValueAt reads one, blanks before `=` allowed.
+// The search gives up there, and the quote counts as not closing: a quote
+// a line-start name left open (`1. Set API_TOKEN="your token`) otherwise
+// closes at the opening quote of a later secret's value and leaves the
+// rest of that value behind. A secret assigned on a line the quote has not
+// crossed into is the value's own text, and is read with it.
+func crossedSecretAssignment(s string, line, e int) bool {
+	k := e
+	for k > line && isBlank(s[k-1]) {
+		k--
+	}
+	r := k
+	for r > line && isNameChar(s[r-1]) {
+		r--
+	}
+	if r == k || !isWordChar(s[k-1]) {
+		return false
+	}
+	for p := r; p < k; p++ {
+		if isNameStart(s[p]) && (p == 0 || !isWordChar(s[p-1])) {
+			name := s[p:k]
+			return secretName(name) || isBridgeName(name)
+		}
+	}
+	return false
 }
 
 // escapedClosingQuote is closingQuote's escaping reading, on v's own line:
