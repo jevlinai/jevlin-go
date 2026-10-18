@@ -1204,6 +1204,62 @@
   "want": "C:\\\\Users\\\\[REDACTED] and C:\\\\Users\\\\[REDACTED]\\\\x"
  },
  {
+  "name": "identity/the account in a dashed project folder",
+  "host": "",
+  "account": "alice",
+  "in": "the folder -Users-alice-Github-proj holds it",
+  "want": "the folder -Users-[REDACTED]-Github-proj holds it"
+ },
+ {
+  "name": "identity/a home path and its dashed project folder",
+  "host": "",
+  "account": "alice",
+  "in": "see /Users/alice/.claude/projects/-Users-alice-Github-proj/notes.md",
+  "want": "see /Users/[REDACTED]/.claude/projects/-Users-[REDACTED]-Github-proj/notes.md"
+ },
+ {
+  "name": "identity/a background task's output path",
+  "host": "",
+  "account": "alice",
+  "in": "<output-file>/private/tmp/claude-501/-private-tmp-claude-501--Users-alice-work/tasks/a.output</output-file>",
+  "want": "<output-file>/private/tmp/claude-501/-private-tmp-claude-501--Users-[REDACTED]-work/tasks/a.output</output-file>"
+ },
+ {
+  "name": "identity/a dashed Linux home, the account ending the name",
+  "host": "",
+  "account": "alice",
+  "in": "cd ~/.claude/projects/-home-alice-src-app; ls -home-alice",
+  "want": "cd ~/.claude/projects/-home-[REDACTED]-src-app; ls -home-[REDACTED]"
+ },
+ {
+  "name": "identity/a dashed Windows home with a space in the account",
+  "host": "",
+  "account": "DESKTOP-X\\John Smith",
+  "in": "C--Users-John-Smith-proj and c--users-john-smith",
+  "want": "C--Users-[REDACTED]-proj and c--users-[REDACTED]"
+ },
+ {
+  "name": "identity/a dotted account in a dashed folder",
+  "host": "",
+  "account": "first.last",
+  "in": "-Users-first-last-repo",
+  "want": "-Users-[REDACTED]-repo"
+ },
+ {
+  "name": "survives/a dashed folder that is not this account",
+  "host": "",
+  "account": "alice",
+  "in": "-Users-alicea-x, -Users-bob-x, -Users-alice_2-x, -Users-alice.bak and the -alice- tag",
+  "want": "-Users-alicea-x, -Users-bob-x, -Users-alice_2-x, -Users-alice.bak and the -alice- tag"
+ },
+ {
+  "name": "survives/a generic account in a dashed folder",
+  "host": "",
+  "account": "vscode",
+  "in": "-home-vscode-workspace and -Users-vscode",
+  "want": "-home-vscode-workspace and -Users-vscode"
+ },
+ {
   "name": "home/windows a quoted word is not part of the name",
   "host": "",
   "account": "",

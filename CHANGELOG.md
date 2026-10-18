@@ -12,6 +12,13 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
+- **The trace scrubber removes your account name from a Claude Code project folder's name.**
+  Claude Code names a project's folder after its path with every separator turned into `-`
+  (`-Users-<account>-work-proj`), and that name turns up in ordinary assistant text: under
+  `~/.claude/projects/` and in a background task's output path. The scrubber removed the account
+  from `/Users/<account>/` but left it in the dashed spelling of the same path. With the trace or
+  the turn end on, it is now removed there too, in both scrubbers; a dashed name that is not your
+  account, or one with no home folder in front of it, is left.
 - **A daily check for a new release.** Once a day, when an agent session starts or ends (Claude
   Code, Cursor and Codex; opencode's plugin and Pi's extension now start the flush at a
   session's start too; Hermes does not), the hooks start a detached check against the project's
