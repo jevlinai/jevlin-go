@@ -2490,5 +2490,215 @@
   "account": "",
   "in": "password: $[REDACTED]\ntoken: ${A:-$[REDACTED]}",
   "want": "password: $[REDACTED]\ntoken: ${A:-$[REDACTED]}"
+ },
+ {
+  "name": "authorization/a curl header with an opaque bearer token",
+  "host": "",
+  "account": "",
+  "in": "curl -H 'Authorization: Bearer opaque-r4nd0m-value' https://example.test",
+  "want": "curl -H 'Authorization: Bearer [REDACTED]' https://example.test"
+ },
+ {
+  "name": "authorization/a header line",
+  "host": "",
+  "account": "",
+  "in": "Authorization: Bearer opaque-r4nd0m-value",
+  "want": "Authorization: Bearer [REDACTED]"
+ },
+ {
+  "name": "authorization/a json headers object",
+  "host": "",
+  "account": "",
+  "in": "{\"Authorization\": \"Bearer opaque_r4nd0m.value\"}",
+  "want": "{\"Authorization\": \"Bearer [REDACTED]\"}"
+ },
+ {
+  "name": "authorization/proxy basic credentials",
+  "host": "",
+  "account": "",
+  "in": "Proxy-Authorization: Basic dXNlcjpwYXNzd29yZA==",
+  "want": "Proxy-Authorization: Basic [REDACTED]"
+ },
+ {
+  "name": "authorization/lowercase, the token scheme",
+  "host": "",
+  "account": "",
+  "in": "--header \"authorization: token 0paque.Value_9\"",
+  "want": "--header \"authorization: token [REDACTED]\""
+ },
+ {
+  "name": "authorization/a javascript template",
+  "host": "",
+  "account": "",
+  "in": "fetch(url, { headers: { Authorization: `Bearer abc123def456` } })",
+  "want": "fetch(url, { headers: { Authorization: `Bearer [REDACTED]` } })"
+ },
+ {
+  "name": "authorization/cost: prose that writes the header and its scheme",
+  "host": "",
+  "account": "",
+  "in": "send Authorization: Bearer token with each call",
+  "want": "send Authorization: Bearer [REDACTED] with each call"
+ },
+ {
+  "name": "survives/an authorization header naming a variable",
+  "host": "",
+  "account": "",
+  "in": "curl -H \"Authorization: Bearer $TOKEN\" https://example.test",
+  "want": "curl -H \"Authorization: Bearer $TOKEN\" https://example.test"
+ },
+ {
+  "name": "survives/an authorization header with a braced variable",
+  "host": "",
+  "account": "",
+  "in": "Authorization: Bearer ${API_TOKEN}",
+  "want": "Authorization: Bearer ${API_TOKEN}"
+ },
+ {
+  "name": "survives/an authorization header with a placeholder",
+  "host": "",
+  "account": "",
+  "in": "Authorization: Bearer <your-token>",
+  "want": "Authorization: Bearer <your-token>"
+ },
+ {
+  "name": "survives/a bearer scheme with no credential",
+  "host": "",
+  "account": "",
+  "in": "Authorization: Bearer ...",
+  "want": "Authorization: Bearer ..."
+ },
+ {
+  "name": "survives/prose about the authorization header",
+  "host": "",
+  "account": "",
+  "in": "the Authorization header carries a Bearer token",
+  "want": "the Authorization header carries a Bearer token"
+ },
+ {
+  "name": "value/an unclosed quote in numbered steps stops at the next secret",
+  "host": "",
+  "account": "",
+  "in": "1. Set API_TOKEN=\"your token\n2. Restart the server.\n3. Then set DB_PASSWORD=\"correct horse battery\"",
+  "want": "1. Set API_TOKEN=[REDACTED]\n2. Restart the server.\n3. Then set DB_PASSWORD=[REDACTED]"
+ },
+ {
+  "name": "value/an unclosed quote stops at a later secret after a bare name",
+  "host": "",
+  "account": "",
+  "in": "API_TOKEN=\"your token\nRestart the server.\nDB_PASSWORD=\"correct horse battery\"",
+  "want": "API_TOKEN=[REDACTED]\nRestart the server.\nDB_PASSWORD=[REDACTED]"
+ },
+ {
+  "name": "value/an unclosed quote stops at a later secret after export",
+  "host": "",
+  "account": "",
+  "in": "export API_TOKEN=\"your token\nRestart the server.\nexport DB_PASSWORD=\"correct horse battery\"",
+  "want": "export API_TOKEN=[REDACTED]\nRestart the server.\nexport DB_PASSWORD=[REDACTED]"
+ },
+ {
+  "name": "value/an unclosed quote stops at a later secret after set",
+  "host": "",
+  "account": "",
+  "in": "set API_TOKEN=\"your token\nRestart the server.\nset DB_PASSWORD=\"correct horse battery\"",
+  "want": "set API_TOKEN=[REDACTED]\nRestart the server.\nset DB_PASSWORD=[REDACTED]"
+ },
+ {
+  "name": "value/an unclosed quote stops at a later secret after a numbered item",
+  "host": "",
+  "account": "",
+  "in": "1. API_TOKEN=\"your token\nRestart the server.\n1. DB_PASSWORD=\"correct horse battery\"",
+  "want": "1. API_TOKEN=[REDACTED]\nRestart the server.\n1. DB_PASSWORD=[REDACTED]"
+ },
+ {
+  "name": "value/an unclosed quote stops at a later secret after a numbered item with a parenthesis",
+  "host": "",
+  "account": "",
+  "in": "2) API_TOKEN=\"your token\nRestart the server.\n2) DB_PASSWORD=\"correct horse battery\"",
+  "want": "2) API_TOKEN=[REDACTED]\nRestart the server.\n2) DB_PASSWORD=[REDACTED]"
+ },
+ {
+  "name": "value/an unclosed quote stops at a later secret after a dash",
+  "host": "",
+  "account": "",
+  "in": "- API_TOKEN=\"your token\nRestart the server.\n- DB_PASSWORD=\"correct horse battery\"",
+  "want": "- API_TOKEN=[REDACTED]\nRestart the server.\n- DB_PASSWORD=[REDACTED]"
+ },
+ {
+  "name": "value/an unclosed quote stops at a later secret after a star",
+  "host": "",
+  "account": "",
+  "in": "* API_TOKEN=\"your token\nRestart the server.\n* DB_PASSWORD=\"correct horse battery\"",
+  "want": "* API_TOKEN=[REDACTED]\nRestart the server.\n* DB_PASSWORD=[REDACTED]"
+ },
+ {
+  "name": "value/an unclosed quote stops at a later secret after a quote marker",
+  "host": "",
+  "account": "",
+  "in": "> API_TOKEN=\"your token\nRestart the server.\n> DB_PASSWORD=\"correct horse battery\"",
+  "want": "> API_TOKEN=[REDACTED]\nRestart the server.\n> DB_PASSWORD=[REDACTED]"
+ },
+ {
+  "name": "value/an unclosed quote stops at a later secret after let",
+  "host": "",
+  "account": "",
+  "in": "let API_TOKEN=\"your token\nRestart the server.\nlet DB_PASSWORD=\"correct horse battery\"",
+  "want": "let API_TOKEN=[REDACTED]\nRestart the server.\nlet DB_PASSWORD=[REDACTED]"
+ },
+ {
+  "name": "value/an unclosed quote stops at a later secret after var",
+  "host": "",
+  "account": "",
+  "in": "var API_TOKEN=\"your token\nRestart the server.\nvar DB_PASSWORD=\"correct horse battery\"",
+  "want": "var API_TOKEN=[REDACTED]\nRestart the server.\nvar DB_PASSWORD=[REDACTED]"
+ },
+ {
+  "name": "value/an unclosed quote stops at a later secret after const",
+  "host": "",
+  "account": "",
+  "in": "const API_TOKEN=\"your token\nRestart the server.\nconst DB_PASSWORD=\"correct horse battery\"",
+  "want": "const API_TOKEN=[REDACTED]\nRestart the server.\nconst DB_PASSWORD=[REDACTED]"
+ },
+ {
+  "name": "value/an unclosed quote stops at a later secret after local -r",
+  "host": "",
+  "account": "",
+  "in": "local -r API_TOKEN=\"your token\nRestart the server.\nlocal -r DB_PASSWORD=\"correct horse battery\"",
+  "want": "local -r API_TOKEN=[REDACTED]\nRestart the server.\nlocal -r DB_PASSWORD=[REDACTED]"
+ },
+ {
+  "name": "value/an unclosed quote stops at a later secret after ENV",
+  "host": "",
+  "account": "",
+  "in": "ENV API_TOKEN=\"your token\nRestart the server.\nENV DB_PASSWORD=\"correct horse battery\"",
+  "want": "ENV API_TOKEN=[REDACTED]\nRestart the server.\nENV DB_PASSWORD=[REDACTED]"
+ },
+ {
+  "name": "value/an unclosed quote stops at a later secret after a dollar",
+  "host": "",
+  "account": "",
+  "in": "$API_TOKEN=\"your token\nRestart the server.\n$DB_PASSWORD=\"correct horse battery\"",
+  "want": "$API_TOKEN=[REDACTED]\nRestart the server.\n$DB_PASSWORD=[REDACTED]"
+ },
+ {
+  "name": "value/an unclosed quote stops at a secret on the next line",
+  "host": "",
+  "account": "",
+  "in": "API_TOKEN=\"first\nDB_PASSWORD=x\" more",
+  "want": "API_TOKEN=[REDACTED]\nDB_PASSWORD=[REDACTED]\" more"
+ },
+ {
+  "name": "value/unclosed triple quotes stop at a later secret",
+  "host": "",
+  "account": "",
+  "in": "API_TOKEN = \"\"\"first\nDB_PASSWORD=\"correct horse\"\n\"\"\"",
+  "want": "API_TOKEN = [REDACTED]\nDB_PASSWORD=[REDACTED]\n\"\"\""
+ },
+ {
+  "name": "value/a quote crossing lines with no secret on them still closes",
+  "host": "",
+  "account": "",
+  "in": "API_TOKEN=\"first line\nsecond line\" and more",
+  "want": "API_TOKEN=[REDACTED] and more"
  }
 ]

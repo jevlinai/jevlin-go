@@ -44,6 +44,13 @@ var (
 	// Bearer values in free text (error strings, net/http log lines).
 	// String applies this; TraceText does not — see TraceText.
 	bearerPattern = regexp.MustCompile(`(?i)\bbearer\s+\S+`)
+	// An Authorization or Proxy-Authorization header and its scheme, as a
+	// header line, a curl -H argument or a JSON or JavaScript key writes it,
+	// then the credential's characters (RFC 7235's token68, and `_`).
+	// TraceText applies it through redactAuthorizationCredentials. Only the
+	// name and the scheme fold case: a (?i) class would take the two
+	// non-ASCII letters Go folds into k and s, which JavaScript's does not.
+	authorizationPattern = regexp.MustCompile(`\b((?i:(?:proxy-)?authorization)["']?[\t ]*:[\t ]*(?:["'` + "`" + `][\t ]*)?(?i:bearer|basic|token)[\t ]+)([A-Za-z0-9._~+/=_-]+)`)
 	// scheme://user:pass@ userinfo embedded in a URL. The match consumes
 	// the trailing "@" and the replacement does not reintroduce one —
 	// deliberately, so the placeholder can never read as
@@ -204,10 +211,10 @@ func String(s string) string {
 // a way it is not for logs: ordinary prose about tokens ("bearer tokens
 // expire soon") is common in a model's visible narration and is exactly
 // the trajectory data the product exists to collect, whereas a log line
-// is far more likely to actually contain a header value. A real
-// Authorization: Bearer credential is still caught here if it has a
-// recognizable shape (sk-/sr-/JWT/AWS/GitHub); only the generic
-// "bearer <word>" catch-all is skipped.
+// is far more likely to actually contain a header value. A credential
+// written as an Authorization header's is still removed here whatever its
+// shape (redactAuthorizationCredentials); only the generic "bearer <word>"
+// catch-all is skipped.
 //
 // It also covers a PEM private key block, whatever stands around it, and
 // what an assistant writes around a search that has no credential shape
@@ -220,6 +227,7 @@ func String(s string) string {
 func TraceText(s string) string {
 	s = redactPrivateKeyBlocks(s)
 	s = scrubCommon(s)
+	s = redactAuthorizationCredentials(s)
 	s = redactSecretFlags(s)
 	s = redactSecretKeys(s)
 	s = redactSecretAssignments(s)
@@ -296,6 +304,48 @@ func redactEnvDumps(s string) string {
 
 func isWordChar(c byte) bool {
 	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+}
+
+// redactAuthorizationCredentials replaces the credential an Authorization or
+// Proxy-Authorization header carries after its scheme, Bearer, Basic or
+// Token in any letter case, whatever its shape: an opaque token has none
+// scrubCommon knows, and `curl -H 'Authorization: Bearer …'` is ordinary
+// assistant output. The scheme is required, so prose about bearer tokens
+// stays. Only the credential's own characters go, so a reference stands
+// ($TOKEN, ${TOKEN}, {token}, <token>), and so does a run with no letter or
+// digit in it (`Bearer ...`). The cost, stated: prose that writes the
+// header and its scheme ("send Authorization: Bearer token") loses the
+// word after them.
+func redactAuthorizationCredentials(s string) string {
+	locs := authorizationPattern.FindAllStringSubmatchIndex(s, -1)
+	if locs == nil {
+		return s
+	}
+	var b strings.Builder
+	last, changed := 0, false
+	for _, m := range locs {
+		start, end := m[4], m[5]
+		if !hasLetterOrDigit(s[start:end]) {
+			continue
+		}
+		b.WriteString(s[last:start])
+		b.WriteString(placeholder)
+		last, changed = end, true
+	}
+	if !changed {
+		return s
+	}
+	b.WriteString(s[last:])
+	return b.String()
+}
+
+func hasLetterOrDigit(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if isLetter(s[i]) || isDigit(s[i]) {
+			return true
+		}
+	}
+	return false
 }
 
 // scrubCommon is the part of the pipeline String and TraceText share.

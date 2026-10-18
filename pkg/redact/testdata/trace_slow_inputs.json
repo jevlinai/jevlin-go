@@ -125,5 +125,29 @@
   "prefix": "Name    Value\n----    -----\nEMPTY",
   "unit": " ",
   "suffix": "x"
+ },
+ {
+  "name": "open quotes over and over, then one long name the searches cross",
+  "prefix": "A_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\nA_TOKEN=\"x\n",
+  "unit": "a",
+  "suffix": "=1"
+ },
+ {
+  "name": "open quotes, each over lines of long names that assign nothing",
+  "prefix": "",
+  "unit": "A_TOKEN=\"x\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb=1\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb=1\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb=1\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb=1\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb=1\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb=1\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb=1\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb=1\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb=1\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb=1\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb=1\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb=1\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb=1\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb=1\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb=1\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb=1\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb=1\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb=1\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb=1\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb=1\n",
+  "suffix": ""
+ },
+ {
+  "name": "an authorization header's scheme, then a run of blanks",
+  "prefix": "Authorization: Bearer",
+  "unit": " ",
+  "suffix": "$"
+ },
+ {
+  "name": "authorization headers with no scheme, over and over",
+  "prefix": "",
+  "unit": "Authorization: x ",
+  "suffix": ""
  }
 ]

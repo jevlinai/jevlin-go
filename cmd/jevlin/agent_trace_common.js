@@ -153,6 +153,17 @@ const scrubTraceCommon = (text) => redactTraceJwts(text
   .replace(/\bAKIA[0-9A-Z]{16}\b/g, TRACE_REDACTED)
   .replace(/\b[rs]k_(?:live|test)_[A-Za-z0-9]{16,}/g, TRACE_REDACTED))
 
+// redactAuthorizationCredentials: the credential an Authorization or
+// Proxy-Authorization header carries after its scheme (Bearer, Basic or
+// Token, the name and the scheme in any letter case as Go's (?i:) folds
+// them), whatever its shape, when it holds a letter or a digit. Only the
+// credential's own characters (token68, and _) go, so a reference stands.
+const TRACE_AUTHORIZATION_RE = new RegExp('\\b((?:' + traceFold('proxy') + '-)?' + traceFold('authorization') +
+  '["\']?[\\t ]*:[\\t ]*(?:["\'`][\\t ]*)?(?:' + traceFold('bearer') + '|' + traceFold('basic') + '|' + traceFold('token') +
+  ')[\\t ]+)([A-Za-z0-9._~+/=_-]+)', 'g')
+const redactTraceAuthorizationCredentials = (text) => text.replace(TRACE_AUTHORIZATION_RE, (match, prefix, credential) =>
+  /[A-Za-z0-9]/.test(credential) ? prefix + TRACE_REDACTED : match)
+
 // A PEM private key block, markers included, as pkg/redact/pem.go removes
 // it, before every other step: from a BEGIN marker whose label ends PRIVATE
 // KEY (or PRIVATE KEY BLOCK) to the next private-key END marker, when no
@@ -312,23 +323,52 @@ const traceClosingQuote = (s, v, maxLines, closer = traceQuoteCloser()) => {
   }
   const q = s.charCodeAt(v)
   let lines = 0
+  let line = v
   for (let i = v + 1; i < s.length; i++) {
     const c = s.charCodeAt(i)
     if (c === q) return i + 1
-    if (c === 10 && ++lines > maxLines) return -1
+    if (c === 10) {
+      if (++lines > maxLines) return -1
+      line = i + 1
+    } else if (c === 61 && lines > 0 && traceCrossedSecretAssignment(s, line, i)) {
+      return -1
+    }
   }
   return -1
+}
+// crossedSecretAssignment: the = at e, on a line the search for a closing
+// quote crossed into (starting at line), assigns a secret, read back as
+// traceSecretValueAt reads a name, blanks before = allowed. The quote then
+// counts as not closing, rather than closing inside that secret's value.
+const traceCrossedSecretAssignment = (s, line, e) => {
+  let k = e
+  while (k > line && traceIsBlank(s.charCodeAt(k - 1))) k--
+  let r = k
+  while (r > line && traceIsName(s.charCodeAt(r - 1))) r--
+  if (r === k || !traceIsWord(s.charCodeAt(k - 1))) return false
+  for (let p = r; p < k; p++) {
+    if (traceIsNameStart(s.charCodeAt(p)) && (p === 0 || !traceIsWord(s.charCodeAt(p - 1)))) {
+      const name = s.slice(p, k)
+      const upper = name.toUpperCase()
+      return traceSecretName(name) || upper === TRACE_BRIDGE_ENV || upper.endsWith('.' + TRACE_BRIDGE_ENV) || upper.endsWith('-' + TRACE_BRIDGE_ENV)
+    }
+  }
+  return false
 }
 // Three quotes run to the next three of the same within the line cap.
 const traceOpensThreeQuotes = (s, v) => v + 3 <= s.length && s.charCodeAt(v + 1) === s.charCodeAt(v) && s.charCodeAt(v + 2) === s.charCodeAt(v)
 const traceTripleQuoteEnd = (s, v, maxLines) => {
   const q = s.charCodeAt(v)
   let lines = 0
+  let line = v
   for (let i = v + 3; i + 2 < s.length; i++) {
     const c = s.charCodeAt(i)
     if (c === q) {
       if (s.charCodeAt(i + 1) === q && s.charCodeAt(i + 2) === q) return i + 3
-    } else if (c === 10 && ++lines > maxLines) {
+    } else if (c === 10) {
+      if (++lines > maxLines) return -1
+      line = i + 1
+    } else if (c === 61 && lines > 0 && traceCrossedSecretAssignment(s, line, i)) {
       return -1
     }
   }
@@ -1040,7 +1080,7 @@ const redactTraceLocalIdentity = (text, identity) => {
 }
 
 const scrubTraceText = (text, identity = TRACE_LOCAL_IDENTITY) =>
-  redactTraceLocalIdentity(redactTraceHomePaths(redactTraceAccountDashed(redactTraceAccountHomes(redactTraceEmails(redactTraceEnvTables(redactTraceEnvDumps(redactTraceSecretAssignments(redactTraceSecretKeys(redactTraceSecretFlags(scrubTraceCommon(redactTracePrivateKeyBlocks(text)))))))), identity), identity)), identity)
+  redactTraceLocalIdentity(redactTraceHomePaths(redactTraceAccountDashed(redactTraceAccountHomes(redactTraceEmails(redactTraceEnvTables(redactTraceEnvDumps(redactTraceSecretAssignments(redactTraceSecretKeys(redactTraceSecretFlags(redactTraceAuthorizationCredentials(scrubTraceCommon(redactTracePrivateKeyBlocks(text))))))))), identity), identity)), identity)
 
 // prepareTraceHistory takes the COMPLETE text parts of one assistant
 // message — `{type: 'text', text}` entries, the shape opencode's message

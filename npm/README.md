@@ -130,8 +130,9 @@ in which a search was served.
 The hooks keep a lineage file per workspace (in Cursor, per conversation) under
 `~/.jevlin/sessions`, so the searches of one task line up even across context compactions and
 subagents, and only the agent that wrote a file reads it. The scrub removes anything shaped
-like a credential, PEM blocks, email addresses, the account name in a home path, and any value
-under a name like `password`, `token` or `api_key`. [The trace](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#the-trace) and
+like a credential, PEM blocks, email addresses, the account name in a home path, an
+`Authorization` header's credential, and any value under a name like `password`, `token` or
+`api_key`. [The trace](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#the-trace) and
 [the turn end](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#the-turn-end) list every field and every scrub rule.
 
 `export JEVLIN_TRACE=off` sends no trace and no turn end; searches work the same without them.
