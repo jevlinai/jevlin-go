@@ -72,8 +72,8 @@ func clearCurrentTargetHealth(store *auth.Store) {
 	if store == nil {
 		return
 	}
-	record, ok, err := store.LoadHealth(auth.HealthFlush)
-	if err != nil || !ok || !strings.HasPrefix(record.Detail, currentTargetHealthPrefix) {
+	record, ok, detailKnown := loadFlushHealth(store)
+	if !ok || (detailKnown && !strings.HasPrefix(record.Detail, currentTargetHealthPrefix)) {
 		return
 	}
 	if record.Reason == auth.HealthAuthUnavailable || record.Reason == auth.HealthSubmissionFailed {
@@ -87,16 +87,36 @@ func clearCurrentTargetHealth(store *auth.Store) {
 // participation capability for the target epoch, which requires exactly
 // the refresh authorization the earlier failure was missing. Reached only
 // after a join attempt (a fresh join, or finding the epoch already held)
-// — a flush with no target open never calls this. The delivery-only
-// clearing rule in updateFlushDeliveryHealth stays for submission_failed
-// and spool_backlog, whose recovery is a delivery, not authorization; this
-// is scoped to auth_state_unavailable alone so it never touches either.
+// — a flush with no target open never calls this. The delivery clearing
+// rules in updateFlushDeliveryHealth stay for submission_failed and
+// spool_backlog, whose recovery is a delivery (or no deliverable record
+// left), not authorization; this is scoped to auth_state_unavailable alone
+// so it never touches either.
 func clearAuthUnavailableHealth(store *auth.Store) {
 	if store == nil {
 		return
 	}
-	if record, ok, err := store.LoadHealth(auth.HealthFlush); err == nil && ok && record.Reason == auth.HealthAuthUnavailable {
+	if record, ok, _ := loadFlushHealth(store); ok && record.Reason == auth.HealthAuthUnavailable {
 		_ = store.ClearHealth(auth.HealthFlush)
+	}
+}
+
+// loadFlushHealth is LoadHealth for the flush's own bookkeeping. A record
+// whose detail was refused (planted, or an older version's error text) still
+// has a valid reason, so the rules that decide on the reason still apply to
+// it: without this the clear helpers never touched it, and it stayed until
+// an accepted delivery or the next mark. detailKnown says whether the
+// detail could be read; a rule that also needs the detail treats an unknown
+// one as matching, since a record that comes back is just marked again.
+func loadFlushHealth(store *auth.Store) (record auth.HealthRecord, ok, detailKnown bool) {
+	record, ok, err := store.LoadHealth(auth.HealthFlush)
+	switch {
+	case err == nil:
+		return record, ok, true
+	case errors.Is(err, auth.ErrHealthDetailRefused):
+		return record, true, false
+	default:
+		return auth.HealthRecord{}, false, false
 	}
 }
 
@@ -122,8 +142,8 @@ func clearFlushStateHealth(store *auth.Store, prefix string) {
 	if store == nil {
 		return
 	}
-	record, ok, err := store.LoadHealth(auth.HealthFlush)
-	if err == nil && ok && record.Reason == auth.HealthFlushStateUnavailable && strings.HasPrefix(record.Detail, prefix) {
+	record, ok, detailKnown := loadFlushHealth(store)
+	if ok && record.Reason == auth.HealthFlushStateUnavailable && (!detailKnown || strings.HasPrefix(record.Detail, prefix)) {
 		_ = store.ClearHealth(auth.HealthFlush)
 	}
 }
@@ -178,6 +198,13 @@ type flushReport struct {
 }
 
 func cmdFlush(args []string, stdout, stderr io.Writer, getenv func(string) string) int {
+	// A flush reads the intake, the spool and its quarantine, all writable
+	// by a sandboxed command, and its errors carry what it read: a planted
+	// spool record's client_record_id went to stderr with an OSC 52
+	// clipboard write in it, from a command docs/guide.md tells
+	// participants to run by hand. Everything the command prints goes
+	// through one filter instead of each error being remembered.
+	stdout, stderr = terminalSafeWriter{stdout}, terminalSafeWriter{stderr}
 	fs := newFlagSet("flush", stderr)
 	cfgPath := fs.String("config", "", "path to TOML config file")
 	detach := fs.Bool("detach", false, "start the flush in the background and return at once")
@@ -357,6 +384,9 @@ func runFlushAdmitted(ctx context.Context, cfg *config.Config, cfgPath string, f
 	now := time.Now()
 	fresh := !force && stamp.TargetEpoch != 0 && stamp.SlotID == m.SlotID && now.Sub(stamp.LastAS) < mn.FlushInterval
 	var epoch uint64
+	// dropped counts the records this run's drops settle: gone without a
+	// delivery, because none could ever have happened.
+	dropped := 0
 	switch {
 	case fresh:
 		epoch = stamp.TargetEpoch
@@ -380,8 +410,17 @@ func runFlushAdmitted(ctx context.Context, cfg *config.Config, cfgPath string, f
 			clearCurrentTargetHealth(store)
 		}
 		epoch = target.epoch
-		driver.joinIfNeeded(ctx, epoch)
-		driver.ensure(ctx, epoch)
+		// Before the join, which may add this epoch's note. Only when the
+		// AS itself named the target: a pinned mining.target_epoch is the
+		// operator's number, not proof the AS has moved past anything, and
+		// a refused epoch's records may still become deliverable from a
+		// direct connection (PR #85 review).
+		if target.queried {
+			dropped += dropRegionRefusedObservationsPastTarget(store, m.SpoolDir, m.SlotID, epoch, stdout)
+		}
+		if !driver.joinIfNeeded(ctx, epoch) {
+			driver.ensure(ctx, epoch)
+		}
 		if holder.Snapshot() != nil {
 			clearAuthUnavailableHealth(store)
 		}
@@ -397,7 +436,7 @@ func runFlushAdmitted(ctx context.Context, cfg *config.Config, cfgPath string, f
 	// resolved, drop any previously-recorded conflicted epoch the AS has
 	// moved past. State-based, not clock-based — see
 	// dropConflictedObservationsPastTarget's own comment for why.
-	dropConflictedObservationsPastTarget(store, m.SpoolDir, m.SlotID, epoch, stdout)
+	dropped += dropConflictedObservationsPastTarget(store, m.SpoolDir, m.SlotID, epoch, stdout)
 
 	// 2. promote intake into the spool.
 	sp, err := spool.Open(m.SpoolDir)
@@ -421,22 +460,68 @@ func runFlushAdmitted(ctx context.Context, cfg *config.Config, cfgPath string, f
 	// 3. deliver once.
 	submitter := auth.NewSubmitter(mining, caps)
 	before, _ := sp.Count()
+	skip := undeliverableRecords(store, m.SlotID)
 	coll := collector.New(sp, submitter, collector.Options{
 		Interval:    time.Hour, // never fires: Drain is called once
 		MaxAttempts: productionMaxAttempts(m.CollectorMaxAttempts),
+		Skip:        skip,
 	})
 	coll.Drain(ctx)
 	after, _ := sp.Count()
 	rep.Pending = after
 	rep.Delivered = coll.Health().Delivered
-	updateFlushDeliveryHealth(store, coll.Health(), before, after, rep.Delivered, stderr)
+	undeliverable := countHeldBack(sp, skip)
+	undeliverable.dropped = dropped
+	updateFlushDeliveryHealth(store, coll.Health(), before, after, rep.Delivered, undeliverable, stderr)
 	if promotionErr != nil && coll.Health().TerminalFailures == 0 {
 		_ = store.MarkHealth(auth.HealthFlush, auth.HealthSpoolBacklog, promotionErr.Error())
 	}
 	return rep, exitOK
 }
 
-func updateFlushDeliveryHealth(store *auth.Store, health collector.Health, before, after, delivered int, stderr io.Writer) {
+// heldBack is what a flush knows of the records it did not try to deliver,
+// for updateFlushDeliveryHealth: none of them is a delivery that failed.
+type heldBack struct {
+	// records is how many queued records the collector's Skip held back
+	// (undeliverableRecords). A held record is left exactly as it is, so
+	// the number is the same before the pass and after it.
+	records int
+	// retrying is how many of those carry an attempt or a next-attempt
+	// time from before their epoch was held. The spool counts them in its
+	// retry backlog, but no retry is coming: they wait for a join or a drop.
+	retrying int
+	// dropped is how many records this run's drops removed before the pass
+	// (invariant 7's two exceptions): records no delivery could have taken.
+	dropped int
+}
+
+// countHeldBack reads the spool after a delivery pass for the records skip
+// held back, by the collector's own rule: a terminal or acknowledged record
+// is cleanup work and is never skipped. A spool it cannot read counts none,
+// so every record still counts as deliverable and a fault is kept rather
+// than cleared on a guess.
+func countHeldBack(sp *spool.Spool, skip func(*spool.Record) bool) heldBack {
+	var held heldBack
+	if skip == nil {
+		return held
+	}
+	pending, err := sp.Pending()
+	if err != nil {
+		return held
+	}
+	for _, rec := range pending {
+		if rec.TerminalReason != "" || rec.RemovalPending || !skip(rec) {
+			continue
+		}
+		held.records++
+		if rec.Attempts > 0 || !rec.NextAttemptAt.IsZero() {
+			held.retrying++
+		}
+	}
+	return held
+}
+
+func updateFlushDeliveryHealth(store *auth.Store, health collector.Health, before, after, delivered int, held heldBack, stderr io.Writer) {
 	if health.TerminalFailures > 0 {
 		_ = store.MarkHealth(auth.HealthFlush, auth.HealthSubmissionFailed, "terminal or quarantined evidence remains unresolved")
 		if health.StorageError != "" {
@@ -461,7 +546,7 @@ func updateFlushDeliveryHealth(store *auth.Store, health collector.Health, befor
 			detail = "the authorization server did not accept a queued observation"
 		}
 		reason := auth.HealthSubmissionFailed
-		if previous, ok, _ := store.LoadHealth(auth.HealthFlush); ok && after > 0 &&
+		if previous, ok, _ := loadFlushHealth(store); ok && after > 0 &&
 			(previous.Reason == auth.HealthSubmissionFailed || previous.Reason == auth.HealthSpoolBacklog) {
 			reason = auth.HealthSpoolBacklog
 			detail = fmt.Sprintf("%d queued observation(s) remain after failed delivery: %s", after, detail)
@@ -471,8 +556,10 @@ func updateFlushDeliveryHealth(store *auth.Store, health collector.Health, befor
 		return
 	}
 
-	if health.RetryBacklog > 0 {
-		_ = store.MarkHealth(auth.HealthFlush, auth.HealthSpoolBacklog, fmt.Sprintf("%d queued observation(s) await retry", health.RetryBacklog))
+	// A held record that was tried before its epoch was held still carries
+	// that retry, but nothing will retry it.
+	if retrying := health.RetryBacklog - held.retrying; retrying > 0 {
+		_ = store.MarkHealth(auth.HealthFlush, auth.HealthSpoolBacklog, fmt.Sprintf("%d queued observation(s) await retry", retrying))
 		return
 	}
 	if health.CleanupRecovered > 0 {
@@ -482,19 +569,40 @@ func updateFlushDeliveryHealth(store *auth.Store, health collector.Health, befor
 	// A fresh collector can legitimately skip records that are still under
 	// persisted backoff. That is not a new submission failure, but if a prior
 	// failed delivery is already on record and no queued item progressed, the
-	// unresolved condition is now accurately described as spool backlog.
-	if before > 0 && after == before {
-		if previous, ok, _ := store.LoadHealth(auth.HealthFlush); ok &&
+	// unresolved condition is now accurately described as spool backlog. The
+	// records the Skip held are not counted: they were never tried, so they
+	// are no progress that failed.
+	deliverableBefore, deliverableAfter := before-held.records, after-held.records
+	if deliverableBefore > 0 && deliverableAfter == deliverableBefore {
+		if previous, ok, _ := loadFlushHealth(store); ok &&
 			(previous.Reason == auth.HealthSubmissionFailed || previous.Reason == auth.HealthSpoolBacklog) {
 			_ = store.MarkHealth(auth.HealthFlush, auth.HealthSpoolBacklog,
-				fmt.Sprintf("%d queued observation(s) remain after failed progress", after))
+				fmt.Sprintf("%d queued observation(s) remain after failed progress", deliverableAfter))
 		}
 		return
 	}
 	if delivered > 0 {
-		// Only an actual accepted delivery proves that a previous flush
-		// problem has recovered. Empty queues and no-target runs do not.
+		// An accepted delivery proves that a previous flush problem has
+		// recovered. Empty queues and no-target runs do not.
 		_ = store.ClearHealth(auth.HealthFlush)
+		return
+	}
+	// No delivery can ever come for the records left: every one is held
+	// back, or this run's drops emptied the spool. A delivery fault on
+	// record was about records that are now held, or are gone without a
+	// delivery that could ever have happened, and nothing failed in this
+	// run, so it is cleared: a warning about records that were later
+	// dropped does not outlive them (issue #88). An empty spool by itself
+	// proves nothing and clears nothing, and a current-target failure,
+	// which this run may have just recorded, is not about delivery at all.
+	// A refused detail is not this run's (MarkHealth never writes one), so
+	// it is decided on the reason alone.
+	if deliverableAfter <= 0 && (held.records > 0 || held.dropped > 0) {
+		if previous, ok, detailKnown := loadFlushHealth(store); ok &&
+			(previous.Reason == auth.HealthSubmissionFailed || previous.Reason == auth.HealthSpoolBacklog) &&
+			(!detailKnown || !strings.HasPrefix(previous.Detail, currentTargetHealthPrefix)) {
+			_ = store.ClearHealth(auth.HealthFlush)
+		}
 	}
 }
 
@@ -517,7 +625,13 @@ func updateFlushDeliveryHealth(store *auth.Store, health collector.Health, befor
 // case; only the rarer "held it, then lost it to ErrProxyBindingMismatch"
 // case had a deadline to compare against. The current-target comparison
 // covers both.
-func dropConflictedObservationsPastTarget(store *auth.Store, spoolDir string, slotID, currentTarget uint64, stdout io.Writer) {
+//
+// An entry is what makes undeliverableRecords hold its epoch's records
+// back, so it goes only with them: a record whose removal fails keeps the
+// entry in place, so the next flush skips it and tries the removal again
+// instead of submitting it, as dropRegionRefusedObservationsPastTarget
+// keeps its note.
+func dropConflictedObservationsPastTarget(store *auth.Store, spoolDir string, slotID, currentTarget uint64, stdout io.Writer) (dropped int) {
 	// WP2-adversarial-review finding 18: an entry for a DIFFERENT slot
 	// than the one currently configured can never reach the
 	// currentTarget comparison below (it is filtered out of `due` by the
@@ -528,7 +642,7 @@ func dropConflictedObservationsPastTarget(store *auth.Store, spoolDir string, sl
 
 	conflicts, err := store.EpochConflicts()
 	if err != nil || len(conflicts) == 0 {
-		return
+		return 0
 	}
 	var due []auth.ConflictedEpoch
 	for _, c := range conflicts {
@@ -537,21 +651,26 @@ func dropConflictedObservationsPastTarget(store *auth.Store, spoolDir string, sl
 		}
 	}
 	if len(due) == 0 {
-		return
+		return 0
 	}
 	sp, err := spool.Open(spoolDir)
 	if err != nil {
-		return // transient; the next flush tries again, `due` stays on file
+		return 0 // transient; the next flush tries again, `due` stays on file
 	}
 	pending, err := sp.Pending()
 	if err != nil {
-		return
+		return 0
 	}
-	dropped := 0
+	settled := map[uint64]bool{}
+	for _, c := range due {
+		settled[c.TargetEpoch] = true
+	}
 	for _, prec := range pending {
 		for _, c := range due {
 			if prec.SlotID == c.SlotID && prec.TargetEpoch == c.TargetEpoch {
-				if err := sp.Remove(prec); err == nil {
+				if err := sp.Remove(prec); err != nil {
+					settled[c.TargetEpoch] = false
+				} else {
 					dropped++
 				}
 				break
@@ -562,12 +681,137 @@ func dropConflictedObservationsPastTarget(store *auth.Store, spoolDir string, sl
 		fmt.Fprintf(stdout, "flush: dropped %d observation(s) across %d conflicted epoch(s) for slot %d — another installation of this participant held them\n",
 			dropped, len(due), slotID)
 	}
-	// Removed once processed, whether or not anything was actually left to
-	// drop (already delivered, or never spooled at all) — the pair has
-	// been acted on either way, and the AS will never re-open it.
-	if err := store.RemoveEpochConflicts(due); err != nil {
+	// An entry whose records all went, or that had none left to drop
+	// (already delivered, or never spooled at all), has been acted on, and
+	// the AS will never re-open it. An entry whose records could not all be
+	// removed stays, so the next flush skips them and tries the removal
+	// again instead of submitting.
+	var done []auth.ConflictedEpoch
+	for _, c := range due {
+		if settled[c.TargetEpoch] {
+			done = append(done, c)
+		}
+	}
+	if err := store.RemoveEpochConflicts(done); err != nil {
 		fmt.Fprintln(stdout, "flush:", err)
 	}
+	return dropped
+}
+
+// undeliverableRecords is the collector's Skip: the records of an epoch
+// this installation cannot get a capability for, read from what the
+// driver keeps (nil when there is nothing, or nothing for this slot).
+// Delivering one is an attempt that cannot succeed: it counts toward the
+// attempt limit, quarantines evidence nothing is wrong with, and reports a
+// delivery fault, so they wait instead. Two kinds of epoch, each settled by
+// its own drop once the AS's target moves past it:
+//
+//   - one the AS refused to enroll this installation in under its region
+//     policy (the region notes). A later join clears the note and its
+//     records deliver as usual; dropRegionRefusedObservationsPastTarget
+//     settles them if none comes;
+//   - one another installation of this participant holds (the conflict
+//     set, from ENROLLMENT_CONFLICT on join or PROXY_BINDING_MISMATCH on
+//     the exchange). It never becomes this installation's, and
+//     dropConflictedObservationsPastTarget settles its records (issue #88).
+//
+// Both are read after this run's join, so they are the AS's latest word.
+// An unreadable record is none, as everywhere else they are read.
+func undeliverableRecords(store *auth.Store, slotID uint64) func(*spool.Record) bool {
+	held := map[uint64]bool{}
+	if notes, err := store.RegionRefusals(); err == nil {
+		for _, note := range notes {
+			if note.SlotID == slotID {
+				held[note.TargetEpoch] = true
+			}
+		}
+	}
+	if conflicts, err := store.EpochConflicts(); err == nil {
+		for _, c := range conflicts {
+			if c.SlotID == slotID {
+				held[c.TargetEpoch] = true
+			}
+		}
+	}
+	if len(held) == 0 {
+		return nil
+	}
+	return func(rec *spool.Record) bool {
+		return rec.SlotID == slotID && held[rec.TargetEpoch]
+	}
+}
+
+// dropRegionRefusedObservationsPastTarget settles the records
+// undeliverableRecords holds back for a region note, by the rule
+// dropConflictedObservationsPastTarget applies to an epoch another
+// installation holds, and for the same reason: once the AS's current target
+// has moved past the epoch the region note names, this installation can
+// never be enrolled in it, so no capability for it can exist and its
+// records are worthless. They are dropped quietly — an informational line,
+// not an error, because nothing is wrong with them — and the note goes
+// with them, since the epoch it explains is over. Not before: a hold can
+// lift within the epoch, and then they deliver.
+//
+// This is the second exception to removing a record only on the AS's
+// acknowledgement (AGENTS.md invariant 7), argued from the same fact as
+// the first. A record whose removal fails keeps the note in place, so the
+// next flush skips it and tries the removal again instead of submitting it.
+//
+// A note for a slot this configuration no longer names is removed: status
+// and doctor already ignore it, and it could never be settled here.
+func dropRegionRefusedObservationsPastTarget(store *auth.Store, spoolDir string, slotID, currentTarget uint64, stdout io.Writer) (dropped int) {
+	_ = store.PruneRegionRefusalsForOtherSlots(slotID)
+	notes, err := store.RegionRefusals()
+	if err != nil {
+		return 0
+	}
+	var due []auth.RegionRefusal
+	for _, note := range notes {
+		if note.SlotID == slotID && note.TargetEpoch < currentTarget {
+			due = append(due, note)
+		}
+	}
+	if len(due) == 0 {
+		return 0
+	}
+	sp, err := spool.Open(spoolDir)
+	if err != nil {
+		return 0 // transient; the notes stay and the next flush tries again
+	}
+	pending, err := sp.Pending()
+	if err != nil {
+		return 0
+	}
+	settled := map[uint64]bool{}
+	for _, note := range due {
+		settled[note.TargetEpoch] = true
+	}
+	for _, note := range due {
+		epochDropped := 0
+		for _, rec := range pending {
+			if rec.SlotID != note.SlotID || rec.TargetEpoch != note.TargetEpoch {
+				continue
+			}
+			if err := sp.Remove(rec); err != nil {
+				settled[note.TargetEpoch] = false
+				continue
+			}
+			epochDropped++
+		}
+		if epochDropped > 0 {
+			fmt.Fprintf(stdout, "flush: dropped %d observation(s) for slot %d epoch %d — the AS refused this installation's join under its region policy\n",
+				epochDropped, note.SlotID, note.TargetEpoch)
+		}
+		dropped += epochDropped
+	}
+	// A note whose records could not all be removed stays, so the next
+	// flush skips them and tries the removal again instead of submitting.
+	if err := store.RemoveRegionRefusals(notes, func(rec auth.RegionRefusal) bool {
+		return rec.SlotID == slotID && settled[rec.TargetEpoch]
+	}); err != nil {
+		fmt.Fprintln(stdout, "flush:", err)
+	}
+	return dropped
 }
 
 // deliverOnly drains the spool when no target could be resolved this run:
@@ -580,12 +824,17 @@ func deliverOnly(ctx context.Context, cfg *config.Config, mining *auth.MiningCli
 		return exitTransport
 	}
 	before, _ := sp.Count()
-	coll := collector.New(sp, auth.NewSubmitter(mining, caps), collector.Options{Interval: time.Hour, MaxAttempts: productionMaxAttempts(cfg.Mining.CollectorMaxAttempts)})
+	skip := undeliverableRecords(store, cfg.Mining.SlotID)
+	coll := collector.New(sp, auth.NewSubmitter(mining, caps), collector.Options{
+		Interval:    time.Hour,
+		MaxAttempts: productionMaxAttempts(cfg.Mining.CollectorMaxAttempts),
+		Skip:        skip,
+	})
 	coll.Drain(ctx)
 	after, _ := sp.Count()
 	rep.Pending = after
 	rep.Delivered = coll.Health().Delivered
-	updateFlushDeliveryHealth(store, coll.Health(), before, after, rep.Delivered, stderr)
+	updateFlushDeliveryHealth(store, coll.Health(), before, after, rep.Delivered, countHeldBack(sp, skip), stderr)
 	fmt.Fprintln(stderr, "flush: no target epoch this run; intake kept for the next flush")
 	return exitOK
 }

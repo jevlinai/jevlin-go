@@ -528,7 +528,7 @@ func TestMiningRejectsUserinfoURL(t *testing.T) {
 // platform.base_url defaults to the real platform, with no file at all.
 func TestPlatformBaseURLDefaults(t *testing.T) {
 	cfg := load(t, nil, noEnv)
-	if cfg.Platform.BaseURL != "https://platform.nyks.dev" {
+	if cfg.Platform.BaseURL != "https://platform.jevlin.ai" {
 		t.Fatalf("got %q, want the default", cfg.Platform.BaseURL)
 	}
 }
@@ -561,7 +561,7 @@ func TestPlatformBaseURLAllowsPlainHTTPOnLoopback(t *testing.T) {
 // different hosts in the real deployment, not one shared origin.
 func TestAgentsAPIURLDefaults(t *testing.T) {
 	cfg := load(t, nil, noEnv)
-	if cfg.Platform.AgentsAPIURL != "https://agents-v1.nyks.dev" {
+	if cfg.Platform.AgentsAPIURL != "https://agents-v1.jevlin.ai" {
 		t.Fatalf("got %q, want the default", cfg.Platform.AgentsAPIURL)
 	}
 	if cfg.Platform.AgentsAPIURL == cfg.Platform.BaseURL {
@@ -608,9 +608,9 @@ func TestAgentsAPIURLDefaultsToBaseURLWhenBaseURLIsLoopback(t *testing.T) {
 // agents_api_url still wins, including pointing a loopback base_url at
 // a real (or a second, differently-loopback) agents API.
 func TestAgentsAPIURLExplicitValueOverridesTheLoopbackDefault(t *testing.T) {
-	body := "[platform]\nbase_url = \"http://127.0.0.1:9999\"\nagents_api_url = \"https://agents-v1.nyks.dev\"\n"
+	body := "[platform]\nbase_url = \"http://127.0.0.1:9999\"\nagents_api_url = \"https://agents-v1.jevlin.ai\"\n"
 	cfg := load(t, []string{"-config", writeTOML(t, body)}, noEnv)
-	if cfg.Platform.AgentsAPIURL != "https://agents-v1.nyks.dev" {
+	if cfg.Platform.AgentsAPIURL != "https://agents-v1.jevlin.ai" {
 		t.Fatalf("got %q, want the explicit value", cfg.Platform.AgentsAPIURL)
 	}
 }
@@ -685,5 +685,121 @@ func TestMiningPayoutAddressReadThrough(t *testing.T) {
 	cfg := load(t, []string{"-config", writeTOML(t, body)}, noEnv)
 	if cfg.Mining.PayoutAddress != "twilight1abc" {
 		t.Fatalf("got %q, want twilight1abc", cfg.Mining.PayoutAddress)
+	}
+}
+
+// A jevlin.toml in the working directory is never loaded on its own: a
+// cloned repo must not choose where the participant's keys are sent.
+func TestLoadIgnoresJevlinTOMLInWorkingDirectory(t *testing.T) {
+	dir := t.TempDir()
+	body := "[miner]\nrouter_url = \"https://evil.example\"\n\n[platform]\nagents_api_url = \"https://evil.example\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "jevlin.toml"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+
+	cfg := load(t, nil, noEnv)
+	if cfg.Miner.RouterConfigured {
+		t.Fatalf("cwd jevlin.toml was loaded: router %v", cfg.Miner.RouterURL)
+	}
+	if u := cfg.Miner.RouterURL; u != nil && u.Host == "evil.example" {
+		t.Fatalf("router taken from cwd jevlin.toml: %v", u)
+	}
+}
+
+// [update] mode: absent is notify, the three words are normalized, and a
+// word this version cannot name falls to notify — never off, which would
+// silence the check by a typo, and never apply — with the word kept aside.
+func TestUpdateModeDefaultsToNotifyAndAnUnknownWordFallsToNotify(t *testing.T) {
+	for raw, want := range map[string]string{
+		"":        UpdateNotify,
+		"apply":   UpdateApply,
+		"notify":  UpdateNotify,
+		"off":     UpdateOff,
+		"Off":     UpdateOff,
+		" apply ": UpdateApply,
+	} {
+		body := "[miner]\nrouter_url = \"http://127.0.0.1:8080\"\n"
+		if raw != "" {
+			body += "[update]\nmode = \"" + raw + "\"\n"
+		}
+		cfg, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv)
+		if err != nil {
+			t.Fatalf("mode %q: %v", raw, err)
+		}
+		if cfg.Update.Mode != want || cfg.Update.UnknownMode != "" {
+			t.Errorf("mode %q: Mode = %q UnknownMode = %q, want %q and none", raw, cfg.Update.Mode, cfg.Update.UnknownMode, want)
+		}
+	}
+	for _, unknown := range []string{"auto", "of", "apply; echo x"} {
+		body := "[update]\nmode = \"" + unknown + "\"\n"
+		cfg, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv)
+		if err != nil {
+			t.Errorf("mode %q stopped the config from loading: %v", unknown, err)
+			continue
+		}
+		if cfg.Update.Mode != UpdateNotify || cfg.Update.UnknownMode != unknown {
+			t.Errorf("mode %q: Mode = %q UnknownMode = %q, want notify and the word kept aside", unknown, cfg.Update.Mode, cfg.Update.UnknownMode)
+		}
+	}
+}
+
+// [miner] tier is the participant's own setting, written by hand, and a
+// word the client cannot use must not take the config down with it: a
+// failed load stops search, the flush and mining together (invariant 1),
+// for a value that changes nothing but which band a request asks for. So
+// case and surrounding space are forgiven, and a word that is still not a
+// band loads as no tier, kept aside for status to name, and is never sent,
+// so the router does not answer every search with a 400 either.
+func TestMinerTierIsNormalizedAndAnUnknownWordIsIgnoredAtLoad(t *testing.T) {
+	for raw, want := range map[string]string{
+		"":         "",
+		"fast":     "fast",
+		"balanced": "balanced",
+		"max":      "max",
+		"Fast":     "fast",
+		" max ":    "max",
+	} {
+		body := "[miner]\nrouter_url = \"http://127.0.0.1:8080\"\n"
+		if raw != "" {
+			body += "tier = \"" + raw + "\"\n"
+		}
+		cfg, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv)
+		if err != nil {
+			t.Fatalf("tier %q: %v", raw, err)
+		}
+		if cfg.Miner.Tier != want || cfg.Miner.UnknownTier != "" {
+			t.Errorf("tier %q: Tier = %q UnknownTier = %q, want %q and none", raw, cfg.Miner.Tier, cfg.Miner.UnknownTier, want)
+		}
+	}
+	for _, unknown := range []string{"turbo", "auto", "max; echo x"} {
+		body := "[miner]\nrouter_url = \"http://127.0.0.1:8080\"\ntier = \"" + unknown + "\"\n"
+		cfg, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv)
+		if err != nil {
+			t.Errorf("tier %q stopped the config from loading: %v", unknown, err)
+			continue
+		}
+		if cfg.Miner.Tier != "" || cfg.Miner.UnknownTier != unknown {
+			t.Errorf("tier %q: Tier = %q UnknownTier = %q, want none and the word kept aside", unknown, cfg.Miner.Tier, cfg.Miner.UnknownTier)
+		}
+	}
+}
+
+// A config written before the move to jevlin.ai may name only the old
+// portal and rely on the agents API being implied from it. It still is,
+// as the old pair: an upgrade must not turn a loading config into one
+// refused as "a custom portal with no API named" (PR #87 review).
+func TestLegacyPortalOnlyConfigStillImpliesItsAgentsAPI(t *testing.T) {
+	cfg, _, err := Load([]string{"-config", writeTOML(t, "[platform]\nbase_url = \"https://platform.nyks.dev\"\n")}, noEnv)
+	if err != nil {
+		t.Fatalf("a portal-only config from before the move was refused: %v", err)
+	}
+	if cfg.Platform.BaseURL != "https://platform.nyks.dev" || cfg.Platform.AgentsAPIURL != "https://agents-v1.nyks.dev" {
+		t.Fatalf("legacy pair: base_url %q, agents_api_url %q", cfg.Platform.BaseURL, cfg.Platform.AgentsAPIURL)
+	}
+	// Named explicitly, the old pair is simply two URLs; and a portal that
+	// is neither default still needs its API named.
+	if _, _, err := Load([]string{"-config", writeTOML(t, "[platform]\nbase_url = \"https://platform.staging.example\"\n")}, noEnv); err == nil {
+		t.Fatal("a custom portal with no agents_api_url was accepted")
 	}
 }

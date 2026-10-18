@@ -42,6 +42,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/jevlinai/jevlin-go/internal/winacl"
 )
 
 // secondPrincipalProbeScript reads JEVLIN_PROBE_PATHS and JEVLIN_PROBE_KINDS
@@ -521,7 +523,7 @@ func TestDoctorReportsAnotherReaderOfTheWalletUntilSetupRepairsIt(t *testing.T) 
 		t.Fatalf("doctor's wallet access verdict with a second reader = %v (%v), want NO", check["verdict"], check["detail"])
 	}
 	detail, _ := check["detail"].(string)
-	if !strings.Contains(detail, key) || !strings.Contains(detail, principalName(sid.String())) {
+	if !strings.Contains(detail, key) || !strings.Contains(detail, winacl.PrincipalName(sid.String())) {
 		t.Errorf("the detail does not name the file and the reader: %q", detail)
 	}
 	// Against a real DACL too: the entry can come back — this fixture adds it

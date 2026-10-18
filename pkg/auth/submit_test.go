@@ -105,6 +105,16 @@ func (f submitRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 
 func newTestSubmitter(t *testing.T, body string) *Submitter {
 	t.Helper()
+	return newTestSubmitterAnswering(t, http.StatusOK, nil, body)
+}
+
+// newTestSubmitterAnswering answers every submission with status, header
+// and body.
+func newTestSubmitterAnswering(t *testing.T, status int, header http.Header, body string) *Submitter {
+	t.Helper()
+	if header == nil {
+		header = make(http.Header)
+	}
 	now := time.Now()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -123,9 +133,9 @@ func newTestSubmitter(t *testing.T, body string) *Submitter {
 	oauth := &OAuthClient{transport: &dpopTransport{
 		base: submitRoundTripper(func(r *http.Request) (*http.Response, error) {
 			return &http.Response{
-				StatusCode: http.StatusOK,
+				StatusCode: status,
 				Body:       io.NopCloser(strings.NewReader(body)),
-				Header:     make(http.Header),
+				Header:     header.Clone(),
 				Request:    r,
 			}, nil
 		}),
@@ -210,6 +220,43 @@ func TestValidSubmissionAcknowledgementsRemoveSpoolRecord(t *testing.T) {
 			}
 			if len(pending) != 0 {
 				t.Fatalf("valid %s acknowledgement retained record: %+v", status, pending)
+			}
+		})
+	}
+}
+
+// ADR-MINIS-0026 §2 and §6: the AS refuses a submission from a refused
+// address with 451 and one of the region codes, and a 451 is retried later
+// — the hold with the Retry-After it carries — never quarantined as
+// permanent: the AS decides each attempt afresh, and a held observation is
+// accepted when it is resubmitted from an attributable address.
+func TestARegionRefusedSubmissionIsRetriedAfterTheASsDelay(t *testing.T) {
+	for _, code := range []string{RegionRestricted, RegionIneligible, RegionUnverified} {
+		t.Run(code, func(t *testing.T) {
+			header := http.Header{}
+			if code == RegionUnverified {
+				header.Set("Retry-After", "600")
+			}
+			sub := newTestSubmitterAnswering(t, http.StatusUnavailableForLegalReasons, header,
+				`{"error":{"code":"`+code+`","message":"refused under the region policy"}}`)
+			satisfied, permanent, retryAfter, err := sub.Submit(t.Context(), &spool.Record{
+				ClientRecordID: testAckRecordID, SlotID: 7, TargetEpoch: 1,
+				Observation: []byte(`{"client_record_id":"` + testAckRecordID + `"}`),
+			})
+			if satisfied || permanent || err == nil {
+				t.Fatalf("Submit = satisfied %v, permanent %v, err %v; want a retryable failure", satisfied, permanent, err)
+			}
+			if code == RegionUnverified && retryAfter != 600*time.Second {
+				t.Fatalf("retryAfter = %v, want the AS's 600s", retryAfter)
+			}
+			if !strings.Contains(err.Error(), code) {
+				t.Fatalf("the error %q does not name the code", err)
+			}
+			// And deferred, not merely retryable: the collector keeps the
+			// record without spending an attempt on the AS's hold.
+			var deferred interface{ Deferred() bool }
+			if !errors.As(err, &deferred) || !deferred.Deferred() {
+				t.Fatalf("the error %T is not a deferral the collector recognizes", err)
 			}
 		})
 	}

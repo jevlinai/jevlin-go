@@ -27,7 +27,7 @@ and consumed elsewhere by import; `cmd/jevlin/` is this client's wrapper. Client
 decisions (retry shapes, the trace envelope, install/agent behaviour) have no upstream home —
 record them in `docs/` here.
 
-The search platform's control plane (`platform.nyks.dev` — `connect`, `mining enable`; `pkg/platform`)
+The search platform's control plane (`platform.jevlin.ai` — `connect`, `mining enable`; `pkg/platform`)
 is a **second, separate contract**, same convention as the AS: owned upstream, this time by
 `search-router`'s own design doc (`tokendrop-auth-server-design/docs/implementation/
 search-platform-agent-onboarding-design.md`, authored for the `search-router` repository and
@@ -50,7 +50,12 @@ the named tests.
 1. **Fail-open on the earning path.** A mining-side write, spawn, or network failure MUST NOT turn
    a successful search/inference into a client-visible failure, and MUST NOT add latency the user
    notices. The hook emits nothing and exits 0 on any internal error; `search` swallows intake/flush
-   failures. "A mining-side write must never block or fail the search."
+   failures. "A mining-side write must never block or fail the search." Under Codex's permission
+   profile a process a sandboxed search spawns contacts **only hosts the profile lists**
+   (`codexAllowedHosts`: the router, the AS when `as_url` is set, the platform agents API): on
+   macOS a detached child outlives the search, and a CONNECT the profile denies fails whichever
+   Codex tool call is running at that moment, the search's own or a later, unrelated one. A new
+   destination on that path is a new host there, or it breaks this invariant.
 2. **No prompt/completion content as mining evidence.** Prompt, message, completion, reasoning, and
    tool payloads MUST NOT be logged, spooled, hashed, sampled, or sent to the AS as evidence
    (contract PART II). `intakeRecord` is a closed field set — request id, host, status code,
@@ -98,7 +103,11 @@ the named tests.
 7. **Durable before visible; remove only on ack.** An observation is persisted (intake→spool, each
    temp-file + atomic rename, fsync'd) before the user sees the result; a spool record leaves delivery
    only on a durable AS ack (PART X). `client_record_id` is minted once per observation, never
-   regenerated on retry.
+   regenerated on retry. Two drops are not acks, and they are the only ones: the records of an
+   epoch another installation of this participant holds (`dropConflictedObservationsPastTarget`)
+   and of an epoch the AS refused to enroll this installation in under its region policy
+   (`dropRegionRefusedObservationsPastTarget`), each only once the AS's current target has moved
+   past it, because no capability for that epoch can exist and no delivery of them can succeed.
 8. **`pkg/` MUST NOT import `cmd/`.** Keeping `pkg/` wrapper-agnostic is what makes it importable and
    is why this repo owns it and can hand it back to the proxy by import, not copy. Enforced by
    `cmd/jevlin/boundary_test.go`.
@@ -116,12 +125,31 @@ the named tests.
 11. **A claim or console URL is printed, never opened.** `connect.go` and `mining.go` import no
     `os/exec`. Structural, and tested.
 12. **`platform.base_url` is compared against, never dialed.** It is the origin a platform-supplied
-    URL must match (`validatePlatformURL`); every request goes to `agents_api_url`.
+    URL must match (`validatePlatformURL`): every byte printable ASCII, no user before the host,
+    and the URL must read back as exactly the text given, so what is checked is all of what is
+    printed. A retired portal origin also matches its one compiled successor
+    (`retiredPortalSuccessors`: `platform.nyks.dev` → `platform.jevlin.ai`), because setup never
+    rewrites an existing config and the platform issues links on the new host; nothing else
+    widens. Every request goes to `agents_api_url`. The claim link lives in `claim.json` beside
+    `credentials.json` (`auth.ClaimRecord`), bound to its agent and written only from the
+    platform's answer or the registration journal beside it: by a foreground run, or by a resume
+    finishing that journal (which, in a sandbox, cannot write there and leaves it to the next
+    foreground run), never in the sandbox-writable `agent.json`; it is checked again before it is printed
+    (`platform.ValidateStoredClaimURL`), because `platform.base_url` may have changed since.
 13. **Registration is one journaled transaction.** A complete `register` response is journaled
     (`registration_pending.json`) before `agent.json` or the credential is written, and finished
     from the journal on the next run, never by a second `register`. The journal is consulted before
-    anything else. A lost or unreadable record beside a stored credential is rebuilt through
-    `GET /v1/agents/me` with nothing local changed before a valid answer. `-force` bypasses
+    anything else. It lives beside `credentials.json`, never in the state dir: a sandboxed agent can
+    write the state dir, and the journal can authorize replacing the credential. A
+    `registration_pending.json` found in the state dir is discarded unread, and once the journal's
+    key is in `credentials.json` an `agent.json` naming another agent is set aside rather than
+    allowed to stop publication. Before a foreground `connect` prints, polls or replaces anything
+    it asks `GET /v1/agents/me` with the stored credential: a lost or unreadable record, or one
+    naming an agent the credential does not belong to, is rebuilt from the answer, with nothing
+    local changed before a valid answer; the credential is the authority, because it lives outside
+    every writable root and `agent.json` does not. Unreadable includes a record holding a character
+    a terminal acts on or an agent id that names a route (`LoadAgentRegistration`,
+    `auth.ValidAgentID`). A `/me` failure shows no claim link. `-force` does not rebuild; it bypasses
     recovery and authorizes deliberate replacement where local state would otherwise refuse a
     fresh registration. Separately and without `-force`, an ordinary foreground `connect` may
     replace a registration the platform has positively verified as expired; that replacement
@@ -188,7 +216,15 @@ the named tests.
     `manual_intervention`, reports every surviving copy, and cleanup preserves every reported path.
     Upgrade never moves to an older release: only `upgrade -rollback` does, by validating a fresh
     copy of that one local `.previous` — never running it in place — with no network, and swapping
-    one level. An npm-managed copy is never replaced. Participant state is removed only by
+    one level. An npm-managed copy is never replaced. The daily check the hooks start,
+    `upgrade -auto` (`cmd/jevlin/update_check.go`), is one release lookup under its own check
+    lock, and only for a replacement this same transaction under the same locks, taken in one
+    attempt. It is started only by a hook, never by a search or anything a search spawns, and never
+    by a hook whose environment says it runs inside a sandbox (Codex's markers, or a proxy on
+    loopback), so the one host it reaches stays off the sandboxed path invariant 1 fences. Its
+    record lives beside `credentials.json`, where no sandbox writes, and it never undoes a person:
+    a release `upgrade -rollback` left is held, a `manual_intervention` waits for a person's
+    upgrade, and a binary another installation owns is that installation's to update. Participant state is removed only by
     `uninstall -purge-state` after an interactive typed confirmation, the wallet address or the
     installation path, that `-yes` cannot supply and a non-terminal cannot reach: protection against
     accidents and non-interactive automation, not against a program driving a terminal.
@@ -205,6 +241,66 @@ the named tests.
     A typed refusal and an unanswered question are different outcomes and must stay
     distinguishable by exit code, which is why the ones that change nothing either way
     (`agents install`'s `Proceed?`, `wallet send`'s confirmation) still differ there.
+    **One exception, deliberate:** when `agents install` or `setup` writes nothing else — an
+    unanswered question, no terminal without `-yes`, an unanswered or declined `Proceed?` or
+    agents question, a declined Codex switch — it still commits the plan's safety writes
+    (`commitSafetyOnly`), and nothing else; a typed no then still exits 0 and no answer non-zero. A safety write
+    only ever removes jevlin's own open network from Codex's config (`codexSafeForm`: the old
+    block's `network_access = true` line, or our profile's own network while the proxy is off),
+    so it changes no setting of the participant's and decides nothing for them; leaving it would
+    keep every command Codex runs able to reach any host, which is the one outcome nobody could
+    have chosen. The run says it closed that block, and still exits non-zero.
+19. **A sandboxed agent's files never redirect or stall this client's own.** The state dir, and
+    with mining the intake, sessions and spool dirs, are writable roots of Codex's sandbox
+    (`codexSandboxRoots`: the permission profile's filesystem entries, on Windows the roots-only
+    block's `writable_roots`), while hooks, hook-spawned flushes and connect's resume work in them
+    from outside it. Live on Codex 0.160.0's macOS sandbox, a command there could leave a symlink
+    out of the root, a hard link to a participant's file outside it, and a FIFO; having emptied a
+    top-level root, it could not `rmdir` it. A root inside another root (the spool's default,
+    `<state_dir>/spool`) can be renamed away and replaced, though. So in those directories no
+    existing name is opened for writing (`fsx.CreateNew`; a replacement is an exclusively
+    created, unpredictably named temporary file renamed into place), no read waits on what is
+    there or reads past a bound (`fsx.ReadRegular`, `ReadRegularNoFollow` where a check on the
+    name came first), no lock follows a link (`fsx.OpenLock`), and the spool, which can be nested,
+    does every operation through `fsx.Root` held to the directory it opened on. The premise is
+    that the installation's own directory (credentials.json, the registration journal, the payout
+    record, flush.lock) and the config's directory are writable from no sandbox: `agents install`
+    grants Codex nothing when a layout would put either inside a root (`codexRootsProblem`), and nothing here can help if Codex's
+    own workspace is the installation or above it. `pkg/fsx/confined.go` owns the operations.
+    `cmd/jevlin/writable_roots_guard_test.go` resolves every file's imports and classifies each
+    reference to a file operation in os, io/ioutil, syscall, x/sys/unix, x/sys/windows and
+    pkg/fsx by (file, function, call) and count, with the reason it is safe, and fails on a new
+    one until someone classifies it: the forbidden state is not choosing. `writable_roots_test.go`,
+    `codex_sandbox_test.go`, `pkg/fsx/confined_test.go`, `pkg/mining/spool/quarantine_link_test.go`
+    and `pkg/auth/refreshlock_link_test.go` plant the links and FIFOs at the exact names, and swap
+    a file between a check and its read through the test seams in `readSecret` and
+    `readCredentials`. What the records say is answered in three parts. A record that could make
+    this client act on, or show, its writer's say-so does not live there: the registration
+    journal, the payout record and the claim record sit beside `credentials.json`, and what an
+    older version left in the state dir is discarded unread or, for a payout address, recorded
+    only when it is the installation's own wallet address (`payoutAddressToDeclare`). Every record
+    a command prints is held on load to what this client writes: a string holding a control,
+    format or line-separator character (`internal/termtext`, Unicode Cc, Cf, Zl and Zp, found by
+    reflection over every string `encoding/json` fills in `pkg/auth/record_text.go`) makes
+    `agent.json` corrupt and any other record unreadable; an identifier a record carries (an
+    agent id, a scope, a slot name, a time) is a token, never a sentence (`pkg/auth/agent_id.go`,
+    held on the platform's wire as well, before anything is journaled), and a slot refusal is
+    stored as a code the client renders in its own words; an address must be twilight bech32; a
+    held-binding note is shown only for the address this installation would declare, with a
+    reason only when it is one the client knows; no message repeats the agent id `agent.json`
+    held; and a decode error repeats none of
+    the record (`auth.DecodeProblem`: the state dir's records, the flush stamp, and the journal
+    and claim record beside the credential alike). What a foreground `flush` prints, which names intake and spool files, goes
+    through `terminalSafeWriter`. And `agent.json` naming an agent the stored credential does not
+    belong to is rebuilt from the platform (invariant 13).
+    `cmd/jevlin/state_record_escape_guard_test.go` builds an installation through the real
+    commands, plants each class of character, one at a time, in every string of every record it
+    leaves and in a spool record's id, runs every command that prints, `flush` included, and fails
+    on a file nobody has classified; it then plants a visible sentence at every scalar of every
+    record, which no command may repeat, with the health detail, free text by design, named as
+    the one exception (`visibleFreeText`). Within those shapes a
+    record still says what its last writer chose: a forged `mining_decision.json` still turns
+    mining on, a forged `payout_declared.json` still makes a resume skip a declaration.
 
 ## Subsystems and where their rules live
 A subsystem's authority is one file, and a subsystem nobody has watched fail is a hypothesis — so
@@ -246,17 +342,64 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   re-registered), `TestConnectRebuildsClaimedRegistrationFromThePlatform` (the `/v1/agents/me`
   rebuild), `TestForegroundConnectReplacesExpiredRegistrationAndPropagatesNewIdentity` (the
   no-flag replacement of a positively-verified expired identity),
+  `TestForgedStateDirJournalCannotReplaceCredential` (a journal in the state dir, which a
+  sandboxed command can write, is discarded unread and publishes nothing),
   `TestConnectRefusesCorruptRegistrationWithExistingPlatformCredential` (the refusal that
   `-force` exists to override), and the claim-code re-mint pair —
   `TestForegroundConnectMintsAFreshClaimLinkForALostOne` and `TestResumeNeverMintsAClaimLink`
   (`remintClaimLink`: minting kills the old code, so only a deliberate foreground connect asks,
   the fresh link is persisted before it is printed, and every failure is exactly the old
-  no-link dead end). For participants: [guide, The claim link](docs/guide.md#the-claim-link).
+  no-link dead end). The journal can hold a platform key, so `-purge-state` removes it with
+  the credential (`registration_journal_purge_test.go`). A record that names an agent the
+  stored key does not belong to is rebuilt by a foreground connect from `/v1/agents/me` before
+  anything is printed or replaced, never by the resume or under `-force`:
+  `registration_unknown_agent_test.go`, against a stub that answers status only for the key's
+  own agent, as the router does. The claim link is `claim.json` beside the credential
+  (`pkg/auth/claim_record.go`): `claim_link_test.go` plants another agent's on-origin link in
+  `agent.json` and holds connect, status, both JSON reports and mining enable to never printing
+  it, a claimed agent to showing none, a `/me` failure to showing none (in `connect -json` too,
+  `TestConnectJSONCarriesNoLinkTheRunWithheld`), and a record naming `me` to being rebuilt;
+  `TestTheRebuildNamesOnlyThePlatformsAgent` holds every message to the id `/me` returned, and
+  `TestForceOnARecordNamingAnotherAgentAsksForDifferentInput` machine mode's `-force` to
+  `fix_input`. `TestAJournalWinsOverAnAgentRecordNamingAnotherAgent`,
+  `TestAJournalPublishesOverWhateverIsAtTheAgentRecordsName` (a loose-mode record, a link, a
+  directory, a FIFO) and `registration_set_aside_test.go` hold a planted record or old evidence
+  to never wedging recovery. For participants:
+  [guide, The claim link](docs/guide.md#the-claim-link).
+- **The payout record** — `pkg/auth/store.go`'s `PayoutRecord` owns `payout.json`, the address a
+  resume declares unattended, and keeps it beside `credentials.json`, never in the state dir:
+  a first declaration takes effect on arrival (`pkg/auth/payout.go`), and a `payout.json` a
+  sandboxed command planted in the state dir was declared by the next resume. It does not
+  stop a sandboxed command that declares with the installation's AS authority itself, which it
+  can read in the state dir; that is the AS's question, and it is open. With nothing on file
+  beside the credential, the address recorded and declared comes only from where no sandbox
+  writes (`payoutAddressToDeclare`): the config's `[mining] payout_address`, or a `payout.json` an
+  older version left in the state dir when it is this installation's own wallet address, whose
+  state-dir copy is then removed. "The AS already has it in force" was the rule once, and a
+  sandboxed command can make that true by itself with `jevlin payout set`. Any other
+  state-dir `payout.json` is never recorded, declared or repeated, and status says to run
+  `jevlin mining enable`, which on an installation already enabled asks only for the address
+  (`miningEnableDecision`). `cmd/jevlin/payout_record_test.go`
+  (`TestTheResumeNeverDeclaresAnAddressOnlyTheStateDirNames`,
+  `TestAnAddressTheSandboxMadeActiveIsNotAdopted`,
+  `TestALegacyAddressThatIsTheInstallationsOwnWalletIsAdopted`,
+  `TestTheConfigsPayoutAddressIsRecordedAndDeclared`), `payout_record_unix_test.go` (a resume
+  that cannot write the home declares the wallet address and leaves the record to the next
+  foreground run), `payout_record_purge_test.go`, `setup_test.go`'s
+  `TestALonePayoutRecordDoesNotHideASetAsideInstallation` and the adoption cases in
+  `setup_units_test.go`. For participants:
+  [guide, Changing the payout address](docs/guide.md#changing-the-payout-address).
 - **The prompt rule** — `cmd/jevlin/prompt.go` owns what counts as an answer and the two
   readers that ask; every prompt in the binary goes through one of them.
   `prompt_abort_test.go` drives each real command to each real question, under both an interrupted
   read and a closed stdin, and asserts the non-zero exit, the unwritten decision and the
   uncontacted platform — and, in the same file, that a typed refusal still declines and exits 0.
+  The one thing an unanswered or declined question still writes is invariant 18's exception, the
+  safety write that closes jevlin's own open network in Codex's config; `codex_unit_test.go`
+  (`TestARunThatWritesNothingStillClosesTheOldBlock`, `TestTheOldBlockIsClosedWhateverTheAnswer`,
+  `TestATypedNoAtProceedClosesTheOldBlockAndSaysSo`) and `setup_test.go`
+  (`TestSetupClosesTheOldBlockWhenItsAgentsQuestionGoesUnanswered`,
+  `TestSetupClosesTheOldBlockOnATypedNo`) hold that it writes that and nothing else.
 - **Which installation the profile and the agents belong to** — `cmd/jevlin/setup.go` owns it
   (`otherInstallation`, `leftForOtherInstallation`). This machine's installation is
   `$JEVLIN_HOME`, else `~/.jevlin`; an explicit `-home` naming any other directory is a
@@ -268,41 +411,109 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `JEVLIN_HOME` as the way to say a directory elsewhere IS the machine's own.
   `setup_other_home_test.go` snapshots the whole sandbox, since the claim is about what is not
   touched.
-- **Whose content is inside our marked block** — `cmd/jevlin/agents.go` owns the split
-  (`markedRegion`, `splitMarkedBlock`, `splitCodexBlock`) and `targets.go` owns what uninstall
-  does with it (`removeOurSandboxBlock`). It is `ownership_match.go`'s rule one level finer: that
-  rule decides whether a block is *this installation's* by what the renderer wrote into it rather
-  than where it sits; this decides which tables *inside* it are ours the same way, from the one
-  name in `codexSandboxTable`. Neither is about position: Codex appends its own tables to
-  `config.toml`, and when our block is last they land inside our markers, so deleting a
-  marker-to-marker byte range would take Codex's folder trust and `[windows] sandbox` with it. A
-  block that will not decode is left alone and reported, never deleted. The line scan that finds
-  the boundaries is **not trusted**: `oursIsOnlyOurs` decodes whatever was classified as ours and
-  requires exactly our one table with nothing nested in it before a byte is deleted or rewritten,
-  because a header the scan misses is not an error, only a missing boundary, and the text around
-  it still decodes — Codex keys folder trust by path, and a header like
-  `[projects.'/home/u/work [1]']` is exactly what a loose pattern misses. The grammar is fixed;
-  the net is what makes the next miss a refusal instead of a lost table, and the two are tested
-  independently on purpose. `codex_block_ownership_test.go` drives install and uninstall against
-  the shapes Codex produces, its record of hook approvals among them — one
-  `[hooks.state."<hooks.json>:<event>:<i>:<j>"]` table per approved hook, written inside our block
-  whenever the block is last (`TestUninstallKeepsCodexsHookTrustInsideOurBlock`,
-  `TestInstallMovesCodexsHookTrustOutOfOurBlockRatherThanDeletingIt`). This client only ever
-  reads that record, for `agents status` (`codexApprovalLines`), and never writes one: approving
-  is the participant's review of commands that run outside Codex's sandbox
-  (`TestTheClientNeverWritesCodexHookTrust`); `marked_block_sections_test.go` tests the split on its own first,
-  because getting it wrong in the removing direction destroys a participant's settings.
-  **Where the block sits is also ours to preserve**: install writes it **where it finds
-  it** — `replaceBlockInPlace` over `markedRegion`'s own pre and post — and appends only when
-  there is none, so **no byte outside our markers ever moves**, and a change that is only ever to
-  our own table never reorders the file. Tables of Codex's found inside the markers move directly
-  below the block, which also keeps a block that is no longer last from collecting Codex's next
-  append.
-  The position is not recorded anywhere, and that is a decision with a stated cost: uninstall
-  erases it, so an uninstall-then-install round trip is byte-identical only for a block where
-  our own writes put it, at the end. `codex_block_position_test.go` asserts that case by bytes
-  and the other by the guarantee that does hold there — not one line of the participant's own
-  moves relative to any other.
+- **Whose content is inside our marked region** — `cmd/jevlin/codex_region.go` owns the reading
+  (`readCodexRegion`), the placement and the removal; `agents.go` owns the line scan it rests on
+  (`markedRegion`, `splitMarkedBlock`, and `markerSpan`, which takes a marker only as a whole line
+  outside a multi-line string); `targets.go` owns what uninstall does with it
+  (`planCodexConfigRemoval`). On macOS and Linux the region is a Codex permission profile
+  (`codex_profile.go`): `default_permissions`, `[features.network_proxy]`, and
+  `[permissions.jevlin]` with `extends`, its filesystem roots and network domains. On Windows it
+  is the old `[sandbox_workspace_write]` table with `writable_roots` alone, written where it is
+  found (`planCodexSandbox`), because no profile has been seen to work in Codex's Windows sandbox.
+  It is `ownership_match.go`'s rule one level finer: that rule decides whether a region is *this
+  installation's* by what the renderer wrote into it (its roots, `codexRootsOwner`); this decides
+  which lines *inside* it are ours the same way, from the headers the renderer writes and its one
+  key. Neither is about position: Codex writes into the region — it appends tables to the end of
+  the file, `codex features enable` writes `[features]` inside the markers, app-server's
+  `config/value/write` puts a root key directly after our `default_permissions` (the captures are
+  in `cmd/jevlin/testdata/codex/`, as `cmd/jevlin/testdata/hermes` keeps Hermes' own output). So a
+  root key that is not ours moves to just above the region, a table to just below it, and nothing
+  of anybody's is ever deleted, on install and on uninstall alike. A region that will not decode,
+  or whose own part is not exactly what the renderer writes, is left alone and reported. The line
+  scan is **not trusted**: before a byte is written, the result must decode to the participant's
+  own content plus exactly what the edit adds (install) or the original minus exactly our keys
+  (uninstall), so a header the scan misses — Codex keys folder trust by path, and
+  `[projects.'/home/u/work [1]']` is exactly what a loose pattern misses — costs a refusal, never a
+  key. **And the decoder is not trusted either**: BurntSushi/toml accepts shapes TOML 1.0 and Codex
+  refuse (a header extending an inline table, or reopening one made by dotted keys), so every write
+  to Codex's config is parsed again with go-toml/v2 (`codex_strict.go`, `planCodexWrite`) and
+  refused, naming the participant's colliding table, if Codex would not load it; a leading UTF-8
+  byte-order mark, which Codex accepts, is set aside to read and kept on write (`readCodexConfig`); `codex_strict_test.go` holds
+  that check to thirteen verdicts taken from Codex itself. The grammar and the nets are tested
+  independently on purpose (`marked_block_sections_test.go` first, because getting the split wrong
+  in the removing direction destroys a participant's settings). Codex's record of hook approvals,
+  one `[hooks.state."<hooks.json>:<event>:<i>:<j>"]` table per hook, is one of those tables
+  (`TestUninstallKeepsCodexsHookTrustInsideOurBlock`,
+  `TestInstallMovesCodexsHookTrustOutOfOurBlockRatherThanDeletingIt`); this client only ever reads
+  it, for `agents status` (`codexApprovalLines`), and never writes one: approving is the
+  participant's review of commands that run outside Codex's sandbox
+  (`TestTheClientNeverWritesCodexHookTrust`).
+  **What Codex deletes with a table.** Codex's editor reads the comments above a table as that
+  table's, and `codex features disable network_proxy` deletes them with it; with our proxy table
+  first, that took our begin marker (captured in `cmd/jevlin/testdata/codex/`). So the proxy table is
+  written last, below our own profile tables, and a region that has lost a marker anyway — a lone
+  end marker with a run of our tables above it, or a lone begin marker with one below it — is still
+  ours (`damagedCodexRegion`): install repairs it, status names it, uninstall removes it whole.
+  **Where the region sits is the file's to say.** `default_permissions` is a bare key, and TOML
+  gives a bare key to whatever table precedes it, so the region goes **before the file's first
+  table header**, or last in a file with none; found there, it is written where it is; found below
+  a header, it is moved up. No line of the participant's moves relative to another.
+  `insertBeforeFirstHeader` splices the block in at a line boundary with no byte of its own and
+  uninstall takes exactly its bytes out, so install then uninstall, and uninstall then install,
+  are byte-identical for every file whose last line ends in a newline, CRLF included
+  (`codex_block_position_test.go`).
+  **The participant's own profile is extended, never edited** (`codex_plan.go`). Codex merges a
+  profile with the one it `extends` — both profiles' roots and domain lists apply, anything
+  neither lists stays closed (seen live on 0.158.0 Linux and 0.160.0 macOS) — so when
+  `default_permissions` names a profile of theirs, ours extends it, and only the
+  `default_permissions` line's value changes. Codex then applies every domain the chain allows
+  once ours turns the network on, whatever the chain's own `enabled` says, so the question, the plan
+  and status name every host the merged profile allows (`codexAllowedFor`), and say a yes opens
+  every host where the chain allows `"*"`. If their profile's network is already open (on, with
+  the proxy off), ours adds only its roots: no hosts and no proxy table, which would cut their
+  network down to ours. The other lines that can change are `":workspace"` (rewritten the same
+  way), a bare `sandbox_mode = "workspace-write"` (commented out) and `network_proxy = false`
+  (rewritten to true, never shadowed by a second definition, a duplicate key Codex refuses).
+  Nothing is ever written inside a participant's table. All of it is one question showing every
+  line, changed only on a typed yes (with no terminal, the by-hand text is the exact lines a yes
+  writes, marks and markers included, so a file finished by hand is this installation's); a typed no installs nothing for Codex and exits 0; no line
+  stops the command, exit 2 (invariant 18); `-yes` answers none of it, in `agents install` and in
+  `setup`; with no terminal `agents install` exits 2 and prints the lines, and a dry run prints
+  the question and plans the yes. Each changed line carries a trailing comment naming its config
+  (`codexMark`, refused for a path with a control or line-separator character) and keeps the line
+  it replaced.
+  **Our own network is never left open.** No operation may leave our profile active with a network
+  of its own and network_proxy off (`openByUs` in `codex_unit_test.go`, asserted after install,
+  reinstall and uninstall of every starting state under every answer). Whenever install does not
+  write the full profile — a typed no, no answer, no terminal, the upgrade re-render, a refusal —
+  our existing block still takes its safe form (`codexSafeForm`): the old block loses its one
+  `network_access = true` line and keeps every other line, a participant's `exclude_*` keys
+  included; our profile with its own network and the proxy off loses its network. That write is
+  marked `safety`; beside a full write that replaces an open block it goes in the plan's
+  `fallback`; and the two are the only writes committed when a run stops without an answer
+  (invariant 18's exception). Uninstall is **one unit**: the region, attributed by its roots, and the lines it
+  implies go together, whichever config path the marks spell; a region left keeps its lines; a
+  line whose value is no longer what install wrote is left as the participant has it, without our
+  mark; and the
+  region never goes while `default_permissions` would still name it. Without a region, a mark is
+  this installation's when it names the same config file through any link.
+  `codex_states_test.go` drives every starting state through the real commands to goldens under
+  `cmd/jevlin/testdata/codex/states/` and back to the participant's bytes; `codex_consent_test.go`
+  and setup's own tests run the question under a typed yes, a typed no, an empty line, an
+  interrupt, a closed stdin, `-yes`, no terminal and a dry run.
+  **The proxy is part of the profile.** Without `features.network_proxy` Codex does not enforce
+  the domain list and the sandbox network is open to every host; `codex features disable
+  network_proxy` deletes our table (the capture is in `cmd/jevlin/testdata/codex/`), so install
+  restores it and `agents status` says, under Codex's row whatever this installation's state
+  there, that every command Codex runs can reach any host (`codex_status.go`). Status reads only
+  `~/.codex/config.toml`, and says so: a trusted project's or `-p` profile's config can turn the
+  proxy off where status cannot see. Status also compares the profile's hosts with all three the
+  config now names; a loopback host is never listed (`codexAllowedHosts`). Supported Codex is
+  0.158.0 or newer (`codexSupported`), the versions it was verified on; older versions are not
+  supported: below 0.131 Codex refuses the file and does not start, and 0.131 to 0.157 is
+  unverified, which the region's own comment says. No file records Codex's version, and this
+  client does not run codex to ask.
+  For participants: [agents, Codex](docs/agents.md#codex).
 - **Our entry in a Hermes `hooks:` block we did not write** — `cmd/jevlin/hermes_install.go`
   owns it (`findHermesOwnEntry`, `hermesRunIsRenderedExactly`), in the file that already owns the rule it
   follows: there is no YAML parser, so a false-positive refusal is cheap and an ambiguous mutation
@@ -352,7 +563,8 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `TestSetupConnectsUnderItsOwnAdmission` exists to forbid. So the destructive exclusion is the
   only place a lock file can be removed, and the locks an upgrade, a setup or a connect leaves are
   named instead: `uninstall`'s `sayLeftoverLocks` lists the gate, `setup.lock`, `connect.lock`,
-  `flush.lock` and the binary's update lock that still exist, as safe to delete, in both modes.
+  `flush.lock`, the binary's update lock and the release check's `update_check.lock` that still
+  exist, as safe to delete, in both modes.
   `lock_leftover_test.go` holds it to the invariant either way round — a lock still on disk is
   named, one the run removed is not — and scopes its search to that section, because a purge plan
   prints the full path of everything it removes. `lifecycle_created_locks_test.go` guards the
@@ -371,11 +583,96 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   cannot express. `wallet_acl_test.go` proves the walk and the repair decision on every OS;
   `wallet_acl_windows_test.go` proves, as a second principal holding an inherited read entry on
   the installation, that `credentials.json` opens and the wallet does not.
+- **The state directory's access list, and the Windows ACL helpers** — a sandbox's entry on
+  `state\` is intended, so no open of the store and no load of a secret reads an access list,
+  refuses one, or resolves an account name: that would turn mining DEGRADED after every search on
+  an installation that uses a sandbox, and put a DACL read on the search path (invariant 1). The
+  store and `doctor` leave such an entry as they find it; `jevlin setup` does not: it gives
+  `<home>` and `state`, `spool`, `intake` and `sessions` beneath it a protected owner-only list on
+  every run (`directories()`), which removes an entry a sandbox's setup added to any of them, until
+  that setup adds it again. That is setup's long-standing behavior and not this change's to alter. `pkg/auth/perm.go` says so where `posixModes` is read;
+  `perm_reads_test.go` parses every source file in the package, Windows-tagged ones included,
+  and fails on a descriptor read, an account lookup or any `winacl` call but `RestrictToOwner`;
+  `perm_windows_test.go` adds `BUILTIN\Users` to the directory and to each of
+  `CredentialFiles()` (all five, `agent.json` and `trace.key` included) and goes through each way
+  in. The one thing the store does is at creation: every directory `OpenStore`
+  makes on the way to a `state_dir` (`MkdirAll` can make several, each inheriting its parent's
+  list) gets `setup`'s own protected owner-only DACL and owner (`restrictStateDir`, the same
+  function), and all of them are removed again if any step fails, so the next run restricts
+  directories it creates instead of opening ones it did not. `store_create_test.go` holds that wiring on every OS
+  through `restrictCreatedStateDir`, a variable for the reason `secretCheckedHook` is one: the
+  real call does nothing on POSIX, so deleting it there would otherwise change no result.
+  What a participant is told is `doctor`'s `state access` (`cmd/jevlin/state_acl.go`): it asks
+  for the directory and `auth.CredentialFiles()` by name, never lists the directory, names other
+  principals as information (`OK`) and calls only a NULL DACL, an owner other than the user,
+  SYSTEM or Administrators, or no owner on record a problem (`NO`). It reads nothing through a link, and a check on a
+  name is not what guarantees that, because the name is in a directory a sandboxed command can
+  write and can be replaced between the check and the read: `winacl.Read` opens the object once
+  with `FILE_FLAG_OPEN_REPARSE_POINT`, refuses a reparse point on the handle's own attributes
+  (`ErrReparsePoint`) and reads the descriptor from that handle, so what was checked is what is
+  read. The `Lstat` before it only classifies early. `stateCheckedHook` is the seam between the
+  two, and `state_acl_windows_test.go` swaps a credential for a junction there. What one handle
+  per object does not close is a directory replaced after it was read and before its credentials
+  were. Invariant 19 records that a top-level root could not be removed from inside Codex's macOS
+  sandbox; nothing here establishes that for a Windows sandbox.
+  Only `doctor.go`, the state and wallet access files (`state_acl.go`, `wallet_acl.go` and their
+  per-platform halves) and `setup_env_windows.go` (the owner's name in an adoption refusal) may
+  reference `inspectStateAccess`, `stateACL`, `winacl.Read` or `winacl.PrincipalName`: naming a SID
+  can reach a domain controller, so `acl_reach_test.go` fails on a call from anywhere a search or a
+  hook runs, `loadTraceKey` included, and `perm_reads_test.go` holds `pkg/auth` to calling nothing
+  from `winacl` but `RestrictToOwner`.
+  `judgeStateDescriptor` is pure, so `state_acl_test.go` runs on every OS, including through
+  `cmdDoctor` with a fake backend; `state_acl_windows_test.go` runs the real reader. The reader,
+  the namer and `RestrictToOwner` live in `internal/winacl` because `pkg/` cannot import `cmd/`
+  (invariant 8) and the wallet check needs the same ones; the package imports nothing of the
+  module and judges nothing, and its descriptor-string parser is tested on every OS.
 - **Durable evidence delivery** — `pkg/fsx` owns the atomic, fsync'd write (Windows included);
   `pkg/mining/spool` owns the queue and its quarantine; `pkg/mining/collector` owns attempts and
   the next-attempt time; `pkg/auth/submit.go` owns the AS exchange and what counts as an ack.
   `cmd/jevlin/delivery_health_test.go` proves a quarantine cannot be cleared by an unrelated
   success.
+- **The AS's region refusals** — `pkg/auth/region.go` owns the three 451 codes
+  (twilight-minis ADR-MINIS-0026, accepted with its contract question; the §26 text amendment is
+  still to be made upstream), their sentences and the note set, one note per slot and epoch,
+  bounded like the conflict set; `cmd/jevlin/driver.go`'s `regionRefused` owns retrying every
+  attempt, as the ADR asks, and explaining a verdict once by its note rather than by a process's
+  memory, because a flush is a process; `cmd/jevlin/flush.go` owns holding every noted epoch's
+  records back (`undeliverableRecords`, the collector's `Skip`, which holds back an epoch another
+  installation holds the same way, issue #88) and dropping them once the AS
+  itself names a target past them, never on a pinned `target_epoch`
+  (`dropRegionRefusedObservationsPastTarget`, invariant 7's second exception). Every
+  enrollment clears its own epoch's note, never another's (`ClearRegionRefusalFor`). A 451 on
+  submission is `auth.RegionDeferredError`, which the collector defers through `Deferrer`: the
+  next attempt honors Retry-After, no attempt is spent and no fault is recorded.
+  `cmd/jevlin/region_flush_test.go` runs real flushes, two where a claim spans them, and
+  `cmd/jevlin/conflict_flush_test.go` runs them for a conflicted epoch: its records held without
+  an attempt or a fault, in deliverOnly too, its entry kept while a removal fails, and a fault
+  about them cleared once they are all that is left or are dropped;
+  `pkg/mining/collector/defer_test.go` and `cmd/jevlin/region_status_test.go` hold the deferral
+  and the status line.
+  For participants: [guide, When your region is refused](docs/guide.md#when-your-region-is-refused).
+- **Codex on Linux: what delivers a search's evidence** — `cmd/jevlin/targets.go`'s
+  `codexDeliveryUnapproved` owns the rule. Codex's Linux sandbox is a PID namespace, so the
+  flush a sandboxed search starts dies with it (issue #80, seen live with jevlin's own binary on
+  0.158.0), and only a hook outside the sandbox delivers: `SessionStart` or `Stop`
+  (`codexDeliveringHooks`). With mining on, one of ours installed and neither approved on record,
+  `agents status` (Codex's `StatusNotes`), `status` (`printDeliveryLines`, and `delivery` in
+  `status -json`) and `agents install` say so; where the record cannot be told
+  (`readCodexApprovals`' problem), nothing is claimed. Delivering inline from the search was
+  rejected: it would put the AS's round trips on the search path (invariant 1).
+  `codex_delivery_test.go` holds the rule and every place it is said.
+  For participants: [agents, Codex](docs/agents.md#codex).
+- **The AS clients' proxy** — `pkg/auth/proxy.go` owns `loopbackProxy`, the Proxy function of
+  both AS-facing transports (discovery and the DPoP credential client): the environment's proxy,
+  used only when its address is a loopback literal (127.0.0.0/8, ::1); any other, a name
+  included, is ignored as every environment proxy used to be, and the request goes direct. The
+  rule "no environment proxy may silently interpose on AS identity" is about a proxy somebody else
+  configured; a proxy on this machine's loopback is the only route out of Codex's sandbox, and a
+  local process can already read `credentials.json`. Only the AS clients follow it: the wallet's
+  chain client keeps `Proxy: nil`, the search and platform clients keep
+  `http.ProxyFromEnvironment`. `pkg/auth/proxy_test.go` drives the package's own transports
+  through an `httptest` CONNECT proxy on loopback, counting tunnels, and the non-loopback cases
+  without a dial.
 - **The search protocol** — `search.go` owns the request and the fail-open intake;
   `search_protocol.go` owns the deadline, the bounded read and the one exact-code retry;
   `search_machine.go` owns search's classification; `machine.go` owns the header, the action set
@@ -419,9 +716,11 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   session exported climbs past a file of another session to the searching session's own, and
   without one takes the nearest file of the searching harness. `miner.go`'s `replaceViaTemp` is the one writer
   behind the lineage files, the window state and the flush stamp: a failed write or rename removes
-  its temporary file, and the sweep takes only `<file>.<pid>.tmp` of another pid older than
-  `lineageMaxAge` — any lineage file's for a lineage write, only its own for the other two, since
-  the stamp's directory is shared and the window state can live in TMPDIR. Guards:
+  its temporary file, which is `<file>.<pid>-<random>.tmp` and created exclusively (hard
+  invariant 19), and the sweep takes only such a file (or the `<file>.<pid>.tmp` earlier versions
+  wrote) of another pid older than `lineageMaxAge` — any lineage file's for a lineage write, only
+  its own for the other two, since the stamp shares the state dir and the window state can live in
+  a plugin root. Guards:
   `search_channel_test.go`, `lineage_session_test.go`, `lineage_declared_session_test.go` and
   `temp_cleanup_test.go`, all asserted on the bytes the router receives or the files left behind.
 - **Setup** — `setup.go` owns the order (binary, previous
@@ -429,7 +728,8 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   the rule that the mining question stays connect's: `-yes` never answers it, and
   `[mining] enabled = true` is written only with no terminal and `JEVLIN_MINING=1`.
   `setup_adopt.go` owns what counts as an installation and adoption by bundle — the
-  identity (`state/` and `credentials.json`) moves whole or not at all, and a destination
+  identity (`state/`, `credentials.json`, and beside it the registration journal, the payout
+  record and the claim record) moves whole or not at all, and a destination
   identity is a typed conflict that stops setup non-zero before anything moves and before
   connect runs (`TestSetupStopsOnAnIdentityConflictBeforeConnect`). `setup_config.go` owns TOML quoting and
   the migration policy (parse first; `[miner]` present → byte-identical; otherwise append
@@ -483,7 +783,9 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   (a sibling of the installation, never inside it and never deleted), the one lock order
   (gate → `setup.lock` → `connect.lock` → `flush.lock`; for `uninstall -binary` the same sequence
   then `<resolved binary>.update.lock`, the same update-lock identity an upgrade holds after
-  gate → `setup.lock`), how setup, connect and flush pass the gate
+  gate → `setup.lock`; the daily check takes its own `update_check.lock` first, in one attempt,
+  and the upgrade's locks after it only to replace the binary, also in one attempt, so it can
+  neither wait nor deadlock), how setup, connect and flush pass the gate
   (a person's command waits at most five seconds; a detached child, marked by `spawnDetached`,
   makes one attempt and exits 0 recording nothing) and the exclusion a destructive operation holds:
   the gate, then every operation lock, located from the config only once the gate is held.
@@ -508,8 +810,10 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   renderers install writes with, never a hand-kept list, plus the `%q` and bare forms Claude
   Code's allow rules are written in and Hermes' bare POSIX path; the config is compared with
   `samePath`, because `%q` hands Windows doubled separators naming the same file.
-  Codex's sandbox block names directories rather than a config, so `removeOurSandboxBlock`
-  attributes it by its writable roots lying under this installation. **Every artifact this client
+  Codex's marked region names directories rather than a config, so `removeOurSandboxBlock`
+  attributes it by its roots being this installation's (`codexRootsOwner`); a line of the
+  participant's that install changed names the config in its mark instead, and goes back with the
+  region it belongs to. **Every artifact this client
   writes names the installation that wrote it** — `TestEveryArtifactNamesTheInstallationThatWroteIt`
   — including the JavaScript adapters, through their `INSTALL_CONFIG` line. Pi's extension runs no
   command of ours, and opencode's plugin runs one only to hand a finished turn to `hook turn`, so
@@ -531,6 +835,13 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   than "installed", because `Status` answers from the file existing and a host another
   installation set up would read as this one's. `agents_skill_ownership_test.go` guards it on real
   files, with `TestUninstallingOneInstallationLeavesAnothersIntegrations`.
+  **A hook is owned per handler, not per group** (`entryOwnership`, `agents.go`): Claude Code's
+  `/hooks` adds a participant's handler to the group already under the same matcher, often ours,
+  and deciding ownership per group took that handler with ours on install, on uninstall and on an
+  upgrade's re-render (issue #32). Out of a mixed group only our handler comes; the group keeps
+  its place, its other handlers and its matcher, ours gets a group of its own on install, and the
+  plan says so. `agents_hook_handler_test.go` drives it through the real commands for Claude Code
+  and Codex, and holds Codex's renumbering note and its unknown-approval line to the shared group.
   **Codex numbers its hooks by place.** It keys an approval by an entry's index in its event's
   list, so `planHooksMerge` rewrites a Codex entry of ours where the first one stands
   (`replaceInPlace`) instead of appending it, and appends only to an event that has none of ours:

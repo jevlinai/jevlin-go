@@ -105,6 +105,11 @@ func installed(t *testing.T) *setupSandbox {
 		preferFile:                                          "builtin\n",
 		filepath.Join("state.unenrolled-20260101", "x.key"): "half",
 		filepath.Join("wallet.incomplete-20260101", "junk"): "partial",
+		// Beside credentials.json: each holds the participant's own
+		// decision or a platform key, so a default uninstall keeps them
+		// byte for byte and a purge removes them.
+		payoutRecordFile:        `{"address":"twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh"}`,
+		registrationJournalFile: `{"v":1}`,
 	} {
 		writeFileT(t, filepath.Join(s.home, rel), body)
 	}
@@ -190,6 +195,7 @@ func writeWalletFixture(t *testing.T, dir string) {
 func participantState(s *setupSandbox) []string {
 	h := func(rel string) string { return filepath.Join(s.home, rel) }
 	return []string{h("wallet"), h("state"), h("spool"), h("intake"), h("sessions"), h(credentialsFile),
+		h(registrationJournalFile), h(payoutRecordFile), h(claimRecordFile),
 		h(setupConfigFile), h(preferFile), h("state.unenrolled-20260101"), h("wallet.incomplete-20260101")}
 }
 
@@ -725,7 +731,7 @@ func TestUninstallBinaryRefusesACopyItDoesNotOwn(t *testing.T) {
 		layout       func(s *setupSandbox) string
 		want         string
 	}{
-		{"npm global", "npm:global", func(s *setupSandbox) string { return s.exe }, "npm uninstall -g jevlin"},
+		{"npm global", "npm:global", func(s *setupSandbox) string { return s.exe }, "npm uninstall -g @jevlinsearch/jevlin"},
 		{"npm local", "npm:local", func(s *setupSandbox) string { return s.exe }, "project's dependencies"},
 		{"npm unknown", "npm:unknown", func(s *setupSandbox) string { return s.exe }, "package manager"},
 		{"node_modules run directly", "", func(s *setupSandbox) string {
@@ -733,7 +739,7 @@ func TestUninstallBinaryRefusesACopyItDoesNotOwn(t *testing.T) {
 		}, "package manager"},
 		{"ambiguous npm-like layout", "", func(s *setupSandbox) string {
 			exe := filepath.Join(s.home, "bin", "jevlin")
-			writeFileT(t, filepath.Join(s.home, "package.json"), `{"name":"jevlin"}`)
+			writeFileT(t, filepath.Join(s.home, "package.json"), `{"name":"@jevlinsearch/jevlin"}`)
 			return exe
 		}, "unclear"},
 		{"a native binary that is not the installation's copy", "", func(s *setupSandbox) string { return s.exe }, "is not this installation's own binary"},
@@ -1532,7 +1538,7 @@ func TestUninstallCustomHome(t *testing.T) {
 func TestLaunchClassifier(t *testing.T) {
 	root := t.TempDir()
 	layout := filepath.Join(root, "pkg")
-	writeFileT(t, filepath.Join(layout, "package.json"), `{"name":"jevlin"}`)
+	writeFileT(t, filepath.Join(layout, "package.json"), `{"name":"@jevlinsearch/jevlin"}`)
 	writeFileT(t, filepath.Join(layout, "install.js"), "")
 	writeFileT(t, filepath.Join(layout, "bin", "jevlin.js"), "")
 	partial := filepath.Join(root, "partial")
@@ -1554,5 +1560,29 @@ func TestLaunchClassifier(t *testing.T) {
 		if got := classifyLaunch(tc.exe, tc.marker); got != tc.want {
 			t.Errorf("classifyLaunch(%s, %q) = %d, want %d", tc.exe, tc.marker, got, tc.want)
 		}
+	}
+}
+
+// uninstallRefusingTarget refuses the same thing on every plan, as the
+// Codex target does over a block it must leave.
+type uninstallRefusingTarget struct{ uninstallIntegrationTarget }
+
+func (uninstallRefusingTarget) PlanUninstall(_ agentOps, _ agentPaths, _ binEntry, _ func(string) string, p *agentPlan) {
+	p.refused = append(p.refused, "Fake integration: left the one thing it cannot remove")
+}
+
+// A refusal is about a file, not a binary: the top-level uninstall plans
+// every target once per binary candidate, and printed and counted each
+// refusal once per candidate ("finished with 2 problem(s)" for one).
+func TestATargetRefusalIsReportedOnce(t *testing.T) {
+	s := installed(t)
+	d, out, errOut := s.uninstallDeps(nil, false, &revokeRecorder{})
+	d.targets = append(append([]installTarget{}, installTargets...), uninstallRefusingTarget{})
+	code := uninstallMain(d, []string{"-yes"})
+	if code == exitOK || !strings.Contains(out.String(), "finished with 1 problem(s)") {
+		t.Fatalf("uninstall exited %d, or did not count one problem\n%s\n%s", code, out, errOut)
+	}
+	if n := strings.Count(out.String()+errOut.String(), "left the one thing it cannot remove"); n != 2 {
+		t.Errorf("the refusal is reported %d times, want twice (the plan and the failure)\n%s\n%s", n, out, errOut)
 	}
 }

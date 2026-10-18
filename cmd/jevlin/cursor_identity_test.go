@@ -14,13 +14,17 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // cursorPreToolUseFixture is the preToolUse INPUT Cursor sends for a Shell
@@ -475,5 +479,231 @@ func TestCursorRewrittenSearchReachesTheRouterAsCursor(t *testing.T) {
 				t.Fatalf("the search did not read and advance the declared lineage file: %+v", l)
 			}
 		})
+	}
+}
+
+// gitBashCase is the install and the two request bodies the Git Bash tests
+// share: one whose query closes a single-quoted word and runs `touch marker`
+// after it, and the same query with its apostrophe written as \u0027.
+type gitBashCase struct {
+	hc                hookContext
+	env               map[string]string
+	ops               hookOps
+	bin, dir, marker  string
+	breakout, escaped string
+}
+
+// newGitBashCase names a stand-in binary, never os.Executable. The bash
+// phase below runs every command the hook allows, and a search rendered
+// with os.Executable names the Go test binary: given `search -config ...
+// --stdin`, that binary stops parsing flags at `search` and runs this whole
+// package again, from inside one of its own tests. The identity check reads
+// only that the path is this process's regular file, so a file that cannot be
+// executed satisfies it, and bash running it runs nothing of ours.
+func newGitBashCase(t *testing.T) gitBashCase {
+	t.Helper()
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin", "jevlin")
+	if err := os.MkdirAll(filepath.Dir(bin), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bin, []byte("stand-in\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := gitBashCase{
+		hc:     hookContext{cfgPath: filepath.Join(dir, "jevlin.toml"), sessionsDir: filepath.Join(dir, "sessions")},
+		bin:    bin,
+		dir:    dir,
+		marker: filepath.Join(dir, "ran"),
+	}
+	c.env = cursorIdentityEnv(c.hc.sessionsDir, "conv-1")
+	_, c.ops = newFakeHookOps(c.env)
+	c.ops.executable = func() (string, error) { return bin, nil }
+	// The query is encoded by json.Marshal, never pasted between quotes: on
+	// Windows the marker path's separators are backslashes, which a JSON
+	// string must escape, and a body that is not JSON is refused by the
+	// recognizer before the rule under test is reached. The closing brace on
+	// a line of its own is what puts the breakout's `#` at the end of a line.
+	q, err := json.Marshal("x'; touch " + c.marker + "; #")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.breakout = `{"version":1,"query":` + string(q) + "\n}"
+	c.escaped = strings.ReplaceAll(c.breakout, "'", `\u0027`)
+	var got, want struct{ Query string }
+	if json.Unmarshal([]byte(c.escaped), &got) != nil || json.Unmarshal([]byte(c.breakout), &want) != nil || got.Query != want.Query || !strings.HasPrefix(got.Query, "x'") {
+		t.Fatalf("\\u0027 does not decode to the same query: %q, want %q", got.Query, want.Query)
+	}
+	return c
+}
+
+// render is the search the skill renders for sh, naming the stand-in.
+func (c gitBashCase) render(t *testing.T, sh shellKind, body string) string {
+	t.Helper()
+	_, script, err := searchBlockForShell(sh, binEntry{command: c.bin, cfg: c.hc.cfgPath}, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return script
+}
+
+// forms is the search for sh as the skill renders it and as preToolUse
+// hands it back with this conversation's identity in front.
+func (c gitBashCase) forms(t *testing.T, sh shellKind, body string) map[string]string {
+	t.Helper()
+	rendered := c.render(t, sh, body)
+	return map[string]string{
+		"plain":    rendered,
+		"prefixed": expectedCursorCommand(t, sh, c.env, rendered),
+	}
+}
+
+// TestCursorShellHookAllowsOnlyWhatGitBashCannotRun: on Windows the
+// participant picks Cursor's terminal, PowerShell or Git Bash, and the hook
+// cannot know which. The PowerShell here-string read by Bash is an ordinary
+// single-quoted string that the body's first `'` closes, and an interactive
+// terminal runs what follows it. So that form is allowed only with a body
+// holding no `'`, and every command the hook allows is run here through
+// interactive Bash to show it runs nothing.
+func TestCursorShellHookAllowsOnlyWhatGitBashCannotRun(t *testing.T) {
+	c := newGitBashCase(t)
+	tool, runners := cursorShellsFor(t, "windows")
+	if !slices.Contains(tool, shellPowerShell) || !slices.Contains(tool, shellPOSIX) {
+		t.Fatalf("Cursor's Windows cell is no longer PowerShell and Git Bash: %v", tool)
+	}
+
+	var allowed []string
+	for name, cmd := range c.forms(t, shellPowerShell, c.breakout) {
+		if f := cursorShellRecognizes(c.ops, c.hc, cmd, tool, runners); f != nil {
+			t.Errorf("%s: the PowerShell search with a ' in its body was allowed where Git Bash may run it:\n%s", name, cmd)
+		}
+		if f := cursorShellRecognizes(c.ops, c.hc, cmd, []shellKind{shellPowerShell}, runners); !isSearchForm(f) {
+			t.Errorf("%s: a PowerShell-only cell no longer allows a ' in the body:\n%s", name, cmd)
+		}
+	}
+	for name, cmd := range c.forms(t, shellPowerShell, c.escaped) {
+		if f := cursorShellRecognizes(c.ops, c.hc, cmd, tool, runners); !isSearchForm(f) {
+			t.Errorf("%s: the PowerShell search with \\u0027 in its body was refused:\n%s", name, cmd)
+		}
+		allowed = append(allowed, cmd)
+	}
+	// The heredoc is inert under PowerShell, so the POSIX form keeps its
+	// apostrophe: the rule is about the here-string, not about every `'`.
+	for _, body := range []string{c.breakout, c.escaped} {
+		for name, cmd := range c.forms(t, shellPOSIX, body) {
+			if f := cursorShellRecognizes(c.ops, c.hc, cmd, tool, runners); !isSearchForm(f) {
+				t.Errorf("%s: the POSIX search was refused in Cursor's Windows cell:\n%s", name, cmd)
+			}
+			allowed = append(allowed, cmd)
+		}
+	}
+
+	bash, err := exec.LookPath("bash")
+	if err != nil || runtime.GOOS == "windows" {
+		t.Skip("no POSIX bash to read the allowed commands with")
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runInteractiveBash := func(cmd string) {
+		t.Helper()
+		if strings.Contains(cmd, exe) {
+			t.Fatalf("the bash phase was handed a command naming the test binary, which would rerun this package:\n%s", cmd)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		sh := exec.CommandContext(ctx, bash, "--norc", "--noprofile", "-i")
+		sh.Dir, sh.Stdin, sh.Env = c.dir, strings.NewReader(cmd+"\n"), []string{"PATH=" + os.Getenv("PATH"), "HOME=" + c.dir}
+		_ = sh.Run()
+	}
+	// The harness itself: the refused command does break out under it.
+	runInteractiveBash(c.forms(t, shellPowerShell, c.breakout)["plain"])
+	if _, err := os.Stat(c.marker); err != nil {
+		t.Fatalf("interactive bash did not run the breakout this test guards against: %v", err)
+	}
+	for _, cmd := range allowed {
+		if err := os.Remove(c.marker); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		runInteractiveBash(cmd)
+		if _, err := os.Stat(c.marker); err == nil {
+			t.Errorf("an allowed command ran its body as a command under interactive bash:\n%s", cmd)
+		}
+	}
+}
+
+// TestCursorWindowsSkillWritesApostrophesEscaped: the skill that teaches the
+// PowerShell form to a participant who may be in Git Bash says to write an
+// apostrophe as \u0027; a host whose PowerShell tool is always PowerShell
+// is not told to.
+func TestCursorWindowsSkillWritesApostrophesEscaped(t *testing.T) {
+	entry := hostStringsEntry("windows")
+	if skill := renderedSkillFor("cursor", entry, "windows"); !strings.Contains(skill, "`\\u0027`") {
+		t.Errorf("Cursor's Windows skill does not say to write an apostrophe as \\u0027:\n%s", skill)
+	}
+	for _, id := range []string{"claude", "codex"} {
+		if skill := renderedSkillFor(id, entry, "windows"); strings.Contains(skill, "`\\u0027`") {
+			t.Errorf("%s's Windows skill carries the Git Bash apostrophe note", id)
+		}
+	}
+	if skill := renderedSkillFor("cursor", hostStringsEntry("darwin"), "darwin"); strings.Contains(skill, "`\\u0027`") {
+		t.Errorf("Cursor's macOS skill carries the Git Bash apostrophe note")
+	}
+}
+
+// TestCursorPreToolUseAllowsOnlyWhatBeforeShellExecutionAllows: preToolUse
+// answers "permission":"allow" as well, so it is held to the same decision.
+// For every cell and every body, preToolUse allows exactly when
+// beforeShellExecution allows, the command it hands back is one
+// beforeShellExecution allows too, and a form refused there gets no answer
+// from preToolUse at all, so Cursor asks.
+func TestCursorPreToolUseAllowsOnlyWhatBeforeShellExecutionAllows(t *testing.T) {
+	c := newGitBashCase(t)
+	type cell struct{ tool, runners []shellKind }
+	cells := map[string]cell{}
+	for _, goos := range []string{"darwin", "linux", "windows"} {
+		tool, runners := cursorShellsFor(t, goos)
+		cells[goos] = cell{tool, runners}
+	}
+	cells["windows, PowerShell only"] = cell{[]shellKind{shellPowerShell}, cells["windows"].runners}
+	refused := 0
+	for name, cl := range cells {
+		for _, sh := range cl.tool {
+			for bodyName, body := range map[string]string{"apostrophe": c.breakout, `'`: c.escaped} {
+				gitBashBreaksOut := sh == shellPowerShell && slices.Contains(cl.tool, shellPOSIX) && body == c.breakout
+				want := !gitBashBreaksOut
+				if gitBashBreaksOut {
+					refused++
+				}
+				cmd := c.render(t, sh, body)
+				if got := cursorShellRecognizes(c.ops, c.hc, cmd, cl.tool, cl.runners) != nil; got != want {
+					t.Errorf("%s, %s form, %s: beforeShellExecution allowed %v, want %v", name, sh, bodyName, got, want)
+				}
+				var out bytes.Buffer
+				cursorPreToolUse(c.ops, c.hc, cursorPreToolUsePayload(t, cmd), cl.tool, cl.runners, &out, io.Discard)
+				if !want {
+					if out.Len() != 0 {
+						t.Errorf("%s, %s form, %s: preToolUse answered for a search beforeShellExecution refuses: %s", name, sh, bodyName, out.String())
+					}
+					continue
+				}
+				var got cursorAnswer
+				var rewritten string
+				if json.Unmarshal(out.Bytes(), &got) != nil || json.Unmarshal(got.UpdatedInput["command"], &rewritten) != nil {
+					t.Errorf("%s, %s form, %s: preToolUse gave no rewrite: %q", name, sh, bodyName, out.String())
+					continue
+				}
+				if got.Permission != "allow" || rewritten != expectedCursorCommand(t, sh, c.env, cmd) {
+					t.Errorf("%s, %s form, %s: preToolUse answered %q with\n%s", name, sh, bodyName, got.Permission, rewritten)
+				}
+				if cursorShellRecognizes(c.ops, c.hc, rewritten, cl.tool, cl.runners) == nil {
+					t.Errorf("%s, %s form, %s: preToolUse allowed a command beforeShellExecution refuses:\n%s", name, sh, bodyName, rewritten)
+				}
+			}
+		}
+	}
+	if refused != 1 {
+		t.Fatalf("the domain holds %d refused cases, want the one this is about: the PowerShell form with a ' where Git Bash may run it", refused)
 	}
 }

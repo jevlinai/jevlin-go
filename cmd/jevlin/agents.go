@@ -74,6 +74,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/jevlinai/jevlin-go/pkg/config"
+	"github.com/jevlinai/jevlin-go/pkg/fsx"
 )
 
 //go:embed skill.md
@@ -179,20 +180,78 @@ type agentOps struct {
 	mkdirAll   func(string, os.FileMode) error
 	stat       func(string) (os.FileInfo, error)
 	removeAll  func(string) error
+	// remove takes one name and never recurses: for a file this command
+	// owns, where removeAll on a directory planted at that name would
+	// take the directory's contents with it (PR #86 review).
+	remove     func(string) error
 	isTerminal func() bool
+	// consent asks the participant a question that only a typed line can
+	// answer, and returns that line; an error is no line at all (hard
+	// invariant 18). nil means there is nobody to ask: no terminal, or a
+	// caller that never asks. -yes does not set it, because the questions
+	// it asks are about a participant's own settings, which -yes never
+	// answers.
+	consent func(question string) (string, error)
+	// binaryLocation vets the binary install records; nil means
+	// checkBinaryLocation.
+	binaryLocation binaryLocationCheck
+	// readSetting, lstat and replaceFile are how the tier file is read,
+	// checked and written: the way search reads it (readTierSetting, which
+	// follows no link and reads a bounded regular file), and so that a link
+	// at its name is removed or replaced as a name, never followed into
+	// whatever it names. nil means readFile, stat and writeFile, which is
+	// what the in-memory machine in the tests offers, having no links.
+	readSetting func(path string) ([]byte, error)
+	lstat       func(path string) (fs.FileInfo, error)
+	replaceFile func(path string, data []byte, perm fs.FileMode) error
+}
+
+func (ops agentOps) binaryLocationFn() binaryLocationCheck {
+	if ops.binaryLocation != nil {
+		return ops.binaryLocation
+	}
+	return checkBinaryLocation
+}
+
+func (ops agentOps) readSettingFn() func(string) ([]byte, error) {
+	if ops.readSetting != nil {
+		return ops.readSetting
+	}
+	return ops.readFile
+}
+
+func (ops agentOps) lstatFn() func(string) (fs.FileInfo, error) {
+	if ops.lstat != nil {
+		return ops.lstat
+	}
+	return ops.stat
+}
+
+func (ops agentOps) replaceFileFn() func(string, []byte, fs.FileMode) error {
+	if ops.replaceFile != nil {
+		return ops.replaceFile
+	}
+	return ops.writeFile
 }
 
 func realAgentOps() agentOps {
 	home, _ := os.UserHomeDir()
 	return agentOps{
-		home:       home,
-		lookPath:   exec.LookPath,
-		executable: os.Executable,
-		readFile:   os.ReadFile,
-		writeFile:  os.WriteFile,
-		mkdirAll:   os.MkdirAll,
-		stat:       os.Stat,
-		removeAll:  os.RemoveAll,
+		home:           home,
+		lookPath:       exec.LookPath,
+		executable:     os.Executable,
+		readFile:       os.ReadFile,
+		writeFile:      os.WriteFile,
+		mkdirAll:       os.MkdirAll,
+		stat:           os.Stat,
+		removeAll:      os.RemoveAll,
+		remove:         os.Remove,
+		binaryLocation: checkBinaryLocation,
+		readSetting:    readTierSetting,
+		lstat:          os.Lstat,
+		replaceFile: func(path string, data []byte, perm fs.FileMode) error {
+			return fsx.WriteFileAtomic(filepath.Dir(path), filepath.Base(path), data, perm)
+		},
 		isTerminal: func() bool {
 			fi, err := os.Stdin.Stat()
 			return err == nil && fi.Mode()&os.ModeCharDevice != 0
@@ -331,17 +390,113 @@ func preferLabel(p string) string {
 	return "on — this search is the default"
 }
 
+// The search tier is the participant's default cost band, a sibling of the
+// search default above: a file beside the config, absent until the
+// participant sets one, read by `search` at request time (never by the
+// skill, which tells the agent to leave `tier` alone). Precedence at a
+// search: the caller's tier, then this file, then [miner] tier in the
+// config, then nothing — the router applies the tenant's default.
+const tierFile = "search-tier"
+
+// tierPath is beside the config when one is in use, else in the
+// installation home — JEVLIN_HOME, else ~/.jevlin, the same answer
+// describeConfigSource gives for where this installation lives. Both the
+// command and `search` resolve the file through this one function, so
+// they name the same file before and after setup writes the config there,
+// and on Windows, where HOME and the user profile can differ, neither
+// side reads HOME on its own (Devin review, 2026-10-14).
+func tierPath(entry binEntry, getenv func(string) string) string {
+	return tierPathFor(entry.cfg, getenv)
+}
+
+func tierPathFor(cfg string, getenv func(string) string) string {
+	if cfg != "" {
+		return filepath.Join(filepath.Dir(cfg), tierFile)
+	}
+	home := defaultJevlinHome(getenv)
+	if home == "" {
+		return ""
+	}
+	return filepath.Join(home, tierFile)
+}
+
+// readTierFile: absent, unreadable, or a word this client cannot name
+// means unset. A planted word is not forwarded to the router.
+func readTierFile(read func(string) ([]byte, error), path string) string {
+	if path == "" {
+		return ""
+	}
+	b, err := read(path)
+	if err != nil {
+		return ""
+	}
+	t := strings.TrimSpace(string(b))
+	if config.KnownSearchTier(t) {
+		return t
+	}
+	return ""
+}
+
+func readTier(ops agentOps, entry binEntry, getenv func(string) string) string {
+	return readTierFile(ops.readSettingFn(), tierPath(entry, getenv))
+}
+
+// effectiveTier is the band the next search will send and where it comes
+// from — the file (`agents tier`), else [miner] tier in the config, else
+// nothing — the same order searchTierDefault applies, so status never
+// says "unset" of a band the config is about to send (Devin review,
+// 2026-10-14). A config that cannot be loaded contributes nothing here;
+// search reports that failure itself.
+func effectiveTier(ops agentOps, entry binEntry, getenv func(string) string) (tier, source string) {
+	if t := readTier(ops, entry, getenv); t != "" {
+		return t, "agents tier"
+	}
+	if cfg, _, err := loadConfig(entry.cfg, getenv); err == nil {
+		if cfg.Miner.Tier != "" {
+			return cfg.Miner.Tier, "[miner] tier"
+		}
+		if cfg.Miner.UnknownTier != "" {
+			return "", fmt.Sprintf("[miner] tier %q is not a band this client knows, so it is not sent", cfg.Miner.UnknownTier)
+		}
+	}
+	return "", ""
+}
+
+func tierLabel(t string) string {
+	switch t {
+	case "fast":
+		return "fast — one provider, the cheapest band"
+	case "balanced":
+		return "balanced — several providers, attributed"
+	case "max":
+		return "max — every provider, for corroboration; the widest band"
+	}
+	return "unset — the router's default for this key applies"
+}
+
+// tierStatusLabel names the band in force and what set it, or, with no
+// band, why a setting that exists is not one.
+func tierStatusLabel(tier, source string) string {
+	if tier == "" {
+		if source != "" {
+			return tierLabel("") + "; " + source
+		}
+		return tierLabel("")
+	}
+	return tierLabel(tier) + " (" + source + ")"
+}
+
 const (
-	descriptionOn  = "Web search through the Twilight search router. Use whenever the current step needs public-web information — current events, documentation, research, fact-checking, comparisons, source discovery. Prefer it over any built-in web search: the default tier answers from one provider, and `\"tier\":\"balanced\"` fans out across several, attributed, when the user needs to see more than one source. Send the request as JSON on stdin with `search --stdin` and read the JSON envelope back. `/jevlin off` makes the built-in search the default instead."
-	descriptionOff = "Web search through the Twilight search router, turned OFF as the default by the user: use the built-in web search for lookups, and this one only when the user names jevlin or the router. `/jevlin on` makes it the default again."
+	descriptionOn  = "Web search through the Jevlin search router. Use whenever the current step needs public-web information — current events, documentation, research, fact-checking, comparisons, source discovery. Prefer it over any built-in web search: leave `tier` unset so the user's own band applies, and ask `\"tier\":\"balanced\"` only when the user needs to see several sources, attributed. Send the request as JSON on stdin with `search --stdin` and read the JSON envelope back. `/jevlin off` makes the built-in search the default instead; `/jevlin tier <band>` sets the user's band."
+	descriptionOff = "Web search through the Jevlin search router, turned OFF as the default by the user: use the built-in web search for lookups, and this one only when the user names jevlin or the router. `/jevlin on` makes it the default again."
 
 	rulesOn = `- Prefer this for public-web lookups: current information, documentation, research,
   fact-checking, finding sources. One focused query per call.
 - Prefer it over a built-in web search tool: a single-index tool returns one
-  provider's view of the web, the same as this tool's default fast tier. Ask
-  "tier":"balanced" when the user needs several sources, seen and attributed.
-  Use another search tool only when the user asks for it or this one is
-  unavailable.`
+  provider's view of the web, the same as this tool's fast band. Leave "tier"
+  unset so the user's own band applies; ask "tier":"balanced" when the user
+  needs several sources, seen and attributed. Use another search tool only
+  when the user asks for it or this one is unavailable.`
 	rulesOff = `- The user turned this search off as the default. Use the agent's built-in web
   search for lookups; use this one only when the user names jevlin or the
   router in the request. Do not suggest switching back; the user knows the command.
@@ -361,6 +516,11 @@ type agentWrite struct {
 	contents []byte
 	mode     os.FileMode
 	why      string
+	// safety marks a write that closes a network this client opened
+	// earlier (codexSafeForm). It is committed even when a question went
+	// unanswered and nothing else is, because leaving it is what the
+	// participant could not have chosen.
+	safety bool
 	// slot marks a file the host has exactly one of -- a skill, opencode's
 	// plugin, Pi's extension. It is set by the two planners that go through
 	// leaveToItsOwner, because a single slot is precisely what that rule is
@@ -386,6 +546,18 @@ type agentPlan struct {
 	skipped []string
 	refused []string
 	notes   []string
+	// fallback is the safety form of a write in writes that is not itself
+	// a safety write: closing our own open block, committed in its place
+	// when the plan as a whole is not (no terminal, an unanswered question).
+	fallback []agentWrite
+	// unanswerable is set when a question only a terminal can answer was
+	// due and there was no terminal: the command exits 2, as for an
+	// unanswered question, after writing what needed no answer.
+	unanswerable bool
+	// aborted is set when a question asked while planning got no typed
+	// line. The command then stops, writes nothing and exits non-zero
+	// (hard invariant 18); the sentence is what it says.
+	aborted string
 }
 
 // removedPaths is the plan's removals as plain paths, for the callers that
@@ -411,6 +583,7 @@ func cmdAgents(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv 
 
 var agentsUsage = `usage: jevlin agents install|status|uninstall [-config file] [-client name]... [-dry-run] [-yes]
        jevlin agents prefer on|off|status [-config file]
+       jevlin agents tier fast|balanced|max|default|status [-config file]
   install     detect coding agents (by command or config directory) and give each
               the search skill and hooks
   status      what is installed where, and which search is the default
@@ -419,9 +592,15 @@ var agentsUsage = `usage: jevlin agents install|status|uninstall [-config file] 
               when named; on: this one is the default. Rewrites the installed
               skills so it takes effect in every agent (/jevlin off|on in
               the agent does the same)
+  tier        the search band every search carries unless the request names
+              one: fast (one provider), balanced (several, attributed) or max
+              (every provider); default unsets it so the router's default
+              applies. Saved beside the config; no skill is rewritten
+              (/jevlin tier <band> in the agent does the same)
   -client     act on this agent only (` + targetIDs(targetHost) + `); repeatable
   -dry-run    print the plan, change nothing
-  -yes        do not ask before writing
+  -yes        answer Proceed? with yes; a question about a Codex setting of
+              your own is still asked, and with no terminal is not answered
 `
 
 func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
@@ -434,6 +613,8 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 	case "install", "status", "uninstall":
 	case "prefer":
 		return agentsPrefer(ops, rest, stdout, stderr, getenv)
+	case "tier":
+		return agentsTier(ops, rest, stdout, stderr, getenv)
 	default:
 		fmt.Fprintf(stderr, "jevlin agents: unknown subcommand %q\n%s", sub, agentsUsage)
 		return exitUsage
@@ -443,7 +624,7 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 	var clients multiFlag
 	fs.Var(&clients, "client", "act on this agent only; repeatable")
 	dryRun := fs.Bool("dry-run", false, "print the plan and change nothing")
-	yes := fs.Bool("yes", false, "do not ask before writing")
+	yes := fs.Bool("yes", false, "answer Proceed? with yes; a question about a Codex setting of your own is still asked")
 	if err := fs.Parse(rest); err != nil {
 		return exitUsage
 	}
@@ -463,17 +644,41 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 		fmt.Fprintln(stderr, "jevlin agents:", err)
 		return exitTransport
 	}
+	if sub == "install" {
+		if err := vetBinaryLocation(ops.binaryLocationFn(), entry.command, "jevlin agents", stderr); err != nil {
+			fmt.Fprintln(stderr, "jevlin agents:", err)
+			return exitUsage
+		}
+	}
 
 	if sub == "status" {
 		printAgentStatus(ops, paths, entry, signals, getenv, stdout)
 		return exitOK
 	}
 
+	// One reader for every question this command asks: a pipe delivers
+	// several answers in one chunk, and a second reader over the same stdin
+	// would lose what the first buffered.
+	br := bufio.NewReader(stdin)
+	switch {
+	case sub == "install" && *dryRun:
+		// A dry run shows the question it would ask and plans the yes,
+		// which it never writes.
+		ops.consent = dryRunConsent(stdout)
+	case sub == "install" && ops.isTerminal():
+		// Codex's config may need a change to the participant's own
+		// settings, which only a typed yes allows; -yes is not that answer.
+		ops.consent = func(question string) (string, error) { return promptBufio(stdout, question, br) }
+	}
 	var plan agentPlan
 	if sub == "install" {
 		plan = buildInstallPlan(ops, paths, selected, entry, getenv)
 	} else {
 		plan = buildUninstallPlan(ops, paths, selected, entry, getenv)
+	}
+	if plan.aborted != "" {
+		fmt.Fprintf(stderr, "\njevlin agents: %s; %s\n", plan.aborted, safetyOutcome(commitSafetyOnly(ops, &plan, stdout, stderr)))
+		return exitUsage
 	}
 
 	fmt.Fprintf(stdout, "jevlin agents %s\n", sub)
@@ -496,6 +701,9 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 	}
 	if plan.empty() {
 		fmt.Fprintln(stdout, "\nnothing to do")
+		if plan.unanswerable {
+			return exitUsage
+		}
 		return refusedExit(&plan)
 	}
 	if *dryRun {
@@ -504,22 +712,29 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 	}
 	if !*yes {
 		if !ops.isTerminal() {
-			fmt.Fprintln(stderr, "jevlin agents: not a terminal, and -yes was not given; nothing was changed")
+			fmt.Fprintf(stderr, "jevlin agents: not a terminal, and -yes was not given; %s\n", safetyOutcome(commitSafetyOnly(ops, &plan, stdout, stderr)))
 			return exitUsage
 		}
 		// The opposite default to the mining question, and so the worse
 		// half of dropin-miner#81's shape: an empty line here means yes, which made
 		// an interrupt at this prompt write every agent file. Only a
 		// typed line decides now.
-		line, err := promptBufio(stdout, "\nProceed? [Y/n]: ", bufio.NewReader(stdin))
+		line, err := promptBufio(stdout, "\nProceed? [Y/n]: ", br)
 		if err != nil {
-			fmt.Fprintf(stderr, "\njevlin agents: %s; nothing was changed\n", promptAbortedReason)
+			fmt.Fprintf(stderr, "\njevlin agents: %s; %s\n", promptAbortedReason, safetyOutcome(commitSafetyOnly(ops, &plan, stdout, stderr)))
 			return exitUsage
 		}
 		switch strings.ToLower(strings.TrimSpace(line)) {
 		case "", "y", "yes":
 		default:
-			fmt.Fprintln(stdout, "left everything as it was")
+			// A no declines every write but the one that closes jevlin's
+			// own open network, as no answer does; the two still differ by
+			// exit code.
+			if commitSafetyOnly(ops, &plan, stdout, stderr) > 0 {
+				fmt.Fprintln(stdout, "left everything else as it was; only jevlin's own block in Codex's config was closed")
+			} else {
+				fmt.Fprintln(stdout, "left everything as it was")
+			}
 			return exitOK
 		}
 	}
@@ -528,12 +743,34 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 	if failures > 0 {
 		return exitTransport
 	}
+	// A run that refused something exits 1 (refusedExit), and its last
+	// line says so rather than "done" alone.
+	done := "done"
+	if len(plan.refused) > 0 {
+		done = fmt.Sprintf("done, except the %d refused above", len(plan.refused))
+	}
 	if sub == "install" {
-		fmt.Fprintln(stdout, "\ndone. Restart any agent that is already open; check with: jevlin agents status")
+		fmt.Fprintf(stdout, "\n%s. Restart any agent that is already open; check with: jevlin agents status\n", done)
 	} else {
-		fmt.Fprintln(stdout, "\ndone")
+		fmt.Fprintf(stdout, "\n%s\n", done)
+	}
+	if plan.unanswerable {
+		// A question only a terminal can answer was due, and there was
+		// none: the same exit as any unanswered question, whatever else
+		// was written beside it.
+		return exitUsage
 	}
 	return refusedExit(&plan)
+}
+
+// dryRunConsent prints the question a real run would ask, says it was not
+// asked, and plans the yes.
+func dryRunConsent(w io.Writer) func(string) (string, error) {
+	return func(question string) (string, error) {
+		fmt.Fprint(w, question)
+		fmt.Fprintln(w, "(dry run: not asked; the plan below is what a yes would write)")
+		return "y", nil
+	}
 }
 
 // agentsPrefer records the search default and rewrites every installed
@@ -573,6 +810,14 @@ func agentsPrefer(ops agentOps, args []string, stdout, stderr io.Writer, getenv 
 	if want == "status" {
 		fmt.Fprintf(stdout, "search default: %s\n", preferLabel(current))
 		return exitOK
+	}
+	// The skills it rewrites name the running binary, exactly as install
+	// writes them, so the same location is refused here before anything is
+	// written: run from somewhere else, prefer would repoint every installed
+	// skill at that copy.
+	if err := vetBinaryLocation(ops.binaryLocationFn(), entry.command, "jevlin agents prefer", stderr); err != nil {
+		fmt.Fprintln(stderr, "jevlin agents prefer:", err)
+		return exitUsage
 	}
 	next := preferOn
 	if want == "off" {
@@ -615,6 +860,87 @@ func agentsPrefer(ops agentOps, args []string, stdout, stderr io.Writer, getenv 
 		fmt.Fprintf(stdout, "updated the skill for: %s\n", strings.Join(writeSurfaces(&p), ", "))
 	}
 	fmt.Fprintln(stdout, "in effect now in this session, and in every agent from its next start")
+	return exitOK
+}
+
+// agentsTier records the participant's default search band. It writes one
+// file of ours beside the config and nothing else: the skill does not
+// carry the band (it tells the agent to leave `tier` unset), so there is
+// nothing to re-render, and `search` reads the file on its next request.
+func agentsTier(ops agentOps, args []string, stdout, stderr io.Writer, getenv func(string) string) int {
+	fs := newFlagSet("agents tier", stderr)
+	cfgPath := fs.String("config", "", "path to TOML config file the search reads")
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	// The verb may come before or after the flags, as with prefer.
+	want := "status"
+	if rest := fs.Args(); len(rest) > 0 {
+		want = strings.ToLower(rest[0])
+		if err := fs.Parse(rest[1:]); err != nil {
+			return exitUsage
+		}
+		if fs.NArg() > 0 {
+			want = ""
+		}
+	}
+	switch {
+	case want == "status", want == "default", config.KnownSearchTier(want):
+	default:
+		fmt.Fprintf(stderr, "jevlin agents tier: want %s, default or status\n%s", strings.Join(config.SearchTiers, ", "), agentsUsage)
+		return exitUsage
+	}
+	entry, _, err := resolveEntry(ops, *cfgPath, getenv)
+	if err != nil {
+		fmt.Fprintln(stderr, "jevlin agents:", err)
+		return exitTransport
+	}
+	path := tierPath(entry, getenv)
+	if path == "" {
+		fmt.Fprintln(stderr, "jevlin agents tier: no config and no home directory, so nowhere to keep the setting")
+		return exitTransport
+	}
+	if want == "status" {
+		fmt.Fprintf(stdout, "search tier: %s\n", tierStatusLabel(effectiveTier(ops, entry, getenv)))
+		return exitOK
+	}
+	current := readTier(ops, entry, getenv)
+	next := want
+	if want == "default" {
+		next = ""
+	}
+	switch next {
+	case "":
+		// Always removed, never "already unset": a file holding a word
+		// this client cannot name reads as unset yet is still there, and
+		// default is what takes it away. Removed by name and never
+		// recursively: a directory planted at the name is refused with
+		// its contents intact (Devin review, 2026-10-14). The name is what
+		// is checked, not what it names: a link, to a file or a directory,
+		// is removed as the link, and what it named is left alone.
+		if info, err := ops.lstatFn()(path); err == nil && info.IsDir() {
+			fmt.Fprintf(stderr, "jevlin agents tier: %s is a directory, not a setting; nothing was removed\n", path)
+			return exitTransport
+		}
+		if err := ops.remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			fmt.Fprintln(stderr, "jevlin agents tier:", err)
+			return exitTransport
+		}
+	case current:
+	default:
+		if err := ops.mkdirAll(filepath.Dir(path), 0o700); err != nil {
+			fmt.Fprintln(stderr, "jevlin agents tier:", err)
+			return exitTransport
+		}
+		// Replaced by name, so a link there gives way to the setting
+		// instead of having the setting written into what it names.
+		if err := ops.replaceFileFn()(path, []byte(next+"\n"), 0o600); err != nil {
+			fmt.Fprintln(stderr, "jevlin agents tier:", err)
+			return exitTransport
+		}
+	}
+	fmt.Fprintf(stdout, "search tier: %s\n", tierStatusLabel(effectiveTier(ops, entry, getenv)))
+	fmt.Fprintln(stdout, "in effect from the next search, in every agent")
 	return exitOK
 }
 
@@ -819,6 +1145,10 @@ func renderSkill(entry binEntry, prefer, note string, shells skillShells) ([]byt
 	if err != nil {
 		return nil, err
 	}
+	tierCmd, err := tierSection(entry, shells)
+	if err != nil {
+		return nil, err
+	}
 	human, err := humanSection(entry, shells)
 	if err != nil {
 		return nil, err
@@ -840,6 +1170,7 @@ func renderSkill(entry binEntry, prefer, note string, shells skillShells) ([]byt
 		"{{SEARCH}}", human,
 		"{{CALL}}", call,
 		"{{PREFER}}", pref,
+		"{{TIER}}", tierCmd,
 		"{{DESCRIPTION}}", string(descYAML),
 		"{{PREFER_RULES}}", rules,
 		"{{HOST_NOTES}}", note,
@@ -1156,38 +1487,106 @@ func cursorHooksFor(t installTarget, entry binEntry, goos string) (hooksSpec, st
 	return cursorHooks(entry, shells)
 }
 
-// entryIsOurs: does this hook entry (a Claude group or a Cursor entry)
-// run this binary? Matching on the binary path is what makes uninstall
-// exact and install idempotent. The match is against a set of exact
-// PREFIXES — hookCommandIsOurs — never a raw substring test. A substring
-// test breaks on Windows: a command quoted with %q doubles every
-// backslash, so bin's own single-backslash path never appears as a
-// contiguous run inside the quoted text, and a second install or an
-// uninstall never recognizes its own entry.
+// hookOwnership is how much of one hook entry is this installation's.
+// Ownership is decided per handler: a group jevlin wrote can come to hold a
+// participant's handler too (Claude Code's /hooks adds one to the group
+// already under the same matcher), and that handler is theirs whatever group
+// it sits in (issue #32).
+type hookOwnership int
+
+const (
+	// hookNotOurs: no handler of this installation's.
+	hookNotOurs hookOwnership = iota
+	// hookOurs: ours entirely — a Cursor entry that runs our command, or a
+	// group every handler of which does. Install replaces it, uninstall
+	// removes it.
+	hookOurs
+	// hookMixed: a group holding a handler of ours beside one that is not.
+	// Only our handlers are taken out of it; the group, its other handlers
+	// in their order, and its matcher stay where they are.
+	hookMixed
+)
+
+// entryOwnership classifies a hook entry (a Claude Code or Codex group, or a
+// Cursor entry) by the handlers that run this installation's command.
+// Matching is against a set of exact PREFIXES — hookCommandIsOurs — never a
+// raw substring test. A substring test breaks on Windows: a command quoted
+// with %q doubles every backslash, so bin's own single-backslash path never
+// appears as a contiguous run inside the quoted text, and a second install
+// or an uninstall never recognizes its own entry.
 //
 // The prefix set is plural because a hook command is quoted for the runner
 // its host declares, and one binary is spelled a different way in each
 // (binaryPrefixes). An entry of ours in a spelling install does not write
 // for that host now is still recognized, so it is replaced and removed
 // rather than left beside the current one.
-func entryIsOurs(e any, ref installationRef) bool {
+func entryOwnership(e any, ref installationRef) hookOwnership {
 	m, ok := e.(map[string]any)
+	if !ok {
+		return hookNotOurs
+	}
+	if c, ok := m["command"].(string); ok && hookCommandIsOurs(c, ref) {
+		return hookOurs
+	}
+	hs, ok := m["hooks"].([]any)
+	if !ok {
+		return hookNotOurs
+	}
+	ours, others := 0, 0
+	for _, h := range hs {
+		if handlerIsOurs(h, ref) {
+			ours++
+		} else {
+			others++
+		}
+	}
+	switch {
+	case ours == 0:
+		return hookNotOurs
+	case others == 0:
+		return hookOurs
+	}
+	return hookMixed
+}
+
+// entryIsOurs: is this hook entry ours entirely, to replace or remove whole?
+func entryIsOurs(e any, ref installationRef) bool {
+	return entryOwnership(e, ref) == hookOurs
+}
+
+// entryHoldsOurs: does this hook entry run a handler of ours at all?
+func entryHoldsOurs(e any, ref installationRef) bool {
+	return entryOwnership(e, ref) != hookNotOurs
+}
+
+func handlerIsOurs(h any, ref installationRef) bool {
+	hm, ok := h.(map[string]any)
 	if !ok {
 		return false
 	}
-	if c, ok := m["command"].(string); ok && hookCommandIsOurs(c, ref) {
-		return true
+	c, ok := hm["command"].(string)
+	return ok && hookCommandIsOurs(c, ref)
+}
+
+// withoutOurHandlers is a mixed group with this installation's handlers
+// taken out, and every other key — the participant's handlers in their
+// order, the matcher, anything else — as it was. It is a copy: the decoded
+// file is only ever changed by assigning the event's new list.
+func withoutOurHandlers(e any, ref installationRef) any {
+	m := e.(map[string]any)
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
 	}
-	if hs, ok := m["hooks"].([]any); ok {
-		for _, h := range hs {
-			if hm, ok := h.(map[string]any); ok {
-				if c, ok := hm["command"].(string); ok && hookCommandIsOurs(c, ref) {
-					return true
-				}
-			}
+	hs, _ := m["hooks"].([]any)
+	kept := make([]any, 0, len(hs))
+	for _, h := range hs {
+		if !handlerIsOurs(h, ref) {
+			kept = append(kept, h)
 		}
 	}
-	return false
+	out["hooks"] = kept
+	return out
 }
 
 // hookCommandIsOurs recognizes every spelling this client writes a command
@@ -1244,26 +1643,44 @@ func planHooksMerge(ops agentOps, label, path string, p *agentPlan, entry binEnt
 		// parse where it runs (dropin-miner#69) exactly as it was. Recognizing every
 		// spelling (hookCommandIsOurs) is what makes the replacement
 		// possible.
+		//
+		// A group that holds a participant's handler beside ours is theirs as
+		// much as ours (issue #32): only our handler comes out of it, and the
+		// group keeps its place, its other handlers and its matcher. Ours gets
+		// a group of its own, as a fresh install writes it, rather than being
+		// rewritten inside theirs, where our matcher would decide when their
+		// handler runs.
+		ref := refFor(entry)
 		kept := make([]any, 0, len(list))
-		ours, current := 0, false
+		cleaned := make([]any, 0, len(list))
+		ours, split, current := 0, 0, false
 		for _, e := range list {
-			if entryIsOurs(e, refFor(entry)) {
+			switch entryOwnership(e, ref) {
+			case hookOurs:
 				ours++
 				if sameJSONValue(e, spec.entries[ev]) {
 					current = true
 				}
+				cleaned = append(cleaned, e)
 				continue
+			case hookMixed:
+				split++
+				e = withoutOurHandlers(e, ref)
 			}
 			kept = append(kept, e)
+			cleaned = append(cleaned, e)
 		}
-		if ours == 1 && current {
+		if split > 0 {
+			p.notes = append(p.notes, fmt.Sprintf("%s: under %s in %s, a hook of yours shared a group with jevlin's; yours stays where it is, and jevlin's gets a group of its own", label, ev, path))
+		}
+		if ours == 1 && current && split == 0 {
 			// Exactly our entry, exactly once, already saying what we would
 			// say. Left in place rather than moved to the end, so a second
 			// install is a no-op byte for byte.
 			continue
 		}
 		if spec.replaceInPlace && ours > 0 {
-			hooks[ev] = replaceFirstOfOurs(list, spec.entries[ev], refFor(entry))
+			hooks[ev] = replaceFirstOfOurs(cleaned, spec.entries[ev], ref)
 		} else {
 			hooks[ev] = append(kept, spec.entries[ev])
 		}
@@ -1431,9 +1848,16 @@ func planHooksRemove(ops agentOps, label, path string, p *agentPlan, entry binEn
 		}
 		kept := make([]any, 0, len(list))
 		for _, e := range list {
-			if entryIsOurs(e, ref) {
+			switch entryOwnership(e, ref) {
+			case hookOurs:
 				changed = true
 				continue
+			case hookMixed:
+				// Only our handler goes; the group is the participant's too,
+				// and keeps the file (issue #32).
+				changed = true
+				e = withoutOurHandlers(e, ref)
+				p.notes = append(p.notes, fmt.Sprintf("%s: under %s in %s, a hook of yours shared a group with jevlin's; only jevlin's is removed", label, ev, path))
 			}
 			kept = append(kept, e)
 		}
@@ -1488,7 +1912,8 @@ func hooksFileIsNowOnlyOurs(m map[string]any, root string, ownsVersion bool) boo
 // PlanUninstall removes its skill directory because it is there; whether it is
 // THIS installation's is decided here, once, for every host, by the reading
 // install's refusal uses (foreignOwner). Hook entries need none of this: they
-// were always removed entry by entry, by the command each one runs.
+// are removed handler by handler, by the command each one runs
+// (entryOwnership).
 func buildUninstallPlan(ops agentOps, paths agentPaths, selected []installTarget, entry binEntry, getenv func(string) string) agentPlan {
 	var p agentPlan
 	for _, t := range selected {
@@ -1525,6 +1950,7 @@ func buildUninstallPlan(ops agentOps, paths agentPaths, selected []installTarget
 func printAgentStatus(ops agentOps, paths agentPaths, entry binEntry, signals map[string]string, getenv func(string) string, stdout io.Writer) {
 	fmt.Fprintln(stdout, "jevlin agents status")
 	fmt.Fprintf(stdout, "  search default: %s\n", preferLabel(readPrefer(ops, entry)))
+	fmt.Fprintf(stdout, "  search tier:    %s\n", tierStatusLabel(effectiveTier(ops, entry, getenv)))
 	for _, t := range targetsByKind(targetHost) {
 		st := t.Status(ops, paths, entry)
 		state := "not installed"
@@ -1546,6 +1972,11 @@ func printAgentStatus(ops agentOps, paths agentPaths, entry binEntry, signals ma
 			found = "found: " + sig
 		}
 		fmt.Fprintf(stdout, "  %-12s %-26s %s\n", t.Label(), found, state)
+		if n, ok := t.(hostNoter); ok {
+			for _, line := range n.HostNotes(ops, paths, entry, getenv) {
+				fmt.Fprintf(stdout, "  %-12s %s\n", "", line)
+			}
+		}
 		if !st.installed {
 			continue
 		}
@@ -1555,7 +1986,7 @@ func printAgentStatus(ops agentOps, paths agentPaths, entry binEntry, signals ma
 		// What only the host can say about its own install, for a host that
 		// is this installation's: Codex's approval of the hooks.
 		if n, ok := t.(statusNoter); ok && !foreign {
-			for _, line := range n.StatusNotes(ops, paths, entry) {
+			for _, line := range n.StatusNotes(ops, paths, entry, getenv) {
 				fmt.Fprintf(stdout, "  %-12s %s\n", "", line)
 			}
 		}
@@ -1780,12 +2211,33 @@ func readWithMode(ops agentOps, path string) ([]byte, os.FileMode, error) {
 // could read those files before this block existed; it could not redirect
 // where they go, and it must not be able to after it either. The state dir is
 // writable because the claim resume and the flush rotate the refresh token
-// there — a deletion-only exposure, not an exfiltration one.
+// there. That is more than a deletion exposure: a sandboxed command can leave
+// a symlink, a hard link or a FIFO at any name in these directories, which
+// hard invariant 19 (pkg/fsx/confined.go) answers for this client's own
+// writes and reads, and it can rewrite the records themselves. The records
+// that could make this client act on, or show, a writer's say-so are kept
+// beside credentials.json for that reason: the registration journal, which
+// can authorize replacing the platform credential (hard invariant 13), the
+// payout record, the address a resume declares, and the claim record, the
+// link a person is told to open. The state directory's own records are held
+// on load to what this client writes (pkg/auth/record_text.go), agent.json
+// to the platform's answer about the stored key, and what a foreground
+// flush prints, which names intake and spool files, to a terminal-safe
+// filter. What a record says within that is still the writer's.
 func codexSandboxRoots(entry binEntry, getenv func(string) string) []string {
 	cfg := configForEntry(entry, getenv)
 	if cfg == nil {
 		return nil
 	}
+	dirs := codexCandidateRoots(cfg)
+	if codexRootsProblem(entry.cfg, cfg, dirs) != "" {
+		return nil
+	}
+	return dirs
+}
+
+// codexCandidateRoots are the directories the block would grant.
+func codexCandidateRoots(cfg *config.Config) []string {
 	// Always: the claim resume writes here after every search, mining or not.
 	dirs := []string{cfg.Mining.StateDir}
 	// Only where the miner records searches — the static flag, not the
@@ -1794,6 +2246,46 @@ func codexSandboxRoots(entry binEntry, getenv func(string) string) []string {
 		dirs = append(dirs, cfg.Miner.IntakeDir, cfg.Miner.SessionsDir, cfg.Mining.SpoolDir)
 	}
 	return cleanDirs(dirs)
+}
+
+// codexSandboxProblem is codexRootsProblem for an entry, for install's note.
+func codexSandboxProblem(entry binEntry, getenv func(string) string) string {
+	cfg := configForEntry(entry, getenv)
+	if cfg == nil {
+		return ""
+	}
+	return codexRootsProblem(entry.cfg, cfg, codexCandidateRoots(cfg))
+}
+
+// codexRootsProblem is why the block must grant none of dirs, or "". Hard
+// invariant 19 rests on the installation's own directory (credentials.json,
+// flush.lock) and the config's directory not being writable from the
+// sandbox: a config rewritten there names the hosts the keys go to. A layout
+// that nests either inside a directory the block would grant is refused
+// whole rather than granted in part.
+func codexRootsProblem(cfgPath string, cfg *config.Config, dirs []string) string {
+	type protected struct{ dir, what string }
+	guard := []protected{{minerRoot(cfg.Miner), "the installation's own directory, which holds credentials.json, the payout record and flush.lock"}}
+	if cfgPath != "" {
+		guard = append(guard, protected{filepath.Dir(cfgPath), "the config's directory"})
+	}
+	for _, g := range guard {
+		for _, d := range dirs {
+			if dirWithin(g.dir, d) {
+				return fmt.Sprintf("granting %s would make %s, %s, writable from the sandbox; give state_dir, intake_dir, sessions_dir and spool_dir directories of their own", d, g.dir, g.what)
+			}
+		}
+	}
+	return ""
+}
+
+// dirWithin reports whether dir is parent or lies inside it.
+func dirWithin(dir, parent string) bool {
+	if dir == "" || parent == "" {
+		return false
+	}
+	rel, err := filepath.Rel(filepath.Clean(parent), filepath.Clean(dir))
+	return err == nil && (rel == "." || filepath.IsLocal(rel))
 }
 
 // codexOwnedRoots is every directory THIS config names that our block may
@@ -1890,7 +2382,7 @@ func cleanDirs(dirs []string) []string {
 // installed" over a host whose sandbox belongs to somebody else — which is
 // exactly what it did, both lines at once, until this returned an answer.
 func planCodexSandbox(ops agentOps, label, path string, roots []string, entry binEntry, getenv func(string) string, p *agentPlan) (changed, left bool) {
-	existing, mode, err := readWithMode(ops, path)
+	existing, mode, err := readCodexConfig(ops, path)
 	if err != nil {
 		p.refused = append(p.refused, fmt.Sprintf("%s: cannot read %s: %v", label, path, err))
 		return false, true
@@ -1899,11 +2391,14 @@ func planCodexSandbox(ops agentOps, label, path string, roots []string, entry bi
 	if bytes.Contains(stripped, []byte("["+codexSandboxTable+"]")) {
 		p.refused = append(p.refused, fmt.Sprintf(
 			"%s: %s already defines [%s]; add these settings to it by hand so searches can record:\n%s",
-			label, path, codexSandboxTable, indentBlock(sandboxSettings(roots))))
+			label, path, codexSandboxTable, indentBlock(codexWindowsSettings(roots))))
 		return false, true
 	}
 
-	want := codexSandboxBlock(roots)
+	// In the participant's line ending, as the profile is
+	// (installCodexRegion), so a CRLF file is not given LF lines and the
+	// block read back compares equal on the next run.
+	want := withLineEnding(codexSandboxBlock(roots), fileLineEnding(string(stripped)))
 	if pre, region, post, ok := markedRegion(existing); ok {
 		have, readable := splitCodexBlock(region)
 		if !readable {
@@ -1927,6 +2422,9 @@ func planCodexSandbox(ops agentOps, label, path string, roots []string, entry bi
 			noteOnce(p, label+": "+leftForeign(other))
 			return false, true
 		}
+		if n := staleRootsNote(label, path, markedSandboxRoots(have.oursText()), entry, getenv); n != "" {
+			p.notes = append(p.notes, n)
+		}
 		if extra := keysWeDidNotWrite(have.oursText()); len(extra) > 0 {
 			p.notes = append(p.notes, droppedKeysNote(label, path, extra))
 		}
@@ -1935,10 +2433,23 @@ func planCodexSandbox(ops agentOps, label, path string, roots []string, entry bi
 				label, tables(len(have.foreign)), path, strings.Join(have.foreignNames(), ", ")))
 		}
 		next := replaceBlockInPlace(pre, want, have.foreignText(), post)
-		return planWrite(ops, label, path, next, mode, "sandbox: network + writable_roots so searches can record", p), false
+		changed, refused := planCodexWrite(ops, label, path, existing, next, string(stripped), []string{codexSandboxTable}, mode, codexWindowsWhy, p)
+		return changed, refused
 	}
-	next := appendMarkedBlock(stripped, want)
-	return planWrite(ops, label, path, next, mode, "sandbox: network + writable_roots so searches can record", p), false
+	// Spliced on with no byte of its own, as the profile is, so uninstall's
+	// exact removal gives the file back as it was.
+	next := insertAtEnd(string(stripped), want)
+	changed, refused := planCodexWrite(ops, label, path, existing, next, string(stripped), []string{codexSandboxTable}, mode, codexWindowsWhy, p)
+	return changed, refused
+}
+
+// insertAtEnd splices block onto the end of file, ending file's last line
+// first in block's own ending when it has none.
+func insertAtEnd(file string, block []byte) []byte {
+	if strings.HasSuffix(string(block), "\r\n") && file != "" && !strings.HasSuffix(file, "\n") {
+		file += "\r"
+	}
+	return []byte(withFinalNewline(file) + string(block))
 }
 
 // droppedKeysNote is the one sentence both plans use for a key a participant
@@ -1974,6 +2485,13 @@ func tables(n int) string {
 // no two of them can come to disagree about which table is ours (dropin-miner#82).
 const codexSandboxTable = "sandbox_workspace_write"
 
+// codexWindowsWhy is the plan line for the Windows block (D6).
+const codexWindowsWhy = "sandbox: writable_roots so searches can record; no network: Codex asks before a search reaches the router"
+
+// sandboxSettings is the table every version before the permission profile
+// wrote, network_access included. Nothing renders it any more; it is the
+// definition of which keys inside an old block are ours (keysWeDidNotWrite),
+// so a migration does not call network_access a key the participant added.
 func sandboxSettings(roots []string) string {
 	quoted := make([]string, len(roots))
 	for i, r := range roots {
@@ -1984,10 +2502,10 @@ func sandboxSettings(roots []string) string {
 
 func codexSandboxBlock(roots []string) []byte {
 	return []byte(agentsMarkerBegin + "\n" +
-		"# Lets jevlin's search reach the router and record its mining\n" +
-		"# observation under your jevlin home. Without this, Codex's default\n" +
-		"# sandbox blocks the write and searches earn nothing.\n" +
-		sandboxSettings(roots) +
+		"# Lets jevlin's search record its mining observation under your\n" +
+		"# jevlin home. Without this, Codex's default sandbox blocks the\n" +
+		"# write and searches earn nothing. No network: Codex asks first.\n" +
+		codexWindowsSettings(roots) +
 		agentsMarkerEnd + "\n")
 }
 
@@ -2039,17 +2557,9 @@ func replaceBlockInPlace(pre string, want []byte, foreign, post string) []byte {
 
 func removeMarkedBlock(b []byte) ([]byte, bool) {
 	s := string(b)
-	i := strings.Index(s, agentsMarkerBegin)
-	if i < 0 {
+	i, _, end, ok := markerSpan(s)
+	if !ok {
 		return b, false
-	}
-	j := strings.Index(s[i:], agentsMarkerEnd)
-	if j < 0 {
-		return b, false
-	}
-	end := i + j + len(agentsMarkerEnd)
-	if end < len(s) && s[end] == '\n' {
-		end++
 	}
 	pre := strings.TrimRight(s[:i], "\n")
 	post := s[end:]
@@ -2074,19 +2584,110 @@ func removeMarkedBlock(b []byte) ([]byte, bool) {
 // ended up inside our markers and the byte-range delete took them with it.
 func markedRegion(b []byte) (pre, region, post string, ok bool) {
 	s := string(b)
-	i := strings.Index(s, agentsMarkerBegin)
-	if i < 0 {
+	i, j, end, ok := markerSpan(s)
+	if !ok {
 		return "", "", "", false
 	}
-	j := strings.Index(s[i:], agentsMarkerEnd)
-	if j < 0 {
-		return "", "", "", false
+	return s[:i], s[i+len(agentsMarkerBegin) : j], s[end:], true
+}
+
+// markerSpan finds our block: begin is where the begin marker's line starts,
+// endLine where the end marker's line starts, after the byte past the end
+// marker's line ending. A marker counts only as a whole line of its own —
+// nothing before it, nothing after it but spaces and the line ending — and
+// only outside a multi-line string. A participant's comment that happens to
+// end in our marker text, or our block's text pasted into a multi-line string, is
+// not our block: the first stranded every later install and uninstall, and
+// the second was rewritten by uninstall.
+func markerSpan(s string) (begin, endLine, after int, ok bool) {
+	begin = -1
+	for _, l := range linesOutsideTOMLStrings(s) {
+		text := strings.TrimRight(s[l.start:l.end], " \t\r")
+		switch {
+		case begin < 0 && text == agentsMarkerBegin:
+			begin = l.start
+		case begin >= 0 && text == agentsMarkerEnd:
+			after = l.end
+			if after < len(s) && s[after] == '\n' {
+				after++
+			}
+			return begin, l.start, after, true
+		}
 	}
-	end := i + j + len(agentsMarkerEnd)
-	if end < len(s) && s[end] == '\n' {
-		end++
+	return 0, 0, 0, false
+}
+
+// textLine is one line of a text by byte offsets, without its "\n".
+type textLine struct{ start, end int }
+
+// linesOutsideTOMLStrings is every line of s that begins outside a
+// multi-line string. It reads TOML's four string forms, comments and escapes
+// just far enough to know where a triple-quoted string opens and closes; a line
+// that starts inside one is not a line of the file's structure.
+func linesOutsideTOMLStrings(s string) []textLine {
+	const (
+		normal = iota
+		mlBasic
+		mlLiteral
+	)
+	var out []textLine
+	state, lineStart, startState := normal, 0, normal
+	for i := 0; i <= len(s); i++ {
+		if i == len(s) || s[i] == '\n' {
+			if startState == normal && (i > lineStart || i < len(s)) {
+				out = append(out, textLine{lineStart, i})
+			}
+			lineStart, startState = i+1, state
+			continue
+		}
+		switch state {
+		case normal:
+			switch {
+			case s[i] == '#':
+				for i+1 < len(s) && s[i+1] != '\n' {
+					i++
+				}
+			case strings.HasPrefix(s[i:], `"""`):
+				state, i = mlBasic, i+2
+			case strings.HasPrefix(s[i:], `'''`):
+				state, i = mlLiteral, i+2
+			case s[i] == '"':
+				i = skipOneLineString(s, i, '"', true)
+			case s[i] == '\'':
+				i = skipOneLineString(s, i, '\'', false)
+			}
+		case mlBasic:
+			switch {
+			case s[i] == '\\':
+				i++
+			case strings.HasPrefix(s[i:], `"""`):
+				state, i = normal, i+2
+			}
+		case mlLiteral:
+			if strings.HasPrefix(s[i:], `'''`) {
+				state, i = normal, i+2
+			}
+		}
 	}
-	return s[:i], s[i+len(agentsMarkerBegin) : i+j], s[end:], true
+	return out
+}
+
+// skipOneLineString returns the index of the quote that closes the string
+// opened at s[open], or the last byte of the line when it does not close.
+func skipOneLineString(s string, open int, quote byte, escapes bool) int {
+	for i := open + 1; i < len(s) && s[i] != '\n'; i++ {
+		switch {
+		case escapes && s[i] == '\\':
+			i++
+		case s[i] == quote:
+			return i
+		}
+	}
+	end := strings.IndexByte(s[open:], '\n')
+	if end < 0 {
+		return len(s) - 1
+	}
+	return open + end - 1
 }
 
 // tomlSection is one top-level table inside a region of TOML text, in its
@@ -2397,15 +2998,20 @@ func onlyComments(s string) bool {
 // lines that continue it would re-parent those keys; appended last, nothing
 // can be re-parented, because nothing follows.
 func appendTables(base []byte, tables string) []byte {
-	tables = strings.TrimRight(tables, "\n")
+	// In the file's own line ending, so a CRLF file gains no LF line.
+	eol := fileLineEnding(string(base))
+	if !strings.Contains(string(base), "\n") {
+		eol = fileLineEnding(tables)
+	}
+	tables = strings.TrimRight(tables, "\r\n")
 	if tables == "" {
 		return base
 	}
-	head := strings.TrimRight(string(base), "\n")
+	head := strings.TrimRight(string(base), "\r\n")
 	if head == "" {
-		return []byte(tables + "\n")
+		return []byte(tables + eol)
 	}
-	return []byte(head + "\n\n" + tables + "\n")
+	return []byte(head + eol + eol + tables + eol)
 }
 
 func appendMarkedBlock(b, block []byte) []byte {
@@ -2500,6 +3106,33 @@ func printPlan(p *agentPlan, home string, w io.Writer) {
 	for _, n := range p.notes {
 		fmt.Fprintf(w, "  %s\n", n)
 	}
+}
+
+// commitSafetyOnly commits the plan's safety writes and nothing else — the
+// writes marked safety, and the safety form of any write that is not
+// (agentPlan.fallback) — and says how many it wrote: what a run that
+// commits nothing else still does.
+func commitSafetyOnly(ops agentOps, p *agentPlan, stdout, stderr io.Writer) int {
+	var only agentPlan
+	for _, w := range p.writes {
+		if w.safety {
+			only.writes = append(only.writes, w)
+		}
+	}
+	only.writes = append(only.writes, p.fallback...)
+	if failures := commitPlan(ops, &only, stdout, stderr); failures > 0 {
+		return len(only.writes) - failures
+	}
+	return len(only.writes)
+}
+
+// safetyOutcome is the end of the sentence a run that commits nothing else
+// says: either nothing changed, or only jevlin's own open block was closed.
+func safetyOutcome(wrote int) string {
+	if wrote > 0 {
+		return "only jevlin's own block in Codex's config was closed, and nothing else was changed"
+	}
+	return "nothing was changed"
 }
 
 func commitPlan(ops agentOps, p *agentPlan, stdout, stderr io.Writer) int {

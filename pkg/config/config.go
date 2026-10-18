@@ -154,6 +154,28 @@ type Platform struct {
 	AgentsAPIURL string
 }
 
+// The words [update] mode takes (cmd/jevlin/update_check.go).
+const (
+	UpdateApply  = "apply"  // a native copy replaces itself with a newer verified release
+	UpdateNotify = "notify" // the check runs; status and doctor say when a newer release exists
+	UpdateOff    = "off"    // no check at all
+)
+
+// Update is the [update] block: what the daily release check the agent hooks
+// start may do. The check contacts only the compiled-in GitHub release
+// origin, with no credential (invariant 5's one exception); a copy npm
+// installed is never replaced, whatever Mode says, and is only noted.
+type Update struct {
+	// Mode is notify (the default), apply or off. Notify until releases are
+	// signed: apply replaces a binary unattended, on the strength of a
+	// checksums.txt from the same release.
+	Mode string
+	// UnknownMode is a word the file set that this version cannot name; Mode
+	// is then notify — never off, which would silence the check by a typo,
+	// and never apply, which would replace a binary on a word nobody chose.
+	UnknownMode string
+}
+
 // Config is the resolved, immutable configuration.
 // Miner is the drop-in miner: no daemon, no proxy. When enabled, the
 // `search` command posts straight to the router, records the served
@@ -185,6 +207,35 @@ type Miner struct {
 	// searched ends, the assistant's final message to the router. Off by
 	// default: it is model-written text leaving the machine.
 	TurnEnd bool
+	// Tier is the search tier a request carries when neither the caller
+	// (the -tier flag, the stdin request's "tier") nor the participant's
+	// `jevlin agents tier` file named one: [miner] tier, written by hand.
+	// Empty means the request carries no tier and the router applies the
+	// tenant's default. One of SearchTiers when set, lower-cased and
+	// trimmed at load.
+	Tier string
+	// UnknownTier is a [miner] tier that is not one of SearchTiers even
+	// after that: kept aside so status can say why the router's default
+	// applies, and never sent. A word this client cannot use does not stop
+	// the config from loading, because that would stop search, the flush
+	// and mining together over a value that only chooses a band.
+	UnknownTier string
+}
+
+// SearchTiers is the router's tier vocabulary this client knows — the
+// cost bands of search-router internal/tenant. A config naming another
+// word is refused at load rather than sent, so a typo is caught here and
+// not as a 400 on every search.
+var SearchTiers = []string{"fast", "balanced", "max"}
+
+// KnownSearchTier reports whether tier is one this client can name.
+func KnownSearchTier(tier string) bool {
+	for _, t := range SearchTiers {
+		if t == tier {
+			return true
+		}
+	}
+	return false
 }
 
 type Config struct {
@@ -212,6 +263,7 @@ type Config struct {
 	Mining   Mining
 	Miner    Miner
 	Platform Platform
+	Update   Update
 
 	// MiningEnabledExplicit is true when the config file itself wrote
 	// `[mining] enabled` (true or false) — distinct from Mining.Enabled
@@ -289,11 +341,15 @@ type fileConfig struct {
 		SessionsDir   string   `toml:"sessions_dir"`
 		FlushInterval duration `toml:"flush_interval"`
 		TurnEnd       bool     `toml:"turn_end"`
+		Tier          string   `toml:"tier"`
 	} `toml:"miner"`
 	Platform struct {
 		BaseURL      string `toml:"base_url"`
 		AgentsAPIURL string `toml:"agents_api_url"`
 	} `toml:"platform"`
+	Update struct {
+		Mode string `toml:"mode"`
+	} `toml:"update"`
 }
 
 type duration struct{ time.Duration }
@@ -332,23 +388,17 @@ func Load(args []string, getenv func(string) string) (cfg *Config, showVersion b
 
 	raw := newRawConfigDefaults()
 
-	// TOML file: explicit path (flag or env) is required to exist; the
-	// conventional ./jevlin.toml is picked up when present.
+	// TOML file: only an explicit path (flag or env), which is required to
+	// exist. A jevlin.toml in the working directory is never picked up on
+	// its own: whoever wrote that directory (a cloned repo, an archive)
+	// would choose where the participant's keys are sent.
 	path := *flagConfig
 	if path == "" {
 		path = getenv("JEVLIN_CONFIG")
 	}
-	explicit := path != ""
-	if path == "" {
-		if _, statErr := os.Stat("jevlin.toml"); statErr == nil {
-			path = "jevlin.toml"
-		}
-	}
 	if path != "" {
 		if err := raw.applyFile(path); err != nil {
-			if explicit || !errors.Is(err, os.ErrNotExist) {
-				return nil, false, err
-			}
+			return nil, false, err
 		}
 	}
 
@@ -473,9 +523,12 @@ type rawConfig struct {
 	minerSessionsDir   string
 	minerFlushInterval time.Duration
 	minerTurnEnd       bool
+	minerTier          string
 
 	platformBaseURL string
 	agentsAPIURL    string
+
+	updateMode string
 }
 
 func (r *rawConfig) applyFile(path string) error {
@@ -618,6 +671,7 @@ func (r *rawConfig) applyBytes(source string, data []byte) error {
 	}
 	r.minerEnabled = f.Miner.Enabled
 	r.minerTurnEnd = f.Miner.TurnEnd
+	r.minerTier = f.Miner.Tier
 	if f.Miner.RouterURL != "" {
 		r.minerRouterURL = f.Miner.RouterURL
 	}
@@ -635,6 +689,9 @@ func (r *rawConfig) applyBytes(source string, data []byte) error {
 	}
 	if f.Platform.AgentsAPIURL != "" {
 		r.agentsAPIURL = f.Platform.AgentsAPIURL
+	}
+	if f.Update.Mode != "" {
+		r.updateMode = f.Update.Mode
 	}
 	return nil
 }
@@ -709,7 +766,9 @@ func (r *rawConfig) finish() (*Config, error) {
 	// before this fix. Three cases, only two of which have a safe
 	// implicit answer:
 	//   - base_url is exactly the real platform's default: agents_api_url
-	//     defaults to the real agents API. The ordinary case.
+	//     defaults to the real agents API. The ordinary case. The pair the
+	//     platform had before jevlin.ai is implied the same way, so a
+	//     config written against it keeps loading.
 	//   - base_url is loopback: assume the same local stub serves both
 	//     roles, matching every existing test's own setup.
 	//   - base_url names anything else (a devnet, a staging portal) and
@@ -722,6 +781,8 @@ func (r *rawConfig) finish() (*Config, error) {
 		switch platformBaseURL {
 		case DefaultPlatformBaseURL:
 			agentsAPIRaw = DefaultAgentsAPIURL
+		case LegacyPlatformBaseURL:
+			agentsAPIRaw = LegacyAgentsAPIURL
 		default:
 			pu, perr := url.Parse(platformBaseURL)
 			if perr != nil || !isLoopbackHost(pu.Hostname()) {
@@ -753,8 +814,24 @@ func (r *rawConfig) finish() (*Config, error) {
 		Mining:                mining,
 		Miner:                 miner,
 		Platform:              Platform{BaseURL: platformBaseURL, AgentsAPIURL: agentsAPIURL},
+		Update:                r.finishUpdate(),
 		MiningEnabledExplicit: r.miningEnabledExplicit,
 	}, nil
+}
+
+// finishUpdate resolves the [update] block the way [miner] tier is resolved:
+// the word is lowercased and trimmed, and one this version cannot name does
+// not stop the config from loading — a typo must not cost every search. It
+// is kept aside for doctor to name, and the mode falls to notify.
+func (r *rawConfig) finishUpdate() Update {
+	switch mode := strings.ToLower(strings.TrimSpace(r.updateMode)); mode {
+	case "":
+		return Update{Mode: UpdateNotify}
+	case UpdateApply, UpdateNotify, UpdateOff:
+		return Update{Mode: mode}
+	default:
+		return Update{Mode: UpdateNotify, UnknownMode: r.updateMode}
+	}
 }
 
 // parsePlatformURL validates a [platform] URL (base_url or
@@ -792,6 +869,11 @@ func (r *rawConfig) finishMiner(upstream *url.URL, mining Mining) (Miner, error)
 		SessionsDir:   r.minerSessionsDir,
 		FlushInterval: r.minerFlushInterval,
 		TurnEnd:       r.minerTurnEnd,
+	}
+	if tier := strings.ToLower(strings.TrimSpace(r.minerTier)); KnownSearchTier(tier) {
+		m.Tier = tier
+	} else if tier != "" {
+		m.UnknownTier = r.minerTier
 	}
 	if m.FlushInterval == 0 {
 		m.FlushInterval = 3 * time.Minute

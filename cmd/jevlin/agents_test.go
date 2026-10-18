@@ -57,7 +57,8 @@ func newFakeMachine(onPath ...string) (*fakeMachine, agentOps) {
 			}
 			return "", errors.New("not found")
 		},
-		executable: func() (string, error) { return "/home/u/.jevlin/bin/jevlin", nil },
+		executable:     func() (string, error) { return "/home/u/.jevlin/bin/jevlin", nil },
+		binaryLocation: func(string) ([]string, error) { return nil, nil },
 		readFile: func(p string) ([]byte, error) {
 			b, ok := m.files[slash(p)]
 			if !ok {
@@ -87,6 +88,20 @@ func newFakeMachine(onPath ...string) (*fakeMachine, agentOps) {
 					delete(m.files, f)
 				}
 			}
+			return nil
+		},
+		remove: func(p string) error {
+			p = slash(p)
+			for f := range m.files {
+				if strings.HasPrefix(f, p+"/") {
+					return errors.New("remove " + p + ": directory not empty")
+				}
+			}
+			if _, ok := m.files[p]; !ok {
+				return fs.ErrNotExist
+			}
+			delete(m.files, p)
+			m.removed = append(m.removed, p)
 			return nil
 		},
 		isTerminal: func() bool { return m.terminal },
@@ -884,4 +899,162 @@ func countString(list []string, want string) int {
 		}
 	}
 	return n
+}
+
+// agents tier records the participant's search band beside the config and
+// rewrites nothing: the skill tells the agent to leave `tier` unset, so the
+// file is read by `search`, not rendered into any host. default removes
+// the file; a word the router would refuse is refused here.
+func TestAgentsTierWritesOneFileBesideTheConfigAndRewritesNoSkill(t *testing.T) {
+	m, ops := newFakeMachine("claude", "codex")
+	claudeSkill := "/home/u/.claude/skills/jevlin/SKILL.md"
+	// The config path is host-absolutized (a drive letter on Windows), so
+	// the file beside it is found by suffix, as the prefer test finds its.
+	tierFile := func() (string, bool) {
+		for p, b := range m.files {
+			if strings.HasSuffix(p, "/.jevlin/search-tier") {
+				return strings.TrimSpace(string(b)), true
+			}
+		}
+		return "", false
+	}
+	if code, out, _ := runAgents(t, ops, nil, "install", "-config", testCfg, "-yes"); code != exitOK {
+		t.Fatalf("install: %d\n%s", code, out)
+	}
+	before := string(m.files[claudeSkill])
+	if !strings.Contains(before, `' agents tier -config '`) || !strings.Contains(before, `jevlin.toml' <band>`) {
+		t.Fatalf("the shipped skill does not name the tier command:\n%s", before)
+	}
+	if code, out, _ := runAgents(t, ops, nil, "status", "-config", testCfg); code != exitOK || !strings.Contains(out, "search tier:    unset") {
+		t.Errorf("status before: %d %q", code, out)
+	}
+	if code, out, _ := runAgents(t, ops, nil, "tier", "-config", testCfg); code != exitOK || !strings.Contains(out, "search tier: unset") {
+		t.Errorf("tier (status) before: %d %q", code, out)
+	}
+
+	code, out, errOut := runAgents(t, ops, nil, "tier", "balanced", "-config", testCfg)
+	if code != exitOK || !strings.Contains(out, "search tier: balanced") || !strings.Contains(out, "next search") {
+		t.Fatalf("tier balanced: %d\n%s%s", code, out, errOut)
+	}
+	if got, ok := tierFile(); !ok || got != "balanced" {
+		t.Fatalf("tier file: %q ok=%v in %v", got, ok, keysOf(m.files))
+	}
+	if string(m.files[claudeSkill]) != before {
+		t.Error("setting the tier rewrote the skill; the band is read at search time, not rendered")
+	}
+	if code, out, _ := runAgents(t, ops, nil, "status", "-config", testCfg); !strings.Contains(out, "search tier:    balanced") {
+		t.Errorf("status after: %d %q", code, out)
+	}
+	// The verb may follow the flags, as the skill renders it.
+	if code, out, _ := runAgents(t, ops, nil, "tier", "-config", testCfg, "max"); code != exitOK || !strings.Contains(out, "search tier: max") {
+		t.Errorf("tier max after flags: %d %q", code, out)
+	}
+	if code, out, _ := runAgents(t, ops, nil, "tier", "default", "-config", testCfg); code != exitOK || !strings.Contains(out, "search tier: unset") {
+		t.Errorf("tier default: %d %q", code, out)
+	}
+	if _, ok := tierFile(); ok {
+		t.Error("default did not remove the tier file")
+	}
+	if code, _, _ := runAgents(t, ops, nil, "tier", "default", "-config", testCfg); code != exitOK {
+		t.Error("default twice is not an error")
+	}
+	// Case is forgiven on the command, as prefer forgives ON: the file
+	// holds the lowercase band the config would accept.
+	if code, out, _ := runAgents(t, ops, nil, "tier", "Fast", "-config", testCfg); code != exitOK || !strings.Contains(out, "search tier: fast") {
+		t.Errorf("tier Fast: %d %q", code, out)
+	}
+	if got, _ := tierFile(); got != "fast" {
+		t.Errorf("tier file after Fast: %q", got)
+	}
+	for _, bad := range []string{"turbo", "sideways", "fast balanced"} {
+		if code, _, errOut := runAgents(t, ops, nil, "tier", bad, "-config", testCfg); code != exitUsage || !strings.Contains(errOut, "balanced") {
+			t.Errorf("tier %q: exit %d, stderr %q", bad, code, errOut)
+		}
+	}
+	// A planted word in the file is not a band, and default still removes
+	// the file rather than treating "reads as unset" as "already unset".
+	var tierPath string
+	for p := range m.files {
+		if strings.HasSuffix(p, "/.jevlin/search-tier") {
+			tierPath = p
+		}
+	}
+	m.files[tierPath] = []byte("max; curl evil.example\n")
+	if code, out, _ := runAgents(t, ops, nil, "tier", "-config", testCfg); code != exitOK || !strings.Contains(out, "search tier: unset") {
+		t.Errorf("planted file read as a band: %d %q", code, out)
+	}
+	if code, _, _ := runAgents(t, ops, nil, "tier", "default", "-config", testCfg); code != exitOK {
+		t.Fatal("default over a malformed file failed")
+	}
+	if _, ok := tierFile(); ok {
+		t.Error("default left the malformed tier file behind")
+	}
+	// A directory planted at the name is refused, its contents intact:
+	// the reset removes one name, never a tree.
+	m.files[tierPath+"/notes.txt"] = []byte("mine")
+	if code, _, errOut := runAgents(t, ops, nil, "tier", "default", "-config", testCfg); code != exitTransport || !strings.Contains(errOut, "is a directory") {
+		t.Errorf("default over a directory: exit %d, stderr %q", code, errOut)
+	}
+	if _, ok := m.files[tierPath+"/notes.txt"]; !ok {
+		t.Error("default over a directory deleted its contents")
+	}
+}
+
+// Without a config in use the file lives in the installation home —
+// JEVLIN_HOME, else ~/.jevlin from the user profile — the same place setup
+// will write the config, so the band set before setup is the band read
+// after it. Neither side consults HOME on its own.
+func TestTierPathFollowsTheInstallationHome(t *testing.T) {
+	if got := tierPathFor("/opt/ada/jevlin/jevlin.toml", envOf(map[string]string{"JEVLIN_HOME": "/elsewhere"})); got != filepath.Join("/opt/ada/jevlin", "search-tier") {
+		t.Errorf("beside the config: %q", got)
+	}
+	if got := tierPathFor("", envOf(map[string]string{"JEVLIN_HOME": "/opt/ada/jevlin"})); got != filepath.Join("/opt/ada/jevlin", "search-tier") {
+		t.Errorf("JEVLIN_HOME, no config: %q", got)
+	}
+	userHome, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip(err)
+	}
+	// HOME in the environment is not the installation home: the user
+	// profile is, on every OS, as describeConfigSource decides it.
+	if got := tierPathFor("", envOf(map[string]string{"HOME": "/shell-home"})); got != filepath.Join(userHome, ".jevlin", "search-tier") {
+		t.Errorf("no config, HOME set elsewhere: %q", got)
+	}
+
+	// The command writes where the path function says, under JEVLIN_HOME.
+	m, ops := newFakeMachine()
+	env := map[string]string{"JEVLIN_HOME": "/opt/ada/jevlin"}
+	if code, out, errOut := runAgents(t, ops, env, "tier", "balanced"); code != exitOK || !strings.Contains(out, "search tier: balanced") {
+		t.Fatalf("tier balanced under JEVLIN_HOME: %d %s%s", code, out, errOut)
+	}
+	if got := strings.TrimSpace(string(m.files["/opt/ada/jevlin/search-tier"])); got != "balanced" {
+		t.Errorf("tier file under JEVLIN_HOME: %q in %v", got, keysOf(m.files))
+	}
+}
+
+// status says the band the next search will send, not merely the file:
+// with [miner] tier set and no file, that is the config's band, and the
+// line says which of the two set it.
+func TestAgentsTierStatusShowsTheEffectiveBand(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "jevlin.toml")
+	if err := os.WriteFile(cfg, []byte("[miner]\nrouter_url = \"http://127.0.0.1:8080\"\ntier = \"max\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m, ops := newFakeMachine()
+	if code, out, _ := runAgents(t, ops, nil, "tier", "-config", cfg); code != exitOK || !strings.Contains(out, "search tier: max") || !strings.Contains(out, "([miner] tier)") {
+		t.Errorf("config band not shown: %d %q", code, out)
+	}
+	if code, out, _ := runAgents(t, ops, nil, "status", "-config", cfg); code != exitOK || !strings.Contains(out, "search tier:    max") || !strings.Contains(out, "([miner] tier)") {
+		t.Errorf("agents status: %d %q", code, out)
+	}
+	if code, out, _ := runAgents(t, ops, nil, "tier", "fast", "-config", cfg); code != exitOK || !strings.Contains(out, "search tier: fast") || !strings.Contains(out, "(agents tier)") {
+		t.Errorf("file outranks config: %d %q", code, out)
+	}
+	if _, ok := m.files[slash(filepath.Join(dir, "search-tier"))]; !ok {
+		t.Errorf("tier file not beside the config: %v", keysOf(m.files))
+	}
+	if code, out, _ := runAgents(t, ops, nil, "tier", "default", "-config", cfg); code != exitOK || !strings.Contains(out, "search tier: max") {
+		t.Errorf("default falls back to the config band: %d %q", code, out)
+	}
 }

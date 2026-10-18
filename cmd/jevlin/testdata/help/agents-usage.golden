@@ -1,5 +1,6 @@
 usage: jevlin agents install|status|uninstall [-config file] [-client name]... [-dry-run] [-yes]
        jevlin agents prefer on|off|status [-config file]
+       jevlin agents tier fast|balanced|max|default|status [-config file]
   install     detect coding agents (by command or config directory) and give each
               the search skill and hooks
   status      what is installed where, and which search is the default
@@ -8,6 +9,12 @@ usage: jevlin agents install|status|uninstall [-config file] [-client name]... [
               when named; on: this one is the default. Rewrites the installed
               skills so it takes effect in every agent (/jevlin off|on in
               the agent does the same)
+  tier        the search band every search carries unless the request names
+              one: fast (one provider), balanced (several, attributed) or max
+              (every provider); default unsets it so the router's default
+              applies. Saved beside the config; no skill is rewritten
+              (/jevlin tier <band> in the agent does the same)
   -client     act on this agent only (claude, codex, cursor, opencode, pi, hermes); repeatable
   -dry-run    print the plan, change nothing
-  -yes        do not ask before writing
+  -yes        answer Proceed? with yes; a question about a Codex setting of
+              your own is still asked, and with no terminal is not answered

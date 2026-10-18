@@ -538,6 +538,9 @@ func (r *uninstallRun) plan() {
 func (r *uninstallRun) uninstallTargets(ops agentOps, apply func(p *agentPlan)) (changed bool, left []string) {
 	paths := ops.paths(r.d.getenv)
 	ref := installationRef{bins: r.candidates, cfg: r.cfgPath}
+	// A refusal is about a file, not a binary: planned once per binary
+	// candidate, it would be printed and counted as a problem once each.
+	refusedOnce := map[string]bool{}
 	for _, t := range r.d.targets {
 		var agnostic agentPlan
 		t.PlanUninstall(ops, paths, binEntry{command: uninstallProbeCommand, cfg: r.cfgPath}, r.d.getenv, &agnostic)
@@ -581,6 +584,14 @@ func (r *uninstallRun) uninstallTargets(ops agentOps, apply func(p *agentPlan)) 
 			var p agentPlan
 			t.PlanUninstall(ops, paths, binEntry{command: c, cfg: r.cfgPath}, r.d.getenv, &p)
 			p = planWithout(p, skip)
+			var refused []string
+			for _, why := range p.refused {
+				if !refusedOnce[why] {
+					refusedOnce[why] = true
+					refused = append(refused, why)
+				}
+			}
+			p.refused = refused
 			if p.empty() && len(p.refused) == 0 {
 				continue
 			}
@@ -620,7 +631,7 @@ const renderedWordRe = `"(?:[^"\\\n]|\\.)*"|'[^'\n]*(?:(?:'\\''|'')[^'\n]*)*'`
 // single-quotes the path (POSIX and PowerShell) or double-quotes it literally
 // (cmd). Matching only some of them would make a file written by a current
 // install look like one that names no binary at all.
-var installedCommand = regexp.MustCompile(`(` + renderedWordRe + `) (?:search|hook|agents prefer)\b`)
+var installedCommand = regexp.MustCompile(`(` + renderedWordRe + `) (?:search|hook|agents prefer|agents tier)\b`)
 
 // installedConfig finds the installation a rendered artifact declares: the
 // `-config <path>` of a command it teaches, or the INSTALL_CONFIG line a
@@ -1045,7 +1056,8 @@ func (r *uninstallRun) purgeSet() (inside, outside []string) {
 	join := func(name string) string { return filepath.Join(r.home, name) }
 	first := []string{
 		join("wallet"), join("sessions"), join("intake"), join("spool"),
-		join(credentialsFile), join(setupConfigFile), join(preferFile),
+		join(credentialsFile), join(registrationJournalFile), join(payoutRecordFile), join(claimRecordFile), join(setupConfigFile), join(preferFile), join(tierFile),
+		join(updateStampFile),
 	}
 	if entries, err := os.ReadDir(r.home); err == nil {
 		for _, e := range entries {
@@ -1057,7 +1069,7 @@ func (r *uninstallRun) purgeSet() (inside, outside []string) {
 	if !r.envKept {
 		first = append(first, join(setupEnvJournalFile))
 	}
-	last := []string{join("state"), join("flush.lock"), join(setupLockFile)}
+	last := []string{join("state"), join("flush.lock"), join(updateLockFile), join(setupLockFile)}
 
 	if r.cfg != nil {
 		journal := join(setupEnvJournalFile)
@@ -1140,8 +1152,9 @@ type configuredPath struct {
 
 // configuredStatePaths is every participant path a config names — state,
 // spool, intake, sessions — and the ones derived from them: the flush stamp
-// in the state directory, and beside the intake the stored credentials and
-// the flush lock.
+// in the state directory, and beside the intake the stored credentials, the
+// registration journal (which can hold a platform key), the payout record,
+// the claim record and the flush lock.
 func configuredStatePaths(cfg *config.Config) []configuredPath {
 	m, mn := cfg.Mining, cfg.Miner
 	out := []configuredPath{
@@ -1152,6 +1165,9 @@ func configuredStatePaths(cfg *config.Config) []configuredPath {
 	if mn.IntakeDir != "" {
 		out = append(out,
 			configuredPath{"the stored credentials beside miner.intake_dir", filepath.Join(minerRoot(mn), credentialsFile)},
+			configuredPath{"the registration journal beside miner.intake_dir", filepath.Join(minerRoot(mn), registrationJournalFile)},
+			configuredPath{"the payout record beside miner.intake_dir", filepath.Join(minerRoot(mn), payoutRecordFile)},
+			configuredPath{"the claim record beside miner.intake_dir", filepath.Join(minerRoot(mn), claimRecordFile)},
 			configuredPath{"the flush lock beside miner.intake_dir", flushLockPath(mn)})
 	}
 	var named []configuredPath
@@ -1576,12 +1592,13 @@ func (r *uninstallRun) sayLeftoverLocks() {
 const refreshTokenLockFile = "refresh.token.lock"
 
 // leftoverLocks is the lock files that still exist for this installation:
-// first in lock order the gate, setup.lock, connect.lock, flush.lock and the
-// binary's update lock, then the two that belong to other subsystems and to
-// no lock order -- the refresh-token lock beside connect.lock in the state
-// directory, and the wallet's creation lock (dropin-miner#136). All seven are the same
-// kind of file: empty, held only while their command runs, made again by the
-// next one. A path that is gone -- uninstall -binary takes the update lock
+// first in lock order the gate, setup.lock, connect.lock, flush.lock, the
+// binary's update lock and the release check's lock beside it in the
+// installation's own directory, then the two that belong to other subsystems
+// and to no lock order -- the refresh-token lock beside connect.lock in the
+// state directory, and the wallet's creation lock (dropin-miner#136). All
+// eight are the same kind of file: empty, held only while their command
+// runs, made again by the next one. A path that is gone -- uninstall -binary takes the update lock
 // with the binary -- is left out rather than named.
 func (r *uninstallRun) leftoverLocks() []string {
 	candidates := []string{lifecycleGatePath(r.home), filepath.Join(r.home, setupLockFile)}
@@ -1595,6 +1612,7 @@ func (r *uninstallRun) leftoverLocks() []string {
 	if owned := r.ownedBinary(); owned != "" {
 		candidates = append(candidates, owned+updateLockSuffix)
 	}
+	candidates = append(candidates, filepath.Join(r.home, updateLockFile))
 	if stateDir != "" {
 		candidates = append(candidates, filepath.Join(stateDir, refreshTokenLockFile))
 	}

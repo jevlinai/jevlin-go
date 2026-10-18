@@ -11,7 +11,9 @@ package main
 //  2. a previous installation, in the installation directory or set aside
 //     beside it — adopted by bundle, and only when a terminal says yes
 //  3. the directories, owner-only before any secret moves; then adoption
-//  4. the config: written fresh, or an existing one migrated (never rewritten)
+//  4. the config: written fresh, or an existing one migrated (never rewritten);
+//     then the files a sandboxed search can only read: the flush lock and the
+//     trace key
 //  5. connect, in-process, which asks the mining question itself
 //  6. the environment: a profile block on POSIX, the User environment on
 //     Windows
@@ -55,7 +57,8 @@ only) and the coding agents found on this machine.
                 coding-agents questions, with or without a terminal; automated
                 callers may pass it. Also yes to reusing a set-aside
                 installation, at a terminal only. Never answers connect's
-                mining question
+                mining question, or a question about a Codex setting of
+                your own
   -no-profile   leave the shell profile (on Windows, the user environment) alone
   -no-agents    do not look for coding agents; -with still sets up what it names
   -with id      set up this target whether or not it was found; repeatable
@@ -86,6 +89,10 @@ type setupDeps struct {
 	// fsx.MoveFileDurable and restrictToOwner. Tests inject failures here.
 	move     func(from, to string) error
 	restrict func(path string, dir bool) error
+	// binaryLocation vets the directory setup records the binary by; nil
+	// means checkBinaryLocation. Tests whose binary sits in a temp sandbox
+	// replace it.
+	binaryLocation binaryLocationCheck
 	// agentPlanObserver, when non-nil, is called with the plan agentsStep
 	// builds — after buildInstallPlan, before anything is printed or
 	// committed — so a test can inspect exactly what production code
@@ -100,6 +107,13 @@ func (d setupDeps) restrictFn() func(string, bool) error {
 		return d.restrict
 	}
 	return restrictToOwner
+}
+
+func (d setupDeps) binaryLocationFn() binaryLocationCheck {
+	if d.binaryLocation != nil {
+		return d.binaryLocation
+	}
+	return checkBinaryLocation
 }
 
 func cmdSetup(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
@@ -250,7 +264,7 @@ func displayPath(p string) string {
 
 // errNpmLaunch is setup's refusal to install from an npm copy other than a
 // global one.
-var errNpmLaunch = errors.New("setup must run from a global npm install: npm install -g jevlin, then jevlin setup")
+var errNpmLaunch = errors.New("setup must run from a global npm install: npm install -g @jevlinsearch/jevlin, then jevlin setup")
 
 // errNpmDirect is a binary inside node_modules run by its own path, around the
 // launcher: nothing then says which kind of install it is, so setup cannot
@@ -296,6 +310,11 @@ func (r *setupRun) run(homeFlag string, with []string) int {
 		return exitTransport
 	}
 	if err := checkSetupLaunch(exe, d.getenv("JEVLIN_LAUNCH")); err != nil {
+		fmt.Fprintln(d.stderr, "jevlin setup:", err)
+		return exitUsage
+	}
+	// The hooks, the skills and the profile's PATH all name this path.
+	if err := vetBinaryLocation(d.binaryLocationFn(), exe, "jevlin setup", d.stderr); err != nil {
 		fmt.Fprintln(d.stderr, "jevlin setup:", err)
 		return exitUsage
 	}
@@ -379,10 +398,13 @@ func (r *setupRun) run(homeFlag string, with []string) int {
 	if code := r.flushLock(); code != exitOK {
 		return code
 	}
+	if code := r.traceKey(); code != exitOK {
+		return code
+	}
 
 	// ── 5. connect ──
 	r.say("Search context")
-	r.printf("Recent agent context may accompany search to the Twilight search router as part of the trajectory/search product.\n")
+	r.printf("Recent agent context may accompany search to the Jevlin search router as part of the trajectory/search product.\n")
 	r.printf("JEVLIN_TRACE=off disables trace transmission. Mining/AS receives metadata observations only.\n")
 	r.say("Connecting")
 	if r.dry {
@@ -752,6 +774,52 @@ func (r *setupRun) flushLock() int {
 		return exitTransport
 	}
 	r.changed = r.changed || created
+	return exitOK
+}
+
+// traceKey creates the trace key the config's state directory will hold. A
+// search with no hook sends an id keyed by it, and one that cannot write the
+// state directory (a sandbox, a read-only mount) can use a key only if it is
+// already there to read; without one that search sends a different id every
+// time. Setup runs outside any sandbox and writes this directory anyway, so it
+// is the place to make the key. connect makes it too, for an installation
+// that is not set up through here, and a search still makes one where it can
+// write: this step is what makes a search's id stable where it cannot.
+//
+// A failure to make the key is said and does not stop setup: the key serves
+// a stable id, not mining, and connect, which reads the same directory,
+// stops on the problems that matter. A config that does not load does stop
+// it here, since nothing after this step could run on it either.
+func (r *setupRun) traceKey() int {
+	stateDir := filepath.Join(r.home, "state")
+	if lexists(r.cfgPath) {
+		cfg, _, err := loadConfig(r.cfgPath, r.d.getenv)
+		if err != nil {
+			fmt.Fprintf(r.d.stderr, "jevlin setup: config %s: %v\n", r.cfgPath, err)
+			return exitTransport
+		}
+		stateDir = cfg.Mining.StateDir
+	}
+	if stateDir == "" {
+		return exitOK
+	}
+	path := auth.TraceKeyPath(stateDir)
+	if r.dry {
+		if !lexists(path) {
+			r.printf("(dry run) would create %s\n", path)
+		}
+		return exitOK
+	}
+	store, err := auth.OpenStore(stateDir)
+	if err == nil {
+		var created bool
+		if created, err = store.EnsureTraceKey(); err == nil {
+			r.changed = r.changed || created
+			return exitOK
+		}
+	}
+	fmt.Fprintf(r.d.stderr, "jevlin setup: could not make the trace key %s: %v\n"+
+		"Searches will make one themselves where they can write there; until then each search from a shell with no hook sends a one-off session id.\n", path, err)
 	return exitOK
 }
 

@@ -8,10 +8,11 @@ Values to look up. Every flag is in `jevlin help` and `jevlin <command> -h`.
 |---|---|
 | `setup` | Everything after the binary: previous installation, config, `connect`, profile, agents. |
 | `uninstall` | Removes what setup wrote for one installation; `-binary` and `-purge-state` go further. |
-| `upgrade` | Replaces a native binary with a verified release; `-rollback` swaps back. |
+| `upgrade` | Replaces a native binary with a verified release; `-rollback` swaps back. `-auto` is the daily check the hooks start, not a command a person runs. |
 | `search` | One web search. `--stdin` for agents (JSON in, JSON out); `<query words>` for a person. |
 | `agents install\|status\|uninstall` | Sets up, reports or removes the skills and hooks of each agent. |
 | `agents prefer on\|off\|status` | Whether this search or the agent's own is the default. |
+| `agents tier fast\|balanced\|max\|default\|status` | The band every search carries unless the request names one; `default` unsets it. |
 | `flush` | One pass of the mining plane: join the open epoch, promote recorded searches, submit. |
 | `connect` | Registers with the search platform, prints the claim link, polls until claimed. |
 | `mining enable\|disable` | Turns mining on (asking for a payout address) or off for this installation. |
@@ -23,11 +24,17 @@ Values to look up. Every flag is in `jevlin help` and `jevlin <command> -h`.
 | `login`, `enroll`, `payout`, `join`, `provider` | The portal's older manual path. |
 | `version`, `help` | The version, and the full usage text. |
 
-Every command takes `-config <file>`. Without it, the config is the first of: `JEVLIN_CONFIG`,
-`./jevlin.toml`, the installation's own (`$JEVLIN_HOME/jevlin.toml`, else
-`~/.jevlin/jevlin.toml`) when that file exists, and built-in defaults. `status` and `doctor`
+A command that reads the config takes `-config <file>`; `setup`, `upgrade` and `uninstall` take
+`-home <dir>` instead, and `wallet init` and `wallet address` take only `-dir`. Without
+`-config`, the config is the first of: `JEVLIN_CONFIG`, the installation's own
+(`$JEVLIN_HOME/jevlin.toml`, else `~/.jevlin/jevlin.toml`) when that file exists, and built-in
+defaults. A `jevlin.toml` in the working directory is never read
+unless you name it, so a cloned repo cannot choose where your keys are sent. `status` and `doctor`
 name the file they used. `connect` refuses to run with no config file, and says to run
 `jevlin setup`.
+`search` refuses a second `-config`, even one naming the same file: the Claude Code allow rule
+ends after the installed `-config <file>`, so a second one could otherwise send the key to
+another config's router without a prompt.
 
 ## The `--stdin` request
 
@@ -38,7 +45,7 @@ list and needs no shell escaping. A malformed field answers `fix_input` before a
 |---|---|
 | `version` | `1`, required. |
 | `query` | The search, required. |
-| `tier` | `"fast"` (default, one provider) or `"balanced"` (several, attributed). |
+| `tier` | `"fast"` (one provider), `"balanced"` (several, attributed) or `"max"` (every provider). Absent, the request carries the participant's band (`agents tier`, then `[miner] tier`), or no tier at all and the router applies the tenant's default. |
 | `recency` | `"day"`, `"week"`, `"month"` or `"year"`. A preference the router passes to its providers; check each citation if it must hold. |
 | `domain_filter` | Up to 16 bare hostnames. A preference, like `recency`. |
 | `max_results` | 1 to 25. A cap. |
@@ -124,11 +131,11 @@ the key out.
 
 ```toml
 [[provider]]
-upstream = "https://router-api.nyks.dev"   # https only; the router_url fallback
+upstream = "https://api.jevlin.ai"   # https only; the router_url fallback
 
 [mining]
 enabled        = true                            # only a scripted first answer — see below
-as_url         = "https://rewards.nyks.dev"      # unset: no AS, so no mining work at all
+as_url         = "https://rewards-testnet.jevlin.ai"  # unset: no AS, so no mining work at all
 chain_id       = "twilight-testnet-1"            # required once as_url is set
 slot_id        = 3                               # required once as_url is set
 state_dir      = "/home/you/.jevlin/state"    # default: <user config dir>/jevlin/state
@@ -142,8 +149,8 @@ spool_dir      = "/home/you/.jevlin/spool"    # default: <state_dir>/spool
 # collector_max_attempts = 0          0 means no attempt ceiling on delivery
 
 [platform]
-base_url       = "https://platform.nyks.dev"    # the human portal and claim pages
-agents_api_url = "https://agents-v1.nyks.dev"    # register/status/enroll — a separate host
+base_url       = "https://platform.jevlin.ai"    # the human portal and claim pages
+agents_api_url = "https://agents-v1.jevlin.ai"    # register/status/enroll — a separate host
 
 [miner]
 enabled        = true                              # default false
@@ -151,7 +158,11 @@ intake_dir     = "/home/you/.jevlin/intake"     # served request ids, until flus
 sessions_dir   = "/home/you/.jevlin/sessions"   # per-workspace lineage files
 flush_interval = "3m"                              # default 3m: how often a flush re-asks the AS
 turn_end       = false                             # default false: report a searched turn's final answer (see The turn end)
+tier           = ""                                # fast | balanced | max; unset = the router's default. `agents tier` outranks it; another word is ignored and named by `agents tier status`
 # router_url = "..."   defaults to the [[provider]] upstream
+
+[update]
+mode           = "apply"                           # apply | notify | off; the daily release check (see Files and locks). Another word checks and notifies only, and doctor names it
 ```
 
 **`[mining] enabled` is not the switch.** Whether mining is on is the decision `connect`,
@@ -163,8 +174,25 @@ an opt-out `connect` does not re-ask. Setup writes `enabled = true` only with no
 `as_url` says an authorization server exists. An unreadable decision counts as degraded, which
 also stops mining.
 
+**Who can open the state directory, on Windows.** `jevlin setup` gives `<home>\state` an access
+list that names only you. A `state_dir` that `setup` (when it is outside the installation), `connect`, `enroll`, `mining
+enable` or `mining disable` creates gets the same list, with you as its owner, and so does each directory it had to create on the way to
+it; if a list cannot be set, what was created is removed rather than left to be opened as it is. A directory that already exists is left as it is by
+those commands, and so is any entry another program has added to it, because an agent's sandbox
+is meant to reach this directory: nothing refuses a state directory over who else is on its
+list. `jevlin setup` is the exception for `<home>\state` and its siblings: it gives them an
+owner-only list on every run, which removes such an entry until the sandbox's own setup adds it
+again. `doctor`'s `state access` line says whose the directory is and names anyone else the list
+admits.
+
 `[miner]`'s two directories default beside the state directory, and `intake_dir`'s parent is
-where `credentials.json` and `flush.lock` are looked for. `base_url` is never dialed: a printed
+where `credentials.json`, `flush.lock`, the payout address you chose (`payout.json`), the claim
+link (`claim.json`) and an unfinished registration (`registration_pending.json`) are kept: never
+the state directory, which an agent's sandbox may write. A `payout.json` an older version left in
+the state directory is never declared from there; `connect` records it beside `credentials.json`
+only when it is this installation's own wallet address, and records `[mining] payout_address`
+instead when the config sets one. A claim link an older version kept in `state/agent.json` is not
+read; the next `jevlin connect` mints a fresh one. `base_url` is never dialed: a printed
 claim link must point there. `agents_api_url` is where `connect` and `mining enable` send
 requests. A non-default, non-loopback `base_url` without `agents_api_url` is refused; a
 loopback one alone defaults `agents_api_url` to it. Every URL must be https, or http on
@@ -210,9 +238,14 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 |---|---|---|---|
 | `jevlin.toml` | The config. | setup | No. |
 | `credentials.json` | The search key, owner-only. Refused if a symlink or readable by others. | connect, login | Only to forget the key: `login -forget`. |
+| `payout.json` | The payout address you chose, which connect declares for you once mining is approved. | connect, mining enable | No, until `jevlin payout show` says it is in force. |
+| `registration_pending.json` | A registration the platform answered that is not yet saved; finished by the next connect. | connect | No: it holds the new key. |
+| `claim.json` | The claim link and code for this installation's agent, while it is unclaimed. | connect | Yes; the next `jevlin connect` mints a fresh link, which ends the old one. |
 | `search-default` | `agents prefer`'s choice. | agents prefer | Yes; the skill default returns. |
+| `search-tier` | `agents tier`'s choice: the band a search carries when the request names none. | agents tier | Yes; `[miner] tier`, then the router's default, returns. |
+| `update_check.json` | The daily release check's record: when it ran, what it found, and a release a rollback holds. | upgrade | Yes; the next agent session checks again, though a rollback's hold is forgotten. |
 | `bin/jevlin` | A native binary, and `jevlin.previous` after an upgrade. | setup, upgrade | Through `uninstall -binary`. |
-| `state/` | Identity, authorization, the mining decision, health records, the flush stamp. | connect, flush | No: it is your registration. |
+| `state/` | Identity, authorization, the mining decision, health records, the flush stamp, the last region refusal. | connect, flush, join | No: it is your registration. |
 | `intake/` | Served request ids, until a flush takes them. | search | No: unsent evidence. |
 | `spool/` | Evidence waiting for the rewards service to acknowledge it. | flush | No: unsent evidence. |
 | `sessions/` | Lineage files, one per workspace or Cursor conversation; with `turn_end` on, an empty mark per searched turn and a turn's final answer for the moment before it is sent. | hooks | Yes, with no agent running; the hooks write them again. |
@@ -228,6 +261,47 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | `bin/<binary>.update.lock` | One upgrade of that binary at a time. | Yes, when none runs. |
 | `wallet/wallet.lock` | Key creation, and a send from its journal check to its first broadcast. | Yes, when no wallet command runs. |
 | `state/refresh.token.lock` | Rotation of the authorization's refresh token. | Yes, when none runs. |
+| `update_check.lock` | One release check at a time for the installation, whichever copy runs it. | Yes, when none runs. |
+
+**The daily release check.** The hooks that start a flush start it too: a session's start and
+stop for Claude Code, Cursor and Codex; for opencode, `hook start` when the plugin loads, when
+a top-level session is created and at each of its idles (opencode reports one idle as two
+events, so the second start finds the flush already running and the check not due); for Pi,
+`hook start` when a session starts. Hermes starts none. Each reads `update_check.json`, beside
+`credentials.json`, and when no check has run in the last day starts `jevlin upgrade -auto` as
+a detached child; the hook itself contacts nothing. A hook running inside an agent's sandbox
+starts no check: one whose environment carries Codex's sandbox markers, or a proxy on this
+machine's loopback, the only route out of Codex's sandbox, because the check's request would
+go through that proxy to a host Codex's profile does not list and fail the Codex command that
+is running. Its flush starts as before.
+
+The child takes the installation's check lock in one attempt, records the check before it
+touches the network (a check that cannot write its record makes no request), and asks the
+project's GitHub releases for the latest version, with no credential. Under
+`[update] mode = "apply"` it replaces a native binary through the same verified
+transaction as `jevlin upgrade`, taking the installation's own locks only then and in one
+attempt: when a setup, uninstall or upgrade holds them it records `lifecycle_busy` and checks
+again the next day. Under `"notify"`, the default until releases are signed, or for a copy npm
+installed, which is never replaced, it only records that a newer release exists. A word `mode` does not know counts as `notify`, and
+`doctor` names it. It never moves to an older release, never installs a release a person rolled
+back from (below), and never replaces a binary that belongs to another installation than the
+config that started it.
+
+The record is about one binary, the resolved path it names, at the version its outcome left
+there: the release an upgrade installed, the one a rollback restored, the one a check ran as.
+A record about another binary or version counts as none. Its outcome is `started`, `current`,
+`available`, `upgraded` (with `refresh = "failed"` when the agent integrations could not be
+refreshed afterwards), `rolled_back`, `failed` with the failure word `upgrade` would print, or
+`not_release` for a development build; `status` and `doctor` read it and nothing else. Two
+records outlast a day because a person has to act on them. `jevlin upgrade -rollback` holds the
+release it left: no check installs that release, or an older one, again; a newer one it does,
+and `jevlin upgrade` by hand lifts the hold. An automatic replacement that could not put the
+binary back (`manual_intervention`) is never overwritten by a check: `status` and `doctor` list
+every copy that survives beside the binary, read from the binary's directory, until a person's
+`jevlin upgrade` succeeds; none is deleted. A record dated in the future, from a clock that was
+set back, counts as due, and so does one that found a release under `"notify"` once the mode
+is `"apply"` on a native copy. Deleting the record is safe: the next agent session checks again,
+though it also forgets a hold.
 
 ## Doctor's checks
 
@@ -235,12 +309,14 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 |---|---|
 | authorization server | The configured AS answers. |
 | enrolled | The AS accepts this installation's authorization. |
-| joined this epoch | This installation is in the open epoch. |
+| joined this epoch | This installation is in the open epoch. When the rewards service refused the join under its region policy, `NO` says which refusal; only a VPN or proxy hold offers a fix. |
 | payout address | An address is in force. |
 | earning | This epoch has enough verified searches to qualify. |
 | intake writable | This process can write where a search records. Probes with one inert non-`.json` file, then removes it. |
 | recording | Recorded searches are waiting, queued, or verified at the AS; or nothing ran recently. |
+| up to date | The daily release check found this copy current, or has not run yet. `NO` names the newer release and the one command that applies it here. `UNKNOWN` when the last check failed, is still running, could not be read, is dated in the future, or ran more than three days ago, which says the hooks that start it may not be running. |
 | wallet access | Windows only: nobody but you can read the wallet. |
+| state access | Windows only: the state directory and its credentials have an access list and an owner, who is you, SYSTEM or Administrators. Anyone else the list names is shown, and is `OK`: an agent's sandbox is expected there. |
 
 `NO` is a fact and a successful diagnosis; `UNKNOWN` is the absence of one. `doctor` exits
 non-zero only when every check came back `UNKNOWN`. It opens existing state only and creates no
@@ -394,12 +470,18 @@ base64url-encoded in `JEVLIN_TRACE_BRIDGE`, written in the syntax of the shell t
 command, and only inside the search request — and only onto a command where that syntax
 actually reaches the search. A loop, a list or a pipeline with the search anywhere but first is
 left exactly as written; the search still runs, carrying the hashed per-shell identity instead.
-With no hook, a search carries that same per-shell identity. The hashed `session_id` is also
-mirrored as the request's own top-level `session_id` and `X-Session-Id` header — the router
-groups quick reformulations by it there, and reads the trajectory from the envelope; the same
-identifier in both places, sent only while an envelope rides, and dropped with the envelope on
-the one compatibility retry. The trace is unauthenticated metadata: nothing treats it as proof
-of origin. `JEVLIN_TRACE=off` sends none.
+With no hook, a search carries that same per-shell identity: the hostname and the parent shell's
+pid, keyed with a random `trace.key` in `state_dir` that `setup` and `connect` create and that is
+never sent, so the router cannot guess its way back to the hostname. A search that finds no key
+makes one if it can write `state_dir`; that is why a sandbox that denies the write still keeps one
+id once setup has made the key. A search with no usable key that cannot make one (`state_dir` is
+read-only and holds none, or the key is a link, open to others or not 32 bytes) sends a one-off id,
+different on every search, rather than any id the hostname could be recovered from. The hashed
+`session_id` is also mirrored as the request's own top-level `session_id` and `X-Session-Id`
+header — the router groups quick reformulations by it there, and reads the trajectory from the
+envelope; the same identifier in both places, sent only while an envelope rides, and dropped with
+the envelope on the one compatibility retry. The trace is unauthenticated metadata: nothing
+treats it as proof of origin. `JEVLIN_TRACE=off` sends none.
 
 ## The turn end
 
@@ -414,13 +496,21 @@ this carries what it concluded. When a turn ends, the agent's end-of-turn hook s
 | `status` | `completed`, `interrupted` or `failed`. |
 | `final_text` | The assistant's last message of the turn, scrubbed of secrets, last 32 KiB. Only on a completed turn, and absent when there is no message to send; the status is sent either way. |
 | `final_chars`, `truncated` | Its length before the cut, and whether it was cut. |
-| `user_text` | What you asked in that turn, scrubbed of secrets, first 32 KiB. Claude Code, Cursor, opencode and Codex. |
+| `user_text` | What you asked in that turn, scrubbed of secrets, first 32 KiB. Claude Code, Cursor, opencode and Codex. Absent for a turn Claude Code started rather than you: a continuation or loop tick, a background task's result, a message from another session, the output of a `!` command, or the summary it writes when it compacts the conversation. |
 | `steps` | The turn in order: what the assistant wrote (scrubbed, capped), and for each tool it called the tool's **name, duration and whether it succeeded**, where the agent records them. Never a tool's input or output. A search of ours is marked by its call id. Claude Code, opencode and Codex in full; under Cursor, the searches only. |
 | `model`, `usage` | The model, and the turn's token counts. Claude Code, Cursor, opencode and Codex. |
 
 Only for a turn in which a jevlin search was served: `search` marks the turn after the router
 answers, so a search you refused, or one that failed, does not count, and a turn with no served
-search sends nothing. Only to the router `miner.router_url` names; without that line nothing is
+search sends nothing. Under Claude Code, a subagent searches under the turn that launched it, and
+one running in the background can do so after that turn has ended; that turn is then reported
+late, by the next turn end in the session, with what you asked, its steps and its last message as
+the transcript holds them. Only a subagent's search makes a turn late: a turn you interrupted
+after the agent itself searched sends nothing, but one in which a subagent searched is reported
+late, as completed, since the hook cannot tell it from a turn that ended. A turn is reported once:
+a search under a turn already reported does not report it again. Under Codex and opencode a
+subagent runs a turn of its own, and its search is joined to no turn end. Only to the router
+`miner.router_url` names; without that line nothing is
 sent. With it on, what you typed in a searched turn is sent; what your tools read and wrote never is: not a file's contents, not a command, not its output. The model's private reasoning and a subagent's own steps are not sent either. The hook writes the record to an owner-only file in
 `sessions/` and a detached `jevlin turn-end` sends it once and deletes the file, sent or not.
 `JEVLIN_TRACE=off` turns it off too. Claude Code (2.1.196 or later), Cursor, opencode, and Codex

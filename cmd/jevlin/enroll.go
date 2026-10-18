@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -43,11 +44,11 @@ func miningClients(ctx context.Context, args []string, cmd string) (*auth.OAuthC
 	if err := fs.Parse(args); err != nil {
 		return nil, nil, config.Mining{}, 2
 	}
-	// No -config is not an error here: config.Load resolves the flag, then
-	// JEVLIN_CONFIG, then ./jevlin.toml, then defaults — the same
-	// order the daemon and the agent commands use. Refusing early made
-	// these six commands the only ones that ignored the environment.
-	cfg, _, err := config.Load([]string{"-config", *cfgPath}, os.Getenv)
+	// No -config is not an error here: loadConfig resolves the flag, then
+	// JEVLIN_CONFIG, then the installation's own config, then defaults —
+	// the same order the agent commands use. Refusing early made these six
+	// commands the only ones that ignored the environment.
+	cfg, _, err := loadConfig(*cfgPath, os.Getenv)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "jevlin:", err)
 		return nil, nil, config.Mining{}, 1
@@ -61,7 +62,7 @@ func miningClients(ctx context.Context, args []string, cmd string) (*auth.OAuthC
 		if src := describeConfigSource(*cfgPath, os.Getenv); src != "" {
 			fmt.Fprintf(os.Stderr, "jevlin: no authorization server configured in %s; there is nothing to enroll\n", src)
 		} else {
-			fmt.Fprintln(os.Stderr, "jevlin: no config file found — looked at $JEVLIN_CONFIG and ./jevlin.toml.")
+			fmt.Fprintln(os.Stderr, "jevlin: no config file found — looked at $JEVLIN_CONFIG and the installation's own config.")
 			fmt.Fprintln(os.Stderr, "  Pass -config <file>, or set JEVLIN_CONFIG.")
 		}
 		return nil, nil, config.Mining{}, 1
@@ -215,6 +216,25 @@ func cmdEnroll(args []string) int {
 	return 0
 }
 
+// joinRegionNote keeps the region note for `jevlin join` as the flush's
+// driver keeps it, so status and doctor say the same thing whichever way
+// the participant joined: a refusal is recorded (code non-empty), and an
+// enrollment in epoch clears a note of that epoch. Neither changes the
+// command's outcome; a note that cannot be written is said on stderr.
+func joinRegionNote(m config.Mining, epoch uint64, code string) {
+	store, err := auth.OpenStoreExisting(m.StateDir)
+	if err == nil {
+		if code != "" {
+			err = store.SaveRegionRefusal(m.SlotID, epoch, code)
+		} else {
+			err = store.ClearRegionRefusalFor(m.SlotID, epoch)
+		}
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "jevlin: region refusal note:", err)
+	}
+}
+
 func cmdJoin(args []string) int {
 	ctx, cancel := operatorContext(2 * time.Minute)
 	defer cancel()
@@ -242,6 +262,7 @@ func cmdJoin(args []string) int {
 	// to send) or enrollment closed without us (a failure flush retries).
 	if auth.JoinHeld(st.JoinStatus) {
 		fmt.Fprintf(os.Stdout, "already joined epoch %s (%s); nothing to send\n", st.TargetEpoch, st.JoinStatus)
+		joinRegionNote(m, epoch, "")
 		return 0
 	}
 	if !st.Joinable {
@@ -251,9 +272,15 @@ func cmdJoin(args []string) int {
 
 	res, err := mining.JoinEpoch(ctx, epoch)
 	if err != nil {
+		if code, ok := auth.RegionRefusalCode(err); ok {
+			fmt.Fprintf(os.Stderr, "jevlin: join refused under the Slot's region policy (%s): %s\n", code, auth.RegionRefusalText(code))
+			joinRegionNote(m, epoch, code)
+			return 1
+		}
 		fmt.Fprintln(os.Stderr, "jevlin: join:", err)
 		return 1
 	}
+	joinRegionNote(m, epoch, "")
 	fmt.Fprintf(os.Stdout, "join %s  draw_id=%s  receipt stored (%d bytes, verified)\n",
 		res.Status, res.DrawID, len(res.Receipt))
 	// The next step depends on the profile, so ASK rather than assert. Under
@@ -412,7 +439,7 @@ func statusMain(args []string, stdout, stderr io.Writer, getenv func(string) str
 	local, ok := gatherAgentIdentity(args, getenv)
 	if !ok {
 		local = agentIdentityFacts{Mining: cfg.Mining, ConfigSource: src, StateDir: cfg.Mining.StateDir,
-			StoreMissing: true, Decision: auth.MiningDecision{State: auth.MiningUndecided}}
+			PlatformBaseURL: cfg.Platform.BaseURL, StoreMissing: true, Decision: auth.MiningDecision{State: auth.MiningUndecided}}
 	}
 
 	// WP2-adversarial-review finding 16: an unclaimed or search-only
@@ -555,6 +582,10 @@ type agentIdentityFacts struct {
 	ConfigSource string
 	StateDir     string
 
+	// PlatformBaseURL is what a stored claim URL must match before it is
+	// printed (invariant 12): agent.json is sandbox-writable.
+	PlatformBaseURL string
+
 	// StoreMissing is the ordinary "nothing has decided anything here"
 	// state; StoreErr is a state directory that exists and cannot be read.
 	StoreMissing bool
@@ -568,14 +599,64 @@ type agentIdentityFacts struct {
 	HasRegistration bool
 	RegistrationErr error
 
+	// Claim is the claim link on file beside credentials.json for the
+	// registration's agent; agent.json carries none (auth.ClaimRecord).
+	Claim    auth.ClaimBootstrap
+	HasClaim bool
+
+	// PayoutAddress is the address this installation would declare
+	// (payoutAddressToDeclare), and PayoutSource where it was found: a
+	// config or wallet address not yet recorded is still this
+	// installation's, and is named as such.
 	PayoutAddress    string
+	PayoutSource     payoutSource
 	HasPayoutAddress bool
 	PayoutAddressErr error
+	// LegacyPayout is a payout.json in the state directory that is not
+	// used: named without its address.
+	LegacyPayout bool
 
 	Held    auth.PayoutBindingHeld
 	HasHeld bool
 
+	// Region/HasRegion is the driver's note of the AS's last region
+	// refusal (ADR-MINIS-0026), shown only for the configured slot: a note
+	// for a slot this configuration no longer names is about another life.
+	Region    auth.RegionRefusal
+	HasRegion bool
+
 	Conflicts []auth.ConflictedEpoch
+
+	// Waiting is how many searches are recorded in intake and not yet
+	// taken by a flush, and OldestWaiting when the first of them was made;
+	// read only while mining is on. CodexUndelivered is codexDeliveryUnapproved
+	// for this installation: on Linux, searches made in Codex wait for a run
+	// outside it (issue #80).
+	// WaitingErr is why intake could not be read, when it could not: the
+	// count is then unknown, never zero.
+	Waiting          int
+	WaitingErr       error
+	OldestWaiting    time.Time
+	CodexUndelivered bool
+	// Update is the daily release check's stamp and mode (update_check.go),
+	// read whenever the state directory is known: it is about the binary,
+	// not about mining, so it is reported before the store is opened.
+	Update updateFacts
+	// Now is sampled once by the gatherer, so the age the renderers print
+	// for the stamp is one instant.
+	Now time.Time
+}
+
+// statusCodexUndelivered is codexDeliveryUnapproved for the installation
+// cfgPath names, on this machine's Codex. A variable so status's tests can
+// say so without a Codex home.
+var statusCodexUndelivered = func(cfgPath string, getenv func(string) string) bool {
+	ops := realAgentOps()
+	entry, _, err := resolveEntry(ops, cfgPath, getenv)
+	if err != nil {
+		return false
+	}
+	return codexDeliveryUnapproved(ops, ops.paths(getenv), entry, codexSandboxOS)
 }
 
 func gatherAgentIdentity(args []string, getenv func(string) string) (agentIdentityFacts, bool) {
@@ -590,7 +671,8 @@ func gatherAgentIdentity(args []string, getenv func(string) string) (agentIdenti
 	if err != nil {
 		return agentIdentityFacts{}, false
 	}
-	f := agentIdentityFacts{Mining: cfg.Mining, ConfigSource: src, StateDir: cfg.Mining.StateDir}
+	f := agentIdentityFacts{Mining: cfg.Mining, ConfigSource: src, StateDir: cfg.Mining.StateDir, PlatformBaseURL: cfg.Platform.BaseURL}
+	f.Update, f.Now = gatherUpdateFacts(cfg, getenv), time.Now()
 	store, err := auth.OpenStoreExisting(cfg.Mining.StateDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -604,20 +686,46 @@ func gatherAgentIdentity(args []string, getenv func(string) string) (agentIdenti
 	}
 	f.Decision = store.ReadMiningDecision()
 	f.Health, f.HealthErr = store.HealthRecords()
+	// What waits in intake does not depend on the registration, so it is
+	// counted before a registration that cannot be read ends the gathering.
+	if f.Decision.State == auth.MiningEnabled {
+		records, _, ierr := readIntake(cfg.Miner.IntakeDir)
+		f.WaitingErr = ierr
+		for _, r := range records {
+			f.Waiting++
+			// A record with no time says nothing about the oldest; only a
+			// file planted in the sandbox-writable intake has none.
+			if at := r.rec.StartedAt; !at.IsZero() && (f.OldestWaiting.IsZero() || at.Before(f.OldestWaiting)) {
+				f.OldestWaiting = at
+			}
+		}
+		f.CodexUndelivered = statusCodexUndelivered(src, getenv)
+	}
 	f.Registration, f.HasRegistration, f.RegistrationErr = store.LoadAgentRegistration()
 	if f.RegistrationErr != nil {
 		return f, true
 	}
 	if f.HasRegistration {
-		f.PayoutAddress, f.HasPayoutAddress, f.PayoutAddressErr = store.LoadPayoutAddress()
+		f.Claim, f.HasClaim = claimFor(cfg.Miner, f.Registration.AgentID, nil)
+		f.PayoutAddress, f.PayoutSource, f.PayoutAddressErr = payoutAddressToDeclare(cfg, store, getenv)
+		f.HasPayoutAddress = f.PayoutSource != payoutNone
+		f.LegacyPayout = !f.HasPayoutAddress && lexists(filepath.Join(cfg.Mining.StateDir, payoutRecordFile))
 	}
 	// WP4b (design f0ddb69 §5.5): both of these are read-before-declare /
 	// conflict bookkeeping the store already has, no AS round trip needed.
-	if held, ok, herr := store.LoadPayoutBindingHeld(); herr == nil && ok {
+	// The held note is in the state directory; it is shown only when its
+	// local address is the one on file beside credentials.json, which every
+	// note this client writes is (declarePayoutIfSafe saves the record's
+	// own address), so a planted note naming another address, with
+	// instructions in its reason, is not shown as the AS's word.
+	if held, ok, herr := store.LoadPayoutBindingHeld(); herr == nil && ok && f.HasPayoutAddress && held.Local == f.PayoutAddress {
 		f.Held, f.HasHeld = held, true
 	}
 	if conflicts, cerr := store.EpochConflicts(); cerr == nil {
 		f.Conflicts = conflicts
+	}
+	if region, ok, rerr := store.LatestRegionRefusal(cfg.Mining.SlotID); rerr == nil && ok {
+		f.Region, f.HasRegion = region, true
 	}
 	return f, true
 }
@@ -639,8 +747,52 @@ func (f agentIdentityFacts) needsMining() bool {
 	return f.Decision.State == auth.MiningEnabled && miningASConfigured(f.Mining)
 }
 
+// payoutSourceNote says where an address status names came from when it is
+// not yet recorded beside credentials.json: the next foreground connect
+// records it, and a resume declares it either way.
+func payoutSourceNote(source payoutSource) string {
+	switch source {
+	case payoutConfig:
+		return " (from mining.payout_address; recorded at the next `jevlin connect`)"
+	case payoutWallet:
+		return " (this installation's own wallet; recorded at the next `jevlin connect`)"
+	}
+	return ""
+}
+
+// heldNoteText is the client's own sentence for a held-binding note. Agent
+// onboarding design §5.5 has status report both addresses, and the note is
+// in a directory a sandboxed command can rewrite, so nothing in it is said as
+// the AS's word of this moment: the reason is shown only when it is one this
+// client knows (a note holding another is refused on load), and the address
+// in force is the AS's answer from this run when there is one (liveActive),
+// else the one the note recorded, said as what the AS answered when this
+// installation last asked. Local is the address this installation would
+// declare, the only note status and doctor show.
+func heldNoteText(held auth.PayoutBindingHeld, liveActive string) string {
+	switch held.HeldFor {
+	case auth.HeldAddressInUse:
+		return fmt.Sprintf("HELD (%s) — %s is registered to another participant, so waiting will not activate it; "+
+			"set a different address, or talk to your Slot operator.", auth.HeldAddressInUse, held.Local)
+	case auth.HeldReplacesActive:
+		inForce := "a different address in force"
+		switch {
+		case liveActive != "":
+			inForce = liveActive + " in force"
+		case held.Active != "":
+			inForce = held.Active + " in force when this installation last asked"
+		}
+		return fmt.Sprintf("HELD (%s) — the AS has %s for this participant; this installation "+
+			"would declare %s. Changing the address in force is an operator-activated change; `jevlin payout show` names both.",
+			auth.HeldReplacesActive, inForce, held.Local)
+	}
+	return fmt.Sprintf("HELD — the AS did not put %s in force, for a reason this version does not recognize; "+
+		"`jevlin payout show` has the AS's own answer.", held.Local)
+}
+
 func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 	printConfigSource(stdout, f.ConfigSource, f.StateDir)
+	fmt.Fprintf(stdout, "update:  %s\n", updateLineText(f.Update, f.Now))
 	if f.StoreMissing {
 		fmt.Fprintln(stdout, "mining: NOT DECIDED")
 		printMiningASConfiguration(stdout, f.Mining)
@@ -676,26 +828,42 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 		// used to make this function print nothing at all, identical to
 		// "never ran connect" — status is exactly where a participant
 		// would go looking to understand why connect started refusing.
-		fmt.Fprintf(stderr, "agent:  registration on file could not be read: %v\n", f.RegistrationErr)
+		// Only a record that is corrupt is what connect rebuilds: one that
+		// is a link, not a regular file or readable by others is refused
+		// by connect as well, and the advice would send the participant
+		// round in a circle.
+		if errors.Is(f.RegistrationErr, auth.ErrAgentRegistrationCorrupt) {
+			fmt.Fprintf(stderr, "agent:  registration on file could not be read: %v; run `jevlin connect` to rebuild it from the platform\n", f.RegistrationErr)
+		} else {
+			fmt.Fprintf(stderr, "agent:  registration on file could not be read: %v\n", f.RegistrationErr)
+		}
 		return false
 	}
 	if !f.HasRegistration {
-		return true // never ran connect: nothing to report here, legacy report proceeds
+		// Never ran connect: nothing about the platform to report, but a
+		// region refusal is the AS's and reaches a manual `enroll` +
+		// `join` installation the same way (PR #85 review).
+		printRegionLine(stdout, f)
+		printDeliveryLines(stdout, f)
+		return true // legacy report proceeds
 	}
 
 	reg := f.Registration
 	switch reg.Status {
 	case "unclaimed":
-		if reg.ClaimURL == "" {
-			// B.3: a registration rebuilt from GET /v1/agents/me before the
-			// platform served the claim bootstrap fields (B.1's known gap)
-			// is durable — status must never fall back to printing the
-			// bare (empty) URL the ordinary branch below prints.
-			fmt.Fprintln(stdout, "agent:  unclaimed — recovered from the platform; its claim link is not "+
-				"retrievable here. Run `jevlin connect -force` to register a fresh agent, or wait for "+
-				"this one to expire.")
+		if !f.HasClaim {
+			// No claim link is on file beside credentials.json for this
+			// agent: a registration rebuilt from GET /v1/agents/me before
+			// the platform served the claim bootstrap fields (B.1's known
+			// gap), or one an older version kept the link for in
+			// agent.json, which is not read. Status never falls back to
+			// printing a bare URL; a foreground connect mints a fresh one.
+			fmt.Fprintln(stdout, "agent:  unclaimed — no claim link is on file for it here. Run `jevlin connect` for a fresh one.")
+		} else if claimURL := printableClaimURL(f.Claim.ClaimURL, f.PlatformBaseURL, stderr); claimURL != "" {
+			fmt.Fprintf(stdout, "agent:  unclaimed — claim at %s\n", claimURL)
 		} else {
-			fmt.Fprintf(stdout, "agent:  unclaimed — claim at %s\n", reg.ClaimURL)
+			fmt.Fprintln(stdout, "agent:  unclaimed — the stored claim link failed validation and is not shown. "+
+				"Run `jevlin connect` for a fresh one.")
 		}
 	case "expired":
 		fmt.Fprintln(stdout, "agent:  expired — run `jevlin connect` again for a new registration")
@@ -703,9 +871,12 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 		fmt.Fprintf(stdout, "agent:  claimed (scopes: %s)\n", strings.Join(reg.Scopes, ", "))
 		if reg.LastEnrollmentSlot != "" {
 			if f.PayoutAddressErr == nil && f.HasPayoutAddress {
-				fmt.Fprintf(stdout, "        enrolled on %s, payout address %s\n", reg.LastEnrollmentSlot, f.PayoutAddress)
+				fmt.Fprintf(stdout, "        enrolled on %s, payout address %s%s\n", reg.LastEnrollmentSlot, f.PayoutAddress, payoutSourceNote(f.PayoutSource))
 			} else {
-				fmt.Fprintf(stdout, "        enrolled on %s, no payout address on file yet\n", reg.LastEnrollmentSlot)
+				fmt.Fprintf(stdout, "        enrolled on %s, no payout address on file yet — run `jevlin mining enable` at a terminal to choose one\n", reg.LastEnrollmentSlot)
+				if f.LegacyPayout {
+					fmt.Fprintln(stdout, "        a payout.json in the state directory is not used; only this installation's own wallet address would be")
+				}
 			}
 		} else if hasScope(reg.Scopes, "mining") {
 			switch f.Decision.State {
@@ -720,7 +891,7 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 					// finding 15: name the refusal explicitly rather than let
 					// a participant discover it only from a resume's silent
 					// no-op.
-					fmt.Fprintln(stdout, "        mining scope granted, but not enrolled: "+reg.SlotRefusal)
+					fmt.Fprintln(stdout, "        mining scope granted, but not enrolled: "+slotRefusalText(reg.SlotRefusal, reg.OfferedSlots, f.Mining.PlatformSlot))
 				} else if !f.HasPayoutAddress {
 					fmt.Fprintln(stdout, "        mining enabled, no wallet yet (no terminal was available at setup) — "+
 						"run `jevlin mining enable` at a terminal, or set mining.payout_address")
@@ -734,20 +905,41 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 	}
 
 	if f.HasHeld {
-		reason := f.Held.HeldFor
-		if reason == "" {
-			reason = "REPLACES_ACTIVE" // this client's own read-before-declare pre-check, not an AS-returned reason
-		}
-		fmt.Fprintf(stdout, "payout: HELD (%s) — the AS has %s active for this participant; this installation "+
-			"would declare %s. Changing the active binding is an operator-activated change.\n",
-			reason, f.Held.Active, f.Held.Local)
+		fmt.Fprintln(stdout, "payout: "+heldNoteText(f.Held, ""))
 	}
+	printRegionLine(stdout, f)
+	printDeliveryLines(stdout, f)
 	for _, c := range f.Conflicts {
 		fmt.Fprintf(stdout, "mining: another installation of this participant holds slot %d epoch %d; "+
 			"this installation's observations for it are queued until the AS's target moves past it, then dropped\n",
 			c.SlotID, c.TargetEpoch)
 	}
 	return f.needsMining()
+}
+
+// printDeliveryLines is status's word on evidence that is recorded and not
+// yet delivered: how much is waiting and since when, and, when Codex on
+// Linux is why, the same sentence agents status prints (issue #80).
+func printDeliveryLines(stdout io.Writer, f agentIdentityFacts) {
+	if f.WaitingErr != nil {
+		fmt.Fprintln(stdout, "waiting: unknown: the intake directory could not be read")
+	} else if f.Waiting > 0 {
+		fmt.Fprintf(stdout, "waiting: %d search(es) recorded and not yet delivered, the oldest made %s\n",
+			f.Waiting, f.OldestWaiting.UTC().Format(time.RFC3339))
+	}
+	if f.CodexUndelivered {
+		fmt.Fprintln(stdout, "delivery: "+codexUndeliveredLine)
+	}
+}
+
+// printRegionLine is status's one line for the AS's latest region
+// refusal, in this client's words, whichever way the participant joined.
+func printRegionLine(stdout io.Writer, f agentIdentityFacts) {
+	if !f.HasRegion {
+		return
+	}
+	fmt.Fprintf(stdout, "region: %s (the AS refused epoch %d at %s, code %s)\n",
+		auth.RegionRefusalText(f.Region.Code), f.Region.TargetEpoch, f.Region.At, f.Region.Code)
 }
 
 func printMiningASConfiguration(w io.Writer, m config.Mining) {
@@ -882,7 +1074,26 @@ func cmdPayout(args []string) int {
 		return 1
 	}
 	printDeclaration(doc)
+	recordDeclaredPayout(*cfgPath, address, doc)
 	return 0
+}
+
+// recordDeclaredPayout makes the address `payout set` just declared the one
+// this installation would declare: the record beside credentials.json that
+// the poll, the resume and status read. Without it the record kept the old
+// address after a change, status named the old one, and once
+// payout_declared.json was gone a resume reported the participant's own
+// change as a hold. Best effort: the AS has the declaration whatever
+// happens here, and a failure only leaves the record as it was.
+func recordDeclaredPayout(cfgPath, address string, doc *auth.PayoutDeclaration) {
+	cfg, _, err := loadConfig(cfgPath, os.Getenv)
+	if err != nil || savePayoutAddress(cfg.Miner, address) != nil || !doc.Effective {
+		return
+	}
+	if store, err := auth.OpenStoreExisting(cfg.Mining.StateDir); err == nil {
+		_ = store.ClearPayoutBindingHeld()
+		_ = store.SavePayoutDeclared(address)
+	}
 }
 
 // printDeclaration reports what the AS recorded, and — when it did not take

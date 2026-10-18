@@ -72,6 +72,13 @@ func TestRestrictToOwnerLeavesOnlyTheCurrentUser(t *testing.T) {
 		t.Fatal(err)
 	}
 	me := user.User.Sid
+	sd, err := windows.GetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if owner, _, err := sd.Owner(); err != nil || owner == nil || !owner.Equals(me) {
+		t.Errorf("%s owner = %v (%v), want the current user %v: another owner keeps WRITE_DAC whatever the DACL says", dir, owner, err, me)
+	}
 
 	entries := daclEntries(t, dir)
 	if !entries.protected {

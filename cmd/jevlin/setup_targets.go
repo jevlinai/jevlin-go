@@ -56,21 +56,38 @@ func joinLabels(ls []string) string {
 
 // agentsParagraph says what answering yes writes, from the registry's own
 // labels, and claims nothing about earning: whether a search earns is the
-// mining decision's business, not the skill's.
+// mining decision's business, not the skill's. What it says of Codex is
+// what the planner for this OS writes (codexSandboxOS): the permission
+// profile off Windows, and on Windows the writable directories alone, with
+// no network.
 func agentsParagraph() string {
-	codex := codexTarget{}.Label()
 	return fmt.Sprintf(`Setup knows these coding agents: %s.
 Each can get a web-search skill that runs jevlin's search through the
-Twilight search router, and — where the agent supports one — the hook, plugin
+Jevlin search router, and — where the agent supports one — the hook, plugin
 or extension that threads each search into the agent's session (an agent with
 no skill directory gets a plugin and a line to paste into its rules instead).
-These are written into the agent's own config directory. For %s it also
-widens the sandbox in its config.toml:
-network access on, and the jevlin state directory — plus the intake,
-sessions and spool directories — made writable, never the config, the stored
-key or the wallet, so a search can record itself and the claim can resolve.
-Answering yes here accepts all of that.
-`, joinLabels(labels(targetsByKind(targetHost))), codex)
+These are written into the agent's own config directory. %s
+Answering yes here accepts the rest.
+`, joinLabels(labels(targetsByKind(targetHost))), codexAgentsSentence(codexSandboxOS))
+}
+
+// codexAgentsSentence is the paragraph's Codex sentence for goos.
+func codexAgentsSentence(goos string) string {
+	codex := codexTarget{}.Label()
+	if goos == "windows" {
+		return fmt.Sprintf(`For %s it also
+writes into its config.toml the jevlin state directory — plus the intake,
+sessions and spool directories — as writable, never the config, the stored
+key or the wallet, so a search can record itself. It opens no network: a
+search from Codex needs Codex's approval to reach the router.`, codex)
+	}
+	return fmt.Sprintf(`For %s it also
+writes a permission profile into its config.toml: the jevlin state
+directory — plus the intake, sessions and spool directories — made writable,
+never the config, the stored key or the wallet, and network access to the
+search hosts only, through Codex's proxy, so a search can record itself and
+the claim can resolve. Every other host stays closed to Codex's commands.
+A change to a Codex setting of your own is asked about separately.`, codex)
 }
 
 func (r *setupRun) agentsStep() int {
@@ -112,7 +129,18 @@ func (r *setupRun) agentsStep() int {
 			entry.rendered = rendered
 		}
 	}
+	switch {
+	case r.dry:
+		ops.consent = dryRunConsent(r.d.stdout)
+	case r.d.interactive:
+		// A change to the participant's own Codex settings is asked about
+		// on its own, and -yes does not answer it (codex_plan.go).
+		ops.consent = func(question string) (string, error) { return promptSetup(r.d.stdout, question, r.lineIn) }
+	}
 	plan := buildInstallPlan(ops, paths, selected, entry, r.d.getenv)
+	if plan.aborted != "" {
+		return r.abort("no coding agent was set up; " + r.safetyOnly(ops, &plan))
+	}
 	if r.d.agentPlanObserver != nil {
 		r.d.agentPlanObserver(plan)
 	}
@@ -133,9 +161,13 @@ func (r *setupRun) agentsStep() int {
 	if !r.explicitTargets {
 		set, err := r.ask("Set up the coding agents found on this machine now?")
 		if err != nil {
-			return r.abort("no coding agent was set up")
+			return r.abort("no coding agent was set up; " + r.safetyOnly(ops, &plan))
 		}
 		if !set {
+			if r.safetyOnly(ops, &plan) != "nothing was changed" {
+				r.printf("Left the agents alone, except that jevlin's own open block in Codex's config was closed. When you change your mind: %s\n", later)
+				return exitOK
+			}
 			r.printf("Left the agents alone. When you change your mind: %s\n", later)
 			return exitOK
 		}
@@ -148,4 +180,13 @@ func (r *setupRun) agentsStep() int {
 		r.printf("Some agent could not be set up; see above.\n")
 	}
 	return exitOK
+}
+
+// safetyOnly commits only the plan's safety writes, as agents install does
+// for a question that goes unanswered, and says what came of it.
+func (r *setupRun) safetyOnly(ops agentOps, plan *agentPlan) string {
+	if r.dry {
+		return "nothing was changed"
+	}
+	return safetyOutcome(commitSafetyOnly(ops, plan, r.d.stdout, r.d.stderr))
 }

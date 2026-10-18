@@ -184,6 +184,7 @@ func newUpgradeFixture(t *testing.T, lr *localRelease) *upgradeFixture {
 	f := &upgradeFixture{t: t, home: filepath.Join(root, "custom-home"), lr: lr, runner: &contentRunner{}, env: map[string]string{}, build: "0.3.0", timeout: selfupdate.OperationTimeout}
 	f.exe = filepath.Join(f.home, "bin", "jevlin")
 	f.agents = realAgentOps()
+	f.agents.binaryLocation = func(string) ([]string, error) { return nil, nil } // the sandbox is in the temp dir
 	f.agents.home = root
 	f.agents.lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
 	f.agents.executable = func() (string, error) { return f.exe, nil }
@@ -372,7 +373,7 @@ func TestUpgradeCommandSendsNpmCopiesToNpmBeforeAnythingElse(t *testing.T) {
 	f := newUpgradeFixture(t, newLocalRelease(t, "0.3.1", map[string]string{"0.3.1": "0.3.1\n"}))
 	f.env["JEVLIN_LAUNCH"] = "npm:global"
 	code, out, errOut := f.run()
-	if code != exitUsage || !strings.HasPrefix(errOut, "jevlin upgrade: ownership: ") || !strings.Contains(errOut, "npm install -g jevlin@latest") {
+	if code != exitUsage || !strings.HasPrefix(errOut, "jevlin upgrade: ownership: ") || !strings.Contains(errOut, "npm install -g @jevlinsearch/jevlin@latest") {
 		t.Errorf("an npm copy gets npm's command: exit %d\n%s\n%s", code, out, errOut)
 	}
 	if len(f.lr.requests) != 0 || f.content(f.exe) != "0.3.0" || lexists(lifecycleGatePath(f.home)) {
@@ -532,7 +533,7 @@ func TestTopLevelHelpNamesTheLifecycleCommands(t *testing.T) {
 			t.Errorf("top-level help must describe%s", command)
 		}
 	}
-	for _, want := range []string{"-purge-state", "-yes never answers it", "-rollback", "npm install -g jevlin@latest"} {
+	for _, want := range []string{"-purge-state", "-yes never answers it", "-rollback", "npm install -g @jevlinsearch/jevlin@latest"} {
 		if !strings.Contains(usageText, want) {
 			t.Errorf("top-level help must say %q", want)
 		}

@@ -145,24 +145,41 @@ func TestRecognizerRefusesAFormRenderedForAnotherShell(t *testing.T) {
 	}
 }
 
-// The identity check is the file, not the spelling: a path that reaches this
-// same binary another way is still recognized.
-func TestRecognizerFollowsTheBinaryNotItsSpelling(t *testing.T) {
+// The identity check is the rendered spelling, not the file: the path this
+// hook was started by is recognized even when it is a link, and another path
+// that reaches the same binary is not, since what a path names to the hook is
+// not always what it names to the shell that runs the command.
+func TestRecognizerTakesOnlyTheBinaryPathTheSkillRenders(t *testing.T) {
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	link := filepath.Join(t.TempDir(), exeName("linked"))
-	if err := os.Symlink(self, link); err != nil {
-		t.Skip("this environment does not allow symlinks: " + err.Error())
+	dir := t.TempDir()
+	link := filepath.Join(dir, exeName("linked"))
+	other := filepath.Join(dir, exeName("other"))
+	for _, l := range []string{link, other} {
+		if err := os.Symlink(self, l); err != nil {
+			t.Skip("this environment does not allow symlinks: " + err.Error())
+		}
 	}
-	f := recognizerFixture{
-		entry:  binEntry{command: link, cfg: filepath.Join(t.TempDir(), "jevlin.toml")},
-		shells: []shellKind{shellPOSIX},
-		exe:    func() (string, error) { return self, nil },
-	}
-	if got := f.recognize(f.renderedSearch(t, shellPOSIX, `{"version":1,"query":"q"}`)); got == nil {
-		t.Fatal("a link to this binary was not recognized as this binary")
+	cfg := filepath.Join(t.TempDir(), "jevlin.toml")
+	for _, c := range []struct {
+		rendered, running string
+		want              bool
+	}{
+		{link, link, true},
+		{self, self, true},
+		{link, self, false},
+		{other, link, false},
+	} {
+		f := recognizerFixture{
+			entry:  binEntry{command: c.rendered, cfg: cfg},
+			shells: []shellKind{shellPOSIX},
+			exe:    func() (string, error) { return c.running, nil },
+		}
+		if got := f.recognize(f.renderedSearch(t, shellPOSIX, `{"version":1,"query":"q"}`)) != nil; got != c.want {
+			t.Errorf("a search naming %q, from a hook started as %q: recognized %v, want %v", c.rendered, c.running, got, c.want)
+		}
 	}
 }
 
@@ -201,5 +218,34 @@ func TestRecognizerAcceptsTheCommandTakenFromTheRenderedSkill(t *testing.T) {
 	}
 	if got.body != exampleRequest {
 		t.Fatalf("body from the skill's own block\n got %q\nwant %q", got.body, exampleRequest)
+	}
+}
+
+// The tier command the skill teaches is allowed with every band, default
+// and status, and nothing else.
+func TestRecognizerAllowsTheRenderedTierCommand(t *testing.T) {
+	for _, sh := range []shellKind{shellPOSIX, shellPowerShell} {
+		f := newRecognizerFixture(t, sh)
+		tier, err := f.entry.tierCommandForShell(sh)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := f.recognize(tier + " status"); got == nil || len(got.path) != 2 || got.path[0] != "agents" || got.path[1] != "tier" {
+			t.Fatalf("%s: the rendered tier status was not recognized: %+v", sh, got)
+		}
+		// Setting the band is the user's decision, and every band but the
+		// one in force changes what a search costs: Cursor asks for these
+		// as Claude Code and Codex do, rather than the hook allowing an
+		// agent, or a prompt injected into a search result, to set one.
+		for _, arg := range []string{"fast", "balanced", "max", "default"} {
+			if got := f.recognize(tier + " " + arg); got != nil {
+				t.Fatalf("%s: the hook allows %q, which changes the band without asking", sh, arg)
+			}
+		}
+		for _, bad := range []string{"turbo", "max; echo x", ""} {
+			if got := f.recognize(strings.TrimSpace(tier + " " + bad)); got != nil {
+				t.Fatalf("%s: tier argument %q was allowed", sh, bad)
+			}
+		}
 	}
 }

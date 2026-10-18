@@ -200,6 +200,30 @@ func readWalletFile(dir, name string, v any) error {
 	return json.Unmarshal(data, v)
 }
 
+// walletAddressOnFile is this installation's own wallet address, read
+// without creating or repairing anything, "" when there is no readable
+// wallet. The wallet directory is beside credentials.json (or where
+// JEVLIN_WALLET_DIR names), outside every writable root, so its address is
+// evidence a record in the state directory can be checked against.
+func walletAddressOnFile(getenv func(string) string) string {
+	dir := getenv(walletDirEnv)
+	if dir == "" {
+		d, err := defaultWalletDir()
+		if err != nil {
+			return ""
+		}
+		dir = d
+	}
+	var sc sidecar
+	if readWalletFile(dir, walletSidecarFile, &sc) != nil {
+		return ""
+	}
+	if hrp, _, err := auth.DecodeBech32Address(sc.Address); err != nil || hrp != auth.TwilightHRP {
+		return ""
+	}
+	return sc.Address
+}
+
 // loadSidecar reads the public half; the error explains the fix.
 func loadSidecar(dir string, getenv func(string) string) (*sidecar, string, error) {
 	resolved, err := openWalletDir(dir, getenv)

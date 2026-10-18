@@ -11,6 +11,7 @@ package main
 
 import (
 	"strings"
+	"time"
 
 	"github.com/jevlinai/jevlin-go/pkg/auth"
 	"github.com/jevlinai/jevlin-go/pkg/redact"
@@ -117,15 +118,63 @@ func doctorEnvelope(f doctorFacts, checks []doctorCheck, exitCode int) commandEn
 type statusReport struct {
 	// ConfigSource/ConfigDefaulted/StateDir: see doctorReport's fields of
 	// the same name (ruling D-R1).
-	ConfigSource    string                 `json:"config_source,omitempty"`
-	ConfigDefaulted bool                   `json:"config_defaulted"`
-	StateDir        string                 `json:"state_dir,omitempty"`
-	Mining          statusMiningJSON       `json:"mining"`
-	Agent           *statusAgentJSON       `json:"agent,omitempty"`
-	AgentErr        string                 `json:"agent_error,omitempty"`
-	PayoutHold      *statusPayoutHoldJSON  `json:"payout_hold,omitempty"`
-	Conflicts       []auth.ConflictedEpoch `json:"epoch_conflicts,omitempty"`
-	AS              *statusASJSON          `json:"authorization_server,omitempty"`
+	ConfigSource    string                   `json:"config_source,omitempty"`
+	ConfigDefaulted bool                     `json:"config_defaulted"`
+	StateDir        string                   `json:"state_dir,omitempty"`
+	Mining          statusMiningJSON         `json:"mining"`
+	Agent           *statusAgentJSON         `json:"agent,omitempty"`
+	AgentErr        string                   `json:"agent_error,omitempty"`
+	PayoutHold      *statusPayoutHoldJSON    `json:"payout_hold,omitempty"`
+	RegionRefusal   *statusRegionRefusalJSON `json:"region_refusal,omitempty"`
+	Delivery        *statusDeliveryJSON      `json:"delivery,omitempty"`
+	Conflicts       []auth.ConflictedEpoch   `json:"epoch_conflicts,omitempty"`
+	AS              *statusASJSON            `json:"authorization_server,omitempty"`
+	Update          statusUpdateJSON         `json:"update"`
+}
+
+// statusUpdateJSON is the daily release check (update_check.go): the mode
+// in force, and the stamp's tokens when one is on file. Error is the
+// client's own sentence for a stamp it refused, never the stamp's text.
+type statusUpdateJSON struct {
+	Mode        string `json:"mode"`
+	UnknownMode bool   `json:"unknown_mode,omitempty"`
+	// Checked is whether a check has run for this copy: a stamp about another
+	// binary or version says nothing here, as in the text report.
+	Checked   bool     `json:"checked"`
+	CheckedAt string   `json:"checked_at,omitempty"`
+	Running   string   `json:"running,omitempty"`
+	Latest    string   `json:"latest,omitempty"`
+	Held      string   `json:"held,omitempty"`
+	Outcome   string   `json:"outcome,omitempty"`
+	Failure   string   `json:"failure,omitempty"`
+	Refresh   string   `json:"refresh,omitempty"`
+	Recovery  []string `json:"recovery,omitempty"`
+	Fix       string   `json:"fix,omitempty"`
+	Error     string   `json:"error,omitempty"`
+}
+
+func statusUpdateJSONOf(f updateFacts) statusUpdateJSON {
+	out := statusUpdateJSON{Mode: f.Mode, UnknownMode: f.UnknownMode != ""}
+	if f.Err != nil {
+		out.Error = boundMessage(f.Err.Error())
+		return out
+	}
+	if !f.thisCopy() {
+		return out
+	}
+	st := f.Stamp
+	out.Checked = true
+	out.CheckedAt = st.CheckedAt.UTC().Format(time.RFC3339)
+	out.Running, out.Latest, out.Held, out.Outcome, out.Failure, out.Refresh = st.Running, st.Latest, st.Held, string(st.Outcome), st.Failure, st.Refresh
+	switch {
+	case stampNeedsAPerson(st):
+		out.Recovery, out.Fix = f.Recovery, manualInterventionFix
+	case st.Outcome == updateAvailable:
+		out.Fix = f.Fix
+	case st.Outcome == updateUpgraded && st.Refresh == refreshFailed:
+		out.Fix = "jevlin agents install"
+	}
+	return out
 }
 
 type statusMiningJSON struct {
@@ -154,12 +203,38 @@ type statusAgentJSON struct {
 	EnrolledAt     string   `json:"enrolled_at,omitempty"`
 	PayoutAddress  string   `json:"payout_address,omitempty"`
 	SlotRefusal    string   `json:"slot_refusal,omitempty"`
+	// LegacyPayoutUnused: a payout.json in the state directory and none on
+	// file beside credentials.json. Its address is never reported.
+	LegacyPayoutUnused bool `json:"legacy_payout_unused,omitempty"`
 }
 
 type statusPayoutHoldJSON struct {
 	Reason string `json:"reason"`
 	Active string `json:"active"`
 	Local  string `json:"local"`
+}
+
+// statusDeliveryJSON is evidence recorded and not yet delivered, present
+// while mining is on: the count, when the oldest was made, and whether
+// Codex on Linux is holding it (codexDeliveryUnapproved, issue #80). A
+// count that could not be taken is absent, with WaitingUnknown, never 0:
+// a model reads 0 as "nothing waiting".
+type statusDeliveryJSON struct {
+	Waiting              *int   `json:"waiting,omitempty"`
+	WaitingUnknown       bool   `json:"waiting_unknown,omitempty"`
+	OldestWaiting        string `json:"oldest_waiting_at,omitempty"`
+	CodexHooksUnapproved bool   `json:"codex_hooks_unapproved"`
+}
+
+// statusRegionRefusalJSON is the driver's note of the AS's last region
+// refusal (ADR-MINIS-0026). Hold is true for the temporary code.
+type statusRegionRefusalJSON struct {
+	Code  string `json:"code"`
+	Slot  uint64 `json:"slot_id"`
+	Epoch uint64 `json:"target_epoch"`
+	At    string `json:"at"`
+	Hold  bool   `json:"hold"`
+	Text  string `json:"text"`
 }
 
 type statusASJSON struct {
@@ -206,6 +281,7 @@ func statusEnvelope(f agentIdentityFacts, as *statusASFacts) commandEnvelope {
 			Health:                healthOf(f.Health),
 		},
 		Conflicts: f.Conflicts,
+		Update:    statusUpdateJSONOf(f.Update),
 	}
 	if f.Decision.Err != nil {
 		report.Mining.Detail = boundMessage(f.Decision.Err.Error())
@@ -217,21 +293,23 @@ func statusEnvelope(f agentIdentityFacts, as *statusASFacts) commandEnvelope {
 		report.AgentErr = boundMessage(f.RegistrationErr.Error())
 	} else if f.HasRegistration {
 		reg := f.Registration
+		claimURL, claimCode := printableClaimArtifacts(f.Claim, f.PlatformBaseURL)
 		agent := &statusAgentJSON{
 			AgentID:        reg.AgentID,
 			Status:         reg.Status,
 			Claimed:        reg.Status == "claimed",
 			Scopes:         reg.Scopes,
-			ClaimURL:       reg.ClaimURL,
-			ClaimCode:      reg.ClaimCode,
+			ClaimURL:       claimURL,
+			ClaimCode:      claimCode,
 			ClaimExpiresAt: reg.ClaimExpiresAt,
 			EnrolledSlot:   reg.LastEnrollmentSlot,
 			EnrolledAt:     reg.LastEnrollmentAt,
-			SlotRefusal:    reg.SlotRefusal,
+			SlotRefusal:    slotRefusalText(reg.SlotRefusal, reg.OfferedSlots, f.Mining.PlatformSlot),
 		}
 		if f.PayoutAddressErr == nil && f.HasPayoutAddress {
 			agent.PayoutAddress = f.PayoutAddress
 		}
+		agent.LegacyPayoutUnused = f.LegacyPayout
 		report.Agent = agent
 	}
 	if f.HasHeld {
@@ -240,6 +318,25 @@ func statusEnvelope(f agentIdentityFacts, as *statusASFacts) commandEnvelope {
 			reason = "REPLACES_ACTIVE" // this client's own pre-check, not an AS-returned reason
 		}
 		report.PayoutHold = &statusPayoutHoldJSON{Reason: reason, Active: f.Held.Active, Local: f.Held.Local}
+	}
+	if f.Decision.State == auth.MiningEnabled {
+		d := &statusDeliveryJSON{CodexHooksUnapproved: f.CodexUndelivered}
+		if f.WaitingErr != nil {
+			d.WaitingUnknown = true
+		} else {
+			n := f.Waiting
+			d.Waiting = &n
+		}
+		if !f.OldestWaiting.IsZero() {
+			d.OldestWaiting = f.OldestWaiting.UTC().Format(time.RFC3339)
+		}
+		report.Delivery = d
+	}
+	if f.HasRegion {
+		report.RegionRefusal = &statusRegionRefusalJSON{
+			Code: f.Region.Code, Slot: f.Region.SlotID, Epoch: f.Region.TargetEpoch, At: f.Region.At,
+			Hold: auth.RegionHold(f.Region.Code), Text: auth.RegionRefusalText(f.Region.Code),
+		}
 	}
 	if as != nil {
 		report.AS = statusASJSONOf(*as)
@@ -334,11 +431,17 @@ func connectEnvelope(cfgPath string, getenv func(string) string, exitCode int, n
 				report.Status = reg.Status
 				report.Claimed = reg.Status == "claimed"
 				report.Scopes = reg.Scopes
-				report.ClaimURL = reg.ClaimURL
-				report.ClaimCode = reg.ClaimCode
+				// A run that did not finish carries no claim link: it may have
+				// withheld the link (the platform could not say whose the
+				// stored key is), and the envelope must not show what the run
+				// said it would not.
+				if exitCode == exitOK {
+					claim, _ := claimFor(cfg.Miner, reg.AgentID, nil)
+					report.ClaimURL, report.ClaimCode = printableClaimArtifacts(claim, cfg.Platform.BaseURL)
+				}
 				report.ClaimExpiresAt = reg.ClaimExpiresAt
 				report.EnrolledSlot = reg.LastEnrollmentSlot
-				report.SlotRefusal = reg.SlotRefusal
+				report.SlotRefusal = slotRefusalText(reg.SlotRefusal, reg.OfferedSlots, cfg.Mining.PlatformSlot)
 			}
 		}
 	}
@@ -378,4 +481,15 @@ func connectOutcome(exitCode int, status string) (code string, retryable bool, a
 	default:
 		return "ok", false, actionNone
 	}
+}
+
+// printableClaimArtifacts is the claim URL and code on file beside
+// credentials.json as a report may show them: both dropped together when
+// the URL fails invariant 12, since a code is only meaningful beside the
+// link it was issued with.
+func printableClaimArtifacts(claim auth.ClaimBootstrap, baseURL string) (claimURL, claimCode string) {
+	if printableClaimURL(claim.ClaimURL, baseURL, nil) == "" {
+		return "", ""
+	}
+	return claim.ClaimURL, claim.ClaimCode
 }

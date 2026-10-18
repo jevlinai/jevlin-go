@@ -1,10 +1,10 @@
 package main
 
 // Ruling D-R1 (issue dropin-miner#58): the config a command reads is resolved
-// -config, then JEVLIN_CONFIG, then ./jevlin.toml, then the
-// installation's own config ($JEVLIN_HOME/jevlin.toml, else
-// ~/.jevlin/jevlin.toml, when that file exists), then built-in
-// defaults — through the one function (describeConfigSource) that
+// -config, then JEVLIN_CONFIG, then the installation's own config
+// ($JEVLIN_HOME/jevlin.toml, else ~/.jevlin/jevlin.toml, when that file
+// exists), then built-in defaults. A jevlin.toml in the working directory
+// is never a step — through the one function (describeConfigSource) that
 // loadConfig, configGatePath and every command naming its source all call,
 // so the gate always keys on exactly the file that gets loaded.
 //
@@ -42,7 +42,7 @@ func writeInstallationConfig(t *testing.T, home string) (cfgPath, stateDir strin
 }
 
 // TestConfigResolutionOrderEachStepWinsOverTheNext drives describeConfigSource
-// through all four sources plus the defaults case, each one added on top of
+// through all three sources plus the defaults case, each one added on top of
 // the last so a regression that drops a step shows up as the wrong (looser)
 // source winning rather than as a total failure.
 func TestConfigResolutionOrderEachStepWinsOverTheNext(t *testing.T) {
@@ -62,15 +62,19 @@ func TestConfigResolutionOrderEachStepWinsOverTheNext(t *testing.T) {
 		t.Fatalf("step 4 (installation config): got %q, want %q", src, installPath)
 	}
 
-	// Step 3: ./jevlin.toml beats the installation config.
+	// A jevlin.toml in the working directory is not a step: whoever wrote
+	// the directory would choose where the participant's keys are sent.
 	if err := os.WriteFile(filepath.Join(dir, "jevlin.toml"), []byte("[mining]\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if src := describeConfigSource("", homeEnv); src != "jevlin.toml" {
-		t.Fatalf("step 3 (cwd config): got %q, want jevlin.toml", src)
+	if src := describeConfigSource("", homeEnv); src != installPath {
+		t.Fatalf("cwd jevlin.toml must not shadow the installation config: got %q, want %q", src, installPath)
+	}
+	if src := describeConfigSource("", noEnv); src != "" {
+		t.Fatalf("cwd jevlin.toml must not be picked up on its own: got %q", src)
 	}
 
-	// Step 2: JEVLIN_CONFIG beats ./jevlin.toml — named even though
+	// Step 2: JEVLIN_CONFIG beats the installation config — named even though
 	// the path itself does not exist, matching config.Load's own "explicit
 	// sources are required to exist and error on their own" rule rather
 	// than silently falling through to a weaker source.
@@ -301,5 +305,38 @@ func TestConnectStopsWithTheFileNamedWhenTheInstallationConfigCannotBeParsed(t *
 	}
 	if !strings.Contains(errOut.String(), badPath) {
 		t.Fatalf("refusal did not name the unreadable installation config %q: %s", badPath, errOut.String())
+	}
+}
+
+// TestLoadConfigIgnoresAPlantedWorkingDirectoryConfig is the attack the
+// cwd step allowed: a repo ships jevlin.toml naming its own router, and a
+// participant runs login/search/limits in that checkout. The installation
+// config, not the planted one, must decide where the sr- key goes.
+func TestLoadConfigIgnoresAPlantedWorkingDirectoryConfig(t *testing.T) {
+	cwd := t.TempDir()
+	planted := "[miner]\nrouter_url = \"https://evil.example\"\n"
+	if err := os.WriteFile(filepath.Join(cwd, "jevlin.toml"), []byte(planted), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(cwd)
+
+	home := filepath.Join(t.TempDir(), "home")
+	installPath, _ := writeInstallationConfig(t, home)
+	for name, getenv := range map[string]func(string) string{
+		"no installation":   envOf(map[string]string{"JEVLIN_HOME": filepath.Join(t.TempDir(), "none")}),
+		"with installation": envOf(map[string]string{"JEVLIN_HOME": home}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg, src, err := loadConfig("", getenv)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if src != "" && src != installPath {
+				t.Fatalf("config source = %q, want the installation config or defaults", src)
+			}
+			if u := cfg.Miner.RouterURL; u != nil && u.Host == "evil.example" {
+				t.Fatalf("router taken from the planted cwd jevlin.toml: %v", u)
+			}
+		})
 	}
 }

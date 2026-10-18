@@ -97,7 +97,7 @@ func cmdMiningEnable(args []string, stdin io.Reader, stdout, stderr io.Writer, g
 	}
 
 	br := bufio.NewReader(stdin)
-	outcome, code := askMiningQuestion(stdin, br, stdout, stderr, getenv, cfg, store, isInteractive(stdin, stdout), participantHasOtherAgent)
+	outcome, code := miningEnableDecision(stdin, br, stdout, stderr, getenv, cfg, store, isInteractive(stdin, stdout), participantHasOtherAgent)
 	if code != exitOK {
 		return code
 	}
@@ -136,8 +136,14 @@ func cmdMiningEnable(args []string, stdin io.Reader, stdout, stderr io.Writer, g
 	if !hasScope(reg.Scopes, "mining") {
 		switch reg.Status {
 		case "unclaimed":
+			claim, _ := claimFor(cfg.Miner, reg.AgentID, stderr)
+			claimURL := printableClaimURL(claim.ClaimURL, cfg.Platform.BaseURL, stderr)
+			if claimURL == "" {
+				fmt.Fprintln(stdout, "\nthis agent has not been claimed yet, and no usable claim link is on file. Run `jevlin connect` for a fresh one.")
+				break
+			}
 			fmt.Fprintln(stdout, "\nthis agent has not been claimed yet. Claim it (and grant mining) at:")
-			fmt.Fprintln(stdout, "  "+reg.ClaimURL)
+			fmt.Fprintln(stdout, "  "+claimURL)
 			fmt.Fprintln(stdout, "\nOnce claimed, this resolves automatically the next time `search` runs, or run `jevlin connect` to check now.")
 		case "expired":
 			fmt.Fprintln(stdout, "\nthis registration expired before being claimed; run `jevlin connect` again for a new one")
@@ -154,7 +160,7 @@ func cmdMiningEnable(args []string, stdin io.Reader, stdout, stderr io.Writer, g
 	}
 
 	// Already granted: act now rather than waiting for the next search.
-	_, code = pollOnce(ctx, stdout, stderr, client, store, cfg, &reg, key)
+	_, code = pollOnce(ctx, stdout, stderr, client, store, cfg, &reg, key, getenv)
 	return code
 }
 
@@ -310,6 +316,39 @@ type miningEnableOutcome struct {
 	payoutAddress string // set only when enabled and an address exists; "" means "enabled, no wallet/address yet"
 }
 
+// miningEnableDecision is what `mining enable` decides. When this
+// installation's decision is already enabled, the command's own name has
+// answered "Enable mining rewards?", and nothing here changes that decision:
+// a participant sent here to choose a payout address (status, or the notice
+// about a payout.json in the state directory) met a question that defaults
+// to No, and pressing Enter turned mining off with exit 0; and without a
+// terminal the scripted path wrote the config's [mining] enabled, which a
+// config setup made at a terminal does not carry, so the same run turned it
+// off silently. Only the missing address is finished: asked at a terminal,
+// through finishMiningEnabled's own reader (invariant 18), and without one
+// recorded from the config's payout_address or said to be missing. With an
+// address already on file nothing is asked, and `jevlin payout set` is how
+// the address in force changes. A decision that is not enabled is
+// askMiningQuestion as before.
+func miningEnableDecision(stdin io.Reader, br *bufio.Reader, stdout, stderr io.Writer, getenv func(string) string, cfg *config.Config, store *auth.Store, interactive, participantHasOtherAgent bool) (miningEnableOutcome, int) {
+	if store.ReadMiningDecision().State != auth.MiningEnabled {
+		return askMiningQuestion(stdin, br, stdout, stderr, getenv, cfg, store, interactive, participantHasOtherAgent)
+	}
+	if address, ok, err := loadPayoutAddress(cfg.Miner); err == nil && ok {
+		// What finishMiningEnabled does first, done here too: an enable
+		// cancels a revoke `mining disable` left pending, or the next flush
+		// revokes the session this run just said stays on.
+		if err := store.ClearRevokePending(); err != nil {
+			fmt.Fprintln(stderr, "jevlin:", err)
+			return miningEnableOutcome{}, exitTransport
+		}
+		fmt.Fprintln(stdout, "mining is already enabled here, with payout address "+address+" on file; "+
+			"`jevlin payout set <address>` changes the address in force")
+		return miningEnableOutcome{enabled: true, payoutAddress: address}, exitOK
+	}
+	return finishMiningEnabled(stdin, br, stdout, stderr, getenv, cfg, store, interactive)
+}
+
 // askMiningQuestion is the one place "enable mining rewards?" is
 // decided, shared by connect's first run and `mining enable` later
 // (agent onboarding design §5.5, "the model does not change" decision):
@@ -326,7 +365,7 @@ type miningEnableOutcome struct {
 //
 // It never enrolls or declares anything — only decides whether mining
 // is on and, if so, persists the resulting address via
-// store.SavePayoutAddress so a later detached resume has one thing to
+// savePayoutAddress, beside credentials.json, so a later detached resume has one thing to
 // read before declaring it unattended.
 //
 // interactive is the caller's own isInteractive(stdin, stdout) — passed
@@ -429,12 +468,12 @@ func finishMiningEnabled(stdin io.Reader, br *bufio.Reader, stdout, stderr io.Wr
 
 	if !interactive {
 		if cfg.Mining.PayoutAddress == "" {
-			fmt.Fprintln(stdout, "mining is enabled in the config, but no payout_address was given and no terminal is "+
+			fmt.Fprintln(stdout, "mining is enabled, but no payout_address was given and no terminal is "+
 				"available to create a wallet; no wallet was created. Set mining.payout_address, or run "+
 				"`jevlin mining enable` at a terminal.")
 			return miningEnableOutcome{enabled: true}, exitOK
 		}
-		if err := store.SavePayoutAddress(cfg.Mining.PayoutAddress); err != nil {
+		if err := savePayoutAddress(cfg.Miner, cfg.Mining.PayoutAddress); err != nil {
 			fmt.Fprintln(stderr, "jevlin:", err)
 			return miningEnableOutcome{}, exitTransport
 		}
@@ -456,7 +495,7 @@ func finishMiningEnabled(stdin io.Reader, br *bufio.Reader, stdout, stderr io.Wr
 		addrLine, err := promptBufio(stderr, "Payout address (leave empty to create a wallet here): ", br)
 		if err != nil {
 			fmt.Fprintf(stderr, "\njevlin: %s; no payout address was recorded and no wallet was created. "+
-				"Mining stays enabled from your answer above; run `jevlin mining enable` to give it an address.\n", promptAbortedReason)
+				"Mining stays enabled; run `jevlin mining enable` to give it an address.\n", promptAbortedReason)
 			return miningEnableOutcome{}, exitUsage
 		}
 		address = strings.TrimSpace(addrLine)
@@ -536,7 +575,7 @@ func finishMiningEnabled(stdin io.Reader, br *bufio.Reader, stdout, stderr io.Wr
 		}
 	}
 
-	if err := store.SavePayoutAddress(address); err != nil {
+	if err := savePayoutAddress(cfg.Miner, address); err != nil {
 		fmt.Fprintln(stderr, "jevlin:", err)
 		return miningEnableOutcome{}, exitTransport
 	}

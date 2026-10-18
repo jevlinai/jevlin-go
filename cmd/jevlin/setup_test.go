@@ -21,6 +21,7 @@ package main
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"go/parser"
 	"go/token"
@@ -60,6 +61,9 @@ type setupSandbox struct {
 	// case can make one of them fail.
 	move     func(from, to string) error
 	restrict func(path string, dir bool) error
+	// binaryLocation, when set, replaces the sandbox's accept-all stand-in
+	// for checkBinaryLocation.
+	binaryLocation binaryLocationCheck
 	// agentPlanObserver, when set, is threaded through to setupDeps: a case
 	// wanting the plan agentsStep actually built sets this before calling
 	// run.
@@ -122,7 +126,17 @@ func (s *setupSandbox) agentOps(interactive bool) agentOps {
 	}
 	ops.executable = func() (string, error) { return s.exe, nil }
 	ops.isTerminal = func() bool { return interactive }
+	ops.binaryLocation = s.binaryLocationCheck()
 	return ops
+}
+
+// binaryLocationCheck is the sandbox's stand-in for checkBinaryLocation:
+// the sandbox lives in a temp directory the real check refuses.
+func (s *setupSandbox) binaryLocationCheck() binaryLocationCheck {
+	if s.binaryLocation != nil {
+		return s.binaryLocation
+	}
+	return func(string) ([]string, error) { return nil, nil }
 }
 
 func (s *setupSandbox) deps(stdin io.Reader, stdout, stderr io.Writer, interactive bool) setupDeps {
@@ -143,6 +157,7 @@ func (s *setupSandbox) deps(stdin io.Reader, stdout, stderr io.Writer, interacti
 		now:               fixedSetupClock,
 		move:              s.move,
 		restrict:          s.restrict,
+		binaryLocation:    s.binaryLocationCheck(),
 		agentPlanObserver: s.agentPlanObserver,
 	}
 }
@@ -879,7 +894,7 @@ func writeInstallation(t *testing.T, dir string, parts ...string) {
 			write(filepath.Join("state", "agent.json"), `{"agent_id":"old-agent","status":"claimed"}`)
 			write(credentialsFile, `{"api_key":"sr-old"}`)
 		case "pending":
-			write(filepath.Join("state", "registration_pending.json"), `{"agent_id":"pending-agent"}`)
+			write(registrationJournalFile, `{"agent_id":"pending-agent"}`)
 		case "spool":
 			write(filepath.Join("spool", "unsent-1.json"), `{"v":1}`)
 		case "config":
@@ -975,8 +990,36 @@ func TestSetupAdoptsASourceHoldingOnlyAPendingRegistration(t *testing.T) {
 	if !strings.Contains(out, "A previous installation is set aside at "+sibling) {
 		t.Fatalf("a pending registration did not count as an installation:\n%s", out)
 	}
-	if !lexists(filepath.Join(s.home, "state", "registration_pending.json")) && !lexists(filepath.Join(s.home, "state", "agent.json")) {
+	if !lexists(filepath.Join(s.home, registrationJournalFile)) || lexists(filepath.Join(sibling, registrationJournalFile)) {
 		t.Errorf("the pending registration was not adopted:\n%s", out)
+	}
+}
+
+// A home holding only payout.json is what a first connect leaves when the
+// participant answered the address question and Register then failed. It
+// is not an installation: setup used to report "a payout address" as the
+// previous installation and never offer the one set aside beside it. Now
+// the set-aside identity is offered and adopted, and the home's payout
+// record, the participant's latest answer, is kept.
+func TestALonePayoutRecordDoesNotHideASetAsideInstallation(t *testing.T) {
+	s := newSetupSandbox(t)
+	sibling := s.home + ".bak"
+	writeInstallation(t, sibling, "identity")
+	const homeAddress = `{"address":"twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh"}`
+	writeFileT(t, filepath.Join(sibling, payoutRecordFile), `{"address":"twilight1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc"}`)
+	writeFileT(t, filepath.Join(s.home, payoutRecordFile), homeAddress)
+	_, out, _ := s.run(tty("y", "n"), true, "-no-agents", "-no-profile")
+	if !strings.Contains(out, "A previous installation is set aside at "+sibling) {
+		t.Fatalf("the set-aside installation was not offered:\n%s", out)
+	}
+	if !lexists(filepath.Join(s.home, credentialsFile)) {
+		t.Fatalf("the set-aside identity was not adopted:\n%s", out)
+	}
+	if got, _ := os.ReadFile(filepath.Join(s.home, payoutRecordFile)); string(got) != homeAddress { // #nosec G304 -- the test's own sandbox
+		t.Errorf("the home's own payout record was replaced: %s", got)
+	}
+	if !lexists(filepath.Join(sibling, payoutRecordFile)) {
+		t.Error("the set-aside installation's payout record was not left where it was")
 	}
 }
 
@@ -1882,7 +1925,7 @@ func TestSetupRefusesNpmCopiesThatWillBeDiscarded(t *testing.T) {
 	s.env["JEVLIN_LAUNCH"] = "npm:local"
 	before := snapshotTree(t, s.root)
 	code, _, errOut := s.run(nil, false)
-	if code != exitUsage || !strings.Contains(errOut, "npm install -g jevlin") {
+	if code != exitUsage || !strings.Contains(errOut, "npm install -g @jevlinsearch/jevlin") {
 		t.Fatalf("a project-local npm copy was not refused: exit %d\n%s", code, errOut)
 	}
 	delete(s.env, "JEVLIN_LAUNCH")
@@ -1896,27 +1939,53 @@ func TestSetupRefusesNpmCopiesThatWillBeDiscarded(t *testing.T) {
 	}
 }
 
-// The JS launcher's side of the marker, against fixture paths.
+// The JS launcher's side of the marker, against fixture paths. Every package
+// directory is built from the name npm/package.json publishes, because npm
+// puts a scoped package one directory deeper than an unscoped one: these
+// fixtures once spelled the predecessor's unscoped name, and passed while
+// every real global install of @jevlinsearch/jevlin was classified unknown
+// and refused by setup.
 func TestNpmLauncherClassifiesItsInstall(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Fatal("node is required to verify the npm launcher")
 	}
+	manifest, err := os.ReadFile(filepath.Join("..", "..", "npm", "package.json")) // #nosec G304 -- a fixed file in this repository
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pkg struct {
+		Name string            `json:"name"`
+		Bin  map[string]string `json:"bin"`
+	}
+	if err := json.Unmarshal(manifest, &pkg); err != nil {
+		t.Fatal(err)
+	}
+	if pkg.Name != npmPackageName {
+		t.Fatalf("npm/package.json names %q, the binary expects %q", pkg.Name, npmPackageName)
+	}
+	// The launcher looks for npm's global shim by the command's name.
+	if len(pkg.Bin) != 1 || pkg.Bin["jevlin"] == "" {
+		t.Fatalf("npm/package.json's bin is %v; the launcher looks for npm's shim as jevlin", pkg.Bin)
+	}
 	script := `
 const m = require(process.argv[1]);
+const name = process.argv[2];
+const posix = (dir) => dir + "/" + name;
+const win = (dir) => dir + "\\" + name.split("/").join("\\");
 const has = (set) => (f) => set.includes(f);
 const cases = [
-  ["/usr/local/lib/node_modules/jevlin", "/usr/local/bin/node", {}, "linux", has([]), "global"],
-  ["/home/u/.nvm/versions/node/v22/lib/node_modules/jevlin", "/home/u/.nvm/versions/node/v22/bin/node", {}, "linux", has([]), "global"],
-  ["/home/u/.npm-global/lib/node_modules/jevlin", "/usr/bin/node", {npm_config_prefix: "/home/u/.npm-global"}, "linux", has([]), "global"],
-  ["/home/u/.npm-global/lib/node_modules/jevlin", "/usr/bin/node", {}, "linux", has(["/home/u/.npm-global/bin/jevlin"]), "global"],
-  ["/home/u/proj/node_modules/jevlin", "/usr/local/bin/node", {}, "linux", has([]), "local"],
-  ["/home/u/lib/node_modules/jevlin", "/usr/local/bin/node", {}, "linux", has([]), "local"],
-  ["/home/u/.npm/_npx/9f/node_modules/jevlin", "/usr/local/bin/node", {}, "linux", has([]), "local"],
-  ["/opt/unpacked/jevlin", "/usr/local/bin/node", {}, "linux", has([]), "unknown"],
-  ["C:\\Users\\u\\AppData\\Roaming\\npm\\node_modules\\jevlin", "C:\\Program Files\\nodejs\\node.exe", {}, "win32", has(["C:\\Users\\u\\AppData\\Roaming\\npm\\jevlin.cmd"]), "global"],
-  ["C:\\Program Files\\nodejs\\node_modules\\jevlin", "C:\\Program Files\\nodejs\\node.exe", {}, "win32", has([]), "global"],
-  ["C:\\src\\proj\\node_modules\\jevlin", "C:\\Program Files\\nodejs\\node.exe", {}, "win32", has([]), "local"],
+  [posix("/usr/local/lib/node_modules"), "/usr/local/bin/node", {}, "linux", has([]), "global"],
+  [posix("/home/u/.nvm/versions/node/v22/lib/node_modules"), "/home/u/.nvm/versions/node/v22/bin/node", {}, "darwin", has([]), "global"],
+  [posix("/home/u/.npm-global/lib/node_modules"), "/usr/bin/node", {npm_config_prefix: "/home/u/.npm-global"}, "linux", has([]), "global"],
+  [posix("/home/u/.npm-global/lib/node_modules"), "/usr/bin/node", {}, "linux", has(["/home/u/.npm-global/bin/jevlin"]), "global"],
+  [posix("/home/u/proj/node_modules"), "/usr/local/bin/node", {}, "linux", has([]), "local"],
+  [posix("/home/u/lib/node_modules"), "/usr/local/bin/node", {}, "linux", has([]), "local"],
+  [posix("/home/u/.npm/_npx/9f/node_modules"), "/usr/local/bin/node", {}, "linux", has([]), "local"],
+  [posix("/opt/unpacked"), "/usr/local/bin/node", {}, "linux", has([]), "unknown"],
+  [win("C:\\Users\\u\\AppData\\Roaming\\npm\\node_modules"), "C:\\Program Files\\nodejs\\node.exe", {}, "win32", has(["C:\\Users\\u\\AppData\\Roaming\\npm\\jevlin.cmd"]), "global"],
+  [win("C:\\Program Files\\nodejs\\node_modules"), "C:\\Program Files\\nodejs\\node.exe", {}, "win32", has([]), "global"],
+  [win("C:\\src\\proj\\node_modules"), "C:\\Program Files\\nodejs\\node.exe", {}, "win32", has([]), "local"],
 ];
 const bad = [];
 for (const [pkg, exec, env, platform, exists, want] of cases) {
@@ -1929,7 +1998,7 @@ if (bad.length) { console.log(bad.join("\n")); process.exit(1); }
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := exec.Command(node, "-e", script, launcher).CombinedOutput() // #nosec G204 -- node from PATH running a fixed script against this repo's launcher
+	out, err := exec.Command(node, "-e", script, launcher, pkg.Name).CombinedOutput() // #nosec G204 -- node from PATH running a fixed script against this repo's launcher
 	if err != nil {
 		t.Fatalf("launcher classification: %v\n%s", err, out)
 	}
@@ -1948,7 +2017,14 @@ func TestSetupEditsASymlinkedProfileThroughTheLink(t *testing.T) {
 		t.Fatal(err)
 	}
 	target := filepath.Join(dotfiles, "zshrc")
-	if err := os.WriteFile(target, []byte("alias ll='ls -l'\n"), 0o640); err != nil { // #nosec G306 -- a profile with a deliberate non-default mode, to prove it is kept
+	if err := os.WriteFile(target, []byte("alias ll='ls -l'\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The non-default mode is set with Chmod, not WriteFile: that mode passes
+	// through the umask, and 0077 would hand setup a 0600 profile, which is
+	// also what its replacement file is before any Chmod, so "kept" would prove
+	// nothing.
+	if err := os.Chmod(target, 0o640); err != nil { // #nosec G302 -- a profile with a deliberate non-default mode, to prove it is kept
 		t.Fatal(err)
 	}
 	if err := os.Symlink(target, s.profilePath()); err != nil {
@@ -2084,5 +2160,197 @@ func TestSetupFilesNeverImportOSExec(t *testing.T) {
 	}
 	if checked < 6 {
 		t.Fatalf("checked %d setup source files, want at least 6: %v", checked, files)
+	}
+}
+
+// ── Codex's question about the participant's own settings, in setup ──
+
+// seedWorkspaceDefault puts a Codex config whose default_permissions is
+// the built-in ":workspace" on the sandbox's disk: a state setup must ask
+// about before switching it.
+func (s *setupSandbox) seedWorkspaceDefault() (path, before string) {
+	s.t.Helper()
+	path = s.paths().codexConfig
+	before = "default_permissions = \":workspace\"\n"
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		s.t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
+		s.t.Fatal(err)
+	}
+	return path, before
+}
+
+// setup's -yes answers setup's own questions, never Codex's question about
+// the participant's settings: a typed no there leaves Codex as it was, and
+// the other agent is still set up.
+func TestSetupYesDoesNotAnswerTheCodexQuestion(t *testing.T) {
+	// The question is the profile's; the Windows block asks nothing.
+	onCodexOS(t, "linux")
+	s := newSetupSandbox(t)
+	s.platform.claim("credits")
+	path, before := s.seedWorkspaceDefault()
+	code, out, errOut := s.run(tty("n", "n"), true, "-yes", "-no-profile", "-no-agents", "-with", "codex", "-with", "claude")
+	if code != exitOK {
+		t.Fatalf("setup exited %d\n%s\n%s", code, out, errOut)
+	}
+	if !strings.Contains(out, "Switch? [y/N]: ") {
+		t.Errorf("setup -yes did not ask the Codex question:\n%s", out)
+	}
+	if got := string(s.readFile(path)); got != before {
+		t.Errorf("a typed no at setup changed Codex's config:\n%s", got)
+	}
+	if !lexists(s.paths().claudeSkill) {
+		t.Errorf("Claude Code was not set up beside the declined Codex:\n%s", out)
+	}
+}
+
+// No line at Codex's question stops setup before any agent is written
+// (hard invariant 18).
+func TestSetupStopsOnAnUnansweredCodexQuestion(t *testing.T) {
+	// The question is the profile's; the Windows block asks nothing.
+	onCodexOS(t, "linux")
+	s := newSetupSandbox(t)
+	s.platform.claim("credits")
+	path, before := s.seedWorkspaceDefault()
+	code, out, errOut := s.run(tty("n"), true, "-yes", "-no-profile", "-no-agents", "-with", "codex", "-with", "claude")
+	if code != exitUsage {
+		t.Errorf("setup exited %d with Codex's question unanswered, want 2\n%s\n%s", code, out, errOut)
+	}
+	if lexists(s.paths().claudeSkill) || lexists(s.paths().claudeSettings) {
+		t.Errorf("setup wrote Claude Code's files after an unanswered question:\n%s", out)
+	}
+	if got := string(s.readFile(path)); got != before {
+		t.Errorf("setup changed Codex's config after an unanswered question:\n%s", got)
+	}
+}
+
+// A setup dry run shows Codex's question and asks nothing.
+func TestSetupDryRunPrintsTheCodexQuestion(t *testing.T) {
+	// The question is the profile's; the Windows block asks nothing.
+	onCodexOS(t, "linux")
+	s := newSetupSandbox(t)
+	_, before := s.seedWorkspaceDefault()
+	code, out, errOut := s.run(tty(), true, "-dry-run", "-yes", "-no-profile", "-no-agents", "-with", "codex")
+	if code != exitOK {
+		t.Fatalf("setup -dry-run exited %d\n%s\n%s", code, out, errOut)
+	}
+	if !strings.Contains(out, "(dry run: not asked; the plan below is what a yes would write)") || strings.Contains(out, "needs your yes at a terminal") {
+		t.Errorf("the dry run did not show the question:\n%s", out)
+	}
+	if got := string(s.readFile(s.paths().codexConfig)); got != before {
+		t.Errorf("a dry run changed Codex's config:\n%s", got)
+	}
+}
+
+// setup's own agents question unanswered still closes our old open block,
+// and writes nothing else.
+func TestSetupClosesTheOldBlockWhenItsAgentsQuestionGoesUnanswered(t *testing.T) {
+	s := newSetupSandbox(t)
+	s.platform.claim("credits")
+	s.onPath["codex"] = true
+	path := s.paths().codexConfig
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	roots := []string{filepath.Join(s.home, "intake"), filepath.Join(s.home, "sessions"), filepath.Join(s.home, "spool"), filepath.Join(s.home, "state")}
+	q := make([]string, len(roots))
+	for i, r := range roots {
+		q[i] = mustTOMLString(r)
+	}
+	before := "model = \"gpt-5\"\n" + agentsMarkerBegin + "\n[sandbox_workspace_write]\nnetwork_access = true\nwritable_roots = [" + strings.Join(q, ", ") + "]\n" + agentsMarkerEnd + "\n"
+	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut := s.run(tty("n"), true, "-no-profile")
+	if code != exitUsage {
+		t.Errorf("setup exited %d with its agents question unanswered, want 2\n%s\n%s", code, out, errOut)
+	}
+	if got := string(s.readFile(path)); got != strings.Replace(before, "network_access = true\n", "", 1) {
+		t.Errorf("the old block was not closed, or more changed:\n%s\n%s", got, errOut)
+	}
+	if lexists(s.paths().codexSkill) {
+		t.Errorf("setup wrote Codex's skill after an unanswered question")
+	}
+	if !strings.Contains(errOut, "only jevlin's own block in Codex's config was closed") {
+		t.Errorf("setup does not say what it closed:\n%s", errOut)
+	}
+}
+
+// A typed no at setup's agents question also closes our old open block, as
+// no answer does, and exits 0: the two stay apart by exit code.
+func TestSetupClosesTheOldBlockOnATypedNo(t *testing.T) {
+	s := newSetupSandbox(t)
+	s.platform.claim("credits")
+	s.onPath["codex"] = true
+	path := s.paths().codexConfig
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	roots := []string{filepath.Join(s.home, "intake"), filepath.Join(s.home, "sessions"), filepath.Join(s.home, "spool"), filepath.Join(s.home, "state")}
+	q := make([]string, len(roots))
+	for i, r := range roots {
+		q[i] = mustTOMLString(r)
+	}
+	before := "model = \"gpt-5\"\n" + agentsMarkerBegin + "\n[sandbox_workspace_write]\nnetwork_access = true\nwritable_roots = [" + strings.Join(q, ", ") + "]\n" + agentsMarkerEnd + "\n"
+	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut := s.run(tty("n", "n"), true, "-no-profile")
+	if code != exitOK {
+		t.Errorf("setup exited %d after a typed no, want 0\n%s\n%s", code, out, errOut)
+	}
+	if got := string(s.readFile(path)); got != strings.Replace(before, "network_access = true\n", "", 1) {
+		t.Errorf("a typed no left the old block open, or changed more:\n%s", got)
+	}
+	if lexists(s.paths().codexSkill) || !strings.Contains(out, "except that jevlin's own open block in Codex's config was closed") {
+		t.Errorf("setup wrote more than the close, or did not say it closed it:\n%s", out)
+	}
+}
+
+// Setup's agents paragraph says of Codex what the planner for this OS
+// writes: off Windows the permission profile with the search hosts through
+// Codex's proxy, on Windows the writable directories alone and no network.
+// Each form's claim is checked against an install the same form plans.
+func TestTheAgentsParagraphSaysWhatEachCodexFormWrites(t *testing.T) {
+	for _, tc := range []struct {
+		goos          string
+		says, notSays []string
+		writes        string // a line of config.toml that form writes
+		notWrites     string // one it never writes
+	}{
+		{"linux",
+			[]string{"writes a permission profile into its config.toml", "network access to the\nsearch hosts only, through Codex's proxy"},
+			[]string{"opens no network"},
+			"[permissions.jevlin.network.domains]", "[" + codexSandboxTable + "]"},
+		{"windows",
+			[]string{"sessions and spool directories — as writable", "It opens no network: a\nsearch from Codex needs Codex's approval to reach the router."},
+			[]string{"permission profile", "proxy", "network access to"},
+			"[" + codexSandboxTable + "]", "network_access"},
+	} {
+		t.Run(tc.goos, func(t *testing.T) {
+			cfgPath, _ := sandboxTestConfig(t)
+			onCodexOS(t, tc.goos)
+			p := agentsParagraph()
+			for _, w := range tc.says {
+				if !strings.Contains(p, w) {
+					t.Errorf("the paragraph does not say %q:\n%s", w, p)
+				}
+			}
+			for _, w := range tc.notSays {
+				if strings.Contains(p, w) {
+					t.Errorf("the paragraph says %q, which this form does not write:\n%s", w, p)
+				}
+			}
+			m, ops := newFakeMachine("codex")
+			m.files[codexConfigPath] = []byte("model = \"gpt-5\"\n")
+			if code, out := runAgentsAt(t, ops, "", "install", "-config", cfgPath, "-client", "codex", "-yes"); code != exitOK {
+				t.Fatalf("install: exit %d\n%s", code, out)
+			}
+			_, block, _, ok := markedRegion(m.files[codexConfigPath])
+			if !ok || !strings.Contains(block, tc.writes) || strings.Contains(block, tc.notWrites) {
+				t.Errorf("this form's block is not what the paragraph describes:\n%s", m.files[codexConfigPath])
+			}
+		})
 	}
 }

@@ -74,6 +74,9 @@ func renderShellCommand(sh shellKind, tokens []cmdToken) (string, error) {
 			out = append(out, tok.text)
 			continue
 		}
+		if !quotableFor(sh, tok.text) {
+			return "", fmt.Errorf("%s cannot carry a path containing control characters, invalid UTF-8 or unsupported quotes: %q", sh, tok.text)
+		}
 		switch sh {
 		case shellPOSIX:
 			out = append(out, posixQuoteArg(tok.text))
@@ -223,6 +226,12 @@ func (e binEntry) hookCommandForRunners(shells []shellKind, sub ...string) (cmd,
 	}
 	return cmd, "its hook runner is not established (" + strings.Join(kinds, " or ") +
 		"); the command is the one proven under cmd, and no single form runs under all of them", nil
+}
+
+// tierCommandForShell is what the skill runs for /jevlin tier <band>.
+func (e binEntry) tierCommandForShell(sh shellKind) (string, error) {
+	tokens := append([]cmdToken{pathToken(e.command), literalToken("agents"), literalToken("tier")}, e.configTokens()...)
+	return renderShellCommand(sh, tokens)
 }
 
 // preferCommandForShell is what the skill runs for /jevlin on|off|status.

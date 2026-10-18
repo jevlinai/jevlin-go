@@ -858,6 +858,15 @@ func TestSkillCommandsRunInTheShellTheyAreRenderedFor(t *testing.T) {
 						t.Fatalf("the preference command did not run under %s\n%s", sh.name, out)
 					}
 				})
+				t.Run("tier", func(t *testing.T) {
+					in := newExecInstallation(t)
+					block := skillBlockFor(t, in.renderedSkill(host), sh.kind, "tier")
+					script := strings.Replace(block.body, "<band>", "status", 1)
+					out := runInShell(t, sh, script, nil, in.env)
+					if out.exit != 0 || !strings.Contains(out.stdout, "search tier:") {
+						t.Fatalf("the tier command did not run under %s\n%s", sh.name, out)
+					}
+				})
 				t.Run("human form", func(t *testing.T) {
 					in := newExecInstallation(t)
 					block := skillBlockFor(t, in.renderedSkill(host), sh.kind, "human")
@@ -1035,12 +1044,22 @@ var hookCases = map[string][]hookCase{
 	"claude": {
 		{
 			event: "PreToolUse",
+			// The search the skill renders for the Bash tool, so the allow is
+			// asserted too: the hook allows only the binary spelled exactly as
+			// its own os.Executable, and this is where that spelling meets the
+			// one the hook runner starts it by. On Windows that runner is Git
+			// Bash, and no other case runs the allow through it.
 			payload: func(in *execInstallation) any {
+				_, search, err := searchBlockForShell(shellPOSIX, in.entry, `{"version":1,"query":"exact query text"}`)
+				if err != nil {
+					return nil
+				}
 				return map[string]any{"session_id": "exec-session", "tool_use_id": "exec-call", "tool_name": "Bash", "cwd": in.root,
-					"tool_input": map[string]any{"command": in.entry.stdinCommand()}}
+					"tool_input": map[string]any{"command": search}}
 			},
 			proof: func(t *testing.T, in *execInstallation, out execOutcome) bool {
-				return out.exit == 0 && strings.Contains(out.stdout, `"updatedInput"`) && strings.Contains(out.stdout, bridgeEnv+"=") && lineageFileExists(in)
+				return out.exit == 0 && strings.Contains(out.stdout, `"permissionDecision":"allow"`) &&
+					strings.Contains(out.stdout, `"updatedInput"`) && strings.Contains(out.stdout, bridgeEnv+"=") && lineageFileExists(in)
 			},
 		},
 		{

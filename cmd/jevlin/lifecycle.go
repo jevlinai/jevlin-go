@@ -22,6 +22,12 @@ package main
 //	H.lifecycle.lock → setup.lock → connect.lock → flush.lock
 //	H.lifecycle.lock → setup.lock → <resolved binary>.update.lock   (upgrade)
 //	H.lifecycle.lock → setup.lock → connect.lock → flush.lock → <resolved binary>.update.lock   (uninstall -binary)
+//	update_check.lock → H.lifecycle.lock → setup.lock → <resolved binary>.update.lock   (upgrade -auto)
+//
+// The daily check's update_check.lock, in the installation's own directory,
+// comes first, and every lock after it is taken in one attempt, only to
+// replace the binary. A person's upgrade or rollback takes it only after
+// letting go of its own locks, to write the check's record.
 //
 // The update lock uninstall -binary takes last is the same identity an
 // upgrade holds, <ResolveExecutable(binary)>.update.lock, so the two never
@@ -34,8 +40,8 @@ package main
 //
 // Who is keyed where. connect and flush key the gate on the directory of the
 // config file they are about to load — chosen exactly as loadConfig chooses
-// it (-config, then JEVLIN_CONFIG, then ./jevlin.toml, then the
-// installation's own config when that file exists) — and they know that
+// it (-config, then JEVLIN_CONFIG, then the installation's own config
+// when that file exists) — and they know that
 // path before loading anything. setup keys it on the installation
 // directory it writes, whose config is H/jevlin.toml; on the installer
 // layout the two keys are the same path. Every path that names a gate goes

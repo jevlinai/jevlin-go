@@ -252,8 +252,8 @@ func TestConfigGatePathFollowsTheConfigLoadConfigWouldChoose(t *testing.T) {
 	writeFileT(t, filepath.Join(cwd, setupConfigFile), "")
 	t.Chdir(cwd)
 	wd, _ := os.Getwd() // the platform's own spelling of cwd (macOS /private)
-	if got, _ := configGatePath("", envOf(map[string]string{"JEVLIN_HOME": c})); got != lifecycleGatePath(wd) {
-		t.Errorf("./jevlin.toml must key the gate like loadConfig picks it up: got %s, want %s", got, lifecycleGatePath(wd))
+	if got, _ := configGatePath("", envOf(map[string]string{"JEVLIN_HOME": c})); got != lifecycleGatePath(c) {
+		t.Errorf("./jevlin.toml is never loaded implicitly, so JEVLIN_HOME keys the gate, not %s: got %s", lifecycleGatePath(wd), got)
 	}
 
 	t.Chdir(root)

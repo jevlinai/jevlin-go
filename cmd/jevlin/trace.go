@@ -15,6 +15,7 @@ package main
 // never the host's own ids.
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -66,6 +67,19 @@ func traceHash(raw string) string {
 	}
 	sum := sha256.Sum256([]byte("tokendrop-trace-v1|" + raw))
 	return hex.EncodeToString(sum[:16])
+}
+
+// traceKeyedHash derives a stable identifier from guessable local facts
+// (hostname, parent pid). Unlike traceHash it is keyed with the
+// installation's secret trace key, so whoever receives it cannot recover
+// the inputs by enumerating them. Empty when there is no key.
+func traceKeyedHash(key []byte, raw string) string {
+	if len(key) == 0 || raw == "" {
+		return ""
+	}
+	mac := hmac.New(sha256.New, key)
+	_, _ = mac.Write([]byte("jevlin-trace-local-v1|" + raw))
+	return hex.EncodeToString(mac.Sum(nil)[:16])
 }
 
 // traceRandomID is the per-process fallback session identity for hosts with

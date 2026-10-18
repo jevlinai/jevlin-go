@@ -80,10 +80,14 @@ the tool (what an agent runs):
              cancel, 2=usage, 3=HTTP 4xx, 4=HTTP 5xx or invalid server response.
   agents     agents install|status|uninstall — find {{HOST_LABELS}} on this machine and give each
              the search skill and the hooks it supports. -dry-run previews,
-             -yes skips the prompt, -client <name> picks one ({{HOST_IDS}}).
+             -client <name> picks one ({{HOST_IDS}}). -yes skips the Proceed?
+             prompt, never a question about a Codex setting of yours.
              agents prefer on|off — whether this search or the agent's own
              is the default (off keeps this one for when you name it);
              in the agent, /jevlin off and /jevlin on do the same
+             agents tier fast|balanced|max|default — the band every search
+             carries unless the request names one; in the agent,
+             /jevlin tier <band> does the same
   hook       internal: the hook runner the agents call around a search;
              JEVLIN_TRACE=off turns traces off entirely
   flush      the mining plane, once: join the open epoch, promote recorded
@@ -100,7 +104,8 @@ unattended once claimed.
              the shell profile (PATH, JEVLIN_CONFIG and, when a wallet
              was made here, JEVLIN_WALLET_DIR; Windows: the user PATH and
              JEVLIN_CONFIG only) and the coding agents found here.
-             -yes answers the profile and agents questions, terminal or not
+             -yes answers the profile and agents questions, terminal or not,
+             never a question about a Codex setting of yours
              -yes may come from automated callers
              -yes never answers the mining question or adopts without a terminal
              -no-profile leaves the shell profile (Windows: user environment)
@@ -126,7 +131,7 @@ unattended once claimed.
              checksum and by running it before and after it is installed;
              the replaced binary is kept as <binary>.previous. -rollback
              puts that one back, with no network. An npm copy is updated
-             with npm install -g jevlin@latest
+             with npm install -g @jevlinsearch/jevlin@latest
   connect    ask whether to mine, then register [-name …] (the answer hints
              the claim page's mining pre-tick); prints the claim URL and
              code and polls (bounded) until claimed. A second run resumes;
@@ -164,16 +169,19 @@ connect): enroll -> payout -> join -> login
 is it working, was I paid:
   doctor     checks in a participant's terms — authorization server,
              enrolled, joined this epoch, payout address, earning, intake
-             writable, recording and, on Windows, wallet access — each
-             saying what to do. Exits non-zero only when every check came
-             back UNKNOWN: a NO is a successful diagnosis. "intake
+             writable, recording and, on Windows, wallet access and state
+             access — each saying what to do. Exits non-zero only when every
+             check came back UNKNOWN: a NO is a successful diagnosis. "intake
              writable", when that check is active, runs one bounded probe
              operation using at most one inert non-.json file in the
              directory a search records into; cleanup is attempted and a
-             leftover is reported by pathname. "recording" flags recent
-             miner activity with nothing queued locally or verified at the
-             AS. "wallet access" names anyone but you who can read the
-             installation's wallet. -json reports as one JSON object
+             leftover is reported by pathname. "recording" flags recent miner
+             activity with nothing queued locally or verified at the AS.
+             "wallet access" names anyone but you who can read the
+             installation's wallet. "state access" says whose the state
+             directory and its credentials are and names anyone else its
+             access list admits, which an agent's sandbox is expected to be;
+             it reports and changes nothing. -json reports as one JSON object
              instead of text
   earnings   what the chain has paid to your payout address
   limits     this key's spend caps and today's spend against the
@@ -189,9 +197,11 @@ wallet (a reward address this installation controls):
   wallet balance   what the chain says this address holds
   wallet send      move funds to another twilight address: -to and -amount
 
-Every command takes -config <file>, falling back to JEVLIN_CONFIG, then
-./jevlin.toml, then the installation's own config ($JEVLIN_HOME/
-jevlin.toml, else ~/.jevlin/jevlin.toml, when that file exists).
+A command that reads the config takes -config <file> (setup, upgrade and
+uninstall take -home instead), falling back to JEVLIN_CONFIG, then the
+installation's own config ($JEVLIN_HOME/jevlin.toml, else
+~/.jevlin/jevlin.toml, when that file exists). A jevlin.toml in the
+working directory is never read unless named.
 status and doctor name the file they resolved, or say plainly that none was
 found and built-in defaults are in use; connect refuses outright when
 resolution finds no config file at all, and says to run jevlin setup.
@@ -199,8 +209,8 @@ The [mining] block names the AS, chain and slot; the
 [miner] block says router intake is configured (whether mining is ON is the
 persisted decision, not a config key); [platform] names two hosts — base_url,
 the portal a printed claim URL is checked against and nothing dials
-(platform.nyks.dev), and agents_api_url, where connect and mining enable
-actually send register/status/enroll (agents-v1.nyks.dev). Searches take
+(platform.jevlin.ai), and agents_api_url, where connect and mining enable
+actually send register/status/enroll (agents-v1.jevlin.ai). Searches take
 your sr- key from JEVLIN_API_KEY if it is set, else from the file
 login (or connect) wrote. Otherwise run connect or login to set up search.
 `

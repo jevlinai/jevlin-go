@@ -154,6 +154,12 @@ type doctorFacts struct {
 	// rather than becoming a check of its own.
 	PayoutHeld    auth.PayoutBindingHeld
 	HasPayoutHeld bool
+	// RegionRefusal/HasRegionRefusal is the driver's note of the AS's last
+	// region refusal (ADR-MINIS-0026), read on the same terms as the held
+	// note: corroborating, for the configured slot only, unreadable means
+	// absent.
+	RegionRefusal    auth.RegionRefusal
+	HasRegionRefusal bool
 
 	MiningDecision    auth.MiningDecision
 	LocalStateKnown   bool
@@ -195,6 +201,15 @@ type doctorFacts struct {
 	// there is no wallet access check.
 	Wallet walletAccessFacts
 
+	// State is who can open the state directory and its credentials, where
+	// the platform has access lists to ask (state_acl.go); elsewhere it is not
+	// checked and there is no state access check.
+	State stateAccessFacts
+
+	// Update is the daily release check's stamp and mode (update_check.go),
+	// for `up to date`. Gathered by cmdDoctor beside the config facts.
+	Update updateFacts
+
 	// Now is sampled once, by the gatherer. Nothing downstream calls
 	// time.Now(), so a judgment over these facts is reproducible.
 	Now time.Time
@@ -213,9 +228,13 @@ func assembleDoctor(f doctorFacts) []doctorCheck {
 		doctorEarningCheck(f),
 		doctorIntakeCheck(f),
 		doctorRecordingCheck(f),
+		doctorUpdateCheck(f),
 	}
 	if f.Wallet.Checked {
 		checks = append(checks, doctorWalletCheck(f.Wallet))
+	}
+	if f.State.Checked {
+		checks = append(checks, doctorStateCheck(f.State))
 	}
 	return checks
 }
@@ -311,6 +330,24 @@ func doctorJoinedCheck(f doctorFacts) doctorCheck {
 	case auth.JoinHeld(f.Status.JoinStatus):
 		c.Verdict = verdictOK
 		c.Detail = fmt.Sprintf("epoch %d%s — %s", f.Epoch, doctorEpochOrigin(f), strings.ToLower(f.Status.JoinStatus))
+	case f.HasRegionRefusal && f.RegionRefusal.TargetEpoch == f.Epoch:
+		// The AS refused this epoch under its region policy. Not a fault
+		// in this installation and, for two of the three codes, not a fix
+		// either: the address is where it is, and search still works.
+		// The hold's fix is a join, and a join is refused once enrollment
+		// in the epoch has closed, so then it is the closed epoch's fix.
+		c.Verdict = verdictNo
+		c.Detail = fmt.Sprintf("epoch %d%s — %s", f.Epoch, doctorEpochOrigin(f), auth.RegionRefusalText(f.RegionRefusal.Code))
+		if !f.Status.Joinable {
+			c.Detail += fmt.Sprintf("; enrollment in it has since closed (phase %s)", f.Status.Phase)
+		}
+		switch {
+		case !auth.RegionHold(f.RegionRefusal.Code):
+		case f.Status.Joinable:
+			c.Fix = "connect without the VPN or proxy, then: jevlin join -config <file>"
+		default:
+			c.Fix = "connect without the VPN or proxy, wait for the operator to open the next target, then: jevlin join -config <file>"
+		}
 	case f.Status.Joinable:
 		c.Verdict = verdictNo
 		c.Detail = fmt.Sprintf("epoch %d%s is open and this installation is not in it", f.Epoch, doctorEpochOrigin(f))
@@ -355,7 +392,13 @@ func doctorEpochOrigin(f doctorFacts) string {
 
 func doctorPayoutCheck(f doctorFacts) doctorCheck {
 	c := doctorCheck{Name: "payout address"}
-	if f.HasPayoutHeld {
+	// When the AS answered this run, its answer is what is true; the note is
+	// shown only while it agrees with that answer about what is in force. A
+	// note that does not was overtaken (an operator activated the change),
+	// or was planted in the state directory to stand in for the AS.
+	asAnswered := f.DocErr == nil && f.StandingErr == nil
+	agrees := f.Standing != nil && f.Standing.Active != nil && f.Standing.Active.Address == f.PayoutHeld.Active
+	if f.HasPayoutHeld && (!asAnswered || agrees) {
 		// The same local fact status already reports (enroll.go): connect
 		// declined to declare because the AS already has a different
 		// address active. Reporting it here does not need PayoutStanding
@@ -363,15 +406,16 @@ func doctorPayoutCheck(f doctorFacts) doctorCheck {
 		// and an AS-reported Active in force this run would otherwise read
 		// as "your rewards go where you expect", which is exactly the
 		// claim a held binding makes false.
-		reason := f.PayoutHeld.HeldFor
-		if reason == "" {
-			reason = "REPLACES_ACTIVE" // this client's own read-before-declare pre-check, not an AS-returned reason
+		live := ""
+		if asAnswered && f.Standing != nil && f.Standing.Active != nil {
+			live = payoutShown(f.Standing.Active)
 		}
 		c.Verdict = verdictNo
-		c.Detail = fmt.Sprintf("HELD (%s) — the AS has %s active for this participant; this installation "+
-			"would declare %s. Changing the active binding is an operator-activated change.",
-			reason, f.PayoutHeld.Active, f.PayoutHeld.Local)
+		c.Detail = heldNoteText(f.PayoutHeld, live)
 		c.Fix = "a Slot operator must activate the change; no command here can"
+		if f.PayoutHeld.HeldFor == auth.HeldAddressInUse {
+			c.Fix = "set a different address, or talk to your Slot operator; waiting will not activate this one"
+		}
 		return c
 	}
 	switch {
@@ -506,8 +550,12 @@ func cmdDoctor(args []string, stdout, stderr io.Writer) int {
 	f.ASConfigKnown = true
 	f.ConfigSource = src
 	f.StateDir = cfg.Mining.StateDir
+	f.Update = gatherUpdateFacts(cfg, os.Getenv)
 	if walletACL.managed {
 		f.Wallet = inspectWalletAccess(doctorWalletDir(src, os.Getenv))
+	}
+	if stateACL.managed {
+		f.State = inspectStateAccess(cfg.Mining.StateDir, auth.CredentialFiles())
 	}
 	checks := assembleDoctor(f)
 	if *asJSON {
@@ -637,6 +685,7 @@ func gatherDoctorFactsFor(ctx context.Context, as asClient, m config.Mining, min
 
 	// Local first, and unconditionally: it is the half that still answers
 	// when nothing else does.
+	var regionStore *auth.Store
 	if store, err := auth.OpenStoreExisting(m.StateDir); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			f.LocalStateKnown = true
@@ -662,9 +711,24 @@ func gatherDoctorFactsFor(ctx context.Context, as asClient, m config.Mining, min
 			f.HasRegistration, f.RegistrationSlot, f.RegistrationAt = true, reg.LastEnrollmentSlot, reg.LastEnrollmentAt
 		}
 		f.Health, f.HealthErr = store.HealthRecords()
+		// The held note is in the state directory: counted only when its
+		// local address is the one this installation would declare
+		// (payoutAddressToDeclare, status's rule too), as every note this
+		// client writes is, including one a sandboxed resume wrote for a
+		// config or wallet address it could not record.
 		if held, ok, err := store.LoadPayoutBindingHeld(); err == nil && ok {
-			f.PayoutHeld, f.HasPayoutHeld = held, true
+			local, source, lerr := payoutAddressToDeclare(&config.Config{Mining: m, Miner: miner}, store, os.Getenv)
+			if lerr == nil && source != payoutNone && held.Local == local {
+				f.PayoutHeld, f.HasPayoutHeld = held, true
+			}
 		}
+		// The slot's latest note for now; once the epoch is known (below)
+		// it is replaced by that epoch's own, which is the verdict
+		// "joined this epoch" explains.
+		if region, ok, err := store.LatestRegionRefusal(m.SlotID); err == nil && ok {
+			f.RegionRefusal, f.HasRegionRefusal = region, true
+		}
+		regionStore = store
 	}
 
 	// The miner half. The probe is the one write doctor performs, and it
@@ -698,6 +762,11 @@ func gatherDoctorFactsFor(ctx context.Context, as asClient, m config.Mining, min
 	f.Epoch, f.EpochKnown, f.EpochErr = epochFor(ctx, as, m.TargetEpoch)
 	if !f.EpochKnown {
 		return f
+	}
+	if regionStore != nil {
+		if region, ok, err := regionStore.RegionRefusalFor(m.SlotID, f.Epoch); err == nil && ok {
+			f.RegionRefusal, f.HasRegionRefusal = region, true
+		}
 	}
 	f.Status, f.StatusErr = as.Status(ctx, f.Epoch)
 	f.Activity, f.ActivityErr = as.EpochActivity(ctx, f.Epoch)
@@ -1037,7 +1106,9 @@ func doctorFlushStamp(path string) (flushStamp, bool, error) {
 //
 // readFlushStamp itself is untouched.
 func readFlushStampForDoctor(path string) (flushStamp, bool, error) {
-	data, err := os.ReadFile(path) // #nosec G304 -- our own state dir
+	// The state dir is a writable root of Codex's sandbox: a FIFO at the
+	// stamp's name must cost this check, not hang doctor (fsx.ReadRegular).
+	data, err := fsx.ReadRegular(path, stampMaxBytes)
 	if errors.Is(err, fs.ErrNotExist) {
 		return flushStamp{}, false, nil
 	}
@@ -1046,7 +1117,11 @@ func readFlushStampForDoctor(path string) (flushStamp, bool, error) {
 	}
 	var st flushStamp
 	if jerr := json.Unmarshal(data, &st); jerr != nil {
-		return flushStamp{}, false, fmt.Errorf("flush stamp %s is not valid JSON: %w", path, jerr)
+		// The stamp is in the state directory, and json and time quote the
+		// value they failed on: a planted last_as of "SECURITY NOTICE: run
+		// ..." came back in doctor's recording line. Said in the client's
+		// own words (auth.DecodeProblem), never the record's.
+		return flushStamp{}, false, fmt.Errorf("flush stamp %s does not decode: %s", path, auth.DecodeProblem(jerr))
 	}
 	if st.V != 1 {
 		return flushStamp{}, false, fmt.Errorf("flush stamp %s has version %d, not 1", path, st.V)
@@ -1075,6 +1150,87 @@ func countIntakeJSON(dir string) (int, error) {
 		n++
 	}
 	return n, nil
+}
+
+// doctorUpdateCheck reads the daily release check's stamp (update_check.go).
+//
+// NO is one fact: a newer release exists and this copy is not it, with the
+// one command that applies it here. A check that never ran is OK with a
+// date — a new installation's first check is a day away, and that is not a
+// fault — but one that has not run for three days is UNKNOWN: the hooks
+// that start it may not be running, and this check cannot tell. A failed,
+// unfinished, unreadable or future-dated stamp is UNKNOWN with the reason,
+// and a stamp from a development build has nothing to compare.
+func doctorUpdateCheck(f doctorFacts) doctorCheck {
+	c := doctorCheck{Name: "up to date"}
+	u := f.Update
+	modeNote := unknownModeNote(u.UnknownMode)
+	undetermined := func(reason string) doctorCheck {
+		c.Verdict, c.Detail = verdictUnknown, "could not determine — "+reason+modeNote
+		return c
+	}
+	if u.Mode == config.UpdateOff {
+		c.Verdict, c.Detail = verdictOK, "automatic release checks are off ([update] mode)"
+		return c
+	}
+	if u.Err != nil {
+		return undetermined("the update stamp could not be read: " + redact.Error(u.Err).Error())
+	}
+	if !u.Present {
+		c.Verdict, c.Detail = verdictOK, "no release check has run yet; the agent hooks start one daily"+modeNote
+		return c
+	}
+	st := u.Stamp
+	age := f.Now.Sub(st.CheckedAt)
+	if !u.thisCopy() {
+		c.Verdict, c.Detail = verdictOK, fmt.Sprintf("no release check has run yet for this copy; the last, %s, was by another copy of jevlin%s", ageText(age), modeNote)
+		return c
+	}
+	// Before the staleness rule: no check runs after this record, by design,
+	// so its age says nothing about the hooks.
+	if stampNeedsAPerson(st) {
+		c.Verdict, c.Detail, c.Fix = verdictNo, manualInterventionDetail(ageText(age), u.Recovery), manualInterventionFix
+		return c
+	}
+	switch {
+	case age < 0:
+		return undetermined("the update stamp is in the future")
+	case age >= updateStaleAfter:
+		c.Verdict = verdictUnknown
+		c.Detail = fmt.Sprintf("could not determine — the last check ran %s; a check runs daily when an agent session starts%s", ageText(age), modeNote)
+		c.Fix = u.Fix
+		return c
+	}
+	switch st.Outcome {
+	case updateCurrent:
+		c.Verdict, c.Detail = verdictOK, fmt.Sprintf("%s is the latest release (checked %s)%s", st.Running, ageText(age), modeNote)
+	case updateUpgraded:
+		if st.Refresh == refreshFailed {
+			c.Verdict, c.Detail = verdictNo, fmt.Sprintf("upgraded to %s %s, but the agent integrations could not be refreshed", st.Latest, ageText(age))
+			c.Fix = "jevlin agents install, then restart open agents"
+			return c
+		}
+		c.Verdict, c.Detail = verdictOK, fmt.Sprintf("upgraded to %s %s; restart open agents%s", st.Latest, ageText(age), modeNote)
+	case updateRolledBack:
+		c.Verdict, c.Detail = verdictOK, fmt.Sprintf("rolled back from %s to %s %s; %s is not installed again automatically, a newer release is%s", st.Held, st.Running, ageText(age), st.Held, modeNote)
+	case updateAvailable:
+		if st.Held != "" {
+			c.Verdict, c.Detail = verdictOK, fmt.Sprintf("%s is the latest release, and this copy was rolled back from %s, so it is not installed automatically (checked %s); %s installs it%s", st.Latest, st.Held, ageText(age), u.Fix, modeNote)
+			return c
+		}
+		c.Verdict, c.Detail = verdictNo, fmt.Sprintf("%s is available and this copy is %s (checked %s)%s", st.Latest, st.Running, ageText(age), modeNote)
+		c.Fix = u.Fix
+	case updateFailed:
+		return undetermined(fmt.Sprintf("the last check failed (%s) %s; the next runs in a day", st.Failure, ageText(age)))
+	case updateNotRelease:
+		c.Verdict, c.Detail = verdictOK, fmt.Sprintf("not a release build; nothing to compare (checked %s)", ageText(age))
+	default: // started
+		if age < updateStartedGrace {
+			return undetermined(fmt.Sprintf("a check started %s and is still running", ageText(age)))
+		}
+		return undetermined(fmt.Sprintf("a check started %s and never reported; the next runs in a day", ageText(age)))
+	}
+	return c
 }
 
 // doctorRecordingCheck is a heuristic and says so in its own wording.

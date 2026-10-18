@@ -70,10 +70,10 @@ func asciiOrFail(t *testing.T, what string, b []byte) {
 func asciiSetupValues(home string) setupValues {
 	return setupValues{
 		home:         home,
-		router:       "https://router-api.nyks.dev",
-		platformURL:  "https://platform.nyks.dev",
-		agentsAPIURL: "https://agents-v1.nyks.dev",
-		asURL:        "https://rewards.nyks.dev",
+		router:       "https://api.jevlin.ai",
+		platformURL:  "https://platform.jevlin.ai",
+		agentsAPIURL: "https://agents-v1.jevlin.ai",
+		asURL:        "https://rewards-testnet.jevlin.ai",
 		chainID:      "twilight-testnet-1",
 		slotID:       3,
 	}
@@ -111,7 +111,7 @@ func TestEveryGeneratedConfigIsASCII(t *testing.T) {
 	t.Run("jevlin.toml, migrated", func(t *testing.T) {
 		// A proxy-era config with neither table: setup appends both, with a
 		// comment of its own.
-		existing := []byte("[[provider]]\nname = \"search-router\"\nupstream = \"https://router-api.nyks.dev\"\n")
+		existing := []byte("[[provider]]\nname = \"search-router\"\nupstream = \"https://api.jevlin.ai\"\n")
 		plan, err := planSetupConfig(filepath.Join(home, setupConfigFile), existing, v, func([]byte) error { return nil })
 		if err != nil {
 			t.Fatal(err)

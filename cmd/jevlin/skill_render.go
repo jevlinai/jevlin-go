@@ -14,6 +14,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -143,7 +144,11 @@ func callSection(entry binEntry, shells skillShells) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			return fenced(lang, script) + "\n" + quotingNote(sh), nil
+			note := quotingNote(sh)
+			if sh == shellPowerShell && shells.choice == chosenByParticipant && slices.Contains(shells.kinds, shellPOSIX) {
+				note += apostropheNote
+			}
+			return fenced(lang, script) + "\n" + note, nil
 		})
 	if err != nil {
 		return "", err
@@ -172,6 +177,14 @@ when you substitute your own query.`
 	return ""
 }
 
+// apostropheNote follows the PowerShell form where a Bash terminal may read
+// it too: Cursor allows that form without asking only when its body holds no
+// apostrophe (inertUnderEveryShell).
+const apostropheNote = `
+Write an apostrophe in the query as ` + "`\\u0027`" + `, the JSON escape for
+it, so the body holds no ` + "`'`" + ` at all: the same text in a Git Bash terminal
+would end its quoting there. The query arrives unchanged.`
+
 // preferSection is the skill's on/off command, per shell.
 func preferSection(entry binEntry, shells skillShells) (string, error) {
 	return perShellSection(shells, false, func(sh shellKind) (string, error) {
@@ -184,6 +197,21 @@ func preferSection(entry binEntry, shells skillShells) (string, error) {
 			lang = "powershell"
 		}
 		return fenced(lang, cmd+" <argument>"), nil
+	})
+}
+
+// tierSection is the skill's tier command, per shell.
+func tierSection(entry binEntry, shells skillShells) (string, error) {
+	return perShellSection(shells, false, func(sh shellKind) (string, error) {
+		cmd, err := entry.tierCommandForShell(sh)
+		if err != nil {
+			return "", err
+		}
+		lang := "bash"
+		if sh == shellPowerShell {
+			lang = "powershell"
+		}
+		return fenced(lang, cmd+" <band>"), nil
 	})
 }
 

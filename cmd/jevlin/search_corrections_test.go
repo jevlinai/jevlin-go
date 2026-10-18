@@ -213,13 +213,12 @@ func seedResumableRegistration(t *testing.T, root string) {
 		t.Fatal(err)
 	}
 	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID:  "agent-fictional-resume",
-		Status:   "unclaimed",
-		ClaimURL: "https://portal.fictional.test/claim/abc",
+		AgentID: "agent-fictional-resume",
+		Status:  "unclaimed",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if !shouldResume(&config.Config{Mining: config.Mining{StateDir: filepath.Join(root, "state")}}) {
+	if !shouldResume(&config.Config{Mining: config.Mining{StateDir: filepath.Join(root, "state")}}, noEnv) {
 		t.Fatal("the seeded registration is not resumable; the gate under test would prove nothing")
 	}
 }

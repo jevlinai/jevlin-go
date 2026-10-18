@@ -13,9 +13,12 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -32,6 +35,85 @@ var injections = map[shellKind][]string{
 		`C:\Users\u\x'; echo x; '\..\jevlin.toml`,
 		"C:\\Users\\u\\x\u2019; echo x; \u2018\\..\\jevlin.toml",
 	},
+}
+
+func TestPowerShellRendererRefusesTypographicQuotes(t *testing.T) {
+	paths := append([]string(nil), injections[shellPowerShell]...)
+	for r := '\u2018'; r <= '\u201b'; r++ {
+		paths = append(paths, `C:\Users\O`+string(r)+`Brien\jevlin.exe`)
+	}
+	for i, path := range paths {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			for _, tokens := range [][]cmdToken{
+				{pathToken(path), literalToken("search"), literalToken("--stdin")},
+				{pathToken(`C:\jevlin.exe`), literalToken("search"), literalToken("-config"), pathToken(path), literalToken("--stdin")},
+			} {
+				command, err := renderShellCommand(shellPowerShell, tokens)
+				if strings.ContainsAny(path, "\u2018\u2019\u201a\u201b") {
+					if err == nil || command != "" {
+						t.Fatalf("rendered a path holding a typographic quote: %q -> %q, %v", path, command, err)
+					}
+				} else if err != nil {
+					t.Fatalf("an ASCII apostrophe can be quoted: %q: %v", path, err)
+				}
+			}
+		})
+	}
+}
+
+func TestShellRendererRefusesControlCharactersAndInvalidUTF8(t *testing.T) {
+	unsafe := []string{"\xff"}
+	for r := rune(0); r < 0x20; r++ {
+		unsafe = append(unsafe, string(r))
+	}
+	unsafe = append(unsafe, "\x7f")
+	for _, sh := range []shellKind{shellPOSIX, shellPowerShell, shellCmd} {
+		for _, s := range unsafe {
+			path := `C:\before` + s + `after\jevlin.exe`
+			t.Run(fmt.Sprintf("%s/%x", sh, s), func(t *testing.T) {
+				for _, tokens := range [][]cmdToken{
+					{pathToken(path), literalToken("search")},
+					{pathToken(`C:\jevlin.exe`), literalToken("search"), literalToken("-config"), pathToken(path)},
+				} {
+					if command, err := renderShellCommand(sh, tokens); err == nil || command != "" {
+						t.Fatalf("rendered an unsafe path: %q -> %q, %v", path, command, err)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestPowerShellRenderedPathsRoundTrip(t *testing.T) {
+	paths := append([]string(nil), injections[shellPowerShell]...)
+	paths = append(paths, `C:\Program Files\jevlin\jevlin.exe`, `C:\Users\it's\a''b\jevlin.toml`, "C:\\café\\東京\\jevlin.exe", "C:\\a$(`echo x`) & ; #\\jevlin.toml")
+	for _, path := range paths {
+		command, err := renderShellCommand(shellPowerShell, []cmdToken{pathToken(path)})
+		if err != nil {
+			if !strings.ContainsAny(path, "\u2018\u2019\u201a\u201b") || command != "" {
+				t.Fatalf("a representable path was refused: %q -> %q, %v", path, command, err)
+			}
+			continue
+		}
+		raw := strings.TrimSuffix(strings.TrimPrefix(command, "& '"), "'")
+		if got, ok := readRenderedPath(shellPowerShell, raw); !ok || got != path {
+			t.Fatalf("rendered path did not round-trip: %q -> %q -> %q (%v)", path, command, got, ok)
+		}
+		for _, sh := range execShellsFor(shellPowerShell, false) {
+			t.Run(sh.name+"/"+path, func(t *testing.T) {
+				command, err := renderShellCommand(shellPowerShell, []cmdToken{literalToken("Show-Path"), pathToken(path)})
+				if err != nil {
+					t.Fatal(err)
+				}
+				script := "function Show-Path { param([string]$Path) [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Path)) }\n" + command
+				out := runInShell(t, sh, script, nil, nil)
+				want := base64.StdEncoding.EncodeToString([]byte(path))
+				if out.exit != 0 || strings.TrimSpace(out.stdout) != want {
+					t.Fatalf("rendered path did not reach PowerShell unchanged: %q\n%s", path, out)
+				}
+			})
+		}
+	}
 }
 
 func TestARenderedPathRegionIsExactlyOneQuotedWord(t *testing.T) {
@@ -166,6 +248,71 @@ func TestTheAllowingHooksRefuseASearchCarryingASecondCommand(t *testing.T) {
 	}
 }
 
+// A binary path whose meaning depends on the process resolving it is not
+// this binary's path. /proc/self/exe is this binary to the hook and the
+// shell itself to the shell that runs the command, which would then read a
+// script named `search` from its working directory; a second link to this
+// binary is refused the same way. Only the path the hook was started by,
+// which is the path the skill renders, is allowed, by all three hooks.
+func TestTheAllowingHooksRefuseABinaryPathOtherThanTheRenderedOne(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin", "jevlin")
+	other := filepath.Join(dir, "other", "jevlin")
+	for _, l := range []string{bin, other} {
+		if err := os.MkdirAll(filepath.Dir(l), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(self, l); err != nil {
+			t.Skip("this environment does not allow symlinks: " + err.Error())
+		}
+	}
+	cfg := filepath.Join(dir, "jevlin.toml")
+	_, search, err := searchBlockForShell(shellPOSIX, binEntry{command: bin, cfg: cfg}, `{"version":1,"query":"q"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]string{
+		"the rendered search":         search,
+		"another link to this binary": strings.Replace(search, posixQuoteArg(bin), posixQuoteArg(other), 1),
+	}
+	if _, err := os.Stat("/proc/self/exe"); err == nil {
+		cases["/proc/self/exe"] = strings.Replace(search, posixQuoteArg(bin), "'/proc/self/exe'", 1)
+		cases["/proc/<pid>/exe"] = strings.Replace(search, posixQuoteArg(bin), posixQuoteArg(filepath.Join("/proc", strconv.Itoa(os.Getpid()), "exe")), 1)
+	}
+	for name, command := range cases {
+		if name != "the rendered search" && command == search {
+			t.Fatalf("%s: the binary path was not replaced", name)
+		}
+		allowed := name == "the rendered search"
+		_, ops := newFakeHookOps(nil)
+		ops.executable = func() (string, error) { return bin, nil }
+
+		var out bytes.Buffer
+		hookLineage(ops, hookContext{cfgPath: cfg}, mustJSON(t, map[string]any{
+			"session_id": "s", "tool_name": "Bash", "tool_input": map[string]any{"command": command},
+		}), &out)
+		if got := strings.Contains(out.String(), `"permissionDecision":"allow"`); got != allowed {
+			t.Errorf("Claude Code's lineage hook, %s: allowed %v, want %v\n%s", name, got, allowed, out.String())
+		}
+		out.Reset()
+		hookCursorOn("linux", ops, hookContext{cfgPath: cfg}, "beforeShellExecution", mustJSON(t, map[string]any{"command": command}), &out, io.Discard)
+		if got := strings.Contains(out.String(), `"permission":"allow"`); got != allowed {
+			t.Errorf("Cursor's beforeShellExecution, %s: allowed %v, want %v\n%s", name, got, allowed, out.String())
+		}
+		out.Reset()
+		hookCodexOn(ops, hookContext{cfgPath: cfg}, "linux", "PreToolUse", mustJSON(t, map[string]any{
+			"session_id": "s", "tool_name": "Bash", "tool_input": map[string]any{"command": command},
+		}), &out)
+		if got := strings.Contains(out.String(), `"permissionDecision":"allow"`); got != allowed {
+			t.Errorf("Codex's PreToolUse, %s: allowed %v, want %v\n%s", name, got, allowed, out.String())
+		}
+	}
+}
+
 // The config in an allowed command must already be in clean form: `a/..`
 // cleans away in text whatever `a` is, while the kernel follows `a` when it
 // is a symlink and opens another file.
@@ -268,26 +415,33 @@ func TestCursorShellHookRefusesAPathItsRunnerReencoded(t *testing.T) {
 	if got := matchedRenderedForms(real, cfg, []shellKind{shellPowerShell}); len(got) != 0 {
 		t.Fatalf("the bytes PowerShell runs are not refused, so this case is not the one it says: %+v", got)
 	}
-	_, ops := newFakeHookOps(nil)
-	ops.executable = func() (string, error) { return bin, nil }
 	hc := hookContext{cfgPath: cfg}
+	opsRunningAs := func(exe string) hookOps {
+		_, ops := newFakeHookOps(nil)
+		ops.executable = func() (string, error) { return exe, nil }
+		return ops
+	}
+	// The recognizer takes only the exact path the hook runs as, so the hook
+	// here runs as the spelling it is handed: that leaves the runner rule as
+	// the one thing that can refuse it.
 	seen := reencodedByCursorOnWindows(real)
-	if recognizeCursorCommand(ops, hc, seen, shells) == nil {
+	seenOps := opsRunningAs(filepath.Join(seenDir, "jevlin"))
+	if recognizeCursorCommand(seenOps, hc, seen, shells) == nil {
 		t.Fatal("the recognizer alone refuses the re-encoded command, so the runner rule is not what is tested")
 	}
-	answer := func(command string) string {
+	answer := func(ops hookOps, command string) string {
 		var out bytes.Buffer
 		hookCursorOn("windows", ops, hc, "beforeShellExecution", mustJSON(t, map[string]any{"command": command}), &out, io.Discard)
 		return out.String()
 	}
-	if got := answer(seen); got != "" {
+	if got := answer(seenOps, seen); got != "" {
 		t.Errorf("Cursor's beforeShellExecution answered %q to a command whose real bytes PowerShell runs as several statements:\nreal: %q\nseen: %q", got, real, seen)
 	}
 	for name, command := range map[string]string{
 		"the rendered search":               search,
 		"a search whose query is not ASCII": render(`{"version":1,"query":"caf\u00e9 \u2014 na\u00efve"}`),
 	} {
-		if got := answer(reencodedByCursorOnWindows(command)); got != `{"permission":"allow"}`+"\n" {
+		if got := answer(opsRunningAs(bin), reencodedByCursorOnWindows(command)); got != `{"permission":"allow"}`+"\n" {
 			t.Errorf("%s is no longer allowed under Windows' hook runners: answered %q", name, got)
 		}
 	}

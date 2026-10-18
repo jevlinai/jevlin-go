@@ -106,7 +106,7 @@ func connectFixture(t *testing.T, explicitMining string) (cfgPath, stateDir stri
 
 	// The platform host is pinned at a local stub that refuses everything.
 	//
-	// Without this the config falls back to the real platform.nyks.dev,
+	// Without this the config falls back to the real platform.jevlin.ai,
 	// and the gate under test is the only thing standing between this test
 	// and a live registration attempt — so the moment a mutation disables
 	// the gate, the test dials a real host. A fixture whose safety depends
@@ -231,7 +231,7 @@ func TestTheHumanDecisionGateMatchesWhereTheQuestionIsActuallyAsked(t *testing.T
 			t.Fatal(err)
 		}
 		if err := store.SaveAgentRegistration(auth.AgentRegistration{
-			AgentID: "agent-fictional", Status: status, ClaimURL: "https://portal.fictional.test/c",
+			AgentID: "agent-fictional", Status: status,
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -470,11 +470,13 @@ func TestTheGateAroundACorruptRegistration(t *testing.T) {
 			name: "corrupt but a valid pending registration exists",
 			setup: func(t *testing.T, dir string) {
 				writeCorruptRegistration(t, dir)
-				store, err := auth.OpenStore(dir)
+				// Beside credentials.json: the fixture's jevlin home is the
+				// state dir's parent.
+				journal, err := auth.OpenRegistrationJournal(filepath.Dir(dir))
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err := store.SavePendingRegistration(auth.PendingRegistration{
+				if err := journal.Save(auth.PendingRegistration{
 					AgentID: "agent-pending", Key: "sr-pending", Status: "unclaimed",
 					ClaimURL: "https://portal.fictional.test/c",
 				}); err != nil {

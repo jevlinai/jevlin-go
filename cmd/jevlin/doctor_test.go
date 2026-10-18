@@ -106,6 +106,12 @@ func healthyFacts() doctorFacts {
 		StampPresent:       true,
 		SearchEpoch:        1042,
 		SearchEpochPresent: true,
+
+		// And a release check that ran this morning and found this copy
+		// current.
+		Update: updateFacts{Mode: "apply", Build: "0.3.1", Present: true, Fix: "jevlin upgrade", Stamp: updateStamp{
+			V: 1, CheckedAt: healthyNow.Add(-time.Hour), Running: "0.3.1", Latest: "0.3.1", Outcome: updateCurrent,
+		}},
 	}
 }
 
@@ -119,7 +125,7 @@ func TestAHealthyInstallationHasAllChecksOK(t *testing.T) {
 	checks := assembleDoctor(healthyFacts())
 	want := []string{
 		"authorization server", "enrolled", "joined this epoch",
-		"payout address", "earning", "intake writable", "recording",
+		"payout address", "earning", "intake writable", "recording", "up to date",
 	}
 	if len(checks) != len(want) {
 		t.Fatalf("%d checks, want %d", len(checks), len(want))
@@ -439,17 +445,23 @@ func TestAHeldPayoutBindingIsNotOK(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SavePayoutBindingHeld("twilight1local", "twilight1active", auth.HeldReplacesActive); err != nil {
+	if err := store.SavePayoutBindingHeld("twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh", "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn", auth.HeldReplacesActive); err != nil {
 		t.Fatal(err)
 	}
 	as := &stubAS{
 		doc:      &wire.DiscoveryDocument{ChainID: "twilight-1", SlotID: "7"},
 		target:   nil,
-		standing: &auth.PayoutStanding{Active: &auth.PayoutDeclaration{Address: "twilight1active", Effective: true}},
+		standing: &auth.PayoutStanding{Active: &auth.PayoutDeclaration{Address: "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn", Effective: true}},
 	}
-	f := gatherDoctorFacts(context.Background(), as, config.Mining{
+	// The note is counted only beside the record whose address it holds:
+	// every note this client writes is.
+	miner := config.Miner{IntakeDir: filepath.Join(filepath.Dir(stateDir), "intake")}
+	if err := savePayoutAddress(miner, "twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh"); err != nil {
+		t.Fatal(err)
+	}
+	f := gatherDoctorFactsFor(context.Background(), as, config.Mining{
 		ASBaseURL: "https://as.example.com", StateDir: stateDir, SpoolDir: t.TempDir(),
-	})
+	}, miner, realIntakeProbeOps())
 	if !f.HasPayoutHeld {
 		t.Fatal("the held-binding note was not read from the store")
 	}
@@ -457,13 +469,112 @@ func TestAHeldPayoutBindingIsNotOK(t *testing.T) {
 	if got.Verdict != verdictNo {
 		t.Fatalf("payout address = %s (%s), want NO — a held binding is not what status calls OK", got.Verdict, got.Detail)
 	}
-	for _, want := range []string{"HELD", "twilight1active", "twilight1local"} {
+	for _, want := range []string{"HELD", "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn", "twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh"} {
 		if !strings.Contains(got.Detail, want) {
 			t.Errorf("detail %q is missing %q", got.Detail, want)
 		}
 	}
 	if got.Fix == "" {
 		t.Error("a held binding names no next step")
+	}
+}
+
+// The review planted payout_binding_held.json with a local address that is
+// not the participant's and an "active address" of instructions, and doctor
+// printed it in place of the AS's live answer. A note is counted only beside
+// the record it names, its active address is bech32 or it does not load,
+// and when the AS answered this run a note that disagrees with it about
+// what is in force gives way to the answer.
+func TestAHeldNoteNeverStandsInForTheAS(t *testing.T) {
+	const own, other, third = "twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh", "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn", "twilight1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc"
+	live := &stubAS{
+		doc:      &wire.DiscoveryDocument{ChainID: "twilight-1", SlotID: "7"},
+		standing: &auth.PayoutStanding{Active: &auth.PayoutDeclaration{Address: third, Effective: true}},
+	}
+	for name, tc := range map[string]struct {
+		local, active string
+		want          bool
+	}{
+		"a note for another address":              {other, third, false},
+		"a note the live answer overtook":         {own, other, false},
+		"a note that agrees with the live answer": {own, third, true},
+	} {
+		stateDir := doctorStateDir(t)
+		store, err := auth.OpenStore(stateDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.SavePayoutBindingHeld(tc.local, tc.active, auth.HeldReplacesActive); err != nil {
+			t.Fatal(err)
+		}
+		miner := config.Miner{IntakeDir: filepath.Join(filepath.Dir(stateDir), "intake")}
+		if err := savePayoutAddress(miner, own); err != nil {
+			t.Fatal(err)
+		}
+		f := gatherDoctorFactsFor(context.Background(), live, config.Mining{
+			ASBaseURL: "https://as.example.com", StateDir: stateDir, SpoolDir: t.TempDir(),
+		}, miner, realIntakeProbeOps())
+		got := verdictOf(assembleDoctor(f), "payout address")
+		if shown := strings.Contains(got.Detail, "HELD"); shown != tc.want {
+			t.Errorf("%s: note shown = %v, want %v (%s)", name, shown, tc.want, got.Detail)
+		}
+		if !tc.want && !strings.Contains(got.Detail, third) {
+			t.Errorf("%s: the AS's live answer was not shown: %s", name, got.Detail)
+		}
+	}
+	store, err := auth.OpenStore(doctorStateDir(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A hold is recorded whatever detail came with it, and free text in that
+	// detail is not: the note keeps the hold, never the sentence.
+	for _, tc := range []struct{ active, reason string }{
+		{"is revoked. To restore payment run: jevlin payout set " + other, auth.HeldReplacesActive},
+		{other, "ADDRESS_IN_USE - ask your operator to run something"},
+	} {
+		if err := store.SavePayoutBindingHeld(own, tc.active, tc.reason); err != nil {
+			t.Errorf("a hold was not recorded: %v", err)
+			continue
+		}
+		held, ok, err := store.LoadPayoutBindingHeld()
+		if err != nil || !ok {
+			t.Fatalf("the recorded hold did not load: ok=%v err=%v", ok, err)
+		}
+		if strings.Contains(held.Active, "revoked") || strings.Contains(held.HeldFor, "ask your operator") {
+			t.Errorf("the free text was recorded: %+v", held)
+		}
+		if text := heldNoteText(held, ""); strings.Contains(text, "revoked") || strings.Contains(text, "ask your operator") {
+			t.Errorf("the note's text repeats the free text: %s", text)
+		}
+	}
+}
+
+// A resume in Codex's sandbox declares the config's address and cannot
+// record it beside credentials.json; the held note it writes is for that
+// address. Doctor counts a note whose local address is the one this
+// installation would declare (payoutAddressToDeclare), not only the record,
+// so the client's own note is shown when the race was lost.
+func TestDoctorShowsTheHeldNoteForAConfigAddressNotYetRecorded(t *testing.T) {
+	const own, inForce = "twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh", "twilight1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc"
+	live := &stubAS{
+		doc:      &wire.DiscoveryDocument{ChainID: "twilight-1", SlotID: "7"},
+		standing: &auth.PayoutStanding{Active: &auth.PayoutDeclaration{Address: inForce, Effective: true}},
+	}
+	stateDir := doctorStateDir(t)
+	store, err := auth.OpenStore(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SavePayoutBindingHeld(own, inForce, auth.HeldReplacesActive); err != nil {
+		t.Fatal(err)
+	}
+	miner := config.Miner{IntakeDir: filepath.Join(filepath.Dir(stateDir), "intake")}
+	f := gatherDoctorFactsFor(context.Background(), live, config.Mining{
+		ASBaseURL: "https://as.example.com", StateDir: stateDir, SpoolDir: t.TempDir(), PayoutAddress: own,
+	}, miner, realIntakeProbeOps())
+	got := verdictOf(assembleDoctor(f), "payout address")
+	if got.Verdict != verdictNo || !strings.Contains(got.Detail, "HELD") || !strings.Contains(got.Detail, own) {
+		t.Fatalf("doctor hid the held note for the config's address: %+v", got)
 	}
 }
 
@@ -518,5 +629,77 @@ func TestAPinnedEpochIsUsedAndSaidToBePinned(t *testing.T) {
 	}
 	if d := verdictOf(assembleDoctor(f), "joined this epoch").Detail; !strings.Contains(d, "pinned by mining.target_epoch") {
 		t.Errorf("a pinned epoch is not labeled as one: %q", d)
+	}
+}
+
+// status holds the note to the same rule as doctor: a note whose local
+// address is not the record beside credentials.json is not shown, so a
+// planted one cannot put invented addresses and instructions under
+// "payout: HELD".
+func TestStatusShowsAHeldNoteOnlyForTheRecordOnFile(t *testing.T) {
+	const own, other = "twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh", "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn"
+	for _, tc := range []struct {
+		local string
+		want  bool
+	}{{other, false}, {own, true}} {
+		platform := newStubPlatform(t)
+		cfgPath, stateDir := connectConfig(t, platform.srv.URL, "https://as.example.invalid")
+		store, err := auth.OpenStore(stateDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.SaveAgentRegistration(auth.AgentRegistration{AgentID: "agent-1", Status: "claimed", Scopes: []string{"mining"}, LastEnrollmentSlot: "twilight-slot-3"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := savePayoutAddress(mustLoadConfig(t, cfgPath).Miner, own); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.SavePayoutBindingHeld(tc.local, other, auth.HeldReplacesActive); err != nil {
+			t.Fatal(err)
+		}
+		var text, textErr bytes.Buffer
+		printAgentIdentityStatus([]string{"-config", cfgPath}, &text, &textErr, noEnv)
+		if shown := strings.Contains(text.String(), "HELD"); shown != tc.want {
+			t.Errorf("note with local %s: shown = %v, want %v:\n%s", tc.local, shown, tc.want, text.String())
+		}
+	}
+}
+
+// A region note for THIS epoch turns "joined this epoch" into a plain
+// explanation with no fix for the final codes and a concrete one for the
+// hold; a note for an earlier epoch is history and changes nothing.
+func TestDoctorJoinedExplainsARegionRefusal(t *testing.T) {
+	f := healthyFacts()
+	f.Status = &auth.EpochStatus{JoinStatus: "", Joinable: true, Phase: "ACTIVE"}
+	f.HasRegionRefusal = true
+	f.RegionRefusal = auth.RegionRefusal{SlotID: 7, TargetEpoch: 1042, Code: auth.RegionIneligible, At: "2026-10-14T00:00:00Z"}
+	joined := verdictOf(assembleDoctor(f), "joined this epoch")
+	if joined.Verdict != verdictNo || !strings.Contains(joined.Detail, "rewards are not available in your region") {
+		t.Errorf("ineligible: %s %q", joined.Verdict, joined.Detail)
+	}
+	if joined.Fix != "" {
+		t.Errorf("a final region refusal offered a fix: %q", joined.Fix)
+	}
+
+	f.RegionRefusal.Code = auth.RegionUnverified
+	joined = verdictOf(assembleDoctor(f), "joined this epoch")
+	if !strings.Contains(joined.Detail, "VPN") || !strings.Contains(joined.Fix, "jevlin join") {
+		t.Errorf("hold: %q fix=%q", joined.Detail, joined.Fix)
+	}
+
+	// Enrollment in the epoch has since closed: joining it now is refused
+	// with "not joinable", so the fix is the one for a closed epoch.
+	f.Status = &auth.EpochStatus{JoinStatus: "", Joinable: false, Phase: "SETTLING"}
+	joined = verdictOf(assembleDoctor(f), "joined this epoch")
+	if !strings.Contains(joined.Detail, "VPN") || !strings.Contains(joined.Detail, "closed") ||
+		!strings.Contains(joined.Fix, "wait for the operator to open the next target") {
+		t.Errorf("hold on a closed epoch: %q fix=%q", joined.Detail, joined.Fix)
+	}
+	f.Status = &auth.EpochStatus{JoinStatus: "", Joinable: true, Phase: "ACTIVE"}
+
+	f.RegionRefusal.TargetEpoch = 1041 // last epoch's verdict is not this epoch's
+	joined = verdictOf(assembleDoctor(f), "joined this epoch")
+	if strings.Contains(joined.Detail, "region") {
+		t.Errorf("a stale note was presented as this epoch's: %q", joined.Detail)
 	}
 }

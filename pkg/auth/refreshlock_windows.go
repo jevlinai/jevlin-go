@@ -4,14 +4,14 @@ package auth
 
 // The Windows half of the refresh lock.
 //
-// The obvious call is LockFileEx, and it is deliberately not used. Its
-// lpOverlapped argument has to reach the kernel as a raw pointer, and
-// producing one in Go needs the unsafe package — admitted in exactly one file
+// The obvious call is LockFileEx, and it is not used. The standard syscall
+// package does not wrap it, and calling it through syscall would need the
+// unsafe package for its overlapped argument — admitted in exactly one file
 // in this module, setup's Windows environment broadcast, and guarded by
-// TestOnlyTheEnvironmentBroadcastImportsUnsafe. The
-// standard syscall package does not wrap LockFileEx, and the wrapper in
-// golang.org/x/sys/windows would be a new module dependency, which the
-// dependency budget admits only under an accepted ADR.
+// TestOnlyTheEnvironmentBroadcastImportsUnsafe. golang.org/x/sys/windows
+// does wrap it, and the module already uses that package (pkg/fsx, which
+// this lock now opens through), but share mode 0 is the lock connect.lock
+// and flush.lock use too, and one mechanism is kept.
 //
 // Opening the lockfile with dwShareMode = 0 buys the same property from
 // the file system instead: while one handle is open, every other
@@ -30,6 +30,8 @@ import (
 	"fmt"
 	"os"
 	"syscall"
+
+	"github.com/jevlinai/jevlin-go/pkg/fsx"
 )
 
 // Neither code is exported by the standard syscall package. The same gap
@@ -44,26 +46,17 @@ const (
 // (nil, false, nil) — not an error, because the caller's whole job is to
 // keep trying until its deadline.
 func tryLockRefreshFile(path string) (*os.File, bool, error) {
-	name, err := syscall.UTF16PtrFromString(path)
-	if err != nil {
-		return nil, false, fmt.Errorf("auth: %s path: %w", refreshLockFile, err)
-	}
-	h, err := syscall.CreateFile(
-		name,
-		syscall.GENERIC_READ|syscall.GENERIC_WRITE,
-		0, // dwShareMode = 0 — this open IS the lock
-		nil,
-		syscall.OPEN_ALWAYS,
-		syscall.FILE_ATTRIBUTE_NORMAL,
-		0,
-	)
+	// Share mode 0 — this open IS the lock — and, the state dir being a
+	// writable root of Codex's sandbox, a link at the name is refused
+	// rather than followed (fsx.OpenLock).
+	f, err := fsx.OpenLock(path)
 	if err != nil {
 		if errors.Is(err, errorSharingViolation) || errors.Is(err, errorLockViolation) {
 			return nil, false, nil
 		}
 		return nil, false, fmt.Errorf("auth: open %s: %w", refreshLockFile, err)
 	}
-	return os.NewFile(uintptr(h), path), true, nil
+	return f, true, nil
 }
 
 // unlockRefreshFile releases the lock, which on this platform is exactly

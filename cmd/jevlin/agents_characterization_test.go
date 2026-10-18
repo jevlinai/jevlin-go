@@ -547,33 +547,42 @@ func normalizeHermesHome(g goldenPlan, hermesHome string) goldenPlan {
 	return replaceInGoldenPlan(g, hermesHome, "<HERMES_HOME>")
 }
 
+// TestCodexSandboxPlanGolden holds Codex's config plan for both answers
+// the sandbox OS gives: the permission profile (macOS and Linux) and the
+// roots-only block (Windows, D6), each planned on every runner.
 func TestCodexSandboxPlanGolden(t *testing.T) {
 	surface, ok := surfaceByID("codex")
 	if !ok {
 		t.Fatal("no agentSurface for codex")
 	}
+	for _, tc := range []struct{ goos, golden string }{
+		{"linux", "codex-sandbox"},
+		{"windows", "codex-sandbox-windows"},
+	} {
+		t.Run(tc.goos+"/install", func(t *testing.T) {
+			onCodexOS(t, tc.goos)
+			cfgPath, home := sandboxGoldenConfig(t)
+			entry := binEntry{command: goldenBin, cfg: cfgPath}
+			_, ops := newFakeMachine()
+			paths := ops.paths(noEnv)
+			plan := buildInstallPlan(ops, paths, []installTarget{surface}, entry, noEnv)
+			compareGoldenPlan(t, withSkillPlaceholder(normalizeGoldenPlan(withoutCodexHooks(capturePlan(plan)), home)), filepath.Join("testdata", "agents", tc.golden+".install.golden"))
+		})
 
-	t.Run("install", func(t *testing.T) {
-		cfgPath, home := sandboxGoldenConfig(t)
-		entry := binEntry{command: goldenBin, cfg: cfgPath}
-		_, ops := newFakeMachine()
-		paths := ops.paths(noEnv)
-		plan := buildInstallPlan(ops, paths, []installTarget{surface}, entry, noEnv)
-		compareGoldenPlan(t, withSkillPlaceholder(normalizeGoldenPlan(withoutCodexHooks(capturePlan(plan)), home)), filepath.Join("testdata", "agents", "codex-sandbox.install.golden"))
-	})
-
-	t.Run("uninstall", func(t *testing.T) {
-		cfgPath, home := sandboxGoldenConfig(t)
-		entry := binEntry{command: goldenBin, cfg: cfgPath}
-		_, ops := newFakeMachine()
-		paths := ops.paths(noEnv)
-		installPlan := buildInstallPlan(ops, paths, []installTarget{surface}, entry, noEnv)
-		if failures := commitPlan(ops, &installPlan, io.Discard, io.Discard); failures != 0 {
-			t.Fatalf("committing the sandboxed install: %d failures", failures)
-		}
-		plan := buildUninstallPlan(ops, paths, []installTarget{surface}, entry, noEnv)
-		compareGoldenPlan(t, withSkillPlaceholder(normalizeGoldenPlan(withoutCodexHooks(capturePlan(plan)), home)), filepath.Join("testdata", "agents", "codex-sandbox.uninstall.golden"))
-	})
+		t.Run(tc.goos+"/uninstall", func(t *testing.T) {
+			onCodexOS(t, tc.goos)
+			cfgPath, home := sandboxGoldenConfig(t)
+			entry := binEntry{command: goldenBin, cfg: cfgPath}
+			_, ops := newFakeMachine()
+			paths := ops.paths(noEnv)
+			installPlan := buildInstallPlan(ops, paths, []installTarget{surface}, entry, noEnv)
+			if failures := commitPlan(ops, &installPlan, io.Discard, io.Discard); failures != 0 {
+				t.Fatalf("committing the sandboxed install: %d failures", failures)
+			}
+			plan := buildUninstallPlan(ops, paths, []installTarget{surface}, entry, noEnv)
+			compareGoldenPlan(t, withSkillPlaceholder(normalizeGoldenPlan(withoutCodexHooks(capturePlan(plan)), home)), filepath.Join("testdata", "agents", tc.golden+".uninstall.golden"))
+		})
+	}
 }
 
 // TestCodexHooksPlanGolden is the install and uninstall of Codex's hooks

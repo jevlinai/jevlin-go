@@ -96,7 +96,13 @@ func TestResolveExecutableAndStageBesideTheResolvedFile(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(real), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(real, []byte("installed"), 0o750); err != nil { // #nosec G306 -- an executable fixture
+	if err := os.WriteFile(real, []byte("installed"), 0o700); err != nil { // #nosec G306 -- an executable fixture
+		t.Fatal(err)
+	}
+	// The mode the candidate must copy is set with Chmod, not WriteFile: that
+	// mode passes through the umask, and 0077 would leave this 0700 and the
+	// test comparing the candidate against a mode the fixture never had.
+	if err := os.Chmod(real, 0o750); err != nil { // #nosec G302 -- an executable fixture whose mode is neither CreateTemp's default nor StageCandidate's fallback
 		t.Fatal(err)
 	}
 	link := filepath.Join(t.TempDir(), "jevlin")

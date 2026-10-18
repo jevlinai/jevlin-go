@@ -147,8 +147,12 @@ func TestMarkTurnSearched(t *testing.T) {
 		if tc.want && !takeTurnSearched(ops, "/home/sessions", turn) {
 			t.Errorf("%s: the mark was not found by the turn that left it", name)
 		}
-		if tc.want && (takeTurnSearched(ops, "/home/sessions", turn) || len(fs.files) != 0) {
+		if tc.want && takeTurnSearched(ops, "/home/sessions", turn) {
 			t.Errorf("%s: the mark outlived being taken", name)
+		}
+		// Taking it leaves only the mark that the turn has ended.
+		if _, ended := fs.files[turnEndedPath("/home/sessions", turn)]; tc.want && (len(fs.files) != 1 || !ended) {
+			t.Errorf("%s: after the take, %d files and ended=%v, want only the ended mark", name, len(fs.files), ended)
 		}
 	}
 }

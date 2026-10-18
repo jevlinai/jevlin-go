@@ -162,10 +162,15 @@ jobs:
           echo "A complete GitHub Release for ${GITHUB_REF_NAME} already exists; goreleaser is skipped."
           echo "Re-running it would replace assets a published npm package may already be downloading."
 
+      # The action is pinned by SHA, and so is the goreleaser it runs: the
+      # action downloads the goreleaser binary named here at run time, and
+      # a range would fetch whatever release is newest, in the one job
+      # that can write to the repository. v2.18.3 built v0.3.0. A bump is
+      # a deliberate PR, like an action's.
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         if: needs.preflight.outputs.release_state == 'absent'
         with:
-          version: "~> v2"
+          version: "v2.18.3"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -233,6 +238,7 @@ jobs:
       contents: read
     env:
       VERSION: ${{ needs.preflight.outputs.version }}
+      PKG: "@jevlinsearch/jevlin"
     steps:
       # This job needs the tag's npm/ directory and nothing else from git.
       # persist-credentials: false keeps the GITHUB_TOKEN out of
@@ -257,15 +263,15 @@ jobs:
         id: registry
         run: |
           set +e
-          npm view "jevlin@${VERSION}" version > npm-view.txt 2> npm-view-err.txt
+          npm view "${PKG}@${VERSION}" version > npm-view.txt 2> npm-view-err.txt
           code=$?
           set -e
           if [ "$code" -eq 0 ]; then
             echo "published=true" >> "$GITHUB_OUTPUT"
-            echo "jevlin@${VERSION} is already on the registry."
+            echo "${PKG}@${VERSION} is already on the registry."
           elif grep -q "E404" npm-view-err.txt; then
             echo "published=false" >> "$GITHUB_OUTPUT"
-            echo "jevlin@${VERSION} is not on the registry yet."
+            echo "${PKG}@${VERSION} is not on the registry yet."
           else
             echo "npm could not tell us whether this version exists:" >&2
             cat npm-view-err.txt >&2
@@ -281,11 +287,11 @@ jobs:
         if: steps.registry.outputs.published == 'true'
         run: |
           tmp="$(mktemp -d)"
-          npm pack "jevlin@${VERSION}" --pack-destination "$tmp" > /dev/null
-          tar -xzf "$tmp/jevlin-${VERSION}.tgz" -C "$tmp"
+          npm pack "${PKG}@${VERSION}" --pack-destination "$tmp" > /dev/null
+          tar -xzf "$tmp/jevlinsearch-jevlin-${VERSION}.tgz" -C "$tmp"
           if ! diff -r "$tmp/package" npm; then
             echo "" >&2
-            echo "jevlin@${VERSION} is already on npm but is not what this tag would publish." >&2
+            echo "${PKG}@${VERSION} is already on npm but is not what this tag would publish." >&2
             echo "Nothing is republished: an npm version is immutable. Diagnose before re-running." >&2
             rm -rf "$tmp"
             exit 1
@@ -310,8 +316,15 @@ jobs:
       # from the package while the OIDC-issued credential is live; the
       # package's own postinstall still ships and still runs for whoever
       # installs it. --provenance attests the published package back to
-      # this workflow run and commit, using the id-token permission
-      # above instead of a stored NPM_TOKEN.
+      # this workflow run and commit.
+      #
+      # No stored token. npm's trusted publishing mints a short-lived
+      # credential from the job's OIDC token when the run's repository,
+      # workflow file and environment match the trusted-publisher record
+      # on the package (docs/RELEASING.md, "npm trusted publishing").
+      # The first version, 0.2.0, was published by hand with 2FA because
+      # that record can only be created on a package that already exists;
+      # every version after it publishes this way.
       - name: npm publish
         if: steps.registry.outputs.published == 'false'
         run: npm publish ./npm --access public --ignore-scripts --provenance
@@ -328,6 +341,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       VERSION: ${{ needs.preflight.outputs.version }}
+      PKG: "@jevlinsearch/jevlin"
     # Git Bash is present on the Windows runner, so the three platforms
     # run the same script and differ only in what the package does.
     defaults:
@@ -361,19 +375,19 @@ jobs:
         run: |
           deadline=$(( $(date +%s) + 600 ))
           attempt=0
-          until [ "$(npm view "jevlin@${VERSION}" version 2>/dev/null)" = "${VERSION}" ]; do
+          until [ "$(npm view "${PKG}@${VERSION}" version 2>/dev/null)" = "${VERSION}" ]; do
             attempt=$(( attempt + 1 ))
             if [ "$(date +%s)" -ge "$deadline" ]; then
-              echo "jevlin@${VERSION} was not observable on the registry within 600s ($attempt attempts)." >&2
+              echo "${PKG}@${VERSION} was not observable on the registry within 600s ($attempt attempts)." >&2
               echo "The publish step reported success, so this is a registry or a package-state problem," >&2
               echo "not something to fix by publishing again: the version is immutable." >&2
-              npm view jevlin versions --json >&2 || true
+              npm view "${PKG}" versions --json >&2 || true
               exit 1
             fi
             echo "attempt ${attempt}: not visible yet, waiting"
             sleep 10
           done
-          echo "jevlin@${VERSION} is visible after ${attempt} retries"
+          echo "${PKG}@${VERSION} is visible after ${attempt} retries"
 
       # The whole path, end to end, on a machine that has never seen this
       # package: npm install, the package's own postinstall choosing the
@@ -397,7 +411,7 @@ jobs:
           echo "installing into $tmp"
           cd "$tmp"
           npm init -y > /dev/null
-          npm install "jevlin@${VERSION}"
+          npm install "${PKG}@${VERSION}"
           version_line="$(npx --no-install jevlin version)"
           cd "$workspace"
           printf '%s\n' "$version_line" > npm-smoke-version.txt

@@ -115,7 +115,7 @@ func TestDecideRegistrationOutcomeFillsInAMissingAddressWithoutReaskingEnable(t 
 	if err := store.SaveMiningEnabled(true); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, _ := store.LoadPayoutAddress(); ok {
+	if _, ok, _ := testPayoutRecord(t, stateDir).Load(); ok {
 		t.Fatal("test fixture bug: an address is already on file")
 	}
 
@@ -126,7 +126,7 @@ func TestDecideRegistrationOutcomeFillsInAMissingAddressWithoutReaskingEnable(t 
 	if code != exitOK || !outcome.enabled || outcome.payoutAddress != addr {
 		t.Fatalf("decideRegistrationOutcome: got %+v code=%d, want enabled with %q", outcome, code, addr)
 	}
-	if got, ok, err := store.LoadPayoutAddress(); err != nil || !ok || got != addr {
+	if got, ok, err := testPayoutRecord(t, stateDir).Load(); err != nil || !ok || got != addr {
 		t.Fatalf("address not persisted: %q ok=%v err=%v", got, ok, err)
 	}
 	if got := registrationHint(outcome); len(got) != 1 || got[0] != "mining" {

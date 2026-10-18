@@ -34,10 +34,12 @@ func cloneDefaultTransport(dialer *net.Dialer) *http.Transport {
 }
 
 // describeConfigSource is the one function ruling D-R1 names: the config a
-// command reads is resolved in this order — -config, JEVLIN_CONFIG,
-// ./jevlin.toml, then the installation's own config
-// ($JEVLIN_HOME/jevlin.toml, else ~/.jevlin/jevlin.toml, when
-// that file exists) — and only then built-in defaults (the empty return).
+// command reads is resolved in this order — -config, JEVLIN_CONFIG, then
+// the installation's own config ($JEVLIN_HOME/jevlin.toml, else
+// ~/.jevlin/jevlin.toml, when that file exists) — and only then built-in
+// defaults (the empty return). A jevlin.toml in the working directory is
+// deliberately not a step: whoever wrote that directory would choose the
+// router and platform hosts the participant's keys are sent to.
 // loadConfig, configGatePath and every command that names its config source
 // call this one function, so the gate a command takes always keys on
 // exactly the file it is about to load.
@@ -46,18 +48,15 @@ func cloneDefaultTransport(dialer *net.Dialer) *http.Transport {
 // config.Load treats an explicit -config/JEVLIN_CONFIG as required to
 // exist and errors on its own when it does not, and that error should name
 // the path the participant gave, not silently fall through to a weaker
-// source. The last two steps are soft — picked up only when the file is
-// actually there — because neither is something a participant named, and a
-// participant who has not written either yet is not making a mistake.
+// source. The installation step is soft — picked up only when the file is
+// actually there — because it is not something a participant named, and a
+// participant who has not run setup yet is not making a mistake.
 func describeConfigSource(cfgPath string, getenv func(string) string) string {
 	if cfgPath != "" {
 		return cfgPath
 	}
 	if p := getenv("JEVLIN_CONFIG"); p != "" {
 		return p
-	}
-	if _, err := os.Stat("jevlin.toml"); err == nil {
-		return "jevlin.toml"
 	}
 	if home := defaultJevlinHome(getenv); home != "" {
 		candidate := filepath.Join(home, setupConfigFile)

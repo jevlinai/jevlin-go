@@ -7,6 +7,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -494,4 +495,108 @@ func TestWalletSendWithoutConfirmationSendsNothing(t *testing.T) {
 	if node.lastTx != "" {
 		t.Fatal("a declined send still broadcast a transaction")
 	}
+}
+
+// hostileNodeText is what a malicious node would put in any free-text
+// field: a screen clear, an OSC 52 clipboard write, a C1 CSI and a
+// right-to-left override.
+const hostileNodeText = "insufficient \x1b[2Jfunds\x1b]52;c;dHdpbGlnaHQxYXR0YWNrZXI=\x07\u009b31m\u202e"
+
+func TestWalletBalanceRefusesANonNumericAmount(t *testing.T) {
+	node := newFakeNode(t, nodeConfig{chainID: "twilight-devnet-2", balance: "\x1b]52;c;dHdpbGlnaHQx\x07100"})
+	dir := walletScratchDir(t)
+	var out, errOut bytes.Buffer
+	if code := cmdWallet([]string{"init", "-dir", dir, "-print-anyway"}, strings.NewReader(""), &out, &errOut,
+		envOf(map[string]string{walletPassphraseEnv: "p-test-1"})); code != 0 {
+		t.Fatalf("init: %s", errOut.String())
+	}
+	out.Reset()
+	errOut.Reset()
+	if code := cmdWallet([]string{"balance", "-dir", dir, "-node", node.srv.URL},
+		strings.NewReader(""), &out, &errOut, noEnv); code != exitTransport {
+		t.Fatalf("exit %d, want %d; stdout %q", code, exitTransport, out.String())
+	}
+	assertTerminalSafe(t, out.String())
+	assertTerminalSafe(t, errOut.String())
+	if !strings.Contains(errOut.String(), "not a decimal number") {
+		t.Errorf("stderr: %q", errOut.String())
+	}
+}
+
+func TestWalletSendSanitizesTheChainsRejectionLog(t *testing.T) {
+	node := newFakeNode(t, nodeConfig{
+		chainID: "twilight-devnet-2", accountNumber: 5, sequence: 9,
+		broadcastCode: 5, broadcastLog: hostileNodeText,
+	})
+	dir := walletScratchDir(t)
+	env := envOf(map[string]string{walletPassphraseEnv: "p-test-1"})
+	var out, errOut bytes.Buffer
+	if code := cmdWallet([]string{"init", "-dir", dir, "-print-anyway"}, strings.NewReader(""), &out, &errOut, env); code != 0 {
+		t.Fatalf("init: %s", errOut.String())
+	}
+	out.Reset()
+	errOut.Reset()
+	code := cmdWallet([]string{"send", "-dir", dir, "-node", node.srv.URL, "-chain-id", "twilight-devnet-2",
+		"-to", "twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh", "-amount", "1000", "-yes"},
+		strings.NewReader(""), &out, &errOut, env)
+	if code != exitChainRejected {
+		t.Fatalf("exit %d, want %d", code, exitChainRejected)
+	}
+	assertTerminalSafe(t, out.String())
+	assertTerminalSafe(t, errOut.String())
+	if !strings.Contains(errOut.String(), "insufficient") {
+		t.Errorf("the chain's reason should still reach the operator: %q", errOut.String())
+	}
+}
+
+func TestNodeErrorsAndLogsAreTerminalSafe(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": map[string]any{"code": -32603, "message": hostileNodeText, "data": hostileNodeText},
+		})
+	})
+	mux.HandleFunc("/abci_query", func(w http.ResponseWriter, r *http.Request) {
+		writeRPC(w, map[string]any{"response": map[string]any{"code": 5, "log": hostileNodeText}})
+	})
+	mux.HandleFunc("/tx", func(w http.ResponseWriter, r *http.Request) {
+		writeRPC(w, map[string]any{"hash": "AB", "height": "7",
+			"tx_result": map[string]any{"code": 3, "log": hostileNodeText}})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := newRPCClient(srv.URL)
+	ctx := context.Background()
+
+	if _, err := c.chainID(ctx); err == nil {
+		t.Fatal("an RPC error envelope must be an error")
+	} else {
+		assertTerminalSafe(t, err.Error())
+	}
+	if _, err := c.balance(ctx, "twilight1whoever", "utwlt"); err == nil {
+		t.Fatal("a failed ABCI query must be an error")
+	} else {
+		assertTerminalSafe(t, err.Error())
+	}
+	res, _, confirmed, err := c.queryTxOnce(ctx, "ab")
+	if err != nil || !confirmed {
+		t.Fatalf("queryTxOnce: confirmed=%v err=%v", confirmed, err)
+	}
+	assertTerminalSafe(t, res.TxResult.Log)
+}
+
+func TestReceiptSenderIsTerminalSafe(t *testing.T) {
+	var page txSearchPage
+	raw := `{"txs":[{"hash":"AB","height":"9","tx_result":{"code":0,"events":[{"type":"transfer","attributes":[` +
+		`{"key":"recipient","value":"twilight1me"},{"key":"amount","value":"5utwlt"},` +
+		`{"key":"sender","value":"twilight1\u001b]52;c;eA==\u0007\u202eevil"}]}]}}]}`
+	if err := json.Unmarshal([]byte(raw), &page); err != nil {
+		t.Fatal(err)
+	}
+	recs := receiptsCreditedTo(&page, "twilight1me", "utwlt")
+	if len(recs) != 1 {
+		t.Fatalf("receipts: %+v", recs)
+	}
+	assertTerminalSafe(t, recs[0].Sender)
 }

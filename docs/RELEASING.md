@@ -90,6 +90,9 @@ release in a trailing comment. A tag like `@v4` is a pointer its owner can move,
 "whatever `@v4` means today" is no answer for what runs beside a publishing credential;
 `ci.yml` holds none and is pinned anyway, because a CI that changes without a diff is the
 other thing pins prevent. A bump is a deliberate PR, and the comment names each SHA's release.
+The repository enforces it: an action that is not pinned to a full SHA fails the run instead
+of running. The rule reaches one step further than `uses:`, to the goreleaser binary that
+`goreleaser-action` downloads, which is named by its exact version for the same reason.
 
 ### `preflight` — may this tag become a release?
 
@@ -122,15 +125,21 @@ is what makes a rerun safe.
 
 Six static binaries (linux, darwin and windows, each amd64 and arm64), each archived with
 `LICENSE`, `NOTICE` and `README.md` — `tar.gz`, `zip` on Windows — and checksummed into
-`checksums.txt`, which is signed into `checksums.txt.sig`, published as a non-draft GitHub
-Release whose body is the commit log since the last tag, opened by a link to `CHANGELOG.md` at
-this one. It is the only job with `contents: write` and the only one that names the
-`release-signing` environment, and goreleaser runs only when the release is `absent`.
+`checksums.txt`, which is signed into `checksums.txt.sig`, published as a GitHub Release whose
+body is the commit log since the last tag, opened by a link to `CHANGELOG.md` at this one. It is
+the only job with `contents: write` and the only one that names the `release-signing`
+environment, and goreleaser runs only when the release is `absent`.
 
 goreleaser's `signs` step runs `go run ./tools/releasecheck sign` with the environment's
 `JEVLIN_RELEASE_SIGNING_KEY`. It signs only with a key whose public half the tagged
 `internal/selfupdate` compiles in, so a release no installed updater could verify stops here,
 before anything is published.
+
+goreleaser creates the release as a draft, uploads every asset to it, and publishes it last.
+Publishing is the moment the repository's immutable releases take hold: from then on GitHub
+refuses to add, replace or delete an asset, keeps the tag on its commit, and attaches a
+release attestation naming the tag, the commit and every asset. So what `npm/install.js` and
+the self-updater download under a version is fixed the moment anyone can see it.
 
 ### `verify-release` — read it back
 
@@ -186,9 +195,13 @@ number. The dead tag is inert: nothing resolves to it.
 `complete` and goreleaser is skipped, because rebuilding would replace assets a published
 package may already be downloading.
 
-**The release is partial.** Preflight stops and names what is missing. Stop too: whether it
-is safe to replace what did upload depends on whether anything has fetched it. Repair the
-release by hand, or delete the release (not the tag), and rerun.
+**goreleaser failed partway.** It publishes only after its last upload, so what it leaves is
+a draft: not public, not yet immutable, and nothing installs from it. Delete the draft and
+rerun.
+
+**The release is partial.** Preflight stops and names what is missing. A published release
+cannot be repaired: GitHub refuses to add or replace its assets, and deleting it does not
+free the tag name for another release. Leave it, and tag the next patch.
 
 **npm publish failed.** Rerun; the compare decides. Absent, it publishes; present and
 identical, it moves on; present and different, it stops.
@@ -264,8 +277,11 @@ at once: installations still trusting the leaked key are exposed until they upgr
 - **`release` environment**: deployments need a required reviewer's approval and are allowed
   only from `main` and `v*` tags.
 - **`release-signing` environment**: allowed only from `v*` tags, holding the one secret,
-  `JEVLIN_RELEASE_SIGNING_KEY`. Nothing else in the repository or the `release` environment
-  is a secret; npm authenticates by OIDC.
+  `JEVLIN_RELEASE_SIGNING_KEY`.
+- **Immutable releases**: a published release's assets and tag cannot change.
+- **Actions pinned to a full commit SHA**, required for every action a workflow uses.
+- **No other secrets**, in the repository or the `release` environment; npm authenticates by
+  OIDC.
 
 Three controls, because each covers a case the others do not. A tag push runs the workflow as
 it exists at the tagged commit, so a crafted commit could carry a `release.yml` without the
@@ -290,6 +306,19 @@ The record lives on npmjs.com, so nothing in this repository can widen it: a for
 differently named workflow cannot authenticate even with `id-token: write`, and renaming the
 workflow file or the environment breaks publishing until the record is changed to match.
 Trusted publishing needs npm 11.5.1 or later, so the job installs a pinned npm.
+
+The record is created on npmjs.com under the package's settings, and a package has to exist
+before it can carry one. The first real version, `@jevlinsearch/jevlin@0.2.0`, was therefore
+published by hand from the `v0.2.0` tag's `npm/` directory, through npm's staged publishing
+(`npm stage publish`, then approval with the account's 2FA), without provenance; the
+workflow's publish job then saw it present and identical and went on to the smoke. No npm
+token is stored anywhere in this repository's settings.
+
+Staging a package that does not exist yet makes npm publish a placeholder for it first, so
+the registry also lists `0.0.0-stage`, published a minute before 0.2.0. It is npm's, not a
+release: a `package.json` and a README saying a version is awaiting review, with no code, no
+`bin` and no install script. It was never `latest`, and nothing installs it unless asked for
+it by that exact version.
 
 ## Outside the automation, deliberately
 
