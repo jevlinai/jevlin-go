@@ -10,7 +10,15 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
-## Unreleased
+## v0.4.1 — 2026-10-19
+
+Releases are now signed, and a native install upgrades itself by default. From v0.4.0, run
+`jevlin upgrade` once: v0.4.0 only tells you this release exists, and installs it checking the
+checksum alone. From then on your copy checks the project's signature on every release and
+installs a newer one itself at the daily check; add `[update] mode = "notify"` to your config
+to be told instead. An npm install is updated with npm, as before. This release's updater has
+not been run on a Windows machine with real-time antivirus protection on; CI's Windows runners
+carry none.
 
 - **`jevlin upgrade` installs only releases signed by the project.** A release now carries
   `checksums.txt.sig`, a signature over `checksums.txt` by the project's release key, and the
