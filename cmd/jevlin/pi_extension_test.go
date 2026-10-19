@@ -33,15 +33,17 @@ import (
 // generation" are asked as questions about process-wide state.
 type piCall struct {
 	// Fire names the Pi event delivered; tool_call when empty.
-	Fire         string         `json:"fire"`
-	Session      string         `json:"session"`
-	Entries      any            `json:"entries"`
-	Command      string         `json:"command"`
-	ToolCallID   string         `json:"toolCallId"`
-	ToolName     string         `json:"toolName"`
-	NoSession    bool           `json:"noSession"`
-	BranchThrows bool           `json:"branchThrows"`
-	Event        map[string]any `json:"event"`
+	Fire         string `json:"fire"`
+	Session      string `json:"session"`
+	Entries      any    `json:"entries"`
+	Command      string `json:"command"`
+	ToolCallID   string `json:"toolCallId"`
+	ToolName     string `json:"toolName"`
+	NoSession    bool   `json:"noSession"`
+	BranchThrows bool   `json:"branchThrows"`
+	// SessionThrows makes the session manager itself throw when asked who it is.
+	SessionThrows bool           `json:"sessionThrows"`
+	Event         map[string]any `json:"event"`
 }
 
 type piOutcome struct {
@@ -129,7 +131,7 @@ func runPiExtensionFor(t *testing.T, cases map[string][]piCall, bin string) map[
    const handler = handlers[fire];
    const event = c.event ?? (fire === 'tool_call' ? { type: 'tool_call', toolName: c.toolName || 'bash', toolCallId: c.toolCallId, input: { command: c.command } } : { type: fire });
    const ctx = c.noSession ? {} : { sessionManager: {
-     getSessionId: () => c.session,
+     getSessionId: () => { if (c.sessionThrows) throw new Error('synthetic host failure'); return c.session; },
      getBranch: () => { if (c.branchThrows) throw new Error('synthetic host failure'); return c.entries; },
    } };
    const out = { command: null, returned: null, threw: '' };
@@ -1045,13 +1047,14 @@ func TestPiExtensionNeverFailsARunWhenItSettles(t *testing.T) {
 		return c
 	}
 	cases := map[string][]piCall{
-		"well formed":        {call, settled(piCall{Session: "s", Entries: good})},
-		"branch unreadable":  {call, settled(piCall{Session: "s", BranchThrows: true})},
-		"entries not a list": {call, settled(piCall{Session: "s", Entries: "nonsense"})},
-		"junk entries":       {call, settled(piCall{Session: "s", Entries: []any{nil, 7, "x", map[string]any{"type": "message"}}})},
-		"no session manager": {call, settled(piCall{NoSession: true})},
-		"no event":           {call, {Fire: "agent_settled", Session: "s", Entries: good, Event: map[string]any{}}},
-		"nothing at all":     {{Fire: "agent_settled", NoSession: true, Event: map[string]any{}}},
+		"well formed":            {call, settled(piCall{Session: "s", Entries: good})},
+		"branch unreadable":      {call, settled(piCall{Session: "s", BranchThrows: true})},
+		"entries not a list":     {call, settled(piCall{Session: "s", Entries: "nonsense"})},
+		"junk entries":           {call, settled(piCall{Session: "s", Entries: []any{nil, 7, "x", map[string]any{"type": "message"}}})},
+		"no session manager":     {call, settled(piCall{NoSession: true})},
+		"session manager throws": {call, settled(piCall{SessionThrows: true})},
+		"no event":               {call, {Fire: "agent_settled", Session: "s", Entries: good, Event: map[string]any{}}},
+		"nothing at all":         {{Fire: "agent_settled", NoSession: true, Event: map[string]any{}}},
 	}
 	for _, bin := range []string{"", newPiStandIn(t).bin} {
 		for name, outcomes := range runPiExtensionFor(t, cases, bin) {
@@ -1198,6 +1201,49 @@ func TestPiTurnEndOfARealSession(t *testing.T) {
 // what the router received: the turn end carries the turn id the search did,
 // and none of what a tool was given or returned.
 func TestPiTurnEndReachesTheRouterJoinedToItsSearch(t *testing.T) {
+	const sid = "01a152f1-14c4-76ba-b318-0a6107087104"
+	searchReq, turnRec, turnRaw := piPathToTheRouter(t, sid, true)
+	if searchReq == nil || turnRec == nil {
+		t.Fatalf("the router received a search: %v, a turn end: %v", searchReq != nil, turnRec != nil)
+	}
+	if searchReq.Trace.Harness != "pi" || searchReq.Trace.TurnID != traceHash(sid+"|6ca53764") {
+		t.Fatalf("the search's trace = %+v", searchReq.Trace)
+	}
+	// The turn end names the turn the search did.
+	if turnRec.TurnID != searchReq.Trace.TurnID || turnRec.SessionID != searchReq.Trace.SessionID || turnRec.Harness != "pi" {
+		t.Errorf("turn end ids %q/%q/%q, the search's %q/%q", turnRec.SessionID, turnRec.TurnID, turnRec.Harness, searchReq.Trace.SessionID, searchReq.Trace.TurnID)
+	}
+	if turnRec.Status != turnCompleted || turnRec.UserText != "who designed the stadium?" || turnRec.FinalText != "A synthetic architect." {
+		t.Errorf("turn end = %+v", turnRec)
+	}
+	if len(turnRec.Steps) != 3 || turnRec.Steps[1].Kind != "search" || turnRec.Steps[1].CallID != searchReq.Trace.CallID || turnRec.Steps[2].Name != "read" {
+		t.Errorf("steps = %+v, want the search joined to the call id %q", turnRec.Steps, searchReq.Trace.CallID)
+	}
+	for _, leak := range []string{"secret.txt", "TOOL OUTPUT", "stadium designer", "JEVLIN_TRACE_BRIDGE", sid, "6ca53764", "c-search"} {
+		if strings.Contains(turnRaw, leak) {
+			t.Errorf("the router received %q", leak)
+		}
+	}
+}
+
+// The same run in an installation that did not turn the turn end on: the
+// search is served and traced as before, and the router is told nothing of the
+// turn. The extension hands the turn over regardless; the binary declines it.
+func TestPiTurnEndStaysHomeUnlessTheInstallationOptedIn(t *testing.T) {
+	searchReq, turnRec, _ := piPathToTheRouter(t, "01a152f1-14c4-76ba-b318-0a6107087104", false)
+	if searchReq == nil || searchReq.Trace.TurnID == "" {
+		t.Fatal("the search was not served with its turn")
+	}
+	if turnRec != nil {
+		t.Errorf("the router received a turn end from an installation that did not opt in: %+v", turnRec)
+	}
+}
+
+// piPathToTheRouter runs the extension, the real binary and a loopback router
+// through one searched turn and returns what the router received. With the
+// turn end off it waits long enough for one that was wrongly sent to arrive.
+func piPathToTheRouter(t *testing.T, sid string, optIn bool) (searchReq *execRouterRequest, turnRec *turnEndRecord, turnRaw string) {
+	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("the search runs through sh")
 	}
@@ -1206,16 +1252,17 @@ func TestPiTurnEndReachesTheRouterJoinedToItsSearch(t *testing.T) {
 		t.Fatal("node is required to verify the embedded Pi extension")
 	}
 	in := newExecInstallation(t)
-	doc, err := os.ReadFile(in.cfg) // #nosec G304 -- the config this test just wrote under its own temp directory
-	if err != nil {
-		t.Fatal(err)
-	}
-	// The installation opts in to the turn end.
-	if err := os.WriteFile(in.cfg, bytes.Replace(doc, []byte("[miner]\n"), []byte("[miner]\nturn_end = true\n"), 1), 0o600); err != nil { // #nosec G703 -- the config this test wrote under its own temp directory
-		t.Fatal(err)
+	if optIn {
+		doc, err := os.ReadFile(in.cfg) // #nosec G304 -- the config this test just wrote under its own temp directory
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The installation opts in to the turn end.
+		if err := os.WriteFile(in.cfg, bytes.Replace(doc, []byte("[miner]\n"), []byte("[miner]\nturn_end = true\n"), 1), 0o600); err != nil { // #nosec G703 -- the config this test wrote under its own temp directory
+			t.Fatal(err)
+		}
 	}
 
-	const sid = "01a152f1-14c4-76ba-b318-0a6107087104"
 	search := "'" + in.bin + "' search -config '" + in.cfg + "' -format model \"stadium designer\""
 	user := piID("6ca53764", piUser("who designed the stadium?"))
 	asked := piAnswer("2d06d93e", "toolUse", piUsage(120, 18, 0, 0), piText("Let me look that up."),
@@ -1249,10 +1296,7 @@ func TestPiTurnEndReachesTheRouterJoinedToItsSearch(t *testing.T) {
 		t.Fatalf("extension: %v\n%s", err, out)
 	}
 
-	var searchReq *execRouterRequest
-	var turnRec *turnEndRecord
-	var turnRaw string
-	for deadline := time.Now().Add(15 * time.Second); (searchReq == nil || turnRec == nil) && time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+	look := func() {
 		for _, r := range in.router.received() {
 			r := r
 			var rec turnEndRecord
@@ -1263,25 +1307,12 @@ func TestPiTurnEndReachesTheRouterJoinedToItsSearch(t *testing.T) {
 			}
 		}
 	}
-	if searchReq == nil || turnRec == nil {
-		t.Fatalf("the router received a search: %v, a turn end: %v", searchReq != nil, turnRec != nil)
+	for deadline := time.Now().Add(15 * time.Second); (searchReq == nil || (optIn && turnRec == nil)) && time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		look()
 	}
-	if searchReq.Trace.Harness != "pi" || searchReq.Trace.TurnID != traceHash(sid+"|6ca53764") {
-		t.Fatalf("the search's trace = %+v", searchReq.Trace)
+	if !optIn {
+		time.Sleep(2 * time.Second)
+		look()
 	}
-	// The turn end names the turn the search did.
-	if turnRec.TurnID != searchReq.Trace.TurnID || turnRec.SessionID != searchReq.Trace.SessionID || turnRec.Harness != "pi" {
-		t.Errorf("turn end ids %q/%q/%q, the search's %q/%q", turnRec.SessionID, turnRec.TurnID, turnRec.Harness, searchReq.Trace.SessionID, searchReq.Trace.TurnID)
-	}
-	if turnRec.Status != turnCompleted || turnRec.UserText != "who designed the stadium?" || turnRec.FinalText != "A synthetic architect." {
-		t.Errorf("turn end = %+v", turnRec)
-	}
-	if len(turnRec.Steps) != 3 || turnRec.Steps[1].Kind != "search" || turnRec.Steps[1].CallID != searchReq.Trace.CallID || turnRec.Steps[2].Name != "read" {
-		t.Errorf("steps = %+v, want the search joined to the call id %q", turnRec.Steps, searchReq.Trace.CallID)
-	}
-	for _, leak := range []string{"secret.txt", "TOOL OUTPUT", "stadium designer", "JEVLIN_TRACE_BRIDGE", sid, "6ca53764", "c-search"} {
-		if strings.Contains(turnRaw, leak) {
-			t.Errorf("the router received %q", leak)
-		}
-	}
+	return searchReq, turnRec, turnRaw
 }
