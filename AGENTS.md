@@ -554,8 +554,8 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   re-renders it unattended under a deadline that kills the child, an in-place write could be
   stopped between truncating and writing and leave it empty (issue #37). So `realAgentOps`
   writes through `fsx.ReplaceFile` (`pkg/fsx/replace_file.go`): a `.tmp-` file beside the file,
-  synced and renamed over it, after following a link to the file it names, so a link stays a
-  link; an existing file keeps its mode, and one the in-place write could not have written
+  synced and renamed over it, after following a link to the file it names (a relative link read
+  from the real directory it sits in, as the kernel reads it), so a link stays a link; an existing file keeps its mode, and one the in-place write could not have written
   (read-only, another account's) is refused. A FIFO is refused before anything is opened. A
   rename still makes a new inode, so a hard link keeps the old bytes. And `commitPlan` holds a
   host's removals when one of its writes failed, and `uninstall -binary` keeps the binary when
