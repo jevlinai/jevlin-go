@@ -10,7 +10,19 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
-## Unreleased
+## v0.4.2 — 2026-10-19
+
+Two fixes to what the trace sends, a signature check for npm installs, and a guard for
+searches. The text sent with a search no longer carries an `Authorization` header's credential
+or the rest of a secret after an unclosed quote; `npm install` now checks the project's
+signature on the binary it downloads; and a crash while preparing the trace no longer stops a
+search. By default a native install on v0.4.1 takes this release by itself at its daily check,
+the signature checked, and the upgrade rewrites opencode's plugin and Pi's extension, which
+carry their own copy of the scrub; an npm install is updated with npm, then
+`jevlin agents install`. opencode's plugin and Pi's
+extension have not been live-smoked with the new scrub rules. This release's updater has not
+been run on a Windows machine with real-time antivirus protection on; CI's Windows runners carry
+none.
 
 - **A bug in preparing the trace can no longer stop a search.** Had the code that scrubs and
   caps the text sent with a search ever crashed, `jevlin search` crashed with it and sent
