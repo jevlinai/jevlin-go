@@ -3140,22 +3140,42 @@ func safetyOutcome(wrote int) string {
 	return "nothing was changed"
 }
 
+// commitPlan writes the plan's files, then makes its removals, and returns
+// how many of either failed.
+//
+// A host's removals wait on its writes: when a write for a host fails, that
+// host's removals are not made, and the run says so. On install a removal is
+// the clean-up of a file the write replaces -- an adapter that moved, an old
+// skill -- and making it after the write failed would leave the host with
+// neither. On uninstall it is the host's skill, and the write it waits on
+// takes our hooks out of the host's own file: with that write failed, the
+// hooks are still there, and keeping the skill leaves the host as it was,
+// fully installed, for the next run to finish, rather than half of it. A
+// held removal is not counted again: the failed write already was.
 func commitPlan(ops agentOps, p *agentPlan, stdout, stderr io.Writer) int {
 	failures := 0
+	failedHosts := map[string]bool{}
 	for _, wr := range p.writes {
 		if err := ops.mkdirAll(filepath.Dir(wr.path), 0o700); err != nil {
 			fmt.Fprintf(stderr, "jevlin agents: %s: %v\n", filepath.Dir(wr.path), err)
 			failures++
+			failedHosts[wr.surface] = true
 			continue
 		}
 		if err := ops.writeFile(wr.path, wr.contents, wr.mode); err != nil {
 			fmt.Fprintf(stderr, "jevlin agents: %s: %v\n", wr.path, err)
 			failures++
+			failedHosts[wr.surface] = true
 			continue
 		}
 		fmt.Fprintf(stdout, "wrote %s\n", tilde(ops.home, wr.path))
 	}
 	for _, r := range p.removes {
+		if failedHosts[r.surface] {
+			fmt.Fprintf(stderr, "jevlin agents: kept %s: a write for %s failed above, so its removals wait for a run that can make it\n",
+				tilde(ops.home, r.path), r.surface)
+			continue
+		}
 		if err := ops.removeAll(r.path); err != nil {
 			fmt.Fprintf(stderr, "jevlin agents: remove %s: %v\n", r.path, err)
 			failures++

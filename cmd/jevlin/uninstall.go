@@ -153,6 +153,12 @@ type uninstallRun struct {
 	// its revert did not finish or it could not be trusted.
 	envKept  bool
 	failures int
+	// integrationFailures counts the changes to a coding agent's files that
+	// failed. While one has, a hook of ours may still be in the host's
+	// file, and the binary it runs is kept (keepBinary).
+	integrationFailures int
+	// binaryKept: -binary was asked for and keepBinary kept it.
+	binaryKept bool
 	// residual: binary material -binary could not remove and says where it is.
 	residual []string
 	// updateLock is the binary's own update lock, held by -binary's exclusion.
@@ -302,7 +308,11 @@ func (r *uninstallRun) run(homeFlag string) int {
 		r.applyPurge()
 	}
 	if r.binary {
-		r.applyBinary()
+		if r.integrationFailures > 0 {
+			r.keepBinary()
+		} else {
+			r.applyBinary()
+		}
 	}
 	if r.purge {
 		r.removeHomeIfEmpty()
@@ -1355,6 +1365,7 @@ func (r *uninstallRun) applyIntegrations() {
 		}
 		if failures := commitPlan(ops, p, r.d.stdout, r.d.stderr); failures > 0 {
 			r.failures += failures
+			r.integrationFailures += failures
 		}
 	})
 }
@@ -1430,6 +1441,22 @@ func (r *uninstallRun) applyPurge() {
 	}
 }
 
+// keepBinary is -binary after a change to a coding agent's files failed
+// (issue #37). A hook file that could not be written still holds our hooks,
+// and the host runs them on every tool call: with the binary gone, each of
+// them would fail, and the uninstall that could take them out would be gone
+// with it. So the binary stays, the run says why, and it exits non-zero.
+// Only the binary waits. The environment block, revocation and -purge-state
+// still go: a hook names the binary by its full path, and one whose config
+// is gone exits 0 without a word, so none of them breaks a hook left behind;
+// and uninstall finds this installation's files from its path, so a second
+// run still can, with or without jevlin.toml.
+func (r *uninstallRun) keepBinary() {
+	r.binaryKept = true
+	r.fail("kept %s: %d change(s) to a coding agent's files failed above, so a hook that runs it may still be in place",
+		strings.Join(r.binarySet(), ", "), r.integrationFailures)
+}
+
 func (r *uninstallRun) applyBinary() {
 	owned := r.ownedBinary()
 	for _, p := range r.binarySet() {
@@ -1493,6 +1520,11 @@ func (r *uninstallRun) closing(revocation string) {
 	} else {
 		r.printf("Uninstall complete.\n")
 	}
+	if r.binaryKept {
+		r.printf("\nThe binary is still in place, kept for the hooks a failed change left in a coding agent's\n" +
+			"files. Run the same uninstall again once those files can be changed; it then removes the\n" +
+			"hooks and the binary.\n")
+	}
 	if len(r.residual) > 0 {
 		r.printf("\nLeft behind, because something may still be running it; delete once nothing is:\n")
 		for _, p := range r.residual {
@@ -1524,7 +1556,7 @@ func (r *uninstallRun) closing(revocation string) {
 				"Or, to use this binary without setting it up again, pass -config %s to each command.\n"+
 				"Do not run `jevlin connect` on its own to come back: with nothing naming this\n"+
 				"installation any more, it would register this machine anew.\n", r.home, r.cfgPath)
-		} else {
+		} else if !r.binaryKept {
 			r.printf("\nTo come back, reinstall and run setup; it finds this state and uses it.\n")
 		}
 		r.printf("Nothing was revoked: uninstall without -purge-state leaves every authorization as it is.\n")
