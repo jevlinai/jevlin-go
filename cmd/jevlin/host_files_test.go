@@ -128,7 +128,10 @@ func TestAHostsRemovalsWaitOnItsFailedWrite(t *testing.T) {
 	if _, ok := m.files["/home/u/.cursor/skills/jevlin/SKILL.md"]; ok {
 		t.Error("Cursor's skill was kept, though Cursor's write went through")
 	}
-	if !strings.Contains(errOut.String(), "kept ~/.claude/skills/jevlin") {
+	// Spelled the way the run spells it: tilde shortens a path only under
+	// the OS's own separator, so on Windows the fake machine's POSIX path is
+	// printed whole.
+	if !strings.Contains(errOut.String(), "kept "+tilde(ops.home, "/home/u/.claude/skills/jevlin")) {
 		t.Errorf("the held removal was not named:\n%s", errOut.String())
 	}
 }
