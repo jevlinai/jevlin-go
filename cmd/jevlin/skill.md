@@ -50,7 +50,7 @@ providers, and not every provider honors them, so results from other dates or
 other hosts can still come back. That is not a failure and not something to
 report as one. If the answer must come from one host or one period, check each
 citation's `url` host or date yourself and use only what qualifies.
-`max_results` is a cap and is applied.
+`max_results` is a cap and is applied.{{FORMS}}
 
 ## What comes back
 
@@ -84,7 +84,7 @@ included. What goes with that list is the providers' own answer texts, so
 ask for it when the pages are what matters — it is not the default.
 `decision` says which providers ran.
 `usage.cost_micros` is what the search cost the network, in millionths of a
-dollar; mention it only if the user asks.
+dollar; mention it only if the user asks.{{FORMS_READING}}
 
 Decide what to do from `ok`, `retryable` and `action`. Never from the message
 text — the message is for a human reading a log, and its wording is not a
