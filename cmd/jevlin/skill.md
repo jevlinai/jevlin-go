@@ -72,16 +72,17 @@ never answer the question as if the search had run.
 
 ## Reading the answer
 
-Read `result.merged` first: the citations of every provider that answered,
-deduplicated by page. Each entry's `found_by` says how many providers agree
-on that page — the fan-out's own evidence — and `best_rank` is the best
-position any of them gave it. `found_in` says where in the per-provider
-result each page came from: one `{candidate, citation}` position per
-`found_by` provider, in the same order. Ask `"view":"merged"` when tokens
-matter: it drops the per-provider `candidates` list and keeps everything
-else, `merged` included. What goes with that list is the providers' own
-answer texts, so ask for it when the pages are what matters — it is
-not the default. `decision` says which providers ran.
+Read `result.merged` first: the router's own list of the pages every
+provider that answered returned, one entry per page, best first. Each
+entry's `found_by` says how many providers agree on that page — the
+fan-out's own evidence — and `best_rank` is the best position any of them
+gave it. `found_in` says where in the per-provider result each page came
+from: one `{candidate, citation}` position per `found_by` provider, in the
+same order. Ask `"view":"merged"` when tokens matter: it drops the
+per-provider `candidates` list and keeps everything else, `merged`
+included. What goes with that list is the providers' own answer texts, so
+ask for it when the pages are what matters — it is not the default.
+`decision` says which providers ran.
 `usage.cost_micros` is what the search cost the network, in millionths of a
 dollar; mention it only if the user asks.
 

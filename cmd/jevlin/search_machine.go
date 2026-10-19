@@ -17,8 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/url"
-	"sort"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -397,8 +396,21 @@ type machineResult struct {
 	// Merged is present in every view: it is the whole reason the option
 	// exists, so an agent that asked for "merged" still gets it, and one
 	// that didn't ask gets it anyway ("an agent may always read merged
-	// first" — S3).
+	// first" — S3). It is the router's merged view, in the router's order
+	// and cut to the router's window: one merge, the router's, which every
+	// deployed router has returned since before v0.1.0. This client used to
+	// run a second one of its own over the candidates, and every benchmark
+	// that included it was measuring a merge nobody maintained.
 	Merged []machineMergedPage `json:"merged"`
+	// Coverage, MergedLimit, MergedTotal and ExcerptsTrimmed are the
+	// router's account of its merged view, carried when the router sent
+	// them (Jevlin-core #55 adds them) and absent when it did not: the
+	// window it applied, how many pages there were before it, and whether
+	// its character budget cut an excerpt.
+	Coverage        *machineCoverage `json:"coverage,omitempty"`
+	MergedLimit     *int             `json:"merged_limit,omitempty"`
+	MergedTotal     *int             `json:"merged_total,omitempty"`
+	ExcerptsTrimmed bool             `json:"excerpts_trimmed,omitempty"`
 	// Candidates is a pointer so "view":"merged" can omit the key
 	// entirely (a nil pointer with omitempty) while "full" — the
 	// default — always carries it, even on the (real-router-never-sends-
@@ -407,12 +419,22 @@ type machineResult struct {
 	Candidates *[]machineCandidate `json:"candidates,omitempty"`
 }
 
-// machineMergedPage is one page after S3's cross-provider merge: the
-// citations of every "ok" candidate, deduplicated by normalized URL.
+// machineMergedPage is one page of the router's merged view, mapped field
+// for field. The six fields this envelope has always carried keep their
+// names and types; the rest are the router's own evidence for the page,
+// present when the router sent them.
 type machineMergedPage struct {
-	URL     string   `json:"url"`
-	Title   string   `json:"title,omitempty"`
-	Snippet string   `json:"snippet,omitempty"`
+	URL string `json:"url"`
+	// CanonicalURL is the key the router merged the page under. It is
+	// informational: cite URL, which is a spelling a provider returned.
+	CanonicalURL string `json:"canonical_url,omitempty"`
+	Title        string `json:"title,omitempty"`
+	// Snippet is the router's excerpt: since Jevlin-core #55 every
+	// provider's text for the page, joined; before it, the longest one.
+	Snippet  string   `json:"snippet,omitempty"`
+	Excerpts []string `json:"excerpts,omitempty"`
+	// FoundBy is the providers that listed the page, each once, in the
+	// order the router lists them.
 	FoundBy []string `json:"found_by"`
 	// FoundIn is where those providers cited the page in the result the
 	// router stores under request_id: one entry per FoundBy provider, in
@@ -420,20 +442,43 @@ type machineMergedPage struct {
 	// (dropin-miner#126). With "view":"merged" the candidates list is omitted, so
 	// without these positions nothing maps a page back into the stored
 	// result — and the router's own feedback events (result.fetched,
-	// result.cited) name a candidate and a citation, not a URL. The merge
-	// knows the positions while it runs; it used to throw them away.
-	FoundIn  []machineMergedPosition `json:"found_in"`
-	BestRank int                     `json:"best_rank"`
+	// result.cited) name a candidate and a citation, not a URL.
+	FoundIn []machineMergedPosition `json:"found_in"`
+	// BestRank is 0-based, as it always was here; the router's is 1-based.
+	BestRank int `json:"best_rank"`
+	// Votes, Groups, Exclusive and MatchedTerms are the router's
+	// corroboration for the page (Jevlin-core #55): distinct (index group,
+	// query form) pairs that listed it, distinct index groups, whether
+	// exactly one group did, and the query's identifiers found in it.
+	Votes        int      `json:"votes,omitempty"`
+	Groups       int      `json:"groups,omitempty"`
+	Exclusive    bool     `json:"exclusive,omitempty"`
+	MatchedTerms []string `json:"matched_terms,omitempty"`
 }
 
 // machineMergedPosition is one (candidate, citation) position in the
 // router's own result: the candidate's index in result.candidates —
 // every candidate, not only the "ok" ones the merge reads — and the
-// citation's index within that candidate's list, which is the same
-// 0-based rank best_rank is measured in.
+// citation's index within that candidate's list.
 type machineMergedPosition struct {
 	Candidate int `json:"candidate"`
 	Citation  int `json:"citation"`
+}
+
+// machineCoverage is the router's account of its whole merge, not only
+// the window (Jevlin-core #55): how many pages, how many only one index
+// group returned and how many two or more did, pages per group, and —
+// when search_queries were sent — pages per query form, index 0 being the
+// query itself, and how many only a reformulation found.
+type machineCoverage struct {
+	Pages             int            `json:"pages"`
+	Exclusive         int            `json:"exclusive"`
+	Corroborated      int            `json:"corroborated"`
+	Groups            int            `json:"groups"`
+	ByGroup           map[string]int `json:"by_group,omitempty"`
+	ExclusiveByGroup  map[string]int `json:"exclusive_by_group,omitempty"`
+	ByForm            []int          `json:"by_form,omitempty"`
+	ReformulationOnly int            `json:"reformulation_only,omitempty"`
 }
 
 // machineDecision is the router's decision block, carried through: which
@@ -485,9 +530,16 @@ type machineCitation struct {
 func machineResultOf(s routerSuccess, view string) *machineResult {
 	r := s.Response
 	out := &machineResult{
-		RequestID: s.RequestID,
-		Chosen:    r.Chosen,
-		Merged:    mergedPagesOf(r),
+		RequestID:       s.RequestID,
+		Chosen:          r.Chosen,
+		Merged:          mergedOf(r),
+		MergedLimit:     r.MergedLimit,
+		MergedTotal:     r.MergedTotal,
+		ExcerptsTrimmed: r.ExcerptsTrimmed,
+	}
+	if r.Coverage != nil {
+		cov := machineCoverage(*r.Coverage)
+		out.Coverage = &cov
 	}
 	if r.Session != nil {
 		out.SessionID = r.Session.ID
@@ -523,11 +575,14 @@ func machineResultOf(s routerSuccess, view string) *machineResult {
 			mc.LatencyMS = c.Latency.TotalMS
 		}
 		for _, cit := range c.Citations {
-			// A conversion, not a field-by-field copy, on purpose: if the
-			// router type ever grows a field, this stops compiling and
-			// someone has to decide whether the machine contract should
-			// carry it. A literal would silently drop it instead.
-			mc.Citations = append(mc.Citations, machineCitation(cit))
+			// Field by field, and on purpose not rank and form: they are the
+			// router's keys for a citation, which mergedOf reads to find
+			// found_in's positions, and the envelope's position is the
+			// index in this list. TestTheRouterCitationsFieldsAreDecided
+			// pins routerCitation's fields, so one the router grows stops
+			// the build's tests until someone decides whether the machine
+			// contract carries it.
+			mc.Citations = append(mc.Citations, machineCitation{URL: cit.URL, Title: cit.Title, Snippet: cit.Snippet})
 		}
 		candidates = append(candidates, mc)
 	}
@@ -539,119 +594,91 @@ func machineResultOf(s routerSuccess, view string) *machineResult {
 	return out
 }
 
-// mergePage accumulates one merged page while r.Candidates is walked in
-// order. foundBy is tracked in a set alongside the ordered slice so a
-// provider whose own citation list somehow repeats a URL is not counted
-// twice.
-type mergePage struct {
-	page     machineMergedPage
-	foundSet map[string]bool
-}
-
-// normalizeMergeKey is S3's URL identity rule: scheme dropped, host
-// lowercased WITH its port kept (u.Host, not u.Hostname() — ":8080" and no
-// port are different endpoints, not the same page twice), one leading
-// "www." dropped, a trailing slash dropped, fragment dropped (url.Parse
-// never puts it in Path or RawQuery, so nothing further is needed to drop
-// it) — the query string is kept, because two pages differing only in
-// query are, by the spec, distinct pages, not the same one. The path is
-// EscapedPath(), not Path: Path is already percent-decoded, so "/a%2Fb"
-// and "/a/b" would collide on it even though they name different
-// resources (a literal "/" inside one path segment versus a second
-// segment).
+// mergedOf maps the router's merged view into the envelope's, in the
+// router's order, with no re-sorting and no re-deduplication: the order and
+// the page identity are the router's contract, and a second opinion here
+// is what this replaced.
 //
-// ok is false, and the citation must be dropped from merged entirely
-// rather than keyed to "", when the URL is not a fetchable page at all:
-// an opaque URL (mailto:, tel:, javascript: — Host and Path both empty
-// because there is no "//authority/path" to have one), the empty string,
-// or anything that fails to parse. Keying these to "" would merge a
-// mailto: link from one provider with a tel: link from another, and with
-// every other citation that also failed to name a page.
-func normalizeMergeKey(raw string) (key string, ok bool) {
-	trimmed := strings.TrimSpace(raw)
-	u, err := url.Parse(trimmed)
-	if err != nil {
-		return "", false
+// A 200 to a search that asked for the merged view and has no "merged" key
+// is the router breaking that contract. It maps to an empty list, never to
+// a failure: the search ran, and its candidates are intact. Nothing is
+// said on stderr: machine mode writes none, because the host that runs the
+// search hands its stderr to the model as well, and the envelope is the
+// answer.
+func mergedOf(r routerResponse) []machineMergedPage {
+	if r.Merged == nil {
+		return []machineMergedPage{}
 	}
-	if u.Host == "" && u.Path == "" {
-		return "", false
-	}
-	host := strings.ToLower(u.Host)
-	host = strings.TrimPrefix(host, "www.")
-	path := strings.TrimSuffix(u.EscapedPath(), "/")
-	key = host + path
-	if u.RawQuery != "" {
-		key += "?" + u.RawQuery
-	}
-	return key, true
-}
-
-// mergedPagesOf builds S3's result.merged: the citations of every "ok"
-// candidate, deduplicated by normalizeMergeKey, ordered by how many
-// providers found a page (most first), then by the best (smallest)
-// 0-based rank any one of them gave it, then by which page this walk saw
-// first. sort.SliceStable is what makes that last rule free: accs starts
-// in first-appearance order, and a stable sort never reorders equal keys.
-//
-// It also records, for each page, where every provider that found it cited
-// it. The candidate index is this walk's own, over r.Candidates entire, so
-// it names the position in the result the router stores rather than a
-// position in the "ok" subsequence the merge happens to read (dropin-miner#126).
-func mergedPagesOf(r routerResponse) []machineMergedPage {
-	byKey := make(map[string]*mergePage)
-	var accs []*mergePage
-	for i, c := range r.Candidates {
-		if c.Status != "ok" {
-			continue
+	pages := make([]machineMergedPage, 0, len(*r.Merged))
+	for _, m := range *r.Merged {
+		page := machineMergedPage{
+			URL:          m.URL,
+			CanonicalURL: m.CanonicalURL,
+			Title:        m.Title,
+			Snippet:      m.Excerpt,
+			Excerpts:     m.Excerpts,
+			FoundBy:      []string{},
+			FoundIn:      []machineMergedPosition{},
+			// The router's rank is 1-based and this envelope's has always
+			// been 0-based. A rank below 1 is not one the router writes;
+			// it is held at 0 rather than carried out as a negative.
+			BestRank:     max(m.BestRank-1, 0),
+			Votes:        m.Votes,
+			Groups:       m.Groups,
+			Exclusive:    m.Exclusive,
+			MatchedTerms: m.MatchedTerms,
 		}
-		for rank, cit := range c.Citations {
-			key, keyable := normalizeMergeKey(cit.URL)
-			if !keyable {
+		// found_by on the wire is one entry per listing — a provider that
+		// found the page under the query and under a reformulation is
+		// listed twice. The envelope's is the providers, each once, in the
+		// router's order, and each provider's position is taken from its
+		// first listing.
+		seen := map[string]bool{}
+		var firsts []routerFoundBy
+		for _, fb := range m.FoundBy {
+			if seen[fb.Provider] {
 				continue
 			}
-			acc, ok := byKey[key]
-			if !ok {
-				acc = &mergePage{
-					page: machineMergedPage{
-						URL:      cit.URL,
-						Title:    cit.Title,
-						Snippet:  cit.Snippet,
-						BestRank: rank,
-					},
-					foundSet: map[string]bool{},
-				}
-				byKey[key] = acc
-				accs = append(accs, acc)
-			}
-			if len(cit.Snippet) > len(acc.page.Snippet) {
-				acc.page.Snippet = cit.Snippet
-			}
-			if rank < acc.page.BestRank {
-				acc.page.BestRank = rank
-			}
-			if !acc.foundSet[c.Provider] {
-				acc.foundSet[c.Provider] = true
-				acc.page.FoundBy = append(acc.page.FoundBy, c.Provider)
-				// The same occurrence found_by counts: a provider whose
-				// own list cites one page more than once contributes the
-				// position of its FIRST citation of it, which is what
-				// keeps found_in and found_by parallel entry for entry.
-				acc.page.FoundIn = append(acc.page.FoundIn, machineMergedPosition{Candidate: i, Citation: rank})
-			}
+			seen[fb.Provider] = true
+			page.FoundBy = append(page.FoundBy, fb.Provider)
+			firsts = append(firsts, fb)
 		}
-	}
-	sort.SliceStable(accs, func(i, j int) bool {
-		a, b := accs[i], accs[j]
-		if len(a.page.FoundBy) != len(b.page.FoundBy) {
-			return len(a.page.FoundBy) > len(b.page.FoundBy)
-		}
-		return a.page.BestRank < b.page.BestRank
-	})
-	pages := make([]machineMergedPage, 0, len(accs))
-	for _, acc := range accs {
-		pages = append(pages, acc.page)
+		page.FoundIn = positionsOf(r.Candidates, firsts)
+		pages = append(pages, page)
 	}
 	return pages
+}
+
+// positionsOf finds each listing's (candidate, citation) position in the
+// router's candidates. The candidate is the provider's index in the whole
+// list. The citation is found by its (form, rank) pair, never computed as
+// rank − 1: since Jevlin-core #55 a candidate's ranks restart for each
+// query form, so a rank names one citation only together with its form,
+// and rank − 1 points at the wrong one the moment a candidate carries two
+// forms.
+//
+// found_in is read in step with found_by, entry for entry. So when any
+// listing cannot be found — a provider with no candidate, or no citation
+// at that form and rank, which a router keeping its own contract never
+// sends — the page carries no positions at all. A shorter list would pair
+// every later position with the wrong provider, which is worse than none,
+// and a guessed one would name a citation the provider never gave.
+func positionsOf(candidates []routerCandidate, listings []routerFoundBy) []machineMergedPosition {
+	positions := make([]machineMergedPosition, 0, len(listings))
+	for _, fb := range listings {
+		ci := slices.IndexFunc(candidates, func(c routerCandidate) bool { return c.Provider == fb.Provider })
+		if ci < 0 {
+			return []machineMergedPosition{}
+		}
+		ti := slices.IndexFunc(candidates[ci].Citations, func(c routerCitation) bool {
+			return c.Form == fb.Form && c.Rank == fb.Rank
+		})
+		if ti < 0 {
+			return []machineMergedPosition{}
+		}
+		positions = append(positions, machineMergedPosition{Candidate: ci, Citation: ti})
+	}
+	return positions
 }
 
 // machineMining is the economic half of the answer, and it is separate

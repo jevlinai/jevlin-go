@@ -348,9 +348,13 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	}
 	// Only "merged" travels: it is the one view the router accepts, while
 	// "full" (explicit or defaulted) is this client's own rendering choice
-	// and would be refused upstream with a 400.
+	// and would be refused upstream with a 400. On --stdin it travels
+	// whatever the caller asked, because the envelope's merged list IS the
+	// router's: the caller's view decides only whether the envelope also
+	// carries the candidates. The human form sends it only for -view
+	// merged, which is what that flag has always meant.
 	forwardView := ""
-	if view == "merged" {
+	if view == "merged" || machine {
 		forwardView = "merged"
 	}
 	out := performSearch(ctx, ops.now, searchCall{
@@ -911,7 +915,18 @@ type routerResponse struct {
 	Query      string            `json:"query"`
 	Chosen     int               `json:"chosen"`
 	Candidates []routerCandidate `json:"candidates"`
-	Session    *struct {
+	// Merged is the router's merged view, which every --stdin search asks
+	// for. A pointer, so a 200 with no "merged" key — the router breaking
+	// its contract — is told apart from an empty merge, "merged": [].
+	Merged *[]routerMergedPage `json:"merged,omitempty"`
+	// Coverage, MergedLimit, MergedTotal and ExcerptsTrimmed come with the
+	// merged view from Jevlin-core #55 on; a router before it sends none of
+	// them, and each decodes to absent.
+	Coverage        *routerCoverage `json:"coverage,omitempty"`
+	MergedLimit     *int            `json:"merged_limit,omitempty"`
+	MergedTotal     *int            `json:"merged_total,omitempty"`
+	ExcerptsTrimmed bool            `json:"excerpts_trimmed,omitempty"`
+	Session         *struct {
 		ID string `json:"id"`
 	} `json:"session,omitempty"`
 	// Decision and Usage are pointers, not values, so a router response
@@ -966,10 +981,58 @@ type routerLatency struct {
 	TotalMS int64 `json:"total_ms,omitempty"`
 }
 
+// routerCitation's Rank is the citation's 1-based place in its
+// candidate's list, after the router's normalisation; Form is the query
+// form that found it, 0 (absent) for query and n for the n-th
+// search_queries entry. Since Jevlin-core #55 ranks restart for each form,
+// so the two together name one citation, which is how mergedOf finds a
+// merged page's position.
 type routerCitation struct {
 	URL     string `json:"url"`
 	Title   string `json:"title,omitempty"`
 	Snippet string `json:"snippet,omitempty"`
+	Rank    int    `json:"rank,omitempty"`
+	Form    int    `json:"form,omitempty"`
+}
+
+// routerMergedPage is one page of the router's merged view. Every field
+// Jevlin-core #55 adds — canonical_url, groups, exclusive, votes,
+// matched_terms and a found_by entry's form — decodes as optional, so the
+// same binary reads the view before and after it.
+type routerMergedPage struct {
+	URL          string          `json:"url"`
+	CanonicalURL string          `json:"canonical_url,omitempty"`
+	Title        string          `json:"title,omitempty"`
+	Excerpt      string          `json:"excerpt,omitempty"`
+	Excerpts     []string        `json:"excerpts,omitempty"`
+	BestRank     int             `json:"best_rank"`
+	FoundBy      []routerFoundBy `json:"found_by"`
+	Groups       int             `json:"groups,omitempty"`
+	Exclusive    bool            `json:"exclusive,omitempty"`
+	Votes        int             `json:"votes,omitempty"`
+	MatchedTerms []string        `json:"matched_terms,omitempty"`
+}
+
+// routerFoundBy is one listing of a merged page: the provider, its 1-based
+// rank for the page, and the query form it was listed under.
+type routerFoundBy struct {
+	Provider string `json:"provider"`
+	Rank     int    `json:"rank"`
+	Form     int    `json:"form,omitempty"`
+}
+
+// routerCoverage is the router's account of its whole merge. Its fields are
+// machineCoverage's, field for field, so machineResultOf converts rather
+// than copies: a field either gains stops the build until the other has it.
+type routerCoverage struct {
+	Pages             int            `json:"pages"`
+	Exclusive         int            `json:"exclusive"`
+	Corroborated      int            `json:"corroborated"`
+	Groups            int            `json:"groups"`
+	ByGroup           map[string]int `json:"by_group,omitempty"`
+	ExclusiveByGroup  map[string]int `json:"exclusive_by_group,omitempty"`
+	ByForm            []int          `json:"by_form,omitempty"`
+	ReformulationOnly int            `json:"reformulation_only,omitempty"`
 }
 
 func (r routerResponse) chosen() *routerCandidate {

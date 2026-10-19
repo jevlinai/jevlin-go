@@ -314,11 +314,14 @@ func TestMachineOptionsRoundTripIntoTheBody(t *testing.T) {
 			},
 		},
 		{
-			name:  "view full is the client's own and never travels",
+			// "full" is still the client's own word and never travels; what
+			// travels is "merged", because the envelope's merged list is the
+			// router's and every --stdin search asks for it.
+			name:  "view full asks the router for its merged view all the same",
 			stdin: `{"version":1,"query":"q","view":"full"}`,
 			check: func(t *testing.T, body map[string]any) {
-				if _, ok := body["view"]; ok {
-					t.Errorf("view sent for the local default: %v", body)
+				if body["view"] != "merged" {
+					t.Errorf("view: %v, want merged", body)
 				}
 			},
 		},
@@ -340,16 +343,16 @@ func TestMachineOptionsRoundTripIntoTheBody(t *testing.T) {
 			},
 		},
 		{
-			name:  "none of the options: unchanged from today",
+			name:  "none of the options: only the query, and the merged view",
 			stdin: `{"version":1,"query":"q"}`,
 			check: func(t *testing.T, body map[string]any) {
-				for _, k := range []string{"tier", "recency", "domain_filter", "max_results", "providers", "view"} {
+				for _, k := range []string{"tier", "recency", "domain_filter", "max_results", "providers"} {
 					if _, ok := body[k]; ok {
 						t.Errorf("%s present in a version-1 request that only sent query: %v", k, body)
 					}
 				}
-				if body["query"] != "q" {
-					t.Errorf("body changed for a query-only request: %v", body)
+				if body["query"] != "q" || body["view"] != "merged" {
+					t.Errorf("body for a query-only request: %v", body)
 				}
 			},
 		},
