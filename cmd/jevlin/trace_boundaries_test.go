@@ -121,6 +121,13 @@ func assertPreparedHistory(t *testing.T, text, source string) {
 	if len(text) > traceHistoryCap || !utf8.ValidString(text) {
 		t.Fatalf("history exceeds byte cap or is invalid UTF-8: %d", len(text))
 	}
+	assertNoCanaryFragments(t, text)
+}
+
+// assertNoCanaryFragments fails if text still holds any piece of a synthetic
+// secret that traceBoundaryInputs and traceIdentityInputs plant.
+func assertNoCanaryFragments(t *testing.T, text string) {
+	t.Helper()
 	for _, fragment := range []string{"CredentialBody0123456789", "0123456789ABCDEF", "SyntheticPayload", "PasswordCanary0123456789", "syntheticperson012345", "SyntheticPerson012345",
 		"HunterCanary0123456789", "DumpCanary", "BridgeCanary0123456789", "SyntheticHost0123", "syntheticacct0123"} {
 		if strings.Contains(strings.ToLower(text), strings.ToLower(fragment)) {

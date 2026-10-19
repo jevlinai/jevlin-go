@@ -309,7 +309,8 @@ func hookDispatch(ops hookOps, args []string, stdin io.Reader, stdout, stderr io
 			hookCodex(ops, hc, args[1], payload, stdout)
 		}
 	case "turn":
-		// A JavaScript host's plugin, at the end of a turn (turn_hosts.go).
+		// A JavaScript host's plugin or extension, at the end of a turn
+		// (turn_hosts.go).
 		if len(args) > 1 {
 			hookHostTurn(ops, hc, args[1], payload)
 		}
