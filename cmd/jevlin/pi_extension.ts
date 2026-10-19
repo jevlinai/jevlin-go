@@ -5,10 +5,11 @@
 // Before each bash call that runs our search, it prefixes the command with
 // JEVLIN_TRACE_BRIDGE=<envelope> carrying Pi's REAL session identity —
 // hashed with the same domain-separated SHA-256 as the Go binary, so the raw
-// id never leaves the machine — the compaction generation of this session
-// branch, and the assistant text that emitted THIS tool call. The same shape
-// the Claude Code hook and the opencode plugin build; `jevlin search`
-// reads the variable and sends it as the `trace` field of the search request.
+// id never leaves the machine — the turn the call was made in, the compaction
+// generation of this session branch, and the assistant text that emitted THIS
+// tool call. The same shape the Claude Code hook and the opencode plugin
+// build; `jevlin search` reads the variable and sends it as the `trace` field
+// of the search request.
 //
 // The scrub, the caps and the recognizer below the marker are spliced in
 // from cmd/jevlin/agent_trace_common.js at install time — one
@@ -94,36 +95,42 @@ const emitsToolCall = (entry, toolCallId) => {
   return content.some((c) => c?.type === "toolCall" && c.id === toolCallId)
 }
 
-// historyForToolCall returns the assistant prose that led to THIS tool call,
-// already scrubbed and capped — or "" when the relationship cannot be proven.
+// Where a tool call sits on the branch: the assistant message entry that
+// emitted it (`owner`), and the user entry that opened the turn it was made in
+// (`start`). Either is -1 when it cannot be proven, and then everything that
+// hangs on it is left out rather than guessed.
 //
-// "Latest assistant text" is the wrong question and would be wrong in two
-// ordinary cases: a search made first in a new user turn would inherit the
-// PREVIOUS turn's prose, and a tool call replayed from an older branch would
-// pick up whatever is newest instead of its own. So the scan is anchored at
-// both ends — capped at the assistant message that actually emits this
-// toolCallId, floored at the user message that opened that turn — and any
-// failure to establish either anchor sends no history at all rather than a
-// plausible guess.
-const historyForToolCall = (entries, toolCallId) => {
-  if (!Array.isArray(entries) || typeof toolCallId !== "string" || toolCallId === "") return ""
-  let cutoff = -1
+// "The latest assistant text" or "the latest user message" would be the wrong
+// question and wrong in two ordinary cases: a search made first in a new user
+// turn would inherit the PREVIOUS turn's prose, and a tool call replayed from
+// an older branch would pick up whatever is newest instead of its own. So the
+// scan is anchored at both ends — capped at the assistant message that
+// actually emits this toolCallId, floored at the user message that opened that
+// turn — and any failure to establish either anchor sends nothing at all.
+const locateToolCall = (entries, toolCallId) => {
+  const where = { owner: -1, start: -1 }
+  if (!Array.isArray(entries) || typeof toolCallId !== "string" || toolCallId === "") return where
   for (let i = entries.length - 1; i >= 0; i--) {
     if (emitsToolCall(entries[i], toolCallId)) {
-      cutoff = i
+      where.owner = i
       break
     }
   }
-  if (cutoff < 0) return "" // no provable owner for this call: no history
-  let floor = -1
-  for (let i = cutoff - 1; i >= 0; i--) {
+  if (where.owner < 0) return where // no provable owner for this call
+  for (let i = where.owner - 1; i >= 0; i--) {
     if (isUserTurn(entries[i])) {
-      floor = i
+      where.start = i
       break
     }
   }
-  if (floor < 0) return "" // no turn boundary in view: never cross one blind
-  for (let i = cutoff; i > floor; i--) {
+  return where // start < 0: no turn boundary in view, never cross one blind
+}
+
+// historyForToolCall returns the assistant prose that led to THIS tool call,
+// already scrubbed and capped — or "" when the relationship cannot be proven.
+const historyForToolCall = (entries, where) => {
+  if (where.owner < 0 || where.start < 0) return ""
+  for (let i = where.owner; i > where.start; i--) {
     const parts = assistantTextParts(entries[i])
     if (parts.length === 0) continue
     const text = prepareTraceHistory(parts)
@@ -132,6 +139,14 @@ const historyForToolCall = (entries, toolCallId) => {
   }
   return ""
 }
+
+// The persisted id of the user entry that opened a turn: what Pi wrote to the
+// session file, so a resumed session still names a turn by it, and a fork,
+// which copies the entries with their ids, does too — unlike the turnIndex Pi
+// counts in memory. Pi makes these ids from eight hex digits of a random
+// UUID, unique within one session and no further, which is why the hash below
+// takes the session's own id first. "" when the entry carries none.
+const entryId = (entry) => (typeof entry?.id === "string" ? entry.id : "")
 
 // The context window's generation, reconstructed from what Pi persisted
 // rather than counted in this process. A compaction is a first-class,
@@ -182,12 +197,16 @@ export default function (pi) {
       const env = { v: 1, harness: "pi", session_id: traceHash(sid), window: windowGeneration(entries) }
       const callId = event.toolCallId
       if (typeof callId === "string" && callId !== "") env.call_id = traceHash(sid + "|" + callId)
-      // No turn_id: Pi has no turn identifier an extension can read. The
-      // turnIndex on turn_start/turn_end is an in-memory counter reset per
-      // agent run and never persisted, so there is nothing stable to hash —
-      // and inventing one would make two unrelated searches look related.
+      // The turn is the user entry this call was made under, by the id Pi
+      // persisted for it. The turnIndex on turn_start/turn_end is no use: it is
+      // an in-memory counter that restarts with each agent run and is never
+      // written down, so two unrelated searches could share one. A call whose
+      // turn cannot be proven carries none, as it carries no history.
+      const where = locateToolCall(entries, callId)
+      const turn = entryId(entries[where.start])
+      if (turn !== "") env.turn_id = traceHash(sid + "|" + turn)
 
-      const text = historyForToolCall(entries, callId)
+      const text = historyForToolCall(entries, where)
       if (text) env.history = [{ role: "assistant", text }]
 
       const bridge = traceBridge(env)

@@ -10,9 +10,12 @@ package main
 // uses for the opencode plugin. Every identifier here is synthetic.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -58,6 +61,30 @@ func piAssistant(text string, toolCallIDs ...string) map[string]any {
 		content = append(content, map[string]any{"type": "toolCall", "id": id, "name": "bash", "arguments": map[string]any{}})
 	}
 	return map[string]any{"type": "message", "message": map[string]any{"role": "assistant", "content": content}}
+}
+
+// piToolResult is a tool result entry, as Pi persists one: its own record of
+// the tool's name, how long it ran and whether it failed, beside the output the
+// extension must never read.
+func piToolResult(callID, tool string, ms float64, isError bool) map[string]any {
+	return map[string]any{"type": "message", "message": map[string]any{
+		"role": "toolResult", "toolCallId": callID, "toolName": tool, "isError": isError, "durationMs": ms,
+		"content": []map[string]any{{"type": "text", "text": "TOOL OUTPUT MUST NOT LEAVE"}},
+	}}
+}
+
+// piCustomMessage is an extension's message, which Pi persists as an entry of
+// its own and sends to the model as if the user had written it.
+func piCustomMessage(text string) map[string]any {
+	return map[string]any{"type": "custom_message", "customType": "synthetic", "content": text, "display": true}
+}
+
+// piID gives a synthetic entry the id Pi persists for every entry. A turn is
+// named by the id of its user entry, so the tests that ask for a turn id have
+// to give one; the rest need not.
+func piID(id string, e map[string]any) map[string]any {
+	e["id"] = id
+	return e
 }
 
 func piCompaction() map[string]any {
@@ -230,10 +257,10 @@ func TestPiExtensionRewritesOurSearchAndNothingElse(t *testing.T) {
 // ── identity ────────────────────────────────────────────────────────────
 
 func TestPiExtensionHashesHostIdentifiers(t *testing.T) {
-	const sid, callID = "pi-session-synthetic-0123", "toolcall-synthetic-0123"
+	const sid, callID, userID = "pi-session-synthetic-0123", "toolcall-synthetic-0123", "u0synth1"
 	got := runPiExtension(t, map[string][]piCall{
 		"hashed": {{Session: sid, Command: piSearchCommand, ToolCallID: callID,
-			Entries: []any{piUser("q"), piAssistant("Searching.", callID)}}},
+			Entries: []any{piID(userID, piUser("q")), piAssistant("Searching.", callID)}}},
 	})
 	o := got["hashed"][0]
 	env := piBridge(t, o)
@@ -243,13 +270,14 @@ func TestPiExtensionHashesHostIdentifiers(t *testing.T) {
 	if env.CallID != traceHash(sid+"|"+callID) {
 		t.Errorf("call_id = %q, want hash(session|toolCallId)", env.CallID)
 	}
-	// Pi exposes no turn identifier to an extension, so the envelope must
-	// carry none rather than a fabricated one.
-	if env.TurnID != "" {
-		t.Errorf("turn_id = %q, but Pi has no turn id an extension can read", env.TurnID)
+	// The turn is the user entry's persisted id, hashed with the session's.
+	if env.TurnID != traceHash(sid+"|"+userID) {
+		t.Errorf("turn_id = %q, want hash(session|user entry id)", env.TurnID)
 	}
-	if strings.Contains(o.Command, sid) || strings.Contains(o.Command, callID) {
-		t.Error("a raw host identifier reached the command line")
+	for _, raw := range []string{sid, callID, userID} {
+		if strings.Contains(o.Command, raw) {
+			t.Errorf("a raw host identifier reached the command line: %q", raw)
+		}
 	}
 }
 
@@ -429,4 +457,243 @@ func TestPiExtensionRedactsAndCapsBeforeTheBridge(t *testing.T) {
 			t.Fatal("an oversized envelope kept its history")
 		}
 	})
+}
+
+// ── the turn ─────────────────────────────────────────────────────────────
+
+// A turn is named by the user entry Pi persisted for it: two searches made
+// under one prompt share it, the next prompt's differ, and it is built from
+// that id, never from a count the extension keeps.
+func TestPiExtensionNamesTheTurnByTheUsersPersistedEntry(t *testing.T) {
+	const sid = "pi-session-turns"
+	firstTurn := []any{
+		piID("u1", piUser("first question")),
+		piID("a1", piAssistant("Looking.", "c1")),
+		piID("r1", piToolResult("c1", "bash", 9, false)),
+		piID("a2", piAssistant("Once more.", "c2")),
+	}
+	secondTurn := append(append([]any{}, firstTurn...),
+		piID("r2", piToolResult("c2", "bash", 9, false)),
+		piID("a3", piAssistant("Done.")),
+		piID("u2", piUser("second question")),
+		piID("a4", piAssistant("Looking again.", "c3")),
+	)
+	// Each call sees the branch as it stands when that call is made.
+	got := runPiExtension(t, map[string][]piCall{"turns": {
+		{Session: sid, ToolCallID: "c1", Command: piSearchCommand, Entries: firstTurn[:2]},
+		{Session: sid, ToolCallID: "c2", Command: piSearchCommand, Entries: firstTurn},
+		{Session: sid, ToolCallID: "c3", Command: piSearchCommand, Entries: secondTurn},
+	}})["turns"]
+	first, again, next := piBridge(t, got[0]).TurnID, piBridge(t, got[1]).TurnID, piBridge(t, got[2]).TurnID
+
+	if first != traceHash(sid+"|u1") || again != first {
+		t.Errorf("two searches of one turn: turn_id %q and %q, want both hash(session|u1)", first, again)
+	}
+	if next != traceHash(sid+"|u2") || next == first {
+		t.Errorf("the next turn's search: turn_id %q, want hash(session|u2), different from %q", next, first)
+	}
+	for i, o := range got {
+		if strings.Contains(o.Command, "u1") || strings.Contains(o.Command, "u2") {
+			t.Errorf("call %d: a raw entry id reached the command line", i)
+		}
+	}
+}
+
+// A resumed session is a new process reading the entries back from the file,
+// and a fork is a new session holding copies of them. The turn id has to come
+// out the same for the first, and be the fork's own for the second, because
+// the entry ids a fork copies are unique within one session and no further.
+func TestPiExtensionKeepsATurnIdAcrossAResumeAndTiesItToItsSession(t *testing.T) {
+	branch := []any{
+		piID("u1", piUser("question")),
+		piID("a1", piAssistant("Looking.", "c1")),
+		piID("r1", piToolResult("c1", "bash", 9, false)),
+		piID("a2", piAssistant("Done.")),
+		piID("u2", piUser("follow-up")),
+		piID("a3", piAssistant("Looking again.", "c9")),
+	}
+	got := runPiExtension(t, map[string][]piCall{
+		// One extension that has been through the whole conversation...
+		"original": {
+			{Session: "s", ToolCallID: "c1", Command: piSearchCommand, Entries: branch[:2]},
+			{Session: "s", ToolCallID: "c9", Command: piSearchCommand, Entries: branch},
+		},
+		// ...and one started after a resume, which saw neither turn begin. A
+		// count kept in memory would restart here and name the turn differently.
+		"resumed": {{Session: "s", ToolCallID: "c9", Command: piSearchCommand, Entries: branch}},
+		// A fork: another session, the same entries with the same ids.
+		"fork": {{Session: "s-fork", ToolCallID: "c9", Command: piSearchCommand, Entries: branch}},
+	})
+	original, resumed, fork := piBridge(t, got["original"][1]).TurnID, piBridge(t, got["resumed"][0]).TurnID, piBridge(t, got["fork"][0]).TurnID
+
+	if original != traceHash("s|u2") || resumed != original {
+		t.Errorf("after a resume: turn_id %q, want %q (hash(session|u2), as before it)", resumed, original)
+	}
+	if fork != traceHash("s-fork|u2") || fork == original {
+		t.Errorf("in a fork: turn_id %q, want hash(fork session|u2), not the original's %q", fork, original)
+	}
+}
+
+// Anything the turn hangs on that cannot be shown sends no turn, as it sends no
+// history: a wrong turn would make unrelated searches look related.
+func TestPiExtensionSendsNoTurnIdItCannotProve(t *testing.T) {
+	cases := map[string]piCall{
+		"no user entry on the branch": {Session: "s", ToolCallID: "c1", Entries: []any{piID("a1", piAssistant("Looking.", "c1"))}},
+		"a user entry only after the call": {Session: "s", ToolCallID: "c1",
+			Entries: []any{piID("a1", piAssistant("Looking.", "c1")), piID("u1", piUser("q"))}},
+		"a user entry with no id": {Session: "s", ToolCallID: "c1",
+			Entries: []any{piUser("q"), piID("a1", piAssistant("Looking.", "c1"))}},
+		"a user entry with an id that is not text": {Session: "s", ToolCallID: "c1",
+			Entries: []any{piID("", func() map[string]any { e := piUser("q"); e["id"] = 7; return e }()), piID("a1", piAssistant("Looking.", "c1"))}},
+		"a call nobody on the branch emitted": {Session: "s", ToolCallID: "c-unknown",
+			Entries: []any{piID("u1", piUser("q")), piID("a1", piAssistant("Looking.", "c1"))}},
+		"no tool call id": {Session: "s", ToolCallID: "",
+			Entries: []any{piID("u1", piUser("q")), piID("a1", piAssistant("Looking.", "c1"))}},
+		"a branch that cannot be read": {Session: "s", ToolCallID: "c1", BranchThrows: true},
+	}
+	byName := map[string][]piCall{}
+	for name, c := range cases {
+		c.Command = piSearchCommand
+		byName[name] = []piCall{c}
+	}
+	for name, outcomes := range runPiExtension(t, byName) {
+		t.Run(name, func(t *testing.T) {
+			if env := piBridge(t, outcomes[0]); env.TurnID != "" {
+				t.Errorf("turn_id = %q, want none", env.TurnID)
+			}
+		})
+	}
+}
+
+// What starts a turn is the user's message. Pi's system prompt is a message
+// entry of its own role, and an extension's message is an entry of its own
+// type; neither is a turn, and neither is read.
+func TestPiExtensionStartsATurnOnlyAtAUserMessage(t *testing.T) {
+	const canary = "SYSTEM PROMPT MUST NEVER BE READ"
+	system := piID("sys", map[string]any{"type": "message", "message": map[string]any{"role": "system", "content": canary}})
+	got := runPiExtension(t, map[string][]piCall{"turn": {{Session: "s", ToolCallID: "c1", Command: piSearchCommand,
+		Entries: []any{system, piID("u1", piUser("q")), piID("cm", piCustomMessage("injected")), piID("a1", piAssistant("Looking.", "c1"))}}}})
+	o := got["turn"][0]
+	if env := piBridge(t, o); env.TurnID != traceHash("s|u1") {
+		t.Errorf("turn_id = %q, want the user entry's (hash(s|u1))", env.TurnID)
+	}
+	if strings.Contains(o.Command, canary) {
+		t.Error("the system prompt reached the command line")
+	}
+}
+
+// ── a real Pi ────────────────────────────────────────────────────────────
+
+// piRecorded is one moment captured from a live Pi (testdata/pi): the event an
+// extension was handed and the branch its session manager returned then.
+type piRecorded struct {
+	Run    string         `json:"run"`
+	Ev     string         `json:"ev"`
+	Sid    string         `json:"sid"`
+	Event  map[string]any `json:"event"`
+	Branch []any          `json:"branch"`
+}
+
+func piFixtureLines(t *testing.T, name string) [][]byte {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("testdata", "pi", name)) // #nosec G304 -- a fixed testdata path this file builds, not an external one
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bytes.Split(bytes.TrimSpace(raw), []byte("\n"))
+}
+
+func loadPiRecording(t *testing.T) []piRecorded {
+	t.Helper()
+	var out []piRecorded
+	for _, line := range piFixtureLines(t, "pi-1.3.0-linux-events.jsonl") {
+		var r piRecorded
+		if err := json.Unmarshal(line, &r); err != nil {
+			t.Fatalf("pi-1.3.0-linux-events.jsonl: %v", err)
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// loadPiSession is Pi's own session file, the entries as written to disk.
+func loadPiSession(t *testing.T) (header map[string]any, entries []map[string]any) {
+	t.Helper()
+	for i, line := range piFixtureLines(t, "pi-1.3.0-linux-session.jsonl") {
+		var e map[string]any
+		if err := json.Unmarshal(line, &e); err != nil {
+			t.Fatalf("pi-1.3.0-linux-session.jsonl: %v", err)
+		}
+		if i == 0 {
+			header = e
+			continue
+		}
+		entries = append(entries, e)
+	}
+	return header, entries
+}
+
+// userEntryIDs lists, in order, the ids of the user messages in entries.
+func userEntryIDs(entries []map[string]any) []string {
+	var ids []string
+	for _, e := range entries {
+		if m, _ := e["message"].(map[string]any); e["type"] == "message" && m != nil && m["role"] == "user" {
+			ids = append(ids, e["id"].(string))
+		}
+	}
+	return ids
+}
+
+// The same questions asked of what a live Pi 1.3.0 handed an extension: the
+// searches of one prompt share a turn, a resumed session's next prompt has its
+// own, and the id is the one Pi wrote to the session file.
+func TestPiTurnIdsOfARealSession(t *testing.T) {
+	header, file := loadPiSession(t)
+	users := userEntryIDs(file)
+	if len(users) != 3 {
+		t.Fatalf("the captured session has %d user messages, want 3: the fixture is not what these tests were written against", len(users))
+	}
+	cases := map[string][]piCall{}
+	var sids = map[string]string{}
+	for _, r := range loadPiRecording(t) {
+		if r.Ev != "tool_call" {
+			continue
+		}
+		sids[r.Run] = r.Sid
+		cmd, _ := r.Event["input"].(map[string]any)["command"].(string)
+		cases[r.Run] = append(cases[r.Run], piCall{Session: r.Sid, Entries: r.Branch, Event: r.Event, Command: cmd})
+	}
+	if sids["A"] != header["id"] || sids["B"] != header["id"] {
+		t.Fatalf("the recorded events and the session file are not one session: %v vs %v", sids, header["id"])
+	}
+	got := runPiExtension(t, cases)
+
+	// Run A: two searches and a command that is not one, all under prompt 1.
+	a := got["A"]
+	if len(a) != 3 {
+		t.Fatalf("run A has %d tool calls, want 3", len(a))
+	}
+	first, second := piBridge(t, a[0]).TurnID, piBridge(t, a[1]).TurnID
+	if first != traceHash(sids["A"]+"|"+users[0]) || second != first {
+		t.Errorf("run A: turn_id %q and %q, want both hash(session|%s)", first, second, users[0])
+	}
+	piNoBridge(t, a[2], cases["A"][2].Command)
+	// Run B: the resumed session's next prompt.
+	if b := piBridge(t, got["B"][0]).TurnID; b != traceHash(sids["B"]+"|"+users[1]) || b == first {
+		t.Errorf("run B: turn_id %q, want hash(session|%s), different from run A's", b, users[1])
+	}
+	// Run D: another session, whose single user message it names.
+	var dUser string
+	for _, r := range loadPiRecording(t) {
+		if r.Run == "D" && r.Ev == "tool_call" {
+			for _, e := range r.Branch {
+				if m, _ := e.(map[string]any)["message"].(map[string]any); m != nil && m["role"] == "user" {
+					dUser = e.(map[string]any)["id"].(string)
+				}
+			}
+		}
+	}
+	if d := piBridge(t, got["D"][0]).TurnID; dUser == "" || d != traceHash(sids["D"]+"|"+dUser) {
+		t.Errorf("run D: turn_id %q, want hash(session|%q)", d, dUser)
+	}
 }
