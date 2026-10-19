@@ -346,7 +346,7 @@ func TestMachineOptionsRoundTripIntoTheBody(t *testing.T) {
 			name:  "none of the options: only the query, and the merged view",
 			stdin: `{"version":1,"query":"q"}`,
 			check: func(t *testing.T, body map[string]any) {
-				for _, k := range []string{"tier", "recency", "domain_filter", "max_results", "providers"} {
+				for _, k := range []string{"tier", "recency", "domain_filter", "max_results", "providers", "objective", "search_queries"} {
 					if _, ok := body[k]; ok {
 						t.Errorf("%s present in a version-1 request that only sent query: %v", k, body)
 					}

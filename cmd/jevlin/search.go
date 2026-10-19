@@ -161,8 +161,14 @@ type searchCall struct {
 	// rendering default and not a value the router accepts; "merged" asks
 	// the router to add its own merged list and per-arm indexes to the
 	// response, and changes nothing else about how the search runs.
-	View  string
-	Trace *traceEnvelope
+	View string
+	// Objective and SearchQueries are the query forms (Jevlin-core #55),
+	// absent unless the --stdin caller sent them. A router that predates
+	// them refuses the whole request, so performSearch's one retry leaves
+	// them out (FormsDropped).
+	Objective     *string
+	SearchQueries []string
+	Trace         *traceEnvelope
 }
 
 // searchOutcome is the structured result of running a search. Both
@@ -194,6 +200,11 @@ type searchOutcome struct {
 	Attempts int
 	Traced   bool
 	Retried  bool
+	// FormsDropped: the retry went without objective and search_queries.
+	// Either the router refused the request as malformed_json while it
+	// carried them, or it refused the trace, and a router that old
+	// predates the forms as well.
+	FormsDropped bool
 }
 
 func (o searchOutcome) ok() bool { return o.Fault == faultNone }
@@ -234,6 +245,8 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	var maxResults *int
 	var providers []string
 	var view string
+	var objective *string
+	var searchQueries []string
 	if machine {
 		// No positional query in machine mode: two sources for the same
 		// value is how a caller ends up sending one and escaping the
@@ -259,6 +272,8 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		maxResults = req.maxResults
 		providers = req.providers
 		view = req.view
+		objective = req.objective
+		searchQueries = req.searchQueries
 	} else {
 		query = strings.TrimSpace(strings.Join(fs.Args(), " "))
 		if query == "" {
@@ -358,16 +373,18 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		forwardView = "merged"
 	}
 	out := performSearch(ctx, ops.now, searchCall{
-		Endpoint:     strings.TrimRight(cfg.Miner.RouterURL.String(), "/") + "/v1/search",
-		Key:          key,
-		Query:        query,
-		Tier:         *tier,
-		Recency:      recency,
-		DomainFilter: domainFilter,
-		MaxResults:   maxResults,
-		Providers:    providers,
-		View:         forwardView,
-		Trace:        trace,
+		Endpoint:      strings.TrimRight(cfg.Miner.RouterURL.String(), "/") + "/v1/search",
+		Key:           key,
+		Query:         query,
+		Tier:          *tier,
+		Recency:       recency,
+		DomainFilter:  domainFilter,
+		MaxResults:    maxResults,
+		Providers:     providers,
+		View:          forwardView,
+		Objective:     objective,
+		SearchQueries: searchQueries,
+		Trace:         trace,
 	})
 	if out.Retried {
 		fmt.Fprintln(stderr, "jevlin search: the router answered "+traceUnsupportedCode+"; retrying once without the trace")
@@ -618,6 +635,12 @@ func performSearch(ctx context.Context, now func() time.Time, call searchCall) s
 	if call.View != "" {
 		body["view"] = call.View
 	}
+	if call.Objective != nil {
+		body["objective"] = *call.Objective
+	}
+	if call.SearchQueries != nil {
+		body["search_queries"] = call.SearchQueries
+	}
 	out := searchOutcome{Traced: call.Trace != nil}
 	if out.Traced {
 		body["trace"] = call.Trace
@@ -654,17 +677,44 @@ func performSearch(ctx context.Context, now func() time.Time, call searchCall) s
 	out.Started = now()
 	attempt, err := postSearch(ctx, client, call, body)
 	out.Attempts++
-	if err == nil && out.Traced && searchTraceUnsupported(attempt.Status, attempt.Raw, attempt.BodyErr) {
-		// The router said, in its own machine code, that it does not
-		// accept the field. One retry without it, on the SAME ctx, so the
-		// fallback gets only what is left of the original budget. Never
-		// recursive: this is the only place a second POST is issued.
+	// The router said, in its own machine code, that it does not accept a
+	// field this request carried. One retry without it, on the SAME ctx, so
+	// the fallback gets only what is left of the original budget. Never
+	// recursive: this is the only place a second POST is issued, and two
+	// answers license it, each by its exact code.
+	_, carriesForms := body["objective"]
+	if _, ok := body["search_queries"]; ok {
+		carriesForms = true
+	}
+	dropForms := func() {
+		delete(body, "objective")
+		delete(body, "search_queries")
+		out.FormsDropped = true
+	}
+	switch {
+	case err != nil:
+	case out.Traced && searchTraceUnsupported(attempt.Status, attempt.Raw, attempt.BodyErr):
 		// The session mirror goes with the trace: a router old enough to
 		// refuse the trace field predates the top-level session_id too,
-		// and this retry exists exactly for those routers.
+		// and this retry exists exactly for those routers. It predates the
+		// query forms as well, and there is no second retry to spend on
+		// them, so they go too.
 		delete(body, "trace")
 		delete(body, "session_id")
+		if carriesForms {
+			dropForms()
+		}
 		out.Retried = true
+		attempt, err = postSearch(ctx, client, call, body)
+		out.Attempts++
+	case carriesForms && searchFormsRefused(attempt.Status, attempt.Raw, attempt.BodyErr):
+		// A router that predates objective and search_queries refuses the
+		// whole request over them, as malformed_json, and so does one whose
+		// body limit the forms pushed this request past: the code cannot
+		// tell the two apart, and the answer to both is the same search on
+		// query alone. A malformed_json to a request without the forms is
+		// not this, and is answered as it came.
+		dropForms()
 		attempt, err = postSearch(ctx, client, call, body)
 		out.Attempts++
 	}

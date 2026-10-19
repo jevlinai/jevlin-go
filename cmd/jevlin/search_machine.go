@@ -37,20 +37,22 @@ const (
 // them are exit 2 / usage_error / fix_input: the caller has something to
 // correct, and no amount of retrying corrects it.
 const (
-	codeInputTooLarge       = "input_too_large"
-	codeInvalidUTF8         = "invalid_utf8"
-	codeInvalidJSON         = "invalid_json"
-	codeUnsupportedVersion  = "unsupported_version"
-	codeUnknownField        = "unknown_field"
-	codeMissingQuery        = "missing_query"
-	codeEmptyQuery          = "empty_query"
-	codeUnexpectedArgument  = "unexpected_argument"
-	codeInvalidFlags        = "invalid_flags"
-	codeInvalidRecency      = "invalid_recency"
-	codeInvalidDomainFilter = "invalid_domain_filter"
-	codeInvalidMaxResults   = "invalid_max_results"
-	codeInvalidView         = "invalid_view"
-	codeInvalidProviders    = "invalid_providers"
+	codeInputTooLarge        = "input_too_large"
+	codeInvalidUTF8          = "invalid_utf8"
+	codeInvalidJSON          = "invalid_json"
+	codeUnsupportedVersion   = "unsupported_version"
+	codeUnknownField         = "unknown_field"
+	codeMissingQuery         = "missing_query"
+	codeEmptyQuery           = "empty_query"
+	codeUnexpectedArgument   = "unexpected_argument"
+	codeInvalidFlags         = "invalid_flags"
+	codeInvalidRecency       = "invalid_recency"
+	codeInvalidDomainFilter  = "invalid_domain_filter"
+	codeInvalidMaxResults    = "invalid_max_results"
+	codeInvalidView          = "invalid_view"
+	codeInvalidProviders     = "invalid_providers"
+	codeInvalidObjective     = "invalid_objective"
+	codeInvalidSearchQueries = "invalid_search_queries"
 )
 
 // inputError is a local refusal with a stable machine code. It is a type
@@ -79,6 +81,12 @@ type machineSearchRequest struct {
 	// choice of "full" or "merged" — never any other string, since
 	// validateView refuses anything else before this is ever set.
 	view string
+	// objective and searchQueries are the query forms: what the caller is
+	// trying to find out, in its own words, and up to four reformulations
+	// of query. nil when the request did not carry them, so a field the
+	// caller left out is left out of the router's body too.
+	objective     *string
+	searchQueries []string
 }
 
 // wireSearchRequest is the decoded shape. Pointers distinguish an absent
@@ -89,14 +97,16 @@ type machineSearchRequest struct {
 // field, rather than the generic "unknown field" a struct-typed decode
 // failure would give no matter which field caused it.
 type wireSearchRequest struct {
-	Version      *int            `json:"version"`
-	Query        *string         `json:"query"`
-	Tier         *string         `json:"tier"`
-	Recency      json.RawMessage `json:"recency"`
-	DomainFilter json.RawMessage `json:"domain_filter"`
-	MaxResults   json.RawMessage `json:"max_results"`
-	Providers    json.RawMessage `json:"providers"`
-	View         json.RawMessage `json:"view"`
+	Version       *int            `json:"version"`
+	Query         *string         `json:"query"`
+	Tier          *string         `json:"tier"`
+	Recency       json.RawMessage `json:"recency"`
+	DomainFilter  json.RawMessage `json:"domain_filter"`
+	MaxResults    json.RawMessage `json:"max_results"`
+	Providers     json.RawMessage `json:"providers"`
+	View          json.RawMessage `json:"view"`
+	Objective     json.RawMessage `json:"objective"`
+	SearchQueries json.RawMessage `json:"search_queries"`
 }
 
 // decodeMachineSearchRequest reads exactly one v1 request from r.
@@ -196,6 +206,20 @@ func decodeMachineSearchRequest(r io.Reader) (machineSearchRequest, error) {
 		}
 		req.view = view
 	}
+	if len(wire.Objective) > 0 {
+		objective, err := validateObjective(wire.Objective)
+		if err != nil {
+			return machineSearchRequest{}, err
+		}
+		req.objective = &objective
+	}
+	if len(wire.SearchQueries) > 0 {
+		forms, err := validateSearchQueries(wire.SearchQueries)
+		if err != nil {
+			return machineSearchRequest{}, err
+		}
+		req.searchQueries = forms
+	}
 	return req, nil
 }
 
@@ -271,6 +295,73 @@ func validateProviders(raw json.RawMessage) ([]string, *inputError) {
 		}
 	}
 	return names, nil
+}
+
+// queryFormMaxBytes is the router's bound on objective and on each
+// search_queries entry, the same as its bound on query; searchQueriesMax is
+// its bound on how many reformulations one request may carry. Both are
+// checked here, before the router is called, so a request the router
+// would refuse with invalid_request costs nothing and its answer names the
+// field.
+const (
+	queryFormMaxBytes = 4096
+	searchQueriesMax  = 4
+)
+
+// validateObjective takes the caller's goal as a string of its own. An
+// explicit null or a blank string is refused, as an empty view is: a
+// caller who wrote the key owes a value, and forwarding nothing in its
+// place would be this client deciding what the caller meant.
+func validateObjective(raw json.RawMessage) (string, *inputError) {
+	if isJSONNull(raw) {
+		return "", inputErrorf(codeInvalidObjective, `"objective" must not be null`)
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return "", inputErrorf(codeInvalidObjective, `"objective" must be a string`)
+	}
+	if strings.TrimSpace(s) == "" {
+		return "", inputErrorf(codeInvalidObjective, `"objective" must not be empty`)
+	}
+	if len(s) > queryFormMaxBytes {
+		return "", inputErrorf(codeInvalidObjective,
+			fmt.Sprintf(`"objective" must be at most %d bytes`, queryFormMaxBytes))
+	}
+	return s, nil
+}
+
+// validateSearchQueries mirrors validateDomainFilter's shape rules: an
+// explicit null or [] is refused rather than guessed at, and so is a list
+// longer than the router accepts. Each entry is a query of its own, held to
+// query's rules: not blank, at most 4096 bytes, and forwarded as the
+// caller's bytes. A repeat of query or of another entry is not refused
+// here: the router drops it, and that rule is the router's to keep.
+func validateSearchQueries(raw json.RawMessage) ([]string, *inputError) {
+	if isJSONNull(raw) {
+		return nil, inputErrorf(codeInvalidSearchQueries, `"search_queries" must not be null`)
+	}
+	var forms []string
+	if err := json.Unmarshal(raw, &forms); err != nil {
+		return nil, inputErrorf(codeInvalidSearchQueries, `"search_queries" must be an array of strings`)
+	}
+	if len(forms) == 0 {
+		return nil, inputErrorf(codeInvalidSearchQueries, `"search_queries" must not be empty`)
+	}
+	if len(forms) > searchQueriesMax {
+		return nil, inputErrorf(codeInvalidSearchQueries,
+			fmt.Sprintf(`"search_queries" accepts at most %d entries`, searchQueriesMax))
+	}
+	for i, f := range forms {
+		if strings.TrimSpace(f) == "" {
+			return nil, inputErrorf(codeInvalidSearchQueries,
+				fmt.Sprintf(`"search_queries" entry %d is empty`, i))
+		}
+		if len(f) > queryFormMaxBytes {
+			return nil, inputErrorf(codeInvalidSearchQueries,
+				fmt.Sprintf(`"search_queries" entry %d must be at most %d bytes`, i, queryFormMaxBytes))
+		}
+	}
+	return forms, nil
 }
 
 func validateDomainFilter(raw json.RawMessage) ([]string, *inputError) {
@@ -411,6 +502,12 @@ type machineResult struct {
 	MergedLimit     *int             `json:"merged_limit,omitempty"`
 	MergedTotal     *int             `json:"merged_total,omitempty"`
 	ExcerptsTrimmed bool             `json:"excerpts_trimmed,omitempty"`
+	// FormsDropped says the search ran without the caller's objective and
+	// search_queries: the router refused the request as malformed_json
+	// while it carried them — because it predates them, or because the
+	// body was more than it reads — and the one retry left them out. Not
+	// a failure: the search ran, on query alone.
+	FormsDropped bool `json:"forms_dropped,omitempty"`
 	// Candidates is a pointer so "view":"merged" can omit the key
 	// entirely (a nil pointer with omitempty) while "full" — the
 	// default — always carries it, even on the (real-router-never-sends-
@@ -863,6 +960,7 @@ func searchEnvelopeOf(out searchOutcome, mining *machineMining, view string) (se
 	if out.ok() {
 		env.RequestID = out.Success.RequestID
 		env.Result = machineResultOf(out.Success, view)
+		env.Result.FormsDropped = out.FormsDropped
 		return env, c.ExitCode
 	}
 	if out.HasRouterErr {
