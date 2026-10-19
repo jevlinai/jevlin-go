@@ -85,11 +85,16 @@ second; `balanced` and `max` fan out to the core arms. A tier is also a per-quer
 on the router, and a set that would exceed the ceiling is trimmed rather than refused, with
 `decision.trimmed` naming what went.
 
-| tier | what runs | for |
-|---|---|---|
-| `fast` | three fast indexes, one per index group | a routine lookup, the default for a new key |
-| `balanced` | the core arms, each result attributed to its source | when the agent needs more than one source, or the first answer came back thin |
-| `max` | every core arm | corroboration: the same page found by independent indexes |
+| tier | what runs | for | what it costs |
+|---|---|---|---|
+| `fast` | three fast indexes, one per index group, about a second | a routine lookup, the default for a new key | about $0.015 a search |
+| `balanced` | the core arms, 8 results each, a 12-page merged window, every arm's text | when the agent needs more than one source, or the first answer came back thin | about $0.035 |
+| `max` | the core arms, 15 results each, a 24-page window, 2,000-character excerpts | corroboration: the same page found by independent indexes, and the most text per page | about $0.045, plus the tokens your agent spends reading it |
+
+The dollar figures are the arms' own prices passed through with no markup; `usage.cost_micros`
+on every response is the real number. A search is free while mining is on (the trajectory pays
+for it); a key without mining draws credit. `max` and a named `providers` set (below) always
+draw credit: they are the two ways to multiply the work a request does.
 
 Who chooses:
 
@@ -106,7 +111,11 @@ Who chooses:
 
 Four fields pass straight through to the router: `recency` (`day`, `week`, `month`,
 `year`), `domain_filter` (up to 16 hostnames), `max_results` (1 to 25) and `providers` (up to
-16 names, to restrict the fan-out or reach an arm that fires only when named). The
+16 names, to restrict the fan-out or reach an arm that fires only when named). A named set
+runs on `balanced` or `max` only: on `fast` the router refuses it, since the fast set is the
+router's. It is billed at the named arms' own prices, draws credit even with mining on, and
+earns no reward, because a single-arm search carries none of the comparison a trajectory is
+paid for. The
 [skill](https://github.com/jevlinai/jevlin-go/blob/main/cmd/jevlin/skill.md) is what the agent reads; the
 [reference](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#the---stdin-request) has the envelope.
 
@@ -216,7 +225,7 @@ says it is not earning.
 | `jevlin setup` | Everything after the binary: previous installation, config, registration, profile, agents. |
 | `jevlin status` | What this installation has and has not completed. `-json` for one envelope. |
 | `jevlin doctor` | Whether searches are recorded and earning, check by check, and the one thing to fix. `-json` too. |
-| `jevlin limits` | This key's spend caps and today's spend, read from the router. |
+| `jevlin limits` | This key's spend caps, rate windows and today's spend, read from the router. A claimed key gets 120 searches a minute, 3,000 an hour and 16 at once; an unclaimed one 10, 120 and 2, with $0.10 a day. |
 | `jevlin agents install\|status\|uninstall` | Sets up, reports or removes the skills and hooks of each agent. |
 | `jevlin agents prefer on\|off\|status` | What `/jevlin on\|off\|status` runs: which search is the default. |
 | `jevlin agents tier <band>\|default\|status` | What `/jevlin tier` runs: the band every search carries. |

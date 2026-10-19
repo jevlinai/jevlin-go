@@ -469,7 +469,7 @@ func tierLabel(t string) string {
 	case "balanced":
 		return "balanced — several providers, attributed"
 	case "max":
-		return "max — every provider, for corroboration; the widest band"
+		return "max — the core arms at 15 results each, a 24-page window, long excerpts; the widest band, credit only"
 	}
 	return "unset — the router's default for this key applies"
 }
@@ -594,7 +594,8 @@ var agentsUsage = `usage: jevlin agents install|status|uninstall [-config file] 
               the agent does the same)
   tier        the search band every search carries unless the request names
               one: fast (three fast indexes), balanced (several, attributed) or
-              max (every provider); default unsets it so the router's default
+              max (the same arms, more results and longer excerpts; draws
+              credit); default unsets it so the router's default
               applies. Saved beside the config; no skill is rewritten
               (/jevlin tier <band> in the agent does the same)
   -client     act on this agent only (` + targetIDs(targetHost) + `); repeatable
