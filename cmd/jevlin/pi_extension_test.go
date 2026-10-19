@@ -1316,3 +1316,66 @@ func piPathToTheRouter(t *testing.T, sid string, optIn bool) (searchReq *execRou
 	}
 	return searchReq, turnRec, turnRaw
 }
+
+// Pi persists its system prompt as a message entry of role "system": before the
+// first message, and again when the prompt or the tools change, which can be
+// inside a turn. It is not a turn, and it is never read; the canary is in both
+// places a prompt has been seen.
+const piSystemCanary = "SYSTEM PROMPT MUST NEVER BE READ"
+
+func piSystem(id string) map[string]any {
+	return piID(id, map[string]any{"type": "message", "message": map[string]any{
+		"role": "system", "content": piSystemCanary, "sections": map[string]any{"preamble": piSystemCanary},
+	}})
+}
+
+func TestPiExtensionNeverReadsTheSystemPrompt(t *testing.T) {
+	in := newPiStandIn(t)
+	branch := []any{
+		piSystem("sys0"), piID("u1", piUser("question")),
+		piSystem("sys1"),
+		piAnswer("a1", "toolUse", piUsage(1, 1, 0, 0), piText("Looking."), piToolUse("c1", "bash", map[string]any{"command": piSearchOf})),
+		piID("r1", piToolResult("c1", "bash", 1, false)),
+		piSystem("sys2"),
+		piAnswer("a2", "stop", piUsage(1, 1, 0, 0), piText("Done.")),
+	}
+	got := runPiExtensionFor(t, map[string][]piCall{"run": {
+		{Session: "s", ToolCallID: "c1", Command: piSearchOf, Entries: branch[:4]},
+		{Fire: "agent_settled", Session: "s", Entries: branch, Event: map[string]any{"type": "agent_settled", "aborted": false}},
+	}}, in.bin)["run"]
+	// A system entry inside the turn does not open another one.
+	if env := piBridge(t, got[0]); env.TurnID != traceHash("s|u1") {
+		t.Errorf("turn_id = %q, want the user entry's (hash(s|u1))", env.TurnID)
+	}
+	r := in.reports(t, 1)[0]
+	if r.Turn.Turn != "u1" || r.Turn.UserText != "question" || r.Turn.FinalText != "Done." {
+		t.Errorf("turn = %+v", r.Turn)
+	}
+	for _, raw := range []string{got[0].Command, r.Raw} {
+		if strings.Contains(raw, piSystemCanary) || strings.Contains(raw, "sys") {
+			t.Errorf("the system prompt, or the id of its entry, reached %q", raw)
+		}
+	}
+}
+
+// A run that settles while the branch cannot be read leaves its turns for the
+// next run to settle, rather than losing them.
+func TestPiExtensionKeepsATurnUntilTheBranchCanBeRead(t *testing.T) {
+	in := newPiStandIn(t)
+	branch := []any{
+		piID("u1", piUser("question")),
+		piAnswer("a1", "toolUse", piUsage(1, 1, 0, 0), piToolUse("c1", "bash", map[string]any{"command": piSearchOf})),
+		piID("r1", piToolResult("c1", "bash", 1, false)),
+		piAnswer("a2", "stop", piUsage(1, 1, 0, 0), piText("Done.")),
+	}
+	settled := piCall{Fire: "agent_settled", Session: "s", Event: map[string]any{"type": "agent_settled", "aborted": false}}
+	unreadable, readable := settled, settled
+	unreadable.BranchThrows = true
+	readable.Entries = branch
+	runPiExtensionFor(t, map[string][]piCall{"run": {
+		{Session: "s", ToolCallID: "c1", Command: piSearchOf, Entries: branch[:2]}, unreadable, readable,
+	}}, in.bin)
+	if r := in.reports(t, 1)[0].Turn; r.Turn != "u1" || r.FinalText != "Done." {
+		t.Errorf("turn = %+v", r)
+	}
+}
