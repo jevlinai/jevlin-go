@@ -12,6 +12,22 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
+- **A coding agent's settings file is never left cut short.** `agents install`, `setup`,
+  `uninstall` and the upgrade's re-render used to rewrite `~/.claude/settings.json`, Codex's and
+  Cursor's hook files, Codex's `config.toml` and Hermes' `config.yaml` in place, so a run stopped
+  part way could leave your own settings empty. They are now replaced whole, through a temporary
+  file renamed over them. A settings file kept in a dotfiles repository behind a link is written
+  through the link, which stays; a file keeps its permissions; and one you made read-only is left
+  alone and reported. On Windows a file cannot be replaced while another program has it open,
+  however that program opened it, so a write waits up to about a second for it to be let go;
+  a file still held after that is left as it was and reported, where the old in-place write
+  could have gone through.
+- **`uninstall -binary` keeps the binary when an agent's file could not be changed.** The hooks
+  still in that file run it, so removing it left an agent failing on every tool call with nothing
+  installed to fix it. The run now says what it kept and exits non-zero; running it again once
+  the file can be written removes the hooks and the binary. An agent whose file could not be
+  written also keeps its other files until the next run, rather than being left half removed.
+
 - **Pi's searches now carry their turn, and `turn_end` reports a Pi turn.** The Pi extension
   names a turn by the id Pi saved for your message, hashed with the session's, so the searches
   of one prompt share a turn id, the next prompt's differ, and a resumed session keeps its

@@ -2,6 +2,14 @@
 
 What `jevlin agents install`, and setup's agents question, writes into each coding agent.
 
+**How a file is written.** An agent's file is replaced whole: the new contents go to a temporary
+file beside it, which is then renamed over it, so a run stopped part way, by you, by a full
+disk or by an upgrade's deadline, leaves the file as it was rather than cut short. A file that
+is a link, such as a settings file kept in a dotfiles repository, is written through to what it
+names, and the link stays. A file keeps its permissions, and one you made read-only is left
+alone and reported. If one of an agent's files cannot be written, the rest of that agent's
+changes wait for the next run, so it is never left half set up.
+
 **Found.** An agent counts as present by the command that launches it or, for Cursor, its config
 directory; setup and `jevlin agents status` print which, and nothing is run to find out. One not
 found is set up with `jevlin setup -with <id>` or `jevlin agents install -client <id>`.

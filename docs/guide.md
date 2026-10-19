@@ -327,7 +327,9 @@ matcher is the same) stays, and only jevlin's handler is taken out, by `uninstal
 `agents install` or upgrade that rewrites it. Your wallet, registration, key,
 unsent searches and config stay, and nothing is revoked. `-binary` also removes the binary, its
 `.previous` and an interrupted upgrade's leftovers, never an npm copy; on Windows it moves the
-running binary aside and names the file to delete later. `uninstall` lists leftover `.lock`
+running binary aside and names the file to delete later. If a coding agent's file could not be
+changed, `-binary` keeps the binary, because the hooks still in that file run it: the run says
+so and exits non-zero, and running it again once the file can be written finishes both. `uninstall` lists leftover `.lock`
 files, which are safe to delete.
 
 `-purge-state` destroys the participant state. At a terminal, you type the wallet's address
