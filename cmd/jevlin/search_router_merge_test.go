@@ -229,6 +229,44 @@ func TestFoundInNamesTheCitationByItsFormAndRank(t *testing.T) {
 	}
 }
 
+// found_in is read in step with found_by. When the router's answer does
+// not let one provider's citation be found, the page carries no positions
+// at all: a shorter list would pair every later position with the wrong
+// provider. No router fixture can hold this, because it is the router
+// breaking its own contract, so the test builds it from the main-shape
+// fixture: brave's citation of the arxiv page is taken out of brave's list,
+// and the merged view still names brave at rank 2.
+func TestAPageWhosePositionCannotBeFoundCarriesNone(t *testing.T) {
+	_, fixture := readRouterFixture(t, "merged-view-success.main.json")
+	brave := objOf(listOf(fixture["candidates"])[0])
+	if brave["provider"] != "brave" {
+		t.Fatalf("the fixture's first candidate is %v, not brave", brave["provider"])
+	}
+	brave["citations"] = listOf(brave["citations"])[:1] // keep rank 1 only; the arxiv page was rank 2
+	raw, err := json.Marshal(fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, _, _ := searchServing(t, raw, `{"version":1,"query":"q"}`)
+	for _, p := range listOf(resultOf(t, env)["merged"]) {
+		page := objOf(p)
+		switch page["url"] {
+		case "https://arxiv.org/abs/2603.01234":
+			if got := listOf(page["found_in"]); len(got) != 0 {
+				t.Errorf("found_in %v for a page whose brave citation is gone; want none", got)
+			}
+			if len(listOf(page["found_by"])) != 4 {
+				t.Errorf("found_by %v; the router's four providers should stay", page["found_by"])
+			}
+		case "https://example.org/rag-eval":
+			// brave's rank-1 citation is still there: this page keeps its positions.
+			if len(listOf(page["found_in"])) != 2 {
+				t.Errorf("found_in %v; want both positions", page["found_in"])
+			}
+		}
+	}
+}
+
 // A 200 with no merged key, to a search that asked for the merged view, is
 // the router breaking its contract. The search still ran: ok, an empty
 // list rather than none, the candidates intact, and nothing on stderr,
