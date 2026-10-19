@@ -227,3 +227,31 @@ func TestReplaceFileRefusesWhatIsNotAFile(t *testing.T) {
 	}
 	noStagedFiles(t, dir)
 }
+
+// A file the in-place write could not have written is not replaced either:
+// one made read-only stays as it is, and the error is the one opening it for
+// writing gives.
+func TestReplaceFileLeavesAFileItCouldNotWrite(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	if err := os.WriteFile(path, []byte("theirs"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o400); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
+	if f, err := os.OpenFile(path, os.O_WRONLY, 0); err == nil { // #nosec G304 -- test path
+		_ = f.Close()
+		t.Skip("this account writes a read-only file anyway (root)")
+	}
+	err := ReplaceFile(path, []byte("ours"), 0o600)
+	var se *StageError
+	if !errors.As(err, &se) || se.Stage != "open" || !errors.Is(err, fs.ErrPermission) {
+		t.Fatalf("replacing a read-only file: %v, want an open-stage permission error", err)
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != "theirs" { // #nosec G304 -- test path
+		t.Fatalf("the read-only file: %q %v", got, err)
+	}
+	noStagedFiles(t, dir)
+}

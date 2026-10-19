@@ -221,6 +221,7 @@ var classifiedFileCalls = map[fileCallSite]fileCallClass{
 	{"pkg/config/config.go", "rawConfig.finish", "os.ReadFile"}:                         {1, "outside: the operator's upstream CA file"},
 	{"pkg/fsx/atomic.go", "defaultOperations", "os.CreateTemp"}:                         {1, "fsx: the exclusive random staging name"},
 	{"pkg/fsx/atomic.go", "defaultOperations", "os.Remove"}:                             {1, "fsx: removes its own staging name"},
+	{"pkg/fsx/replace_file.go", "replaceFile", "os.OpenFile"}:                           {1, "fsx: opens an existing regular file for writing without truncating, only to refuse one the caller could not write in place; closed unwritten"},
 	{"pkg/fsx/confined.go", "CreateNew", "os.OpenFile"}:                                 {1, "fsx: O_EXCL, never an existing name"},
 	{"pkg/fsx/confined.go", "CreateNew", "os.Remove"}:                                   {1, "fsx: removes the file it just created"},
 	{"pkg/fsx/confined_unix.go", "openLock", "os.OpenFile"}:                             {1, "fsx: O_NOFOLLOW, then a regular-file check"},

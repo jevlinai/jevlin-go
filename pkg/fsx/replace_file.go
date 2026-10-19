@@ -28,6 +28,12 @@ const maxLinkHops = 40
 //     target's directory, so the rename stays within one directory.
 //   - An existing file keeps its permission bits; mode is used only for a file
 //     that does not exist yet.
+//   - A file this process could not write in place is not replaced. A rename
+//     needs only the directory to be writable, so without the check a file
+//     the participant made read-only, or one another account owns, would be
+//     replaced where an in-place write was refused. It is opened for writing,
+//     without truncating, and closed; if that fails, so does ReplaceFile,
+//     with that error.
 //
 // What a rename cannot keep, it does not: the replaced file is a new inode,
 // so a hard link to the old one keeps the old bytes, and a watcher holding
@@ -51,6 +57,11 @@ func replaceFile(path string, data []byte, mode fs.FileMode, ops operations) err
 		return &StageError{Stage: "resolve", Err: fmt.Errorf("%s is not a regular file", target)}
 	case err == nil:
 		mode = info.Mode().Perm()
+		probe, err := os.OpenFile(target, os.O_WRONLY, 0) // #nosec G304 -- the caller's own file, opened only to ask whether it may be written
+		if err != nil {
+			return &StageError{Stage: "open", Err: err}
+		}
+		_ = probe.Close()
 	case !errors.Is(err, fs.ErrNotExist):
 		return &StageError{Stage: "resolve", Err: err}
 	}
