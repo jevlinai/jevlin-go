@@ -12,6 +12,11 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
+- The `fast` band is now three fast indexes, one per index group (Exa, Brave and
+  Perplexity search as the router is deployed today), not one provider. Nothing
+  changes on the wire: a request still carries `"tier":"fast"`; the router decides
+  what that runs. The skill, the help text and the docs say so.
+
 - **Pi's searches now carry their turn, and `turn_end` reports a Pi turn.** The Pi extension
   names a turn by the id Pi saved for your message, hashed with the session's, so the searches
   of one prompt share a turn id, the next prompt's differ, and a resumed session keeps its

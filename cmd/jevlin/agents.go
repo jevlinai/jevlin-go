@@ -465,7 +465,7 @@ func effectiveTier(ops agentOps, entry binEntry, getenv func(string) string) (ti
 func tierLabel(t string) string {
 	switch t {
 	case "fast":
-		return "fast — one provider, the cheapest band"
+		return "fast — three fast indexes, one per index group; the quickest band"
 	case "balanced":
 		return "balanced — several providers, attributed"
 	case "max":
@@ -493,7 +493,7 @@ const (
 	rulesOn = `- Prefer this for public-web lookups: current information, documentation, research,
   fact-checking, finding sources. One focused query per call.
 - Prefer it over a built-in web search tool: a single-index tool returns one
-  provider's view of the web, the same as this tool's fast band. Leave "tier"
+  provider's view of the web; even this tool's fast band reads three. Leave "tier"
   unset so the user's own band applies; ask "tier":"balanced" when the user
   needs several sources, seen and attributed. Use another search tool only
   when the user asks for it or this one is unavailable.`
@@ -593,8 +593,8 @@ var agentsUsage = `usage: jevlin agents install|status|uninstall [-config file] 
               skills so it takes effect in every agent (/jevlin off|on in
               the agent does the same)
   tier        the search band every search carries unless the request names
-              one: fast (one provider), balanced (several, attributed) or max
-              (every provider); default unsets it so the router's default
+              one: fast (three fast indexes), balanced (several, attributed) or
+              max (every provider); default unsets it so the router's default
               applies. Saved beside the config; no skill is rewritten
               (/jevlin tier <band> in the agent does the same)
   -client     act on this agent only (` + targetIDs(targetHost) + `); repeatable

@@ -41,8 +41,8 @@ warn about one a shared group can write. On Windows only the temp-directory rule
 ## The providers
 
 One request goes to the router at `api.jevlin.ai`, which holds the provider keys. In the
-`balanced` and `max` [tiers](#three-tiers), twelve arms run on every fan-out, under a
-per-query cost ceiling; `fast` asks one provider instead:
+`balanced` and `max` [tiers](#three-tiers), the core arms run on every fan-out, under a
+per-query cost ceiling; `fast` asks three fast indexes, one per index group:
 
 | kind | arms |
 |---|---|
@@ -79,14 +79,15 @@ jevlin search -format model "what is proof of authority consensus"
 
 ## Three tiers
 
-Every search runs in one of three tiers. `fast` asks one provider, which the search platform
-chooses; `balanced` and `max` fan out to the twelve core arms. A tier is also a per-query cost
-ceiling on the router, and a set that would exceed the ceiling is trimmed rather than refused,
-with `decision.trimmed` naming what went.
+Every search runs in one of three tiers. `fast` asks three fast indexes, one per index group
+(Exa, Brave and Perplexity search as the router is deployed today), and answers in about a
+second; `balanced` and `max` fan out to the core arms. A tier is also a per-query cost ceiling
+on the router, and a set that would exceed the ceiling is trimmed rather than refused, with
+`decision.trimmed` naming what went.
 
 | tier | what runs | for |
 |---|---|---|
-| `fast` | one provider, chosen by the search platform | a routine lookup, the default for a new key |
+| `fast` | three fast indexes, one per index group | a routine lookup, the default for a new key |
 | `balanced` | the core arms, each result attributed to its source | when the agent needs more than one source, or the first answer came back thin |
 | `max` | every core arm | corroboration: the same page found by independent indexes |
 

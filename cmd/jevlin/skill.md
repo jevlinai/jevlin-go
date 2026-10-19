@@ -25,8 +25,8 @@ Leave `tier` unset for a routine lookup: the request then carries the user's
 own band (set with `/jevlin tier`), or the router's default when the user set
 none. Ask `"tier":"balanced"` when the user needs to see several sources, or
 when the first result came back thin — several providers, attributed. `fast`
-is one provider; `max` is every provider and is the user's to choose, never
-yours: do not send it.
+is three fast indexes, one per index group, back in about a second; `max` is
+every provider and is the user's to choose, never yours: do not send it.
 
 ## Request options
 

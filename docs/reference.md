@@ -45,7 +45,7 @@ list and needs no shell escaping. A malformed field answers `fix_input` before a
 |---|---|
 | `version` | `1`, required. |
 | `query` | The search, required. |
-| `tier` | `"fast"` (one provider), `"balanced"` (several, attributed) or `"max"` (every provider). Absent, the request carries the participant's band (`agents tier`, then `[miner] tier`), or no tier at all and the router applies the tenant's default. |
+| `tier` | `"fast"` (three fast indexes, one per index group), `"balanced"` (several, attributed) or `"max"` (every provider). Absent, the request carries the participant's band (`agents tier`, then `[miner] tier`), or no tier at all and the router applies the tenant's default. |
 | `recency` | `"day"`, `"week"`, `"month"` or `"year"`. A preference the router passes to its providers; check each citation if it must hold. |
 | `domain_filter` | Up to 16 bare hostnames. A preference, like `recency`. |
 | `max_results` | 1 to 25. A cap. |

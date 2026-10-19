@@ -135,8 +135,9 @@ The choice is saved beside your config and survives reinstalls. While it is off,
 
 ## Choosing a band
 
-Every search carries a tier, the router's cost band: `fast` is one provider, `balanced` is
-several with each source attributed, `max` is every provider, for corroboration. `/jevlin tier
+Every search carries a tier, the router's cost band: `fast` is three fast indexes, one per
+index group, back in about a second; `balanced` is several with each source attributed; `max`
+is every provider, for corroboration. `/jevlin tier
 balanced` in an agent, or `jevlin agents tier balanced` from a shell, sets the band every search
 carries unless the request names one; `/jevlin tier default` unsets it, and `/jevlin tier` says
 what is in force. The skill tells your agent to leave `tier` alone so your band applies, and to
