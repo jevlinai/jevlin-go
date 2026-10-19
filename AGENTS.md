@@ -550,6 +550,20 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `generated_config_ascii_test.go` renders each artifact from ASCII inputs and refuses a byte
   above 0x7F — from ASCII inputs, because a participant whose home is `C:\Users\José` is not
   this client's doing.
+  **How it writes them**: a host's file is the participant's own settings, and since the upgrade
+  re-renders it unattended under a deadline that kills the child, an in-place write could be
+  stopped between truncating and writing and leave it empty (issue #37). So `realAgentOps`
+  writes through `fsx.ReplaceFile` (`pkg/fsx/replace_file.go`): a `.tmp-` file beside the file,
+  synced and renamed over it, after following a link to the file it names, so a link stays a
+  link; an existing file keeps its mode, and one the in-place write could not have written
+  (read-only, another account's) is refused. A FIFO is refused before anything is opened. A
+  rename still makes a new inode, so a hard link keeps the old bytes. And `commitPlan` holds a
+  host's removals when one of its writes failed, and `uninstall -binary` keeps the binary when
+  any change to a host's files failed (`keepBinary`), because the hooks left in the file run it.
+  `pkg/fsx/replace_file_test.go` (stages, links, modes, the staged name, a read-only file),
+  `replace_file_unix_test.go` (the FIFO), `replace_file_windows_test.go` (the file held open,
+  in both share modes) and `cmd/jevlin/host_files_test.go` (the real install and uninstall)
+  hold it.
   For participants: [reference, Config](docs/reference.md#config).
 - **What a destructive run may leave behind** — `cmd/jevlin/lifecycle.go` owns the
   exclusion: which operation locks it takes, which of those files it created, and the rule that
