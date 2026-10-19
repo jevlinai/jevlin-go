@@ -63,7 +63,7 @@ var watchedFileCalls = map[string]map[string]bool{
 	"golang.org/x/sys/windows": nameSet("CreateFile", "MoveFileEx", "MoveFile", "DeleteFile", "CreateDirectory",
 		"RemoveDirectory", "CreateHardLink", "CreateSymbolicLink", "SetFileInformationByHandle", "NtCreateFile",
 		"NtSetInformationFile"),
-	"github.com/jevlinai/jevlin-go/pkg/fsx": nameSet("WriteFileAtomic", "WriteFileExclusive", "MoveFileDurable",
+	"github.com/jevlinai/jevlin-go/pkg/fsx": nameSet("WriteFileAtomic", "WriteFileExclusive", "ReplaceFile", "MoveFileDurable",
 		"RemoveFileDurable", "CreateNew", "ReadRegular", "ReadRegularNoFollow", "OpenLock", "OpenLockExisting", "OpenRoot",
 		"SyncDirectory"),
 }
@@ -91,7 +91,7 @@ var classifiedFileCalls = map[fileCallSite]fileCallClass{
 	{"cmd/jevlin/agents.go", "realAgentOps", "os.RemoveAll"}:                            {1, "outside: host skill directories"},
 	{"cmd/jevlin/agents.go", "realAgentOps", "os.Remove"}:                               {1, "outside: one name of ours beside the config (search-tier), lstat-checked not to be a directory, so a link is removed as the link; never recursive"},
 	{"cmd/jevlin/agents.go", "realAgentOps", "fsx.WriteFileAtomic"}:                     {1, "outside: search-tier beside the config, in the installation's own root; an exclusively created temporary renamed over the name, so a link there is replaced, never written through"},
-	{"cmd/jevlin/agents.go", "realAgentOps", "os.WriteFile"}:                            {1, "outside: host config files"},
+	{"cmd/jevlin/agents.go", "realAgentOps", "fsx.ReplaceFile"}:                         {1, "outside: host config files, replaced whole through a temporary file beside the file a link names (issue #37)"},
 	{"cmd/jevlin/connect.go", "readResumeStamp", "fsx.ReadRegular"}:                     {1, "root: the state dir's resume stamp, read without waiting and bounded"},
 	{"cmd/jevlin/connect.go", "writeResumeStamp", "fsx.WriteFileAtomic"}:                {1, "root: the state dir's resume stamp; fsx stages under an exclusive random name"},
 	{"cmd/jevlin/credentials.go", "cmdLogin", "os.Remove"}:                              {1, "outside: credentials.json, in the installation's own root"},

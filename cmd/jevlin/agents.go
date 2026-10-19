@@ -237,11 +237,16 @@ func (ops agentOps) replaceFileFn() func(string, []byte, fs.FileMode) error {
 func realAgentOps() agentOps {
 	home, _ := os.UserHomeDir()
 	return agentOps{
-		home:           home,
-		lookPath:       exec.LookPath,
-		executable:     os.Executable,
-		readFile:       os.ReadFile,
-		writeFile:      os.WriteFile,
+		home:       home,
+		lookPath:   exec.LookPath,
+		executable: os.Executable,
+		readFile:   os.ReadFile,
+		// A host file is the participant's own, so it is replaced whole
+		// (issue #37): a temporary file beside it, synced, renamed over it,
+		// so an interrupted run leaves the old bytes rather than a truncated
+		// file. ReplaceFile follows a link to the file it names and keeps an
+		// existing file's mode, as the in-place write did.
+		writeFile:      fsx.ReplaceFile,
 		mkdirAll:       os.MkdirAll,
 		stat:           os.Stat,
 		removeAll:      os.RemoveAll,
