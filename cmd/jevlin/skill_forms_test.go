@@ -20,6 +20,17 @@ func withQueryFormsTaught(t *testing.T, on bool) {
 	t.Cleanup(func() { skillTeachesQueryForms = was })
 }
 
+// The gate ships off. The tests below set it themselves, so neither would
+// notice the default turned on; this one reads it as compiled. Turning the
+// gate on, once Jevlin-core #55 is live on the router, is the release's
+// deliberate change, and this test changes with it.
+func TestTheQueryFormsGateShipsOff(t *testing.T) {
+	if skillTeachesQueryForms {
+		t.Fatal("skillTeachesQueryForms is on: the skill would teach every agent to send objective and " +
+			"search_queries. Turn it on only once the live router takes them, and change this test in the same commit.")
+	}
+}
+
 // Off is the shipped state until #55 is live: a skill that told every
 // agent to send the forms to a router that refuses them would make every
 // search pay a refused request and a retry.
