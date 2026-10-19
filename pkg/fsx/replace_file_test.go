@@ -244,6 +244,11 @@ func TestReplaceFileLeavesAFileItCouldNotWrite(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
 	if f, err := os.OpenFile(path, os.O_WRONLY, 0); err == nil { // #nosec G304 -- test path
 		_ = f.Close()
+		// As symlinkOrSkip does: under CI=true a guard that did not run must
+		// not read as one that passed.
+		if os.Getenv("CI") == "true" {
+			t.Fatal("this account writes a read-only file anyway (root), and CI does not let this test skip")
+		}
 		t.Skip("this account writes a read-only file anyway (root)")
 	}
 	err := ReplaceFile(path, []byte("ours"), 0o600)
