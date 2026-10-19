@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // maxLinkHops bounds the walk ReplaceFile takes through symbolic links, as
@@ -13,13 +14,33 @@ import (
 // than a hang.
 const maxLinkHops = 40
 
+// On Windows, a rename over a file that any other handle has open is refused,
+// whatever that handle shares: the CI runners refused it with the file held
+// both ways (replace_file_windows_test.go), Node's and Rust's way of opening
+// included, which is how Claude Code, Cursor and Codex open their files.
+// The in-place write this replaces was refused only by a holder that did not
+// share writing. And holds are brief and real: the upgrade's re-render runs
+// from a hook while the host is running and may be reading its own settings,
+// and a rename in this module has already failed on a momentarily held
+// target on Windows (miner.go's replaceViaTemp, seen on the 0.2.10 release
+// check). So ReplaceFile retries the publication -- only the publication,
+// with the staged file kept -- replaceAttempts times, replaceDelay apart,
+// and only for an error heldBriefly names, which is constant false off
+// Windows. internal/selfupdate's moveAside waits the same way for the same
+// reason. WriteFileAtomic does not wait: the spool and intake write through
+// it on the search path, which hard invariant 1 keeps free of waits.
+const (
+	replaceAttempts = 5
+	replaceDelay    = 250 * time.Millisecond
+)
+
 // ReplaceFile replaces the file at path with complete data, as
 // WriteFileAtomic does: a temporary file in the same directory, synced, then
 // renamed over the name, so a reader sees the old bytes or the new ones and
 // never a mix, whenever the writer stops.
 //
 // It is for a file somebody else owns and arranges, such as a coding agent's
-// settings, and differs from WriteFileAtomic in two ways:
+// settings, and differs from WriteFileAtomic in these ways:
 //
 //   - A symbolic link at path is followed to the file it names, and that file
 //     is replaced: the link stays a link. A settings file kept in a dotfiles
@@ -34,6 +55,8 @@ const maxLinkHops = 40
 //     replaced where an in-place write was refused. It is opened for writing,
 //     without truncating, and closed; if that fails, so does ReplaceFile,
 //     with that error.
+//   - On Windows, a rename refused because another handle holds the target
+//     is tried again for about a second (replaceAttempts) before it fails.
 //
 // What a rename cannot keep, it does not: the replaced file is a new inode,
 // so a hard link to the old one keeps the old bytes, and a watcher holding
@@ -64,6 +87,16 @@ func replaceFile(path string, data []byte, mode fs.FileMode, ops operations) err
 		_ = probe.Close()
 	case !errors.Is(err, fs.ErrNotExist):
 		return &StageError{Stage: "resolve", Err: err}
+	}
+	publish := ops.publish
+	ops.publish = func(from, to string, exclusive bool) error {
+		for attempt := 1; ; attempt++ {
+			err := publish(from, to, exclusive)
+			if err == nil || attempt == replaceAttempts || ops.held == nil || !ops.held(err) {
+				return err
+			}
+			ops.pause(replaceDelay)
+		}
 	}
 	return writeFile(filepath.Dir(target), filepath.Base(target), data, mode, false, ops)
 }

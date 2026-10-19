@@ -18,8 +18,10 @@ rewritten to match newer behaviour; the newer entry says what changed.
   part way could leave your own settings empty. They are now replaced whole, through a temporary
   file renamed over them. A settings file kept in a dotfiles repository behind a link is written
   through the link, which stays; a file keeps its permissions; and one you made read-only is left
-  alone and reported. On Windows, a file another program holds open without sharing it for
-  deletion can now be refused where it used to be written; it is left as it was and reported.
+  alone and reported. On Windows a file cannot be replaced while another program has it open,
+  however that program opened it, so a write waits up to about a second for it to be let go;
+  a file still held after that is left as it was and reported, where the old in-place write
+  could have gone through.
 - **`uninstall -binary` keeps the binary when an agent's file could not be changed.** The hooks
   still in that file run it, so removing it left an agent failing on every tool call with nothing
   installed to fix it. The run now says what it kept and exits non-zero; running it again once

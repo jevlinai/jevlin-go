@@ -561,9 +561,11 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   host's removals when one of its writes failed, and `uninstall -binary` keeps the binary when
   any change to a host's files failed (`keepBinary`), because the hooks left in the file run it.
   `pkg/fsx/replace_file_test.go` (stages, links, modes, the staged name, a read-only file),
-  `replace_file_unix_test.go` (the FIFO), `replace_file_windows_test.go` (the file held open,
-  in both share modes) and `cmd/jevlin/host_files_test.go` (the real install and uninstall)
-  hold it.
+  `replace_file_unix_test.go` (the FIFO), `replace_file_windows_test.go` (the file held open)
+  and `cmd/jevlin/host_files_test.go` (the real install and uninstall) hold it. On Windows any
+  open handle refuses the rename, whatever it shares (seen on the CI runners, PR #120), so the
+  publication alone is retried for about a second for a sharing violation or access denied,
+  as `moveAside` is; `WriteFileAtomic`, on the search path, never waits.
   For participants: [reference, Config](docs/reference.md#config).
 - **What a destructive run may leave behind** — `cmd/jevlin/lifecycle.go` owns the
   exclusion: which operation locks it takes, which of those files it created, and the rule that

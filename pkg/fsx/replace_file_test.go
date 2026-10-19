@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // noStagedFiles fails if a temporary file is left in dir.
@@ -293,4 +294,81 @@ func TestReplaceFileFollowsARelativeLinkFromTheRealDirectory(t *testing.T) {
 	}
 	noStagedFiles(t, filepath.Join(dotfiles, "shared"))
 	noStagedFiles(t, filepath.Join(home, "shared"))
+}
+
+// The publication retry's policy, on every OS through the seam: a refusal
+// heldBriefly names is tried again replaceAttempts times, replaceDelay
+// apart, and the staged file is kept for it; a hold that clears inside the
+// window ends in the new bytes; one that outlasts it ends in the old bytes,
+// with nothing staged left; any other refusal is returned at once.
+func TestReplaceFileRetriesOnlyAHeldPublication(t *testing.T) {
+	held := errors.New("held")
+	other := errors.New("other")
+	for _, tc := range []struct {
+		name      string
+		refusals  int
+		err       error
+		wantNew   bool
+		wantTries int
+	}{
+		{"a hold that clears inside the window", 3, held, true, 4},
+		{"a hold that outlasts the window", 99, held, false, replaceAttempts},
+		{"a refusal that is not a hold", 99, other, false, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "settings.json")
+			if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			ops := defaultOperations()
+			publish, tries := ops.publish, 0
+			ops.publish = func(from, to string, exclusive bool) error {
+				tries++
+				if _, err := os.Stat(from); err != nil {
+					t.Errorf("try %d: the staged file is gone: %v", tries, err)
+				}
+				if tries <= tc.refusals {
+					return tc.err
+				}
+				return publish(from, to, exclusive)
+			}
+			ops.held = func(err error) bool { return errors.Is(err, held) }
+			var waited []time.Duration
+			ops.pause = func(d time.Duration) { waited = append(waited, d) }
+
+			err := replaceFile(path, []byte("new"), 0o600, ops)
+			if tries != tc.wantTries || len(waited) != tc.wantTries-1 {
+				t.Fatalf("%d tries and %d waits, want %d and %d", tries, len(waited), tc.wantTries, tc.wantTries-1)
+			}
+			for _, d := range waited {
+				if d != replaceDelay {
+					t.Fatalf("waited %v, want %v each time", d, replaceDelay)
+				}
+			}
+			got, rerr := os.ReadFile(path) // #nosec G304 -- test path
+			if tc.wantNew {
+				if err != nil || rerr != nil || string(got) != "new" {
+					t.Fatalf("after a hold that cleared: %v, %q %v", err, got, rerr)
+				}
+			} else if !errors.Is(err, tc.err) || rerr != nil || string(got) != "old" {
+				t.Fatalf("after a refusal: %v, %q %v; want the refusal and the old bytes", err, got, rerr)
+			}
+			noStagedFiles(t, dir)
+		})
+	}
+}
+
+// WriteFileAtomic, which the spool and intake use on the search path, never
+// waits: a held refusal is returned on the first try.
+func TestWriteFileAtomicNeverWaits(t *testing.T) {
+	held := errors.New("held")
+	ops := defaultOperations()
+	tries := 0
+	ops.publish = func(string, string, bool) error { tries++; return held }
+	ops.held = func(error) bool { return true }
+	ops.pause = func(time.Duration) { t.Fatal("WriteFileAtomic waited") }
+	if err := writeFile(t.TempDir(), "x", []byte("x"), 0o600, false, ops); !errors.Is(err, held) || tries != 1 {
+		t.Fatalf("%v after %d tries, want the refusal on the first", err, tries)
+	}
 }

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // ErrDirectorySyncUnsupported identifies a platform without directory fsync.
@@ -38,12 +39,18 @@ type operations struct {
 	publish func(string, string, bool) error
 	syncDir func(string) error
 	remove  func(string) error
+	// held and pause are ReplaceFile's retry of a publication refused
+	// because something holds the target open (replace_file.go). Nothing
+	// else reads them: WriteFileAtomic never waits.
+	held  func(error) bool
+	pause func(time.Duration)
 }
 
 func defaultOperations() operations {
 	return operations{
 		create:  func(dir, pattern string) (stagedFile, error) { return os.CreateTemp(dir, pattern) },
 		publish: publish, syncDir: syncDirectory, remove: os.Remove,
+		held: heldBriefly, pause: time.Sleep,
 	}
 }
 
