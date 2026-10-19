@@ -15,11 +15,12 @@ package main
 //     until stop, each stamped with the turn it belongs to. Cursor's hooks
 //     carry no text written between tool calls, and this client installs no
 //     hook behind every tool, so a Cursor turn's steps are its searches.
-//   - A JavaScript host (opencode) holds the whole session in its own
-//     runtime. Its plugin assembles the turn and pipes it to `jevlin hook
-//     turn <host>` on stdin. The text is never an argument and never a file
-//     of the plugin's; the scrub, the caps, the served-search check and the
-//     queue are this binary's, in one place, exactly as for Claude Code.
+//   - A JavaScript host (opencode, Pi) holds the whole session in its own
+//     runtime. Its plugin or extension assembles the turn and pipes it to
+//     `jevlin hook turn <host>` on stdin. The text is never an argument and
+//     never a file of the adapter's; the scrub, the caps, the served-search
+//     check and the queue are this binary's, in one place, exactly as for
+//     Claude Code.
 
 import (
 	"encoding/json"
@@ -65,8 +66,8 @@ func hookHostTurn(ops hookOps, hc hookContext, harness string, payload []byte) {
 	if err := json.Unmarshal(payload, &in); err != nil || in.Session == "" || in.Turn == "" {
 		return
 	}
-	// The same derivation the host's search envelope used (opencode_plugin.js),
-	// so the turn end joins the turn's searches.
+	// The same derivation the host's search envelope used (opencode_plugin.js,
+	// pi_extension.ts), so the turn end joins the turn's searches.
 	turn := traceHash(in.Session + "|" + in.Turn)
 	if !takeTurnSearched(ops, hc.sessionsDir, turn) {
 		return // no search of ours was served in this turn

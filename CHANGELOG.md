@@ -10,6 +10,21 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## Unreleased
+
+- **Pi's searches now carry their turn, and `turn_end` reports a Pi turn.** The Pi extension
+  names a turn by the id Pi saved for your message, hashed with the session's, so the searches
+  of one prompt share a turn id, the next prompt's differ, and a resumed session keeps its
+  turns' names. With `[miner] turn_end = true`, a turn that searched is then reported when Pi's
+  run has settled: what you asked, what the assistant finally wrote, each tool by name,
+  duration and outcome, the model and the token counts; never a tool's input or output, and
+  nothing of Pi's system prompt. The report waits for Pi's `agent_settled`, not the `agent_end`
+  that closes each loop of a prompt, because Pi retries a failed request and continues after
+  compacting inside one prompt, and a report at the first of those would send the failed
+  attempt as the turn. That needs Pi 0.80.4 or later; on an earlier Pi the searches carry their
+  turn and no turn is reported. A native install's upgrade rewrites Pi's extension; an npm install
+  is updated with npm, then `jevlin agents install`.
+
 ## v0.4.2 — 2026-10-19
 
 Two fixes to what the trace sends, a signature check for npm installs, and a guard for

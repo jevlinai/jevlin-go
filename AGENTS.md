@@ -816,10 +816,11 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   participant's that install changed names the config in its mark instead, and goes back with the
   region it belongs to. **Every artifact this client
   writes names the installation that wrote it** — `TestEveryArtifactNamesTheInstallationThatWroteIt`
-  — including the JavaScript adapters, through their `INSTALL_CONFIG` line. Pi's extension runs no
-  command of ours, and opencode's plugin runs one only to hand a finished turn to `hook turn`, so
-  without that line neither would name its installation's config, and a disposable installation's
-  purge could delete the main installation's copy. An artifact naming no
+  — including the JavaScript adapters, through their `INSTALL_CONFIG` line. Neither teaches a
+  command, and each runs the binary only to hand it something — a session's start to `hook start`,
+  a finished turn to `hook turn` — so without that line neither would name its installation's
+  config, and a disposable installation's purge could delete the main installation's copy. An
+  artifact naming no
   installation is left and reported, never deleted on the assumption it is ours — with the file
   named and the one `agents install` that would stamp it, so the dead end self-heals.
   **The rule holds at install time too.** A host has one skill directory, and opencode and Pi one

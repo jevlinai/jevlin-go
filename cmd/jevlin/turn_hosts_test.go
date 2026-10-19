@@ -93,6 +93,56 @@ func TestHostTurn(t *testing.T) {
 	}
 }
 
+// Pi's extension pipes the same record to the same entry point under its own
+// name. Its ids are Pi's: the session's, and the persisted id of the user entry
+// that opened the turn, hashed as its search envelope hashed them, so the turn
+// end joins only the searches of its own turn.
+func TestHostTurnForPi(t *testing.T) {
+	const session, entry = "01a152f1-14c4-76ba-b318-0a6107087104", "6ca53764"
+	payload := map[string]any{
+		"session": session, "turn": entry, "status": "completed",
+		"user_text": "who designed it?", "final_text": "Populous.", "model": "stub-1",
+		"usage": map[string]any{"input_tokens": 1000, "output_tokens": 30},
+		"steps": []map[string]any{
+			{"kind": "assistant", "text": "Looking."},
+			{"kind": "search", "call": "call_1", "ms": 5200, "ok": true},
+			{"kind": "tool", "name": "bash", "ms": 40, "ok": false},
+		},
+	}
+
+	h := newTurnEndHarness(nil, true)
+	h.served(traceHash(session + "|" + entry))
+	runHook(t, h.ops, h.hc, "turn pi", payload)
+	rec := h.record(t)
+	if rec.Harness != "pi" || rec.SessionID != traceHash(session) || rec.TurnID != traceHash(session+"|"+entry) || rec.Status != turnCompleted {
+		t.Errorf("ids = %+v", rec)
+	}
+	if rec.UserText != "who designed it?" || rec.FinalText != "Populous." || rec.Model != "stub-1" || rec.Usage == nil || rec.Usage.InputTokens != 1000 ||
+		len(rec.Steps) != 3 || rec.Steps[1].Kind != "search" || rec.Steps[1].CallID != traceHash(session+"|call_1") || rec.Steps[2].Name != "bash" || *rec.Steps[2].OK {
+		t.Errorf("record = %+v", rec)
+	}
+
+	for name, tc := range map[string]struct {
+		enabled bool
+		served  string
+	}{
+		"not opted in":                            {false, traceHash(session + "|" + entry)},
+		"no search served":                        {true, ""},
+		"a search served in another turn":         {true, traceHash(session + "|e7c1a0b2")},
+		"the same entry id in another session":    {true, traceHash("another-session|" + entry)},
+		"a search of the whole session, unhashed": {true, traceHash(session)},
+	} {
+		h := newTurnEndHarness(nil, tc.enabled)
+		if tc.served != "" {
+			h.served(tc.served)
+		}
+		runHook(t, h.ops, h.hc, "turn pi", payload)
+		if len(h.queued) != 0 {
+			t.Errorf("%s: queued %v", name, h.queued)
+		}
+	}
+}
+
 // Cursor's turn arrives in pieces: the prompt at beforeSubmitPrompt, each
 // search at beforeShellExecution, the reply at afterAgentResponse, the model
 // and tokens at stop.
