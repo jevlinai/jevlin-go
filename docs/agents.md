@@ -304,14 +304,31 @@ A skill in `~/.pi/agent/skills/jevlin/`; an auto-discovered extension, `~/.pi/ag
 ### What to know
 
 It runs Bash everywhere, Git Bash on Windows. The extension rewrites the search command with
-the session, the call, the assistant text that led to that search, and the compaction count,
-read back from the session Pi saved, so a resumed session keeps its place. When a session
-starts it also starts the flush and the daily release check, as Claude Code's session-start
-hook does; it pipes nothing to that process and reads nothing back.
+the session, the call, the turn it was made in, the assistant text that led to that search, and
+the compaction count, read back from the session Pi saved, so a resumed session keeps its place.
+A turn is named by the id Pi saved for the message you wrote: two searches under one prompt
+share it, the next prompt's differ, and a resumed session names its turns as it did before.
+A fork is a session of its own, with turn ids of its own. When a session starts the extension also
+starts the flush and the daily release check, as Claude Code's session-start hook does; it
+pipes nothing to that process and reads nothing back.
+
+With `turn_end` on, a turn that searched is reported when Pi's run has settled. Pi can run
+several loops for one prompt, retrying a failed request or continuing after it compacts, and
+each loop ends with `agent_end`; the report waits for `agent_settled`, which comes once, after
+the last of them. The extension builds the turn from the session Pi saved: what you asked, what
+the assistant finally wrote, each tool by name, duration and outcome, the model and its token
+counts, and hands it to jevlin on stdin. A tool's input and output are never read into it, and
+Pi's system prompt, which Pi keeps in the session, is never looked at. The text is scrubbed
+before it leaves the extension and again by jevlin.
 
 ### Known limits
 
-None known.
+The turn end needs Pi 0.80.4 or later, the first to report a settled run; on an earlier Pi the
+searches carry their turn and no turn is reported. Pi 1.1.0 added whether a run was aborted;
+before it, a turn is reported as interrupted only when its last answer says so. A run an
+extension starts with a message of its own, not yours, belongs to your last message: its
+searches share that turn, which has by then been reported, and are joined to no turn end.
+The turn end has been run live on Pi 1.3.0 on Linux, and not on macOS or Windows.
 
 ## Hermes
 
