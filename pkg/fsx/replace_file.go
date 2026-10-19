@@ -71,6 +71,12 @@ func replaceFile(path string, data []byte, mode fs.FileMode, ops operations) err
 // linkTarget follows symbolic links from path to the name that is not one:
 // an existing file, or the name a dangling link points at, which is where a
 // write through the link would create the file.
+//
+// A relative link is read from the real directory the link sits in, as the
+// kernel reads it, not from the text of its path: when a directory on the
+// way is itself a link, "dir/../x" named lexically is a different file from
+// the one the kernel opens, so the link's directory is resolved first, at
+// every hop.
 func linkTarget(path string) (string, error) {
 	for hop := 0; hop < maxLinkHops; hop++ {
 		info, err := os.Lstat(path)
@@ -88,7 +94,11 @@ func linkTarget(path string) (string, error) {
 			return "", err
 		}
 		if !filepath.IsAbs(dest) {
-			dest = filepath.Join(filepath.Dir(path), dest)
+			dir, err := filepath.EvalSymlinks(filepath.Dir(path))
+			if err != nil {
+				return "", err
+			}
+			dest = filepath.Join(dir, dest)
 		}
 		path = dest
 	}

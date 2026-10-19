@@ -255,3 +255,42 @@ func TestReplaceFileLeavesAFileItCouldNotWrite(t *testing.T) {
 	}
 	noStagedFiles(t, dir)
 }
+
+// A relative link with ".." under a directory that is itself a link is
+// followed as the kernel follows it, from the real directory. Here
+// home/.claude is a link to dotfiles/claude, and the settings file there
+// names ../shared/settings.json: the file replaced is dotfiles/shared's,
+// and home/shared's, which a lexical reading of the path would pick, is left
+// byte for byte.
+func TestReplaceFileFollowsARelativeLinkFromTheRealDirectory(t *testing.T) {
+	root := t.TempDir()
+	dotfiles := filepath.Join(root, "dotfiles")
+	home := filepath.Join(root, "home")
+	for _, d := range []string{filepath.Join(dotfiles, "claude"), filepath.Join(dotfiles, "shared"), filepath.Join(home, "shared")} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	realFile := filepath.Join(dotfiles, "shared", "settings.json")
+	bystander := filepath.Join(home, "shared", "settings.json")
+	if err := os.WriteFile(realFile, []byte("real, old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bystander, []byte("someone else's"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	symlinkOrSkip(t, filepath.Join(dotfiles, "claude"), filepath.Join(home, ".claude"))
+	symlinkOrSkip(t, filepath.Join("..", "shared", "settings.json"), filepath.Join(dotfiles, "claude", "settings.json"))
+
+	if err := ReplaceFile(filepath.Join(home, ".claude", "settings.json"), []byte("new"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(realFile); err != nil || string(got) != "new" { // #nosec G304 -- test path
+		t.Fatalf("the file the link names: %q %v, want the new bytes", got, err)
+	}
+	if got, err := os.ReadFile(bystander); err != nil || string(got) != "someone else's" { // #nosec G304 -- test path
+		t.Fatalf("the file a lexical reading names was written: %q %v", got, err)
+	}
+	noStagedFiles(t, filepath.Join(dotfiles, "shared"))
+	noStagedFiles(t, filepath.Join(home, "shared"))
+}
