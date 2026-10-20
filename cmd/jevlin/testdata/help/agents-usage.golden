@@ -10,8 +10,9 @@ usage: jevlin agents install|status|uninstall [-config file] [-client name]... [
               skills so it takes effect in every agent (/jevlin off|on in
               the agent does the same)
   tier        the search band every search carries unless the request names
-              one: fast (one provider), balanced (several, attributed) or max
-              (every provider); default unsets it so the router's default
+              one: fast (three fast indexes), balanced (several, attributed) or
+              max (the same arms, more results and longer excerpts; draws
+              credit); default unsets it so the router's default
               applies. Saved beside the config; no skill is rewritten
               (/jevlin tier <band> in the agent does the same)
   -client     act on this agent only (claude, codex, cursor, opencode, pi, hermes); repeatable

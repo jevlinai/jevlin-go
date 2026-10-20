@@ -39,6 +39,24 @@ rewritten to match newer behaviour; the newer entry says what changed.
   the file can be written removes the hooks and the binary. An agent whose file could not be
   written also keeps its other files until the next run, rather than being left half removed.
 
+- The `fast` band is now three fast indexes, one per index group (Exa, Brave and
+  Perplexity search as the router is deployed today), not one provider. Nothing
+  changes on the wire: a request still carries `"tier":"fast"`; the router decides
+  what that runs. The skill, the help text and the docs say so.
+
+- **The three bands are now priced and documented as work per query.** `balanced` is
+  the core arms at 8 results each in a 12-page merged window; `max` is the same arms
+  at 15 results each, a 24-page window and 2,000-character excerpts. The arms' own
+  prices pass through with no markup (about $0.015, $0.035 and $0.045 a search);
+  `usage.cost_micros` is the real number. With mining on, `fast` and `balanced` are
+  paid for by the trajectory; `max` and a named `providers` set always draw credit,
+  and a named set earns no reward. The router now refuses `providers` on `fast`
+  (400 `invalid_request`): the fast set is the router's. The skill tells the agent to
+  send a named set only with `balanced` or `max`, and only when the user asked for a
+  specific index. The limits a key gets were raised: a claimed key has 120 searches a
+  minute, 3,000 an hour and 16 at once (was 10, 60 and 2); an unclaimed key 10, 120
+  and 2 with $0.10 a day (was 6, 60, 1 and $0.02). `jevlin limits` shows them.
+
 - **Pi's searches now carry their turn, and `turn_end` reports a Pi turn.** The Pi extension
   names a turn by the id Pi saved for your message, hashed with the session's, so the searches
   of one prompt share a turn id, the next prompt's differ, and a resumed session keeps its

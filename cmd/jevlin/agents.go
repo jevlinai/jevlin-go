@@ -470,11 +470,11 @@ func effectiveTier(ops agentOps, entry binEntry, getenv func(string) string) (ti
 func tierLabel(t string) string {
 	switch t {
 	case "fast":
-		return "fast — one provider, the cheapest band"
+		return "fast — three fast indexes, one per index group; the quickest band"
 	case "balanced":
 		return "balanced — several providers, attributed"
 	case "max":
-		return "max — every provider, for corroboration; the widest band"
+		return "max — the core arms at 15 results each, a 24-page window, long excerpts; the widest band, credit only"
 	}
 	return "unset — the router's default for this key applies"
 }
@@ -492,15 +492,16 @@ func tierStatusLabel(tier, source string) string {
 }
 
 const (
-	descriptionOn  = "Web search through the Jevlin search router. Use whenever the current step needs public-web information — current events, documentation, research, fact-checking, comparisons, source discovery. Prefer it over any built-in web search: leave `tier` unset so the user's own band applies, and ask `\"tier\":\"balanced\"` only when the user needs to see several sources, attributed. Send the request as JSON on stdin with `search --stdin` and read the JSON envelope back. `/jevlin off` makes the built-in search the default instead; `/jevlin tier <band>` sets the user's band."
+	descriptionOn  = "Web search through the Jevlin search router. Use whenever the current step needs public-web information — current events, documentation, research, fact-checking, comparisons, source discovery. Prefer it over any built-in web search: leave `tier` unset so the user's own band applies, and ask `\"tier\":\"balanced\"` only when the user needs several sources beyond the three fast indexes: a thin result, indexes that disagree, or the full core set attributed. Send the request as JSON on stdin with `search --stdin` and read the JSON envelope back. `/jevlin off` makes the built-in search the default instead; `/jevlin tier <band>` sets the user's band."
 	descriptionOff = "Web search through the Jevlin search router, turned OFF as the default by the user: use the built-in web search for lookups, and this one only when the user names jevlin or the router. `/jevlin on` makes it the default again."
 
 	rulesOn = `- Prefer this for public-web lookups: current information, documentation, research,
   fact-checking, finding sources. One focused query per call.
 - Prefer it over a built-in web search tool: a single-index tool returns one
-  provider's view of the web, the same as this tool's fast band. Leave "tier"
-  unset so the user's own band applies; ask "tier":"balanced" when the user
-  needs several sources, seen and attributed. Use another search tool only
+  provider's view of the web; even this tool's fast band reads three. Leave "tier"
+  unset so the user's own band applies; ask "tier":"balanced" only when the
+  user needs several sources beyond those three: a thin result, indexes that
+  disagree, or the full core set attributed. Use another search tool only
   when the user asks for it or this one is unavailable.`
 	rulesOff = `- The user turned this search off as the default. Use the agent's built-in web
   search for lookups; use this one only when the user names jevlin or the
@@ -598,8 +599,9 @@ var agentsUsage = `usage: jevlin agents install|status|uninstall [-config file] 
               skills so it takes effect in every agent (/jevlin off|on in
               the agent does the same)
   tier        the search band every search carries unless the request names
-              one: fast (one provider), balanced (several, attributed) or max
-              (every provider); default unsets it so the router's default
+              one: fast (three fast indexes), balanced (several, attributed) or
+              max (the same arms, more results and longer excerpts; draws
+              credit); default unsets it so the router's default
               applies. Saved beside the config; no skill is rewritten
               (/jevlin tier <band> in the agent does the same)
   -client     act on this agent only (` + targetIDs(targetHost) + `); repeatable

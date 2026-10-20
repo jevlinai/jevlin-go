@@ -23,10 +23,14 @@ that instead of a shell at all.
 
 Leave `tier` unset for a routine lookup: the request then carries the user's
 own band (set with `/jevlin tier`), or the router's default when the user set
-none. Ask `"tier":"balanced"` when the user needs to see several sources, or
-when the first result came back thin — several providers, attributed. `fast`
-is one provider; `max` is every provider and is the user's to choose, never
-yours: do not send it.
+none. `fast` is three fast indexes, one per index group, back in about a
+second, so ask `"tier":"balanced"` only when the user needs several sources
+beyond what those three gave: the fast result came back thin, the indexes
+disagree, or the user wants the full core set with every page attributed — 8
+results each in a 12-page merged window. `max` is the same arms asked for 15
+results each, a 24-page window and 2,000-character excerpts, three to four
+times the tokens to read, and it is the user's to choose, never yours. Do not
+send it.
 
 ## Request options
 
@@ -42,8 +46,11 @@ Four more fields, each optional, passed straight through to the router:
   `{"version":1,"query":"quick fact check","max_results":3}`
 - `providers` — up to 16 provider names — to restrict the fan-out to named
   arms, or to reach an extended arm that fires only when named. The router
-  owns the list; an unknown name is its call, not refused here.
-  `{"version":1,"query":"compare agent frameworks","providers":["exa","brave"]}`
+  owns the list; an unknown name is its call, not refused here. A named set
+  needs `"tier":"balanced"` or `"max"` (the router refuses it on `fast`),
+  is billed at those arms' own prices and draws the user's credit even when
+  mining is on, so send it only when the user asked for a specific index.
+  `{"version":1,"query":"compare agent frameworks","tier":"balanced","providers":["exa","brave"]}`
 
 `recency` and `domain_filter` are preferences: the router passes them to its
 providers, and not every provider honors them, so results from other dates or

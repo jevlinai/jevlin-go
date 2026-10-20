@@ -11,7 +11,7 @@
 
 Free multi-provider web search for coding agents, with the trajectory behind every search.
 One binary gives Claude Code, Cursor, Codex, opencode, Pi and Hermes a `search` that can fan a
-query out across twelve search providers at once, merges what they return into one attributed
+query out across seven search indexes at once, merges what they return into one attributed
 list, and carries enough of the agent's context that the router can see the task a search
 belongs to, not just the query string. There is no daemon, proxy or MCP server: between tool
 calls nothing is running.
@@ -41,19 +41,19 @@ warn about one a shared group can write. On Windows only the temp-directory rule
 ## The providers
 
 One request goes to the router at `api.jevlin.ai`, which holds the provider keys. In the
-`balanced` and `max` [tiers](#three-tiers), twelve arms run on every fan-out, under a
-per-query cost ceiling; `fast` asks one provider instead:
+`balanced` and `max` [tiers](#three-tiers), the core arms run on every fan-out, under a
+per-query cost ceiling; `fast` asks three fast indexes, one per index group:
 
 | kind | arms |
 |---|---|
-| web indexes | Exa, Brave, You.com, Serper, SerpAPI, Telem, Parallel search, TinyFish |
-| answer engines | OpenAI web search, Perplexity, Perplexity search |
-| research agents | Parallel (slow lane: it keeps working after the response and lands on the trace) |
+| web indexes | Exa, Brave, Serper, Telem, Parallel search, TinyFish, Perplexity search |
 
-Thirteen more fire only when a request names them in `providers`: Tavily and Tavily
-research, Linkup and Linkup answer, Valyu, Kagi, Mojeek, Gemini, Grok, Exa answer, Brave
-answer, the Perplexity agent and Octen. The set is the router's and changes without a client
-release; `decision` in every response says which arms ran.
+More fire only when a request names them in `providers` (on `balanced` or `max`): SerpAPI (a
+Google read in the slow lane: it keeps working after the response and lands on the trace), the
+research agents (Parallel, Tavily research, the Perplexity agent, Octen), Tavily, Linkup and
+Linkup answer, Valyu, Kagi, Mojeek, Gemini, Grok, Exa answer and Brave answer. The set is the
+router's and changes without a client release; `decision` in every response says which arms
+ran.
 
 ## What a search returns
 
@@ -79,16 +79,22 @@ jevlin search -format model "what is proof of authority consensus"
 
 ## Three tiers
 
-Every search runs in one of three tiers. `fast` asks one provider, which the search platform
-chooses; `balanced` and `max` fan out to the twelve core arms. A tier is also a per-query cost
-ceiling on the router, and a set that would exceed the ceiling is trimmed rather than refused,
-with `decision.trimmed` naming what went.
+Every search runs in one of three tiers. `fast` asks three fast indexes, one per index group
+(Exa, Brave and Perplexity search as the router is deployed today), and answers in about a
+second; `balanced` and `max` fan out to the core arms. A tier is also a per-query cost ceiling
+on the router, and a set that would exceed the ceiling is trimmed rather than refused, with
+`decision.trimmed` naming what went.
 
-| tier | what runs | for |
-|---|---|---|
-| `fast` | one provider, chosen by the search platform | a routine lookup, the default for a new key |
-| `balanced` | the core arms, each result attributed to its source | when the agent needs more than one source, or the first answer came back thin |
-| `max` | every core arm | corroboration: the same page found by independent indexes |
+| tier | what runs | for | what it costs |
+|---|---|---|---|
+| `fast` | three fast indexes, one per index group, about a second | a routine lookup, the default for a new key | about $0.015 a search |
+| `balanced` | the core arms, 8 results each, a 12-page merged window, every arm's text | when the agent needs more than one source, or the first answer came back thin | about $0.035 |
+| `max` | the core arms, 15 results each, a 24-page window, 2,000-character excerpts | corroboration: the same page found by independent indexes, and the most text per page | about $0.045, plus the tokens your agent spends reading it |
+
+The dollar figures are the arms' own prices passed through with no markup; `usage.cost_micros`
+on every response is the real number. A search is free while mining is on (the trajectory pays
+for it); a key without mining draws credit. `max` and a named `providers` set (below) always
+draw credit: they are the two ways to multiply the work a request does.
 
 Who chooses:
 
@@ -96,8 +102,9 @@ Who chooses:
   from a shell, sets the band every search carries unless a request names one. `/jevlin tier
   default` unsets it and `/jevlin tier` says what is in force.
 - **The agent**, one step at a time: the skill tells it to leave `tier` alone so your band
-  applies, to ask for `balanced` when it needs several sources, and never to send `max` on
-  its own. `max` is yours to choose.
+  applies, to ask for `balanced` only when it needs several sources beyond the three fast
+  indexes (a thin result, indexes that disagree, the full set attributed), and never to send
+  `max` on its own. `max` is yours to choose.
 - **The router**, when nobody did: a request with no tier and no band set carries none, and
   the router applies the default for your key.
 
@@ -105,7 +112,11 @@ Who chooses:
 
 Four fields pass straight through to the router: `recency` (`day`, `week`, `month`,
 `year`), `domain_filter` (up to 16 hostnames), `max_results` (1 to 25) and `providers` (up to
-16 names, to restrict the fan-out or reach an arm that fires only when named). The
+16 names, to restrict the fan-out or reach an arm that fires only when named). A named set
+runs on `balanced` or `max` only: on `fast` the router refuses it, since the fast set is the
+router's. It is billed at the named arms' own prices, draws credit even with mining on, and
+earns no reward, because a single-arm search carries none of the comparison a trajectory is
+paid for. The
 [skill](https://github.com/jevlinai/jevlin-go/blob/main/cmd/jevlin/skill.md) is what the agent reads; the
 [reference](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#the---stdin-request) has the envelope.
 
@@ -215,7 +226,7 @@ says it is not earning.
 | `jevlin setup` | Everything after the binary: previous installation, config, registration, profile, agents. |
 | `jevlin status` | What this installation has and has not completed. `-json` for one envelope. |
 | `jevlin doctor` | Whether searches are recorded and earning, check by check, and the one thing to fix. `-json` too. |
-| `jevlin limits` | This key's spend caps and today's spend, read from the router. |
+| `jevlin limits` | This key's spend caps, rate windows and today's spend, read from the router. A claimed key gets 120 searches a minute, 3,000 an hour and 16 at once; an unclaimed one 10, 120 and 2, with $0.10 a day. |
 | `jevlin agents install\|status\|uninstall` | Sets up, reports or removes the skills and hooks of each agent. |
 | `jevlin agents prefer on\|off\|status` | What `/jevlin on\|off\|status` runs: which search is the default. |
 | `jevlin agents tier <band>\|default\|status` | What `/jevlin tier` runs: the band every search carries. |
