@@ -11,7 +11,7 @@
 
 Free multi-provider web search for coding agents, with the trajectory behind every search.
 One binary gives Claude Code, Cursor, Codex, opencode, Pi and Hermes a `search` that can fan a
-query out across twelve search providers at once, merges what they return into one attributed
+query out across seven search indexes at once, merges what they return into one attributed
 list, and carries enough of the agent's context that the router can see the task a search
 belongs to, not just the query string. There is no daemon, proxy or MCP server: between tool
 calls nothing is running.
@@ -46,14 +46,14 @@ per-query cost ceiling; `fast` asks three fast indexes, one per index group:
 
 | kind | arms |
 |---|---|
-| web indexes | Exa, Brave, You.com, Serper, SerpAPI, Telem, Parallel search, TinyFish |
-| answer engines | OpenAI web search, Perplexity, Perplexity search |
-| research agents | Parallel (slow lane: it keeps working after the response and lands on the trace) |
+| web indexes | Exa, Brave, Serper, Telem, Parallel search, TinyFish, Perplexity search |
 
-Thirteen more fire only when a request names them in `providers`: Tavily and Tavily
-research, Linkup and Linkup answer, Valyu, Kagi, Mojeek, Gemini, Grok, Exa answer, Brave
-answer, the Perplexity agent and Octen. The set is the router's and changes without a client
-release; `decision` in every response says which arms ran.
+More fire only when a request names them in `providers` (on `balanced` or `max`): SerpAPI (a
+Google read in the slow lane: it keeps working after the response and lands on the trace), the
+research agents (Parallel, Tavily research, the Perplexity agent, Octen), Tavily, Linkup and
+Linkup answer, Valyu, Kagi, Mojeek, Gemini, Grok, Exa answer and Brave answer. The set is the
+router's and changes without a client release; `decision` in every response says which arms
+ran.
 
 ## What a search returns
 
