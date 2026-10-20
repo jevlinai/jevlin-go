@@ -166,7 +166,8 @@ the named tests.
     `command`, `ok`, `exit_code`, `status`, `code`, `retryable`, `action`), a closed action set
     (`none`, `retry`, `fix_input`, `connect`, `login`, `check_access`, `report`) and exit classes
     0 through 4. Classification is by typed errors and exact codes, never by message text
-    (`trace_unsupported` is the one exact-code retry; a router 401 is `login`, never `connect`).
+    (one retry, licensed by two exact codes: `trace_unsupported`, and `malformed_json` to a request
+    carrying `objective` or `search_queries`; a router 401 is `login`, never `connect`).
     Machine mode never invents a participant decision: where a terminal would ask, it answers
     `human_decision_required`. The mandatory header and its semantics are what is versioned
     (`machineVersion` in `machine.go`): changing the required header's shape or the meaning of
@@ -691,8 +692,13 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   through an `httptest` CONNECT proxy on loopback, counting tunnels, and the non-loopback cases
   without a dial.
 - **The search protocol** — `search.go` owns the request and the fail-open intake;
-  `search_protocol.go` owns the deadline, the bounded read and the one exact-code retry;
-  `search_machine.go` owns search's classification; `machine.go` owns the header, the action set
+  `search_protocol.go` owns the deadline, the bounded read and the one retry with the two codes
+  that license it; `search_machine.go` owns search's classification and `result.merged`, which is
+  the router's merged view mapped field for field and never a merge of this client's
+  (`search_router_merge_test.go`, against the router's own fixtures in
+  `cmd/jevlin/testdata/search/router`);
+  `skill_render.go`'s `skillTeachesQueryForms` keeps the skill from teaching the query forms
+  before the router takes them; `machine.go` owns the header, the action set
   and the exit/status correspondence; `report_json.go` owns `status`/`doctor`/`connect` JSON.
   `search_protocol_test.go` and `report_json_test.go` guard them.
   For participants: [reference, The envelope](docs/reference.md#the-envelope).

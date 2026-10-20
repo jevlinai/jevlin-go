@@ -1179,6 +1179,8 @@ func renderSkill(entry binEntry, prefer, note string, shells skillShells) ([]byt
 		"{{DESCRIPTION}}", string(descYAML),
 		"{{PREFER_RULES}}", rules,
 		"{{HOST_NOTES}}", note,
+		"{{FORMS}}", formsSection(),
+		"{{FORMS_READING}}", formsReadingSection(),
 	)
 	return []byte(r.Replace(skillMD)), nil
 }

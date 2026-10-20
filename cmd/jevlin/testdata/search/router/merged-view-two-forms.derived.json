@@ -1,0 +1,566 @@
+{
+  "_derived": "Derived, not captured. Source: jevlinai/Jevlin-core feat/merge-v2 at 26f505a4, docs/router-contracts/fixtures/merged-view-success.json (sha256 0ab9efc0415b718af33ff8ece2c884045a3331c3349dec1589e438bfb93e67c9). Changes: exa lists three pages under search_queries[0] (form 1): the aclanthology and arxiv pages it already listed under the query, and https://github.com/example/rag_eval_bench; the query gains the identifier rag_eval_bench. Everything else was re-derived by the router's own code at that commit, not by hand: exa's citations by provider.NormalizeCitations (one listing per page per form, ranks restarting at 1 for each form), then Response.attachMergedView (MergeWith and Indexes) at the window the handler uses for one search_queries entry, 24. Costs and latencies are the source fixture's.",
+  "request_id": "01a153b4-fdb5-76e2-a0b2-1b161550e3e3",
+  "query": "state of retrieval-augmented generation evaluation 2026 rag_eval_bench",
+  "chosen": 1,
+  "candidates": [
+    {
+      "provider": "brave",
+      "model": "fake",
+      "kind": "retrieval",
+      "tier": "core",
+      "citations": [
+        {
+          "url": "https://example.org/rag-eval",
+          "domain": "example.org",
+          "title": "Title of https://example.org/rag-eval",
+          "snippet": "What https://example.org/rag-eval says about the question.",
+          "rank": 1
+        },
+        {
+          "url": "https://arxiv.org/abs/2603.01234",
+          "domain": "arxiv.org",
+          "title": "Title of https://arxiv.org/abs/2603.01234",
+          "snippet": "What https://arxiv.org/abs/2603.01234 says about the question.",
+          "rank": 2
+        }
+      ],
+      "usage": {
+        "search_calls": 1
+      },
+      "cost_micros": 100,
+      "cost_source": "modeled",
+      "latency": {
+        "ttfb_ms": 469,
+        "total_ms": 939
+      },
+      "status": "ok"
+    },
+    {
+      "provider": "exa",
+      "model": "fake",
+      "kind": "retrieval",
+      "tier": "core",
+      "citations": [
+        {
+          "url": "https://arxiv.org/abs/2603.01234",
+          "domain": "arxiv.org",
+          "title": "Title of https://arxiv.org/abs/2603.01234",
+          "snippet": "What https://arxiv.org/abs/2603.01234 says about the question.",
+          "rank": 1,
+          "published": "2026-03-04T00:00:00Z",
+          "excerpts": [
+            "We survey 140 RAG evaluation benchmarks published since 2023."
+          ]
+        },
+        {
+          "url": "https://aclanthology.org/2026.acl-long.42",
+          "domain": "aclanthology.org",
+          "title": "Title of https://aclanthology.org/2026.acl-long.42",
+          "snippet": "What https://aclanthology.org/2026.acl-long.42 says about the question.",
+          "rank": 2
+        },
+        {
+          "url": "https://example.org/rag-eval",
+          "domain": "example.org",
+          "title": "Title of https://example.org/rag-eval",
+          "snippet": "What https://example.org/rag-eval says about the question.",
+          "rank": 3
+        },
+        {
+          "url": "https://aclanthology.org/2026.acl-long.42",
+          "domain": "aclanthology.org",
+          "title": "Title of https://aclanthology.org/2026.acl-long.42",
+          "snippet": "What https://aclanthology.org/2026.acl-long.42 says about the question.",
+          "rank": 1,
+          "form": 1
+        },
+        {
+          "url": "https://arxiv.org/abs/2603.01234",
+          "domain": "arxiv.org",
+          "title": "Title of https://arxiv.org/abs/2603.01234",
+          "snippet": "What https://arxiv.org/abs/2603.01234 says about the question.",
+          "rank": 2,
+          "published": "2026-03-04T00:00:00Z",
+          "excerpts": [
+            "We survey 140 RAG evaluation benchmarks published since 2023."
+          ],
+          "form": 1
+        },
+        {
+          "url": "https://github.com/example/rag_eval_bench",
+          "domain": "github.com",
+          "title": "Title of https://github.com/example/rag_eval_bench",
+          "snippet": "What https://github.com/example/rag_eval_bench says about the question.",
+          "rank": 3,
+          "form": 1
+        }
+      ],
+      "usage": {
+        "search_calls": 1
+      },
+      "cost_micros": 100,
+      "cost_source": "modeled",
+      "latency": {
+        "ttfb_ms": 1049,
+        "total_ms": 2098
+      },
+      "status": "ok"
+    },
+    {
+      "provider": "linkup",
+      "model": "fake",
+      "kind": "retrieval",
+      "tier": "core",
+      "citations": [
+        {
+          "url": "https://aclanthology.org/2026.acl-long.42",
+          "domain": "aclanthology.org",
+          "title": "Title of https://aclanthology.org/2026.acl-long.42",
+          "snippet": "What https://aclanthology.org/2026.acl-long.42 says about the question.",
+          "rank": 1
+        },
+        {
+          "url": "https://arxiv.org/abs/2603.01234",
+          "domain": "arxiv.org",
+          "title": "Title of https://arxiv.org/abs/2603.01234",
+          "snippet": "What https://arxiv.org/abs/2603.01234 says about the question.",
+          "rank": 2
+        },
+        {
+          "url": "https://blog.example.com/rag-metrics",
+          "domain": "example.com",
+          "title": "Title of https://blog.example.com/rag-metrics",
+          "snippet": "What https://blog.example.com/rag-metrics says about the question.",
+          "rank": 3
+        }
+      ],
+      "usage": {
+        "search_calls": 1
+      },
+      "cost_micros": 100,
+      "cost_source": "modeled",
+      "latency": {
+        "ttfb_ms": 892,
+        "total_ms": 1784
+      },
+      "status": "ok"
+    },
+    {
+      "provider": "you",
+      "model": "fake",
+      "kind": "answer",
+      "tier": "core",
+      "answer": "Evaluation of RAG systems in 2026 centres on faithfulness and retrieval quality.",
+      "citations": [
+        {
+          "url": "https://arxiv.org/abs/2603.01234",
+          "domain": "arxiv.org",
+          "title": "Title of https://arxiv.org/abs/2603.01234",
+          "snippet": "What https://arxiv.org/abs/2603.01234 says about the question.",
+          "rank": 1
+        },
+        {
+          "url": "https://news.example.net/rag-2026",
+          "domain": "example.net",
+          "title": "Title of https://news.example.net/rag-2026",
+          "snippet": "What https://news.example.net/rag-2026 says about the question.",
+          "rank": 2
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 120,
+        "completion_tokens": 60,
+        "search_calls": 1
+      },
+      "cost_micros": 100,
+      "cost_source": "modeled",
+      "latency": {
+        "ttfb_ms": 420,
+        "total_ms": 840
+      },
+      "status": "ok"
+    }
+  ],
+  "signals": {
+    "referee": [
+      {
+        "provider": "brave",
+        "status": "ok",
+        "has_answer": false,
+        "is_refusal": false,
+        "answer_words": 0,
+        "citation_count": 2,
+        "distinct_domains": 2,
+        "citation_density": 0,
+        "dead_citations": 0,
+        "unknown_citations": 2,
+        "recency_ok": true,
+        "dated_citations": 0,
+        "latency_ms": 939,
+        "cost_micros": 100,
+        "score": 0.5000000000000001
+      },
+      {
+        "provider": "exa",
+        "status": "ok",
+        "has_answer": false,
+        "is_refusal": false,
+        "answer_words": 0,
+        "citation_count": 3,
+        "distinct_domains": 3,
+        "citation_density": 0,
+        "dead_citations": 0,
+        "unknown_citations": 3,
+        "recency_ok": true,
+        "dated_citations": 1,
+        "latency_ms": 2098,
+        "cost_micros": 100,
+        "score": 0.638888888888889
+      },
+      {
+        "provider": "linkup",
+        "status": "ok",
+        "has_answer": false,
+        "is_refusal": false,
+        "answer_words": 0,
+        "citation_count": 3,
+        "distinct_domains": 3,
+        "citation_density": 0,
+        "dead_citations": 0,
+        "unknown_citations": 3,
+        "recency_ok": true,
+        "dated_citations": 0,
+        "latency_ms": 1784,
+        "cost_micros": 100,
+        "score": 0.638888888888889
+      },
+      {
+        "provider": "you",
+        "status": "ok",
+        "has_answer": true,
+        "is_refusal": false,
+        "answer_words": 12,
+        "citation_count": 2,
+        "distinct_domains": 2,
+        "citation_density": 16.666666666666668,
+        "dead_citations": 0,
+        "unknown_citations": 2,
+        "recency_ok": true,
+        "dated_citations": 0,
+        "latency_ms": 840,
+        "cost_micros": 100,
+        "score": 0.5222222222222221
+      }
+    ],
+    "consensus": {
+      "per_candidate": [
+        {
+          "provider": "brave",
+          "overlap": 0.4166666666666667,
+          "coverage": 0.4,
+          "corroborated_citations": 2,
+          "orphan_citations": 0,
+          "outlier": false
+        },
+        {
+          "provider": "exa",
+          "overlap": 0.47222222222222215,
+          "coverage": 0.6,
+          "corroborated_citations": 3,
+          "orphan_citations": 0,
+          "outlier": false
+        },
+        {
+          "provider": "linkup",
+          "overlap": 0.3333333333333333,
+          "coverage": 0.6,
+          "corroborated_citations": 2,
+          "orphan_citations": 1,
+          "outlier": false
+        },
+        {
+          "provider": "you",
+          "overlap": 0.27777777777777773,
+          "coverage": 0.4,
+          "corroborated_citations": 1,
+          "orphan_citations": 1,
+          "outlier": false
+        }
+      ],
+      "union_domains": 5,
+      "shared_domains": 3,
+      "agreement_ratio": 0.6,
+      "contested": false
+    },
+    "ranking": [
+      {
+        "index": 1,
+        "provider": "exa",
+        "score": 2.6494444444444443,
+        "base_score": 2.6494444444444443
+      },
+      {
+        "index": 3,
+        "provider": "you",
+        "score": 2.562063492063492,
+        "base_score": 2.562063492063492
+      },
+      {
+        "index": 2,
+        "provider": "linkup",
+        "score": 2.341111111111111,
+        "base_score": 2.341111111111111
+      },
+      {
+        "index": 0,
+        "provider": "brave",
+        "score": 2.1592857142857143,
+        "base_score": 2.1592857142857143
+      }
+    ]
+  },
+  "decision": {
+    "mode": "rank",
+    "tier": "balanced",
+    "provider_set": "brave+exa+linkup+you",
+    "providers": [
+      "brave",
+      "exa",
+      "linkup",
+      "you"
+    ],
+    "propensity": 1,
+    "router_version": "none",
+    "ranker_version": "fallback-heuristic-v1"
+  },
+  "usage": {
+    "cost_micros": 400,
+    "latency_ms": 0,
+    "cache_hit": false,
+    "deadline_hit": false,
+    "byok": false
+  },
+  "merged": [
+    {
+      "result_id": "r_5644955565f6a535833e5ab7a5467528",
+      "url": "https://arxiv.org/abs/2603.01234",
+      "canonical_url": "https://arxiv.org/abs/2603.01234",
+      "domain": "arxiv.org",
+      "title": "Title of https://arxiv.org/abs/2603.01234",
+      "excerpt": "What https://arxiv.org/abs/2603.01234 says about the question. … We survey 140 RAG evaluation benchmarks published since 2023.",
+      "excerpts": [
+        "What https://arxiv.org/abs/2603.01234 says about the question.",
+        "We survey 140 RAG evaluation benchmarks published since 2023."
+      ],
+      "published": "2026-03-04T00:00:00Z",
+      "best_rank": 1,
+      "found_by": [
+        {
+          "provider": "brave",
+          "rank": 2
+        },
+        {
+          "provider": "exa",
+          "rank": 1
+        },
+        {
+          "provider": "exa",
+          "rank": 2,
+          "form": 1
+        },
+        {
+          "provider": "linkup",
+          "rank": 2
+        },
+        {
+          "provider": "you",
+          "rank": 1
+        }
+      ],
+      "groups": 4,
+      "votes": 5,
+      "score": 50.5
+    },
+    {
+      "result_id": "r_e71db59d9e0a7c29ffb54ed01b228c43",
+      "url": "https://aclanthology.org/2026.acl-long.42",
+      "canonical_url": "https://aclanthology.org/2026.acl-long.42",
+      "domain": "aclanthology.org",
+      "title": "Title of https://aclanthology.org/2026.acl-long.42",
+      "excerpt": "What https://aclanthology.org/2026.acl-long.42 says about the question.",
+      "excerpts": [
+        "What https://aclanthology.org/2026.acl-long.42 says about the question."
+      ],
+      "best_rank": 1,
+      "found_by": [
+        {
+          "provider": "exa",
+          "rank": 2
+        },
+        {
+          "provider": "exa",
+          "rank": 1,
+          "form": 1
+        },
+        {
+          "provider": "linkup",
+          "rank": 1
+        }
+      ],
+      "groups": 2,
+      "votes": 3,
+      "score": 30.5
+    },
+    {
+      "result_id": "r_a15058df767a8273dee22ffbb95a6d2a",
+      "url": "https://example.org/rag-eval",
+      "canonical_url": "https://example.org/rag-eval",
+      "domain": "example.org",
+      "title": "Title of https://example.org/rag-eval",
+      "excerpt": "What https://example.org/rag-eval says about the question.",
+      "excerpts": [
+        "What https://example.org/rag-eval says about the question."
+      ],
+      "best_rank": 1,
+      "found_by": [
+        {
+          "provider": "brave",
+          "rank": 1
+        },
+        {
+          "provider": "exa",
+          "rank": 3
+        }
+      ],
+      "groups": 2,
+      "votes": 2,
+      "score": 20.5
+    },
+    {
+      "result_id": "r_de83cf7250c658002103d06409469e4d",
+      "url": "https://news.example.net/rag-2026",
+      "canonical_url": "https://news.example.net/rag-2026",
+      "domain": "example.net",
+      "title": "Title of https://news.example.net/rag-2026",
+      "excerpt": "What https://news.example.net/rag-2026 says about the question.",
+      "excerpts": [
+        "What https://news.example.net/rag-2026 says about the question."
+      ],
+      "best_rank": 2,
+      "found_by": [
+        {
+          "provider": "you",
+          "rank": 2
+        }
+      ],
+      "groups": 1,
+      "votes": 1,
+      "exclusive": true,
+      "score": 10.333333333333334
+    },
+    {
+      "result_id": "r_bbe4c1870789486d3e23b62aae2c3e30",
+      "url": "https://github.com/example/rag_eval_bench",
+      "canonical_url": "https://github.com/example/rag_eval_bench",
+      "domain": "github.com",
+      "title": "Title of https://github.com/example/rag_eval_bench",
+      "excerpt": "What https://github.com/example/rag_eval_bench says about the question.",
+      "excerpts": [
+        "What https://github.com/example/rag_eval_bench says about the question."
+      ],
+      "best_rank": 3,
+      "found_by": [
+        {
+          "provider": "exa",
+          "rank": 3,
+          "form": 1
+        }
+      ],
+      "groups": 1,
+      "votes": 1,
+      "exclusive": true,
+      "score": 11.25,
+      "matched_terms": [
+        "rag_eval_bench"
+      ]
+    },
+    {
+      "result_id": "r_086a538639c704946776f0223a772428",
+      "url": "https://blog.example.com/rag-metrics",
+      "canonical_url": "https://blog.example.com/rag-metrics",
+      "domain": "example.com",
+      "title": "Title of https://blog.example.com/rag-metrics",
+      "excerpt": "What https://blog.example.com/rag-metrics says about the question.",
+      "excerpts": [
+        "What https://blog.example.com/rag-metrics says about the question."
+      ],
+      "best_rank": 3,
+      "found_by": [
+        {
+          "provider": "linkup",
+          "rank": 3
+        }
+      ],
+      "groups": 1,
+      "votes": 1,
+      "exclusive": true,
+      "score": 10.25
+    }
+  ],
+  "indexes": {
+    "selected": 4,
+    "ok": 4,
+    "pending": 0,
+    "by_provider": [
+      {
+        "provider": "brave",
+        "status": "ok",
+        "results": 2,
+        "latency_ms": 939
+      },
+      {
+        "provider": "exa",
+        "status": "ok",
+        "results": 6,
+        "latency_ms": 2098
+      },
+      {
+        "provider": "linkup",
+        "status": "ok",
+        "results": 3,
+        "latency_ms": 1784
+      },
+      {
+        "provider": "you",
+        "status": "ok",
+        "results": 2,
+        "latency_ms": 840
+      }
+    ]
+  },
+  "coverage": {
+    "pages": 6,
+    "exclusive": 3,
+    "corroborated": 3,
+    "by_group": {
+      "brave": 2,
+      "exa": 4,
+      "linkup": 3,
+      "you": 2
+    },
+    "exclusive_by_group": {
+      "exa": 1,
+      "linkup": 1,
+      "you": 1
+    },
+    "groups": 4,
+    "by_form": [
+      5,
+      3
+    ],
+    "reformulation_only": 1
+  },
+  "merged_limit": 24,
+  "merged_total": 6
+}

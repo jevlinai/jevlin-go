@@ -12,6 +12,17 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
+- **`search --stdin`'s merged list is the router's own.** `result.merged` used to be this
+  client's second merge of the candidates. Every `--stdin` search now asks the router for its
+  merged view and carries that list as it comes, in the router's order and window; the client
+  merge is gone. The entries keep their fields, `best_rank` still counts from 0, and `found_in`
+  still names each page's place among the candidates. A router that sends them adds each page's
+  `votes`, `groups` and `excerpts` and the search's `coverage` and `merged_total`, which the
+  envelope carries. `view` now decides only whether the envelope includes the candidates.
+- **`search --stdin` takes `objective` and `search_queries`**, the goal in the caller's words
+  and up to four more wordings of the query, and passes them to the router. A router that does
+  not take them yet answers `malformed_json`; the search then runs once more without them and
+  says so in `result.forms_dropped`. The skill does not teach them until the router does.
 - **A coding agent's settings file is never left cut short.** `agents install`, `setup`,
   `uninstall` and the upgrade's re-render used to rewrite `~/.claude/settings.json`, Codex's and
   Cursor's hook files, Codex's `config.toml` and Hermes' `config.yaml` in place, so a run stopped

@@ -161,8 +161,14 @@ type searchCall struct {
 	// rendering default and not a value the router accepts; "merged" asks
 	// the router to add its own merged list and per-arm indexes to the
 	// response, and changes nothing else about how the search runs.
-	View  string
-	Trace *traceEnvelope
+	View string
+	// Objective and SearchQueries are the query forms (Jevlin-core #55),
+	// absent unless the --stdin caller sent them. A router that predates
+	// them refuses the whole request, so performSearch's one retry leaves
+	// them out (FormsDropped).
+	Objective     *string
+	SearchQueries []string
+	Trace         *traceEnvelope
 }
 
 // searchOutcome is the structured result of running a search. Both
@@ -194,6 +200,11 @@ type searchOutcome struct {
 	Attempts int
 	Traced   bool
 	Retried  bool
+	// FormsDropped: the retry went without objective and search_queries.
+	// Either the router refused the request as malformed_json while it
+	// carried them, or it refused the trace, and a router that old
+	// predates the forms as well.
+	FormsDropped bool
 }
 
 func (o searchOutcome) ok() bool { return o.Fault == faultNone }
@@ -234,6 +245,8 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	var maxResults *int
 	var providers []string
 	var view string
+	var objective *string
+	var searchQueries []string
 	if machine {
 		// No positional query in machine mode: two sources for the same
 		// value is how a caller ends up sending one and escaping the
@@ -259,6 +272,8 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		maxResults = req.maxResults
 		providers = req.providers
 		view = req.view
+		objective = req.objective
+		searchQueries = req.searchQueries
 	} else {
 		query = strings.TrimSpace(strings.Join(fs.Args(), " "))
 		if query == "" {
@@ -348,22 +363,28 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	}
 	// Only "merged" travels: it is the one view the router accepts, while
 	// "full" (explicit or defaulted) is this client's own rendering choice
-	// and would be refused upstream with a 400.
+	// and would be refused upstream with a 400. On --stdin it travels
+	// whatever the caller asked, because the envelope's merged list IS the
+	// router's: the caller's view decides only whether the envelope also
+	// carries the candidates. The human form sends it only for -view
+	// merged, which is what that flag has always meant.
 	forwardView := ""
-	if view == "merged" {
+	if view == "merged" || machine {
 		forwardView = "merged"
 	}
 	out := performSearch(ctx, ops.now, searchCall{
-		Endpoint:     strings.TrimRight(cfg.Miner.RouterURL.String(), "/") + "/v1/search",
-		Key:          key,
-		Query:        query,
-		Tier:         *tier,
-		Recency:      recency,
-		DomainFilter: domainFilter,
-		MaxResults:   maxResults,
-		Providers:    providers,
-		View:         forwardView,
-		Trace:        trace,
+		Endpoint:      strings.TrimRight(cfg.Miner.RouterURL.String(), "/") + "/v1/search",
+		Key:           key,
+		Query:         query,
+		Tier:          *tier,
+		Recency:       recency,
+		DomainFilter:  domainFilter,
+		MaxResults:    maxResults,
+		Providers:     providers,
+		View:          forwardView,
+		Objective:     objective,
+		SearchQueries: searchQueries,
+		Trace:         trace,
 	})
 	if out.Retried {
 		fmt.Fprintln(stderr, "jevlin search: the router answered "+traceUnsupportedCode+"; retrying once without the trace")
@@ -614,6 +635,12 @@ func performSearch(ctx context.Context, now func() time.Time, call searchCall) s
 	if call.View != "" {
 		body["view"] = call.View
 	}
+	if call.Objective != nil {
+		body["objective"] = *call.Objective
+	}
+	if call.SearchQueries != nil {
+		body["search_queries"] = call.SearchQueries
+	}
 	out := searchOutcome{Traced: call.Trace != nil}
 	if out.Traced {
 		body["trace"] = call.Trace
@@ -650,17 +677,44 @@ func performSearch(ctx context.Context, now func() time.Time, call searchCall) s
 	out.Started = now()
 	attempt, err := postSearch(ctx, client, call, body)
 	out.Attempts++
-	if err == nil && out.Traced && searchTraceUnsupported(attempt.Status, attempt.Raw, attempt.BodyErr) {
-		// The router said, in its own machine code, that it does not
-		// accept the field. One retry without it, on the SAME ctx, so the
-		// fallback gets only what is left of the original budget. Never
-		// recursive: this is the only place a second POST is issued.
+	// The router said, in its own machine code, that it does not accept a
+	// field this request carried. One retry without it, on the SAME ctx, so
+	// the fallback gets only what is left of the original budget. Never
+	// recursive: this is the only place a second POST is issued, and two
+	// answers license it, each by its exact code.
+	_, carriesForms := body["objective"]
+	if _, ok := body["search_queries"]; ok {
+		carriesForms = true
+	}
+	dropForms := func() {
+		delete(body, "objective")
+		delete(body, "search_queries")
+		out.FormsDropped = true
+	}
+	switch {
+	case err != nil:
+	case out.Traced && searchTraceUnsupported(attempt.Status, attempt.Raw, attempt.BodyErr):
 		// The session mirror goes with the trace: a router old enough to
 		// refuse the trace field predates the top-level session_id too,
-		// and this retry exists exactly for those routers.
+		// and this retry exists exactly for those routers. It predates the
+		// query forms as well, and there is no second retry to spend on
+		// them, so they go too.
 		delete(body, "trace")
 		delete(body, "session_id")
+		if carriesForms {
+			dropForms()
+		}
 		out.Retried = true
+		attempt, err = postSearch(ctx, client, call, body)
+		out.Attempts++
+	case carriesForms && searchFormsRefused(attempt.Status, attempt.Raw, attempt.BodyErr):
+		// A router that predates objective and search_queries refuses the
+		// whole request over them, as malformed_json, and so does one whose
+		// body limit the forms pushed this request past: the code cannot
+		// tell the two apart, and the answer to both is the same search on
+		// query alone. A malformed_json to a request without the forms is
+		// not this, and is answered as it came.
+		dropForms()
 		attempt, err = postSearch(ctx, client, call, body)
 		out.Attempts++
 	}
@@ -911,7 +965,18 @@ type routerResponse struct {
 	Query      string            `json:"query"`
 	Chosen     int               `json:"chosen"`
 	Candidates []routerCandidate `json:"candidates"`
-	Session    *struct {
+	// Merged is the router's merged view, which every --stdin search asks
+	// for. A pointer, so a 200 with no "merged" key — the router breaking
+	// its contract — is told apart from an empty merge, "merged": [].
+	Merged *[]routerMergedPage `json:"merged,omitempty"`
+	// Coverage, MergedLimit, MergedTotal and ExcerptsTrimmed come with the
+	// merged view from Jevlin-core #55 on; a router before it sends none of
+	// them, and each decodes to absent.
+	Coverage        *routerCoverage `json:"coverage,omitempty"`
+	MergedLimit     *int            `json:"merged_limit,omitempty"`
+	MergedTotal     *int            `json:"merged_total,omitempty"`
+	ExcerptsTrimmed bool            `json:"excerpts_trimmed,omitempty"`
+	Session         *struct {
 		ID string `json:"id"`
 	} `json:"session,omitempty"`
 	// Decision and Usage are pointers, not values, so a router response
@@ -966,10 +1031,58 @@ type routerLatency struct {
 	TotalMS int64 `json:"total_ms,omitempty"`
 }
 
+// routerCitation's Rank is the citation's 1-based place in its
+// candidate's list, after the router's normalisation; Form is the query
+// form that found it, 0 (absent) for query and n for the n-th
+// search_queries entry. Since Jevlin-core #55 ranks restart for each form,
+// so the two together name one citation, which is how mergedOf finds a
+// merged page's position.
 type routerCitation struct {
 	URL     string `json:"url"`
 	Title   string `json:"title,omitempty"`
 	Snippet string `json:"snippet,omitempty"`
+	Rank    int    `json:"rank,omitempty"`
+	Form    int    `json:"form,omitempty"`
+}
+
+// routerMergedPage is one page of the router's merged view. Every field
+// Jevlin-core #55 adds — canonical_url, groups, exclusive, votes,
+// matched_terms and a found_by entry's form — decodes as optional, so the
+// same binary reads the view before and after it.
+type routerMergedPage struct {
+	URL          string          `json:"url"`
+	CanonicalURL string          `json:"canonical_url,omitempty"`
+	Title        string          `json:"title,omitempty"`
+	Excerpt      string          `json:"excerpt,omitempty"`
+	Excerpts     []string        `json:"excerpts,omitempty"`
+	BestRank     int             `json:"best_rank"`
+	FoundBy      []routerFoundBy `json:"found_by"`
+	Groups       int             `json:"groups,omitempty"`
+	Exclusive    bool            `json:"exclusive,omitempty"`
+	Votes        int             `json:"votes,omitempty"`
+	MatchedTerms []string        `json:"matched_terms,omitempty"`
+}
+
+// routerFoundBy is one listing of a merged page: the provider, its 1-based
+// rank for the page, and the query form it was listed under.
+type routerFoundBy struct {
+	Provider string `json:"provider"`
+	Rank     int    `json:"rank"`
+	Form     int    `json:"form,omitempty"`
+}
+
+// routerCoverage is the router's account of its whole merge. Its fields are
+// machineCoverage's, field for field, so machineResultOf converts rather
+// than copies: a field either gains stops the build until the other has it.
+type routerCoverage struct {
+	Pages             int            `json:"pages"`
+	Exclusive         int            `json:"exclusive"`
+	Corroborated      int            `json:"corroborated"`
+	Groups            int            `json:"groups"`
+	ByGroup           map[string]int `json:"by_group,omitempty"`
+	ExclusiveByGroup  map[string]int `json:"exclusive_by_group,omitempty"`
+	ByForm            []int          `json:"by_form,omitempty"`
+	ReformulationOnly int            `json:"reformulation_only,omitempty"`
 }
 
 func (r routerResponse) chosen() *routerCandidate {

@@ -50,7 +50,9 @@ list and needs no shell escaping. A malformed field answers `fix_input` before a
 | `domain_filter` | Up to 16 bare hostnames. A preference, like `recency`. |
 | `max_results` | 1 to 25. A cap. |
 | `providers` | Up to 16 provider names: restrict the fan-out, or reach an extended arm that fires only when named. The router owns the list; an unknown name is its call. |
-| `view` | `"full"` (default) or `"merged"`, which drops the per-provider `candidates`. `"merged"` is also sent to the router, which adds its own `merged` and `indexes` to its raw answer; the envelope's `merged` stays this client's own merge. The human form's `-view merged` with `-format json` shows that raw answer. |
+| `view` | `"full"` (default) or `"merged"`, which drops the per-provider `candidates` from the envelope. Either way the router is asked for its merged view, and the envelope's `merged` is that list. The human form's `-view merged` with `-format json` shows the router's raw answer with it. |
+| `objective` | What you are trying to find out, in your own words: a non-blank string of at most 4096 bytes. The router passes it to the providers that take a goal and does not rank by it. |
+| `search_queries` | 1 to 4 more wordings of `query`, each a non-blank string of at most 4096 bytes, which the router searches beside it; it drops a repeat. Each extra wording costs about as much as another search. A router that predates `objective` and `search_queries` refuses a request carrying them as `malformed_json`, and so does one whose body limit they push the request past: the search is then sent once more without them, and `result.forms_dropped` is `true`. |
 
 ### The envelope
 
@@ -91,9 +93,17 @@ carries `request_id`, `result` and `mining`. `mining.state` is `enabled`, `disab
 unresolved. A successful search never means anything was earned, and a mining failure never
 turns a successful search into a failed one. Result text is untrusted web content.
 
-`result.merged` lists the citations of every candidate, deduplicated across providers. Each
-entry has `found_by` (the providers that found it), `found_in` (one `{candidate, citation}`
-position per provider, in the same order) and `best_rank`.
+`result.merged` is the router's merged view: its pages, in its order, cut to its window, never
+re-sorted or merged again here. Each entry has `url`, `title`, `snippet` (the router's excerpt
+for the page), `found_by` (the providers that listed it, each once), `found_in` (one
+`{candidate, citation}` position per provider, in the same order, or none where the router's
+answer does not let them be found) and `best_rank`, counted from 0. A router that sends them
+adds `canonical_url`, `excerpts`, `votes` (the index groups and wordings that listed the page),
+`groups`, `exclusive` and `matched_terms`, and to `result` the merge's `coverage`,
+`merged_limit` (the window), `merged_total` (the pages before it) and `excerpts_trimmed`.
+`result.forms_dropped` is `true` when the search ran without `objective` and `search_queries`
+(above). An answer with no merged view gets `result.merged: []`, with the candidates as the
+router sent them; the search is still `ok`.
 
 `status`, `doctor` and `connect` take `-json` and answer with the same header. Where a terminal
 would ask a person, machine mode answers with the code `human_decision_required`.
