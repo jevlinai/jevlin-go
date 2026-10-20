@@ -70,10 +70,13 @@ the tool (what an agent runs):
              envelope on stdout; -format and -view are ignored, the
              envelope is always JSON and the request's own view field
              decides). The --stdin request may also carry tier, recency,
-             domain_filter, max_results, providers and view ("full" or
-             "merged"); a malformed value answers fix_input before any
-             router call. view "merged" is also sent to the router, which
-             adds its own merged and indexes to the raw response.
+             domain_filter, max_results, providers, view ("full" or
+             "merged"), objective and search_queries; a malformed value
+             answers fix_input before any router call. --stdin always asks
+             the router for its merged view, which is result.merged; view
+             "merged" leaves the candidates out of the envelope. The
+             human form's -view merged adds the router's merged and
+             indexes to the raw response.
              -timeout bounds the whole search in either form, default
              1m0s. Records the served request for mining and starts a
              flush. Exit: 0=valid search response, 1=transport/timeout/

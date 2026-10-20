@@ -40,9 +40,19 @@ const defaultSearchTimeout = 60 * time.Second
 // 32 MiB through a loopback server; production never assigns it.
 var searchMaxBody int64 = 32 << 20
 
-// traceUnsupportedCode is the ONE router answer that licenses a second
-// POST. Status alone never does — see searchTraceUnsupported.
+// traceUnsupportedCode and formsRefusedCode are the two router answers
+// that license a second POST, and there is still only one: performSearch
+// retries once, whichever it was. Status alone never does — see
+// searchTraceUnsupported and searchFormsRefused.
 const traceUnsupportedCode = "trace_unsupported"
+
+// formsRefusedCode is the router's code for a body it could not read. Its
+// strict decoder gives it for an unknown field, which is what objective and
+// search_queries are to a router that predates them (Jevlin-core #55), and
+// its body limit gives it for a body over 64 KiB. It licenses the retry only
+// for a request that carried the query forms, and that retry leaves them
+// out (searchFormsRefused).
+const formsRefusedCode = "malformed_json"
 
 // searchTransport is a package-local seam: nil in production, so the
 // search client uses searchDefaultTransport. A test sets it to inspect the
@@ -206,6 +216,20 @@ func searchTraceUnsupported(status int, raw []byte, bodyErr error) bool {
 	}
 	e, ok := decodeSearchHostError(raw)
 	return ok && e.Code == traceUnsupportedCode
+}
+
+// searchFormsRefused reports whether this response is the router refusing
+// a request's body as malformed_json, by its exact code. Like
+// searchTraceUnsupported it never reads the message, and a bare 400 is not
+// enough: an invalid tier or a bad domain_filter must not buy a second
+// billable POST. performSearch asks only for a request that carried the
+// query forms.
+func searchFormsRefused(status int, raw []byte, bodyErr error) bool {
+	if bodyErr != nil || status != http.StatusBadRequest {
+		return false
+	}
+	e, ok := decodeSearchHostError(raw)
+	return ok && e.Code == formsRefusedCode
 }
 
 // retryAfterMS reads RFC 7231's Retry-After in either form. An unparsable

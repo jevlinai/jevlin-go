@@ -166,7 +166,8 @@ the named tests.
     `command`, `ok`, `exit_code`, `status`, `code`, `retryable`, `action`), a closed action set
     (`none`, `retry`, `fix_input`, `connect`, `login`, `check_access`, `report`) and exit classes
     0 through 4. Classification is by typed errors and exact codes, never by message text
-    (`trace_unsupported` is the one exact-code retry; a router 401 is `login`, never `connect`).
+    (one retry, licensed by two exact codes: `trace_unsupported`, and `malformed_json` to a request
+    carrying `objective` or `search_queries`; a router 401 is `login`, never `connect`).
     Machine mode never invents a participant decision: where a terminal would ask, it answers
     `human_decision_required`. The mandatory header and its semantics are what is versioned
     (`machineVersion` in `machine.go`): changing the required header's shape or the meaning of
@@ -550,6 +551,22 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `generated_config_ascii_test.go` renders each artifact from ASCII inputs and refuses a byte
   above 0x7F — from ASCII inputs, because a participant whose home is `C:\Users\José` is not
   this client's doing.
+  **How it writes them**: a host's file is the participant's own settings, and since the upgrade
+  re-renders it unattended under a deadline that kills the child, an in-place write could be
+  stopped between truncating and writing and leave it empty (issue #37). So `realAgentOps`
+  writes through `fsx.ReplaceFile` (`pkg/fsx/replace_file.go`): a `.tmp-` file beside the file,
+  synced and renamed over it, after following a link to the file it names (a relative link read
+  from the real directory it sits in, as the kernel reads it), so a link stays a link; an existing file keeps its mode, and one the in-place write could not have written
+  (read-only, another account's) is refused. A FIFO is refused before anything is opened. A
+  rename still makes a new inode, so a hard link keeps the old bytes. And `commitPlan` holds a
+  host's removals when one of its writes failed, and `uninstall -binary` keeps the binary when
+  any change to a host's files failed (`keepBinary`), because the hooks left in the file run it.
+  `pkg/fsx/replace_file_test.go` (stages, links, modes, the staged name, a read-only file),
+  `replace_file_unix_test.go` (the FIFO), `replace_file_windows_test.go` (the file held open)
+  and `cmd/jevlin/host_files_test.go` (the real install and uninstall) hold it. On Windows any
+  open handle refuses the rename, whatever it shares (seen on the CI runners, PR #120), so the
+  publication alone is retried for about a second for a sharing violation or access denied,
+  as `moveAside` is; `WriteFileAtomic`, on the search path, never waits.
   For participants: [reference, Config](docs/reference.md#config).
 - **What a destructive run may leave behind** — `cmd/jevlin/lifecycle.go` owns the
   exclusion: which operation locks it takes, which of those files it created, and the rule that
@@ -675,8 +692,13 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   through an `httptest` CONNECT proxy on loopback, counting tunnels, and the non-loopback cases
   without a dial.
 - **The search protocol** — `search.go` owns the request and the fail-open intake;
-  `search_protocol.go` owns the deadline, the bounded read and the one exact-code retry;
-  `search_machine.go` owns search's classification; `machine.go` owns the header, the action set
+  `search_protocol.go` owns the deadline, the bounded read and the one retry with the two codes
+  that license it; `search_machine.go` owns search's classification and `result.merged`, which is
+  the router's merged view mapped field for field and never a merge of this client's
+  (`search_router_merge_test.go`, against the router's own fixtures in
+  `cmd/jevlin/testdata/search/router`);
+  `skill_render.go`'s `skillTeachesQueryForms` keeps the skill from teaching the query forms
+  before the router takes them; `machine.go` owns the header, the action set
   and the exit/status correspondence; `report_json.go` owns `status`/`doctor`/`connect` JSON.
   `search_protocol_test.go` and `report_json_test.go` guard them.
   For participants: [reference, The envelope](docs/reference.md#the-envelope).

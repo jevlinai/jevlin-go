@@ -38,9 +38,14 @@ func decodeFixtureSuccess(t *testing.T, name string) routerSuccess {
 }
 
 // TestEnvelopeCarriesTheRoutersDecisionAndUsage is the golden: every field
-// S2 adds is present with the fixture's own value.
+// S2 adds is present with the fixture's own value, and the merged list is
+// the router's. Its input is the router's own generated merged-view
+// response (testdata/search/router, today's shape), not balanced_response
+// above: that one was recorded without view: "merged", and an envelope
+// built from it pins the router-omitted-its-merge case rather than the
+// normal one.
 func TestEnvelopeCarriesTheRoutersDecisionAndUsage(t *testing.T) {
-	success := decodeFixtureSuccess(t, "balanced_response.json")
+	success := decodeFixtureSuccess(t, filepath.Join("router", "merged-view-success.main.json"))
 	result := machineResultOf(success, "full")
 
 	got, err := json.MarshalIndent(result, "", "  ")

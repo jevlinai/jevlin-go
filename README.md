@@ -59,8 +59,8 @@ ran.
 
 The router runs the request against the arms and answers once, with everything they returned:
 
-- **`result.merged`**: the citations of every provider that answered, deduplicated by page.
-  Each entry carries `found_by`, the providers that found that page, and `best_rank`, the best
+- **`result.merged`**: the router's own list of the pages every provider that answered
+  returned, one entry per page, best first. Each entry carries `found_by`, the providers that found that page, and `best_rank`, the best
   position any of them gave it. Agreement between independent indexes is the fan-out's
   own evidence, and the skill tells the agent to read this list first.
 - **`result.candidates`**: each provider's answer as it came back, so a disagreement can be

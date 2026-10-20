@@ -21,6 +21,59 @@ import (
 // exampleRequest is the request body the skill shows.
 const exampleRequest = `{"version":1,"query":"exact query text"}`
 
+// skillTeachesQueryForms is the release gate for the query forms
+// (Jevlin-core #55). The client sends objective and search_queries
+// whenever a caller does, and a router that predates them costs that
+// search one refused request and a retry without them (forms_dropped). A
+// skill that tells every agent to send them would make every search pay
+// that, so the paragraph that teaches them, and the reading of the fields
+// #55 adds to the merged view, render only while this is true.
+//
+// Turn it on in the release that follows #55 reaching the live router, and
+// not before. A test that renders with it on sets it and restores it, and
+// is never parallel.
+var skillTeachesQueryForms = false
+
+// formsSection is the Request options paragraph on the query forms, and
+// formsReadingSection the Reading the answer paragraph on what #55 adds to
+// the merged view. Each begins with its own paragraph break, because each
+// replaces a marker at the end of a line: with the gate off they render as
+// nothing, and the skill is exactly what it was without them.
+func formsSection() string {
+	if !skillTeachesQueryForms {
+		return ""
+	}
+	return `
+
+Two more help the router find what one wording of the question misses:
+
+- ` + "`objective`" + ` — one sentence, the user's goal in your own words. Send it
+  on every search.
+  ` + "`" + `{"version":1,"query":"pgx pool exhausted","objective":"find why a Go service's pgx connection pool runs out under load"}` + "`" + `
+- ` + "`search_queries`" + ` — up to 4 more wordings, each searched beside
+  ` + "`query`" + `. Each costs about as much as another search, so send two or
+  three when the first search came back thin, or when the question has a
+  name you are not sure of: the identifier as the user wrote it, the
+  vendor's name for it, and the plain-words version.
+  ` + "`" + `{"version":1,"query":"ERR_OSSL_EVP_UNSUPPORTED","search_queries":["Node.js 17 OpenSSL 3 error","digital envelope routines unsupported"]}` + "`" + `
+
+If ` + "`result.forms_dropped`" + ` is ` + "`true`" + `, the router did not take them and the
+search ran on ` + "`query`" + ` alone. That is not a failure.`
+}
+
+func formsReadingSection() string {
+	if !skillTeachesQueryForms {
+		return ""
+	}
+	return `
+
+Each entry's ` + "`votes`" + ` counts the index groups and wordings that listed
+the page, and ` + "`result.coverage`" + ` sums the search the same way: the
+fan-out's own evidence, stronger than ` + "`found_by`" + ` alone. A page's
+` + "`snippet`" + ` is every provider's text for it, joined. The list is the
+router's window: ` + "`result.merged_total`" + ` says how many pages there were.`
+}
+
 // shellLabel names a shell the way a participant's host does.
 func shellLabel(sh shellKind) string {
 	switch sh {

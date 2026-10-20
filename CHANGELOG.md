@@ -12,6 +12,33 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
+- **`search --stdin`'s merged list is the router's own.** `result.merged` used to be this
+  client's second merge of the candidates. Every `--stdin` search now asks the router for its
+  merged view and carries that list as it comes, in the router's order and window; the client
+  merge is gone. The entries keep their fields, `best_rank` still counts from 0, and `found_in`
+  still names each page's place among the candidates. A router that sends them adds each page's
+  `votes`, `groups` and `excerpts` and the search's `coverage` and `merged_total`, which the
+  envelope carries. `view` now decides only whether the envelope includes the candidates.
+- **`search --stdin` takes `objective` and `search_queries`**, the goal in the caller's words
+  and up to four more wordings of the query, and passes them to the router. A router that does
+  not take them yet answers `malformed_json`; the search then runs once more without them and
+  says so in `result.forms_dropped`. The skill does not teach them until the router does.
+- **A coding agent's settings file is never left cut short.** `agents install`, `setup`,
+  `uninstall` and the upgrade's re-render used to rewrite `~/.claude/settings.json`, Codex's and
+  Cursor's hook files, Codex's `config.toml` and Hermes' `config.yaml` in place, so a run stopped
+  part way could leave your own settings empty. They are now replaced whole, through a temporary
+  file renamed over them. A settings file kept in a dotfiles repository behind a link is written
+  through the link, which stays; a file keeps its permissions; and one you made read-only is left
+  alone and reported. On Windows a file cannot be replaced while another program has it open,
+  however that program opened it, so a write waits up to about a second for it to be let go;
+  a file still held after that is left as it was and reported, where the old in-place write
+  could have gone through.
+- **`uninstall -binary` keeps the binary when an agent's file could not be changed.** The hooks
+  still in that file run it, so removing it left an agent failing on every tool call with nothing
+  installed to fix it. The run now says what it kept and exits non-zero; running it again once
+  the file can be written removes the hooks and the binary. An agent whose file could not be
+  written also keeps its other files until the next run, rather than being left half removed.
+
 - The `fast` band is now three fast indexes, one per index group (Exa, Brave and
   Perplexity search as the router is deployed today), not one provider. Nothing
   changes on the wire: a request still carries `"tier":"fast"`; the router decides
