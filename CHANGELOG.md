@@ -10,7 +10,21 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
-## Unreleased
+## v0.4.3 — 2026-10-20
+
+The search answer is now the router's own, and a search can carry more than one wording of
+the question. `result.merged` is the router's merged list in its order and window, where it
+used to be a second merge made here, and `search --stdin` takes `objective` and
+`search_queries`, which the skill now teaches an agent to send. The fast band is described as
+the three fast indexes it runs, with the work and the price of each band and the higher limits
+a key gets, and a named `providers` set needs `balanced` or `max`. Separately, a coding
+agent's settings file is replaced whole instead of rewritten in place, so a run stopped part
+way can no longer leave it empty, and Pi's turn is reported. By default a native install on
+v0.4.2 takes this release by itself at its daily check, and the upgrade rewrites the skill and
+hooks of each agent it set up, which is how an agent already using jevlin is taught the new
+fields; an npm install is updated with npm, then `jevlin agents install`. Pi's turn end was
+run live on Linux only. The file replacement, and this release's updater, have not been run on
+a Windows machine with real-time antivirus protection on; CI's Windows runners carry none.
 
 - **`search --stdin`'s merged list is the router's own.** `result.merged` used to be this
   client's second merge of the candidates. Every `--stdin` search now asks the router for its
