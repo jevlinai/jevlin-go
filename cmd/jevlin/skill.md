@@ -23,9 +23,10 @@ that instead of a shell at all.
 
 Leave `tier` unset for a routine lookup: the request then carries the user's
 own band (set with `/jevlin tier`), or the router's default when the user set
-none. Ask `"tier":"balanced"` when the user needs to see several sources, or
-when the first result came back thin — several providers, attributed, 8
-results each in a 12-page merged window. `fast` is three fast indexes, one per
+none. `fast` already reads three indexes, so ask `"tier":"balanced"` only
+when the user needs several sources beyond what those three gave: the fast
+result came back thin, the indexes disagree, or the user wants the full core
+set with every page attributed — 8 results each in a 12-page merged window. `fast` is three fast indexes, one per
 index group, back in about a second; `max` is the same arms asked for 15
 results each, a 24-page window and 2,000-character excerpts, three to four
 times the tokens to read, and it is the user's to choose, never yours. Do not

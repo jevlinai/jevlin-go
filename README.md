@@ -102,8 +102,9 @@ Who chooses:
   from a shell, sets the band every search carries unless a request names one. `/jevlin tier
   default` unsets it and `/jevlin tier` says what is in force.
 - **The agent**, one step at a time: the skill tells it to leave `tier` alone so your band
-  applies, to ask for `balanced` when it needs several sources, and never to send `max` on
-  its own. `max` is yours to choose.
+  applies, to ask for `balanced` only when it needs several sources beyond the three fast
+  indexes (a thin result, indexes that disagree, the full set attributed), and never to send
+  `max` on its own. `max` is yours to choose.
 - **The router**, when nobody did: a request with no tier and no band set carries none, and
   the router applies the default for your key.
 

@@ -145,7 +145,8 @@ named `providers` set always draw credit. `/jevlin tier
 balanced` in an agent, or `jevlin agents tier balanced` from a shell, sets the band every search
 carries unless the request names one; `/jevlin tier default` unsets it, and `/jevlin tier` says
 what is in force. The skill tells your agent to leave `tier` alone so your band applies, and to
-ask for `balanced` only when you need several sources; it never sends `max` on its own. With no
+ask for `balanced` only when you need several sources beyond the three fast indexes, a thin
+result or indexes that disagree; it never sends `max` on its own. With no
 band set, the request carries no tier and the router applies the default for your key.
 
 ## What travels with a search
