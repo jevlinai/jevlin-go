@@ -52,7 +52,7 @@ list and needs no shell escaping. A malformed field answers `fix_input` before a
 | `providers` | Up to 16 provider names: restrict the fan-out, or reach an extended arm that fires only when named. The router owns the list; an unknown name is its call. |
 | `view` | `"full"` (default) or `"merged"`, which drops the per-provider `candidates` from the envelope. Either way the router is asked for its merged view, and the envelope's `merged` is that list. The human form's `-view merged` with `-format json` shows the router's raw answer with it. |
 | `objective` | What you are trying to find out, in your own words: a non-blank string of at most 4096 bytes. The router passes it to the providers that take a goal and does not rank by it. |
-| `search_queries` | 1 to 4 more wordings of `query`, each a non-blank string of at most 4096 bytes, which the router searches beside it; it drops a repeat. A router that predates `objective` and `search_queries` refuses a request carrying them as `malformed_json`, and so does one whose body limit they push the request past: the search is then sent once more without them, and `result.forms_dropped` is `true`. |
+| `search_queries` | 1 to 4 more wordings of `query`, each a non-blank string of at most 4096 bytes, which the router searches beside it; it drops a repeat. Each extra wording costs about as much as another search. A router that predates `objective` and `search_queries` refuses a request carrying them as `malformed_json`, and so does one whose body limit they push the request past: the search is then sent once more without them, and `result.forms_dropped` is `true`. |
 
 ### The envelope
 

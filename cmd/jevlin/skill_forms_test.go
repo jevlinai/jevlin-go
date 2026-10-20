@@ -71,7 +71,7 @@ func TestTheSkillTeachesTheQueryFormsOnceReleased(t *testing.T) {
 			// three wordings. And that a dropped form is not a failure.
 			prose := strings.Join(strings.Fields(options), " ") // wrapping is not what is asserted
 			for _, want := range []string{
-				"`objective`", "on every search", "`search_queries`", "came back thin", "not sure of",
+				"`objective`", "on every search", "`search_queries`", "costs about as much as another search", "came back thin", "not sure of",
 				"as the user wrote it", "the vendor's name", "plain-words", "`result.forms_dropped`", "not a failure",
 			} {
 				if !strings.Contains(prose, want) {

@@ -51,9 +51,10 @@ Two more help the router find what one wording of the question misses:
   on every search.
   ` + "`" + `{"version":1,"query":"pgx pool exhausted","objective":"find why a Go service's pgx connection pool runs out under load"}` + "`" + `
 - ` + "`search_queries`" + ` — up to 4 more wordings, each searched beside
-  ` + "`query`" + `. Send two or three when the first search came back thin, or
-  when the question has a name you are not sure of: the identifier as the
-  user wrote it, the vendor's name for it, and the plain-words version.
+  ` + "`query`" + `. Each costs about as much as another search, so send two or
+  three when the first search came back thin, or when the question has a
+  name you are not sure of: the identifier as the user wrote it, the
+  vendor's name for it, and the plain-words version.
   ` + "`" + `{"version":1,"query":"ERR_OSSL_EVP_UNSUPPORTED","search_queries":["Node.js 17 OpenSSL 3 error","digital envelope routines unsupported"]}` + "`" + `
 
 If ` + "`result.forms_dropped`" + ` is ` + "`true`" + `, the router did not take them and the
