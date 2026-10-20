@@ -170,6 +170,33 @@ func TestMalformedJSONWithoutTheFormsIsNotRetried(t *testing.T) {
 	}
 }
 
+// A request that carried the forms is retried on malformed_json and on
+// nothing else: any other 400 is the router's answer, the one POST is all
+// it costs, and forms_dropped (which says a retry ran) is not set.
+func TestAnotherRefusalOfARequestCarryingTheFormsIsNotRetried(t *testing.T) {
+	sr, cfg, root := newSequencedRouter(t, routerRefuses("invalid_request"))
+	h := fixedSearchOps(root)
+	code, out, _ := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"},
+		`{"version":1,"query":"q","objective":"why","search_queries":["q2"]}`, "-config", cfg)
+	if code == exitOK {
+		t.Fatalf("exit 0 for a refused request: %s", out)
+	}
+	bodies := sr.sent()
+	if len(bodies) != 1 {
+		t.Fatalf("%d requests, want exactly 1", len(bodies))
+	}
+	if bodies[0]["objective"] == nil || bodies[0]["search_queries"] == nil {
+		t.Fatalf("the request did not carry the forms, so this test proves nothing: %v", bodies[0])
+	}
+	env := decodeEnvelope(t, out)
+	if env["result"] != nil {
+		t.Errorf("a refused search carries a result: %v", env["result"])
+	}
+	if strings.Contains(out, "forms_dropped") {
+		t.Errorf("forms_dropped is in the envelope though no retry ran: %s", out)
+	}
+}
+
 // The retry is never recursive: a router that refuses the retry too gets no
 // third request, and its refusal is the answer.
 func TestTheFormsRetryIsTheOnlyRetry(t *testing.T) {
