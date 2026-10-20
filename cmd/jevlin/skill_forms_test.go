@@ -1,11 +1,11 @@
 package main
 
-// The query forms in the skill, behind skillTeachesQueryForms (the release
-// gate for Jevlin-core #55): off, the skill says nothing about them or about
-// what #55 adds to the merged view; on, it teaches both, with examples a
-// --stdin request accepts. These tests set a package variable, so each
-// restores it with t.Cleanup and none is parallel: a parallel test
-// rendering a skill would see the switch.
+// The query forms in the skill, behind skillTeachesQueryForms (the switch
+// for Jevlin-core #55): off, the skill says nothing about them or about
+// what #55 adds to the merged view; on, which is how it ships, it teaches
+// both, with examples a --stdin request accepts. These tests set a package
+// variable, so each restores it with t.Cleanup and none is parallel: a
+// parallel test rendering a skill would see the switch.
 
 import (
 	"regexp"
@@ -20,20 +20,31 @@ func withQueryFormsTaught(t *testing.T, on bool) {
 	t.Cleanup(func() { skillTeachesQueryForms = was })
 }
 
-// The gate ships off. The tests below set it themselves, so neither would
-// notice the default turned on; this one reads it as compiled. Turning the
-// gate on, once Jevlin-core #55 is live on the router, is the release's
-// deliberate change, and this test changes with it.
-func TestTheQueryFormsGateShipsOff(t *testing.T) {
-	if skillTeachesQueryForms {
-		t.Fatal("skillTeachesQueryForms is on: the skill would teach every agent to send objective and " +
-			"search_queries. Turn it on only once the live router takes them, and change this test in the same commit.")
+// The switch ships on. The tests below set it themselves, so none would
+// notice the default turned off; this one reads it as compiled, and reads
+// the skill a participant gets. Turning it off, if the live router stops
+// taking the forms, is a deliberate change, and this test changes with it.
+func TestTheQueryFormsAreTaughtAsShipped(t *testing.T) {
+	if !skillTeachesQueryForms {
+		t.Fatal("skillTeachesQueryForms is off: the skill no longer teaches agents to send objective and " +
+			"search_queries, though Jevlin-core #55 is live. Turn it off only if the router stops taking them, " +
+			"and change this test in the same commit.")
+	}
+	entry := binEntry{command: "/home/u/.jevlin/bin/jevlin", cfg: "/home/u/.jevlin/jevlin.toml"}
+	for _, id := range goldenHostIDs {
+		skill := renderedSkillFor(id, entry, hostShellOSes[0])
+		for _, want := range []string{"`objective`", "`search_queries`", "`result.forms_dropped`"} {
+			if !strings.Contains(skill, want) {
+				t.Errorf("%s: the skill as shipped does not say %s", id, want)
+			}
+		}
 	}
 }
 
-// Off is the shipped state until #55 is live: a skill that told every
-// agent to send the forms to a router that refuses them would make every
-// search pay a refused request and a retry.
+// Off is the state before #55 was live: a skill that told every agent to
+// send the forms to a router that refuses them would make every search
+// pay a refused request and a retry. It is kept as the proof that the
+// switch still switches.
 func TestTheSkillTeachesNoQueryFormsUntilTheRouterTakesThem(t *testing.T) {
 	withQueryFormsTaught(t, false)
 	entry := binEntry{command: "/home/u/.jevlin/bin/jevlin", cfg: "/home/u/.jevlin/jevlin.toml"}

@@ -697,8 +697,9 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   the router's merged view mapped field for field and never a merge of this client's
   (`search_router_merge_test.go`, against the router's own fixtures in
   `cmd/jevlin/testdata/search/router`);
-  `skill_render.go`'s `skillTeachesQueryForms` keeps the skill from teaching the query forms
-  before the router takes them; `machine.go` owns the header, the action set
+  `skill_render.go`'s `skillTeachesQueryForms` is the switch for the skill's query-forms
+  paragraphs, on since the router took the forms (`TestTheQueryFormsAreTaughtAsShipped`);
+  `machine.go` owns the header, the action set
   and the exit/status correspondence; `report_json.go` owns `status`/`doctor`/`connect` JSON.
   `search_protocol_test.go` and `report_json_test.go` guard them.
   For participants: [reference, The envelope](docs/reference.md#the-envelope).

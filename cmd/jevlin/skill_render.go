@@ -21,18 +21,21 @@ import (
 // exampleRequest is the request body the skill shows.
 const exampleRequest = `{"version":1,"query":"exact query text"}`
 
-// skillTeachesQueryForms is the release gate for the query forms
-// (Jevlin-core #55). The client sends objective and search_queries
-// whenever a caller does, and a router that predates them costs that
-// search one refused request and a retry without them (forms_dropped). A
-// skill that tells every agent to send them would make every search pay
-// that, so the paragraph that teaches them, and the reading of the fields
-// #55 adds to the merged view, render only while this is true.
+// skillTeachesQueryForms is the switch for the query forms (Jevlin-core
+// #55). The client sends objective and search_queries whenever a caller
+// does, and a router that predates them costs that search one refused
+// request and a retry without them (forms_dropped). A skill that tells
+// every agent to send them would make every search pay that, so the
+// paragraph that teaches them, and the reading of the fields #55 adds to
+// the merged view, render only while this is true.
 //
-// Turn it on in the release that follows #55 reaching the live router, and
-// not before. A test that renders with it on sets it and restores it, and
-// is never parallel.
-var skillTeachesQueryForms = false
+// It is on: #55 is on the live router. It shipped off, and went on in the
+// release that followed #55 reaching the router, because a skill is
+// rewritten on a participant's machine by the upgrade and cannot be
+// taken back from there. Turn it off only if the router stops taking the
+// forms. A test that renders with it set sets it and restores it, and is
+// never parallel.
+var skillTeachesQueryForms = true
 
 // formsSection is the Request options paragraph on the query forms, and
 // formsReadingSection the Reading the answer paragraph on what #55 adds to
