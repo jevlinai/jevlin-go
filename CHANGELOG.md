@@ -22,7 +22,11 @@ rewritten to match newer behaviour; the newer entry says what changed.
 - **`search --stdin` takes `objective` and `search_queries`**, the goal in the caller's words
   and up to four more wordings of the query, and passes them to the router. A router that does
   not take them yet answers `malformed_json`; the search then runs once more without them and
-  says so in `result.forms_dropped`. The skill does not teach them until the router does.
+  says so in `result.forms_dropped`. The skill now teaches an agent to send them: `objective` on
+  every search, and two or three more wordings in `search_queries` when the first search came
+  back thin or a name is uncertain, each extra wording costing about as much as another search.
+  It also says how to read what the router now sends with the merged list: each page's `votes`,
+  `result.coverage` and `result.merged_total`. A native install's upgrade rewrites the skill.
 - **A coding agent's settings file is never left cut short.** `agents install`, `setup`,
   `uninstall` and the upgrade's re-render used to rewrite `~/.claude/settings.json`, Codex's and
   Cursor's hook files, Codex's `config.toml` and Hermes' `config.yaml` in place, so a run stopped
