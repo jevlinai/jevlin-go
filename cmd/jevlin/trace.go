@@ -157,8 +157,10 @@ func capTraceForCommandLine(env *traceEnvelope, sh shellKind, cmd string) *trace
 		return env
 	}
 	// base64url writes 3 bytes as 4 characters, so the JSON may take 3/4 of
-	// what the limit leaves after the command and the bridge's syntax.
-	return capTraceToFit(env, (limit-bridgeSyntaxOverhead(sh)-len(cmd))/4*3)
+	// what the limit leaves after the command and the bridge's syntax —
+	// floor(budget*3/4), the same formula traceBridge applies in the JS
+	// adapters, so the two languages trim to the same place.
+	return capTraceToFit(env, (limit-bridgeSyntaxOverhead(sh)-len(cmd))*3/4)
 }
 
 func capTraceToFit(env *traceEnvelope, jsonLimit int) *traceEnvelope {

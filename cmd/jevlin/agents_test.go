@@ -1157,3 +1157,53 @@ func TestAnNpmRunInstallOverANativeInstallDuplicatesNothing(t *testing.T) {
 		t.Fatalf("hooks left after uninstall: %v", commands)
 	}
 }
+
+// adoptOwnBinary's swap is scoped to the machine home's own config: an
+// `agents install -config <another installation's config>` run from an npm
+// copy must not wire that installation's hooks to this home's binary, whose
+// later `uninstall -binary` would strand them. The ownership reference still
+// carries both paths either way.
+func TestAdoptOwnBinarySwapsOnlyForTheInstallationsOwnConfig(t *testing.T) {
+	home := "/home/u/.jevlin"
+	exe := "jevlin"
+	if runtime.GOOS == "windows" {
+		exe = "jevlin.exe"
+	}
+	own := filepath.Join(home, "bin", exe)
+	npmExe := filepath.Join("/home/u/npm/node_modules/jevlin/bin", exe)
+	stat := func(p string) (os.FileInfo, error) {
+		if slash(p) == slash(own) {
+			return fakeFileInfo{name: exe}, nil
+		}
+		return nil, fs.ErrNotExist
+	}
+	npmEnv := func(k string) string {
+		if k == "JEVLIN_LAUNCH" {
+			return "npm:global"
+		}
+		return ""
+	}
+
+	theirs := adoptOwnBinary(binEntry{command: npmExe, cfg: "/home/other/jevlin.toml"}, home, npmEnv, stat)
+	if theirs.command != npmExe {
+		t.Fatalf("another installation's config still got this home's binary: %q", theirs.command)
+	}
+	if theirs.ownBinary != own {
+		t.Fatalf("the ownership reference lost the home's binary: %q", theirs.ownBinary)
+	}
+
+	// As resolveEntry spells a config: absolute (on Windows that adds the
+	// working drive to this test's rootless path).
+	ownCfg, err := filepath.Abs(filepath.Join(home, "jevlin.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ours := adoptOwnBinary(binEntry{command: npmExe, cfg: ownCfg}, home, npmEnv, stat)
+	if ours.command != own || ours.ownBinary != npmExe {
+		t.Fatalf("the home's own config did not adopt its binary: command %q, ownBinary %q", ours.command, ours.ownBinary)
+	}
+
+	if native := adoptOwnBinary(binEntry{command: own, cfg: ownCfg}, home, func(string) string { return "" }, stat); native.command != own {
+		t.Fatalf("a native run moved its own command: %q", native.command)
+	}
+}

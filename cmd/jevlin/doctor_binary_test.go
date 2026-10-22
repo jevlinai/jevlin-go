@@ -5,7 +5,9 @@ package main
 // runs against a home that keeps no binary.
 
 import (
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -48,5 +50,53 @@ func TestGatherBinaryFactsChecksNothingWithoutAnOwnBinary(t *testing.T) {
 		if check.Name == "binary on PATH" {
 			t.Fatal("an unchecked binary fact still produced a row")
 		}
+	}
+}
+
+// The gather's positive path, against real files and a real PATH: an
+// inverted Same would otherwise pass every test in this file.
+func TestGatherBinaryFactsSeesThroughPATH(t *testing.T) {
+	home := t.TempDir()
+	bin := filepath.Join(home, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	name := "jevlin"
+	if runtime.GOOS == "windows" {
+		name = "jevlin.exe"
+	}
+	own := filepath.Join(bin, name)
+	if err := os.WriteFile(own, []byte("#!/bin/sh\n"), 0o755); err != nil { // #nosec G306 -- a LookPath target must be executable
+		t.Fatal(err)
+	}
+	getenv := func(k string) string {
+		if k == "JEVLIN_HOME" {
+			return home
+		}
+		return ""
+	}
+
+	t.Setenv("PATHEXT", ".EXE") // what Windows LookPath consults; unread elsewhere
+	t.Setenv("PATH", bin)
+	f := gatherBinaryFacts(getenv)
+	if !f.Checked || !f.Same || f.OnPath == "" {
+		t.Fatalf("the installation's own binary on PATH was not recognized: %+v", f)
+	}
+
+	shadow := t.TempDir()
+	other := filepath.Join(shadow, name)
+	if err := os.WriteFile(other, []byte("#!/bin/sh\n"), 0o755); err != nil { // #nosec G306 -- a LookPath target must be executable
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", shadow+string(os.PathListSeparator)+bin)
+	f = gatherBinaryFacts(getenv)
+	if !f.Checked || f.Same || !samePath(f.OnPath, other) {
+		t.Fatalf("a shadowing copy was not seen: %+v", f)
+	}
+
+	t.Setenv("PATH", "")
+	f = gatherBinaryFacts(getenv)
+	if !f.Checked || f.OnPath != "" {
+		t.Fatalf("an empty PATH still resolved something: %+v", f)
 	}
 }

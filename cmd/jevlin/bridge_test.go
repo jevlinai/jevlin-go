@@ -360,3 +360,48 @@ func TestBridgeSyntaxOverheadMatchesWhatWithTraceBridgeWrites(t *testing.T) {
 		}
 	}
 }
+
+// The JS overhead table and the JS wrapper are two hand-kept spellings in
+// one file, and only the Go pair had a pin
+// (TestBridgeSyntaxOverheadMatchesWhatWithTraceBridgeWrites). Without this
+// half, widening the PowerShell wrapper while forgetting the table would
+// quietly overfeed the Windows command-line budget — the silent non-run the
+// budget exists to prevent. All four answers must be one number per shell.
+func TestBridgeSyntaxOverheadAgreesAcrossLanguages(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatal("node is required to compare the shared trace source with the Go overhead")
+	}
+	script := `
+ const fs = await import('node:fs');
+ const input = JSON.parse(fs.readFileSync(0,'utf8'));
+ const src = input.shared + "\nexport { withTraceBridge, BRIDGE_SYNTAX_OVERHEAD };";
+ const mod = await import('data:text/javascript;base64,'+Buffer.from(src).toString('base64'));
+ const cmd = 'jevlin search --stdin';
+ const bridge = 'eyJ2IjoxfQ';
+ const out = {};
+ for (const shell of ['posix', 'powershell']) {
+  out[shell] = { table: mod.BRIDGE_SYNTAX_OVERHEAD[shell], written: mod.withTraceBridge(cmd, bridge, shell).length - cmd.length - bridge.length };
+ }
+ process.stdout.write(JSON.stringify(out));`
+	payload, _ := json.Marshal(map[string]any{"shared": agentTraceCommonJS})
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, node, "--input-type=module", "-e", script) // #nosec G204 -- fixed test script and local Node runtime; synthetic input on stdin
+	cmd.Stdin = strings.NewReader(string(payload))
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("shared source: %v\n%s", err, output)
+	}
+	var got map[string]struct{ Table, Written int }
+	if err := json.Unmarshal(output, &got); err != nil {
+		t.Fatalf("%v\n%s", err, output)
+	}
+	for _, sh := range []shellKind{shellPOSIX, shellPowerShell} {
+		want := bridgeSyntaxOverhead(sh)
+		g, ok := got[string(sh)]
+		if !ok || g.Table != want || g.Written != want {
+			t.Errorf("%s: JS table %d, JS written %d, Go %d", sh, g.Table, g.Written, want)
+		}
+	}
+}

@@ -101,13 +101,28 @@ func ownBinaryAt(home string, stat func(string) (os.FileInfo, error)) string {
 // machine that already carries both sets collapses them to one on the next
 // install. A native process keeps its own path, and an installation with no
 // binary of its own (a pure npm install) is exactly as before.
+//
+// The swap is made only for the home's OWN config (or discovery): home here
+// is the machine's installation (JEVLIN_HOME, else ~/.jevlin), and an
+// `agents install -config <elsewhere>` run from an npm copy must not wire
+// another installation's hooks to this home's binary, whose later
+// `uninstall -binary` would strand them. Such a run keeps its own path, as
+// before; the ownership reference still carries both.
 func adoptOwnBinary(entry binEntry, home string, getenv func(string) string, stat func(string) (os.FileInfo, error)) binEntry {
 	own := ownBinaryAt(home, stat)
 	if own == "" {
 		return entry
 	}
 	entry.ownBinary = own
-	if own != entry.command && classifyLaunch(entry.command, getenv("JEVLIN_LAUNCH")) != launchNative {
+	// Through Abs, as resolveEntry spells entry.cfg: on Windows a rootless
+	// path gains the working drive there, and the comparison must see both
+	// sides the same way.
+	ownCfg, err := filepath.Abs(filepath.Join(home, setupConfigFile))
+	if err != nil {
+		ownCfg = filepath.Join(home, setupConfigFile)
+	}
+	homesOwnConfig := entry.cfg == "" || samePath(entry.cfg, ownCfg)
+	if own != entry.command && homesOwnConfig && classifyLaunch(entry.command, getenv("JEVLIN_LAUNCH")) != launchNative {
 		entry.command, entry.ownBinary = own, entry.command
 	}
 	return entry

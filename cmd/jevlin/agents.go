@@ -1029,20 +1029,22 @@ func resolveEntry(ops agentOps, cfgPath string, getenv func(string) string) (bin
 	if home == "" && ops.home != "" {
 		home = filepath.Join(ops.home, ".jevlin")
 	}
-	entry := adoptOwnBinary(binEntry{command: bin}, home, getenv, ops.stat)
+	entry := binEntry{command: bin}
 	src := cfgPath
 	if src == "" {
 		src = describeConfigSource("", getenv)
 	}
 	if src == "" {
-		return entry, "  (no config file: defaults and JEVLIN_* env)", nil
+		// After the config is settled, because adoptOwnBinary's swap is
+		// gated on whose config this is.
+		return adoptOwnBinary(entry, home, getenv, ops.stat), "  (no config file: defaults and JEVLIN_* env)", nil
 	}
 	abs, err := filepath.Abs(src)
 	if err != nil {
 		return binEntry{}, "", fmt.Errorf("%s: %w", src, err)
 	}
 	entry.cfg = abs
-	return entry, "  (config: " + abs + ")", nil
+	return adoptOwnBinary(entry, home, getenv, ops.stat), "  (config: " + abs + ")", nil
 }
 
 func labels(ts []installTarget) []string {

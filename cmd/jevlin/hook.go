@@ -550,6 +550,11 @@ func hookLineage(ops hookOps, hc hookContext, payload []byte, stdout io.Writer) 
 			// Assigned every time, so the orchestrator's next call clears it.
 			l.ParentSessionID = env.ParentSessionID
 			l.Seq++
+			// Aliases env.History, which capTraceForCommandLine below
+			// trims IN PLACE. Safe only because updateLineage serializes
+			// and writes before this function returns — move the lineage
+			// write after the trim and the file quietly loses the full
+			// history it exists to keep.
 			l.History = env.History
 		})
 	}
