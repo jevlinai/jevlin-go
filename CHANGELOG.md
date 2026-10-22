@@ -10,6 +10,26 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## Unreleased
+
+Windows fixes, from a live soak of every agent on one machine. opencode started from a
+terminal like Git Bash runs its commands in bash, and the search's trace prefix is now
+written for the shell opencode actually resolved rather than the one the installer guessed
+from the OS — started from Git Bash every search used to fail outright. A Pi search on
+Windows silently did not run when the conversation was long, because the trace rode inside
+the command and Windows delivers nothing past a length limit; the trace is now budgeted to
+the host's command line, keeping the newest words, and a command already at the limit goes
+out untraced rather than not at all. Pi's trace also sent the previous tool's OUTPUT as if
+it were the assistant's own words when the assistant wrote none; only assistant text is sent
+now. Running `jevlin setup` from the npm copy over a native install used to stand a second
+copy of every hook beside the first and flip the skill to the npm path; the npm copy now
+recognizes the installation's own binary, writes hooks that keep naming it, and a machine
+already carrying both sets collapses them to one on the next install. `doctor` gains a
+`binary on PATH` check that names the copy a bare `jevlin` actually runs — npm's shim
+standing earlier on PATH than `~/.jevlin/bin` is how that setup-from-npm happens without
+meaning to. And the two PowerShell 5.1 stdin tests no longer insist on a byte-order mark
+that only some Windows builds emit.
+
 ## v0.4.3 — 2026-10-20
 
 The search answer is now the router's own, and a search can carry more than one wording of
