@@ -460,7 +460,14 @@ It is a filter over text a model wrote, not a guarantee. A secret with no tellin
 known shape, in ordinary prose, passes, and so do these: `password: …` in the middle of a
 sentence; `NAME = value` unquoted outside PowerShell; a value inside a quote that opened before
 another word (`echo "export PASSWORD=a b"` keeps `b`); a lowercase cmd `set` name, or a `set`
-written after other words, keeps the tail of a value with spaces; a flag's value of lowercase
+written after other words, keeps the tail of a value with spaces; a quote that Windows
+PowerShell 5.1's native-argument quoting moved — a prompt handed to a program as a
+command-line argument reaches it re-quoted, `set "API_TOKEN=your token"` as
+`API_TOKEN=your" token` and the next setting as `"DB_PASSWORD=correct horse battery` with no
+closing quote — keeps the value's tail after its first word, because the moved quote reads as
+one that closes a string or never opens one (pass the prompt on stdin, which keeps the quotes
+where they were typed, or use Git Bash or the serve API; 5.1 itself reads piped non-ASCII in
+the ANSI code page, so a prompt with accents wants Git Bash or the serve API either way); a flag's value of lowercase
 letters only, or after a flag whose last word is not a secret's (`--auth …`); a flag's quoted
 value broken across lines; a quoted value after `=` in the middle of a line that runs across
 lines keeps every line after the one its quote opens on, which is the whole value when the quote
