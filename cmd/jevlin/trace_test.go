@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestTraceHashIsStableAndNeverTheRawID(t *testing.T) {
@@ -130,4 +131,84 @@ func envelopeLen(t *testing.T, env *traceEnvelope) int {
 	t.Helper()
 	b, _ := json.Marshal(env)
 	return len(b)
+}
+
+// The command-line cap: history is cut from the front until the encoded
+// bridge, its shell syntax and the command fit the host's limit, then
+// dropped; an envelope whose bare form still does not fit yields nil, so
+// the command goes out with no bridge rather than too long to run. The
+// per-OS limit itself is trivial (hostCommandCharLimit), so the budget
+// arithmetic is tested through capTraceToFit, which runs on every OS.
+func TestCapTraceToFitTrimsTheFrontThenDropsHistoryThenTheBridge(t *testing.T) {
+	fresh := func(text string) *traceEnvelope {
+		return &traceEnvelope{V: traceVersion, SessionID: "keep-me", History: []traceHistory{{Role: "assistant", Text: text}}}
+	}
+	long := strings.Repeat("x", 20<<10) + "THE-END"
+
+	env := capTraceToFit(fresh(long), 8<<10)
+	if env == nil || env.SessionID != "keep-me" || len(env.History) != 1 {
+		t.Fatalf("a fitting trim was not made: %+v", env)
+	}
+	if got := envelopeLen(t, env); got > 8<<10 {
+		t.Errorf("still over the limit: %d bytes", got)
+	}
+	if !strings.HasSuffix(env.History[0].Text, "THE-END") {
+		t.Errorf("the cut kept the wrong end")
+	}
+
+	// A multi-byte rune straddling the cut is dropped whole, never sliced.
+	ruler := strings.Repeat("\u00e9", 10<<10) + "THE-END"
+	env = capTraceToFit(fresh(ruler), 8<<10)
+	if env == nil || !utf8.ValidString(env.History[0].Text) || !strings.HasSuffix(env.History[0].Text, "THE-END") {
+		t.Fatalf("the cut broke a rune boundary: %+v", env)
+	}
+
+	// A tight budget still carries a sliver of the newest words.
+	env = capTraceToFit(fresh(long), 120)
+	if env == nil || len(env.History) != 1 || !strings.HasSuffix(env.History[0].Text, "THE-END") || envelopeLen(t, env) > 120 {
+		t.Errorf("a tight budget lost the newest words: %+v", env)
+	}
+
+	// A budget below what even an emptied history entry costs sheds it whole.
+	env = capTraceToFit(fresh(long), 60)
+	if env == nil || env.History != nil || env.SessionID != "keep-me" {
+		t.Errorf("history not shed under a tight budget: %+v", env)
+	}
+
+	// A budget nothing fits in — a command already at the host's limit —
+	// sends no bridge at all.
+	if got := capTraceToFit(fresh("hi"), -1); got != nil {
+		t.Errorf("an unfittable envelope survived: %+v", got)
+	}
+}
+
+// capTraceForCommandLine answers from the real OS limit: on Windows a
+// history far past the limit comes back fitting beside its command, and on
+// every other OS the envelope is returned untouched.
+func TestCapTraceForCommandLineBoundsTheRewrittenCommand(t *testing.T) {
+	cmd := `jevlin search -format model "q"`
+	long := strings.Repeat("y", 40<<10) + "THE-END"
+	env := capTraceForCommandLine(
+		&traceEnvelope{V: traceVersion, History: []traceHistory{{Role: "assistant", Text: long}}}, shellPOSIX, cmd)
+	if env == nil {
+		t.Fatal("a trimmable envelope was dropped whole")
+	}
+	bridge, err := encodeTraceBridge(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rewritten, ok := withTraceBridge(shellPOSIX, bridge, cmd)
+	if !ok {
+		t.Fatal("the rewrite stood down")
+	}
+	if limit := hostCommandCharLimit(); limit != 0 {
+		if len(rewritten) > limit {
+			t.Errorf("rewritten command is %d chars, over the %d limit", len(rewritten), limit)
+		}
+		if !strings.HasSuffix(env.History[0].Text, "THE-END") {
+			t.Errorf("the trim kept the wrong end")
+		}
+	} else if envelopeLen(t, env) != envelopeLen(t, &traceEnvelope{V: traceVersion, History: []traceHistory{{Role: "assistant", Text: long}}}) {
+		t.Errorf("an OS with no limit still trimmed the envelope")
+	}
 }

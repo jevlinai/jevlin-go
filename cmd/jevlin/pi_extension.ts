@@ -40,6 +40,16 @@
 // command text (H-R1).
 const HOST_SHELL = "{{HOST_SHELL}}"
 
+// The longest command line Pi's bash tool delivers on this platform. On
+// Windows a command over about 8,191 characters comes back as "(no
+// output)" without having run, and past 32K the spawn itself fails with
+// ENAMETOOLONG — measured live on Windows 11 with a padding extension:
+// 4,000 ✓, 8,000 ✓, 8,300 ✗, 33,000 ✗. The envelope cap alone allows a
+// bridge of ~65K characters, so an unbudgeted rewrite is what made every
+// long-history search on Windows silently not run. 0 is no limit: no POSIX
+// host limit is within the envelope cap's reach.
+const HOST_COMMAND_CHAR_LIMIT = process.platform === "win32" ? 8000 : 0
+
 // The installation this file belongs to — see the opencode plugin's copy of
 // this line. Pi's skill names the installation in the command it teaches, so
 // this extension is attributable through its sibling; it carries the line
@@ -368,7 +378,7 @@ export default function (pi) {
       const text = historyForToolCall(entries, where)
       if (text) env.history = [{ role: "assistant", text }]
 
-      const bridge = traceBridge(env)
+      const bridge = traceBridge(env, bridgeBudgetFor(cmd, HOST_SHELL, HOST_COMMAND_CHAR_LIMIT))
       if (bridge === null) return // oversized even without history: no bridge
       // H-R4: remove every bridge assignment we recognize, prepend our own,
       // and leave a command carrying one we cannot remove untouched.

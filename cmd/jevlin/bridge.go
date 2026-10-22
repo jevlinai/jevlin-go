@@ -32,6 +32,7 @@ package main
 
 import (
 	"regexp"
+	"runtime"
 	"strings"
 )
 
@@ -152,6 +153,32 @@ func withTraceBridge(sh shellKind, bridge, cmd string) (string, bool) {
 	default:
 		return cmd, false
 	}
+}
+
+// hostCommandCharLimit is the longest command line a rewritten command may
+// reach on this OS. Windows refuses to start a process whose command line
+// is over 32,767 UTF-16 characters, and the 48 KiB envelope cap alone
+// encodes to a bridge of about 65K characters; the headroom under 32,767
+// covers the host's own quoting. 0 elsewhere: no POSIX limit is within the
+// envelope cap's reach. One rule with HOST_COMMAND_CHAR_LIMIT in the
+// JavaScript adapters (Pi's own tool delivers far less there, which its
+// template says for itself).
+func hostCommandCharLimit() int {
+	if runtime.GOOS == "windows" {
+		return 30000
+	}
+	return 0
+}
+
+// bridgeSyntaxOverhead is what withTraceBridge writes around the bridge
+// value for sh, beyond the command itself — computed from the same pieces
+// it concatenates, so the two cannot drift apart
+// (TestBridgeSyntaxOverheadMatchesWhatWithTraceBridgeWrites).
+func bridgeSyntaxOverhead(sh shellKind) int {
+	if sh == shellPowerShell {
+		return len("$env:" + bridgeEnv + " = ''; try { \n} finally { Remove-Item Env:" + bridgeEnv + " -ErrorAction SilentlyContinue }")
+	}
+	return len(bridgeEnv + "= ")
 }
 
 // bridgeShellForTool is Claude Code's per-call answer. Its PreToolUse payload

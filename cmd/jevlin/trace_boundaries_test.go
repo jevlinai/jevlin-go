@@ -315,6 +315,10 @@ func TestOpencodeRedactionBoundaries(t *testing.T) {
 	script := `
  const fs = await import('node:fs');
  const input = JSON.parse(fs.readFileSync(0,'utf8'));
+ // A platform with no command-line limit, before the import reads it: this
+ // test compares the full 32 KiB tail, and the Windows budget — which has
+ // its own test — would trim it on a Windows runner.
+ Object.defineProperty(process, 'platform', { value: 'linux' });
  const plugin = await import('data:text/javascript;base64,'+Buffer.from(input.plugin).toString('base64'));
  const result={};
  for (const [name,text] of Object.entries(input.cases)) {

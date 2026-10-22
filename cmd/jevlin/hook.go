@@ -554,6 +554,15 @@ func hookLineage(ops hookOps, hc hookContext, payload []byte, stdout io.Writer) 
 		})
 	}
 
+	if isShell {
+		// The lineage file above keeps the full history; the inline copy is
+		// trimmed to what the host's command line can carry. nil means not
+		// even the bare envelope fits beside this command, and the command
+		// then goes out untouched rather than too long to run.
+		if env = capTraceForCommandLine(env, bridgeShell, command); env == nil {
+			return
+		}
+	}
 	bridge, err := encodeTraceBridge(env)
 	if err != nil {
 		return

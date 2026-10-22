@@ -138,6 +138,65 @@ func capTrace(env *traceEnvelope) *traceEnvelope {
 	return nil
 }
 
+// capTraceForCommandLine trims env until the command carrying its encoded
+// bridge fits the host's command line: history text is cut from the FRONT —
+// keeping the end, the words nearest the search, as capTrace's own
+// truncation does — then history is dropped, and nil means even the bare
+// envelope cannot ride and the command must go out with no bridge at all,
+// because a trace must never be the reason a search fails. The text was
+// scrubbed in capTrace before it got here, so this cut comes after the
+// scrub, never before it. On an OS with no command-line limit it changes
+// nothing. The same rule the JavaScript adapters apply through
+// bridgeBudgetFor and traceBridge's budget in agent_trace_common.js.
+//
+// len(cmd) counts bytes where Windows counts UTF-16 characters; bytes are
+// never fewer, so the error is in the safe direction.
+func capTraceForCommandLine(env *traceEnvelope, sh shellKind, cmd string) *traceEnvelope {
+	limit := hostCommandCharLimit()
+	if env == nil || limit == 0 {
+		return env
+	}
+	// base64url writes 3 bytes as 4 characters, so the JSON may take 3/4 of
+	// what the limit leaves after the command and the bridge's syntax.
+	return capTraceToFit(env, (limit-bridgeSyntaxOverhead(sh)-len(cmd))/4*3)
+}
+
+func capTraceToFit(env *traceEnvelope, jsonLimit int) *traceEnvelope {
+	b, err := json.Marshal(env)
+	if err != nil {
+		return nil
+	}
+	for len(b) > jsonLimit && len(env.History) > 0 {
+		over := len(b) - jsonLimit
+		if text := env.History[0].Text; len(text) <= over {
+			env.History = env.History[1:]
+			if len(env.History) == 0 {
+				env.History = nil
+			}
+		} else {
+			// Walk forward off any continuation byte so the cut lands on a
+			// rune boundary, as prepareTraceText's tail cut does. A cut text
+			// byte removes at least one serialized byte, so one pass per
+			// entry is enough and the loop always ends.
+			start := over
+			for start < len(text) && !utf8.RuneStart(text[start]) {
+				start++
+			}
+			env.History[0].Text = text[start:]
+		}
+		if b, err = json.Marshal(env); err != nil {
+			return nil
+		}
+	}
+	if len(b) > jsonLimit {
+		env.History = nil
+		if b, err = json.Marshal(env); err != nil || len(b) > jsonLimit {
+			return nil
+		}
+	}
+	return env
+}
+
 // traceScrubTestHook, when set, runs on every text prepareTraceText is about
 // to scrub. Tests set it to panic, standing in for a scrubber bug, to hold
 // search and the hooks to failing open when one happens (#48).

@@ -343,3 +343,20 @@ func TestBridgeGuardsAgree(t *testing.T) {
 		})
 	}
 }
+
+// bridgeSyntaxOverhead is computed from the same pieces withTraceBridge
+// concatenates; this holds the two to each other, so a changed wrapper
+// cannot quietly starve or overfeed the command-line budget.
+func TestBridgeSyntaxOverheadMatchesWhatWithTraceBridgeWrites(t *testing.T) {
+	const cmd = `jevlin search -format model "q"`
+	const bridge = "eyJ2IjoxfQ"
+	for _, sh := range []shellKind{shellPOSIX, shellPowerShell} {
+		rewritten, ok := withTraceBridge(sh, bridge, cmd)
+		if !ok {
+			t.Fatalf("%s: the rewrite stood down", sh)
+		}
+		if got, want := len(rewritten), len(cmd)+len(bridge)+bridgeSyntaxOverhead(sh); got != want {
+			t.Errorf("%s: rewritten length %d, overhead says %d", sh, got, want)
+		}
+	}
+}

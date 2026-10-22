@@ -27,6 +27,14 @@
 // PowerShell is looked up as a program name and the search never runs (dropin-miner#68).
 const HOST_SHELL = "{{HOST_SHELL}}"
 
+// The longest command line a rewritten command may reach on this platform.
+// Windows refuses to start a process whose command line is over 32,767
+// characters (node reports ENAMETOOLONG), and the envelope cap alone allows
+// a bridge of ~65K characters; the headroom under 32,767 covers the host's
+// own quoting. 0 is no limit: no POSIX host limit is within the envelope
+// cap's reach.
+const HOST_COMMAND_CHAR_LIMIT = process.platform === "win32" ? 30000 : 0
+
 // The installation this file belongs to: the config `jevlin agents
 // install` resolved when it wrote this. Nothing here reads it — the plugin
 // runs no command of ours and needs no config — it is how `uninstall` knows
@@ -292,7 +300,7 @@ export const JevlinLineage = async ({ client }) => {
         } catch {
           // no history is fine; the ids still thread the search
         }
-        const bridge = traceBridge(env)
+        const bridge = traceBridge(env, bridgeBudgetFor(cmd, HOST_SHELL, HOST_COMMAND_CHAR_LIMIT))
         if (bridge === null) return
         // H-R4: a bridge already on the command is not ours until we put it
         // there. Every assignment we can prove standalone is removed and
