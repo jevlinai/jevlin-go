@@ -572,10 +572,11 @@ func TestOpencodePluginWritesTheShellOpencodeRuns(t *testing.T) {
 	gitCmd := filepath.Join(root, "git", "cmd")
 	gitBin := filepath.Join(root, "git", "bin")
 	for dir, name := range map[string]string{gitCmd: "git.exe", gitBin: "bash.exe"} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o755); err != nil {
+		// Plain non-executable files: the mirror only asks isFile.
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -628,17 +629,18 @@ func TestOpencodePluginWritesTheShellOpencodeRuns(t *testing.T) {
 		// to PowerShell, and so must the mirror — a posix prefix here is the
 		// dropin-miner#68 breakage in the opposite direction.
 		"stale shell":      {Shell: str("/no-such-prefix/bin/bash")},
-		"pwsh":             {Shell: str(`C:\Program Files\PowerShell\pwsh.exe`)},
+		"pwsh":             {Shell: str(`C:\Program Files\PowerShell\7\pwsh.exe`)},
 		"no shell":         {Shell: nil},
 		"undeclared shell": {Shell: str(`C:\tools\nu.exe`)},
 	})
+	posixPrefix, psPrefix := bridgeEnv+"=", "$env:"+bridgeEnv+" = '"
 	for name, want := range map[string]string{
-		"git bash":         "JEVLIN_TRACE_BRIDGE=",
-		"bash by path":     "JEVLIN_TRACE_BRIDGE=",
-		"stale shell":      "$env:JEVLIN_TRACE_BRIDGE = '",
-		"pwsh":             "$env:JEVLIN_TRACE_BRIDGE = '",
-		"no shell":         "$env:JEVLIN_TRACE_BRIDGE = '",
-		"undeclared shell": "$env:JEVLIN_TRACE_BRIDGE = '",
+		"git bash":         posixPrefix,
+		"bash by path":     posixPrefix,
+		"stale shell":      psPrefix,
+		"pwsh":             psPrefix,
+		"no shell":         psPrefix,
+		"undeclared shell": psPrefix,
 	} {
 		if !strings.HasPrefix(got[name], want) {
 			t.Errorf("win32 %s: the rewritten command begins %.40q, want the syntax beginning %q", name, got[name], want)

@@ -58,7 +58,7 @@ func TestGatherBinaryFactsChecksNothingWithoutAnOwnBinary(t *testing.T) {
 func TestGatherBinaryFactsSeesThroughPATH(t *testing.T) {
 	home := t.TempDir()
 	bin := filepath.Join(home, "bin")
-	if err := os.MkdirAll(bin, 0o755); err != nil {
+	if err := os.MkdirAll(bin, 0o750); err != nil {
 		t.Fatal(err)
 	}
 	name := "jevlin"
