@@ -27,6 +27,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -70,6 +71,46 @@ func classifyLaunch(exe, marker string) launchKind {
 		}
 	}
 	return npmLayoutKind(exe)
+}
+
+// ownBinaryAt is the binary an installation keeps at <home>/bin — a regular
+// file at the one name setup installs to and uninstall owns (ownedBinary) —
+// or "" when there is none there or home is unknown.
+func ownBinaryAt(home string, stat func(string) (os.FileInfo, error)) string {
+	if home == "" {
+		return ""
+	}
+	name := "jevlin"
+	if runtime.GOOS == "windows" {
+		name = "jevlin.exe"
+	}
+	own := filepath.Join(home, "bin", name)
+	if info, err := stat(own); err != nil || !info.Mode().IsRegular() {
+		return ""
+	}
+	return own
+}
+
+// adoptOwnBinary fills entry.ownBinary from the installation's home and,
+// when this process is an npm-managed copy while the installation keeps a
+// native binary, makes THAT binary the command the integrations run. Hooks
+// written by the npm copy then survive `npm uninstall`, the skill keeps
+// naming the installation's own copy, and a reinstall from either copy
+// refreshes the one set of entries instead of standing a second set beside
+// the first — with both binaries in the ownership reference (refFor), a
+// machine that already carries both sets collapses them to one on the next
+// install. A native process keeps its own path, and an installation with no
+// binary of its own (a pure npm install) is exactly as before.
+func adoptOwnBinary(entry binEntry, home string, getenv func(string) string, stat func(string) (os.FileInfo, error)) binEntry {
+	own := ownBinaryAt(home, stat)
+	if own == "" {
+		return entry
+	}
+	entry.ownBinary = own
+	if own != entry.command && classifyLaunch(entry.command, getenv("JEVLIN_LAUNCH")) != launchNative {
+		entry.command, entry.ownBinary = own, entry.command
+	}
+	return entry
 }
 
 // npmLayoutKind recognizes the files npm/install.js leaves around the binary:

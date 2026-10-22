@@ -1058,3 +1058,102 @@ func TestAgentsTierStatusShowsTheEffectiveBand(t *testing.T) {
 		t.Errorf("default falls back to the config band: %d %q", code, out)
 	}
 }
+
+// `jevlin setup` or `agents install` run from the npm copy over a native
+// install duplicated every hook: ownership asked for the running binary's
+// exact path, so the native-path entries read as another installation's and
+// an npm twin was appended beside each one — all 5 Claude Code hooks twice,
+// all 8 Cursor hooks twice — while the skill flipped to the npm path and
+// Hermes refused its own block (observed live on Windows). The installation's
+// binary at <home>/bin is now one of its own (binEntry.ownBinary, refFor),
+// and an npm-run install embeds that native path (adoptOwnBinary): the merge
+// replaces instead of appending, and a machine already carrying both sets
+// collapses them to one.
+func TestAnNpmRunInstallOverANativeInstallDuplicatesNothing(t *testing.T) {
+	m, ops := newFakeMachine("claude")
+	exe := "jevlin"
+	if runtime.GOOS == "windows" {
+		exe = "jevlin.exe"
+	}
+	native := filepath.Join("/home/u/.jevlin", "bin", exe)
+	npmCopy := filepath.Join("/home/u/npm/node_modules/jevlin/bin", exe)
+	m.files[slash(native)] = []byte("the native binary")
+	settings := "/home/u/.claude/settings.json"
+	skillPath := "/home/u/.claude/skills/jevlin/SKILL.md"
+	m.files[settings] = []byte(`{}`)
+
+	jevlinHandlers := func() (count int, commands []string) {
+		t.Helper()
+		if _, ok := m.files[settings]; !ok {
+			return 0, nil // uninstall may remove the whole file
+		}
+		for _, groups := range hooksOf(t, m, settings) {
+			list, _ := groups.([]any)
+			for _, g := range list {
+				hooks, _ := g.(map[string]any)["hooks"].([]any)
+				for _, h := range hooks {
+					cmd, _ := h.(map[string]any)["command"].(string)
+					if strings.Contains(cmd, "jevlin") {
+						count++
+						commands = append(commands, cmd)
+					}
+				}
+			}
+		}
+		return count, commands
+	}
+
+	// A native install first.
+	ops.executable = func() (string, error) { return native, nil }
+	if code, out, _ := runAgents(t, ops, nil, "install", "-config", testCfg, "-yes"); code != exitOK {
+		t.Fatalf("native install: %d\n%s", code, out)
+	}
+	installed, _ := jevlinHandlers()
+	if installed == 0 {
+		t.Fatal("the native install wrote no hooks")
+	}
+
+	// The pre-fix sequence, reproduced: run from the npm copy while the
+	// installation home resolves elsewhere, so no binary of the
+	// installation's own is found and ownership falls back to the running
+	// path alone. Every hook doubles.
+	ops.executable = func() (string, error) { return npmCopy, nil }
+	foreign := map[string]string{"JEVLIN_HOME": "/home/u/elsewhere", "JEVLIN_LAUNCH": "npm:global"}
+	if code, out, _ := runAgents(t, ops, foreign, "install", "-config", testCfg, "-yes"); code != exitOK {
+		t.Fatalf("npm install without an own binary: %d\n%s", code, out)
+	}
+	if doubled, _ := jevlinHandlers(); doubled != 2*installed {
+		t.Fatalf("the reproduction did not double the hooks: %d of %d", doubled, 2*installed)
+	}
+
+	// The fixed run, from the npm copy with the installation's own binary in
+	// view: one set, every command running the native path, and the npm
+	// path gone from the file and the skill alike.
+	if code, out, _ := runAgents(t, ops, map[string]string{"JEVLIN_LAUNCH": "npm:global"}, "install", "-config", testCfg, "-yes"); code != exitOK {
+		t.Fatalf("npm install over the native one: %d\n%s", code, out)
+	}
+	count, commands := jevlinHandlers()
+	if count != installed {
+		t.Fatalf("hooks after the npm-run install: %d, want %d\n%v", count, installed, commands)
+	}
+	for _, cmd := range commands {
+		if strings.Contains(cmd, "node_modules") {
+			t.Errorf("a hook still runs the npm copy: %q", cmd)
+		}
+	}
+	if raw := string(m.files[settings]); strings.Contains(raw, "node_modules") {
+		t.Errorf("the settings file still names the npm copy:\n%s", raw)
+	}
+	if skill := string(m.files[skillPath]); strings.Contains(skill, "node_modules") || !strings.Contains(skill, exe) {
+		t.Errorf("the skill does not teach the installation's own binary:\n%.200s", skill)
+	}
+
+	// Uninstall run from the npm copy removes both installations' spellings
+	// — its reference carries the running path and the installation's own.
+	if code, out, _ := runAgents(t, ops, map[string]string{"JEVLIN_LAUNCH": "npm:global"}, "uninstall", "-config", testCfg, "-yes"); code != exitOK {
+		t.Fatalf("uninstall: %d\n%s", code, out)
+	}
+	if left, commands := jevlinHandlers(); left != 0 {
+		t.Fatalf("hooks left after uninstall: %v", commands)
+	}
+}
