@@ -1314,7 +1314,7 @@ func TestBridgedSearchCarriesItsHostsHarness(t *testing.T) {
 				} else {
 					command = skillBlockFor(t, in.renderedSkill(host), sh.kind, "search").body
 				}
-				bridged := bridgedCommand(t, host, command, sh.kind)
+				bridged := bridgedCommand(t, host, command, sh.kind, runtime.GOOS)
 				if host == "codex" {
 					bridged = codexBridgedCommand(t, in, command)
 				}

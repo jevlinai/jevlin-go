@@ -27,6 +27,35 @@
 // PowerShell is looked up as a program name and the search never runs (dropin-miner#68).
 const HOST_SHELL = "{{HOST_SHELL}}"
 
+// The names ShellSelect's META table reads as a POSIX login shell and as
+// PowerShell, kept to the shells whose bridge syntax this adapter writes.
+const POSIX_SHELL_NAMES = new Set(["bash", "sh", "zsh", "ksh", "dash"])
+const POWERSHELL_NAMES = new Set(["pwsh", "powershell"])
+
+// hostShell answers PER CALL on Windows, where the install-time declaration
+// alone is wrong for part of the fleet: opencode resolves its shell at
+// runtime (packages/core/src/shell/select.ts), and `$SHELL` wins whenever it
+// is set and usable — environment() is select(process.env.SHELL) — before
+// win() tries pwsh, powershell, Git Bash and cmd. Started from Git Bash,
+// which exports SHELL=/usr/bin/bash, opencode runs its bash tool in bash,
+// and the PowerShell wrapper the Windows declaration bakes in was read by
+// bash as a command named `$env:JEVLIN_TRACE_BRIDGE`: every search failed.
+// So the one signal opencode itself consults is mirrored here: a $SHELL
+// named like a POSIX shell means the POSIX prefix, one named like
+// PowerShell means the wrapper, and anything else — unset, a shell opencode
+// would refuse, or a config-chosen shell this plugin cannot see — keeps the
+// installer's declared answer. A wrong guess here costs exactly what the
+// declaration already cost: that call's lineage, never the command.
+const hostShell = () => {
+  if (process.platform !== "win32" || HOST_SHELL !== "powershell") return HOST_SHELL
+  const s = process.env.SHELL
+  if (typeof s !== "string" || s === "") return HOST_SHELL
+  const base = s.split(/[\\/]/).pop().toLowerCase().replace(/\.exe$/, "")
+  if (POSIX_SHELL_NAMES.has(base)) return "posix"
+  if (POWERSHELL_NAMES.has(base)) return "powershell"
+  return HOST_SHELL
+}
+
 // The longest command line a rewritten command may reach on this platform.
 // Windows refuses to start a process whose command line is over 32,767
 // characters (node reports ENAMETOOLONG), and the envelope cap alone allows
@@ -300,13 +329,14 @@ export const JevlinLineage = async ({ client }) => {
         } catch {
           // no history is fine; the ids still thread the search
         }
-        const bridge = traceBridge(env, bridgeBudgetFor(cmd, HOST_SHELL, HOST_COMMAND_CHAR_LIMIT))
+        const shell = hostShell()
+        const bridge = traceBridge(env, bridgeBudgetFor(cmd, shell, HOST_COMMAND_CHAR_LIMIT))
         if (bridge === null) return
         // H-R4: a bridge already on the command is not ours until we put it
         // there. Every assignment we can prove standalone is removed and
         // this call's own is prepended; a command carrying one we cannot
         // remove with certainty is left exactly as it is.
-        const rewritten = withTraceBridge(cmd, bridge, HOST_SHELL)
+        const rewritten = withTraceBridge(cmd, bridge, shell)
         if (rewritten === null) return
         output.args.command = rewritten
       } catch {

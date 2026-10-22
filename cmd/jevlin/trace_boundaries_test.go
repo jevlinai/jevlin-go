@@ -549,3 +549,73 @@ func TestTraceSourceBudget(t *testing.T) {
 		t.Fatal("incomplete transcript entry retained history")
 	}
 }
+
+// The install-time declaration says PowerShell for opencode on Windows, but
+// opencode resolves its shell at runtime and $SHELL wins whenever it is set
+// and usable (ShellSelect: environment() is select(process.env.SHELL),
+// before win() tries pwsh, powershell, Git Bash and cmd). Started from Git
+// Bash, which exports SHELL=/usr/bin/bash, every search failed: bash read
+// the PowerShell wrapper as a command named $env:JEVLIN_TRACE_BRIDGE, and
+// the model retried until the run timed out (observed live on Windows).
+// The plugin now mirrors the one signal opencode itself consults, per call.
+func TestOpencodePluginWritesTheShellOpencodeRuns(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatal("node is required to verify the embedded opencode plugin")
+	}
+	script := `
+ const fs = await import('node:fs');
+ const input = JSON.parse(fs.readFileSync(0,'utf8'));
+ Object.defineProperty(process, 'platform', { value: input.platform });
+ const plugin = await import('data:text/javascript;base64,'+Buffer.from(input.plugin).toString('base64'));
+ const result = {};
+ for (const [name, shellEnv] of Object.entries(input.cases)) {
+  if (shellEnv === null) delete process.env.SHELL; else process.env.SHELL = shellEnv;
+  const hooks = await plugin.JevlinLineage({client:{session:{messages:async()=>({data:[]})}}});
+  const output = {args:{command:'jevlin search query'}};
+  await hooks['tool.execute.before']({tool:'bash',sessionID:'synthetic',callID:'call'},output);
+  result[name] = output.args.command;
+ }
+ process.stdout.write(JSON.stringify(result));`
+	run := func(platform string, sh shellKind, cases map[string]any) map[string]string {
+		t.Helper()
+		input, _ := json.Marshal(map[string]any{"plugin": renderAgentScript(opencodePluginJS, sh, testCfg), "cases": cases, "platform": platform})
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, node, "--input-type=module", "-e", script) // #nosec G204 -- fixed test script and local Node runtime; synthetic input on stdin
+		cmd.Stdin = strings.NewReader(string(input))
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("plugin: %v\n%s", err, output)
+		}
+		var got map[string]string
+		if err := json.Unmarshal(output, &got); err != nil {
+			t.Fatalf("%v\n%s", err, output)
+		}
+		return got
+	}
+
+	got := run("win32", shellPowerShell, map[string]any{
+		"git bash":         "/usr/bin/bash",
+		"git bash by path": `C:\Program Files\Git\bin\bash.exe`,
+		"pwsh":             `C:\Program Files\PowerShell\7\pwsh.exe`,
+		"no shell":         nil,
+		"undeclared shell": `C:\tools\nu.exe`,
+	})
+	for name, want := range map[string]string{
+		"git bash":         "JEVLIN_TRACE_BRIDGE=",
+		"git bash by path": "JEVLIN_TRACE_BRIDGE=",
+		"pwsh":             "$env:JEVLIN_TRACE_BRIDGE = '",
+		"no shell":         "$env:JEVLIN_TRACE_BRIDGE = '",
+		"undeclared shell": "$env:JEVLIN_TRACE_BRIDGE = '",
+	} {
+		if !strings.HasPrefix(got[name], want) {
+			t.Errorf("win32 %s: the rewritten command begins %.40q, want the syntax beginning %q", name, got[name], want)
+		}
+	}
+	// Off Windows the declaration is the whole answer, whatever $SHELL says.
+	posix := run("linux", shellPOSIX, map[string]any{"pwsh in the environment": "/usr/bin/pwsh"})
+	if cmd := posix["pwsh in the environment"]; !strings.HasPrefix(cmd, "JEVLIN_TRACE_BRIDGE=") {
+		t.Errorf("linux: the rewritten command begins %.40q, want the POSIX prefix", cmd)
+	}
+}
