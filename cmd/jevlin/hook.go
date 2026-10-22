@@ -550,10 +550,24 @@ func hookLineage(ops hookOps, hc hookContext, payload []byte, stdout io.Writer) 
 			// Assigned every time, so the orchestrator's next call clears it.
 			l.ParentSessionID = env.ParentSessionID
 			l.Seq++
+			// Aliases env.History, which capTraceForCommandLine below
+			// trims IN PLACE. Safe only because updateLineage serializes
+			// and writes before this function returns — move the lineage
+			// write after the trim and the file quietly loses the full
+			// history it exists to keep.
 			l.History = env.History
 		})
 	}
 
+	if isShell {
+		// The lineage file above keeps the full history; the inline copy is
+		// trimmed to what the host's command line can carry. nil means not
+		// even the bare envelope fits beside this command, and the command
+		// then goes out untouched rather than too long to run.
+		if env = capTraceForCommandLine(env, bridgeShell, command); env == nil {
+			return
+		}
+	}
 	bridge, err := encodeTraceBridge(env)
 	if err != nil {
 		return

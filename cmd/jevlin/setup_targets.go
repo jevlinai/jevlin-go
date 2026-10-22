@@ -117,7 +117,7 @@ func (r *setupRun) agentsStep() int {
 	}
 
 	r.printf("%s\n", agentsParagraph())
-	entry := binEntry{command: r.exe, cfg: r.cfgPath}
+	entry := adoptOwnBinary(binEntry{command: r.exe, cfg: r.cfgPath}, r.home, r.d.getenv, ops.stat)
 	if r.dry && len(r.configPlanData) > 0 {
 		// config() printed what it would write (fresh) or add (migrated)
 		// but never published it, so there is nothing at r.cfgPath yet —

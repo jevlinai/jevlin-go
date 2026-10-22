@@ -1610,6 +1610,34 @@
   "want": "set API_TOKEN=[REDACTED]"
  },
  {
+  "name": "cmd/the quote-before-name set idiom encloses its value",
+  "host": "",
+  "account": "",
+  "in": "set \"API_TOKEN=your token\" && echo ok",
+  "want": "set \"API_TOKEN=[REDACTED]\" && echo ok"
+ },
+ {
+  "name": "cmd/a line-leading set takes the moved quote with its line",
+  "host": "",
+  "account": "",
+  "in": "set API_TOKEN=your\" token",
+  "want": "set API_TOKEN=[REDACTED]"
+ },
+ {
+  "name": "survives/powershell 5.1 moved the quote into the value",
+  "host": "",
+  "account": "",
+  "in": "run it with API_TOKEN=your\" token",
+  "want": "run it with API_TOKEN=[REDACTED]\" token"
+ },
+ {
+  "name": "survives/powershell 5.1 left the quote before the name unclosed",
+  "host": "",
+  "account": "",
+  "in": "\"DB_PASSWORD=correct horse battery",
+  "want": "\"DB_PASSWORD=[REDACTED] horse battery"
+ },
+ {
   "name": "survives/set with a lowercase name keeps the sentence",
   "host": "",
   "account": "",
