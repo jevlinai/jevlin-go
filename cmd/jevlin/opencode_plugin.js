@@ -21,6 +21,12 @@
 
 // {{TRACE_COMMON}}
 
+// For hostShell's usability mirror only: whether a shell opencode would
+// resolve exists as a file. Static like the shared source's own imports —
+// hostShell answers inside a synchronous rewrite.
+import { statSync as shellStatSync } from "node:fs"
+import { delimiter as shellPathDelimiter, join as shellPathJoin } from "node:path"
+
 // The shell opencode runs its bash tool in on THIS machine, written in by
 // the installer from the host's declaration. The bridge is an environment
 // assignment, and its syntax is the shell's: a POSIX prefix handed to
@@ -40,20 +46,70 @@ const POWERSHELL_NAMES = new Set(["pwsh", "powershell"])
 // which exports SHELL=/usr/bin/bash, opencode runs its bash tool in bash,
 // and the PowerShell wrapper the Windows declaration bakes in was read by
 // bash as a command named `$env:JEVLIN_TRACE_BRIDGE`: every search failed.
-// So the one signal opencode itself consults is mirrored here: a $SHELL
-// named like a POSIX shell means the POSIX prefix, one named like
-// PowerShell means the wrapper, and anything else — unset, a shell opencode
-// would refuse, or a config-chosen shell this plugin cannot see — keeps the
-// installer's declared answer. A wrong guess here costs exactly what the
-// declaration already cost: that call's lineage, never the command.
+// So the signal opencode itself consults is mirrored here, usability
+// included: select.ts runs $SHELL only when executable() resolves it — a
+// unix-rooted path named bash resolves to Git Bash's bash.exe through git
+// on PATH, any other resolved absolute path must exist as a file, a bare
+// name is found on PATH — and falls back to win()'s PowerShell when it
+// cannot. A $SHELL named like a POSIX shell that this cannot see the same
+// way therefore keeps the installer's declared answer, because answering
+// "posix" for a shell opencode will not run hands PowerShell a prefix it
+// reads as a program name: the very failure this resolution exists to fix,
+// in the opposite direction. What can still miss is a shell opencode's own
+// config chose, which this plugin cannot see; that case behaves exactly as
+// the install-time declaration always did.
 const hostShell = () => {
   if (process.platform !== "win32" || HOST_SHELL !== "powershell") return HOST_SHELL
   const s = process.env.SHELL
   if (typeof s !== "string" || s === "") return HOST_SHELL
   const base = s.split(/[\\/]/).pop().toLowerCase().replace(/\.exe$/, "")
-  if (POSIX_SHELL_NAMES.has(base)) return "posix"
+  if (POSIX_SHELL_NAMES.has(base) && usablePosixShell(s, base)) return "posix"
   if (POWERSHELL_NAMES.has(base)) return "powershell"
   return HOST_SHELL
+}
+
+const shellIsFile = (p) => {
+  try {
+    return shellStatSync(p).isFile()
+  } catch {
+    return false
+  }
+}
+
+// Git Bash's bash.exe the way select.ts gitbash() finds it: git on PATH,
+// then <git>/../../bin/bash.exe. "" when either is missing.
+const gitBashExe = () => {
+  for (const dir of (process.env.PATH || "").split(shellPathDelimiter)) {
+    if (!dir) continue
+    const git = shellPathJoin(dir, "git.exe")
+    if (!shellIsFile(git)) continue
+    const bash = shellPathJoin(git, "..", "..", "bin", "bash.exe")
+    if (shellIsFile(bash)) return bash
+  }
+  return ""
+}
+
+const onShellPath = (name) => {
+  for (const dir of (process.env.PATH || "").split(shellPathDelimiter)) {
+    if (dir && (shellIsFile(shellPathJoin(dir, name)) || shellIsFile(shellPathJoin(dir, name + ".exe")))) return true
+  }
+  return false
+}
+
+// usablePosixShell mirrors select.ts full()+executable() for the POSIX
+// names this adapter writes a prefix for: would opencode actually run this
+// $SHELL, rather than fall back to PowerShell?
+const usablePosixShell = (s, base) => {
+  if (/[\\/]/.test(s)) {
+    // A path. Unix-rooted bash resolves to Git Bash when git is on PATH
+    // (SHELL=/usr/bin/bash is what Git Bash itself exports); otherwise the
+    // path itself must exist as a file.
+    if (s.startsWith("/") && base === "bash" && gitBashExe() !== "") return true
+    return shellIsFile(s)
+  }
+  // A bare name: bash through Git Bash first, then any of them on PATH.
+  if (base === "bash" && gitBashExe() !== "") return true
+  return onShellPath(s)
 }
 
 // The longest command line a rewritten command may reach on this platform.

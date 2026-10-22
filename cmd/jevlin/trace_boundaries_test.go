@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -563,21 +565,43 @@ func TestOpencodePluginWritesTheShellOpencodeRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal("node is required to verify the embedded opencode plugin")
 	}
+	// A Git Bash the usability mirror can see: git.exe on PATH, bash.exe at
+	// <git>/../../bin, as select.ts gitbash() walks it. Plain files are
+	// enough — the mirror asks only whether they exist.
+	root := t.TempDir()
+	gitCmd := filepath.Join(root, "git", "cmd")
+	gitBin := filepath.Join(root, "git", "bin")
+	for dir, name := range map[string]string{gitCmd: "git.exe", gitBin: "bash.exe"} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	realBash := filepath.Join(gitBin, "bash.exe")
+
+	type shellCase struct {
+		Shell *string `json:"shell"`
+		Path  string  `json:"path"`
+	}
+	str := func(s string) *string { return &s }
 	script := `
  const fs = await import('node:fs');
  const input = JSON.parse(fs.readFileSync(0,'utf8'));
  Object.defineProperty(process, 'platform', { value: input.platform });
  const plugin = await import('data:text/javascript;base64,'+Buffer.from(input.plugin).toString('base64'));
  const result = {};
- for (const [name, shellEnv] of Object.entries(input.cases)) {
-  if (shellEnv === null) delete process.env.SHELL; else process.env.SHELL = shellEnv;
+ for (const [name, c] of Object.entries(input.cases)) {
+  if (c.shell === null) delete process.env.SHELL; else process.env.SHELL = c.shell;
+  process.env.PATH = c.path;
   const hooks = await plugin.JevlinLineage({client:{session:{messages:async()=>({data:[]})}}});
   const output = {args:{command:'jevlin search query'}};
   await hooks['tool.execute.before']({tool:'bash',sessionID:'synthetic',callID:'call'},output);
   result[name] = output.args.command;
  }
  process.stdout.write(JSON.stringify(result));`
-	run := func(platform string, sh shellKind, cases map[string]any) map[string]string {
+	run := func(platform string, sh shellKind, cases map[string]shellCase) map[string]string {
 		t.Helper()
 		input, _ := json.Marshal(map[string]any{"plugin": renderAgentScript(opencodePluginJS, sh, testCfg), "cases": cases, "platform": platform})
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -595,16 +619,23 @@ func TestOpencodePluginWritesTheShellOpencodeRuns(t *testing.T) {
 		return got
 	}
 
-	got := run("win32", shellPowerShell, map[string]any{
-		"git bash":         "/usr/bin/bash",
-		"git bash by path": `C:\Program Files\Git\bin\bash.exe`,
-		"pwsh":             `C:\Program Files\PowerShell\7\pwsh.exe`,
-		"no shell":         nil,
-		"undeclared shell": `C:\tools\nu.exe`,
+	got := run("win32", shellPowerShell, map[string]shellCase{
+		// Git Bash's own export, with git visible: the live failure shape.
+		"git bash": {Shell: str("/usr/bin/bash"), Path: gitCmd},
+		// A bash named by a path that exists.
+		"bash by path": {Shell: str(realBash)},
+		// A stale posix $SHELL opencode cannot resolve: select.ts falls back
+		// to PowerShell, and so must the mirror — a posix prefix here is the
+		// dropin-miner#68 breakage in the opposite direction.
+		"stale shell":      {Shell: str("/no-such-prefix/bin/bash")},
+		"pwsh":             {Shell: str(`C:\Program Files\PowerShell\pwsh.exe`)},
+		"no shell":         {Shell: nil},
+		"undeclared shell": {Shell: str(`C:\tools\nu.exe`)},
 	})
 	for name, want := range map[string]string{
 		"git bash":         "JEVLIN_TRACE_BRIDGE=",
-		"git bash by path": "JEVLIN_TRACE_BRIDGE=",
+		"bash by path":     "JEVLIN_TRACE_BRIDGE=",
+		"stale shell":      "$env:JEVLIN_TRACE_BRIDGE = '",
 		"pwsh":             "$env:JEVLIN_TRACE_BRIDGE = '",
 		"no shell":         "$env:JEVLIN_TRACE_BRIDGE = '",
 		"undeclared shell": "$env:JEVLIN_TRACE_BRIDGE = '",
@@ -614,7 +645,7 @@ func TestOpencodePluginWritesTheShellOpencodeRuns(t *testing.T) {
 		}
 	}
 	// Off Windows the declaration is the whole answer, whatever $SHELL says.
-	posix := run("linux", shellPOSIX, map[string]any{"pwsh in the environment": "/usr/bin/pwsh"})
+	posix := run("linux", shellPOSIX, map[string]shellCase{"pwsh in the environment": {Shell: str("/usr/bin/pwsh")}})
 	if cmd := posix["pwsh in the environment"]; !strings.HasPrefix(cmd, "JEVLIN_TRACE_BRIDGE=") {
 		t.Errorf("linux: the rewritten command begins %.40q, want the POSIX prefix", cmd)
 	}
