@@ -326,6 +326,17 @@ func TestPiExtensionBindsHistoryToTheCurrentToolCall(t *testing.T) {
 		// after it belongs to a later turn and must not be picked up.
 		"later turn ignored": {{Session: "s", ToolCallID: "c-old", Command: piSearchCommand,
 			Entries: append(append([]any{}, previousTurn...), piUser("second question"), piAssistant(current, "c1"))}},
+		// A tool result sits between the prose and the call that searches:
+		// its text parts are a tool's output, never the assistant's prose,
+		// and the scan must step over it to the real prose behind it.
+		"tool result between": {{Session: "s", ToolCallID: "c1", Command: piSearchCommand,
+			Entries: []any{piUser("second question"), piAssistant(current, "c-read"),
+				piToolResult("c-read", "read", 5, false), piAssistant("", "c1")}}},
+		// The only text between the turn's start and the call is a tool
+		// result's: there is no assistant prose to send, so none is sent.
+		"only tool output in the turn": {{Session: "s", ToolCallID: "c1", Command: piSearchCommand,
+			Entries: []any{piUser("second question"), piAssistant("", "c-read"),
+				piToolResult("c-read", "read", 5, false), piAssistant("", "c1")}}},
 	}
 	got := runPiExtension(t, cases)
 
@@ -346,6 +357,20 @@ func TestPiExtensionBindsHistoryToTheCurrentToolCall(t *testing.T) {
 	for _, name := range []string{"unrelated call", "first search in a new turn", "no turn boundary"} {
 		if strings.Contains(got[name][0].Command, "PREVIOUS") {
 			t.Errorf("%s: previous-turn prose reached the bridge", name)
+		}
+	}
+	stepped := piBridge(t, got["tool result between"][0])
+	if len(stepped.History) != 1 || stepped.History[0].Text != current {
+		t.Fatalf("the scan did not step over a tool result to the prose behind it: %+v", stepped.History)
+	}
+	if env := piBridge(t, got["only tool output in the turn"][0]); len(env.History) != 0 {
+		t.Errorf("a tool result's text was sent as assistant prose: %+v", env.History)
+	}
+	for _, name := range []string{"tool result between", "only tool output in the turn"} {
+		for _, h := range piBridge(t, got[name][0]).History {
+			if strings.Contains(h.Text, "TOOL OUTPUT") {
+				t.Errorf("%s: a tool's output reached the bridge history", name)
+			}
 		}
 	}
 }

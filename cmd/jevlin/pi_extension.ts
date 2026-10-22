@@ -71,7 +71,11 @@ const startSession = async () => {
 // parts (packages/ai/src/types.ts: AssistantMessage.content is
 // (TextContent | ThinkingContent | ToolCall)[]), and only `text` parts are
 // visible assistant prose — thinking and toolCall parts are not sent.
+// The role is checked here, not assumed: a toolResult entry also carries
+// text parts, and a tool's output is not the assistant's prose and must
+// never become history (invariant 2 sends assistant text, nothing else).
 const assistantTextParts = (entry) => {
+  if (entry?.type !== "message" || entry?.message?.role !== "assistant") return []
   const content = entry?.message?.content
   if (!Array.isArray(content)) return []
   return content
