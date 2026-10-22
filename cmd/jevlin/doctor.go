@@ -210,6 +210,11 @@ type doctorFacts struct {
 	// for `up to date`. Gathered by cmdDoctor beside the config facts.
 	Update updateFacts
 
+	// Binary is which copy a bare `jevlin` runs, next to the one this
+	// installation keeps at <home>/bin (gatherBinaryFacts). Checked only
+	// when the installation keeps one.
+	Binary binaryFacts
+
 	// Now is sampled once, by the gatherer. Nothing downstream calls
 	// time.Now(), so a judgment over these facts is reproducible.
 	Now time.Time
@@ -229,6 +234,9 @@ func assembleDoctor(f doctorFacts) []doctorCheck {
 		doctorIntakeCheck(f),
 		doctorRecordingCheck(f),
 		doctorUpdateCheck(f),
+	}
+	if f.Binary.Checked {
+		checks = append(checks, doctorBinaryCheck(f.Binary))
 	}
 	if f.Wallet.Checked {
 		checks = append(checks, doctorWalletCheck(f.Wallet))
@@ -551,6 +559,7 @@ func cmdDoctor(args []string, stdout, stderr io.Writer) int {
 	f.ConfigSource = src
 	f.StateDir = cfg.Mining.StateDir
 	f.Update = gatherUpdateFacts(cfg, os.Getenv)
+	f.Binary = gatherBinaryFacts(os.Getenv)
 	if walletACL.managed {
 		f.Wallet = inspectWalletAccess(doctorWalletDir(src, os.Getenv))
 	}

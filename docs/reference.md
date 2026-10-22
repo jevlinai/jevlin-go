@@ -324,6 +324,7 @@ though it also forgets a hold.
 | earning | This epoch has enough verified searches to qualify. |
 | intake writable | This process can write where a search records. Probes with one inert non-`.json` file, then removes it. |
 | recording | Recorded searches are waiting, queued, or verified at the AS; or nothing ran recently. |
+| binary on PATH | A bare `jevlin` runs this installation's own binary. `NO` names the copy that answers instead — an npm shim earlier on PATH is the common one — or says nothing on PATH answers at all. Checked only when the installation keeps a binary at its `bin`. The agents' own files name the binary by full path and are unaffected either way. |
 | up to date | The daily release check found this copy current, or has not run yet. `NO` names the newer release and the one command that applies it here. `UNKNOWN` when the last check failed, is still running, could not be read, is dated in the future, or ran more than three days ago, which says the hooks that start it may not be running. |
 | wallet access | Windows only: nobody but you can read the wallet. |
 | state access | Windows only: the state directory and its credentials have an access list and an owner, who is you, SYSTEM or Administrators. Anyone else the list names is shown, and is `OK`: an agent's sandbox is expected there. |
