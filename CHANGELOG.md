@@ -10,6 +10,18 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## Unreleased
+
+- **The skill is published on its own.** `skills/jevlin/SKILL.md` is the same skill setup
+  writes, with `jevlin` found on PATH instead of by its full path, so an agent can take it
+  from a marketplace: `npx skills add jevlinai/jevlin-go`, Claude Code's
+  `/plugin install jevlin --marketplace jevlinai/jevlin-go`, Codex's
+  `codex plugin marketplace add jevlinai/jevlin-go`, and Cursor's Marketplace. The manifests
+  are `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `plugin.json` (the
+  Agent Plugins standard) and `.agents/plugins/marketplace.json`. The binary still comes from
+  the install; the skill says so when it is missing, and a marketplace install carries no
+  hooks or allow rules — `jevlin setup` writes those.
+
 ## v0.4.3 — 2026-10-20
 
 The search answer is now the router's own, and a search can carry more than one wording of

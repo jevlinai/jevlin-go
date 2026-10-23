@@ -1,0 +1,16 @@
+{
+  "name": "jevlin",
+  "description": "Jevlin: free multi-provider web search for coding agents",
+  "owner": {
+    "name": "Jevlin",
+    "url": "https://jevlin.ai"
+  },
+  "plugins": [
+    {
+      "name": "jevlin",
+      "source": "./",
+      "description": "Web search through the Jevlin router: one request, eight providers, merged sources with a per-provider receipt.",
+      "version": "0.4.3"
+    }
+  ]
+}

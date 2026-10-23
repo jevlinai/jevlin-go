@@ -31,6 +31,21 @@ jevlin setup
 Install it globally, never with `npx`: setup writes the binary's path into your agents' skills
 and hooks, and npm throws away an `npx` cache or a project's `node_modules`.
 
+The skill the agent reads is also published on its own, for an agent that installs from a
+marketplace. The binary still comes from the install above; the skill says so when it is
+missing.
+
+```bash
+npx skills add jevlinai/jevlin-go                          # any agent with skills (skills.sh)
+/plugin install jevlin --marketplace jevlinai/jevlin-go    # Claude Code, 2.1.275 or later
+claude plugin marketplace add jevlinai/jevlin-go           # Claude Code, older: then /plugin install jevlin@jevlin
+codex plugin marketplace add jevlinai/jevlin-go            # Codex CLI: then /plugins
+```
+
+Cursor loads the same package from its Marketplace once it is listed there, and from the
+repository until then. An agent can do the whole install itself from
+[jevlin.ai/agents.md](https://jevlin.ai/agents.md).
+
 Without Node, download the archive for your OS and architecture from the
 [releases page](https://github.com/jevlinai/jevlin-go/releases) and verify it against that
 release's `checksums.txt`. Put `jevlin` in a directory only you can write, such as
