@@ -68,7 +68,8 @@ jevlin status
 jevlin agents status
 ```
 
-It is done when `agents status` lists this agent as installed. A row that
+It is done when `status` reports nothing incomplete and `agents status`
+lists this agent as installed, the same two things step 1 checks. A row that
 still says `not installed` after setup is one setup could not answer for the
 user (the Codex question above, or a file it refused to touch): show them the
 row and ask them to run `jevlin agents install -client <agent>` at a terminal
