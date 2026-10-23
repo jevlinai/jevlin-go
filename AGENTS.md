@@ -743,7 +743,11 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `TestTheCodexGateNamesExactlyTheEventsTheInstallWrites`, and
   `TestCodexEntriesStandDownForAnotherHostsPayload` and `TestWhatContradictsACodexEntry` hold the
   gate. Codex's PreToolUse answers only this installation's exact rendered search, with the bridge
-  and an allow, and is silent for anything else (`TestCodexRewritesAndAllowsOnlyTheRenderedSearch`).
+  and an allow, and its exact rendered fetch, with an allow and the input as it came, and is
+  silent for anything else (`TestCodexRewritesAndAllowsOnlyTheRenderedSearch`,
+  `TestCodexAllowsTheRenderedFetchAsIs`). Claude Code's lineage hook allows the rendered fetch the
+  same way (`allowRenderedFetch`), and Cursor's recognizer knows it as a form
+  (`renderedFormsForShell`); `fetch_allow_test.go` holds all three to the exact command.
 - **Whose lineage file a search may use** — `search.go`'s `searchTrace` owns the channel rule and
   the declared file's session guard; `miner.go`'s `lineageForCwd` owns the walk, which with a
   session exported climbs past a file of another session to the searching session's own, and

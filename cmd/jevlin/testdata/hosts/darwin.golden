@@ -108,6 +108,15 @@ Bash("/Users/u/.jevlin/bin/jevlin" search -config "/Users/u/.jevlin/jevlin.toml"
 -- rule
 Bash(/Users/u/.jevlin/bin/jevlin search -config "/Users/u/.jevlin/jevlin.toml":*)
 "Bash(/Users/u/.jevlin/bin/jevlin search -config \"/Users/u/.jevlin/jevlin.toml\":*)"
+-- rule
+Bash('/Users/u/.jevlin/bin/jevlin' fetch -config '/Users/u/.jevlin/jevlin.toml' --stdin:*)
+"Bash('/Users/u/.jevlin/bin/jevlin' fetch -config '/Users/u/.jevlin/jevlin.toml' --stdin:*)"
+-- rule
+Bash("/Users/u/.jevlin/bin/jevlin" fetch -config "/Users/u/.jevlin/jevlin.toml" --stdin:*)
+"Bash(\"/Users/u/.jevlin/bin/jevlin\" fetch -config \"/Users/u/.jevlin/jevlin.toml\" --stdin:*)"
+-- rule
+Bash(/Users/u/.jevlin/bin/jevlin fetch -config "/Users/u/.jevlin/jevlin.toml" --stdin:*)
+"Bash(/Users/u/.jevlin/bin/jevlin fetch -config \"/Users/u/.jevlin/jevlin.toml\" --stdin:*)"
 
 == claude: bridge prefix its lineage adapter writes
 -- skill search block (posix)
@@ -196,7 +205,7 @@ JSON
 -- skill block (bash)
 matches the rendered `search` for posix
 -- skill block (bash)
-refused
+matches the rendered `fetch` for posix
 -- skill block (bash)
 matches the rendered `agents prefer` for posix
 -- skill block (bash)

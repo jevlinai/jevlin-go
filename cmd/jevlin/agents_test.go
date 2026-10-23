@@ -201,8 +201,8 @@ func TestAgentsInstallWritesClaudeSkillAndMergesHooksIntoSettings(t *testing.T) 
 		t.Error("a key reached settings.json")
 	}
 	allow := allowOf(t, m, settings)
-	if len(allow) != 4 || allow[0] != "Bash(git status:*)" {
-		t.Fatalf("the user's own allow rule must come first, then our three spellings: %v", allow)
+	if len(allow) != 7 || allow[0] != "Bash(git status:*)" {
+		t.Fatalf("the user's own allow rule must come first, then our three spellings of the search and three of the fetch: %v", allow)
 	}
 	// The config path is absolutized by the host (a drive letter on Windows),
 	// so match around it rather than on it.
@@ -210,6 +210,12 @@ func TestAgentsInstallWritesClaudeSkillAndMergesHooksIntoSettings(t *testing.T) 
 		{`Bash('/home/u/.jevlin/bin/jevlin' search -config '`, `jevlin.toml':*)`},
 		{`Bash("/home/u/.jevlin/bin/jevlin" search -config "`, `jevlin.toml":*)`},
 		{`Bash(/home/u/.jevlin/bin/jevlin search -config "`, `jevlin.toml":*)`},
+		// The fetch has no human form: each rule ends at --stdin, where the
+		// request on stdin begins, and allows nothing the skill does not
+		// render.
+		{`Bash('/home/u/.jevlin/bin/jevlin' fetch -config '`, `jevlin.toml' --stdin:*)`},
+		{`Bash("/home/u/.jevlin/bin/jevlin" fetch -config "`, `jevlin.toml" --stdin:*)`},
+		{`Bash(/home/u/.jevlin/bin/jevlin fetch -config "`, `jevlin.toml" --stdin:*)`},
 	} {
 		r := allow[i+1]
 		if !strings.HasPrefix(r, want.prefix) || !strings.HasSuffix(r, want.suffix) {
@@ -218,7 +224,7 @@ func TestAgentsInstallWritesClaudeSkillAndMergesHooksIntoSettings(t *testing.T) 
 	}
 	for _, r := range allow[1:] {
 		if strings.Contains(r, "hook") || strings.Contains(r, "flush") || strings.Contains(r, "wallet") {
-			t.Errorf("a rule allows more than search: %s", r)
+			t.Errorf("a rule allows more than search and fetch: %s", r)
 		}
 	}
 
@@ -528,11 +534,11 @@ func TestAgentsHookAndAllowRuleMatchingSurvivesAWindowsStyleBinaryPath(t *testin
 			t.Errorf("Claude %s after two installs: want 1 entry, got %d: %v", ev, len(list), list)
 		}
 	}
-	// Three spellings of the same prefix rule, and still three after a
-	// second install: the single-quoted path the skill renders, and the
-	// %q-quoted and bare ones an agent may type instead.
-	if allow := allowOf(t, m, settings); len(allow) != 3 {
-		t.Fatalf("Claude allow rules after two installs: want 3, got %d: %v", len(allow), allow)
+	// Three spellings of each prefix rule, the search's and the fetch's, and
+	// still six after a second install: the single-quoted path the skill
+	// renders, and the %q-quoted and bare ones an agent may type instead.
+	if allow := allowOf(t, m, settings); len(allow) != 6 {
+		t.Fatalf("Claude allow rules after two installs: want 6, got %d: %v", len(allow), allow)
 	}
 
 	cursorPath := "/home/u/.cursor/hooks.json"

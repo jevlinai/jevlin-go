@@ -128,6 +128,15 @@ Bash("C:\\Users\\u\\.jevlin\\bin\\jevlin.exe" search -config "C:\\Users\\u\\.jev
 -- rule
 Bash(C:\Users\u\.jevlin\bin\jevlin.exe search -config "C:\\Users\\u\\.jevlin\\jevlin.toml":*)
 "Bash(C:\\Users\\u\\.jevlin\\bin\\jevlin.exe search -config \"C:\\\\Users\\\\u\\\\.jevlin\\\\jevlin.toml\":*)"
+-- rule
+Bash('C:\Users\u\.jevlin\bin\jevlin.exe' fetch -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin:*)
+"Bash('C:\\Users\\u\\.jevlin\\bin\\jevlin.exe' fetch -config 'C:\\Users\\u\\.jevlin\\jevlin.toml' --stdin:*)"
+-- rule
+Bash("C:\\Users\\u\\.jevlin\\bin\\jevlin.exe" fetch -config "C:\\Users\\u\\.jevlin\\jevlin.toml" --stdin:*)
+"Bash(\"C:\\\\Users\\\\u\\\\.jevlin\\\\bin\\\\jevlin.exe\" fetch -config \"C:\\\\Users\\\\u\\\\.jevlin\\\\jevlin.toml\" --stdin:*)"
+-- rule
+Bash(C:\Users\u\.jevlin\bin\jevlin.exe fetch -config "C:\\Users\\u\\.jevlin\\jevlin.toml" --stdin:*)
+"Bash(C:\\Users\\u\\.jevlin\\bin\\jevlin.exe fetch -config \"C:\\\\Users\\\\u\\\\.jevlin\\\\jevlin.toml\" --stdin:*)"
 
 == claude: bridge prefix its lineage adapter writes
 -- skill search block (posix)
@@ -232,9 +241,9 @@ matches the rendered `search` for powershell
 -- skill block (bash)
 matches the rendered `search` for posix
 -- skill block (powershell)
-refused
+matches the rendered `fetch` for powershell
 -- skill block (bash)
-refused
+matches the rendered `fetch` for posix
 -- skill block (powershell)
 matches the rendered `agents prefer` for powershell
 -- skill block (bash)

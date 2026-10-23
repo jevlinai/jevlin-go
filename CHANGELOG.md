@@ -36,7 +36,9 @@ rewritten to match newer behaviour; the newer entry says what changed.
   `max_chars`, `offset` and `query`; the envelope carries each page's text, in capped slices
   with a `next_offset` to read on. It needs a router with the fetch endpoint and a claimed
   account, and it serves only pages from the account's own recent searches; otherwise it says
-  so (`fetch_not_supported`, `fetch_unavailable`, a page's `not_recent`).
+  so (`fetch_not_supported`, `fetch_unavailable`, a page's `not_recent`). Claude Code, Cursor and
+  Codex run the exact fetch the skill renders without asking, as they run the search; Claude
+  Code's allow rules for it arrive when the upgrade refreshes the agent integrations.
 - **Two new request options**, `merged_limit` (1 to 50 pages) and `max_chars` (the merged
   list's total characters of page text), let an agent ask for more pages when a first pass
   looks thin, or for less text.

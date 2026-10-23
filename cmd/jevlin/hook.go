@@ -499,6 +499,9 @@ func hookLineage(ops hookOps, hc hookContext, payload []byte, stdout io.Writer) 
 	// decide a permission answer.
 	ours := false
 	if isShell {
+		if allowRenderedFetch(ops, hc, p.ToolName, command, stdout) {
+			return
+		}
 		if !isSearchCommand(command) {
 			return
 		}
@@ -604,6 +607,30 @@ func hookLineage(ops hookOps, hc hookContext, payload []byte, stdout io.Writer) 
 		return
 	}
 	fmt.Fprintln(stdout, string(out))
+}
+
+// allowRenderedFetch answers Claude Code's permission question for the
+// fetch its skill renders, and for nothing else: this installation's binary
+// and config, for the shell of the tool that will run it, with one version-1
+// request after it. The command is not rewritten and no lineage is written:
+// a fetch carries no trace. The installed allow rules cover the Bash tool;
+// this covers the PowerShell tool, which they cannot name, and stands in for
+// both wherever the rules are not read. It reports whether it answered.
+func allowRenderedFetch(ops hookOps, hc hookContext, toolName, command string, stdout io.Writer) bool {
+	sh, known := bridgeShellForTool(toolName)
+	if !known || !isFetchForm(recognizeRenderedForm(command, ops.executable, hc.cfgPath, []shellKind{sh})) {
+		return false
+	}
+	out, err := json.Marshal(map[string]any{"hookSpecificOutput": map[string]any{
+		"hookEventName":            "PreToolUse",
+		"permissionDecision":       "allow",
+		"permissionDecisionReason": "jevlin: this is the fetch command its own skill renders",
+	}})
+	if err != nil {
+		return false
+	}
+	fmt.Fprintln(stdout, string(out))
+	return true
 }
 
 func orString(v, fallback string) string {
@@ -1363,6 +1390,10 @@ func inertUnderEveryShell(f *recognizedForm, shells []shellKind) bool {
 
 func isSearchForm(f *recognizedForm) bool {
 	return f != nil && len(f.path) == 1 && f.path[0] == "search"
+}
+
+func isFetchForm(f *recognizedForm) bool {
+	return f != nil && len(f.path) == 1 && f.path[0] == "fetch"
 }
 
 // hookInputIntact reports whether the runners Cursor starts its hooks with
