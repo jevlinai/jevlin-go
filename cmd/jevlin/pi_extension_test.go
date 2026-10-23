@@ -748,8 +748,11 @@ func newPiStandIn(t *testing.T) *piStandIn {
 	}
 	t.Cleanup(func() {
 		// Quiet for half a second: every record the stand-in starts
-		// (r.XXXXXX) ends as r.XXXXXX.done, and a spawn that has not
-		// reached mktemp yet shows up within that window.
+		// (r.XXXXXX) ends as r.XXXXXX.done. The window is tidiness, not
+		// correctness: a spawn slower than that finds the directory gone,
+		// its mktemp fails and the script exits 0 (`|| exit 0`), and the
+		// RemoveAll error below is not reported, so neither a late nor a
+		// still-running child can fail a test either way.
 		deadline := time.Now().Add(5 * time.Second)
 		for quietSince := time.Now(); time.Now().Before(deadline); {
 			entries, _ := os.ReadDir(dir)
