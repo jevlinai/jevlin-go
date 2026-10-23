@@ -330,9 +330,15 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	key, keySrc, err := resolveAPIKey(getenv, cfg.Miner)
 	if err != nil {
 		if machine {
+			if keyRefusedForOrigin(err) {
+				return failSearchSetup(stdout, exitUsage, keyOriginCode, actionFixInput, err)
+			}
 			return failSearchSetup(stdout, exitClientErr, "credential_unreadable", actionConnect, err)
 		}
 		fmt.Fprintln(stderr, "jevlin:", err)
+		if keyRefusedForOrigin(err) {
+			return exitUsage
+		}
 		return exitClientErr
 	}
 	if key == "" {

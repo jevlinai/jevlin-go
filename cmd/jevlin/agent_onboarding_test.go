@@ -743,7 +743,7 @@ func runConnect(t *testing.T, cfgPath string, stdin *bytes.Buffer, extra ...stri
 	}
 	var out, errOut bytes.Buffer
 	args := append([]string{"-config", cfgPath}, extra...)
-	code = cmdConnect(args, stdin, &out, &errOut, noEnv)
+	code = cmdConnect(args, stdin, &out, &errOut, installedAs(noEnv, args))
 	return code, out.String(), errOut.String()
 }
 
@@ -1098,7 +1098,7 @@ func TestConnectStoresKeyAndSearchWorksBeforeClaim(t *testing.T) {
 	code := searchMain(searchOps{
 		getppid: func() int { return 1 }, hostname: func() (string, error) { return "h", nil },
 		getwd: func() (string, error) { return t.TempDir(), nil }, now: time.Now, hook: hook,
-	}, []string{"-config", routerCfg, "-no-flush", "hello"}, strings.NewReader(""), &out, &errOut, noEnv)
+	}, []string{"-config", routerCfg, "-no-flush", "hello"}, strings.NewReader(""), &out, &errOut, installedAs(noEnv, []string{"-config", routerCfg}))
 	if code != exitOK {
 		t.Fatalf("search exited %d: %s", code, errOut.String())
 	}
@@ -1794,7 +1794,7 @@ func TestMiningEnableReApprovalPointsAtTheGenericClaimAddressNotTheDeadOneTimeUR
 	platform.claim("credits") // claimed, credits only — mining not granted
 
 	var stdout bytes.Buffer
-	code := cmdMining([]string{"enable", "-config", cfgPath}, &bytes.Buffer{}, &stdout, &bytes.Buffer{}, noEnv)
+	code := cmdMining([]string{"enable", "-config", cfgPath}, &bytes.Buffer{}, &stdout, &bytes.Buffer{}, installedAs(noEnv, []string{"-config", cfgPath}))
 	if code != exitOK {
 		t.Fatalf("cmdMining enable: code=%d stdout=%s", code, stdout.String())
 	}
@@ -1841,7 +1841,7 @@ func TestMiningEnableReApprovalPrefersTheRealConsoleURLWhenThePlatformSendsOne(t
 	platform.setConsoleURL(realConsoleURL)
 
 	var stdout bytes.Buffer
-	code := cmdMining([]string{"enable", "-config", cfgPath}, &bytes.Buffer{}, &stdout, &bytes.Buffer{}, noEnv)
+	code := cmdMining([]string{"enable", "-config", cfgPath}, &bytes.Buffer{}, &stdout, &bytes.Buffer{}, installedAs(noEnv, []string{"-config", cfgPath}))
 	if code != exitOK {
 		t.Fatalf("cmdMining enable: code=%d stdout=%s", code, stdout.String())
 	}
@@ -1890,7 +1890,7 @@ func TestMiningEnableOnAnUnclaimedAgentPrintsTheOriginalStillValidClaimLink(t *t
 	seedClaim(t, cfgPath, "agent-1", originalClaimURL, "")
 
 	var stdout bytes.Buffer
-	code := cmdMining([]string{"enable", "-config", cfgPath}, &bytes.Buffer{}, &stdout, &bytes.Buffer{}, noEnv)
+	code := cmdMining([]string{"enable", "-config", cfgPath}, &bytes.Buffer{}, &stdout, &bytes.Buffer{}, installedAs(noEnv, []string{"-config", cfgPath}))
 	if code != exitOK {
 		t.Fatalf("cmdMining enable: code=%d stdout=%s", code, stdout.String())
 	}
@@ -1934,7 +1934,7 @@ func TestMiningEnableNeverPrintsAStoredClaimURLOffThePlatformOrigin(t *testing.T
 	seedClaim(t, cfgPath, "agent-1", "https://evil.example/claim/AB12-CD34", "")
 
 	var stdout, stderr bytes.Buffer
-	code := cmdMining([]string{"enable", "-config", cfgPath}, &bytes.Buffer{}, &stdout, &stderr, noEnv)
+	code := cmdMining([]string{"enable", "-config", cfgPath}, &bytes.Buffer{}, &stdout, &stderr, installedAs(noEnv, []string{"-config", cfgPath}))
 	if code != exitOK {
 		t.Fatalf("cmdMining enable: code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
@@ -1977,7 +1977,7 @@ func TestMiningEnableOnAnExpiredRegistrationSaysToRegisterAgain(t *testing.T) {
 	seedClaim(t, cfgPath, "agent-1", deadClaimURL, "")
 
 	var stdout bytes.Buffer
-	code := cmdMining([]string{"enable", "-config", cfgPath}, &bytes.Buffer{}, &stdout, &bytes.Buffer{}, noEnv)
+	code := cmdMining([]string{"enable", "-config", cfgPath}, &bytes.Buffer{}, &stdout, &bytes.Buffer{}, installedAs(noEnv, []string{"-config", cfgPath}))
 	if code != exitOK {
 		t.Fatalf("cmdMining enable: code=%d stdout=%s", code, stdout.String())
 	}
@@ -2034,7 +2034,7 @@ func TestConcurrentResumesProduceExactlyOneEnrollmentAndDeclaration(t *testing.T
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			codes[i] = cmdConnect([]string{"-config", cfgPath, "-resume"}, &bytes.Buffer{}, &bytes.Buffer{}, &bytes.Buffer{}, noEnv)
+			codes[i] = cmdConnect([]string{"-config", cfgPath, "-resume"}, &bytes.Buffer{}, &bytes.Buffer{}, &bytes.Buffer{}, installedAs(noEnv, []string{"-config", cfgPath}))
 		}(i)
 	}
 	wg.Wait()

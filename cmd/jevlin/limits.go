@@ -90,9 +90,15 @@ func cmdLimits(args []string, stdout, stderr io.Writer, getenv func(string) stri
 	key, keySrc, err := resolveAPIKey(getenv, cfg.Miner)
 	if err != nil {
 		if machine {
+			if keyRefusedForOrigin(err) {
+				return failLimits(stdout, exitUsage, keyOriginCode, actionFixInput, err)
+			}
 			return failLimits(stdout, exitClientErr, "credential_unreadable", actionConnect, err)
 		}
 		fmt.Fprintln(stderr, "jevlin:", err)
+		if keyRefusedForOrigin(err) {
+			return exitUsage
+		}
 		return exitClientErr
 	}
 	if key == "" {
