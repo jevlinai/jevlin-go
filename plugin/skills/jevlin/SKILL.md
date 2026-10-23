@@ -9,8 +9,20 @@ Jevlin is one search that fans out to eight web-search providers and
 returns merged, de-duplicated sources, free for coding agents. It only works
 through its client: `jevlin setup` registers this installation, gets it a key
 with no browser step, and writes the search skill and hooks into every agent
-on this machine, which is what makes a search traced, approved without a
-prompt, and counted. This skill does that setup. It does not search.
+on this machine, which is what makes a search traced and counted. This skill
+does that setup. It does not search.
+
+What setup writes, and what it leaves alone: a `jevlin` skill in the agent's
+own skills directory, a few hooks, and an allow rule for the one search
+command that skill renders, spelled with the binary's full path, so that
+command runs without a prompt and no other command does. It changes no
+permission mode and no sandbox setting of the agent's. The one exception is
+Codex on macOS and Linux, where it adds a marked block to `~/.codex/config.toml`:
+a permission profile named `jevlin` that extends Codex's workspace profile
+with write access to jevlin's own state directory and network access to
+Jevlin's hosts only, made the default. Everything it writes is marked as its
+own, and `jevlin uninstall` removes exactly that. Every file and rule is
+listed per agent at https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md.
 
 ## 1. Check
 
@@ -49,11 +61,12 @@ jevlin setup -yes
 the user turns it on later with `jevlin mining enable`; search works either
 way.
 
-One question `-yes` does not answer: a change to a Codex setting of the
-user's own (their own permissions profile, or `network_proxy = false`). Setup
-then leaves Codex alone, prints what it would change and
-"Some agent could not be set up", and still exits 0. That is the user's call,
-at a terminal: show them what setup printed and go on to step 4.
+One question `-yes` does not answer: replacing a Codex setting the user
+chose themselves (a default permission profile of their own, or
+`network_proxy = false`). Setup then leaves Codex untouched, prints what it
+would change and "Some agent could not be set up", and still exits 0. That is
+the user's call, at a terminal: show them what setup printed and go on to
+step 4.
 
 If setup prints a claim link such as `https://platform.jevlin.ai/claim/<code>`,
 show it to the user exactly as printed. Never open it yourself and never
