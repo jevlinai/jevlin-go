@@ -41,10 +41,11 @@ rewritten to match newer behaviour; the newer entry says what changed.
   list's total characters of page text), let an agent ask for more pages when a first pass
   looks thin, or for less text.
 - **The skill is corrected.** It no longer says `fast` answers in about a second, and it no
-  longer says `recency` and `domain_filter` are passed to every provider: the router does not
-  yet apply them everywhere, so an agent is told to treat results as unfiltered and check each
-  page's date and host. It teaches reading `found_by` and `votes`, `matched_terms`,
-  `published`, `result.indexes` and `merged_total` against `merged_limit`.
+  longer says `recency` and `domain_filter` are passed to every provider: an agent is told that
+  `result.filters_applied` means the router held every page to the filter, and that without it
+  the router may not have, so it checks each page's date and host. It teaches reading
+  `found_by` and `votes`, `matched_terms`, `published`, `source_id`, `result.indexes` and
+  `merged_total` against `merged_limit`, and when to read a page in full with `jevlin fetch`.
 
 ## v0.4.3 — 2026-10-20
 

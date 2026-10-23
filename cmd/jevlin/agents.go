@@ -1160,6 +1160,10 @@ func renderSkill(entry binEntry, prefer, note string, shells skillShells) ([]byt
 	if err != nil {
 		return nil, err
 	}
+	fetchCall, err := fetchSection(entry, shells)
+	if err != nil {
+		return nil, err
+	}
 	// The frontmatter's description is a YAML scalar, not a bare string
 	// this template can quote for it: descriptionOn carries this search's
 	// own JSON examples, quotes and colons included, and a template that
@@ -1176,6 +1180,7 @@ func renderSkill(entry binEntry, prefer, note string, shells skillShells) ([]byt
 	r := strings.NewReplacer(
 		"{{SEARCH}}", human,
 		"{{CALL}}", call,
+		"{{FETCH_CALL}}", fetchCall,
 		"{{PREFER}}", pref,
 		"{{TIER}}", tierCmd,
 		"{{DESCRIPTION}}", string(descYAML),

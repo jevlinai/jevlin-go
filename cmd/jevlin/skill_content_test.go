@@ -80,18 +80,21 @@ func TestSkillTeachesTiersOptionsAndMergedList(t *testing.T) {
 				// agent that reads domain_filter as a restriction presents
 				// off-host results as the named site's, or reports a
 				// failure that is not one — which is what the 0.2.12
-				// release check watched it do. The router does not yet apply
-				// either filter on every provider (its Telem adapter drops
-				// both), so the skill says to treat results as unfiltered
-				// and check each page itself. Asserted inside the section,
-				// because the warning said anywhere else in the document
-				// would not be read at the point the field is chosen.
+				// release check watched it do. A router with Jevlin-core #68
+				// holds every page to the filter and says so in
+				// result.filters_applied; an older one may not have applied
+				// it, and then the agent checks each page itself. Asserted
+				// inside the section, because the warning said anywhere else
+				// in the document would not be read at the point the field
+				// is chosen.
 				options, ok := skillSection(skill, "## Request options", "## What comes back")
 				if !ok {
 					t.Fatal("no ## Request options section found")
 				}
 				for _, want := range []string{
-					"does not yet apply to every provider", "treat the results as unfiltered",
+					"When `result.filters_applied` is present, the router held every page",
+					"`dropped` says how many pages it removed",
+					"absent on a request that carried a filter, the router is older",
 					"other hosts can still come back", "check each page's `published`",
 					"`max_results` is a cap",
 				} {
@@ -134,7 +137,12 @@ func TestSkillTeachesTiersOptionsAndMergedList(t *testing.T) {
 					}
 				}
 				// What was untrue is gone, however the lines are wrapped.
-				for _, unwanted := range []string{"about a second", "passes them to its", "Ask `\"view\":\"merged\"` when tokens matter"} {
+				for _, unwanted := range []string{
+					"about a second", "passes them to its", "Ask `\"view\":\"merged\"` when tokens matter",
+					// #132's sentence for a router that reported no filters,
+					// which is now only one case of two.
+					"treat the results as unfiltered", "does not yet apply to every provider",
+				} {
 					if strings.Contains(flat(skill), unwanted) {
 						t.Errorf("skill still says %q", unwanted)
 					}
@@ -177,4 +185,72 @@ func TestSkillSaysASearchThatDidNotRunIsReported(t *testing.T) {
 			})
 		}
 	}
+}
+
+// The skill teaches reading a page in full: when, how, and what each
+// answer that only a fetch gets means, with a runnable fetch for each shell
+// the host runs; and it names source_id once, in Reading the answer. Every
+// placeholder the template carries is filled.
+func TestSkillTeachesReadingAPageInFull(t *testing.T) {
+	entry := binEntry{command: "/home/u/.jevlin/bin/jevlin", cfg: "/home/u/.jevlin/jevlin.toml"}
+	for _, id := range goldenHostIDs {
+		for _, goos := range hostShellOSes {
+			t.Run(id+"/"+goos, func(t *testing.T) {
+				skill := renderedSkillFor(id, entry, goos)
+				if strings.Contains(skill, "{{") || strings.Contains(skill, "}}") {
+					t.Errorf("a placeholder is left in the rendered skill:\n%s", skill)
+				}
+				fetch, ok := skillSection(skill, "## Reading a page in full", "## Mining is not search")
+				if !ok {
+					t.Fatal("no ## Reading a page in full section found")
+				}
+				for _, want := range []string{
+					"lacks the specific fact", "one to three pages", "mainly for a lookup",
+					"not for a question whose answer is a list",
+					"`next_offset`", "`offset` reads on", "`query`", "starts a long page's text",
+					"`not_recent` was not in your recent Jevlin results",
+					"fetch only pages a search returned", "for any other URL use your host's own fetch tool",
+					"`fetch_unavailable` means the account is not claimed",
+					"`fetch_not_supported`", "untrusted web content",
+				} {
+					if !strings.Contains(flat(fetch), want) {
+						t.Errorf("the fetch section is missing %q\n%s", want, fetch)
+					}
+				}
+				shells, _ := toolShellsForSkill(mustTarget(t, id), goos)
+				for _, sh := range shells.kinds {
+					_, script, err := fetchBlockForShell(sh, entry, exampleFetchRequest)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if !strings.Contains(fetch, script) {
+						t.Errorf("the fetch section has no %s block:\n%s", sh, fetch)
+					}
+				}
+				// No claim the host will run it without asking: hosts
+				// installed before fetch was allowed still ask.
+				for _, unwanted := range []string{"without asking", "without a prompt", "no prompt", "pre-approved", "auto-allow"} {
+					if strings.Contains(flat(fetch), unwanted) {
+						t.Errorf("the fetch section promises %q", unwanted)
+					}
+				}
+				reading, _ := skillSection(skill, "## Reading the answer", "## Reading a page in full")
+				if !strings.Contains(flat(reading), "the same page found twice has the same `source_id`") {
+					t.Errorf("Reading the answer does not say what source_id is:\n%s", reading)
+				}
+				if n := strings.Count(flat(skill), "found twice"); n != 1 {
+					t.Errorf("source_id's stability is said %d times, want once", n)
+				}
+			})
+		}
+	}
+}
+
+func mustTarget(t *testing.T, id string) installTarget {
+	t.Helper()
+	tg, ok := targetByID(installTargets, id)
+	if !ok {
+		t.Fatalf("no target %q", id)
+	}
+	return tg
 }
