@@ -34,6 +34,10 @@ func skillSection(skill, heading, nextHeading string) (string, bool) {
 	return skill[start:end], true
 }
 
+// flat collapses every run of whitespace to one space, so a phrase is found
+// however the paragraph around it is wrapped.
+func flat(s string) string { return strings.Join(strings.Fields(s), " ") }
+
 func TestSkillTeachesTiersOptionsAndMergedList(t *testing.T) {
 	entry := binEntry{command: "/home/u/.jevlin/bin/jevlin", cfg: "/home/u/.jevlin/jevlin.toml"}
 	for _, id := range goldenHostIDs {
@@ -87,11 +91,11 @@ func TestSkillTeachesTiersOptionsAndMergedList(t *testing.T) {
 					t.Fatal("no ## Request options section found")
 				}
 				for _, want := range []string{
-					"does not yet apply to\nevery provider", "treat\nthe results as unfiltered",
-					"other hosts can still\ncome back", "check each page's `published`",
+					"does not yet apply to every provider", "treat the results as unfiltered",
+					"other hosts can still come back", "check each page's `published`",
 					"`max_results` is a cap",
 				} {
-					if !strings.Contains(options, want) {
+					if !strings.Contains(flat(options), want) {
 						t.Errorf("the Request options section does not say what the router promises: missing %q\n%s", want, options)
 					}
 				}
@@ -122,16 +126,16 @@ func TestSkillTeachesTiersOptionsAndMergedList(t *testing.T) {
 					"several indexes agree on are more trustworthy",
 					"`matched_terms`", "`published`", "time-bound question", "`result_id`",
 					"`result.indexes`", "`usage.deadline_hit`", "degraded",
-					"rather than conclude that\nnothing exists",
-					"`result.merged_total`", "more pages exist", "raise\n`merged_limit`",
+					"rather than conclude that nothing exists",
+					"`result.merged_total`", "more pages exist", "raise `merged_limit`",
 				} {
-					if !strings.Contains(reading, want) {
+					if !strings.Contains(flat(reading), want) {
 						t.Errorf("the Reading the answer section is missing %q\n%s", want, reading)
 					}
 				}
-				// What was untrue is gone.
-				for _, unwanted := range []string{"in about a second", "passes them to its", "Ask `\"view\":\"merged\"` when tokens matter"} {
-					if strings.Contains(skill, unwanted) {
+				// What was untrue is gone, however the lines are wrapped.
+				for _, unwanted := range []string{"about a second", "passes them to its", "Ask `\"view\":\"merged\"` when tokens matter"} {
+					if strings.Contains(flat(skill), unwanted) {
 						t.Errorf("skill still says %q", unwanted)
 					}
 				}
