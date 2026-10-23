@@ -17,5 +17,10 @@
     "documentation",
     "coding-agent",
     "setup"
-  ]
+  ],
+  "icon": "./.claude-plugin/icon.png",
+  "documentationUrl": "https://docs.jevlin.ai/",
+  "supportUrl": "https://github.com/jevlinai/jevlin-go/issues",
+  "privacyPolicyUrl": "https://platform.jevlin.ai/privacy",
+  "termsOfServiceUrl": "https://platform.jevlin.ai/terms"
 }
