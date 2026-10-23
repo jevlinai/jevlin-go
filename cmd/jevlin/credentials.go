@@ -286,11 +286,53 @@ func keyBindingOf(cfg *config.Config) credentials {
 	return c
 }
 
-// keyRefusedForOrigin: is err a refusal to send the key to the origin asked
-// for? Classified by type, never by message (invariant 15).
+// envKeyRefusedFor is the rule for the environment's key in machine mode:
+// a search --stdin whose key comes from JEVLIN_API_KEY, given an explicit
+// -config that is not this installation's own config file
+// (installationConfigPath), is refused when that config's router origin
+// differs from the router origin of the installation's own config. The
+// installation's own config, named or not, is served as before, and so is a
+// differing file that names the same router.
+func envKeyRefusedFor(cfgPath string, cfg *config.Config, getenv func(string) string) error {
+	if cfgPath == "" || unwrittenDefaultConfig(cfgPath, getenv) {
+		return nil
+	}
+	if own := installationConfigPath(getenv); own != "" && sameConfigPath(cfgPath, own) {
+		return nil
+	}
+	raw, _ := routerKeyService.configured(cfg)
+	requested, err := urlOrigin(raw)
+	if err != nil {
+		return err
+	}
+	bound := "no router"
+	if own, _, err := loadConfig("", getenv); err == nil {
+		ownRaw, _ := routerKeyService.configured(own)
+		if o, err := urlOrigin(ownRaw); err == nil {
+			bound = o
+		}
+	}
+	if requested == bound {
+		return nil
+	}
+	return &envKeyOriginError{bound: bound, requested: requested}
+}
+
+// keyRefusedForOrigin: is err a refusal to send a key to the origin asked
+// for, either key's? Classified by type, never by message (invariant 15).
 func keyRefusedForOrigin(err error) bool {
 	var stored *keyOriginError
-	return errors.As(err, &stored)
+	var env *envKeyOriginError
+	return errors.As(err, &stored) || errors.As(err, &env)
+}
+
+// envKeyOriginError is envKeyRefusedFor's refusal, worded for the key's
+// source: the environment, not the file.
+type envKeyOriginError struct{ bound, requested string }
+
+func (e *envKeyOriginError) Error() string {
+	return fmt.Sprintf("%s is sent only to this installation's router (%s), and this config names %s; it is not sent there. "+
+		"Use the config this installation was set up with", apiKeyEnv, e.bound, e.requested)
 }
 
 // credentialsPath is the file beside the intake directory: with the

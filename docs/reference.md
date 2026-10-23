@@ -226,7 +226,7 @@ lacks, appended, and must load before it is saved.
 |---|---|---|
 | `JEVLIN_CONFIG` | every command | The config file, after `-config`. Setup's profile block sets it. |
 | `JEVLIN_HOME` | every command, setup | This machine's installation directory, instead of `~/.jevlin`. |
-| `JEVLIN_API_KEY` | search | The search key, overriding `credentials.json`. |
+| `JEVLIN_API_KEY` | search | The search key, overriding `credentials.json`. With `--stdin` and a `-config` that is not the installation's own file, it is sent only when that config names the installation's router. |
 | `JEVLIN_TRACE` | search, hooks | `off` sends no trace. |
 | `JEVLIN_WALLET_DIR` | wallet commands | The wallet directory. Setup's profile block sets it when it made a wallet. |
 | `JEVLIN_WALLET_PASSPHRASE` | wallet commands | The keyfile passphrase, for a caller with no terminal. |

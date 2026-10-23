@@ -24,7 +24,8 @@ rewritten to match newer behaviour; the newer entry says what changed.
 - **The stored key is sent only to the router and the agents API it was issued for.** `connect`
   records both in `credentials.json`; a file from an earlier version belongs to the hosts of the
   installation's own config until the next `connect` records them. A command given a config that
-  names another host stops before any request and says which host the key belongs to.
+  names another host stops before any request and says which host the key belongs to. With
+  `search --stdin`, `JEVLIN_API_KEY` is held to the installation's router the same way.
 - **Claude Code's allow rules always name the installed config**, the default path when setup
   has not written it yet, and the next `agents install`, `setup` or upgrade replaces rules an
   earlier version wrote without one.

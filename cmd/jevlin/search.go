@@ -328,6 +328,9 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		*tier = searchTierDefault(cfgSource, cfg.Miner, getenv)
 	}
 	key, keySrc, err := resolveAPIKey(getenv, cfg.Miner)
+	if err == nil && machine && keySrc == keyFromEnv {
+		err = envKeyRefusedFor(*cfgPath, cfg, getenv)
+	}
 	if err != nil {
 		if machine {
 			if keyRefusedForOrigin(err) {
