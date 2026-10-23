@@ -87,9 +87,9 @@ the tool (what an agent runs):
              url), and optionally max_chars (1000 to 50000), offset and
              query; one JSON envelope on stdout with result.pages, each
              with its status, content and next_offset. The router serves
-             only pages from this account's recent searches, and only to a
-             claimed account. -timeout as for search. Exit codes as for
-             search.
+             only pages from this account's recent searches, and only to an
+             account that can fetch. -timeout as for search. Exit codes as
+             for search.
   agents     agents install|status|uninstall — find {{HOST_LABELS}} on this machine and give each
              the search skill and the hooks it supports. -dry-run previews,
              -client <name> picks one ({{HOST_IDS}}). -yes skips the Proceed?

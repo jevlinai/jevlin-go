@@ -34,9 +34,10 @@ rewritten to match newer behaviour; the newer entry says what changed.
 - **`jevlin fetch --stdin` reads a page a search found, in full.** One JSON request names up
   to five pages, by the `source_id` a search returned or by URL, with an optional
   `max_chars`, `offset` and `query`; the envelope carries each page's text, in capped slices
-  with a `next_offset` to read on. It needs a router with the fetch endpoint and a claimed
-  account, and it serves only pages from the account's own recent searches; otherwise it says
-  so (`fetch_not_supported`, `fetch_unavailable`, a page's `not_recent`). Claude Code, Cursor and
+  with a `next_offset` to read on. It needs a router with fetch on and an account that can
+  fetch, and it serves only pages from the account's own recent searches; otherwise it says so
+  (`fetch_not_supported`, `fetch_disabled`, `fetch_unavailable`, a page's `not_recent`). A page
+  the upstream cut short says so with `truncated` and its `full_length`. Claude Code, Cursor and
   Codex run the exact fetch the skill renders without asking, as they run the search; Claude
   Code's allow rules for it arrive when the upgrade refreshes the agent integrations.
 - **Two new request options**, `merged_limit` (1 to 50 pages) and `max_chars` (the merged

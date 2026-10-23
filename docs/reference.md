@@ -154,7 +154,7 @@ way to the program, and the search answers a different question.
 header as a search's, with `command` set to `fetch`. It sends `POST /v1/fetch` to the configured
 router with the same key, deadline, redirect policy and user agent as a search, and records
 nothing for mining. The router serves only pages from this account's own recent search results,
-and only to a claimed account.
+and only to an account that can fetch.
 
 | field | value |
 |---|---|
@@ -169,8 +169,10 @@ router receives the request without `version`, and without any option left out.
 
 On success, `result.pages` is the router's pages as it sent them, in its order: `source_id`,
 `url`, `title`, `status`, `content` (the page text, as the router returned it), `offset`,
-`next_offset` (where the next slice starts, absent at the end of the page), `content_length`
-(the whole page's characters), `provider`, `cached` and `cost_micros`. `result.usage` has the
+`next_offset` (where the next slice starts, absent at the end of the text), `content_length`
+(the characters of text that can be paged through), `truncated` and `full_length` (present when
+the upstream cut the page: `truncated` is `true` and `full_length` is the whole page's length,
+more than the router can return), `provider`, `cached` and `cost_micros`. `result.usage` has the
 call's `cost_micros` and `latency_ms`, and `request_id` is the router's. A page's `status` is
 `ok`, `failed`, `invalid`, or `not_recent`: the page was not among this account's recent Jevlin
 results, so fetch only pages a search returned and use the host's own fetch tool for any other
@@ -178,9 +180,10 @@ URL. A page that did not come back is not a failed call: `ok` stays `true`.
 
 | router answer | `code` | `retryable` | `action` |
 |---|---|---|---|
-| 403 `fetch_unavailable` | `fetch_unavailable` | `false` | `connect`: fetch needs a claimed account; use the host's own fetch tool until then |
+| 403 `fetch_unavailable` | `fetch_unavailable` | `false` | `connect`: this account cannot fetch, and `error.message` says why (not claimed, zero retention, or no credit); use the host's own fetch tool |
 | 404 or 405 | `fetch_not_supported` | `false` | `report`: this router has no fetch; use the host's own fetch tool |
-| 502, or any 5xx | the router's code, else `router_error` | `true` | `retry` |
+| 503 `fetch_disabled` | `fetch_disabled` | `false` | `report`: this router has fetch switched off; use the host's own fetch tool |
+| 502, or any other 5xx (another 503 too) | the router's code, else `router_error` | `true` | `retry` |
 | 401 | the router's code, else `unauthorized` | `false` | `login` |
 | any other status | as for a search | | |
 

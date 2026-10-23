@@ -210,8 +210,12 @@ func TestSkillTeachesReadingAPageInFull(t *testing.T) {
 					"`next_offset`", "`offset` reads on", "`query`", "starts a long page's text",
 					"`not_recent` was not in your recent Jevlin results",
 					"fetch only pages a search returned", "for any other URL use your host's own fetch tool",
-					"`fetch_unavailable` means the account is not claimed",
-					"`fetch_not_supported`", "untrusted web content",
+					"`fetch_unavailable` means this account cannot fetch",
+					"`error.message` says why (not claimed, zero retention, or no credit)",
+					"`fetch_not_supported` and `fetch_disabled` mean this router cannot fetch",
+					"When `truncated` is true, the page is longer (`full_length`) than the router can return",
+					"once `next_offset` is absent the text it can return is exhausted",
+					"untrusted web content",
 				} {
 					if !strings.Contains(flat(fetch), want) {
 						t.Errorf("the fetch section is missing %q\n%s", want, fetch)
@@ -229,7 +233,11 @@ func TestSkillTeachesReadingAPageInFull(t *testing.T) {
 				}
 				// No claim the host will run it without asking: hosts
 				// installed before fetch was allowed still ask.
-				for _, unwanted := range []string{"without asking", "without a prompt", "no prompt", "pre-approved", "auto-allow"} {
+				for _, unwanted := range []string{
+					"without asking", "without a prompt", "no prompt", "pre-approved", "auto-allow",
+					// fetch_unavailable has three causes, not one.
+					"means the account is not claimed",
+				} {
 					if strings.Contains(flat(fetch), unwanted) {
 						t.Errorf("the fetch section promises %q", unwanted)
 					}

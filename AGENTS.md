@@ -705,8 +705,10 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `skill_render.go`'s `skillTeachesQueryForms` is the switch for the skill's query-forms
   paragraphs, on since the router took the forms (`TestTheQueryFormsAreTaughtAsShipped`);
   `fetch.go` owns `fetch --stdin`: its strict request, the one POST to `/v1/fetch` through
-  search's `routerClient` and `postRouter`, and the two answers only a fetch gets
-  (`fetch_unavailable` is `connect`, a 404 or 405 is `fetch_not_supported`), guarded by
+  search's `routerClient` and `postRouter`, and the three answers only a fetch gets
+  (`fetch_unavailable` is `connect`; a 404 or 405 is `fetch_not_supported` and a 503 with the
+  router's code `fetch_disabled` is `fetch_disabled`, both `report`, while any other 503 stays a
+  retry), guarded by
   `fetch_test.go`;
   `machine.go` owns the header, the action set
   and the exit/status correspondence; `report_json.go` owns `status`/`doctor`/`connect` JSON.

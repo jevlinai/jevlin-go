@@ -46,12 +46,18 @@ const (
 
 // The router's codes and statuses fetch answers with its own advice.
 const (
-	// fetchUnavailableCode is the router's 403 for an account that is not
-	// claimed. The account, not the request, is what is missing.
+	// fetchUnavailableCode is the router's 403 for an account that cannot
+	// fetch: not claimed, set to zero retention, or with no credit to bill.
+	// The account, not the request, is what is missing, and the router's
+	// message says which.
 	fetchUnavailableCode = "fetch_unavailable"
 	// fetchNotSupportedCode is this client's name for a router without the
 	// endpoint: it answers /v1/fetch with 404 or 405.
 	fetchNotSupportedCode = "fetch_not_supported"
+	// fetchDisabledCode is the router's 503 for a deployment with fetch
+	// switched off. It is the code that says so, not the status: another 503,
+	// the platform pausing, is a retry like any 5xx.
+	fetchDisabledCode = "fetch_disabled"
 )
 
 // The router's bounds on a fetch request, mirrored so a request it would
@@ -290,8 +296,10 @@ type routerFetchResponse struct {
 
 // routerFetchPage is one page as the router returns it. Status is "ok",
 // "failed", "not_recent" (the page is not among this tenant's recent search
-// results) or "invalid". The numbers and the cached flag are pointers,
-// because 0 and false are answers and absence is another.
+// results) or "invalid". The numbers and the flags are pointers, because 0
+// and false are answers and absence is another. ContentLength is the length
+// of the text that can be paged through; when the upstream cut the page,
+// Truncated is true and FullLength is the page's whole length.
 type routerFetchPage struct {
 	SourceID      string  `json:"source_id,omitempty"`
 	URL           string  `json:"url,omitempty"`
@@ -301,6 +309,8 @@ type routerFetchPage struct {
 	Offset        *int    `json:"offset,omitempty"`
 	NextOffset    *int    `json:"next_offset,omitempty"`
 	ContentLength *int    `json:"content_length,omitempty"`
+	Truncated     *bool   `json:"truncated,omitempty"`
+	FullLength    *int    `json:"full_length,omitempty"`
 	Provider      string  `json:"provider,omitempty"`
 	Cached        *bool   `json:"cached,omitempty"`
 	CostMicros    *int64  `json:"cost_micros,omitempty"`
@@ -325,6 +335,8 @@ type machineFetchPage struct {
 	Offset        *int    `json:"offset,omitempty"`
 	NextOffset    *int    `json:"next_offset,omitempty"`
 	ContentLength *int    `json:"content_length,omitempty"`
+	Truncated     *bool   `json:"truncated,omitempty"`
+	FullLength    *int    `json:"full_length,omitempty"`
 	Provider      string  `json:"provider,omitempty"`
 	Cached        *bool   `json:"cached,omitempty"`
 	CostMicros    *int64  `json:"cost_micros,omitempty"`
@@ -424,21 +436,27 @@ func performFetch(ctx context.Context, now func() time.Time, endpoint, key strin
 	return out
 }
 
-// classifyFetch is search's classification, with the router's two answers
-// that only a fetch gets read first: an account that is not claimed, and a
-// router that has no fetch endpoint. Neither is the request's fault and
-// neither changes on a retry.
+// classifyFetch is search's classification, with the router's answers that
+// only a fetch gets read first: an account that cannot fetch, a router with
+// no fetch endpoint, and a router with fetch switched off. None is the
+// request's fault and none changes on a retry.
 func classifyFetch(out fetchOutcome) searchClassification {
 	if out.Fault != faultRouterStatus {
 		return classifySearch(searchOutcome{Fault: out.Fault})
 	}
 	switch {
 	case out.HTTPStatus == http.StatusForbidden && out.HasRouterErr && out.RouterErr.Code == fetchUnavailableCode:
-		// The account is not claimed. connect is the action whose meaning
-		// is exactly that: the claim workflow needs attention.
+		// The account cannot fetch: not claimed, zero retention, or no
+		// credit, which the router's message says. connect is kept for all
+		// three: the account, which the claim workflow is about, is what
+		// needs attention, and the closed action set has nothing nearer.
 		return searchClassification{exitClientErr, fetchUnavailableCode, false, actionConnect}
 	case out.HTTPStatus == http.StatusNotFound, out.HTTPStatus == http.StatusMethodNotAllowed:
 		return searchClassification{exitClientErr, fetchNotSupportedCode, false, actionReport}
+	case out.HTTPStatus == http.StatusServiceUnavailable && out.HasRouterErr && out.RouterErr.Code == fetchDisabledCode:
+		// This router has fetch switched off, which no retry changes. Exit 3
+		// as for fetch_not_supported, the other "this router cannot fetch".
+		return searchClassification{exitClientErr, fetchDisabledCode, false, actionReport}
 	}
 	return classifyRouterStatus(searchOutcome{
 		HTTPStatus: out.HTTPStatus, RouterErr: out.RouterErr, HasRouterErr: out.HasRouterErr,
@@ -475,6 +493,8 @@ func fetchEnvelopeOf(out fetchOutcome) (fetchEnvelope, int) {
 		switch c.Code {
 		case fetchNotSupportedCode:
 			env.Error = clientMessage(errors.New("this router has no fetch endpoint; use the host's own fetch tool"))
+		case fetchDisabledCode:
+			env.Error = clientMessage(errors.New("this router has fetch switched off; use the host's own fetch tool"))
 		default:
 			env.Error = clientMessage(out.Err)
 		}
