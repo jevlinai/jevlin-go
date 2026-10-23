@@ -1021,13 +1021,24 @@ func TestTierPathFollowsTheInstallationHome(t *testing.T) {
 		t.Errorf("no config, HOME set elsewhere: %q", got)
 	}
 
-	// The command writes where the path function says, under JEVLIN_HOME.
+	// The command writes where the path function says, under JEVLIN_HOME:
+	// beside the installation's config, which the command names whether or
+	// not it is written yet, and which resolveEntry makes absolute, so on
+	// Windows it carries the drive the bare JEVLIN_HOME left implicit.
 	m, ops := newFakeMachine()
 	env := map[string]string{"JEVLIN_HOME": "/opt/ada/jevlin"}
 	if code, out, errOut := runAgents(t, ops, env, "tier", "balanced"); code != exitOK || !strings.Contains(out, "search tier: balanced") {
 		t.Fatalf("tier balanced under JEVLIN_HOME: %d %s%s", code, out, errOut)
 	}
-	if got := strings.TrimSpace(string(m.files["/opt/ada/jevlin/search-tier"])); got != "balanced" {
+	entry, _, err := resolveEntry(ops, "", envOf(env))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := tierPath(entry, envOf(env))
+	if home, _ := filepath.Abs("/opt/ada/jevlin"); !samePath(filepath.Dir(want), home) {
+		t.Errorf("the tier file is not under JEVLIN_HOME: %s", want)
+	}
+	if got := strings.TrimSpace(string(m.files[slash(want)])); got != "balanced" {
 		t.Errorf("tier file under JEVLIN_HOME: %q in %v", got, keysOf(m.files))
 	}
 }
