@@ -1,0 +1,21 @@
+{
+  "name": "jevlin",
+  "version": "0.4.3",
+  "displayName": "Jevlin web search",
+  "description": "Sets up Jevlin, free multi-provider web search for coding agents: installs the jevlin client and runs its setup, which writes this agent's own search skill and hooks.",
+  "author": {
+    "name": "Jevlin",
+    "url": "https://jevlin.ai"
+  },
+  "homepage": "https://docs.jevlin.ai/",
+  "repository": "https://github.com/jevlinai/jevlin-go",
+  "license": "Apache-2.0",
+  "keywords": [
+    "search",
+    "web-search",
+    "research",
+    "documentation",
+    "coding-agent",
+    "setup"
+  ]
+}

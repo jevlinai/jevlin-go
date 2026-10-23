@@ -10,6 +10,18 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## Unreleased
+
+- **A setup skill on the marketplaces.** `skills/jevlin/SKILL.md` and the manifests beside it
+  (`.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `plugin.json` for the Agent
+  Plugins standard, `.agents/plugins/marketplace.json` for Codex) let an agent take Jevlin from
+  skills.sh (`npx skills add jevlinai/jevlin-go`), Claude Code's plugin directory
+  (`/plugin install jevlin --marketplace jevlinai/jevlin-go`), Codex's plugin marketplace and
+  Cursor's. What it gets is not the search: the skill installs the client and runs
+  `jevlin setup`, which writes the agent's own search skill and hooks, exactly as a person
+  running setup gets them. Release preflight now checks the manifests' version with
+  `npm/package.json`.
+
 ## v0.4.3 — 2026-10-20
 
 The search answer is now the router's own, and a search can carry more than one wording of

@@ -39,6 +39,9 @@ func newReleaseRepo(t *testing.T, version string) *releaseRepo {
 	copyFromRepo(t, dir, "npm/install.js")
 	copyFromRepo(t, dir, releaseKeysFile)
 	write(t, dir, "npm/package.json", `{"name":"jevlin","version":"`+version+`"}`+"\n")
+	write(t, dir, ".claude-plugin/plugin.json", `{"name":"jevlin","version":"`+version+`"}`+"\n")
+	write(t, dir, ".claude-plugin/marketplace.json", `{"name":"jevlin","plugins":[{"name":"jevlin","source":"./","version":"`+version+`"}]}`+"\n")
+	write(t, dir, "plugin.json", `{"name":"jevlin","version":"`+version+`"}`+"\n")
 	write(t, dir, "CHANGELOG.md", "# Changelog\n\n## v"+version+" — 2026-09-20\n\n- something a participant should know\n")
 	commit(t, dir, "release "+version)
 	return &releaseRepo{t: t, dir: dir}
@@ -183,6 +186,21 @@ func TestPreflightRefusesAnNpmVersionThatDoesNotMatchTheTag(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "0.2.7") {
 		t.Errorf("the refusal does not name what the manifest actually said: %v", err)
+	}
+}
+
+func TestPreflightRefusesAStalePluginManifest(t *testing.T) {
+	r := newReleaseRepo(t, "0.2.8")
+	write(t, r.dir, ".claude-plugin/marketplace.json", `{"name":"jevlin","plugins":[{"name":"jevlin","source":"./","version":"0.2.7"}]}`+"\n")
+	commit(t, r.dir, "npm bumped, the marketplace entry not")
+	r.annotate("v0.2.8")
+
+	_, err := r.preflight("v0.2.8")
+	if err == nil {
+		t.Fatal("npm/package.json said 0.2.8 and the marketplace entry 0.2.7, and the release was allowed to proceed")
+	}
+	if !strings.Contains(err.Error(), "marketplace.json") || !strings.Contains(err.Error(), "0.2.7") {
+		t.Errorf("the refusal does not name the stale manifest and what it said: %v", err)
 	}
 }
 
