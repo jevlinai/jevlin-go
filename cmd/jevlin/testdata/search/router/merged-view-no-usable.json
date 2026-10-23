@@ -1,0 +1,209 @@
+{
+  "request_id": "01a153b4-ff40-7216-8231-531a0a870b07",
+  "query": "state of retrieval-augmented generation evaluation 2026",
+  "chosen": -1,
+  "candidates": [
+    {
+      "provider": "brave",
+      "model": "fake",
+      "kind": "retrieval",
+      "tier": "core",
+      "usage": {},
+      "cost_micros": 100,
+      "cost_source": "modeled",
+      "latency": {
+        "ttfb_ms": 0,
+        "total_ms": 0
+      },
+      "status": "quota",
+      "error": "brave: upstream status 429"
+    },
+    {
+      "provider": "exa",
+      "model": "fake",
+      "kind": "retrieval",
+      "tier": "core",
+      "usage": {},
+      "cost_micros": 100,
+      "cost_source": "modeled",
+      "latency": {
+        "ttfb_ms": 0,
+        "total_ms": 0
+      },
+      "status": "error",
+      "error": "exa: upstream status 500"
+    },
+    {
+      "provider": "linkup",
+      "model": "fake",
+      "kind": "retrieval",
+      "tier": "core",
+      "usage": {},
+      "cost_micros": 100,
+      "cost_source": "modeled",
+      "latency": {
+        "ttfb_ms": 0,
+        "total_ms": 0
+      },
+      "status": "auth",
+      "error": "linkup: upstream status 401"
+    }
+  ],
+  "signals": {
+    "referee": [
+      {
+        "provider": "brave",
+        "status": "quota",
+        "has_answer": false,
+        "is_refusal": false,
+        "answer_words": 0,
+        "citation_count": 0,
+        "distinct_domains": 0,
+        "citation_density": 0,
+        "dead_citations": 0,
+        "unknown_citations": 0,
+        "recency_ok": true,
+        "dated_citations": 0,
+        "latency_ms": 0,
+        "cost_micros": 100,
+        "score": 0
+      },
+      {
+        "provider": "exa",
+        "status": "error",
+        "has_answer": false,
+        "is_refusal": false,
+        "answer_words": 0,
+        "citation_count": 0,
+        "distinct_domains": 0,
+        "citation_density": 0,
+        "dead_citations": 0,
+        "unknown_citations": 0,
+        "recency_ok": true,
+        "dated_citations": 0,
+        "latency_ms": 0,
+        "cost_micros": 100,
+        "score": 0
+      },
+      {
+        "provider": "linkup",
+        "status": "auth",
+        "has_answer": false,
+        "is_refusal": false,
+        "answer_words": 0,
+        "citation_count": 0,
+        "distinct_domains": 0,
+        "citation_density": 0,
+        "dead_citations": 0,
+        "unknown_citations": 0,
+        "recency_ok": true,
+        "dated_citations": 0,
+        "latency_ms": 0,
+        "cost_micros": 100,
+        "score": 0
+      }
+    ],
+    "consensus": {
+      "per_candidate": [
+        {
+          "provider": "brave",
+          "overlap": 0,
+          "coverage": 0,
+          "corroborated_citations": 0,
+          "orphan_citations": 0,
+          "outlier": false
+        },
+        {
+          "provider": "exa",
+          "overlap": 0,
+          "coverage": 0,
+          "corroborated_citations": 0,
+          "orphan_citations": 0,
+          "outlier": false
+        },
+        {
+          "provider": "linkup",
+          "overlap": 0,
+          "coverage": 0,
+          "corroborated_citations": 0,
+          "orphan_citations": 0,
+          "outlier": false
+        }
+      ],
+      "union_domains": 0,
+      "shared_domains": 0,
+      "agreement_ratio": 0,
+      "contested": false
+    },
+    "ranking": [
+      {
+        "index": 0,
+        "provider": "brave",
+        "score": 0,
+        "base_score": 0
+      },
+      {
+        "index": 1,
+        "provider": "exa",
+        "score": 0,
+        "base_score": 0
+      },
+      {
+        "index": 2,
+        "provider": "linkup",
+        "score": 0,
+        "base_score": 0
+      }
+    ]
+  },
+  "decision": {
+    "mode": "rank",
+    "tier": "balanced",
+    "provider_set": "brave+exa+linkup",
+    "providers": [
+      "brave",
+      "exa",
+      "linkup"
+    ],
+    "propensity": 1,
+    "router_version": "none",
+    "ranker_version": "fallback-heuristic-v1"
+  },
+  "usage": {
+    "cost_micros": 300,
+    "latency_ms": 0,
+    "cache_hit": false,
+    "deadline_hit": false,
+    "byok": false
+  },
+  "no_usable_result": true,
+  "merged": [],
+  "indexes": {
+    "selected": 3,
+    "ok": 0,
+    "pending": 0,
+    "by_provider": [
+      {
+        "provider": "brave",
+        "status": "quota"
+      },
+      {
+        "provider": "exa",
+        "status": "error"
+      },
+      {
+        "provider": "linkup",
+        "status": "auth"
+      }
+    ]
+  },
+  "coverage": {
+    "pages": 0,
+    "exclusive": 0,
+    "corroborated": 0,
+    "by_group": {},
+    "exclusive_by_group": {},
+    "groups": 0
+  },
+  "merged_limit": 12
+}

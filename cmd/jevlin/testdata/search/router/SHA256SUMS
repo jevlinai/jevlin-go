@@ -1,3 +1,5 @@
 9ad0ebcad88c1337da9cb4f726e2b572407b1684907514f91d85337e91d9a5aa  merged-view-success.main.json
 0ab9efc0415b718af33ff8ece2c884045a3331c3349dec1589e438bfb93e67c9  merged-view-success.merge-v2.json
 42260d738da31f2cc16d6244aa0c79a6f805b638b2bc0b589e960591091dbc33  merged-view-two-forms.derived.json
+df3ab46e8638ce22d706483cdc92794a67c533d0049c8a873ba6eb8f5ff769ee  merged-view-partial-failure.json
+c6192f0341814638d4db070551547d558ff88f35129aba53eaf6014e9892681c  merged-view-no-usable.json

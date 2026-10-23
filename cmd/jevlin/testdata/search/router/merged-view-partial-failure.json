@@ -1,0 +1,581 @@
+{
+  "request_id": "01a153b4-fdd1-71bc-9b4d-224239137561",
+  "query": "state of retrieval-augmented generation evaluation 2026",
+  "chosen": 0,
+  "candidates": [
+    {
+      "provider": "brave",
+      "model": "fake",
+      "kind": "retrieval",
+      "tier": "core",
+      "citations": [
+        {
+          "url": "https://arxiv.org/abs/2603.01234",
+          "domain": "arxiv.org",
+          "title": "Title of https://arxiv.org/abs/2603.01234",
+          "snippet": "What https://arxiv.org/abs/2603.01234 says about the question.",
+          "rank": 1
+        },
+        {
+          "url": "https://example.org/rag-eval",
+          "domain": "example.org",
+          "title": "Title of https://example.org/rag-eval",
+          "snippet": "What https://example.org/rag-eval says about the question.",
+          "rank": 2
+        }
+      ],
+      "usage": {
+        "search_calls": 1
+      },
+      "cost_micros": 100,
+      "cost_source": "modeled",
+      "latency": {
+        "ttfb_ms": 450,
+        "total_ms": 901
+      },
+      "status": "ok"
+    },
+    {
+      "provider": "exa",
+      "model": "fake",
+      "kind": "retrieval",
+      "tier": "core",
+      "usage": {},
+      "cost_micros": 100,
+      "cost_source": "modeled",
+      "latency": {
+        "ttfb_ms": 0,
+        "total_ms": 0
+      },
+      "status": "timeout",
+      "error": "context deadline exceeded"
+    },
+    {
+      "provider": "linkup",
+      "model": "fake",
+      "kind": "retrieval",
+      "tier": "core",
+      "usage": {
+        "search_calls": 1
+      },
+      "cost_micros": 100,
+      "cost_source": "modeled",
+      "latency": {
+        "ttfb_ms": 825,
+        "total_ms": 1650
+      },
+      "status": "ok"
+    },
+    {
+      "provider": "parallel",
+      "model": "fake",
+      "kind": "retrieval",
+      "tier": "core",
+      "usage": {},
+      "cost_micros": 100,
+      "cost_source": "modeled",
+      "latency": {
+        "ttfb_ms": 0,
+        "total_ms": 0
+      },
+      "status": "deadline",
+      "error": "context deadline exceeded"
+    },
+    {
+      "provider": "serpapi",
+      "model": "fake",
+      "kind": "retrieval",
+      "tier": "core",
+      "usage": {},
+      "cost_micros": 0,
+      "latency": {
+        "ttfb_ms": 0,
+        "total_ms": 0
+      },
+      "status": "pending",
+      "error": "still running: this arm is off the request path and lands on the trace later"
+    },
+    {
+      "provider": "tavily",
+      "model": "fake",
+      "kind": "retrieval",
+      "tier": "core",
+      "usage": {},
+      "cost_micros": 0,
+      "latency": {
+        "ttfb_ms": 0,
+        "total_ms": 0
+      },
+      "status": "skipped",
+      "error": "circuit breaker open"
+    },
+    {
+      "provider": "telem",
+      "model": "fake",
+      "kind": "retrieval",
+      "tier": "core",
+      "citations": [
+        {
+          "url": "https://example.org/rag-eval",
+          "domain": "example.org",
+          "title": "Title of https://example.org/rag-eval",
+          "snippet": "What https://example.org/rag-eval says about the question.",
+          "rank": 1
+        },
+        {
+          "url": "https://telem.example.com/rag",
+          "domain": "example.com",
+          "title": "Title of https://telem.example.com/rag",
+          "snippet": "What https://telem.example.com/rag says about the question.",
+          "rank": 2
+        }
+      ],
+      "usage": {
+        "search_calls": 1
+      },
+      "cost_micros": 100,
+      "cost_source": "modeled",
+      "latency": {
+        "ttfb_ms": 435,
+        "total_ms": 870
+      },
+      "status": "ok"
+    },
+    {
+      "provider": "you",
+      "model": "fake",
+      "kind": "retrieval",
+      "tier": "core",
+      "usage": {},
+      "cost_micros": 0,
+      "latency": {
+        "ttfb_ms": 0,
+        "total_ms": 0
+      },
+      "status": "skipped",
+      "error": "no credential configured for this account"
+    }
+  ],
+  "signals": {
+    "referee": [
+      {
+        "provider": "brave",
+        "status": "ok",
+        "has_answer": false,
+        "is_refusal": false,
+        "answer_words": 0,
+        "citation_count": 2,
+        "distinct_domains": 2,
+        "citation_density": 0,
+        "dead_citations": 0,
+        "unknown_citations": 2,
+        "recency_ok": true,
+        "dated_citations": 0,
+        "latency_ms": 901,
+        "cost_micros": 100,
+        "score": 0.5000000000000001
+      },
+      {
+        "provider": "exa",
+        "status": "timeout",
+        "has_answer": false,
+        "is_refusal": false,
+        "answer_words": 0,
+        "citation_count": 0,
+        "distinct_domains": 0,
+        "citation_density": 0,
+        "dead_citations": 0,
+        "unknown_citations": 0,
+        "recency_ok": true,
+        "dated_citations": 0,
+        "latency_ms": 0,
+        "cost_micros": 100,
+        "score": 0
+      },
+      {
+        "provider": "linkup",
+        "status": "ok",
+        "has_answer": false,
+        "is_refusal": false,
+        "answer_words": 0,
+        "citation_count": 0,
+        "distinct_domains": 0,
+        "citation_density": 0,
+        "dead_citations": 0,
+        "unknown_citations": 0,
+        "recency_ok": true,
+        "dated_citations": 0,
+        "latency_ms": 1650,
+        "cost_micros": 100,
+        "score": 0
+      },
+      {
+        "provider": "parallel",
+        "status": "deadline",
+        "has_answer": false,
+        "is_refusal": false,
+        "answer_words": 0,
+        "citation_count": 0,
+        "distinct_domains": 0,
+        "citation_density": 0,
+        "dead_citations": 0,
+        "unknown_citations": 0,
+        "recency_ok": true,
+        "dated_citations": 0,
+        "latency_ms": 0,
+        "cost_micros": 100,
+        "score": 0
+      },
+      {
+        "provider": "serpapi",
+        "status": "pending",
+        "has_answer": false,
+        "is_refusal": false,
+        "answer_words": 0,
+        "citation_count": 0,
+        "distinct_domains": 0,
+        "citation_density": 0,
+        "dead_citations": 0,
+        "unknown_citations": 0,
+        "recency_ok": true,
+        "dated_citations": 0,
+        "latency_ms": 0,
+        "cost_micros": 0,
+        "score": 0
+      },
+      {
+        "provider": "tavily",
+        "status": "skipped",
+        "has_answer": false,
+        "is_refusal": false,
+        "answer_words": 0,
+        "citation_count": 0,
+        "distinct_domains": 0,
+        "citation_density": 0,
+        "dead_citations": 0,
+        "unknown_citations": 0,
+        "recency_ok": true,
+        "dated_citations": 0,
+        "latency_ms": 0,
+        "cost_micros": 0,
+        "score": 0
+      },
+      {
+        "provider": "telem",
+        "status": "ok",
+        "has_answer": false,
+        "is_refusal": false,
+        "answer_words": 0,
+        "citation_count": 2,
+        "distinct_domains": 2,
+        "citation_density": 0,
+        "dead_citations": 0,
+        "unknown_citations": 2,
+        "recency_ok": true,
+        "dated_citations": 0,
+        "latency_ms": 870,
+        "cost_micros": 100,
+        "score": 0.5000000000000001
+      },
+      {
+        "provider": "you",
+        "status": "skipped",
+        "has_answer": false,
+        "is_refusal": false,
+        "answer_words": 0,
+        "citation_count": 0,
+        "distinct_domains": 0,
+        "citation_density": 0,
+        "dead_citations": 0,
+        "unknown_citations": 0,
+        "recency_ok": true,
+        "dated_citations": 0,
+        "latency_ms": 0,
+        "cost_micros": 0,
+        "score": 0
+      }
+    ],
+    "consensus": {
+      "per_candidate": [
+        {
+          "provider": "brave",
+          "overlap": 0.3333333333333333,
+          "coverage": 0.6666666666666666,
+          "corroborated_citations": 1,
+          "orphan_citations": 1,
+          "outlier": false
+        },
+        {
+          "provider": "exa",
+          "overlap": 0,
+          "coverage": 0,
+          "corroborated_citations": 0,
+          "orphan_citations": 0,
+          "outlier": false
+        },
+        {
+          "provider": "linkup",
+          "overlap": 0,
+          "coverage": 0,
+          "corroborated_citations": 0,
+          "orphan_citations": 0,
+          "outlier": false
+        },
+        {
+          "provider": "parallel",
+          "overlap": 0,
+          "coverage": 0,
+          "corroborated_citations": 0,
+          "orphan_citations": 0,
+          "outlier": false
+        },
+        {
+          "provider": "serpapi",
+          "overlap": 0,
+          "coverage": 0,
+          "corroborated_citations": 0,
+          "orphan_citations": 0,
+          "outlier": false
+        },
+        {
+          "provider": "tavily",
+          "overlap": 0,
+          "coverage": 0,
+          "corroborated_citations": 0,
+          "orphan_citations": 0,
+          "outlier": false
+        },
+        {
+          "provider": "telem",
+          "overlap": 0.3333333333333333,
+          "coverage": 0.6666666666666666,
+          "corroborated_citations": 1,
+          "orphan_citations": 1,
+          "outlier": false
+        },
+        {
+          "provider": "you",
+          "overlap": 0,
+          "coverage": 0,
+          "corroborated_citations": 0,
+          "orphan_citations": 0,
+          "outlier": false
+        }
+      ],
+      "union_domains": 3,
+      "shared_domains": 1,
+      "agreement_ratio": 0.3333333333333333,
+      "contested": false
+    },
+    "ranking": [
+      {
+        "index": 0,
+        "provider": "brave",
+        "score": 1.947619047619048,
+        "base_score": 1.947619047619048
+      },
+      {
+        "index": 6,
+        "provider": "telem",
+        "score": 1.947619047619048,
+        "base_score": 1.947619047619048
+      },
+      {
+        "index": 1,
+        "provider": "exa",
+        "score": 0,
+        "base_score": 0
+      },
+      {
+        "index": 2,
+        "provider": "linkup",
+        "score": 0,
+        "base_score": 0
+      },
+      {
+        "index": 3,
+        "provider": "parallel",
+        "score": 0,
+        "base_score": 0
+      },
+      {
+        "index": 4,
+        "provider": "serpapi",
+        "score": 0,
+        "base_score": 0
+      },
+      {
+        "index": 5,
+        "provider": "tavily",
+        "score": 0,
+        "base_score": 0
+      },
+      {
+        "index": 7,
+        "provider": "you",
+        "score": 0,
+        "base_score": 0
+      }
+    ]
+  },
+  "decision": {
+    "mode": "rank",
+    "tier": "balanced",
+    "provider_set": "brave+exa+linkup+parallel+serpapi+tavily+telem+you",
+    "providers": [
+      "brave",
+      "exa",
+      "linkup",
+      "parallel",
+      "serpapi",
+      "tavily",
+      "telem",
+      "you"
+    ],
+    "propensity": 1,
+    "router_version": "none",
+    "ranker_version": "fallback-heuristic-v1"
+  },
+  "usage": {
+    "cost_micros": 500,
+    "latency_ms": 302,
+    "cache_hit": false,
+    "deadline_hit": true,
+    "byok": false,
+    "pending": 1
+  },
+  "merged": [
+    {
+      "result_id": "r_bcd32e5b15b5aee29ec950b180672195",
+      "url": "https://example.org/rag-eval",
+      "canonical_url": "https://example.org/rag-eval",
+      "domain": "example.org",
+      "title": "Title of https://example.org/rag-eval",
+      "excerpt": "What https://example.org/rag-eval says about the question.",
+      "excerpts": [
+        "What https://example.org/rag-eval says about the question."
+      ],
+      "best_rank": 1,
+      "found_by": [
+        {
+          "provider": "brave",
+          "rank": 2
+        },
+        {
+          "provider": "telem",
+          "rank": 1
+        }
+      ],
+      "groups": 2,
+      "votes": 2,
+      "score": 20.5
+    },
+    {
+      "result_id": "r_9c224d5e30ddf17a8ae181749266de99",
+      "url": "https://arxiv.org/abs/2603.01234",
+      "canonical_url": "https://arxiv.org/abs/2603.01234",
+      "domain": "arxiv.org",
+      "title": "Title of https://arxiv.org/abs/2603.01234",
+      "excerpt": "What https://arxiv.org/abs/2603.01234 says about the question.",
+      "excerpts": [
+        "What https://arxiv.org/abs/2603.01234 says about the question."
+      ],
+      "best_rank": 1,
+      "found_by": [
+        {
+          "provider": "brave",
+          "rank": 1
+        }
+      ],
+      "groups": 1,
+      "votes": 1,
+      "exclusive": true,
+      "score": 10.5
+    },
+    {
+      "result_id": "r_fb781e3f69533502b07071159b9fde5b",
+      "url": "https://telem.example.com/rag",
+      "canonical_url": "https://telem.example.com/rag",
+      "domain": "example.com",
+      "title": "Title of https://telem.example.com/rag",
+      "excerpt": "What https://telem.example.com/rag says about the question.",
+      "excerpts": [
+        "What https://telem.example.com/rag says about the question."
+      ],
+      "best_rank": 2,
+      "found_by": [
+        {
+          "provider": "telem",
+          "rank": 2
+        }
+      ],
+      "groups": 1,
+      "votes": 1,
+      "exclusive": true,
+      "score": 10.333333333333334
+    }
+  ],
+  "indexes": {
+    "selected": 8,
+    "ok": 3,
+    "pending": 1,
+    "by_provider": [
+      {
+        "provider": "brave",
+        "status": "ok",
+        "results": 2,
+        "latency_ms": 901
+      },
+      {
+        "provider": "exa",
+        "status": "timeout"
+      },
+      {
+        "provider": "linkup",
+        "status": "ok",
+        "results": 0,
+        "latency_ms": 1650
+      },
+      {
+        "provider": "parallel",
+        "status": "deadline"
+      },
+      {
+        "provider": "serpapi",
+        "status": "pending"
+      },
+      {
+        "provider": "tavily",
+        "status": "skipped",
+        "reason": "breaker_open"
+      },
+      {
+        "provider": "telem",
+        "status": "ok",
+        "results": 2,
+        "latency_ms": 870
+      },
+      {
+        "provider": "you",
+        "status": "skipped",
+        "reason": "no_credential"
+      }
+    ]
+  },
+  "coverage": {
+    "pages": 3,
+    "exclusive": 2,
+    "corroborated": 1,
+    "by_group": {
+      "brave": 2,
+      "telem": 2
+    },
+    "exclusive_by_group": {
+      "brave": 1,
+      "telem": 1
+    },
+    "groups": 2
+  },
+  "merged_limit": 12,
+  "merged_total": 3
+}

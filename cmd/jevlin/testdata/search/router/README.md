@@ -10,6 +10,12 @@ against the router's own output, not responses typed for them.
   `groups`, `coverage` or window fields.
 - `merged-view-success.merge-v2.json` is the same file from `feat/merge-v2` at `26f505a`
   (Jevlin-core #55, not yet deployed), byte for byte.
+- `merged-view-partial-failure.json` and `merged-view-no-usable.json` are the router's two
+  failure fixtures from Jevlin-core `main` at `301a9b0`, byte for byte (unchanged there since
+  `152d371`, and pinned by the router's own `SHA256SUMS`). The first is a search that went out
+  degraded: `usage.deadline_hit` true and arms that timed out, hit the deadline, were still
+  pending or were skipped, beside three that answered. In the second no arm answered, one with
+  `status: "error"`, and the merged view is empty.
 - `merged-view-two-forms.derived.json` is derived from the `feat/merge-v2` file, not
   captured. Its `_derived` field says how: one provider lists pages under a second query
   form, and the router's own code at that commit renumbered the citations and re-derived the
