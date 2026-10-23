@@ -168,7 +168,13 @@ type searchCall struct {
 	// them out (FormsDropped).
 	Objective     *string
 	SearchQueries []string
-	Trace         *traceEnvelope
+	// MergedLimit and MaxChars size the merged view (the router's window
+	// and its excerpt budget), absent unless the --stdin caller sent them.
+	// The router accepts them only beside view "merged", which every
+	// --stdin search sends.
+	MergedLimit *int
+	MaxChars    *int
+	Trace       *traceEnvelope
 }
 
 // searchOutcome is the structured result of running a search. Both
@@ -247,6 +253,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	var view string
 	var objective *string
 	var searchQueries []string
+	var mergedLimit, maxChars *int
 	if machine {
 		// No positional query in machine mode: two sources for the same
 		// value is how a caller ends up sending one and escaping the
@@ -274,6 +281,8 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		view = req.view
 		objective = req.objective
 		searchQueries = req.searchQueries
+		mergedLimit = req.mergedLimit
+		maxChars = req.maxChars
 	} else {
 		query = strings.TrimSpace(strings.Join(fs.Args(), " "))
 		if query == "" {
@@ -385,6 +394,8 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		View:          forwardView,
 		Objective:     objective,
 		SearchQueries: searchQueries,
+		MergedLimit:   mergedLimit,
+		MaxChars:      maxChars,
 		Trace:         trace,
 	})
 	if out.Retried {
@@ -641,6 +652,12 @@ func performSearch(ctx context.Context, now func() time.Time, call searchCall) s
 	}
 	if call.SearchQueries != nil {
 		body["search_queries"] = call.SearchQueries
+	}
+	if call.MergedLimit != nil {
+		body["merged_limit"] = *call.MergedLimit
+	}
+	if call.MaxChars != nil {
+		body["max_chars"] = *call.MaxChars
 	}
 	out := searchOutcome{Traced: call.Trace != nil}
 	if out.Traced {

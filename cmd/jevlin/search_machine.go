@@ -53,6 +53,8 @@ const (
 	codeInvalidProviders     = "invalid_providers"
 	codeInvalidObjective     = "invalid_objective"
 	codeInvalidSearchQueries = "invalid_search_queries"
+	codeInvalidMergedLimit   = "invalid_merged_limit"
+	codeInvalidMaxChars      = "invalid_max_chars"
 )
 
 // inputError is a local refusal with a stable machine code. It is a type
@@ -87,6 +89,11 @@ type machineSearchRequest struct {
 	// caller left out is left out of the router's body too.
 	objective     *string
 	searchQueries []string
+	// mergedLimit and maxChars size the router's merged view: how many
+	// pages, and how many characters of excerpt across them. nil when the
+	// request did not carry them, so the router's own defaults apply.
+	mergedLimit *int
+	maxChars    *int
 }
 
 // wireSearchRequest is the decoded shape. Pointers distinguish an absent
@@ -107,6 +114,8 @@ type wireSearchRequest struct {
 	View          json.RawMessage `json:"view"`
 	Objective     json.RawMessage `json:"objective"`
 	SearchQueries json.RawMessage `json:"search_queries"`
+	MergedLimit   json.RawMessage `json:"merged_limit"`
+	MaxChars      json.RawMessage `json:"max_chars"`
 }
 
 // decodeMachineSearchRequest reads exactly one v1 request from r.
@@ -219,6 +228,20 @@ func decodeMachineSearchRequest(r io.Reader) (machineSearchRequest, error) {
 			return machineSearchRequest{}, err
 		}
 		req.searchQueries = forms
+	}
+	if len(wire.MergedLimit) > 0 {
+		n, err := validateMergedLimit(wire.MergedLimit)
+		if err != nil {
+			return machineSearchRequest{}, err
+		}
+		req.mergedLimit = &n
+	}
+	if len(wire.MaxChars) > 0 {
+		n, err := validateMaxChars(wire.MaxChars)
+		if err != nil {
+			return machineSearchRequest{}, err
+		}
+		req.maxChars = &n
 	}
 	return req, nil
 }
@@ -424,6 +447,45 @@ func validateMaxResults(raw json.RawMessage) (int, *inputError) {
 	}
 	if n < 1 || n > 25 {
 		return 0, inputErrorf(codeInvalidMaxResults, `"max_results" must be between 1 and 25`)
+	}
+	return n, nil
+}
+
+// mergedLimitMax is the router's bound on merged_limit, mirrored here so a
+// value it would refuse costs the caller no router call. The router's own
+// default is 12 pages (24 on max, and more when search_queries are sent).
+const mergedLimitMax = 50
+
+// validateMergedLimit takes the merged view's window: an integer from 1 to
+// 50, as the router accepts it.
+func validateMergedLimit(raw json.RawMessage) (int, *inputError) {
+	if isJSONNull(raw) {
+		return 0, inputErrorf(codeInvalidMergedLimit, `"merged_limit" must not be null`)
+	}
+	var n int
+	if err := json.Unmarshal(raw, &n); err != nil {
+		return 0, inputErrorf(codeInvalidMergedLimit, `"merged_limit" must be an integer`)
+	}
+	if n < 1 || n > mergedLimitMax {
+		return 0, inputErrorf(codeInvalidMergedLimit,
+			fmt.Sprintf(`"merged_limit" must be between 1 and %d`, mergedLimitMax))
+	}
+	return n, nil
+}
+
+// validateMaxChars takes the merged view's total excerpt budget, a positive
+// integer. The router sets no upper bound and neither does this client: a
+// budget larger than the pages' text cuts nothing.
+func validateMaxChars(raw json.RawMessage) (int, *inputError) {
+	if isJSONNull(raw) {
+		return 0, inputErrorf(codeInvalidMaxChars, `"max_chars" must not be null`)
+	}
+	var n int
+	if err := json.Unmarshal(raw, &n); err != nil {
+		return 0, inputErrorf(codeInvalidMaxChars, `"max_chars" must be an integer`)
+	}
+	if n < 1 {
+		return 0, inputErrorf(codeInvalidMaxChars, `"max_chars" must be a positive integer`)
 	}
 	return n, nil
 }
