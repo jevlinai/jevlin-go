@@ -31,6 +31,12 @@ rewritten to match newer behaviour; the newer entry says what changed.
   went to and how many pages the router dropped for falling outside it.
   `result.decision.build` names the router build, and each page in `result.merged` carries the
   router's `source_id` once the router sends one.
+- **`jevlin fetch --stdin` reads a page a search found, in full.** One JSON request names up
+  to five pages, by the `source_id` a search returned or by URL, with an optional
+  `max_chars`, `offset` and `query`; the envelope carries each page's text, in capped slices
+  with a `next_offset` to read on. It needs a router with the fetch endpoint and a claimed
+  account, and it serves only pages from the account's own recent searches; otherwise it says
+  so (`fetch_not_supported`, `fetch_unavailable`, a page's `not_recent`).
 - **Two new request options**, `merged_limit` (1 to 50 pages) and `max_chars` (the merged
   list's total characters of page text), let an agent ask for more pages when a first pass
   looks thin, or for less text.

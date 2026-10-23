@@ -161,8 +161,8 @@ the named tests.
     CheckTx is not inclusion; resolution is a `/tx` confirmation (matching hash, positive height,
     explicit code) or an explicit `-abandon-pending`. The same signed bytes are re-sent, never a
     second signature. `wallet.lock` spans the pending check through first-broadcast classification.
-15. **The machine protocol is versioned, closed and typed.** `search --stdin`, `status -json`,
-    `doctor -json`, `connect -json` and `limits -json` emit one envelope with the mandatory header (`version`,
+15. **The machine protocol is versioned, closed and typed.** `search --stdin`, `fetch --stdin`,
+    `status -json`, `doctor -json`, `connect -json` and `limits -json` emit one envelope with the mandatory header (`version`,
     `command`, `ok`, `exit_code`, `status`, `code`, `retryable`, `action`), a closed action set
     (`none`, `retry`, `fix_input`, `connect`, `login`, `check_access`, `report`) and exit classes
     0 through 4. Classification is by typed errors and exact codes, never by message text
@@ -704,6 +704,10 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   named as not carried, with the reason (`TestEveryKeyTheRouterSendsIsDecided`);
   `skill_render.go`'s `skillTeachesQueryForms` is the switch for the skill's query-forms
   paragraphs, on since the router took the forms (`TestTheQueryFormsAreTaughtAsShipped`);
+  `fetch.go` owns `fetch --stdin`: its strict request, the one POST to `/v1/fetch` through
+  search's `routerClient` and `postRouter`, and the two answers only a fetch gets
+  (`fetch_unavailable` is `connect`, a 404 or 405 is `fetch_not_supported`), guarded by
+  `fetch_test.go`;
   `machine.go` owns the header, the action set
   and the exit/status correspondence; `report_json.go` owns `status`/`doctor`/`connect` JSON.
   `search_protocol_test.go` and `report_json_test.go` guard them.

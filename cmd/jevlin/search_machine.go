@@ -127,37 +127,9 @@ type wireSearchRequest struct {
 // and a request that could set them would let the caller forge the
 // trajectory a search is attributed to.
 func decodeMachineSearchRequest(r io.Reader) (machineSearchRequest, error) {
-	raw, err := io.ReadAll(io.LimitReader(r, machineStdinMax+1))
-	if err != nil {
-		return machineSearchRequest{}, inputErrorf(codeInvalidJSON, "the request could not be read from stdin")
-	}
-	if int64(len(raw)) > machineStdinMax {
-		// Oversized input is a usage error, not a partially parsed request.
-		return machineSearchRequest{}, inputErrorf(codeInputTooLarge,
-			"the request is larger than the 1 MiB limit")
-	}
-	if !utf8.Valid(raw) {
-		return machineSearchRequest{}, inputErrorf(codeInvalidUTF8, "the request is not valid UTF-8")
-	}
-	raw = trimUTF8BOM(raw)
-	if err := singleJSONObject(raw); err != nil {
-		return machineSearchRequest{}, inputErrorf(codeInvalidJSON,
-			"the request must be exactly one JSON object with nothing after it")
-	}
-
-	// The version is read with a permissive decode first, so a future
-	// version is told its version is unsupported rather than being
-	// lectured about the new fields that came with it.
-	var probe struct {
-		Version *int `json:"version"`
-	}
-	if err := json.Unmarshal(raw, &probe); err != nil || probe.Version == nil {
-		return machineSearchRequest{}, inputErrorf(codeUnsupportedVersion,
-			"the request needs \"version\": 1")
-	}
-	if *probe.Version != machineRequestVersion {
-		return machineSearchRequest{}, inputErrorf(codeUnsupportedVersion,
-			"this client speaks search request version 1")
+	raw, ierr := readMachineRequest(r, "search")
+	if ierr != nil {
+		return machineSearchRequest{}, ierr
 	}
 
 	dec := json.NewDecoder(strings.NewReader(string(raw)))
@@ -244,6 +216,45 @@ func decodeMachineSearchRequest(r io.Reader) (machineSearchRequest, error) {
 		req.maxChars = &n
 	}
 	return req, nil
+}
+
+// readMachineRequest reads one version-1 request object from r, for the
+// machine command named: bounded, valid UTF-8, exactly one JSON object, and
+// "version": 1. What the object may carry is the command's own to decide.
+func readMachineRequest(r io.Reader, command string) ([]byte, *inputError) {
+	raw, err := io.ReadAll(io.LimitReader(r, machineStdinMax+1))
+	if err != nil {
+		return nil, inputErrorf(codeInvalidJSON, "the request could not be read from stdin")
+	}
+	if int64(len(raw)) > machineStdinMax {
+		// Oversized input is a usage error, not a partially parsed request.
+		return nil, inputErrorf(codeInputTooLarge,
+			"the request is larger than the 1 MiB limit")
+	}
+	if !utf8.Valid(raw) {
+		return nil, inputErrorf(codeInvalidUTF8, "the request is not valid UTF-8")
+	}
+	raw = trimUTF8BOM(raw)
+	if err := singleJSONObject(raw); err != nil {
+		return nil, inputErrorf(codeInvalidJSON,
+			"the request must be exactly one JSON object with nothing after it")
+	}
+
+	// The version is read with a permissive decode first, so a future
+	// version is told its version is unsupported rather than being
+	// lectured about the new fields that came with it.
+	var probe struct {
+		Version *int `json:"version"`
+	}
+	if err := json.Unmarshal(raw, &probe); err != nil || probe.Version == nil {
+		return nil, inputErrorf(codeUnsupportedVersion,
+			"the request needs \"version\": 1")
+	}
+	if *probe.Version != machineRequestVersion {
+		return nil, inputErrorf(codeUnsupportedVersion,
+			"this client speaks "+command+" request version 1")
+	}
+	return raw, nil
 }
 
 // isJSONNull reports whether raw is the literal JSON null, distinct from

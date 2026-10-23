@@ -686,11 +686,7 @@ func performSearch(ctx context.Context, now func() time.Time, call searchCall) s
 	// not share across the two attempts. Transport: searchTransport's own
 	// test override takes priority; production leaves it nil and falls
 	// back to searchDefaultTransport.
-	transport := searchTransport
-	if transport == nil {
-		transport = searchDefaultTransport
-	}
-	client := &http.Client{Timeout: 0, CheckRedirect: auth.SameOriginRedirects, Transport: transport}
+	client := routerClient()
 
 	out.Started = now()
 	attempt, err := postSearch(ctx, client, call, body)
@@ -808,24 +804,47 @@ func contextFault(ctx context.Context, err error, otherwise searchFault) searchF
 	}
 }
 
+// routerClient is the one client every call to the router is made with:
+// search's and fetch's. Both carry the participant's sr- key, so both share
+// the redirect policy described above, and the deadline is the caller's
+// ctx, never a client Timeout.
+func routerClient() *http.Client {
+	transport := searchTransport
+	if transport == nil {
+		transport = searchDefaultTransport
+	}
+	return &http.Client{Timeout: 0, CheckRedirect: auth.SameOriginRedirects, Transport: transport}
+}
+
 func postSearch(ctx context.Context, client *http.Client, call searchCall, body map[string]any) (routerAttempt, error) {
+	return postRouter(ctx, client, call.Endpoint, call.Key, body, func(req *http.Request) {
+		if sid, ok := body["session_id"].(string); ok && sid != "" {
+			// Read off the body, not off call.Trace, so the header cannot
+			// outlive the field: the trace-compatibility retry deletes the
+			// key, and the header must disappear with it.
+			req.Header.Set("X-Session-Id", sid)
+		}
+	})
+}
+
+// postRouter POSTs body as JSON to one of the router's endpoints with the
+// participant's key, and reads the answer against searchMaxBody. header,
+// when set, adds what only one endpoint sends.
+func postRouter(ctx context.Context, client *http.Client, endpoint, key string, body map[string]any, header func(*http.Request)) (routerAttempt, error) {
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return routerAttempt{}, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, call.Endpoint, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return routerAttempt{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", clientIdentifier())
-	req.Header.Set("Authorization", "Bearer "+call.Key)
-	if sid, ok := body["session_id"].(string); ok && sid != "" {
-		// Read off the body, not off call.Trace, so the header cannot
-		// outlive the field: the trace-compatibility retry deletes the
-		// key, and the header must disappear with it.
-		req.Header.Set("X-Session-Id", sid)
+	req.Header.Set("Authorization", "Bearer "+key)
+	if header != nil {
+		header(req)
 	}
 	resp, err := client.Do(req)
 	if err != nil {

@@ -10,6 +10,7 @@ Values to look up. Every flag is in `jevlin help` and `jevlin <command> -h`.
 | `uninstall` | Removes what setup wrote for one installation; `-binary` and `-purge-state` go further. |
 | `upgrade` | Replaces a native binary with a verified release; `-rollback` swaps back. `-auto` is the daily check the hooks start, not a command a person runs. |
 | `search` | One web search. `--stdin` for agents (JSON in, JSON out); `<query words>` for a person. |
+| `fetch --stdin` | The full text of pages a search returned, for agents (JSON in, JSON out). See [Reading a page in full](#reading-a-page-in-full). |
 | `agents install\|status\|uninstall` | Sets up, reports or removes the skills and hooks of each agent. |
 | `agents prefer on\|off\|status` | Whether this search or the agent's own is the default. |
 | `agents tier fast\|balanced\|max\|default\|status` | The band every search carries unless the request names one; `default` unsets it. |
@@ -32,9 +33,9 @@ defaults. A `jevlin.toml` in the working directory is never read
 unless you name it, so a cloned repo cannot choose where your keys are sent. `status` and `doctor`
 name the file they used. `connect` refuses to run with no config file, and says to run
 `jevlin setup`.
-`search` refuses a second `-config`, even one naming the same file: the Claude Code allow rule
-ends after the installed `-config <file>`, so a second one could otherwise send the key to
-another config's router without a prompt.
+`search` and `fetch` refuse a second `-config`, even one naming the same file: the Claude Code
+allow rule ends after the installed `-config <file>`, so a second one could otherwise send the
+key to another config's router without a prompt.
 
 ## The `--stdin` request
 
@@ -146,6 +147,44 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 The first line is what makes an apostrophe, a quotation mark or any non-ASCII character arrive
 as written. Without it, Windows PowerShell 5.1 turns every non-ASCII character into `?` on the
 way to the program, and the search answers a different question.
+
+### Reading a page in full
+
+`jevlin fetch --stdin` takes one JSON object and answers with one envelope carrying the same
+header as a search's, with `command` set to `fetch`. It sends `POST /v1/fetch` to the configured
+router with the same key, deadline, redirect policy and user agent as a search, and records
+nothing for mining. The router serves only pages from this account's own recent search results,
+and only to a claimed account.
+
+| field | value |
+|---|---|
+| `version` | `1`, required. |
+| `pages` | 1 to 5 entries, required. Each is exactly one of `{"source_id": "s_…"}`, a page's `source_id` from a search's `result.merged` (`s_` and 32 lowercase hex digits), or `{"url": "https://…"}`, an absolute http or https URL. |
+| `max_chars` | 1000 to 50000: how many characters of each page to return. Absent, the router's default. |
+| `offset` | 0 or more: where in each page's text to start. Pass a page's `next_offset` to read on. |
+| `query` | Up to 500 characters, not blank: the router starts a long page's text near the part that matches. |
+
+Every malformed value, and any other field, answers `fix_input` before the router is called. The
+router receives the request without `version`, and without any option left out.
+
+On success, `result.pages` is the router's pages as it sent them, in its order: `source_id`,
+`url`, `title`, `status`, `content` (the page text, as the router returned it), `offset`,
+`next_offset` (where the next slice starts, absent at the end of the page), `content_length`
+(the whole page's characters), `provider`, `cached` and `cost_micros`. `result.usage` has the
+call's `cost_micros` and `latency_ms`, and `request_id` is the router's. A page's `status` is
+`ok`, `failed`, `invalid`, or `not_recent`: the page was not among this account's recent Jevlin
+results, so fetch only pages a search returned and use the host's own fetch tool for any other
+URL. A page that did not come back is not a failed call: `ok` stays `true`.
+
+| router answer | `code` | `retryable` | `action` |
+|---|---|---|---|
+| 403 `fetch_unavailable` | `fetch_unavailable` | `false` | `connect`: fetch needs a claimed account; use the host's own fetch tool until then |
+| 404 or 405 | `fetch_not_supported` | `false` | `report`: this router has no fetch; use the host's own fetch tool |
+| 502, or any 5xx | the router's code, else `router_error` | `true` | `retry` |
+| 401 | the router's code, else `unauthorized` | `false` | `login` |
+| any other status | as for a search | | |
+
+A fetch is one request and is never retried by the client.
 
 ### Bounds
 

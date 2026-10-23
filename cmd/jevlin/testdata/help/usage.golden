@@ -19,6 +19,15 @@ the tool (what an agent runs):
              1m0s. Records the served request for mining and starts a
              flush. Exit: 0=valid search response, 1=transport/timeout/
              cancel, 2=usage, 3=HTTP 4xx, 4=HTTP 5xx or invalid server response.
+  fetch      jevlin fetch --stdin: the full text of pages a search
+             returned, for an agent. One version-1 JSON request on stdin:
+             pages (1 to 5, each a source_id from a search's result or a
+             url), and optionally max_chars (1000 to 50000), offset and
+             query; one JSON envelope on stdout with result.pages, each
+             with its status, content and next_offset. The router serves
+             only pages from this account's recent searches, and only to a
+             claimed account. -timeout as for search. Exit codes as for
+             search.
   agents     agents install|status|uninstall — find Claude Code, Codex,
              Cursor, opencode, Pi and Hermes on this machine and give each
              the search skill and the hooks it supports. -dry-run previews,
