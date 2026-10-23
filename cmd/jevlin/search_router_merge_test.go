@@ -314,21 +314,131 @@ func TestEveryStdinSearchAsksForTheMergedView(t *testing.T) {
 	}
 }
 
-// routerCitation is copied into the envelope's machineCitation field by
-// field, leaving out rank and form, which are the router's keys for finding
-// found_in's positions. A field the router grows would be dropped by that
-// copy without anyone deciding to: this list makes the decision a diff.
+// The router's types are copied into the envelope field by field, so a
+// field one of them grows would be dropped by that copy without anyone
+// deciding to: this list makes the decision a diff. routerCitation leaves out
+// rank and form, which are the router's keys for finding found_in's
+// positions; routerMergedPage, routerIndex and routerUsage are carried whole
+// (machineResultOf, mergedOf), excerpts and canonical_url only in the full
+// view. TestEveryKeyTheRouterSendsIsDecided is the other half: it reads the
+// router's own fixtures, so a key the router starts sending fails there.
 func TestTheRouterCitationsFieldsAreDecided(t *testing.T) {
-	decided := []string{"URL url", "Title title,omitempty", "Snippet snippet,omitempty", "Rank rank,omitempty", "Form form,omitempty"}
-	var got []string
-	rt := reflect.TypeFor[routerCitation]()
-	for i := range rt.NumField() {
-		f := rt.Field(i)
-		got = append(got, f.Name+" "+f.Tag.Get("json"))
+	for _, tc := range []struct {
+		rt      reflect.Type
+		decided []string
+		where   string
+	}{
+		{reflect.TypeFor[routerCitation](), []string{
+			"URL url", "Title title,omitempty", "Snippet snippet,omitempty", "Rank rank,omitempty", "Form form,omitempty",
+		}, "machineCitation (machineResultOf)"},
+		{reflect.TypeFor[routerMergedPage](), []string{
+			"URL url", "ResultID result_id,omitempty", "CanonicalURL canonical_url,omitempty", "Title title,omitempty",
+			"Published published,omitempty", "Excerpt excerpt,omitempty", "Excerpts excerpts,omitempty",
+			"BestRank best_rank", "FoundBy found_by", "Groups groups,omitempty", "Exclusive exclusive,omitempty",
+			"Votes votes,omitempty", "MatchedTerms matched_terms,omitempty",
+		}, "machineMergedPage (mergedOf)"},
+		{reflect.TypeFor[routerIndex](), []string{
+			"Provider provider", "Status status", "Results results,omitempty", "LatencyMS latency_ms,omitempty",
+		}, "machineIndex (machineResultOf)"},
+		{reflect.TypeFor[routerUsage](), []string{
+			"CostMicros cost_micros,omitempty", "CacheHit cache_hit,omitempty", "Pending pending,omitempty",
+			"LatencyMS latency_ms,omitempty", "DeadlineHit deadline_hit,omitempty",
+		}, "machineUsage (machineResultOf)"},
+	} {
+		var got []string
+		for i := range tc.rt.NumField() {
+			f := tc.rt.Field(i)
+			got = append(got, f.Name+" "+f.Tag.Get("json"))
+		}
+		if !reflect.DeepEqual(got, tc.decided) {
+			t.Errorf("%s's fields are %q; this test lists %q.\n"+
+				"Decide whether the envelope's %s carries the new one, then update the list.", tc.rt.Name(), got, tc.decided, tc.where)
+		}
 	}
-	if !reflect.DeepEqual(got, decided) {
-		t.Errorf("routerCitation's fields are %q; this test lists %q.\n"+
-			"Decide whether the envelope's machineCitation carries the new one (machineResultOf), then update the list.", got, decided)
+}
+
+// routerKeysDecided is every key the router's fixtures send in the parts of
+// its answer the envelope maps, each with what the envelope does with it.
+// A key that is not here fails TestEveryKeyTheRouterSendsIsDecided: copying
+// newer router fixtures in with a field nobody has looked at stops the
+// build until someone writes its line.
+var routerKeysDecided = map[string]map[string]string{
+	"merged[]": {
+		"url":           "carried",
+		"result_id":     "carried",
+		"title":         "carried",
+		"published":     "carried",
+		"excerpt":       "carried, as snippet",
+		"excerpts":      "carried in the full view only: snippet is these joined",
+		"canonical_url": "carried in the full view only: informational, and url is what is cited",
+		"found_by":      "carried, each provider once, with found_in from its first listing",
+		"best_rank":     "carried, 0-based",
+		"groups":        "carried",
+		"exclusive":     "carried",
+		"votes":         "carried",
+		"matched_terms": "carried",
+		"domain":        "not carried: it is url's host",
+		"score":         "not carried: the router calls it moving, and the list's order is its order",
+	},
+	"indexes": {
+		"by_provider": "carried, as result.indexes",
+		"selected":    "not carried: a count over by_provider",
+		"ok":          "not carried: a count over by_provider",
+		"pending":     "not carried: a count over by_provider",
+	},
+	"indexes.by_provider[]": {
+		"provider":   "carried",
+		"status":     "carried",
+		"results":    "carried",
+		"latency_ms": "carried",
+		"reason":     "not carried: status is what a caller acts on; why an arm was skipped is the router's own operation",
+	},
+	"usage": {
+		"cost_micros":  "carried",
+		"latency_ms":   "carried",
+		"cache_hit":    "carried",
+		"pending":      "carried",
+		"deadline_hit": "carried",
+		"byok":         "not carried: whose key paid is the tenant's business, not the search's answer",
+	},
+}
+
+func TestEveryKeyTheRouterSendsIsDecided(t *testing.T) {
+	names, err := filepath.Glob(filepath.Join("testdata", "search", "router", "*.json"))
+	if err != nil || len(names) == 0 {
+		t.Fatalf("no router fixtures: %v", err)
+	}
+	seen := map[string]map[string]bool{}
+	note := func(fixture, part string, obj map[string]any) {
+		for k := range obj {
+			if _, ok := routerKeysDecided[part][k]; !ok {
+				t.Errorf("%s: %s carries %q, which nobody has decided about; add it to routerKeysDecided", fixture, part, k)
+			}
+			if seen[part] == nil {
+				seen[part] = map[string]bool{}
+			}
+			seen[part][k] = true
+		}
+	}
+	for _, name := range names {
+		_, doc := readRouterFixture(t, filepath.Base(name))
+		for _, p := range listOf(doc["merged"]) {
+			note(filepath.Base(name), "merged[]", objOf(p))
+		}
+		note(filepath.Base(name), "indexes", objOf(doc["indexes"]))
+		for _, ix := range listOf(objOf(doc["indexes"])["by_provider"]) {
+			note(filepath.Base(name), "indexes.by_provider[]", objOf(ix))
+		}
+		note(filepath.Base(name), "usage", objOf(doc["usage"]))
+	}
+	// A decided key no fixture sends is a line about a router that may not
+	// exist; say so rather than keep it silently.
+	for part, keys := range routerKeysDecided {
+		for k := range keys {
+			if !seen[part][k] {
+				t.Errorf("routerKeysDecided[%q][%q]: no router fixture sends it", part, k)
+			}
+		}
 	}
 }
 

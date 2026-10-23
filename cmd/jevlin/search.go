@@ -987,6 +987,29 @@ type routerResponse struct {
 	// pointer, never on a value that would print as {} or 0).
 	Decision *routerDecision `json:"decision,omitempty"`
 	Usage    *routerUsage    `json:"usage,omitempty"`
+	// Indexes is the router's per-provider account of the search, sent
+	// with the merged view: which arms answered, which failed or timed out
+	// or were skipped, and how many results each gave. A pointer, like
+	// Decision and Usage, so a router that omits it is told apart from one
+	// that sent an empty list.
+	Indexes *routerIndexes `json:"indexes,omitempty"`
+}
+
+// routerIndexes is the router's "indexes" block. Only by_provider is read:
+// selected, ok and pending are counts over that same list.
+type routerIndexes struct {
+	ByProvider []routerIndex `json:"by_provider"`
+}
+
+// routerIndex is one provider's line in indexes.by_provider. Results and
+// LatencyMS are pointers because the router sends them only for an arm that
+// answered, and an arm that answered with no results says 0: absent and zero
+// are different answers.
+type routerIndex struct {
+	Provider  string `json:"provider"`
+	Status    string `json:"status"`
+	Results   *int   `json:"results,omitempty"`
+	LatencyMS *int64 `json:"latency_ms,omitempty"`
 }
 
 // routerDecision is the router's own account of which arms it ran.
@@ -1008,6 +1031,9 @@ type routerUsage struct {
 	CacheHit   bool  `json:"cache_hit,omitempty"`
 	Pending    int   `json:"pending,omitempty"`
 	LatencyMS  int64 `json:"latency_ms,omitempty"`
+	// DeadlineHit says the router answered at its deadline with arms still
+	// out, so what came back is less than the search would have found.
+	DeadlineHit bool `json:"deadline_hit,omitempty"`
 }
 
 type routerCandidate struct {
@@ -1048,11 +1074,16 @@ type routerCitation struct {
 // routerMergedPage is one page of the router's merged view. Every field
 // Jevlin-core #55 adds — canonical_url, groups, exclusive, votes,
 // matched_terms and a found_by entry's form — decodes as optional, so the
-// same binary reads the view before and after it.
+// same binary reads the view before and after it. Published is the page's
+// date as the first provider that gave one gave it (RFC 3339, absent or
+// null when none did); ResultID is the router's stable name for the page
+// within this search's request_id.
 type routerMergedPage struct {
 	URL          string          `json:"url"`
+	ResultID     string          `json:"result_id,omitempty"`
 	CanonicalURL string          `json:"canonical_url,omitempty"`
 	Title        string          `json:"title,omitempty"`
+	Published    string          `json:"published,omitempty"`
 	Excerpt      string          `json:"excerpt,omitempty"`
 	Excerpts     []string        `json:"excerpts,omitempty"`
 	BestRank     int             `json:"best_rank"`

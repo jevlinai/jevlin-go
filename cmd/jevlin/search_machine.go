@@ -484,6 +484,12 @@ type machineResult struct {
 	// standing in for "the router didn't say."
 	Decision *machineDecision `json:"decision,omitempty"`
 	Usage    *machineUsage    `json:"usage,omitempty"`
+	// Indexes is the router's indexes.by_provider, in its order: each arm's
+	// status, and for one that answered its result count and latency. It is
+	// how a caller tells "nothing exists" from "an index failed": a status
+	// other than "ok" means that arm's pages are missing from merged. Absent
+	// exactly when the router sent no indexes block, like Decision and Usage.
+	Indexes *[]machineIndex `json:"indexes,omitempty"`
 	// Merged is present in every view: it is the whole reason the option
 	// exists, so an agent that asked for "merged" still gets it, and one
 	// that didn't ask gets it anyway ("an agent may always read merged
@@ -522,10 +528,18 @@ type machineResult struct {
 // present when the router sent them.
 type machineMergedPage struct {
 	URL string `json:"url"`
+	// ResultID is the router's name for the page in the result stored under
+	// request_id, so a later call can refer to the page without its URL.
+	ResultID string `json:"result_id,omitempty"`
 	// CanonicalURL is the key the router merged the page under. It is
 	// informational: cite URL, which is a spelling a provider returned.
 	CanonicalURL string `json:"canonical_url,omitempty"`
 	Title        string `json:"title,omitempty"`
+	// Published is the page's date as a provider gave it, RFC 3339, absent
+	// when none did. Carried as the router's string, never parsed: the
+	// caller compares it with the question's time, and a reformatted date
+	// would be this client's claim rather than the provider's.
+	Published string `json:"published,omitempty"`
 	// Snippet is the router's excerpt: since Jevlin-core #55 every
 	// provider's text for the page, joined; before it, the longest one.
 	Snippet  string   `json:"snippet,omitempty"`
@@ -594,6 +608,21 @@ type machineUsage struct {
 	CacheHit   bool  `json:"cache_hit,omitempty"`
 	Pending    int   `json:"pending,omitempty"`
 	LatencyMS  int64 `json:"latency_ms,omitempty"`
+	// DeadlineHit, present only when true as CacheHit is, says the router
+	// answered at its deadline with arms still out: the search was cut
+	// short, and an empty or thin merged list is not evidence of absence.
+	DeadlineHit bool `json:"deadline_hit,omitempty"`
+}
+
+// machineIndex is one arm's line in result.indexes. Results and LatencyMS
+// are absent, not zero, when the router did not send them, which it does
+// for an arm that did not answer; an arm that answered with nothing says
+// "results": 0.
+type machineIndex struct {
+	Provider  string `json:"provider"`
+	Status    string `json:"status"`
+	Results   *int   `json:"results,omitempty"`
+	LatencyMS *int64 `json:"latency_ms,omitempty"`
 }
 
 type machineCandidate struct {
@@ -644,11 +673,19 @@ func machineResultOf(s routerSuccess, view string) *machineResult {
 	if r.Usage != nil {
 		out.LatencyMS = r.Usage.LatencyMS
 		out.Usage = &machineUsage{
-			CostMicros: r.Usage.CostMicros,
-			CacheHit:   r.Usage.CacheHit,
-			Pending:    r.Usage.Pending,
-			LatencyMS:  r.Usage.LatencyMS,
+			CostMicros:  r.Usage.CostMicros,
+			CacheHit:    r.Usage.CacheHit,
+			Pending:     r.Usage.Pending,
+			LatencyMS:   r.Usage.LatencyMS,
+			DeadlineHit: r.Usage.DeadlineHit,
 		}
+	}
+	if r.Indexes != nil {
+		indexes := make([]machineIndex, 0, len(r.Indexes.ByProvider))
+		for _, ix := range r.Indexes.ByProvider {
+			indexes = append(indexes, machineIndex(ix))
+		}
+		out.Indexes = &indexes
 	}
 	if r.Decision != nil {
 		out.Decision = &machineDecision{
@@ -710,8 +747,10 @@ func mergedOf(r routerResponse) []machineMergedPage {
 	for _, m := range *r.Merged {
 		page := machineMergedPage{
 			URL:          m.URL,
+			ResultID:     m.ResultID,
 			CanonicalURL: m.CanonicalURL,
 			Title:        m.Title,
+			Published:    m.Published,
 			Snippet:      m.Excerpt,
 			Excerpts:     m.Excerpts,
 			FoundBy:      []string{},
