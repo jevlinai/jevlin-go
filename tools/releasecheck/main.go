@@ -72,7 +72,7 @@ func usage(w io.Writer) {
   preflight      -tag vX.Y.Z -repo DIR -canonical-ref REF
                  everything that must hold before anything is built: tag syntax,
                  annotated tag, the tagged commit's ancestry in canonical main,
-                 npm/package.json's version at the tag, the changelog heading,
+                 npm/package.json's and the plugin manifests' versions at the tag, the changelog heading,
                  and the two naming contracts agreeing.
                  Outputs: version, commit, canonical_main
 
@@ -188,6 +188,17 @@ func runPreflight(args []string, out io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(out, "ok  npm/package.json at the tag says %s\n", v)
+
+	for _, path := range pluginManifests {
+		manifest, err := g.FileAtRev(*tag, path)
+		if err != nil {
+			return err
+		}
+		if err := CheckPluginManifestVersion(path, manifest, v); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "ok  %s at the tag says %s\n", path, v)
+	}
 
 	changelog, err := g.FileAtRev(*tag, "CHANGELOG.md")
 	if err != nil {

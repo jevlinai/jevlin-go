@@ -57,7 +57,11 @@ predecessor project shipped without it.
   what changed for a participant. goreleaser's release notes are the commit list.
 - **`npm/package.json` says `X.Y.Z`** in the commit being tagged.
 - **The plugin manifests say `X.Y.Z`** too, or Claude Code keeps the old plugin for everyone
-  who installed it from the marketplace.
+  who installed it from the marketplace. Preflight checks all three with `npm/package.json`.
+- **`skills/jevlin/SKILL.md` is regenerated** after any change to `cmd/jevlin/skill.md` or the
+  renderer: `JEVLIN_UPDATE_MARKETPLACE_SKILL=1 go test ./cmd/jevlin -run TestMarketplaceSkillIsTheTemplateRendered`.
+  The test fails on a stale copy, so `make verify` catches it; the point is that a marketplace
+  user gets the same skill an installed one does.
 - **The help text and the skill match the flags shipped.** A flag `usageText` or
   `cmd/jevlin/skill.md` names that the binary does not accept, or one it accepts that
   neither mentions, breaks the contract an agent reads.
