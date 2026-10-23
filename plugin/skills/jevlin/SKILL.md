@@ -13,9 +13,12 @@ on this machine, which is what makes a search traced and counted. This skill
 does that setup. It does not search.
 
 What setup writes, and what it leaves alone: a `jevlin` skill in the agent's
-own skills directory, a few hooks, and an allow rule for the one search
-command that skill renders, spelled with the binary's full path, so that
-command runs without a prompt and no other command does. It changes no
+own skills directory (Claude Code, Cursor, Codex, Pi, Hermes; opencode has
+no skills directory and gets an in-process plugin plus a rules block, printed
+for the user to paste into `AGENTS.md`), a few hooks, and, where the agent
+keeps an allow list, an entry for the one search command the skill renders,
+spelled with the binary's full path, so that command runs without a prompt
+and no other command does. It changes no
 permission mode and no sandbox setting of the agent's. The one exception is
 Codex on macOS and Linux, where it adds a marked block to `~/.codex/config.toml`:
 a permission profile named `jevlin` that extends Codex's workspace profile
@@ -56,8 +59,9 @@ jevlin setup -yes
 ```
 
 `-yes` answers the shell-profile and coding-agents questions: it adds
-`jevlin` to PATH and writes the skill and hooks into every agent it finds
-(Claude Code, Cursor, Codex, opencode, Pi, Hermes). Mining stays off unless
+`jevlin` to PATH and writes the skill (or, for opencode, the plugin) and
+hooks into every agent it finds (Claude Code, Cursor, Codex, opencode, Pi,
+Hermes). Mining stays off unless
 the user turns it on later with `jevlin mining enable`; search works either
 way.
 
