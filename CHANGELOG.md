@@ -12,9 +12,10 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
-- **A setup skill on the marketplaces.** `skills/jevlin/SKILL.md` and the manifests beside it
-  (`.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `plugin.json` for the Agent
-  Plugins standard, `.agents/plugins/marketplace.json` for Codex) let an agent take Jevlin from
+- **A setup skill on the marketplaces.** `plugin/skills/jevlin/SKILL.md`, the manifests beside it
+  (`plugin/.claude-plugin/plugin.json`, `plugin/plugin.json` for the Agent
+  Plugins standard) and the marketplaces at the root (`.claude-plugin/marketplace.json`,
+  `.agents/plugins/marketplace.json` for Codex) let an agent take Jevlin from
   skills.sh (`npx skills add jevlinai/jevlin-go`), Claude Code's plugin directory
   (`/plugin install jevlin --marketplace jevlinai/jevlin-go`), Codex's plugin marketplace and
   Cursor's. What it gets is not the search: the skill installs the client and runs

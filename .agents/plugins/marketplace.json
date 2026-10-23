@@ -3,7 +3,7 @@
   "plugins": [
     {
       "name": "jevlin",
-      "source": { "path": "./" },
+      "source": { "path": "./plugin" },
       "interface": { "displayName": "Jevlin web search" }
     }
   ]
