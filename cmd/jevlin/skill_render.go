@@ -74,7 +74,9 @@ Each entry's ` + "`votes`" + ` counts the index groups and wordings that listed
 the page, and ` + "`result.coverage`" + ` sums the search the same way: the
 fan-out's own evidence, stronger than ` + "`found_by`" + ` alone. A page's
 ` + "`snippet`" + ` is every provider's text for it, joined. The list is the
-router's window: ` + "`result.merged_total`" + ` says how many pages there were.`
+router's window: ` + "`result.merged_total`" + ` says how many pages there were,
+and when it is more than ` + "`result.merged_limit`" + `, more pages exist: raise
+` + "`merged_limit`" + ` or narrow the query.`
 }
 
 // shellLabel names a shell the way a participant's host does.

@@ -696,7 +696,12 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   that license it; `search_machine.go` owns search's classification and `result.merged`, which is
   the router's merged view mapped field for field and never a merge of this client's
   (`search_router_merge_test.go`, against the router's own fixtures in
-  `cmd/jevlin/testdata/search/router`);
+  `cmd/jevlin/testdata/search/router`); `machineResultOf` owns what each `view` carries: the
+  default, `merged`, says each page's text once (no candidates, no `excerpts` or
+  `canonical_url`), because the envelope is what the model reads, and `full` may only grow
+  (`TestTheFullViewOnlyAddsToWhatV043Sent`, against the v0.4.3 capture in
+  `cmd/jevlin/testdata/search/full-a0ff6ca`); every key the router's fixtures send is either carried or
+  named as not carried, with the reason (`TestEveryKeyTheRouterSendsIsDecided`);
   `skill_render.go`'s `skillTeachesQueryForms` is the switch for the skill's query-forms
   paragraphs, on since the router took the forms (`TestTheQueryFormsAreTaughtAsShipped`);
   `machine.go` owns the header, the action set

@@ -46,11 +46,13 @@ list and needs no shell escaping. A malformed field answers `fix_input` before a
 | `version` | `1`, required. |
 | `query` | The search, required. |
 | `tier` | `"fast"` (three fast indexes, one per index group, ~$0.015), `"balanced"` (the core arms, 8 results each, a 12-page merged window, ~$0.035) or `"max"` (the core arms, 15 results each, a 24-page window, 2,000-character excerpts, ~$0.045 plus the agent's own tokens). Prices are the arms' own, passed through; `usage.cost_micros` is the real one. Absent, the request carries the participant's band (`agents tier`, then `[miner] tier`), or no tier at all and the router applies the tenant's default. |
-| `recency` | `"day"`, `"week"`, `"month"` or `"year"`. A preference the router passes to its providers; check each citation if it must hold. |
-| `domain_filter` | Up to 16 bare hostnames. A preference, like `recency`. |
+| `recency` | `"day"`, `"week"`, `"month"` or `"year"`. Not yet applied by every provider the router asks: treat the results as unfiltered, and check each page's `published` date if it must hold. |
+| `domain_filter` | Up to 16 bare hostnames. Not yet applied by every provider either; check each page's `url` host if it must hold. |
 | `max_results` | 1 to 25. A cap. |
+| `merged_limit` | 1 to 50: how many pages `result.merged` holds. Absent, the router's window applies (12 pages on `fast` and `balanced`, 24 on `max`, more when `search_queries` are sent). |
+| `max_chars` | A positive integer: the characters of page text across the whole merged list. Absent, only the router's per-page cut applies. |
 | `providers` | Up to 16 provider names: restrict the fan-out, or reach an extended arm that fires only when named. The router owns the list; an unknown name is its call. Needs `balanced` or `max`: on `fast` the router answers 400 `invalid_request`. Billed at the named arms' prices, draws credit even with mining on, earns no reward. |
-| `view` | `"full"` (default) or `"merged"`, which drops the per-provider `candidates` from the envelope. Either way the router is asked for its merged view, and the envelope's `merged` is that list. The human form's `-view merged` with `-format json` shows the router's raw answer with it. |
+| `view` | `"merged"` (default) or `"full"`. Absent or `"merged"`, the envelope carries the merged list without the per-provider `candidates`, and each page without `excerpts` and `canonical_url`, which repeat its `snippet` and `url`. `"full"` adds all three, for the providers' own answer texts. Either way the router is asked for its merged view, and the envelope's `merged` is that list. The human form's `-view merged` with `-format json` shows the router's raw answer with it. |
 | `objective` | What you are trying to find out, in your own words: a non-blank string of at most 4096 bytes. The router passes it to the providers that take a goal and does not rank by it. |
 | `search_queries` | 1 to 4 more wordings of `query`, each a non-blank string of at most 4096 bytes, which the router searches beside it; it drops a repeat. Each extra wording costs about as much as another search. A router that predates `objective` and `search_queries` refuses a request carrying them as `malformed_json`, and so does one whose body limit they push the request past: the search is then sent once more without them, and `result.forms_dropped` is `true`. |
 
@@ -98,12 +100,19 @@ re-sorted or merged again here. Each entry has `url`, `title`, `snippet` (the ro
 for the page), `found_by` (the providers that listed it, each once), `found_in` (one
 `{candidate, citation}` position per provider, in the same order, or none where the router's
 answer does not let them be found) and `best_rank`, counted from 0. A router that sends them
-adds `canonical_url`, `excerpts`, `votes` (the index groups and wordings that listed the page),
-`groups`, `exclusive` and `matched_terms`, and to `result` the merge's `coverage`,
-`merged_limit` (the window), `merged_total` (the pages before it) and `excerpts_trimmed`.
+adds `result_id` (the page's name within this search), `published` (the page's date as a
+provider gave it, absent when none did), `votes` (the index groups and wordings that listed the
+page), `groups`, `exclusive` and `matched_terms`, and to `result` the merge's `coverage`,
+`merged_limit` (the window), `merged_total` (the pages before it) and `excerpts_trimmed`. In the
+full view each entry also has `canonical_url` and `excerpts`.
+
+`result.indexes` is the router's account of each index it asked, in its order: `provider`,
+`status`, and for one that answered `results` and `latency_ms`. A `status` other than `ok`, or
+`result.usage.deadline_hit` (present only when `true`), means the search came back degraded, and
+pages are missing from `merged`. Both are absent when the router sends no account of them.
 `result.forms_dropped` is `true` when the search ran without `objective` and `search_queries`
 (above). An answer with no merged view gets `result.merged: []`, with the candidates as the
-router sent them; the search is still `ok`.
+router sent them in the full view; the search is still `ok`.
 
 `status`, `doctor` and `connect` take `-json` and answer with the same header. Where a terminal
 would ask a person, machine mode answers with the code `human_decision_required`.

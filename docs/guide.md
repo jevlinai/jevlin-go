@@ -136,7 +136,7 @@ The choice is saved beside your config and survives reinstalls. While it is off,
 ## Choosing a band
 
 Every search carries a tier, the router's cost band: `fast` is three fast indexes, one per
-index group, back in about a second, about $0.015 at the arms' own prices; `balanced` is the
+index group, quicker than the others, about $0.015 at the arms' own prices; `balanced` is the
 core arms with 8 results each and a 12-page merged window, about $0.035; `max` is the same arms
 asked for 15 results each, a 24-page window and 2,000-character excerpts, about $0.045 plus the
 tokens your agent spends reading it. Nothing is marked up; `usage.cost_micros` is the number.

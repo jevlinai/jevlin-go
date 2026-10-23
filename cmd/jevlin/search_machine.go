@@ -53,6 +53,8 @@ const (
 	codeInvalidProviders     = "invalid_providers"
 	codeInvalidObjective     = "invalid_objective"
 	codeInvalidSearchQueries = "invalid_search_queries"
+	codeInvalidMergedLimit   = "invalid_merged_limit"
+	codeInvalidMaxChars      = "invalid_max_chars"
 )
 
 // inputError is a local refusal with a stable machine code. It is a type
@@ -77,7 +79,7 @@ type machineSearchRequest struct {
 	domainFilter []string
 	maxResults   *int
 	providers    []string
-	// view is "" (absent, meaning "full") or the caller's validated
+	// view is "" (absent, meaning "merged") or the caller's validated
 	// choice of "full" or "merged" — never any other string, since
 	// validateView refuses anything else before this is ever set.
 	view string
@@ -87,6 +89,11 @@ type machineSearchRequest struct {
 	// caller left out is left out of the router's body too.
 	objective     *string
 	searchQueries []string
+	// mergedLimit and maxChars size the router's merged view: how many
+	// pages, and how many characters of excerpt across them. nil when the
+	// request did not carry them, so the router's own defaults apply.
+	mergedLimit *int
+	maxChars    *int
 }
 
 // wireSearchRequest is the decoded shape. Pointers distinguish an absent
@@ -107,6 +114,8 @@ type wireSearchRequest struct {
 	View          json.RawMessage `json:"view"`
 	Objective     json.RawMessage `json:"objective"`
 	SearchQueries json.RawMessage `json:"search_queries"`
+	MergedLimit   json.RawMessage `json:"merged_limit"`
+	MaxChars      json.RawMessage `json:"max_chars"`
 }
 
 // decodeMachineSearchRequest reads exactly one v1 request from r.
@@ -219,6 +228,20 @@ func decodeMachineSearchRequest(r io.Reader) (machineSearchRequest, error) {
 			return machineSearchRequest{}, err
 		}
 		req.searchQueries = forms
+	}
+	if len(wire.MergedLimit) > 0 {
+		n, err := validateMergedLimit(wire.MergedLimit)
+		if err != nil {
+			return machineSearchRequest{}, err
+		}
+		req.mergedLimit = &n
+	}
+	if len(wire.MaxChars) > 0 {
+		n, err := validateMaxChars(wire.MaxChars)
+		if err != nil {
+			return machineSearchRequest{}, err
+		}
+		req.maxChars = &n
 	}
 	return req, nil
 }
@@ -428,10 +451,50 @@ func validateMaxResults(raw json.RawMessage) (int, *inputError) {
 	return n, nil
 }
 
+// mergedLimitMax is the router's bound on merged_limit, mirrored here so a
+// value it would refuse costs the caller no router call. The router's own
+// default is 12 pages (24 on max, and more when search_queries are sent).
+const mergedLimitMax = 50
+
+// validateMergedLimit takes the merged view's window: an integer from 1 to
+// 50, as the router accepts it.
+func validateMergedLimit(raw json.RawMessage) (int, *inputError) {
+	if isJSONNull(raw) {
+		return 0, inputErrorf(codeInvalidMergedLimit, `"merged_limit" must not be null`)
+	}
+	var n int
+	if err := json.Unmarshal(raw, &n); err != nil {
+		return 0, inputErrorf(codeInvalidMergedLimit, `"merged_limit" must be an integer`)
+	}
+	if n < 1 || n > mergedLimitMax {
+		return 0, inputErrorf(codeInvalidMergedLimit,
+			fmt.Sprintf(`"merged_limit" must be between 1 and %d`, mergedLimitMax))
+	}
+	return n, nil
+}
+
+// validateMaxChars takes the merged view's total excerpt budget, a positive
+// integer. The router sets no upper bound and neither does this client: a
+// budget larger than the pages' text cuts nothing.
+func validateMaxChars(raw json.RawMessage) (int, *inputError) {
+	if isJSONNull(raw) {
+		return 0, inputErrorf(codeInvalidMaxChars, `"max_chars" must not be null`)
+	}
+	var n int
+	if err := json.Unmarshal(raw, &n); err != nil {
+		return 0, inputErrorf(codeInvalidMaxChars, `"max_chars" must be an integer`)
+	}
+	if n < 1 {
+		return 0, inputErrorf(codeInvalidMaxChars, `"max_chars" must be a positive integer`)
+	}
+	return n, nil
+}
+
 // validateView refuses anything but the two shapes this client renders.
 // An absent "view" never reaches here — wire.View is empty and
 // decodeMachineSearchRequest leaves req.view at its zero value, which
-// means "full" everywhere it is read. Decoded as raw JSON first, like
+// means "merged" everywhere it is read: only an explicit "full" asks for
+// the candidates. Decoded as raw JSON first, like
 // recency, domain_filter and max_results: a plain *string field would let
 // an explicit "view": null decode to the same nil the field has when the
 // caller never wrote the key at all, silently treating a stated null as
@@ -484,10 +547,14 @@ type machineResult struct {
 	// standing in for "the router didn't say."
 	Decision *machineDecision `json:"decision,omitempty"`
 	Usage    *machineUsage    `json:"usage,omitempty"`
-	// Merged is present in every view: it is the whole reason the option
-	// exists, so an agent that asked for "merged" still gets it, and one
-	// that didn't ask gets it anyway ("an agent may always read merged
-	// first" — S3). It is the router's merged view, in the router's order
+	// Indexes is the router's indexes.by_provider, in its order: each arm's
+	// status, and for one that answered its result count and latency. It is
+	// how a caller tells "nothing exists" from "an index failed": a status
+	// other than "ok" means that arm's pages are missing from merged. Absent
+	// exactly when the router sent no indexes block, like Decision and Usage.
+	Indexes *[]machineIndex `json:"indexes,omitempty"`
+	// Merged is present in every view: it is what an agent reads first,
+	// and with no view asked for it is nearly all the envelope carries. It is the router's merged view, in the router's order
 	// and cut to the router's window: one merge, the router's, which every
 	// deployed router has returned since before v0.1.0. This client used to
 	// run a second one of its own over the candidates, and every benchmark
@@ -508,11 +575,14 @@ type machineResult struct {
 	// body was more than it reads — and the one retry left them out. Not
 	// a failure: the search ran, on query alone.
 	FormsDropped bool `json:"forms_dropped,omitempty"`
-	// Candidates is a pointer so "view":"merged" can omit the key
-	// entirely (a nil pointer with omitempty) while "full" — the
-	// default — always carries it, even on the (real-router-never-sends-
-	// this) edge case of zero candidates: a non-nil pointer to an empty
-	// slice is not "empty" to encoding/json, only a nil pointer is.
+	// Candidates is carried only for "view":"full". Every page in merged
+	// already holds the text the candidates' citations repeat, and the
+	// providers' own answer texts are what a caller asks "full" for. A
+	// pointer so the default and "merged" omit the key entirely (a nil
+	// pointer with omitempty) while "full" always carries it, even on the
+	// (real-router-never-sends-this) edge case of zero candidates: a
+	// non-nil pointer to an empty slice is not "empty" to encoding/json,
+	// only a nil pointer is.
 	Candidates *[]machineCandidate `json:"candidates,omitempty"`
 }
 
@@ -522,13 +592,25 @@ type machineResult struct {
 // present when the router sent them.
 type machineMergedPage struct {
 	URL string `json:"url"`
-	// CanonicalURL is the key the router merged the page under. It is
-	// informational: cite URL, which is a spelling a provider returned.
+	// ResultID is the router's name for the page in the result stored under
+	// request_id, so a later call can refer to the page without its URL.
+	ResultID string `json:"result_id,omitempty"`
+	// CanonicalURL is the key the router merged the page under, carried in
+	// the full view only. It is informational: cite URL, which is a
+	// spelling a provider returned, and on almost every page the two are
+	// the same string.
 	CanonicalURL string `json:"canonical_url,omitempty"`
 	Title        string `json:"title,omitempty"`
+	// Published is the page's date as a provider gave it, RFC 3339, absent
+	// when none did. Carried as the router's string, never parsed: the
+	// caller compares it with the question's time, and a reformatted date
+	// would be this client's claim rather than the provider's.
+	Published string `json:"published,omitempty"`
 	// Snippet is the router's excerpt: since Jevlin-core #55 every
 	// provider's text for the page, joined; before it, the longest one.
-	Snippet  string   `json:"snippet,omitempty"`
+	Snippet string `json:"snippet,omitempty"`
+	// Excerpts is the texts Snippet joins, one per provider, carried in the
+	// full view only: in the default view it would repeat Snippet whole.
 	Excerpts []string `json:"excerpts,omitempty"`
 	// FoundBy is the providers that listed the page, each once, in the
 	// order the router lists them.
@@ -594,6 +676,21 @@ type machineUsage struct {
 	CacheHit   bool  `json:"cache_hit,omitempty"`
 	Pending    int   `json:"pending,omitempty"`
 	LatencyMS  int64 `json:"latency_ms,omitempty"`
+	// DeadlineHit, present only when true as CacheHit is, says the router
+	// answered at its deadline with arms still out: the search was cut
+	// short, and an empty or thin merged list is not evidence of absence.
+	DeadlineHit bool `json:"deadline_hit,omitempty"`
+}
+
+// machineIndex is one arm's line in result.indexes. Results and LatencyMS
+// are absent, not zero, when the router did not send them, which it does
+// for an arm that did not answer; an arm that answered with nothing says
+// "results": 0.
+type machineIndex struct {
+	Provider  string `json:"provider"`
+	Status    string `json:"status"`
+	Results   *int   `json:"results,omitempty"`
+	LatencyMS *int64 `json:"latency_ms,omitempty"`
 }
 
 type machineCandidate struct {
@@ -624,12 +721,16 @@ type machineCitation struct {
 // prettier would corrupt the thing the caller asked for. The terminal
 // sanitizing belongs to the human renderer, where a control byte would
 // actually do something.
+//
+// view is the caller's: only "full" carries the candidates and each page's
+// excerpts and canonical_url; "merged" and an absent view leave them out.
 func machineResultOf(s routerSuccess, view string) *machineResult {
 	r := s.Response
+	full := view == "full"
 	out := &machineResult{
 		RequestID:       s.RequestID,
 		Chosen:          r.Chosen,
-		Merged:          mergedOf(r),
+		Merged:          mergedOf(r, full),
 		MergedLimit:     r.MergedLimit,
 		MergedTotal:     r.MergedTotal,
 		ExcerptsTrimmed: r.ExcerptsTrimmed,
@@ -644,11 +745,19 @@ func machineResultOf(s routerSuccess, view string) *machineResult {
 	if r.Usage != nil {
 		out.LatencyMS = r.Usage.LatencyMS
 		out.Usage = &machineUsage{
-			CostMicros: r.Usage.CostMicros,
-			CacheHit:   r.Usage.CacheHit,
-			Pending:    r.Usage.Pending,
-			LatencyMS:  r.Usage.LatencyMS,
+			CostMicros:  r.Usage.CostMicros,
+			CacheHit:    r.Usage.CacheHit,
+			Pending:     r.Usage.Pending,
+			LatencyMS:   r.Usage.LatencyMS,
+			DeadlineHit: r.Usage.DeadlineHit,
 		}
+	}
+	if r.Indexes != nil {
+		indexes := make([]machineIndex, 0, len(r.Indexes.ByProvider))
+		for _, ix := range r.Indexes.ByProvider {
+			indexes = append(indexes, machineIndex(ix))
+		}
+		out.Indexes = &indexes
 	}
 	if r.Decision != nil {
 		out.Decision = &machineDecision{
@@ -656,6 +765,9 @@ func machineResultOf(s routerSuccess, view string) *machineResult {
 			Providers: r.Decision.Providers,
 			Trimmed:   r.Decision.Trimmed,
 		}
+	}
+	if !full {
+		return out
 	}
 	candidates := make([]machineCandidate, 0, len(r.Candidates))
 	for i, c := range r.Candidates {
@@ -683,18 +795,15 @@ func machineResultOf(s routerSuccess, view string) *machineResult {
 		}
 		candidates = append(candidates, mc)
 	}
-	// "merged" is the one view that omits candidates; every other value
-	// validateView accepts ("full") or leaves absent keeps them.
-	if view != "merged" {
-		out.Candidates = &candidates
-	}
+	out.Candidates = &candidates
 	return out
 }
 
 // mergedOf maps the router's merged view into the envelope's, in the
 // router's order, with no re-sorting and no re-deduplication: the order and
 // the page identity are the router's contract, and a second opinion here
-// is what this replaced.
+// is what this replaced. Each page's excerpts and canonical_url are kept
+// only when full is set; the rest of the page is the same in every view.
 //
 // A 200 to a search that asked for the merged view and has no "merged" key
 // is the router breaking that contract. It maps to an empty list, never to
@@ -702,20 +811,20 @@ func machineResultOf(s routerSuccess, view string) *machineResult {
 // said on stderr: machine mode writes none, because the host that runs the
 // search hands its stderr to the model as well, and the envelope is the
 // answer.
-func mergedOf(r routerResponse) []machineMergedPage {
+func mergedOf(r routerResponse, full bool) []machineMergedPage {
 	if r.Merged == nil {
 		return []machineMergedPage{}
 	}
 	pages := make([]machineMergedPage, 0, len(*r.Merged))
 	for _, m := range *r.Merged {
 		page := machineMergedPage{
-			URL:          m.URL,
-			CanonicalURL: m.CanonicalURL,
-			Title:        m.Title,
-			Snippet:      m.Excerpt,
-			Excerpts:     m.Excerpts,
-			FoundBy:      []string{},
-			FoundIn:      []machineMergedPosition{},
+			URL:       m.URL,
+			ResultID:  m.ResultID,
+			Title:     m.Title,
+			Published: m.Published,
+			Snippet:   m.Excerpt,
+			FoundBy:   []string{},
+			FoundIn:   []machineMergedPosition{},
 			// The router's rank is 1-based and this envelope's has always
 			// been 0-based. A rank below 1 is not one the router writes;
 			// it is held at 0 rather than carried out as a negative.
@@ -741,6 +850,10 @@ func mergedOf(r routerResponse) []machineMergedPage {
 			firsts = append(firsts, fb)
 		}
 		page.FoundIn = positionsOf(r.Candidates, firsts)
+		if full {
+			page.CanonicalURL = m.CanonicalURL
+			page.Excerpts = m.Excerpts
+		}
 		pages = append(pages, page)
 	}
 	return pages
