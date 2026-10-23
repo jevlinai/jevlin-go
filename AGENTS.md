@@ -161,8 +161,8 @@ the named tests.
     CheckTx is not inclusion; resolution is a `/tx` confirmation (matching hash, positive height,
     explicit code) or an explicit `-abandon-pending`. The same signed bytes are re-sent, never a
     second signature. `wallet.lock` spans the pending check through first-broadcast classification.
-15. **The machine protocol is versioned, closed and typed.** `search --stdin`, `status -json`,
-    `doctor -json`, `connect -json` and `limits -json` emit one envelope with the mandatory header (`version`,
+15. **The machine protocol is versioned, closed and typed.** `search --stdin`, `fetch --stdin`,
+    `status -json`, `doctor -json`, `connect -json` and `limits -json` emit one envelope with the mandatory header (`version`,
     `command`, `ok`, `exit_code`, `status`, `code`, `retryable`, `action`), a closed action set
     (`none`, `retry`, `fix_input`, `connect`, `login`, `check_access`, `report`) and exit classes
     0 through 4. Classification is by typed errors and exact codes, never by message text
@@ -704,6 +704,12 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   named as not carried, with the reason (`TestEveryKeyTheRouterSendsIsDecided`);
   `skill_render.go`'s `skillTeachesQueryForms` is the switch for the skill's query-forms
   paragraphs, on since the router took the forms (`TestTheQueryFormsAreTaughtAsShipped`);
+  `fetch.go` owns `fetch --stdin`: its strict request, the one POST to `/v1/fetch` through
+  search's `routerClient` and `postRouter`, and the three answers only a fetch gets
+  (`fetch_unavailable` is `connect`; a 404 or 405 is `fetch_not_supported` and a 503 with the
+  router's code `fetch_disabled` is `fetch_disabled`, both `report`, while any other 503 stays a
+  retry), guarded by
+  `fetch_test.go`;
   `machine.go` owns the header, the action set
   and the exit/status correspondence; `report_json.go` owns `status`/`doctor`/`connect` JSON.
   `search_protocol_test.go` and `report_json_test.go` guard them.
@@ -739,7 +745,11 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `TestTheCodexGateNamesExactlyTheEventsTheInstallWrites`, and
   `TestCodexEntriesStandDownForAnotherHostsPayload` and `TestWhatContradictsACodexEntry` hold the
   gate. Codex's PreToolUse answers only this installation's exact rendered search, with the bridge
-  and an allow, and is silent for anything else (`TestCodexRewritesAndAllowsOnlyTheRenderedSearch`).
+  and an allow, and its exact rendered fetch, with an allow and the input as it came, and is
+  silent for anything else (`TestCodexRewritesAndAllowsOnlyTheRenderedSearch`,
+  `TestCodexAllowsTheRenderedFetchAsIs`). Claude Code's lineage hook allows the rendered fetch the
+  same way (`allowRenderedFetch`), and Cursor's recognizer knows it as a form
+  (`renderedFormsForShell`); `fetch_allow_test.go` holds all three to the exact command.
 - **Whose lineage file a search may use** — `search.go`'s `searchTrace` owns the channel rule and
   the declared file's session guard; `miner.go`'s `lineageForCwd` owns the walk, which with a
   session exported climbs past a file of another session to the searching session's own, and

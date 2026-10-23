@@ -34,15 +34,20 @@ earlier version wrote differently, and `jevlin agents install` refreshes it.
 
 A skill in `~/.claude/skills/jevlin/`. In `~/.claude/settings.json`: five hooks (`PreToolUse` on
 the Bash and PowerShell tools threads each search into the turn, three track the context window,
-`Stop` flushes) and three `permissions.allow` rules, the single-quoted, quoted and bare spellings
-of the search command. Reinstalling replaces those rules rather than adding more.
+`Stop` flushes) and six `permissions.allow` rules, the single-quoted, quoted and bare spellings
+of the search command and of `fetch --stdin`. Reinstalling replaces those rules rather than adding
+more, so an installation set up before `fetch` existed gains its rules on the next
+`jevlin agents install`, `jevlin setup` or `jevlin upgrade`, and asks before each fetch until then.
 
 ### What to know
 
 Bash on macOS and Linux. On Windows the model picks Git Bash or PowerShell per call, so the skill
 teaches both. The hook prefixes the search with the trace, which an allow rule (matched on how a
 command begins) no longer matches, so the hook answers `allow` itself for exactly the search the
-skill renders. Otherwise every search waits for approval, and a headless session refuses it.
+skill renders. Otherwise every search waits for approval, and a headless session refuses it. The
+hook also answers `allow` for exactly the fetch the skill renders, which it does not rewrite: the
+allow rules cover it under the Bash tool, and the hook under the PowerShell tool, which they cannot
+name.
 
 ### Known limits
 
@@ -72,7 +77,8 @@ and the Agent CLI both load.
 
 The hooks keep one lineage file per conversation, so two chats on one project do not relabel
 each other's searches. `preToolUse` puts the conversation's identity in front of exactly the
-search the skill renders and rewrites nothing else; the shell hook allows exactly that command.
+search the skill renders and rewrites nothing else; the shell hook allows exactly that command,
+and exactly the fetch the skill renders, which carries no identity.
 
 One of the hooks runs when you submit a prompt. It keeps nothing unless you turned `turn_end` on;
 then it holds what you asked, scrubbed, until that turn ends. With `turn_end` on, a turn that
@@ -233,8 +239,9 @@ affected.
 With the hooks approved, a search Codex runs carries its session, turn and call, and a
 subagent's search names the session that started it. Only the search command the skill shows is
 given them, and allowed without a prompt; anything else, including the search after a `cd`, in a
-loop or piped on, runs as written and carries the per-shell identity. A Codex search carries no
-assistant text.
+loop or piped on, runs as written and carries the per-shell identity. The fetch command the skill
+shows is allowed without a prompt as well, as written, and anything else that fetches is asked
+about. A Codex search carries no assistant text.
 
 With `[miner] turn_end = true`, Codex's `Stop` hook also reports a turn in which a jevlin search was
 served (see [The turn end](reference.md#the-turn-end)). It reads the turn from Codex's own session

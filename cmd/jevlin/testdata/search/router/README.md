@@ -16,6 +16,14 @@ against the router's own output, not responses typed for them.
   degraded: `usage.deadline_hit` true and arms that timed out, hit the deadline, were still
   pending or were skipped, beside three that answered. In the second no arm answered, one with
   `status: "error"`, and the merged view is empty.
+- `beta-balanced-filters-2026-10-23.json` is not a generated fixture but one real answer,
+  recorded on 2026-10-23 from the beta router (`router-api.nyks.dev`) running Jevlin-core #68:
+  a balanced search for "python 3.14 free-threaded build changes" with `recency: "year"` and
+  `domain_filter: ["python.org", "github.com"]`, 12 merged pages of 23, one arm (exa) with
+  `status: "error"`. It is the only file here with `filters_applied` and `decision.build`. It
+  was checked for keys, emails and account identifiers before it was committed and carries
+  none. No router fixture or recording carries a merged page's `source_id` yet, so that field
+  is tested with a response built in the test, never with a file here.
 - `merged-view-two-forms.derived.json` is derived from the `feat/merge-v2` file, not
   captured. Its `_derived` field says how: one provider lists pages under a second query
   form, and the router's own code at that commit renumbered the citations and re-derived the

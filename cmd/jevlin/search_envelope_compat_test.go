@@ -27,16 +27,20 @@ var fullViewAdditions = map[string]bool{
 	"result.merged.[].result_id": true,
 	"result.indexes":             true,
 	"result.usage.deadline_hit":  true,
+	"result.merged.[].source_id": true,
+	"result.filters_applied":     true,
+	"result.decision.build":      true,
 }
 
 // fullCaptures pairs each capture with the router answer it was made from.
 var fullCaptures = map[string]string{
-	"merged-view-success.main.envelope.json":      "router/merged-view-success.main.json",
-	"merged-view-success.merge-v2.envelope.json":  "router/merged-view-success.merge-v2.json",
-	"merged-view-two-forms.derived.envelope.json": "router/merged-view-two-forms.derived.json",
-	"merged-view-partial-failure.envelope.json":   "router/merged-view-partial-failure.json",
-	"merged-view-no-usable.envelope.json":         "router/merged-view-no-usable.json",
-	"balanced_response.envelope.json":             "balanced_response.json",
+	"merged-view-success.main.envelope.json":         "router/merged-view-success.main.json",
+	"merged-view-success.merge-v2.envelope.json":     "router/merged-view-success.merge-v2.json",
+	"merged-view-two-forms.derived.envelope.json":    "router/merged-view-two-forms.derived.json",
+	"merged-view-partial-failure.envelope.json":      "router/merged-view-partial-failure.json",
+	"merged-view-no-usable.envelope.json":            "router/merged-view-no-usable.json",
+	"balanced_response.envelope.json":                "balanced_response.json",
+	"beta-balanced-filters-2026-10-23.envelope.json": "router/beta-balanced-filters-2026-10-23.json",
 }
 
 // searchStdoutServing runs one --stdin search against a fake router that

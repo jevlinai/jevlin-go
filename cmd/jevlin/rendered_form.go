@@ -199,6 +199,11 @@ func renderedFormsForShell(cfg string, sh shellKind) []renderedCommand {
 	if _, script, err := searchBlockForShell(sh, entry, bodyPlaceholder); err == nil {
 		out = append(out, renderedCommand{text: placeholders.Replace(script), path: []string{"search"}, wantsBody: true})
 	}
+	// The fetch, in the same carrier: its body is the request, held to the
+	// same one-version-1-object rule, and nothing else may follow it.
+	if _, script, err := fetchBlockForShell(sh, entry, bodyPlaceholder); err == nil {
+		out = append(out, renderedCommand{text: placeholders.Replace(script), path: []string{"fetch"}, wantsBody: true})
+	}
 	if prefer, err := entry.preferCommandForShell(sh); err == nil {
 		for _, arg := range []string{"on", "off", "status"} {
 			out = append(out, renderedCommand{text: placeholders.Replace(prefer) + " " + arg, path: []string{"agents", "prefer"}})

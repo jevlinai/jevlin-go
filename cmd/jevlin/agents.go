@@ -1160,6 +1160,10 @@ func renderSkill(entry binEntry, prefer, note string, shells skillShells) ([]byt
 	if err != nil {
 		return nil, err
 	}
+	fetchCall, err := fetchSection(entry, shells)
+	if err != nil {
+		return nil, err
+	}
 	// The frontmatter's description is a YAML scalar, not a bare string
 	// this template can quote for it: descriptionOn carries this search's
 	// own JSON examples, quotes and colons included, and a template that
@@ -1176,6 +1180,7 @@ func renderSkill(entry binEntry, prefer, note string, shells skillShells) ([]byt
 	r := strings.NewReplacer(
 		"{{SEARCH}}", human,
 		"{{CALL}}", call,
+		"{{FETCH_CALL}}", fetchCall,
 		"{{PREFER}}", pref,
 		"{{TIER}}", tierCmd,
 		"{{DESCRIPTION}}", string(descYAML),
@@ -1354,27 +1359,38 @@ func claudeHooks(entry binEntry, sh shellKind) (hooksSpec, error) {
 }
 
 // claudeAllowRules are the permission rules that let Claude Code run the
-// search the skill teaches without asking each time. A Bash rule is a
-// prefix match on the command text, so the rule ends where the query
-// begins; both the quoted path the skill prints and a bare one are
-// covered, because a shell that strips the quotes still starts the
-// command with the same binary. Only `search` is allowed: the hooks run
-// outside the permission system, and nothing else needs to.
+// search the skill teaches, and its fetch, without asking each time. A Bash
+// rule is a prefix match on the command text, so the search's rule ends
+// where the query begins, and the fetch's at --stdin, where its request
+// begins: the fetch has no human form, and its rule allows nothing the
+// skill does not render. Both the quoted path the skill prints and a bare
+// one are covered, because a shell that strips the quotes still starts the
+// command with the same binary. Only `search` and `fetch --stdin` are
+// allowed: the hooks run outside the permission system, and nothing else
+// needs to. A fetch is billed per page, but less than a search, and the
+// router serves only pages this account's own searches returned, five at a
+// time, so the rule cannot make it a general fetcher.
 func claudeAllowRules(entry binEntry) []string {
-	suffix := " search"
-	if entry.cfg != "" {
-		suffix += fmt.Sprintf(" -config %q", entry.cfg)
+	var rules []string
+	for _, tail := range []struct{ sub, after string }{{"search", ""}, {"fetch", " --stdin"}} {
+		suffix := " " + tail.sub
+		if entry.cfg != "" {
+			suffix += fmt.Sprintf(" -config %q", entry.cfg)
+		}
+		posixSuffix := " " + tail.sub
+		if entry.cfg != "" {
+			posixSuffix += " -config " + posixQuoteArg(entry.cfg)
+		}
+		// The single-quoted spelling is what the skill renders; the
+		// %q-quoted and bare ones cover the same command typed with the path
+		// double-quoted or unquoted, because a participant or a model may
+		// type either.
+		rules = append(rules,
+			fmt.Sprintf("Bash(%s%s%s:*)", posixQuoteArg(entry.command), posixSuffix, tail.after),
+			fmt.Sprintf("Bash(%q%s%s:*)", entry.command, suffix, tail.after),
+			fmt.Sprintf("Bash(%s%s%s:*)", entry.command, suffix, tail.after))
 	}
-	// The single-quoted spelling is what the skill renders; the %q-quoted and
-	// bare ones cover the same command typed with the path double-quoted or
-	// unquoted, because a participant or a model may type either. Every
-	// spelling is a prefix rule ending where the query begins.
-	rules := []string{fmt.Sprintf("Bash(%q%s:*)", entry.command, suffix), fmt.Sprintf("Bash(%s%s:*)", entry.command, suffix)}
-	posixSuffix := " search"
-	if entry.cfg != "" {
-		posixSuffix += " -config " + posixQuoteArg(entry.cfg)
-	}
-	return append([]string{fmt.Sprintf("Bash(%s%s:*)", posixQuoteArg(entry.command), posixSuffix)}, rules...)
+	return rules
 }
 
 // ruleIsOurs: does this permissions.allow entry name this binary? Matches

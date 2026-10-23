@@ -10,6 +10,7 @@ Values to look up. Every flag is in `jevlin help` and `jevlin <command> -h`.
 | `uninstall` | Removes what setup wrote for one installation; `-binary` and `-purge-state` go further. |
 | `upgrade` | Replaces a native binary with a verified release; `-rollback` swaps back. `-auto` is the daily check the hooks start, not a command a person runs. |
 | `search` | One web search. `--stdin` for agents (JSON in, JSON out); `<query words>` for a person. |
+| `fetch --stdin` | The full text of pages a search returned, for agents (JSON in, JSON out). See [Reading a page in full](#reading-a-page-in-full). |
 | `agents install\|status\|uninstall` | Sets up, reports or removes the skills and hooks of each agent. |
 | `agents prefer on\|off\|status` | Whether this search or the agent's own is the default. |
 | `agents tier fast\|balanced\|max\|default\|status` | The band every search carries unless the request names one; `default` unsets it. |
@@ -32,9 +33,9 @@ defaults. A `jevlin.toml` in the working directory is never read
 unless you name it, so a cloned repo cannot choose where your keys are sent. `status` and `doctor`
 name the file they used. `connect` refuses to run with no config file, and says to run
 `jevlin setup`.
-`search` refuses a second `-config`, even one naming the same file: the Claude Code allow rule
-ends after the installed `-config <file>`, so a second one could otherwise send the key to
-another config's router without a prompt.
+`search` and `fetch` refuse a second `-config`, even one naming the same file: the Claude Code
+allow rule ends after the installed `-config <file>`, so a second one could otherwise send the
+key to another config's router without a prompt.
 
 ## The `--stdin` request
 
@@ -46,8 +47,8 @@ list and needs no shell escaping. A malformed field answers `fix_input` before a
 | `version` | `1`, required. |
 | `query` | The search, required. |
 | `tier` | `"fast"` (three fast indexes, one per index group, ~$0.015), `"balanced"` (the core arms, 8 results each, a 12-page merged window, ~$0.035) or `"max"` (the core arms, 15 results each, a 24-page window, 2,000-character excerpts, ~$0.045 plus the agent's own tokens). Prices are the arms' own, passed through; `usage.cost_micros` is the real one. Absent, the request carries the participant's band (`agents tier`, then `[miner] tier`), or no tier at all and the router applies the tenant's default. |
-| `recency` | `"day"`, `"week"`, `"month"` or `"year"`. Not yet applied by every provider the router asks: treat the results as unfiltered, and check each page's `published` date if it must hold. |
-| `domain_filter` | Up to 16 bare hostnames. Not yet applied by every provider either; check each page's `url` host if it must hold. |
+| `recency` | `"day"`, `"week"`, `"month"` or `"year"`. A router that applies it says so in `result.filters_applied` (below). Without that report the results may be unfiltered: check each page's `published` date if it must hold. |
+| `domain_filter` | Up to 16 bare hostnames. Reported in `result.filters_applied` like `recency`; without the report, check each page's `url` host if it must hold. |
 | `max_results` | 1 to 25. A cap. |
 | `merged_limit` | 1 to 50: how many pages `result.merged` holds. Absent, the router's window applies (12 pages on `fast` and `balanced`, 24 on `max`, more when `search_queries` are sent). |
 | `max_chars` | A positive integer: the characters of page text across the whole merged list. Absent, only the router's per-page cut applies. |
@@ -100,7 +101,9 @@ re-sorted or merged again here. Each entry has `url`, `title`, `snippet` (the ro
 for the page), `found_by` (the providers that listed it, each once), `found_in` (one
 `{candidate, citation}` position per provider, in the same order, or none where the router's
 answer does not let them be found) and `best_rank`, counted from 0. A router that sends them
-adds `result_id` (the page's name within this search), `published` (the page's date as a
+adds `result_id` (the page's name within this search), `source_id` (its name across searches,
+`s_` and 32 hex digits: the same page found twice has the same one, and `fetch` takes it),
+`published` (the page's date as a
 provider gave it, absent when none did), `votes` (the index groups and wordings that listed the
 page), `groups`, `exclusive` and `matched_terms`, and to `result` the merge's `coverage`,
 `merged_limit` (the window), `merged_total` (the pages before it) and `excerpts_trimmed`. In the
@@ -110,6 +113,14 @@ full view each entry also has `canonical_url` and `excerpts`.
 `status`, and for one that answered `results` and `latency_ms`. A `status` other than `ok`, or
 `result.usage.deadline_hit` (present only when `true`), means the search came back degraded, and
 pages are missing from `merged`. Both are absent when the router sends no account of them.
+`result.filters_applied` is the router's report on the request's filters, field for field, and
+has one entry per filter the request carried. `recency` has `requested`, `published_after` (the
+cut-off the router used), `sent_to` and `not_sent` (the providers it did and did not pass the
+filter to) and `dropped` (the pages the router itself removed for falling outside it);
+`domain_filter` has the same but `published_after`. Present, it says every page in the answer
+was held to the filter. Absent on a request that carried one, the router predates the report and
+the pages may not have been. `result.decision.build` names the router build that answered, its
+`version` and `config_hash`, when the router sends it.
 `result.forms_dropped` is `true` when the search ran without `objective` and `search_queries`
 (above). An answer with no merged view gets `result.merged: []`, with the candidates as the
 router sent them in the full view; the search is still `ok`.
@@ -136,6 +147,47 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 The first line is what makes an apostrophe, a quotation mark or any non-ASCII character arrive
 as written. Without it, Windows PowerShell 5.1 turns every non-ASCII character into `?` on the
 way to the program, and the search answers a different question.
+
+### Reading a page in full
+
+`jevlin fetch --stdin` takes one JSON object and answers with one envelope carrying the same
+header as a search's, with `command` set to `fetch`. It sends `POST /v1/fetch` to the configured
+router with the same key, deadline, redirect policy and user agent as a search, and records
+nothing for mining. The router serves only pages from this account's own recent search results,
+and only to an account that can fetch.
+
+| field | value |
+|---|---|
+| `version` | `1`, required. |
+| `pages` | 1 to 5 entries, required. Each is exactly one of `{"source_id": "s_…"}`, a page's `source_id` from a search's `result.merged` (`s_` and 32 lowercase hex digits), or `{"url": "https://…"}`, an absolute http or https URL. |
+| `max_chars` | 1000 to 50000: how many characters of each page to return. Absent, the router's default. |
+| `offset` | 0 or more: where in each page's text to start. Pass a page's `next_offset` to read on. |
+| `query` | Up to 500 characters, not blank: the router starts a long page's text near the part that matches. |
+
+Every malformed value, and any other field, answers `fix_input` before the router is called. The
+router receives the request without `version`, and without any option left out.
+
+On success, `result.pages` is the router's pages as it sent them, in its order: `source_id`,
+`url`, `title`, `status`, `content` (the page text, as the router returned it), `offset`,
+`next_offset` (where the next slice starts, absent at the end of the text), `content_length`
+(the characters of text that can be paged through), `truncated` and `full_length` (present when
+the upstream cut the page: `truncated` is `true` and `full_length` is the whole page's length,
+more than the router can return), `provider`, `cached` and `cost_micros`. `result.usage` has the
+call's `cost_micros` and `latency_ms`, and `request_id` is the router's. A page's `status` is
+`ok`, `failed`, `invalid`, or `not_recent`: the page was not among this account's recent Jevlin
+results, so fetch only pages a search returned and use the host's own fetch tool for any other
+URL. A page that did not come back is not a failed call: `ok` stays `true`.
+
+| router answer | `code` | `retryable` | `action` |
+|---|---|---|---|
+| 403 `fetch_unavailable` | `fetch_unavailable` | `false` | `connect`: this account cannot fetch, and `error.message` says why (not claimed, zero retention, or no credit); use the host's own fetch tool |
+| 404 or 405 | `fetch_not_supported` | `false` | `report`: this router has no fetch; use the host's own fetch tool |
+| 503 `fetch_disabled` | `fetch_disabled` | `false` | `report`: this router has fetch switched off; use the host's own fetch tool |
+| 502, or any other 5xx (another 503 too) | the router's code, else `router_error` | `true` | `retry` |
+| 401 | the router's code, else `unauthorized` | `false` | `login` |
+| any other status | as for a search | | |
+
+A fetch is one request and is never retried by the client.
 
 ### Bounds
 

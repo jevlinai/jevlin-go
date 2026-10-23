@@ -200,7 +200,8 @@ func TestAnAllowRuleSetAlreadyCurrentIsLeftInPlace(t *testing.T) {
 		t.Fatalf("this test interleaves the participant's rule among ours and needs at least three: %q", current)
 	}
 	// Ours, out of order, with the participant's own rule in the middle.
-	scrambled := []string{current[2], "Bash(git status:*)", current[0], current[1]}
+	scrambled := append([]string{current[2], "Bash(git status:*)", current[0]}, current[3:]...)
+	scrambled = append(scrambled, current[1])
 	seedAllow(t, m, scrambled...)
 
 	if code, out, errOut := runAgents(t, ops, nil, "install", "-yes", "-config", testCfg, "-client", "claude"); code != exitOK {
@@ -212,5 +213,50 @@ func TestAnAllowRuleSetAlreadyCurrentIsLeftInPlace(t *testing.T) {
 	}
 	if !strings.Contains(string(m.files[claudeSettingsPath]), `"allow"`) {
 		t.Fatal("the allow list vanished")
+	}
+}
+
+// An installation from before the fetch holds the search's three rules and
+// no fetch rule. The next install, or an upgrade's re-render, replaces that
+// set with the current one, which allows the fetch too; the participant's
+// own rule stays where it was.
+func TestAnInstallFromBeforeTheFetchGainsItsAllowRules(t *testing.T) {
+	m, ops := newFakeMachine("claude")
+	current := claudeAllowRules(installedEntry(t, ops))
+	var searchOnly, fetchRules []string
+	for _, r := range current {
+		if strings.Contains(r, " fetch ") {
+			fetchRules = append(fetchRules, r)
+		} else {
+			searchOnly = append(searchOnly, r)
+		}
+	}
+	if len(searchOnly) != 3 || len(fetchRules) != 3 {
+		t.Fatalf("the current set is not three search rules and three fetch rules: %q", current)
+	}
+	seedAllow(t, m, append([]string{"Bash(git status:*)"}, searchOnly...)...)
+
+	if code, out, errOut := runAgents(t, ops, nil, "install", "-yes", "-config", testCfg, "-client", "claude"); code != exitOK {
+		t.Fatalf("install: exit %d\n%s\n%s", code, out, errOut)
+	}
+	allow := allowOf(t, m, claudeSettingsPath)
+	if allow[0] != "Bash(git status:*)" {
+		t.Errorf("the participant's rule moved: %q", allow)
+	}
+	for _, r := range current {
+		if countString(allow, r) != 1 {
+			t.Errorf("after the install, %s is there %d times: %q", r, countString(allow, r), allow)
+		}
+	}
+	if len(allow) != 1+len(current) {
+		t.Errorf("%d rules, want the participant's and the current %d: %q", len(allow), len(current), allow)
+	}
+
+	// And uninstall takes the fetch's rules with the search's.
+	if code, out, errOut := runAgents(t, ops, nil, "uninstall", "-yes", "-config", testCfg, "-client", "claude"); code != exitOK {
+		t.Fatalf("uninstall: exit %d\n%s\n%s", code, out, errOut)
+	}
+	if allow := allowOf(t, m, claudeSettingsPath); len(allow) != 1 || allow[0] != "Bash(git status:*)" {
+		t.Errorf("uninstall left %q", allow)
 	}
 }

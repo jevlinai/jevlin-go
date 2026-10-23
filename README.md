@@ -117,8 +117,10 @@ These fields pass straight through to the router: `recency` (`day`, `week`, `mon
 `year`), `domain_filter` (up to 16 hostnames), `max_results` (1 to 25), `merged_limit` (1 to
 50 pages in the merged list), `max_chars` (the merged list's total characters of page text) and
 `providers` (up to 16 names, to restrict the fan-out or reach an arm that fires only when
-named). The router does not yet apply `recency` and `domain_filter` on every provider, so the
-skill tells the agent to check each page's date and host itself. A named set
+named). A router that applies `recency` and `domain_filter` itself says so in
+`result.filters_applied`: it sent each filter to every provider that takes it and dropped any
+page outside it. Without that report the results may be unfiltered, and the skill tells the
+agent to check each page's date and host itself. A named set
 runs on `balanced` or `max` only: on `fast` the router refuses it, since the fast set is the
 router's. It is billed at the named arms' own prices, draws credit even with mining on, and
 earns no reward, because a single-arm search carries none of the comparison a trajectory is

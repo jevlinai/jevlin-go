@@ -11,7 +11,8 @@ package main
 // only for contradiction (codexEntryStandsDown).
 //
 //	PreToolUse    the bridge: this installation's exact rendered search gets
-//	              the trace envelope and an allow; anything else, silence.
+//	              the trace envelope and an allow, its exact rendered fetch
+//	              an allow alone; anything else, silence.
 //	SessionStart  seed the window, start a flush.
 //	PreCompact,   bump the window, once per compaction.
 //	PostCompact
@@ -139,11 +140,12 @@ type codexPayload struct {
 	ToolInput map[string]any `json:"tool_input"`
 }
 
-// codexLineage is Codex's PreToolUse. It answers for exactly one command:
-// this installation's own rendered search, byte for byte what its skill
-// teaches, naming its binary and its config. That command gets the trace
+// codexLineage is Codex's PreToolUse. It answers for exactly two commands:
+// this installation's own rendered search and fetch, byte for byte what its
+// skill teaches, naming its binary and its config. The search gets the trace
 // envelope in front of it, in the syntax of the shell Codex runs it in, and
-// an allow. Every other command gets silence — no rewrite, no decision, no
+// an allow; the fetch, which carries no trace, gets the allow alone. Every
+// other command gets silence — no rewrite, no decision, no
 // file — which is stricter than Claude Code's hook on purpose: an answer
 // without a decision is not established on Codex, and an allow for anything
 // but our own command is not this client's to give.
@@ -167,7 +169,12 @@ func codexLineage(ops hookOps, hc hookContext, goos string, payload []byte, stdo
 		return
 	}
 	sh := shells[0]
-	if !isSearchForm(recognizeRenderedForm(command, ops.executable, hc.cfgPath, []shellKind{sh})) {
+	form := recognizeRenderedForm(command, ops.executable, hc.cfgPath, []shellKind{sh})
+	if isFetchForm(form) {
+		codexAllowAsIs(p.ToolInput, stdout)
+		return
+	}
+	if !isSearchForm(form) {
 		return
 	}
 
@@ -234,6 +241,22 @@ func codexLineage(ops hookOps, hc hookContext, goos string, payload []byte, stdo
 		"hookEventName":      "PreToolUse",
 		"permissionDecision": "allow",
 		"updatedInput":       updated,
+	}})
+	if err != nil {
+		return
+	}
+	fmt.Fprintln(stdout, string(out))
+}
+
+// codexAllowAsIs answers this installation's rendered fetch with an allow
+// and its input unchanged: a fetch carries no trace, so nothing is added,
+// and no lineage file is written. The input is echoed because the decision
+// and the input together is the one answer shape a live run established.
+func codexAllowAsIs(input map[string]any, stdout io.Writer) {
+	out, err := json.Marshal(map[string]any{"hookSpecificOutput": map[string]any{
+		"hookEventName":      "PreToolUse",
+		"permissionDecision": "allow",
+		"updatedInput":       input,
 	}})
 	if err != nil {
 		return
