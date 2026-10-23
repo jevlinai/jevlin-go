@@ -9,7 +9,7 @@
     {
       "name": "jevlin",
       "source": "./",
-      "description": "Web search through the Jevlin router: one request, eight providers, merged sources with a per-provider receipt.",
+      "description": "Installs the jevlin client and runs its setup; the search skill and hooks come from setup.",
       "version": "0.4.3"
     }
   ]

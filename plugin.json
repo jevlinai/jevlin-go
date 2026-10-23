@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "jevlin",
   "version": "0.4.3",
-  "description": "Free multi-provider web search for coding agents. One search fans out to eight providers and returns merged, de-duplicated sources; every search is a trace in the agent's trajectory.",
+  "description": "Sets up Jevlin, free multi-provider web search for coding agents: installs the jevlin client and runs its setup, which writes this agent's own search skill and hooks.",
   "author": {
     "name": "Jevlin",
     "url": "https://jevlin.ai"
@@ -15,6 +15,7 @@
     "web-search",
     "research",
     "documentation",
-    "coding-agent"
+    "coding-agent",
+    "setup"
   ]
 }

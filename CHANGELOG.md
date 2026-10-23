@@ -12,15 +12,15 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
-- **The skill is published on its own.** `skills/jevlin/SKILL.md` is the same skill setup
-  writes, with `jevlin` found on PATH instead of by its full path, so an agent can take it
-  from a marketplace: `npx skills add jevlinai/jevlin-go`, Claude Code's
-  `/plugin install jevlin --marketplace jevlinai/jevlin-go`, Codex's
-  `codex plugin marketplace add jevlinai/jevlin-go`, and Cursor's Marketplace. The manifests
-  are `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `plugin.json` (the
-  Agent Plugins standard) and `.agents/plugins/marketplace.json`. The binary still comes from
-  the install; the skill says so when it is missing, and a marketplace install carries no
-  hooks or allow rules — `jevlin setup` writes those.
+- **A setup skill on the marketplaces.** `skills/jevlin/SKILL.md` and the manifests beside it
+  (`.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `plugin.json` for the Agent
+  Plugins standard, `.agents/plugins/marketplace.json` for Codex) let an agent take Jevlin from
+  skills.sh (`npx skills add jevlinai/jevlin-go`), Claude Code's plugin directory
+  (`/plugin install jevlin --marketplace jevlinai/jevlin-go`), Codex's plugin marketplace and
+  Cursor's. What it gets is not the search: the skill installs the client and runs
+  `jevlin setup`, which writes the agent's own search skill and hooks, exactly as a person
+  running setup gets them. Release preflight now checks the manifests' version with
+  `npm/package.json`.
 
 ## v0.4.3 — 2026-10-20
 

@@ -31,9 +31,9 @@ jevlin setup
 Install it globally, never with `npx`: setup writes the binary's path into your agents' skills
 and hooks, and npm throws away an `npx` cache or a project's `node_modules`.
 
-The skill the agent reads is also published on its own, for an agent that installs from a
-marketplace. The binary still comes from the install above; the skill says so when it is
-missing.
+An agent can run this install itself. The marketplaces carry a setup skill, not the search:
+it installs the client and runs `jevlin setup`, which writes the agent's own skill and hooks.
+Without setup there is no search.
 
 ```bash
 npx skills add jevlinai/jevlin-go                          # any agent with skills (skills.sh)
@@ -43,7 +43,7 @@ codex plugin marketplace add jevlinai/jevlin-go            # Codex CLI: then /pl
 ```
 
 Cursor loads the same package from its Marketplace once it is listed there, and from the
-repository until then. An agent can do the whole install itself from
+repository until then. The same instructions, for an agent handed a link, are at
 [jevlin.ai/agents.md](https://jevlin.ai/agents.md).
 
 Without Node, download the archive for your OS and architecture from the
