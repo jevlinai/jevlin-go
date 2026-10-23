@@ -362,12 +362,13 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		fmt.Fprintln(stderr, "jevlin search: ignoring "+bridgeEnv+": this session's host declared the lineage file ("+lineageEnv+") as its trace channel, so a bridge here was written by something else")
 	}
 	// Only "merged" travels: it is the one view the router accepts, while
-	// "full" (explicit or defaulted) is this client's own rendering choice
-	// and would be refused upstream with a 400. On --stdin it travels
-	// whatever the caller asked, because the envelope's merged list IS the
-	// router's: the caller's view decides only whether the envelope also
-	// carries the candidates. The human form sends it only for -view
-	// merged, which is what that flag has always meant.
+	// "full" is this client's own rendering choice and would be refused
+	// upstream with a 400. On --stdin it travels whatever the caller asked,
+	// because the envelope's merged list IS the router's: the caller's view
+	// decides only how much of the router's answer the envelope repeats
+	// (the candidates, and each page's excerpts and canonical_url, in
+	// "full"). The human form sends it only for -view merged, which is what
+	// that flag has always meant.
 	forwardView := ""
 	if view == "merged" || machine {
 		forwardView = "merged"

@@ -68,8 +68,10 @@ func listOf(v any) []any         { l, _ := v.([]any); return l }
 func objOf(v any) map[string]any { m, _ := v.(map[string]any); return m }
 
 // checkMergedAgainstTheRouter holds result.merged to the router's merged[]:
-// the same pages in the same order, each mapped field for field.
-func checkMergedAgainstTheRouter(t *testing.T, fixture, result map[string]any) {
+// the same pages in the same order, each mapped field for field. full says
+// which view the envelope was asked for: only "full" repeats each page's
+// excerpts and canonical_url, and any other view must carry neither.
+func checkMergedAgainstTheRouter(t *testing.T, fixture, result map[string]any, full bool) {
 	t.Helper()
 	wire := listOf(fixture["merged"])
 	got := listOf(result["merged"])
@@ -84,8 +86,19 @@ func checkMergedAgainstTheRouter(t *testing.T, fixture, result map[string]any) {
 		if g["snippet"] != w["excerpt"] {
 			t.Errorf("page %d: snippet is not the router's excerpt:\n%v\n%v", i, g["snippet"], w["excerpt"])
 		}
-		if !reflect.DeepEqual(g["excerpts"], w["excerpts"]) {
-			t.Errorf("page %d: excerpts %v, the router's %v", i, g["excerpts"], w["excerpts"])
+		if full {
+			if !reflect.DeepEqual(g["excerpts"], w["excerpts"]) {
+				t.Errorf("page %d: excerpts %v, the router's %v", i, g["excerpts"], w["excerpts"])
+			}
+			if g["canonical_url"] != w["canonical_url"] {
+				t.Errorf("page %d: canonical_url %v, the router's %v", i, g["canonical_url"], w["canonical_url"])
+			}
+		} else {
+			for _, k := range []string{"excerpts", "canonical_url"} {
+				if v, has := g[k]; has {
+					t.Errorf("page %d: %s %v outside the full view, which repeats what snippet and url say", i, k, v)
+				}
+			}
 		}
 		if g["best_rank"] != w["best_rank"].(float64)-1 {
 			t.Errorf("page %d: best_rank %v, want the router's %v less one", i, g["best_rank"], w["best_rank"])
@@ -141,29 +154,34 @@ func checkFoundIn(t *testing.T, fixture, wirePage, page map[string]any) {
 }
 
 // Today's router (main, as deployed): result.merged is its merged[], in
-// its order, with the excerpts it sends, and no field #55 adds.
+// its order, with the excerpts it sends in the full view, and no field #55
+// adds.
 func TestTheMergedListIsTheRoutersInItsOrder(t *testing.T) {
 	raw, fixture := readRouterFixture(t, "merged-view-success.main.json")
-	env, sent, stderr := searchServing(t, raw, `{"version":1,"query":"q"}`)
-	if sent["view"] != "merged" {
-		t.Fatalf("the search did not ask the router for its merged view: %v", sent)
-	}
-	result := resultOf(t, env)
-	checkMergedAgainstTheRouter(t, fixture, result)
-	for _, k := range []string{"coverage", "merged_limit", "merged_total", "excerpts_trimmed", "forms_dropped"} {
-		if _, ok := result[k]; ok {
-			t.Errorf("result carries %s, which this router never sent", k)
-		}
-	}
-	for _, p := range listOf(result["merged"]) {
-		for _, k := range []string{"votes", "groups", "exclusive", "matched_terms", "canonical_url"} {
-			if _, ok := objOf(p)[k]; ok {
-				t.Errorf("%v carries %s, which this router never sent", objOf(p)["url"], k)
+	for view, stdin := range bothViews {
+		t.Run(view, func(t *testing.T) {
+			env, sent, stderr := searchServing(t, raw, stdin)
+			if sent["view"] != "merged" {
+				t.Fatalf("the search did not ask the router for its merged view: %v", sent)
 			}
-		}
-	}
-	if stderr != "" {
-		t.Errorf("a normal search wrote on stderr: %q", stderr)
+			result := resultOf(t, env)
+			checkMergedAgainstTheRouter(t, fixture, result, view == "full")
+			for _, k := range []string{"coverage", "merged_limit", "merged_total", "excerpts_trimmed", "forms_dropped"} {
+				if _, ok := result[k]; ok {
+					t.Errorf("result carries %s, which this router never sent", k)
+				}
+			}
+			for _, p := range listOf(result["merged"]) {
+				for _, k := range []string{"votes", "groups", "exclusive", "matched_terms", "canonical_url"} {
+					if _, ok := objOf(p)[k]; ok {
+						t.Errorf("%v carries %s, which this router never sent", objOf(p)["url"], k)
+					}
+				}
+			}
+			if stderr != "" {
+				t.Errorf("a normal search wrote on stderr: %q", stderr)
+			}
+		})
 	}
 }
 
@@ -171,13 +189,23 @@ func TestTheMergedListIsTheRoutersInItsOrder(t *testing.T) {
 // for each page and its account of the whole merge, passed through.
 func TestTheMergedListCarriesTheRoutersEvidence(t *testing.T) {
 	raw, fixture := readRouterFixture(t, "merged-view-success.merge-v2.json")
-	env, _, _ := searchServing(t, raw, `{"version":1,"query":"q","view":"merged"}`)
+	for view, stdin := range map[string]string{
+		"merged": `{"version":1,"query":"q","view":"merged"}`,
+		"full":   `{"version":1,"query":"q","view":"full"}`,
+	} {
+		t.Run(view, func(t *testing.T) { checkTheRoutersEvidence(t, raw, fixture, stdin, view == "full") })
+	}
+}
+
+func checkTheRoutersEvidence(t *testing.T, raw []byte, fixture map[string]any, stdin string, full bool) {
+	t.Helper()
+	env, _, _ := searchServing(t, raw, stdin)
 	result := resultOf(t, env)
-	checkMergedAgainstTheRouter(t, fixture, result)
+	checkMergedAgainstTheRouter(t, fixture, result, full)
 	wire, got := listOf(fixture["merged"]), listOf(result["merged"])
 	for i := range wire {
 		w, g := objOf(wire[i]), objOf(got[i])
-		for _, k := range []string{"votes", "groups", "canonical_url"} {
+		for _, k := range []string{"votes", "groups"} {
 			if g[k] != w[k] {
 				t.Errorf("page %d: %s %v, the router's %v", i, k, g[k], w[k])
 			}
@@ -203,7 +231,7 @@ func TestFoundInNamesTheCitationByItsFormAndRank(t *testing.T) {
 	raw, fixture := readRouterFixture(t, "merged-view-two-forms.derived.json")
 	env, _, _ := searchServing(t, raw, `{"version":1,"query":"q"}`)
 	result := resultOf(t, env)
-	checkMergedAgainstTheRouter(t, fixture, result)
+	checkMergedAgainstTheRouter(t, fixture, result, false)
 
 	// The page only the reformulation found: exa's third citation under
 	// form 1 is the sixth in its list. rank − 1 would name the third,
@@ -271,9 +299,10 @@ func TestAPageWhosePositionCannotBeFoundCarriesNone(t *testing.T) {
 // the router breaking its contract. The search still ran: ok, an empty
 // list rather than none, the candidates intact, and nothing on stderr,
 // which machine mode never writes. balanced_response.json is a real
-// response recorded without view: "merged", so it has no merged key.
+// response recorded without view: "merged", so it has no merged key. The
+// full view is asked for, so the candidates can be seen to survive.
 func TestARouterThatOmitsItsMergedViewStillAnswersOK(t *testing.T) {
-	env, _, stderr := searchServing(t, readSearchTestdata(t, "balanced_response.json"), `{"version":1,"query":"q"}`)
+	env, _, stderr := searchServing(t, readSearchTestdata(t, "balanced_response.json"), `{"version":1,"query":"q","view":"full"}`)
 	if env["ok"] != true {
 		t.Fatalf("not ok: %v", env)
 	}
@@ -291,14 +320,14 @@ func TestARouterThatOmitsItsMergedViewStillAnswersOK(t *testing.T) {
 
 // view: "merged" travels on every --stdin search, whatever the caller
 // asked; the caller's view decides only whether the envelope carries the
-// candidates.
+// candidates, which only "full" does.
 func TestEveryStdinSearchAsksForTheMergedView(t *testing.T) {
 	raw, _ := readRouterFixture(t, "merged-view-success.main.json")
 	for _, tc := range []struct {
 		name, stdin    string
 		wantCandidates bool
 	}{
-		{"absent", `{"version":1,"query":"q"}`, true},
+		{"absent", `{"version":1,"query":"q"}`, false},
 		{"full", `{"version":1,"query":"q","view":"full"}`, true},
 		{"merged", `{"version":1,"query":"q","view":"merged"}`, false},
 	} {
