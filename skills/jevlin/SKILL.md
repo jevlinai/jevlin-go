@@ -20,10 +20,11 @@ jevlin agents status
 ```
 
 `status` says whether the client is installed and set up; `agents status`
-prints one row per agent, `installed (…)` or `not installed`. If this agent's
-row says installed, stop here and use the installed `jevlin` skill. If
-`jevlin` is not found, go to step 2. If it is found but setup is incomplete,
-or this agent's row says not installed, go to step 3.
+prints one row per agent, `installed (…)` or `not installed`. Stop here and
+use the installed `jevlin` skill only when both hold: `status` reports
+nothing incomplete, and this agent's row says installed. Otherwise, if
+`jevlin` is not found, go to step 2; if it is found, go to step 3: setup is
+safe to run again and repairs what is missing.
 
 ## 2. Install the client
 
@@ -67,11 +68,12 @@ jevlin status
 jevlin agents status
 ```
 
-It is done when `agents status` lists this agent as installed. A row that
+It is done when `status` reports nothing incomplete and `agents status`
+lists this agent as installed, the same two things step 1 checks. A row that
 still says `not installed` after setup is one setup could not answer for the
 user (the Codex question above, or a file it refused to touch): show them the
 row and ask them to run `jevlin agents install -client <agent>` at a terminal
-and answer it there. Do not rerun setup for it. Then tell the user to restart
+and answer it there. Then tell the user to restart
 any agent session that was already open, this one included, so it loads the
 installed `jevlin` skill. That skill teaches the search: one JSON
 request on stdin, one JSON envelope back. Do not search from this skill, and
