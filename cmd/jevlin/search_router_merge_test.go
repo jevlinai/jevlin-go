@@ -449,8 +449,13 @@ func TestEveryKeyTheRouterSendsIsDecided(t *testing.T) {
 			seen[part][k] = true
 		}
 	}
+	// The live recording is the router's bytes too, and the newest of them.
+	names = append(names, filepath.Join("testdata", "search", "balanced_merged_live.json"))
 	for _, name := range names {
-		_, doc := readRouterFixture(t, filepath.Base(name))
+		var doc map[string]any
+		if err := json.Unmarshal(readSearchTestdata(t, strings.TrimPrefix(filepath.ToSlash(name), "testdata/search/")), &doc); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
 		for _, p := range listOf(doc["merged"]) {
 			note(filepath.Base(name), "merged[]", objOf(p))
 		}

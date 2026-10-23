@@ -12,11 +12,12 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
-- **`jevlin search --stdin` answers in far fewer bytes.** With no `view` in the
+- **`jevlin search --stdin` answers in about a quarter of the bytes.** With no `view` in the
   request, the envelope now carries the router's merged list alone: no per-provider
   `candidates`, and each page without `excerpts` and `canonical_url`, which repeated its
   `snippet` and `url`. Each page's text arrives once instead of three times, and the envelope is
-  what an agent's host puts into the model's context. An integration that reads `candidates`
+  what an agent's host puts into the model's context: on a recorded 12-page `balanced` search it
+  went from 74 KB to 19 KB. An integration that reads `candidates`
   asks for `"view":"full"`, which carries everything it did before, unchanged, plus the new
   fields below.
 - **The envelope says when a search was degraded.** `result.indexes` lists each index the
