@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "jevlin",
-      "source": "./",
+      "source": "./plugin",
       "description": "Installs the jevlin client and runs its setup; the search skill and hooks come from setup.",
       "version": "0.4.3"
     }

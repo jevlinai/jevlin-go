@@ -11,9 +11,9 @@ import (
 // npm/package.json and leaves these behind ships a client that updates
 // and a marketplace skill that does not (#134 review).
 var pluginManifests = []string{
-	".claude-plugin/plugin.json",
+	"plugin/.claude-plugin/plugin.json",
 	".claude-plugin/marketplace.json",
-	"plugin.json",
+	"plugin/plugin.json",
 }
 
 // PluginManifestVersions reads every "version" a manifest declares: the
