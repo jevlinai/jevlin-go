@@ -59,11 +59,13 @@ func TestSkillTeachesTiersOptionsAndMergedList(t *testing.T) {
 					}
 				}
 
-				// Options: all three named, one example JSON shape each.
+				// Options: each named, one example JSON shape each.
 				for _, want := range []string{
 					"`recency`", `"recency":"month"`,
 					"`domain_filter`", `"domain_filter":["developer.mozilla.org"]`,
 					"`max_results`", `"max_results":3`,
+					"`merged_limit`", `"merged_limit":24`, "first pass looks thin",
+					"`max_chars`", `"max_chars":3000`,
 				} {
 					if !strings.Contains(skill, want) {
 						t.Errorf("skill is missing request-option guidance %q", want)
@@ -74,16 +76,19 @@ func TestSkillTeachesTiersOptionsAndMergedList(t *testing.T) {
 				// agent that reads domain_filter as a restriction presents
 				// off-host results as the named site's, or reports a
 				// failure that is not one — which is what the 0.2.12
-				// release check watched it do. Asserted inside the section,
-				// because "preferences" said anywhere else in the document
+				// release check watched it do. The router does not yet apply
+				// either filter on every provider (its Telem adapter drops
+				// both), so the skill says to treat results as unfiltered
+				// and check each page itself. Asserted inside the section,
+				// because the warning said anywhere else in the document
 				// would not be read at the point the field is chosen.
 				options, ok := skillSection(skill, "## Request options", "## What comes back")
 				if !ok {
 					t.Fatal("no ## Request options section found")
 				}
 				for _, want := range []string{
-					"preferences", "not every provider honors them",
-					"other hosts can still come back", "check each",
+					"does not yet apply to\nevery provider", "treat\nthe results as unfiltered",
+					"other hosts can still\ncome back", "check each page's `published`",
 					"`max_results` is a cap",
 				} {
 					if !strings.Contains(options, want) {
@@ -92,27 +97,42 @@ func TestSkillTeachesTiersOptionsAndMergedList(t *testing.T) {
 				}
 
 				// Reading the answer: merged first, found_by as evidence,
-				// view:merged to cut tokens, what it costs to ask for it,
-				// decision, and cost mentioned only if asked.
+				// view:full only for answer texts, decision, and cost
+				// mentioned only if asked.
 				for _, want := range []string{
-					"result.merged", "found_by", `"view":"merged"`,
+					"result.merged", "found_by", `"view":"full"`,
 					"decision", "usage.cost_micros", "only if the user asks",
 				} {
 					if !strings.Contains(skill, want) {
 						t.Errorf("skill is missing reading-the-answer guidance %q", want)
 					}
 				}
-				// The merged view is not free and is not the default: it
-				// drops the providers' own answer texts with the candidates
-				// list. The release check watched an agent ask for it on
-				// its very first search, unprompted.
+				// The full view is what costs: it repeats each page's text
+				// with every provider's candidates, so it is asked for only
+				// for the answer texts, and it is not the default. And the
+				// signals a degraded search sends are read as degraded, not
+				// as an empty web: an index's status, deadline_hit, a page's
+				// date, corroboration and the identifiers it contains.
 				reading, ok := skillSection(skill, "## Reading the answer", "## Mining is not search")
 				if !ok {
 					t.Fatal("no ## Reading the answer section found")
 				}
-				for _, want := range []string{"answer texts", "not the default"} {
+				for _, want := range []string{
+					"answer texts", "not the default",
+					"several indexes agree on are more trustworthy",
+					"`matched_terms`", "`published`", "time-bound question", "`result_id`",
+					"`result.indexes`", "`usage.deadline_hit`", "degraded",
+					"rather than conclude that\nnothing exists",
+					"`result.merged_total`", "more pages exist", "raise\n`merged_limit`",
+				} {
 					if !strings.Contains(reading, want) {
-						t.Errorf("the Reading the answer section does not say what the merged view costs: missing %q\n%s", want, reading)
+						t.Errorf("the Reading the answer section is missing %q\n%s", want, reading)
+					}
+				}
+				// What was untrue is gone.
+				for _, unwanted := range []string{"in about a second", "passes them to its", "Ask `\"view\":\"merged\"` when tokens matter"} {
+					if strings.Contains(skill, unwanted) {
+						t.Errorf("skill still says %q", unwanted)
 					}
 				}
 
