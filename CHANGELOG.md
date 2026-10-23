@@ -21,6 +21,9 @@ rewritten to match newer behaviour; the newer entry says what changed.
   `jevlin setup`, which writes the agent's own search skill and hooks, exactly as a person
   running setup gets them. Release preflight now checks the manifests' version with
   `npm/package.json`.
+- **Claude Code's allow rules always name the installed config**, the default path when setup
+  has not written it yet, and the next `agents install`, `setup` or upgrade replaces rules an
+  earlier version wrote without one.
 
 ## v0.4.3 — 2026-10-20
 

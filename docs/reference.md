@@ -34,7 +34,10 @@ name the file they used. `connect` refuses to run with no config file, and says 
 `jevlin setup`.
 `search` refuses a second `-config`, even one naming the same file: the Claude Code allow rule
 ends after the installed `-config <file>`, so a second one could otherwise send the key to
-another config's router without a prompt.
+another config's router without a prompt. Every command `agents install` renders names a
+config; before setup has written the installation's own (`$JEVLIN_HOME/jevlin.toml`, else
+`~/.jevlin/jevlin.toml`), a `-config` naming that path reads as built-in defaults, exactly as
+no `-config` would.
 
 ## The `--stdin` request
 

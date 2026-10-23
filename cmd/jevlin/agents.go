@@ -313,6 +313,11 @@ func (o agentOps) paths(getenv func(string) string) agentPaths {
 type binEntry struct {
 	command string
 	cfg     string // absolute config path, or "" for discovery
+	// implicit: cfg is the file a command naming no -config reads on this
+	// machine (installationConfigPath), so a command of ours an earlier
+	// version rendered without -config ran under this installation's config
+	// and is this installation's to replace.
+	implicit bool
 
 	// rendered, when non-nil, is the config codexSandboxRoots reads
 	// instead of cfg's own bytes on disk. setup's dry run is the one
@@ -1013,18 +1018,27 @@ func resolveEntry(ops agentOps, cfgPath string, getenv func(string) string) (bin
 		return binEntry{}, "", fmt.Errorf("cannot determine my own path: %w", err)
 	}
 	entry := binEntry{command: bin}
+	// Every command rendered names a config, the installation's own when
+	// nothing more specific is given, and before setup has written that file
+	// it names the path setup will write: loadConfig reads it as defaults
+	// until then. A Claude Code allow rule is a prefix ending after that
+	// -config, and search refuses a second one.
 	src := cfgPath
 	if src == "" {
-		src = describeConfigSource("", getenv)
+		src = installationConfigPath(getenv)
 	}
 	if src == "" {
-		return entry, "  (no config file: defaults and JEVLIN_* env)", nil
+		return binEntry{}, "", errors.New("cannot name a config: no home directory, and neither JEVLIN_CONFIG nor JEVLIN_HOME is set")
 	}
 	abs, err := filepath.Abs(src)
 	if err != nil {
 		return binEntry{}, "", fmt.Errorf("%s: %w", src, err)
 	}
 	entry.cfg = abs
+	entry.implicit = sameConfigPath(abs, installationConfigPath(getenv))
+	if _, err := os.Lstat(abs); errors.Is(err, fs.ErrNotExist) {
+		return entry, "  (config: " + abs + ", not written yet: defaults and JEVLIN_* env until setup writes it)", nil
+	}
 	return entry, "  (config: " + abs + ")", nil
 }
 
@@ -2318,12 +2332,13 @@ func codexOwnedRoots(entry binEntry, getenv func(string) string) []string {
 
 // configForEntry is the config an entry names, parsed: the one setup's dry
 // run handed over (entry.rendered) or the bytes at entry.cfg. nil is "there
-// is none to read", which every caller has to answer for itself.
+// is none to read", which every caller has to answer for itself; the
+// installation's own default config before setup has written it is none.
 func configForEntry(entry binEntry, getenv func(string) string) *config.Config {
 	if entry.rendered != nil {
 		return entry.rendered
 	}
-	if entry.cfg == "" {
+	if entry.cfg == "" || unwrittenDefaultConfig(entry.cfg, getenv) {
 		return nil
 	}
 	cfg, _, err := loadConfig(entry.cfg, getenv)
