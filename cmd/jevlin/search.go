@@ -1011,6 +1011,39 @@ type routerResponse struct {
 	// Decision and Usage, so a router that omits it is told apart from one
 	// that sent an empty list.
 	Indexes *routerIndexes `json:"indexes,omitempty"`
+	// FiltersApplied is the router's account of the request's recency and
+	// domain_filter (Jevlin-core #68): which providers each was sent to and
+	// how many pages the router itself dropped for falling outside it. A
+	// router before #68 sends none, and then nothing says the results were
+	// filtered.
+	FiltersApplied *routerFiltersApplied `json:"filters_applied,omitempty"`
+}
+
+// routerFiltersApplied carries one key per filter the request carried, and
+// only those: a request with recency alone gets no domain_filter entry.
+type routerFiltersApplied struct {
+	Recency      *routerRecencyFilter `json:"recency,omitempty"`
+	DomainFilter *routerDomainFilter  `json:"domain_filter,omitempty"`
+}
+
+// routerRecencyFilter and routerDomainFilter keep the router's lists as
+// pointers, so "not_sent": [] stays an empty list and a list the router
+// left out stays out: the envelope repeats them field for field. Dropped is
+// the pages the router removed for falling outside the filter, on top of
+// whatever the providers that took it left out themselves.
+type routerRecencyFilter struct {
+	Requested      string    `json:"requested,omitempty"`
+	PublishedAfter string    `json:"published_after,omitempty"`
+	SentTo         *[]string `json:"sent_to,omitempty"`
+	NotSent        *[]string `json:"not_sent,omitempty"`
+	Dropped        *int      `json:"dropped,omitempty"`
+}
+
+type routerDomainFilter struct {
+	Requested []string  `json:"requested,omitempty"`
+	SentTo    *[]string `json:"sent_to,omitempty"`
+	NotSent   *[]string `json:"not_sent,omitempty"`
+	Dropped   *int      `json:"dropped,omitempty"`
 }
 
 // routerIndexes is the router's "indexes" block. Only by_provider is read:
@@ -1039,6 +1072,15 @@ type routerDecision struct {
 	// (SKILL.md's "trimmed rather than the request refused"). Absent when
 	// nothing was trimmed.
 	Trimmed []string `json:"trimmed,omitempty"`
+	// Build names the router build that answered (Jevlin-core #68): its
+	// version and a hash of its configuration, so two answers can be told
+	// apart by what produced them.
+	Build *routerBuild `json:"build,omitempty"`
+}
+
+type routerBuild struct {
+	Version    string `json:"version,omitempty"`
+	ConfigHash string `json:"config_hash,omitempty"`
 }
 
 // routerUsage is the router's ledger for the whole search: what it cost,
@@ -1095,10 +1137,13 @@ type routerCitation struct {
 // same binary reads the view before and after it. Published is the page's
 // date as the first provider that gave one gave it (RFC 3339, absent or
 // null when none did); ResultID is the router's stable name for the page
-// within this search's request_id.
+// within this search's request_id. SourceID is its name across searches:
+// the same page found by two searches has the same one, and it is what a
+// fetch names a page by.
 type routerMergedPage struct {
 	URL          string          `json:"url"`
 	ResultID     string          `json:"result_id,omitempty"`
+	SourceID     string          `json:"source_id,omitempty"`
 	CanonicalURL string          `json:"canonical_url,omitempty"`
 	Title        string          `json:"title,omitempty"`
 	Published    string          `json:"published,omitempty"`

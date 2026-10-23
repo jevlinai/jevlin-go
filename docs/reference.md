@@ -46,8 +46,8 @@ list and needs no shell escaping. A malformed field answers `fix_input` before a
 | `version` | `1`, required. |
 | `query` | The search, required. |
 | `tier` | `"fast"` (three fast indexes, one per index group, ~$0.015), `"balanced"` (the core arms, 8 results each, a 12-page merged window, ~$0.035) or `"max"` (the core arms, 15 results each, a 24-page window, 2,000-character excerpts, ~$0.045 plus the agent's own tokens). Prices are the arms' own, passed through; `usage.cost_micros` is the real one. Absent, the request carries the participant's band (`agents tier`, then `[miner] tier`), or no tier at all and the router applies the tenant's default. |
-| `recency` | `"day"`, `"week"`, `"month"` or `"year"`. Not yet applied by every provider the router asks: treat the results as unfiltered, and check each page's `published` date if it must hold. |
-| `domain_filter` | Up to 16 bare hostnames. Not yet applied by every provider either; check each page's `url` host if it must hold. |
+| `recency` | `"day"`, `"week"`, `"month"` or `"year"`. A router that applies it says so in `result.filters_applied` (below). Without that report the results may be unfiltered: check each page's `published` date if it must hold. |
+| `domain_filter` | Up to 16 bare hostnames. Reported in `result.filters_applied` like `recency`; without the report, check each page's `url` host if it must hold. |
 | `max_results` | 1 to 25. A cap. |
 | `merged_limit` | 1 to 50: how many pages `result.merged` holds. Absent, the router's window applies (12 pages on `fast` and `balanced`, 24 on `max`, more when `search_queries` are sent). |
 | `max_chars` | A positive integer: the characters of page text across the whole merged list. Absent, only the router's per-page cut applies. |
@@ -100,7 +100,9 @@ re-sorted or merged again here. Each entry has `url`, `title`, `snippet` (the ro
 for the page), `found_by` (the providers that listed it, each once), `found_in` (one
 `{candidate, citation}` position per provider, in the same order, or none where the router's
 answer does not let them be found) and `best_rank`, counted from 0. A router that sends them
-adds `result_id` (the page's name within this search), `published` (the page's date as a
+adds `result_id` (the page's name within this search), `source_id` (its name across searches,
+`s_` and 32 hex digits: the same page found twice has the same one, and `fetch` takes it),
+`published` (the page's date as a
 provider gave it, absent when none did), `votes` (the index groups and wordings that listed the
 page), `groups`, `exclusive` and `matched_terms`, and to `result` the merge's `coverage`,
 `merged_limit` (the window), `merged_total` (the pages before it) and `excerpts_trimmed`. In the
@@ -110,6 +112,14 @@ full view each entry also has `canonical_url` and `excerpts`.
 `status`, and for one that answered `results` and `latency_ms`. A `status` other than `ok`, or
 `result.usage.deadline_hit` (present only when `true`), means the search came back degraded, and
 pages are missing from `merged`. Both are absent when the router sends no account of them.
+`result.filters_applied` is the router's report on the request's filters, field for field, and
+has one entry per filter the request carried. `recency` has `requested`, `published_after` (the
+cut-off the router used), `sent_to` and `not_sent` (the providers it did and did not pass the
+filter to) and `dropped` (the pages the router itself removed for falling outside it);
+`domain_filter` has the same but `published_after`. Present, it says every page in the answer
+was held to the filter. Absent on a request that carried one, the router predates the report and
+the pages may not have been. `result.decision.build` names the router build that answered, its
+`version` and `config_hash`, when the router sends it.
 `result.forms_dropped` is `true` when the search ran without `objective` and `search_queries`
 (above). An answer with no merged view gets `result.merged: []`, with the candidates as the
 router sent them in the full view; the search is still `ok`.

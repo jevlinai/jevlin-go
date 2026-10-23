@@ -25,6 +25,12 @@ rewritten to match newer behaviour; the newer entry says what changed.
   search short, so an agent can tell "nothing exists" from "an index timed out". Each page in
   `result.merged` now carries its `published` date when a provider gave one, and its
   `result_id`.
+- **The envelope says which filters the router applied, and which build answered.** A router
+  that holds a search's pages to its `recency` and `domain_filter` reports it, and
+  `result.filters_applied` carries that report as the router sent it: the providers each filter
+  went to and how many pages the router dropped for falling outside it.
+  `result.decision.build` names the router build, and each page in `result.merged` carries the
+  router's `source_id` once the router sends one.
 - **Two new request options**, `merged_limit` (1 to 50 pages) and `max_chars` (the merged
   list's total characters of page text), let an agent ask for more pages when a first pass
   looks thin, or for less text.
