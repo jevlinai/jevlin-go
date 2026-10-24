@@ -46,7 +46,11 @@ type installationRef struct {
 }
 
 func refFor(entry binEntry) installationRef {
-	return installationRef{bins: []string{entry.command}, cfg: entry.cfg, implicit: entry.implicit}
+	bins := []string{entry.command}
+	if entry.ownBinary != "" && entry.ownBinary != entry.command {
+		bins = append(bins, entry.ownBinary)
+	}
+	return installationRef{bins: bins, cfg: entry.cfg, implicit: entry.implicit}
 }
 
 // binaryPrefixes is every spelling of `<bin> ` this client writes: the three

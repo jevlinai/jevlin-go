@@ -10,7 +10,7 @@ func TestPluginManifestVersionsReadBothShapes(t *testing.T) {
 	if err != nil || strings.Join(v, ",") != "0.4.3" {
 		t.Fatalf("plugin manifest: %v %v", v, err)
 	}
-	v, err = PluginManifestVersions(".claude-plugin/marketplace.json", []byte(`{"name":"jevlin","plugins":[{"name":"jevlin","source":"./","version":"0.4.3"}]}`))
+	v, err = PluginManifestVersions(".claude-plugin/marketplace.json", []byte(`{"name":"jevlin","plugins":[{"name":"jevlin","source":"./plugin","version":"0.4.3"}]}`))
 	if err != nil || strings.Join(v, ",") != "0.4.3" {
 		t.Fatalf("marketplace manifest: %v %v", v, err)
 	}

@@ -288,7 +288,12 @@ install prints a rules block to paste into `AGENTS.md`.
 
 ### What to know
 
-It runs Bash on macOS and Linux, and PowerShell on Windows.
+It runs Bash on macOS and Linux. On Windows it resolves its shell when it starts: `$SHELL`
+wins whenever it is set — a terminal like Git Bash sets it, and opencode then runs its bash
+tool in bash — and only without one does it take the first of pwsh, PowerShell, Git Bash and
+cmd it finds. The plugin follows the same signal per call, so a search carries its bridge in
+the syntax of the shell that will actually run it, from whichever terminal opencode was
+started in.
 
 A subagent runs as a child session, and its searches name the session that started it. The
 plugin learns that from the session's creation, or asks opencode once.

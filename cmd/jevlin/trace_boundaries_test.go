@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -315,6 +317,10 @@ func TestOpencodeRedactionBoundaries(t *testing.T) {
 	script := `
  const fs = await import('node:fs');
  const input = JSON.parse(fs.readFileSync(0,'utf8'));
+ // A platform with no command-line limit, before the import reads it: this
+ // test compares the full 32 KiB tail, and the Windows budget — which has
+ // its own test — would trim it on a Windows runner.
+ Object.defineProperty(process, 'platform', { value: 'linux' });
  const plugin = await import('data:text/javascript;base64,'+Buffer.from(input.plugin).toString('base64'));
  const result={};
  for (const [name,text] of Object.entries(input.cases)) {
@@ -543,5 +549,106 @@ func TestTraceSourceBudget(t *testing.T) {
 	fs.files["/transcript"] = append([]byte("{\"type\":\"user\",\"message\":{\"content\":\"q\"}}\n"), record...)
 	if got := currentAssistantText(ops, hookPayload{TranscriptPath: "/transcript"}); got != "" {
 		t.Fatal("incomplete transcript entry retained history")
+	}
+}
+
+// The install-time declaration says PowerShell for opencode on Windows, but
+// opencode resolves its shell at runtime and $SHELL wins whenever it is set
+// and usable (ShellSelect: environment() is select(process.env.SHELL),
+// before win() tries pwsh, powershell, Git Bash and cmd). Started from Git
+// Bash, which exports SHELL=/usr/bin/bash, every search failed: bash read
+// the PowerShell wrapper as a command named $env:JEVLIN_TRACE_BRIDGE, and
+// the model retried until the run timed out (observed live on Windows).
+// The plugin now mirrors the one signal opencode itself consults, per call.
+func TestOpencodePluginWritesTheShellOpencodeRuns(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatal("node is required to verify the embedded opencode plugin")
+	}
+	// A Git Bash the usability mirror can see: git.exe on PATH, bash.exe at
+	// <git>/../../bin, as select.ts gitbash() walks it. Plain files are
+	// enough — the mirror asks only whether they exist.
+	root := t.TempDir()
+	gitCmd := filepath.Join(root, "git", "cmd")
+	gitBin := filepath.Join(root, "git", "bin")
+	for dir, name := range map[string]string{gitCmd: "git.exe", gitBin: "bash.exe"} {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		// Plain non-executable files: the mirror only asks isFile.
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	realBash := filepath.Join(gitBin, "bash.exe")
+
+	type shellCase struct {
+		Shell *string `json:"shell"`
+		Path  string  `json:"path"`
+	}
+	str := func(s string) *string { return &s }
+	script := `
+ const fs = await import('node:fs');
+ const input = JSON.parse(fs.readFileSync(0,'utf8'));
+ Object.defineProperty(process, 'platform', { value: input.platform });
+ const plugin = await import('data:text/javascript;base64,'+Buffer.from(input.plugin).toString('base64'));
+ const result = {};
+ for (const [name, c] of Object.entries(input.cases)) {
+  if (c.shell === null) delete process.env.SHELL; else process.env.SHELL = c.shell;
+  process.env.PATH = c.path;
+  const hooks = await plugin.JevlinLineage({client:{session:{messages:async()=>({data:[]})}}});
+  const output = {args:{command:'jevlin search query'}};
+  await hooks['tool.execute.before']({tool:'bash',sessionID:'synthetic',callID:'call'},output);
+  result[name] = output.args.command;
+ }
+ process.stdout.write(JSON.stringify(result));`
+	run := func(platform string, sh shellKind, cases map[string]shellCase) map[string]string {
+		t.Helper()
+		input, _ := json.Marshal(map[string]any{"plugin": renderAgentScript(opencodePluginJS, sh, testCfg), "cases": cases, "platform": platform})
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, node, "--input-type=module", "-e", script) // #nosec G204 -- fixed test script and local Node runtime; synthetic input on stdin
+		cmd.Stdin = strings.NewReader(string(input))
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("plugin: %v\n%s", err, output)
+		}
+		var got map[string]string
+		if err := json.Unmarshal(output, &got); err != nil {
+			t.Fatalf("%v\n%s", err, output)
+		}
+		return got
+	}
+
+	got := run("win32", shellPowerShell, map[string]shellCase{
+		// Git Bash's own export, with git visible: the live failure shape.
+		"git bash": {Shell: str("/usr/bin/bash"), Path: gitCmd},
+		// A bash named by a path that exists.
+		"bash by path": {Shell: str(realBash)},
+		// A stale posix $SHELL opencode cannot resolve: select.ts falls back
+		// to PowerShell, and so must the mirror — a posix prefix here is the
+		// dropin-miner#68 breakage in the opposite direction.
+		"stale shell":      {Shell: str("/no-such-prefix/bin/bash")},
+		"pwsh":             {Shell: str(`C:\Program Files\PowerShell\7\pwsh.exe`)},
+		"no shell":         {Shell: nil},
+		"undeclared shell": {Shell: str(`C:\tools\nu.exe`)},
+	})
+	posixPrefix, psPrefix := bridgeEnv+"=", "$env:"+bridgeEnv+" = '"
+	for name, want := range map[string]string{
+		"git bash":         posixPrefix,
+		"bash by path":     posixPrefix,
+		"stale shell":      psPrefix,
+		"pwsh":             psPrefix,
+		"no shell":         psPrefix,
+		"undeclared shell": psPrefix,
+	} {
+		if !strings.HasPrefix(got[name], want) {
+			t.Errorf("win32 %s: the rewritten command begins %.40q, want the syntax beginning %q", name, got[name], want)
+		}
+	}
+	// Off Windows the declaration is the whole answer, whatever $SHELL says.
+	posix := run("linux", shellPOSIX, map[string]shellCase{"pwsh in the environment": {Shell: str("/usr/bin/pwsh")}})
+	if cmd := posix["pwsh in the environment"]; !strings.HasPrefix(cmd, "JEVLIN_TRACE_BRIDGE=") {
+		t.Errorf("linux: the rewritten command begins %.40q, want the POSIX prefix", cmd)
 	}
 }

@@ -181,7 +181,10 @@ the named tests.
     fails open and exits 0 on any internal error. **The bridge that carries the envelope is written
     in the syntax of the shell that will run the command** (`bridge.go`, mirrored in
     `agent_trace_common.js` and pinned by `TestBridgeGuardsAgree`), taken from the host's
-    declaration — or, for Claude Code, from the tool its payload names, since that host runs two.
+    declaration — or, for Claude Code, from the tool its payload names, since that host runs two,
+    and for opencode on Windows from the `$SHELL` signal opencode itself resolves its shell by,
+    usability mirrored per call by its plugin (`opencode_plugin.js`), since that host settles its
+    shell only when it starts.
     A POSIX prefix handed to PowerShell is looked up as a program name, and the search does not run.
     **And only onto a command that syntax can carry it to**: the POSIX assignment prefix binds to
     the first simple command and is a syntax error before a compound one, so it is written only

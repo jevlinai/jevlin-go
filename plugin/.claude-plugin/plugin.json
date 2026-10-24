@@ -1,7 +1,7 @@
 {
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "jevlin",
-  "version": "0.4.3",
+  "version": "0.5.0",
+  "displayName": "Jevlin web search",
   "description": "Sets up Jevlin, free multi-provider web search for coding agents: installs the jevlin client and runs its setup, which writes this agent's own search skill and hooks.",
   "author": {
     "name": "Jevlin",
@@ -17,5 +17,10 @@
     "documentation",
     "coding-agent",
     "setup"
-  ]
+  ],
+  "icon": "./.claude-plugin/icon.png",
+  "documentationUrl": "https://docs.jevlin.ai/",
+  "supportUrl": "https://github.com/jevlinai/jevlin-go/issues",
+  "privacyPolicyUrl": "https://platform.jevlin.ai/privacy",
+  "termsOfServiceUrl": "https://platform.jevlin.ai/terms"
 }

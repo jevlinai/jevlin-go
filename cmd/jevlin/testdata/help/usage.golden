@@ -114,8 +114,8 @@ connect): enroll -> payout -> join -> login
 is it working, was I paid:
   doctor     checks in a participant's terms — authorization server,
              enrolled, joined this epoch, payout address, earning, intake
-             writable, recording and, on Windows, wallet access and state
-             access — each saying what to do. Exits non-zero only when every
+             writable, recording, binary on PATH and, on Windows, wallet
+             access and state access — each saying what to do. Exits non-zero only when every
              check came back UNKNOWN: a NO is a successful diagnosis. "intake
              writable", when that check is active, runs one bounded probe
              operation using at most one inert non-.json file in the

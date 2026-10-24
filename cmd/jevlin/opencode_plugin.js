@@ -21,11 +21,104 @@
 
 // {{TRACE_COMMON}}
 
+// For hostShell's usability mirror only: whether a shell opencode would
+// resolve exists as a file. Static like the shared source's own imports —
+// hostShell answers inside a synchronous rewrite.
+import { statSync as shellStatSync } from "node:fs"
+import { delimiter as shellPathDelimiter, join as shellPathJoin } from "node:path"
+
 // The shell opencode runs its bash tool in on THIS machine, written in by
 // the installer from the host's declaration. The bridge is an environment
 // assignment, and its syntax is the shell's: a POSIX prefix handed to
 // PowerShell is looked up as a program name and the search never runs (dropin-miner#68).
 const HOST_SHELL = "{{HOST_SHELL}}"
+
+// The names ShellSelect's META table reads as a POSIX login shell and as
+// PowerShell, kept to the shells whose bridge syntax this adapter writes.
+const POSIX_SHELL_NAMES = new Set(["bash", "sh", "zsh", "ksh", "dash"])
+const POWERSHELL_NAMES = new Set(["pwsh", "powershell"])
+
+// hostShell answers PER CALL on Windows, where the install-time declaration
+// alone is wrong for part of the fleet: opencode resolves its shell at
+// runtime (packages/core/src/shell/select.ts), and `$SHELL` wins whenever it
+// is set and usable — environment() is select(process.env.SHELL) — before
+// win() tries pwsh, powershell, Git Bash and cmd. Started from Git Bash,
+// which exports SHELL=/usr/bin/bash, opencode runs its bash tool in bash,
+// and the PowerShell wrapper the Windows declaration bakes in was read by
+// bash as a command named `$env:JEVLIN_TRACE_BRIDGE`: every search failed.
+// So the signal opencode itself consults is mirrored here, usability
+// included: select.ts runs $SHELL only when executable() resolves it — a
+// unix-rooted path named bash resolves to Git Bash's bash.exe through git
+// on PATH, any other resolved absolute path must exist as a file, a bare
+// name is found on PATH — and falls back to win()'s PowerShell when it
+// cannot. A $SHELL named like a POSIX shell that this cannot see the same
+// way therefore keeps the installer's declared answer, because answering
+// "posix" for a shell opencode will not run hands PowerShell a prefix it
+// reads as a program name: the very failure this resolution exists to fix,
+// in the opposite direction. What can still miss is a shell opencode's own
+// config chose, which this plugin cannot see; that case behaves exactly as
+// the install-time declaration always did.
+const hostShell = () => {
+  if (process.platform !== "win32" || HOST_SHELL !== "powershell") return HOST_SHELL
+  const s = process.env.SHELL
+  if (typeof s !== "string" || s === "") return HOST_SHELL
+  const base = s.split(/[\\/]/).pop().toLowerCase().replace(/\.exe$/, "")
+  if (POSIX_SHELL_NAMES.has(base) && usablePosixShell(s, base)) return "posix"
+  if (POWERSHELL_NAMES.has(base)) return "powershell"
+  return HOST_SHELL
+}
+
+const shellIsFile = (p) => {
+  try {
+    return shellStatSync(p).isFile()
+  } catch {
+    return false
+  }
+}
+
+// Git Bash's bash.exe the way select.ts gitbash() finds it: git on PATH,
+// then <git>/../../bin/bash.exe. "" when either is missing.
+const gitBashExe = () => {
+  for (const dir of (process.env.PATH || "").split(shellPathDelimiter)) {
+    if (!dir) continue
+    const git = shellPathJoin(dir, "git.exe")
+    if (!shellIsFile(git)) continue
+    const bash = shellPathJoin(git, "..", "..", "bin", "bash.exe")
+    if (shellIsFile(bash)) return bash
+  }
+  return ""
+}
+
+const onShellPath = (name) => {
+  for (const dir of (process.env.PATH || "").split(shellPathDelimiter)) {
+    if (dir && (shellIsFile(shellPathJoin(dir, name)) || shellIsFile(shellPathJoin(dir, name + ".exe")))) return true
+  }
+  return false
+}
+
+// usablePosixShell mirrors select.ts full()+executable() for the POSIX
+// names this adapter writes a prefix for: would opencode actually run this
+// $SHELL, rather than fall back to PowerShell?
+const usablePosixShell = (s, base) => {
+  if (/[\\/]/.test(s)) {
+    // A path. Unix-rooted bash resolves to Git Bash when git is on PATH
+    // (SHELL=/usr/bin/bash is what Git Bash itself exports); otherwise the
+    // path itself must exist as a file.
+    if (s.startsWith("/") && base === "bash" && gitBashExe() !== "") return true
+    return shellIsFile(s)
+  }
+  // A bare name: bash through Git Bash first, then any of them on PATH.
+  if (base === "bash" && gitBashExe() !== "") return true
+  return onShellPath(s)
+}
+
+// The longest command line a rewritten command may reach on this platform.
+// Windows refuses to start a process whose command line is over 32,767
+// characters (node reports ENAMETOOLONG), and the envelope cap alone allows
+// a bridge of ~65K characters; the headroom under 32,767 covers the host's
+// own quoting. 0 is no limit: no POSIX host limit is within the envelope
+// cap's reach.
+const HOST_COMMAND_CHAR_LIMIT = process.platform === "win32" ? 30000 : 0
 
 // The installation this file belongs to: the config `jevlin agents
 // install` resolved when it wrote this. Nothing here reads it — the plugin
@@ -292,13 +385,14 @@ export const JevlinLineage = async ({ client }) => {
         } catch {
           // no history is fine; the ids still thread the search
         }
-        const bridge = traceBridge(env)
+        const shell = hostShell()
+        const bridge = traceBridge(env, bridgeBudgetFor(cmd, shell, HOST_COMMAND_CHAR_LIMIT))
         if (bridge === null) return
         // H-R4: a bridge already on the command is not ours until we put it
         // there. Every assignment we can prove standalone is removed and
         // this call's own is prepended; a command carrying one we cannot
         // remove with certainty is left exactly as it is.
-        const rewritten = withTraceBridge(cmd, bridge, HOST_SHELL)
+        const rewritten = withTraceBridge(cmd, bridge, shell)
         if (rewritten === null) return
         output.args.command = rewritten
       } catch {

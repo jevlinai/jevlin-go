@@ -327,6 +327,7 @@ though it also forgets a hold.
 | earning | This epoch has enough verified searches to qualify. |
 | intake writable | This process can write where a search records. Probes with one inert non-`.json` file, then removes it. |
 | recording | Recorded searches are waiting, queued, or verified at the AS; or nothing ran recently. |
+| binary on PATH | A bare `jevlin` runs this installation's own binary. `NO` names the copy that answers instead — an npm shim earlier on PATH is the common one — or says nothing on PATH answers at all. Checked only when the installation keeps a binary at its `bin`. The agents' own files name the binary by full path and are unaffected either way. |
 | up to date | The daily release check found this copy current, or has not run yet. `NO` names the newer release and the one command that applies it here. `UNKNOWN` when the last check failed, is still running, could not be read, is dated in the future, or ran more than three days ago, which says the hooks that start it may not be running. |
 | wallet access | Windows only: nobody but you can read the wallet. |
 | state access | Windows only: the state directory and its credentials have an access list and an owner, who is you, SYSTEM or Administrators. Anyone else the list names is shown, and is `OK`: an agent's sandbox is expected there. |
@@ -463,7 +464,14 @@ It is a filter over text a model wrote, not a guarantee. A secret with no tellin
 known shape, in ordinary prose, passes, and so do these: `password: …` in the middle of a
 sentence; `NAME = value` unquoted outside PowerShell; a value inside a quote that opened before
 another word (`echo "export PASSWORD=a b"` keeps `b`); a lowercase cmd `set` name, or a `set`
-written after other words, keeps the tail of a value with spaces; a flag's value of lowercase
+written after other words, keeps the tail of a value with spaces; a quote that Windows
+PowerShell 5.1's native-argument quoting moved — a prompt handed to a program as a
+command-line argument reaches it re-quoted, `set "API_TOKEN=your token"` as
+`API_TOKEN=your" token` and the next setting as `"DB_PASSWORD=correct horse battery` with no
+closing quote — keeps the value's tail after its first word, because the moved quote reads as
+one that closes a string or never opens one (pass the prompt on stdin, which keeps the quotes
+where they were typed, or use Git Bash or the serve API; 5.1 itself reads piped non-ASCII in
+the ANSI code page, so a prompt with accents wants Git Bash or the serve API either way); a flag's value of lowercase
 letters only, or after a flag whose last word is not a secret's (`--auth …`); a flag's quoted
 value broken across lines; a quoted value after `=` in the middle of a line that runs across
 lines keeps every line after the one its quote opens on, which is the whole value when the quote
@@ -581,4 +589,4 @@ make verify     # build, vet and lint (each incl. Windows), tidy, race, vuln, cr
 make quick RUN=TestName   # vet, lint and only the named tests, while you work
 ```
 
-Go 1.25 or newer; the tests also need Node.js (CI uses 22) to run the embedded opencode plugin.
+Go 1.27 or newer; the tests also need Node.js (CI uses 22) to run the embedded opencode plugin.

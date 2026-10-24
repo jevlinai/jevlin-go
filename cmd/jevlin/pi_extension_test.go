@@ -108,9 +108,22 @@ func runPiExtension(t *testing.T, cases map[string][]piCall) map[string][]piOutc
 	return runPiExtensionFor(t, cases, "")
 }
 
+// runPiExtensionOn is runPiExtension with Node's process.platform faked, so
+// the extension's per-platform choices — the Windows command-line limit —
+// can be asked on every runner.
+func runPiExtensionOn(t *testing.T, platform string, cases map[string][]piCall) map[string][]piOutcome {
+	t.Helper()
+	return runPiExtensionWith(t, cases, "", platform)
+}
+
 // runPiExtensionFor is runPiExtension for an extension rendered with bin, the
 // binary it hands a finished turn to.
 func runPiExtensionFor(t *testing.T, cases map[string][]piCall, bin string) map[string][]piOutcome {
+	t.Helper()
+	return runPiExtensionWith(t, cases, bin, "")
+}
+
+func runPiExtensionWith(t *testing.T, cases map[string][]piCall, bin, platform string) map[string][]piOutcome {
 	t.Helper()
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -119,6 +132,8 @@ func runPiExtensionFor(t *testing.T, cases map[string][]piCall, bin string) map[
 	script := `
  const fs = await import('node:fs');
  const input = JSON.parse(fs.readFileSync(0,'utf8'));
+ // Before the import: the extension reads process.platform at module level.
+ if (input.platform) Object.defineProperty(process, 'platform', { value: input.platform });
  const mod = await import('data:text/javascript;base64,'+Buffer.from(input.extension).toString('base64'));
  const result = {};
  for (const [name, calls] of Object.entries(input.cases)) {
@@ -142,7 +157,7 @@ func runPiExtensionFor(t *testing.T, cases map[string][]piCall, bin string) map[
   result[name] = outcomes;
  }
  process.stdout.write(JSON.stringify(result));`
-	input, err := json.Marshal(map[string]any{"extension": renderAgentScriptFor(piExtensionTS, shellPOSIX, testCfg, bin), "cases": cases})
+	input, err := json.Marshal(map[string]any{"extension": renderAgentScriptFor(piExtensionTS, shellPOSIX, testCfg, bin), "cases": cases, "platform": platform})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,6 +341,17 @@ func TestPiExtensionBindsHistoryToTheCurrentToolCall(t *testing.T) {
 		// after it belongs to a later turn and must not be picked up.
 		"later turn ignored": {{Session: "s", ToolCallID: "c-old", Command: piSearchCommand,
 			Entries: append(append([]any{}, previousTurn...), piUser("second question"), piAssistant(current, "c1"))}},
+		// A tool result sits between the prose and the call that searches:
+		// its text parts are a tool's output, never the assistant's prose,
+		// and the scan must step over it to the real prose behind it.
+		"tool result between": {{Session: "s", ToolCallID: "c1", Command: piSearchCommand,
+			Entries: []any{piUser("second question"), piAssistant(current, "c-read"),
+				piToolResult("c-read", "read", 5, false), piAssistant("", "c1")}}},
+		// The only text between the turn's start and the call is a tool
+		// result's: there is no assistant prose to send, so none is sent.
+		"only tool output in the turn": {{Session: "s", ToolCallID: "c1", Command: piSearchCommand,
+			Entries: []any{piUser("second question"), piAssistant("", "c-read"),
+				piToolResult("c-read", "read", 5, false), piAssistant("", "c1")}}},
 	}
 	got := runPiExtension(t, cases)
 
@@ -347,6 +373,59 @@ func TestPiExtensionBindsHistoryToTheCurrentToolCall(t *testing.T) {
 		if strings.Contains(got[name][0].Command, "PREVIOUS") {
 			t.Errorf("%s: previous-turn prose reached the bridge", name)
 		}
+	}
+	stepped := piBridge(t, got["tool result between"][0])
+	if len(stepped.History) != 1 || stepped.History[0].Text != current {
+		t.Fatalf("the scan did not step over a tool result to the prose behind it: %+v", stepped.History)
+	}
+	if env := piBridge(t, got["only tool output in the turn"][0]); len(env.History) != 0 {
+		t.Errorf("a tool result's text was sent as assistant prose: %+v", env.History)
+	}
+	for _, name := range []string{"tool result between", "only tool output in the turn"} {
+		for _, h := range piBridge(t, got[name][0]).History {
+			if strings.Contains(h.Text, "TOOL OUTPUT") {
+				t.Errorf("%s: a tool's output reached the bridge history", name)
+			}
+		}
+	}
+}
+
+// On Windows, Pi's bash tool delivers nothing for a command over about
+// 8,191 characters — "(no output)", not an error — and the spawn itself
+// fails past 32K (ENAMETOOLONG). A bridge that inflated the rewritten
+// command past that limit made every long-history search silently not run
+// (observed live, 3 of 3). So the extension budgets the bridge to the
+// command line: history keeps its newest tail, and a command already at
+// the limit goes out untouched — no bridge rather than a search that
+// cannot run. Both platforms are faked, so every runner asks both halves.
+func TestPiExtensionBridgeFitsTheWindowsCommandLine(t *testing.T) {
+	long := strings.Repeat("alpha bravo charlie delta ", 1000) + "NEWEST WORDS AT THE END"
+	turn := func(cmd string) []piCall {
+		return []piCall{{Session: "s", ToolCallID: "c1", Command: cmd,
+			Entries: []any{piUser("q"), piAssistant(long, "c1")}}}
+	}
+	nearLimit := piSearchCommand + " #" + strings.Repeat("x", 7980)
+	got := runPiExtensionOn(t, "win32", map[string][]piCall{
+		"long history":     turn(piSearchCommand),
+		"command at limit": turn(nearLimit),
+	})
+
+	o := got["long history"][0]
+	env := piBridge(t, o)
+	if len(o.Command) > 8000 {
+		t.Errorf("rewritten command is %d chars; Pi's bash tool on Windows delivers nothing past ~8,191", len(o.Command))
+	}
+	if len(env.History) != 1 || !strings.HasSuffix(env.History[0].Text, "NEWEST WORDS AT THE END") {
+		t.Errorf("the trim kept the wrong end: %+v", env.History)
+	}
+	// A command standing at the limit by itself: the right bridge is none.
+	piNoBridge(t, got["command at limit"][0], nearLimit)
+
+	// An OS with no limit budgets nothing: the same turn's history rides whole.
+	whole := runPiExtensionOn(t, "linux", map[string][]piCall{"long history": turn(piSearchCommand)})
+	env = piBridge(t, whole["long history"][0])
+	if len(env.History) != 1 || env.History[0].Text != long {
+		t.Errorf("an OS with no limit still trimmed the history")
 	}
 }
 
@@ -449,7 +528,10 @@ func TestPiExtensionRedactsAndCapsBeforeTheBridge(t *testing.T) {
 	cases["envelope_budget"] = []piCall{{Session: "s", ToolCallID: "c1", Command: piSearchCommand,
 		Entries: []any{piUser("q"), piAssistant(strings.Repeat("\"", traceHistoryCap), "c1")}}}
 
-	got := runPiExtension(t, cases)
+	// On a platform with no command-line limit, so the full 32 KiB tail
+	// rides and the scrub-then-cap order is what is compared; the Windows
+	// budget has its own test (TestPiExtensionBridgeFitsTheWindowsCommandLine).
+	got := runPiExtensionOn(t, "linux", cases)
 	for name, text := range inputs {
 		t.Run(name, func(t *testing.T) {
 			env := piBridge(t, got[name][0])
@@ -729,12 +811,49 @@ type piReport struct {
 	Turn hostTurn
 }
 
+// newPiStandIn writes a shell script that stands in for the jevlin binary
+// and records what the extension hands it. The extension spawns it
+// detached (unref) and never waits, so a stand-in can still be writing
+// its record after the test that caused it has returned. The directory
+// is therefore not t.TempDir(), whose cleanup fails the test when a file
+// appears under it mid-RemoveAll (macOS CI, three PRs running): the
+// stand-in owns its directory, waits for the last writer to finish, and
+// removes it without making a late straggler anyone's failure.
 func newPiStandIn(t *testing.T) *piStandIn {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("the stand-in binary is a POSIX shell script")
 	}
-	dir := t.TempDir()
+	dir, err := os.MkdirTemp("", "jevlin-pi-standin-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		// Quiet for half a second: every record the stand-in starts
+		// (r.XXXXXX) ends as r.XXXXXX.done. The window is tidiness, not
+		// correctness: a spawn slower than that finds the directory gone,
+		// its mktemp fails and the script exits 0 (`|| exit 0`), and the
+		// RemoveAll error below is not reported, so neither a late nor a
+		// still-running child can fail a test either way.
+		deadline := time.Now().Add(5 * time.Second)
+		for quietSince := time.Now(); time.Now().Before(deadline); {
+			entries, _ := os.ReadDir(dir)
+			busy := false
+			for _, e := range entries {
+				n := e.Name()
+				if strings.HasPrefix(n, "r.") && !strings.HasSuffix(n, ".done") && !strings.HasSuffix(n, ".argv") {
+					busy = true
+				}
+			}
+			if busy {
+				quietSince = time.Now()
+			} else if time.Since(quietSince) >= 500*time.Millisecond {
+				break
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+		_ = os.RemoveAll(dir)
+	})
 	bin := filepath.Join(dir, "jevlin")
 	script := "#!/bin/sh\nd='" + dir + "'\ncase \"$*\" in *' start pi') exit 0;; esac\nf=$(mktemp \"$d/r.XXXXXX\") || exit 0\nprintf '%s\\n' \"$@\" > \"$f.argv\"\ncat > \"$f\"\nmv \"$f\" \"$f.done\"\n"
 	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil { // #nosec G306 -- a test stand-in that must be executable

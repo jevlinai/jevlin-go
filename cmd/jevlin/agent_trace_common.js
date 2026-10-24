@@ -1108,14 +1108,65 @@ const prepareTraceHistory = (parts, identity = TRACE_LOCAL_IDENTITY) => {
   return bytes.subarray(start).toString('utf8')
 }
 
-// traceBridge serializes the envelope and enforces the envelope cap:
-// history is dropped first, and an envelope still too large yields null —
-// no bridge at all, rather than a command the host cannot run. Returns the
-// base64url bridge value.
-const traceBridge = (env) => {
-  if (Buffer.byteLength(JSON.stringify(env)) > TRACE_ENVELOPE_CAP) delete env.history
-  if (Buffer.byteLength(JSON.stringify(env)) > TRACE_ENVELOPE_CAP) return null
+// traceBridge serializes the envelope and enforces the envelope cap and,
+// when the host's command line has a hard length limit, this call's budget
+// (encoded characters; null when there is no limit). Under a budget,
+// history is trimmed from the FRONT first — the words nearest the search
+// are the ones that explain it, the same end capTrace keeps — at the
+// envelope cap it is dropped whole, as it always was; and an envelope
+// still too large yields null: no bridge at all, rather than a command the
+// host cannot run. The text was scrubbed before it got here
+// (prepareTraceHistory), so this cut comes after the scrub, never before
+// it. Returns the base64url bridge value.
+const traceBridge = (env, budget) => {
+  // base64url writes 3 bytes as 4 characters, so the JSON may take 3/4 of
+  // the character budget. The budget may be negative — a command already
+  // standing near the host's limit — and then nothing fits and no bridge
+  // rides at all. At the envelope cap itself the behaviour is as it was:
+  // history is dropped whole, never trimmed.
+  const limit = budget == null ? TRACE_ENVELOPE_CAP : Math.min(TRACE_ENVELOPE_CAP, Math.floor((budget * 3) / 4))
+  if (budget != null) {
+    let over = Buffer.byteLength(JSON.stringify(env)) - limit
+    while (over > 0 && Array.isArray(env.history) && env.history.length > 0) {
+      const text = Buffer.from(typeof env.history[0].text === "string" ? env.history[0].text : "")
+      if (text.length <= over) {
+        env.history.shift()
+        if (env.history.length === 0) delete env.history
+      } else {
+        // Walk forward off any continuation byte so the cut lands on a rune
+        // boundary, as prepareTraceHistory's own tail cut does. A cut text
+        // byte removes at least one serialized byte, so one pass per entry
+        // is enough and the loop always ends.
+        let start = over
+        while (start < text.length && (text[start] & 0xc0) === 0x80) start++
+        env.history[0].text = text.subarray(start).toString("utf8")
+      }
+      over = Buffer.byteLength(JSON.stringify(env)) - limit
+    }
+  }
+  if (Buffer.byteLength(JSON.stringify(env)) > limit) delete env.history
+  if (Buffer.byteLength(JSON.stringify(env)) > limit) return null
   return Buffer.from(JSON.stringify(env)).toString("base64url")
+}
+
+// What withTraceBridge writes around the bridge value, beyond the command
+// itself, per shell — computed from the same pieces it concatenates, so the
+// two cannot drift apart.
+const BRIDGE_SYNTAX_OVERHEAD = {
+  posix: (TRACE_BRIDGE_ENV + "= ").length,
+  powershell: ("$env:" + TRACE_BRIDGE_ENV + " = ''; try { \n} finally { Remove-Item Env:" + TRACE_BRIDGE_ENV + " -ErrorAction SilentlyContinue }").length,
+}
+
+// bridgeBudgetFor is the most characters this call's encoded bridge may
+// take: the host's command-line limit, less the command itself and the
+// syntax withTraceBridge puts around the bridge. null when the host has no
+// limit (limit 0). The result may be zero or negative — the command alone
+// can stand near the limit — and traceBridge then sends no bridge at all,
+// because a trace must never be the reason a search fails.
+const bridgeBudgetFor = (cmd, shell, limit) => {
+  if (!limit) return null
+  const overhead = BRIDGE_SYNTAX_OVERHEAD[shell === "powershell" ? "powershell" : "posix"]
+  return limit - overhead - (typeof cmd === "string" ? cmd.length : 0)
 }
 
 // ── the bridge this adapter puts on the command ─────────────────────────

@@ -73,6 +73,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/jevlinai/jevlin-go/internal/selfupdate"
 	"github.com/jevlinai/jevlin-go/pkg/config"
 	"github.com/jevlinai/jevlin-go/pkg/fsx"
 )
@@ -195,6 +196,9 @@ type agentOps struct {
 	// binaryLocation vets the binary install records; nil means
 	// checkBinaryLocation.
 	binaryLocation binaryLocationCheck
+	// binaryVersion reads the release a binary on disk was built as; nil
+	// means binaryReleaseVersion.
+	binaryVersion func(path string) (selfupdate.Version, bool)
 	// readSetting, lstat and replaceFile are how the tier file is read,
 	// checked and written: the way search reads it (readTierSetting, which
 	// follows no link and reads a bounded regular file), and so that a link
@@ -204,6 +208,13 @@ type agentOps struct {
 	readSetting func(path string) ([]byte, error)
 	lstat       func(path string) (fs.FileInfo, error)
 	replaceFile func(path string, data []byte, perm fs.FileMode) error
+}
+
+func (ops agentOps) binaryVersionFn() func(string) (selfupdate.Version, bool) {
+	if ops.binaryVersion != nil {
+		return ops.binaryVersion
+	}
+	return binaryReleaseVersion
 }
 
 func (ops agentOps) binaryLocationFn() binaryLocationCheck {
@@ -318,6 +329,25 @@ type binEntry struct {
 	// version rendered without -config ran under this installation's config
 	// and is this installation's to replace.
 	implicit bool
+
+	// ownBinary is the installation's second binary, the one command is
+	// not: the copy it keeps at <home>/bin while command is the copy
+	// running, or, once adoptOwnBinary has made <home>/bin the command, the
+	// copy running (the npm one). Either way a binary whose integrations are
+	// this installation's own, which is all refFor asks of it. Without
+	// it, `jevlin setup` run from the npm copy over a native install saw
+	// every native-path hook as another installation's and stood an npm
+	// twin beside each one — all 5 Claude Code hooks twice, all 8 Cursor
+	// hooks twice — while Hermes refused its own block as "another
+	// installation's". "" when the installation keeps none, or it cannot
+	// be told.
+	ownBinary string
+
+	// ownOlder is the installation's own binary when adoptOwnBinary would
+	// have made it the command but could not tell it is as new as the copy
+	// running, so the integrations name the running copy instead; "" when
+	// that question did not arise.
+	ownOlder string
 
 	// rendered, when non-nil, is the config codexSandboxRoots reads
 	// instead of cfg's own bytes on disk. setup's dry run is the one
@@ -705,6 +735,9 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 	}
 	if sub == "install" {
 		fmt.Fprintf(stdout, "  search: %s%s\n", entry.searchCommand(), cfgNote)
+		if note := entry.ownOlderNote(); note != "" {
+			fmt.Fprintf(stdout, "  %s\n", note)
+		}
 	}
 	printPlan(&plan, ops.home, stdout)
 	if len(selected) == 0 {
@@ -1017,6 +1050,13 @@ func resolveEntry(ops agentOps, cfgPath string, getenv func(string) string) (bin
 	if err != nil {
 		return binEntry{}, "", fmt.Errorf("cannot determine my own path: %w", err)
 	}
+	// The installation's home the way the rest of this file resolves it:
+	// JEVLIN_HOME, else <ops.home>/.jevlin (tierPath's answer), never
+	// os.UserHomeDir directly, which ops.home may deliberately differ from.
+	home := getenv("JEVLIN_HOME")
+	if home == "" && ops.home != "" {
+		home = filepath.Join(ops.home, ".jevlin")
+	}
 	entry := binEntry{command: bin}
 	// Every command rendered names a config, the installation's own when
 	// nothing more specific is given, and before setup has written that file
@@ -1036,10 +1076,22 @@ func resolveEntry(ops agentOps, cfgPath string, getenv func(string) string) (bin
 	}
 	entry.cfg = abs
 	entry.implicit = sameConfigPath(abs, installationConfigPath(getenv))
+	// After the config is settled, because adoptOwnBinary's swap is gated
+	// on whose config this is.
+	entry = adoptOwnBinary(entry, home, getenv, ops.stat, ops.binaryVersionFn())
 	if _, err := os.Lstat(abs); errors.Is(err, fs.ErrNotExist) { // #nosec G703 -- the config path this command was given or the installation's own; only whether it exists is asked
 		return entry, "  (config: " + abs + ", not written yet: defaults and JEVLIN_* env until setup writes it)", nil
 	}
 	return entry, "  (config: " + abs + ")", nil
+}
+
+// ownOlderNote says why the integrations name this copy rather than the
+// installation's own binary, or "" when they name the one they should.
+func (e binEntry) ownOlderNote() string {
+	if e.ownOlder == "" {
+		return ""
+	}
+	return fmt.Sprintf("(not %s: it is not known to be as new as this copy; after `%s upgrade`, install again to use it)", e.ownOlder, e.ownOlder)
 }
 
 func labels(ts []installTarget) []string {
