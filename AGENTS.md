@@ -691,6 +691,22 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `http.ProxyFromEnvironment`. `pkg/auth/proxy_test.go` drives the package's own transports
   through an `httptest` CONNECT proxy on loopback, counting tunnels, and the non-loopback cases
   without a dial.
+- **Where the stored key may go** — `cmd/jevlin/credentials.go` owns it (`keyService`,
+  `resolveAPIKey`, `platformKey`): the key in `credentials.json` is sent only to the router and
+  the agents API origins it records, which connect publishes from the registration journal
+  (`keyBindingOf` when the journal is saved, never a provider upstream standing in, and a
+  connect under another agents API than the journal's is refused) and fills in for an older
+  file only on a foreground run under the installation's own config (`recordKeyBinding`: a
+  recorded origin never changes); a file without them belongs to the installation's own config
+  (`installationConfigPath`), never to a `-config` naming another file. search, limits and the
+  turn end hold `JEVLIN_API_KEY` to the installation's router the same way
+  (`envKeyRefusedFor`). Every
+  Claude Code allow rule names a config, because `resolveEntry` always resolves one and
+  `loadConfig` reads the installation's unwritten default path as defaults
+  (`unwrittenDefaultConfig`); `binEntry.implicit` lets an install replace what an earlier
+  version rendered without one. `key_binding_test.go` holds each sender to zero connections
+  for another origin. For participants:
+  [reference, Credentials](docs/reference.md#credentials).
 - **The search protocol** — `search.go` owns the request and the fail-open intake;
   `search_protocol.go` owns the deadline, the bounded read and the one retry with the two codes
   that license it; `search_machine.go` owns search's classification and `result.merged`, which is

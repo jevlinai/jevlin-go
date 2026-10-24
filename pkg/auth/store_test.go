@@ -345,6 +345,46 @@ func TestPendingRegistrationJournalIsStrictAndOwnerOnly(t *testing.T) {
 	}
 }
 
+// The origins a journal records are origins and nothing more: a path, a
+// query, credentials or another scheme is refused on save, so what a
+// publication records is what a binding compares.
+func TestPendingRegistrationJournalHoldsOriginsOnly(t *testing.T) {
+	s, err := OpenRegistrationJournal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := PendingRegistration{
+		AgentID: "agent-journal", Key: "sr-journal-key", ClaimURL: "https://platform.jevlin.ai/claim/J",
+		Status: "unclaimed",
+	}
+	for _, ok := range []string{"", "https://agents.example", "http://127.0.0.1:8080", "https://[::1]:8443"} {
+		rec := base
+		rec.Router, rec.AgentsAPI = ok, ok
+		if err := s.Save(rec); err != nil {
+			t.Errorf("origin %q refused: %v", ok, err)
+			continue
+		}
+		got, loaded, err := s.Load()
+		if err != nil || !loaded || got.Router != ok || got.AgentsAPI != ok {
+			t.Errorf("origin %q did not round-trip: %+v %v %v", ok, got, loaded, err)
+		}
+	}
+	for _, bad := range []string{"https://agents.example/", "https://agents.example/v1", "https://agents.example?x=1",
+		"https://u:p@agents.example", "ftp://agents.example", "agents.example", "https://"} {
+		for _, field := range []string{"router", "agents_api"} {
+			rec := base
+			if field == "router" {
+				rec.Router = bad
+			} else {
+				rec.AgentsAPI = bad
+			}
+			if err := s.Save(rec); err == nil {
+				t.Errorf("%s %q accepted", field, bad)
+			}
+		}
+	}
+}
+
 func TestPendingExpiredReplacementJournalBindsPreviousIdentity(t *testing.T) {
 	s, err := OpenRegistrationJournal(t.TempDir())
 	if err != nil {

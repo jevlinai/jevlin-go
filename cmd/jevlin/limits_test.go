@@ -14,7 +14,7 @@ import (
 func runLimits(t *testing.T, env map[string]string, args ...string) (int, string, string) {
 	t.Helper()
 	var out, errOut bytes.Buffer
-	code := cmdLimits(args, &out, &errOut, envOf(env))
+	code := cmdLimits(args, &out, &errOut, installedAs(envOf(env), args))
 	return code, out.String(), errOut.String()
 }
 

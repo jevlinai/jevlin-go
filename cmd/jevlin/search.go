@@ -328,11 +328,20 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		*tier = searchTierDefault(cfgSource, cfg.Miner, getenv)
 	}
 	key, keySrc, err := resolveAPIKey(getenv, cfg.Miner)
+	if err == nil && keySrc == keyFromEnv {
+		err = envKeyRefusedFor(*cfgPath, cfg, getenv)
+	}
 	if err != nil {
 		if machine {
+			if keyRefusedForOrigin(err) {
+				return failSearchSetup(stdout, exitUsage, keyOriginCode, actionFixInput, err)
+			}
 			return failSearchSetup(stdout, exitClientErr, "credential_unreadable", actionConnect, err)
 		}
 		fmt.Fprintln(stderr, "jevlin:", err)
+		if keyRefusedForOrigin(err) {
+			return exitUsage
+		}
 		return exitClientErr
 	}
 	if key == "" {

@@ -60,6 +60,13 @@ const exitConfigNotFound = -3
 // can never succeed, so "retry" was the wrong instruction.
 const exitForceDoesNotRebuild = -4
 
+// exitKeyOffOrigin is connectRun's internal signal, in machine mode only,
+// that the stored key is bound to another agents API than the config names
+// (connectKeyRefusal). connectCommand's own pre-check normally answers
+// first; this is the net behind it, translated to fix_input with code
+// key_origin_mismatch like that pre-check.
+const exitKeyOffOrigin = -5
+
 func orDefaults(cfgSource string) string {
 	if cfgSource == "" {
 		return "defaults/env, no config file found"

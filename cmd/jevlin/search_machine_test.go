@@ -23,7 +23,7 @@ import (
 func runSearchStdin(t *testing.T, h *searchHarness, env map[string]string, stdin string, args ...string) (int, string, string) {
 	t.Helper()
 	var out, errOut strings.Builder
-	getenv := envOf(env)
+	getenv := installedAs(envOf(env), args)
 	h.ops.hook.getenv = getenv
 	code := searchMain(h.ops, append([]string{"--stdin"}, args...), strings.NewReader(stdin), &out, &errOut, getenv)
 	return code, out.String(), errOut.String()
