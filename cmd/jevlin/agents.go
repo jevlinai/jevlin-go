@@ -1036,7 +1036,7 @@ func resolveEntry(ops agentOps, cfgPath string, getenv func(string) string) (bin
 	}
 	entry.cfg = abs
 	entry.implicit = sameConfigPath(abs, installationConfigPath(getenv))
-	if _, err := os.Lstat(abs); errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Lstat(abs); errors.Is(err, fs.ErrNotExist) { // #nosec G703 -- the config path this command was given or the installation's own; only whether it exists is asked
 		return entry, "  (config: " + abs + ", not written yet: defaults and JEVLIN_* env until setup writes it)", nil
 	}
 	return entry, "  (config: " + abs + ")", nil
