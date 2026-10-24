@@ -10,7 +10,19 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
-## Unreleased
+## v0.6.0 — 2026-10-25
+
+The search envelope is smaller by default, and the stored key goes only to the hosts it was
+issued for. With no `view` in the request, `search --stdin` now carries the router's merged
+list alone, about a quarter of the bytes it did; an integration that reads `candidates` asks
+for `"view":"full"`, which carries everything it did before. That change to the default
+answer is why this is 0.6.0 and not a patch. The envelope also says when a search was
+degraded. The key in `credentials.json` is sent only to the router and agents API recorded
+for it, and `JEVLIN_API_KEY` only to the installation's router; a command given a config that
+names another host stops before any request, with `key_origin_mismatch` in machine mode. By
+default a native install on v0.5.0 takes this release at its daily check; an npm install is
+updated with npm. This release's updater has not run on a Windows machine with real-time
+antivirus on.
 
 - **The stored key is sent only to the router and agents API recorded for it when connect
   stored it.** `connect` records both in `credentials.json`; a file from an earlier version
