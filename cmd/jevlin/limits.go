@@ -88,6 +88,9 @@ func cmdLimits(args []string, stdout, stderr io.Writer, getenv func(string) stri
 		return exitTransport
 	}
 	key, keySrc, err := resolveAPIKey(getenv, cfg.Miner)
+	if err == nil && keySrc == keyFromEnv {
+		err = envKeyRefusedFor(*cfgPath, cfg, getenv)
+	}
 	if err != nil {
 		if machine {
 			if keyRefusedForOrigin(err) {

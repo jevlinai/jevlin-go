@@ -39,3 +39,52 @@ func TestTheEnvironmentKeyInMachineModeGoesToTheInstallationsRouter(t *testing.T
 		}
 	}
 }
+
+// The terminal form and limits hold the environment's key to the same
+// router; the message says how to choose another one.
+func TestTheEnvironmentKeyGoesToTheInstallationsRouterInEveryForm(t *testing.T) {
+	limitsBody := `{"daily_micros":5000000,"weekly_micros":0,"today":{"spent_micros":0,"ceiling_micros":5000000,"remaining_micros":5000000}}`
+	own, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/limits" {
+			_, _ = w.Write([]byte(limitsBody))
+			return
+		}
+		_, _ = w.Write([]byte(routerBody))
+	})
+	other, otherConns := countingServer(t, nil)
+	otherCfg := sameStateOtherURL(t, cfg, own.srv.URL, other.URL)
+	env := map[string]string{"JEVLIN_HOME": root, apiKeyEnv: boundKey}
+
+	code, _, errOut := runSearch(t, fixedSearchOps(root), env, "-config", otherCfg, "q")
+	if code != exitUsage || !strings.Contains(errOut, origin(t, other.URL)) || !strings.Contains(errOut, "JEVLIN_CONFIG") {
+		t.Errorf("terminal search: exit %d\n%s", code, errOut)
+	}
+	code, out, _ := runLimits(t, env, "-json", "-config", otherCfg)
+	if code != exitUsage || !strings.Contains(out, `"code":"`+keyOriginCode+`"`) || !strings.Contains(out, `"action":"fix_input"`) {
+		t.Errorf("limits: exit %d\n%s", code, out)
+	}
+	if code, _, errOut := runLimits(t, env, "-config", otherCfg); code != exitUsage {
+		t.Errorf("limits, terminal: exit %d\n%s", code, errOut)
+	}
+	if n := otherConns(); n != 0 {
+		t.Fatalf("%d connection(s) reached another router", n)
+	}
+
+	before := own.requests()
+	if code, _, errOut := runSearch(t, fixedSearchOps(root), env, "-config", cfg, "q"); code != exitOK {
+		t.Errorf("terminal search, the installation's config: exit %d\n%s", code, errOut)
+	}
+	if code, _, errOut := runLimits(t, env, "-config", cfg); code != exitOK {
+		t.Errorf("limits, the installation's config: exit %d\n%s", code, errOut)
+	}
+	if got := own.requests() - before; got != 2 {
+		t.Errorf("the installation's router got %d request(s), want 2", got)
+	}
+
+	// A router chosen on purpose is served once its config is the
+	// installation's.
+	chosen := map[string]string{"JEVLIN_HOME": root, "JEVLIN_CONFIG": otherCfg, apiKeyEnv: boundKey}
+	if code, _, errOut := runSearch(t, fixedSearchOps(root), chosen, "-config", otherCfg, "q"); code != exitOK || otherConns() == 0 {
+		t.Errorf("JEVLIN_CONFIG naming the other config: exit %d, %d connection(s)\n%s", code, otherConns(), errOut)
+	}
+}

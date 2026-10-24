@@ -301,13 +301,14 @@ func keyBindingOf(cfg *config.Config) credentials {
 	return c
 }
 
-// envKeyRefusedFor is the rule for the environment's key in machine mode:
-// a search --stdin whose key comes from JEVLIN_API_KEY, given an explicit
+// envKeyRefusedFor is the rule for the environment's key: a search, a limits
+// read or a turn end whose key comes from JEVLIN_API_KEY, given an explicit
 // -config that is not this installation's own config file
 // (installationConfigPath), is refused when that config's router origin
 // differs from the router origin of the installation's own config. The
 // installation's own config, named or not, is served as before, and so is a
-// differing file that names the same router.
+// differing file that names the same router. A router chosen on purpose is
+// served by making its config the installation's, with JEVLIN_CONFIG.
 func envKeyRefusedFor(cfgPath string, cfg *config.Config, getenv func(string) string) error {
 	if cfgPath == "" || unwrittenDefaultConfig(cfgPath, getenv) {
 		return nil
@@ -350,7 +351,7 @@ type envKeyOriginError struct {
 }
 
 func (e *envKeyOriginError) Error() string {
-	const choose = "Use the config this installation was set up with"
+	const choose = "To use this config's router, set JEVLIN_CONFIG to it, which makes it this installation's config"
 	if e.unnamed {
 		return fmt.Sprintf("%s is sent only to this installation's router, and this installation's own config names none, "+
 			"so it is not sent to %s. %s", apiKeyEnv, e.requested, choose)
