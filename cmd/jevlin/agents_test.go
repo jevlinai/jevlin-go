@@ -17,6 +17,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jevlinai/jevlin-go/internal/selfupdate"
 )
 
 type fakeFileInfo struct {
@@ -1103,6 +1105,9 @@ func TestAnNpmRunInstallOverANativeInstallDuplicatesNothing(t *testing.T) {
 		return count, commands
 	}
 
+	// Both copies the same release, so the swap's version check passes.
+	ops.binaryVersion = func(string) (selfupdate.Version, bool) { return selfupdate.Version{Minor: 5}, true }
+
 	// A native install first.
 	ops.executable = func() (string, error) { return native, nil }
 	if code, out, _ := runAgents(t, ops, nil, "install", "-config", testCfg, "-yes"); code != exitOK {
@@ -1183,8 +1188,9 @@ func TestAdoptOwnBinarySwapsOnlyForTheInstallationsOwnConfig(t *testing.T) {
 		}
 		return ""
 	}
+	sameRelease := func(string) (selfupdate.Version, bool) { return selfupdate.Version{Minor: 5}, true }
 
-	theirs := adoptOwnBinary(binEntry{command: npmExe, cfg: "/home/other/jevlin.toml"}, home, npmEnv, stat)
+	theirs := adoptOwnBinary(binEntry{command: npmExe, cfg: "/home/other/jevlin.toml"}, home, npmEnv, stat, sameRelease)
 	if theirs.command != npmExe {
 		t.Fatalf("another installation's config still got this home's binary: %q", theirs.command)
 	}
@@ -1198,12 +1204,12 @@ func TestAdoptOwnBinarySwapsOnlyForTheInstallationsOwnConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ours := adoptOwnBinary(binEntry{command: npmExe, cfg: ownCfg}, home, npmEnv, stat)
+	ours := adoptOwnBinary(binEntry{command: npmExe, cfg: ownCfg}, home, npmEnv, stat, sameRelease)
 	if ours.command != own || ours.ownBinary != npmExe {
 		t.Fatalf("the home's own config did not adopt its binary: command %q, ownBinary %q", ours.command, ours.ownBinary)
 	}
 
-	if native := adoptOwnBinary(binEntry{command: own, cfg: ownCfg}, home, func(string) string { return "" }, stat); native.command != own {
+	if native := adoptOwnBinary(binEntry{command: own, cfg: ownCfg}, home, func(string) string { return "" }, stat, sameRelease); native.command != own {
 		t.Fatalf("a native run moved its own command: %q", native.command)
 	}
 }
