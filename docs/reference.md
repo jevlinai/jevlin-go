@@ -35,7 +35,10 @@ name the file they used. `connect` refuses to run with no config file, and says 
 `jevlin setup`.
 `search` and `fetch` refuse a second `-config`, even one naming the same file: the Claude Code
 allow rule ends after the installed `-config <file>`, so a second one could otherwise send the
-key to another config's router without a prompt.
+key to another config's router without a prompt. Every command `agents install` renders names a
+config; before setup has written the installation's own (`$JEVLIN_HOME/jevlin.toml`, else
+`~/.jevlin/jevlin.toml`), a `-config` naming that path reads as built-in defaults, exactly as
+no `-config` would.
 
 ## The `--stdin` request
 
@@ -284,7 +287,7 @@ lacks, appended, and must load before it is saved.
 |---|---|---|
 | `JEVLIN_CONFIG` | every command | The config file, after `-config`. Setup's profile block sets it. |
 | `JEVLIN_HOME` | every command, setup | This machine's installation directory, instead of `~/.jevlin`. |
-| `JEVLIN_API_KEY` | search | The search key, overriding `credentials.json`. |
+| `JEVLIN_API_KEY` | search, limits, the turn end | The search key, overriding `credentials.json`. With a `-config` that is not the installation's own file, it is sent only when that config names the installation's router; to use another router, set `JEVLIN_CONFIG` to its config. |
 | `JEVLIN_TRACE` | search, hooks | `off` sends no trace. |
 | `JEVLIN_WALLET_DIR` | wallet commands | The wallet directory. Setup's profile block sets it when it made a wallet. |
 | `JEVLIN_WALLET_PASSPHRASE` | wallet commands | The keyfile passphrase, for a caller with no terminal. |
@@ -308,7 +311,7 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | path | what it is | written by | safe to delete? |
 |---|---|---|---|
 | `jevlin.toml` | The config. | setup | No. |
-| `credentials.json` | The search key, owner-only. Refused if a symlink or readable by others. | connect, login | Only to forget the key: `login -forget`. |
+| `credentials.json` | The search key, owner-only, and the router and agents API it is sent to. Refused if a symlink or readable by others. | connect, login | Only to forget the key: `login -forget`. |
 | `payout.json` | The payout address you chose, which connect declares for you once mining is approved. | connect, mining enable | No, until `jevlin payout show` says it is in force. |
 | `registration_pending.json` | A registration the platform answered that is not yet saved; finished by the next connect. | connect | No: it holds the new key. |
 | `claim.json` | The claim link and code for this installation's agent, while it is unclaimed. | connect | Yes; the next `jevlin connect` mints a fresh link, which ends the old one. |
@@ -385,6 +388,7 @@ though it also forgets a hold.
 | earning | This epoch has enough verified searches to qualify. |
 | intake writable | This process can write where a search records. Probes with one inert non-`.json` file, then removes it. |
 | recording | Recorded searches are waiting, queued, or verified at the AS; or nothing ran recently. |
+| binary on PATH | A bare `jevlin` runs this installation's own binary. `NO` names the copy that answers instead — an npm shim earlier on PATH is the common one — or says nothing on PATH answers at all. Checked only when the installation keeps a binary at its `bin`. The agents' own files name the binary by full path and are unaffected either way. |
 | up to date | The daily release check found this copy current, or has not run yet. `NO` names the newer release and the one command that applies it here. `UNKNOWN` when the last check failed, is still running, could not be read, is dated in the future, or ran more than three days ago, which says the hooks that start it may not be running. |
 | wallet access | Windows only: nobody but you can read the wallet. |
 | state access | Windows only: the state directory and its credentials have an access list and an owner, who is you, SYSTEM or Administrators. Anyone else the list names is shown, and is `OK`: an agent's sandbox is expected there. |
@@ -521,7 +525,14 @@ It is a filter over text a model wrote, not a guarantee. A secret with no tellin
 known shape, in ordinary prose, passes, and so do these: `password: …` in the middle of a
 sentence; `NAME = value` unquoted outside PowerShell; a value inside a quote that opened before
 another word (`echo "export PASSWORD=a b"` keeps `b`); a lowercase cmd `set` name, or a `set`
-written after other words, keeps the tail of a value with spaces; a flag's value of lowercase
+written after other words, keeps the tail of a value with spaces; a quote that Windows
+PowerShell 5.1's native-argument quoting moved — a prompt handed to a program as a
+command-line argument reaches it re-quoted, `set "API_TOKEN=your token"` as
+`API_TOKEN=your" token` and the next setting as `"DB_PASSWORD=correct horse battery` with no
+closing quote — keeps the value's tail after its first word, because the moved quote reads as
+one that closes a string or never opens one (pass the prompt on stdin, which keeps the quotes
+where they were typed, or use Git Bash or the serve API; 5.1 itself reads piped non-ASCII in
+the ANSI code page, so a prompt with accents wants Git Bash or the serve API either way); a flag's value of lowercase
 letters only, or after a flag whose last word is not a secret's (`--auth …`); a flag's quoted
 value broken across lines; a quoted value after `=` in the middle of a line that runs across
 lines keeps every line after the one its quote opens on, which is the whole value when the quote
@@ -607,6 +618,17 @@ calls that started and awaited it appear as tool calls. A project set to retain 
 `login` reads an sr- key from stdin or `-key-env VAR`, never an argument, checks it against the
 router without spending, and writes `credentials.json` as `0600`, as `connect` does. No key ever
 goes into a command line or an agent's config.
+
+The stored key is sent only to the router and the agents API recorded for it when `connect`
+stored it, whichever config a command is given. `connect` records both origins (scheme, host
+and port) in `credentials.json`, from the registration it finished, and `login` the router its
+config names. A file an earlier version wrote without them belongs to the origins of the
+installation's own config (`JEVLIN_CONFIG`, else `$JEVLIN_HOME/jevlin.toml` or
+`~/.jevlin/jevlin.toml`), never of a `-config` that names another file, and only a `connect`
+run under the installation's own config writes them down: if you run with another config, run
+`connect` once with `JEVLIN_CONFIG` set to it. A command whose config names another origin stops
+before any request, with `key_origin_mismatch` and `fix_input` in machine mode, naming both
+origins, or saying the installation's config names none.
 
 ### Wallet
 

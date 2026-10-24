@@ -72,14 +72,14 @@ func manualEnrollConfig(t *testing.T, asURL string) (cfgPath, stateDir string) {
 func runMiningDisable(t *testing.T, cfgPath string) (code int, stdout, stderr string) {
 	t.Helper()
 	var out, errOut bytes.Buffer
-	code = cmdMining([]string{"disable", "-config", cfgPath}, &bytes.Buffer{}, &out, &errOut, noEnv)
+	code = cmdMining([]string{"disable", "-config", cfgPath}, &bytes.Buffer{}, &out, &errOut, installedAs(noEnv, []string{"-config", cfgPath}))
 	return code, out.String(), errOut.String()
 }
 
 func runMiningEnable(t *testing.T, cfgPath string) (code int, stdout, stderr string) {
 	t.Helper()
 	var out, errOut bytes.Buffer
-	code = cmdMining([]string{"enable", "-config", cfgPath}, &bytes.Buffer{}, &out, &errOut, noEnv)
+	code = cmdMining([]string{"enable", "-config", cfgPath}, &bytes.Buffer{}, &out, &errOut, installedAs(noEnv, []string{"-config", cfgPath}))
 	return code, out.String(), errOut.String()
 }
 

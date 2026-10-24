@@ -391,7 +391,9 @@ agents_api_url = %q
 		t.Fatal(err)
 	}
 	in.entry = binEntry{command: in.bin, cfg: in.cfg}
-	in.env = execEnv()
+	// This config is the installation's own, as setup's profile block says
+	// for a participant: the environment's key is sent to its router.
+	in.env = append(execEnv(), "JEVLIN_CONFIG="+in.cfg)
 	return in
 }
 
@@ -580,11 +582,15 @@ func stdinBytesDelivered(t *testing.T, sh execShell, delivery stdinDelivery, req
 //
 // Everything delivers the request byte for byte except one case: Windows
 // PowerShell 5.1 piping a literal written inside the script. There the bytes
-// arrive behind a UTF-8 byte-order mark, with CRLF after them. The mark is
-// the reason the binary tolerates one (trimUTF8BOM), and it is recorded as
-// observed rather than explained: 5.1 reports $OutputEncoding us-ascii with
-// an EMPTY preamble, and the mark survives setting $OutputEncoding and
-// [Console]::OutputEncoding both, so it is not that preamble.
+// arrive with CRLF after them and, on some builds, behind a UTF-8 byte-order
+// mark. The mark is the reason the binary tolerates one (trimUTF8BOM), and
+// it is recorded as observed rather than explained: 5.1 reports
+// $OutputEncoding us-ascii with an EMPTY preamble, and the mark survives
+// setting $OutputEncoding and [Console]::OutputEncoding both, so it is not
+// that preamble. It is also build-dependent: the CI runners' 5.1 adds it,
+// and 5.1.26100 (Windows 11) sends none, with every remaining byte equal —
+// which is why the comparisons below take the mark as optional
+// (equalBehindOptionalBOM) rather than required.
 //
 // What the rendered form does fix is the content. Without its first line,
 // 5.1 replaces every UTF-16 unit outside ASCII with "?" — café arrives as
@@ -602,7 +608,8 @@ func deliveredBytes(sh execShell, delivery stdinDelivery, request string) []byte
 
 // mangledByASCIIEncoding is what 5.1 delivers for a literal pipe WITHOUT the
 // encoding line the rendered form carries: one "?" per UTF-16 unit outside
-// ASCII, so an astral character becomes two.
+// ASCII, so an astral character becomes two. The byte-order mark in front is
+// the build-dependent one deliveredBytes describes.
 func mangledByASCIIEncoding(request string) []byte {
 	out := []byte{0xef, 0xbb, 0xbf}
 	for _, unit := range utf16.Encode([]rune(request)) {
@@ -613,6 +620,18 @@ func mangledByASCIIEncoding(request string) []byte {
 		out = append(out, byte(unit))
 	}
 	return append(out, '\r', '\n')
+}
+
+// equalBehindOptionalBOM compares delivered bytes with an expectation whose
+// leading UTF-8 byte-order mark only some 5.1 builds send: equal as they
+// are, or equal once the expectation's mark is dropped. An expectation with
+// no mark is compared exactly, so no shell may ADD one the expectation does
+// not carry.
+func equalBehindOptionalBOM(got, want []byte) bool {
+	if bytes.Equal(got, want) {
+		return true
+	}
+	return bytes.HasPrefix(want, utf8BOM) && bytes.Equal(got, want[len(utf8BOM):])
 }
 
 // stdinPayloads are the payload kinds the rendered forms must carry.
@@ -649,8 +668,8 @@ func TestStdinBytesEachShellDelivers(t *testing.T) {
 		for _, r := range runs {
 			t.Run(name+"/"+r.sh.name+"/"+string(r.delivery), func(t *testing.T) {
 				got := stdinBytesDelivered(t, r.sh, r.delivery, request)
-				if want := deliveredBytes(r.sh, r.delivery, request); !bytes.Equal(got, want) {
-					t.Fatalf("%s delivered\n got %x\nwant %x", r.sh.name, got, want)
+				if want := deliveredBytes(r.sh, r.delivery, request); !equalBehindOptionalBOM(got, want) {
+					t.Fatalf("%s delivered\n got %x\nwant %x (byte-order mark optional)", r.sh.name, got, want)
 				}
 			})
 		}
@@ -668,8 +687,8 @@ func TestWithoutTheEncodingLineWindowsPowerShellMangsTheQuery(t *testing.T) {
 	}
 	request := `{"version":1,"query":"café 東京 😀"}`
 	got := stdinBytesDelivered(t, shellWinPS, deliveryBareLiteral, request)
-	if want := mangledByASCIIEncoding(request); !bytes.Equal(got, want) {
-		t.Fatalf("a literal pipe without the encoding line delivered\n got %x\nwant %x", got, want)
+	if want := mangledByASCIIEncoding(request); !equalBehindOptionalBOM(got, want) {
+		t.Fatalf("a literal pipe without the encoding line delivered\n got %x\nwant %x (byte-order mark optional)", got, want)
 	}
 }
 
@@ -1336,7 +1355,7 @@ func TestBridgedSearchCarriesItsHostsHarness(t *testing.T) {
 				} else {
 					command = skillBlockFor(t, in.renderedSkill(host), sh.kind, "search").body
 				}
-				bridged := bridgedCommand(t, host, command, sh.kind)
+				bridged := bridgedCommand(t, host, command, sh.kind, runtime.GOOS)
 				if host == "codex" {
 					bridged = codexBridgedCommand(t, in, command)
 				}

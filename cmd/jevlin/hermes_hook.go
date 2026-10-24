@@ -134,6 +134,11 @@ func hookHermes(event string, payload []byte, stdout io.Writer) {
 	if env == nil {
 		return
 	}
+	// With no history this is headroom, not a cut: an envelope that cannot
+	// ride beside the command sends no bridge.
+	if env = capTraceForCommandLine(env, shellPOSIX, cmd); env == nil {
+		return
+	}
 	bridge, err := encodeTraceBridge(env)
 	if err != nil {
 		return

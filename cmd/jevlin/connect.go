@@ -271,9 +271,20 @@ type registrationPublicationOptions struct {
 	replacingExpired     bool
 	allowCorruptPreserve bool
 	previousPlatformKey  string
+	// binding is where the published key may be sent: the origins the
+	// journal recorded when the key was minted (pendingBinding). A journal
+	// an older client wrote records none, and its key falls to the
+	// installation's own config until a connect under that config records
+	// them.
+	binding credentials
 }
 
-func pendingRegistrationFromPlatform(reg *platform.Registration) auth.PendingRegistration {
+// pendingRegistrationFromPlatform is the journal record of a key cfg's
+// platform just minted, with the router and agents API it is for
+// (keyBindingOf), so whichever run finishes the journal publishes the key
+// with the origins it was minted under rather than its own config's.
+func pendingRegistrationFromPlatform(reg *platform.Registration, cfg *config.Config) auth.PendingRegistration {
+	b := keyBindingOf(cfg)
 	return auth.PendingRegistration{
 		AgentID:        reg.AgentID,
 		Key:            reg.Key,
@@ -282,7 +293,14 @@ func pendingRegistrationFromPlatform(reg *platform.Registration) auth.PendingReg
 		ClaimExpiresAt: reg.ClaimExpiresAt,
 		Status:         "unclaimed",
 		PollIntervalMS: reg.PollInterval.Milliseconds(),
+		Router:         b.Router,
+		AgentsAPI:      b.AgentsAPI,
 	}
+}
+
+// pendingBinding is the binding a journal's key is published with.
+func pendingBinding(p auth.PendingRegistration) credentials {
+	return credentials{Router: p.Router, AgentsAPI: p.AgentsAPI}
 }
 
 func agentRegistrationFromPending(reg auth.PendingRegistration) auth.AgentRegistration {
@@ -337,9 +355,11 @@ func preflightFreshRegistration(m config.Miner, force bool) error {
 }
 
 func publishPlatformCredential(path, key string, opts registrationPublicationOptions) error {
+	published := opts.binding
+	published.APIKey = key
 	exists, current, err := credentialFileState(path)
 	if !exists {
-		return writeCredentials(path, credentials{APIKey: key})
+		return writeCredentials(path, published)
 	}
 	if err != nil {
 		return fmt.Errorf("cannot publish platform credential: %w", err)
@@ -348,7 +368,7 @@ func publishPlatformCredential(path, key string, opts registrationPublicationOpt
 		return nil
 	}
 	if opts.force || (opts.replacingExpired && opts.previousPlatformKey != "" && current == opts.previousPlatformKey) {
-		return writeCredentials(path, credentials{APIKey: key})
+		return writeCredentials(path, published)
 	}
 	return errors.New("cannot publish platform credential: credentials.json contains a different platform key")
 }
@@ -475,6 +495,15 @@ func connectCommand(args []string, stdin io.Reader, stdout, stderr io.Writer, ge
 		})
 		return exitTransport
 	}
+	// The stored key goes only to the agents API it is bound to; a config
+	// naming another is a request to change, said before anything is read
+	// or written. connectRun refuses the same way for the text path.
+	if parseErr == nil {
+		if err := connectKeyRefusal(cfgPath, getenv); err != nil {
+			emitMachine(stdout, keyOriginEnvelope(err))
+			return exitUsage
+		}
+	}
 	// Only when the command itself parsed. An invalid command is not a
 	// lifecycle state: with a parse failure there is no -config to speak
 	// of, so the gate would answer about the DEFAULT config and state
@@ -521,6 +550,10 @@ func connectCommand(args []string, stdin io.Reader, stdout, stderr io.Writer, ge
 			Error:         clientMessage(errConnectNoConfig),
 		})
 		return exitTransport
+	}
+	if code == exitKeyOffOrigin {
+		emitMachine(stdout, keyOriginEnvelope(connectKeyRefusal(cfgPath, getenv)))
+		return exitUsage
 	}
 	if code == exitForceDoesNotRebuild {
 		// -force met a record naming another agent than the stored key's,
@@ -572,6 +605,51 @@ func connectCommand(args []string, stdin io.Reader, stdout, stderr io.Writer, ge
 	}
 	emitMachine(stdout, connectEnvelope(cfgPath, getenv, code, narration.String()))
 	return code
+}
+
+// connectKeyRefusal is the stored key's binding as connect asks it: nil
+// unless credentials.json, or the registration journal beside it, holds a
+// key bound to another agents API than the config at cfgPath names. A config
+// that does not load is connectRun's to report.
+func connectKeyRefusal(cfgPath string, getenv func(string) string) error {
+	cfg, _, err := loadConfig(cfgPath, getenv)
+	if err != nil {
+		return nil
+	}
+	return connectOriginRefusal(cfg, getenv)
+}
+
+// connectOriginRefusal is every key connect may send to cfg's agents API:
+// the one in credentials.json, and the one a registration journal is about
+// to publish, which is bound to the agents API that minted it.
+func connectOriginRefusal(cfg *config.Config, getenv func(string) string) error {
+	if err := storedKeyRefusedFor(agentsAPIKeyService, cfg.Miner, cfg.Platform.AgentsAPIURL, getenv); err != nil {
+		return err
+	}
+	journal, err := registrationJournal(cfg.Miner)
+	if err != nil {
+		return nil
+	}
+	pending, ok, err := journal.Load()
+	if err != nil || !ok || pending.AgentsAPI == "" {
+		return nil
+	}
+	bound, err := urlOrigin(pending.AgentsAPI)
+	if err != nil {
+		return nil
+	}
+	requested, err := urlOrigin(cfg.Platform.AgentsAPIURL)
+	if err != nil || requested != bound {
+		return &keyOriginError{service: agentsAPIKeyService.name, bound: bound, requested: requested}
+	}
+	return nil
+}
+
+func keyOriginEnvelope(err error) commandEnvelope {
+	return commandEnvelope{
+		machineHeader: newMachineHeader("connect", exitUsage, keyOriginCode, false, actionFixInput),
+		Error:         clientMessage(err),
+	}
 }
 
 // connectNeedsHumanDecision reports whether a `connect -json` run would
@@ -748,6 +826,21 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 		}
 		return exitTransport
 	}
+	// Every platform call below carries the stored key, or the journal's
+	// once it is published, so a config naming another agents API than the
+	// one it is bound to is refused here, before the state directory is
+	// opened. platformKey holds each call to the same rule.
+	if err := connectOriginRefusal(cfg, getenv); err != nil {
+		if *resume {
+			fmt.Fprintln(stderr, "connect -resume:", err)
+			return exitOK
+		}
+		fmt.Fprintln(stderr, "jevlin connect:", err)
+		if machine {
+			return exitKeyOffOrigin
+		}
+		return exitUsage
+	}
 	store, err := auth.OpenStore(cfg.Mining.StateDir)
 	if err != nil {
 		fmt.Fprintln(stderr, "jevlin:", err)
@@ -854,6 +947,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 			allowCorruptPreserve: true,
 			replacingExpired:     pending.ReplaceExpired,
 			previousPlatformKey:  pending.PreviousKey,
+			binding:              pendingBinding(pending),
 		})
 		if err != nil {
 			fmt.Fprintln(stderr, "jevlin: pending registration recovery:", err)
@@ -907,7 +1001,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 				return exitOK
 			}
 			if !*force {
-				if credKey, keyErr := platformKey(cfg.Miner); keyErr == nil {
+				if credKey, keyErr := platformKey(cfg, getenv); keyErr == nil {
 					identity, meErr := client.Me(ctx, credKey)
 					if meErr != nil {
 						// ErrAgentNotFound and any other /me failure are both
@@ -964,7 +1058,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 		// expired registration, and says so for a record naming another
 		// agent rather than polling an agent the key does not own.
 		if existed && loaded && !*resume && reg.Status != "expired" {
-			if meKey, keyErr := platformKey(cfg.Miner); keyErr == nil {
+			if meKey, keyErr := platformKey(cfg, getenv); keyErr == nil {
 				identity, meErr := client.Me(ctx, meKey)
 				switch {
 				case meErr == nil && identity.AgentID == reg.AgentID:
@@ -1021,7 +1115,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 			}
 
 			oldReg := reg
-			oldKey, keyErr := platformKey(cfg.Miner)
+			oldKey, keyErr := platformKey(cfg, getenv)
 			replace := false
 			if keyErr == nil {
 				st, statusErr := client.Status(ctx, oldReg.AgentID, oldKey)
@@ -1089,7 +1183,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 					fmt.Fprintln(stderr, "jevlin: register:", registerErr)
 					return exitTransport
 				}
-				pending = pendingRegistrationFromPlatform(fresh)
+				pending = pendingRegistrationFromPlatform(fresh, cfg)
 				pending.ReplaceExpired = true
 				pending.PreviousAgentID = oldReg.AgentID
 				pending.PreviousKey = oldKey
@@ -1102,6 +1196,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 					replacingExpired:     true,
 					allowCorruptPreserve: true,
 					previousPlatformKey:  oldKey,
+					binding:              pendingBinding(pending),
 				})
 				if err != nil {
 					fmt.Fprintln(stderr, "jevlin: publish replacement registration:", err)
@@ -1136,7 +1231,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 				fmt.Fprintln(stderr, "jevlin: register:", err)
 				return exitTransport
 			}
-			pending = pendingRegistrationFromPlatform(fresh)
+			pending = pendingRegistrationFromPlatform(fresh, cfg)
 			if err := journal.Save(pending); err != nil {
 				fmt.Fprintln(stderr, "jevlin: persist pending registration:", err)
 				return exitTransport
@@ -1144,6 +1239,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 			reg, err = publishPendingRegistration(store, cfg.Miner, pending, registrationPublicationOptions{
 				force:                *force,
 				allowCorruptPreserve: true,
+				binding:              pendingBinding(pending),
 			})
 			if err != nil {
 				fmt.Fprintln(stderr, "jevlin: publish registration:", err)
@@ -1161,10 +1257,17 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 
 	// Platform calls use the stored agent credential; the search environment
 	// override does not apply to this installation's enrollment.
-	key, err = platformKey(cfg.Miner)
+	key, err = platformKey(cfg, getenv)
 	if err != nil {
 		fmt.Fprintln(stderr, "jevlin:", err)
 		return exitTransport
+	}
+	if !*resume {
+		// A key an older client stored records no origins; it is bound to
+		// the installation's config until they are written down here.
+		if err := recordKeyBinding(cfg.Miner, cfgSource, getenv); err != nil {
+			fmt.Fprintln(stderr, "jevlin: could not record where the stored key may be sent:", err)
+		}
 	}
 
 	// WP2-adversarial-review finding 20: the claim URL/code are a

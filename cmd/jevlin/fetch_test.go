@@ -24,7 +24,7 @@ func runFetchStdin(t *testing.T, env map[string]string, stdin string, args ...st
 	t.Helper()
 	var out, errOut strings.Builder
 	now := func() time.Time { return time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC) }
-	code := fetchMain(now, append([]string{"--stdin"}, args...), strings.NewReader(stdin), &out, &errOut, envOf(env))
+	code := fetchMain(now, append([]string{"--stdin"}, args...), strings.NewReader(stdin), &out, &errOut, installedAs(envOf(env), args))
 	return code, out.String(), errOut.String()
 }
 

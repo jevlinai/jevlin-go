@@ -204,6 +204,11 @@ func codexLineage(ops hookOps, hc hookContext, goos string, payload []byte, stdo
 		return
 	}
 
+	// A Codex envelope carries no history, so this is headroom, not a cut:
+	// an envelope that cannot ride beside the command sends no bridge.
+	if env = capTraceForCommandLine(env, sh, command); env == nil {
+		return
+	}
 	bridge, err := encodeTraceBridge(env)
 	if err != nil {
 		return

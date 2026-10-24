@@ -17,6 +17,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jevlinai/jevlin-go/internal/selfupdate"
 )
 
 type fakeFileInfo struct {
@@ -1027,13 +1029,24 @@ func TestTierPathFollowsTheInstallationHome(t *testing.T) {
 		t.Errorf("no config, HOME set elsewhere: %q", got)
 	}
 
-	// The command writes where the path function says, under JEVLIN_HOME.
+	// The command writes where the path function says, under JEVLIN_HOME:
+	// beside the installation's config, which the command names whether or
+	// not it is written yet, and which resolveEntry makes absolute, so on
+	// Windows it carries the drive the bare JEVLIN_HOME left implicit.
 	m, ops := newFakeMachine()
 	env := map[string]string{"JEVLIN_HOME": "/opt/ada/jevlin"}
 	if code, out, errOut := runAgents(t, ops, env, "tier", "balanced"); code != exitOK || !strings.Contains(out, "search tier: balanced") {
 		t.Fatalf("tier balanced under JEVLIN_HOME: %d %s%s", code, out, errOut)
 	}
-	if got := strings.TrimSpace(string(m.files["/opt/ada/jevlin/search-tier"])); got != "balanced" {
+	entry, _, err := resolveEntry(ops, "", envOf(env))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := tierPath(entry, envOf(env))
+	if home, _ := filepath.Abs("/opt/ada/jevlin"); !samePath(filepath.Dir(want), home) {
+		t.Errorf("the tier file is not under JEVLIN_HOME: %s", want)
+	}
+	if got := strings.TrimSpace(string(m.files[slash(want)])); got != "balanced" {
 		t.Errorf("tier file under JEVLIN_HOME: %q in %v", got, keysOf(m.files))
 	}
 }
@@ -1062,5 +1075,158 @@ func TestAgentsTierStatusShowsTheEffectiveBand(t *testing.T) {
 	}
 	if code, out, _ := runAgents(t, ops, nil, "tier", "default", "-config", cfg); code != exitOK || !strings.Contains(out, "search tier: max") {
 		t.Errorf("default falls back to the config band: %d %q", code, out)
+	}
+}
+
+// `jevlin setup` or `agents install` run from the npm copy over a native
+// install duplicated every hook: ownership asked for the running binary's
+// exact path, so the native-path entries read as another installation's and
+// an npm twin was appended beside each one — all 5 Claude Code hooks twice,
+// all 8 Cursor hooks twice — while the skill flipped to the npm path and
+// Hermes refused its own block (observed live on Windows). The installation's
+// binary at <home>/bin is now one of its own (binEntry.ownBinary, refFor),
+// and an npm-run install embeds that native path (adoptOwnBinary): the merge
+// replaces instead of appending, and a machine already carrying both sets
+// collapses them to one.
+func TestAnNpmRunInstallOverANativeInstallDuplicatesNothing(t *testing.T) {
+	m, ops := newFakeMachine("claude")
+	exe := "jevlin"
+	if runtime.GOOS == "windows" {
+		exe = "jevlin.exe"
+	}
+	native := filepath.Join("/home/u/.jevlin", "bin", exe)
+	npmCopy := filepath.Join("/home/u/npm/node_modules/jevlin/bin", exe)
+	m.files[slash(native)] = []byte("the native binary")
+	settings := "/home/u/.claude/settings.json"
+	skillPath := "/home/u/.claude/skills/jevlin/SKILL.md"
+	m.files[settings] = []byte(`{}`)
+
+	jevlinHandlers := func() (count int, commands []string) {
+		t.Helper()
+		if _, ok := m.files[settings]; !ok {
+			return 0, nil // uninstall may remove the whole file
+		}
+		for _, groups := range hooksOf(t, m, settings) {
+			list, _ := groups.([]any)
+			for _, g := range list {
+				hooks, _ := g.(map[string]any)["hooks"].([]any)
+				for _, h := range hooks {
+					cmd, _ := h.(map[string]any)["command"].(string)
+					if strings.Contains(cmd, "jevlin") {
+						count++
+						commands = append(commands, cmd)
+					}
+				}
+			}
+		}
+		return count, commands
+	}
+
+	// Both copies the same release, so the swap's version check passes.
+	ops.binaryVersion = func(string) (selfupdate.Version, bool) { return selfupdate.Version{Minor: 5}, true }
+
+	// A native install first.
+	ops.executable = func() (string, error) { return native, nil }
+	if code, out, _ := runAgents(t, ops, nil, "install", "-config", testCfg, "-yes"); code != exitOK {
+		t.Fatalf("native install: %d\n%s", code, out)
+	}
+	installed, _ := jevlinHandlers()
+	if installed == 0 {
+		t.Fatal("the native install wrote no hooks")
+	}
+
+	// The pre-fix sequence, reproduced: run from the npm copy while the
+	// installation home resolves elsewhere, so no binary of the
+	// installation's own is found and ownership falls back to the running
+	// path alone. Every hook doubles.
+	ops.executable = func() (string, error) { return npmCopy, nil }
+	foreign := map[string]string{"JEVLIN_HOME": "/home/u/elsewhere", "JEVLIN_LAUNCH": "npm:global"}
+	if code, out, _ := runAgents(t, ops, foreign, "install", "-config", testCfg, "-yes"); code != exitOK {
+		t.Fatalf("npm install without an own binary: %d\n%s", code, out)
+	}
+	if doubled, _ := jevlinHandlers(); doubled != 2*installed {
+		t.Fatalf("the reproduction did not double the hooks: %d of %d", doubled, 2*installed)
+	}
+
+	// The fixed run, from the npm copy with the installation's own binary in
+	// view: one set, every command running the native path, and the npm
+	// path gone from the file and the skill alike.
+	if code, out, _ := runAgents(t, ops, map[string]string{"JEVLIN_LAUNCH": "npm:global"}, "install", "-config", testCfg, "-yes"); code != exitOK {
+		t.Fatalf("npm install over the native one: %d\n%s", code, out)
+	}
+	count, commands := jevlinHandlers()
+	if count != installed {
+		t.Fatalf("hooks after the npm-run install: %d, want %d\n%v", count, installed, commands)
+	}
+	for _, cmd := range commands {
+		if strings.Contains(cmd, "node_modules") {
+			t.Errorf("a hook still runs the npm copy: %q", cmd)
+		}
+	}
+	if raw := string(m.files[settings]); strings.Contains(raw, "node_modules") {
+		t.Errorf("the settings file still names the npm copy:\n%s", raw)
+	}
+	if skill := string(m.files[skillPath]); strings.Contains(skill, "node_modules") || !strings.Contains(skill, exe) {
+		t.Errorf("the skill does not teach the installation's own binary:\n%.200s", skill)
+	}
+
+	// Uninstall run from the npm copy removes both installations' spellings
+	// — its reference carries the running path and the installation's own.
+	if code, out, _ := runAgents(t, ops, map[string]string{"JEVLIN_LAUNCH": "npm:global"}, "uninstall", "-config", testCfg, "-yes"); code != exitOK {
+		t.Fatalf("uninstall: %d\n%s", code, out)
+	}
+	if left, commands := jevlinHandlers(); left != 0 {
+		t.Fatalf("hooks left after uninstall: %v", commands)
+	}
+}
+
+// adoptOwnBinary's swap is scoped to the machine home's own config: an
+// `agents install -config <another installation's config>` run from an npm
+// copy must not wire that installation's hooks to this home's binary, whose
+// later `uninstall -binary` would strand them. The ownership reference still
+// carries both paths either way.
+func TestAdoptOwnBinarySwapsOnlyForTheInstallationsOwnConfig(t *testing.T) {
+	home := "/home/u/.jevlin"
+	exe := "jevlin"
+	if runtime.GOOS == "windows" {
+		exe = "jevlin.exe"
+	}
+	own := filepath.Join(home, "bin", exe)
+	npmExe := filepath.Join("/home/u/npm/node_modules/jevlin/bin", exe)
+	stat := func(p string) (os.FileInfo, error) {
+		if slash(p) == slash(own) {
+			return fakeFileInfo{name: exe}, nil
+		}
+		return nil, fs.ErrNotExist
+	}
+	npmEnv := func(k string) string {
+		if k == "JEVLIN_LAUNCH" {
+			return "npm:global"
+		}
+		return ""
+	}
+	sameRelease := func(string) (selfupdate.Version, bool) { return selfupdate.Version{Minor: 5}, true }
+
+	theirs := adoptOwnBinary(binEntry{command: npmExe, cfg: "/home/other/jevlin.toml"}, home, npmEnv, stat, sameRelease)
+	if theirs.command != npmExe {
+		t.Fatalf("another installation's config still got this home's binary: %q", theirs.command)
+	}
+	if theirs.ownBinary != own {
+		t.Fatalf("the ownership reference lost the home's binary: %q", theirs.ownBinary)
+	}
+
+	// As resolveEntry spells a config: absolute (on Windows that adds the
+	// working drive to this test's rootless path).
+	ownCfg, err := filepath.Abs(filepath.Join(home, "jevlin.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ours := adoptOwnBinary(binEntry{command: npmExe, cfg: ownCfg}, home, npmEnv, stat, sameRelease)
+	if ours.command != own || ours.ownBinary != npmExe {
+		t.Fatalf("the home's own config did not adopt its binary: command %q, ownBinary %q", ours.command, ours.ownBinary)
+	}
+
+	if native := adoptOwnBinary(binEntry{command: own, cfg: ownCfg}, home, func(string) string { return "" }, stat, sameRelease); native.command != own {
+		t.Fatalf("a native run moved its own command: %q", native.command)
 	}
 }

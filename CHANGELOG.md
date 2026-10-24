@@ -12,6 +12,16 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
+- **The stored key is sent only to the router and agents API recorded for it when connect
+  stored it.** `connect` records both in `credentials.json`; a file from an earlier version
+  belongs to the hosts of the installation's own config until a `connect` run under that config
+  records them. A command given a config that names another host stops before any request and
+  says which host the key belongs to. `JEVLIN_API_KEY` is held to the installation's router the
+  same way, by `search`, `limits` and the turn end; to use another router, set `JEVLIN_CONFIG` to
+  its config.
+- **Claude Code's allow rules always name the installed config**, the default path when setup
+  has not written it yet, and the next `agents install`, `setup` or upgrade replaces rules an
+  earlier version wrote without one.
 - **`jevlin search --stdin` answers in about a quarter of the bytes.** With no `view` in the
   request, the envelope now carries the router's merged list alone: no per-provider
   `candidates`, and each page without `excerpts` and `canonical_url`, which repeated its
@@ -49,6 +59,49 @@ rewritten to match newer behaviour; the newer entry says what changed.
   the router may not have, so it checks each page's date and host. It teaches reading
   `found_by` and `votes`, `matched_terms`, `published`, `source_id`, `result.indexes` and
   `merged_total` against `merged_limit`, and when to read a page in full with `jevlin fetch`.
+
+## v0.5.0 — 2026-10-24
+
+Built with Go 1.27, and the first release that needs macOS 13 Ventura or later; that is why it
+is 0.5.0 and not a patch. On Windows it fixes what a live soak of every agent on one machine
+found: opencode started from Git Bash, a Pi search in a long conversation, Pi's trace sending
+a tool's output as the assistant's own words, and a setup run from the npm copy over a native
+install, which doubled every hook. `doctor` now names the copy a bare `jevlin` runs. A setup
+skill is published on skills.sh and on Claude Code's, Codex's and Cursor's plugin
+marketplaces. By default a native install on v0.4.3 takes this release by itself at its daily
+check, and the upgrade rewrites the skill and hooks of each agent it set up; an npm install is
+updated with npm, then `jevlin agents install`. If you are on macOS 12, stay on v0.4.3. A
+native install's upgrade should refuse this release there (not yet tried on macOS 12); with
+npm, pin `@jevlinsearch/jevlin@0.4.3`. The Windows fixes were run live on the soak machine.
+The check that keeps an npm copy's hooks off an older native binary was not; nor has this
+release's updater run on a Windows machine with real-time antivirus on.
+
+- **opencode started from Git Bash on Windows searches again.** opencode started from a
+  terminal like Git Bash runs its commands in bash, and the search's trace prefix is now
+  written for the shell opencode actually resolved rather than the one the installer guessed
+  from the OS. Started from Git Bash, every search used to fail outright. Found in a live
+  Windows soak of every agent on one machine, as are the next four.
+- **A long conversation no longer stops a Pi search on Windows.** The search silently did not
+  run, because the trace rode inside the command and Windows delivers nothing past a length
+  limit. The trace is now budgeted to the host's command line, keeping the newest words, and a
+  command already at the limit goes out untraced rather than not at all. Pi's limit was
+  measured; the other hosts on Windows are held to the operating system's own limit and have
+  not been measured yet.
+- **Pi's trace sends only the assistant's words.** When the assistant wrote none before a
+  search, Pi's trace sent the previous tool's output as if it were the assistant's own; only
+  assistant text is sent now.
+- **Setup from the npm copy over a native install no longer doubles every hook.** It used to
+  stand a second copy of every hook beside the first and flip the skill to the npm path. The
+  npm copy now recognizes the installation's own binary, and a machine already carrying both
+  sets collapses them to one on the next install. The hooks and the skill name the
+  installation's binary when it is the same release as the npm copy or newer; when it is
+  older, or its release cannot be read, they name the npm copy, and the install says to
+  upgrade the installation's binary and install again.
+- **`doctor` names the copy a bare `jevlin` runs.** The new `binary on PATH` check: npm's
+  shim standing earlier on PATH than `~/.jevlin/bin` is how a setup from the npm copy happens
+  without meaning to.
+- The two PowerShell 5.1 stdin tests no longer insist on a byte-order mark that only some
+  Windows builds emit.
 - **macOS 13 Ventura or later.** Built with Go 1.27, the binary no longer runs on macOS 12
   Monterey, which Apple stopped updating in 2024. Linux and Windows are unchanged.
 - **A setup skill on the marketplaces.** `plugin/skills/jevlin/SKILL.md`, the manifests beside it

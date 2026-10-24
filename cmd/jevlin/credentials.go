@@ -38,6 +38,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,13 +91,273 @@ const (
 	keyFromNone keySource = ""
 )
 
-// credentials is the on-disk shape. Router records which gateway the key
-// was verified against so a later `login -show` can say so; it is
-// informational and never overrides the config.
+// credentials is the on-disk shape. Router and AgentsAPI are where the key
+// may be sent: the router a search, a limits read and a turn end go to, and
+// the platform's agents API that connect and mining enable call. Each is an
+// origin (login has always written its router as the full URL it verified
+// against, which reduces to the same origin), and keyService.check holds
+// every request carrying the stored key to it.
 type credentials struct {
-	V      int    `json:"v"`
-	APIKey string `json:"api_key"`
-	Router string `json:"router,omitempty"`
+	V         int    `json:"v"`
+	APIKey    string `json:"api_key"`
+	Router    string `json:"router,omitempty"`
+	AgentsAPI string `json:"agents_api,omitempty"`
+}
+
+// ── where the stored key may go ─────────────────────────────────────────
+//
+// The key in credentials.json is sent only to the origin it is bound to,
+// whichever config a command was given. Bound means the origin
+// credentials.json records for that service; a file an older client wrote
+// without one is bound to that service's origin in this installation's own
+// config (installationConfigPath, read as a command naming no -config reads
+// it), never to a config named on the command line. Origins compare by
+// scheme, host and port. A foreground connect records both on the key it
+// publishes and fills in a missing one (recordKeyBinding).
+
+// keyService is one place the stored key is sent. configured is where cfg
+// sends it, and whether cfg names that place itself: a provider upstream
+// standing in for an unset miner.router_url is where a search goes, but not
+// a router the config named, so it is checked against and never recorded.
+type keyService struct {
+	name       string
+	recorded   func(*credentials) string
+	configured func(*config.Config) (string, bool)
+}
+
+var (
+	routerKeyService = keyService{
+		name:     "router",
+		recorded: func(c *credentials) string { return c.Router },
+		configured: func(cfg *config.Config) (string, bool) {
+			if cfg.Miner.RouterURL == nil {
+				return "", false
+			}
+			return cfg.Miner.RouterURL.String(), cfg.Miner.RouterConfigured
+		},
+	}
+	agentsAPIKeyService = keyService{
+		name:     "agents API",
+		recorded: func(c *credentials) string { return c.AgentsAPI },
+		configured: func(cfg *config.Config) (string, bool) {
+			return cfg.Platform.AgentsAPIURL, cfg.Platform.AgentsAPIURL != ""
+		},
+	}
+)
+
+// keyOriginError is a request that would carry the stored key to an origin
+// other than the one it is bound to. It names the origins and nothing
+// else: no key, no path. unnamed is a binding nothing chose: credentials.json
+// records no origin and the installation's config names none, so the origin
+// it falls to is a built-in default, which the message does not present as
+// the key's.
+type keyOriginError struct {
+	service   string
+	bound     string
+	requested string
+	unnamed   bool
+}
+
+func (e *keyOriginError) Error() string {
+	if e.unnamed {
+		return fmt.Sprintf("the stored key records no %s, and this installation's own config names none, so it is not sent to %s. "+
+			"Run jevlin connect with JEVLIN_CONFIG set to the config this installation uses, which records it", e.service, e.requested)
+	}
+	return fmt.Sprintf("the stored key belongs to the %s at %s, and this config names %s; it is not sent there. "+
+		"Use the config this installation was set up with", e.service, e.bound, e.requested)
+}
+
+// keyOriginCode is the machine code for a keyOriginError, under fix_input:
+// the same request with the installation's own config succeeds.
+const keyOriginCode = "key_origin_mismatch"
+
+// urlOrigin is scheme://host[:port] in lower case, with the scheme's
+// default port left out, so https://h and https://h:443 are one origin.
+func urlOrigin(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
+		return "", errors.New("not an absolute http(s) URL")
+	}
+	scheme, host, port := strings.ToLower(u.Scheme), strings.ToLower(u.Hostname()), u.Port()
+	if (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
+		port = ""
+	}
+	if port != "" {
+		return scheme + "://" + net.JoinHostPort(host, port), nil
+	}
+	if strings.Contains(host, ":") {
+		return scheme + "://[" + host + "]", nil
+	}
+	return scheme + "://" + host, nil
+}
+
+// boundOrigin is the origin the stored key belongs to for this service, and
+// whether that origin may be written into credentials.json: one recorded
+// already, or one the installation's config names itself.
+func (s keyService) boundOrigin(c *credentials, getenv func(string) string) (origin string, named bool, err error) {
+	if r := s.recorded(c); r != "" {
+		o, err := urlOrigin(r)
+		if err != nil {
+			return "", false, fmt.Errorf("credentials: the %s it records is %v — re-run: jevlin connect", s.name, err)
+		}
+		return o, true, nil
+	}
+	cfg, _, err := loadConfig("", getenv)
+	if err != nil {
+		return "", false, fmt.Errorf("credentials: the stored key records no %s, and this installation's own config cannot be read to name one: %w", s.name, err)
+	}
+	raw, named := s.configured(cfg)
+	o, err := urlOrigin(raw)
+	if err != nil {
+		return "", false, fmt.Errorf("credentials: the stored key records no %s, and this installation's own config names none", s.name)
+	}
+	return o, named, nil
+}
+
+// check refuses a request to dest that would carry the stored key c
+// anywhere but its bound origin.
+func (s keyService) check(c *credentials, dest string, getenv func(string) string) error {
+	bound, named, err := s.boundOrigin(c, getenv)
+	if err != nil {
+		return err
+	}
+	requested, err := urlOrigin(dest)
+	if err != nil {
+		return fmt.Errorf("%s: %v", s.name, err)
+	}
+	if requested != bound {
+		return &keyOriginError{service: s.name, bound: bound, requested: requested, unnamed: !named}
+	}
+	return nil
+}
+
+// storedKeyRefusedFor is check against the key on file, for a command that
+// refuses before it does anything else: nil when there is no readable key
+// (the command's own key read reports that), or when it may go to dest.
+func storedKeyRefusedFor(s keyService, m config.Miner, dest string, getenv func(string) string) error {
+	creds, err := readCredentials(credentialsPath(m))
+	if err != nil {
+		return nil
+	}
+	var origin *keyOriginError
+	if err := s.check(creds, dest, getenv); errors.As(err, &origin) {
+		return err
+	}
+	return nil
+}
+
+// recordKeyBinding fills in an origin credentials.json does not record yet
+// with the one the key is already bound to, when the installation's config
+// names it, so a file an older client wrote stops depending on that config.
+// It never changes a recorded origin and never widens where the key may go.
+// Only a run whose config is the installation's own (cfgSource is
+// installationConfigPath) writes anything: a recorded origin never changes,
+// so one taken from the installation's config while the participant runs
+// with another would hold that other config's router refused for good.
+// Best effort: the binding holds the same either way.
+func recordKeyBinding(m config.Miner, cfgSource string, getenv func(string) string) error {
+	if own := installationConfigPath(getenv); cfgSource == "" || own == "" || !sameConfigPath(cfgSource, own) {
+		return nil
+	}
+	path := credentialsPath(m)
+	creds, err := readCredentials(path)
+	if err != nil {
+		return err
+	}
+	changed := false
+	for _, f := range []struct {
+		s     keyService
+		field *string
+	}{{routerKeyService, &creds.Router}, {agentsAPIKeyService, &creds.AgentsAPI}} {
+		if *f.field != "" {
+			continue
+		}
+		if o, named, err := f.s.boundOrigin(creds, getenv); err == nil && named {
+			*f.field, changed = o, true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return writeCredentials(path, *creds)
+}
+
+// keyBindingOf is the binding a key minted for cfg's platform is published
+// with: cfg's router and agents API. An origin cfg does not name is left
+// unrecorded, and so falls to the installation's config; a provider
+// upstream standing in for an unset miner.router_url is not a router the
+// config named.
+func keyBindingOf(cfg *config.Config) credentials {
+	var c credentials
+	for _, f := range []struct {
+		s     keyService
+		field *string
+	}{{routerKeyService, &c.Router}, {agentsAPIKeyService, &c.AgentsAPI}} {
+		raw, named := f.s.configured(cfg)
+		if o, err := urlOrigin(raw); err == nil && named {
+			*f.field = o
+		}
+	}
+	return c
+}
+
+// envKeyRefusedFor is the rule for the environment's key: a search, a limits
+// read or a turn end whose key comes from JEVLIN_API_KEY, given an explicit
+// -config that is not this installation's own config file
+// (installationConfigPath), is refused when that config's router origin
+// differs from the router origin of the installation's own config. The
+// installation's own config, named or not, is served as before, and so is a
+// differing file that names the same router. A router chosen on purpose is
+// served by making its config the installation's, with JEVLIN_CONFIG.
+func envKeyRefusedFor(cfgPath string, cfg *config.Config, getenv func(string) string) error {
+	if cfgPath == "" || unwrittenDefaultConfig(cfgPath, getenv) {
+		return nil
+	}
+	if own := installationConfigPath(getenv); own != "" && sameConfigPath(cfgPath, own) {
+		return nil
+	}
+	raw, _ := routerKeyService.configured(cfg)
+	requested, err := urlOrigin(raw)
+	if err != nil {
+		return err
+	}
+	bound, named := "", false
+	if own, _, err := loadConfig("", getenv); err == nil {
+		ownRaw, ownNamed := routerKeyService.configured(own)
+		if o, err := urlOrigin(ownRaw); err == nil {
+			bound, named = o, ownNamed
+		}
+	}
+	if requested == bound {
+		return nil
+	}
+	return &envKeyOriginError{bound: bound, requested: requested, unnamed: !named}
+}
+
+// keyRefusedForOrigin: is err a refusal to send a key to the origin asked
+// for, either key's? Classified by type, never by message (invariant 15).
+func keyRefusedForOrigin(err error) bool {
+	var stored *keyOriginError
+	var env *envKeyOriginError
+	return errors.As(err, &stored) || errors.As(err, &env)
+}
+
+// envKeyOriginError is envKeyRefusedFor's refusal, worded for the key's
+// source: the environment, not the file. unnamed is keyOriginError's: the
+// installation's config names no router, so no origin is named as its.
+type envKeyOriginError struct {
+	bound, requested string
+	unnamed          bool
+}
+
+func (e *envKeyOriginError) Error() string {
+	const choose = "To use this config's router, set JEVLIN_CONFIG to it, which makes it this installation's config"
+	if e.unnamed {
+		return fmt.Sprintf("%s is sent only to this installation's router, and this installation's own config names none, "+
+			"so it is not sent to %s. %s", apiKeyEnv, e.requested, choose)
+	}
+	return fmt.Sprintf("%s is sent only to this installation's router (%s), and this config names %s; it is not sent there. %s",
+		apiKeyEnv, e.bound, e.requested, choose)
 }
 
 // credentialsPath is the file beside the intake directory: with the
@@ -182,13 +443,18 @@ func saveClaim(m config.Miner, b auth.ClaimBootstrap) error {
 }
 
 // platformKey uses only the credential connect stored for platform calls.
-// The search-only environment override does not apply to enrollment.
-func platformKey(m config.Miner) (string, error) {
-	creds, err := readCredentials(credentialsPath(m))
+// The search-only environment override does not apply to enrollment. The
+// key is returned only when cfg's agents API is the one it is bound to;
+// every caller sends it to cfg.Platform.AgentsAPIURL.
+func platformKey(cfg *config.Config, getenv func(string) string) (string, error) {
+	creds, err := readCredentials(credentialsPath(cfg.Miner))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return "", errors.New("no platform key on file (credentials.json); run `jevlin connect` first")
 		}
+		return "", err
+	}
+	if err := agentsAPIKeyService.check(creds, cfg.Platform.AgentsAPIURL, getenv); err != nil {
 		return "", err
 	}
 	return creds.APIKey, nil
@@ -207,6 +473,8 @@ func looksLikePlatformKey(key string) bool {
 // resolveAPIKey applies the order documented above. A credentials file
 // that exists but cannot be trusted (symlink, readable by others,
 // unparseable) preserves its error rather than selecting another source.
+// The stored key is returned only when m's router is the one it is bound to
+// (a *keyOriginError otherwise); every caller sends it to m.RouterURL.
 func resolveAPIKey(getenv func(string) string, m config.Miner) (string, keySource, error) {
 	if k := getenv(apiKeyEnv); k != "" {
 		return k, keyFromEnv, nil
@@ -214,6 +482,11 @@ func resolveAPIKey(getenv func(string) string, m config.Miner) (string, keySourc
 	creds, err := readCredentials(credentialsPath(m))
 	switch {
 	case err == nil:
+		if m.RouterURL != nil {
+			if err := routerKeyService.check(creds, m.RouterURL.String(), getenv); err != nil {
+				return "", keyFromNone, err
+			}
+		}
 		return creds.APIKey, keyFromFile, nil
 	case !errors.Is(err, fs.ErrNotExist):
 		return "", keyFromNone, err
@@ -467,7 +740,11 @@ func cmdLogin(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv f
 		}
 	}
 
-	if err := writeCredentials(path, credentials{APIKey: key, Router: router}); err != nil {
+	// The router recorded is where the key may be sent from now on, under
+	// connect's rule (keyBindingOf): a router the config names, never the
+	// provider upstream standing in for one.
+	stored := credentials{APIKey: key, Router: keyBindingOf(cfg).Router}
+	if err := writeCredentials(path, stored); err != nil {
 		fmt.Fprintln(stderr, "jevlin login: write:", err)
 		return exitTransport
 	}

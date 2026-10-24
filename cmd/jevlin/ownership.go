@@ -21,13 +21,18 @@ package main
 // npm's job.
 
 import (
+	"debug/buildinfo"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"strings"
+
+	"github.com/jevlinai/jevlin-go/internal/selfupdate"
 )
 
 // launchKind is what the classifier concluded.
@@ -70,6 +75,116 @@ func classifyLaunch(exe, marker string) launchKind {
 		}
 	}
 	return npmLayoutKind(exe)
+}
+
+// ownBinaryAt is the binary an installation keeps at <home>/bin — a regular
+// file at the one name setup installs to and uninstall owns (ownedBinary) —
+// or "" when there is none there or home is unknown.
+func ownBinaryAt(home string, stat func(string) (os.FileInfo, error)) string {
+	if home == "" {
+		return ""
+	}
+	name := "jevlin"
+	if runtime.GOOS == "windows" {
+		name = "jevlin.exe"
+	}
+	own := filepath.Join(home, "bin", name)
+	if info, err := stat(own); err != nil || !info.Mode().IsRegular() {
+		return ""
+	}
+	return own
+}
+
+// adoptOwnBinary fills entry.ownBinary from the installation's home and,
+// when this process is an npm-managed copy while the installation keeps a
+// native binary, makes THAT binary the command the integrations run. Hooks
+// written by the npm copy then survive `npm uninstall`, the skill keeps
+// naming the installation's own copy, and a reinstall from either copy
+// refreshes the one set of entries instead of standing a second set beside
+// the first — with both binaries in the ownership reference (refFor), a
+// machine that already carries both sets collapses them to one on the next
+// install. A native process keeps its own path, and an installation with no
+// binary of its own (a pure npm install) is exactly as before.
+//
+// The swap is made only for the home's OWN config (or discovery): home here
+// is the machine's installation (JEVLIN_HOME, else ~/.jevlin), and an
+// `agents install -config <elsewhere>` run from an npm copy must not wire
+// another installation's hooks to this home's binary, whose later
+// `uninstall -binary` would strand them. Such a run keeps its own path, as
+// before; the ownership reference still carries both.
+//
+// And only when the home's binary is known to be no older than the copy
+// running: setup never copies itself to <home>/bin, so the native copy moves
+// only by `jevlin upgrade`, and an npm copy a release ahead would otherwise
+// write its hooks and its skill for a binary that predates them. Either
+// version unknown keeps the running path, the way it was before the swap;
+// entry.ownOlder then names the copy that was passed over, for the plan to
+// say why.
+func adoptOwnBinary(entry binEntry, home string, getenv func(string) string, stat func(string) (os.FileInfo, error), versionOf func(string) (selfupdate.Version, bool)) binEntry {
+	own := ownBinaryAt(home, stat)
+	if own == "" {
+		return entry
+	}
+	entry.ownBinary = own
+	// Through Abs, as resolveEntry spells entry.cfg: on Windows a rootless
+	// path gains the working drive there, and the comparison must see both
+	// sides the same way.
+	ownCfg, err := filepath.Abs(filepath.Join(home, setupConfigFile))
+	if err != nil {
+		ownCfg = filepath.Join(home, setupConfigFile)
+	}
+	homesOwnConfig := entry.cfg == "" || samePath(entry.cfg, ownCfg)
+	if own == entry.command || !homesOwnConfig || classifyLaunch(entry.command, getenv("JEVLIN_LAUNCH")) == launchNative {
+		return entry
+	}
+	if !ownIsNoOlder(versionOf, own, entry.command) {
+		entry.ownOlder = own
+		return entry
+	}
+	entry.command, entry.ownBinary = own, entry.command
+	return entry
+}
+
+// ownIsNoOlder reports whether the binary at own is a release no older than
+// the one at running. Both are read the same way, from the file, so a
+// question about two copies never compares a stamped string with a read one.
+func ownIsNoOlder(versionOf func(string) (selfupdate.Version, bool), own, running string) bool {
+	ov, ok := versionOf(own)
+	if !ok {
+		return false
+	}
+	rv, ok := versionOf(running)
+	return ok && ov.Compare(rv) >= 0
+}
+
+// jevlinModulePath is the main module a jevlin binary's build information
+// names.
+const jevlinModulePath = "github.com/jevlinai/jevlin-go"
+
+// binaryReleaseVersion is the release a jevlin binary on disk was built as,
+// read from the build information the Go linker records in it, never by
+// running it. A release is built from its tag, so the main module's version
+// is that tag (v0.4.3); -trimpath, which the release build uses, leaves that
+// and drops the -ldflags that set main.version, so this is the one reading of
+// a copy's version that works from outside it. A build from an untagged or
+// modified tree carries a pseudo-version, which is no release, and a file
+// that is not a jevlin binary answers false.
+func binaryReleaseVersion(path string) (selfupdate.Version, bool) {
+	info, err := buildinfo.ReadFile(path)
+	if err != nil {
+		return selfupdate.Version{}, false
+	}
+	return releaseOfBuild(info)
+}
+
+// releaseOfBuild is binaryReleaseVersion's reading of build information
+// already in hand.
+func releaseOfBuild(info *debug.BuildInfo) (selfupdate.Version, bool) {
+	if info == nil || info.Main.Path != jevlinModulePath {
+		return selfupdate.Version{}, false
+	}
+	v, err := selfupdate.ParseReleaseTag(info.Main.Version)
+	return v, err == nil
 }
 
 // npmLayoutKind recognizes the files npm/install.js leaves around the binary:

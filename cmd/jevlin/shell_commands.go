@@ -152,13 +152,14 @@ func (e binEntry) searchCommandForShell(sh shellKind) (string, error) {
 //     to UTF-8 without a byte-order mark fixes that, and was measured to fix
 //     it for every payload on both editions.
 //
-// What the first line does NOT fix is the byte-order mark 5.1 puts in front
-// of the first thing it writes: it is still there with the line, with
-// [Console]::OutputEncoding set as well, and twice over with an encoding
-// that has its own preamble. The mark appears to be written when the stream
-// is created, before any assignment in the script can run, which no rendered
-// form can reach — so the binary tolerates one leading mark instead
-// (trimUTF8BOM). That tolerance absorbs a mark; it cannot recover a query
+// What the first line does NOT fix is the byte-order mark some 5.1 builds
+// put in front of the first thing they write (the CI runners' 5.1 does,
+// 5.1.26100 on Windows 11 does not): where it appears it is still there
+// with the line, with [Console]::OutputEncoding set as well, and twice over
+// with an encoding that has its own preamble. The mark appears to be
+// written when the stream is created, before any assignment in the script
+// can run, which no rendered form can reach — so the binary tolerates one
+// leading mark instead (trimUTF8BOM). That tolerance absorbs a mark; it cannot recover a query
 // the shell already replaced with question marks, which is why the encoding
 // line is not optional.
 const psOutputEncodingLine = `$OutputEncoding = [System.Text.UTF8Encoding]::new($false)`

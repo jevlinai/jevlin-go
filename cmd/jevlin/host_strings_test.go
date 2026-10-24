@@ -309,7 +309,7 @@ func hermesBridgedCommand(t *testing.T, command string) string {
 // jsBridgedCommand runs the rendered opencode plugin or Pi extension — the
 // artifact the install writes — in Node against one synthetic bash call and
 // returns the command it hands the host.
-func jsBridgedCommand(t *testing.T, host, command string, sh shellKind) string {
+func jsBridgedCommand(t *testing.T, host, command string, sh shellKind, goos string) string {
 	t.Helper()
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -319,9 +319,16 @@ func jsBridgedCommand(t *testing.T, host, command string, sh shellKind) string {
 	if host == "pi" {
 		source = renderAgentScript(piExtensionTS, sh, testCfg)
 	}
+	platform := map[string]string{"windows": "win32", "darwin": "darwin", "linux": "linux"}[goos]
 	script := `
  const fs = await import('node:fs');
  const input = JSON.parse(fs.readFileSync(0,'utf8'));
+ // This golden pins what the adapter writes for the DECLARED shell on each
+ // goos, on whatever runner renders it: the platform is the golden's, and
+ // the runner's own $SHELL — opencode's per-call override signal — is
+ // cleared, so the default path is what is compared.
+ Object.defineProperty(process, 'platform', { value: input.platform });
+ delete process.env.SHELL;
  const mod = await import('data:text/javascript;base64,'+Buffer.from(input.source).toString('base64'));
  let command = input.command;
  if (input.host === 'opencode') {
@@ -337,7 +344,7 @@ func jsBridgedCommand(t *testing.T, host, command string, sh shellKind) string {
   command = event.input.command;
  }
  process.stdout.write(JSON.stringify({command}));`
-	input, _ := json.Marshal(map[string]string{"host": host, "source": source, "command": command})
+	input, _ := json.Marshal(map[string]string{"host": host, "source": source, "command": command, "platform": platform})
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, node, "--input-type=module", "-e", script) // #nosec G204 -- fixed test script and local Node runtime; synthetic input on stdin
@@ -359,7 +366,7 @@ func jsBridgedCommand(t *testing.T, host, command string, sh shellKind) string {
 // command, or "" for Cursor, whose lineage is a file its hooks write, and for
 // Codex, whose hook answers only as the installation it runs as
 // (codexBridgedCommand).
-func bridgedCommand(t *testing.T, host, command string, sh shellKind) string {
+func bridgedCommand(t *testing.T, host, command string, sh shellKind, goos string) string {
 	t.Helper()
 	switch host {
 	case "claude":
@@ -367,7 +374,7 @@ func bridgedCommand(t *testing.T, host, command string, sh shellKind) string {
 	case "hermes":
 		return hermesBridgedCommand(t, command)
 	case "opencode", "pi":
-		return jsBridgedCommand(t, host, command, sh)
+		return jsBridgedCommand(t, host, command, sh, goos)
 	}
 	return ""
 }
@@ -551,8 +558,8 @@ func renderedHostStrings(t *testing.T, goos string) string {
 				if err != nil {
 					t.Fatal(err)
 				}
-				value("skill search block ("+string(sh)+")", withBridgePlaceholder(bridgedCommand(t, id, search, sh)))
-				value("stdin command ("+string(sh)+")", withBridgePlaceholder(bridgedCommand(t, id, stdin, sh)))
+				value("skill search block ("+string(sh)+")", withBridgePlaceholder(bridgedCommand(t, id, search, sh, goos)))
+				value("stdin command ("+string(sh)+")", withBridgePlaceholder(bridgedCommand(t, id, stdin, sh, goos)))
 			}
 		}
 	}

@@ -150,7 +150,7 @@ func TestABridgeAloneIsBelievedAsBefore(t *testing.T) {
 func TestTheMachineFormDropsAForeignBridgeAndDoesNotTeachIt(t *testing.T) {
 	p := newChannelProbe(t)
 	env := map[string]string{"JEVLIN_API_KEY": "k", "JEVLIN_HARNESS": "cursor", lineageEnv: p.lineage, bridgeEnv: someoneElsesBridge(t, "claude-code")}
-	getenv := envOf(env)
+	getenv := installedAs(envOf(env), []string{"-config", p.cfg})
 	p.h.ops.hook.getenv = getenv
 	var stdout, stderr bytes.Buffer
 	code := searchMain(p.h.ops, []string{"-config", p.cfg, "--stdin"}, strings.NewReader(`{"version":1,"query":"q"}`), &stdout, &stderr, getenv)
