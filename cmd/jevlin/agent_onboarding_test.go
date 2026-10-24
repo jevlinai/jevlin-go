@@ -3228,7 +3228,7 @@ func TestPendingRegistrationRecoveryPublishesWithoutRegister(t *testing.T) {
 	if err != nil {
 		t.Fatalf("completed Register response: %v", err)
 	}
-	pending := pendingRegistrationFromPlatform(fresh)
+	pending := pendingRegistrationFromPlatform(fresh, cfg)
 	if err := testJournal(t, cfgPath).Save(pending); err != nil {
 		t.Fatal(err)
 	}
@@ -3278,7 +3278,7 @@ func TestPendingJournalRecoveryNeverCallsMeEvenWithACorruptRegistrationAndCreden
 	if err != nil {
 		t.Fatalf("completed Register response: %v", err)
 	}
-	pending := pendingRegistrationFromPlatform(fresh)
+	pending := pendingRegistrationFromPlatform(fresh, cfg)
 	if err := testJournal(t, cfgPath).Save(pending); err != nil {
 		t.Fatal(err)
 	}

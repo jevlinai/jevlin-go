@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/jevlinai/jevlin-go/pkg/config"
+	platformapi "github.com/jevlinai/jevlin-go/pkg/platform"
 )
 
 const boundKey = "sr-bound-key-0123456789" // #nosec G101 -- a synthetic key only loopback stubs see
@@ -480,5 +481,55 @@ func TestTheTurnEndSendsTheStoredKeyOnlyToItsRouter(t *testing.T) {
 	// The control: the same queued turn end reaches the key's own router.
 	if code := cmdTurnEnd([]string{"-config", ownCfg, "-file", queue()}, env); code != exitOK || ownConns() == 0 {
 		t.Fatalf("the key's own router: exit %d, %d connection(s)", code, ownConns())
+	}
+}
+
+// A registration journal's key is bound to the agents API that minted it:
+// a connect under a config naming another publishes nothing and dials
+// nothing.
+func TestAJournalsKeyGoesOnlyToTheAgentsAPIThatMintedIt(t *testing.T) {
+	withShortConnectTimings(t)
+	platform := newStubPlatform(t)
+	cfg, _ := connectConfig(t, platform.srv.URL, "")
+	fresh, err := platformapi.New(platform.srv.URL, platform.srv.URL).Register(t.Context(), "journal", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := pendingRegistrationFromPlatform(fresh, mustLoadConfig(t, cfg))
+	if pending.AgentsAPI != origin(t, platform.srv.URL) {
+		t.Fatalf("the journal records agents API %q, want %s", pending.AgentsAPI, origin(t, platform.srv.URL))
+	}
+	if err := testJournal(t, cfg).Save(pending); err != nil {
+		t.Fatal(err)
+	}
+	other, otherConns := countingServer(t, nil)
+	otherCfg := sameStateOtherURL(t, cfg, platform.srv.URL, other.URL)
+	// Even as the installation's own config, another agents API is refused.
+	env := envOf(map[string]string{"JEVLIN_CONFIG": otherCfg})
+	credPath := credentialsPath(minerOf(t, cfg))
+
+	var stdout, stderr bytes.Buffer
+	if code := cmdConnect([]string{"-config", otherCfg}, &bytes.Buffer{}, &stdout, &stderr, env); code != exitUsage {
+		t.Errorf("connect: exit %d, want %d\n%s", code, exitUsage, stderr.String())
+	}
+	stdout.Reset()
+	code := cmdConnect([]string{"-config", otherCfg, "-json"}, &bytes.Buffer{}, &stdout, io.Discard, env)
+	assertOriginRefusal(t, code, stdout.String(), origin(t, platform.srv.URL), origin(t, other.URL), otherCfg, cfg)
+	if code := cmdConnect([]string{"-config", otherCfg, "-resume"}, &bytes.Buffer{}, io.Discard, io.Discard, env); code != exitOK {
+		t.Errorf("resume: exit %d, want the quiet 0", code)
+	}
+	if n := otherConns(); n != 0 {
+		t.Fatalf("%d connection(s) reached another agents API", n)
+	}
+	if _, err := os.Lstat(credPath); err == nil {
+		t.Fatal("credentials.json was written")
+	}
+
+	// The minting agents API publishes it, bound to what the journal says.
+	if code, _, errOut := runConnect(t, cfg, nil); code != exitOK {
+		t.Fatalf("connect: exit %d\n%s", code, errOut)
+	}
+	if c := readStoredKey(t, cfg); c.AgentsAPI != pending.AgentsAPI {
+		t.Errorf("published with agents API %q, want %q", c.AgentsAPI, pending.AgentsAPI)
 	}
 }
