@@ -6,6 +6,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -65,6 +67,53 @@ func describeConfigSource(cfgPath string, getenv func(string) string) string {
 		}
 	}
 	return ""
+}
+
+// installationConfigPath is the file this machine's installation config is,
+// whether or not it exists yet: JEVLIN_CONFIG, else
+// $JEVLIN_HOME/jevlin.toml, else ~/.jevlin/jevlin.toml. It is the file a
+// command naming no -config reads once setup has written it. Empty only
+// when no home directory can be determined and nothing names one.
+func installationConfigPath(getenv func(string) string) string {
+	if p := getenv("JEVLIN_CONFIG"); p != "" {
+		return p
+	}
+	if home := defaultJevlinHome(getenv); home != "" {
+		return filepath.Join(home, setupConfigFile)
+	}
+	return ""
+}
+
+// unwrittenDefaultConfig: does cfgPath name the installation's own default
+// config, $JEVLIN_HOME/jevlin.toml or ~/.jevlin/jevlin.toml, while that file
+// does not exist and JEVLIN_CONFIG names nothing else? Every command
+// `agents install` renders names a config, and before setup has written one
+// it names this path; until the file is there it reads as built-in
+// defaults, which is what describeConfigSource makes of the same absent
+// file when no -config is given.
+func unwrittenDefaultConfig(cfgPath string, getenv func(string) string) bool {
+	if cfgPath == "" || getenv("JEVLIN_CONFIG") != "" {
+		return false
+	}
+	home := defaultJevlinHome(getenv)
+	if home == "" || !sameConfigPath(cfgPath, filepath.Join(home, setupConfigFile)) {
+		return false
+	}
+	_, err := os.Lstat(cfgPath) // #nosec G703 -- the config path this command was given; only whether it exists is asked
+	return errors.Is(err, fs.ErrNotExist)
+}
+
+// sameConfigPath is samePath on the absolute forms, for a path that may
+// have been given relative to the working directory. It asks nothing of the
+// filesystem, so it answers for a file not written yet.
+func sameConfigPath(a, b string) bool {
+	if abs, err := filepath.Abs(a); err == nil {
+		a = abs
+	}
+	if abs, err := filepath.Abs(b); err == nil {
+		b = abs
+	}
+	return samePath(a, b)
 }
 
 // defaultJevlinHome is the installation location this process assumes

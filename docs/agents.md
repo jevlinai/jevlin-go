@@ -35,7 +35,9 @@ earlier version wrote differently, and `jevlin agents install` refreshes it.
 A skill in `~/.claude/skills/jevlin/`. In `~/.claude/settings.json`: five hooks (`PreToolUse` on
 the Bash and PowerShell tools threads each search into the turn, three track the context window,
 `Stop` flushes) and three `permissions.allow` rules, the single-quoted, quoted and bare spellings
-of the search command. Reinstalling replaces those rules rather than adding more.
+of the search command. Every rule ends with the installation's `-config <file>`, and before setup
+has written that file it names the path setup will write. Reinstalling replaces those rules
+rather than adding more, including rules an earlier version wrote without a config.
 
 ### What to know
 

@@ -122,7 +122,7 @@ func fixedSearchOps(cwd string) *searchHarness {
 func runSearch(t *testing.T, h *searchHarness, env map[string]string, args ...string) (int, string, string) {
 	t.Helper()
 	var out, errOut bytes.Buffer
-	getenv := envOf(env)
+	getenv := installedAs(envOf(env), args)
 	h.ops.hook.getenv = getenv
 	code := searchMain(h.ops, args, strings.NewReader(""), &out, &errOut, getenv)
 	return code, out.String(), errOut.String()

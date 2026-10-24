@@ -71,8 +71,13 @@ const (
 // resolved path, once found, is handed to config.Load as an explicit
 // -config, which is exactly what makes it required to exist — a guarantee
 // this function has already checked for the soft-discovered installation
-// step before choosing it.
+// step before choosing it. A -config naming the installation's own default
+// config before setup has written it reads as no -config at all
+// (unwrittenDefaultConfig).
 func loadConfig(cfgPath string, getenv func(string) string) (*config.Config, string, error) {
+	if unwrittenDefaultConfig(cfgPath, getenv) {
+		cfgPath = ""
+	}
 	src := describeConfigSource(cfgPath, getenv)
 	args := []string{}
 	if src != "" {

@@ -384,7 +384,9 @@ agents_api_url = %q
 		t.Fatal(err)
 	}
 	in.entry = binEntry{command: in.bin, cfg: in.cfg}
-	in.env = execEnv()
+	// This config is the installation's own, as setup's profile block says
+	// for a participant: the environment's key is sent to its router.
+	in.env = append(execEnv(), "JEVLIN_CONFIG="+in.cfg)
 	return in
 }
 

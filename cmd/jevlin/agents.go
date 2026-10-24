@@ -324,6 +324,11 @@ func (o agentOps) paths(getenv func(string) string) agentPaths {
 type binEntry struct {
 	command string
 	cfg     string // absolute config path, or "" for discovery
+	// implicit: cfg is the file a command naming no -config reads on this
+	// machine (installationConfigPath), so a command of ours an earlier
+	// version rendered without -config ran under this installation's config
+	// and is this installation's to replace.
+	implicit bool
 
 	// ownBinary is the installation's second binary, the one command is
 	// not: the copy it keeps at <home>/bin while command is the copy
@@ -1053,21 +1058,31 @@ func resolveEntry(ops agentOps, cfgPath string, getenv func(string) string) (bin
 		home = filepath.Join(ops.home, ".jevlin")
 	}
 	entry := binEntry{command: bin}
+	// Every command rendered names a config, the installation's own when
+	// nothing more specific is given, and before setup has written that file
+	// it names the path setup will write: loadConfig reads it as defaults
+	// until then. A Claude Code allow rule is a prefix ending after that
+	// -config, and search refuses a second one.
 	src := cfgPath
 	if src == "" {
-		src = describeConfigSource("", getenv)
+		src = installationConfigPath(getenv)
 	}
 	if src == "" {
-		// After the config is settled, because adoptOwnBinary's swap is
-		// gated on whose config this is.
-		return adoptOwnBinary(entry, home, getenv, ops.stat, ops.binaryVersionFn()), "  (no config file: defaults and JEVLIN_* env)", nil
+		return binEntry{}, "", errors.New("cannot name a config: no home directory, and neither JEVLIN_CONFIG nor JEVLIN_HOME is set")
 	}
 	abs, err := filepath.Abs(src)
 	if err != nil {
 		return binEntry{}, "", fmt.Errorf("%s: %w", src, err)
 	}
 	entry.cfg = abs
-	return adoptOwnBinary(entry, home, getenv, ops.stat, ops.binaryVersionFn()), "  (config: " + abs + ")", nil
+	entry.implicit = sameConfigPath(abs, installationConfigPath(getenv))
+	// After the config is settled, because adoptOwnBinary's swap is gated
+	// on whose config this is.
+	entry = adoptOwnBinary(entry, home, getenv, ops.stat, ops.binaryVersionFn())
+	if _, err := os.Lstat(abs); errors.Is(err, fs.ErrNotExist) { // #nosec G703 -- the config path this command was given or the installation's own; only whether it exists is asked
+		return entry, "  (config: " + abs + ", not written yet: defaults and JEVLIN_* env until setup writes it)", nil
+	}
+	return entry, "  (config: " + abs + ")", nil
 }
 
 // ownOlderNote says why the integrations name this copy rather than the
@@ -2369,12 +2384,13 @@ func codexOwnedRoots(entry binEntry, getenv func(string) string) []string {
 
 // configForEntry is the config an entry names, parsed: the one setup's dry
 // run handed over (entry.rendered) or the bytes at entry.cfg. nil is "there
-// is none to read", which every caller has to answer for itself.
+// is none to read", which every caller has to answer for itself; the
+// installation's own default config before setup has written it is none.
 func configForEntry(entry binEntry, getenv func(string) string) *config.Config {
 	if entry.rendered != nil {
 		return entry.rendered
 	}
-	if entry.cfg == "" {
+	if entry.cfg == "" || unwrittenDefaultConfig(entry.cfg, getenv) {
 		return nil
 	}
 	cfg, _, err := loadConfig(entry.cfg, getenv)

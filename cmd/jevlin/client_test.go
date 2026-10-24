@@ -5,6 +5,7 @@ package main
 // because env beats the config file in config.Load's precedence.
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -14,6 +15,36 @@ func noEnv(string) string { return "" }
 // envOf builds a getenv from a literal map.
 func envOf(m map[string]string) func(string) string {
 	return func(k string) string { return m[k] }
+}
+
+// installedAs is getenv for a test whose installation is the config it
+// passes with -config, as it is for a participant whose every rendered
+// command names the installation's own config: JEVLIN_CONFIG names that
+// file, unless the test set JEVLIN_CONFIG or JEVLIN_HOME itself. The stored
+// key's binding and the environment key's rule are both read against the
+// installation's config, so a test that means to drive another
+// installation's config says which is the installation's.
+func installedAs(getenv func(string) string, args []string) func(string) string {
+	if getenv("JEVLIN_CONFIG") != "" || getenv("JEVLIN_HOME") != "" {
+		return getenv
+	}
+	cfg := ""
+	for i, a := range args {
+		if (a == "-config" || a == "--config") && i+1 < len(args) {
+			cfg = args[i+1]
+		} else if v, ok := strings.CutPrefix(a, "-config="); ok {
+			cfg = v
+		}
+	}
+	if cfg == "" {
+		return getenv
+	}
+	return func(k string) string {
+		if k == "JEVLIN_CONFIG" {
+			return cfg
+		}
+		return getenv(k)
+	}
 }
 
 // The env-only half of key resolution; the credentials file's place in the
