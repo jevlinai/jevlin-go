@@ -299,7 +299,10 @@ type routerFetchResponse struct {
 // results) or "invalid". The numbers and the flags are pointers, because 0
 // and false are answers and absence is another. ContentLength is the length
 // of the text that can be paged through; when the upstream cut the page,
-// Truncated is true and FullLength is the page's whole length.
+// Truncated is true and FullLength is the page's whole length. Reason says
+// why a failed page failed: "upstream_failed" (a later try may work) or
+// "unrendered" (the page needs a browser; asking again will not help).
+// Absent on an ok page.
 type routerFetchPage struct {
 	SourceID      string  `json:"source_id,omitempty"`
 	URL           string  `json:"url,omitempty"`
@@ -311,6 +314,7 @@ type routerFetchPage struct {
 	ContentLength *int    `json:"content_length,omitempty"`
 	Truncated     *bool   `json:"truncated,omitempty"`
 	FullLength    *int    `json:"full_length,omitempty"`
+	Reason        string  `json:"reason,omitempty"`
 	Provider      string  `json:"provider,omitempty"`
 	Cached        *bool   `json:"cached,omitempty"`
 	CostMicros    *int64  `json:"cost_micros,omitempty"`
@@ -337,6 +341,7 @@ type machineFetchPage struct {
 	ContentLength *int    `json:"content_length,omitempty"`
 	Truncated     *bool   `json:"truncated,omitempty"`
 	FullLength    *int    `json:"full_length,omitempty"`
+	Reason        string  `json:"reason,omitempty"`
 	Provider      string  `json:"provider,omitempty"`
 	Cached        *bool   `json:"cached,omitempty"`
 	CostMicros    *int64  `json:"cost_micros,omitempty"`

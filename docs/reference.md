@@ -175,7 +175,9 @@ On success, `result.pages` is the router's pages as it sent them, in its order: 
 `next_offset` (where the next slice starts, absent at the end of the text), `content_length`
 (the characters of text that can be paged through), `truncated` and `full_length` (present when
 the upstream cut the page: `truncated` is `true` and `full_length` is the whole page's length,
-more than the router can return), `provider`, `cached` and `cost_micros`. `result.usage` has the
+more than the router can return), `reason` (on a failed page: `upstream_failed`, which a later
+try may fix, or `unrendered`, a page that needs a browser, which asking again will not),
+`provider`, `cached` and `cost_micros`. `result.usage` has the
 call's `cost_micros` and `latency_ms`, and `request_id` is the router's. A page's `status` is
 `ok`, `failed`, `invalid`, or `not_recent`: the page was not among this account's recent Jevlin
 results, so fetch only pages a search returned and use the host's own fetch tool for any other
