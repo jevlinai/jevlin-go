@@ -37,6 +37,13 @@ func TestDoctorBinaryCheckNamesTheCopyThatShadowsThisOne(t *testing.T) {
 	if !strings.Contains(c.Fix, own+" setup") {
 		t.Errorf("the fix does not run setup by the binary's full path: %s", c.Fix)
 	}
+	// A home with a space in it, as on Windows under C:\Users\Jane Doe: the
+	// path is quoted the way setup shows one, so the shell does not split it.
+	spaced := filepath.Join("/home/Jane Doe/.jevlin", "bin", "jevlin")
+	c = doctorBinaryCheck(binaryFacts{Checked: true, Own: spaced})
+	if quoted := displayPath(spaced); quoted == spaced || !strings.Contains(c.Fix, quoted+" setup") {
+		t.Errorf("the fix does not quote a path with a space: %s", c.Fix)
+	}
 }
 
 // doctor -config naming another installation's jevlin.toml diagnoses that

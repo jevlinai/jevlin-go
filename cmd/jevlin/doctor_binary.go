@@ -59,8 +59,9 @@ func doctorBinaryCheck(f binaryFacts) doctorCheck {
 	case f.OnPath == "":
 		c.Verdict = verdictNo
 		c.Detail = "nothing on PATH answers `jevlin`; this installation's binary is " + f.Own
-		// By its full path: a bare `jevlin` is exactly what does not run.
-		c.Fix = "open a new terminal, or run " + f.Own + " setup to put " + filepath.Dir(f.Own) + " on PATH"
+		// By its full path, quoted as setup quotes a path it shows: a bare
+		// `jevlin` is exactly what does not run here.
+		c.Fix = "open a new terminal, or run " + displayPath(f.Own) + " setup to put " + filepath.Dir(f.Own) + " on PATH"
 	case f.Same:
 		c.Verdict = verdictOK
 		c.Detail = "`jevlin` runs this installation's own binary, " + f.Own
