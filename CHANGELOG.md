@@ -17,8 +17,8 @@ rewritten to match newer behaviour; the newer entry says what changed.
   belongs to the hosts of the installation's own config until a `connect` run under that config
   records them. A command given a config that names another host stops before any request and
   says which host the key belongs to. `JEVLIN_API_KEY` is held to the installation's router the
-  same way, by `search`, `limits` and the turn end; to use another router, set `JEVLIN_CONFIG` to
-  its config.
+  same way, by `search`, `limits`, the turn end and `fetch`; to use another router, set
+  `JEVLIN_CONFIG` to its config.
 - **Claude Code's allow rules always name the installed config**, the default path when setup
   has not written it yet, and the next `agents install`, `setup` or upgrade replaces rules an
   earlier version wrote without one.

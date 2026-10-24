@@ -557,3 +557,34 @@ func TestAJournalsKeyGoesOnlyToTheAgentsAPIThatMintedIt(t *testing.T) {
 		t.Errorf("published with router %q agents API %q, want the journal's %q %q", c.Router, c.AgentsAPI, pending.Router, pending.AgentsAPI)
 	}
 }
+
+// fetchAnswering is a router handler that answers every request with a fetch
+// response.
+func fetchAnswering(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(fetchRouterAnswer))
+}
+
+const fetchOneURL = `{"version":1,"pages":[{"url":"https://example.test/"}]}`
+
+func TestFetchSendsTheStoredKeyOnlyToItsRouter(t *testing.T) {
+	own, cfg, root := newFakeRouter(t, fetchAnswering)
+	other, otherConns := countingServer(t, http.HandlerFunc(fetchAnswering))
+	otherCfg := sameStateOtherURL(t, cfg, own.srv.URL, other.URL)
+	storeKey(t, cfg, credentials{Router: origin(t, own.srv.URL)})
+	env := map[string]string{"JEVLIN_CONFIG": cfg}
+
+	code, out, _ := runFetchStdin(t, env, fetchOneURL, "-config", otherCfg)
+	assertOriginRefusal(t, code, out, origin(t, own.srv.URL), origin(t, other.URL),
+		root, cfg, otherCfg, credentialsPath(minerOf(t, cfg)))
+	if n := otherConns(); n != 0 {
+		t.Fatalf("%d connection(s) reached a router the key does not belong to", n)
+	}
+
+	if code, out, _ := runFetchStdin(t, env, fetchOneURL, "-config", cfg); code != exitOK {
+		t.Fatalf("the key's own router: exit %d\n%s", code, out)
+	}
+	if req, _ := own.last(t); req.Header.Get("Authorization") != "Bearer "+boundKey {
+		t.Errorf("the key's own router was sent Authorization %q", req.Header.Get("Authorization"))
+	}
+}

@@ -701,8 +701,8 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   connect under another agents API than the journal's is refused) and fills in for an older
   file only on a foreground run under the installation's own config (`recordKeyBinding`: a
   recorded origin never changes); a file without them belongs to the installation's own config
-  (`installationConfigPath`), never to a `-config` naming another file. search, limits and the
-  turn end hold `JEVLIN_API_KEY` to the installation's router the same way
+  (`installationConfigPath`), never to a `-config` naming another file. search, limits, the
+  turn end and fetch hold `JEVLIN_API_KEY` to the installation's router the same way
   (`envKeyRefusedFor`). Every
   Claude Code allow rule names a config, because `resolveEntry` always resolves one and
   `loadConfig` reads the installation's unwritten default path as defaults
