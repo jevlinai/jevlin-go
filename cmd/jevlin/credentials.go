@@ -146,15 +146,23 @@ var (
 )
 
 // keyOriginError is a request that would carry the stored key to an origin
-// other than the one it is bound to. It names both origins and nothing
-// else: no key, no path.
+// other than the one it is bound to. It names the origins and nothing
+// else: no key, no path. unnamed is a binding nothing chose: credentials.json
+// records no origin and the installation's config names none, so the origin
+// it falls to is a built-in default, which the message does not present as
+// the key's.
 type keyOriginError struct {
 	service   string
 	bound     string
 	requested string
+	unnamed   bool
 }
 
 func (e *keyOriginError) Error() string {
+	if e.unnamed {
+		return fmt.Sprintf("the stored key records no %s, and this installation's own config names none, so it is not sent to %s. "+
+			"Run jevlin connect with JEVLIN_CONFIG set to the config this installation uses, which records it", e.service, e.requested)
+	}
 	return fmt.Sprintf("the stored key belongs to the %s at %s, and this config names %s; it is not sent there. "+
 		"Use the config this installation was set up with", e.service, e.bound, e.requested)
 }
@@ -209,7 +217,7 @@ func (s keyService) boundOrigin(c *credentials, getenv func(string) string) (ori
 // check refuses a request to dest that would carry the stored key c
 // anywhere but its bound origin.
 func (s keyService) check(c *credentials, dest string, getenv func(string) string) error {
-	bound, _, err := s.boundOrigin(c, getenv)
+	bound, named, err := s.boundOrigin(c, getenv)
 	if err != nil {
 		return err
 	}
@@ -218,7 +226,7 @@ func (s keyService) check(c *credentials, dest string, getenv func(string) strin
 		return fmt.Errorf("%s: %v", s.name, err)
 	}
 	if requested != bound {
-		return &keyOriginError{service: s.name, bound: bound, requested: requested}
+		return &keyOriginError{service: s.name, bound: bound, requested: requested, unnamed: !named}
 	}
 	return nil
 }
@@ -312,17 +320,17 @@ func envKeyRefusedFor(cfgPath string, cfg *config.Config, getenv func(string) st
 	if err != nil {
 		return err
 	}
-	bound := "no router"
+	bound, named := "", false
 	if own, _, err := loadConfig("", getenv); err == nil {
-		ownRaw, _ := routerKeyService.configured(own)
+		ownRaw, ownNamed := routerKeyService.configured(own)
 		if o, err := urlOrigin(ownRaw); err == nil {
-			bound = o
+			bound, named = o, ownNamed
 		}
 	}
 	if requested == bound {
 		return nil
 	}
-	return &envKeyOriginError{bound: bound, requested: requested}
+	return &envKeyOriginError{bound: bound, requested: requested, unnamed: !named}
 }
 
 // keyRefusedForOrigin: is err a refusal to send a key to the origin asked
@@ -334,12 +342,21 @@ func keyRefusedForOrigin(err error) bool {
 }
 
 // envKeyOriginError is envKeyRefusedFor's refusal, worded for the key's
-// source: the environment, not the file.
-type envKeyOriginError struct{ bound, requested string }
+// source: the environment, not the file. unnamed is keyOriginError's: the
+// installation's config names no router, so no origin is named as its.
+type envKeyOriginError struct {
+	bound, requested string
+	unnamed          bool
+}
 
 func (e *envKeyOriginError) Error() string {
-	return fmt.Sprintf("%s is sent only to this installation's router (%s), and this config names %s; it is not sent there. "+
-		"Use the config this installation was set up with", apiKeyEnv, e.bound, e.requested)
+	const choose = "Use the config this installation was set up with"
+	if e.unnamed {
+		return fmt.Sprintf("%s is sent only to this installation's router, and this installation's own config names none, "+
+			"so it is not sent to %s. %s", apiKeyEnv, e.requested, choose)
+	}
+	return fmt.Sprintf("%s is sent only to this installation's router (%s), and this config names %s; it is not sent there. %s",
+		apiKeyEnv, e.bound, e.requested, choose)
 }
 
 // credentialsPath is the file beside the intake directory: with the

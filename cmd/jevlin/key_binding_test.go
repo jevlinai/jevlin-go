@@ -406,3 +406,34 @@ func TestOnlyTheInstallationsOwnConfigRecordsAnOrigin(t *testing.T) {
 		t.Fatalf("search with custom.toml: exit %d, %d connection(s) to its router\n%s", code, bConns(), errOutS)
 	}
 }
+
+// With nothing recorded and no router in the installation's config, the
+// origin the key falls to is a built-in default nobody chose, and the
+// refusal does not present it as the key's.
+func TestARefusalNamesNoRouterTheInstallationNeverChose(t *testing.T) {
+	own, cfg, root := newFakeRouter(t, nil)
+	storeKey(t, cfg, credentials{})
+	env := map[string]string{"JEVLIN_HOME": t.TempDir()}
+	code, out, _ := runSearchStdin(t, fixedSearchOps(root), env, `{"version":1,"query":"q"}`, "-config", cfg)
+	if code != exitUsage || !strings.Contains(out, `"code":"`+keyOriginCode+`"`) {
+		t.Fatalf("exit %d\n%s", code, out)
+	}
+	defaults, _, err := loadConfig("", envOf(env))
+	if err != nil {
+		t.Fatal(err)
+	}
+	standIn := origin(t, defaults.Miner.RouterURL.String())
+	for _, gone := range []string{standIn, strings.TrimPrefix(standIn, "https://"), "belongs to", boundKey, root} {
+		if strings.Contains(out, gone) {
+			t.Errorf("the refusal says %q:\n%s", gone, out)
+		}
+	}
+	for _, said := range []string{"names none", "JEVLIN_CONFIG", origin(t, own.srv.URL)} {
+		if !strings.Contains(out, said) {
+			t.Errorf("the refusal does not say %q:\n%s", said, out)
+		}
+	}
+	if n := own.requests(); n != 0 {
+		t.Fatalf("%d request(s) sent", n)
+	}
+}
