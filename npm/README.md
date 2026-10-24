@@ -78,8 +78,11 @@ The router runs the request against the arms and answers once, with everything t
   returned, one entry per page, best first. Each entry carries `found_by`, the providers that found that page, and `best_rank`, the best
   position any of them gave it. Agreement between independent indexes is the fan-out's
   own evidence, and the skill tells the agent to read this list first.
+- **`result.indexes`**: each index the router asked and how it answered, so a search where an
+  index failed or the deadline cut it short reads as degraded rather than as an empty web.
 - **`result.candidates`**: each provider's answer as it came back, so a disagreement can be
-  inspected rather than averaged away. `"view":"merged"` drops this when tokens matter.
+  inspected rather than averaged away. Only `"view":"full"` carries it: the default view says
+  each page's text once, in the merged list.
 - **`decision`**, which providers ran; **`usage.cost_micros`**, what the search cost, in
   millionths of a dollar; **`latency_ms`**, for the search and for each provider;
   **`request_id`**, so a search can be found again.
@@ -102,7 +105,7 @@ on the router, and a set that would exceed the ceiling is trimmed rather than re
 
 | tier | what runs | for | what it costs |
 |---|---|---|---|
-| `fast` | three fast indexes, one per index group, about a second | a routine lookup, the default for a new key | about $0.015 a search |
+| `fast` | three fast indexes, one per index group, the quickest | a routine lookup, the default for a new key | about $0.015 a search |
 | `balanced` | the core arms, 8 results each, a 12-page merged window, every arm's text | when the agent needs more than one source, or the first answer came back thin | about $0.035 |
 | `max` | the core arms, 15 results each, a 24-page window, 2,000-character excerpts | corroboration: the same page found by independent indexes, and the most text per page | about $0.045, plus the tokens your agent spends reading it |
 
@@ -125,9 +128,12 @@ Who chooses:
 
 ## Request options
 
-Four fields pass straight through to the router: `recency` (`day`, `week`, `month`,
-`year`), `domain_filter` (up to 16 hostnames), `max_results` (1 to 25) and `providers` (up to
-16 names, to restrict the fan-out or reach an arm that fires only when named). A named set
+These fields pass straight through to the router: `recency` (`day`, `week`, `month`,
+`year`), `domain_filter` (up to 16 hostnames), `max_results` (1 to 25), `merged_limit` (1 to
+50 pages in the merged list), `max_chars` (the merged list's total characters of page text) and
+`providers` (up to 16 names, to restrict the fan-out or reach an arm that fires only when
+named). The router does not yet apply `recency` and `domain_filter` on every provider, so the
+skill tells the agent to check each page's date and host itself. A named set
 runs on `balanced` or `max` only: on `fast` the router refuses it, since the fast set is the
 router's. It is billed at the named arms' own prices, draws credit even with mining on, and
 earns no reward, because a single-arm search carries none of the comparison a trajectory is

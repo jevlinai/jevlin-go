@@ -22,6 +22,27 @@ rewritten to match newer behaviour; the newer entry says what changed.
 - **Claude Code's allow rules always name the installed config**, the default path when setup
   has not written it yet, and the next `agents install`, `setup` or upgrade replaces rules an
   earlier version wrote without one.
+- **`jevlin search --stdin` answers in about a quarter of the bytes.** With no `view` in the
+  request, the envelope now carries the router's merged list alone: no per-provider
+  `candidates`, and each page without `excerpts` and `canonical_url`, which repeated its
+  `snippet` and `url`. Each page's text arrives once instead of three times, and the envelope is
+  what an agent's host puts into the model's context: on a recorded 12-page `balanced` search it
+  went from 74 KB to 19 KB. An integration that reads `candidates`
+  asks for `"view":"full"`, which carries everything it did before, unchanged, plus the new
+  fields below.
+- **The envelope says when a search was degraded.** `result.indexes` lists each index the
+  router asked with its `status`, and `result.usage.deadline_hit` says the deadline cut the
+  search short, so an agent can tell "nothing exists" from "an index timed out". Each page in
+  `result.merged` now carries its `published` date when a provider gave one, and its
+  `result_id`.
+- **Two new request options**, `merged_limit` (1 to 50 pages) and `max_chars` (the merged
+  list's total characters of page text), let an agent ask for more pages when a first pass
+  looks thin, or for less text.
+- **The skill is corrected.** It no longer says `fast` answers in about a second, and it no
+  longer says `recency` and `domain_filter` are passed to every provider: the router does not
+  yet apply them everywhere, so an agent is told to treat results as unfiltered and check each
+  page's date and host. It teaches reading `found_by` and `votes`, `matched_terms`,
+  `published`, `result.indexes` and `merged_total` against `merged_limit`.
 
 ## v0.5.0 — 2026-10-24
 

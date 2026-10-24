@@ -10,8 +10,9 @@ description: {{DESCRIPTION}}
 Send one JSON request on **stdin** and read one JSON object back.
 {{CALL}}
 `version` must be `1`. `query` is required. Everything else — `tier`,
-`recency`, `domain_filter`, `max_results`, `providers`, `view` — is optional;
-see Tiers and Request options below. A malformed value in any of them answers
+`recency`, `domain_filter`, `max_results`, `providers`, `merged_limit`,
+`max_chars`, `view` — is optional; see Tiers, Request options and Reading the
+answer below. A malformed value in any of them answers
 `fix_input` before the request reaches the router.
 
 The query goes in the JSON, never in the command line. Build that JSON with a
@@ -23,8 +24,8 @@ that instead of a shell at all.
 
 Leave `tier` unset for a routine lookup: the request then carries the user's
 own band (set with `/jevlin tier`), or the router's default when the user set
-none. `fast` is three fast indexes, one per index group, back in about a
-second, so ask `"tier":"balanced"` only when the user needs several sources
+none. `fast` is three fast indexes, one per index group, cheaper and quicker
+than `balanced`, so ask `"tier":"balanced"` only when the user needs several sources
 beyond what those three gave: the fast result came back thin, the indexes
 disagree, or the user wants the full core set with every page attributed — 8
 results each in a 12-page merged window. `max` is the same arms asked for 15
@@ -34,7 +35,7 @@ send it.
 
 ## Request options
 
-Four more fields, each optional, passed straight through to the router:
+More fields, each optional, passed straight through to the router:
 
 - `recency` — `"day"`, `"week"`, `"month"` or `"year"` — for anything
   time-bound: a release, a price, the news.
@@ -51,12 +52,19 @@ Four more fields, each optional, passed straight through to the router:
   is billed at those arms' own prices and draws the user's credit even when
   mining is on, so send it only when the user asked for a specific index.
   `{"version":1,"query":"compare agent frameworks","tier":"balanced","providers":["exa","brave"]}`
+- `merged_limit` — an integer from 1 to 50 — how many pages `result.merged`
+  holds. Ask for more pages when a list question's first pass looks thin.
+  `{"version":1,"query":"open-source vector databases","merged_limit":24}`
+- `max_chars` — a positive integer — the characters of page text across the
+  whole merged list, to read less of each page.
+  `{"version":1,"query":"what HTTP/3 changes from HTTP/2","max_chars":3000}`
 
-`recency` and `domain_filter` are preferences: the router passes them to its
-providers, and not every provider honors them, so results from other dates or
-other hosts can still come back. That is not a failure and not something to
-report as one. If the answer must come from one host or one period, check each
-citation's `url` host or date yourself and use only what qualifies.
+`recency` and `domain_filter` are requests the router does not yet apply to
+every provider. Until a response reports which filters were applied, treat
+the results as unfiltered: pages from other dates or other hosts can still
+come back. That is not a failure and not something to report as one. If the
+answer must come from one host or one period, check each page's `published`
+date and `url` host yourself and use only what qualifies.
 `max_results` is a cap and is applied.{{FORMS}}
 
 ## What comes back
@@ -68,9 +76,10 @@ One JSON object on stdout, nothing else. These fields are always present:
  "status":"ok","code":"ok","retryable":false,"action":"none"}
 ```
 
-On success it also carries `request_id`, `result` (chosen index, a merged
-cross-provider list, per-provider candidates, decision, usage, session,
-latency) and `mining`. On failure it carries `code`, an optional
+On success it also carries `request_id`, `result` (the merged
+cross-provider list, each index's status, decision, usage, session, latency,
+and the per-provider candidates only when you ask `"view":"full"`) and
+`mining`. On failure it carries `code`, an optional
 `error.message`, and `retry_after_ms` when the router said how long to wait.
 
 When `ok` is false, or the command could not run at all (blocked, sandboxed,
@@ -79,17 +88,26 @@ never answer the question as if the search had run.
 
 ## Reading the answer
 
-Read `result.merged` first: the router's own list of the pages every
-provider that answered returned, one entry per page, best first. Each
-entry's `found_by` says how many providers agree on that page — the
-fan-out's own evidence — and `best_rank` is the best position any of them
-gave it. `found_in` says where in the per-provider result each page came
-from: one `{candidate, citation}` position per `found_by` provider, in the
-same order. Ask `"view":"merged"` when tokens matter: it drops the
-per-provider `candidates` list and keeps everything else, `merged`
-included. What goes with that list is the providers' own answer texts, so
-ask for it when the pages are what matters — it is not the default.
-`decision` says which providers ran.
+Read `result.merged`: the router's own list of the pages every provider
+that answered returned, one entry per page, best first, each page's text
+said once in its `snippet`. With `view` unset that list is the answer; ask
+`"view":"full"` only when you need the providers' own answer texts, which
+come with every provider's candidates and repeat each page's text, so it is
+not the default.
+
+Each entry's `found_by` names the providers that listed the page: pages
+several indexes agree on are more trustworthy than a page one index found.
+`best_rank` is the best position any of them gave it, and `found_in` says
+where in the per-provider result each page came from, one `{candidate,
+citation}` position per `found_by` provider. `matched_terms`, when present,
+says which of the query's identifiers the page contains. `published`, when
+present, is the page's date as a provider gave it: check it for a
+time-bound question. `result_id` names the page within this search.
+
+`result.indexes` lists each index the router asked, with its `status`. An
+index whose `status` is not `ok`, or `usage.deadline_hit`, means the search
+came back degraded: retry, or widen the query, rather than conclude that
+nothing exists. `decision` says which providers ran.
 `usage.cost_micros` is what the search cost the network, in millionths of a
 dollar; mention it only if the user asks.{{FORMS_READING}}
 

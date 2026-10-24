@@ -13,10 +13,38 @@
   "usage": {
     "cost_micros": 400
   },
+  "indexes": [
+    {
+      "provider": "brave",
+      "status": "ok",
+      "results": 2,
+      "latency_ms": 939
+    },
+    {
+      "provider": "exa",
+      "status": "ok",
+      "results": 3,
+      "latency_ms": 2098
+    },
+    {
+      "provider": "linkup",
+      "status": "ok",
+      "results": 3,
+      "latency_ms": 1784
+    },
+    {
+      "provider": "you",
+      "status": "ok",
+      "results": 2,
+      "latency_ms": 840
+    }
+  ],
   "merged": [
     {
       "url": "https://arxiv.org/abs/2603.01234",
+      "result_id": "r_60d91b0e91524bab617000e18d9990b5",
       "title": "Title of https://arxiv.org/abs/2603.01234",
+      "published": "2026-03-04T00:00:00Z",
       "snippet": "What https://arxiv.org/abs/2603.01234 says about the question.",
       "excerpts": [
         "We survey 140 RAG evaluation benchmarks published since 2023."
@@ -49,6 +77,7 @@
     },
     {
       "url": "https://example.org/rag-eval",
+      "result_id": "r_b5dd9bb3f1df01e9e62374a760340c64",
       "title": "Title of https://example.org/rag-eval",
       "snippet": "What https://example.org/rag-eval says about the question.",
       "found_by": [
@@ -69,6 +98,7 @@
     },
     {
       "url": "https://aclanthology.org/2026.acl-long.42",
+      "result_id": "r_d4a009c53cdc5a0ac9e341c61372e3d5",
       "title": "Title of https://aclanthology.org/2026.acl-long.42",
       "snippet": "What https://aclanthology.org/2026.acl-long.42 says about the question.",
       "found_by": [
@@ -89,6 +119,7 @@
     },
     {
       "url": "https://news.example.net/rag-2026",
+      "result_id": "r_47dc15fbb8d031f187b23378860f914d",
       "title": "Title of https://news.example.net/rag-2026",
       "snippet": "What https://news.example.net/rag-2026 says about the question.",
       "found_by": [
@@ -104,6 +135,7 @@
     },
     {
       "url": "https://blog.example.com/rag-metrics",
+      "result_id": "r_bc896737ae886454ac4b31add57bcb29",
       "title": "Title of https://blog.example.com/rag-metrics",
       "snippet": "What https://blog.example.com/rag-metrics says about the question.",
       "found_by": [

@@ -12,12 +12,13 @@ import (
 	"testing"
 )
 
-// TestViewMergedOmitsCandidates: view: merged carries no "candidates" key
-// and the identical "merged" list "full" carries, and both asked the
-// router for the same thing.
+// TestViewMergedOmitsCandidates: view: merged carries no "candidates" key,
+// and its merged list is the one "full" carries less each page's excerpts
+// and canonical_url, which only "full" repeats; both asked the router for
+// the same thing.
 func TestViewMergedOmitsCandidates(t *testing.T) {
 	fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write(readSearchTestdata(t, filepath.Join("router", "merged-view-success.main.json")))
+		_, _ = w.Write(readSearchTestdata(t, filepath.Join("router", "merged-view-success.merge-v2.json")))
 	})
 	h := fixedSearchOps(root)
 
@@ -40,16 +41,28 @@ func TestViewMergedOmitsCandidates(t *testing.T) {
 		t.Fatalf("view:merged has no merged pages: %s", mergedOut)
 	}
 
-	fullMerged, err1 := json.Marshal(fullResult["merged"])
+	fullPages, _ := fullResult["merged"].([]any)
+	repeated := 0
+	for _, p := range fullPages {
+		page, _ := p.(map[string]any)
+		for _, k := range []string{"excerpts", "canonical_url"} {
+			if _, ok := page[k]; ok {
+				repeated++
+				delete(page, k)
+			}
+		}
+	}
+	if repeated == 0 {
+		t.Fatal("the full view carried no excerpts or canonical_url, so this compares nothing")
+	}
+	fullMerged, err1 := json.Marshal(fullPages)
 	mergedMerged, err2 := json.Marshal(mergedResult["merged"])
 	if err1 != nil || err2 != nil {
 		t.Fatalf("marshal: %v %v", err1, err2)
 	}
 	if string(fullMerged) != string(mergedMerged) {
-		t.Errorf("merged differs between the two views:\nfull:   %s\nmerged: %s", fullMerged, mergedMerged)
+		t.Errorf("merged is not full's less excerpts and canonical_url:\nfull:   %s\nmerged: %s", fullMerged, mergedMerged)
 	}
-
-	t.Logf("envelope size: full=%d bytes, merged=%d bytes", len(fullOut), len(mergedOut))
 
 	fr.mu.Lock()
 	defer fr.mu.Unlock()
@@ -58,25 +71,31 @@ func TestViewMergedOmitsCandidates(t *testing.T) {
 	}
 }
 
-// TestViewAbsentIsFull: a request that never mentions "view" behaves
-// exactly as "full" — the option is additive, not a new required field.
-func TestViewAbsentIsFull(t *testing.T) {
+// TestViewAbsentIsMerged: a request that never mentions "view" gets exactly
+// what "merged" gets, byte for byte: the merged list without the
+// candidates. Only an explicit "full" asks for those.
+func TestViewAbsentIsMerged(t *testing.T) {
 	_, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(routerBody))
+		_, _ = w.Write(readSearchTestdata(t, filepath.Join("router", "merged-view-success.merge-v2.json")))
 	})
 	h := fixedSearchOps(root)
-	code, out, _ := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"},
-		`{"version":1,"query":"q"}`, "-config", cfg)
-	if code != exitOK {
-		t.Fatalf("exit %d: %s", code, out)
+	run := func(stdin string) string {
+		code, out, _ := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, stdin, "-config", cfg)
+		if code != exitOK {
+			t.Fatalf("exit %d: %s", code, out)
+		}
+		return out
 	}
-	env := decodeEnvelope(t, out)
-	result, _ := env["result"].(map[string]any)
-	if _, ok := result["candidates"]; !ok {
-		t.Errorf("an absent view omitted candidates: %s", out)
+	absent := run(`{"version":1,"query":"q"}`)
+	if merged := run(`{"version":1,"query":"q","view":"merged"}`); absent != merged {
+		t.Errorf("an absent view differs from \"merged\":\nabsent: %s\nmerged: %s", absent, merged)
 	}
-	if _, ok := result["merged"]; !ok {
-		t.Errorf("an absent view has no merged key: %s", out)
+	result, _ := decodeEnvelope(t, absent)["result"].(map[string]any)
+	if _, ok := result["candidates"]; ok {
+		t.Errorf("an absent view carried candidates: %s", absent)
+	}
+	if pages, _ := result["merged"].([]any); len(pages) == 0 {
+		t.Errorf("an absent view has no merged pages: %s", absent)
 	}
 }
 

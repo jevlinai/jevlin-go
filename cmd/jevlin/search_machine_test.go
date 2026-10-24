@@ -552,7 +552,7 @@ func TestMachineSuccessCarriesTheClientOwnedResult(t *testing.T) {
 	})
 	h := fixedSearchOps(root)
 	code, out, _ := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"},
-		`{"version":1,"query":"how do ports work"}`, "-config", cfg)
+		`{"version":1,"query":"how do ports work","view":"full"}`, "-config", cfg)
 	if code != exitOK {
 		t.Fatalf("exit %d", code)
 	}

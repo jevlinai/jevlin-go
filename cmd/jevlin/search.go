@@ -168,7 +168,13 @@ type searchCall struct {
 	// them out (FormsDropped).
 	Objective     *string
 	SearchQueries []string
-	Trace         *traceEnvelope
+	// MergedLimit and MaxChars size the merged view (the router's window
+	// and its excerpt budget), absent unless the --stdin caller sent them.
+	// The router accepts them only beside view "merged", which every
+	// --stdin search sends.
+	MergedLimit *int
+	MaxChars    *int
+	Trace       *traceEnvelope
 }
 
 // searchOutcome is the structured result of running a search. Both
@@ -247,6 +253,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	var view string
 	var objective *string
 	var searchQueries []string
+	var mergedLimit, maxChars *int
 	if machine {
 		// No positional query in machine mode: two sources for the same
 		// value is how a caller ends up sending one and escaping the
@@ -274,6 +281,8 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		view = req.view
 		objective = req.objective
 		searchQueries = req.searchQueries
+		mergedLimit = req.mergedLimit
+		maxChars = req.maxChars
 	} else {
 		query = strings.TrimSpace(strings.Join(fs.Args(), " "))
 		if query == "" {
@@ -371,12 +380,13 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		fmt.Fprintln(stderr, "jevlin search: ignoring "+bridgeEnv+": this session's host declared the lineage file ("+lineageEnv+") as its trace channel, so a bridge here was written by something else")
 	}
 	// Only "merged" travels: it is the one view the router accepts, while
-	// "full" (explicit or defaulted) is this client's own rendering choice
-	// and would be refused upstream with a 400. On --stdin it travels
-	// whatever the caller asked, because the envelope's merged list IS the
-	// router's: the caller's view decides only whether the envelope also
-	// carries the candidates. The human form sends it only for -view
-	// merged, which is what that flag has always meant.
+	// "full" is this client's own rendering choice and would be refused
+	// upstream with a 400. On --stdin it travels whatever the caller asked,
+	// because the envelope's merged list IS the router's: the caller's view
+	// decides only how much of the router's answer the envelope repeats
+	// (the candidates, and each page's excerpts and canonical_url, in
+	// "full"). The human form sends it only for -view merged, which is what
+	// that flag has always meant.
 	forwardView := ""
 	if view == "merged" || machine {
 		forwardView = "merged"
@@ -393,6 +403,8 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		View:          forwardView,
 		Objective:     objective,
 		SearchQueries: searchQueries,
+		MergedLimit:   mergedLimit,
+		MaxChars:      maxChars,
 		Trace:         trace,
 	})
 	if out.Retried {
@@ -649,6 +661,12 @@ func performSearch(ctx context.Context, now func() time.Time, call searchCall) s
 	}
 	if call.SearchQueries != nil {
 		body["search_queries"] = call.SearchQueries
+	}
+	if call.MergedLimit != nil {
+		body["merged_limit"] = *call.MergedLimit
+	}
+	if call.MaxChars != nil {
+		body["max_chars"] = *call.MaxChars
 	}
 	out := searchOutcome{Traced: call.Trace != nil}
 	if out.Traced {
@@ -996,6 +1014,29 @@ type routerResponse struct {
 	// pointer, never on a value that would print as {} or 0).
 	Decision *routerDecision `json:"decision,omitempty"`
 	Usage    *routerUsage    `json:"usage,omitempty"`
+	// Indexes is the router's per-provider account of the search, sent
+	// with the merged view: which arms answered, which failed or timed out
+	// or were skipped, and how many results each gave. A pointer, like
+	// Decision and Usage, so a router that omits it is told apart from one
+	// that sent an empty list.
+	Indexes *routerIndexes `json:"indexes,omitempty"`
+}
+
+// routerIndexes is the router's "indexes" block. Only by_provider is read:
+// selected, ok and pending are counts over that same list.
+type routerIndexes struct {
+	ByProvider []routerIndex `json:"by_provider"`
+}
+
+// routerIndex is one provider's line in indexes.by_provider. Results and
+// LatencyMS are pointers because the router sends them only for an arm that
+// answered, and an arm that answered with no results says 0: absent and zero
+// are different answers.
+type routerIndex struct {
+	Provider  string `json:"provider"`
+	Status    string `json:"status"`
+	Results   *int   `json:"results,omitempty"`
+	LatencyMS *int64 `json:"latency_ms,omitempty"`
 }
 
 // routerDecision is the router's own account of which arms it ran.
@@ -1017,6 +1058,9 @@ type routerUsage struct {
 	CacheHit   bool  `json:"cache_hit,omitempty"`
 	Pending    int   `json:"pending,omitempty"`
 	LatencyMS  int64 `json:"latency_ms,omitempty"`
+	// DeadlineHit says the router answered at its deadline with arms still
+	// out, so what came back is less than the search would have found.
+	DeadlineHit bool `json:"deadline_hit,omitempty"`
 }
 
 type routerCandidate struct {
@@ -1057,11 +1101,16 @@ type routerCitation struct {
 // routerMergedPage is one page of the router's merged view. Every field
 // Jevlin-core #55 adds — canonical_url, groups, exclusive, votes,
 // matched_terms and a found_by entry's form — decodes as optional, so the
-// same binary reads the view before and after it.
+// same binary reads the view before and after it. Published is the page's
+// date as the first provider that gave one gave it (RFC 3339, absent or
+// null when none did); ResultID is the router's stable name for the page
+// within this search's request_id.
 type routerMergedPage struct {
 	URL          string          `json:"url"`
+	ResultID     string          `json:"result_id,omitempty"`
 	CanonicalURL string          `json:"canonical_url,omitempty"`
 	Title        string          `json:"title,omitempty"`
+	Published    string          `json:"published,omitempty"`
 	Excerpt      string          `json:"excerpt,omitempty"`
 	Excerpts     []string        `json:"excerpts,omitempty"`
 	BestRank     int             `json:"best_rank"`
