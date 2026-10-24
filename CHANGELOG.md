@@ -12,24 +12,32 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
-Windows fixes, from a live soak of every agent on one machine. opencode started from a
-terminal like Git Bash runs its commands in bash, and the search's trace prefix is now
-written for the shell opencode actually resolved rather than the one the installer guessed
-from the OS — started from Git Bash every search used to fail outright. A Pi search on
-Windows silently did not run when the conversation was long, because the trace rode inside
-the command and Windows delivers nothing past a length limit; the trace is now budgeted to
-the host's command line, keeping the newest words, and a command already at the limit goes
-out untraced rather than not at all. Pi's trace also sent the previous tool's OUTPUT as if
-it were the assistant's own words when the assistant wrote none; only assistant text is sent
-now. Running `jevlin setup` from the npm copy over a native install used to stand a second
-copy of every hook beside the first and flip the skill to the npm path; the npm copy now
-recognizes the installation's own binary, writes hooks that keep naming it, and a machine
-already carrying both sets collapses them to one on the next install. `doctor` gains a
-`binary on PATH` check that names the copy a bare `jevlin` actually runs — npm's shim
-standing earlier on PATH than `~/.jevlin/bin` is how that setup-from-npm happens without
-meaning to. And the two PowerShell 5.1 stdin tests no longer insist on a byte-order mark
-that only some Windows builds emit.
-
+- **opencode started from Git Bash on Windows searches again.** opencode started from a
+  terminal like Git Bash runs its commands in bash, and the search's trace prefix is now
+  written for the shell opencode actually resolved rather than the one the installer guessed
+  from the OS. Started from Git Bash, every search used to fail outright. Found in a live
+  Windows soak of every agent on one machine, as are the next four.
+- **A long conversation no longer stops a Pi search on Windows.** The search silently did not
+  run, because the trace rode inside the command and Windows delivers nothing past a length
+  limit. The trace is now budgeted to the host's command line, keeping the newest words, and a
+  command already at the limit goes out untraced rather than not at all. Pi's limit was
+  measured; the other hosts on Windows are held to the operating system's own limit and have
+  not been measured yet.
+- **Pi's trace sends only the assistant's words.** When the assistant wrote none before a
+  search, Pi's trace sent the previous tool's output as if it were the assistant's own; only
+  assistant text is sent now.
+- **Setup from the npm copy over a native install no longer doubles every hook.** It used to
+  stand a second copy of every hook beside the first and flip the skill to the npm path. The
+  npm copy now recognizes the installation's own binary, and a machine already carrying both
+  sets collapses them to one on the next install. The hooks and the skill name the
+  installation's binary when it is the same release as the npm copy or newer; when it is
+  older, or its release cannot be read, they name the npm copy, and the install says to
+  upgrade the installation's binary and install again.
+- **`doctor` names the copy a bare `jevlin` runs.** The new `binary on PATH` check: npm's
+  shim standing earlier on PATH than `~/.jevlin/bin` is how a setup from the npm copy happens
+  without meaning to.
+- The two PowerShell 5.1 stdin tests no longer insist on a byte-order mark that only some
+  Windows builds emit.
 - **macOS 13 Ventura or later.** Built with Go 1.27, the binary no longer runs on macOS 12
   Monterey, which Apple stopped updating in 2024. Linux and Windows are unchanged.
 - **A setup skill on the marketplaces.** `plugin/skills/jevlin/SKILL.md`, the manifests beside it
