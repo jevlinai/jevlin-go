@@ -650,7 +650,13 @@ func hermesWhoseHook(cmd string) string {
 	if n >= 4 && words[1] == "hook" && words[n-2] == "hermes" && words[n-1] == "pre_tool_call" {
 		switch {
 		case n == 6 && words[2] == "-config":
-			return "its hook belongs to another installation, the one configured by " + unquoteRenderedPath(words[3])[0] + ", not to this one"
+			// The binary is named with the config: a hook can name this
+			// installation's own config while running a binary that is not
+			// one of its two (the running copy and <home>/bin's), and
+			// "another installation, the one configured by <our own config>"
+			// read as a contradiction when it did.
+			return "its hook belongs to another installation — one that runs " + unquoteRenderedPath(words[0])[0] +
+				" configured by " + unquoteRenderedPath(words[3])[0] + " — not to this one"
 		case n == 4:
 			return "its hook belongs to another installation, one that runs " + unquoteRenderedPath(words[0])[0] + " with no -config, not to this one"
 		}
