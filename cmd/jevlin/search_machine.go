@@ -620,8 +620,7 @@ type machineMergedPage struct {
 	// the same order. It is what keeps a merged-only envelope joinable
 	// (dropin-miner#126). With "view":"merged" the candidates list is omitted, so
 	// without these positions nothing maps a page back into the stored
-	// result — and the router's own feedback events (result.fetched,
-	// result.cited) name a candidate and a citation, not a URL.
+	// result's candidates.
 	FoundIn []machineMergedPosition `json:"found_in"`
 	// BestRank is 0-based, as it always was here; the router's is 1-based.
 	BestRank int `json:"best_rank"`

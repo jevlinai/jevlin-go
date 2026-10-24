@@ -22,8 +22,10 @@ package main
 //     upstream that stands in for it when it is absent is never sent this;
 //   - the same scrub and the same 32 KiB tail cap as trace history, applied
 //     before anything is written or sent;
-//   - only the assistant's last message — never the prompt, never a tool's
-//     input or output.
+//   - the assistant's last message and, where the host's transcript can be
+//     read (turn_detail.go), the user's message, the assistant's visible
+//     text and each tool call's name, duration and outcome — never a tool's
+//     input or output, and nothing the model reasoned privately.
 //
 // Shape. The hook does no network I/O: it writes the prepared record to an
 // owner-only file under the sessions directory and starts a detached
