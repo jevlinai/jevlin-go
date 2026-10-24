@@ -31,7 +31,11 @@ func (f recognizerFixture) renderedFetch(t *testing.T, sh shellKind, body string
 // which must get no allow.
 func notQuiteTheFetch(t *testing.T, fetch, body string, other recognizerFixture, sh shellKind) map[string]string {
 	t.Helper()
+	if !strings.Contains(fetch, " --stdin") {
+		t.Fatalf("the rendered fetch has no --stdin to follow:\n%s", fetch)
+	}
 	return map[string]string{
+		"a -config after its prefix":     strings.Replace(fetch, " --stdin", " --stdin -config /tmp/other.toml", 1),
 		"a second statement after it":    fetch + "\necho x",
 		"a command chained onto its end": fetch + " && echo x",
 		"another installation's config":  other.renderedFetch(t, sh, body),
@@ -102,6 +106,7 @@ func TestCodexAllowsTheRenderedFetchAsIs(t *testing.T) {
 	other := newCodexTestInstall(t, "/home/u/dm-disposable/jevlin.toml")
 	_, otherFetch, _ := fetchBlockForShell(shellPOSIX, other.entry(), fetchAllowBody)
 	for name, cmd := range map[string]string{
+		"a -config after its prefix":     strings.Replace(fetch, " --stdin", " --stdin -config /tmp/other.toml", 1),
 		"a second statement after it":    strings.Replace(fetch, "\nJSON", "\nJSON\necho x", 1),
 		"a command chained onto its end": fetch + " && echo x",
 		"another installation's fetch":   strings.Replace(otherFetch, other.bin, in.bin, 1),

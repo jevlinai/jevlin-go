@@ -391,6 +391,28 @@ func TestFetchNeedsStdin(t *testing.T) {
 // A second -config is refused before anything is read or sent, as for a
 // search: an allow rule ends after the installed -config, and a second one
 // could otherwise send the key to another config's router.
+// A second -config after the rendered prefix, naming another router, is
+// refused before either config's router is dialed: the allow rule ends
+// after the installed -config ... --stdin, so whatever follows it must not
+// choose where the key goes.
+func TestFetchRefusesASecondConfigNamingAnotherRouter(t *testing.T) {
+	fr, cfg, _ := newFakeRouter(t, nil)
+	a, aConns := countingServer(t, nil)
+	b, bConns := countingServer(t, nil)
+	cfgA := sameStateOtherURL(t, cfg, fr.srv.URL, a.URL)
+	cfgB := sameStateOtherURL(t, cfg, fr.srv.URL, b.URL)
+	var out, errOut strings.Builder
+	code := fetchMain(time.Now, []string{"-config", cfgA, "--stdin", "-config", cfgB},
+		strings.NewReader(`{"version":1,"pages":[{"url":"https://example.test/"}]}`), &out, &errOut,
+		envOf(map[string]string{"JEVLIN_CONFIG": cfgA, apiKeyEnv: boundKey}))
+	if env := decodeEnvelope(t, out.String()); code != exitUsage || env["code"] != codeInvalidFlags || env["action"] != actionFixInput {
+		t.Errorf("exit %d, %v, %v; want %d, %s, %s\n%s", code, env["code"], env["action"], exitUsage, codeInvalidFlags, actionFixInput, out.String())
+	}
+	if n, m := aConns(), bConns(); n != 0 || m != 0 || len(fr.reqs) != 0 {
+		t.Errorf("connections: %d to the first config's router, %d to the second's, %d request(s) to the stub; want none", n, m, len(fr.reqs))
+	}
+}
+
 func TestFetchRefusesASecondConfig(t *testing.T) {
 	fr, cfg, _ := newFakeRouter(t, nil)
 	code, out, _ := runFetchStdin(t, map[string]string{"JEVLIN_API_KEY": "sr-fictional-key"},
