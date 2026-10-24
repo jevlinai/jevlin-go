@@ -182,6 +182,21 @@ func TestCapTraceToFitTrimsTheFrontThenDropsHistoryThenTheBridge(t *testing.T) {
 	}
 }
 
+// The hook hands the lineage file the same history entries it then trims for
+// the command line; the trim must cut its own copy, or the file keeps the cut
+// text in place of the full history it exists to keep.
+func TestCapTraceToFitLeavesTheCallersHistoryWhole(t *testing.T) {
+	long := strings.Repeat("x", 20<<10) + "THE-END"
+	shared := []traceHistory{{Role: "assistant", Text: long}}
+	env := capTraceToFit(&traceEnvelope{V: traceVersion, History: shared}, 8<<10)
+	if env == nil || len(env.History) != 1 || len(env.History[0].Text) >= len(long) {
+		t.Fatalf("the trim was not made: %+v", env)
+	}
+	if shared[0].Text != long {
+		t.Fatalf("the caller's history entry was cut too: %d of %d bytes left", len(shared[0].Text), len(long))
+	}
+}
+
 // capTraceForCommandLine answers from the real OS limit: on Windows a
 // history far past the limit comes back fitting beside its command, and on
 // every other OS the envelope is returned untouched.

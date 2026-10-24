@@ -163,7 +163,11 @@ func capTraceForCommandLine(env *traceEnvelope, sh shellKind, cmd string) *trace
 	return capTraceToFit(env, (limit-bridgeSyntaxOverhead(sh)-len(cmd))*3/4)
 }
 
+// capTraceToFit trims env.History on a copy of its own: the entries a caller
+// handed in may be shared, as the lineage file's are in hook.go, and a cut
+// made in them would cut that copy too.
 func capTraceToFit(env *traceEnvelope, jsonLimit int) *traceEnvelope {
+	env.History = append([]traceHistory(nil), env.History...)
 	b, err := json.Marshal(env)
 	if err != nil {
 		return nil
