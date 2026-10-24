@@ -25,7 +25,9 @@ predecessor project shipped without it.
 
 1. **`main` is green.** `ci.yml` passing on `main` is a precondition; do not tag through a
    red `main`.
-2. **A dedicated `release/x.y.z` PR** bumps `npm/package.json`'s `"version"` to `X.Y.Z` and
+2. **A dedicated `release/x.y.z` PR** bumps `npm/package.json`'s `"version"` to `X.Y.Z`, the
+   same `"version"` in the three plugin manifests (`plugin/.claude-plugin/plugin.json`,
+   `.claude-plugin/marketplace.json`, `plugin/plugin.json`), and
    turns `## Unreleased` in `CHANGELOG.md` into `## vX.Y.Z — YYYY-MM-DD`. Its merge commit is
    what gets tagged.
 3. **The checks under "Before you tag" run on that exact commit.**
@@ -54,6 +56,10 @@ predecessor project shipped without it.
 - **`CHANGELOG.md` has the heading for this version, with its date**, and an entry that says
   what changed for a participant. goreleaser's release notes are the commit list.
 - **`npm/package.json` says `X.Y.Z`** in the commit being tagged.
+- **The plugin manifests say `X.Y.Z`** too, or Claude Code keeps the old plugin for everyone
+  who installed it from the marketplace. Preflight checks all three with `npm/package.json`.
+- **`plugin/skills/jevlin/SKILL.md` still says what setup does.** It is the setup skill the marketplaces
+  carry, not the search skill; a flag or question it names must be one setup accepts.
 - **The help text and the skill match the flags shipped.** A flag `usageText` or
   `cmd/jevlin/skill.md` names that the binary does not accept, or one it accepts that
   neither mentions, breaks the contract an agent reads.

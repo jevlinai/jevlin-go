@@ -49,6 +49,18 @@ rewritten to match newer behaviour; the newer entry says what changed.
   the router may not have, so it checks each page's date and host. It teaches reading
   `found_by` and `votes`, `matched_terms`, `published`, `source_id`, `result.indexes` and
   `merged_total` against `merged_limit`, and when to read a page in full with `jevlin fetch`.
+- **macOS 13 Ventura or later.** Built with Go 1.27, the binary no longer runs on macOS 12
+  Monterey, which Apple stopped updating in 2024. Linux and Windows are unchanged.
+- **A setup skill on the marketplaces.** `plugin/skills/jevlin/SKILL.md`, the manifests beside it
+  (`plugin/.claude-plugin/plugin.json`, `plugin/plugin.json` for the Agent
+  Plugins standard) and the marketplaces at the root (`.claude-plugin/marketplace.json`,
+  `.agents/plugins/marketplace.json` for Codex) let an agent take Jevlin from
+  skills.sh (`npx skills add jevlinai/jevlin-go`), Claude Code's plugin directory
+  (`/plugin install jevlin --marketplace jevlinai/jevlin-go`), Codex's plugin marketplace and
+  Cursor's. What it gets is not the search: the skill installs the client and runs
+  `jevlin setup`, which writes the agent's own search skill and hooks, exactly as a person
+  running setup gets them. Release preflight now checks the manifests' version with
+  `npm/package.json`.
 
 ## v0.4.3 — 2026-10-20
 
