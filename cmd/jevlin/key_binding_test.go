@@ -439,9 +439,18 @@ func TestARefusalNamesNoRouterTheInstallationNeverChose(t *testing.T) {
 	}
 }
 
-// The turn end refuses another origin silently, as it does every other key
-// failure, and dials nothing.
-func TestTheTurnEndSendsTheStoredKeyOnlyToItsRouter(t *testing.T) {
+// turnEndFixture is two configs over one state with the turn end on, each
+// naming its own counting router, and a queue that puts one turn end where
+// both configs' turn end reads it.
+type turnEndFixture struct {
+	ownCfg, otherCfg     string
+	ownURL, otherURL     string
+	ownConns, otherConns func() int64
+	queue                func() string
+}
+
+func newTurnEndFixture(t *testing.T) turnEndFixture {
+	t.Helper()
 	ownSrv, ownConns := countingServer(t, nil)
 	other, otherConns := countingServer(t, nil)
 	fr, cfg, _ := newFakeRouter(t, nil)
@@ -457,30 +466,41 @@ func TestTheTurnEndSendsTheStoredKeyOnlyToItsRouter(t *testing.T) {
 		}
 		return p
 	}
-	ownCfg, otherCfg := write(ownSrv.URL), write(other.URL)
-	storeKey(t, ownCfg, credentials{Router: origin(t, ownSrv.URL)})
-	sessions := minerOf(t, ownCfg).SessionsDir
+	f := turnEndFixture{
+		ownCfg: write(ownSrv.URL), otherCfg: write(other.URL),
+		ownURL: ownSrv.URL, otherURL: other.URL,
+		ownConns: ownConns, otherConns: otherConns,
+	}
+	sessions := minerOf(t, f.ownCfg).SessionsDir
 	if err := os.MkdirAll(sessions, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	queue := func() string {
+	f.queue = func() string {
 		p := filepath.Join(sessions, "t1"+turnEndSuffix)
 		if err := os.WriteFile(p, []byte(`{"session_id":"s1","turn_id":"t1"}`), 0o600); err != nil { // #nosec G703 -- a path under t.TempDir
 			t.Fatal(err)
 		}
 		return p
 	}
-	env := envOf(map[string]string{"JEVLIN_CONFIG": ownCfg})
+	return f
+}
 
-	if code := cmdTurnEnd([]string{"-config", otherCfg, "-file", queue()}, env); code != exitOK {
+// The turn end refuses another origin silently, as it does every other key
+// failure, and dials nothing.
+func TestTheTurnEndSendsTheStoredKeyOnlyToItsRouter(t *testing.T) {
+	f := newTurnEndFixture(t)
+	storeKey(t, f.ownCfg, credentials{Router: origin(t, f.ownURL)})
+	env := envOf(map[string]string{"JEVLIN_CONFIG": f.ownCfg})
+
+	if code := cmdTurnEnd([]string{"-config", f.otherCfg, "-file", f.queue()}, env); code != exitOK {
 		t.Errorf("exit %d, want the silent 0", code)
 	}
-	if n := otherConns(); n != 0 {
+	if n := f.otherConns(); n != 0 {
 		t.Fatalf("%d connection(s) reached a router the key does not belong to", n)
 	}
 	// The control: the same queued turn end reaches the key's own router.
-	if code := cmdTurnEnd([]string{"-config", ownCfg, "-file", queue()}, env); code != exitOK || ownConns() == 0 {
-		t.Fatalf("the key's own router: exit %d, %d connection(s)", code, ownConns())
+	if code := cmdTurnEnd([]string{"-config", f.ownCfg, "-file", f.queue()}, env); code != exitOK || f.ownConns() == 0 {
+		t.Fatalf("the key's own router: exit %d, %d connection(s)", code, f.ownConns())
 	}
 }
 

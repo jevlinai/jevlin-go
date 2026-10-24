@@ -88,3 +88,54 @@ func TestTheEnvironmentKeyGoesToTheInstallationsRouterInEveryForm(t *testing.T) 
 		t.Errorf("JEVLIN_CONFIG naming the other config: exit %d, %d connection(s)\n%s", code, otherConns(), errOut)
 	}
 }
+
+// The turn end holds the environment's key to the installation's router as
+// it does the stored one: silently, exit 0, nothing dialed.
+func TestTheTurnEndSendsTheEnvironmentKeyOnlyToTheInstallationsRouter(t *testing.T) {
+	f := newTurnEndFixture(t)
+	if _, err := readCredentials(credentialsPath(minerOf(t, f.ownCfg))); err == nil {
+		t.Fatal("this test is about the environment's key, and a key is stored")
+	}
+	env := envOf(map[string]string{"JEVLIN_CONFIG": f.ownCfg, apiKeyEnv: boundKey})
+
+	if code := cmdTurnEnd([]string{"-config", f.otherCfg, "-file", f.queue()}, env); code != exitOK {
+		t.Errorf("exit %d, want the silent 0", code)
+	}
+	if n := f.otherConns(); n != 0 {
+		t.Fatalf("%d connection(s) reached another router", n)
+	}
+	// The control: the installation's own config reaches its router.
+	if code := cmdTurnEnd([]string{"-config", f.ownCfg, "-file", f.queue()}, env); code != exitOK || f.ownConns() == 0 {
+		t.Fatalf("the installation's router: exit %d, %d connection(s)", code, f.ownConns())
+	}
+}
+
+// With no router in the installation's config, the environment key's
+// refusal names none as the installation's: it says the config names none,
+// and how to choose one.
+func TestTheEnvironmentKeysRefusalNamesNoRouterTheInstallationNeverChose(t *testing.T) {
+	own, cfg, root := newFakeRouter(t, nil)
+	env := map[string]string{"JEVLIN_HOME": t.TempDir(), apiKeyEnv: boundKey}
+	code, out, _ := runSearchStdin(t, fixedSearchOps(root), env, `{"version":1,"query":"q"}`, "-config", cfg)
+	if code != exitUsage || !strings.Contains(out, `"code":"`+keyOriginCode+`"`) {
+		t.Fatalf("exit %d\n%s", code, out)
+	}
+	defaults, _, err := loadConfig("", envOf(env))
+	if err != nil {
+		t.Fatal(err)
+	}
+	standIn := origin(t, defaults.Miner.RouterURL.String())
+	for _, gone := range []string{standIn, strings.TrimPrefix(standIn, "https://"), boundKey, root} {
+		if strings.Contains(out, gone) {
+			t.Errorf("the refusal says %q:\n%s", gone, out)
+		}
+	}
+	for _, said := range []string{apiKeyEnv, "names none", "JEVLIN_CONFIG", origin(t, own.srv.URL)} {
+		if !strings.Contains(out, said) {
+			t.Errorf("the refusal does not say %q:\n%s", said, out)
+		}
+	}
+	if n := own.requests(); n != 0 {
+		t.Fatalf("%d request(s) sent", n)
+	}
+}
