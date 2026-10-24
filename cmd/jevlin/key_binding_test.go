@@ -437,3 +437,48 @@ func TestARefusalNamesNoRouterTheInstallationNeverChose(t *testing.T) {
 		t.Fatalf("%d request(s) sent", n)
 	}
 }
+
+// The turn end refuses another origin silently, as it does every other key
+// failure, and dials nothing.
+func TestTheTurnEndSendsTheStoredKeyOnlyToItsRouter(t *testing.T) {
+	ownSrv, ownConns := countingServer(t, nil)
+	other, otherConns := countingServer(t, nil)
+	fr, cfg, _ := newFakeRouter(t, nil)
+	b, err := os.ReadFile(cfg) // #nosec G304 -- this test's own config
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := strings.Replace(string(b), "[miner]\n", "[miner]\nturn_end = true\n", 1)
+	write := func(router string) string {
+		p := filepath.Join(t.TempDir(), "jevlin.toml")
+		if err := os.WriteFile(p, []byte(strings.ReplaceAll(body, fr.srv.URL, router)), 0o600); err != nil { // #nosec G703 -- a path under t.TempDir
+			t.Fatal(err)
+		}
+		return p
+	}
+	ownCfg, otherCfg := write(ownSrv.URL), write(other.URL)
+	storeKey(t, ownCfg, credentials{Router: origin(t, ownSrv.URL)})
+	sessions := minerOf(t, ownCfg).SessionsDir
+	if err := os.MkdirAll(sessions, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	queue := func() string {
+		p := filepath.Join(sessions, "t1"+turnEndSuffix)
+		if err := os.WriteFile(p, []byte(`{"session_id":"s1","turn_id":"t1"}`), 0o600); err != nil { // #nosec G703 -- a path under t.TempDir
+			t.Fatal(err)
+		}
+		return p
+	}
+	env := envOf(map[string]string{"JEVLIN_CONFIG": ownCfg})
+
+	if code := cmdTurnEnd([]string{"-config", otherCfg, "-file", queue()}, env); code != exitOK {
+		t.Errorf("exit %d, want the silent 0", code)
+	}
+	if n := otherConns(); n != 0 {
+		t.Fatalf("%d connection(s) reached a router the key does not belong to", n)
+	}
+	// The control: the same queued turn end reaches the key's own router.
+	if code := cmdTurnEnd([]string{"-config", ownCfg, "-file", queue()}, env); code != exitOK || ownConns() == 0 {
+		t.Fatalf("the key's own router: exit %d, %d connection(s)", code, ownConns())
+	}
+}
