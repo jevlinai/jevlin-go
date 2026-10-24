@@ -242,8 +242,15 @@ func storedKeyRefusedFor(s keyService, m config.Miner, dest string, getenv func(
 // with the one the key is already bound to, when the installation's config
 // names it, so a file an older client wrote stops depending on that config.
 // It never changes a recorded origin and never widens where the key may go.
+// Only a run whose config is the installation's own (cfgSource is
+// installationConfigPath) writes anything: a recorded origin never changes,
+// so one taken from the installation's config while the participant runs
+// with another would hold that other config's router refused for good.
 // Best effort: the binding holds the same either way.
-func recordKeyBinding(m config.Miner, getenv func(string) string) error {
+func recordKeyBinding(m config.Miner, cfgSource string, getenv func(string) string) error {
+	if own := installationConfigPath(getenv); cfgSource == "" || own == "" || !sameConfigPath(cfgSource, own) {
+		return nil
+	}
 	path := credentialsPath(m)
 	creds, err := readCredentials(path)
 	if err != nil {

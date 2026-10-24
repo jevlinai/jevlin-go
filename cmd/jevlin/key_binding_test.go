@@ -341,3 +341,68 @@ func TestTheStoredKeyGoesOnlyToTheAgentsAPIItRecords(t *testing.T) {
 		t.Errorf("resume against the key's own agents API: exit %d\n%s", code, errOut)
 	}
 }
+
+// ── what is recorded, and by which run ──────────────────────────────────
+
+// twoConfigInstallation is an installation registered under its own config
+// (<home>/jevlin.toml, router A), and a second config beside it naming router
+// B over the same state, so the same credentials.json. The key is left as an
+// older client wrote it: no origins.
+func twoConfigInstallation(t *testing.T) (home, own, custom string, a, b *httptest.Server, aConns, bConns func() int64) {
+	t.Helper()
+	withShortConnectTimings(t)
+	platform := newStubPlatform(t)
+	own, _ = connectConfig(t, platform.srv.URL, "")
+	home = filepath.Dir(own)
+	a, aConns = countingServer(t, nil)
+	b, bConns = countingServer(t, nil)
+	f, err := os.OpenFile(own, os.O_APPEND|os.O_WRONLY, 0o600) // #nosec G304 -- this test's own config
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.WriteString(f, "\n[miner]\nrouter_url = \""+a.URL+"\"\n")
+	_ = f.Close()
+	custom = sameStateOtherURL(t, own, a.URL, b.URL)
+	if code, out, errOut := runConnect(t, own, nil); code != exitOK {
+		t.Fatalf("connect: exit %d\n%s\n%s", code, out, errOut)
+	}
+	c := readStoredKey(t, own)
+	if err := writeCredentials(credentialsPath(minerOf(t, own)), credentials{APIKey: c.APIKey}); err != nil {
+		t.Fatal(err)
+	}
+	return home, own, custom, a, b, aConns, bConns
+}
+
+// A connect run under a config that is not the installation's own writes no
+// origin: what it would write is the installation config's, and once written
+// it would never change. A connect under the config the participant names as
+// the installation's records that config's.
+func TestOnlyTheInstallationsOwnConfigRecordsAnOrigin(t *testing.T) {
+	home, _, custom, _, b, _, bConns := twoConfigInstallation(t)
+	installation := envOf(map[string]string{"JEVLIN_HOME": home})
+
+	var out, errOut bytes.Buffer
+	if code := cmdConnect([]string{"-config", custom}, &bytes.Buffer{}, &out, &errOut, installation); code != exitOK {
+		t.Fatalf("connect -config custom: exit %d\n%s\n%s", code, out.String(), errOut.String())
+	}
+	if c := readStoredKey(t, custom); c.Router != "" || c.AgentsAPI != "" {
+		t.Fatalf("a connect under another config recorded router %q, agents API %q", c.Router, c.AgentsAPI)
+	}
+
+	out.Reset()
+	errOut.Reset()
+	chosen := envOf(map[string]string{"JEVLIN_HOME": home, "JEVLIN_CONFIG": custom})
+	if code := cmdConnect(nil, &bytes.Buffer{}, &out, &errOut, chosen); code != exitOK {
+		t.Fatalf("JEVLIN_CONFIG=custom connect: exit %d\n%s\n%s", code, out.String(), errOut.String())
+	}
+	if c := readStoredKey(t, custom); c.Router != origin(t, b.URL) {
+		t.Fatalf("recorded router %q, want %s", c.Router, origin(t, b.URL))
+	}
+
+	// What is recorded wins: the installation's default config still names
+	// router A, and a search with custom.toml is served by B.
+	code, _, errOutS := runSearch(t, fixedSearchOps(t.TempDir()), map[string]string{"JEVLIN_HOME": home}, "-config", custom, "-no-flush", "q")
+	if code != exitOK || bConns() == 0 {
+		t.Fatalf("search with custom.toml: exit %d, %d connection(s) to its router\n%s", code, bConns(), errOutS)
+	}
+}

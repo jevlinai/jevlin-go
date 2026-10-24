@@ -1230,7 +1230,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 	if !*resume {
 		// A key an older client stored records no origins; it is bound to
 		// the installation's config until they are written down here.
-		if err := recordKeyBinding(cfg.Miner, getenv); err != nil {
+		if err := recordKeyBinding(cfg.Miner, cfgSource, getenv); err != nil {
 			fmt.Fprintln(stderr, "jevlin: could not record where the stored key may be sent:", err)
 		}
 	}
