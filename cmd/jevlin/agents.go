@@ -325,14 +325,17 @@ type binEntry struct {
 	command string
 	cfg     string // absolute config path, or "" for discovery
 
-	// ownBinary is the copy the installation keeps at <home>/bin, when it
-	// keeps one and it is not command already: a second binary whose
-	// integrations are this installation's own. Without it, `jevlin setup`
-	// run from the npm copy over a native install saw every native-path
-	// hook as another installation's and stood an npm twin beside each one
-	// — all 5 Claude Code hooks twice, all 8 Cursor hooks twice — while
-	// Hermes refused its own block as "another installation's". "" when
-	// the installation keeps none, or it cannot be told.
+	// ownBinary is the installation's second binary, the one command is
+	// not: the copy it keeps at <home>/bin while command is the copy
+	// running, or, once adoptOwnBinary has made <home>/bin the command, the
+	// copy running (the npm one). Either way a binary whose integrations are
+	// this installation's own, which is all refFor asks of it. Without
+	// it, `jevlin setup` run from the npm copy over a native install saw
+	// every native-path hook as another installation's and stood an npm
+	// twin beside each one — all 5 Claude Code hooks twice, all 8 Cursor
+	// hooks twice — while Hermes refused its own block as "another
+	// installation's". "" when the installation keeps none, or it cannot
+	// be told.
 	ownBinary string
 
 	// ownOlder is the installation's own binary when adoptOwnBinary would
