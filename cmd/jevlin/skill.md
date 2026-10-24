@@ -169,11 +169,18 @@ when its `next_offset` is present there is more, and sending it back as
 `offset` reads on from there. When `truncated` is true, the page is longer
 (`full_length`) than the router can return, and once `next_offset` is absent
 the text it can return is exhausted. `query`, up to 500 characters, starts a
-long page's text at the part that matches it.
+long page's text at the part that matches it: when a page is much longer
+than one slice (`content_length` well above `max_chars`, or `truncated` is
+true), pass a `query` describing the fact you need, so the slice starts near
+it rather than at the top. Links come back as their text alone, without
+their URLs, so do not look for URLs in `content`.
 
 A page whose `status` is `not_recent` was not in your recent Jevlin results:
 fetch only pages a search returned, and for any other URL use your host's
-own fetch tool. A `code` of `fetch_unavailable` means this account cannot
+own fetch tool. A page whose `status` is `failed` says why in `reason`:
+`unrendered` means the page needs a browser to show its text, so use another
+source and do not fetch it again; `upstream_failed` may succeed on a later
+try. A `code` of `fetch_unavailable` means this account cannot
 fetch, and `error.message` says why (not claimed, zero retention, or no
 credit); `fetch_not_supported` and `fetch_disabled` mean this router cannot
 fetch. In each case use your host's own fetch tool. Any other failure is read from
