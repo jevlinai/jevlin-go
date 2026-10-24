@@ -37,10 +37,20 @@ import (
 type installationRef struct {
 	bins []string
 	cfg  string
+	// implicit: cfg is the config a command naming none reads on this
+	// machine (binEntry.implicit), so such a command is this installation's
+	// too. Only an installation resolved by resolveEntry says so; uninstall
+	// builds its own ref, and leaves a command naming no config to be
+	// reported as it always has.
+	implicit bool
 }
 
 func refFor(entry binEntry) installationRef {
-	return installationRef{bins: []string{entry.command}, cfg: entry.cfg}
+	bins := []string{entry.command}
+	if entry.ownBinary != "" && entry.ownBinary != entry.command {
+		bins = append(bins, entry.ownBinary)
+	}
+	return installationRef{bins: bins, cfg: entry.cfg, implicit: entry.implicit}
 }
 
 // binaryPrefixes is every spelling of `<bin> ` this client writes: the three
@@ -157,7 +167,10 @@ func unquoteRenderedPath(word string) []string {
 // namesOurConfig: does what follows the binary name this installation's
 // config? An installation running on discovery wrote no -config at all, so
 // for it the absence of the flag is the match and its presence is another
-// installation's.
+// installation's. For the installation a command naming no config resolves
+// to (ref.implicit), the absence of the flag matches as well as its own
+// path does: that is what an earlier version rendered for it before its
+// config existed, and it must be replaced, not left beside the new form.
 //
 // The comparison is samePath, not bytes: %q hands Windows a path with doubled
 // separators naming the same file, and Windows paths differ in case without
@@ -178,7 +191,7 @@ func (ref installationRef) namesOurConfig(rest string) bool {
 		}
 		return false
 	}
-	return ref.cfg == ""
+	return ref.cfg == "" || ref.implicit
 }
 
 // commandIsOurs is the whole rule in one line: this installation's binary,
@@ -231,9 +244,10 @@ func (ref installationRef) commandIsOurs(command string) bool {
 // safe direction — a block left is recoverable, a block taken from another
 // installation is not — and the sentence says which of the two it was.
 //
-// Discovery — an installation running with no config at all — has nothing to
-// compare against, so it keeps the block rather than strand one nothing can
-// attribute.
+// Discovery — an installation running with no config at all, which is also
+// what the installation's own default config is before setup has written it
+// (unwrittenDefaultConfig) — has nothing to compare against, so it keeps the
+// block rather than strand one nothing can attribute.
 //
 // The permission profile that replaced the table names its directories the
 // same way, as the keys of its filesystem table, so one reading answers for
@@ -243,7 +257,7 @@ func codexBlockOwner(ourTable string, entry binEntry, getenv func(string) string
 }
 
 func codexRootsOwner(roots []string, entry binEntry, getenv func(string) string) (ours bool, other, why string) {
-	if entry.cfg == "" {
+	if entry.cfg == "" || unwrittenDefaultConfig(entry.cfg, getenv) {
 		return true, "", ""
 	}
 	if len(roots) == 0 {

@@ -79,7 +79,7 @@ func cmdMiningEnable(args []string, stdin io.Reader, stdout, stderr io.Writer, g
 	defer cancel()
 	// WP2-adversarial-review finding 3: the platform bearer, from
 	// credentials.json only — never resolveAPIKey's env fallbacks.
-	key, err := platformKey(cfg.Miner)
+	key, err := platformKey(cfg, getenv)
 	if err != nil {
 		fmt.Fprintln(stderr, "jevlin:", err)
 		return exitTransport

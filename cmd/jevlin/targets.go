@@ -1279,9 +1279,14 @@ func (opencodeTarget) Label() string    { return "opencode" }
 func (opencodeTarget) Kind() targetKind { return targetHost }
 
 // opencode runs its bash tool in $SHELL on macOS and Linux (falling back to
-// zsh on macOS, bash, then sh), and on Windows in the first of pwsh,
-// powershell, Git Bash and cmd it finds. Its lineage plugin runs in-process:
-// there is no hook command.
+// zsh on macOS, bash, then sh), and on Windows in $SHELL when a terminal
+// such as Git Bash set one, else the first of pwsh, powershell, Git Bash
+// and cmd it finds (shell.ts: environment() is select($SHELL) before
+// win()). The Windows cell below is the DEFAULT the plugin is rendered
+// with; the plugin mirrors the $SHELL signal per call (hostShell in
+// opencode_plugin.js), because the baked PowerShell wrapper handed to a
+// Git Bash-started opencode made every search fail. Its lineage plugin
+// runs in-process: there is no hook command.
 func (opencodeTarget) Shells(goos string) hostShells {
 	switch goos {
 	case "darwin", "linux":

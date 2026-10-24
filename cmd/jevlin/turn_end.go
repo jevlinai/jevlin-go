@@ -499,7 +499,10 @@ func cmdTurnEnd(args []string, getenv func(string) string) int {
 	if err := json.Unmarshal(body, &rec); err != nil || rec.SessionID == "" || rec.TurnID == "" {
 		return exitOK
 	}
-	key, _, err := resolveAPIKey(getenv, cfg.Miner)
+	key, keySrc, err := resolveAPIKey(getenv, cfg.Miner)
+	if err == nil && keySrc == keyFromEnv {
+		err = envKeyRefusedFor(*cfgPath, cfg, getenv)
+	}
 	if err != nil || key == "" {
 		return exitOK
 	}

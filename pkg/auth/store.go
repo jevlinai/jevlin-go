@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -597,6 +598,12 @@ type PendingRegistration struct {
 	ReplaceExpired  bool   `json:"replace_expired,omitempty"`
 	PreviousAgentID string `json:"previous_agent_id,omitempty"`
 	PreviousKey     string `json:"previous_key,omitempty"`
+	// Router and AgentsAPI are the origins (scheme://host[:port]) the key
+	// is for: the router and the agents API of the config that registered
+	// it. Publication records them with the key. A journal an older client
+	// wrote carries neither.
+	Router    string `json:"router,omitempty"`
+	AgentsAPI string `json:"agents_api,omitempty"`
 }
 
 const pendingRegistrationVersion = 1
@@ -703,10 +710,24 @@ func validatePendingRegistration(rec PendingRegistration) error {
 		!bounded(rec.ClaimExpiresAt, 0, 128) || rec.Status != "unclaimed" ||
 		rec.PollIntervalMS < 0 || rec.PollIntervalMS > int64((24*time.Hour)/time.Millisecond) ||
 		(rec.ReplaceExpired && (!boundedNonEmpty(rec.PreviousAgentID, 1, 512) || !boundedNonEmpty(rec.PreviousKey, 1, 4096))) ||
-		(!rec.ReplaceExpired && (rec.PreviousAgentID != "" || rec.PreviousKey != "")) {
+		(!rec.ReplaceExpired && (rec.PreviousAgentID != "" || rec.PreviousKey != "")) ||
+		!originOrEmpty(rec.Router) || !originOrEmpty(rec.AgentsAPI) {
 		return errors.New("auth: pending registration fields are invalid")
 	}
 	return nil
+}
+
+// originOrEmpty: is value empty, or an http(s) origin and nothing more?
+func originOrEmpty(value string) bool {
+	if value == "" {
+		return true
+	}
+	if len(value) > 512 {
+		return false
+	}
+	u, err := url.Parse(value)
+	return err == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != "" && u.User == nil &&
+		u.Path == "" && u.RawQuery == "" && u.Fragment == "" && u.Opaque == "" && value == u.Scheme+"://"+u.Host
 }
 
 func bounded(value string, min, max int) bool {

@@ -135,7 +135,7 @@ agents_api_url = "` + platform + `"
 func TestConnectJSONRefusesToInventAFirstMiningDecision(t *testing.T) {
 	cfgPath, stateDir := connectFixture(t, "")
 	var out, errOut bytes.Buffer
-	code := cmdConnect([]string{"-config", cfgPath, "-json"}, strings.NewReader(""), &out, &errOut, noEnv)
+	code := cmdConnect([]string{"-config", cfgPath, "-json"}, strings.NewReader(""), &out, &errOut, installedAs(noEnv, []string{"-config", cfgPath}))
 
 	if code != exitUsage {
 		t.Fatalf("exit %d, want %d: %s", code, exitUsage, out.String())
@@ -187,7 +187,7 @@ func TestConnectJSONRefusesToDecideAfterRebuildingAnExpiredIdentity(t *testing.T
 	registerCallsBefore, _, _ := platform.counts()
 
 	var out, errOut bytes.Buffer
-	code := cmdConnect([]string{"-config", cfgPath, "-json"}, strings.NewReader(""), &out, &errOut, noEnv)
+	code := cmdConnect([]string{"-config", cfgPath, "-json"}, strings.NewReader(""), &out, &errOut, installedAs(noEnv, []string{"-config", cfgPath}))
 
 	if code != exitUsage {
 		t.Fatalf("exit %d, want %d: out=%s err=%s", code, exitUsage, out.String(), errOut.String())
@@ -401,7 +401,7 @@ agents_api_url = "` + platformURL + `"
 	writeCorruptRegistration(t, stateDir)
 
 	var out, errOut bytes.Buffer
-	code := cmdConnect([]string{"-config", cfgPath, "-json"}, strings.NewReader(""), &out, &errOut, noEnv)
+	code := cmdConnect([]string{"-config", cfgPath, "-json"}, strings.NewReader(""), &out, &errOut, installedAs(noEnv, []string{"-config", cfgPath}))
 
 	if code != exitUsage {
 		t.Fatalf("exit %d, want %d: %s", code, exitUsage, out.String())
@@ -535,7 +535,7 @@ agents_api_url = "` + platformURL + `"
 	}
 
 	var out, errOut bytes.Buffer
-	code := cmdConnect([]string{"-config", cfgPath}, strings.NewReader(""), &out, &errOut, noEnv)
+	code := cmdConnect([]string{"-config", cfgPath}, strings.NewReader(""), &out, &errOut, installedAs(noEnv, []string{"-config", cfgPath}))
 
 	if code == exitOK {
 		t.Fatalf("ordinary connect succeeded despite a credential conflict: %s %s", out.String(), errOut.String())
@@ -590,7 +590,7 @@ func TestMalformedMachineFlagsAreAUsageErrorNotALifecycleState(t *testing.T) {
 
 			args := append([]string{"-json"}, tc.args...)
 			var out, errOut bytes.Buffer
-			code := cmdConnect(args, strings.NewReader(""), &out, &errOut, noEnv)
+			code := cmdConnect(args, strings.NewReader(""), &out, &errOut, installedAs(noEnv, args))
 
 			if code != exitUsage {
 				t.Fatalf("exit %d, want %d: %s", code, exitUsage, out.String())
@@ -632,7 +632,7 @@ func TestValidMachineFlagsStillReachTheHumanDecisionGate(t *testing.T) {
 		{"-json", "-config", cfgPath, "-force"},
 	} {
 		var out, errOut bytes.Buffer
-		code := cmdConnect(args, strings.NewReader(""), &out, &errOut, noEnv)
+		code := cmdConnect(args, strings.NewReader(""), &out, &errOut, installedAs(noEnv, args))
 		if code != exitUsage {
 			t.Fatalf("%v: exit %d", args, code)
 		}
@@ -660,7 +660,7 @@ func TestThePreParserAcceptsExactlyWhatConnectRunDoes(t *testing.T) {
 		// connectRun's own parse, observed through its exit code: it
 		// returns exitUsage for exactly the arguments it cannot parse.
 		var narration bytes.Buffer
-		runCode := connectRun(args, strings.NewReader(""), io.Discard, &narration, noEnv, false, false)
+		runCode := connectRun(args, strings.NewReader(""), io.Discard, &narration, installedAs(noEnv, args), false, false)
 		runRejected := runCode == exitUsage
 		if (preErr != nil) != runRejected {
 			t.Errorf("%v: pre-parser err=%v, connectRun rejected=%v", args, preErr, runRejected)
