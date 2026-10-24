@@ -526,10 +526,14 @@ func TestAJournalsKeyGoesOnlyToTheAgentsAPIThatMintedIt(t *testing.T) {
 	}
 
 	// The minting agents API publishes it, bound to what the journal says.
-	if code, _, errOut := runConnect(t, cfg, nil); code != exitOK {
-		t.Fatalf("connect: exit %d\n%s", code, errOut)
+	// A detached resume finishes it here, under a config that is not the
+	// installation's: neither fills in an origin, so what is recorded can
+	// only be the journal's own.
+	elsewhere := envOf(map[string]string{"JEVLIN_HOME": t.TempDir()})
+	if code := cmdConnect([]string{"-config", cfg, "-resume"}, &bytes.Buffer{}, io.Discard, io.Discard, elsewhere); code != exitOK {
+		t.Fatalf("resume: exit %d", code)
 	}
-	if c := readStoredKey(t, cfg); c.AgentsAPI != pending.AgentsAPI {
-		t.Errorf("published with agents API %q, want %q", c.AgentsAPI, pending.AgentsAPI)
+	if c := readStoredKey(t, cfg); c.AgentsAPI != pending.AgentsAPI || c.Router != pending.Router {
+		t.Errorf("published with router %q agents API %q, want the journal's %q %q", c.Router, c.AgentsAPI, pending.Router, pending.AgentsAPI)
 	}
 }
