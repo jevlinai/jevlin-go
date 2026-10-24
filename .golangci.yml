@@ -3,14 +3,13 @@
 # and gosec is enabled for the same reason tokendrop-proxy enables it.
 version: "2"
 run:
-  # The module's minimum LANGUAGE version (go.mod's `go` directive), not
-  # the toolchain it's built with. go.mod additionally pins `toolchain
-  # go1.26.9` — a patched build toolchain (govulncheck gates on stdlib
-  # CVEs; 1.25.0 alone failed it) — but that's an orthogonal, purely
-  # build-environment concern: it doesn't mean this module suddenly
-  # requires 1.26 language features. These two numbers are deliberately
-  # different; don't "sync" them.
-  go: "1.25"
+  # The module's language version (go.mod's `go` directive). It is
+  # 1.27, the same minor as the build toolchain (`toolchain go1.27.3`):
+  # nothing imports pkg/ from outside, so a lower minimum bought nothing,
+  # and the go directive also sets the binary's GODEBUG defaults, which a
+  # 1.25 directive held at Go 1.25's. The toolchain line still moves on
+  # its own for each patched release (govulncheck gates on stdlib CVEs).
+  go: "1.27"
 linters:
   enable:
     - gosec

@@ -30,6 +30,19 @@ standing earlier on PATH than `~/.jevlin/bin` is how that setup-from-npm happens
 meaning to. And the two PowerShell 5.1 stdin tests no longer insist on a byte-order mark
 that only some Windows builds emit.
 
+- **macOS 13 Ventura or later.** Built with Go 1.27, the binary no longer runs on macOS 12
+  Monterey, which Apple stopped updating in 2024. Linux and Windows are unchanged.
+- **A setup skill on the marketplaces.** `plugin/skills/jevlin/SKILL.md`, the manifests beside it
+  (`plugin/.claude-plugin/plugin.json`, `plugin/plugin.json` for the Agent
+  Plugins standard) and the marketplaces at the root (`.claude-plugin/marketplace.json`,
+  `.agents/plugins/marketplace.json` for Codex) let an agent take Jevlin from
+  skills.sh (`npx skills add jevlinai/jevlin-go`), Claude Code's plugin directory
+  (`/plugin install jevlin --marketplace jevlinai/jevlin-go`), Codex's plugin marketplace and
+  Cursor's. What it gets is not the search: the skill installs the client and runs
+  `jevlin setup`, which writes the agent's own search skill and hooks, exactly as a person
+  running setup gets them. Release preflight now checks the manifests' version with
+  `npm/package.json`.
+
 ## v0.4.3 — 2026-10-20
 
 The search answer is now the router's own, and a search can carry more than one wording of

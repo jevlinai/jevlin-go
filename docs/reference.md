@@ -575,4 +575,4 @@ make verify     # build, vet and lint (each incl. Windows), tidy, race, vuln, cr
 make quick RUN=TestName   # vet, lint and only the named tests, while you work
 ```
 
-Go 1.25 or newer; the tests also need Node.js (CI uses 22) to run the embedded opencode plugin.
+Go 1.27 or newer; the tests also need Node.js (CI uses 22) to run the embedded opencode plugin.

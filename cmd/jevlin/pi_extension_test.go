@@ -811,12 +811,49 @@ type piReport struct {
 	Turn hostTurn
 }
 
+// newPiStandIn writes a shell script that stands in for the jevlin binary
+// and records what the extension hands it. The extension spawns it
+// detached (unref) and never waits, so a stand-in can still be writing
+// its record after the test that caused it has returned. The directory
+// is therefore not t.TempDir(), whose cleanup fails the test when a file
+// appears under it mid-RemoveAll (macOS CI, three PRs running): the
+// stand-in owns its directory, waits for the last writer to finish, and
+// removes it without making a late straggler anyone's failure.
 func newPiStandIn(t *testing.T) *piStandIn {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("the stand-in binary is a POSIX shell script")
 	}
-	dir := t.TempDir()
+	dir, err := os.MkdirTemp("", "jevlin-pi-standin-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		// Quiet for half a second: every record the stand-in starts
+		// (r.XXXXXX) ends as r.XXXXXX.done. The window is tidiness, not
+		// correctness: a spawn slower than that finds the directory gone,
+		// its mktemp fails and the script exits 0 (`|| exit 0`), and the
+		// RemoveAll error below is not reported, so neither a late nor a
+		// still-running child can fail a test either way.
+		deadline := time.Now().Add(5 * time.Second)
+		for quietSince := time.Now(); time.Now().Before(deadline); {
+			entries, _ := os.ReadDir(dir)
+			busy := false
+			for _, e := range entries {
+				n := e.Name()
+				if strings.HasPrefix(n, "r.") && !strings.HasSuffix(n, ".done") && !strings.HasSuffix(n, ".argv") {
+					busy = true
+				}
+			}
+			if busy {
+				quietSince = time.Now()
+			} else if time.Since(quietSince) >= 500*time.Millisecond {
+				break
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+		_ = os.RemoveAll(dir)
+	})
 	bin := filepath.Join(dir, "jevlin")
 	script := "#!/bin/sh\nd='" + dir + "'\ncase \"$*\" in *' start pi') exit 0;; esac\nf=$(mktemp \"$d/r.XXXXXX\") || exit 0\nprintf '%s\\n' \"$@\" > \"$f.argv\"\ncat > \"$f\"\nmv \"$f\" \"$f.done\"\n"
 	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil { // #nosec G306 -- a test stand-in that must be executable
