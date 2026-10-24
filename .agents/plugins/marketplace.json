@@ -1,0 +1,10 @@
+{
+  "name": "jevlin",
+  "plugins": [
+    {
+      "name": "jevlin",
+      "source": { "path": "./plugin" },
+      "interface": { "displayName": "Jevlin web search" }
+    }
+  ]
+}

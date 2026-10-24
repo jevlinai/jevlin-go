@@ -26,7 +26,7 @@ func ResolveExecutable(path string) (string, error) {
 	if resolved, err = filepath.Abs(resolved); err != nil {
 		return "", err
 	}
-	info, err := os.Lstat(resolved)
+	info, err := os.Lstat(resolved) // #nosec G703 -- the running binary's own path, resolved above
 	if err != nil {
 		return "", err
 	}
