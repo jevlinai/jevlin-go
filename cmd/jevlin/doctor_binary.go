@@ -23,15 +23,11 @@ type binaryFacts struct {
 	Same    bool   // OnPath is Own: one file, or one cleaned path
 }
 
-func gatherBinaryFacts(getenv func(string) string) binaryFacts {
-	home := getenv("JEVLIN_HOME")
-	if home == "" {
-		userHome, err := os.UserHomeDir()
-		if err != nil || userHome == "" {
-			return binaryFacts{}
-		}
-		home = filepath.Join(userHome, ".jevlin")
-	}
+// gatherBinaryFacts compares PATH's answer with the binary the installation
+// at home keeps: the one doctor is diagnosing (doctorInstallationHome), so
+// `doctor -config <another installation's jevlin.toml>` asks about that
+// installation's binary, as its wallet check does.
+func gatherBinaryFacts(home string) binaryFacts {
 	own := ownBinaryAt(home, os.Stat)
 	if own == "" {
 		return binaryFacts{} // a pure npm install keeps none; nothing to compare
@@ -63,7 +59,8 @@ func doctorBinaryCheck(f binaryFacts) doctorCheck {
 	case f.OnPath == "":
 		c.Verdict = verdictNo
 		c.Detail = "nothing on PATH answers `jevlin`; this installation's binary is " + f.Own
-		c.Fix = "open a new terminal, or run jevlin setup to put " + filepath.Dir(f.Own) + " on PATH"
+		// By its full path: a bare `jevlin` is exactly what does not run.
+		c.Fix = "open a new terminal, or run " + f.Own + " setup to put " + filepath.Dir(f.Own) + " on PATH"
 	case f.Same:
 		c.Verdict = verdictOK
 		c.Detail = "`jevlin` runs this installation's own binary, " + f.Own

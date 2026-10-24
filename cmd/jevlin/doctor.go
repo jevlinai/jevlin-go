@@ -559,7 +559,7 @@ func cmdDoctor(args []string, stdout, stderr io.Writer) int {
 	f.ConfigSource = src
 	f.StateDir = cfg.Mining.StateDir
 	f.Update = gatherUpdateFacts(cfg, os.Getenv)
-	f.Binary = gatherBinaryFacts(os.Getenv)
+	f.Binary = gatherBinaryFacts(doctorInstallationHome(src, os.Getenv))
 	if walletACL.managed {
 		f.Wallet = inspectWalletAccess(doctorWalletDir(src, os.Getenv))
 	}
@@ -577,13 +577,24 @@ func cmdDoctor(args []string, stdout, stderr io.Writer) int {
 }
 
 // doctorWalletDir is the wallet setup looks after, and so the one whose repair
-// is `jevlin setup`: the wallet directory of the installation. That is the
+// is `jevlin setup`: the wallet directory of the installation doctor is
+// diagnosing.
+func doctorWalletDir(cfgSource string, getenv func(string) string) string {
+	home := doctorInstallationHome(cfgSource, getenv)
+	if home == "" {
+		return ""
+	}
+	return filepath.Join(home, "wallet")
+}
+
+// doctorInstallationHome is the installation doctor is diagnosing: the
 // loaded config's directory when the config is an installation's
 // jevlin.toml, and otherwise the installation uninstall and upgrade resolve.
-func doctorWalletDir(cfgSource string, getenv func(string) string) string {
+// "" when there is none to name.
+func doctorInstallationHome(cfgSource string, getenv func(string) string) string {
 	if cfgSource != "" && filepath.Base(cfgSource) == setupConfigFile {
 		if abs, err := filepath.Abs(cfgSource); err == nil {
-			return filepath.Join(filepath.Dir(abs), "wallet")
+			return filepath.Dir(abs)
 		}
 	}
 	userHome, _ := os.UserHomeDir()
@@ -592,7 +603,7 @@ func doctorWalletDir(cfgSource string, getenv func(string) string) string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, "wallet")
+	return home
 }
 
 // doctorExit decides the process status.
