@@ -693,11 +693,14 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   without a dial.
 - **Where the stored key may go** — `cmd/jevlin/credentials.go` owns it (`keyService`,
   `resolveAPIKey`, `platformKey`): the key in `credentials.json` is sent only to the router and
-  the agents API origins it records, which connect writes on publish (`keyBindingOf`, never a
-  provider upstream standing in) and fills in for an older file on a foreground run
-  (`recordKeyBinding`); a file without them belongs to the installation's own config
-  (`installationConfigPath`), never to a `-config` naming another file. `search --stdin` holds
-  `JEVLIN_API_KEY` to the installation's router the same way (`envKeyRefusedFor`). Every
+  the agents API origins it records, which connect publishes from the registration journal
+  (`keyBindingOf` when the journal is saved, never a provider upstream standing in, and a
+  connect under another agents API than the journal's is refused) and fills in for an older
+  file only on a foreground run under the installation's own config (`recordKeyBinding`: a
+  recorded origin never changes); a file without them belongs to the installation's own config
+  (`installationConfigPath`), never to a `-config` naming another file. search, limits and the
+  turn end hold `JEVLIN_API_KEY` to the installation's router the same way
+  (`envKeyRefusedFor`). Every
   Claude Code allow rule names a config, because `resolveEntry` always resolves one and
   `loadConfig` reads the installation's unwritten default path as defaults
   (`unwrittenDefaultConfig`); `binEntry.implicit` lets an install replace what an earlier

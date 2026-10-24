@@ -21,11 +21,12 @@ rewritten to match newer behaviour; the newer entry says what changed.
   `jevlin setup`, which writes the agent's own search skill and hooks, exactly as a person
   running setup gets them. Release preflight now checks the manifests' version with
   `npm/package.json`.
-- **The stored key is sent only to the router and the agents API it was issued for.** `connect`
-  records both in `credentials.json`; a file from an earlier version belongs to the hosts of the
-  installation's own config until the next `connect` records them. A command given a config that
-  names another host stops before any request and says which host the key belongs to. With
-  `search --stdin`, `JEVLIN_API_KEY` is held to the installation's router the same way.
+- **The stored key is sent only to the router and agents API recorded for it when connect
+  stored it.** `connect` records both in `credentials.json`; a file from an earlier version
+  belongs to the hosts of the installation's own config until a `connect` run under that config
+  records them. A command given a config that names another host stops before any request and
+  says which host the key belongs to. `JEVLIN_API_KEY` is held to the installation's router the
+  same way, by `search` and `limits`; to use another router, set `JEVLIN_CONFIG` to its config.
 - **Claude Code's allow rules always name the installed config**, the default path when setup
   has not written it yet, and the next `agents install`, `setup` or upgrade replaces rules an
   earlier version wrote without one.

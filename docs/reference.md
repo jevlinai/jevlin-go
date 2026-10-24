@@ -226,7 +226,7 @@ lacks, appended, and must load before it is saved.
 |---|---|---|
 | `JEVLIN_CONFIG` | every command | The config file, after `-config`. Setup's profile block sets it. |
 | `JEVLIN_HOME` | every command, setup | This machine's installation directory, instead of `~/.jevlin`. |
-| `JEVLIN_API_KEY` | search | The search key, overriding `credentials.json`. With `--stdin` and a `-config` that is not the installation's own file, it is sent only when that config names the installation's router. |
+| `JEVLIN_API_KEY` | search, limits | The search key, overriding `credentials.json`. With a `-config` that is not the installation's own file, it is sent only when that config names the installation's router; to use another router, set `JEVLIN_CONFIG` to its config. |
 | `JEVLIN_TRACE` | search, hooks | `off` sends no trace. |
 | `JEVLIN_WALLET_DIR` | wallet commands | The wallet directory. Setup's profile block sets it when it made a wallet. |
 | `JEVLIN_WALLET_PASSPHRASE` | wallet commands | The keyfile passphrase, for a caller with no terminal. |
@@ -550,14 +550,16 @@ calls that started and awaited it appear as tool calls. A project set to retain 
 router without spending, and writes `credentials.json` as `0600`, as `connect` does. No key ever
 goes into a command line or an agent's config.
 
-The stored key is sent only to the router and the agents API it was issued for, whichever config
-a command is given. `connect` records both origins (scheme, host and port) in
-`credentials.json`, and `login` the router its config names. A file an earlier version wrote
-without them belongs to the origins of the installation's own config (`JEVLIN_CONFIG`, else
-`$JEVLIN_HOME/jevlin.toml` or `~/.jevlin/jevlin.toml`), never of a `-config` that names another
-file, and the next `connect` writes them down. A command whose config names another origin stops
+The stored key is sent only to the router and the agents API recorded for it when `connect`
+stored it, whichever config a command is given. `connect` records both origins (scheme, host
+and port) in `credentials.json`, from the registration it finished, and `login` the router its
+config names. A file an earlier version wrote without them belongs to the origins of the
+installation's own config (`JEVLIN_CONFIG`, else `$JEVLIN_HOME/jevlin.toml` or
+`~/.jevlin/jevlin.toml`), never of a `-config` that names another file, and only a `connect`
+run under the installation's own config writes them down: if you run with another config, run
+`connect` once with `JEVLIN_CONFIG` set to it. A command whose config names another origin stops
 before any request, with `key_origin_mismatch` and `fix_input` in machine mode, naming both
-origins.
+origins, or saying the installation's config names none.
 
 ### Wallet
 
