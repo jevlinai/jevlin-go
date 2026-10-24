@@ -12,20 +12,19 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## v0.5.0 — 2026-10-24
 
-Built with Go 1.27, and the first release that needs macOS 13 Ventura or later; that is why
-it is 0.5.0 and not a patch. On Windows it fixes what a live soak of every agent on one
-machine found: opencode started from Git Bash, a Pi search in a long conversation, Pi's trace
-history, and a setup run from the npm copy over a native install, which doubled every hook.
-`doctor` now names the copy a bare `jevlin` runs. A setup skill is published on skills.sh and
-on Claude Code's, Codex's and Cursor's plugin marketplaces. By default a native install on
-v0.4.3 takes this release by itself at its daily check, and the upgrade rewrites the skill and
-hooks of each agent it set up; an npm install is updated with npm, then
-`jevlin agents install`. On macOS 12 stay on v0.4.3: the upgrade runs a new binary before it
-installs it, and should refuse this one there, which has not been tried on a macOS 12 machine;
-an npm install does not run the binary, so on macOS 12 pin `@jevlinsearch/jevlin@0.4.3`.
-The Windows fixes were run live on the soak machine. The check that keeps an npm copy's hooks
-off an older native binary was not; nor has this release's updater run on a Windows machine
-with real-time antivirus on.
+Built with Go 1.27, and the first release that needs macOS 13 Ventura or later; that is why it
+is 0.5.0 and not a patch. On Windows it fixes what a live soak of every agent on one machine
+found: opencode started from Git Bash, a Pi search in a long conversation, Pi's trace sending
+a tool's output as the assistant's own words, and a setup run from the npm copy over a native
+install, which doubled every hook. `doctor` now names the copy a bare `jevlin` runs. A setup
+skill is published on skills.sh and on Claude Code's, Codex's and Cursor's plugin
+marketplaces. By default a native install on v0.4.3 takes this release by itself at its daily
+check, and the upgrade rewrites the skill and hooks of each agent it set up; an npm install is
+updated with npm, then `jevlin agents install`. If you are on macOS 12, stay on v0.4.3. A
+native install's upgrade should refuse this release there (not yet tried on macOS 12); with
+npm, pin `@jevlinsearch/jevlin@0.4.3`. The Windows fixes were run live on the soak machine.
+The check that keeps an npm copy's hooks off an older native binary was not; nor has this
+release's updater run on a Windows machine with real-time antivirus on.
 
 - **opencode started from Git Bash on Windows searches again.** opencode started from a
   terminal like Git Bash runs its commands in bash, and the search's trace prefix is now
