@@ -12,6 +12,8 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
+- **macOS 13 Ventura or later.** Built with Go 1.27, the binary no longer runs on macOS 12
+  Monterey, which Apple stopped updating in 2024. Linux and Windows are unchanged.
 - **A setup skill on the marketplaces.** `plugin/skills/jevlin/SKILL.md`, the manifests beside it
   (`plugin/.claude-plugin/plugin.json`, `plugin/plugin.json` for the Agent
   Plugins standard) and the marketplaces at the root (`.claude-plugin/marketplace.json`,
