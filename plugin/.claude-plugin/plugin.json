@@ -1,6 +1,6 @@
 {
   "name": "jevlin",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "displayName": "Jevlin web search",
   "description": "Sets up Jevlin, free multi-provider web search for coding agents: installs the jevlin client and runs its setup, which writes this agent's own search skill and hooks.",
   "author": {

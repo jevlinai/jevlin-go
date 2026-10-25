@@ -12,13 +12,52 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
+- **The envelope says which filters the router applied, and which build answered.** A router
+  that holds a search's pages to its `recency` and `domain_filter` reports it, and
+  `result.filters_applied` carries that report as the router sent it: the providers each filter
+  went to and how many pages the router dropped for falling outside it.
+  `result.decision.build` names the router build, and each page in `result.merged` carries the
+  router's `source_id` once the router sends one.
+- **`jevlin fetch --stdin` reads a page a search found, in full.** One JSON request names up
+  to five pages, by the `source_id` a search returned or by URL, with an optional
+  `max_chars`, `offset` and `query`; the envelope carries each page's text, in capped slices
+  with a `next_offset` to read on. It needs a router with fetch on and an account that can
+  fetch, and it serves only pages from the account's own recent searches; otherwise it says so
+  (`fetch_not_supported`, `fetch_disabled`, `fetch_unavailable`, a page's `not_recent`). A page
+  the upstream cut short says so with `truncated` and its `full_length`, and a failed page says
+  why with `reason`: `upstream_failed` or `unrendered`. Claude Code, Cursor and Codex run the
+  exact fetch the skill renders without asking, as they run the search; Claude Code's allow
+  rules for it arrive when the upgrade refreshes the agent integrations. Like `search`, it sends
+  the stored key only to the router recorded for it, and `JEVLIN_API_KEY` only to the
+  installation's router.
+- **The skill trusts a filter the router reports, and reads a page in full.** An agent is told
+  that `result.filters_applied` means the router held every page to the filter, and that
+  without it the router may not have, so it checks each page's date and host. It teaches
+  reading `source_id`, and when to read a page in full with `jevlin fetch`: passing `query` for
+  a page much longer than one slice, what a failed page's `reason` means, and that fetched text
+  keeps a link's words but not its URL.
+
+## v0.6.0 — 2026-10-25
+
+The search envelope is smaller by default, and the stored key goes only to the hosts it was
+issued for. With no `view` in the request, `search --stdin` now carries the router's merged
+list alone, about a quarter of the bytes it did; an integration that reads `candidates` asks
+for `"view":"full"`, which carries everything it did before. That change to the default
+answer is why this is 0.6.0 and not a patch. The envelope also says when a search was
+degraded. The key in `credentials.json` is sent only to the router and agents API recorded
+for it, and `JEVLIN_API_KEY` only to the installation's router; a command given a config that
+names another host stops before any request, with `key_origin_mismatch` in machine mode. By
+default a native install on v0.5.0 takes this release at its daily check; an npm install is
+updated with npm. This release's updater has not run on a Windows machine with real-time
+antivirus on.
+
 - **The stored key is sent only to the router and agents API recorded for it when connect
   stored it.** `connect` records both in `credentials.json`; a file from an earlier version
   belongs to the hosts of the installation's own config until a `connect` run under that config
   records them. A command given a config that names another host stops before any request and
   says which host the key belongs to. `JEVLIN_API_KEY` is held to the installation's router the
-  same way, by `search`, `limits`, the turn end and `fetch`; to use another router, set
-  `JEVLIN_CONFIG` to its config.
+  same way, by `search`, `limits` and the turn end; to use another router, set `JEVLIN_CONFIG` to
+  its config.
 - **Claude Code's allow rules always name the installed config**, the default path when setup
   has not written it yet, and the next `agents install`, `setup` or upgrade replaces rules an
   earlier version wrote without one.
@@ -35,31 +74,14 @@ rewritten to match newer behaviour; the newer entry says what changed.
   search short, so an agent can tell "nothing exists" from "an index timed out". Each page in
   `result.merged` now carries its `published` date when a provider gave one, and its
   `result_id`.
-- **The envelope says which filters the router applied, and which build answered.** A router
-  that holds a search's pages to its `recency` and `domain_filter` reports it, and
-  `result.filters_applied` carries that report as the router sent it: the providers each filter
-  went to and how many pages the router dropped for falling outside it.
-  `result.decision.build` names the router build, and each page in `result.merged` carries the
-  router's `source_id` once the router sends one.
-- **`jevlin fetch --stdin` reads a page a search found, in full.** One JSON request names up
-  to five pages, by the `source_id` a search returned or by URL, with an optional
-  `max_chars`, `offset` and `query`; the envelope carries each page's text, in capped slices
-  with a `next_offset` to read on. It needs a router with fetch on and an account that can
-  fetch, and it serves only pages from the account's own recent searches; otherwise it says so
-  (`fetch_not_supported`, `fetch_disabled`, `fetch_unavailable`, a page's `not_recent`). A page
-  the upstream cut short says so with `truncated` and its `full_length`, and a failed page says
-  why with `reason`: `upstream_failed` or `unrendered`. Claude Code, Cursor and Codex run the
-  exact fetch the skill renders without asking, as they run the search; Claude Code's allow
-  rules for it arrive when the upgrade refreshes the agent integrations.
 - **Two new request options**, `merged_limit` (1 to 50 pages) and `max_chars` (the merged
   list's total characters of page text), let an agent ask for more pages when a first pass
   looks thin, or for less text.
 - **The skill is corrected.** It no longer says `fast` answers in about a second, and it no
-  longer says `recency` and `domain_filter` are passed to every provider: an agent is told that
-  `result.filters_applied` means the router held every page to the filter, and that without it
-  the router may not have, so it checks each page's date and host. It teaches reading
-  `found_by` and `votes`, `matched_terms`, `published`, `source_id`, `result.indexes` and
-  `merged_total` against `merged_limit`, and when to read a page in full with `jevlin fetch`.
+  longer says `recency` and `domain_filter` are passed to every provider: the router does not
+  yet apply them everywhere, so an agent is told to treat results as unfiltered and check each
+  page's date and host. It teaches reading `found_by` and `votes`, `matched_terms`,
+  `published`, `result.indexes` and `merged_total` against `merged_limit`.
 
 ## v0.5.0 — 2026-10-24
 
