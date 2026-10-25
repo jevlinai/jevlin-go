@@ -121,12 +121,17 @@ func skillBlockFor(t *testing.T, skill string, sh shellKind, kind string) skillB
 		if blk.lang != fenceFor(sh) {
 			continue
 		}
-		isSearch := strings.Contains(blk.body, "--stdin")
+		isFetch := strings.Contains(blk.body, " fetch ")
+		isSearch := strings.Contains(blk.body, "--stdin") && !isFetch
 		isPrefer := strings.Contains(blk.body, "agents prefer")
 		isTier := strings.Contains(blk.body, "agents tier")
 		switch kind {
 		case "search":
 			if isSearch {
+				return blk
+			}
+		case "fetch":
+			if isFetch {
 				return blk
 			}
 		case "prefer":
@@ -138,7 +143,7 @@ func skillBlockFor(t *testing.T, skill string, sh shellKind, kind string) skillB
 				return blk
 			}
 		case "human":
-			if !isSearch && !isPrefer && !isTier {
+			if !isSearch && !isFetch && !isPrefer && !isTier {
 				return blk
 			}
 		}

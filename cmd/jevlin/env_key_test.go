@@ -4,7 +4,10 @@ package main
 // (credentials.go, envKeyRefusedFor).
 
 import (
+	"errors"
+	"io/fs"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 )
@@ -137,5 +140,35 @@ func TestTheEnvironmentKeysRefusalNamesNoRouterTheInstallationNeverChose(t *test
 	}
 	if n := own.requests(); n != 0 {
 		t.Fatalf("%d request(s) sent", n)
+	}
+}
+
+func TestFetchSendsTheEnvironmentKeyOnlyToTheInstallationsRouter(t *testing.T) {
+	own, cfg, root := newFakeRouter(t, fetchAnswering)
+	other, otherConns := countingServer(t, http.HandlerFunc(fetchAnswering))
+	otherCfg := sameStateOtherURL(t, cfg, own.srv.URL, other.URL)
+	if _, err := os.Stat(credentialsPath(minerOf(t, cfg))); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("this test needs no stored key: %v", err)
+	}
+	env := map[string]string{"JEVLIN_CONFIG": cfg, apiKeyEnv: boundKey}
+
+	code, out, _ := runFetchStdin(t, env, fetchOneURL, "-config", otherCfg)
+	assertOriginRefusal(t, code, out, origin(t, own.srv.URL), origin(t, other.URL), root, cfg, otherCfg)
+	if n := otherConns(); n != 0 {
+		t.Fatalf("%d connection(s) reached another router", n)
+	}
+
+	if code, out, _ := runFetchStdin(t, env, fetchOneURL, "-config", cfg); code != exitOK || own.requests() != 1 {
+		t.Fatalf("the installation's router: exit %d, %d request(s)\n%s", code, own.requests(), out)
+	}
+	if req, _ := own.last(t); req.Header.Get("Authorization") != "Bearer "+boundKey {
+		t.Errorf("the installation's router was sent Authorization %q", req.Header.Get("Authorization"))
+	}
+
+	// A router chosen on purpose is served once its config is the
+	// installation's.
+	chosen := map[string]string{"JEVLIN_CONFIG": otherCfg, apiKeyEnv: boundKey}
+	if code, out, _ := runFetchStdin(t, chosen, fetchOneURL, "-config", otherCfg); code != exitOK || otherConns() == 0 {
+		t.Errorf("JEVLIN_CONFIG naming the other config: exit %d, %d connection(s)\n%s", code, otherConns(), out)
 	}
 }

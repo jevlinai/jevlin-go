@@ -33,6 +33,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -271,6 +272,7 @@ type execRouter struct {
 type execRouterRequest struct {
 	Query string          `json:"query"`
 	Trace *traceEnvelope  `json:"trace"`
+	Path  string          `json:"-"`
 	Raw   json.RawMessage `json:"-"`
 }
 
@@ -346,10 +348,15 @@ func newExecInstallationIn(t *testing.T, dirName string) *execInstallation {
 		var req execRouterRequest
 		_ = json.Unmarshal(body, &req)
 		req.Raw = body
+		req.Path = r.URL.Path
 		in.router.mu.Lock()
 		in.router.requests = append(in.router.requests, req)
 		in.router.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/v1/fetch" {
+			_, _ = io.WriteString(w, `{"request_id":"req-exec-fetch","pages":[{"status":"not_recent"}]}`)
+			return
+		}
 		_, _ = io.WriteString(w, `{"request_id":"req-exec","chosen":0,"candidates":[{"provider":"stub","kind":"search","status":"ok","answer":"stub answer"}]}`)
 	}))
 	t.Cleanup(router.Close)
@@ -867,6 +874,21 @@ func TestSkillCommandsRunInTheShellTheyAreRenderedFor(t *testing.T) {
 					block := skillBlockFor(t, in.renderedSkill(host), sh.kind, "search")
 					out := runInShell(t, sh, block.body, nil, in.env)
 					requireOneRequest(t, in, out, "exact query text")
+				})
+				t.Run("fetch", func(t *testing.T) {
+					in := newExecInstallation(t)
+					block := skillBlockFor(t, in.renderedSkill(host), sh.kind, "fetch")
+					out := runInShell(t, sh, block.body, nil, in.env)
+					got := in.router.received()
+					if out.exit != 0 || len(got) != 1 || got[0].Path != "/v1/fetch" {
+						t.Fatalf("the fetch block did not reach /v1/fetch once under %s: %d request(s)\n%s", sh.name, len(got), out)
+					}
+					var sent, want any
+					_ = json.Unmarshal(got[0].Raw, &sent)
+					_ = json.Unmarshal([]byte(`{"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}`), &want)
+					if !reflect.DeepEqual(sent, want) {
+						t.Errorf("the router received %s", got[0].Raw)
+					}
 				})
 				t.Run("preference", func(t *testing.T) {
 					in := newExecInstallation(t)

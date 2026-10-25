@@ -127,37 +127,9 @@ type wireSearchRequest struct {
 // and a request that could set them would let the caller forge the
 // trajectory a search is attributed to.
 func decodeMachineSearchRequest(r io.Reader) (machineSearchRequest, error) {
-	raw, err := io.ReadAll(io.LimitReader(r, machineStdinMax+1))
-	if err != nil {
-		return machineSearchRequest{}, inputErrorf(codeInvalidJSON, "the request could not be read from stdin")
-	}
-	if int64(len(raw)) > machineStdinMax {
-		// Oversized input is a usage error, not a partially parsed request.
-		return machineSearchRequest{}, inputErrorf(codeInputTooLarge,
-			"the request is larger than the 1 MiB limit")
-	}
-	if !utf8.Valid(raw) {
-		return machineSearchRequest{}, inputErrorf(codeInvalidUTF8, "the request is not valid UTF-8")
-	}
-	raw = trimUTF8BOM(raw)
-	if err := singleJSONObject(raw); err != nil {
-		return machineSearchRequest{}, inputErrorf(codeInvalidJSON,
-			"the request must be exactly one JSON object with nothing after it")
-	}
-
-	// The version is read with a permissive decode first, so a future
-	// version is told its version is unsupported rather than being
-	// lectured about the new fields that came with it.
-	var probe struct {
-		Version *int `json:"version"`
-	}
-	if err := json.Unmarshal(raw, &probe); err != nil || probe.Version == nil {
-		return machineSearchRequest{}, inputErrorf(codeUnsupportedVersion,
-			"the request needs \"version\": 1")
-	}
-	if *probe.Version != machineRequestVersion {
-		return machineSearchRequest{}, inputErrorf(codeUnsupportedVersion,
-			"this client speaks search request version 1")
+	raw, ierr := readMachineRequest(r, "search")
+	if ierr != nil {
+		return machineSearchRequest{}, ierr
 	}
 
 	dec := json.NewDecoder(strings.NewReader(string(raw)))
@@ -244,6 +216,45 @@ func decodeMachineSearchRequest(r io.Reader) (machineSearchRequest, error) {
 		req.maxChars = &n
 	}
 	return req, nil
+}
+
+// readMachineRequest reads one version-1 request object from r, for the
+// machine command named: bounded, valid UTF-8, exactly one JSON object, and
+// "version": 1. What the object may carry is the command's own to decide.
+func readMachineRequest(r io.Reader, command string) ([]byte, *inputError) {
+	raw, err := io.ReadAll(io.LimitReader(r, machineStdinMax+1))
+	if err != nil {
+		return nil, inputErrorf(codeInvalidJSON, "the request could not be read from stdin")
+	}
+	if int64(len(raw)) > machineStdinMax {
+		// Oversized input is a usage error, not a partially parsed request.
+		return nil, inputErrorf(codeInputTooLarge,
+			"the request is larger than the 1 MiB limit")
+	}
+	if !utf8.Valid(raw) {
+		return nil, inputErrorf(codeInvalidUTF8, "the request is not valid UTF-8")
+	}
+	raw = trimUTF8BOM(raw)
+	if err := singleJSONObject(raw); err != nil {
+		return nil, inputErrorf(codeInvalidJSON,
+			"the request must be exactly one JSON object with nothing after it")
+	}
+
+	// The version is read with a permissive decode first, so a future
+	// version is told its version is unsupported rather than being
+	// lectured about the new fields that came with it.
+	var probe struct {
+		Version *int `json:"version"`
+	}
+	if err := json.Unmarshal(raw, &probe); err != nil || probe.Version == nil {
+		return nil, inputErrorf(codeUnsupportedVersion,
+			"the request needs \"version\": 1")
+	}
+	if *probe.Version != machineRequestVersion {
+		return nil, inputErrorf(codeUnsupportedVersion,
+			"this client speaks "+command+" request version 1")
+	}
+	return raw, nil
 }
 
 // isJSONNull reports whether raw is the literal JSON null, distinct from
@@ -575,6 +586,12 @@ type machineResult struct {
 	// body was more than it reads — and the one retry left them out. Not
 	// a failure: the search ran, on query alone.
 	FormsDropped bool `json:"forms_dropped,omitempty"`
+	// FiltersApplied is the router's filters_applied, field for field, in
+	// every view, and absent exactly when the router sent none. Present, it
+	// says the router held every page to the request's recency and
+	// domain_filter; absent on a request that carried one, the router is
+	// older than that and the pages are unfiltered.
+	FiltersApplied *machineFiltersApplied `json:"filters_applied,omitempty"`
 	// Candidates is carried only for "view":"full". Every page in merged
 	// already holds the text the candidates' citations repeat, and the
 	// providers' own answer texts are what a caller asks "full" for. A
@@ -595,6 +612,10 @@ type machineMergedPage struct {
 	// ResultID is the router's name for the page in the result stored under
 	// request_id, so a later call can refer to the page without its URL.
 	ResultID string `json:"result_id,omitempty"`
+	// SourceID is the router's name for the page across searches, "s_" and
+	// 32 hex digits, present when the router sent one: the same page found
+	// twice carries the same id, and fetch --stdin takes it.
+	SourceID string `json:"source_id,omitempty"`
 	// CanonicalURL is the key the router merged the page under, carried in
 	// the full view only. It is informational: cite URL, which is a
 	// spelling a provider returned, and on almost every page the two are
@@ -665,6 +686,54 @@ type machineDecision struct {
 	Tier      string   `json:"tier,omitempty"`
 	Providers []string `json:"providers,omitempty"`
 	Trimmed   []string `json:"trimmed,omitempty"`
+	// Build is the router build that answered, when the router said.
+	Build *machineBuild `json:"build,omitempty"`
+}
+
+// machineBuild is routerBuild's fields, converted rather than copied.
+type machineBuild struct {
+	Version    string `json:"version,omitempty"`
+	ConfigHash string `json:"config_hash,omitempty"`
+}
+
+// machineFiltersApplied and its two entries are the router's, field for
+// field, converted rather than copied so a field either side gains stops
+// the build until the other has it.
+type machineFiltersApplied struct {
+	Recency      *machineRecencyFilter `json:"recency,omitempty"`
+	DomainFilter *machineDomainFilter  `json:"domain_filter,omitempty"`
+}
+
+type machineRecencyFilter struct {
+	Requested      string    `json:"requested,omitempty"`
+	PublishedAfter string    `json:"published_after,omitempty"`
+	SentTo         *[]string `json:"sent_to,omitempty"`
+	NotSent        *[]string `json:"not_sent,omitempty"`
+	Dropped        *int      `json:"dropped,omitempty"`
+}
+
+type machineDomainFilter struct {
+	Requested []string  `json:"requested,omitempty"`
+	SentTo    *[]string `json:"sent_to,omitempty"`
+	NotSent   *[]string `json:"not_sent,omitempty"`
+	Dropped   *int      `json:"dropped,omitempty"`
+}
+
+// filtersAppliedOf maps the router's filters_applied, nil for nil.
+func filtersAppliedOf(f *routerFiltersApplied) *machineFiltersApplied {
+	if f == nil {
+		return nil
+	}
+	out := &machineFiltersApplied{}
+	if f.Recency != nil {
+		r := machineRecencyFilter(*f.Recency)
+		out.Recency = &r
+	}
+	if f.DomainFilter != nil {
+		d := machineDomainFilter(*f.DomainFilter)
+		out.DomainFilter = &d
+	}
+	return out
 }
 
 // machineUsage is the router's cost and cache ledger for the whole
@@ -764,7 +833,12 @@ func machineResultOf(s routerSuccess, view string) *machineResult {
 			Providers: r.Decision.Providers,
 			Trimmed:   r.Decision.Trimmed,
 		}
+		if r.Decision.Build != nil {
+			b := machineBuild(*r.Decision.Build)
+			out.Decision.Build = &b
+		}
 	}
+	out.FiltersApplied = filtersAppliedOf(r.FiltersApplied)
 	if !full {
 		return out
 	}
@@ -819,6 +893,7 @@ func mergedOf(r routerResponse, full bool) []machineMergedPage {
 		page := machineMergedPage{
 			URL:       m.URL,
 			ResultID:  m.ResultID,
+			SourceID:  m.SourceID,
 			Title:     m.Title,
 			Published: m.Published,
 			Snippet:   m.Excerpt,

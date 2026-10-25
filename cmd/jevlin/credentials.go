@@ -92,11 +92,11 @@ const (
 )
 
 // credentials is the on-disk shape. Router and AgentsAPI are where the key
-// may be sent: the router a search, a limits read and a turn end go to, and
-// the platform's agents API that connect and mining enable call. Each is an
-// origin (login has always written its router as the full URL it verified
-// against, which reduces to the same origin), and keyService.check holds
-// every request carrying the stored key to it.
+// may be sent: the router a search, a limits read, a turn end and a fetch
+// go to, and the platform's agents API that connect and mining enable call.
+// Each is an origin (login has always written its router as the full URL it
+// verified against, which reduces to the same origin), and keyService.check
+// holds every request carrying the stored key to it.
 type credentials struct {
 	V         int    `json:"v"`
 	APIKey    string `json:"api_key"`

@@ -361,7 +361,8 @@ func TestTheRouterCitationsFieldsAreDecided(t *testing.T) {
 			"URL url", "Title title,omitempty", "Snippet snippet,omitempty", "Rank rank,omitempty", "Form form,omitempty",
 		}, "machineCitation (machineResultOf)"},
 		{reflect.TypeFor[routerMergedPage](), []string{
-			"URL url", "ResultID result_id,omitempty", "CanonicalURL canonical_url,omitempty", "Title title,omitempty",
+			"URL url", "ResultID result_id,omitempty", "SourceID source_id,omitempty",
+			"CanonicalURL canonical_url,omitempty", "Title title,omitempty",
 			"Published published,omitempty", "Excerpt excerpt,omitempty", "Excerpts excerpts,omitempty",
 			"BestRank best_rank", "FoundBy found_by", "Groups groups,omitempty", "Exclusive exclusive,omitempty",
 			"Votes votes,omitempty", "MatchedTerms matched_terms,omitempty",
@@ -369,6 +370,22 @@ func TestTheRouterCitationsFieldsAreDecided(t *testing.T) {
 		{reflect.TypeFor[routerIndex](), []string{
 			"Provider provider", "Status status", "Results results,omitempty", "LatencyMS latency_ms,omitempty",
 		}, "machineIndex (machineResultOf)"},
+		{reflect.TypeFor[routerDecision](), []string{
+			"Tier tier,omitempty", "Providers providers,omitempty", "Trimmed trimmed,omitempty", "Build build,omitempty",
+		}, "machineDecision (machineResultOf)"},
+		{reflect.TypeFor[routerBuild](), []string{
+			"Version version,omitempty", "ConfigHash config_hash,omitempty",
+		}, "machineBuild (machineResultOf)"},
+		{reflect.TypeFor[routerFiltersApplied](), []string{
+			"Recency recency,omitempty", "DomainFilter domain_filter,omitempty",
+		}, "machineFiltersApplied (filtersAppliedOf)"},
+		{reflect.TypeFor[routerRecencyFilter](), []string{
+			"Requested requested,omitempty", "PublishedAfter published_after,omitempty",
+			"SentTo sent_to,omitempty", "NotSent not_sent,omitempty", "Dropped dropped,omitempty",
+		}, "machineRecencyFilter (filtersAppliedOf)"},
+		{reflect.TypeFor[routerDomainFilter](), []string{
+			"Requested requested,omitempty", "SentTo sent_to,omitempty", "NotSent not_sent,omitempty", "Dropped dropped,omitempty",
+		}, "machineDomainFilter (filtersAppliedOf)"},
 		{reflect.TypeFor[routerUsage](), []string{
 			"CostMicros cost_micros,omitempty", "CacheHit cache_hit,omitempty", "Pending pending,omitempty",
 			"LatencyMS latency_ms,omitempty", "DeadlineHit deadline_hit,omitempty",
@@ -392,6 +409,54 @@ func TestTheRouterCitationsFieldsAreDecided(t *testing.T) {
 // newer router fixtures in with a field nobody has looked at stops the
 // build until someone writes its line.
 var routerKeysDecided = map[string]map[string]string{
+	"(top)": {
+		"request_id":       "carried",
+		"query":            "not carried: the caller sent it",
+		"chosen":           "carried",
+		"candidates":       "carried in the full view only",
+		"merged":           "carried",
+		"coverage":         "carried",
+		"merged_limit":     "carried",
+		"merged_total":     "carried",
+		"indexes":          "carried, as result.indexes",
+		"decision":         "carried",
+		"usage":            "carried",
+		"filters_applied":  "carried, field for field",
+		"signals":          "not carried: the router's scoring inputs, which the merged order already reflects",
+		"no_usable_result": "not carried: result.indexes says which arms failed, and merged is empty",
+		"_derived":         "not the router's: the derived fixture's note on how it was made",
+	},
+	"decision": {
+		"tier":           "carried",
+		"providers":      "carried",
+		"build":          "carried",
+		"mode":           "not carried: how the router chose, its own operation",
+		"provider_set":   "not carried: providers, joined",
+		"propensity":     "not carried: the router's learning record",
+		"router_version": "not carried: build is the router's account of what answered",
+		"ranker_version": "not carried: build is the router's account of what answered",
+	},
+	"decision.build": {
+		"version":     "carried",
+		"config_hash": "carried",
+	},
+	"filters_applied": {
+		"recency":       "carried",
+		"domain_filter": "carried",
+	},
+	"filters_applied.recency": {
+		"requested":       "carried",
+		"published_after": "carried",
+		"sent_to":         "carried",
+		"not_sent":        "carried",
+		"dropped":         "carried",
+	},
+	"filters_applied.domain_filter": {
+		"requested": "carried",
+		"sent_to":   "carried",
+		"not_sent":  "carried",
+		"dropped":   "carried",
+	},
 	"merged[]": {
 		"url":           "carried",
 		"result_id":     "carried",
@@ -464,6 +529,13 @@ func TestEveryKeyTheRouterSendsIsDecided(t *testing.T) {
 			note(filepath.Base(name), "indexes.by_provider[]", objOf(ix))
 		}
 		note(filepath.Base(name), "usage", objOf(doc["usage"]))
+		note(filepath.Base(name), "(top)", doc)
+		note(filepath.Base(name), "decision", objOf(doc["decision"]))
+		note(filepath.Base(name), "decision.build", objOf(objOf(doc["decision"])["build"]))
+		fa := objOf(doc["filters_applied"])
+		note(filepath.Base(name), "filters_applied", fa)
+		note(filepath.Base(name), "filters_applied.recency", objOf(fa["recency"]))
+		note(filepath.Base(name), "filters_applied.domain_filter", objOf(fa["domain_filter"]))
 	}
 	// A decided key no fixture sends is a line about a router that may not
 	// exist; say so rather than keep it silently.

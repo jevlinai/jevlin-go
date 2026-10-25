@@ -21,6 +21,10 @@ import (
 // exampleRequest is the request body the skill shows.
 const exampleRequest = `{"version":1,"query":"exact query text"}`
 
+// exampleFetchRequest is the fetch body the skill shows: one page by the
+// source_id a search returned, which the agent replaces with its own.
+const exampleFetchRequest = `{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}`
+
 // skillTeachesQueryForms is the switch for the query forms (Jevlin-core
 // #55). The client sends objective and search_queries whenever a caller
 // does, and a router that predates them costs that search one refused
@@ -212,6 +216,19 @@ func callSection(entry binEntry, shells skillShells) (string, error) {
 		return "", err
 	}
 	return body, nil
+}
+
+// fetchSection is the skill's "Reading a page in full" command, per shell:
+// the same carrier as the search, so the quoting the search's note explains
+// holds for it unchanged.
+func fetchSection(entry binEntry, shells skillShells) (string, error) {
+	return perShellSection(shells, false, func(sh shellKind) (string, error) {
+		lang, script, err := fetchBlockForShell(sh, entry, exampleFetchRequest)
+		if err != nil {
+			return "", err
+		}
+		return fenced(lang, script), nil
+	})
 }
 
 // quotingNote explains, per shell, what keeps the request intact — the part

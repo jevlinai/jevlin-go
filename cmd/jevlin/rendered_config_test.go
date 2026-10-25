@@ -52,14 +52,23 @@ func TestEveryAllowRuleNamesAConfigWhenNoneIsWrittenYet(t *testing.T) {
 	if len(allow) == 0 {
 		t.Fatal("no allow rules written")
 	}
+	ours := map[string]int{}
 	for _, r := range allow {
 		if !ruleIsOurs(r, refFor(entry)) {
 			continue
 		}
-		if !strings.Contains(r, " search -config ") || !strings.HasSuffix(r, ":*)") {
-			t.Errorf("a rule does not end with the installation's -config: %s", r)
+		// A search rule ends after its -config; a fetch rule after the
+		// --stdin that follows it.
+		sub, tail := " search -config ", ":*)"
+		if strings.Contains(r, " fetch -config ") {
+			sub, tail = " fetch -config ", " --stdin:*)"
 		}
-		words := renderedWords(strings.TrimSuffix(strings.SplitN(r, " search -config ", 2)[1], ":*)"))
+		ours[strings.TrimSpace(strings.TrimSuffix(sub, " -config "))]++
+		if !strings.Contains(r, sub) || !strings.HasSuffix(r, tail) {
+			t.Errorf("a rule does not end with the installation's -config: %s", r)
+			continue
+		}
+		words := renderedWords(strings.TrimSuffix(strings.SplitN(r, sub, 2)[1], tail))
 		if len(words) != 1 {
 			t.Errorf("a rule's config is not one word: %s", r)
 			continue
@@ -71,6 +80,11 @@ func TestEveryAllowRuleNamesAConfigWhenNoneIsWrittenYet(t *testing.T) {
 		if !named {
 			t.Errorf("a rule names another config than %s: %s", want, r)
 		}
+	}
+	// Three spellings each, single-quoted, %q and bare, of the search and
+	// of the fetch.
+	if ours["search"] != 3 || ours["fetch"] != 3 {
+		t.Errorf("rules of ours: %v, want 3 search and 3 fetch", ours)
 	}
 }
 
@@ -93,10 +107,17 @@ func TestRulesAndHooksWithoutAConfigAreReplacedOnInstall(t *testing.T) {
 	if len(seeded) == 0 {
 		t.Fatal("the earlier install wrote no rules")
 	}
+	seededFetch := 0
 	for _, r := range seeded {
 		if strings.Contains(r, "-config") {
 			t.Fatalf("the seed is meant to hold rules without a config: %s", r)
 		}
+		if strings.Contains(r, " fetch --stdin") {
+			seededFetch++
+		}
+	}
+	if seededFetch == 0 {
+		t.Fatalf("the seed holds no fetch rule without a config: %q", seeded)
 	}
 	hooksBefore := hookCommands(t, m)
 	if len(hooksBefore) == 0 {

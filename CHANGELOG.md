@@ -10,6 +10,33 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## Unreleased
+
+- **The envelope says which filters the router applied, and which build answered.** A router
+  that holds a search's pages to its `recency` and `domain_filter` reports it, and
+  `result.filters_applied` carries that report as the router sent it: the providers each filter
+  went to and how many pages the router dropped for falling outside it.
+  `result.decision.build` names the router build, and each page in `result.merged` carries the
+  router's `source_id` once the router sends one.
+- **`jevlin fetch --stdin` reads a page a search found, in full.** One JSON request names up
+  to five pages, by the `source_id` a search returned or by URL, with an optional
+  `max_chars`, `offset` and `query`; the envelope carries each page's text, in capped slices
+  with a `next_offset` to read on. It needs a router with fetch on and an account that can
+  fetch, and it serves only pages from the account's own recent searches; otherwise it says so
+  (`fetch_not_supported`, `fetch_disabled`, `fetch_unavailable`, a page's `not_recent`). A page
+  the upstream cut short says so with `truncated` and its `full_length`, and a failed page says
+  why with `reason`: `upstream_failed` or `unrendered`. Claude Code, Cursor and Codex run the
+  exact fetch the skill renders without asking, as they run the search; Claude Code's allow
+  rules for it arrive when the upgrade refreshes the agent integrations. Like `search`, it sends
+  the stored key only to the router recorded for it, and `JEVLIN_API_KEY` only to the
+  installation's router.
+- **The skill trusts a filter the router reports, and reads a page in full.** An agent is told
+  that `result.filters_applied` means the router held every page to the filter, and that
+  without it the router may not have, so it checks each page's date and host. It teaches
+  reading `source_id`, and when to read a page in full with `jevlin fetch`: passing `query` for
+  a page much longer than one slice, what a failed page's `reason` means, and that fetched text
+  keeps a link's words but not its URL.
+
 ## v0.6.0 — 2026-10-25
 
 The search envelope is smaller by default, and the stored key goes only to the hosts it was

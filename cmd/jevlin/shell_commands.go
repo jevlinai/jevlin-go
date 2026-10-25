@@ -123,6 +123,13 @@ func (e binEntry) stdinCommandForShell(sh shellKind) (string, error) {
 	return renderShellCommand(sh, append(tokens, literalToken("--stdin")))
 }
 
+// fetchCommandForShell is fetch's machine path, the same shape as the
+// search's: the pages to read arrive as JSON on stdin.
+func (e binEntry) fetchCommandForShell(sh shellKind) (string, error) {
+	tokens := append([]cmdToken{pathToken(e.command), literalToken("fetch")}, e.configTokens()...)
+	return renderShellCommand(sh, append(tokens, literalToken("--stdin")))
+}
+
 // searchCommandForShell is the human form's prefix, without a query.
 func (e binEntry) searchCommandForShell(sh shellKind) (string, error) {
 	tokens := append([]cmdToken{pathToken(e.command), literalToken("search")}, e.configTokens()...)
@@ -165,13 +172,28 @@ func searchBlockForShell(sh shellKind, e binEntry, body string) (lang, script st
 	if err != nil {
 		return "", "", err
 	}
+	return stdinBlockForShell(sh, cmd, body, "search")
+}
+
+// fetchBlockForShell is searchBlockForShell for `fetch --stdin`: the same
+// carrier, so a request body arrives as exactly for a fetch as for a search.
+func fetchBlockForShell(sh shellKind, e binEntry, body string) (lang, script string, err error) {
+	cmd, err := e.fetchCommandForShell(sh)
+	if err != nil {
+		return "", "", err
+	}
+	return stdinBlockForShell(sh, cmd, body, "fetch")
+}
+
+// stdinBlockForShell puts body on cmd's stdin in sh's own grammar.
+func stdinBlockForShell(sh shellKind, cmd, body, what string) (lang, script string, err error) {
 	switch sh {
 	case shellPOSIX:
 		return "bash", cmd + " <<'JSON'\n" + body + "\nJSON", nil
 	case shellPowerShell:
 		return "powershell", psOutputEncodingLine + "\n@'\n" + body + "\n'@ | " + cmd, nil
 	default:
-		return "", "", fmt.Errorf("no search block form for the %q shell", sh)
+		return "", "", fmt.Errorf("no %s block form for the %q shell", what, sh)
 	}
 }
 

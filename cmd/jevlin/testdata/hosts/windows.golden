@@ -80,6 +80,15 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 {"version":1,"query":"exact query text"}
 '@ | & 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin
 -- fence bash
+'C:\Users\u\.jevlin\bin\jevlin.exe' fetch -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<'JSON'
+{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}
+JSON
+-- fence powershell
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+@'
+{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}
+'@ | & 'C:\Users\u\.jevlin\bin\jevlin.exe' fetch -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin
+-- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
 -- fence powershell
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
@@ -119,6 +128,15 @@ Bash("C:\\Users\\u\\.jevlin\\bin\\jevlin.exe" search -config "C:\\Users\\u\\.jev
 -- rule
 Bash(C:\Users\u\.jevlin\bin\jevlin.exe search -config "C:\\Users\\u\\.jevlin\\jevlin.toml":*)
 "Bash(C:\\Users\\u\\.jevlin\\bin\\jevlin.exe search -config \"C:\\\\Users\\\\u\\\\.jevlin\\\\jevlin.toml\":*)"
+-- rule
+Bash('C:\Users\u\.jevlin\bin\jevlin.exe' fetch -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin:*)
+"Bash('C:\\Users\\u\\.jevlin\\bin\\jevlin.exe' fetch -config 'C:\\Users\\u\\.jevlin\\jevlin.toml' --stdin:*)"
+-- rule
+Bash("C:\\Users\\u\\.jevlin\\bin\\jevlin.exe" fetch -config "C:\\Users\\u\\.jevlin\\jevlin.toml" --stdin:*)
+"Bash(\"C:\\\\Users\\\\u\\\\.jevlin\\\\bin\\\\jevlin.exe\" fetch -config \"C:\\\\Users\\\\u\\\\.jevlin\\\\jevlin.toml\" --stdin:*)"
+-- rule
+Bash(C:\Users\u\.jevlin\bin\jevlin.exe fetch -config "C:\\Users\\u\\.jevlin\\jevlin.toml" --stdin:*)
+"Bash(C:\\Users\\u\\.jevlin\\bin\\jevlin.exe fetch -config \"C:\\\\Users\\\\u\\\\.jevlin\\\\jevlin.toml\" --stdin:*)"
 
 == claude: bridge prefix its lineage adapter writes
 -- skill search block (posix)
@@ -144,6 +162,11 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 {"version":1,"query":"exact query text"}
 '@ | & 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin
 -- fence powershell
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+@'
+{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}
+'@ | & 'C:\Users\u\.jevlin\bin\jevlin.exe' fetch -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin
+-- fence powershell
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
 -- fence powershell
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <band>
@@ -163,6 +186,15 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<'JSON'
 {"version":1,"query":"exact query text"}
+JSON
+-- fence powershell
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+@'
+{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}
+'@ | & 'C:\Users\u\.jevlin\bin\jevlin.exe' fetch -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin
+-- fence bash
+'C:\Users\u\.jevlin\bin\jevlin.exe' fetch -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<'JSON'
+{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}
 JSON
 -- fence powershell
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
@@ -209,6 +241,10 @@ matches the rendered `search` for powershell
 -- skill block (bash)
 matches the rendered `search` for posix
 -- skill block (powershell)
+matches the rendered `fetch` for powershell
+-- skill block (bash)
+matches the rendered `fetch` for posix
+-- skill block (powershell)
 matches the rendered `agents prefer` for powershell
 -- skill block (bash)
 matches the rendered `agents prefer` for posix
@@ -246,6 +282,10 @@ $env:JEVLIN_TRACE_BRIDGE = '<BRIDGE>'; try { & 'C:\Users\u\.jevlin\bin\jevlin.ex
 {"version":1,"query":"exact query text"}
 JSON
 -- fence bash
+'C:\Users\u\.jevlin\bin\jevlin.exe' fetch -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<'JSON'
+{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}
+JSON
+-- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <band>
@@ -268,6 +308,10 @@ JEVLIN_TRACE_BRIDGE=<BRIDGE> 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<'JSON'
 {"version":1,"query":"exact query text"}
+JSON
+-- fence bash
+'C:\Users\u\.jevlin\bin\jevlin.exe' fetch -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<'JSON'
+{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}
 JSON
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
