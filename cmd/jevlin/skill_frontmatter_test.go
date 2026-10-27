@@ -105,7 +105,7 @@ func TestSkillFrontmatterIsValidYAMLWhenOff(t *testing.T) {
 	// rendered skill has to carry all three in both the description and the
 	// rules: a participant who says "the router" after /jevlin off is still
 	// asking for this search (Devin review, PR #147).
-	for _, name := range []string{"jevlin", "supersearch", "the router"} {
+	for _, name := range []string{"jevlin", "SuperSearch", "the router"} {
 		if !strings.Contains(doc.Description, name) {
 			t.Errorf("descriptionOff does not name %q", name)
 		}

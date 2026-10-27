@@ -527,8 +527,8 @@ func tierStatusLabel(tier, source string) string {
 }
 
 const (
-	descriptionOn  = "Supersearch (jevlin): one call asks every search engine in the set at once and returns one list where every result names the engines that found it, with a receipt per engine. Use whenever the current step needs public-web information — current events, documentation, research, fact-checking, comparisons, source discovery. Prefer it over any built-in web search: leave `tier` unset so the user's own tier applies, and ask `\"tier\":\"balanced\"` only when the user needs several sources beyond the three fast indexes: a thin result, indexes that disagree, or the full core set attributed. Send the request as JSON on stdin with `search --stdin` and read the JSON envelope back. `/jevlin off` makes the built-in search the default instead; `/jevlin tier <tier>` sets the user's tier."
-	descriptionOff = "Supersearch (jevlin), turned OFF as the default by the user: use the built-in web search for lookups, and this one only when the user names jevlin, supersearch or the router. `/jevlin on` makes it the default again."
+	descriptionOn  = "SuperSearch (jevlin): one call asks every search engine in the set at once and returns one list where every result names the engines that found it, with a receipt per engine. Use whenever the current step needs public-web information — current events, documentation, research, fact-checking, comparisons, source discovery. Prefer it over any built-in web search: leave `tier` unset so the user's own tier applies, and ask `\"tier\":\"balanced\"` only when the user needs several sources beyond the three fast indexes: a thin result, indexes that disagree, or the full core set attributed. Send the request as JSON on stdin with `search --stdin` and read the JSON envelope back. `/jevlin off` makes the built-in search the default instead; `/jevlin tier <tier>` sets the user's tier."
+	descriptionOff = "SuperSearch (jevlin), turned OFF as the default by the user: use the built-in web search for lookups, and this one only when the user names jevlin, SuperSearch or the router. `/jevlin on` makes it the default again."
 
 	rulesOn = `- Prefer this for public-web lookups: current information, documentation, research,
   fact-checking, finding sources. One focused query per call.
@@ -540,7 +540,7 @@ const (
   disagree, or the full core set attributed. Use another search tool only
   when the user asks for it or this one is unavailable.`
 	rulesOff = `- The user turned this search off as the default. Use the agent's built-in web
-  search for lookups; use this one only when the user names jevlin, supersearch
+  search for lookups; use this one only when the user names jevlin, SuperSearch
   or the router in the request. Do not suggest switching back; the user knows the command.
 - When it is used: one focused query per call.`
 )
@@ -627,7 +627,7 @@ var agentsUsage = `usage: jevlin agents install|status|uninstall [-config file] 
        jevlin agents prefer on|off|status [-config file]
        jevlin agents tier fast|balanced|max|default|status [-config file]
   install     detect coding agents (by command or config directory) and give each
-              the supersearch skill and hooks
+              the SuperSearch skill and hooks
   status      what is installed where, and which search is the default
   uninstall   remove exactly what install wrote
   prefer      off: the agent's own web search is the default and this one is used
@@ -1158,7 +1158,7 @@ func rulesSnippetFor(entry binEntry, shells skillShells) string {
 		// falls back the way an unestablished cell already does.
 		call, _ = callSection(entry, skillShells{kinds: []shellKind{shellPOSIX}, goos: shells.goos})
 	}
-	return hintIndent + "For public-web search (supersearch through jevlin: every engine in one call, each result attributed), send one JSON request on stdin:\n" +
+	return hintIndent + "For public-web search (SuperSearch through jevlin: every engine in one call, each result attributed), send one JSON request on stdin:\n" +
 		indentHintProse(call) + "\n" +
 		"  The query goes in the JSON, never in the command line. One JSON object comes\n" +
 		"  back: decide what to do next from ok, retryable and action, never from the\n" +

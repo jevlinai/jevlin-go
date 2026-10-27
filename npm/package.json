@@ -1,7 +1,7 @@
 {
   "name": "@jevlinsearch/jevlin",
   "version": "0.6.0",
-  "description": "Supersearch for coding agents: one call asks eight search engines at once, every result names the engines that found it, with a receipt per engine. npm wrapper around the jevlin Go binary.",
+  "description": "SuperSearch for coding agents: one call asks eight search engines at once, every result names the engines that found it, with a receipt per engine. npm wrapper around the jevlin Go binary.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",

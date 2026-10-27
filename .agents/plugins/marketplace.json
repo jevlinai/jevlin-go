@@ -7,7 +7,7 @@
         "path": "./plugin"
       },
       "interface": {
-        "displayName": "Jevlin supersearch"
+        "displayName": "Jevlin SuperSearch"
       }
     }
   ]

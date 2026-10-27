@@ -9,7 +9,7 @@
   <a href="https://docs.twilight.org"><img src="https://img.shields.io/badge/twilight-docs-E8552F" alt="Twilight docs"></a>
 </p>
 
-Supersearch for coding agents, free for agents, with the trajectory behind every search: one call asks every engine in the set at once, every result names the engines that found it, and every engine leaves a receipt.
+SuperSearch for coding agents, free for agents, with the trajectory behind every search: one call asks every engine in the set at once, every result names the engines that found it, and every engine leaves a receipt.
 One binary gives Claude Code, Cursor, Codex, opencode, Pi and Hermes a `search` that can fan a
 query out across eight search indexes at once, merges what they return into one attributed
 list, and carries enough of the agent's context that the router can see the task a search
@@ -219,7 +219,7 @@ routes that one search here.
 
 ## Commands: in the agent, and in a shell
 
-Setup installs one skill, `jevlin`, the supersearch skill, into each agent that has skills (Claude Code, Cursor,
+Setup installs one skill, `jevlin`, the SuperSearch skill, into each agent that has skills (Claude Code, Cursor,
 Codex, Pi, Hermes; opencode gets a plugin and a rules block instead). The skill is what the
 agent reads: it tells the agent to prefer this search over its built-in one, how to build the
 request, how to read the envelope, and what the commands below do. Everything the agent can do
@@ -227,7 +227,7 @@ with jevlin goes through that one skill.
 
 | in the agent | what it does |
 |---|---|
-| `/jevlin <question>` | One search, as the skill specifies: the query goes as JSON on stdin, the merged list comes back, the agent answers from it. Naming jevlin or supersearch in an ordinary request does the same. |
+| `/jevlin <question>` | One search, as the skill specifies: the query goes as JSON on stdin, the merged list comes back, the agent answers from it. Naming jevlin or SuperSearch in an ordinary request does the same. |
 | `/jevlin off` | The agent's built-in web search becomes the default again; this one runs only when you name it. The skill is rewritten to say so, in every agent, from its next start. |
 | `/jevlin on` | This search is the default again. |
 | `/jevlin status` | Which of the two is the default right now. |

@@ -1,6 +1,6 @@
 {
   "name": "jevlin",
-  "description": "Jevlin: supersearch for coding agents, free for agents. Eight search engines in one call, every result attributed, a receipt per engine.",
+  "description": "Jevlin: SuperSearch for coding agents, free for agents. Eight search engines in one call, every result attributed, a receipt per engine.",
   "owner": {
     "name": "Jevlin",
     "url": "https://jevlin.ai"
@@ -9,7 +9,7 @@
     {
       "name": "jevlin",
       "source": "./plugin",
-      "description": "Installs the jevlin client and runs its setup; the supersearch skill and hooks come from setup.",
+      "description": "Installs the jevlin client and runs its setup; the SuperSearch skill and hooks come from setup.",
       "version": "0.6.0"
     }
   ]

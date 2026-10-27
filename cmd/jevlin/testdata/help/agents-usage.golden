@@ -2,7 +2,7 @@ usage: jevlin agents install|status|uninstall [-config file] [-client name]... [
        jevlin agents prefer on|off|status [-config file]
        jevlin agents tier fast|balanced|max|default|status [-config file]
   install     detect coding agents (by command or config directory) and give each
-              the supersearch skill and hooks
+              the SuperSearch skill and hooks
   status      what is installed where, and which search is the default
   uninstall   remove exactly what install wrote
   prefer      off: the agent's own web search is the default and this one is used

@@ -3,11 +3,11 @@ name: jevlin
 description: {{DESCRIPTION}}
 ---
 
-# Supersearch (jevlin)
+# SuperSearch (jevlin)
 
-Supersearch: one call asks every search engine in the set at once and returns
+SuperSearch: one call asks every search engine in the set at once and returns
 one list; every result names the engines that found it, and every engine
-leaves a receipt. A request that names supersearch means this search, as a
+leaves a receipt. A request that names SuperSearch means this search, as a
 request that names jevlin does.
 
 ## How to call it

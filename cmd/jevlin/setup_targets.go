@@ -62,7 +62,7 @@ func joinLabels(ls []string) string {
 // no network.
 func agentsParagraph() string {
 	return fmt.Sprintf(`Setup knows these coding agents: %s.
-Each can get a supersearch skill that runs jevlin's search through the
+Each can get a SuperSearch skill that runs jevlin's search through the
 Jevlin search router, and — where the agent supports one — the hook, plugin
 or extension that threads each search into the agent's session (an agent with
 no skill directory gets a plugin and a line to paste into its rules instead).

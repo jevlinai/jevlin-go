@@ -63,7 +63,7 @@ func renderUsageText() string {
 const usageTemplate = `usage: jevlin <command> [flags]
 
 the tool (what an agent runs):
-  search     one supersearch through the router (every engine in the set
+  search     one SuperSearch through the router (every engine in the set
              in one call, each result attributed), two forms: jevlin
              search [-tier fast] [-format json|model] [-view merged]
              <query words> for a person, or jevlin search --stdin for an
@@ -92,7 +92,7 @@ the tool (what an agent runs):
              account that can fetch. -timeout as for search. Exit codes as
              for search.
   agents     agents install|status|uninstall — find {{HOST_LABELS}} on this machine and give each
-             the supersearch skill and the hooks it supports. -dry-run previews,
+             the SuperSearch skill and the hooks it supports. -dry-run previews,
              -client <name> picks one ({{HOST_IDS}}). -yes skips the Proceed?
              prompt, never a question about a Codex setting of yours.
              agents prefer on|off — whether this search or the agent's own
