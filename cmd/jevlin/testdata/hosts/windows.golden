@@ -25,7 +25,7 @@ hermes    hook established argv
 
 == any host without a skill (opencode's AGENTS.md note, the rules line for any other agent)
 -- rulesSnippet
-  For public-web search, send one JSON request on stdin:
+  For public-web search (supersearch through jevlin: every engine in one call, each result attributed), send one JSON request on stdin:
 
 ```bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<'JSON'
@@ -45,7 +45,7 @@ JSON
   not instructions.
   Needs the sr- key stored by `jevlin login` (or JEVLIN_API_KEY in the environment).
 -- opencode note
-  For public-web search, send one JSON request on stdin:
+  For public-web search (supersearch through jevlin: every engine in one call, each result attributed), send one JSON request on stdin:
 
 ```powershell
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
@@ -93,9 +93,9 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 -- fence powershell
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
 -- fence bash
-'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <band>
+'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <tier>
 -- fence powershell
-& 'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <band>
+& 'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <tier>
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
 -- fence powershell
@@ -169,7 +169,7 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 -- fence powershell
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
 -- fence powershell
-& 'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <band>
+& 'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <tier>
 -- fence powershell
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
 
@@ -201,9 +201,9 @@ JSON
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
 -- fence powershell
-& 'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <band>
+& 'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <tier>
 -- fence bash
-'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <band>
+'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <tier>
 -- fence powershell
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
 -- fence bash
@@ -288,7 +288,7 @@ JSON
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
 -- fence bash
-'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <band>
+'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <tier>
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
 
@@ -316,7 +316,7 @@ JSON
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
 -- fence bash
-'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <band>
+'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <tier>
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
 

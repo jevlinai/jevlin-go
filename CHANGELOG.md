@@ -12,6 +12,14 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
+- **The skill is supersearch.** The skill every agent reads now says what it is: supersearch,
+  one call that asks every engine in the set at once and returns one list where every result
+  names the engines that found it, with a receipt per engine. Its heading is "Supersearch
+  (jevlin)", its description opens with that, and a request that names supersearch means this
+  search, as one that names jevlin does. The skill's name, the `/jevlin` commands and the package
+  name are unchanged. The plugin manifests, the setup skill, the npm package and the READMEs say the
+  same, and the agent-facing text says "tier" where it said "band", as the docs already do.
+
 - **The envelope says which filters the router applied, and which build answered.** A router
   that holds a search's pages to its `recency` and `domain_filter` reports it, and
   `result.filters_applied` carries that report as the router sent it: the providers each filter

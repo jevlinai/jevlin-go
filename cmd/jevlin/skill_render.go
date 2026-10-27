@@ -286,7 +286,7 @@ func tierSection(entry binEntry, shells skillShells) (string, error) {
 		if sh == shellPowerShell {
 			lang = "powershell"
 		}
-		return fenced(lang, cmd+" <band>"), nil
+		return fenced(lang, cmd+" <tier>"), nil
 	})
 }
 

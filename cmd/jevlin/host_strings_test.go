@@ -498,7 +498,7 @@ func renderedHostStrings(t *testing.T, goos string) string {
 			for _, blk := range skillCommandBlocks(cursorSkill) {
 				label := "skill block (" + blk.lang + ")"
 				command := strings.Replace(blk.body, "<argument>", "status", 1)
-				command = strings.Replace(command, "<band>", "status", 1)
+				command = strings.Replace(command, "<tier>", "status", 1)
 				command = strings.Replace(command, "<query>", "exact query text", 1)
 				value(label, recognizerVerdict(command, entry, goos))
 			}

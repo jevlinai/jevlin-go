@@ -1,7 +1,8 @@
 usage: jevlin <command> [flags]
 
 the tool (what an agent runs):
-  search     one web search through the router, two forms: jevlin
+  search     one supersearch through the router (every engine in the set
+             in one call, each result attributed), two forms: jevlin
              search [-tier fast] [-format json|model] [-view merged]
              <query words> for a person, or jevlin search --stdin for an
              agent (one version-1 JSON request object on stdin, one JSON
@@ -30,16 +31,16 @@ the tool (what an agent runs):
              for search.
   agents     agents install|status|uninstall — find Claude Code, Codex,
              Cursor, opencode, Pi and Hermes on this machine and give each
-             the search skill and the hooks it supports. -dry-run previews,
+             the supersearch skill and the hooks it supports. -dry-run previews,
              -client <name> picks one (claude, codex,
              cursor, opencode, pi, hermes). -yes skips the Proceed?
              prompt, never a question about a Codex setting of yours.
              agents prefer on|off — whether this search or the agent's own
              is the default (off keeps this one for when you name it);
              in the agent, /jevlin off and /jevlin on do the same
-             agents tier fast|balanced|max|default — the band every search
+             agents tier fast|balanced|max|default — the tier every search
              carries unless the request names one; in the agent,
-             /jevlin tier <band> does the same
+             /jevlin tier <tier> does the same
   hook       internal: the hook runner the agents call around a search;
              JEVLIN_TRACE=off turns traces off entirely
   flush      the mining plane, once: join the open epoch, promote recorded

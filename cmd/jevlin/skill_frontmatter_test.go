@@ -101,4 +101,16 @@ func TestSkillFrontmatterIsValidYAMLWhenOff(t *testing.T) {
 	if doc.Description != descriptionOff {
 		t.Errorf("description did not round-trip through YAML:\ngot:  %q\nwant: %q", doc.Description, descriptionOff)
 	}
+	// Off keeps three ways of asking for this search by name, and the
+	// rendered skill has to carry all three in both the description and the
+	// rules: a participant who says "the router" after /jevlin off is still
+	// asking for this search (Devin review, PR #147).
+	for _, name := range []string{"jevlin", "supersearch", "the router"} {
+		if !strings.Contains(doc.Description, name) {
+			t.Errorf("descriptionOff does not name %q", name)
+		}
+		if !strings.Contains(string(skill), name) {
+			t.Errorf("the off-mode skill does not name %q", name)
+		}
+	}
 }

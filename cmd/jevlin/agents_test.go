@@ -930,7 +930,7 @@ func TestAgentsTierWritesOneFileBesideTheConfigAndRewritesNoSkill(t *testing.T) 
 		t.Fatalf("install: %d\n%s", code, out)
 	}
 	before := string(m.files[claudeSkill])
-	if !strings.Contains(before, `' agents tier -config '`) || !strings.Contains(before, `jevlin.toml' <band>`) {
+	if !strings.Contains(before, `' agents tier -config '`) || !strings.Contains(before, `jevlin.toml' <tier>`) {
 		t.Fatalf("the shipped skill does not name the tier command:\n%s", before)
 	}
 	if code, out, _ := runAgents(t, ops, nil, "status", "-config", testCfg); code != exitOK || !strings.Contains(out, "search tier:    unset") {

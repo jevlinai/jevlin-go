@@ -9,9 +9,9 @@
   <a href="https://docs.twilight.org"><img src="https://img.shields.io/badge/twilight-docs-E8552F" alt="Twilight docs"></a>
 </p>
 
-Free multi-provider web search for coding agents, with the trajectory behind every search.
+Supersearch for coding agents, free for agents, with the trajectory behind every search: one call asks every engine in the set at once, every result names the engines that found it, and every engine leaves a receipt.
 One binary gives Claude Code, Cursor, Codex, opencode, Pi and Hermes a `search` that can fan a
-query out across seven search indexes at once, merges what they return into one attributed
+query out across eight search indexes at once, merges what they return into one attributed
 list, and carries enough of the agent's context that the router can see the task a search
 belongs to, not just the query string. There is no daemon, proxy or MCP server: between tool
 calls nothing is running.
@@ -116,14 +116,14 @@ draw credit: they are the two ways to multiply the work a request does.
 
 Who chooses:
 
-- **You**, out of band: `/jevlin tier balanced` in an agent, or `jevlin agents tier balanced`
-  from a shell, sets the band every search carries unless a request names one. `/jevlin tier
+- **You**, ahead of time: `/jevlin tier balanced` in an agent, or `jevlin agents tier balanced`
+  from a shell, sets the tier every search carries unless a request names one. `/jevlin tier
   default` unsets it and `/jevlin tier` says what is in force.
-- **The agent**, one step at a time: the skill tells it to leave `tier` alone so your band
+- **The agent**, one step at a time: the skill tells it to leave `tier` alone so your tier
   applies, to ask for `balanced` only when it needs several sources beyond the three fast
   indexes (a thin result, indexes that disagree, the full set attributed), and never to send
   `max` on its own. `max` is yours to choose.
-- **The router**, when nobody did: a request with no tier and no band set carries none, and
+- **The router**, when nobody did: a request that names no tier, with none set, carries none, and
   the router applies the default for your key.
 
 ## Request options
@@ -219,7 +219,7 @@ routes that one search here.
 
 ## Commands: in the agent, and in a shell
 
-Setup installs one skill, `jevlin`, into each agent that has skills (Claude Code, Cursor,
+Setup installs one skill, `jevlin`, the supersearch skill, into each agent that has skills (Claude Code, Cursor,
 Codex, Pi, Hermes; opencode gets a plugin and a rules block instead). The skill is what the
 agent reads: it tells the agent to prefer this search over its built-in one, how to build the
 request, how to read the envelope, and what the commands below do. Everything the agent can do
@@ -227,15 +227,15 @@ with jevlin goes through that one skill.
 
 | in the agent | what it does |
 |---|---|
-| `/jevlin <question>` | One search, as the skill specifies: the query goes as JSON on stdin, the merged list comes back, the agent answers from it. Naming jevlin in an ordinary request does the same. |
+| `/jevlin <question>` | One search, as the skill specifies: the query goes as JSON on stdin, the merged list comes back, the agent answers from it. Naming jevlin or supersearch in an ordinary request does the same. |
 | `/jevlin off` | The agent's built-in web search becomes the default again; this one runs only when you name it. The skill is rewritten to say so, in every agent, from its next start. |
 | `/jevlin on` | This search is the default again. |
 | `/jevlin status` | Which of the two is the default right now. |
-| `/jevlin tier fast\|balanced\|max` | Sets the band every search carries unless a request names one. |
+| `/jevlin tier fast\|balanced\|max` | Sets the tier every search carries unless a request names one. |
 | `/jevlin tier default` | Unsets it; `[miner] tier` in your config applies if set, else the router's default for your key. |
-| `/jevlin tier` | The band in force. |
+| `/jevlin tier` | The tier in force. |
 
-The settings are yours: the skill tells the agent never to change the default or the band on
+The settings are yours: the skill tells the agent never to change the default or the tier on
 its own. `/jevlin off` does not reach opencode, whose rules block carries no preference.
 
 Those are the only forms the skill teaches, because they are the only ones an agent needs
@@ -252,7 +252,7 @@ says it is not earning.
 | `jevlin limits` | This key's spend caps, rate windows and today's spend, read from the router. A claimed key gets 120 searches a minute, 3,000 an hour and 16 at once; an unclaimed one 10, 120 and 2, with $0.10 a day. |
 | `jevlin agents install\|status\|uninstall` | Sets up, reports or removes the skills and hooks of each agent. |
 | `jevlin agents prefer on\|off\|status` | What `/jevlin on\|off\|status` runs: which search is the default. |
-| `jevlin agents tier <band>\|default\|status` | What `/jevlin tier` runs: the band every search carries. |
+| `jevlin agents tier <tier>\|default\|status` | What `/jevlin tier` runs: the tier every search carries. |
 | `jevlin mining enable\|disable` | Turns Twilight mining on, asking for a payout address, or off. |
 | `jevlin earnings` | What the chain has paid to your payout address. |
 | `jevlin wallet init\|address\|register\|balance\|send` | The wallet setup made, or one you make here. |

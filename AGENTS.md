@@ -1,10 +1,10 @@
 # AGENTS.md — jevlin
 
-Agent instructions for jevlin: web search for coding agents, with mining rewards for a
+Agent instructions for jevlin: supersearch for coding agents, with mining rewards for a
 participant who opts in. Loaded every session.
 
 ## What this is
-jevlin is **web search for coding agents**: a **no-daemon** Go CLI a coding agent shells out
+jevlin is **supersearch for coding agents**, one call to every search engine in the set with each result attributed: a **no-daemon** Go CLI a coding agent shells out
 to (`jevlin search …`) plus a lifecycle hook. Between calls nothing runs — no reverse proxy,
 no resident process. Mining is opt-in: for a participant who turns it on, it is the client for
 Twilight MINIS, and it earns by capturing each provider call's **event id**

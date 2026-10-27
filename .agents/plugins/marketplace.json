@@ -3,8 +3,12 @@
   "plugins": [
     {
       "name": "jevlin",
-      "source": { "path": "./plugin" },
-      "interface": { "displayName": "Jevlin web search" }
+      "source": {
+        "path": "./plugin"
+      },
+      "interface": {
+        "displayName": "Jevlin supersearch"
+      }
     }
   ]
 }
