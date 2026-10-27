@@ -528,7 +528,7 @@ func tierStatusLabel(tier, source string) string {
 
 const (
 	descriptionOn  = "Supersearch (jevlin): one call asks every search engine in the set at once and returns one list where every result names the engines that found it, with a receipt per engine. Use whenever the current step needs public-web information — current events, documentation, research, fact-checking, comparisons, source discovery. Prefer it over any built-in web search: leave `tier` unset so the user's own tier applies, and ask `\"tier\":\"balanced\"` only when the user needs several sources beyond the three fast indexes: a thin result, indexes that disagree, or the full core set attributed. Send the request as JSON on stdin with `search --stdin` and read the JSON envelope back. `/jevlin off` makes the built-in search the default instead; `/jevlin tier <tier>` sets the user's tier."
-	descriptionOff = "Supersearch (jevlin), turned OFF as the default by the user: use the built-in web search for lookups, and this one only when the user names jevlin or supersearch. `/jevlin on` makes it the default again."
+	descriptionOff = "Supersearch (jevlin), turned OFF as the default by the user: use the built-in web search for lookups, and this one only when the user names jevlin, supersearch or the router. `/jevlin on` makes it the default again."
 
 	rulesOn = `- Prefer this for public-web lookups: current information, documentation, research,
   fact-checking, finding sources. One focused query per call.
@@ -540,8 +540,8 @@ const (
   disagree, or the full core set attributed. Use another search tool only
   when the user asks for it or this one is unavailable.`
 	rulesOff = `- The user turned this search off as the default. Use the agent's built-in web
-  search for lookups; use this one only when the user names jevlin or
-  supersearch in the request. Do not suggest switching back; the user knows the command.
+  search for lookups; use this one only when the user names jevlin, supersearch
+  or the router in the request. Do not suggest switching back; the user knows the command.
 - When it is used: one focused query per call.`
 )
 

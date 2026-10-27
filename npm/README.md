@@ -11,7 +11,7 @@
 
 Supersearch for coding agents, free for agents, with the trajectory behind every search: one call asks every engine in the set at once, every result names the engines that found it, and every engine leaves a receipt.
 One binary gives Claude Code, Cursor, Codex, opencode, Pi and Hermes a `search` that can fan a
-query out across seven search indexes at once, merges what they return into one attributed
+query out across eight search indexes at once, merges what they return into one attributed
 list, and carries enough of the agent's context that the router can see the task a search
 belongs to, not just the query string. There is no daemon, proxy or MCP server: between tool
 calls nothing is running.
