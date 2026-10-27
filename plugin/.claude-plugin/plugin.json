@@ -1,6 +1,6 @@
 {
   "name": "jevlin",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "displayName": "Jevlin supersearch",
   "description": "Sets up Jevlin, supersearch for coding agents: one call asks eight search engines at once, every result names the engines that found it, with a receipt per engine, free for agents. Installs the jevlin client and runs its setup, which writes this agent's own supersearch skill and hooks.",
   "author": {
