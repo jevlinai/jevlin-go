@@ -12,6 +12,17 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
+## v0.6.1 — 2026-10-27
+
+The skill every agent reads now says it is supersearch, and the client gains `jevlin fetch
+--stdin`, which reads a page a search found in full; the skill teaches it, and teaches agents to
+trust the filters the router reports. The search envelope gains the router's filter report, its
+build and each page's `source_id`; nothing it carried before has changed. The skill's name, the
+`/jevlin` commands and the flags a script already calls are the same, and "band" is now "tier"
+in the text an agent reads. By default a native install on v0.6.0 takes this release at its
+daily check; an npm install is updated with npm. This release's updater has not run on a
+Windows machine with real-time antivirus on.
+
 - **The skill is supersearch.** The skill every agent reads now says what it is: supersearch,
   one call that asks every engine in the set at once and returns one list where every result
   names the engines that found it, with a receipt per engine. Its heading is "Supersearch
