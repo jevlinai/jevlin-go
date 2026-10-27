@@ -1,8 +1,8 @@
 {
   "name": "jevlin",
   "version": "0.6.0",
-  "displayName": "Jevlin web search",
-  "description": "Sets up Jevlin, free multi-provider web search for coding agents: installs the jevlin client and runs its setup, which writes this agent's own search skill and hooks.",
+  "displayName": "Jevlin supersearch",
+  "description": "Sets up Jevlin, supersearch for coding agents: one call asks eight search engines at once, every result names the engines that found it, with a receipt per engine, free for agents. Installs the jevlin client and runs its setup, which writes this agent's own supersearch skill and hooks.",
   "author": {
     "name": "Jevlin",
     "url": "https://jevlin.ai"
@@ -16,7 +16,10 @@
     "research",
     "documentation",
     "coding-agent",
-    "setup"
+    "setup",
+    "supersearch",
+    "fan-out",
+    "multi-engine"
   ],
   "icon": "./.claude-plugin/icon.png",
   "documentationUrl": "https://docs.jevlin.ai/",

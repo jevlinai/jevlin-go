@@ -3,7 +3,12 @@ name: jevlin
 description: {{DESCRIPTION}}
 ---
 
-# Web search (jevlin)
+# Supersearch (jevlin)
+
+Supersearch: one call asks every search engine in the set at once and returns
+one list; every result names the engines that found it, and every engine
+leaves a receipt. A request that names supersearch means this search, as a
+request that names jevlin does.
 
 ## How to call it
 
@@ -23,7 +28,7 @@ that instead of a shell at all.
 ## Tiers
 
 Leave `tier` unset for a routine lookup: the request then carries the user's
-own band (set with `/jevlin tier`), or the router's default when the user set
+own tier (set with `/jevlin tier`), or the router's default when the user set
 none. `fast` is three fast indexes, one per index group, cheaper and quicker
 than `balanced`, so ask `"tier":"balanced"` only when the user needs several sources
 beyond what those three gave: the fast result came back thin, the indexes
@@ -227,7 +232,7 @@ If the argument is `tier`, alone or followed by exactly `fast`, `balanced`,
 `max`, `default` or `status`, it is not a query. Run
 {{TIER}}
 with that word (`status` when none was given), show its output, and keep
-leaving `tier` unset in later requests so the new band applies. The setting is
+leaving `tier` unset in later requests so the new tier applies. The setting is
 the user's; never change it on your own.
 
 ## Rules

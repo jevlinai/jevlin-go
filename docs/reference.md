@@ -13,7 +13,7 @@ Values to look up. Every flag is in `jevlin help` and `jevlin <command> -h`.
 | `fetch --stdin` | The full text of pages a search returned, for agents (JSON in, JSON out). See [Reading a page in full](#reading-a-page-in-full). |
 | `agents install\|status\|uninstall` | Sets up, reports or removes the skills and hooks of each agent. |
 | `agents prefer on\|off\|status` | Whether this search or the agent's own is the default. |
-| `agents tier fast\|balanced\|max\|default\|status` | The band every search carries unless the request names one; `default` unsets it. |
+| `agents tier fast\|balanced\|max\|default\|status` | The tier every search carries unless the request names one; `default` unsets it. |
 | `flush` | One pass of the mining plane: join the open epoch, promote recorded searches, submit. |
 | `connect` | Registers with the search platform, prints the claim link, polls until claimed. |
 | `mining enable\|disable` | Turns mining on (asking for a payout address) or off for this installation. |
@@ -318,7 +318,7 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | `registration_pending.json` | A registration the platform answered that is not yet saved; finished by the next connect. | connect | No: it holds the new key. |
 | `claim.json` | The claim link and code for this installation's agent, while it is unclaimed. | connect | Yes; the next `jevlin connect` mints a fresh link, which ends the old one. |
 | `search-default` | `agents prefer`'s choice. | agents prefer | Yes; the skill default returns. |
-| `search-tier` | `agents tier`'s choice: the band a search carries when the request names none. | agents tier | Yes; `[miner] tier`, then the router's default, returns. |
+| `search-tier` | `agents tier`'s choice: the tier a search carries when the request names none. | agents tier | Yes; `[miner] tier`, then the router's default, returns. |
 | `update_check.json` | The daily release check's record: when it ran, what it found, and a release a rollback holds. | upgrade | Yes; the next agent session checks again, though a rollback's hold is forgotten. |
 | `bin/jevlin` | A native binary, and `jevlin.previous` after an upgrade. | setup, upgrade | Through `uninstall -binary`. |
 | `state/` | Identity, authorization, the mining decision, health records, the flush stamp, the last region refusal. | connect, flush, join | No: it is your registration. |
