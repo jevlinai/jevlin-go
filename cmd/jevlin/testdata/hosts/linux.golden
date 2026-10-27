@@ -77,7 +77,7 @@ JSON
 -- fence bash
 '/home/u/.jevlin/bin/jevlin' agents prefer -config '/home/u/.jevlin/jevlin.toml' <argument>
 -- fence bash
-'/home/u/.jevlin/bin/jevlin' agents tier -config '/home/u/.jevlin/jevlin.toml' <band>
+'/home/u/.jevlin/bin/jevlin' agents tier -config '/home/u/.jevlin/jevlin.toml' <tier>
 -- fence bash
 '/home/u/.jevlin/bin/jevlin' search -config '/home/u/.jevlin/jevlin.toml' -format model "<query>"
 
@@ -138,7 +138,7 @@ JSON
 -- fence bash
 '/home/u/.jevlin/bin/jevlin' agents prefer -config '/home/u/.jevlin/jevlin.toml' <argument>
 -- fence bash
-'/home/u/.jevlin/bin/jevlin' agents tier -config '/home/u/.jevlin/jevlin.toml' <band>
+'/home/u/.jevlin/bin/jevlin' agents tier -config '/home/u/.jevlin/jevlin.toml' <tier>
 -- fence bash
 '/home/u/.jevlin/bin/jevlin' search -config '/home/u/.jevlin/jevlin.toml' -format model "<query>"
 
@@ -171,7 +171,7 @@ JSON
 -- fence bash
 '/home/u/.jevlin/bin/jevlin' agents prefer -config '/home/u/.jevlin/jevlin.toml' <argument>
 -- fence bash
-'/home/u/.jevlin/bin/jevlin' agents tier -config '/home/u/.jevlin/jevlin.toml' <band>
+'/home/u/.jevlin/bin/jevlin' agents tier -config '/home/u/.jevlin/jevlin.toml' <tier>
 -- fence bash
 '/home/u/.jevlin/bin/jevlin' search -config '/home/u/.jevlin/jevlin.toml' -format model "<query>"
 
@@ -241,7 +241,7 @@ JSON
 -- fence bash
 '/home/u/.jevlin/bin/jevlin' agents prefer -config '/home/u/.jevlin/jevlin.toml' <argument>
 -- fence bash
-'/home/u/.jevlin/bin/jevlin' agents tier -config '/home/u/.jevlin/jevlin.toml' <band>
+'/home/u/.jevlin/bin/jevlin' agents tier -config '/home/u/.jevlin/jevlin.toml' <tier>
 -- fence bash
 '/home/u/.jevlin/bin/jevlin' search -config '/home/u/.jevlin/jevlin.toml' -format model "<query>"
 
@@ -269,7 +269,7 @@ JSON
 -- fence bash
 '/home/u/.jevlin/bin/jevlin' agents prefer -config '/home/u/.jevlin/jevlin.toml' <argument>
 -- fence bash
-'/home/u/.jevlin/bin/jevlin' agents tier -config '/home/u/.jevlin/jevlin.toml' <band>
+'/home/u/.jevlin/bin/jevlin' agents tier -config '/home/u/.jevlin/jevlin.toml' <tier>
 -- fence bash
 '/home/u/.jevlin/bin/jevlin' search -config '/home/u/.jevlin/jevlin.toml' -format model "<query>"
 

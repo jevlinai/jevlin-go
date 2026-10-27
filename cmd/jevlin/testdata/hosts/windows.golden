@@ -93,9 +93,9 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 -- fence powershell
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
 -- fence bash
-'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <band>
+'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <tier>
 -- fence powershell
-& 'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <band>
+& 'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <tier>
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
 -- fence powershell
@@ -169,7 +169,7 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 -- fence powershell
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
 -- fence powershell
-& 'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <band>
+& 'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <tier>
 -- fence powershell
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
 
@@ -201,9 +201,9 @@ JSON
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
 -- fence powershell
-& 'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <band>
+& 'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <tier>
 -- fence bash
-'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <band>
+'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <tier>
 -- fence powershell
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
 -- fence bash
@@ -288,7 +288,7 @@ JSON
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
 -- fence bash
-'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <band>
+'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <tier>
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
 
@@ -316,7 +316,7 @@ JSON
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
 -- fence bash
-'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <band>
+'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <tier>
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
 
