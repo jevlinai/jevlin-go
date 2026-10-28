@@ -71,12 +71,13 @@ func TestEveryOtherHostKeepsTheHeredocCall(t *testing.T) {
 	}
 }
 
-func TestTheClaudeCodeQuotingNoteTeachesTheApostropheEscape(t *testing.T) {
-	skill := renderedSkillFor("claude", oneLineEntry("linux"), "linux")
+func TestTheClaudeCodeQuotingNoteKeepsQuoteAndDollarOutOfTheRequest(t *testing.T) {
+	skill := flat(renderedSkillFor("claude", oneLineEntry("linux"), "linux"))
 	for _, want := range []string{
-		`what'\''s new in Go`,
-		"Write each apostrophe in the request",
-		"the single line",
+		`"what\u0027s new in Go"`,
+		"replace every `'` in the request with `\\u0027` and every `$` with `\\u0024`",
+		"the call stays on one line",
+		"Never pipe or redirect the call's output",
 	} {
 		if !strings.Contains(skill, want) {
 			t.Errorf("the quoting note does not say %q", want)

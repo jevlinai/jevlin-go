@@ -270,8 +270,10 @@ when you substitute your own query.`
 const oneLineQuotingNote = `
 The request is one single-quoted word after ` + "`<<<`" + `, so the call stays on one
 line: keep the quotes and the single line, and write a newline in a string as
-` + "`\\n`" + `. Write each apostrophe in the request as ` + "`'\\''`" + `:
-` + "`<<< '{\"version\":1,\"query\":\"what'\\''s new in Go\"}'`" + `.`
+` + "`\\n`" + `. Before you send it, replace every ` + "`'`" + ` in the request with ` + "`\\u0027`" + ` and every
+` + "`$`" + ` with ` + "`\\u0024`" + `, JSON escapes the client decodes
+(` + "`\"what\\u0027s new in Go\"`" + `). A bare one fails the call. Never pipe or
+redirect the call's output; read the envelope as it comes back.`
 
 // apostropheNote follows the PowerShell form where a Bash terminal may read
 // it too: Cursor allows that form without asking only when its body holds no
