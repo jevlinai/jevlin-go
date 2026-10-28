@@ -106,6 +106,10 @@ type skillShells struct {
 	kinds  []shellKind
 	choice shellChoice
 	goos   string
+	// oneLine renders the POSIX call as one line (a here-string) rather
+	// than a heredoc. Claude Code's allow rules match a command line, and
+	// do not match a multi-line one.
+	oneLine bool
 }
 
 // condition is the sentence above one block of a multi-shell host's skill:
@@ -154,7 +158,8 @@ func (s skillShells) lead() string {
 // told which host and OS that applies to instead of finding out from a
 // search that never runs.
 func toolShellsForSkill(t installTarget, goos string) (shells skillShells, note string) {
-	fallback := skillShells{kinds: []shellKind{shellPOSIX}, goos: goos}
+	_, oneLine := t.(claudeTarget)
+	fallback := skillShells{kinds: []shellKind{shellPOSIX}, goos: goos, oneLine: oneLine}
 	declared, err := declaredShells(t, goos, channelTool)
 	if err != nil {
 		return fallback, fmt.Sprintf(
@@ -164,7 +169,7 @@ func toolShellsForSkill(t installTarget, goos string) (shells skillShells, note 
 	if len(declared) == 0 {
 		return fallback, ""
 	}
-	return skillShells{kinds: declared, choice: toolShellChoice(t, goos), goos: goos}, ""
+	return skillShells{kinds: declared, choice: toolShellChoice(t, goos), goos: goos, oneLine: oneLine}, ""
 }
 
 // fenced wraps a rendered script in its fence.
@@ -202,10 +207,16 @@ func callSection(entry binEntry, shells skillShells) (string, error) {
 	body, err := perShellSection(shells, true,
 		func(sh shellKind) (string, error) {
 			lang, script, err := searchBlockForShell(sh, entry, exampleRequest)
+			if shells.oneLine && sh == shellPOSIX {
+				lang, script, err = oneLineSearchBlock(entry, exampleRequest)
+			}
 			if err != nil {
 				return "", err
 			}
 			note := quotingNote(sh)
+			if shells.oneLine && sh == shellPOSIX {
+				note = oneLineQuotingNote
+			}
 			if sh == shellPowerShell && shells.choice == chosenByParticipant && slices.Contains(shells.kinds, shellPOSIX) {
 				note += apostropheNote
 			}
@@ -223,6 +234,9 @@ func callSection(entry binEntry, shells skillShells) (string, error) {
 func fetchSection(entry binEntry, shells skillShells) (string, error) {
 	return perShellSection(shells, false, func(sh shellKind) (string, error) {
 		lang, script, err := fetchBlockForShell(sh, entry, exampleFetchRequest)
+		if shells.oneLine && sh == shellPOSIX {
+			lang, script, err = oneLineFetchBlock(entry, exampleFetchRequest)
+		}
 		if err != nil {
 			return "", err
 		}
@@ -250,6 +264,13 @@ when you substitute your own query.`
 	}
 	return ""
 }
+
+// oneLineQuotingNote replaces the heredoc's note where the call is one line.
+const oneLineQuotingNote = `
+The request is one single-quoted word after ` + "`<<<`" + `, so the call stays on one
+line: keep the quotes and the single line, and write a newline in a string as
+` + "`\\n`" + `. Write each apostrophe in the request as ` + "`'\\''`" + `:
+` + "`<<< '{\"version\":1,\"query\":\"what'\\''s new in Go\"}'`" + `.`
 
 // apostropheNote follows the PowerShell form where a Bash terminal may read
 // it too: Cursor allows that form without asking only when its body holds no

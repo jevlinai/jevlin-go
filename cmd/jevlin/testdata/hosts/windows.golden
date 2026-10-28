@@ -67,18 +67,14 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
 == claude: skill command blocks
 -- fence bash
-'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<'JSON'
-{"version":1,"query":"exact query text"}
-JSON
+'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<< '{"version":1,"query":"exact query text"}'
 -- fence powershell
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 @'
 {"version":1,"query":"exact query text"}
 '@ | & 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin
 -- fence bash
-'C:\Users\u\.jevlin\bin\jevlin.exe' fetch -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<'JSON'
-{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}
-JSON
+'C:\Users\u\.jevlin\bin\jevlin.exe' fetch -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<< '{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}'
 -- fence powershell
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 @'
@@ -136,9 +132,7 @@ Bash(C:\Users\u\.jevlin\bin\jevlin.exe fetch -config "C:\\Users\\u\\.jevlin\\jev
 
 == claude: bridge prefix its lineage adapter writes
 -- skill search block (posix)
-JEVLIN_TRACE_BRIDGE=<BRIDGE> 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<'JSON'
-{"version":1,"query":"exact query text"}
-JSON
+JEVLIN_TRACE_BRIDGE=<BRIDGE> 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<< '{"version":1,"query":"exact query text"}'
 -- stdin command (posix)
 JEVLIN_TRACE_BRIDGE=<BRIDGE> 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin
 -- skill search block (powershell)

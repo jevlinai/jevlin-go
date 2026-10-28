@@ -197,6 +197,33 @@ func stdinBlockForShell(sh shellKind, cmd, body, what string) (lang, script stri
 	}
 }
 
+// oneLineSearchBlock and oneLineFetchBlock render the POSIX call as a single
+// line, the request in a single-quoted here-string:
+//
+//	'<bin>' search -config '<cfg>' --stdin <<< '<request>'
+//
+// Claude Code matches a Bash command against its allow rules as one command
+// line, and does not match a multi-line heredoc against a rule for its
+// prefix, so the heredoc form is asked about on every search. A here-string
+// is bash and zsh, which is what its Bash tool runs, and is not POSIX sh.
+// A single-quoted word cannot hold a bare quote: posixQuoteArg writes each
+// as '\” , and the request must have no raw newline.
+func oneLineSearchBlock(e binEntry, body string) (lang, script string, err error) {
+	cmd, err := e.stdinCommandForShell(shellPOSIX)
+	if err != nil {
+		return "", "", err
+	}
+	return "bash", cmd + " <<< " + posixQuoteArg(body), nil
+}
+
+func oneLineFetchBlock(e binEntry, body string) (lang, script string, err error) {
+	cmd, err := e.fetchCommandForShell(shellPOSIX)
+	if err != nil {
+		return "", "", err
+	}
+	return "bash", cmd + " <<< " + posixQuoteArg(body), nil
+}
+
 // hookCommandForShell is the command a host writes into its own config and
 // runs around a search. It is rendered for the host's declared hook RUNNER,
 // which is not always a shell: Hermes splits the string itself and execs it,

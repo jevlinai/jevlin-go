@@ -230,6 +230,9 @@ func TestSkillTeachesReadingAPageInFull(t *testing.T) {
 				shells, _ := toolShellsForSkill(mustTarget(t, id), goos)
 				for _, sh := range shells.kinds {
 					_, script, err := fetchBlockForShell(sh, entry, exampleFetchRequest)
+					if shells.oneLine && sh == shellPOSIX {
+						_, script, err = oneLineFetchBlock(entry, exampleFetchRequest)
+					}
 					if err != nil {
 						t.Fatal(err)
 					}
