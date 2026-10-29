@@ -203,8 +203,8 @@ func TestAgentsInstallWritesClaudeSkillAndMergesHooksIntoSettings(t *testing.T) 
 		t.Error("a key reached settings.json")
 	}
 	allow := allowOf(t, m, settings)
-	if len(allow) != 7 || allow[0] != "Bash(git status:*)" {
-		t.Fatalf("the user's own allow rule must come first, then our three spellings of the search and three of the fetch: %v", allow)
+	if len(allow) != 9 || allow[0] != "Bash(git status:*)" {
+		t.Fatalf("the user's own allow rule must come first, then our three spellings of the search and three of the fetch, and the requests folder's Edit and Read rules: %v", allow)
 	}
 	// The config path is absolutized by the host (a drive letter on Windows),
 	// so match around it rather than on it.
@@ -223,6 +223,9 @@ func TestAgentsInstallWritesClaudeSkillAndMergesHooksIntoSettings(t *testing.T) 
 		if !strings.HasPrefix(r, want.prefix) || !strings.HasSuffix(r, want.suffix) {
 			t.Errorf("allow rule %d: %s", i+1, r)
 		}
+	}
+	if allow[7] != "Edit(//home/u/.jevlin/requests/**)" || allow[8] != "Read(//home/u/.jevlin/requests/**)" {
+		t.Errorf("the requests folder's rules: %s, %s", allow[7], allow[8])
 	}
 	for _, r := range allow[1:] {
 		if strings.Contains(r, "hook") || strings.Contains(r, "flush") || strings.Contains(r, "wallet") {
@@ -537,10 +540,11 @@ func TestAgentsHookAndAllowRuleMatchingSurvivesAWindowsStyleBinaryPath(t *testin
 		}
 	}
 	// Three spellings of each prefix rule, the search's and the fetch's, and
-	// still six after a second install: the single-quoted path the skill
-	// renders, and the %q-quoted and bare ones an agent may type instead.
-	if allow := allowOf(t, m, settings); len(allow) != 6 {
-		t.Fatalf("Claude allow rules after two installs: want 6, got %d: %v", len(allow), allow)
+	// the requests folder's Edit and Read rules, and still eight after a
+	// second install: the single-quoted path the skill renders, and the
+	// %q-quoted and bare ones an agent may type instead.
+	if allow := allowOf(t, m, settings); len(allow) != 8 {
+		t.Fatalf("Claude allow rules after two installs: want 8, got %d: %v", len(allow), allow)
 	}
 
 	cursorPath := "/home/u/.cursor/hooks.json"

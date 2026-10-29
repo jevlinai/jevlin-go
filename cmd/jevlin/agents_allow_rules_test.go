@@ -225,6 +225,9 @@ func TestAnInstallFromBeforeTheFetchGainsItsAllowRules(t *testing.T) {
 	current := claudeAllowRules(installedEntry(t, ops))
 	var searchOnly, fetchRules []string
 	for _, r := range current {
+		if !strings.HasPrefix(r, "Bash(") {
+			continue // the request folder's rules are the next test's
+		}
 		if strings.Contains(r, " fetch ") {
 			fetchRules = append(fetchRules, r)
 		} else {

@@ -1434,7 +1434,8 @@ func claudeHooks(entry binEntry, sh shellKind) (hooksSpec, error) {
 // one are covered, because a shell that strips the quotes still starts the
 // command with the same binary. Only `search` and `fetch --stdin` are
 // allowed: the hooks run outside the permission system, and nothing else
-// needs to. A fetch is billed per page, but less than a search, and the
+// needs to. The two rules after them are the requests folder's, for a request
+// that cannot ride on the one-line call (claude_requests.go). A fetch is billed per page, but less than a search, and the
 // router serves only pages this account's own searches returned, five at a
 // time, so the rule cannot make it a general fetcher.
 func claudeAllowRules(entry binEntry) []string {
@@ -1457,7 +1458,7 @@ func claudeAllowRules(entry binEntry) []string {
 			fmt.Sprintf("Bash(%q%s%s:*)", entry.command, suffix, tail.after),
 			fmt.Sprintf("Bash(%s%s%s:*)", entry.command, suffix, tail.after))
 	}
-	return rules
+	return append(rules, claudeRequestRules(entry)...)
 }
 
 // ruleIsOurs: does this permissions.allow entry name this binary? Matches
@@ -1478,7 +1479,7 @@ func ruleIsOurs(e any, ref installationRef) bool {
 	// same as a hook entry naming it.
 	inner, ok := strings.CutPrefix(r, "Bash(")
 	if !ok {
-		return false
+		return requestRuleIsOurs(r, ref)
 	}
 	inner, _ = strings.CutSuffix(inner, ")")
 	inner = strings.TrimSuffix(inner, ":*")

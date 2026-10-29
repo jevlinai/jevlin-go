@@ -12,7 +12,7 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
-For Claude Code, the skill now teaches the search and fetch calls as one line, `... --stdin <<< '<request>'`, where it taught a multi-line heredoc before. Claude Code does not match a multi-line command against the permission rules `jevlin agents install` writes for it, so a search the skill itself taught was refused in a headless session, and would be asked about in an interactive one; the one-line form matches them. An apostrophe in the request is written `'\''`, and the skill says so. Run `jevlin agents install` again, or take the next daily update, to refresh the skill; no other host's call changes.
+For Claude Code, the skill now teaches the search and fetch calls as one line, `... --stdin <<< '<request>'`, where it taught a multi-line heredoc before. Claude Code does not match a multi-line command against the permission rules `jevlin agents install` writes for it, so a search the skill itself taught was refused in a headless session, and would be asked about in an interactive one; the one-line form matches them. A request that holds an apostrophe or a `$` cannot ride on that line, so the skill has the agent write it with the Write tool to a file in a `requests` folder beside the config and run the same call with `--stdin < <file>`; `jevlin agents install` adds the two permission rules (`Edit` and `Read`, for that folder) that let it do so without a question. Run `jevlin agents install` again, or take the next daily update, to refresh the skill and the rules; no other host's call changes.
 
 ## v0.6.1 — 2026-10-27
 
