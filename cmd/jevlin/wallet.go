@@ -937,7 +937,15 @@ func resolveChainID(cfgPath, chainIDFlag string, getenv func(string) string) str
 func validateNodeURL(raw string, insecure bool, stderr io.Writer) error {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return fmt.Errorf("-node %q: %w", raw, err)
+		// Not repeated: a URL that does not parse may still hold a
+		// password, and this message is printed.
+		return errors.New("the node URL does not parse")
+	}
+	// A user or password in the URL would go to the node as Basic
+	// authorization on every request, from a value that sits in argv or the
+	// environment; it is refused, and not repeated in the refusal.
+	if u.User != nil {
+		return errors.New("the node URL carries a user name or password; give the node's URL without one")
 	}
 	if u.Scheme == "https" {
 		return nil
