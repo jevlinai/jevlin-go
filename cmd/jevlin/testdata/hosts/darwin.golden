@@ -69,9 +69,7 @@ JSON
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' agents prefer -config '/Users/u/.jevlin/jevlin.toml' <argument>
 -- fence bash
-'/Users/u/.jevlin/bin/jevlin' agents tier -config '/Users/u/.jevlin/jevlin.toml' <tier>
--- fence bash
-'/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' -format model "<query>"
+'/Users/u/.jevlin/bin/jevlin' agents tier -config '/Users/u/.jevlin/jevlin.toml' <words>
 -- prose
 the Write tool to a new file in `/Users/u/.jevlin/requests` (a new name each time), then run it
 -- prose
@@ -138,9 +136,7 @@ JSON
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' agents prefer -config '/Users/u/.jevlin/jevlin.toml' <argument>
 -- fence bash
-'/Users/u/.jevlin/bin/jevlin' agents tier -config '/Users/u/.jevlin/jevlin.toml' <tier>
--- fence bash
-'/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' -format model "<query>"
+'/Users/u/.jevlin/bin/jevlin' agents tier -config '/Users/u/.jevlin/jevlin.toml' <words>
 
 == codex: hooks.json commands, as read back from the file
 -- PreToolUse
@@ -171,9 +167,7 @@ JSON
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' agents prefer -config '/Users/u/.jevlin/jevlin.toml' <argument>
 -- fence bash
-'/Users/u/.jevlin/bin/jevlin' agents tier -config '/Users/u/.jevlin/jevlin.toml' <tier>
--- fence bash
-'/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' -format model "<query>"
+'/Users/u/.jevlin/bin/jevlin' agents tier -config '/Users/u/.jevlin/jevlin.toml' <words>
 
 == cursor: hooks.json commands, as read back from the file
 -- sessionStart
@@ -206,12 +200,6 @@ JSON
 matches the rendered `search` for posix
 -- skill block (bash)
 matches the rendered `fetch` for posix
--- skill block (bash)
-matches the rendered `agents prefer` for posix
--- skill block (bash)
-matches the rendered `agents tier` for posix
--- skill block (bash)
-refused
 -- stdin command alone
 refused
 -- the rendered search plus a second statement
@@ -241,9 +229,7 @@ JSON
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' agents prefer -config '/Users/u/.jevlin/jevlin.toml' <argument>
 -- fence bash
-'/Users/u/.jevlin/bin/jevlin' agents tier -config '/Users/u/.jevlin/jevlin.toml' <tier>
--- fence bash
-'/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' -format model "<query>"
+'/Users/u/.jevlin/bin/jevlin' agents tier -config '/Users/u/.jevlin/jevlin.toml' <words>
 
 == pi: the shell its installed adapter is rendered for
 -- HOST_SHELL
@@ -269,9 +255,7 @@ JSON
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' agents prefer -config '/Users/u/.jevlin/jevlin.toml' <argument>
 -- fence bash
-'/Users/u/.jevlin/bin/jevlin' agents tier -config '/Users/u/.jevlin/jevlin.toml' <tier>
--- fence bash
-'/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' -format model "<query>"
+'/Users/u/.jevlin/bin/jevlin' agents tier -config '/Users/u/.jevlin/jevlin.toml' <words>
 
 == hermes: config.yaml hook command
 -- command

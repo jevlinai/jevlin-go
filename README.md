@@ -29,6 +29,19 @@ jevlin setup
 Install it globally, never with `npx`: setup writes the binary's path into your agents' skills
 and hooks, and npm throws away an `npx` cache or a project's `node_modules`.
 
+### `jevlin: command not found` after `npm install -g`
+
+npm puts a global package's commands in `$(npm prefix -g)/bin`, and some setups (a Node installed
+without a version manager, or a custom prefix) do not have that directory on `PATH`. Add it, then
+open a new shell:
+
+```bash
+export PATH="$(npm prefix -g)/bin:$PATH"
+```
+
+Put that line in your shell's startup file (`~/.zshrc` or `~/.bashrc`) to keep it. On Windows the
+global directory is `npm prefix -g` itself, with no `bin`.
+
 An agent can run this install itself. The marketplaces carry a setup skill, not the search:
 it installs the client and runs `jevlin setup`, which writes the agent's own skill and hooks.
 Without setup there is no search.
@@ -245,7 +258,7 @@ registration or the claim needs attention.
 | `jevlin limits` | This key's spend caps, rate windows and today's spend, read from the router. A claimed key gets 120 searches a minute, 3,000 an hour and 16 at once; an unclaimed one 10, 120 and 2, with $0.10 a day. |
 | `jevlin agents install\|status\|uninstall` | Sets up, reports or removes the skills and hooks of each agent. |
 | `jevlin agents prefer on\|off\|status` | What `/jevlin on\|off\|status` runs: which search is the default. |
-| `jevlin agents tier <tier>\|default\|status` | What `/jevlin tier` runs: the tier every search carries. |
+| `jevlin agents tier <tier> [preset]\|default\|status` | What `/jevlin tier` runs: the tier every search carries, and for `fast` the preset (`economy`, `standard`). |
 | `jevlin connect` | Registers with the search platform, prints the claim link, polls until claimed. |
 | `jevlin login` | Stores a key you already have, read from stdin, for searches without a registration. |
 | `jevlin upgrade` | A native install: the latest release, verified before it runs; `-rollback` swaps back. |

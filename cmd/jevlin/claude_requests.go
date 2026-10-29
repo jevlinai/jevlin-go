@@ -82,6 +82,23 @@ func claudeRequestRules(entry binEntry) []string {
 	return []string{"Edit(" + p + ")", "Read(" + p + ")"}
 }
 
+// claudeSkillRule lets Claude Code read the skill's bundled reference.md
+// without asking: a Read rule for the skill's own folder, nothing above it.
+func claudeSkillRule(skillFile string) string {
+	return "Read(" + claudeRulePath(filepath.Dir(skillFile)) + "/**)"
+}
+
+// skillRuleIsOurs: is this the Read rule for a skills/jevlin folder? A host
+// has one such folder, so the rule is attributed by that name alone.
+func skillRuleIsOurs(r string) bool {
+	inner, ok := strings.CutPrefix(r, "Read(")
+	if !ok {
+		return false
+	}
+	inner, ok = strings.CutSuffix(inner, ")")
+	return ok && strings.HasSuffix(strings.ReplaceAll(inner, `\`, "/"), "/skills/"+agentsName+"/**")
+}
+
 // requestRuleIsOurs: is this an Edit or Read rule for the requests folder
 // of the installation ref names? The folder is the installation's, so a rule
 // for another config's folder is left.
@@ -90,7 +107,13 @@ func requestRuleIsOurs(r string, ref installationRef) bool {
 	// A folder rule names no binary, so it is attributed by the config
 	// alone; the uninstall probe has no binary on purpose, and a rule must
 	// not be taken for the probe's (TestNoHookFileCanEnterTheAttributionPlan).
-	if dir == "" || slices.Contains(ref.bins, uninstallProbeCommand) {
+	if slices.Contains(ref.bins, uninstallProbeCommand) {
+		return false
+	}
+	if skillRuleIsOurs(r) {
+		return true
+	}
+	if dir == "" {
 		return false
 	}
 	want := claudeRulePath(dir) + "/**"

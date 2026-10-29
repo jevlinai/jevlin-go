@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"io"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -58,7 +59,7 @@ func TestEveryAllowRuleNamesAConfigWhenNoneIsWrittenYet(t *testing.T) {
 			continue
 		}
 		if !strings.HasPrefix(r, "Bash(") {
-			ours["folder"]++ // the requests folder's Edit and Read rules
+			ours["folder"]++ // the requests folder's Edit and Read rules, and the skill folder's Read
 			continue
 		}
 		// A search rule ends after its -config; a fetch rule after the
@@ -87,8 +88,8 @@ func TestEveryAllowRuleNamesAConfigWhenNoneIsWrittenYet(t *testing.T) {
 	}
 	// Three spellings each, single-quoted, %q and bare, of the search and
 	// of the fetch.
-	if ours["search"] != 3 || ours["fetch"] != 3 || ours["folder"] != 2 {
-		t.Errorf("rules of ours: %v, want 3 search, 3 fetch and 2 folder", ours)
+	if ours["search"] != 3 || ours["fetch"] != 3 || ours["folder"] != 3 {
+		t.Errorf("rules of ours: %v, want 3 search, 3 fetch and 3 folder", ours)
 	}
 }
 
@@ -147,12 +148,12 @@ func TestRulesAndHooksWithoutAConfigAreReplacedOnInstall(t *testing.T) {
 	}
 	entry, _, _ := resolveEntry(ops, "", envOf(env))
 	allow := allowOf(t, m, claudeSettingsPath)
-	want := append([]string{mine}, claudeAllowRules(entry)...)
+	want := append([]string{mine}, currentClaudeAllow(ops, entry)...)
 	if !sameRuleSet(allow, want) {
 		t.Errorf("allow rules after the install:\n got %q\nwant %q", allow, want)
 	}
 	for _, r := range seeded {
-		if countString(allow, r) != 0 {
+		if countString(allow, r) != 0 && !slices.Contains(want, r) {
 			t.Errorf("a rule without a config survived: %s", r)
 		}
 	}

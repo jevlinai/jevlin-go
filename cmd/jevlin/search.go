@@ -158,7 +158,11 @@ type searchCall struct {
 	// --stdin search sends.
 	MergedLimit *int
 	MaxChars    *int
-	Trace       *traceEnvelope
+	// PageChars caps each page's excerpt. FastSet names the user's fast
+	// preset and rides only with tier "fast".
+	PageChars *int
+	FastSet   string
+	Trace     *traceEnvelope
 }
 
 // searchOutcome is the structured result of running a search. Both
@@ -236,7 +240,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	var view string
 	var objective *string
 	var searchQueries []string
-	var mergedLimit, maxChars *int
+	var mergedLimit, maxChars, pageChars *int
 	if machine {
 		// No positional query in machine mode: two sources for the same
 		// value is how a caller ends up sending one and escaping the
@@ -266,6 +270,8 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		searchQueries = req.searchQueries
 		mergedLimit = req.mergedLimit
 		maxChars = req.maxChars
+		pageChars = req.pageChars
+		mergedLimit, pageChars = agentOutputDefaults(mergedLimit, maxChars, pageChars, searchQueries)
 	} else {
 		query = strings.TrimSpace(strings.Join(fs.Args(), " "))
 		if query == "" {
@@ -388,6 +394,8 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		SearchQueries: searchQueries,
 		MergedLimit:   mergedLimit,
 		MaxChars:      maxChars,
+		PageChars:     pageChars,
+		FastSet:       fastSetFor(ctx, *tier, cfgSource, strings.TrimRight(cfg.Search.RouterURL.String(), "/"), key, getenv),
 		Trace:         trace,
 	})
 	if out.Retried {
@@ -554,6 +562,12 @@ func performSearch(ctx context.Context, now func() time.Time, call searchCall) (
 	}
 	if call.MaxChars != nil {
 		body["max_chars"] = *call.MaxChars
+	}
+	if call.PageChars != nil {
+		body["page_chars"] = *call.PageChars
+	}
+	if call.FastSet != "" {
+		body["fast_set"] = call.FastSet
 	}
 	out = searchOutcome{Traced: call.Trace != nil}
 	if out.Traced {

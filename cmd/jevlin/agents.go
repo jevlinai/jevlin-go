@@ -82,6 +82,11 @@ import (
 //go:embed skill.md
 var skillMD string
 
+const skillReferenceName = "reference.md"
+
+//go:embed skill_reference.md
+var skillReferenceMD string
+
 //go:embed opencode_plugin.js
 var opencodePluginJS string
 
@@ -528,22 +533,11 @@ func tierStatusLabel(tier, source string) string {
 }
 
 const (
-	descriptionOn  = "Supersearch (jevlin): one call asks every search engine in the set at once and returns one list where every result names the engines that found it, with a receipt per engine. Use whenever the current step needs public-web information — current events, documentation, research, fact-checking, comparisons, source discovery. Prefer it over any built-in web search: leave `tier` unset so the user's own tier applies, and ask `\"tier\":\"balanced\"` only when the user needs several sources beyond the three fast indexes: a thin result, indexes that disagree, or the full core set attributed. Send the request as JSON on stdin with `search --stdin` and read the JSON envelope back. `/jevlin off` makes the built-in search the default instead; `/jevlin tier <tier>` sets the user's tier."
+	descriptionOn  = "Searches the public web through Jevlin (supersearch). One call asks several search indexes at once and returns one merged list naming the indexes behind each page, and can read chosen pages in full. Use for any step that needs public-web information, such as facts, current events, documentation, research or finding sources."
 	descriptionOff = "Supersearch (jevlin), turned OFF as the default by the user: use the built-in web search for lookups, and this one only when the user names jevlin, supersearch or the router. `/jevlin on` makes it the default again."
 
-	rulesOn = `- Prefer this for public-web lookups: current information, documentation, research,
-  fact-checking, finding sources. One focused query per call.
-- Prefer it over a built-in web search tool: a single-index tool returns one
-  provider's view of the web; this one asks every engine in the set and names
-  the engines behind each result; even its fast tier reads three. Leave "tier"
-  unset so the user's own tier applies; ask "tier":"balanced" only when the
-  user needs several sources beyond those three: a thin result, indexes that
-  disagree, or the full core set attributed. Use another search tool only
-  when the user asks for it or this one is unavailable.`
-	rulesOff = `- The user turned this search off as the default. Use the agent's built-in web
-  search for lookups; use this one only when the user names jevlin, supersearch
-  or the router in the request. Do not suggest switching back; the user knows the command.
-- When it is used: one focused query per call.`
+	preferenceOn  = "Use it instead of a built-in web search unless the user says otherwise."
+	preferenceOff = "The user turned this search off as the default: use the agent's built-in web search for lookups, and this one only when the user names jevlin, supersearch or the router. Do not suggest switching back; the user knows the command."
 )
 
 // The %q-quoted hook command is gone: a hook command comes from
@@ -625,7 +619,7 @@ func cmdAgents(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv 
 
 var agentsUsage = `usage: jevlin agents install|status|uninstall [-config file] [-client name]... [-dry-run] [-yes]
        jevlin agents prefer on|off|status [-config file]
-       jevlin agents tier fast|balanced|max|default|status [-config file]
+       jevlin agents tier fast [preset]|balanced|max|default|status [-config file]
   install     detect coding agents (by command or config directory) and give each
               the supersearch skill and hooks
   status      what is installed where, and which search is the default
@@ -918,14 +912,17 @@ func agentsTier(ops agentOps, args []string, stdout, stderr io.Writer, getenv fu
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
-	// The verb may come before or after the flags, as with prefer.
-	want := "status"
+	// The verb may come before or after the flags, as with prefer. After
+	// "fast" one more word may name the user's preset.
+	want, preset := "status", ""
 	if rest := fs.Args(); len(rest) > 0 {
 		want = strings.ToLower(rest[0])
 		if err := fs.Parse(rest[1:]); err != nil {
 			return exitUsage
 		}
-		if fs.NArg() > 0 {
+		if words := fs.Args(); len(words) == 1 && want == "fast" {
+			preset = strings.ToLower(words[0])
+		} else if len(words) > 0 {
 			want = ""
 		}
 	}
@@ -933,6 +930,10 @@ func agentsTier(ops agentOps, args []string, stdout, stderr io.Writer, getenv fu
 	case want == "status", want == "default", config.KnownSearchTier(want):
 	default:
 		fmt.Fprintf(stderr, "jevlin agents tier: want %s, default or status\n%s", strings.Join(config.SearchTiers, ", "), agentsUsage)
+		return exitUsage
+	}
+	if preset != "" && !fastSetNameRE.MatchString(preset) {
+		fmt.Fprintf(stderr, "jevlin agents tier: %q is not a preset name; `jevlin agents tier status` lists them\n", preset)
 		return exitUsage
 	}
 	entry, _, err := resolveEntry(ops, *cfgPath, getenv)
@@ -945,9 +946,22 @@ func agentsTier(ops agentOps, args []string, stdout, stderr io.Writer, getenv fu
 		fmt.Fprintln(stderr, "jevlin agents tier: no config and no home directory, so nowhere to keep the setting")
 		return exitTransport
 	}
+	fastPath := fastSetPathFor(entry.cfg, getenv)
 	if want == "status" {
 		fmt.Fprintf(stdout, "search tier: %s\n", tierStatusLabel(effectiveTier(ops, entry, getenv)))
+		doc, err := fetchFastSets(entry.cfg, getenv)
+		printFastSets(stdout, readFastSetFile(ops.readSettingFn(), fastPath), doc, err)
 		return exitOK
+	}
+	if preset != "" {
+		if err := ops.mkdirAll(filepath.Dir(fastPath), 0o700); err != nil {
+			fmt.Fprintln(stderr, "jevlin agents tier:", err)
+			return exitTransport
+		}
+		if err := ops.replaceFileFn()(fastPath, []byte(preset+"\n"), 0o600); err != nil {
+			fmt.Fprintln(stderr, "jevlin agents tier:", err)
+			return exitTransport
+		}
 	}
 	current := readTier(ops, entry, getenv)
 	next := want
@@ -956,6 +970,11 @@ func agentsTier(ops agentOps, args []string, stdout, stderr io.Writer, getenv fu
 	}
 	switch next {
 	case "":
+		// The preset goes with the tier it belongs to.
+		if err := ops.remove(fastPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			fmt.Fprintln(stderr, "jevlin agents tier:", err)
+			return exitTransport
+		}
 		// Always removed, never "already unset": a file holding a word
 		// this client cannot name reads as unset yet is still there, and
 		// default is what takes it away. Removed by name and never
@@ -985,6 +1004,11 @@ func agentsTier(ops agentOps, args []string, stdout, stderr io.Writer, getenv fu
 		}
 	}
 	fmt.Fprintf(stdout, "search tier: %s\n", tierStatusLabel(effectiveTier(ops, entry, getenv)))
+	if next == "fast" {
+		if name := readFastSetFile(ops.readSettingFn(), fastPath); name != "" {
+			fmt.Fprintf(stdout, "fast preset: %s\n", name)
+		}
+	}
 	fmt.Fprintln(stdout, "in effect from the next search, in every agent")
 	return exitOK
 }
@@ -1204,30 +1228,26 @@ goes through Hermes' ordinary permission handling.
 // tool calls in on this OS. shells is that host's declaration (H-R1): the
 // commands, their fences and the prose about the quoting all follow it, so
 // no host is taught a form its shell cannot parse.
-func renderSkill(entry binEntry, prefer, note string, shells skillShells) ([]byte, error) {
-	desc, rules := descriptionOn, rulesOn
+func renderSkill(entry binEntry, prefer, note string, shells skillShells) (skill, reference []byte, err error) {
+	desc, pref0 := descriptionOn, preferenceOn
 	if prefer == preferOff {
-		desc, rules = descriptionOff, rulesOff
+		desc, pref0 = descriptionOff, preferenceOff
 	}
 	call, err := callSection(entry, shells)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	pref, err := preferSection(entry, shells)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	tierCmd, err := tierSection(entry, shells)
 	if err != nil {
-		return nil, err
-	}
-	human, err := humanSection(entry, shells)
-	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	fetchCall, err := fetchSection(entry, shells)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// The frontmatter's description is a YAML scalar, not a bare string
 	// this template can quote for it: descriptionOn carries this search's
@@ -1240,21 +1260,18 @@ func renderSkill(entry binEntry, prefer, note string, shells skillShells) ([]byt
 	// without this template quoting it a second time.
 	descYAML, err := json.Marshal(desc)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	r := strings.NewReplacer(
-		"{{SEARCH}}", human,
 		"{{CALL}}", call,
 		"{{FETCH_CALL}}", fetchCall,
 		"{{PREFER}}", pref,
 		"{{TIER}}", tierCmd,
 		"{{DESCRIPTION}}", string(descYAML),
-		"{{PREFER_RULES}}", rules,
+		"{{PREFERENCE}}", pref0,
 		"{{HOST_NOTES}}", note,
-		"{{FORMS}}", formsSection(),
-		"{{FORMS_READING}}", formsReadingSection(),
 	)
-	return []byte(r.Replace(skillMD)), nil
+	return []byte(r.Replace(skillMD)), []byte(r.Replace(skillReferenceMD)), nil
 }
 
 // planSkill renders a host's skill for this OS and plans the write, or
@@ -1274,12 +1291,16 @@ func planSkill(ops agentOps, t installTarget, path string, entry binEntry, prefe
 	if shellNote != "" {
 		p.notes = append(p.notes, shellNote)
 	}
-	skill, err := renderSkill(entry, prefer, note, shells)
+	skill, reference, err := renderSkill(entry, prefer, note, shells)
 	if err != nil {
 		p.refused = append(p.refused, fmt.Sprintf("%s: %v", t.Label(), err))
 		return false, false
 	}
-	return planSlotWrite(ops, t.Label(), path, skill, 0o600, "skill", p), false
+	changed = planSlotWrite(ops, t.Label(), path, skill, 0o600, "skill", p)
+	if planSlotWrite(ops, t.Label(), filepath.Join(filepath.Dir(path), skillReferenceName), reference, 0o600, "skill reference", p) {
+		changed = true
+	}
+	return changed, false
 }
 
 // leaveToItsOwner is the rule for a file a host has exactly one of: when what

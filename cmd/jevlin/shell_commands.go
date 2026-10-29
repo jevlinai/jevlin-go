@@ -130,12 +130,6 @@ func (e binEntry) fetchCommandForShell(sh shellKind) (string, error) {
 	return renderShellCommand(sh, append(tokens, literalToken("--stdin")))
 }
 
-// searchCommandForShell is the human form's prefix, without a query.
-func (e binEntry) searchCommandForShell(sh shellKind) (string, error) {
-	tokens := append([]cmdToken{pathToken(e.command), literalToken("search")}, e.configTokens()...)
-	return renderShellCommand(sh, append(tokens, literalToken("-format"), literalToken("model")))
-}
-
 // ── the request body, carried in the shell's own grammar ────────────────
 //
 // The body has to reach the binary byte for byte: the query is in it, and a
