@@ -60,7 +60,16 @@ func fetchFastSets(cfgPath string, getenv func(string) string) (fastSetsDoc, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), fastSetsTimeout)
 	defer cancel()
-	endpoint := strings.TrimRight(cfg.Search.RouterURL.String(), "/") + "/v1/fast-sets"
+	client := &http.Client{Timeout: fastSetsTimeout, CheckRedirect: auth.SameOriginRedirects, Transport: loginProbeTransport}
+	return getFastSets(ctx, client, cfg.Search.RouterURL.String(), key)
+}
+
+// getFastSets is the one GET /v1/fast-sets, for `agents tier` and for the
+// search's check that its stored preset is still offered. The client is the
+// caller's, with the redirect policy a request carrying the sr- key needs.
+func getFastSets(ctx context.Context, client *http.Client, routerBase, key string) (fastSetsDoc, error) {
+	var doc fastSetsDoc
+	endpoint := strings.TrimRight(routerBase, "/") + "/v1/fast-sets"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return doc, err
@@ -68,7 +77,7 @@ func fetchFastSets(cfgPath string, getenv func(string) string) (fastSetsDoc, err
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", searchUserAgent+"/"+strings.TrimPrefix(buildVersion(), "v"))
 	req.Header.Set("Authorization", "Bearer "+key)
-	resp, err := (&http.Client{Timeout: fastSetsTimeout, CheckRedirect: auth.SameOriginRedirects, Transport: loginProbeTransport}).Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return doc, err
 	}
@@ -88,6 +97,28 @@ func fetchFastSets(cfgPath string, getenv func(string) string) (fastSetsDoc, err
 		return doc, fmt.Errorf("the router's preset list could not be read")
 	}
 	return doc, nil
+}
+
+// lists: is name one of the presets the router offers? An answer that names
+// none (an empty object, a body of another shape) lists nothing.
+func (d fastSetsDoc) lists(name string) bool {
+	for _, s := range d.Sets {
+		if s.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// names are the presets the router offers that look like names.
+func (d fastSetsDoc) names() []string {
+	var out []string
+	for _, s := range d.Sets {
+		if fastSetNameRE.MatchString(s.Name) {
+			out = append(out, s.Name)
+		}
+	}
+	return out
 }
 
 // printFastSets says which preset is stored and lists what the router
@@ -111,6 +142,9 @@ func printFastSets(stdout io.Writer, stored string, doc fastSetsDoc, err error) 
 		name = doc.Default + " (the router's default)"
 	}
 	fmt.Fprintf(stdout, "fast preset: %s\n", name)
+	if stored != "" && !doc.lists(stored) {
+		fmt.Fprintf(stdout, "  warning: this router does not list %q (it lists %s), so no preset is sent; set one with `jevlin agents tier fast <preset>`\n", stored, strings.Join(doc.names(), ", "))
+	}
 	for _, s := range doc.Sets {
 		if !fastSetNameRE.MatchString(s.Name) {
 			continue

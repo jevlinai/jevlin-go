@@ -18,8 +18,22 @@ import (
 // with answer(sent), after files are written beside the config.
 func servingWith(t *testing.T, files map[string]string, stdin string, answer func(sent map[string]any) []byte) (out string, sent map[string]any) {
 	t.Helper()
+	return servingWithSets(t, realFastSets, files, stdin, answer)
+}
+
+// realFastSets is the body GET /v1/fast-sets answers with.
+const realFastSets = `{"default":"economy","sets":[{"name":"economy","providers":["serper","parallel-fast"],"estimated_cost_micros":1300},{"name":"standard","providers":["exa-lite","serper","parallel-fast"],"estimated_cost_micros":5300}]}`
+
+// servingWithSets is servingWith with the router's answer to the preset
+// list chosen by the test.
+func servingWithSets(t *testing.T, sets string, files map[string]string, stdin string, answer func(sent map[string]any) []byte) (out string, sent map[string]any) {
+	t.Helper()
 	var fr *fakeRouter
-	fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
+	fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/fast-sets" {
+			_, _ = w.Write([]byte(sets))
+			return
+		}
 		// The fake has already read the request body and kept it.
 		fr.mu.Lock()
 		raw := fr.body
@@ -54,6 +68,8 @@ func TestAnAgentSearchSizesWhatTheCallerDidNot(t *testing.T) {
 	}{
 		{"nothing sized", `{"version":1,"query":"q"}`, float64(500), nil, nil},
 		{"the caller's page cap", `{"version":1,"query":"q","page_chars":1200}`, float64(1200), nil, nil},
+		{"the lower bound", `{"version":1,"query":"q","page_chars":200}`, float64(200), nil, nil},
+		{"the upper bound", `{"version":1,"query":"q","page_chars":4000}`, float64(4000), nil, nil},
 		{"rewordings widen the window", `{"version":1,"query":"q","search_queries":["a","b"]}`, float64(500), float64(20), nil},
 		{"the caller's window", `{"version":1,"query":"q","search_queries":["a"],"merged_limit":16}`, float64(500), float64(16), nil},
 		{"a whole-list budget is the caller's choice", `{"version":1,"query":"q","max_chars":3000}`, nil, nil, float64(3000)},
@@ -120,21 +136,54 @@ func TestTheFastPresetRidesOnlyWithTheFastTier(t *testing.T) {
 	}
 }
 
-// An unknown preset is the router's 400 with its own code, and the caller
-// has something to fix.
+// A preset the router listed and then refuses (withdrawn between the list
+// and the search) is the router's 400 with its own code, and the caller has
+// something to fix.
 func TestAnUnknownFastPresetIsFixInput(t *testing.T) {
-	fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
+	var searched bool
+	_, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/fast-sets" {
+			_, _ = w.Write([]byte(realFastSets))
+			return
+		}
+		searched = true
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(`{"error":"unknown fast set; valid: economy, standard","code":"invalid_fast_set"}`))
 	})
-	_ = fr
-	if err := os.WriteFile(filepath.Join(root, "search-fast-set"), []byte("gold\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "search-fast-set"), []byte("economy\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	_, out, _ := runSearchStdin(t, fixedSearchOps(root), map[string]string{"JEVLIN_API_KEY": "k"}, `{"version":1,"query":"q","tier":"fast"}`, "-config", cfg)
 	env := decodeEnvelope(t, out)
-	if env["code"] != "invalid_fast_set" || env["action"] != actionFixInput || env["retryable"] != false {
-		t.Errorf("code %v action %v retryable %v", env["code"], env["action"], env["retryable"])
+	if !searched || env["code"] != "invalid_fast_set" || env["action"] != actionFixInput || env["retryable"] != false {
+		t.Errorf("searched %v code %v action %v retryable %v", searched, env["code"], env["action"], env["retryable"])
+	}
+}
+
+// The router lists presets, and the stored name must be one of them: a typo,
+// a renamed preset or a 200 that is not the list would fail every fast
+// search with a code the agent cannot act on.
+func TestAFastPresetTheRouterDoesNotListIsNotSent(t *testing.T) {
+	raw := readSearchTestdata(t, filepath.Join("router", "merged-view-success.merge-v2.json"))
+	answer := func(map[string]any) []byte { return raw }
+	files := map[string]string{"search-tier": "fast\n", "search-fast-set": "economy\n"}
+	for _, tc := range []struct {
+		name, sets string
+		want       any
+	}{
+		{"listed", realFastSets, "economy"},
+		{"another name is listed", `{"default":"standard","sets":[{"name":"standard"}]}`, nil},
+		{"no sets", `{"default":"economy","sets":[]}`, nil},
+		{"an empty object", `{}`, nil},
+		{"a search body", string(raw), nil},
+		{"not JSON", `<html>ok</html>`, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, sent := servingWithSets(t, tc.sets, files, `{"version":1,"query":"q"}`, answer)
+			if got := sent["fast_set"]; got != tc.want {
+				t.Errorf("fast_set %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

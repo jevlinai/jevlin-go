@@ -99,3 +99,48 @@ func TestTierStatusOnARouterWithoutPresetsSaysSo(t *testing.T) {
 		t.Errorf("%d\n%s", code, out)
 	}
 }
+
+func TestTierFastRefusesANameTheRouterDoesNotList(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(realFastSets)) }))
+	t.Cleanup(srv.Close)
+	cfg := writeTOML(t, "schema = 1\n\n[router]\nurl = \""+srv.URL+"\"\n")
+	m, ops := newFakeMachine("claude")
+	env := map[string]string{"JEVLIN_API_KEY": "k", "JEVLIN_CONFIG": cfg}
+	code, _, errOut := runAgents(t, ops, env, "tier", "-config", cfg, "fast", "econmy")
+	if code != exitUsage || !strings.Contains(errOut, "economy, standard") {
+		t.Errorf("a typo: exit %d\n%s", code, errOut)
+	}
+	for p := range m.files {
+		if strings.HasSuffix(p, "/"+fastSetFile) {
+			t.Errorf("a refused name was stored in %s", p)
+		}
+	}
+	if code, out, errOut := runAgents(t, ops, env, "tier", "-config", cfg, "fast", "standard"); code != exitOK || strings.Contains(out, "warning") {
+		t.Errorf("a listed name: exit %d\n%s%s", code, out, errOut)
+	}
+}
+
+// With nothing to check against, the name is kept and the run says so.
+func TestTierFastKeepsAnUncheckedNameWithAWarning(t *testing.T) {
+	_, ops := newFakeMachine("claude")
+	code, out, _ := runAgents(t, ops, nil, "tier", "-config", testCfg, "fast", "economy")
+	if code != exitOK || !strings.Contains(out, "could not be read, so the name was not checked") {
+		t.Errorf("exit %d\n%s", code, out)
+	}
+}
+
+func TestTierStatusWarnsOfAStoredPresetTheRouterDoesNotList(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(realFastSets)) }))
+	t.Cleanup(srv.Close)
+	cfg := writeTOML(t, "schema = 1\n\n[router]\nurl = \""+srv.URL+"\"\n")
+	_, ops := newFakeMachine("claude")
+	env := map[string]string{"JEVLIN_API_KEY": "k", "JEVLIN_CONFIG": cfg}
+	// Stored while the router could not be asked.
+	if code, _, _ := runAgents(t, ops, nil, "tier", "-config", cfg, "fast", "gold"); code != exitOK {
+		t.Fatal("storing")
+	}
+	_, out, _ := runAgents(t, ops, env, "tier", "-config", cfg, "status")
+	if !strings.Contains(out, `does not list "gold"`) || !strings.Contains(out, "economy, standard") {
+		t.Errorf("no warning:\n%s", out)
+	}
+}

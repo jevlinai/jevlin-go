@@ -29,7 +29,7 @@ hermes    hook established argv
 
 ```bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<'JSON'
-{"version":1,"query":"exact query text"}
+{"version":1,"query":"exact query text","objective":"what you need to find out"}
 JSON
 ```
 
@@ -48,7 +48,7 @@ JSON
 ```powershell
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 @'
-{"version":1,"query":"exact query text"}
+{"version":1,"query":"exact query text","objective":"what you need to find out"}
 '@ | & 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin
 ```
 
@@ -67,18 +67,18 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
 == claude: skill command blocks
 -- fence bash
-'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<< '{"version":1,"query":"exact query text"}'
+'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<< '{"version":1,"query":"exact query text","objective":"what you need to find out"}'
 -- fence powershell
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 @'
-{"version":1,"query":"exact query text"}
+{"version":1,"query":"exact query text","objective":"what you need to find out"}
 '@ | & 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin
 -- fence bash
-'C:\Users\u\.jevlin\bin\jevlin.exe' fetch -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<< '{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}'
+'C:\Users\u\.jevlin\bin\jevlin.exe' fetch -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<< '{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"query":"the fact you need","max_chars":8000}'
 -- fence powershell
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 @'
-{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}
+{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"query":"the fact you need","max_chars":8000}
 '@ | & 'C:\Users\u\.jevlin\bin\jevlin.exe' fetch -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
@@ -138,13 +138,13 @@ Read(//c/Users/u/.jevlin/requests/**)
 
 == claude: bridge prefix its lineage adapter writes
 -- skill search block (posix)
-JEVLIN_TRACE_BRIDGE=<BRIDGE> 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<< '{"version":1,"query":"exact query text"}'
+JEVLIN_TRACE_BRIDGE=<BRIDGE> 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<< '{"version":1,"query":"exact query text","objective":"what you need to find out"}'
 -- stdin command (posix)
 JEVLIN_TRACE_BRIDGE=<BRIDGE> 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin
 -- skill search block (powershell)
 $env:JEVLIN_TRACE_BRIDGE = '<BRIDGE>'; try { $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 @'
-{"version":1,"query":"exact query text"}
+{"version":1,"query":"exact query text","objective":"what you need to find out"}
 '@ | & 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin
 } finally { Remove-Item Env:JEVLIN_TRACE_BRIDGE -ErrorAction SilentlyContinue }
 -- stdin command (powershell)
@@ -155,12 +155,12 @@ $env:JEVLIN_TRACE_BRIDGE = '<BRIDGE>'; try { & 'C:\Users\u\.jevlin\bin\jevlin.ex
 -- fence powershell
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 @'
-{"version":1,"query":"exact query text"}
+{"version":1,"query":"exact query text","objective":"what you need to find out"}
 '@ | & 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin
 -- fence powershell
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 @'
-{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}
+{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"query":"the fact you need","max_chars":8000}
 '@ | & 'C:\Users\u\.jevlin\bin\jevlin.exe' fetch -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin
 -- fence powershell
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
@@ -175,20 +175,20 @@ Codex on windows: which shell runs its hook commands is not established, so noth
 -- fence powershell
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 @'
-{"version":1,"query":"exact query text"}
+{"version":1,"query":"exact query text","objective":"what you need to find out"}
 '@ | & 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<'JSON'
-{"version":1,"query":"exact query text"}
+{"version":1,"query":"exact query text","objective":"what you need to find out"}
 JSON
 -- fence powershell
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 @'
-{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}
+{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"query":"the fact you need","max_chars":8000}
 '@ | & 'C:\Users\u\.jevlin\bin\jevlin.exe' fetch -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' fetch -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<'JSON'
-{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}
+{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"query":"the fact you need","max_chars":8000}
 JSON
 -- fence powershell
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
@@ -247,7 +247,7 @@ const HOST_SHELL = "powershell"
 -- skill search block (powershell)
 $env:JEVLIN_TRACE_BRIDGE = '<BRIDGE>'; try { $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 @'
-{"version":1,"query":"exact query text"}
+{"version":1,"query":"exact query text","objective":"what you need to find out"}
 '@ | & 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin
 } finally { Remove-Item Env:JEVLIN_TRACE_BRIDGE -ErrorAction SilentlyContinue }
 -- stdin command (powershell)
@@ -257,11 +257,11 @@ $env:JEVLIN_TRACE_BRIDGE = '<BRIDGE>'; try { & 'C:\Users\u\.jevlin\bin\jevlin.ex
 == pi: skill command blocks
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<'JSON'
-{"version":1,"query":"exact query text"}
+{"version":1,"query":"exact query text","objective":"what you need to find out"}
 JSON
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' fetch -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<'JSON'
-{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}
+{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"query":"the fact you need","max_chars":8000}
 JSON
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
@@ -275,7 +275,7 @@ const HOST_SHELL = "posix"
 == pi: bridge prefix its lineage adapter writes
 -- skill search block (posix)
 JEVLIN_TRACE_BRIDGE=<BRIDGE> 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<'JSON'
-{"version":1,"query":"exact query text"}
+{"version":1,"query":"exact query text","objective":"what you need to find out"}
 JSON
 -- stdin command (posix)
 JEVLIN_TRACE_BRIDGE=<BRIDGE> 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin
@@ -283,11 +283,11 @@ JEVLIN_TRACE_BRIDGE=<BRIDGE> 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 
 == hermes: skill command blocks
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<'JSON'
-{"version":1,"query":"exact query text"}
+{"version":1,"query":"exact query text","objective":"what you need to find out"}
 JSON
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' fetch -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<'JSON'
-{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}
+{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"query":"the fact you need","max_chars":8000}
 JSON
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
@@ -303,7 +303,7 @@ JSON
 == hermes: bridge prefix its lineage adapter writes
 -- skill search block (posix)
 JEVLIN_TRACE_BRIDGE=<BRIDGE> 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin <<'JSON'
-{"version":1,"query":"exact query text"}
+{"version":1,"query":"exact query text","objective":"what you need to find out"}
 JSON
 -- stdin command (posix)
 JEVLIN_TRACE_BRIDGE=<BRIDGE> 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' --stdin
