@@ -12,6 +12,37 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
+**Run `jevlin setup` after installing this version.** The config is now configuration format 1,
+and a config an earlier version wrote is refused until setup replaces it.
+
+- **Configuration format 1.** `jevlin.toml` begins `schema = 1` and names each endpoint in its
+  own section: `[router] url`, `[platform] url`, `[agents] url`, and `[mining]` with `as_url`,
+  the chain and slot, the payout answer, the directories and the turn end. Each defaults to the
+  compiled Jevlin host. A file without the schema line, or with a key format 1 does not define,
+  stops every command with "this configuration is from an older jevlin; run `jevlin setup`",
+  and is never reinterpreted. `jevlin setup` sets such a file aside as `jevlin.toml.old` and
+  writes format 1 in its place; copy any setting you changed by hand from the old file.
+- **Endpoints are explicit.** `JEVLIN_ROUTER_URL`, `JEVLIN_PLATFORM_URL`,
+  `JEVLIN_AGENTS_API_URL` and `JEVLIN_AS_URL` now apply to every command, not only to setup,
+  under the same rules as the file: https, or http on a loopback host, and no user name or
+  password. The `[[provider]]` block, the proxy's `[proxy]`, `[transport]`, `[log]`,
+  `[observe]` and `[privacy]` sections and every `TOKENDROP_*` variable are gone.
+- **Credentials are sent only to the origin they were issued for.** The stored key goes only to
+  the router and the agents API recorded with it, `JEVLIN_API_KEY` only to the router this run
+  is configured with, and the rewards service's refresh authorization only to the service that
+  issued it; every request, retry and redirect is checked, and a mismatch is refused before
+  anything is sent. A key stored by an earlier `jevlin login` records no router and is now sent
+  nowhere: store it again with `jevlin login`. A rewards authorization from an earlier version
+  records no service either: run `jevlin connect` (or `jevlin enroll`) again. Using a router
+  other than the default prints one line on stderr naming it, on every call that carries a key.
+- **The `provider` command is removed**, with the provider-verification client code behind it.
+  The participant supplies no provider key: the rewards service checks each search with its own
+  credential. `join` no longer suggests a provider step, and `status` no longer asks for a
+  provider binding (`status -json` drops `provider` and `provider_error`).
+- **Smaller changes.** `jevlin enroll -assertion` reads the token without echoing it. Text a
+  server returns in an error is redacted before it is printed. A wallet node URL carrying a user
+  name or password is refused.
+
 ## v0.6.1 — 2026-10-27
 
 The skill every agent reads now says it is supersearch, and the client gains `jevlin fetch

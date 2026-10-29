@@ -133,7 +133,7 @@ install creates if it is not there.
 On macOS and Linux the block is a Codex permission profile named `jevlin`, made the default with
 `default_permissions`. It extends Codex's `:workspace` profile, or a profile of your own that you
 agreed to switch from, with write access to the state directory, plus the intake, sessions and
-spool directories when `[miner] enabled` is set, and network access to the search hosts only:
+spool directories when `as_url` is set, and network access to the search hosts only:
 the router, the authorization server when `as_url` is set, and the platform's agents API. A host
 on this machine's loopback is never listed, because no command in Codex's sandbox can reach it
 and listing it would open every local port; the plan says when a service is on loopback. The
@@ -169,7 +169,7 @@ remove the block between its two markers), and 0.131 to 0.157 has not been tried
 flush and claim resume use it to reach the authorization server; jevlin never uses a proxy that
 is not on this machine for that. A process a search starts contacts only the hosts the profile
 lists, because Codex fails whichever command is running when anything inside the sandbox is
-refused a host. If you change `router_url`, `as_url` or the platform in your config, run
+refused a host. If you change `[router] url`, `as_url` or `[agents] url` in your config, run
 `jevlin agents install` again; `jevlin agents status` says when the profile names other hosts
 than the config does.
 
@@ -246,7 +246,7 @@ loop or piped on, runs as written and carries the per-shell identity. The fetch 
 shows is allowed without a prompt as well, as written, and anything else that fetches is asked
 about. A Codex search carries no assistant text.
 
-With `[miner] turn_end = true`, Codex's `Stop` hook also reports a turn in which a jevlin search was
+With `[mining] turn_end = true`, Codex's `Stop` hook also reports a turn in which a jevlin search was
 served (see [The turn end](reference.md#the-turn-end)). It reads the turn from Codex's own session
 file: what you asked, what the assistant wrote along the way, its final answer, and each tool call by
 name and outcome, never a tool's input or output. A subagent's turn sends nothing of its own. Without

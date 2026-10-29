@@ -7,14 +7,12 @@ participant who opts in. Loaded every session.
 jevlin is **supersearch for coding agents**, one call to every search engine in the set with each result attributed: a **no-daemon** Go CLI a coding agent shells out
 to (`jevlin search …`) plus a lifecycle hook. Between calls nothing runs — no reverse proxy,
 no resident process. Mining is opt-in: for a participant who turns it on, it is the client for
-Twilight MINIS, and it earns by capturing each provider call's **event id**
-(`request_id` for search, `generation_id` for OpenRouter) and submitting it to the Authorization
-Server (AS), which **reconciles against the provider** — the client never self-reports volume. It
-holds participant secrets on the participant's own machine: OAuth refresh tokens + a DPoP key, a
-Twilight payout wallet (BIP39 + signing key), and — only when the Slot's profile is `OPENROUTER_V1`
-(the `provider` command; see `enroll.go`'s `AcceptsOpenRouterProfile`) — an OpenRouter zero-spend
-key. Under the default `SEARCH_ROUTER_V1` profile the participant holds no provider credential at
-all; the AS verifies with its own operator credential.
+Twilight MINIS, and it earns by capturing each served search's **event id** (the router's
+`request_id`) and submitting it to the Authorization Server (AS) under `SEARCH_ROUTER_V1`, which
+**reconciles against the router** — the client never self-reports volume. It holds participant
+secrets on the participant's own machine: the sr- key, OAuth refresh tokens + a DPoP key, and a
+Twilight payout wallet (BIP39 + signing key). The participant holds no provider credential: the
+AS verifies with its own operator credential, and the client never submits `OPENROUTER_V1`.
 
 ## Authority — the protocol is owned upstream, not here
 The AS↔client wire contract, source profiles, and fixture corpus are owned in
@@ -67,10 +65,11 @@ the named tests.
    privacy surface, not a default. The **turn end** (`turn_end.go`, `turn_detail.go`, `turn_hosts.go`, `codex_turn_end.go`) is the only other one: for
    a turn that searched, the user's message, the assistant's visible text, and its final message,
    all under the same scrub and caps, with a skeleton of the turn's other tool calls. It is sent
-   only when the installation set `[miner] turn_end = true`. It MUST stay off by default; MUST
+   only when the installation set `[mining] turn_end = true`. It MUST stay off by default; MUST
    send nothing for a turn in which no search was SERVED (a proposed, refused or failed search is
-   not one — `search` marks the turn after the router answers); MUST go only to a router the
-   config names (`Miner.RouterConfigured`, never the provider upstream standing in); and MUST
+   not one — `search` marks the turn after the router answers); MUST go only to the router this
+   run is configured with (`[router] url`, `JEVLIN_ROUTER_URL`, or the compiled default — there is
+   no fallback to anything else); and MUST
    NEVER carry a tool's input or output. Of a tool call it sends the name, the duration and the
    outcome — `turnStep` has no field for more, and one must not be added. A command is read for
    one purpose, to recognize our own search, and is not kept. Thinking blocks and a subagent's own
@@ -85,13 +84,17 @@ the named tests.
 4. **Secrets never in argv.** stdin or owner-only (0600) files, never a flag. The one documented
    exception is the search *query* (not a credential), called out where it happens.
 5. **Never assemble or call an unadvertised operational URL.** Endpoints come from the discovery document; the
-   AS origin is **configured, not discovered**; service-document endpoints are same-origin checked; an
-   off-origin provider-authorization template is refused unless on the compiled `providerhosts`
-   allowlist. `as_url`, `router_url`, `platform.base_url` and `platform.agents_api_url` are all
-   https-or-loopback, enforced at config load — every search sends the participant's sr- key
-   in `Authorization` to `router_url`, and `connect`/`mining enable` send the platform-issued key
-   to `agents_api_url`, the same cleartext-credential exposure `as_url`'s rule closes.
-   `platform.base_url` carries no credential — nothing is ever dialed there — it is the portal
+   AS origin is **configured, not discovered**; service-document endpoints are same-origin checked.
+   The configuration is format 1 (`pkg/config`): `[router] url`, `[platform] url`, `[agents] url`
+   and `[mining] as_url` default to the compiled Jevlin hosts (`pkg/config/defaults.go`), may be
+   replaced by the file or the `JEVLIN_*_URL` variables, and are all https-or-loopback with no
+   userinfo, enforced at load — every search sends the participant's sr- key to the router, and
+   `connect`/`mining enable` send the platform-issued key to the agents API. A file that is not
+   format 1 is refused, never reinterpreted. **And a secret goes only to the origin it was issued
+   for** (`internal/egress`): every request carrying the sr- key, the platform key, the refresh
+   authorization, a DPoP proof or an enrollment assertion is checked, the first request, each
+   retry and each redirect hop, against the origin that secret is recorded with, and refused
+   before anything is sent. `[platform] url` carries no credential — nothing is ever dialed there — it is the portal
    origin a printed `claim_url` is checked against (invariant 12); the human portal and the machine
    API are separate hosts. The sole exception is the self-updater: `internal/selfupdate`
    contacts only the compiled-in canonical `jevlinai/jevlin-go` GitHub release origin,
@@ -120,23 +123,21 @@ the named tests.
     authority on whether mining is on: `enabled`, `disabled`, `undecided`, `degraded`. Search
     intake, the flush, `connect`, its resume and `status` all read it through `auth.MiningDecision`
     and `miningActive`. `[mining] enabled` in the config is a scripted first answer for onboarding,
-    never a switch; `[miner] enabled` says only that intake is configured; `as_url` being non-empty
-    is what says an AS exists (`miningASConfigured`). An unreadable or unsafe decision is DEGRADED
+    never a switch; `as_url` being non-empty is what says an AS exists (`miningASConfigured`), and
+    with it intake is configured (`Miner.Enabled`). An unreadable or unsafe decision is DEGRADED
     and stops mining.
 11. **A claim or console URL is printed, never opened.** `connect.go` and `mining.go` import no
     `os/exec`. Structural, and tested.
-12. **`platform.base_url` is compared against, never dialed.** It is the origin a platform-supplied
+12. **`[platform] url` is compared against, never dialed.** It is the origin a platform-supplied
     URL must match (`validatePlatformURL`): every byte printable ASCII, no user before the host,
     and the URL must read back as exactly the text given, so what is checked is all of what is
-    printed. A retired portal origin also matches its one compiled successor
-    (`retiredPortalSuccessors`: `platform.nyks.dev` → `platform.jevlin.ai`), because setup never
-    rewrites an existing config and the platform issues links on the new host; nothing else
-    widens. Every request goes to `agents_api_url`. The claim link lives in `claim.json` beside
+    printed, and its origin must be the portal's own exactly; nothing widens it. Every request goes
+    to the agents API. The claim link lives in `claim.json` beside
     `credentials.json` (`auth.ClaimRecord`), bound to its agent and written only from the
     platform's answer or the registration journal beside it: by a foreground run, or by a resume
     finishing that journal (which, in a sandbox, cannot write there and leaves it to the next
     foreground run), never in the sandbox-writable `agent.json`; it is checked again before it is printed
-    (`platform.ValidateStoredClaimURL`), because `platform.base_url` may have changed since.
+    (`platform.ValidateStoredClaimURL`), because `[platform] url` may have changed since.
 13. **Registration is one journaled transaction.** A complete `register` response is journaled
     (`registration_pending.json`) before `agent.json` or the credential is written, and finished
     from the journal on the next run, never by a second `register`. The journal is consulted before
@@ -694,21 +695,26 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `http.ProxyFromEnvironment`. `pkg/auth/proxy_test.go` drives the package's own transports
   through an `httptest` CONNECT proxy on loopback, counting tunnels, and the non-loopback cases
   without a dial.
-- **Where the stored key may go** — `cmd/jevlin/credentials.go` owns it (`keyService`,
-  `resolveAPIKey`, `platformKey`): the key in `credentials.json` is sent only to the router and
-  the agents API origins it records, which connect publishes from the registration journal
-  (`keyBindingOf` when the journal is saved, never a provider upstream standing in, and a
-  connect under another agents API than the journal's is refused) and fills in for an older
-  file only on a foreground run under the installation's own config (`recordKeyBinding`: a
-  recorded origin never changes); a file without them belongs to the installation's own config
-  (`installationConfigPath`), never to a `-config` naming another file. search, limits, the
-  turn end and fetch hold `JEVLIN_API_KEY` to the installation's router the same way
-  (`envKeyRefusedFor`). Every
+- **Where a secret may go** — `internal/egress` owns the rule: `Check` compares a request's
+  origin with the origin the secret is recorded with, and `Do` (a request this client builds) and
+  `Transport` (a client a library drives: x/oauth2, the DPoP transport) put it under every
+  redirect hop and retry. `cmd/jevlin/credentials.go` owns what each key is recorded with
+  (`resolveAPIKey`, `platformKey`): the key in `credentials.json` goes only to the router and the
+  agents API origins it records — `login` records the router it verified against, `connect` both,
+  from the registration journal (`keyBindingOf`) — and a file that records no origin is sent
+  nowhere (`errUnboundRouterKey`: run `jevlin login`; `errUnboundPlatformKey`: run `jevlin
+  connect`); nothing is inferred from the current configuration. `JEVLIN_API_KEY` goes only to the
+  router this run is configured with, and every call to a non-default router says so on stderr
+  (`noteNonDefaultOrigin`). `pkg/auth/store.go`'s `RefreshAuthorization` records the AS that
+  issued the refresh token, and `OAuthClient` refuses a refresh or revocation against another
+  (`storedAuthorization`); a raw token with no AS is `ErrUnboundRefreshAuthorization`.
+  `pkg/platform`'s `Key` carries the agents API origin with the key. `internal/egress/egress_test.go`,
+  `pkg/auth/as_binding_test.go`, `key_binding_test.go` and `egress_matrix_test.go` hold each sender
+  to zero connections for another origin, and `egress_coverage_test.go` fails on an
+  `Authorization` or `DPoP` header set anywhere the guard has not been classified. Every
   Claude Code allow rule names a config, because `resolveEntry` always resolves one and
   `loadConfig` reads the installation's unwritten default path as defaults
-  (`unwrittenDefaultConfig`); `binEntry.implicit` lets an install replace what an earlier
-  version rendered without one. `key_binding_test.go` holds each sender to zero connections
-  for another origin. For participants:
+  (`unwrittenDefaultConfig`). For participants:
   [reference, Credentials](docs/reference.md#credentials).
 - **The search protocol** — `search.go` owns the request and the fail-open intake;
   `search_protocol.go` owns the deadline, the bounded read and the one retry with the two codes
@@ -790,8 +796,9 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   record and the claim record) moves whole or not at all, and a destination
   identity is a typed conflict that stops setup non-zero before anything moves and before
   connect runs (`TestSetupStopsOnAnIdentityConflictBeforeConnect`). `setup_config.go` owns TOML quoting and
-  the migration policy (parse first; `[miner]` present → byte-identical; otherwise append
-  only the missing tables and parse again). `setup_env.go` owns the one-well-formed-block
+  the config policy: no file → a fresh format-1 file; a format-1 file that loads → byte-identical;
+  an older file (`config.ErrLegacyConfig`) → set aside as `jevlin.toml.old` and a fresh file
+  written, never migrated; anything else → refused. `setup_env.go` owns the one-well-formed-block
   profile rule and the Windows `setup-env.json` delta journal, over backends in
   `setup_env_unix.go` and `setup_env_windows.go`; `setup_targets.go` owns `-with`, which
   reaches every target kind. `setup_test.go` drives setup in-process against a sandbox

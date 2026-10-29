@@ -156,7 +156,7 @@ agent was doing when it asked:
 | `window`, `seq` | Which context window of the session, after compactions, and a call counter. |
 | `history` | The assistant text just before the search, scrubbed of secrets, last 32 KiB. Codex and Hermes send none. |
 
-With `[miner] turn_end = true`, the agent's end-of-turn hook also sends what the turn
+With `[mining] turn_end = true`, the agent's end-of-turn hook also sends what the turn
 concluded: the final message, what you asked, the sequence of tools called with name, duration
 and outcome (never a tool's input or output), the model and the token counts. Only for turns
 in which a search was served.
@@ -232,7 +232,7 @@ with jevlin goes through that one skill.
 | `/jevlin on` | This search is the default again. |
 | `/jevlin status` | Which of the two is the default right now. |
 | `/jevlin tier fast\|balanced\|max` | Sets the tier every search carries unless a request names one. |
-| `/jevlin tier default` | Unsets it; `[miner] tier` in your config applies if set, else the router's default for your key. |
+| `/jevlin tier default` | Unsets it; `[router] tier` in your config applies if set, else the router's default for your key. |
 | `/jevlin tier` | The tier in force. |
 
 The settings are yours: the skill tells the agent never to change the default or the tier on
@@ -262,7 +262,7 @@ says it is not earning.
 | `jevlin uninstall` | Removes what setup wrote; `-binary` and `-purge-state` go further. |
 | `jevlin version`, `jevlin help` | The version, and the full usage text. |
 
-`login`, `enroll`, `payout`, `join` and `provider` are the portal's older manual path. A
+`login`, `enroll`, `payout` and `join` are the portal's older manual path. A
 command that reads the config takes `-config <file>`; `setup`, `upgrade` and `uninstall` take
 `-home <dir>` instead, the installation. The [reference](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#commands) has every flag.
 

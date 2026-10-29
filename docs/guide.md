@@ -242,11 +242,16 @@ The client trusts its RPC node; see the [node settings](reference.md#wallet).
 ## The older manual path
 
 The portal's older commands, `enroll`, `login`, `join`, `wallet register` and `payout set`,
-still work beside `connect`. `provider` belongs to that path and applies only on a Slot whose
-profile is `OPENROUTER_V1`; on the default profile you supply no provider key. `jevlin help`
-describes each.
+still work beside `connect`. You supply no provider key on any of them: the rewards service checks
+each search with its own credential. `jevlin help` describes each.
 
 ## Upgrading
+
+**From 0.6 or earlier, run `jevlin setup` after installing.** This version reads configuration
+format 1 only. An older `jevlin.toml` is refused with "this configuration is from an older
+jevlin; run `jevlin setup`", and setup sets it aside as `jevlin.toml.old` and writes the new
+format in its place. If you stored your key with `jevlin login` before, store it again: a key is
+now recorded with the router it was issued for, and one recorded with none is sent nowhere.
 
 Once a day, when an agent session starts or ends, jevlin checks the project's GitHub releases
 for a newer one, and a native install replaces its own binary with it, the same careful way
