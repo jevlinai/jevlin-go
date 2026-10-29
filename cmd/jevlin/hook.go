@@ -513,7 +513,7 @@ func hookLineage(ops hookOps, hc hookContext, payload []byte, stdout io.Writer) 
 			return
 		}
 		bridgeShell = sh
-		if f := recognizeClaudeForm(command, ops.executable, hc.cfgPath, []shellKind{bridgeShell}); f != nil {
+		if f := recognizeClaudeForm(command, ops.executable, hc.cfgPath, []shellKind{bridgeShell}, ops.readFile); f != nil {
 			ours = len(f.path) == 1 && f.path[0] == "search"
 		}
 	} else if _, exists := p.ToolInput["trace_bridge"]; exists {
@@ -638,7 +638,7 @@ func hookLineage(ops hookOps, hc hookContext, payload []byte, stdout io.Writer) 
 // both wherever the rules are not read. It reports whether it answered.
 func allowRenderedFetch(ops hookOps, hc hookContext, toolName, command string, stdout io.Writer) bool {
 	sh, known := bridgeShellForTool(toolName)
-	if !known || !isFetchForm(recognizeClaudeForm(command, ops.executable, hc.cfgPath, []shellKind{sh})) {
+	if !known || !isFetchForm(recognizeClaudeForm(command, ops.executable, hc.cfgPath, []shellKind{sh}, ops.readFile)) {
 		return false
 	}
 	out, err := json.Marshal(map[string]any{"hookSpecificOutput": map[string]any{

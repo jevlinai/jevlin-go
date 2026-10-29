@@ -69,6 +69,8 @@ type renderedFormMatch struct {
 	cfg       string
 	body      string
 	wantsBody bool
+	// file: body is the path of a request file, not the request.
+	file bool
 }
 
 // matchedRenderedForms is the grammar half of the recognizer: every form this
@@ -129,6 +131,7 @@ func matchedRenderedFormsIn(command, cfg string, shells []shellKind, oneLine boo
 				cfg:       cfgPath,
 				body:      got.body,
 				wantsBody: candidate.wantsBody,
+				file:      candidate.fileBody,
 			})
 		}
 	}
@@ -141,16 +144,19 @@ func matchedRenderedFormsIn(command, cfg string, shells []shellKind, oneLine boo
 // is the config this hook was started with — the same one the skill's command
 // names, because one install wrote both.
 func recognizeRenderedForm(command string, executable func() (string, error), cfg string, shells []shellKind) *recognizedForm {
-	return recognizeRenderedFormIn(command, executable, cfg, shells, false)
+	return recognizeRenderedFormIn(command, executable, cfg, shells, false, nil)
 }
 
 // recognizeClaudeForm is recognizeRenderedForm for Claude Code, whose Bash
 // tool is taught the one-line call.
-func recognizeClaudeForm(command string, executable func() (string, error), cfg string, shells []shellKind) *recognizedForm {
-	return recognizeRenderedFormIn(command, executable, cfg, shells, true)
+//
+// readFile reads a request file for the file form; nil recognizes no file
+// form.
+func recognizeClaudeForm(command string, executable func() (string, error), cfg string, shells []shellKind, readFile func(string) ([]byte, error)) *recognizedForm {
+	return recognizeRenderedFormIn(command, executable, cfg, shells, true, readFile)
 }
 
-func recognizeRenderedFormIn(command string, executable func() (string, error), cfg string, shells []shellKind, oneLine bool) *recognizedForm {
+func recognizeRenderedFormIn(command string, executable func() (string, error), cfg string, shells []shellKind, oneLine bool, readFile func(string) ([]byte, error)) *recognizedForm {
 	if executable == nil {
 		return nil
 	}
@@ -171,6 +177,13 @@ func recognizeRenderedFormIn(command string, executable func() (string, error), 
 			continue
 		}
 		if m.wantsBody {
+			if m.file {
+				body, ok := requestFileBody(m.body, cfg, readFile)
+				if !ok {
+					continue
+				}
+				m.body = body
+			}
 			if !isOneVersionOneRequest(m.body) {
 				continue
 			}
@@ -191,6 +204,8 @@ type renderedCommand struct {
 	wantsBody bool
 	// quotedBody: the body is a single-quoted POSIX word, not raw text.
 	quotedBody bool
+	// fileBody: that word names a request file, read from standard input.
+	fileBody bool
 }
 
 // binPlaceholder and cfgPlaceholder mark the two paths inside a rendered
@@ -265,9 +280,11 @@ func renderedOneLineForms(cfg string) []renderedCommand {
 	var out []renderedCommand
 	if cmd, err := entry.stdinCommandForShell(shellPOSIX); err == nil {
 		out = append(out, renderedCommand{text: placeholders.Replace(cmd) + " <<< " + bodyPlaceholder, path: []string{"search"}, wantsBody: true, quotedBody: true})
+		out = append(out, renderedCommand{text: placeholders.Replace(cmd) + " < " + bodyPlaceholder, path: []string{"search"}, wantsBody: true, quotedBody: true, fileBody: true})
 	}
 	if cmd, err := entry.fetchCommandForShell(shellPOSIX); err == nil {
 		out = append(out, renderedCommand{text: placeholders.Replace(cmd) + " <<< " + bodyPlaceholder, path: []string{"fetch"}, wantsBody: true, quotedBody: true})
+		out = append(out, renderedCommand{text: placeholders.Replace(cmd) + " < " + bodyPlaceholder, path: []string{"fetch"}, wantsBody: true, quotedBody: true, fileBody: true})
 	}
 	return out
 }

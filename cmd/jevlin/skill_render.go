@@ -215,7 +215,7 @@ func callSection(entry binEntry, shells skillShells) (string, error) {
 			}
 			note := quotingNote(sh)
 			if shells.oneLine && sh == shellPOSIX {
-				note = oneLineQuotingNote
+				note = oneLineQuotingNote(entry)
 			}
 			if sh == shellPowerShell && shells.choice == chosenByParticipant && slices.Contains(shells.kinds, shellPOSIX) {
 				note += apostropheNote
@@ -239,6 +239,9 @@ func fetchSection(entry binEntry, shells skillShells) (string, error) {
 		}
 		if err != nil {
 			return "", err
+		}
+		if shells.oneLine && sh == shellPOSIX {
+			return fenced(lang, script) + oneLineFetchNote(entry), nil
 		}
 		return fenced(lang, script), nil
 	})
@@ -266,13 +269,31 @@ when you substitute your own query.`
 }
 
 // oneLineQuotingNote replaces the heredoc's note where the call is one line.
-const oneLineQuotingNote = `
+// A request holding a quote or a dollar sign cannot ride on that line (Claude
+// Code refuses the command), and writing them as JSON escapes was decoded
+// back by the model before it sent the call, so it goes through a file the
+// agent writes in the installation's requests folder (claude_requests.go).
+func oneLineQuotingNote(entry binEntry) string {
+	note := `
 The request is one single-quoted word after ` + "`<<<`" + `, so the call stays on one
-line: keep the quotes and the single line, and write a newline in a string as
-` + "`\\n`" + `. Before you send it, replace every ` + "`'`" + ` in the request with ` + "`\\u0027`" + ` and every
-` + "`$`" + ` with ` + "`\\u0024`" + `, JSON escapes the client decodes
-(` + "`\"what\\u0027s new in Go\"`" + `). A bare one fails the call. Never pipe or
-redirect the call's output; read the envelope as it comes back.`
+line.`
+	if dir := requestsDirFor(entry.cfg); dir != "" {
+		file := posixQuoteArg(requestFilePath(dir, "q-4821.json"))
+		note += ` A request holding a ` + "`'`" + ` or a ` + "`$`" + ` cannot go on that line: write it with
+the Write tool to a new file in ` + "`" + dir + "`" + ` (a new name each time), then run it
+with ` + "`--stdin < " + file + "`" + ` instead of ` + "`--stdin <<< '…'`" + `.`
+	}
+	return note + ` Never pipe or redirect the call's output.`
+}
+
+// oneLineFetchNote follows the one-line fetch where there is a requests
+// folder: a request holding a quote or a dollar sign goes the same way.
+func oneLineFetchNote(entry binEntry) string {
+	if requestsDirFor(entry.cfg) == "" {
+		return ""
+	}
+	return "\nA fetch holding a `'` or a `$` uses a request file too.\n"
+}
 
 // apostropheNote follows the PowerShell form where a Bash terminal may read
 // it too: Cursor allows that form without asking only when its body holds no

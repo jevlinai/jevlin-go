@@ -57,6 +57,10 @@ func TestEveryAllowRuleNamesAConfigWhenNoneIsWrittenYet(t *testing.T) {
 		if !ruleIsOurs(r, refFor(entry)) {
 			continue
 		}
+		if !strings.HasPrefix(r, "Bash(") {
+			ours["folder"]++ // the requests folder's Edit and Read rules
+			continue
+		}
 		// A search rule ends after its -config; a fetch rule after the
 		// --stdin that follows it.
 		sub, tail := " search -config ", ":*)"
@@ -83,8 +87,8 @@ func TestEveryAllowRuleNamesAConfigWhenNoneIsWrittenYet(t *testing.T) {
 	}
 	// Three spellings each, single-quoted, %q and bare, of the search and
 	// of the fetch.
-	if ours["search"] != 3 || ours["fetch"] != 3 {
-		t.Errorf("rules of ours: %v, want 3 search and 3 fetch", ours)
+	if ours["search"] != 3 || ours["fetch"] != 3 || ours["folder"] != 2 {
+		t.Errorf("rules of ours: %v, want 3 search, 3 fetch and 2 folder", ours)
 	}
 }
 

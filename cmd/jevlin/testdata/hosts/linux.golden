@@ -72,6 +72,10 @@ JSON
 '/home/u/.jevlin/bin/jevlin' agents tier -config '/home/u/.jevlin/jevlin.toml' <tier>
 -- fence bash
 '/home/u/.jevlin/bin/jevlin' search -config '/home/u/.jevlin/jevlin.toml' -format model "<query>"
+-- prose
+the Write tool to a new file in `/home/u/.jevlin/requests` (a new name each time), then run it
+-- prose
+with `--stdin < '/home/u/.jevlin/requests/q-4821.json'` instead of `--stdin <<< '…'`. Never pipe or redirect the call's output.
 
 == claude: settings.json hook commands, as read back from the file
 -- PreToolUse
@@ -109,6 +113,12 @@ Bash("/home/u/.jevlin/bin/jevlin" fetch -config "/home/u/.jevlin/jevlin.toml" --
 -- rule
 Bash(/home/u/.jevlin/bin/jevlin fetch -config "/home/u/.jevlin/jevlin.toml" --stdin:*)
 "Bash(/home/u/.jevlin/bin/jevlin fetch -config \"/home/u/.jevlin/jevlin.toml\" --stdin:*)"
+-- rule
+Edit(//home/u/.jevlin/requests/**)
+"Edit(//home/u/.jevlin/requests/**)"
+-- rule
+Read(//home/u/.jevlin/requests/**)
+"Read(//home/u/.jevlin/requests/**)"
 
 == claude: bridge prefix its lineage adapter writes
 -- skill search block (posix)

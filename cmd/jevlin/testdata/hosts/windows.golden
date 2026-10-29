@@ -92,6 +92,10 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
 -- fence powershell
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
+-- prose
+the Write tool to a new file in `C:\Users\u\.jevlin\requests` (a new name each time), then run it
+-- prose
+with `--stdin < 'C:\Users\u\.jevlin\requests\q-4821.json'` instead of `--stdin <<< '…'`. Never pipe or redirect the call's output.
 
 == claude: settings.json hook commands, as read back from the file
 -- PreToolUse
@@ -129,6 +133,12 @@ Bash("C:\\Users\\u\\.jevlin\\bin\\jevlin.exe" fetch -config "C:\\Users\\u\\.jevl
 -- rule
 Bash(C:\Users\u\.jevlin\bin\jevlin.exe fetch -config "C:\\Users\\u\\.jevlin\\jevlin.toml" --stdin:*)
 "Bash(C:\\Users\\u\\.jevlin\\bin\\jevlin.exe fetch -config \"C:\\\\Users\\\\u\\\\.jevlin\\\\jevlin.toml\" --stdin:*)"
+-- rule
+Edit(//c/Users/u/.jevlin/requests/**)
+"Edit(//c/Users/u/.jevlin/requests/**)"
+-- rule
+Read(//c/Users/u/.jevlin/requests/**)
+"Read(//c/Users/u/.jevlin/requests/**)"
 
 == claude: bridge prefix its lineage adapter writes
 -- skill search block (posix)
