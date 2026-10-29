@@ -172,7 +172,7 @@ func TestMachineInputContractRefusals(t *testing.T) {
 			if got := envField(t, env, "action"); got != actionFixInput {
 				t.Errorf("action %q, want %q", got, actionFixInput)
 			}
-			if errOut != "" {
+			if withoutOriginNotice(errOut) != "" {
 				t.Errorf("an expected protocol error also explained itself on stderr: %q", errOut)
 			}
 			fr.mu.Lock()
@@ -453,7 +453,7 @@ func TestMachineOptionsRefusedBeforeRouterCall(t *testing.T) {
 					t.Errorf("message %q does not contain %q", msg, tc.wantMsgContains)
 				}
 			}
-			if errOut != "" {
+			if withoutOriginNotice(errOut) != "" {
 				t.Errorf("an expected protocol error also explained itself on stderr: %q", errOut)
 			}
 			fr.mu.Lock()
@@ -538,7 +538,7 @@ func TestEveryProcessClassEmitsACompleteEnvelope(t *testing.T) {
 			if env["version"] != float64(machineVersion) || env["command"] != "search" {
 				t.Errorf("header: %s", out)
 			}
-			if errOut != "" {
+			if withoutOriginNotice(errOut) != "" {
 				t.Errorf("machine mode wrote prose to stderr: %q", errOut)
 			}
 		})

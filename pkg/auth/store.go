@@ -227,27 +227,57 @@ func Thumbprint(key *ecdsa.PrivateKey) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(tp), nil
 }
 
-// SaveRefreshToken durably replaces the renewable refresh authorization
-// (rotation makes this a frequent, must-not-torn write): tmp file 0600
-// in the same directory, then atomic rename.
-func (s *Store) SaveRefreshToken(token string) error {
+// RefreshAuthorization is the stored refresh token and the origin of the AS
+// that issued it. The token is sent only to that origin (OAuthClient checks
+// it through egress before any refresh or revocation), so a configuration
+// that names another AS after enrollment reaches nothing with it.
+type RefreshAuthorization struct {
+	V     int    `json:"v"`
+	AS    string `json:"as"`
+	Token string `json:"token"`
+}
+
+const refreshAuthorizationVersion = 1
+
+// ErrUnboundRefreshAuthorization is a refresh.token that does not record the
+// AS that issued it: written by an earlier client, or by something else. It
+// is sent nowhere; enrolling again replaces it.
+var ErrUnboundRefreshAuthorization = errors.New("auth: the stored AS authorization does not record the AS that issued it, " +
+	"so it is sent to none; run jevlin connect (or jevlin enroll) to authorize this installation again")
+
+// SaveRefreshToken durably replaces the renewable refresh authorization,
+// recording asOrigin as its issuer (rotation makes this a frequent,
+// must-not-torn write): tmp file 0600 in the same directory, then atomic
+// rename.
+func (s *Store) SaveRefreshToken(asOrigin, token string) error {
 	if token == "" {
 		return errors.New("auth: refusing to store an empty refresh token")
 	}
-	return fsx.WriteFileAtomic(s.dir, refreshTokenFile, []byte(token), 0o600)
+	if asOrigin == "" {
+		return errors.New("auth: refusing to store a refresh token with no issuing AS")
+	}
+	data, err := json.Marshal(RefreshAuthorization{V: refreshAuthorizationVersion, AS: asOrigin, Token: token})
+	if err != nil {
+		return err
+	}
+	return fsx.WriteFileAtomic(s.dir, refreshTokenFile, data, 0o600)
 }
 
 // LoadRefreshToken returns the stored refresh authorization, or ok=false
-// when none exists yet.
-func (s *Store) LoadRefreshToken() (token string, ok bool, err error) {
+// when none exists yet. One that records no issuing AS is
+// ErrUnboundRefreshAuthorization.
+func (s *Store) LoadRefreshToken() (rec RefreshAuthorization, ok bool, err error) {
 	raw, err := s.readSecret(refreshTokenFile)
 	if errors.Is(err, fs.ErrNotExist) {
-		return "", false, nil
+		return RefreshAuthorization{}, false, nil
 	}
 	if err != nil {
-		return "", false, err
+		return RefreshAuthorization{}, false, err
 	}
-	return string(raw), true, nil
+	if json.Unmarshal(raw, &rec) != nil || rec.V != refreshAuthorizationVersion || rec.AS == "" || rec.Token == "" {
+		return RefreshAuthorization{}, false, ErrUnboundRefreshAuthorization
+	}
+	return rec, true, nil
 }
 
 // DeleteRefreshToken removes the refresh authorization (revocation /

@@ -23,7 +23,7 @@ func TestSearchCredentialSources(t *testing.T) {
 			fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(routerBody)) })
 			path := filepath.Join(root, credentialsFile)
 			if tc.stored != "" {
-				if err := writeCredentials(path, credentials{APIKey: tc.stored}); err != nil {
+				if err := writeCredentials(path, boundCredentials(mustLoadConfig(t, cfg), tc.stored)); err != nil {
 					t.Fatal(err)
 				}
 			}

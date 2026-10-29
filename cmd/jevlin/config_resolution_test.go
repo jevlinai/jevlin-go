@@ -34,7 +34,7 @@ func writeInstallationConfig(t *testing.T, home string) (cfgPath, stateDir strin
 	}
 	stateDir = filepath.Join(home, "state")
 	cfgPath = filepath.Join(home, setupConfigFile)
-	body := fmt.Sprintf("[mining]\nstate_dir = %q\n", stateDir)
+	body := fmt.Sprintf("schema = 1\n[mining]\nstate_dir = %q\n", stateDir)
 	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestConfigResolutionOrderEachStepWinsOverTheNext(t *testing.T) {
 
 	// A jevlin.toml in the working directory is not a step: whoever wrote
 	// the directory would choose where the participant's keys are sent.
-	if err := os.WriteFile(filepath.Join(dir, "jevlin.toml"), []byte("[mining]\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "jevlin.toml"), []byte("schema = 1\n[mining]\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if src := describeConfigSource("", homeEnv); src != installPath {
@@ -314,7 +314,7 @@ func TestConnectStopsWithTheFileNamedWhenTheInstallationConfigCannotBeParsed(t *
 // config, not the planted one, must decide where the sr- key goes.
 func TestLoadConfigIgnoresAPlantedWorkingDirectoryConfig(t *testing.T) {
 	cwd := t.TempDir()
-	planted := "[miner]\nrouter_url = \"https://evil.example\"\n"
+	planted := "schema = 1\n[router]\nurl = \"https://evil.example\"\n"
 	if err := os.WriteFile(filepath.Join(cwd, "jevlin.toml"), []byte(planted), 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -25,9 +25,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jevlinai/jevlin-go/internal/egress"
 	"github.com/jevlinai/jevlin-go/internal/netdial"
 	"github.com/jevlinai/jevlin-go/internal/termtext"
 	"github.com/jevlinai/jevlin-go/pkg/auth"
+	"github.com/jevlinai/jevlin-go/pkg/redact"
 )
 
 const (
@@ -59,6 +61,18 @@ const (
 	CodeAttributionUnavailable = "attribution_unavailable"
 	CodeUnknownSlot            = "unknown_slot"
 )
+
+// Key is the platform-issued key and the agents API origin it was issued
+// by. It is sent only to that origin: every request carrying it goes through
+// egress.Do bound to Origin, so a client configured for another agents API
+// refuses before anything is sent.
+type Key struct {
+	Value  string
+	Origin string
+}
+
+// keySecret names the key in an egress refusal.
+const keySecret = "the platform key"
 
 // ErrAgentNotFound is Status's answer to a 404: an unknown agent, or a
 // key that does not belong to it — the design deliberately gives both
@@ -273,8 +287,7 @@ func isLoopbackHostname(host string) bool {
 // an off-origin URL could point a participant at a page that is not
 // actually this platform's. Absolute HTTPS (or loopback, matching this
 // codebase's http(s)-or-loopback convention elsewhere), origin exactly
-// equal to baseURL's own — or, for a retired portal origin, its compiled
-// successor (retiredPortalSuccessors).
+// equal to baseURL's own.
 //
 // The origin is not the whole of what is printed. url.Parse accepts a space,
 // U+3000 or any other non-ASCII rune in a path, so "<origin>/claim/X
@@ -315,34 +328,17 @@ func validatePlatformURL(raw, baseURL string) error {
 		return fmt.Errorf("platform: configured base URL does not parse: %w", err)
 	}
 	if u.Scheme != base.Scheme || u.Host != base.Host {
-		if retiredPortalSuccessors[base.Scheme+"://"+base.Host] == u.Scheme+"://"+u.Host {
-			return nil
-		}
-		return fmt.Errorf("platform: claim_url origin %s://%s does not match the configured platform.base_url origin %s://%s",
+		return fmt.Errorf("platform: claim_url origin %s://%s does not match the configured platform.url origin %s://%s",
 			u.Scheme, u.Host, base.Scheme, base.Host)
 	}
 	return nil
-}
-
-// retiredPortalSuccessors maps a portal origin the platform no longer
-// issues links on to the one it moved to. setup writes platform.base_url
-// into every installation's config and never rewrites an existing one, so
-// an installation made before a move names the old origin for as long as
-// it exists, while the platform hands it links on the new one. The
-// successor is accepted for exactly its retired origin: both are compiled
-// in and both are the platform's, so what is printed is still never an
-// origin the agents API merely named. Nothing here is dialed (invariant
-// 12), and nothing runs backward — a base on the new origin accepts only
-// its own.
-var retiredPortalSuccessors = map[string]string{
-	"https://platform.nyks.dev": "https://platform.jevlin.ai",
 }
 
 // ValidateStoredClaimURL applies validatePlatformURL to a claim_url read
 // back from local state rather than straight off the wire. agent.json lives
 // in a sandbox-writable state_dir, so the copy there is only as trustworthy
 // as the last thing that wrote the file: it must pass the same check
-// against the configured platform.base_url before it is shown to anyone.
+// against the configured platform.url before it is shown to anyone.
 func ValidateStoredClaimURL(raw, baseURL string) error {
 	return validatePlatformURL(raw, strings.TrimRight(baseURL, "/"))
 }
@@ -396,14 +392,14 @@ func (s *AgentStatus) HasScope(scope string) bool {
 // expired-unclaimed key still authenticates so the client can learn
 // "expired" and stop polling — only a revoked key, or an unknown
 // agent/key pairing, answers 404.
-func (c *Client) Status(ctx context.Context, agentID, key string) (*AgentStatus, error) {
+func (c *Client) Status(ctx context.Context, agentID string, key Key) (*AgentStatus, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.apiBaseURL+"/v1/agents/"+url.PathEscape(agentID), nil)
 	if err != nil {
 		return nil, fmt.Errorf("platform: build status request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Authorization", "Bearer "+key.Value)
 	req.Header.Set("Accept", "application/json")
-	resp, err := c.http.Do(req)
+	resp, err := egress.Do(c.http, req, keySecret, key.Origin)
 	if err != nil {
 		return nil, fmt.Errorf("platform: status request failed: %w", err)
 	}
@@ -540,14 +536,14 @@ type AgentIdentity struct {
 // AGENTS.md/PR-B doc for the design escalation this closes). ErrAgentNotFound
 // on 404 (an unknown or revoked key, same no-oracle answer Status gives);
 // RefusalError otherwise.
-func (c *Client) Me(ctx context.Context, key string) (*AgentIdentity, error) {
+func (c *Client) Me(ctx context.Context, key Key) (*AgentIdentity, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.apiBaseURL+"/v1/agents/me", nil)
 	if err != nil {
 		return nil, fmt.Errorf("platform: build self-lookup request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Authorization", "Bearer "+key.Value)
 	req.Header.Set("Accept", "application/json")
-	resp, err := c.http.Do(req)
+	resp, err := egress.Do(c.http, req, keySecret, key.Origin)
 	if err != nil {
 		return nil, fmt.Errorf("platform: self-lookup request failed: %w", err)
 	}
@@ -627,15 +623,15 @@ type ClaimBootstrap struct {
 // either way, deliberately indistinguishable. The claim_url gets the same
 // origin-lock as register's (invariant 12): a registration link this
 // client will print must point at the configured portal.
-func (c *Client) ClaimCode(ctx context.Context, agentID, key string) (*ClaimBootstrap, error) {
+func (c *Client) ClaimCode(ctx context.Context, agentID string, key Key) (*ClaimBootstrap, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		c.apiBaseURL+"/v1/agents/"+url.PathEscape(agentID)+"/claim-code", nil)
 	if err != nil {
 		return nil, fmt.Errorf("platform: build claim-code request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Authorization", "Bearer "+key.Value)
 	req.Header.Set("Accept", "application/json")
-	resp, err := c.http.Do(req)
+	resp, err := egress.Do(c.http, req, keySecret, key.Origin)
 	if err != nil {
 		return nil, fmt.Errorf("platform: claim-code request failed: %w", err)
 	}
@@ -689,7 +685,7 @@ func (c *Client) ClaimCode(ctx context.Context, agentID, key string) (*ClaimBoot
 // literally: {"token": "…", "slot": "…", "expires_at": "…"}. The two
 // extra fields are not read — the token is handed on whole, and slot is
 // what this client already asked for.
-func (c *Client) Enroll(ctx context.Context, agentID, key, slot string) (string, error) {
+func (c *Client) Enroll(ctx context.Context, agentID string, key Key, slot string) (string, error) {
 	raw, err := json.Marshal(map[string]string{"slot": slot})
 	if err != nil {
 		return "", fmt.Errorf("platform: encode enroll request: %w", err)
@@ -698,10 +694,10 @@ func (c *Client) Enroll(ctx context.Context, agentID, key, slot string) (string,
 	if err != nil {
 		return "", fmt.Errorf("platform: build enroll request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Authorization", "Bearer "+key.Value)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	resp, err := c.http.Do(req)
+	resp, err := egress.Do(c.http, req, keySecret, key.Origin)
 	if err != nil {
 		return "", fmt.Errorf("platform: enroll request failed: %w", err)
 	}
@@ -776,7 +772,10 @@ func refusal(status int, raw []byte) error {
 		// character is no code at all, and such a message is dropped
 		// (the code alone still classifies the refusal).
 		if code != "" && !hasControlChar(code) {
-			msg := env.Error.Message
+			// Server prose is redacted before it can be printed: a
+			// platform that echoed a key it received would otherwise
+			// put it on the participant's terminal or in a CI log.
+			msg := redact.String(env.Error.Message)
 			if hasControlChar(msg) {
 				msg = ""
 			}

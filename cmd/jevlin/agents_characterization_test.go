@@ -451,19 +451,21 @@ func sandboxGoldenConfig(t *testing.T) (cfgPath, home string) {
 		}
 	}
 	doc := fmt.Sprintf(`
+schema = 1
+
+[router]
+url = "https://router.example.invalid"
+
 [mining]
 enabled = true
 as_url = "https://as.example.invalid"
 chain_id = "twilight-1"
 slot_id = 7
-state_dir = %q
-spool_dir = %q
+state_dir = %[1]q
+spool_dir = %[2]q
 
-[miner]
-enabled = true
-router_url = "https://router.example.invalid"
-intake_dir = %q
-sessions_dir = %q
+intake_dir = %[3]q
+sessions_dir = %[4]q
 `, home+"/state", home+"/spool", home+"/intake", home+"/sessions")
 	cfgPath = home + "/jevlin.toml"
 	if err := os.WriteFile(cfgPath, []byte(doc), 0o600); err != nil {

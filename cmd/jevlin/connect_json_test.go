@@ -114,16 +114,12 @@ func connectFixture(t *testing.T, explicitMining string) (cfgPath, stateDir stri
 	// the mutation's red arrive in milliseconds instead of three minutes.
 	platform, _ := countingPlatformStub(t)
 
-	toml := "[mining]\n"
+	toml := "schema = 1\n\n[platform]\nurl = \"" + platform + "\"\n\n[agents]\nurl = \"" + platform + "\"\n\n[mining]\n"
 	if explicitMining != "" {
 		toml += "enabled = " + explicitMining + "\n"
 	}
 	toml += `state_dir = "` + filepath.ToSlash(stateDir) + `"
 spool_dir = "` + filepath.ToSlash(filepath.Join(root, "spool")) + `"
-
-[platform]
-base_url = "` + platform + `"
-agents_api_url = "` + platform + `"
 `
 	if err := os.WriteFile(cfgPath, []byte(toml), 0o600); err != nil {
 		t.Fatal(err)
@@ -383,17 +379,21 @@ func TestConnectJSONRefusesOnACorruptRegistrationBeforeRegistering(t *testing.T)
 	cfgPath := filepath.Join(root, "jevlin.toml")
 	// No explicit mining.enabled, and no credential to block a fresh
 	// registration: exactly the state that could reach Register.
-	toml := `[mining]
-state_dir = "` + filepath.ToSlash(stateDir) + `"
-spool_dir = "` + filepath.ToSlash(filepath.Join(root, "spool")) + `"
+	toml := `schema = 1
 
-[miner]
-router_url = "https://router.fictional.test"
-intake_dir = "` + filepath.ToSlash(filepath.Join(root, "miner", "intake")) + `"
+[router]
+url = "https://router.fictional.test"
 
 [platform]
-base_url = "` + platformURL + `"
-agents_api_url = "` + platformURL + `"
+url = "` + platformURL + `"
+
+[agents]
+url = "` + platformURL + `"
+
+[mining]
+state_dir = "` + filepath.ToSlash(stateDir) + `"
+spool_dir = "` + filepath.ToSlash(filepath.Join(root, "spool")) + `"
+intake_dir = "` + filepath.ToSlash(filepath.Join(root, "miner", "intake")) + `"
 `
 	if err := os.WriteFile(cfgPath, []byte(toml), 0o600); err != nil {
 		t.Fatal(err)
@@ -508,17 +508,21 @@ func TestOrdinaryConnectKeepsItsCorruptRegistrationRecovery(t *testing.T) {
 	minerDir := filepath.Join(root, "miner")
 	platformURL, _ := countingPlatformStub(t)
 	cfgPath := filepath.Join(root, "jevlin.toml")
-	toml := `[mining]
-state_dir = "` + filepath.ToSlash(stateDir) + `"
-spool_dir = "` + filepath.ToSlash(filepath.Join(root, "spool")) + `"
+	toml := `schema = 1
 
-[miner]
-router_url = "https://router.fictional.test"
-intake_dir = "` + filepath.ToSlash(filepath.Join(minerDir, "intake")) + `"
+[router]
+url = "https://router.fictional.test"
 
 [platform]
-base_url = "` + platformURL + `"
-agents_api_url = "` + platformURL + `"
+url = "` + platformURL + `"
+
+[agents]
+url = "` + platformURL + `"
+
+[mining]
+state_dir = "` + filepath.ToSlash(stateDir) + `"
+spool_dir = "` + filepath.ToSlash(filepath.Join(root, "spool")) + `"
+intake_dir = "` + filepath.ToSlash(filepath.Join(minerDir, "intake")) + `"
 `
 	if err := os.WriteFile(cfgPath, []byte(toml), 0o600); err != nil {
 		t.Fatal(err)
@@ -530,7 +534,7 @@ agents_api_url = "` + platformURL + `"
 		t.Fatal(err)
 	}
 	if err := writeCredentials(filepath.Join(minerDir, "credentials.json"),
-		credentials{APIKey: "sr-existing-platform-key"}); err != nil {
+		boundCredentials(mustLoadConfig(t, cfgPath), "sr-existing-platform-key")); err != nil {
 		t.Fatal(err)
 	}
 

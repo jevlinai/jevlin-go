@@ -161,7 +161,7 @@ func TestTheMachineFormDropsAForeignBridgeAndDoesNotTeachIt(t *testing.T) {
 	if tr["harness"] != "cursor" || tr["session_id"] != "cursor-conv" || bytes.Contains(sent, []byte("foreign")) {
 		t.Errorf("machine form: %s", sent)
 	}
-	if strings.Contains(stdout.String(), "JEVLIN") || stderr.Len() != 0 {
+	if strings.Contains(stdout.String(), "JEVLIN") || withoutOriginNotice(stderr.String()) != "" {
 		t.Errorf("the machine form explained the variable to its reader: stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
 }

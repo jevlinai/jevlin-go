@@ -51,7 +51,7 @@ func TestStatusRendersDecisionAndASConfigurationIndependently(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
 			stateDir := filepath.Join(root, "state")
-			body := fmt.Sprintf("[mining]\nstate_dir = %q\n", stateDir)
+			body := fmt.Sprintf("schema = 1\n[mining]\nstate_dir = %q\n", stateDir)
 			if tc.configured {
 				body += "as_url = \"https://as.example\"\nchain_id = \"twilight-1\"\nslot_id = 7\n"
 			}
@@ -92,7 +92,7 @@ func TestSearchUndecidedIsSilentAndDoesNotCapture(t *testing.T) {
 	}
 	h := fixedSearchOps(root)
 	code, _, stderr := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "q")
-	if code != exitOK || stderr != "" {
+	if code != exitOK || withoutOriginNotice(stderr) != "" {
 		t.Fatalf("undecided search = exit %d stderr %q", code, stderr)
 	}
 	if recs, _, err := readIntake(filepath.Join(root, "intake")); err != nil || len(recs) != 0 {
@@ -166,7 +166,7 @@ func TestSearchCaptureHealthMarksAndLaterClearsOnlyCapture(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, _, stderr = runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "q")
-	if code != exitOK || stderr != "" {
+	if code != exitOK || withoutOriginNotice(stderr) != "" {
 		t.Fatalf("recovered capture = exit %d stderr %q", code, stderr)
 	}
 	if _, ok, err := store.LoadHealth(auth.HealthCapture); err != nil || ok {
@@ -268,7 +268,7 @@ func TestSearchPersistedOnOverridesConfigEnabledFalse(t *testing.T) {
 
 	h := fixedSearchOps(root)
 	code, out, stderr := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "q")
-	if code != exitOK || out != routerBody || stderr != "" {
+	if code != exitOK || out != routerBody || withoutOriginNotice(stderr) != "" {
 		t.Fatalf("persisted ON with config false = exit %d out=%q stderr=%q", code, out, stderr)
 	}
 	if recs, _, err := readIntake(filepath.Join(root, "intake")); err != nil || len(recs) != 1 {
@@ -338,14 +338,24 @@ func TestInteractiveConnectDecisionAuthorizesSearchAndFlushWithoutConfigEnabled(
 		t.Fatal(err)
 	}
 	finalBody := strings.Replace(string(final), onboardingAS.srv.URL, miningAS.srv.URL, 1)
-	finalBody += fmt.Sprintf("\n[miner]\nenabled = true\nrouter_url = %q\n", router.srv.URL)
+	finalBody += fmt.Sprintf("\n[router]\nurl = %q\n", router.srv.URL)
 	if err := os.WriteFile(cfgPath, []byte(finalBody), 0o600); err != nil { // #nosec G703 -- cfgPath is test-owned
+		t.Fatal(err)
+	}
+	// The two stubs stand in for one AS, so the authorization the first one
+	// issued is recorded as the second's: a real AS that moved would have
+	// this installation enroll again, which is not what this test is about.
+	rec, _, err := store.LoadRefreshToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveRefreshToken(testOrigin(miningAS.srv.URL), rec.Token); err != nil {
 		t.Fatal(err)
 	}
 
 	h := fixedSearchOps(filepath.Dir(stateDir))
 	code, out, stderr := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfgPath, "q")
-	if code != exitOK || out != routerBody || stderr != "" {
+	if code != exitOK || out != routerBody || withoutOriginNotice(stderr) != "" {
 		t.Fatalf("lifecycle search = exit %d out=%q stderr=%q", code, out, stderr)
 	}
 	if recs, _, err := readIntake(filepath.Join(filepath.Dir(stateDir), "intake")); err != nil || len(recs) != 1 {

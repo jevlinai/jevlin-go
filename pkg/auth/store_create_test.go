@@ -252,7 +252,7 @@ func TestCredentialFilesAreTheFilesTheStoreWritesForCredentials(t *testing.T) {
 	if _, err := s.DPoPKey(); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SaveRefreshToken("t"); err != nil {
+	if err := s.SaveRefreshToken(testASOrigin, "t"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.ParticipationSecret(); err != nil {

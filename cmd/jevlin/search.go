@@ -41,6 +41,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jevlinai/jevlin-go/internal/egress"
 	"github.com/jevlinai/jevlin-go/pkg/auth"
 	"github.com/jevlinai/jevlin-go/pkg/config"
 	"github.com/jevlinai/jevlin-go/pkg/fsx"
@@ -150,7 +151,7 @@ type routerAttempt struct {
 // with one this client chose, not one the caller or the router asked for.
 type searchCall struct {
 	Endpoint     string
-	Key          string
+	Key          routerKey
 	Query        string
 	Tier         string
 	Recency      *string
@@ -222,6 +223,9 @@ func searchMachineRequested(args []string) bool { return hasBoolFlag(args, "stdi
 
 func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
 	machine := searchMachineRequested(args)
+	// The non-default router notice is not a protocol outcome but a line
+	// about where the key goes, and it is said in every mode.
+	notices := stderr
 	// In machine mode everything is in the envelope. An expected protocol
 	// outcome must not also explain itself on stderr: a caller reading
 	// both would get the same failure twice, in two formats, and the one
@@ -318,17 +322,9 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		fmt.Fprintf(stderr, "jevlin: config (%s): %v\n", orDefaults(cfgSource), err)
 		return exitTransport
 	}
-	if cfg.Miner.RouterURL == nil {
-		if machine {
-			return failSearchSetup(stdout, exitTransport, "no_router_configured", actionFixInput,
-				errors.New("no router configured (miner.router_url or a [[provider]] upstream)"))
-		}
-		fmt.Fprintln(stderr, "jevlin: no router configured (miner.router_url or a [[provider]] upstream)")
-		return exitTransport
-	}
 	// The caller's tier wins (the -tier flag, or the stdin request's
 	// "tier"); when neither named one, the participant's own default from
-	// `jevlin agents tier`, then [miner] tier, is sent; when both are
+	// `jevlin agents tier`, then [router] tier, is sent; when both are
 	// unset, the request carries no tier and the router applies the
 	// tenant's default. The agent is told to leave the field alone
 	// (skill.md), so in practice this is the participant's setting unless
@@ -336,24 +332,16 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	if *tier == "" {
 		*tier = searchTierDefault(cfgSource, cfg.Miner, getenv)
 	}
-	key, keySrc, err := resolveAPIKey(getenv, cfg.Miner)
-	if err == nil && keySrc == keyFromEnv {
-		err = envKeyRefusedFor(*cfgPath, cfg, getenv)
-	}
+	key, err := resolveAPIKey(getenv, cfg.Miner)
 	if err != nil {
+		code, exit, action := routerKeyFailure(err)
 		if machine {
-			if keyRefusedForOrigin(err) {
-				return failSearchSetup(stdout, exitUsage, keyOriginCode, actionFixInput, err)
-			}
-			return failSearchSetup(stdout, exitClientErr, "credential_unreadable", actionConnect, err)
+			return failSearchSetup(stdout, exit, code, action, err)
 		}
 		fmt.Fprintln(stderr, "jevlin:", err)
-		if keyRefusedForOrigin(err) {
-			return exitUsage
-		}
-		return exitClientErr
+		return exit
 	}
-	if key == "" {
+	if key.value == "" {
 		if machine {
 			// The value is never named, only its absence. There is
 			// nothing in this envelope to leak.
@@ -364,6 +352,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		return exitClientErr
 	}
 
+	noteNonDefaultOrigin(notices, key.bound, "router", config.DefaultRouterURL, routerChooser(getenv))
 	ctx, cancel := searchDeadline(*timeout)
 	defer cancel()
 
@@ -438,7 +427,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		emitMachine(stdout, env)
 		return code
 	}
-	return renderSearchForHuman(out, *format, keySrc, stdout, stderr)
+	return renderSearchForHuman(out, *format, key.source, stdout, stderr)
 }
 
 // renderSearchForHuman is the terminal path: the router's own bytes for
@@ -610,7 +599,7 @@ func recordSearchForMining(ops searchOps, cfg *config.Config, out searchOutcome,
 
 // searchTierDefault is the band a request carries when the caller named
 // none: the participant's `jevlin agents tier` file beside the config,
-// then [miner] tier, then nothing — and nothing means the router applies
+// then [router] tier, then nothing — and nothing means the router applies
 // the tenant's default, which this client does not guess at.
 func searchTierDefault(cfgSource string, m config.Miner, getenv func(string) string) string {
 	// The path is tierPathFor's and the read readTierSetting's, both the
@@ -839,7 +828,7 @@ func postSearch(ctx context.Context, client *http.Client, call searchCall, body 
 // postRouter POSTs body as JSON to one of the router's endpoints with the
 // participant's key, and reads the answer against searchMaxBody. header,
 // when set, adds what only one endpoint sends.
-func postRouter(ctx context.Context, client *http.Client, endpoint, key string, body map[string]any, header func(*http.Request)) (routerAttempt, error) {
+func postRouter(ctx context.Context, client *http.Client, endpoint string, key routerKey, body map[string]any, header func(*http.Request)) (routerAttempt, error) {
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return routerAttempt{}, err
@@ -851,11 +840,11 @@ func postRouter(ctx context.Context, client *http.Client, endpoint, key string, 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", clientIdentifier())
-	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Authorization", "Bearer "+key.value)
 	if header != nil {
 		header(req)
 	}
-	resp, err := client.Do(req)
+	resp, err := egress.Do(client, req, key.secret, key.bound)
 	if err != nil {
 		return routerAttempt{}, err
 	}

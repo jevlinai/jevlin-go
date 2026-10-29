@@ -394,7 +394,7 @@ func newDriverFixture(t *testing.T, as *fakeAS, pinned *uint64) *driverFixture {
 		t.Fatal(err)
 	}
 	// The enrolled state: a refresh authorization already in custody.
-	if err := store.SaveRefreshToken("rt-0"); err != nil {
+	if err := store.SaveRefreshToken(testOrigin(as.srv.URL), "rt-0"); err != nil {
 		t.Fatal(err)
 	}
 	disc, err := auth.NewDiscoverer(auth.DiscoveryConfig{

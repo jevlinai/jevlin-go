@@ -91,7 +91,7 @@ func TestRefreshNeverSpendsATokenTwice(t *testing.T) {
 	f := newFakeAS(t)
 	f.token = as.handle
 	c := newClient(t, f)
-	if err := c.store.SaveRefreshToken("rt-0"); err != nil {
+	if err := c.store.SaveRefreshToken(c.disc.Origin(), "rt-0"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -140,8 +140,8 @@ func TestRefreshNeverSpendsATokenTwice(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("no refresh token after %d refreshes: ok=%v err=%v", redeemed, ok, err)
 	}
-	if want := fmt.Sprintf("rt-%d", issued); stored != want {
-		t.Errorf("stored refresh token = %q, want the last successor issued (%q)", stored, want)
+	if want := fmt.Sprintf("rt-%d", issued); stored.Token != want {
+		t.Errorf("stored refresh token = %q, want the last successor issued (%q)", stored.Token, want)
 	}
 }
 
@@ -335,7 +335,7 @@ func TestRefreshReleasesLockAfterFailure(t *testing.T) {
 		_, _ = w.Write([]byte(`{"error":"invalid_grant"}`))
 	}
 	c := newClient(t, f)
-	if err := c.store.SaveRefreshToken("rt-doomed"); err != nil {
+	if err := c.store.SaveRefreshToken(c.disc.Origin(), "rt-doomed"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.Refresh(context.Background()); err == nil {
@@ -413,7 +413,7 @@ func TestConcurrentRefreshSpendsOneRotation(t *testing.T) {
 	f := newFakeAS(t)
 	f.token = as.handle
 	c := newClient(t, f)
-	if err := c.store.SaveRefreshToken("rt-0"); err != nil {
+	if err := c.store.SaveRefreshToken(c.disc.Origin(), "rt-0"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -469,7 +469,7 @@ func TestAccessTokenWithNoStatedExpiryIsNotCached(t *testing.T) {
 	f := newFakeAS(t)
 	f.token = as.handle
 	c := newClient(t, f)
-	if err := c.store.SaveRefreshToken("rt-0"); err != nil {
+	if err := c.store.SaveRefreshToken(c.disc.Origin(), "rt-0"); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 3; i++ {
@@ -491,7 +491,7 @@ func TestAccessTokenInsideTheExpiryMarginIsNotServed(t *testing.T) {
 	f := newFakeAS(t)
 	f.token = as.handle
 	c := newClient(t, f)
-	if err := c.store.SaveRefreshToken("rt-0"); err != nil {
+	if err := c.store.SaveRefreshToken(c.disc.Origin(), "rt-0"); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 3; i++ {
@@ -515,7 +515,7 @@ func TestRejectedAccessTokenIsDroppedFromTheCache(t *testing.T) {
 	f := newFakeAS(t)
 	f.token = as.handle
 	c := newClient(t, f)
-	if err := c.store.SaveRefreshToken("rt-0"); err != nil {
+	if err := c.store.SaveRefreshToken(c.disc.Origin(), "rt-0"); err != nil {
 		t.Fatal(err)
 	}
 

@@ -742,7 +742,7 @@ func TestUpgradeAndRollbackCreateTheFlushLock(t *testing.T) {
 			f := newUpgradeFixture(t, newLocalRelease(t, "0.3.1", map[string]string{"0.3.1": "0.3.1\n"}))
 			f.write(selfupdate.PreviousPath(f.exe), "0.2.9")
 			writeFileT(t, filepath.Join(f.home, setupConfigFile),
-				"[miner]\nintake_dir = \""+filepath.ToSlash(filepath.Join(f.home, "intake"))+"\"\n")
+				"schema = 1\n[mining]\nintake_dir = \""+filepath.ToSlash(filepath.Join(f.home, "intake"))+"\"\n")
 			lock := filepath.Join(f.home, "flush.lock")
 			if code, out, errOut := f.run(args...); code != exitOK {
 				t.Fatalf("exit %d\n%s\n%s", code, out, errOut)

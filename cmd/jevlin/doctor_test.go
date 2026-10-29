@@ -586,7 +586,7 @@ func TestTheLocalCustodyStateIsReadFromDisk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveRefreshToken("rt-1"); err != nil {
+	if err := store.SaveRefreshToken("https://as.example", "rt-1"); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.SaveAgentRegistration(auth.AgentRegistration{

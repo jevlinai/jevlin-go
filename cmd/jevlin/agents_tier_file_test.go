@@ -67,9 +67,9 @@ func TestAnUnknownConfigTierIsNamedByStatusAndNotSent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := strings.Replace(string(raw), "[miner]\n", "[miner]\ntier = \"turbo\"\n", 1)
+	body := strings.Replace(string(raw), "[router]\n", "[router]\ntier = \"turbo\"\n", 1)
 	if body == string(raw) {
-		t.Fatalf("precondition: no [miner] table in %q", raw)
+		t.Fatalf("precondition: no [router] table in %q", raw)
 	}
 	if err := os.WriteFile(cfg, []byte(body), 0o600); err != nil { // #nosec G703 -- a path in this test's own temp dir
 		t.Fatal(err)

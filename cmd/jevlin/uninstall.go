@@ -1169,16 +1169,16 @@ func configuredStatePaths(cfg *config.Config) []configuredPath {
 	m, mn := cfg.Mining, cfg.Miner
 	out := []configuredPath{
 		{"mining.state_dir", m.StateDir}, {"mining.spool_dir", m.SpoolDir},
-		{"miner.intake_dir", mn.IntakeDir}, {"miner.sessions_dir", mn.SessionsDir},
+		{"mining.intake_dir", mn.IntakeDir}, {"mining.sessions_dir", mn.SessionsDir},
 		{"the flush stamp in mining.state_dir", flushStampPath(m)},
 	}
 	if mn.IntakeDir != "" {
 		out = append(out,
-			configuredPath{"the stored credentials beside miner.intake_dir", filepath.Join(minerRoot(mn), credentialsFile)},
-			configuredPath{"the registration journal beside miner.intake_dir", filepath.Join(minerRoot(mn), registrationJournalFile)},
-			configuredPath{"the payout record beside miner.intake_dir", filepath.Join(minerRoot(mn), payoutRecordFile)},
-			configuredPath{"the claim record beside miner.intake_dir", filepath.Join(minerRoot(mn), claimRecordFile)},
-			configuredPath{"the flush lock beside miner.intake_dir", flushLockPath(mn)})
+			configuredPath{"the stored credentials beside mining.intake_dir", filepath.Join(minerRoot(mn), credentialsFile)},
+			configuredPath{"the registration journal beside mining.intake_dir", filepath.Join(minerRoot(mn), registrationJournalFile)},
+			configuredPath{"the payout record beside mining.intake_dir", filepath.Join(minerRoot(mn), payoutRecordFile)},
+			configuredPath{"the claim record beside mining.intake_dir", filepath.Join(minerRoot(mn), claimRecordFile)},
+			configuredPath{"the flush lock beside mining.intake_dir", flushLockPath(mn)})
 	}
 	var named []configuredPath
 	for _, c := range out {

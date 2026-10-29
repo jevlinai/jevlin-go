@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/jevlinai/jevlin-go/pkg/mining/scope"
+	"github.com/jevlinai/jevlin-go/pkg/redact"
 )
 
 // ErrProxyBindingMismatch is the capability exchange's refusal when this
@@ -174,14 +175,14 @@ func (c *CapabilityClient) exchange(ctx context.Context, targetEpoch uint64) (*s
 		// first and never reaches here.
 		if out.TwilightError != "" {
 			if out.TwilightError == "PROXY_BINDING_MISMATCH" {
-				return nil, fmt.Errorf("auth: capability refused (%s): %s: %w", out.TwilightError, out.Description, ErrProxyBindingMismatch)
+				return nil, fmt.Errorf("auth: capability refused (%s): %s: %w", out.TwilightError, redact.String(out.Description), ErrProxyBindingMismatch)
 			}
-			return nil, fmt.Errorf("auth: capability refused (%s): %s", out.TwilightError, out.Description)
+			return nil, fmt.Errorf("auth: capability refused (%s): %s", out.TwilightError, redact.String(out.Description))
 		}
 		if resp.StatusCode == http.StatusUnauthorized || out.Error == "invalid_grant" || out.Error == "invalid_token" {
 			c.mining.oauth.InvalidateAccessToken()
 		}
-		return nil, fmt.Errorf("auth: capability refused (%d %s): %s", resp.StatusCode, out.Error, out.Description)
+		return nil, fmt.Errorf("auth: capability refused (%d %s): %s", resp.StatusCode, out.Error, redact.String(out.Description))
 	}
 	if out.AccessToken == "" || out.ExpiresIn <= 0 {
 		return nil, fmt.Errorf("auth: capability response incomplete")

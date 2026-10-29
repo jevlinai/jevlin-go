@@ -253,7 +253,7 @@ func cmdFlush(args []string, stdout, stderr io.Writer, getenv func(string) strin
 		return exitTransport
 	}
 	if !cfg.Miner.Enabled {
-		fmt.Fprintf(stderr, "jevlin flush: [miner] is not enabled in %s; the daemon flushes for itself\n", orDefaults(src))
+		fmt.Fprintf(stderr, "jevlin flush: %s names no [mining] as_url, so nothing is recorded and there is nothing to flush\n", orDefaults(src))
 		return exitUsage
 	}
 

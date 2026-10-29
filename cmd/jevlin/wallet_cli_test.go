@@ -301,8 +301,7 @@ func TestOperatorCommandsHonorJevlinConfigFromTheEnvironment(t *testing.T) {
 	// PAST config resolution is the whole point, so the failure we want is
 	// a network/discovery one, never "no config".
 	cfg := filepath.Join(t.TempDir(), "jevlin.toml")
-	body := "[[provider]]\nname = \"search-router\"\nupstream = \"https://upstream.invalid\"\n\n" +
-		"[mining]\nenabled = true\nas_url = \"https://as.invalid\"\nchain_id = \"c\"\nslot_id = 1\n" +
+	body := "schema = 1\n[mining]\nenabled = true\nas_url = \"https://as.invalid\"\nchain_id = \"c\"\nslot_id = 1\n" +
 		"state_dir = \"" + dir + "\"\n"
 	if err := os.WriteFile(cfg, []byte(body), 0o600); err != nil {
 		t.Fatal(err)

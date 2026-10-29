@@ -64,7 +64,7 @@ func manualEnrollConfig(t *testing.T, asURL string) (cfgPath, stateDir string) {
 	t.Helper()
 	dir := t.TempDir()
 	stateDir = filepath.Join(dir, "state")
-	body := fmt.Sprintf("[mining]\nenabled = true\nas_url = %q\nchain_id = \"twilight-1\"\nslot_id = 7\nstate_dir = %q\n",
+	body := fmt.Sprintf("schema = 1\n[mining]\nenabled = true\nas_url = %q\nchain_id = \"twilight-1\"\nslot_id = 7\nstate_dir = %q\n",
 		asURL, stateDir)
 	return writeTOML(t, body), stateDir
 }
@@ -96,7 +96,7 @@ func TestMiningDisableActsOnARefreshTokenWithNoAgentRegistration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveRefreshToken("rt-legacy"); err != nil {
+	if err := store.SaveRefreshToken(testOrigin(as.srv.URL), "rt-legacy"); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok, _ := store.LoadAgentRegistration(); ok {
@@ -455,13 +455,13 @@ func TestDisablePersistsOffBeforeFailedRevokeAndSearchStaysUnmined(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := string(raw) + fmt.Sprintf("\n[miner]\nenabled = true\nrouter_url = %q\n", router.srv.URL)
+	body := string(raw) + fmt.Sprintf("\n[router]\nurl = %q\n", router.srv.URL)
 	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil { // #nosec G703 -- cfgPath is test-owned
 		t.Fatal(err)
 	}
 	h := fixedSearchOps(filepath.Dir(stateDir))
 	code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfgPath, "q")
-	if code != exitOK || out != routerBody || errOut != "" {
+	if code != exitOK || out != routerBody || withoutOriginNotice(errOut) != "" {
 		t.Fatalf("post-disable search = exit %d out=%q stderr=%q", code, out, errOut)
 	}
 	if recs, _, err := readIntake(filepath.Join(filepath.Dir(stateDir), "intake")); err != nil || len(recs) != 0 {

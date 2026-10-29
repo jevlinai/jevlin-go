@@ -28,7 +28,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jevlinai/jevlin-go/internal/egress"
 	"github.com/jevlinai/jevlin-go/pkg/auth"
+	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
 const limitsTimeout = 30 * time.Second
@@ -79,32 +81,16 @@ func cmdLimits(args []string, stdout, stderr io.Writer, getenv func(string) stri
 		fmt.Fprintf(stderr, "jevlin: config (%s): %v\n", orDefaults(cfgSource), err)
 		return exitTransport
 	}
-	if cfg.Miner.RouterURL == nil {
-		if machine {
-			return failLimits(stdout, exitTransport, "no_router_configured", actionFixInput,
-				errors.New("no router configured (miner.router_url or a [[provider]] upstream)"))
-		}
-		fmt.Fprintln(stderr, "jevlin: no router configured (miner.router_url or a [[provider]] upstream)")
-		return exitTransport
-	}
-	key, keySrc, err := resolveAPIKey(getenv, cfg.Miner)
-	if err == nil && keySrc == keyFromEnv {
-		err = envKeyRefusedFor(*cfgPath, cfg, getenv)
-	}
+	key, err := resolveAPIKey(getenv, cfg.Miner)
 	if err != nil {
+		code, exit, action := routerKeyFailure(err)
 		if machine {
-			if keyRefusedForOrigin(err) {
-				return failLimits(stdout, exitUsage, keyOriginCode, actionFixInput, err)
-			}
-			return failLimits(stdout, exitClientErr, "credential_unreadable", actionConnect, err)
+			return failLimits(stdout, exit, code, action, err)
 		}
 		fmt.Fprintln(stderr, "jevlin:", err)
-		if keyRefusedForOrigin(err) {
-			return exitUsage
-		}
-		return exitClientErr
+		return exit
 	}
-	if key == "" {
+	if key.value == "" {
 		if machine {
 			return failLimits(stdout, exitClientErr, "no_credential", actionConnect,
 				errors.New("this installation holds no search credential; run jevlin connect"))
@@ -124,11 +110,13 @@ func cmdLimits(args []string, stdout, stderr io.Writer, getenv func(string) stri
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", searchUserAgent+"/"+strings.TrimPrefix(buildVersion(), "v"))
-	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Authorization", "Bearer "+key.value)
+	noteNonDefaultOrigin(stderr, key.bound, "router", config.DefaultRouterURL, routerChooser(getenv))
 	// The same client shape as the login probe, for the same reason: this
 	// request carries the sr- key in Authorization, so redirects are
 	// same-origin bounded, never net/http's follow-10 default.
-	resp, err := (&http.Client{Timeout: limitsTimeout, CheckRedirect: auth.SameOriginRedirects, Transport: loginProbeTransport}).Do(req)
+	resp, err := egress.Do(&http.Client{Timeout: limitsTimeout, CheckRedirect: auth.SameOriginRedirects, Transport: loginProbeTransport},
+		req, key.secret, key.bound)
 	if err != nil {
 		if machine {
 			return failLimits(stdout, exitTransport, "transport_error", actionRetry, err)
@@ -164,7 +152,7 @@ func cmdLimits(args []string, stdout, stderr io.Writer, getenv func(string) stri
 			if machine {
 				return failLimits(stdout, exitClientErr, code, actionLogin, errors.New("the router refused the key"))
 			}
-			fmt.Fprintf(stderr, "jevlin: HTTP %d — the router refused the key (from %s); store a valid one with: jevlin login\n", resp.StatusCode, keySrc)
+			fmt.Fprintf(stderr, "jevlin: HTTP %d — the router refused the key (from %s); store a valid one with: jevlin login\n", resp.StatusCode, key.source)
 			return exitClientErr
 		default:
 			if machine {

@@ -413,7 +413,7 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 	}
 	root := updateRoot(cfg.Miner)
 	if root == "" {
-		say("the config names no installation directory (miner.intake_dir); nothing checked")
+		say("the config names no installation directory (mining.intake_dir); nothing checked")
 		return exitOK
 	}
 	exe, err := d.executable()

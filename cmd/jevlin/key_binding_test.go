@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/jevlinai/jevlin-go/internal/egress"
 	"github.com/jevlinai/jevlin-go/pkg/config"
 	platformapi "github.com/jevlinai/jevlin-go/pkg/platform"
 )
@@ -95,7 +96,7 @@ func readStoredKey(t *testing.T, cfgPath string) *credentials {
 
 func origin(t *testing.T, raw string) string {
 	t.Helper()
-	o, err := urlOrigin(raw)
+	o, err := egress.Origin(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,31 +182,38 @@ func TestAnOriginIsSchemeHostAndPort(t *testing.T) {
 	}
 }
 
-// A credentials.json an older client wrote records no router. Its key
-// belongs to the router of the installation's own config, whichever config
-// the command names.
-func TestAKeyRecordingNoRouterBelongsToTheInstallationsConfig(t *testing.T) {
+// A credentials.json that records no router — not written by this client's
+// login or connect, which always record one — is sent to no router at all,
+// the installation's own included, and the refusal says to store the key
+// again with login.
+func TestAStoredKeyThatRecordsNoRouterGoesNowhere(t *testing.T) {
 	own, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(routerBody)) })
-	other, otherConns := countingServer(t, nil)
-	otherCfg := sameStateOtherURL(t, cfg, own.srv.URL, other.URL)
 	storeKey(t, cfg, credentials{})
-	// newFakeRouter's config is <root>/jevlin.toml: the installation's own
-	// config is found by JEVLIN_HOME, as it is on a participant's machine.
 	env := map[string]string{"JEVLIN_HOME": root}
 
-	code, out, _ := runSearchStdin(t, fixedSearchOps(root), env, `{"version":1,"query":"q"}`, "-config", otherCfg)
-	assertOriginRefusal(t, code, out, origin(t, own.srv.URL), origin(t, other.URL), otherCfg, root)
-	if n := otherConns(); n != 0 {
-		t.Fatalf("%d connection(s) reached a router the key does not belong to", n)
+	code, out, _ := runSearchStdin(t, fixedSearchOps(root), env, `{"version":1,"query":"q"}`, "-config", cfg)
+	envl := decodeEnvelope(t, out)
+	if code != exitClientErr || envField(t, envl, "code") != unboundKeyCode || envField(t, envl, "action") != actionLogin {
+		t.Errorf("search: exit %d\n%s", code, out)
 	}
-
-	code, out, _ = runSearchStdin(t, fixedSearchOps(root), env, `{"version":1,"query":"q"}`, "-config", cfg)
-	if code != exitOK {
-		t.Fatalf("the installation's own config: exit %d\n%s", code, out)
+	if !strings.Contains(out, "jevlin login") || strings.Contains(out, boundKey) {
+		t.Errorf("the refusal does not say to log in, or repeats the key:\n%s", out)
 	}
-	// A search reads the binding; only connect writes it.
+	if code, _, errOut := runSearch(t, fixedSearchOps(root), env, "-config", cfg, "q"); code != exitClientErr || !strings.Contains(errOut, "jevlin login") {
+		t.Errorf("the terminal form: exit %d\n%s", code, errOut)
+	}
+	if code, out, _ := runLimits(t, env, "-json", "-config", cfg); code != exitClientErr || !strings.Contains(out, `"code":"`+unboundKeyCode+`"`) {
+		t.Errorf("limits: exit %d\n%s", code, out)
+	}
+	if code, out, _ := runFetchStdin(t, env, `{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}]}`, "-config", cfg); code != exitClientErr || !strings.Contains(out, `"code":"`+unboundKeyCode+`"`) {
+		t.Errorf("fetch: exit %d\n%s", code, out)
+	}
+	if n := own.requests(); n != 0 {
+		t.Fatalf("a key bound to no router was sent %d time(s)", n)
+	}
+	// Nothing infers a binding for it either.
 	if c := readStoredKey(t, cfg); c.Router != "" || c.AgentsAPI != "" {
-		t.Errorf("a search wrote the binding: %+v", c)
+		t.Errorf("a command wrote a binding nobody recorded: %+v", c)
 	}
 }
 
@@ -237,7 +245,7 @@ func keyedConnect(t *testing.T) (platform *stubPlatform, cfg, stateDir string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _ = io.WriteString(f, "\n[miner]\nrouter_url = \""+router.URL+"\"\n")
+	_, _ = io.WriteString(f, "\n[router]\nurl = \""+router.URL+"\"\n")
 	_ = f.Close()
 	if code, out, errOut := runConnect(t, cfg, nil); code != exitOK {
 		t.Fatalf("connect: exit %d\n%s\n%s", code, out, errOut)
@@ -258,45 +266,45 @@ func TestConnectRecordsWhereItsKeyMayGo(t *testing.T) {
 	}
 }
 
-// A key an older connect stored records neither origin. A foreground
-// connect writes down the ones the installation's config names; a detached
-// resume writes nothing.
-func TestAForegroundConnectRecordsAnOlderKeysOrigins(t *testing.T) {
-	_, cfg, _ := keyedConnect(t)
+// A key that records no agents API is sent to none: connect, its resume and
+// mining enable refuse before any request, and say to run connect.
+func TestAKeyThatRecordsNoAgentsAPIIsNotSentToThePlatform(t *testing.T) {
+	platform, cfg, _ := keyedConnect(t)
 	c := readStoredKey(t, cfg)
-	wantRouter, wantAPI := c.Router, c.AgentsAPI
-	strip := func() {
-		if err := writeCredentials(credentialsPath(minerOf(t, cfg)), credentials{APIKey: c.APIKey}); err != nil {
-			t.Fatal(err)
+	c.AgentsAPI = ""
+	if err := writeCredentials(credentialsPath(minerOf(t, cfg)), *c); err != nil {
+		t.Fatal(err)
+	}
+	other, otherConns := countingServer(t, nil)
+	otherCfg := sameStateOtherURL(t, cfg, platform.srv.URL, other.URL)
+	env := installedAs(noEnv, []string{"-config", otherCfg})
+
+	for _, args := range [][]string{{"-config", otherCfg, "-resume"}, {"-config", otherCfg}} {
+		var stdout, stderr bytes.Buffer
+		cmdConnect(args, &bytes.Buffer{}, &stdout, &stderr, env)
+		if !strings.Contains(stderr.String()+stdout.String(), "jevlin connect") {
+			t.Errorf("connect %v did not say what to do:\n%s%s", args, stdout.String(), stderr.String())
 		}
 	}
-
-	strip()
-	if code, _, errOut := runConnect(t, cfg, nil, "-resume"); code != exitOK {
-		t.Fatalf("resume: exit %d\n%s", code, errOut)
+	var stdout, stderr bytes.Buffer
+	if code := cmdMining([]string{"enable", "-config", otherCfg}, &bytes.Buffer{}, &stdout, &stderr, env); code == exitOK {
+		t.Errorf("mining enable: exit 0\n%s", stdout.String())
 	}
-	if got := readStoredKey(t, cfg); got.Router != "" || got.AgentsAPI != "" {
-		t.Errorf("a resume recorded origins: %+v", got)
-	}
-
-	if code, out, errOut := runConnect(t, cfg, nil); code != exitOK {
-		t.Fatalf("connect: exit %d\n%s\n%s", code, out, errOut)
-	}
-	if got := readStoredKey(t, cfg); got.Router != wantRouter || got.AgentsAPI != wantAPI || got.APIKey != c.APIKey {
-		t.Errorf("after a foreground connect: router %q agents API %q; want %q %q, same key", got.Router, got.AgentsAPI, wantRouter, wantAPI)
+	if n := otherConns(); n != 0 {
+		t.Fatalf("%d connection(s) carried a key that records no agents API", n)
 	}
 }
 
-// The provider upstream that stands in for an unset router_url is where a
-// search goes, not a router anybody named, and is never written down.
-func TestAStandInRouterIsNeverRecorded(t *testing.T) {
+// With no router in the configuration, the router connect records is the
+// compiled default: the one the key was issued for.
+func TestConnectRecordsTheDefaultRouterWhenTheConfigNamesNone(t *testing.T) {
 	withShortConnectTimings(t)
 	platform := newStubPlatform(t)
 	cfg, _ := connectConfig(t, platform.srv.URL, "")
 	if code, out, errOut := runConnect(t, cfg, nil); code != exitOK {
 		t.Fatalf("connect: exit %d\n%s\n%s", code, out, errOut)
 	}
-	if c := readStoredKey(t, cfg); c.Router != "" || c.AgentsAPI != origin(t, platform.srv.URL) {
+	if c := readStoredKey(t, cfg); c.Router != origin(t, config.DefaultRouterURL) || c.AgentsAPI != origin(t, platform.srv.URL) {
 		t.Errorf("recorded router %q agents API %q", c.Router, c.AgentsAPI)
 	}
 }
@@ -343,99 +351,28 @@ func TestTheStoredKeyGoesOnlyToTheAgentsAPIItRecords(t *testing.T) {
 	}
 }
 
-// ── what is recorded, and by which run ──────────────────────────────────
+// ── what login records ──────────────────────────────────────────────────
 
-// twoConfigInstallation is an installation registered under its own config
-// (<home>/jevlin.toml, router A), and a second config beside it naming router
-// B over the same state, so the same credentials.json. The key is left as an
-// older client wrote it: no origins.
-func twoConfigInstallation(t *testing.T) (home, own, custom string, a, b *httptest.Server, aConns, bConns func() int64) {
-	t.Helper()
-	withShortConnectTimings(t)
-	platform := newStubPlatform(t)
-	own, _ = connectConfig(t, platform.srv.URL, "")
-	home = filepath.Dir(own)
-	a, aConns = countingServer(t, nil)
-	b, bConns = countingServer(t, nil)
-	f, err := os.OpenFile(own, os.O_APPEND|os.O_WRONLY, 0o600) // #nosec G304 -- this test's own config
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _ = io.WriteString(f, "\n[miner]\nrouter_url = \""+a.URL+"\"\n")
-	_ = f.Close()
-	custom = sameStateOtherURL(t, own, a.URL, b.URL)
-	if code, out, errOut := runConnect(t, own, nil); code != exitOK {
-		t.Fatalf("connect: exit %d\n%s\n%s", code, out, errOut)
-	}
-	c := readStoredKey(t, own)
-	if err := writeCredentials(credentialsPath(minerOf(t, own)), credentials{APIKey: c.APIKey}); err != nil {
-		t.Fatal(err)
-	}
-	return home, own, custom, a, b, aConns, bConns
-}
-
-// A connect run under a config that is not the installation's own writes no
-// origin: what it would write is the installation config's, and once written
-// it would never change. A connect under the config the participant names as
-// the installation's records that config's.
-func TestOnlyTheInstallationsOwnConfigRecordsAnOrigin(t *testing.T) {
-	home, _, custom, _, b, _, bConns := twoConfigInstallation(t)
-	installation := envOf(map[string]string{"JEVLIN_HOME": home})
-
-	var out, errOut bytes.Buffer
-	if code := cmdConnect([]string{"-config", custom}, &bytes.Buffer{}, &out, &errOut, installation); code != exitOK {
-		t.Fatalf("connect -config custom: exit %d\n%s\n%s", code, out.String(), errOut.String())
-	}
-	if c := readStoredKey(t, custom); c.Router != "" || c.AgentsAPI != "" {
-		t.Fatalf("a connect under another config recorded router %q, agents API %q", c.Router, c.AgentsAPI)
-	}
-
-	out.Reset()
-	errOut.Reset()
-	chosen := envOf(map[string]string{"JEVLIN_HOME": home, "JEVLIN_CONFIG": custom})
-	if code := cmdConnect(nil, &bytes.Buffer{}, &out, &errOut, chosen); code != exitOK {
-		t.Fatalf("JEVLIN_CONFIG=custom connect: exit %d\n%s\n%s", code, out.String(), errOut.String())
-	}
-	if c := readStoredKey(t, custom); c.Router != origin(t, b.URL) {
-		t.Fatalf("recorded router %q, want %s", c.Router, origin(t, b.URL))
-	}
-
-	// What is recorded wins: the installation's default config still names
-	// router A, and a search with custom.toml is served by B.
-	code, _, errOutS := runSearch(t, fixedSearchOps(t.TempDir()), map[string]string{"JEVLIN_HOME": home}, "-config", custom, "-no-flush", "q")
-	if code != exitOK || bConns() == 0 {
-		t.Fatalf("search with custom.toml: exit %d, %d connection(s) to its router\n%s", code, bConns(), errOutS)
-	}
-}
-
-// With nothing recorded and no router in the installation's config, the
-// origin the key falls to is a built-in default nobody chose, and the
-// refusal does not present it as the key's.
-func TestARefusalNamesNoRouterTheInstallationNeverChose(t *testing.T) {
-	own, cfg, root := newFakeRouter(t, nil)
-	storeKey(t, cfg, credentials{})
-	env := map[string]string{"JEVLIN_HOME": t.TempDir()}
-	code, out, _ := runSearchStdin(t, fixedSearchOps(root), env, `{"version":1,"query":"q"}`, "-config", cfg)
-	if code != exitUsage || !strings.Contains(out, `"code":"`+keyOriginCode+`"`) {
-		t.Fatalf("exit %d\n%s", code, out)
-	}
-	defaults, _, err := loadConfig("", envOf(env))
-	if err != nil {
-		t.Fatal(err)
-	}
-	standIn := origin(t, defaults.Miner.RouterURL.String())
-	for _, gone := range []string{standIn, strings.TrimPrefix(standIn, "https://"), "belongs to", boundKey, root} {
-		if strings.Contains(out, gone) {
-			t.Errorf("the refusal says %q:\n%s", gone, out)
+// login records the router it verified the key against. Storing the same key
+// again keeps the agents API connect recorded with it; another key, which was
+// not issued there as far as this client knows, records none.
+func TestLoginRecordsTheRouterAndKeepsTheSameKeysAgentsAPI(t *testing.T) {
+	platform, cfg, _ := keyedConnect(t)
+	before := readStoredKey(t, cfg)
+	router := minerOf(t, cfg).RouterURL.String()
+	run := func(key string) *credentials {
+		t.Helper()
+		var out, errOut bytes.Buffer
+		if code := cmdLogin([]string{"-config", cfg, "-no-verify"}, strings.NewReader(key+"\n"), &out, &errOut, noEnv); code != exitOK {
+			t.Fatalf("login: exit %d\n%s", code, errOut.String())
 		}
+		return readStoredKey(t, cfg)
 	}
-	for _, said := range []string{"names none", "JEVLIN_CONFIG", origin(t, own.srv.URL)} {
-		if !strings.Contains(out, said) {
-			t.Errorf("the refusal does not say %q:\n%s", said, out)
-		}
+	if got := run(before.APIKey); got.Router != origin(t, router) || got.AgentsAPI != origin(t, platform.srv.URL) {
+		t.Errorf("the same key again: %+v", got)
 	}
-	if n := own.requests(); n != 0 {
-		t.Fatalf("%d request(s) sent", n)
+	if got := run("sr-another-key-0123456789"); got.Router != origin(t, router) || got.AgentsAPI != "" {
+		t.Errorf("another key: %+v", got)
 	}
 }
 
@@ -458,7 +395,7 @@ func newTurnEndFixture(t *testing.T) turnEndFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := strings.Replace(string(b), "[miner]\n", "[miner]\nturn_end = true\n", 1)
+	body := strings.Replace(string(b), "[mining]\n", "[mining]\nturn_end = true\n", 1)
 	write := func(router string) string {
 		p := filepath.Join(t.TempDir(), "jevlin.toml")
 		if err := os.WriteFile(p, []byte(strings.ReplaceAll(body, fr.srv.URL, router)), 0o600); err != nil { // #nosec G703 -- a path under t.TempDir

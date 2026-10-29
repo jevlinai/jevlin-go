@@ -187,7 +187,7 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv fu
 type hookContext struct {
 	cfgPath     string
 	sessionsDir string
-	// turnEnd is [miner] turn_end: this installation reports a turn's final
+	// turnEnd is [mining] turn_end: this installation reports a turn's final
 	// message. See turn_end.go.
 	turnEnd bool
 	// updateRoot and updateMode are what the daily release check's decision

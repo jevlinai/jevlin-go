@@ -547,9 +547,9 @@ func TestTheRouterHostIsComparedAsCodexComparesIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	spelled := strings.Replace(string(b), `router_url = "https://router.example.invalid"`, `router_url = "https://Router.Example.Invalid.:8443/v1"`, 1)
+	spelled := strings.Replace(string(b), `url = "https://router.example.invalid"`, `url = "https://Router.Example.Invalid.:8443/v1"`, 1)
 	if spelled == string(b) {
-		t.Fatal("the test config has no router_url to respell")
+		t.Fatal("the test config has no router url to respell")
 	}
 	if err := os.WriteFile(cfgPath, []byte(spelled), 0o600); err != nil { // #nosec G703 -- the test's own config, in t.TempDir()
 		t.Fatal(err)

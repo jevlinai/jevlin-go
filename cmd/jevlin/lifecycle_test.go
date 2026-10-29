@@ -129,7 +129,7 @@ func activeOperation(err error) string {
 // minerConfigTemplate is a mining installation's config with its state,
 // intake and sessions directories filled in. The AS is never contacted: no
 // mining decision is on file.
-const minerConfigTemplate = "[mining]\nas_url = \"https://rewards.invalid.test\"\nchain_id = \"twilight-testnet-1\"\nslot_id = 3\nstate_dir = %q\n\n[miner]\nenabled = true\nintake_dir = %q\nsessions_dir = %q\n"
+const minerConfigTemplate = "schema = 1\n[mining]\nas_url = \"https://rewards.invalid.test\"\nchain_id = \"twilight-testnet-1\"\nslot_id = 3\nstate_dir = %q\nintake_dir = %q\nsessions_dir = %q\n"
 
 func writeFileT(t *testing.T, path, body string) {
 	t.Helper()
@@ -187,7 +187,7 @@ func TestResolveInstallationHomeOrder(t *testing.T) {
 	envHome := filepath.Join(root, "envhome")
 	cfgDir := filepath.Join(root, "cfgdir")
 	layout := filepath.Join(root, "layout")
-	writeFileT(t, filepath.Join(layout, setupConfigFile), "")
+	writeFileT(t, filepath.Join(layout, setupConfigFile), "schema = 1\n")
 	layoutExe := filepath.Join(layout, "bin", "jevlin")
 	noToml := filepath.Join(root, "notoml", "bin", "jevlin")
 	notBin := filepath.Join(root, "layout", "tools", "jevlin")
@@ -249,7 +249,7 @@ func TestConfigGatePathFollowsTheConfigLoadConfigWouldChoose(t *testing.T) {
 	}
 
 	cwd := filepath.Join(root, "cwd")
-	writeFileT(t, filepath.Join(cwd, setupConfigFile), "")
+	writeFileT(t, filepath.Join(cwd, setupConfigFile), "schema = 1\n")
 	t.Chdir(cwd)
 	wd, _ := os.Getwd() // the platform's own spelling of cwd (macOS /private)
 	if got, _ := configGatePath("", envOf(map[string]string{"JEVLIN_HOME": c})); got != lifecycleGatePath(c) {
@@ -437,7 +437,7 @@ func connectInstallation(t *testing.T) (home, cfgPath, stateDir string) {
 	cfgPath = filepath.Join(home, setupConfigFile)
 	// mining.enabled is explicit, so connect -json has a decision to act on
 	// and reaches admission instead of answering human_decision_required.
-	writeFileT(t, cfgPath, fmt.Sprintf("[platform]\nbase_url = %q\nagents_api_url = %q\n\n[mining]\nenabled = false\nstate_dir = %q\n",
+	writeFileT(t, cfgPath, fmt.Sprintf("schema = 1\n[platform]\nurl = %q\n[agents]\nurl = %q\n\n[mining]\nenabled = false\nstate_dir = %q\n",
 		platform.srv.URL, platform.srv.URL, stateDir))
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		t.Fatal(err)

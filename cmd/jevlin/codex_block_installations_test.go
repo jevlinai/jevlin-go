@@ -78,19 +78,21 @@ func writeMiningHomeConfig(t *testing.T, home string) string {
 		}
 	}
 	doc := fmt.Sprintf(`
+schema = 1
+
+[router]
+url = "https://router.example.invalid"
+
 [mining]
 enabled = true
 as_url = "https://as.example.invalid"
 chain_id = "twilight-1"
 slot_id = 7
-state_dir = %q
-spool_dir = %q
+state_dir = %[1]q
+spool_dir = %[2]q
 
-[miner]
-enabled = true
-router_url = "https://router.example.invalid"
-intake_dir = %q
-sessions_dir = %q
+intake_dir = %[3]q
+sessions_dir = %[4]q
 `, filepath.ToSlash(filepath.Join(home, "state")), filepath.ToSlash(filepath.Join(home, "spool")),
 		filepath.ToSlash(filepath.Join(home, "intake")), filepath.ToSlash(filepath.Join(home, "sessions")))
 	cfg := filepath.Join(home, setupConfigFile)
@@ -114,19 +116,21 @@ func writeRelocatedStateConfig(t *testing.T, home, stateDir string) string {
 		}
 	}
 	doc := fmt.Sprintf(`
+schema = 1
+
+[router]
+url = "https://router.example.invalid"
+
 [mining]
 enabled = true
 as_url = "https://as.example.invalid"
 chain_id = "twilight-1"
 slot_id = 7
-state_dir = %q
-spool_dir = %q
+state_dir = %[1]q
+spool_dir = %[2]q
 
-[miner]
-enabled = true
-router_url = "https://router.example.invalid"
-intake_dir = %q
-sessions_dir = %q
+intake_dir = %[3]q
+sessions_dir = %[4]q
 `, filepath.ToSlash(stateDir), filepath.ToSlash(filepath.Join(home, "spool")),
 		filepath.ToSlash(filepath.Join(home, "intake")), filepath.ToSlash(filepath.Join(home, "sessions")))
 	cfg := filepath.Join(home, setupConfigFile)

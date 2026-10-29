@@ -148,7 +148,7 @@ func TestARouterThatRefusesTheFormsGetsOneRetryWithoutThem(t *testing.T) {
 			t.Errorf("the retry changed %s: %v, then %v", k, first[k], retry[k])
 		}
 	}
-	if errOut != "" {
+	if withoutOriginNotice(errOut) != "" {
 		t.Errorf("machine mode wrote on stderr: %q", errOut)
 	}
 }

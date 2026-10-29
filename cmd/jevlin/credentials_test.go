@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,7 +21,11 @@ import (
 func emptyMiner(t *testing.T) config.Miner {
 	t.Helper()
 	root := t.TempDir()
-	return config.Miner{IntakeDir: filepath.Join(root, "intake"), SessionsDir: filepath.Join(root, "sessions")}
+	router, err := url.Parse("https://router.fictional.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return config.Miner{RouterURL: router, IntakeDir: filepath.Join(root, "intake"), SessionsDir: filepath.Join(root, "sessions")}
 }
 
 func TestResolveAPIKeyOrderIsEnvThenFile(t *testing.T) {
@@ -38,18 +43,18 @@ func TestResolveAPIKeyOrderIsEnvThenFile(t *testing.T) {
 		}
 	}
 
-	k, src, err := resolveAPIKey(envOf(map[string]string{"JEVLIN_API_KEY": "sr-canary-env", "OPENAI_API_KEY": "sk-canary"}), m) // #nosec G101 -- synthetic canaries, not credentials
+	k, src, err := resolveKeyParts(envOf(map[string]string{"JEVLIN_API_KEY": "sr-canary-env", "OPENAI_API_KEY": "sk-canary"}), m) // #nosec G101 -- synthetic canaries, not credentials
 	if err != nil || k != "sr-canary-env" || src != keyFromEnv {
 		t.Errorf("env should win: %q %q %v", k, src, err)
 	}
-	k, src, err = resolveAPIKey(envOf(map[string]string{"OPENAI_API_KEY": "sk-canary"}), m)
+	k, src, err = resolveKeyParts(envOf(map[string]string{"OPENAI_API_KEY": "sk-canary"}), m)
 	if err != nil || k != "sr-canary-stored" || src != keyFromFile {
 		t.Errorf("stored search credential should be selected: %q %q %v", k, src, err)
 	}
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	k, src, err = resolveAPIKey(envOf(map[string]string{"OPENAI_API_KEY": "sk-canary"}), m)
+	k, src, err = resolveKeyParts(envOf(map[string]string{"OPENAI_API_KEY": "sk-canary"}), m)
 	if err != nil || k != "" || src != keyFromNone {
 		t.Errorf("unrelated environment must not supply a key: %q %q %v", k, src, err)
 	}
@@ -61,14 +66,14 @@ func TestResolveAPIKeyRefusesAFileOthersCanRead(t *testing.T) {
 	}
 	m := emptyMiner(t)
 	path := credentialsPath(m)
-	if err := writeCredentials(path, credentials{APIKey: "sr-canary-stored"}); err != nil { // #nosec G101 -- "sr-canary-stored", not a credential
+	if err := writeCredentials(path, credentials{APIKey: "sr-canary-stored", Router: "https://router.fictional.test"}); err != nil { // #nosec G101 -- "sr-canary-stored", not a credential
 		t.Fatal(err)
 	}
 	if err := os.Chmod(path, 0o644); err != nil { // #nosec G302 -- intentionally permissive mode, to exercise the refusal path
 		t.Fatal(err)
 	}
 	// Preserve the file error regardless of unrelated environment values.
-	k, src, err := resolveAPIKey(envOf(map[string]string{"OPENAI_API_KEY": "sk-canary"}), m)
+	k, src, err := resolveKeyParts(envOf(map[string]string{"OPENAI_API_KEY": "sk-canary"}), m)
 	if err == nil || !strings.Contains(err.Error(), "refusing") || k != "" || src != keyFromNone {
 		t.Errorf("a readable credentials file must be refused: %q %q %v", k, src, err)
 	}
@@ -78,7 +83,7 @@ func TestResolveAPIKeyRefusesAFileOthersCanRead(t *testing.T) {
 	if err := os.Chmod(path, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if k, _, err := resolveAPIKey(noEnv, m); err != nil || k != "sr-canary-stored" {
+	if k, _, err := resolveKeyParts(noEnv, m); err != nil || k != "sr-canary-stored" {
 		t.Errorf("0600 again should read: %q %v", k, err)
 	}
 }
@@ -87,7 +92,7 @@ func TestResolveAPIKeyRefusesASymlinkAndACorruptFile(t *testing.T) {
 	m := emptyMiner(t)
 	path := credentialsPath(m)
 	real := filepath.Join(t.TempDir(), "elsewhere.json")
-	if err := writeCredentials(real, credentials{APIKey: "sr-canary-linked"}); err != nil { // #nosec G101 -- "sr-canary-linked", not a credential
+	if err := writeCredentials(real, credentials{APIKey: "sr-canary-linked", Router: "https://router.fictional.test"}); err != nil { // #nosec G101 -- "sr-canary-linked", not a credential
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -96,7 +101,7 @@ func TestResolveAPIKeyRefusesASymlinkAndACorruptFile(t *testing.T) {
 	if err := os.Symlink(real, path); err != nil {
 		t.Skipf("symlinks unavailable here: %v", err)
 	}
-	if _, _, err := resolveAPIKey(noEnv, m); err == nil || !strings.Contains(err.Error(), "symlink") {
+	if _, _, err := resolveKeyParts(noEnv, m); err == nil || !strings.Contains(err.Error(), "symlink") {
 		t.Errorf("symlink not refused: %v", err)
 	}
 	_ = os.Remove(path)
@@ -104,13 +109,13 @@ func TestResolveAPIKeyRefusesASymlinkAndACorruptFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"v":1,"api_key":""}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := resolveAPIKey(noEnv, m); err == nil || !strings.Contains(err.Error(), "jevlin login") {
+	if _, _, err := resolveKeyParts(noEnv, m); err == nil || !strings.Contains(err.Error(), "jevlin login") {
 		t.Errorf("empty key not refused with the fix named: %v", err)
 	}
 	if err := os.WriteFile(path, []byte(`not json`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := resolveAPIKey(noEnv, m); err == nil || !strings.Contains(err.Error(), "does not parse") {
+	if _, _, err := resolveKeyParts(noEnv, m); err == nil || !strings.Contains(err.Error(), "does not parse") {
 		t.Errorf("garbage not refused: %v", err)
 	}
 }

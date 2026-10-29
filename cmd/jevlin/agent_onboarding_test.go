@@ -599,7 +599,7 @@ func (f *stubOnboardingAS) miningClient(t *testing.T) (*auth.MiningClient, strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveRefreshToken("rt-0"); err != nil {
+	if err := store.SaveRefreshToken(testOrigin(f.srv.URL), "rt-0"); err != nil {
 		t.Fatal(err)
 	}
 	d, err := auth.NewDiscoverer(auth.DiscoveryConfig{BaseURL: f.srv.URL, ChainID: "twilight-1", SlotID: 7})
@@ -651,7 +651,7 @@ func connectConfig(t *testing.T, platformURL, asURL string) (cfgPath, stateDir s
 	dir := t.TempDir()
 	stateDir = filepath.Join(dir, "state")
 	var b strings.Builder
-	fmt.Fprintf(&b, "[platform]\nbase_url = %q\nagents_api_url = %q\n", platformURL, platformURL)
+	fmt.Fprintf(&b, "schema = 1\n[platform]\nurl = %q\n[agents]\nurl = %q\n", platformURL, platformURL)
 	if asURL != "" {
 		fmt.Fprintf(&b, "\n[mining]\nenabled = true\nas_url = %q\nchain_id = \"twilight-1\"\nslot_id = 7\nstate_dir = %q\n",
 			asURL, stateDir)
@@ -731,7 +731,7 @@ func scriptedMiningConfig(t *testing.T, platformURL, extra string) (cfgPath, sta
 	t.Helper()
 	dir := t.TempDir()
 	stateDir = filepath.Join(dir, "state")
-	body := fmt.Sprintf("[platform]\nbase_url = %q\nagents_api_url = %q\n\n[mining]\nstate_dir = %q\nas_url = \"https://as.example.invalid\"\nchain_id = \"twilight-1\"\nslot_id = 7\n%s\n",
+	body := fmt.Sprintf("schema = 1\n[platform]\nurl = %q\n[agents]\nurl = %q\n\n[mining]\nstate_dir = %q\nas_url = \"https://as.example.invalid\"\nchain_id = \"twilight-1\"\nslot_id = 7\n%s\n",
 		platformURL, platformURL, stateDir, extra)
 	return writeTOML(t, body), stateDir
 }
@@ -1072,10 +1072,6 @@ func TestConnectStoresKeyAndSearchWorksBeforeClaim(t *testing.T) {
 	withShortConnectTimings(t)
 	platform := newStubPlatform(t)
 	cfgPath, _ := connectConfig(t, platform.srv.URL, "")
-	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
-		t.Fatal("connect failed")
-	}
-
 	router := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer sr-stubkey" {
 			t.Errorf("search sent Authorization %q, want the key connect stored", got)
@@ -1084,11 +1080,19 @@ func TestConnectStoresKeyAndSearchWorksBeforeClaim(t *testing.T) {
 	}))
 	defer router.Close()
 
+	// The router the key is issued for is the one the configuration names
+	// when connect runs: connect records it with the key.
 	existing, err := os.ReadFile(cfgPath) // #nosec G304 -- the test's own writeTOML output, not an external path
 	if err != nil {
 		t.Fatal(err)
 	}
-	routerCfg := writeTOML(t, string(existing)+fmt.Sprintf("\n[miner]\nrouter_url = %q\n", router.URL))
+	if err := os.WriteFile(cfgPath, []byte(string(existing)+fmt.Sprintf("\n[router]\nurl = %q\n", router.URL)), 0o600); err != nil { // #nosec G703 -- the test's own config
+		t.Fatal(err)
+	}
+	routerCfg := cfgPath
+	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
+		t.Fatal("connect failed")
+	}
 	// search.go's own state_dir/intake_dir resolution needs [mining] to
 	// have a state_dir even in the search-only case; connectConfig
 	// already wrote one, reused here via the same directory tree.
@@ -1777,7 +1781,7 @@ func TestMiningEnableReApprovalPointsAtTheGenericClaimAddressNotTheDeadOneTimeUR
 	if err := os.MkdirAll(filepath.Dir(credentialsPath(cfg.Miner)), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-key"}); err != nil {
+	if err := writeCredentials(credentialsPath(cfg.Miner), boundCredentials(cfg, "sr-key")); err != nil {
 		t.Fatal(err)
 	}
 	store, err := auth.OpenStore(stateDir)
@@ -1823,7 +1827,7 @@ func TestMiningEnableReApprovalPrefersTheRealConsoleURLWhenThePlatformSendsOne(t
 	if err := os.MkdirAll(filepath.Dir(credentialsPath(cfg.Miner)), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-key"}); err != nil {
+	if err := writeCredentials(credentialsPath(cfg.Miner), boundCredentials(cfg, "sr-key")); err != nil {
 		t.Fatal(err)
 	}
 	store, err := auth.OpenStore(stateDir)
@@ -1874,7 +1878,7 @@ func TestMiningEnableOnAnUnclaimedAgentPrintsTheOriginalStillValidClaimLink(t *t
 	if err := os.MkdirAll(filepath.Dir(credentialsPath(cfg.Miner)), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-key"}); err != nil {
+	if err := writeCredentials(credentialsPath(cfg.Miner), boundCredentials(cfg, "sr-key")); err != nil {
 		t.Fatal(err)
 	}
 	store, err := auth.OpenStore(stateDir)
@@ -1919,7 +1923,7 @@ func TestMiningEnableNeverPrintsAStoredClaimURLOffThePlatformOrigin(t *testing.T
 	if err := os.MkdirAll(filepath.Dir(credentialsPath(cfg.Miner)), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-key"}); err != nil {
+	if err := writeCredentials(credentialsPath(cfg.Miner), boundCredentials(cfg, "sr-key")); err != nil {
 		t.Fatal(err)
 	}
 	store, err := auth.OpenStore(stateDir)
@@ -1961,7 +1965,7 @@ func TestMiningEnableOnAnExpiredRegistrationSaysToRegisterAgain(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(credentialsPath(cfg.Miner)), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-key"}); err != nil {
+	if err := writeCredentials(credentialsPath(cfg.Miner), boundCredentials(cfg, "sr-key")); err != nil {
 		t.Fatal(err)
 	}
 	store, err := auth.OpenStore(stateDir)
@@ -2005,7 +2009,7 @@ func TestConcurrentResumesProduceExactlyOneEnrollmentAndDeclaration(t *testing.T
 	if err := os.MkdirAll(filepath.Dir(credentialsPath(cfg.Miner)), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-key"}); err != nil {
+	if err := writeCredentials(credentialsPath(cfg.Miner), boundCredentials(cfg, "sr-key")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -2141,7 +2145,7 @@ func TestTerminalYesIsFollowedThroughToAnActualEnrollment(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(credentialsPath(cfg.Miner)), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-key"}); err != nil {
+	if err := writeCredentials(credentialsPath(cfg.Miner), boundCredentials(cfg, "sr-key")); err != nil {
 		t.Fatal(err)
 	}
 	platform.claim("mining")
@@ -2193,7 +2197,7 @@ func TestConnectRefusesToOverwriteAnExistingCredentialsFileUnlessForced(t *testi
 	if err := os.MkdirAll(filepath.Dir(credPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeCredentials(credPath, credentials{APIKey: "sr-existing-real-key"}); err != nil {
+	if err := writeCredentials(credPath, boundCredentials(cfg, "sr-existing-real-key")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -2302,7 +2306,7 @@ func TestConnectRefusesCorruptRegistrationWithExistingPlatformCredential(t *test
 	if err := os.MkdirAll(filepath.Dir(credPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeCredentials(credPath, credentials{APIKey: "sr-existing-key"}); err != nil { // #nosec G101 -- canned test credential
+	if err := writeCredentials(credPath, boundCredentials(cfg, "sr-existing-key")); err != nil { // #nosec G101 -- canned test credential
 		t.Fatal(err)
 	}
 	store, err := auth.OpenStore(stateDir)
@@ -2400,7 +2404,7 @@ func setupLostRegistration(t *testing.T, cfg *config.Config, key string, corrupt
 	if err := os.MkdirAll(filepath.Dir(credPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeCredentials(credPath, credentials{APIKey: key}); err != nil {
+	if err := writeCredentials(credPath, boundCredentials(cfg, key)); err != nil {
 		t.Fatal(err)
 	}
 	if !corrupt {
@@ -3160,7 +3164,7 @@ func TestExpiredRegistrationStatusFailureRefusesForceReplacement(t *testing.T) {
 	seedClaim(t, cfgPath, "agent-expired", platform.srv.URL+"/claim/OLD", "OLD")
 	cfg := mustLoadConfig(t, cfgPath)
 	credPath := credentialsPath(cfg.Miner)
-	if err := writeCredentials(credPath, credentials{APIKey: "sr-old-key"}); err != nil { // #nosec G101 -- canned test credential
+	if err := writeCredentials(credPath, boundCredentials(cfg, "sr-old-key")); err != nil { // #nosec G101 -- canned test credential
 		t.Fatal(err)
 	}
 	platform.setStatusError(true)
@@ -3286,7 +3290,7 @@ func TestPendingJournalRecoveryNeverCallsMeEvenWithACorruptRegistrationAndCreden
 	// A platform credential is on file and agent.json is corrupt — the
 	// exact combination that, absent a pending journal, would route into
 	// the B.3 rebuild instead of a plain refusal.
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: pending.Key}); err != nil {
+	if err := writeCredentials(credentialsPath(cfg.Miner), boundCredentials(cfg, pending.Key)); err != nil {
 		t.Fatal(err)
 	}
 	corruptBytes := []byte("{not json")
@@ -3332,12 +3336,13 @@ func TestPendingExpiredReplacementRecoveryCompletesAcrossRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	seedClaim(t, cfgPath, "agent-old", oldURL, "OLD")
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-old-key"}); err != nil { // #nosec G101 -- canned test credential
+	if err := writeCredentials(credentialsPath(cfg.Miner), boundCredentials(cfg, "sr-old-key")); err != nil { // #nosec G101 -- canned test credential
 		t.Fatal(err)
 	}
 	if err := testJournal(t, cfgPath).Save(auth.PendingRegistration{
 		AgentID:         "agent-new",
 		Key:             "sr-new-key",
+		AgentsAPI:       testOrigin(platform.srv.URL),
 		ClaimURL:        platform.srv.URL + "/claim/NEW",
 		ClaimCode:       "NEW",
 		ClaimExpiresAt:  "2026-09-16T00:00:00Z",
@@ -3379,13 +3384,14 @@ func TestForgedStateDirJournalCannotReplaceCredential(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-victim-key"}); err != nil { // #nosec G101 -- canned test credential
+	if err := writeCredentials(credentialsPath(cfg.Miner), boundCredentials(cfg, "sr-victim-key")); err != nil { // #nosec G101 -- canned test credential
 		t.Fatal(err)
 	}
 	forged := auth.PendingRegistration{
 		V:               1,
 		AgentID:         "agent-attacker",
 		Key:             "sr-attacker-key",
+		AgentsAPI:       testOrigin(platform.srv.URL),
 		ClaimURL:        platform.srv.URL + "/claim/EVIL",
 		ClaimCode:       "EVIL",
 		ClaimExpiresAt:  "2026-09-16T00:00:00Z",
@@ -3428,6 +3434,7 @@ func TestPendingRegistrationConflictDoesNotOverwriteOrRegister(t *testing.T) {
 	pending := auth.PendingRegistration{
 		AgentID:        "agent-journal",
 		Key:            "sr-journal-key",
+		AgentsAPI:      testOrigin(platform.srv.URL),
 		ClaimURL:       platform.srv.URL + "/claim/JOURNAL-1",
 		ClaimCode:      "JOURNAL-1",
 		ClaimExpiresAt: "2026-09-16T00:00:00Z",
@@ -3436,7 +3443,7 @@ func TestPendingRegistrationConflictDoesNotOverwriteOrRegister(t *testing.T) {
 	if err := testJournal(t, cfgPath).Save(pending); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-other-key"}); err != nil { // #nosec G101 -- canned test credential
+	if err := writeCredentials(credentialsPath(cfg.Miner), boundCredentials(cfg, "sr-other-key")); err != nil { // #nosec G101 -- canned test credential
 		t.Fatal(err)
 	}
 
@@ -3475,6 +3482,7 @@ func TestAJournalWinsOverAnAgentRecordNamingAnotherAgent(t *testing.T) {
 	if err := testJournal(t, cfgPath).Save(auth.PendingRegistration{
 		AgentID:        "agent-journal",
 		Key:            "sr-journal-key",
+		AgentsAPI:      testOrigin(platform.srv.URL),
 		ClaimURL:       platform.srv.URL + "/claim/JOURNAL-1",
 		ClaimCode:      "JOURNAL-1",
 		ClaimExpiresAt: "2026-09-16T00:00:00Z",

@@ -29,6 +29,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
 // Stable client codes for a fetch request this client refused to send,
@@ -384,7 +386,7 @@ type fetchOutcome struct {
 
 // performFetch sends one POST under ctx's deadline. Never retried: a fetch
 // is billed per page, and nothing the router says licenses a second one.
-func performFetch(ctx context.Context, now func() time.Time, endpoint, key string, body map[string]any) fetchOutcome {
+func performFetch(ctx context.Context, now func() time.Time, endpoint string, key routerKey, body map[string]any) fetchOutcome {
 	var out fetchOutcome
 	attempt, err := postRouter(ctx, routerClient(), endpoint, key, body, nil)
 	if err != nil {
@@ -527,7 +529,9 @@ func fetchMain(now func() time.Time, args []string, stdin io.Reader, stdout, std
 		return exitUsage
 	}
 	// Machine mode only, so everything is in the envelope, as for search
-	// --stdin: nothing on stderr for a caller to parse instead.
+	// --stdin: nothing on stderr for a caller to parse instead, but the
+	// line about where the key goes, which is said in every mode.
+	notices := stderr
 	stderr = io.Discard
 	fs := newFlagSet("fetch", stderr)
 	cfgPath := onceStringFlag(fs, "config", "path to TOML config file; given at most once")
@@ -552,28 +556,20 @@ func fetchMain(now func() time.Time, args []string, stdin io.Reader, stdout, std
 	if err != nil {
 		return failFetch(stdout, exitTransport, "config_unreadable", actionFixInput, err)
 	}
-	if cfg.Miner.RouterURL == nil {
-		return failFetch(stdout, exitTransport, "no_router_configured", actionFixInput,
-			errors.New("no router configured (miner.router_url or a [[provider]] upstream)"))
-	}
 	// The stored key goes only to the router it records (resolveAPIKey), and
-	// JEVLIN_API_KEY only to the installation's router, as for search and
-	// limits. Either refusal is the config's to fix, not a reason to connect.
-	key, keySrc, err := resolveAPIKey(getenv, cfg.Miner)
-	if err == nil && keySrc == keyFromEnv {
-		err = envKeyRefusedFor(*cfgPath, cfg, getenv)
-	}
+	// JEVLIN_API_KEY to the router this run is configured with, as for search
+	// and limits.
+	key, err := resolveAPIKey(getenv, cfg.Miner)
 	if err != nil {
-		if keyRefusedForOrigin(err) {
-			return failFetch(stdout, exitUsage, keyOriginCode, actionFixInput, err)
-		}
-		return failFetch(stdout, exitClientErr, "credential_unreadable", actionConnect, err)
+		code, exit, action := routerKeyFailure(err)
+		return failFetch(stdout, exit, code, action, err)
 	}
-	if key == "" {
+	if key.value == "" {
 		return failFetch(stdout, exitClientErr, string(faultNoCredential), actionConnect,
 			errors.New("this installation holds no search credential; run jevlin connect"))
 	}
 
+	noteNonDefaultOrigin(notices, key.bound, "router", config.DefaultRouterURL, routerChooser(getenv))
 	ctx, cancel := searchDeadline(*timeout)
 	defer cancel()
 	out := performFetch(ctx, now, strings.TrimRight(cfg.Miner.RouterURL.String(), "/")+"/v1/fetch", key, req.body())

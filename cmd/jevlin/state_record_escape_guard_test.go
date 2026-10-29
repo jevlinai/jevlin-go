@@ -107,14 +107,6 @@ func stateRecordFixture(t *testing.T) (cfgPath, stateDir string) {
 	if err := store.SaveRevokePending(); err != nil {
 		t.Fatal(err)
 	}
-	// [miner] on, so a foreground flush runs far enough to read the spool.
-	raw, err := os.ReadFile(cfgPath) // #nosec G304 -- the test's own config
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(raw), "[miner]") {
-		writeFileT(t, cfgPath, string(raw)+"\n[miner]\nenabled = true\n")
-	}
 	cfg := mustLoadConfig(t, cfgPath)
 	if err := saveFlushStamp(store, flushStampPath(cfg.Mining), flushStamp{V: 1, SlotID: 7, TargetEpoch: 1042, LastAS: time.Now(), LastFlush: time.Now()}, io.Discard); err != nil {
 		t.Fatal(err)

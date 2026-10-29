@@ -92,7 +92,7 @@ func fakeResponse(status int, body string, header http.Header) *http.Response {
 func traceCall() searchCall {
 	return searchCall{
 		Endpoint: "https://router.fictional.test/v1/search",
-		Key:      "sr-fictional",
+		Key:      testRouterKey("https://router.fictional.test", "sr-fictional"),
 		Query:    "how do ports work",
 		Trace:    &traceEnvelope{V: traceVersion, Harness: "cli", SessionID: "sess", CallID: "call"},
 	}
@@ -310,7 +310,7 @@ func TestRouterResponsesAreBoundedAndValidated(t *testing.T) {
 				return fakeResponse(tc.status, tc.body, tc.header), nil
 			}}
 			useTransport(t, rt)
-			out := runPerformSearch(t, 30*time.Second, searchCall{Endpoint: "https://r.test/v1/search", Key: "k", Query: "q"})
+			out := runPerformSearch(t, 30*time.Second, searchCall{Endpoint: "https://r.test/v1/search", Key: testRouterKey("https://r.test", "k"), Query: "q"})
 			if out.Fault != tc.want {
 				t.Fatalf("fault %q, want %q (err %v)", out.Fault, tc.want, out.Err)
 			}
@@ -333,7 +333,7 @@ func TestAnInterruptedBodyIsNeverASuccessOverThePrefix(t *testing.T) {
 		}, nil
 	}}
 	useTransport(t, rt)
-	out := runPerformSearch(t, 30*time.Second, searchCall{Endpoint: "https://r.test/v1/search", Key: "k", Query: "q"})
+	out := runPerformSearch(t, 30*time.Second, searchCall{Endpoint: "https://r.test/v1/search", Key: testRouterKey("https://r.test", "k"), Query: "q"})
 	if out.ok() {
 		t.Fatal("an interrupted body was accepted as a successful search")
 	}
@@ -358,7 +358,7 @@ func TestADeclaredOversizedContentLengthIsRefusedWithoutDraining(t *testing.T) {
 		}, nil
 	}}
 	useTransport(t, rt)
-	out := runPerformSearch(t, 30*time.Second, searchCall{Endpoint: "https://r.test/v1/search", Key: "k", Query: "q"})
+	out := runPerformSearch(t, 30*time.Second, searchCall{Endpoint: "https://r.test/v1/search", Key: testRouterKey("https://r.test", "k"), Query: "q"})
 	if out.Fault != faultOversized {
 		t.Fatalf("fault %q, want %q", out.Fault, faultOversized)
 	}
@@ -440,7 +440,7 @@ func TestOnlyAnExactTraceUnsupportedCodeBuysASecondPost(t *testing.T) {
 				return fakeResponse(http.StatusOK, routerBody, nil), nil
 			}}
 			useTransport(t, rt)
-			call := searchCall{Endpoint: "https://r.test/v1/search", Key: "k", Query: "q"}
+			call := searchCall{Endpoint: "https://r.test/v1/search", Key: testRouterKey("https://r.test", "k"), Query: "q"}
 			if tc.traced {
 				call.Trace = &traceEnvelope{V: traceVersion, Harness: "cli", SessionID: "s", CallID: "c"}
 			}
@@ -477,7 +477,7 @@ func TestATracedSearchMirrorsItsSessionIntoBodyAndHeader(t *testing.T) {
 				return fakeResponse(http.StatusOK, routerBody, nil), nil
 			}}
 			useTransport(t, rt)
-			call := searchCall{Endpoint: "https://router.fictional.test/v1/search", Key: "sr-fictional", Query: "q", Trace: tc.trace}
+			call := searchCall{Endpoint: "https://router.fictional.test/v1/search", Key: testRouterKey("https://router.fictional.test", "sr-fictional"), Query: "q", Trace: tc.trace}
 			out := runPerformSearch(t, 30*time.Second, call)
 			if !out.ok() {
 				t.Fatalf("search failed: %q %v", out.Fault, out.Err)

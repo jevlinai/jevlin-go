@@ -644,7 +644,7 @@ func TestHookCursorWithoutAConversationDoesNothingButAllow(t *testing.T) {
 func writeHookConfig(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "jevlin.toml")
-	if err := os.WriteFile(path, []byte("[miner]\nsessions_dir = \"/sessions\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("schema = 1\n[mining]\nsessions_dir = \"/sessions\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return path

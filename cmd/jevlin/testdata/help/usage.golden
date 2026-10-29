@@ -118,8 +118,6 @@ connect): enroll -> payout -> join -> login
              arrival; a change waits for a Slot operator to approve it
   join       join the configured slot and the open target epoch (flush does
              this too; run it once after enrolling so the first hour counts)
-  provider   register a participant provider verification key from stdin, or
-             provider -status; only when the Slot accepts OPENROUTER_V1
 
 is it working, was I paid:
   doctor     checks in a participant's terms — authorization server,
@@ -160,11 +158,14 @@ working directory is never read unless named.
 status and doctor name the file they resolved, or say plainly that none was
 found and built-in defaults are in use; connect refuses outright when
 resolution finds no config file at all, and says to run jevlin setup.
-The [mining] block names the AS, chain and slot; the
-[miner] block says router intake is configured (whether mining is ON is the
-persisted decision, not a config key); [platform] names two hosts — base_url,
-the portal a printed claim URL is checked against and nothing dials
-(platform.jevlin.ai), and agents_api_url, where connect and mining enable
-actually send register/status/enroll (agents-v1.jevlin.ai). Searches take
-your sr- key from JEVLIN_API_KEY if it is set, else from the file
-login (or connect) wrote. Otherwise run connect or login to set up search.
+The config is configuration format 1 and begins "schema = 1"; a file without
+it is from an older jevlin, and jevlin setup replaces it. [router] url is
+where searches go (api.jevlin.ai); [platform] url is the portal a printed
+claim URL is checked against, never dialed (platform.jevlin.ai); [agents] url
+is where connect and mining enable send register/status/enroll
+(agents-v1.jevlin.ai); [mining] names the AS, chain and slot (whether mining
+is ON is the persisted decision, not a config key). JEVLIN_ROUTER_URL,
+JEVLIN_PLATFORM_URL, JEVLIN_AGENTS_API_URL and JEVLIN_AS_URL replace them for
+one run. Searches take your sr- key from JEVLIN_API_KEY if it is set, else
+from the file login (or connect) wrote, which records the router it may be
+sent to. Otherwise run connect or login to set up search.

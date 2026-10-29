@@ -64,7 +64,7 @@ func TestPayoutSetRequiresAnAddressAndNotAFlag(t *testing.T) {
 // main (PR dropin-miner#4); fixed here directly rather than waiting on that to merge.
 func TestEveryAdvertisedCommandIsRouted(t *testing.T) {
 	t.Setenv("JEVLIN_CONFIG", "")
-	for _, name := range []string{"enroll", "join", "provider", "payout", "status", "doctor", "earnings", "connect", "mining"} {
+	for _, name := range []string{"enroll", "join", "payout", "status", "doctor", "earnings", "connect", "mining"} {
 		t.Run(name, func(t *testing.T) {
 			// No -config, so each command refuses early and none of them
 			// reaches the network — except connect, which (unlike every

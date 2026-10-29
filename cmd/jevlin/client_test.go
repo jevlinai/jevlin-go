@@ -51,17 +51,17 @@ func installedAs(getenv func(string) string, args []string) func(string) string 
 // order is covered in credentials_test.go.
 func TestAPIKeyUsesOnlySearchEnvironment(t *testing.T) {
 	m := emptyMiner(t)
-	got, src, err := resolveAPIKey(envOf(map[string]string{ // #nosec G101 -- env-var names and synthetic canaries, not credentials
+	got, src, err := resolveKeyParts(envOf(map[string]string{ // #nosec G101 -- env-var names and synthetic canaries, not credentials
 		"JEVLIN_API_KEY": "canary-tenant-key",
 		"OPENAI_API_KEY": "canary-personal-key",
 	}), m)
 	if err != nil || got != "canary-tenant-key" || src != keyFromEnv {
 		t.Errorf("a personal OpenAI key must not shadow the tenant key: got %q from %q (%v)", got, src, err)
 	}
-	if k, src, _ := resolveAPIKey(envOf(map[string]string{"OPENAI_API_KEY": "canary-personal-key"}), m); k != "" || src != keyFromNone {
+	if k, src, _ := resolveKeyParts(envOf(map[string]string{"OPENAI_API_KEY": "canary-personal-key"}), m); k != "" || src != keyFromNone {
 		t.Errorf("unrelated source: %q from %q", k, src)
 	}
-	if k, src, err := resolveAPIKey(noEnv, m); k != "" || src != keyFromNone || err != nil {
+	if k, src, err := resolveKeyParts(noEnv, m); k != "" || src != keyFromNone || err != nil {
 		t.Errorf("no key set must mean no key: %q %q %v", k, src, err)
 	}
 }

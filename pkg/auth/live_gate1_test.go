@@ -140,7 +140,7 @@ func TestLiveGate1OAuthLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := thiefStore.SaveRefreshToken(stolen); err != nil {
+	if err := thiefStore.SaveRefreshToken(stolen.AS, stolen.Token); err != nil {
 		t.Fatal(err)
 	}
 	d, err := NewDiscoverer(DiscoveryConfig{BaseURL: env.asURL, ChainID: "twilight-1", SlotID: 7})
@@ -159,7 +159,7 @@ func TestLiveGate1OAuthLifecycle(t *testing.T) {
 	if err := env.client.Revoke(ctx); err != nil {
 		t.Fatalf("revocation: %v", err)
 	}
-	if err := env.store.SaveRefreshToken(stolen); err != nil {
+	if err := env.store.SaveRefreshToken(stolen.AS, stolen.Token); err != nil {
 		t.Fatal(err) // restore the (now revoked) token to prove refusal
 	}
 	if _, err := env.client.Refresh(ctx); err == nil {
@@ -338,73 +338,4 @@ func TestLiveGate3Capability(t *testing.T) {
 		t.Fatalf("cache miss on a fresh capability: %v", err)
 	}
 	t.Logf("GATE-3 live: capability for epoch %d, expires in %s", epochNum, time.Until(got.ExpiresAt).Round(time.Second))
-}
-
-// GATE-4 live legs: provider-verification binding lifecycle driven by
-// the real proxy client against the real AS. Uses the AS's fixture
-// checker (no live OpenRouter): the zero-spend policy is proven, the
-// live-provider legs belong to GATE-6.
-func TestLiveGate4ProviderVerification(t *testing.T) {
-	env := newLiveEnv(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-	defer cancel()
-
-	pending, err := env.client.StartAuthorization(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go env.approveInBrowser(t, pending.URL)
-	if _, err := pending.Wait(ctx); err != nil {
-		t.Fatal(err)
-	}
-
-	d, err := NewDiscoverer(DiscoveryConfig{BaseURL: env.asURL, ChainID: "twilight-1", SlotID: 7})
-	if err != nil {
-		t.Fatal(err)
-	}
-	mining := NewMiningClient(d, env.client, env.store)
-
-	// Nothing bound yet.
-	status, err := mining.ProviderStatus(ctx)
-	if err != nil {
-		t.Fatalf("provider status: %v", err)
-	}
-	if status.Status != ProviderStatusNotConfigured {
-		t.Fatalf("expected NOT_CONFIGURED, got %+v", status)
-	}
-
-	// A spendable key must be refused by the AS policy.
-	if _, err := mining.RegisterProviderCredential(ctx, os.Getenv("TOKENDROP_LIVE_SPENDABLE_KEY")); err == nil {
-		t.Fatal("a spendable verification key was accepted")
-	}
-
-	// The zero-spend key binds.
-	zeroSpend := os.Getenv("TOKENDROP_LIVE_ZERO_SPEND_KEY")
-	if zeroSpend == "" {
-		t.Skip("TOKENDROP_LIVE_ZERO_SPEND_KEY not set")
-	}
-	binding, err := mining.RegisterProviderCredential(ctx, zeroSpend)
-	if err != nil {
-		t.Fatalf("registration: %v", err)
-	}
-	if binding.Status != ProviderStatusReady || binding.KeyFingerprint == "" {
-		t.Fatalf("binding: %+v", binding)
-	}
-	if strings.Contains(fmt.Sprintf("%+v", binding), zeroSpend) {
-		t.Fatal("binding document echoed the key")
-	}
-
-	status, err = mining.ProviderStatus(ctx)
-	if err != nil || status.Status != ProviderStatusReady {
-		t.Fatalf("post-registration status: %v %+v", err, status)
-	}
-
-	if err := mining.RemoveProviderCredential(ctx); err != nil {
-		t.Fatalf("removal: %v", err)
-	}
-	status, err = mining.ProviderStatus(ctx)
-	if err != nil || status.Status != ProviderStatusNotConfigured {
-		t.Fatalf("post-removal status: %v %+v", err, status)
-	}
-	t.Logf("GATE-4 live: bind/replace-refusal/status/remove proven; %s", RevokeAtProviderNotice)
 }

@@ -29,8 +29,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/BurntSushi/toml"
-
 	"github.com/jevlinai/jevlin-go/pkg/config"
 	"github.com/jevlinai/jevlin-go/pkg/fsx"
 )
@@ -150,48 +148,23 @@ func writeTOMLLines(b *strings.Builder, lines []tomlLine) {
 	}
 }
 
-func platformTable(v setupValues) (string, error) {
-	lines, err := quoteAll("base_url", v.platformURL, "agents_api_url", v.agentsAPIURL)
-	if err != nil {
-		return "", err
-	}
-	var b strings.Builder
-	b.WriteString("[platform]\n")
-	writeTOMLLines(&b, lines)
-	return b.String(), nil
-}
-
-func minerTable(v setupValues) (string, error) {
-	lines, err := quoteAll(
-		"intake_dir", filepath.Join(v.home, "intake"),
-		"sessions_dir", filepath.Join(v.home, "sessions"),
-	)
-	if err != nil {
-		return "", err
-	}
-	lines = append([]tomlLine{{"enabled", "true"}}, lines...)
-	var b strings.Builder
-	b.WriteString("[miner]\n")
-	writeTOMLLines(&b, lines)
-	return b.String(), nil
-}
-
-// renderFreshConfig is a fresh installation's config, with every value quoted.
+// renderFreshConfig is a fresh installation's config in format 1, with every
+// value quoted.
 func renderFreshConfig(v setupValues) ([]byte, error) {
 	var b strings.Builder
-	provider, err := quoteAll("name", "search-router", "upstream", v.router)
-	if err != nil {
-		return nil, err
+	fmt.Fprintf(&b, "schema = %d\n", config.Schema)
+	for _, section := range []struct{ name, url string }{
+		{"router", v.router},
+		{"platform", v.platformURL},
+		{"agents", v.agentsAPIURL},
+	} {
+		lines, err := quoteAll("url", section.url)
+		if err != nil {
+			return nil, fmt.Errorf("[%s] %w", section.name, err)
+		}
+		b.WriteString("\n[" + section.name + "]\n")
+		writeTOMLLines(&b, lines)
 	}
-	b.WriteString("[[provider]]\n")
-	writeTOMLLines(&b, provider)
-	b.WriteString("\n")
-
-	platform, err := platformTable(v)
-	if err != nil {
-		return nil, err
-	}
-	b.WriteString(platform)
 	b.WriteString("\n[mining]\n")
 
 	var mining []tomlLine
@@ -211,152 +184,106 @@ func renderFreshConfig(v setupValues) ([]byte, error) {
 	}
 	mining = append(mining, rest...)
 	mining = append(mining, tomlLine{"slot_id", strconv.FormatUint(v.slotID, 10)})
+	writeTOMLLines(&b, mining)
+	// ASCII, as every comment this client generates into a config is
+	// (asciiGeneratedConfig guards it): Windows PowerShell 5.1 reads a file
+	// with no byte-order mark in the system's ANSI code page.
+	b.WriteString("# target_epoch deliberately unset - flush asks the AS which epoch to join.\n")
 	dirs, err := quoteAll(
 		"state_dir", filepath.Join(v.home, "state"),
 		"spool_dir", filepath.Join(v.home, "spool"),
+		"intake_dir", filepath.Join(v.home, "intake"),
+		"sessions_dir", filepath.Join(v.home, "sessions"),
 	)
 	if err != nil {
 		return nil, err
 	}
-	writeTOMLLines(&b, mining)
-	// ASCII, and every comment this client generates into a config is
-	// (asciiGeneratedConfig guards it). This line used to carry an em dash;
-	// Windows PowerShell 5.1 reads a file with no byte-order mark in the
-	// system's ANSI code page, so `Get-Content jevlin.toml` showed the
-	// participant `\u00e2\u20ac\u201d` where the dash should be (dropin-miner#88). The
-	// rule is ASCII rather than "not that character": the next non-ASCII
-	// punctuation would read exactly as badly.
-	b.WriteString("# target_epoch deliberately unset - flush asks the AS which epoch to join.\n")
 	writeTOMLLines(&b, dirs)
-	b.WriteString("\n")
-
-	miner, err := minerTable(v)
-	if err != nil {
-		return nil, err
-	}
-	b.WriteString(miner)
 	return []byte(b.String()), nil
 }
 
-// configOutcome is what the migration policy decided for one file.
+// configOutcome is what setup decided for one file.
 type configOutcome int
 
 const (
 	configFresh    configOutcome = iota // no file: a new one is written
-	configLeft                          // valid, with [miner]: untouched
-	configMigrated                      // valid, without [miner]: missing tables appended
+	configLeft                          // format 1 and valid: untouched
+	configReplaced                      // an older format: set aside, and a new one written
 )
 
-// configPlan is the policy's answer before anything is written.
+// configPlan is the decision before anything is written.
 type configPlan struct {
 	outcome configOutcome
-	data    []byte   // the bytes to publish (fresh or migrated); nil when left
-	added   []string // table names appended, for the narration
-}
-
-// configTablesDefined reads the TOML metadata for the two tables setup owns.
-// Structural, never a text search: `[miner]` inside a comment or a string is
-// not a table, and a dotted `miner.enabled = true` at the root is.
-func configTablesDefined(data []byte) (platform, miner bool, err error) {
-	var doc map[string]any
-	md, err := toml.Decode(string(data), &doc)
-	if err != nil {
-		return false, false, err
-	}
-	return md.IsDefined("platform"), md.IsDefined("miner"), nil
+	data    []byte // the bytes to publish (fresh or replaced); nil when left
+	aside   string // where an older file is moved (configReplaced)
 }
 
 // errConfigInvalid marks a refusal of the existing file, as opposed to a
 // failure to read it.
 var errConfigInvalid = errors.New("config is not valid")
 
-// planSetupConfig applies the migration policy to path. existing is the
-// file's current bytes, or nil when there is none.
-func planSetupConfig(path string, existing []byte, v setupValues, validate func([]byte) error) (configPlan, error) {
-	if existing == nil {
+// planSetupConfig decides what setup does with the config at path. existing
+// is the file's current bytes, or nil when there is none. A valid format-1
+// file is left byte for byte. An older file is never reinterpreted: it is set
+// aside under a name of its own, so nothing the participant wrote is lost,
+// and a fresh format-1 file takes its place. A format-1 file that does not
+// load is refused, because it is the participant's current configuration and
+// setup does not guess what it should have said.
+func planSetupConfig(path string, existing []byte, v setupValues, validate func([]byte) error, exists func(string) bool) (configPlan, error) {
+	fresh := func() ([]byte, error) {
 		data, err := renderFreshConfig(v)
 		if err != nil {
-			return configPlan{}, err
+			return nil, err
 		}
 		if err := validate(data); err != nil {
-			return configPlan{}, fmt.Errorf("the config setup would write does not load (%w); nothing was written", err)
+			return nil, fmt.Errorf("the config setup would write does not load (%w); nothing was written", err)
+		}
+		return data, nil
+	}
+	if existing == nil {
+		data, err := fresh()
+		if err != nil {
+			return configPlan{}, err
 		}
 		return configPlan{outcome: configFresh, data: data}, nil
 	}
-
-	// Parse first, always, and whatever the text contains.
-	if err := validate(existing); err != nil {
-		return configPlan{}, fmt.Errorf("%w: %s: %v", errConfigInvalid, path, err)
-	}
-	hasPlatform, hasMiner, err := configTablesDefined(existing)
-	if err != nil {
-		return configPlan{}, fmt.Errorf("%w: %s: %v", errConfigInvalid, path, err)
-	}
-	if hasMiner {
+	err := validate(existing)
+	switch {
+	case err == nil:
 		return configPlan{outcome: configLeft}, nil
-	}
-
-	var tail strings.Builder
-	var added []string
-	if !hasPlatform {
-		t, err := platformTable(v)
-		if err != nil {
-			return configPlan{}, err
+	case errors.Is(err, config.ErrLegacyConfig):
+		data, ferr := fresh()
+		if ferr != nil {
+			return configPlan{}, ferr
 		}
-		tail.WriteString("\n" + t)
-		added = append(added, "[platform]")
-	}
-	t, err := minerTable(v)
-	if err != nil {
-		return configPlan{}, err
-	}
-	tail.WriteString("\n" + t)
-	added = append(added, "[miner]")
-
-	next := append([]byte(nil), existing...)
-	if len(next) > 0 && next[len(next)-1] != '\n' {
-		next = append(next, '\n')
-	}
-	next = append(next, "\n# Added by jevlin setup.\n"...)
-	next = append(next, strings.TrimPrefix(tail.String(), "\n")...)
-	if err := validate(next); err != nil {
-		return configPlan{}, fmt.Errorf("%s would not load after adding %s (%v); it was left as it is — add them by hand",
-			path, strings.Join(added, " and "), err)
-	}
-	return configPlan{outcome: configMigrated, data: next, added: added}, nil
-}
-
-// validateConfigFile loads data through pkg/config exactly as every command
-// will: it is written to an owner-only temporary file in dir, loaded with no
-// environment (so only the file's own bytes are judged), and removed.
-func validateConfigFile(dir string) func([]byte) error {
-	return func(data []byte) error {
-		f, err := os.CreateTemp(dir, ".jevlin-validate-*.toml")
-		if err != nil {
-			return err
+		aside, aerr := asideName(path, exists)
+		if aerr != nil {
+			return configPlan{}, aerr
 		}
-		name := f.Name()
-		defer func() { _ = os.Remove(name) }()
-		if err := f.Chmod(0o600); err != nil {
-			_ = f.Close()
-			return err
-		}
-		if _, err := f.Write(data); err != nil {
-			_ = f.Close()
-			return err
-		}
-		if err := f.Close(); err != nil {
-			return err
-		}
-		_, _, err = config.Load([]string{"-config", name}, func(string) string { return "" })
-		return err
+		return configPlan{outcome: configReplaced, data: data, aside: aside}, nil
+	default:
+		return configPlan{}, fmt.Errorf("%w: %s: %v", errConfigInvalid, path, err)
 	}
 }
 
-// validateConfigSyntax is the dry run's check: the TOML must decode, but
-// nothing is written anywhere to load it through pkg/config.
-func validateConfigSyntax(data []byte) error {
-	_, _, err := configTablesDefined(data)
+// asideName is the first of path.old, path.old.1, ... that does not exist.
+func asideName(path string, exists func(string) bool) (string, error) {
+	for i := 0; i < 100; i++ {
+		name := path + ".old"
+		if i > 0 {
+			name += "." + strconv.Itoa(i)
+		}
+		if !exists(name) {
+			return name, nil
+		}
+	}
+	return "", fmt.Errorf("%s: no free name to set the older configuration aside under; move %s.old* away", path, path)
+}
+
+// validateConfigBytes loads data through pkg/config exactly as every command
+// will, with no environment, so only the file's own bytes are judged.
+func validateConfigBytes(data []byte) error {
+	_, err := config.LoadBytes(data, func(string) string { return "" })
 	return err
 }
 

@@ -95,7 +95,7 @@ func installed(t *testing.T) *setupSandbox {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveRefreshToken("rt-installed"); err != nil {
+	if err := store.SaveRefreshToken(testOrigin(s.as.srv.URL), "rt-installed"); err != nil {
 		t.Fatal(err)
 	}
 	for rel, body := range map[string]string{
@@ -1109,7 +1109,7 @@ func TestPurgeRefusesEveryConfirmationButTheExactOne(t *testing.T) {
 func TestPurgeConfirmationFallsBackToTheInstallationPath(t *testing.T) {
 	s := newSetupSandbox(t)
 	writeInstallation(t, s.home, "identity")
-	writeFileT(t, s.cfgPath(), fmt.Sprintf("[mining]\nstate_dir = %q\n", filepath.Join(s.home, "state")))
+	writeFileT(t, s.cfgPath(), fmt.Sprintf("schema = 1\n[mining]\nstate_dir = %q\n", filepath.Join(s.home, "state")))
 	if token, what := purgeConfirmation(s.home); token != s.home || what != "the installation path" {
 		t.Errorf("with no readable wallet the token is the canonical installation path: %q (%s)", token, what)
 	}
@@ -1217,11 +1217,14 @@ func TestPurgeDoesNotInventAFlushLockWhenTheConfigNamesNoStateDir(t *testing.T) 
 	if err := os.MkdirAll(s.home, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	// A bare proxy config: no [mining], no [miner] — nothing for
-	// finishMining to default a state dir from (its own os.UserConfigDir
-	// fallback fails, since every source it reads was just blanked above)
-	// and nothing for finishMiner to derive an intake dir from either.
-	proxy := "[[provider]]\nname = \"search-router\"\nupstream = \"https://router.example.invalid\"\n"
+	// A config naming no directory at all: nothing for finishMining to
+	// default a state dir from (its own os.UserConfigDir fallback fails,
+	// since every source it reads was just blanked above) and nothing to
+	// derive an intake dir from either.
+	proxy := "schema = 1\n"
+	// The sandbox names an AS for every run; with one, a state directory is
+	// required, and this fixture is about a configuration that names none.
+	delete(s.env, "JEVLIN_AS_URL")
 	if err := os.WriteFile(s.cfgPath(), []byte(proxy), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1276,7 +1279,7 @@ func installedOwningItsBinary(t *testing.T) *setupSandbox {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveRefreshToken("rt-installed"); err != nil {
+	if err := store.SaveRefreshToken(testOrigin(s.as.srv.URL), "rt-installed"); err != nil {
 		t.Fatal(err)
 	}
 	for rel, body := range map[string]string{
@@ -1408,7 +1411,7 @@ func TestPurgeDoesNotRevokeStateOutsideTheInstallation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveRefreshToken("rt-elsewhere"); err != nil {
+	if err := store.SaveRefreshToken(testOrigin(s.as.srv.URL), "rt-elsewhere"); err != nil {
 		t.Fatal(err)
 	}
 	setConfigKey(t, s, "state_dir", outsideState)

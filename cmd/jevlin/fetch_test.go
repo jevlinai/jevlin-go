@@ -38,7 +38,7 @@ func fetchServing(t *testing.T, status int, raw, stdin string) (map[string]any, 
 		_, _ = w.Write([]byte(raw))
 	})
 	code, out, errOut := runFetchStdin(t, map[string]string{"JEVLIN_API_KEY": "sr-fictional-key"}, stdin, "-config", cfg)
-	if errOut != "" {
+	if withoutOriginNotice(errOut) != "" {
 		t.Errorf("fetch wrote on stderr: %q", errOut)
 	}
 	return decodeEnvelope(t, out), code, fr
@@ -288,7 +288,7 @@ func TestFetchUsesTheStoredKeyAndNeverArgv(t *testing.T) {
 		t.Fatal(err)
 	}
 	const stored = "sr-stored-fictional-0123456789"
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: stored}); err != nil {
+	if err := writeCredentials(credentialsPath(cfg.Miner), boundCredentials(cfg, stored)); err != nil {
 		t.Fatal(err)
 	}
 	args := []string{"-config", cfgPath}

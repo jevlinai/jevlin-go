@@ -373,18 +373,23 @@ func newExecInstallationIn(t *testing.T, dirName string) *execInstallation {
 		})
 	})
 
-	doc := fmt.Sprintf(`[mining]
-state_dir = %q
-spool_dir = %q
+	doc := fmt.Sprintf(`schema = 1
 
-[miner]
-router_url = %q
-intake_dir = %q
-sessions_dir = %q
+[router]
+url = %[3]q
 
 [platform]
-base_url = %q
-agents_api_url = %q
+url = %[6]q
+
+[agents]
+url = %[7]q
+
+[mining]
+state_dir = %[1]q
+spool_dir = %[2]q
+
+intake_dir = %[4]q
+sessions_dir = %[5]q
 `, filepath.Join(home, "state"), filepath.Join(home, "spool"), router.URL,
 		filepath.Join(home, "intake"), in.sessions, platform.URL, platform.URL)
 	if err := os.WriteFile(in.cfg, []byte(doc), 0o600); err != nil {

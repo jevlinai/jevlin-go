@@ -705,11 +705,7 @@ func (r *setupRun) config() int {
 		fmt.Fprintln(r.d.stderr, "jevlin setup: refusing the config:", err)
 		return exitTransport
 	}
-	validate := validateConfigSyntax
-	if !r.dry {
-		validate = validateConfigFile(r.home)
-	}
-	plan, err := planSetupConfig(r.cfgPath, existing, r.values, validate)
+	plan, err := planSetupConfig(r.cfgPath, existing, r.values, validateConfigBytes, lexists)
 	if err != nil {
 		fmt.Fprintf(r.d.stderr, "\njevlin setup: %v\nNothing was changed in it. Fix or move the file aside, then run setup again.\n", err)
 		return exitTransport
@@ -719,17 +715,21 @@ func (r *setupRun) config() int {
 	}
 	switch plan.outcome {
 	case configLeft:
-		r.say("Config already has a [miner] block: " + r.cfgPath + " (left as is)")
+		r.say("Config is already format 1: " + r.cfgPath + " (left as is)")
 		return exitOK
 	case configFresh:
 		if r.dry {
 			r.printf("(dry run) would write %s\n", r.cfgPath)
 			return exitOK
 		}
-	case configMigrated:
+	case configReplaced:
 		if r.dry {
-			r.printf("(dry run) would add %s to %s, leaving its existing lines as they are\n", strings.Join(plan.added, " and "), r.cfgPath)
+			r.printf("(dry run) would set %s aside as %s, an older configuration format, and write a new one\n", r.cfgPath, plan.aside)
 			return exitOK
+		}
+		if err := os.Rename(r.cfgPath, plan.aside); err != nil { // #nosec G703 -- the installation's own config path and a name beside it
+			fmt.Fprintln(r.d.stderr, "jevlin setup: setting the older configuration aside:", err)
+			return exitTransport
 		}
 	}
 	if err := publishSetupConfig(r.cfgPath, plan.data); err != nil {
@@ -737,8 +737,9 @@ func (r *setupRun) config() int {
 		return exitTransport
 	}
 	r.changed = true
-	if plan.outcome == configMigrated {
-		r.say(fmt.Sprintf("Added %s to %s; its existing lines are unchanged", strings.Join(plan.added, " and "), r.cfgPath))
+	if plan.outcome == configReplaced {
+		r.say(fmt.Sprintf("Set %s aside as %s: it is an older configuration format, which this jevlin does not read", r.cfgPath, plan.aside))
+		r.say("Wrote " + r.cfgPath + " in configuration format 1; copy any setting you changed by hand from the old file")
 	} else {
 		r.say("Wrote " + r.cfgPath)
 	}

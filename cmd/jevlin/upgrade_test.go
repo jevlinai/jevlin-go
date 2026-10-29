@@ -189,7 +189,7 @@ func newUpgradeFixture(t *testing.T, lr *localRelease) *upgradeFixture {
 	f.agents.lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
 	f.agents.executable = func() (string, error) { return f.exe, nil }
 	f.agents.isTerminal = func() bool { return false }
-	writeFileT(t, filepath.Join(f.home, setupConfigFile), "")
+	writeFileT(t, filepath.Join(f.home, setupConfigFile), "schema = 1\n")
 	f.write(f.exe, "0.3.0")
 	return f
 }

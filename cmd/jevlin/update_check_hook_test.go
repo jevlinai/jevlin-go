@@ -29,7 +29,7 @@ import (
 func TestTheRealHooksStartTheCheckOnlyOutsideASandbox(t *testing.T) {
 	root := t.TempDir()
 	cfg := filepath.Join(root, "jevlin.toml")
-	writeFileT(t, cfg, "[miner]\nsessions_dir = \"/sessions\"\nintake_dir = \""+filepath.ToSlash(filepath.Join(root, "intake"))+"\"\n")
+	writeFileT(t, cfg, "schema = 1\n[mining]\nsessions_dir = \"/sessions\"\nintake_dir = \""+filepath.ToSlash(filepath.Join(root, "intake"))+"\"\n")
 	entries := []struct {
 		name    string
 		args    []string

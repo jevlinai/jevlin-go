@@ -1377,7 +1377,7 @@ func piPathToTheRouter(t *testing.T, sid string, optIn bool) (searchReq *execRou
 			t.Fatal(err)
 		}
 		// The installation opts in to the turn end.
-		if err := os.WriteFile(in.cfg, bytes.Replace(doc, []byte("[miner]\n"), []byte("[miner]\nturn_end = true\n"), 1), 0o600); err != nil { // #nosec G703 -- the config this test wrote under its own temp directory
+		if err := os.WriteFile(in.cfg, bytes.Replace(doc, []byte("[mining]\n"), []byte("[mining]\nturn_end = true\n"), 1), 0o600); err != nil { // #nosec G703 -- the config this test wrote under its own temp directory
 			t.Fatal(err)
 		}
 	}

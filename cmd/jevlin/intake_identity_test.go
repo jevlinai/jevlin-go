@@ -109,7 +109,7 @@ func TestProductionMaxAttemptsCompatibility(t *testing.T) {
 		{"", 50}, {"collector_max_attempts = 0", 50}, {"collector_max_attempts = 50", 50}, {"collector_max_attempts = 4", 4},
 	} {
 		path := filepath.Join(t.TempDir(), "config.toml")
-		data := "[mining]\nas_url = \"https://as.example.com\"\nchain_id = \"twilight-1\"\nslot_id = 1\n" + tc.key + "\n"
+		data := "schema = 1\n[mining]\nas_url = \"https://as.example.com\"\nchain_id = \"twilight-1\"\nslot_id = 1\n" + tc.key + "\n"
 		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 			t.Fatal(err)
 		}

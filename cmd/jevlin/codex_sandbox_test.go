@@ -78,19 +78,21 @@ func sandboxTestConfig(t *testing.T) (cfgPath, home string) {
 		}
 	}
 	doc := fmt.Sprintf(`
+schema = 1
+
+[router]
+url = "https://router.example.invalid"
+
 [mining]
 enabled = true
 as_url = "https://as.example.invalid"
 chain_id = "twilight-1"
 slot_id = 7
-state_dir = %q
-spool_dir = %q
+state_dir = %[1]q
+spool_dir = %[2]q
 
-[miner]
-enabled = true
-router_url = "https://router.example.invalid"
-intake_dir = %q
-sessions_dir = %q
+intake_dir = %[3]q
+sessions_dir = %[4]q
 `, filepath.ToSlash(filepath.Join(home, "state")), filepath.ToSlash(filepath.Join(home, "spool")),
 		filepath.ToSlash(filepath.Join(home, "intake")), filepath.ToSlash(filepath.Join(home, "sessions")))
 	cfgPath = filepath.Join(home, "jevlin.toml")
@@ -255,7 +257,7 @@ func TestCodexInstallWithMinerOffStillWritesStateDirRoot(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(home, "state"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	doc := fmt.Sprintf("[mining]\nstate_dir = %q\n\n[miner]\nenabled = false\n",
+	doc := fmt.Sprintf("schema = 1\n[mining]\nstate_dir = %q\n",
 		filepath.ToSlash(filepath.Join(home, "state")))
 	cfgPath := filepath.Join(home, "jevlin.toml")
 	if err := os.WriteFile(cfgPath, []byte(doc), 0o600); err != nil {
@@ -335,18 +337,20 @@ func TestCodexInstallRefusesALayoutThatNestsTheInstallationInARoot(t *testing.T)
 
 func nestedDoc(state, spool, intake, sessions string) string {
 	return fmt.Sprintf(`
+schema = 1
+
+[router]
+url = "https://router.example.invalid"
+
 [mining]
 enabled = true
 as_url = "https://as.example.invalid"
 chain_id = "twilight-1"
 slot_id = 7
-state_dir = %q
-spool_dir = %q
+state_dir = %[1]q
+spool_dir = %[2]q
 
-[miner]
-enabled = true
-router_url = "https://router.example.invalid"
-intake_dir = %q
-sessions_dir = %q
+intake_dir = %[3]q
+sessions_dir = %[4]q
 `, filepath.ToSlash(state), filepath.ToSlash(spool), filepath.ToSlash(intake), filepath.ToSlash(sessions))
 }

@@ -47,9 +47,9 @@ func newFakeRouter(t *testing.T, handler http.HandlerFunc) (*fakeRouter, string,
 	t.Cleanup(f.srv.Close)
 	root := t.TempDir()
 	cfg := filepath.Join(root, "jevlin.toml")
-	toml := `[[provider]]
-name = "search-router"
-upstream = "https://router.fictional.test"
+	// [router] is last, so a test appending a router key (tier) appends it
+	// to that table.
+	toml := `schema = 1
 
 [mining]
 enabled = true
@@ -59,9 +59,8 @@ slot_id = 3
 state_dir = "` + filepath.ToSlash(filepath.Join(root, "state")) + `"
 spool_dir = "` + filepath.ToSlash(filepath.Join(root, "spool")) + `"
 
-[miner]
-enabled = true
-router_url = "` + f.srv.URL + `"
+[router]
+url = "` + f.srv.URL + `"
 `
 	if err := os.WriteFile(cfg, []byte(toml), 0o600); err != nil {
 		t.Fatal(err)

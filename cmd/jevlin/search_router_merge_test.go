@@ -178,7 +178,7 @@ func TestTheMergedListIsTheRoutersInItsOrder(t *testing.T) {
 					}
 				}
 			}
-			if stderr != "" {
+			if withoutOriginNotice(stderr) != "" {
 				t.Errorf("a normal search wrote on stderr: %q", stderr)
 			}
 		})
@@ -313,7 +313,7 @@ func TestARouterThatOmitsItsMergedViewStillAnswersOK(t *testing.T) {
 	if len(listOf(result["candidates"])) == 0 {
 		t.Error("the candidates did not survive the missing merged view")
 	}
-	if stderr != "" {
+	if withoutOriginNotice(stderr) != "" {
 		t.Errorf("machine mode wrote on stderr: %q", stderr)
 	}
 }

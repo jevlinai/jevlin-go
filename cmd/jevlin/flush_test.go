@@ -82,7 +82,7 @@ func newFlushFixture(t *testing.T, as *fakeAS) *flushFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveRefreshToken("rt-0"); err != nil {
+	if err := store.SaveRefreshToken(testOrigin(as.srv.URL), "rt-0"); err != nil {
 		t.Fatal(err)
 	}
 	// miningActive's own default (an absent decision reads as stopped)
@@ -94,19 +94,21 @@ func newFlushFixture(t *testing.T, as *fakeAS) *flushFixture {
 	}
 	router := newRouterRecorder(t)
 	doc := fmt.Sprintf(`
+schema = 1
+
+[router]
+url = %[6]q
+
 [mining]
 enabled = true
-as_url = %q
-chain_id = %q
-slot_id = %d
-state_dir = %q
-spool_dir = %q
+as_url = %[1]q
+chain_id = %[2]q
+slot_id = %[3]d
+state_dir = %[4]q
+spool_dir = %[5]q
 
-[miner]
-enabled = true
-router_url = %q
-intake_dir = %q
-sessions_dir = %q
+intake_dir = %[7]q
+sessions_dir = %[8]q
 flush_interval = "1s"
 `, as.srv.URL, testChainID, testSlotID, stateDir, filepath.Join(root, "spool"),
 		router.srv.URL, filepath.Join(root, "intake"), filepath.Join(root, "sessions"))

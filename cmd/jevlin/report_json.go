@@ -238,18 +238,16 @@ type statusRegionRefusalJSON struct {
 }
 
 type statusASJSON struct {
-	SetupError  string             `json:"setup_error,omitempty"`
-	BaseURL     string             `json:"base_url,omitempty"`
-	ChainID     string             `json:"chain_id,omitempty"`
-	SlotID      uint64             `json:"slot_id,omitempty"`
-	Epoch       *uint64            `json:"epoch,omitempty"`
-	EpochPinned bool               `json:"epoch_pinned"`
-	EpochError  string             `json:"epoch_error,omitempty"`
-	Status      *statusEpochJSON   `json:"epoch_status,omitempty"`
-	StatusError string             `json:"epoch_status_error,omitempty"`
-	Provider    *statusBindingJSON `json:"provider,omitempty"`
-	ProviderErr string             `json:"provider_error,omitempty"`
-	Queue       *queueState        `json:"queue,omitempty"`
+	SetupError  string           `json:"setup_error,omitempty"`
+	BaseURL     string           `json:"base_url,omitempty"`
+	ChainID     string           `json:"chain_id,omitempty"`
+	SlotID      uint64           `json:"slot_id,omitempty"`
+	Epoch       *uint64          `json:"epoch,omitempty"`
+	EpochPinned bool             `json:"epoch_pinned"`
+	EpochError  string           `json:"epoch_error,omitempty"`
+	Status      *statusEpochJSON `json:"epoch_status,omitempty"`
+	StatusError string           `json:"epoch_status_error,omitempty"`
+	Queue       *queueState      `json:"queue,omitempty"`
 }
 
 type statusEpochJSON struct {
@@ -259,14 +257,6 @@ type statusEpochJSON struct {
 	JoinStatus          string `json:"join_status"`
 	ParticipationStatus string `json:"participation_status"`
 	CapabilityAvailable bool   `json:"capability_available"`
-}
-
-type statusBindingJSON struct {
-	Provider       string `json:"provider"`
-	Status         string `json:"status"`
-	SourceProfile  string `json:"source_profile"`
-	KeyFingerprint string `json:"key_fingerprint"`
-	LastVerifiedAt string `json:"last_verified_at,omitempty"`
 }
 
 func statusEnvelope(f agentIdentityFacts, as *statusASFacts) commandEnvelope {
@@ -374,17 +364,6 @@ func statusASJSONOf(f statusASFacts) *statusASJSON {
 			JoinStatus:          st.JoinStatus,
 			ParticipationStatus: st.ParticipationStatus,
 			CapabilityAvailable: st.CapabilityAvailable,
-		}
-	}
-	if f.BindingErr != nil {
-		out.ProviderErr = boundMessage(redact.Error(f.BindingErr).Error())
-	} else if b := f.Binding; b != nil {
-		out.Provider = &statusBindingJSON{
-			Provider:       b.Provider,
-			Status:         b.Status,
-			SourceProfile:  b.SourceProfile,
-			KeyFingerprint: b.KeyFingerprint,
-			LastVerifiedAt: b.LastSuccessfulVerificationAt,
 		}
 	}
 	queue := f.Queue

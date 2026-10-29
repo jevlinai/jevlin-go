@@ -140,7 +140,9 @@ func TestDoctorJSONMakesNoMoreASCallsThanTheTextReport(t *testing.T) {
 
 	root := t.TempDir()
 	cfgPath := filepath.Join(root, "jevlin.toml")
-	toml := `[mining]
+	toml := `schema = 1
+
+[mining]
 enabled = true
 as_url = "` + as.URL + `"
 chain_id = "fictional-1"
@@ -180,7 +182,9 @@ func statusFixture(t *testing.T) (cfgPath, root string, store *auth.Store) {
 	t.Helper()
 	root = t.TempDir()
 	cfgPath = filepath.Join(root, "jevlin.toml")
-	toml := `[mining]
+	toml := `schema = 1
+
+[mining]
 state_dir = "` + filepath.ToSlash(filepath.Join(root, "state")) + `"
 spool_dir = "` + filepath.ToSlash(filepath.Join(root, "spool")) + `"
 `
@@ -304,7 +308,7 @@ func TestConnectJSONExposesClaimArtifactsAndNoCredential(t *testing.T) {
 	}
 	claim := auth.ClaimBootstrap{AgentID: reg.AgentID, ClaimURL: config.DefaultPlatformBaseURL + "/claim/abc123", ClaimCode: "ABC-123"}
 	seedClaim(t, cfgPath, claim.AgentID, claim.ClaimURL, claim.ClaimCode)
-	if err := writeCredentials(filepath.Join(root, "credentials.json"), credentials{APIKey: key}); err != nil {
+	if err := writeCredentials(filepath.Join(root, "credentials.json"), boundCredentials(mustLoadConfig(t, cfgPath), key)); err != nil {
 		t.Fatal(err)
 	}
 

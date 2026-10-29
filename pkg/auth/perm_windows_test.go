@@ -132,7 +132,7 @@ func TestAnotherPrincipalsEntryRefusesNothingOnLoad(t *testing.T) {
 	if _, err := s.DPoPKey(); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SaveRefreshToken("refresh-token"); err != nil {
+	if err := s.SaveRefreshToken(testASOrigin, "refresh-token"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.ParticipationSecret(); err != nil {
@@ -166,8 +166,8 @@ func TestAnotherPrincipalsEntryRefusesNothingOnLoad(t *testing.T) {
 	if _, err := s.DPoPKeyExisting(); err != nil {
 		t.Errorf("dpop.key refused: %v", err)
 	}
-	if tok, ok, err := s.LoadRefreshToken(); err != nil || !ok || tok != "refresh-token" {
-		t.Errorf("refresh.token = %q, %v, %v; want it loaded", tok, ok, err)
+	if tok, ok, err := s.LoadRefreshToken(); err != nil || !ok || tok.Token != "refresh-token" {
+		t.Errorf("refresh.token = %q, %v, %v; want it loaded", tok.Token, ok, err)
 	}
 	if _, err := s.ParticipationSecret(); err != nil {
 		t.Errorf("participation.secret refused: %v", err)

@@ -20,6 +20,8 @@ import (
 	"strings"
 
 	jose "github.com/go-jose/go-jose/v4"
+
+	"github.com/jevlinai/jevlin-go/pkg/redact"
 )
 
 // ReceiptTyp is the only accepted receipt JWS typ (contract §24).
@@ -447,7 +449,7 @@ func joinRefusal(status int, raw []byte) error {
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(raw, &env); err == nil && env.Error.Code != "" {
-		return &ASRefusedError{Status: status, Code: env.Error.Code, Message: env.Error.Message}
+		return &ASRefusedError{Status: status, Code: env.Error.Code, Message: redact.String(env.Error.Message)}
 	}
 	return &ASRefusedError{Status: status}
 }

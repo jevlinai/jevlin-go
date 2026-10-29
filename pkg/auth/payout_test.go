@@ -94,7 +94,7 @@ func (f *payoutAS) client(t *testing.T) *MiningClient {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveRefreshToken("rt-0"); err != nil {
+	if err := store.SaveRefreshToken(testOrigin(t, f.srv.URL), "rt-0"); err != nil {
 		t.Fatal(err)
 	}
 	d, err := NewDiscoverer(DiscoveryConfig{BaseURL: f.srv.URL, ChainID: "twilight-1", SlotID: 7})
@@ -350,36 +350,6 @@ func TestWhitespaceAddressNeverReachesTheAS(t *testing.T) {
 	}
 	if _, err := as.client(t).DeclarePayoutAddress(context.Background(), "   "); err == nil {
 		t.Fatal("a whitespace-only address was accepted")
-	}
-}
-
-// `provider` is meaningful only where the AS accepts OPENROUTER_V1.
-//
-// Under SEARCH_ROUTER_V1 the participant holds no provider credential at all
-// (§35.1, MINIS-VER-006), so there is no binding for a registration to
-// establish. Asking discovery lets the proxy say that plainly instead of
-// relaying a refusal the participant cannot interpret.
-func TestAcceptsOpenRouterProfileFollowsDiscovery(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		profiles []string
-		want     bool
-	}{
-		{"OpenRouter only", []string{"OPENROUTER_V1"}, true},
-		{"both profiles", []string{"OPENROUTER_V1", "SEARCH_ROUTER_V1"}, true},
-		{"search router only", []string{"SEARCH_ROUTER_V1"}, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			as := newPayoutAS(t)
-			as.sourceProfiles = tc.profiles
-			got, err := as.client(t).AcceptsOpenRouterProfile(context.Background())
-			if err != nil {
-				t.Fatalf("read discovery: %v", err)
-			}
-			if got != tc.want {
-				t.Fatalf("accepts=%v, want %v for %v", got, tc.want, tc.profiles)
-			}
-		})
 	}
 }
 

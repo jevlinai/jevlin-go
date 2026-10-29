@@ -657,28 +657,6 @@ func TestSetupSecondRunIsANoOp(t *testing.T) {
 	}
 }
 
-// An existing config with a [miner] table is left byte for byte.
-func TestSetupLeavesAConfigWithMinerByteIdentical(t *testing.T) {
-	s := newSetupSandbox(t)
-	s.platform.claim("credits")
-	if err := os.MkdirAll(s.home, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	body := "# mine, by hand\n[platform]\nbase_url = \"" + s.platform.srv.URL + "\"\n\n[mining]\nas_url = \"" + s.as.srv.URL +
-		"\"\nchain_id = \"twilight-1\"\nslot_id = 7\nstate_dir = " + mustTOML(t, filepath.Join(s.home, "state")) +
-		"\n\n[miner]\nenabled = true\nintake_dir = " + mustTOML(t, filepath.Join(s.home, "intake")) + "\n"
-	if err := os.WriteFile(s.cfgPath(), []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	code, out, errOut := s.run(nil, false)
-	if code != exitOK {
-		t.Fatalf("setup exited %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
-	}
-	if got := s.readFile(s.cfgPath()); string(got) != body {
-		t.Fatalf("config changed:\n--- want ---\n%s\n--- got ---\n%s", body, got)
-	}
-}
-
 func mustTOML(t *testing.T, s string) string {
 	t.Helper()
 	q, err := tomlString(s)
@@ -688,49 +666,55 @@ func mustTOML(t *testing.T, s string) string {
 	return q
 }
 
-// A tokendrop-proxy config — valid, no [platform], no [miner] — gains only
-// the two missing tables. Its own bytes stay the file's prefix, and the
-// result loads.
-func TestSetupAppendsOnlyTheMissingTablesToAProxyConfig(t *testing.T) {
+// An older config is not migrated: setup sets it aside, byte for byte, under
+// a name of its own and writes format 1 in its place. Nothing the older file
+// said is carried over, its router included.
+func TestSetupSetsAnOlderConfigAsideAndWritesFormatOne(t *testing.T) {
 	s := newSetupSandbox(t)
 	s.platform.claim("credits")
 	if err := os.MkdirAll(s.home, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	proxy := "[proxy]\nlisten = \"127.0.0.1:8787\"\n\n[[provider]]\nname = \"search-router\"\nupstream = \"https://router.invalid.test\"\n\n" +
+	older := "[proxy]\nlisten = \"127.0.0.1:8787\"\n\n[[provider]]\nname = \"search-router\"\nupstream = \"https://legacy-upstream.example/api\"\n\n" +
 		"[mining]\nas_url = \"" + s.as.srv.URL + "\"\nchain_id = \"twilight-1\"\nslot_id = 7\nstate_dir = " + mustTOML(t, filepath.Join(s.home, "state")) + "\n"
-	if err := os.WriteFile(s.cfgPath(), []byte(proxy), 0o600); err != nil {
+	if err := os.WriteFile(s.cfgPath(), []byte(older), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// One aside name is taken already, so the next one is used.
+	if err := os.WriteFile(s.cfgPath()+".old", []byte("an earlier one"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	code, out, errOut := s.run(nil, false)
 	if code != exitOK {
 		t.Fatalf("setup exited %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
 	}
+	if got := s.readFile(s.cfgPath() + ".old.1"); string(got) != older {
+		t.Fatalf("the older config was not set aside byte for byte:\n%s", got)
+	}
+	if got := s.readFile(s.cfgPath() + ".old"); string(got) != "an earlier one" {
+		t.Fatalf("an existing aside file was overwritten:\n%s", got)
+	}
 	got := s.readFile(s.cfgPath())
-	if !bytes.HasPrefix(got, []byte(proxy)) {
-		t.Fatalf("the proxy config's own bytes were not kept as the prefix:\n%s", got)
-	}
-	platform, miner, err := configTablesDefined(got)
-	if err != nil || !platform || !miner {
-		t.Fatalf("tables after migration: platform=%v miner=%v err=%v\n%s", platform, miner, err, got)
-	}
-	if n := bytes.Count(got, []byte("[platform]")); n != 1 {
-		t.Errorf("[platform] appears %d times", n)
+	if !bytes.HasPrefix(got, []byte("schema = 1\n")) || bytes.Contains(got, []byte("legacy-upstream")) || bytes.Contains(got, []byte("[proxy]")) {
+		t.Fatalf("the new config is not format 1, or carries the older file's settings:\n%s", got)
 	}
 	cfg := loadSetupConfig(t, s.cfgPath())
-	if cfg.Listen.Address != "127.0.0.1:8787" || !cfg.Miner.Enabled {
-		t.Errorf("migrated config lost the proxy's settings or gained no miner: %+v %+v", cfg.Listen, cfg.Miner)
+	if cfg.Miner.RouterURL.String() != "https://router.invalid.test" || !cfg.Miner.Enabled {
+		t.Errorf("the new config: router %v intake %v", cfg.Miner.RouterURL, cfg.Miner.Enabled)
+	}
+	if !strings.Contains(out, s.cfgPath()+".old.1") || !strings.Contains(out, "older configuration format") {
+		t.Errorf("setup did not say where the older config went:\n%s", out)
 	}
 }
 
-// A valid config that already has [platform] gains only [miner].
-func TestSetupAppendsOnlyMinerWhenPlatformExists(t *testing.T) {
+// A format-1 config is left exactly as it is.
+func TestSetupLeavesAFormatOneConfigByteForByte(t *testing.T) {
 	s := newSetupSandbox(t)
 	s.platform.claim("credits")
 	if err := os.MkdirAll(s.home, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	body := "[platform]\nbase_url = \"" + s.platform.srv.URL + "\"\nagents_api_url = \"" + s.platform.srv.URL + "\"\n\n" +
+	body := "schema = 1\n# the participant's own comment\n[platform]\nurl = \"" + s.platform.srv.URL + "\"\n\n" +
 		"[mining]\nas_url = \"" + s.as.srv.URL + "\"\nchain_id = \"twilight-1\"\nslot_id = 7\nstate_dir = " + mustTOML(t, filepath.Join(s.home, "state")) + "\n"
 	if err := os.WriteFile(s.cfgPath(), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
@@ -739,17 +723,12 @@ func TestSetupAppendsOnlyMinerWhenPlatformExists(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("setup exited %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
 	}
-	got := s.readFile(s.cfgPath())
-	if !bytes.HasPrefix(got, []byte(body)) {
-		t.Fatalf("existing bytes not kept:\n%s", got)
+	if got := s.readFile(s.cfgPath()); string(got) != body {
+		t.Fatalf("a format-1 config was changed:\n%s\n--- setup said ---\n%s", got, out)
 	}
-	if n := bytes.Count(got, []byte("[platform]")); n != 1 {
-		t.Fatalf("[platform] appears %d times, want 1:\n%s", n, got)
+	if lexists(s.cfgPath() + ".old") {
+		t.Error("a format-1 config was set aside")
 	}
-	if n := bytes.Count(got, []byte("[miner]")); n != 1 {
-		t.Fatalf("[miner] appears %d times, want 1:\n%s", n, got)
-	}
-	loadSetupConfig(t, s.cfgPath())
 }
 
 // A config that does not parse is refused whatever its text holds — here, a
@@ -898,7 +877,7 @@ func writeInstallation(t *testing.T, dir string, parts ...string) {
 		case "spool":
 			write(filepath.Join("spool", "unsent-1.json"), `{"v":1}`)
 		case "config":
-			write(setupConfigFile, "[mining]\nstate_dir = \"/nowhere\"\n")
+			write(setupConfigFile, "schema = 1\n[mining]\nstate_dir = \"/nowhere\"\n")
 		}
 	}
 }
@@ -1466,8 +1445,9 @@ func TestSetupNamesEveryPathWhenARollbackFails(t *testing.T) {
 	}
 }
 
-// An adopted config goes through the migration policy like any other.
-func TestSetupMigratesAnAdoptedConfig(t *testing.T) {
+// An adopted config goes through the config policy like any other: an older
+// one is set aside and a format-1 one written.
+func TestSetupReplacesAnAdoptedOlderConfig(t *testing.T) {
 	s := newSetupSandbox(t)
 	sibling := s.home + ".bak"
 	writeInstallation(t, sibling, "wallet")
@@ -1476,11 +1456,14 @@ func TestSetupMigratesAnAdoptedConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, out, _ := s.run(tty("y", "n"), true, "-no-agents", "-no-profile")
-	if !strings.Contains(out, "adopted the config") || !strings.Contains(out, "Added [platform] and [miner] to "+s.cfgPath()) {
-		t.Fatalf("adopted config not migrated:\n%s", out)
+	if !strings.Contains(out, "adopted the config") || !strings.Contains(out, "Set "+s.cfgPath()+" aside as "+s.cfgPath()+".old") {
+		t.Fatalf("the adopted older config was not set aside:\n%s", out)
 	}
-	if got := s.readFile(s.cfgPath()); !bytes.HasPrefix(got, []byte(proxy)) {
-		t.Errorf("adopted config's bytes not kept:\n%s", got)
+	if got := s.readFile(s.cfgPath() + ".old"); string(got) != proxy {
+		t.Errorf("the adopted config's bytes were not kept aside:\n%s", got)
+	}
+	if got := s.readFile(s.cfgPath()); !bytes.HasPrefix(got, []byte("schema = 1\n")) {
+		t.Errorf("no format-1 config written:\n%s", got)
 	}
 }
 
@@ -1599,7 +1582,7 @@ func seedConfigFixture(t *testing.T, s *setupSandbox, outcome configFixtureOutco
 			t.Fatal(err)
 		}
 	case fixtureConfigMigrated:
-		data = []byte("[mining]\nas_url = " + mustTOML(t, s.as.srv.URL) + "\nchain_id = \"twilight-1\"\nslot_id = 7\nstate_dir = " +
+		data = []byte("schema = 1\n[mining]\nas_url = " + mustTOML(t, s.as.srv.URL) + "\nchain_id = \"twilight-1\"\nslot_id = 7\nstate_dir = " +
 			mustTOML(t, filepath.Join(s.home, "state")) + "\n")
 	}
 	if err := os.WriteFile(s.cfgPath(), data, 0o600); err != nil {

@@ -11,7 +11,7 @@ func TestUpgradeHoldsTheGateSetupAndTheExecutablesUpdateLock(t *testing.T) {
 	home := filepath.Join(root, "home")
 	exe := filepath.Join(home, "bin", "jevlin")
 	writeFileT(t, exe, "binary")
-	writeFileT(t, filepath.Join(home, setupConfigFile), "")
+	writeFileT(t, filepath.Join(home, setupConfigFile), "schema = 1\n")
 
 	ex, err := excludeForUpgrade(home, exe, 0)
 	if err != nil {
@@ -42,7 +42,7 @@ func TestUpgradeRefusesARunningSetupOrAnotherUpgradeOfTheSameBinary(t *testing.T
 	home := filepath.Join(root, "home")
 	exe := filepath.Join(root, "shared", "bin", "jevlin")
 	writeFileT(t, exe, "binary")
-	writeFileT(t, filepath.Join(home, setupConfigFile), "")
+	writeFileT(t, filepath.Join(home, setupConfigFile), "schema = 1\n")
 
 	release := holdLockFile(t, filepath.Join(home, setupLockFile))
 	if _, err := excludeForUpgrade(home, exe, 0); activeOperation(err) != "setup" {
@@ -53,7 +53,7 @@ func TestUpgradeRefusesARunningSetupOrAnotherUpgradeOfTheSameBinary(t *testing.T
 	// Another installation upgrading the same binary holds its own gate but
 	// the same update lock.
 	other := filepath.Join(root, "other-home")
-	writeFileT(t, filepath.Join(other, setupConfigFile), "")
+	writeFileT(t, filepath.Join(other, setupConfigFile), "schema = 1\n")
 	first, err := excludeForUpgrade(other, exe, 0)
 	if err != nil {
 		t.Fatal(err)

@@ -88,7 +88,7 @@ func newActivityClient(t *testing.T, base string) *MiningClient {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveRefreshToken("rt-0"); err != nil {
+	if err := store.SaveRefreshToken(testOrigin(t, base), "rt-0"); err != nil {
 		t.Fatal(err)
 	}
 	d, err := NewDiscoverer(DiscoveryConfig{BaseURL: base, ChainID: "twilight-1", SlotID: 7})

@@ -68,23 +68,16 @@ func TestUsageTextStatusSection(t *testing.T) {
 	}
 }
 
-// TestUsageTextManualEnrollmentSectionNamesProvider: `provider` is a real
-// dispatched command, and `join` ends by naming it as the next step on a
-// Slot that accepts OPENROUTER_V1 (enroll.go's cmdJoin). A command the
-// binary tells you to run, and that the binary's own help does not mention,
-// is the 0.2.6 help-surface finding in miniature — so the manual-enrollment
-// section, where it belongs, is asserted to name it.
-func TestUsageTextManualEnrollmentSectionNamesProvider(t *testing.T) {
+// TestUsageTextNamesNoProviderCommand: the participant supplies no provider
+// key, so help names no command for one, and no command that is not
+// dispatched.
+func TestUsageTextNamesNoProviderCommand(t *testing.T) {
 	s := section(t, "\nmanual enrollment", "\nis it working")
-
-	if !strings.Contains(s, "\n  provider ") {
-		t.Errorf("manual enrollment section: no `provider` entry; cmdProvider is dispatched and cmdJoin points at it\n%s", s)
+	if strings.Contains(s, "\n  provider ") || strings.Contains(s, "OPENROUTER_V1") {
+		t.Errorf("manual enrollment section still names the provider command\n%s", s)
 	}
-	// Scoped, not unconditional: under the default SEARCH_ROUTER_V1 profile
-	// the participant holds no provider credential at all, and help that
-	// implied otherwise would send that participant into a refusal.
-	if !strings.Contains(s, "OPENROUTER_V1") {
-		t.Errorf("manual enrollment section: `provider` is not scoped to OPENROUTER_V1\n%s", s)
+	if code := dispatch("provider", nil); code == exitOK {
+		t.Error("`jevlin provider` still runs")
 	}
 }
 

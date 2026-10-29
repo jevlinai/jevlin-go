@@ -1,91 +1,75 @@
-// Package config resolves the proxy configuration exactly once at startup —
-// defaults, then a TOML file (JEVLIN_CONFIG names it), then the proxy-era
-// TOKENDROP_* listener variables, then flags — into an immutable struct.
-// Nothing re-reads configuration at request time. Unsafe states are rejected here rather than warned about: a
-// non-loopback TCP listener (no override flag exists), content logging
-// (the key is accepted only in order to be rejected), and a non-https or
-// credential-carrying upstream.
+// Package config resolves the client's configuration exactly once, into an
+// immutable struct: compiled defaults (defaults.go), then the TOML file a
+// command names, then the JEVLIN_* endpoint variables. Nothing re-reads it
+// later.
+//
+// The file is configuration format 1. It begins `schema = 1` and names every
+// endpoint in its own section:
+//
+//	schema = 1
+//
+//	[router]
+//	url = "https://api.jevlin.ai"
+//
+//	[platform]
+//	url = "https://platform.jevlin.ai"
+//
+//	[agents]
+//	url = "https://agents-v1.jevlin.ai"
+//
+//	[mining]
+//	as_url   = "https://rewards-testnet.jevlin.ai"
+//	chain_id = "twilight-testnet-1"
+//	slot_id  = 3
+//
+// Every section and key is optional; a missing one takes its compiled
+// default. A file without `schema = 1`, or with a key format 1 does not
+// define, is refused with one message and never reinterpreted: an older
+// file's endpoints were chosen under rules this client no longer has, and
+// guessing what they meant now is how a key reaches a host it was not issued
+// for.
+//
+// Unsafe states are rejected here rather than warned about later: every URL
+// that a credential is sent to must be https, or plain http on a loopback
+// host, and must carry no userinfo.
 package config
 
 import (
-	"crypto/x509"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
 )
 
-// Defaults per design_plan §5.7, §5.8, §6.1, §6.4 and §11.
+// Schema is the configuration format this client reads and setup writes.
+const Schema = 1
+
+// ErrLegacyConfig marks a file that is not configuration format 1: no
+// schema line, or a key format 1 does not define.
+var ErrLegacyConfig = errors.New("this configuration is from an older jevlin; run `jevlin setup`")
+
+// The runtime endpoint variables. Each replaces its URL after the file, under
+// the file's own URL rules; JEVLIN_CONFIG still chooses the file.
 const (
-	DefaultListen              = "127.0.0.1:8787"
-	DefaultAdminListen         = "127.0.0.1:8788"
-	defaultUpstream            = "https://openrouter.ai/api"
-	defaultProviderName        = "openrouter"
-	defaultShutdownGrace       = 5 * time.Second
-	defaultMaxRequestBodyBytes = 32 << 20
-	defaultMaxInboundConns     = 256
-
-	defaultObservationBudget = 48 << 20
-	defaultRingBytes         = 256 << 10
-	defaultMaxEventBytes     = 1 << 20
-	defaultMaxEvents         = 100_000
-	defaultMaxObservedBody   = 64 << 20
-	defaultMaxDepth          = 32
-	defaultMaxJSONKeyBytes   = 256
+	EnvRouterURL    = "JEVLIN_ROUTER_URL"
+	EnvPlatformURL  = "JEVLIN_PLATFORM_URL"
+	EnvAgentsAPIURL = "JEVLIN_AGENTS_API_URL"
+	EnvASURL        = "JEVLIN_AS_URL"
 )
-
-// Listen is a parsed listener specification: loopback TCP (the default) or a
-// Unix socket given as unix:///absolute/path.
-type Listen struct {
-	Network string // "tcp" or "unix"
-	Address string // host:port, or the socket path
-}
-
-func (l Listen) IsUnix() bool { return l.Network == "unix" }
-
-func (l Listen) String() string {
-	if l.IsUnix() {
-		return "unix://" + l.Address
-	}
-	return l.Address
-}
-
-// Observe carries the observation bounds. Defined now so the keys are stable;
-// consumed from Phase 2 onward.
-type Observe struct {
-	MemoryBudgetBytes    int64
-	RingBytes            int64
-	MaxEventBytes        int64
-	MaxEvents            int64
-	MaxObservedBodyBytes int64
-	MaxDepth             int
-	MaxJSONKeyBytes      int
-}
-
-// RingCount derives the global ring count from the budget. It is derived, not
-// configured: two knobs that can disagree about one ceiling is how an earlier
-// draft of the design got a bound nobody chose (ADR-0002).
-func (o Observe) RingCount() int {
-	if o.RingBytes <= 0 {
-		return 0
-	}
-	return int(o.MemoryBudgetBytes / o.RingBytes)
-}
 
 // Mining is the AS-facing mining-plane configuration (contract §18–§19).
 // Enabled is only the scripted first answer consumed by onboarding; the
 // persisted mining decision is runtime authority, while a non-empty ASBaseURL
-// says AS work is configured. A proxy without a [mining] block behaves exactly
-// as it did before mining integration existed.
+// says AS work is configured.
 type Mining struct {
 	Enabled     bool
 	ASBaseURL   string
@@ -98,57 +82,30 @@ type Mining struct {
 	StateDir string
 	// SpoolDir holds durably-written observations awaiting delivery.
 	// Separate from StateDir because its contents are evidence, not
-	// secrets: it is written on every metered request, and it is the one
-	// directory an operator may legitimately inspect or back up.
-	// Defaults to StateDir/spool.
+	// secrets. Defaults to StateDir/spool.
 	SpoolDir string
-	// TargetEpoch pins the reward epoch this installation participates
-	// in. It is now an OVERRIDE, not the only source: the AS advertises
-	// a current-target endpoint, and the daemon asks it every tick and
-	// joins whatever is open.
-	//
-	// A pointer because absent and zero are different answers — epoch 0
-	// is as legal an epoch as slot 0 is a legal slot, and a bare uint64
-	// would silently read "the operator said nothing" as "the operator
-	// said epoch 0". nil means "ask the AS"; non-nil pins that exact
-	// epoch and suppresses the query entirely, which is the escape
-	// hatch for an AS too old to advertise the endpoint, and for
-	// pinning one target during a demo or a test.
+	// TargetEpoch pins the reward epoch this installation participates in,
+	// overriding the AS's current-target endpoint. A pointer because absent
+	// and zero are different answers: nil means "ask the AS".
 	TargetEpoch *uint64
-	// Collector tuning. Zero means "use the collector's own defaults",
-	// which are the tested values; these exist so a demo can shorten the
-	// idle poll without a rebuild.
+	// Collector tuning. Zero means "use the collector's own defaults".
 	CollectorInterval    time.Duration
 	CollectorBaseBackoff time.Duration
 	CollectorMaxBackoff  time.Duration
 	CollectorMaxAttempts int
 	// PayoutAddress is the scripted-install answer to connect/mining
-	// enable's terminal question (agent onboarding design §5.5): a
-	// pre-decided payout destination, so an install with no terminal
-	// can still enable mining without a wallet ever being created here.
+	// enable's terminal question (agent onboarding design §5.5).
 	PayoutAddress string
 	// PlatformSlot names which platform-advertised mining slot connect
-	// should enroll into, required only when the platform ever offers
-	// more than one (WP2-review judgment call 1's ruling: one slot
-	// offered, take it; more than one, refuse and require this — no
-	// automatic AS-audience matching on the client's part).
+	// should enroll into, required only when the platform offers more
+	// than one.
 	PlatformSlot string
 }
 
-// Platform is the search platform connect and mining enable talk to
-// (agent onboarding design, search-platform-agent-onboarding-design.md).
-// Unlike Mining, this has no Enabled gate: both URLs are always
-// resolved and validated, and nothing dials either unless connect or
-// mining enable is actually invoked.
-//
-// Two URLs, not one: search-router runs the human-facing portal and
-// claim pages on one host and the machine-facing /v1/agents/* API on
-// another. BaseURL is the portal — the origin a printed claim_url is
-// checked against (invariant 12). AgentsAPIURL is where the actual
-// register/status/enroll requests go. A single shared origin was this
-// package's original assumption; live testing found the real deployment
-// splits it in two, and pkg/platform.Client now takes both rather than
-// deriving one from the other.
+// Platform is the search platform connect and mining enable talk to. BaseURL
+// is the human-facing portal, the origin a printed claim_url is checked
+// against (invariant 12), and is never dialed; AgentsAPIURL is where
+// register/status/enroll requests go, carrying the platform-issued key.
 type Platform struct {
 	BaseURL      string
 	AgentsAPIURL string
@@ -162,14 +119,9 @@ const (
 )
 
 // Update is the [update] block: what the daily release check the agent hooks
-// start may do. The check contacts only the compiled-in GitHub release
-// origin, with no credential (invariant 5's one exception); a copy npm
-// installed is never replaced, whatever Mode says, and is only noted.
+// start may do.
 type Update struct {
-	// Mode is apply (the default), notify or off. Apply is the default
-	// because a release is installed only under the project's signature over
-	// its checksums.txt, checked against a key compiled into the binary doing
-	// the installing (internal/selfupdate's SignedVerifier).
+	// Mode is apply (the default), notify or off.
 	Mode string
 	// UnknownMode is a word the file set that this version cannot name; Mode
 	// is then notify — never off, which would silence the check by a typo,
@@ -177,56 +129,41 @@ type Update struct {
 	UnknownMode string
 }
 
-// Config is the resolved, immutable configuration.
-// Miner is the drop-in miner: no daemon, no proxy. When enabled, the
-// `search` command posts straight to the router, records the served
-// request id under IntakeDir, and hands the mining-plane work (join,
-// capability, spool, submit) to a detached one-shot `flush`. Everything
-// under [mining] still applies — the miner is the same participant, run
-// at four moments instead of on a ticker.
+// Miner is the search side of the client: where searches go and what a
+// served search leaves for the flush.
 type Miner struct {
+	// Enabled says intake is configured: a served search records its
+	// request id for the flush. It is true exactly when an AS is
+	// configured ([mining] as_url), because intake exists only to be
+	// delivered there.
 	Enabled bool
-	// RouterURL is where searches go. Empty means the [[provider]]
-	// upstream, which is the gateway a proxy would have forwarded to.
+	// RouterURL is where searches, fetches, limits reads and turn ends go:
+	// [router] url, JEVLIN_ROUTER_URL, or the compiled default. Never nil
+	// in a loaded config.
 	RouterURL *url.URL
 	// IntakeDir holds one small JSON file per served search until a flush
 	// promotes it into the spool under a joined (slot, epoch).
 	IntakeDir string
-	// SessionsDir holds the per-workspace lineage sidecars the hooks
-	// write and `search` reads.
+	// SessionsDir holds the per-workspace lineage sidecars the hooks write
+	// and `search` reads.
 	SessionsDir string
-	// FlushInterval is how often a flush repeats the AS round trip
-	// (target, join, capability). Intake promotion and spool delivery run
-	// on every flush regardless.
+	// FlushInterval is how often a flush repeats the AS round trip.
 	FlushInterval time.Duration
-	// RouterConfigured is true when miner.router_url was written in the
-	// config, false when RouterURL is the provider upstream standing in for
-	// it. Searches go to either. Anything that must only ever reach the
-	// search router — the turn end — requires this.
-	RouterConfigured bool
 	// TurnEnd opts this installation in to reporting, when a turn that
 	// searched ends, the assistant's final message to the router. Off by
 	// default: it is model-written text leaving the machine.
 	TurnEnd bool
-	// Tier is the search tier a request carries when neither the caller
-	// (the -tier flag, the stdin request's "tier") nor the participant's
-	// `jevlin agents tier` file named one: [miner] tier, written by hand.
-	// Empty means the request carries no tier and the router applies the
-	// tenant's default. One of SearchTiers when set, lower-cased and
-	// trimmed at load.
+	// Tier is the search tier a request carries when neither the caller nor
+	// the participant's `jevlin agents tier` file named one. Empty means the
+	// router's default. One of SearchTiers when set.
 	Tier string
-	// UnknownTier is a [miner] tier that is not one of SearchTiers even
-	// after that: kept aside so status can say why the router's default
-	// applies, and never sent. A word this client cannot use does not stop
-	// the config from loading, because that would stop search, the flush
-	// and mining together over a value that only chooses a band.
+	// UnknownTier is a [router] tier that is not one of SearchTiers: kept
+	// aside so status can say why the router's default applies, and never
+	// sent.
 	UnknownTier string
 }
 
-// SearchTiers is the router's tier vocabulary this client knows — the
-// cost bands of search-router internal/tenant. A config naming another
-// word is refused at load rather than sent, so a typo is caught here and
-// not as a 400 on every search.
+// SearchTiers is the router's tier vocabulary this client knows.
 var SearchTiers = []string{"fast", "balanced", "max"}
 
 // KnownSearchTier reports whether tier is one this client can name.
@@ -239,79 +176,33 @@ func KnownSearchTier(tier string) bool {
 	return false
 }
 
+// Config is the resolved, immutable configuration.
 type Config struct {
-	Listen                Listen
-	AdminListen           Listen
-	ShutdownGrace         time.Duration
-	MaxRequestBodyBytes   int64
-	MaxInboundConns       int
-	ResponseHeaderTimeout time.Duration // 0 = disabled, deliberately (§5.8)
-
-	ProviderName string
-	ProviderTier string
-	Upstream     *url.URL
-
-	// UpstreamCAPool, when non-nil, REPLACES the system trust store for
-	// upstream TLS — a pinning control (and the E2E fixture path). Replacing
-	// rather than appending means the key can only narrow trust, never
-	// widen it. Nil means system roots.
-	UpstreamCAPool *x509.CertPool
-	UpstreamCAFile string
-
-	LogLevel slog.Level
-
-	Observe  Observe
 	Mining   Mining
 	Miner    Miner
 	Platform Platform
 	Update   Update
 
 	// MiningEnabledExplicit is true when the config file itself wrote
-	// `[mining] enabled` (true or false) — distinct from Mining.Enabled
-	// being false because the file said nothing about it at all. There
-	// is no environment override or flag for mining.enabled, so the
-	// file is the only source this can come from. connect and mining
-	// enable need the distinction: they ask their one interactive
-	// question only when this is false (nobody has decided yet); when
-	// it's true, whatever the file said is trusted outright, silently,
-	// which is what makes a scripted install possible.
+	// `[mining] enabled` (true or false), as distinct from saying nothing.
+	// connect and mining enable ask their interactive question only when
+	// this is false.
 	MiningEnabledExplicit bool
 }
 
-// fileConfig mirrors the TOML document. Field names follow
-// tokendrop-proxy-spec §10 and README.md.
+// fileConfig mirrors configuration format 1. Any key outside it is refused.
 type fileConfig struct {
-	Proxy struct {
-		Listen              string   `toml:"listen"`
-		AdminListen         string   `toml:"admin_listen"`
-		ShutdownGrace       duration `toml:"shutdown_grace"`
-		MaxRequestBodyBytes int64    `toml:"max_request_body_bytes"`
-		MaxInboundConns     int      `toml:"max_inbound_conns"`
-	} `toml:"proxy"`
-	Provider []struct {
-		Name     string `toml:"name"`
-		Tier     string `toml:"tier"`
-		Upstream string `toml:"upstream"`
-	} `toml:"provider"`
-	Transport struct {
-		ResponseHeaderTimeout duration `toml:"response_header_timeout"`
-		UpstreamCAFile        string   `toml:"upstream_ca_file"`
-	} `toml:"transport"`
-	Privacy struct {
-		LogContent bool `toml:"log_content"`
-	} `toml:"privacy"`
-	Log struct {
-		Level string `toml:"level"`
-	} `toml:"log"`
-	Observe struct {
-		MemoryBudgetBytes    int64 `toml:"observation_memory_budget"`
-		RingBytes            int64 `toml:"ring_bytes"`
-		MaxEventBytes        int64 `toml:"max_event_bytes"`
-		MaxEvents            int64 `toml:"max_events"`
-		MaxObservedBodyBytes int64 `toml:"max_observed_body_bytes"`
-		MaxDepth             int   `toml:"max_depth"`
-		MaxJSONKeyBytes      int   `toml:"max_json_key_bytes"`
-	} `toml:"observe"`
+	Schema *int `toml:"schema"`
+	Router struct {
+		URL  string `toml:"url"`
+		Tier string `toml:"tier"`
+	} `toml:"router"`
+	Platform struct {
+		URL string `toml:"url"`
+	} `toml:"platform"`
+	Agents struct {
+		URL string `toml:"url"`
+	} `toml:"agents"`
 	Mining struct {
 		Enabled              bool     `toml:"enabled"`
 		ASURL                string   `toml:"as_url"`
@@ -321,33 +212,17 @@ type fileConfig struct {
 		MetadataTTL          duration `toml:"metadata_ttl"`
 		StateDir             string   `toml:"state_dir"`
 		SpoolDir             string   `toml:"spool_dir"`
+		IntakeDir            string   `toml:"intake_dir"`
+		SessionsDir          string   `toml:"sessions_dir"`
+		FlushInterval        duration `toml:"flush_interval"`
+		TurnEnd              bool     `toml:"turn_end"`
 		CollectorInterval    duration `toml:"collector_interval"`
 		CollectorBaseBackoff duration `toml:"collector_base_backoff"`
 		CollectorMaxBackoff  duration `toml:"collector_max_backoff"`
 		CollectorMaxAttempts int      `toml:"collector_max_attempts"`
-		// PayoutAddress answers connect/mining enable's terminal question
-		// through configuration, for a scripted or headless install
-		// (agent onboarding design §5.5). Read only when Enabled is also
-		// explicit in the file — it names an address, not a decision.
-		PayoutAddress string `toml:"payout_address"`
-		// PlatformSlot names the platform-advertised mining slot to
-		// enroll into, when the platform ever offers more than one
-		// (WP2-review judgment call 1).
-		PlatformSlot string `toml:"platform_slot"`
+		PayoutAddress        string   `toml:"payout_address"`
+		PlatformSlot         string   `toml:"platform_slot"`
 	} `toml:"mining"`
-	Miner struct {
-		Enabled       bool     `toml:"enabled"`
-		RouterURL     string   `toml:"router_url"`
-		IntakeDir     string   `toml:"intake_dir"`
-		SessionsDir   string   `toml:"sessions_dir"`
-		FlushInterval duration `toml:"flush_interval"`
-		TurnEnd       bool     `toml:"turn_end"`
-		Tier          string   `toml:"tier"`
-	} `toml:"miner"`
-	Platform struct {
-		BaseURL      string `toml:"base_url"`
-		AgentsAPIURL string `toml:"agents_api_url"`
-	} `toml:"platform"`
 	Update struct {
 		Mode string `toml:"mode"`
 	} `toml:"update"`
@@ -364,18 +239,15 @@ func (d *duration) UnmarshalText(b []byte) error {
 	return nil
 }
 
-// Load resolves the configuration from args (flags) and getenv. It returns
-// showVersion=true when -version was passed. Precedence:
-// flags > environment > TOML file > defaults.
+// Load resolves the configuration. args may carry -config (the file) and
+// -version; with no -config, JEVLIN_CONFIG names the file. With neither, the
+// compiled defaults and the endpoint variables are the whole configuration.
 func Load(args []string, getenv func(string) string) (cfg *Config, showVersion bool, err error) {
-	fs := flag.NewFlagSet("tokendrop-proxy", flag.ContinueOnError)
+	fs := flag.NewFlagSet("jevlin", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	var (
-		flagConfig      = fs.String("config", "", "path to TOML config file")
-		flagListen      = fs.String("listen", "", "listen address (host:port or unix:///path)")
-		flagAdminListen = fs.String("admin-listen", "", "admin listen address (host:port or unix:///path)")
-		flagLogLevel    = fs.String("log-level", "", "log level: debug|info|warn|error")
-		flagVersion     = fs.Bool("version", false, "print version and exit")
+		flagConfig  = fs.String("config", "", "path to TOML config file")
+		flagVersion = fs.Bool("version", false, "print version and exit")
 	)
 	if err := fs.Parse(args); err != nil {
 		return nil, false, err
@@ -387,35 +259,25 @@ func Load(args []string, getenv func(string) string) (cfg *Config, showVersion b
 		return nil, true, nil
 	}
 
-	raw := newRawConfigDefaults()
-
-	// TOML file: only an explicit path (flag or env), which is required to
-	// exist. A jevlin.toml in the working directory is never picked up on
-	// its own: whoever wrote that directory (a cloned repo, an archive)
-	// would choose where the participant's keys are sent.
+	var raw rawConfig
+	// Only an explicit path (flag or env) is read, and it must exist. A
+	// jevlin.toml in the working directory is never picked up on its own:
+	// whoever wrote that directory would choose where the participant's keys
+	// are sent.
 	path := *flagConfig
 	if path == "" {
 		path = getenv("JEVLIN_CONFIG")
 	}
 	if path != "" {
-		if err := raw.applyFile(path); err != nil {
+		data, err := os.ReadFile(path) // #nosec G304 -- the config path is operator-supplied by design
+		if err != nil {
+			return nil, false, fmt.Errorf("config file: %w", err)
+		}
+		if err := raw.applyBytes(path, data); err != nil {
 			return nil, false, err
 		}
 	}
-
 	applyEnv(&raw, getenv)
-
-	// Flags.
-	if *flagListen != "" {
-		raw.listen = *flagListen
-	}
-	if *flagAdminListen != "" {
-		raw.adminListen = *flagAdminListen
-	}
-	if *flagLogLevel != "" {
-		raw.logLevel = *flagLogLevel
-	}
-
 	cfg, err = raw.finish()
 	if err != nil {
 		return nil, false, err
@@ -423,15 +285,10 @@ func Load(args []string, getenv func(string) string) (cfg *Config, showVersion b
 	return cfg, false, nil
 }
 
-// LoadBytes is Load's environment overlay and finish() applied to config
-// file bytes already in hand, instead of a path Load would read from disk.
-// It exists for a caller that knows what a file would contain before
-// anything writes it there — setup's dry run, which computes the exact
-// bytes it would publish but (by design) never does. There is no -config,
-// -listen, -admin-listen or -log-level flag to override it: those name a
-// path or a value on argv, and bytes already in memory have neither.
+// LoadBytes is Load applied to config file bytes already in hand, for setup's
+// dry run, which computes the exact bytes it would publish but never does.
 func LoadBytes(data []byte, getenv func(string) string) (*Config, error) {
-	raw := newRawConfigDefaults()
+	var raw rawConfig
 	if err := raw.applyBytes("config", data); err != nil {
 		return nil, err
 	}
@@ -439,393 +296,156 @@ func LoadBytes(data []byte, getenv func(string) string) (*Config, error) {
 	return raw.finish()
 }
 
-// newRawConfigDefaults is rawConfig before any file, environment or flag
-// has been applied — the same literal Load has always started from.
-func newRawConfigDefaults() rawConfig {
-	return rawConfig{
-		listen:                DefaultListen,
-		adminListen:           DefaultAdminListen,
-		shutdownGrace:         defaultShutdownGrace,
-		maxRequestBodyBytes:   defaultMaxRequestBodyBytes,
-		maxInboundConns:       defaultMaxInboundConns,
-		responseHeaderTimeout: 0,
-		providerName:          defaultProviderName,
-		providerTier:          "A",
-		upstream:              defaultUpstream,
-		logLevel:              "info",
-		platformBaseURL:       DefaultPlatformBaseURL,
-		observe: Observe{
-			MemoryBudgetBytes:    defaultObservationBudget,
-			RingBytes:            defaultRingBytes,
-			MaxEventBytes:        defaultMaxEventBytes,
-			MaxEvents:            defaultMaxEvents,
-			MaxObservedBodyBytes: defaultMaxObservedBody,
-			MaxDepth:             defaultMaxDepth,
-			MaxJSONKeyBytes:      defaultMaxJSONKeyBytes,
-		},
-	}
-}
-
-// applyEnv is Load's environment overlay — the proxy-era listener
-// variables, which keep their TOKENDROP_ names — the same for a config
-// read from a path (Load) or from bytes already in hand (LoadBytes).
+// applyEnv is the runtime endpoint overlay. Each variable replaces its URL,
+// and the URL is then held to the file's rules in finish.
 func applyEnv(r *rawConfig, getenv func(string) string) {
-	if v := getenv("TOKENDROP_LISTEN"); v != "" {
-		r.listen = v
+	if v := getenv(EnvRouterURL); v != "" {
+		r.routerURL = v
 	}
-	if v := getenv("TOKENDROP_ADMIN_LISTEN"); v != "" {
-		r.adminListen = v
+	if v := getenv(EnvPlatformURL); v != "" {
+		r.platformURL = v
 	}
-	if v := getenv("TOKENDROP_UPSTREAM"); v != "" {
-		r.upstream = v
+	if v := getenv(EnvAgentsAPIURL); v != "" {
+		r.agentsAPIURL = v
 	}
-	if v := getenv("TOKENDROP_UPSTREAM_CA_FILE"); v != "" {
-		r.upstreamCAFile = v
-	}
-	if v := getenv("TOKENDROP_LOG_LEVEL"); v != "" {
-		r.logLevel = v
+	if v := getenv(EnvASURL); v != "" {
+		r.asURL = v
 	}
 }
 
-// rawConfig holds pre-validation values from all sources.
+// rawConfig holds pre-validation values from the file and the environment.
 type rawConfig struct {
-	listen                string
-	adminListen           string
-	shutdownGrace         time.Duration
-	maxRequestBodyBytes   int64
-	maxInboundConns       int
-	responseHeaderTimeout time.Duration
-	providerName          string
-	providerTier          string
-	upstream              string
-	upstreamCAFile        string
-	logLevel              string
-	observe               Observe
+	routerURL string
+	tier      string
 
-	miningEnabled              bool
-	miningASURL                string
-	miningChainID              string
-	miningSlotID               *uint64
-	miningTargetEpoch          *uint64
-	miningTTL                  time.Duration
-	miningStateDir             string
-	miningSpoolDir             string
-	miningCollectorInterval    time.Duration
-	miningCollectorBaseBackoff time.Duration
-	miningCollectorMaxBackoff  time.Duration
-	miningCollectorMaxAttempts int
-	miningPayoutAddress        string
-	miningPlatformSlot         string
-	miningEnabledExplicit      bool
+	platformURL  string
+	agentsAPIURL string
 
-	minerEnabled       bool
-	minerRouterURL     string
-	minerIntakeDir     string
-	minerSessionsDir   string
-	minerFlushInterval time.Duration
-	minerTurnEnd       bool
-	minerTier          string
-
-	platformBaseURL string
-	agentsAPIURL    string
+	miningEnabled         bool
+	miningEnabledExplicit bool
+	asURL                 string
+	chainID               string
+	slotID                *uint64
+	targetEpoch           *uint64
+	metadataTTL           time.Duration
+	stateDir              string
+	spoolDir              string
+	intakeDir             string
+	sessionsDir           string
+	flushInterval         time.Duration
+	turnEnd               bool
+	collectorInterval     time.Duration
+	collectorBaseBackoff  time.Duration
+	collectorMaxBackoff   time.Duration
+	collectorMaxAttempts  int
+	payoutAddress         string
+	platformSlot          string
 
 	updateMode string
 }
 
-func (r *rawConfig) applyFile(path string) error {
-	data, err := os.ReadFile(path) // #nosec G304 -- the config path is operator-supplied by design
-	if err != nil {
-		return fmt.Errorf("config file: %w", err)
-	}
-	return r.applyBytes(path, data)
+// formatOneSections are the top-level keys format 1 defines.
+var formatOneSections = map[string]bool{"schema": true, "router": true, "platform": true, "agents": true, "mining": true, "update": true}
+
+// legacyError is ErrLegacyConfig for one file, saying what made it so.
+func legacyError(source, why string) error {
+	return fmt.Errorf("config file %s: %w (%s)", source, ErrLegacyConfig, why)
 }
 
-// applyBytes is applyFile's parse-and-apply step, taken alone: source names
-// the bytes in an error message (a path for a real file, or a fixed label
-// for bytes that only exist in memory — LoadBytes has no path to give it).
+// applyBytes parses one format-1 document. source names the bytes in an
+// error message.
 func (r *rawConfig) applyBytes(source string, data []byte) error {
+	// Read as a plain document first: a file that is not TOML says so, and
+	// one with no schema line is an older file whatever else it holds.
+	var doc map[string]any
+	if _, err := toml.Decode(string(data), &doc); err != nil {
+		return fmt.Errorf("config file %s: %w", source, err)
+	}
+	if _, ok := doc["schema"]; !ok {
+		return legacyError(source, "no schema line")
+	}
 	var f fileConfig
 	md, err := toml.Decode(string(data), &f)
 	if err != nil {
+		// A section of another shape, an older file's [[provider]] array,
+		// is a key format 1 does not define; a value of the wrong type in a
+		// format-1 key is a mistake in this file, and says so.
+		for key := range doc {
+			if !formatOneSections[key] {
+				return legacyError(source, "unknown key(s): "+key)
+			}
+		}
 		return fmt.Errorf("config file %s: %w", source, err)
 	}
-	// Unknown keys are typos waiting to be silent; reject them.
 	if undecoded := md.Undecoded(); len(undecoded) > 0 {
 		keys := make([]string, len(undecoded))
 		for i, k := range undecoded {
 			keys[i] = k.String()
 		}
-		return fmt.Errorf("config file %s: unknown key(s): %s", source, strings.Join(keys, ", "))
+		sort.Strings(keys)
+		return legacyError(source, "unknown key(s): "+strings.Join(keys, ", "))
+	}
+	if *f.Schema != Schema {
+		return fmt.Errorf("config file %s: schema = %d is not one this jevlin reads (it reads schema = %d); "+
+			"run `jevlin setup`, or the jevlin that wrote it", source, *f.Schema, Schema)
 	}
 
-	if f.Privacy.LogContent {
-		return errors.New("privacy.log_content = true is not a supported configuration: content is never logged, and no override exists")
-	}
+	r.routerURL = f.Router.URL
+	r.tier = f.Router.Tier
+	r.platformURL = f.Platform.URL
+	r.agentsAPIURL = f.Agents.URL
 
-	if f.Proxy.Listen != "" {
-		r.listen = f.Proxy.Listen
-	}
-	if f.Proxy.AdminListen != "" {
-		r.adminListen = f.Proxy.AdminListen
-	}
-	if f.Proxy.ShutdownGrace.Duration != 0 {
-		r.shutdownGrace = f.Proxy.ShutdownGrace.Duration
-	}
-	if f.Proxy.MaxRequestBodyBytes != 0 {
-		r.maxRequestBodyBytes = f.Proxy.MaxRequestBodyBytes
-	}
-	if f.Proxy.MaxInboundConns != 0 {
-		r.maxInboundConns = f.Proxy.MaxInboundConns
-	}
-	if f.Transport.ResponseHeaderTimeout.Duration != 0 {
-		r.responseHeaderTimeout = f.Transport.ResponseHeaderTimeout.Duration
-	}
-	if f.Transport.UpstreamCAFile != "" {
-		r.upstreamCAFile = f.Transport.UpstreamCAFile
-	}
-	switch len(f.Provider) {
-	case 0:
-	case 1:
-		p := f.Provider[0]
-		if p.Name != "" {
-			r.providerName = p.Name
-		}
-		if p.Tier != "" {
-			r.providerTier = p.Tier
-		}
-		if p.Upstream != "" {
-			r.upstream = p.Upstream
-		}
-	default:
-		return errors.New("config: exactly one [[provider]] is supported at launch (Tier A)")
-	}
-	if f.Log.Level != "" {
-		r.logLevel = f.Log.Level
-	}
-	if f.Observe.MemoryBudgetBytes != 0 {
-		r.observe.MemoryBudgetBytes = f.Observe.MemoryBudgetBytes
-	}
-	if f.Observe.RingBytes != 0 {
-		r.observe.RingBytes = f.Observe.RingBytes
-	}
-	if f.Observe.MaxEventBytes != 0 {
-		r.observe.MaxEventBytes = f.Observe.MaxEventBytes
-	}
-	if f.Observe.MaxEvents != 0 {
-		r.observe.MaxEvents = f.Observe.MaxEvents
-	}
-	if f.Observe.MaxObservedBodyBytes != 0 {
-		r.observe.MaxObservedBodyBytes = f.Observe.MaxObservedBodyBytes
-	}
-	if f.Observe.MaxDepth != 0 {
-		r.observe.MaxDepth = f.Observe.MaxDepth
-	}
-	if f.Observe.MaxJSONKeyBytes != 0 {
-		r.observe.MaxJSONKeyBytes = f.Observe.MaxJSONKeyBytes
-	}
-	r.miningEnabled = f.Mining.Enabled
-	// IsDefined, not f.Mining.Enabled itself: connect/mining enable need
-	// to tell "the file wrote enabled = false" apart from "the file
-	// never mentioned [mining] at all", and both decode to Go's zero
-	// value the same way. There is no env override for this key (see
-	// Config.MiningEnabledExplicit's doc comment), so the file is the
-	// only source of the distinction.
+	m := f.Mining
+	r.miningEnabled = m.Enabled
+	// IsDefined, not m.Enabled itself: connect and mining enable must tell
+	// "the file wrote enabled = false" from "the file said nothing".
 	r.miningEnabledExplicit = md.IsDefined("mining", "enabled")
-	if f.Mining.PayoutAddress != "" {
-		r.miningPayoutAddress = f.Mining.PayoutAddress
-	}
-	if f.Mining.PlatformSlot != "" {
-		r.miningPlatformSlot = f.Mining.PlatformSlot
-	}
-	if f.Mining.ASURL != "" {
-		r.miningASURL = f.Mining.ASURL
-	}
-	if f.Mining.ChainID != "" {
-		r.miningChainID = f.Mining.ChainID
-	}
-	if f.Mining.SlotID != nil {
-		r.miningSlotID = f.Mining.SlotID
-	}
-	if f.Mining.TargetEpoch != nil {
-		r.miningTargetEpoch = f.Mining.TargetEpoch
-	}
-	if f.Mining.SpoolDir != "" {
-		r.miningSpoolDir = f.Mining.SpoolDir
-	}
-	if f.Mining.CollectorInterval.Duration != 0 {
-		r.miningCollectorInterval = f.Mining.CollectorInterval.Duration
-	}
-	if f.Mining.CollectorBaseBackoff.Duration != 0 {
-		r.miningCollectorBaseBackoff = f.Mining.CollectorBaseBackoff.Duration
-	}
-	if f.Mining.CollectorMaxBackoff.Duration != 0 {
-		r.miningCollectorMaxBackoff = f.Mining.CollectorMaxBackoff.Duration
-	}
-	if f.Mining.CollectorMaxAttempts != 0 {
-		r.miningCollectorMaxAttempts = f.Mining.CollectorMaxAttempts
-	}
-	if f.Mining.MetadataTTL.Duration != 0 {
-		r.miningTTL = f.Mining.MetadataTTL.Duration
-	}
-	if f.Mining.StateDir != "" {
-		r.miningStateDir = f.Mining.StateDir
-	}
-	r.minerEnabled = f.Miner.Enabled
-	r.minerTurnEnd = f.Miner.TurnEnd
-	r.minerTier = f.Miner.Tier
-	if f.Miner.RouterURL != "" {
-		r.minerRouterURL = f.Miner.RouterURL
-	}
-	if f.Miner.IntakeDir != "" {
-		r.minerIntakeDir = f.Miner.IntakeDir
-	}
-	if f.Miner.SessionsDir != "" {
-		r.minerSessionsDir = f.Miner.SessionsDir
-	}
-	if f.Miner.FlushInterval.Duration != 0 {
-		r.minerFlushInterval = f.Miner.FlushInterval.Duration
-	}
-	if f.Platform.BaseURL != "" {
-		r.platformBaseURL = f.Platform.BaseURL
-	}
-	if f.Platform.AgentsAPIURL != "" {
-		r.agentsAPIURL = f.Platform.AgentsAPIURL
-	}
-	if f.Update.Mode != "" {
-		r.updateMode = f.Update.Mode
-	}
+	r.asURL = m.ASURL
+	r.chainID = m.ChainID
+	r.slotID = m.SlotID
+	r.targetEpoch = m.TargetEpoch
+	r.metadataTTL = m.MetadataTTL.Duration
+	r.stateDir = m.StateDir
+	r.spoolDir = m.SpoolDir
+	r.intakeDir = m.IntakeDir
+	r.sessionsDir = m.SessionsDir
+	r.flushInterval = m.FlushInterval.Duration
+	r.turnEnd = m.TurnEnd
+	r.collectorInterval = m.CollectorInterval.Duration
+	r.collectorBaseBackoff = m.CollectorBaseBackoff.Duration
+	r.collectorMaxBackoff = m.CollectorMaxBackoff.Duration
+	r.collectorMaxAttempts = m.CollectorMaxAttempts
+	r.payoutAddress = m.PayoutAddress
+	r.platformSlot = m.PlatformSlot
+	r.updateMode = f.Update.Mode
 	return nil
 }
 
 func (r *rawConfig) finish() (*Config, error) {
-	listen, err := parseListen(r.listen)
-	if err != nil {
-		return nil, fmt.Errorf("proxy.listen: %w", err)
-	}
-	adminListen, err := parseListen(r.adminListen)
-	if err != nil {
-		return nil, fmt.Errorf("proxy.admin_listen: %w", err)
-	}
-	upstream, err := parseUpstream(r.upstream)
-	if err != nil {
-		return nil, fmt.Errorf("provider.upstream: %w", err)
-	}
-	level, err := parseLevel(r.logLevel)
-	if err != nil {
-		return nil, fmt.Errorf("log.level: %w", err)
-	}
-	if r.providerTier != "A" {
-		return nil, fmt.Errorf("provider.tier: only Tier A ships at launch, got %q", r.providerTier)
-	}
-	if r.providerName == "" {
-		return nil, errors.New("provider.name: must not be empty")
-	}
-	if r.maxRequestBodyBytes <= 0 {
-		return nil, errors.New("proxy.max_request_body_bytes: must be positive")
-	}
-	if r.maxInboundConns < 1 {
-		return nil, errors.New("proxy.max_inbound_conns: must be at least 1")
-	}
-	if r.shutdownGrace < 0 {
-		return nil, errors.New("proxy.shutdown_grace: must not be negative")
-	}
-	if r.responseHeaderTimeout < 0 {
-		return nil, errors.New("transport.response_header_timeout: must not be negative")
-	}
-	if err := validateObserve(r.observe); err != nil {
-		return nil, err
-	}
-	var caPool *x509.CertPool
-	if r.upstreamCAFile != "" {
-		pem, err := os.ReadFile(r.upstreamCAFile) // #nosec G304 -- operator-supplied path by design
-		if err != nil {
-			return nil, fmt.Errorf("transport.upstream_ca_file: %w", err)
-		}
-		caPool = x509.NewCertPool()
-		if !caPool.AppendCertsFromPEM(pem) {
-			return nil, fmt.Errorf("transport.upstream_ca_file: %s contains no usable PEM certificate", r.upstreamCAFile)
-		}
-	}
-
 	mining, err := r.finishMining()
 	if err != nil {
 		return nil, err
 	}
-	miner, err := r.finishMiner(upstream, mining)
+	miner, err := r.finishMiner(mining)
 	if err != nil {
 		return nil, err
 	}
-	platformBaseURL, err := parsePlatformURL(r.platformBaseURL, "platform.base_url")
+	platform, err := r.finishPlatform()
 	if err != nil {
 		return nil, err
 	}
-	// WP2-review must-fix: agents_api_url used to default unconditionally
-	// to the real platform, so a dev/test config naming only a loopback
-	// base_url (every existing stub-backed test does exactly this) would
-	// silently register against production the moment connect/mining
-	// enable actually ran — which is exactly what happened once, live,
-	// before this fix. Three cases, only two of which have a safe
-	// implicit answer:
-	//   - base_url is exactly the real platform's default: agents_api_url
-	//     defaults to the real agents API. The ordinary case. The pair the
-	//     platform had before jevlin.ai is implied the same way, so a
-	//     config written against it keeps loading.
-	//   - base_url is loopback: assume the same local stub serves both
-	//     roles, matching every existing test's own setup.
-	//   - base_url names anything else (a devnet, a staging portal) and
-	//     agents_api_url is unset: refused. A custom non-loopback base_url
-	//     gives no safe signal about which API host it pairs with —
-	//     defaulting to production here is exactly the footgun this whole
-	//     fix exists to close, just for a devnet instead of a laptop.
-	agentsAPIRaw := r.agentsAPIURL
-	if agentsAPIRaw == "" {
-		switch platformBaseURL {
-		case DefaultPlatformBaseURL:
-			agentsAPIRaw = DefaultAgentsAPIURL
-		case LegacyPlatformBaseURL:
-			agentsAPIRaw = LegacyAgentsAPIURL
-		default:
-			pu, perr := url.Parse(platformBaseURL)
-			if perr != nil || !isLoopbackHost(pu.Hostname()) {
-				return nil, errors.New("platform.agents_api_url: required when platform.base_url names anything other " +
-					"than the default platform — a devnet or staging deployment must name both")
-			}
-			agentsAPIRaw = platformBaseURL
-		}
-	}
-	agentsAPIURL, err := parsePlatformURL(agentsAPIRaw, "platform.agents_api_url")
-	if err != nil {
-		return nil, err
-	}
-
 	return &Config{
-		Listen:                listen,
-		AdminListen:           adminListen,
-		ShutdownGrace:         r.shutdownGrace,
-		MaxRequestBodyBytes:   r.maxRequestBodyBytes,
-		MaxInboundConns:       r.maxInboundConns,
-		ResponseHeaderTimeout: r.responseHeaderTimeout,
-		ProviderName:          r.providerName,
-		ProviderTier:          r.providerTier,
-		Upstream:              upstream,
-		UpstreamCAPool:        caPool,
-		UpstreamCAFile:        r.upstreamCAFile,
-		LogLevel:              level,
-		Observe:               r.observe,
 		Mining:                mining,
 		Miner:                 miner,
-		Platform:              Platform{BaseURL: platformBaseURL, AgentsAPIURL: agentsAPIURL},
+		Platform:              platform,
 		Update:                r.finishUpdate(),
 		MiningEnabledExplicit: r.miningEnabledExplicit,
 	}, nil
 }
 
-// finishUpdate resolves the [update] block the way [miner] tier is resolved:
-// the word is lowercased and trimmed, and one this version cannot name does
-// not stop the config from loading — a typo must not cost every search. It
-// is kept aside for doctor to name, and the mode falls to notify, not to the
-// default: a word the participant wrote is a choice this version cannot
-// read, and a binary is not replaced on it.
+// finishUpdate resolves the [update] block. A word this version cannot name
+// does not stop the config from loading; it is kept aside for doctor, and the
+// mode falls to notify.
 func (r *rawConfig) finishUpdate() Update {
 	switch mode := strings.ToLower(strings.TrimSpace(r.updateMode)); mode {
 	case "":
@@ -837,178 +457,163 @@ func (r *rawConfig) finishUpdate() Update {
 	}
 }
 
-// parsePlatformURL validates a [platform] URL (base_url or
-// agents_api_url) the same way mining.as_url and miner.router_url are
-// (invariant 5): https, or http only for loopback — connect and mining
-// enable send the platform-issued sr- key in Authorization to
-// agents_api_url (base_url never carries a credential, only a printed
-// claim_url is checked against it, but the same posture costs nothing
-// to hold for both). Unlike as_url, there is no Enabled gate: both
-// always resolve, since nothing dials either unless connect or mining
-// enable actually runs, and the defaults are always valid https URLs.
-func parsePlatformURL(raw, field string) (string, error) {
+// ParseEndpoint holds a URL a credential is sent to, or one a printed URL is
+// checked against, to the rule every such URL shares (invariant 5): an
+// absolute http(s) URL with a host, https unless the host is loopback, and
+// no userinfo, query or fragment. field names the URL in the error.
+func ParseEndpoint(raw, field string) (*url.URL, error) {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
-		return "", fmt.Errorf("%s: must be an absolute http(s) URL", field)
+		return nil, fmt.Errorf("%s: must be an absolute http(s) URL", field)
 	}
 	if u.User != nil {
-		return "", fmt.Errorf("%s: must not carry userinfo", field)
+		return nil, fmt.Errorf("%s: must not carry userinfo", field)
+	}
+	if u.RawQuery != "" || u.Fragment != "" || u.RawFragment != "" {
+		return nil, fmt.Errorf("%s: must not carry a query or fragment", field)
 	}
 	if u.Scheme == "http" && !isLoopbackHost(u.Hostname()) {
-		return "", fmt.Errorf("%s: plain http is permitted only for loopback hosts, got %q — "+
+		return nil, fmt.Errorf("%s: plain http is permitted only for loopback hosts, got %q — "+
 			"use https, or a loopback address for local development", field, u.Host)
 	}
-	return raw, nil
+	return u, nil
 }
 
-// finishMiner resolves the [miner] block. Its directories default beside
-// the mining state so one HOME-relative tree holds everything the
-// participant owns; the router defaults to the provider upstream so an
-// existing proxy config becomes a miner config by adding two lines.
-func (r *rawConfig) finishMiner(upstream *url.URL, mining Mining) (Miner, error) {
-	m := Miner{
-		Enabled:       r.minerEnabled,
-		IntakeDir:     r.minerIntakeDir,
-		SessionsDir:   r.minerSessionsDir,
-		FlushInterval: r.minerFlushInterval,
-		TurnEnd:       r.minerTurnEnd,
+// finishPlatform resolves the portal and the agents API. The agents API
+// defaults to the compiled one only when the portal is the compiled one, and
+// to the portal itself when the portal is loopback (a local stub serving
+// both). A custom non-loopback portal with no agents API named is refused:
+// pairing it with the production API would send a devnet's registrations, and
+// the key they mint, to production.
+func (r *rawConfig) finishPlatform() (Platform, error) {
+	baseRaw := r.platformURL
+	if baseRaw == "" {
+		baseRaw = DefaultPlatformBaseURL
 	}
-	if tier := strings.ToLower(strings.TrimSpace(r.minerTier)); KnownSearchTier(tier) {
+	base, err := ParseEndpoint(baseRaw, "platform.url")
+	if err != nil {
+		return Platform{}, err
+	}
+	agentsRaw := r.agentsAPIURL
+	if agentsRaw == "" {
+		switch {
+		case baseRaw == DefaultPlatformBaseURL:
+			agentsRaw = DefaultAgentsAPIURL
+		case isLoopbackHost(base.Hostname()):
+			agentsRaw = baseRaw
+		default:
+			return Platform{}, errors.New("agents.url: required when platform.url names anything other than the default " +
+				"platform — a devnet or staging deployment must name both")
+		}
+	}
+	if _, err := ParseEndpoint(agentsRaw, "agents.url"); err != nil {
+		return Platform{}, err
+	}
+	return Platform{BaseURL: baseRaw, AgentsAPIURL: agentsRaw}, nil
+}
+
+// finishMiner resolves the router and the search side's directories. The
+// directories default beside the mining state so one tree holds everything
+// the participant owns.
+func (r *rawConfig) finishMiner(mining Mining) (Miner, error) {
+	routerRaw := r.routerURL
+	if routerRaw == "" {
+		routerRaw = DefaultRouterURL
+	}
+	router, err := ParseEndpoint(routerRaw, "router.url")
+	if err != nil {
+		return Miner{}, err
+	}
+	m := Miner{
+		Enabled:       mining.ASBaseURL != "",
+		RouterURL:     router,
+		IntakeDir:     r.intakeDir,
+		SessionsDir:   r.sessionsDir,
+		FlushInterval: r.flushInterval,
+		TurnEnd:       r.turnEnd,
+	}
+	if tier := strings.ToLower(strings.TrimSpace(r.tier)); KnownSearchTier(tier) {
 		m.Tier = tier
 	} else if tier != "" {
-		m.UnknownTier = r.minerTier
+		m.UnknownTier = r.tier
 	}
 	if m.FlushInterval == 0 {
 		m.FlushInterval = 3 * time.Minute
 	}
-	base := ""
-	if mining.StateDir != "" {
-		base = filepath.Dir(mining.StateDir)
-	}
-	if m.IntakeDir == "" && base != "" {
-		m.IntakeDir = filepath.Join(base, "intake")
-	}
-	if m.SessionsDir == "" && base != "" {
-		m.SessionsDir = filepath.Join(base, "sessions")
-	}
-	if r.minerRouterURL != "" {
-		m.RouterConfigured = true
-		u, err := url.Parse(r.minerRouterURL)
-		if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
-			return Miner{}, errors.New("miner.router_url: must be an absolute http(s) URL")
-		}
-		if u.User != nil {
-			return Miner{}, errors.New("miner.router_url: must not carry userinfo")
-		}
-		// as_url's rule, unchanged in substance: every search sends the
-		// participant's sr- key in Authorization, so a routable plain-http
-		// router is the same cleartext-credential exposure a routable
-		// plain-http AS would be. The loopback carve-out is deliberate,
-		// for local development without TLS; testing against a ROUTABLE
-		// devnet router needs TLS on the devnet, or the client co-located
-		// over loopback — that is the intended consequence, not a gap.
-		if u.Scheme == "http" && !isLoopbackHost(u.Hostname()) {
-			return Miner{}, fmt.Errorf("miner.router_url: plain http is permitted only for loopback hosts, got %q — "+
-				"use https, or a loopback address for local development", u.Host)
-		}
-		m.RouterURL = u
-	} else {
-		m.RouterURL = upstream
-	}
-	if !m.Enabled {
-		return m, nil
-	}
 	if m.FlushInterval < 0 {
-		return Miner{}, errors.New("miner.flush_interval: must not be negative")
+		return Miner{}, errors.New("mining.flush_interval: must not be negative")
 	}
-	if m.IntakeDir == "" || m.SessionsDir == "" {
-		return Miner{}, errors.New("miner: intake_dir and sessions_dir are required when no mining.state_dir can be derived")
+	if mining.StateDir != "" {
+		base := filepath.Dir(mining.StateDir)
+		if m.IntakeDir == "" {
+			m.IntakeDir = filepath.Join(base, "intake")
+		}
+		if m.SessionsDir == "" {
+			m.SessionsDir = filepath.Join(base, "sessions")
+		}
 	}
-	if mining.ASBaseURL == "" {
-		return Miner{}, errors.New("miner.enabled = true needs a [mining] block naming an AS: the miner is that participant without the daemon")
+	if m.Enabled && (m.IntakeDir == "" || m.SessionsDir == "") {
+		return Miner{}, errors.New("mining: intake_dir and sessions_dir are required when no mining.state_dir can be derived")
 	}
 	return m, nil
 }
 
-// finishMining resolves local mining configuration independently from the
-// scripted first-decision answer. An absent AS is a valid search-only/local
-// configuration; once an AS is named, its complete participant identity and
-// safety settings must validate regardless of Mining.Enabled.
+// finishMining resolves the mining plane. An absent AS is a valid
+// search-only configuration; once an AS is named, by the file or
+// JEVLIN_AS_URL, its participant identity defaults to the compiled chain and
+// slot and every value must validate.
 func (r *rawConfig) finishMining() (Mining, error) {
 	m := Mining{
 		Enabled:              r.miningEnabled,
-		ASBaseURL:            r.miningASURL,
-		ChainID:              r.miningChainID,
-		MetadataTTL:          r.miningTTL,
-		CollectorInterval:    r.miningCollectorInterval,
-		CollectorBaseBackoff: r.miningCollectorBaseBackoff,
-		CollectorMaxBackoff:  r.miningCollectorMaxBackoff,
-		CollectorMaxAttempts: r.miningCollectorMaxAttempts,
-		PayoutAddress:        r.miningPayoutAddress,
-		PlatformSlot:         r.miningPlatformSlot,
+		ASBaseURL:            r.asURL,
+		ChainID:              r.chainID,
+		MetadataTTL:          r.metadataTTL,
+		CollectorInterval:    r.collectorInterval,
+		CollectorBaseBackoff: r.collectorBaseBackoff,
+		CollectorMaxBackoff:  r.collectorMaxBackoff,
+		CollectorMaxAttempts: r.collectorMaxAttempts,
+		PayoutAddress:        r.payoutAddress,
+		PlatformSlot:         r.platformSlot,
+		StateDir:             r.stateDir,
+		SpoolDir:             r.spoolDir,
 	}
-	if r.miningSlotID != nil {
-		m.SlotID = *r.miningSlotID
-	}
-	// Copied, not aliased: the resolved configuration is immutable, and
-	// sharing the pointer with rawConfig would leave a writable path
-	// into it.
-	if r.miningTargetEpoch != nil {
-		pinned := *r.miningTargetEpoch
+	// Copied, not aliased: the resolved configuration is immutable.
+	if r.targetEpoch != nil {
+		pinned := *r.targetEpoch
 		m.TargetEpoch = &pinned
+	}
+	if r.slotID != nil {
+		m.SlotID = *r.slotID
 	}
 	if m.MetadataTTL == 0 {
 		m.MetadataTTL = 15 * time.Minute
 	}
-	m.StateDir = r.miningStateDir
 	if m.StateDir == "" {
 		if base, err := os.UserConfigDir(); err == nil {
 			m.StateDir = filepath.Join(base, "jevlin", "state")
 		}
 	}
-	m.SpoolDir = r.miningSpoolDir
 	if m.SpoolDir == "" && m.StateDir != "" {
 		m.SpoolDir = filepath.Join(m.StateDir, "spool")
 	}
 	if m.ASBaseURL == "" {
 		return m, nil
 	}
-	u, err := url.Parse(m.ASBaseURL)
-	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
-		return Mining{}, errors.New("mining.as_url: must be an absolute http(s) URL")
-	}
-	if u.User != nil {
-		return Mining{}, errors.New("mining.as_url: must not carry userinfo (it would surface in Authorization headers and error strings)")
-	}
-	// §18, and rejected HERE rather than at first use. auth.NewDiscoverer
-	// applies the same rule and keeps applying it — this is defense in depth,
-	// not a move — but a config that loads and then fails on the first AS call
-	// contradicts this package's own contract: unsafe states are rejected at
-	// load, not warned about later. Every token, DPoP proof and observation
-	// this client sends to the AS would otherwise cross the wire in the clear
-	// on a routable plain-http host.
-	//
-	// The loopback carve-out is deliberate and is what makes local development
-	// possible without TLS. It also means testing against a ROUTABLE devnet
-	// requires TLS on the devnet, or the client co-located over loopback;
-	// that is the intended consequence, not a gap.
-	if u.Scheme == "http" && !isLoopbackHost(u.Hostname()) {
-		return Mining{}, fmt.Errorf("mining.as_url: plain http is permitted only for loopback hosts (§18), got %q — "+
-			"use https, or a loopback address for local development", u.Host)
+	// §18, rejected here rather than at first use: every token, DPoP proof
+	// and observation this client sends to the AS would otherwise cross the
+	// wire in the clear on a routable plain-http host.
+	if _, err := ParseEndpoint(m.ASBaseURL, "mining.as_url"); err != nil {
+		return Mining{}, err
 	}
 	if m.ChainID == "" {
-		return Mining{}, errors.New("mining.chain_id: required when an authorization server is configured")
+		m.ChainID = DefaultChainID
 	}
-	if r.miningSlotID == nil {
-		return Mining{}, errors.New("mining.slot_id: required when an authorization server is configured (one AS serves exactly one Core Slot)")
+	if r.slotID == nil {
+		m.SlotID = DefaultSlotID
 	}
 	if m.MetadataTTL < 0 {
 		return Mining{}, errors.New("mining.metadata_ttl: must not be negative")
 	}
-	// StateDir can still be empty here: it is only defaulted when
-	// os.UserConfigDir() succeeds, and that error was swallowed above.
-	// Catching it at config time turns a confusing runtime failure deep
-	// in the key store into a startup message naming the actual fix.
 	if m.StateDir == "" {
 		return Mining{}, errors.New("mining.state_dir: required when an authorization server is configured (no user config directory could be determined for the default)")
 	}
@@ -1021,102 +626,10 @@ func (r *rawConfig) finishMining() (Mining, error) {
 	return m, nil
 }
 
-func validateObserve(o Observe) error {
-	switch {
-	case o.RingBytes < 4096:
-		return errors.New("observe.ring_bytes: must be at least 4096")
-	case o.MemoryBudgetBytes < o.RingBytes:
-		return errors.New("observe.observation_memory_budget: must be at least one ring_bytes")
-	case o.MaxEventBytes <= 0:
-		return errors.New("observe.max_event_bytes: must be positive")
-	case o.MaxEvents <= 0:
-		return errors.New("observe.max_events: must be positive")
-	case o.MaxObservedBodyBytes <= 0:
-		return errors.New("observe.max_observed_body_bytes: must be positive")
-	case o.MaxDepth < 1:
-		return errors.New("observe.max_depth: must be at least 1")
-	case o.MaxJSONKeyBytes < 8:
-		return errors.New("observe.max_json_key_bytes: must be at least 8")
-	}
-	return nil
-}
-
-// parseListen accepts "host:port" (which must be loopback — there is
-// deliberately no override flag; a remote mode would be a separate,
-// authenticated feature) or "unix:///absolute/path".
-func parseListen(s string) (Listen, error) {
-	if s == "" {
-		return Listen{}, errors.New("must not be empty")
-	}
-	if path, ok := strings.CutPrefix(s, "unix://"); ok {
-		if !filepath.IsAbs(path) {
-			return Listen{}, fmt.Errorf("socket path must be absolute, got %q", path)
-		}
-		return Listen{Network: "unix", Address: path}, nil
-	}
-	host, port, err := net.SplitHostPort(s)
-	if err != nil {
-		return Listen{}, fmt.Errorf("invalid address %q: %w", s, err)
-	}
-	if port == "" {
-		return Listen{}, fmt.Errorf("missing port in %q", s)
-	}
-	if !isLoopbackHost(host) {
-		return Listen{}, fmt.Errorf("%q is not loopback: the TCP listener must bind loopback only, and no override flag exists (use a unix:// socket or keep 127.0.0.1)", s)
-	}
-	return Listen{Network: "tcp", Address: s}, nil
-}
-
 func isLoopbackHost(host string) bool {
 	if host == "localhost" {
 		return true
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
-}
-
-// parseUpstream validates the upstream as an origin plus fixed base path — not
-// a general URL. A credential smuggled in as https://user:pass@host would
-// become an Authorization header the proxy generates; a query or fragment has
-// no business in a base; and anything but https would put the bearer
-// credential on the wire in the clear.
-func parseUpstream(s string) (*url.URL, error) {
-	u, err := url.Parse(s)
-	if err != nil {
-		return nil, fmt.Errorf("invalid URL %q: %w", s, err)
-	}
-	switch {
-	case u.Scheme != "https":
-		return nil, fmt.Errorf("scheme must be https, got %q", u.Scheme)
-	case u.User != nil:
-		return nil, errors.New("must not carry userinfo")
-	case u.RawQuery != "":
-		return nil, errors.New("must not carry a query")
-	case u.Fragment != "" || u.RawFragment != "":
-		return nil, errors.New("must not carry a fragment")
-	case u.Host == "":
-		return nil, errors.New("missing host")
-	case u.RawPath != "":
-		return nil, errors.New("path must not be percent-encoded")
-	case strings.HasSuffix(u.Path, "/"):
-		return nil, errors.New("base path must not end with a slash")
-	case u.Opaque != "":
-		return nil, errors.New("must be an absolute URL with a host")
-	}
-	return u, nil
-}
-
-func parseLevel(s string) (slog.Level, error) {
-	switch strings.ToLower(s) {
-	case "debug":
-		return slog.LevelDebug, nil
-	case "info":
-		return slog.LevelInfo, nil
-	case "warn":
-		return slog.LevelWarn, nil
-	case "error":
-		return slog.LevelError, nil
-	default:
-		return 0, fmt.Errorf("unknown level %q (want debug|info|warn|error)", s)
-	}
 }

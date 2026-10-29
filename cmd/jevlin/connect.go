@@ -112,7 +112,7 @@ func printableClaimURL(raw, baseURL string, stderr io.Writer) string {
 	}
 	if platform.ValidateStoredClaimURL(raw, baseURL) != nil {
 		if stderr != nil {
-			fmt.Fprintf(stderr, "jevlin: the stored claim link is not on the configured platform.base_url (%s); not printing it\n", baseURL)
+			fmt.Fprintf(stderr, "jevlin: the stored claim link is not on the configured platform url (%s); not printing it\n", baseURL)
 		}
 		return ""
 	}
@@ -133,7 +133,7 @@ func printableClaimURL(raw, baseURL string, stderr io.Writer) string {
 // On any failure the caller falls back to exactly the B.3 dead end this
 // closes — against a platform without the route (404) nothing changes but
 // one line on stderr.
-func remintClaimLink(ctx context.Context, client *platform.Client, store *auth.Store, m config.Miner, reg *auth.AgentRegistration, key string, stderr io.Writer) (auth.ClaimBootstrap, bool) {
+func remintClaimLink(ctx context.Context, client *platform.Client, store *auth.Store, m config.Miner, reg *auth.AgentRegistration, key platform.Key, stderr io.Writer) (auth.ClaimBootstrap, bool) {
 	fresh, err := client.ClaimCode(ctx, reg.AgentID, key)
 	if err != nil {
 		fmt.Fprintln(stderr, "jevlin: could not mint a fresh claim link:", err)
@@ -163,7 +163,7 @@ func remintClaimLink(ctx context.Context, client *platform.Client, store *auth.S
 // reports that the run ends here, with code. A record that could not be
 // persisted is retried from scratch by the next run, which is why nothing
 // else is written first.
-func publishRebuiltRegistration(ctx context.Context, client *platform.Client, store *auth.Store, m config.Miner, identity *platform.AgentIdentity, credKey string, stdout, stderr io.Writer) (reg auth.AgentRegistration, code int, stop bool) {
+func publishRebuiltRegistration(ctx context.Context, client *platform.Client, store *auth.Store, m config.Miner, identity *platform.AgentIdentity, credKey platform.Key, stdout, stderr io.Writer) (reg auth.AgentRegistration, code int, stop bool) {
 	reg = auth.AgentRegistration{
 		AgentID:            identity.AgentID,
 		Status:             identity.Status,
@@ -210,7 +210,7 @@ func publishRebuiltRegistration(ctx context.Context, client *platform.Client, st
 // found no agent for the key, or named the very agent the status call did
 // not know, and the caller keeps the behavior it had before. Never called
 // by -resume or under -force, which replaces rather than recovers.
-func rebuildUnknownRegistration(ctx context.Context, client *platform.Client, store *auth.Store, m config.Miner, old auth.AgentRegistration, credKey string, stdout, stderr io.Writer) (reg auth.AgentRegistration, code int, stop, ok bool) {
+func rebuildUnknownRegistration(ctx context.Context, client *platform.Client, store *auth.Store, m config.Miner, old auth.AgentRegistration, credKey platform.Key, stdout, stderr io.Writer) (reg auth.AgentRegistration, code int, stop, ok bool) {
 	identity, err := client.Me(ctx, credKey)
 	if err != nil {
 		if !errors.Is(err, platform.ErrAgentNotFound) {
@@ -623,26 +623,24 @@ func connectKeyRefusal(cfgPath string, getenv func(string) string) error {
 // the one in credentials.json, and the one a registration journal is about
 // to publish, which is bound to the agents API that minted it.
 func connectOriginRefusal(cfg *config.Config, getenv func(string) string) error {
-	if err := storedKeyRefusedFor(agentsAPIKeyService, cfg.Miner, cfg.Platform.AgentsAPIURL, getenv); err != nil {
-		return err
+	_ = getenv
+	const fix = "Use the configuration this installation was set up with"
+	if creds, err := readCredentials(credentialsPath(cfg.Miner)); err == nil && creds.AgentsAPI != "" {
+		if err := checkKeyOrigin(platformKeySecret, creds.AgentsAPI, cfg.Platform.AgentsAPIURL, fix); err != nil {
+			return err
+		}
 	}
 	journal, err := registrationJournal(cfg.Miner)
 	if err != nil {
 		return nil
 	}
 	pending, ok, err := journal.Load()
-	if err != nil || !ok || pending.AgentsAPI == "" {
+	if err != nil || !ok {
 		return nil
 	}
-	bound, err := urlOrigin(pending.AgentsAPI)
-	if err != nil {
-		return nil
-	}
-	requested, err := urlOrigin(cfg.Platform.AgentsAPIURL)
-	if err != nil || requested != bound {
-		return &keyOriginError{service: agentsAPIKeyService.name, bound: bound, requested: requested}
-	}
-	return nil
+	// A journal records the agents API that minted its key; one recording
+	// none binds it nowhere, and it is refused like any key bound elsewhere.
+	return checkKeyOrigin("the key the registration journal holds", pending.AgentsAPI, cfg.Platform.AgentsAPIURL, fix)
 }
 
 func keyOriginEnvelope(err error) commandEnvelope {
@@ -923,7 +921,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 	interval := resumePollInterval
 	var reg auth.AgentRegistration
 	var existed bool
-	var key string
+	var key platform.Key
 
 	// A journal in the state directory is from an older release, or forged by
 	// a sandboxed command: either way it is not trusted to publish a key.
@@ -1186,7 +1184,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 				pending = pendingRegistrationFromPlatform(fresh, cfg)
 				pending.ReplaceExpired = true
 				pending.PreviousAgentID = oldReg.AgentID
-				pending.PreviousKey = oldKey
+				pending.PreviousKey = oldKey.Value
 				if err := journal.Save(pending); err != nil {
 					fmt.Fprintln(stderr, "jevlin: persist pending registration:", err)
 					return exitTransport
@@ -1195,7 +1193,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 					force:                *force,
 					replacingExpired:     true,
 					allowCorruptPreserve: true,
-					previousPlatformKey:  oldKey,
+					previousPlatformKey:  oldKey.Value,
 					binding:              pendingBinding(pending),
 				})
 				if err != nil {
@@ -1261,13 +1259,6 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 	if err != nil {
 		fmt.Fprintln(stderr, "jevlin:", err)
 		return exitTransport
-	}
-	if !*resume {
-		// A key an older client stored records no origins; it is bound to
-		// the installation's config until they are written down here.
-		if err := recordKeyBinding(cfg.Miner, cfgSource, getenv); err != nil {
-			fmt.Fprintln(stderr, "jevlin: could not record where the stored key may be sent:", err)
-		}
 	}
 
 	// WP2-adversarial-review finding 20: the claim URL/code are a
@@ -1434,7 +1425,7 @@ func registrationHint(outcome miningEnableOutcome) []string {
 // done=false means "keep polling" (still unclaimed, or a transient
 // error worth retrying in the foreground — a resume does not retry,
 // it simply exits and lets the next resume try again).
-func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Client, store *auth.Store, cfg *config.Config, reg *auth.AgentRegistration, key string, getenv func(string) string) (done bool, code int) {
+func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Client, store *auth.Store, cfg *config.Config, reg *auth.AgentRegistration, key platform.Key, getenv func(string) string) (done bool, code int) {
 	// WP2-adversarial-review finding 6: re-read the on-disk record before
 	// mutating it — reg may be stale relative to whatever the most recent
 	// write actually persisted (this function is called repeatedly across

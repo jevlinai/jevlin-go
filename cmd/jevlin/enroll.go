@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -155,17 +154,18 @@ func cmdEnroll(args []string) int {
 
 	switch {
 	case *assertion:
-		// stdin, never a flag, for the reason `provider` reads its key that
-		// way: a token in argv is visible to every other process through ps
-		// and lands in shell history. This one is worth more than a key —
-		// it is the credential that makes this machine the enrolled one.
-		fmt.Fprintln(os.Stderr, "paste the enrollment token from the provider's page, then press Enter:")
-		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
-		if err != nil && strings.TrimSpace(line) == "" {
-			fmt.Fprintln(os.Stderr, "jevlin: no enrollment token on stdin")
+		// stdin, never a flag: a token in argv is visible to every other
+		// process through ps and lands in shell history. Read with echo off
+		// at a terminal, as login reads a key (readSecret): it is the
+		// credential that makes this machine the enrolled one.
+		fmt.Fprintln(os.Stderr, "paste the enrollment token from the provider's page, then press Enter (it is not echoed):")
+		token, err := readSecret(os.Stdin)
+		fmt.Fprintln(os.Stderr)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "jevlin: no enrollment token on stdin:", err)
 			return 2
 		}
-		if _, err := oauthClient.RedeemEnrollmentAssertion(ctx, strings.TrimSpace(line)); err != nil {
+		if _, err := oauthClient.RedeemEnrollmentAssertion(ctx, token); err != nil {
 			fmt.Fprintln(os.Stderr, "jevlin: enrollment failed:", err)
 			// The token is single-use at the AS, and a failure after the
 			// request left this machine may have spent it. Saying so is
@@ -283,87 +283,10 @@ func cmdJoin(args []string) int {
 	joinRegionNote(m, epoch, "")
 	fmt.Fprintf(os.Stdout, "join %s  draw_id=%s  receipt stored (%d bytes, verified)\n",
 		res.Status, res.DrawID, len(res.Receipt))
-	// The next step depends on the profile, so ASK rather than assert. Under
-	// SEARCH_ROUTER_V1 there is no provider step at all — the AS verifies
-	// with its own operator credential and §35.1 gives that profile no
-	// participant key — so naming it unconditionally sent a live deployment
-	// down a path that ends in a refusal.
-	if accepts, err := mining.AcceptsOpenRouterProfile(ctx); err == nil && !accepts {
-		fmt.Fprintln(os.Stdout, "next: nothing. This Slot holds no participant provider credential;")
-		fmt.Fprintln(os.Stdout, "      verification runs on the operator's own. Searches from your agents do the rest.")
-		return 0
-	}
-	fmt.Fprintln(os.Stdout, "next: jevlin provider -config <file>   (reads the key from stdin)")
-	return 0
-}
-
-func cmdProvider(args []string) int {
-	fs := flag.NewFlagSet("provider", flag.ContinueOnError)
-	cfgPath := fs.String("config", "", "path to TOML config file")
-	show := fs.Bool("status", false, "report the current binding instead of registering")
-	if err := fs.Parse(args); err != nil {
-		return 2
-	}
-
-	ctx, cancel := operatorContext(3 * time.Minute)
-	defer cancel()
-
-	_, mining, _, code := miningClients(ctx, []string{"-config", *cfgPath}, "provider")
-	if code != 0 {
-		return code
-	}
-
-	// Scoped to OPENROUTER_V1 (integration plan §10 step 6). Under
-	// SEARCH_ROUTER_V1 the participant holds no provider credential at all —
-	// the AS verifies with its own operator credential and §35.1 gives this
-	// profile no key to ask about — so on a Slot serving only that profile
-	// there is no binding for this command to establish. Asked here rather
-	// than relayed from the AS's refusal, because "this Slot does not use
-	// participant provider keys" is an answer a person can act on and
-	// PROVIDER_UNAVAILABLE is not.
-	accepts, err := mining.AcceptsOpenRouterProfile(ctx)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "jevlin: could not read the AS service document:", err)
-		return 1
-	}
-	if !accepts {
-		fmt.Fprintln(os.Stderr, "jevlin: this Slot does not accept OPENROUTER_V1 observations, "+
-			"so it holds no participant provider credential and there is nothing for `provider` to register.")
-		fmt.Fprintln(os.Stderr, "Verification there runs on the Slot operator's own credential; you supply nothing.")
-		return 2
-	}
-
-	if *show {
-		b, err := mining.ProviderStatus(ctx)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "jevlin: provider status:", err)
-			return 1
-		}
-		printBinding(b)
-		return 0
-	}
-
-	// stdin, never a flag: an API key in argv is visible to every other
-	// process on the machine via ps, and lands in shell history.
-	fmt.Fprintln(os.Stderr, "paste the zero-spend provider key, then press Enter (it is not echoed to stdout, stored locally, or logged):")
-	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil && strings.TrimSpace(line) == "" {
-		fmt.Fprintln(os.Stderr, "jevlin: no key on stdin")
-		return 2
-	}
-	key := strings.TrimSpace(line)
-	if key == "" {
-		fmt.Fprintln(os.Stderr, "jevlin: empty key")
-		return 2
-	}
-
-	b, err := mining.RegisterProviderCredential(ctx, key)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "jevlin: register provider credential:", err)
-		return 1
-	}
-	printBinding(b)
-	fmt.Fprintln(os.Stdout, "\nenrollment complete. start the daemon and it will acquire a capability within a minute.")
+	// Under SEARCH_ROUTER_V1 there is no provider step: the AS verifies with
+	// its own operator credential, and the participant supplies nothing.
+	fmt.Fprintln(os.Stdout, "next: nothing. Verification runs on the Slot operator's own credential;")
+	fmt.Fprintln(os.Stdout, "      searches from your agents do the rest.")
 	return 0
 }
 
@@ -385,9 +308,6 @@ type statusASFacts struct {
 	Status    *auth.EpochStatus
 	StatusErr error
 
-	Binding    *auth.ProviderBinding
-	BindingErr error
-
 	Queue queueState
 }
 
@@ -408,7 +328,6 @@ func gatherStatusAS(ctx context.Context, m config.Mining) statusASFacts {
 	if f.StatusErr != nil {
 		return f
 	}
-	f.Binding, f.BindingErr = mining.ProviderStatus(ctx)
 	f.Queue = spoolQueueState(m.SpoolDir)
 	return f
 }
@@ -503,11 +422,6 @@ func renderStatusAS(f statusASFacts, stdout, stderr io.Writer) {
 	fmt.Fprintf(stdout, "phase=%s mode=%s joinable=%t join_status=%s participation=%s capability_available=%t\n",
 		st.Phase, st.DistributionMode, st.Joinable, st.JoinStatus, st.ParticipationStatus, st.CapabilityAvailable)
 
-	if f.BindingErr == nil {
-		printBindingTo(stdout, f.Binding)
-	} else {
-		fmt.Fprintf(stdout, "provider: none (%v)\n", f.BindingErr)
-	}
 	printQueueState(stdout, f.Queue)
 }
 
@@ -998,16 +912,6 @@ func printQueueState(w io.Writer, q queueState) {
 	if q.Count > 0 {
 		fmt.Fprintln(w,
 			"        held locally until the AS accepts them; nothing is lost while it is unreachable")
-	}
-}
-
-func printBinding(b *auth.ProviderBinding) { printBindingTo(os.Stdout, b) }
-
-func printBindingTo(w io.Writer, b *auth.ProviderBinding) {
-	fmt.Fprintf(w, "provider: %s  status=%s  profile=%s  fingerprint=%s\n",
-		b.Provider, b.Status, b.SourceProfile, b.KeyFingerprint)
-	if b.LastSuccessfulVerificationAt != "" {
-		fmt.Fprintf(w, "          last verified %s\n", b.LastSuccessfulVerificationAt)
 	}
 }
 

@@ -152,12 +152,12 @@ func TestPollReportsUnclaimedThenClaimed(t *testing.T) {
 		})
 	}
 	c := New(stub.srv.URL, stub.srv.URL)
-	st, err := c.Status(context.Background(), "agent-1", "sr-abc123")
+	st, err := c.Status(context.Background(), "agent-1", keyOf(c, "sr-abc123"))
 	if err != nil || st.Status != "unclaimed" {
 		t.Fatalf("got %+v err=%v", st, err)
 	}
 	claimed = true
-	st, err = c.Status(context.Background(), "agent-1", "sr-abc123")
+	st, err = c.Status(context.Background(), "agent-1", keyOf(c, "sr-abc123"))
 	if err != nil || st.Status != "claimed" || !st.HasScope("mining") {
 		t.Fatalf("got %+v err=%v", st, err)
 	}
@@ -166,7 +166,7 @@ func TestPollReportsUnclaimedThenClaimed(t *testing.T) {
 	stub.status = func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 	}
-	if _, err := c.Status(context.Background(), "agent-x", "sr-nope"); err != ErrAgentNotFound {
+	if _, err := c.Status(context.Background(), "agent-x", keyOf(c, "sr-nope")); err != ErrAgentNotFound {
 		t.Fatalf("got %v, want ErrAgentNotFound", err)
 	}
 }
@@ -186,7 +186,7 @@ func TestStatusDecodesParticipantHasOtherMiningAgent(t *testing.T) {
 		})
 	}
 	c := New(stub.srv.URL, stub.srv.URL)
-	st, err := c.Status(context.Background(), "agent-1", "sr-abc123")
+	st, err := c.Status(context.Background(), "agent-1", keyOf(c, "sr-abc123"))
 	if err != nil || !st.ParticipantHasOtherMiningAgent {
 		t.Fatalf("got %+v err=%v, want ParticipantHasOtherMiningAgent=true", st, err)
 	}
@@ -194,7 +194,7 @@ func TestStatusDecodesParticipantHasOtherMiningAgent(t *testing.T) {
 	stub.status = func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "claimed", "scopes": []string{"mining"}})
 	}
-	st, err = c.Status(context.Background(), "agent-1", "sr-abc123")
+	st, err = c.Status(context.Background(), "agent-1", keyOf(c, "sr-abc123"))
 	if err != nil || st.ParticipantHasOtherMiningAgent {
 		t.Fatalf("got %+v err=%v, want ParticipantHasOtherMiningAgent=false when the field is absent", st, err)
 	}
@@ -215,7 +215,7 @@ func TestStatusDecodesConsoleURLOnThePortalOrigin(t *testing.T) {
 		})
 	}
 	c := New(stub.srv.URL, stub.srv.URL)
-	st, err := c.Status(context.Background(), "agent-1", "sr-abc123")
+	st, err := c.Status(context.Background(), "agent-1", keyOf(c, "sr-abc123"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestStatusConsoleURLDefaultsEmptyWhenAbsent(t *testing.T) {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "unclaimed", "scopes": []string{}})
 	}
 	c := New(stub.srv.URL, stub.srv.URL)
-	st, err := c.Status(context.Background(), "agent-1", "sr-abc123")
+	st, err := c.Status(context.Background(), "agent-1", keyOf(c, "sr-abc123"))
 	if err != nil || st.ConsoleURL != "" {
 		t.Fatalf("got ConsoleURL=%q err=%v, want empty and no error", st.ConsoleURL, err)
 	}
@@ -253,7 +253,7 @@ func TestStatusDropsAnInvalidConsoleURLWithoutFailingTheWholePoll(t *testing.T) 
 		})
 	}
 	c := New(stub.srv.URL, stub.srv.URL)
-	st, err := c.Status(context.Background(), "agent-1", "sr-abc123")
+	st, err := c.Status(context.Background(), "agent-1", keyOf(c, "sr-abc123"))
 	if err != nil {
 		t.Fatalf("an invalid console_url failed the whole status poll: %v", err)
 	}
@@ -276,7 +276,7 @@ func TestEnrollRequiresClaimedMiningScope(t *testing.T) {
 		})
 	}
 	c := New(stub.srv.URL, stub.srv.URL)
-	_, err := c.Enroll(context.Background(), "agent-1", "sr-noscope", "twilight-slot-3")
+	_, err := c.Enroll(context.Background(), "agent-1", keyOf(c, "sr-noscope"), "twilight-slot-3")
 	if err == nil {
 		t.Fatal("enroll with no mining scope was not refused")
 	}
@@ -288,7 +288,7 @@ func TestEnrollRequiresClaimedMiningScope(t *testing.T) {
 	stub.enroll = func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"token": "enroll-jwt-1"}) // #nosec G101 -- a canned stub response, not a credential
 	}
-	token, err := c.Enroll(context.Background(), "agent-1", "sr-hasscope", "twilight-slot-3")
+	token, err := c.Enroll(context.Background(), "agent-1", keyOf(c, "sr-hasscope"), "twilight-slot-3")
 	if err != nil || token != "enroll-jwt-1" { // #nosec G101 -- comparing against the stub's own canned value above
 		t.Fatalf("got %q err=%v", token, err)
 	}
@@ -491,7 +491,7 @@ func TestStatusRejectsValueOutsideTheEnum(t *testing.T) {
 			"status": "PENDING_REVIEW", "scopes": []string{"mining"},
 		})
 	}
-	st, err := New(stub.srv.URL, stub.srv.URL).Status(context.Background(), "agent-1", "sr-key")
+	st, err := New(stub.srv.URL, stub.srv.URL).Status(context.Background(), "agent-1", Key{"sr-key", stub.srv.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -530,11 +530,11 @@ func TestMeAndStatusDecodeIdenticalBodiesIdentically(t *testing.T) {
 		writeJSON(w, http.StatusOK, withID)
 	}
 	c := New(stub.srv.URL, stub.srv.URL)
-	st, err := c.Status(context.Background(), "agent-1", "sr-key")
+	st, err := c.Status(context.Background(), "agent-1", keyOf(c, "sr-key"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	identity, err := c.Me(context.Background(), "sr-key")
+	identity, err := c.Me(context.Background(), keyOf(c, "sr-key"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -559,7 +559,7 @@ func TestMeRejectsOversizedBodyAsReadErrorNotRefusal(t *testing.T) {
 		_, _ = w.Write(bytes.Repeat([]byte("a"), maxBodyBytes+10))
 		_, _ = w.Write([]byte(`"}`))
 	}
-	_, err := New(stub.srv.URL, stub.srv.URL).Me(context.Background(), "sr-key")
+	_, err := New(stub.srv.URL, stub.srv.URL).Me(context.Background(), Key{"sr-key", stub.srv.URL})
 	if err == nil {
 		t.Fatal("an oversized 200 response was accepted")
 	}
@@ -584,7 +584,7 @@ func TestMeRejectsEmptyAgentID(t *testing.T) {
 	stub.me = func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "unclaimed"})
 	}
-	if _, err := New(stub.srv.URL, stub.srv.URL).Me(context.Background(), "sr-key"); err == nil {
+	if _, err := New(stub.srv.URL, stub.srv.URL).Me(context.Background(), Key{"sr-key", stub.srv.URL}); err == nil {
 		t.Fatal("an empty agent_id was accepted")
 	}
 }
@@ -597,7 +597,7 @@ func TestMeRejectsClaimCodeControlCharacter(t *testing.T) {
 			"claim_url": stub.srv.URL + "/claim/X", "claim_code": "AB\r\nCD",
 		})
 	}
-	if _, err := New(stub.srv.URL, stub.srv.URL).Me(context.Background(), "sr-key"); err == nil {
+	if _, err := New(stub.srv.URL, stub.srv.URL).Me(context.Background(), Key{"sr-key", stub.srv.URL}); err == nil {
 		t.Fatal("a claim_code with a control character was accepted")
 	}
 }
@@ -610,7 +610,7 @@ func TestMeRejectsForeignOriginClaimURL(t *testing.T) {
 			"claim_url": "https://evil.example/claim/X",
 		})
 	}
-	if _, err := New(stub.srv.URL, stub.srv.URL).Me(context.Background(), "sr-key"); err == nil {
+	if _, err := New(stub.srv.URL, stub.srv.URL).Me(context.Background(), Key{"sr-key", stub.srv.URL}); err == nil {
 		t.Fatal("an off-origin claim_url was accepted")
 	}
 }
@@ -620,7 +620,7 @@ func TestMeReturnsErrAgentNotFoundOn404(t *testing.T) {
 	stub.me = func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"code": "not_found"}})
 	}
-	_, err := New(stub.srv.URL, stub.srv.URL).Me(context.Background(), "sr-key")
+	_, err := New(stub.srv.URL, stub.srv.URL).Me(context.Background(), Key{"sr-key", stub.srv.URL})
 	if !errors.Is(err, ErrAgentNotFound) {
 		t.Fatalf("err = %v, want ErrAgentNotFound", err)
 	}
@@ -642,7 +642,7 @@ func TestClaimCodeMintsAFreshPortalLockedLink(t *testing.T) {
 			"claim_expires_at": "2026-12-31T00:00:00Z",
 		})
 	}
-	got, err := New(stub.srv.URL, stub.srv.URL).ClaimCode(context.Background(), "agent-1", "sr-key")
+	got, err := New(stub.srv.URL, stub.srv.URL).ClaimCode(context.Background(), "agent-1", Key{"sr-key", stub.srv.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -662,7 +662,7 @@ func TestClaimCodeReturnsErrAgentNotFoundOn404(t *testing.T) {
 	stub.claimCode = func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"code": "not_found"}})
 	}
-	_, err := New(stub.srv.URL, stub.srv.URL).ClaimCode(context.Background(), "agent-1", "sr-key")
+	_, err := New(stub.srv.URL, stub.srv.URL).ClaimCode(context.Background(), "agent-1", Key{"sr-key", stub.srv.URL})
 	if !errors.Is(err, ErrAgentNotFound) {
 		t.Fatalf("err = %v, want ErrAgentNotFound", err)
 	}
@@ -684,7 +684,7 @@ func TestClaimCodeRefusesABadBootstrap(t *testing.T) {
 				}
 				writeJSON(w, http.StatusOK, body)
 			}
-			if _, err := New(stub.srv.URL, stub.srv.URL).ClaimCode(context.Background(), "agent-1", "sr-key"); err == nil {
+			if _, err := New(stub.srv.URL, stub.srv.URL).ClaimCode(context.Background(), "agent-1", Key{"sr-key", stub.srv.URL}); err == nil {
 				t.Fatal("a bad bootstrap was accepted")
 			}
 		})
@@ -708,7 +708,7 @@ func TestRefusalPrefersTopLevelCode(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			stub := newStubPlatform(t)
 			stub.me = func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusForbidden, tc.body) }
-			_, err := New(stub.srv.URL, stub.srv.URL).Me(context.Background(), "sr-key")
+			_, err := New(stub.srv.URL, stub.srv.URL).Me(context.Background(), Key{"sr-key", stub.srv.URL})
 			var refusal *RefusalError
 			if !errors.As(err, &refusal) {
 				t.Fatalf("err = %v, want *RefusalError", err)
@@ -757,10 +757,10 @@ func TestStatusRefusesControlCharactersInScopesAndLastEnrollment(t *testing.T) {
 				writeJSON(w, http.StatusOK, b)
 			}
 			c := New(stub.srv.URL, stub.srv.URL)
-			if _, err := c.Status(context.Background(), "agent-1", "sr-key"); err == nil {
+			if _, err := c.Status(context.Background(), "agent-1", keyOf(c, "sr-key")); err == nil {
 				t.Error("Status accepted a control character")
 			}
-			if _, err := c.Me(context.Background(), "sr-key"); err == nil {
+			if _, err := c.Me(context.Background(), keyOf(c, "sr-key")); err == nil {
 				t.Error("Me accepted a control character")
 			}
 		})
@@ -794,10 +794,10 @@ func TestStatusRefusesProseWhereARecordHoldsATokenOnly(t *testing.T) {
 				writeJSON(w, http.StatusOK, b)
 			}
 			c := New(stub.srv.URL, stub.srv.URL)
-			if _, err := c.Status(context.Background(), "agent-1", "sr-key"); err == nil {
+			if _, err := c.Status(context.Background(), "agent-1", keyOf(c, "sr-key")); err == nil {
 				t.Error("Status accepted prose where a record holds a token")
 			}
-			if _, err := c.Me(context.Background(), "sr-key"); err == nil {
+			if _, err := c.Me(context.Background(), keyOf(c, "sr-key")); err == nil {
 				t.Error("Me accepted prose where a record holds a token")
 			}
 		})
@@ -829,7 +829,7 @@ func TestRefusalIgnoresAControlCharacterCode(t *testing.T) {
 	stub.me = func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]any{"code": "x\u009b2K", "error": map[string]any{"message": "hi"}})
 	}
-	_, err := New(stub.srv.URL, stub.srv.URL).Me(context.Background(), "sr-key")
+	_, err := New(stub.srv.URL, stub.srv.URL).Me(context.Background(), Key{"sr-key", stub.srv.URL})
 	var refusal *RefusalError
 	if !errors.As(err, &refusal) {
 		t.Fatalf("err = %v, want *RefusalError", err)
@@ -932,25 +932,28 @@ func TestTheFieldsARecordRefusesAreRefusedOnTheWire(t *testing.T) {
 		writeJSON(w, http.StatusOK, map[string]any{"claim_url": stub.srv.URL + "/claim/Y", "claim_code": "Y", "claim_expires_at": mintExpiry})
 	}
 	c := New(stub.srv.URL, stub.srv.URL)
-	if _, err := c.Me(context.Background(), "sr-1"); err == nil {
+	if _, err := c.Me(context.Background(), keyOf(c, "sr-1")); err == nil {
 		t.Error("me: an agent_id naming the self-lookup route accepted")
 	}
 	statusExpiry = "2026-09-16\u2028x"
-	if _, err := c.Status(context.Background(), "a", "sr-1"); err == nil {
+	if _, err := c.Status(context.Background(), "a", keyOf(c, "sr-1")); err == nil {
 		t.Error("status: a claim_expires_at with U+2028 accepted")
 	}
 	mintExpiry = "2026-09-16\x07"
-	if _, err := c.ClaimCode(context.Background(), "a", "sr-1"); err == nil {
+	if _, err := c.ClaimCode(context.Background(), "a", keyOf(c, "sr-1")); err == nil {
 		t.Error("claim-code: a claim_expires_at with BEL accepted")
 	}
 	meID, statusExpiry, mintExpiry = "agent-1", "2026-09-16T00:00:00Z", "2026-09-16T00:00:00Z"
-	if _, err := c.Me(context.Background(), "sr-1"); err != nil {
+	if _, err := c.Me(context.Background(), keyOf(c, "sr-1")); err != nil {
 		t.Errorf("me: an ordinary answer refused: %v", err)
 	}
-	if _, err := c.Status(context.Background(), "a", "sr-1"); err != nil {
+	if _, err := c.Status(context.Background(), "a", keyOf(c, "sr-1")); err != nil {
 		t.Errorf("status: an ordinary answer refused: %v", err)
 	}
-	if _, err := c.ClaimCode(context.Background(), "a", "sr-1"); err != nil {
+	if _, err := c.ClaimCode(context.Background(), "a", keyOf(c, "sr-1")); err != nil {
 		t.Errorf("claim-code: an ordinary answer refused: %v", err)
 	}
 }
+
+// keyOf is v as a key issued by c's own agents API, which is where c sends it.
+func keyOf(c *Client, v string) Key { return Key{Value: v, Origin: c.apiBaseURL} }

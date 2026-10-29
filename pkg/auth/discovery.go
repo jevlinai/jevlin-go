@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jevlinai/jevlin-go/internal/egress"
 	"github.com/jevlinai/jevlin-go/internal/netdial"
 	"github.com/jevlinai/jevlin-go/pkg/wire"
 )
@@ -71,6 +72,16 @@ type Discoverer struct {
 // Transport literal, only so a test can read its Timeout/KeepAlive
 // directly and confirm this commit did not change them.
 var discoveryDialer = &net.Dialer{}
+
+// Origin is the configured AS's origin: what every credential this
+// installation sends to the AS is bound to.
+func (d *Discoverer) Origin() string {
+	o, err := egress.Origin(d.origin.String())
+	if err != nil {
+		return ""
+	}
+	return o
+}
 
 // NewDiscoverer validates the configured base URL up front: a malformed
 // or non-HTTPS public URL never produces a single request.
@@ -205,9 +216,8 @@ func (d *Discoverer) fetch(ctx context.Context) (*wire.DiscoveryDocument, error)
 // credential-bearing requests there — and SameOriginRedirects anchors on
 // that first host, so nothing later would catch it.
 //
-// enrollment_authorization_template is deliberately absent: it is displayed,
-// never fetched, and checkProviderAuthorizationTemplate holds it to the
-// compiled providerhosts allowlist instead.
+// enrollment_authorization_template is deliberately absent: this client
+// neither displays nor fetches it.
 func checkEndpointOrigins(doc *wire.DiscoveryDocument, origin *url.URL) error {
 	for _, f := range []struct{ name, v string }{
 		{"authorization_server", doc.AuthorizationServer},

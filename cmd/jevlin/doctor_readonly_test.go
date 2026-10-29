@@ -22,7 +22,7 @@ import (
 
 func doctorConfig(t *testing.T, asURL, stateDir, spoolDir string) string {
 	t.Helper()
-	body := "[mining]\n" +
+	body := "schema = 1\n[mining]\n" +
 		"as_url = " + quoteTOML(asURL) + "\n" +
 		"chain_id = \"twilight-1\"\nslot_id = 7\n" +
 		"state_dir = " + quoteTOML(stateDir) + "\n" +
@@ -178,7 +178,7 @@ func TestDoctorDoesNotBypassTheRefreshLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveRefreshToken("rt-doctor"); err != nil {
+	if err := store.SaveRefreshToken(testOrigin(as.srv.URL), "rt-doctor"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.DPoPKey(); err != nil {
@@ -218,7 +218,7 @@ func TestDoctorWithExistingAuthOnlyAllowsRefreshStateMutation(t *testing.T) {
 	if err := store.SaveMiningEnabled(true); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveRefreshToken("rt-doctor"); err != nil {
+	if err := store.SaveRefreshToken(testOrigin(as.srv.URL), "rt-doctor"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.DPoPKey(); err != nil {
@@ -262,20 +262,17 @@ func TestDoctorNeverSpendsSearchOrProviderTraffic(t *testing.T) {
 	as := newFakeAS(t)
 	root := t.TempDir()
 	stateDir := filepath.Join(root, "missing-state")
-	body := fmt.Sprintf(`[[provider]]
-name = "search-router"
-upstream = %q
+	body := fmt.Sprintf(`schema = 1
+
+[router]
+url = %[5]q
 
 [mining]
-as_url = %q
+as_url = %[2]q
 chain_id = "twilight-1"
 slot_id = 7
-state_dir = %q
-spool_dir = %q
-
-[miner]
-enabled = true
-router_url = %q
+state_dir = %[3]q
+spool_dir = %[4]q
 `, router.URL, as.srv.URL, stateDir, filepath.Join(root, "spool"), router.URL)
 	cfgPath := writeTOML(t, body)
 	var out, stderr bytes.Buffer
@@ -306,14 +303,13 @@ func TestDoctorLeavesNoProbeFileInTheIntakeDirectory(t *testing.T) {
 	if err := store.SaveMiningEnabled(true); err != nil {
 		t.Fatal(err)
 	}
-	cfgPath := writeTOML(t, "[mining]\n"+
+	cfgPath := writeTOML(t, "schema = 1\n[mining]\n"+
 		"as_url = "+quoteTOML(as.srv.URL)+"\n"+
 		"chain_id = \"twilight-1\"\nslot_id = 7\n"+
 		"state_dir = "+quoteTOML(stateDir)+"\n"+
-		"spool_dir = "+quoteTOML(spoolDir)+"\n\n"+
-		"[miner]\nenabled = true\n"+
-		"router_url = \"https://router.fictional.test\"\n"+
-		"intake_dir = "+quoteTOML(intakeDir)+"\n")
+		"spool_dir = "+quoteTOML(spoolDir)+"\n"+
+		"intake_dir = "+quoteTOML(intakeDir)+"\n"+
+		"[router]\nurl = \"https://router.fictional.test\"\n")
 
 	var out, stderr bytes.Buffer
 	_ = cmdDoctor([]string{"-config", cfgPath}, &out, &stderr)

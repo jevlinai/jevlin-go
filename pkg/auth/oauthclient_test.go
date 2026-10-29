@@ -112,7 +112,7 @@ func TestTokenRequestRetriesOnNonceChallenge(t *testing.T) {
 		_, _ = w.Write([]byte(tokenJSON("at-1", "rt-1")))
 	}
 	c := newClient(t, f)
-	if err := c.store.SaveRefreshToken("rt-0"); err != nil {
+	if err := c.store.SaveRefreshToken(c.disc.Origin(), "rt-0"); err != nil {
 		t.Fatal(err)
 	}
 	tok, err := c.Refresh(context.Background())
@@ -139,15 +139,15 @@ func TestRefreshPersistsRotatedToken(t *testing.T) {
 		_, _ = w.Write([]byte(tokenJSON("at-2", "rt-new")))
 	}
 	c := newClient(t, f)
-	if err := c.store.SaveRefreshToken("rt-old"); err != nil {
+	if err := c.store.SaveRefreshToken(c.disc.Origin(), "rt-old"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	got, ok, err := c.store.LoadRefreshToken()
-	if err != nil || !ok || got != "rt-new" {
-		t.Fatalf("rotated token not persisted: %q ok=%v err=%v", got, ok, err)
+	if err != nil || !ok || got.Token != "rt-new" {
+		t.Fatalf("rotated token not persisted: %q ok=%v err=%v", got.Token, ok, err)
 	}
 }
 
@@ -201,7 +201,7 @@ func TestStartAuthorizationURLShape(t *testing.T) {
 func TestRevokeDeletesLocalToken(t *testing.T) {
 	f := newFakeAS(t)
 	c := newClient(t, f)
-	if err := c.store.SaveRefreshToken("rt-x"); err != nil {
+	if err := c.store.SaveRefreshToken(c.disc.Origin(), "rt-x"); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.Revoke(context.Background()); err != nil {
@@ -226,7 +226,7 @@ func TestRevokeDeletesLocalToken(t *testing.T) {
 func TestRevokeBlocksWhenTheLockIsHeld(t *testing.T) {
 	f := newFakeAS(t)
 	c := newClient(t, f)
-	if err := c.store.SaveRefreshToken("rt-x"); err != nil {
+	if err := c.store.SaveRefreshToken(c.disc.Origin(), "rt-x"); err != nil {
 		t.Fatal(err)
 	}
 	release, err := c.store.lockRefreshTokenFor(context.Background(), time.Second)
@@ -323,14 +323,14 @@ func TestRevokeKeepsTheTokenWhenRevocationFails(t *testing.T) {
 		f := newFakeAS(t)
 		f.revokeStatus.Store(http.StatusServiceUnavailable)
 		c := newClient(t, f)
-		if err := c.store.SaveRefreshToken("rt-x"); err != nil {
+		if err := c.store.SaveRefreshToken(c.disc.Origin(), "rt-x"); err != nil {
 			t.Fatal(err)
 		}
 		if err := c.Revoke(context.Background()); err == nil {
 			t.Fatal("a refused revocation was reported as success")
 		}
 		stored, ok, _ := c.store.LoadRefreshToken()
-		if !ok || stored != "rt-x" {
+		if !ok || stored.Token != "rt-x" {
 			t.Fatal("a failed revocation discarded the token, destroying the only means of retrying it")
 		}
 	})
@@ -338,7 +338,7 @@ func TestRevokeKeepsTheTokenWhenRevocationFails(t *testing.T) {
 	t.Run("the AS is unreachable", func(t *testing.T) {
 		f := newFakeAS(t)
 		c := newClient(t, f)
-		if err := c.store.SaveRefreshToken("rt-x"); err != nil {
+		if err := c.store.SaveRefreshToken(c.disc.Origin(), "rt-x"); err != nil {
 			t.Fatal(err)
 		}
 		f.srv.Close() // after the client is built, so discovery already resolved

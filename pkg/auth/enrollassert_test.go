@@ -113,8 +113,8 @@ func TestRedeemEnrollmentAssertionPersistsTheGrant(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("no refresh authorization stored after enrollment: ok=%v err=%v", ok, err)
 	}
-	if stored != "rt-from-assertion" {
-		t.Errorf("stored refresh token %q", stored)
+	if stored.Token != "rt-from-assertion" {
+		t.Errorf("stored refresh token %q", stored.Token)
 	}
 }
 

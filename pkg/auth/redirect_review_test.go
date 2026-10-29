@@ -6,8 +6,8 @@ package auth
 // PROVENANCE. These are the reviewers' encoding of the attacks, handed over
 // from the client's security review (angles a1/a2) as five files in handover-proxy/
 // internal_auth. credentialclient_test.go proves the POLICY at the
-// constructor; these prove the CALL PATHS — that Refresh, the assertion
-// redemption and RegisterProviderCredential are actually wired through it, so
+// constructor; these prove the CALL PATHS — that Refresh and the assertion
+// redemption are actually wired through it, so
 // a future method that builds its own client is caught by something other
 // than the source-parsing test.
 //
@@ -25,8 +25,8 @@ package auth
 // request was refused" and "the secret did not travel" are different claims
 // and the second is the one that matters if the first ever regresses.
 //
-// The two that were already polarized correctly — the provider-key and
-// enrollment-assertion legs — keep their original names, so a reader can
+// The one that was already polarized correctly — the enrollment-assertion
+// leg — keeps its original name, so a reader can
 // cross-reference the review directly. The rest are renamed to state the
 // guarantee, since a green test called ...LeaksToken misleads.
 //
@@ -142,7 +142,7 @@ func reviewClients(t *testing.T, asURL, refresh string) (*OAuthClient, *MiningCl
 		t.Fatal(err)
 	}
 	if refresh != "" {
-		if err := store.SaveRefreshToken(refresh); err != nil {
+		if err := store.SaveRefreshToken(testOrigin(t, asURL), refresh); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -193,24 +193,6 @@ func TestAssertionRedemptionLeaksAssertionOnOffOriginRedirect(t *testing.T) {
 		t.Error("the assertion was redeemed through an off-origin redirect")
 	}
 	sink.refuse(t, secret, "the enrollment assertion")
-}
-
-// §36: the zero-spend verification key goes to the configured AS and nowhere
-// else. RegisterProviderCredential PUTs it in the body through authedRequest,
-// and a 308 replays that body. Keeps the review's name.
-func TestProviderKeyLeaksOnOffOriginRedirect(t *testing.T) {
-	const secret = "sk-or-v1-ZERO-SPEND-SECRET" // #nosec G101 -- synthetic canary, present so a leak can be searched for
-
-	sink := newReviewSink(t, `{"provider":"openrouter","status":"READY","key_fingerprint":"fp"}`)
-	as := newReviewAS(t, func(p string) bool {
-		return strings.HasPrefix(p, "/v1/provider-verification/")
-	}, sink.srv.URL+"/steal", http.StatusPermanentRedirect) // 308
-
-	_, m := reviewClients(t, as.URL, "rt-1")
-	if _, err := m.RegisterProviderCredential(context.Background(), secret); err == nil {
-		t.Error("the provider key was registered through an off-origin redirect")
-	}
-	sink.refuse(t, secret, "the provider verification key")
 }
 
 // --- the bearer cases, rewired through the constructor ---

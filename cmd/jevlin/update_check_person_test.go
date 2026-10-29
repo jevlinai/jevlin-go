@@ -199,7 +199,7 @@ func TestACheckNeverReplacesAnotherInstallationsBinary(t *testing.T) {
 		t.Fatal(err)
 	}
 	otherCfg := filepath.Join(other, setupConfigFile)
-	writeFileT(t, otherCfg, "[mining]\nstate_dir = \""+filepath.ToSlash(filepath.Join(other, "state"))+"\"\n[update]\nmode = \"apply\"\n")
+	writeFileT(t, otherCfg, "schema = 1\n[mining]\nstate_dir = \""+filepath.ToSlash(filepath.Join(other, "state"))+"\"\n[update]\nmode = \"apply\"\n")
 	code, out, errOut := f.runAuto(otherCfg)
 	if code != exitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
@@ -219,7 +219,7 @@ func TestAnAutomaticUpgradeRecordsAFailedRefresh(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(m.home, "state"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	writeFileT(t, m.cfg, "[mining]\nstate_dir = \""+filepath.ToSlash(filepath.Join(m.home, "state"))+"\"\n[update]\nmode = \"apply\"\n")
+	writeFileT(t, m.cfg, "schema = 1\n[mining]\nstate_dir = \""+filepath.ToSlash(filepath.Join(m.home, "state"))+"\"\n[update]\nmode = \"apply\"\n")
 	m.runner.fail = true
 	if code, out, errOut := m.run("-auto", "-config", m.cfg); code != exitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
@@ -340,7 +340,7 @@ func TestTheDefaultModeReplacesANativeCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfgPath := filepath.Join(f.home, setupConfigFile)
-	writeFileT(t, cfgPath, "[mining]\nstate_dir = \""+filepath.ToSlash(stateDir)+"\"\n")
+	writeFileT(t, cfgPath, "schema = 1\n[mining]\nstate_dir = \""+filepath.ToSlash(stateDir)+"\"\n")
 	if mode := mustLoadConfig(t, cfgPath).Update.Mode; mode != config.UpdateApply {
 		t.Fatalf("the default mode is %q, want apply", mode)
 	}

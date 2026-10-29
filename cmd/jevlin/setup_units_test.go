@@ -51,7 +51,6 @@ func TestTOMLStringRoundTripsEveryCharacterClass(t *testing.T) {
 // Every path in the fresh config is quoted: a home that holds a quote and a
 // backslash still produces a config pkg/config loads, with the path intact.
 func TestFreshConfigQuotesEveryPath(t *testing.T) {
-	dir := t.TempDir()
 	home := `/tmp/we ird"q\b$;&'x/.jevlin`
 	v, err := resolveSetupValues(home, func(string) string { return "" }, false)
 	if err != nil {
@@ -61,7 +60,7 @@ func TestFreshConfigQuotesEveryPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := validateConfigFile(dir)(data); err != nil {
+	if err := validateConfigBytes(data); err != nil {
 		t.Fatalf("fresh config for %q does not load: %v\n%s", home, err, data)
 	}
 	var doc struct {
@@ -74,33 +73,39 @@ func TestFreshConfigQuotesEveryPath(t *testing.T) {
 	}
 }
 
-func TestMigrationPolicyUnits(t *testing.T) {
+func TestSetupConfigPolicyUnits(t *testing.T) {
 	dir := t.TempDir()
-	validate := validateConfigFile(dir)
 	v, _ := resolveSetupValues(filepath.Join(dir, "home"), func(string) string { return "" }, false)
 	path := filepath.Join(dir, "jevlin.toml")
-	mining := "[mining]\nas_url = \"https://as.example\"\nchain_id = \"c\"\nslot_id = 1\nstate_dir = \"/s\"\n"
+	none := func(string) bool { return false }
 
-	// [miner] present, even as a dotted key at the root: left.
-	plan, err := planSetupConfig(path, []byte(mining+"\n[miner]\nenabled = false\n"), v, validate)
+	// No file: fresh, format 1, and it loads.
+	plan, err := planSetupConfig(path, nil, v, validateConfigBytes, none)
+	if err != nil || plan.outcome != configFresh || !bytes.HasPrefix(plan.data, []byte("schema = 1\n")) {
+		t.Fatalf("no file: %+v %v", plan, err)
+	}
+	// A valid format-1 file: left.
+	plan, err = planSetupConfig(path, []byte("schema = 1\n"), v, validateConfigBytes, none)
 	if err != nil || plan.outcome != configLeft || plan.data != nil {
-		t.Fatalf("[miner] table: %+v %v", plan, err)
+		t.Fatalf("format 1: %+v %v", plan, err)
 	}
-	// The text "[miner]" inside a comment is not a table.
-	plan, err = planSetupConfig(path, []byte(mining+"# [miner] later\n"), v, validate)
-	if err != nil || plan.outcome != configMigrated || strings.Join(plan.added, ",") != "[platform],[miner]" {
-		t.Fatalf("commented [miner]: %+v %v", plan, err)
+	// An older file, whatever it holds: replaced, and set aside first.
+	for _, older := range []string{"[miner]\nenabled = false\n", "[log]\nlevel = \"info\"\n", "", "# just a comment\n"} {
+		plan, err = planSetupConfig(path, []byte(older), v, validateConfigBytes, none)
+		if err != nil || plan.outcome != configReplaced || plan.aside != path+".old" || !bytes.HasPrefix(plan.data, []byte("schema = 1\n")) {
+			t.Fatalf("older %q: %+v %v", older, plan, err)
+		}
 	}
-	// Invalid, whatever it says.
-	_, err = planSetupConfig(path, []byte("[miner]\nenabled = true\n[miner]\n"), v, validate)
-	if !errors.Is(err, errConfigInvalid) || !strings.Contains(err.Error(), path) {
-		t.Fatalf("invalid config: %v", err)
+	taken := func(p string) bool { return p == path+".old" || p == path+".old.1" }
+	if plan, err = planSetupConfig(path, []byte("[miner]\n"), v, validateConfigBytes, taken); err != nil || plan.aside != path+".old.2" {
+		t.Fatalf("aside name with two taken: %+v %v", plan, err)
 	}
-	// A migration whose result would not load is refused, not published: no
-	// [mining] AS, so [miner] enabled cannot be valid.
-	_, err = planSetupConfig(path, []byte("[log]\nlevel = \"info\"\n"), v, validate)
-	if err == nil || !strings.Contains(err.Error(), "left as it is") {
-		t.Fatalf("unloadable migration: %v", err)
+	// A format-1 file that does not load, or a file that is not TOML: refused.
+	for _, bad := range []string{"schema = 1\n[router]\nurl = \"http://router.example\"\n", "[miner]\nenabled = true\n[miner]\n", "not toml at all ["} {
+		_, err = planSetupConfig(path, []byte(bad), v, validateConfigBytes, none)
+		if !errors.Is(err, errConfigInvalid) || !strings.Contains(err.Error(), path) {
+			t.Fatalf("invalid %q: %v", bad, err)
+		}
 	}
 }
 

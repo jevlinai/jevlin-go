@@ -205,22 +205,22 @@ func TestRefreshTokenLifecycle(t *testing.T) {
 	if _, ok, err := s.LoadRefreshToken(); err != nil || ok {
 		t.Fatalf("fresh store should have no token: ok=%v err=%v", ok, err)
 	}
-	if err := s.SaveRefreshToken("rt-one"); err != nil {
+	if err := s.SaveRefreshToken(testASOrigin, "rt-one"); err != nil {
 		t.Fatal(err)
 	}
 	// Rotation: atomic replace, new value wins.
-	if err := s.SaveRefreshToken("rt-two"); err != nil {
+	if err := s.SaveRefreshToken(testASOrigin, "rt-two"); err != nil {
 		t.Fatal(err)
 	}
 	got, ok, err := s.LoadRefreshToken()
-	if err != nil || !ok || got != "rt-two" {
-		t.Fatalf("got %q ok=%v err=%v", got, ok, err)
+	if err != nil || !ok || got.Token != "rt-two" {
+		t.Fatalf("got %q ok=%v err=%v", got.Token, ok, err)
 	}
 	info, err := os.Stat(filepath.Join(dir, "refresh.token"))
 	if err != nil || (posixModes && info.Mode().Perm() != 0o600) {
 		t.Fatalf("refresh.token perms = %v, want 0600", info.Mode().Perm())
 	}
-	if err := s.SaveRefreshToken(""); err == nil {
+	if err := s.SaveRefreshToken(testASOrigin, ""); err == nil {
 		t.Fatal("empty refresh token accepted")
 	}
 	if err := s.DeleteRefreshToken(); err != nil {

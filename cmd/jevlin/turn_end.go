@@ -4,7 +4,7 @@ package main
 //
 // A search's trace carries what the assistant wrote BEFORE it searched. The
 // answer is written after the last search, when no request is being made, so
-// the router never saw it. With `[miner] turn_end = true` — off by default —
+// the router never saw it. With `[mining] turn_end = true` — off by default —
 // the host's end-of-turn hook reports the turn's final message to the
 // router's POST /v1/turns, under the same hashed session and turn ids the
 // turn's searches carried.
@@ -18,8 +18,8 @@ package main
 //     turn after the router answers. A search the model proposed and the
 //     user refused, or one that failed, marks nothing, and a turn with no
 //     mark sends nothing;
-//   - only to a router the config NAMES (miner.router_url). The provider
-//     upstream that stands in for it when it is absent is never sent this;
+//   - only to the router this run is configured with, through egress bound
+//     to the key's origin;
 //   - the same scrub and the same 32 KiB tail cap as trace history, applied
 //     before anything is written or sent;
 //   - the assistant's last message and, where the host's transcript can be
@@ -44,6 +44,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/jevlinai/jevlin-go/internal/egress"
 	"github.com/jevlinai/jevlin-go/pkg/auth"
 	"github.com/jevlinai/jevlin-go/pkg/config"
 	"github.com/jevlinai/jevlin-go/pkg/fsx"
@@ -491,21 +492,17 @@ func cmdTurnEnd(args []string, getenv func(string) string) int {
 	// Deleted before the send, whatever comes next: one attempt, and no file
 	// of assistant text left behind by a send that hung.
 	_ = os.Remove(path)
-	// Only to a router the config names. With no miner.router_url, RouterURL
-	// is the provider upstream standing in for it, and the assistant's answer
-	// is not that provider's to receive.
-	if err != nil || !cfg.Miner.TurnEnd || !cfg.Miner.RouterConfigured || cfg.Miner.RouterURL == nil {
+	// Only to the router the configuration names, which is always the
+	// compiled router or one the configuration or JEVLIN_ROUTER_URL chose.
+	if err != nil || !cfg.Miner.TurnEnd {
 		return exitOK
 	}
 	var rec turnEndRecord
 	if err := json.Unmarshal(body, &rec); err != nil || rec.SessionID == "" || rec.TurnID == "" {
 		return exitOK
 	}
-	key, keySrc, err := resolveAPIKey(getenv, cfg.Miner)
-	if err == nil && keySrc == keyFromEnv {
-		err = envKeyRefusedFor(*cfgPath, cfg, getenv)
-	}
-	if err != nil || key == "" {
+	key, err := resolveAPIKey(getenv, cfg.Miner)
+	if err != nil || key.value == "" {
 		return exitOK
 	}
 	client := &http.Client{Timeout: turnEndTimeout, CheckRedirect: auth.SameOriginRedirects, Transport: loginProbeTransport}
@@ -516,7 +513,7 @@ func cmdTurnEnd(args []string, getenv func(string) string) int {
 // sendTurnEnd posts one turn end. The status code is returned for tests; no
 // caller acts on it — a router that predates the endpoint answers 404, and
 // that is as final as a 202.
-func sendTurnEnd(client *http.Client, routerURL, key string, rec turnEndRecord) int {
+func sendTurnEnd(client *http.Client, routerURL string, key routerKey, rec turnEndRecord) int {
 	body, err := json.Marshal(rec)
 	if err != nil {
 		return 0
@@ -528,8 +525,8 @@ func sendTurnEnd(client *http.Client, routerURL, key string, rec turnEndRecord) 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", searchUserAgent+"/"+strings.TrimPrefix(buildVersion(), "v"))
-	req.Header.Set("Authorization", "Bearer "+key)
-	resp, err := client.Do(req)
+	req.Header.Set("Authorization", "Bearer "+key.value)
+	resp, err := egress.Do(client, req, key.secret, key.bound)
 	if err != nil {
 		return 0
 	}

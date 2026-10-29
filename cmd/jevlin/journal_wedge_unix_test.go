@@ -62,6 +62,7 @@ func TestAJournalPublishesOverWhateverIsAtTheAgentRecordsName(t *testing.T) {
 			if err := testJournal(t, cfgPath).Save(auth.PendingRegistration{
 				AgentID:        "agent-journal",
 				Key:            "sr-journal-key",
+				AgentsAPI:      testOrigin(platform.srv.URL),
 				ClaimURL:       platform.srv.URL + "/claim/JOURNAL-1",
 				ClaimCode:      "JOURNAL-1",
 				ClaimExpiresAt: "2026-09-16T00:00:00Z",

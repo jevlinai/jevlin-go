@@ -1,174 +1,112 @@
 package main
 
-// With --stdin, the environment's key goes to the installation's own router
-// (credentials.go, envKeyRefusedFor).
+// JEVLIN_API_KEY goes to the router this run is configured with, and nowhere
+// else: never to a host an older config or variable would have named, and,
+// when the router is not the default, with one line on stderr naming it on
+// every call that carries the key (credentials.go, resolveAPIKey and
+// noteNonDefaultOrigin). The matrix in egress_matrix_test.go crosses this with
+// every configuration state; these are the cases read one at a time.
 
 import (
-	"errors"
-	"io/fs"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
+
+	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
-// With --stdin, the environment's key goes to the installation's own
-// router: an explicit config that is another file naming another router is
-// refused; the installation's config, or another file naming its router, is
-// served.
-func TestTheEnvironmentKeyInMachineModeGoesToTheInstallationsRouter(t *testing.T) {
-	own, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(routerBody)) })
-	other, otherConns := countingServer(t, nil)
-	otherCfg := sameStateOtherURL(t, cfg, own.srv.URL, other.URL)
-	env := map[string]string{"JEVLIN_HOME": root, apiKeyEnv: boundKey}
-
-	code, out, _ := runSearchStdin(t, fixedSearchOps(root), env, `{"version":1,"query":"q"}`, "-config", otherCfg)
-	assertOriginRefusal(t, code, out, origin(t, own.srv.URL), origin(t, other.URL), otherCfg, root)
-	if !strings.Contains(out, apiKeyEnv) {
-		t.Errorf("the refusal does not say whose key it is:\n%s", out)
-	}
-	if n := otherConns(); n != 0 {
-		t.Fatalf("%d connection(s) reached another router", n)
-	}
-
-	for name, path := range map[string]string{
-		"the installation's config":           cfg,
-		"another file naming the same router": sameStateOtherURL(t, cfg, own.srv.URL, own.srv.URL),
-	} {
-		before := own.requests()
-		code, out, _ := runSearchStdin(t, fixedSearchOps(root), env, `{"version":1,"query":"q"}`, "-config", path)
-		if code != exitOK || own.requests() != before+1 {
-			t.Errorf("%s: exit %d, %d request(s)\n%s", name, code, own.requests()-before, out)
-		}
-	}
-}
-
-// The terminal form and limits hold the environment's key to the same
-// router; the message says how to choose another one.
-func TestTheEnvironmentKeyGoesToTheInstallationsRouterInEveryForm(t *testing.T) {
+// In every form, the environment's key reaches the configured router, and
+// each call says on stderr that it is not the default router.
+func TestTheEnvironmentKeyGoesToTheConfiguredRouterAndSaysSo(t *testing.T) {
 	limitsBody := `{"daily_micros":5000000,"weekly_micros":0,"today":{"spent_micros":0,"ceiling_micros":5000000,"remaining_micros":5000000}}`
 	own, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v1/limits" {
+		switch r.URL.Path {
+		case "/v1/limits":
 			_, _ = w.Write([]byte(limitsBody))
-			return
+		case "/v1/fetch":
+			fetchAnswering(w, r)
+		default:
+			_, _ = w.Write([]byte(routerBody))
 		}
-		_, _ = w.Write([]byte(routerBody))
 	})
-	other, otherConns := countingServer(t, nil)
-	otherCfg := sameStateOtherURL(t, cfg, own.srv.URL, other.URL)
 	env := map[string]string{"JEVLIN_HOME": root, apiKeyEnv: boundKey}
+	notice := origin(t, own.srv.URL) + " is not the default router"
 
-	code, _, errOut := runSearch(t, fixedSearchOps(root), env, "-config", otherCfg, "q")
-	if code != exitUsage || !strings.Contains(errOut, origin(t, other.URL)) || !strings.Contains(errOut, "JEVLIN_CONFIG") {
-		t.Errorf("terminal search: exit %d\n%s", code, errOut)
+	type form struct {
+		name string
+		run  func() (int, string)
 	}
-	code, out, _ := runLimits(t, env, "-json", "-config", otherCfg)
-	if code != exitUsage || !strings.Contains(out, `"code":"`+keyOriginCode+`"`) || !strings.Contains(out, `"action":"fix_input"`) {
-		t.Errorf("limits: exit %d\n%s", code, out)
-	}
-	if code, _, errOut := runLimits(t, env, "-config", otherCfg); code != exitUsage {
-		t.Errorf("limits, terminal: exit %d\n%s", code, errOut)
-	}
-	if n := otherConns(); n != 0 {
-		t.Fatalf("%d connection(s) reached another router", n)
-	}
-
-	before := own.requests()
-	if code, _, errOut := runSearch(t, fixedSearchOps(root), env, "-config", cfg, "q"); code != exitOK {
-		t.Errorf("terminal search, the installation's config: exit %d\n%s", code, errOut)
-	}
-	if code, _, errOut := runLimits(t, env, "-config", cfg); code != exitOK {
-		t.Errorf("limits, the installation's config: exit %d\n%s", code, errOut)
-	}
-	if got := own.requests() - before; got != 2 {
-		t.Errorf("the installation's router got %d request(s), want 2", got)
-	}
-
-	// A router chosen on purpose is served once its config is the
-	// installation's.
-	chosen := map[string]string{"JEVLIN_HOME": root, "JEVLIN_CONFIG": otherCfg, apiKeyEnv: boundKey}
-	if code, _, errOut := runSearch(t, fixedSearchOps(root), chosen, "-config", otherCfg, "q"); code != exitOK || otherConns() == 0 {
-		t.Errorf("JEVLIN_CONFIG naming the other config: exit %d, %d connection(s)\n%s", code, otherConns(), errOut)
-	}
-}
-
-// The turn end holds the environment's key to the installation's router as
-// it does the stored one: silently, exit 0, nothing dialed.
-func TestTheTurnEndSendsTheEnvironmentKeyOnlyToTheInstallationsRouter(t *testing.T) {
-	f := newTurnEndFixture(t)
-	if _, err := readCredentials(credentialsPath(minerOf(t, f.ownCfg))); err == nil {
-		t.Fatal("this test is about the environment's key, and a key is stored")
-	}
-	env := envOf(map[string]string{"JEVLIN_CONFIG": f.ownCfg, apiKeyEnv: boundKey})
-
-	if code := cmdTurnEnd([]string{"-config", f.otherCfg, "-file", f.queue()}, env); code != exitOK {
-		t.Errorf("exit %d, want the silent 0", code)
-	}
-	if n := f.otherConns(); n != 0 {
-		t.Fatalf("%d connection(s) reached another router", n)
-	}
-	// The control: the installation's own config reaches its router.
-	if code := cmdTurnEnd([]string{"-config", f.ownCfg, "-file", f.queue()}, env); code != exitOK || f.ownConns() == 0 {
-		t.Fatalf("the installation's router: exit %d, %d connection(s)", code, f.ownConns())
-	}
-}
-
-// With no router in the installation's config, the environment key's
-// refusal names none as the installation's: it says the config names none,
-// and how to choose one.
-func TestTheEnvironmentKeysRefusalNamesNoRouterTheInstallationNeverChose(t *testing.T) {
-	own, cfg, root := newFakeRouter(t, nil)
-	env := map[string]string{"JEVLIN_HOME": t.TempDir(), apiKeyEnv: boundKey}
-	code, out, _ := runSearchStdin(t, fixedSearchOps(root), env, `{"version":1,"query":"q"}`, "-config", cfg)
-	if code != exitUsage || !strings.Contains(out, `"code":"`+keyOriginCode+`"`) {
-		t.Fatalf("exit %d\n%s", code, out)
-	}
-	defaults, _, err := loadConfig("", envOf(env))
-	if err != nil {
-		t.Fatal(err)
-	}
-	standIn := origin(t, defaults.Miner.RouterURL.String())
-	for _, gone := range []string{standIn, strings.TrimPrefix(standIn, "https://"), boundKey, root} {
-		if strings.Contains(out, gone) {
-			t.Errorf("the refusal says %q:\n%s", gone, out)
+	for _, f := range []form{
+		{"search --stdin", func() (int, string) {
+			code, _, errOut := runSearchStdin(t, fixedSearchOps(root), env, `{"version":1,"query":"q"}`, "-config", cfg)
+			return code, errOut
+		}},
+		{"search", func() (int, string) {
+			code, _, errOut := runSearch(t, fixedSearchOps(root), env, "-config", cfg, "q")
+			return code, errOut
+		}},
+		{"limits", func() (int, string) {
+			code, _, errOut := runLimits(t, env, "-config", cfg)
+			return code, errOut
+		}},
+		{"fetch --stdin", func() (int, string) {
+			code, _, errOut := runFetchStdin(t, env, fetchOneURL, "-config", cfg)
+			return code, errOut
+		}},
+	} {
+		before := own.requests()
+		code, errOut := f.run()
+		if code != exitOK || own.requests() != before+1 {
+			t.Errorf("%s: exit %d, %d request(s)\n%s", f.name, code, own.requests()-before, errOut)
 		}
-	}
-	for _, said := range []string{apiKeyEnv, "names none", "JEVLIN_CONFIG", origin(t, own.srv.URL)} {
-		if !strings.Contains(out, said) {
-			t.Errorf("the refusal does not say %q:\n%s", said, out)
+		if strings.Count(errOut, notice) != 1 {
+			t.Errorf("%s: stderr does not name the router once:\n%s", f.name, errOut)
 		}
-	}
-	if n := own.requests(); n != 0 {
-		t.Fatalf("%d request(s) sent", n)
-	}
-}
-
-func TestFetchSendsTheEnvironmentKeyOnlyToTheInstallationsRouter(t *testing.T) {
-	own, cfg, root := newFakeRouter(t, fetchAnswering)
-	other, otherConns := countingServer(t, http.HandlerFunc(fetchAnswering))
-	otherCfg := sameStateOtherURL(t, cfg, own.srv.URL, other.URL)
-	if _, err := os.Stat(credentialsPath(minerOf(t, cfg))); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("this test needs no stored key: %v", err)
-	}
-	env := map[string]string{"JEVLIN_CONFIG": cfg, apiKeyEnv: boundKey}
-
-	code, out, _ := runFetchStdin(t, env, fetchOneURL, "-config", otherCfg)
-	assertOriginRefusal(t, code, out, origin(t, own.srv.URL), origin(t, other.URL), root, cfg, otherCfg)
-	if n := otherConns(); n != 0 {
-		t.Fatalf("%d connection(s) reached another router", n)
-	}
-
-	if code, out, _ := runFetchStdin(t, env, fetchOneURL, "-config", cfg); code != exitOK || own.requests() != 1 {
-		t.Fatalf("the installation's router: exit %d, %d request(s)\n%s", code, own.requests(), out)
+		if strings.Contains(errOut, boundKey) {
+			t.Errorf("%s: stderr repeats the key:\n%s", f.name, errOut)
+		}
 	}
 	if req, _ := own.last(t); req.Header.Get("Authorization") != "Bearer "+boundKey {
-		t.Errorf("the installation's router was sent Authorization %q", req.Header.Get("Authorization"))
+		t.Errorf("the router was sent Authorization %q", req.Header.Get("Authorization"))
 	}
+}
 
-	// A router chosen on purpose is served once its config is the
-	// installation's.
-	chosen := map[string]string{"JEVLIN_CONFIG": otherCfg, apiKeyEnv: boundKey}
-	if code, out, _ := runFetchStdin(t, chosen, fetchOneURL, "-config", otherCfg); code != exitOK || otherConns() == 0 {
-		t.Errorf("JEVLIN_CONFIG naming the other config: exit %d, %d connection(s)\n%s", code, otherConns(), out)
+// JEVLIN_ROUTER_URL chooses the router for one run, over the file, and the
+// notice names the variable as what chose it.
+func TestJEVLINROUTERURLChoosesTheRouterAndTheNoticeSaysSo(t *testing.T) {
+	fileRouter, cfg, root := newFakeRouter(t, nil)
+	chosen, chosenConns := countingServer(t, nil)
+	env := map[string]string{"JEVLIN_HOME": root, apiKeyEnv: boundKey, config.EnvRouterURL: chosen.URL}
+	code, _, errOut := runSearchStdin(t, fixedSearchOps(root), env, `{"version":1,"query":"q"}`, "-config", cfg)
+	if code != exitOK || chosenConns() == 0 {
+		t.Fatalf("exit %d, %d connection(s) to the chosen router\n%s", code, chosenConns(), errOut)
+	}
+	if n := fileRouter.requests(); n != 0 {
+		t.Errorf("the file's router still got %d request(s)", n)
+	}
+	if !strings.Contains(errOut, origin(t, chosen.URL)) || !strings.Contains(errOut, config.EnvRouterURL) {
+		t.Errorf("the notice does not name the router and what chose it:\n%s", errOut)
+	}
+}
+
+// The default router draws no notice: nothing chose it but the build.
+func TestTheDefaultRouterDrawsNoNotice(t *testing.T) {
+	var stderr strings.Builder
+	noteNonDefaultOrigin(&stderr, origin(t, config.DefaultRouterURL), "router", config.DefaultRouterURL, "the configuration")
+	if stderr.Len() != 0 {
+		t.Errorf("the default router drew a notice: %q", stderr.String())
+	}
+}
+
+// The turn end sends the environment's key to the configured router too,
+// and only when the configuration turns it on.
+func TestTheTurnEndSendsTheEnvironmentKeyOnlyToTheConfiguredRouter(t *testing.T) {
+	f := newTurnEndFixture(t)
+	env := envOf(map[string]string{apiKeyEnv: boundKey})
+	if code := cmdTurnEnd([]string{"-config", f.ownCfg, "-file", f.queue()}, env); code != exitOK || f.ownConns() == 0 {
+		t.Fatalf("the configured router: exit %d, %d connection(s)", code, f.ownConns())
+	}
+	if n := f.otherConns(); n != 0 {
+		t.Fatalf("%d connection(s) reached a router this run was not configured with", n)
 	}
 }

@@ -345,7 +345,7 @@ func TestSendTurnEnd(t *testing.T) {
 	defer srv.Close()
 
 	rec := turnEndRecord{SessionID: "s", TurnID: "t", Harness: "claude-code", Status: turnCompleted, FinalText: "done", FinalChars: 4}
-	if code := sendTurnEnd(srv.Client(), srv.URL, "sr-test", rec); code != http.StatusAccepted {
+	if code := sendTurnEnd(srv.Client(), srv.URL, testRouterKey(srv.URL, "sr-test"), rec); code != http.StatusAccepted {
 		t.Fatalf("status %d", code)
 	}
 	if got.path != "POST /v1/turns" || got.auth != "Bearer sr-test" || got.contentType != "application/json" || !reflect.DeepEqual(got.body, rec) {
@@ -355,11 +355,11 @@ func TestSendTurnEnd(t *testing.T) {
 	// A router that predates the endpoint, and one that is gone: both are
 	// final, and neither is an error anyone handles.
 	old := httptest.NewServer(http.NotFoundHandler())
-	if code := sendTurnEnd(old.Client(), old.URL, "sr-test", rec); code != http.StatusNotFound {
+	if code := sendTurnEnd(old.Client(), old.URL, testRouterKey(old.URL, "sr-test"), rec); code != http.StatusNotFound {
 		t.Errorf("old router: %d", code)
 	}
 	old.Close()
-	if code := sendTurnEnd(old.Client(), old.URL, "sr-test", rec); code != 0 {
+	if code := sendTurnEnd(old.Client(), old.URL, testRouterKey(old.URL, "sr-test"), rec); code != 0 {
 		t.Errorf("unreachable router: %d", code)
 	}
 }

@@ -235,7 +235,7 @@ func TestABodyThatDiesOnTheDeadlineOutranksItsStatus(t *testing.T) {
 				}, nil
 			}})
 			out := runPerformSearch(t, 150*time.Millisecond, searchCall{
-				Endpoint: "https://r.test/v1/search", Key: "k", Query: "q",
+				Endpoint: "https://r.test/v1/search", Key: testRouterKey("https://r.test", "k"), Query: "q",
 			})
 			if out.Fault != faultTimeout {
 				t.Fatalf("HTTP %d with a stalled body gave fault %q, want %q", status, out.Fault, faultTimeout)
@@ -261,7 +261,7 @@ func TestANonSuccessBodyCanceledByTheCallerIsNotRetryable(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() { time.Sleep(20 * time.Millisecond); cancel() }()
 	defer cancel()
-	out := performSearch(ctx, time.Now, searchCall{Endpoint: "https://r.test/v1/search", Key: "k", Query: "q"})
+	out := performSearch(ctx, time.Now, searchCall{Endpoint: "https://r.test/v1/search", Key: testRouterKey("https://r.test", "k"), Query: "q"})
 	if out.Fault != faultCanceled {
 		t.Fatalf("fault %q, want %q", out.Fault, faultCanceled)
 	}
@@ -286,7 +286,7 @@ func TestACompleteNonSuccessStillClassifiesByStatus(t *testing.T) {
 				return fakeResponse(tc.status, `{"code":"c","error":"e"}`, nil), nil
 			}})
 			out := runPerformSearch(t, 30*time.Second, searchCall{
-				Endpoint: "https://r.test/v1/search", Key: "k", Query: "q",
+				Endpoint: "https://r.test/v1/search", Key: testRouterKey("https://r.test", "k"), Query: "q",
 			})
 			if out.Fault != faultRouterStatus || !out.ResponseComplete {
 				t.Fatalf("fault %q complete %v", out.Fault, out.ResponseComplete)

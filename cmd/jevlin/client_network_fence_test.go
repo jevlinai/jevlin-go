@@ -83,7 +83,7 @@ func TestNetworkFenceCoversTheSearchClient(t *testing.T) {
 	defer cancel()
 	call := searchCall{
 		Endpoint: "https://" + fenceProbeHost + "/v1/search",
-		Key:      "canary-not-a-real-key", // #nosec G101 -- a syntactically valid placeholder, never sent anywhere
+		Key:      testRouterKey("https://"+fenceProbeHost, "canary-not-a-real-key"), // #nosec G101 -- a syntactically valid placeholder, never sent anywhere
 		Query:    "network fence guard — this must never leave the machine",
 	}
 	out := performSearch(ctx, time.Now, call)
