@@ -894,7 +894,7 @@ func TestSkillCommandsRunInTheShellTheyAreRenderedFor(t *testing.T) {
 					}
 					var sent, want any
 					_ = json.Unmarshal(got[0].Raw, &sent)
-					_ = json.Unmarshal([]byte(`{"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}`), &want)
+					_ = json.Unmarshal([]byte(`{"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"query":"the fact you need","max_chars":8000}`), &want)
 					if !reflect.DeepEqual(sent, want) {
 						t.Errorf("the router received %s", got[0].Raw)
 					}

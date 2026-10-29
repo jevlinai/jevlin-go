@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"io"
-	"net/http"
 	"regexp"
 	"strings"
 	"time"
@@ -72,7 +70,7 @@ func readFastSetFile(read func(string) ([]byte, error), path string) string {
 }
 
 // fastSetFor is the preset a search sends: the user's, only when the search
-// runs on the fast tier, and only when the router lists presets. The router
+// runs on the fast tier, and only when the router lists that preset. The router
 // refuses a field it does not know, so a router that predates presets would
 // fail the whole search over one; asking first costs a round trip, paid only
 // by a participant who stored a preset and searched on the fast tier, and any
@@ -82,7 +80,7 @@ func fastSetFor(ctx context.Context, tier, cfg, routerBase, key string, getenv f
 		return ""
 	}
 	name := readFastSetFile(readTierSetting, fastSetPathFor(cfg, getenv))
-	if name == "" || !routerListsFastSets(ctx, routerBase, key) {
+	if name == "" || !routerListsFastSet(ctx, routerBase, key, name) {
 		return ""
 	}
 	return name
@@ -90,23 +88,13 @@ func fastSetFor(ctx context.Context, tier, cfg, routerBase, key string, getenv f
 
 const fastSetsProbeTimeout = 2 * time.Second
 
-// routerListsFastSets: does GET /v1/fast-sets answer 200? The redirect policy
-// is the search client's, because the request carries the sr- key.
-func routerListsFastSets(ctx context.Context, routerBase, key string) bool {
+// routerListsFastSet: does GET /v1/fast-sets answer with a list that names
+// this preset? Anything else (an older router, a 200 that is not the list, a
+// preset renamed or withdrawn) sends none, because the router refuses a
+// preset it does not know and the agent could not fix that.
+func routerListsFastSet(ctx context.Context, routerBase, key, name string) bool {
 	ctx, cancel := context.WithTimeout(ctx, fastSetsProbeTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(routerBase, "/")+"/v1/fast-sets", nil)
-	if err != nil {
-		return false
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", searchUserAgent+"/"+strings.TrimPrefix(buildVersion(), "v"))
-	req.Header.Set("Authorization", "Bearer "+key)
-	resp, err := routerClient().Do(req)
-	if err != nil {
-		return false
-	}
-	defer func() { _ = resp.Body.Close() }()
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
-	return resp.StatusCode == http.StatusOK
+	doc, err := getFastSets(ctx, routerClient(), routerBase, key)
+	return err == nil && doc.lists(name)
 }

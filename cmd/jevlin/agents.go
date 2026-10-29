@@ -955,6 +955,18 @@ func agentsTier(ops agentOps, args []string, stdout, stderr io.Writer, getenv fu
 		return exitOK
 	}
 	if preset != "" {
+		// A name the router does not list would fail every fast search, so
+		// it is refused when the router can say; when it cannot, the name
+		// is kept and the one line says it was not checked.
+		switch doc, err := fetchFastSets(entry.cfg, getenv); {
+		case err == nil && !doc.lists(preset):
+			fmt.Fprintf(stderr, "jevlin agents tier: this router does not list %q; it lists %s\n", preset, strings.Join(doc.names(), ", "))
+			return exitUsage
+		case errors.Is(err, errFastSetsAbsent):
+			fmt.Fprintln(stdout, "warning: this router does not list presets, so the name is kept but none is sent")
+		case err != nil:
+			fmt.Fprintln(stdout, "warning: the router's preset list could not be read, so the name was not checked")
+		}
 		if err := ops.mkdirAll(filepath.Dir(fastPath), 0o700); err != nil {
 			fmt.Fprintln(stderr, "jevlin agents tier:", err)
 			return exitTransport

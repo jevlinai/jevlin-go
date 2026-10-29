@@ -29,7 +29,7 @@ hermes    hook established argv
 
 ```bash
 '/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' --stdin <<'JSON'
-{"version":1,"query":"exact query text"}
+{"version":1,"query":"exact query text","objective":"what you need to find out"}
 JSON
 ```
 
@@ -49,7 +49,7 @@ JSON
 
 ```bash
 '/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' --stdin <<'JSON'
-{"version":1,"query":"exact query text"}
+{"version":1,"query":"exact query text","objective":"what you need to find out"}
 JSON
 ```
 
@@ -67,9 +67,9 @@ JSON
 
 == claude: skill command blocks
 -- fence bash
-'/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' --stdin <<< '{"version":1,"query":"exact query text"}'
+'/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' --stdin <<< '{"version":1,"query":"exact query text","objective":"what you need to find out"}'
 -- fence bash
-'/Users/u/.jevlin/bin/jevlin' fetch -config '/Users/u/.jevlin/jevlin.toml' --stdin <<< '{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}'
+'/Users/u/.jevlin/bin/jevlin' fetch -config '/Users/u/.jevlin/jevlin.toml' --stdin <<< '{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"query":"the fact you need","max_chars":8000}'
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' agents prefer -config '/Users/u/.jevlin/jevlin.toml' <argument>
 -- fence bash
@@ -124,18 +124,18 @@ Read(//Users/u/.jevlin/requests/**)
 
 == claude: bridge prefix its lineage adapter writes
 -- skill search block (posix)
-JEVLIN_TRACE_BRIDGE=<BRIDGE> '/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' --stdin <<< '{"version":1,"query":"exact query text"}'
+JEVLIN_TRACE_BRIDGE=<BRIDGE> '/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' --stdin <<< '{"version":1,"query":"exact query text","objective":"what you need to find out"}'
 -- stdin command (posix)
 JEVLIN_TRACE_BRIDGE=<BRIDGE> '/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' --stdin
 
 == codex: skill command blocks
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' --stdin <<'JSON'
-{"version":1,"query":"exact query text"}
+{"version":1,"query":"exact query text","objective":"what you need to find out"}
 JSON
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' fetch -config '/Users/u/.jevlin/jevlin.toml' --stdin <<'JSON'
-{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}
+{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"query":"the fact you need","max_chars":8000}
 JSON
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' agents prefer -config '/Users/u/.jevlin/jevlin.toml' <argument>
@@ -162,11 +162,11 @@ JSON
 == cursor: skill command blocks
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' --stdin <<'JSON'
-{"version":1,"query":"exact query text"}
+{"version":1,"query":"exact query text","objective":"what you need to find out"}
 JSON
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' fetch -config '/Users/u/.jevlin/jevlin.toml' --stdin <<'JSON'
-{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}
+{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"query":"the fact you need","max_chars":8000}
 JSON
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' agents prefer -config '/Users/u/.jevlin/jevlin.toml' <argument>
@@ -216,7 +216,7 @@ const HOST_SHELL = "posix"
 == opencode: bridge prefix its lineage adapter writes
 -- skill search block (posix)
 JEVLIN_TRACE_BRIDGE=<BRIDGE> '/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' --stdin <<'JSON'
-{"version":1,"query":"exact query text"}
+{"version":1,"query":"exact query text","objective":"what you need to find out"}
 JSON
 -- stdin command (posix)
 JEVLIN_TRACE_BRIDGE=<BRIDGE> '/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' --stdin
@@ -224,11 +224,11 @@ JEVLIN_TRACE_BRIDGE=<BRIDGE> '/Users/u/.jevlin/bin/jevlin' search -config '/User
 == pi: skill command blocks
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' --stdin <<'JSON'
-{"version":1,"query":"exact query text"}
+{"version":1,"query":"exact query text","objective":"what you need to find out"}
 JSON
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' fetch -config '/Users/u/.jevlin/jevlin.toml' --stdin <<'JSON'
-{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}
+{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"query":"the fact you need","max_chars":8000}
 JSON
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' agents prefer -config '/Users/u/.jevlin/jevlin.toml' <argument>
@@ -242,7 +242,7 @@ const HOST_SHELL = "posix"
 == pi: bridge prefix its lineage adapter writes
 -- skill search block (posix)
 JEVLIN_TRACE_BRIDGE=<BRIDGE> '/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' --stdin <<'JSON'
-{"version":1,"query":"exact query text"}
+{"version":1,"query":"exact query text","objective":"what you need to find out"}
 JSON
 -- stdin command (posix)
 JEVLIN_TRACE_BRIDGE=<BRIDGE> '/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' --stdin
@@ -250,11 +250,11 @@ JEVLIN_TRACE_BRIDGE=<BRIDGE> '/Users/u/.jevlin/bin/jevlin' search -config '/User
 == hermes: skill command blocks
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' --stdin <<'JSON'
-{"version":1,"query":"exact query text"}
+{"version":1,"query":"exact query text","objective":"what you need to find out"}
 JSON
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' fetch -config '/Users/u/.jevlin/jevlin.toml' --stdin <<'JSON'
-{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}
+{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"query":"the fact you need","max_chars":8000}
 JSON
 -- fence bash
 '/Users/u/.jevlin/bin/jevlin' agents prefer -config '/Users/u/.jevlin/jevlin.toml' <argument>
@@ -270,7 +270,7 @@ JSON
 == hermes: bridge prefix its lineage adapter writes
 -- skill search block (posix)
 JEVLIN_TRACE_BRIDGE=<BRIDGE> '/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' --stdin <<'JSON'
-{"version":1,"query":"exact query text"}
+{"version":1,"query":"exact query text","objective":"what you need to find out"}
 JSON
 -- stdin command (posix)
 JEVLIN_TRACE_BRIDGE=<BRIDGE> '/Users/u/.jevlin/bin/jevlin' search -config '/Users/u/.jevlin/jevlin.toml' --stdin

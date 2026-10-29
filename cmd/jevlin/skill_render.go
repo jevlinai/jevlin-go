@@ -19,11 +19,11 @@ import (
 )
 
 // exampleRequest is the request body the skill shows.
-const exampleRequest = `{"version":1,"query":"exact query text"}`
+const exampleRequest = `{"version":1,"query":"exact query text","objective":"what you need to find out"}`
 
 // exampleFetchRequest is the fetch body the skill shows: one page by the
 // source_id a search returned, which the agent replaces with its own.
-const exampleFetchRequest = `{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}`
+const exampleFetchRequest = `{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"query":"the fact you need","max_chars":8000}`
 
 // shellLabel names a shell the way a participant's host does.
 func shellLabel(sh shellKind) string {
