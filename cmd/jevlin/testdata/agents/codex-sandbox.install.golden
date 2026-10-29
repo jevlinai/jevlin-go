@@ -9,6 +9,13 @@
     },
     {
       "surface": "Codex",
+      "path": "/home/u/.codex/skills/jevlin/reference.md",
+      "mode": 384,
+      "why": "skill reference",
+      "content": "\u003creference.md, rendered for this OS; see testdata/hosts/*.golden\u003e"
+    },
+    {
+      "surface": "Codex",
       "path": "/home/u/.codex/config.toml",
       "mode": 384,
       "why": "permissions: profile \"jevlin\", extending \":workspace\", with the writable roots, and network to agents-v1.jevlin.ai, as.example.invalid and router.example.invalid only, through Codex's proxy (supported with Codex 0.158.0 or newer; older versions are not supported)",

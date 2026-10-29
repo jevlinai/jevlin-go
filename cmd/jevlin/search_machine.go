@@ -55,6 +55,7 @@ const (
 	codeInvalidSearchQueries = "invalid_search_queries"
 	codeInvalidMergedLimit   = "invalid_merged_limit"
 	codeInvalidMaxChars      = "invalid_max_chars"
+	codeInvalidPageChars     = "invalid_page_chars"
 )
 
 // inputError is a local refusal with a stable machine code. It is a type
@@ -94,6 +95,9 @@ type machineSearchRequest struct {
 	// request did not carry them, so the router's own defaults apply.
 	mergedLimit *int
 	maxChars    *int
+	// pageChars caps each page's excerpt (the router's page_chars),
+	// where maxChars is one budget for the whole list.
+	pageChars *int
 }
 
 // wireSearchRequest is the decoded shape. Pointers distinguish an absent
@@ -116,6 +120,7 @@ type wireSearchRequest struct {
 	SearchQueries json.RawMessage `json:"search_queries"`
 	MergedLimit   json.RawMessage `json:"merged_limit"`
 	MaxChars      json.RawMessage `json:"max_chars"`
+	PageChars     json.RawMessage `json:"page_chars"`
 }
 
 // decodeMachineSearchRequest reads exactly one v1 request from r.
@@ -214,6 +219,13 @@ func decodeMachineSearchRequest(r io.Reader) (machineSearchRequest, error) {
 			return machineSearchRequest{}, err
 		}
 		req.maxChars = &n
+	}
+	if len(wire.PageChars) > 0 {
+		n, err := validatePageChars(wire.PageChars)
+		if err != nil {
+			return machineSearchRequest{}, err
+		}
+		req.pageChars = &n
 	}
 	return req, nil
 }
@@ -480,6 +492,30 @@ func validateMergedLimit(raw json.RawMessage) (int, *inputError) {
 	if n < 1 || n > mergedLimitMax {
 		return 0, inputErrorf(codeInvalidMergedLimit,
 			fmt.Sprintf(`"merged_limit" must be between 1 and %d`, mergedLimitMax))
+	}
+	return n, nil
+}
+
+// The router's bounds on page_chars, mirrored here so a value it would
+// refuse costs no request.
+const (
+	pageCharsMin = 200
+	pageCharsMax = 4000
+)
+
+// validatePageChars takes the per-page excerpt cap: an integer from 200 to
+// 4000.
+func validatePageChars(raw json.RawMessage) (int, *inputError) {
+	if string(raw) == "null" {
+		return 0, inputErrorf(codeInvalidPageChars, `"page_chars" must not be null`)
+	}
+	var n int
+	if err := json.Unmarshal(raw, &n); err != nil {
+		return 0, inputErrorf(codeInvalidPageChars, `"page_chars" must be an integer`)
+	}
+	if n < pageCharsMin || n > pageCharsMax {
+		return 0, inputErrorf(codeInvalidPageChars,
+			fmt.Sprintf(`"page_chars" must be between %d and %d`, pageCharsMin, pageCharsMax))
 	}
 	return n, nil
 }

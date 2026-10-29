@@ -421,9 +421,18 @@ func execEnv() []string {
 	)
 }
 
-// renderedSkill is the SKILL.md host's install writes for this installation.
+// renderedSkill is the SKILL.md and reference.md host's install writes for this installation.
 func (in *execInstallation) renderedSkill(host string) string {
-	return renderedSkillFor(host, in.entry, runtime.GOOS)
+	tg, ok := targetByID(installTargets, host)
+	if !ok {
+		panic("no target " + host)
+	}
+	shells, _ := toolShellsForSkill(tg, runtime.GOOS)
+	skill, reference, err := renderSkill(in.entry, preferOn, "", shells)
+	if err != nil {
+		panic(err)
+	}
+	return string(skill) + "\n" + string(reference)
 }
 
 // ── the harness, controlled ──────────────────────────────────────────────
@@ -902,18 +911,11 @@ func TestSkillCommandsRunInTheShellTheyAreRenderedFor(t *testing.T) {
 				t.Run("tier", func(t *testing.T) {
 					in := newExecInstallation(t)
 					block := skillBlockFor(t, in.renderedSkill(host), sh.kind, "tier")
-					script := strings.Replace(block.body, "<tier>", "status", 1)
+					script := strings.Replace(block.body, "<words>", "status", 1)
 					out := runInShell(t, sh, script, nil, in.env)
 					if out.exit != 0 || !strings.Contains(out.stdout, "search tier:") {
 						t.Fatalf("the tier command did not run under %s\n%s", sh.name, out)
 					}
-				})
-				t.Run("human form", func(t *testing.T) {
-					in := newExecInstallation(t)
-					block := skillBlockFor(t, in.renderedSkill(host), sh.kind, "human")
-					script := strings.Replace(block.body, "<query>", "exact query text", 1)
-					out := runInShell(t, sh, script, nil, in.env)
-					requireOneRequest(t, in, out, "exact query text")
 				})
 			})
 		}

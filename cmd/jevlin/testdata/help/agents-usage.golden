@@ -1,6 +1,6 @@
 usage: jevlin agents install|status|uninstall [-config file] [-client name]... [-dry-run] [-yes]
        jevlin agents prefer on|off|status [-config file]
-       jevlin agents tier fast|balanced|max|default|status [-config file]
+       jevlin agents tier fast [preset]|balanced|max|default|status [-config file]
   install     detect coding agents (by command or config directory) and give each
               the supersearch skill and hooks
   status      what is installed where, and which search is the default

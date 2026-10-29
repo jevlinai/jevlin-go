@@ -9,6 +9,13 @@
     },
     {
       "surface": "Pi",
+      "path": "/home/u/.pi/agent/skills/jevlin/reference.md",
+      "mode": 384,
+      "why": "skill reference",
+      "content": "\u003creference.md, rendered for this OS; see testdata/hosts/*.golden\u003e"
+    },
+    {
+      "surface": "Pi",
       "path": "/home/u/.pi/agent/extensions/jevlin.ts",
       "mode": 384,
       "why": "lineage extension",

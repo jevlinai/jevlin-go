@@ -13,7 +13,7 @@ Values to look up. Every flag is in `jevlin help` and `jevlin <command> -h`.
 | `fetch --stdin` | The full text of pages a search returned, for agents (JSON in, JSON out). See [Reading a page in full](#reading-a-page-in-full). |
 | `agents install\|status\|uninstall` | Sets up, reports or removes the skills and hooks of each agent. |
 | `agents prefer on\|off\|status` | Whether this search or the agent's own is the default. |
-| `agents tier fast\|balanced\|max\|default\|status` | The tier every search carries unless the request names one; `default` unsets it. |
+| `agents tier fast [preset]\|balanced\|max\|default\|status` | The tier every search carries unless the request names one; `default` unsets it. After `fast`, a preset name (`economy`, `standard`) picks which fast indexes run; `status` lists the router's presets with their estimated price per search. |
 | `flush` | One pass of the mining plane: join the open epoch, promote recorded searches, submit. |
 | `connect` | Registers with the search platform, prints the claim link, polls until claimed. |
 | `mining enable\|disable` | Turns mining on (asking for a payout address) or off for this installation. |
@@ -53,8 +53,9 @@ list and needs no shell escaping. A malformed field answers `fix_input` before a
 | `recency` | `"day"`, `"week"`, `"month"` or `"year"`. A router that applies it says so in `result.filters_applied` (below). Without that report the results may be unfiltered: check each page's `published` date if it must hold. |
 | `domain_filter` | Up to 16 bare hostnames. Reported in `result.filters_applied` like `recency`; without the report, check each page's `url` host if it must hold. |
 | `max_results` | 1 to 25. A cap. |
-| `merged_limit` | 1 to 50: how many pages `result.merged` holds. Absent, the router's window applies (12 pages on `fast` and `balanced`, 24 on `max`, more when `search_queries` are sent). |
-| `max_chars` | A positive integer: the characters of page text across the whole merged list. Absent, only the router's per-page cut applies. |
+| `merged_limit` | 1 to 50: how many pages `result.merged` holds. Absent, the router's window applies (12 pages on `fast` and `balanced`, 24 on `max`), except that a request with `search_queries` and no `merged_limit` is sent 20, because every wording adds pages. |
+| `max_chars` | A positive integer: the characters of page text across the whole merged list, spent in list order, so later pages get less. Absent, `page_chars` applies. |
+| `page_chars` | 200 to 4000: the characters of excerpt each page keeps. Absent, and with no `max_chars`, 500 is sent, which keeps an agent search under about 20,000 characters. |
 | `providers` | Up to 16 provider names: restrict the fan-out, or reach an extended arm that fires only when named. The router owns the list; an unknown name is its call. Needs `balanced` or `max`: on `fast` the router answers 400 `invalid_request`. Billed at the named arms' prices, draws credit even with mining on, earns no reward. |
 | `view` | `"merged"` (default) or `"full"`. Absent or `"merged"`, the envelope carries the merged list without the per-provider `candidates`, and each page without `excerpts` and `canonical_url`, which repeat its `snippet` and `url`. `"full"` adds all three, for the providers' own answer texts. Either way the router is asked for its merged view, and the envelope's `merged` is that list. The human form's `-view merged` with `-format json` shows the router's raw answer with it. |
 | `objective` | What you are trying to find out, in your own words: a non-blank string of at most 4096 bytes. The router passes it to the providers that take a goal and does not rank by it. |
@@ -319,6 +320,7 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | `claim.json` | The claim link and code for this installation's agent, while it is unclaimed. | connect | Yes; the next `jevlin connect` mints a fresh link, which ends the old one. |
 | `search-default` | `agents prefer`'s choice. | agents prefer | Yes; the skill default returns. |
 | `search-tier` | `agents tier`'s choice: the tier a search carries when the request names none. | agents tier | Yes; `[miner] tier`, then the router's default, returns. |
+| `search-fast-set` | `agents tier fast <preset>`'s choice: the preset a fast search sends as `fast_set`. The skill never sets it. | agents tier | Yes; `agents tier default` removes it. |
 | `update_check.json` | The daily release check's record: when it ran, what it found, and a release a rollback holds. | upgrade | Yes; the next agent session checks again, though a rollback's hold is forgotten. |
 | `bin/jevlin` | A native binary, and `jevlin.previous` after an upgrade. | setup, upgrade | Through `uninstall -binary`. |
 | `state/` | Identity, authorization, the mining decision, health records, the flush stamp, the last region refusal. | connect, flush, join | No: it is your registration. |

@@ -6,6 +6,13 @@
       "mode": 384,
       "why": "skill",
       "content": "\u003cSKILL.md, rendered for this OS; see testdata/hosts/*.golden\u003e"
+    },
+    {
+      "surface": "Codex",
+      "path": "/home/u/.codex/skills/jevlin/reference.md",
+      "mode": 384,
+      "why": "skill reference",
+      "content": "\u003creference.md, rendered for this OS; see testdata/hosts/*.golden\u003e"
     }
   ],
   "notes": [

@@ -721,8 +721,11 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   (`TestTheFullViewOnlyAddsToWhatV043Sent`, against the v0.4.3 capture in
   `cmd/jevlin/testdata/search/full-a0ff6ca`); every key the router's fixtures send is either carried or
   named as not carried, with the reason (`TestEveryKeyTheRouterSendsIsDecided`);
-  `skill_render.go`'s `skillTeachesQueryForms` is the switch for the skill's query-forms
-  paragraphs, on since the router took the forms (`TestTheQueryFormsAreTaughtAsShipped`);
+  `skill.md` and `skill_reference.md` are the templates of the installed `SKILL.md` and the
+  `reference.md` beside it (`renderSkill`; swapping the text is a file change, held by
+  `TestTheSkillTeachesTheLeanSearchOnEveryHost`), and `agent_defaults.go` owns what an
+  agent search is sent when its caller sized nothing (`page_chars`, `merged_limit`,
+  `TestAgentSearchOutputStaysBounded`) and the user's fast preset (`fast_set`);
   `fetch.go` owns `fetch --stdin`: its strict request, the one POST to `/v1/fetch` through
   search's `routerClient` and `postRouter`, and the three answers only a fetch gets
   (`fetch_unavailable` is `connect`; a 404 or 405 is `fetch_not_supported` and a 503 with the

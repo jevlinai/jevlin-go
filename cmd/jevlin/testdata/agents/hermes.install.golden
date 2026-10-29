@@ -9,6 +9,13 @@
     },
     {
       "surface": "Hermes",
+      "path": "\u003cHERMES_HOME\u003e/skills/jevlin/reference.md",
+      "mode": 384,
+      "why": "skill reference",
+      "content": "\u003creference.md, rendered for this OS; see testdata/hosts/*.golden\u003e"
+    },
+    {
+      "surface": "Hermes",
       "path": "\u003cHERMES_HOME\u003e/config.yaml",
       "mode": 384,
       "why": "pre_tool_call lineage hook",

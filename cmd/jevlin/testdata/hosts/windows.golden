@@ -89,13 +89,9 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 -- fence powershell
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
 -- fence bash
-'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <tier>
+'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <words>
 -- fence powershell
-& 'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <tier>
--- fence bash
-'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
--- fence powershell
-& 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
+& 'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <words>
 -- prose
 the Write tool to a new file in `C:\Users\u\.jevlin\requests` (a new name each time), then run it
 -- prose
@@ -173,9 +169,7 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 -- fence powershell
 & 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
 -- fence powershell
-& 'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <tier>
--- fence powershell
-& 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
+& 'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <words>
 
 == codex: hooks.json commands, as read back from the file
 -- refused
@@ -205,13 +199,9 @@ JSON
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
 -- fence powershell
-& 'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <tier>
+& 'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <words>
 -- fence bash
-'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <tier>
--- fence powershell
-& 'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
--- fence bash
-'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
+'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <words>
 
 == cursor: hooks.json commands, as read back from the file
 -- sessionStart
@@ -248,18 +238,6 @@ matches the rendered `search` for posix
 matches the rendered `fetch` for powershell
 -- skill block (bash)
 matches the rendered `fetch` for posix
--- skill block (powershell)
-matches the rendered `agents prefer` for powershell
--- skill block (bash)
-matches the rendered `agents prefer` for posix
--- skill block (powershell)
-matches the rendered `agents tier` for powershell
--- skill block (bash)
-matches the rendered `agents tier` for posix
--- skill block (powershell)
-refused
--- skill block (bash)
-refused
 -- stdin command alone
 refused
 -- the rendered search plus a second statement
@@ -292,9 +270,7 @@ JSON
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
 -- fence bash
-'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <tier>
--- fence bash
-'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
+'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <words>
 
 == pi: the shell its installed adapter is rendered for
 -- HOST_SHELL
@@ -320,9 +296,7 @@ JSON
 -- fence bash
 'C:\Users\u\.jevlin\bin\jevlin.exe' agents prefer -config 'C:\Users\u\.jevlin\jevlin.toml' <argument>
 -- fence bash
-'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <tier>
--- fence bash
-'C:\Users\u\.jevlin\bin\jevlin.exe' search -config 'C:\Users\u\.jevlin\jevlin.toml' -format model "<query>"
+'C:\Users\u\.jevlin\bin\jevlin.exe' agents tier -config 'C:\Users\u\.jevlin\jevlin.toml' <words>
 
 == hermes: config.yaml hook command
 -- command

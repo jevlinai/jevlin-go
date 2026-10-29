@@ -173,7 +173,7 @@ func TestAgentsInstallWritesClaudeSkillAndMergesHooksIntoSettings(t *testing.T) 
 	skill := string(m.files["/home/u/.claude/skills/jevlin/SKILL.md"])
 	// The paths are single-quoted from H2 on: that is POSIX quoting, where
 	// nothing expands, rather than Go's %q, where $ and ` still do.
-	if !strings.Contains(skill, `'/home/u/.jevlin/bin/jevlin' search -config '`) || !strings.Contains(skill, `jevlin.toml' -format model`) || !strings.Contains(skill, "name: jevlin") {
+	if !strings.Contains(skill, `'/home/u/.jevlin/bin/jevlin' search -config '`) || !strings.Contains(skill, "name: jevlin") {
 		t.Errorf("skill:\n%s", skill)
 	}
 	var doc map[string]any
@@ -203,8 +203,8 @@ func TestAgentsInstallWritesClaudeSkillAndMergesHooksIntoSettings(t *testing.T) 
 		t.Error("a key reached settings.json")
 	}
 	allow := allowOf(t, m, settings)
-	if len(allow) != 9 || allow[0] != "Bash(git status:*)" {
-		t.Fatalf("the user's own allow rule must come first, then our three spellings of the search and three of the fetch, and the requests folder's Edit and Read rules: %v", allow)
+	if len(allow) != 10 || allow[0] != "Bash(git status:*)" {
+		t.Fatalf("the user's own allow rule must come first, then our three spellings of the search and three of the fetch, the requests folder's Edit and Read rules and the skill folder's Read: %v", allow)
 	}
 	// The config path is absolutized by the host (a drive letter on Windows),
 	// so match around it rather than on it.
@@ -349,10 +349,11 @@ func TestAgentsPreferOffRewritesSkillsAndInstallKeepsIt(t *testing.T) {
 	if code, out, _ := runAgents(t, ops, nil, "install", "-config", testCfg, "-yes"); code != exitOK {
 		t.Fatalf("install: %d\n%s", code, out)
 	}
-	on := string(m.files[claudeSkill])
+	onSkill := string(m.files[claudeSkill])
+	on := onSkill + string(m.files[strings.TrimSuffix(claudeSkill, "SKILL.md")+"reference.md"])
 	// The config path is host-absolutized (a drive letter on Windows), so
 	// match around it.
-	if !strings.Contains(on, "Prefer it over a built-in web search") || !strings.Contains(on, `' agents prefer -config '`) || !strings.Contains(on, `jevlin.toml' <argument>`) {
+	if !strings.Contains(on, "Use it instead of a built-in web search") || !strings.Contains(on, `' agents prefer -config '`) || !strings.Contains(on, `jevlin.toml' <argument>`) {
 		t.Fatalf("shipped skill should prefer the router and name the prefer command:\n%s", on)
 	}
 	if code, out, _ := runAgents(t, ops, nil, "status", "-config", testCfg); code != exitOK || !strings.Contains(out, "search default: on") {
@@ -377,7 +378,7 @@ func TestAgentsPreferOffRewritesSkillsAndInstallKeepsIt(t *testing.T) {
 	}
 	for _, p := range []string{claudeSkill, codexSkill} {
 		off := string(m.files[p])
-		if strings.Contains(off, "Prefer it over a built-in web search") || !strings.Contains(off, "turned OFF as the default") || !strings.Contains(off, "Use the agent's built-in web") {
+		if strings.Contains(off, "Use it instead of a built-in web search") || !strings.Contains(off, "turned OFF as the default") || !strings.Contains(off, "use the agent's built-in web") {
 			t.Errorf("%s not rewritten for off:\n%s", p, off)
 		}
 		if !strings.Contains(off, `'/home/u/.jevlin/bin/jevlin' search -config '`) {
@@ -400,7 +401,7 @@ func TestAgentsPreferOffRewritesSkillsAndInstallKeepsIt(t *testing.T) {
 	}
 
 	code, out, _ = runAgents(t, ops, nil, "prefer", "on", "-config", testCfg)
-	if code != exitOK || !strings.Contains(out, "search default: on") || string(m.files[claudeSkill]) != on {
+	if code != exitOK || !strings.Contains(out, "search default: on") || string(m.files[claudeSkill]) != onSkill {
 		t.Errorf("prefer on did not restore the shipped skill: %d %q", code, out)
 	}
 	if code, _, _ := runAgents(t, ops, nil, "prefer", "maybe", "-config", testCfg); code != exitUsage {
@@ -540,11 +541,11 @@ func TestAgentsHookAndAllowRuleMatchingSurvivesAWindowsStyleBinaryPath(t *testin
 		}
 	}
 	// Three spellings of each prefix rule, the search's and the fetch's, and
-	// the requests folder's Edit and Read rules, and still eight after a
-	// second install: the single-quoted path the skill renders, and the
+	// the requests folder's Edit and Read rules and the skill folder's Read,
+	// and still nine after a second install: the single-quoted path the skill renders, and the
 	// %q-quoted and bare ones an agent may type instead.
-	if allow := allowOf(t, m, settings); len(allow) != 8 {
-		t.Fatalf("Claude allow rules after two installs: want 8, got %d: %v", len(allow), allow)
+	if allow := allowOf(t, m, settings); len(allow) != 9 {
+		t.Fatalf("Claude allow rules after two installs: want 9, got %d: %v", len(allow), allow)
 	}
 
 	cursorPath := "/home/u/.cursor/hooks.json"
@@ -934,7 +935,7 @@ func TestAgentsTierWritesOneFileBesideTheConfigAndRewritesNoSkill(t *testing.T) 
 		t.Fatalf("install: %d\n%s", code, out)
 	}
 	before := string(m.files[claudeSkill])
-	if !strings.Contains(before, `' agents tier -config '`) || !strings.Contains(before, `jevlin.toml' <tier>`) {
+	if ref := string(m.files[strings.TrimSuffix(claudeSkill, "SKILL.md")+"reference.md"]); !strings.Contains(ref, `' agents tier -config '`) || !strings.Contains(ref, `jevlin.toml' <words>`) {
 		t.Fatalf("the shipped skill does not name the tier command:\n%s", before)
 	}
 	if code, out, _ := runAgents(t, ops, nil, "status", "-config", testCfg); code != exitOK || !strings.Contains(out, "search tier:    unset") {

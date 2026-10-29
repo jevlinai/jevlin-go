@@ -83,7 +83,7 @@ func TestSkillFrontmatterIsValidYAMLWhenOff(t *testing.T) {
 		t.Fatal("no claude target")
 	}
 	shells, _ := toolShellsForSkill(tg, "linux")
-	skill, err := renderSkill(binEntry{command: "/home/u/.jevlin/bin/jevlin", cfg: "/home/u/.jevlin/jevlin.toml"}, preferOff, "", shells)
+	skill, _, err := renderSkill(binEntry{command: "/home/u/.jevlin/bin/jevlin", cfg: "/home/u/.jevlin/jevlin.toml"}, preferOff, "", shells)
 	if err != nil {
 		t.Fatal(err)
 	}

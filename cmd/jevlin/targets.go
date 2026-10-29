@@ -480,7 +480,7 @@ func (t claudeTarget) PlanInstall(ops agentOps, paths agentPaths, entry binEntry
 	changed, left := planSkill(ops, t, paths.claudeSkill, entry, prefer, "", p)
 	if spec, err := claudeHooksFor(t, entry, runtime.GOOS); err != nil {
 		p.refused = append(p.refused, fmt.Sprintf("%s: %v", t.Label(), err))
-	} else if planHooksMerge(ops, t.Label(), paths.claudeSettings, p, entry, spec) {
+	} else if spec.allow = append(spec.allow, claudeSkillRule(paths.claudeSkill)); planHooksMerge(ops, t.Label(), paths.claudeSettings, p, entry, spec) {
 		changed = true
 	}
 	if !changed && !left {
