@@ -1,4 +1,4 @@
-// Package promote turns a terminal proxy observation into a
+// Package promote turns a served search's observation into a
 // ProviderObservationV1 record (contract §54 promotion rule, §48–§57
 // envelope). It is pure data mapping: no I/O, no network, no clock
 // beyond what the observation already carries.
@@ -22,15 +22,9 @@ import (
 // a healthy proxy are promotable, and the rest are simply dropped.
 var ErrNotPromotable = errors.New("promote: observation is not structurally eligible")
 
-// Eligible reports the §54 rule for OPENROUTER_V1:
-//
-//	Outcome == COMPLETE
-//	AND provider_event_id (generation id) is non-empty
-//
-// Deliberately NOT required: saw_done, saw_usage, saw_finish_reason,
-// streaming, or termination == done. An eof_without_done or
-// client_disconnect observation with a usable generation id is still
-// submitted — whether it qualifies economically is the AS's call.
+// Eligible reports the §54 rule: Outcome == COMPLETE and a non-empty
+// provider_event_id (the router's request id). Whether it qualifies
+// economically is the AS's call.
 func Eligible(obs *observe.Observation) bool {
 	if obs == nil || obs.GenerationID == "" {
 		return false
@@ -49,11 +43,15 @@ func Build(obs *observe.Observation, clientRecordID string) (*wire.ProviderObser
 		return nil, errors.New("promote: client_record_id is required")
 	}
 	termination, _ := obs.Outcome.Termination()
+	profile, err := sourceProfileFor(obs.Profile)
+	if err != nil {
+		return nil, err
+	}
 
 	rec := &wire.ProviderObservationV1{
 		Version:         wire.ObservationVersion,
 		ClientRecordID:  clientRecordID,
-		SourceProfile:   sourceProfileFor(obs.Profile),
+		SourceProfile:   profile,
 		ProviderEventID: obs.GenerationID,
 		ResolvedModel:   obs.ResolvedModel,
 		Streaming:       obs.Streaming,
@@ -84,42 +82,27 @@ func Build(obs *observe.Observation, clientRecordID string) (*wire.ProviderObser
 			TotalTokens:      strconv.FormatUint(obs.Usage.TotalTokens, 10),
 		}
 	}
-	// §56: each profile's own closed allowlist, response-side only.
-	//
-	// provider_name is on OPENROUTER_V1's list and on no other. Under
-	// SEARCH_ROUTER_V1 the permitted set is EMPTY — §35.1 specifies a
-	// verification model and says nothing about proxy-side source data —
-	// so the object is omitted entirely. Sending it anyway is not a
-	// tolerated extra: the AS rejects the observation, so a field nobody
-	// asked for would have cost the participant the whole record.
-	if rec.SourceProfile == wire.SourceProfileOpenRouterV1 && obs.Provider != "" {
-		rec.SourceData = map[string]any{"provider_name": obs.Provider}
-	}
+	// §56: SEARCH_ROUTER_V1's source-data allowlist is empty, so no
+	// source_data object is sent; the AS would reject one.
 	if err := rec.Validate(); err != nil {
 		return nil, err
 	}
 	return rec, nil
 }
 
-// sourceProfileFor names the wire source profile for an observed response
-// shape.
-//
-// The mapping is by ROUTE, decided upstream by the caller — in
-// cmd/jevlin, intakeRecord.observation() hardcodes
-// observe.ProfileSearchRouter, because the search command only ever calls
-// /v1/search, a search-router exchange by definition. It is deliberately
-// not inferred from the response body: a
-// payload shape is evidence about a payload, and source_profile is a claim
-// about which provider's vocabulary produced the identifier the AS will
-// resolve. Guessing that wrong sends a request id to be looked up as a
-// generation id, which resolves to nothing and rejects honest work.
-//
-// The zero value is ProfileChatCompletion, so an observation built without a
-// profile set reads as OPENROUTER_V1 — the shape the observer shipped with,
-// and the one every existing caller means.
-func sourceProfileFor(p observe.Profile) string {
+// ErrNoSourceProfile is an observation that names no source profile.
+var ErrNoSourceProfile = errors.New("promote: the observation names no source profile")
+
+// sourceProfileFor names the wire source profile for an observation. The
+// profile is decided by the route the client called (cmd/jevlin's
+// intakeRecord.observation names observe.ProfileSearchRouter, because search
+// only ever calls /v1/search), never inferred from a response body: guessing
+// it wrong sends an identifier to be resolved in another provider's
+// vocabulary, which rejects honest work. The search router's profile is the
+// only one this client produces; any other is refused rather than sent.
+func sourceProfileFor(p observe.Profile) (string, error) {
 	if p == observe.ProfileSearchRouter {
-		return wire.SourceProfileSearchRouterV1
+		return wire.SourceProfileSearchRouterV1, nil
 	}
-	return wire.SourceProfileOpenRouterV1
+	return "", ErrNoSourceProfile
 }

@@ -1,13 +1,24 @@
-// Package observe watches provider responses without retaining them: the
-// bounded lossy tap (ADR-0002), the structural scanner (ADR-0004), the
-// Observation type, and the Sink it is delivered through. It imports no
-// mining package — which is what lets the observation side ship with no
-// mining code in the tree at all — and nothing below it can reach the
-// client's response: losing a measurement is always preferable to stalling
-// inference.
+// Package observe is the Observation type: the metadata this client keeps
+// about one served search, and nothing of its content. It imports no mining
+// package; promotion (pkg/mining/promote) turns an Observation into the wire
+// record the AS receives.
 package observe
 
 import "time"
+
+// Profile names the provider vocabulary an observation's identifier belongs
+// to. It is decided by the route the client called, never inferred from a
+// response body. The zero value names none, and promotion refuses it: an
+// observation built without a profile is a mistake, not a default.
+type Profile uint8
+
+const (
+	// ProfileUnset is the zero value: no profile was named.
+	ProfileUnset Profile = iota
+	// ProfileSearchRouter is the search router's /v1/search answer, whose
+	// request id the AS resolves under SEARCH_ROUTER_V1.
+	ProfileSearchRouter
+)
 
 // Termination says how the proxy FINISHED observing (Complete): these are
 // facts about watching, never reward-eligibility claims.
@@ -112,16 +123,3 @@ type Observation struct {
 	ParseDegraded    bool // ≥1 event skipped (oversize or malformed)
 	MetadataConflict bool // a later chunk disagreed with the first on id/model
 }
-
-// Sink receives terminal observations. Offer is non-blocking and returns
-// nothing — there is no error to propagate and therefore no way for anything
-// downstream to affect the response.
-type Sink interface {
-	Offer(*Observation)
-}
-
-// NopSink is the Phase 2 production sink: observations feed counters and
-// nothing else.
-type NopSink struct{}
-
-func (NopSink) Offer(*Observation) {}

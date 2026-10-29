@@ -15,13 +15,14 @@ import (
 	"github.com/jevlinai/jevlin-go/pkg/wire"
 )
 
-// searchObservation mirrors what internal/observe's search profile emits for
-// a healthy POST /v1/search: identity from request_id, the chosen
+// searchObservation mirrors what cmd/jevlin's intake records for a healthy
+// POST /v1/search: identity from request_id, the chosen
 // candidate's provider as the resolved model, and no token usage at all.
 func searchObservation() *observe.Observation {
 	started := time.Date(2026, 8, 22, 10, 0, 0, 0, time.UTC)
 	return &observe.Observation{
-		Provider:      "openrouter",
+		Provider:      "search-router",
+		Profile:       observe.ProfileSearchRouter,
 		GenerationID:  "f47ac10b-58cc-4372-a567-0e02b2c3d479",
 		ResolvedModel: "synthetic-search-b",
 		StatusCode:    200,
