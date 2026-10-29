@@ -17,8 +17,10 @@ rewritten to match newer behaviour; the newer entry says what changed.
   search without a trajectory spools no observation, declares nothing, is billed at list and
   earns nothing. The machine envelope reports it as `mining.trajectory` (with the reason in
   `mining.detail`), a human is told once on stderr, `jevlin status` says "OFF (trace is off)"
-  from such a shell beside the stored decision, and `jevlin mining enable`, `jevlin enroll`,
-  connect's enrolment and a detached flush all refuse from one. Hosts whose hooks carry no
+  from such a shell beside the stored decision (and `-json` carries `mining.effective` beside the
+  stored `mining.state`), and `jevlin mining enable`, `jevlin enroll` and connect's enrolment
+  refuse from one. A flush is not gated: what earlier traced searches recorded is delivered
+  whatever the shell it runs from. Hosts whose hooks carry no
   assistant text (Codex, Hermes, a bare shell) send a trace of ids alone, which is not a
   trajectory, and so do not mine until they do.
 - **The mining declaration.** When this installation is mining and the envelope carries a

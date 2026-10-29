@@ -185,9 +185,13 @@ type statusMiningJSON struct {
 	Health                []machineHealth `json:"health,omitempty"`
 	HealthError           string          `json:"health_error,omitempty"`
 	// Trace is "off" when JEVLIN_TRACE is off in the shell status ran in,
-	// "on" otherwise: with it off, mining is off from that shell whatever
-	// State says, since searches from it carry no trajectory.
-	Trace string `json:"trace,omitempty"`
+	// "on" otherwise. Effective is what mining IS from that shell — State
+	// when tracing is on, "disabled" when it is off, since searches from
+	// it carry no trajectory — so a machine reader and the text report
+	// derive the same answer: State is the stored decision, Effective the
+	// one in force, and they differ only when Trace is "off".
+	Trace     string `json:"trace,omitempty"`
+	Effective string `json:"effective,omitempty"`
 }
 
 // statusAgentJSON is the stored registration. Every field in it is already
@@ -281,6 +285,7 @@ func statusEnvelope(f agentIdentityFacts, as *statusASFacts) commandEnvelope {
 		Mining: statusMiningJSON{
 			State:                 string(f.Decision.State),
 			Trace:                 traceStateWord(f.TraceOff),
+			Effective:             effectiveMiningState(f),
 			ASConfigured:          miningASConfigured(f.Mining),
 			StateDirectoryPresent: !f.StoreMissing,
 			Health:                healthOf(f.Health),
@@ -505,4 +510,13 @@ func traceStateWord(off bool) string {
 		return "off"
 	}
 	return "on"
+}
+
+// effectiveMiningState is the mining state in force from the shell status
+// ran in: the stored decision, unless tracing is off there.
+func effectiveMiningState(f agentIdentityFacts) string {
+	if f.TraceOff && f.Decision.State == auth.MiningEnabled {
+		return string(auth.MiningDisabled)
+	}
+	return string(f.Decision.State)
 }

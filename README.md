@@ -173,6 +173,7 @@ like a credential, PEM blocks, email addresses, the account name in a home path,
 trajectory is what mining pays for and what the free tier is served on, so a search without one
 is billed at list and earns nothing. `jevlin status` says so from such a shell, `jevlin mining
 enable` and `jevlin enroll` refuse from one, and the machine envelope reports `mining.trajectory`.
+A flush still delivers what earlier traced searches recorded.
 
 ## What setup asks
 

@@ -232,6 +232,25 @@ func prepareTraceText(text string) string {
 	return text
 }
 
+// hasTrajectory is the one definition of "this envelope carries a
+// trajectory": at least one history entry the assistant wrote, with text
+// in it after the size caps have had their say. Ids alone are not one; a
+// host's reasoning entry alone (Cursor's thought, before any response) is
+// not one; an entry whose text was omitted as oversize is not one. It is
+// the router's own definition (the last assistant entry with text), so
+// what this client declares and spools is what the router pays for.
+func hasTrajectory(env *traceEnvelope) bool {
+	if env == nil {
+		return false
+	}
+	for _, h := range env.History {
+		if h.Role == "assistant" && strings.TrimSpace(h.Text) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // traceOff is the one definition of "the participant switched tracing off"
 // (JEVLIN_TRACE=off, 0 or false). Everything that follows from it follows
 // from here: no envelope rides the search, no turn end is sent, and — since

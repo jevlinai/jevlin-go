@@ -169,7 +169,11 @@ like a credential, PEM blocks, email addresses, the account name in a home path,
 `api_key`. [The trace](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#the-trace) and
 [the turn end](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#the-turn-end) list every field and every scrub rule.
 
-`export JEVLIN_TRACE=off` sends no trace and no turn end; searches work the same without them.
+`export JEVLIN_TRACE=off` sends no trace and no turn end, and turns mining off with them: the
+trajectory is what mining pays for and what the free tier is served on, so a search without one
+is billed at list and earns nothing. `jevlin status` says so from such a shell, `jevlin mining
+enable` and `jevlin enroll` refuse from one, and the machine envelope reports `mining.trajectory`.
+A flush still delivers what earlier traced searches recorded.
 
 ## What setup asks
 

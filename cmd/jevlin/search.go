@@ -750,7 +750,7 @@ func performSearch(ctx context.Context, now func() time.Time, call searchCall) (
 	// the answered POST was not one.
 	trajectory := func() bool {
 		tr, ok := body["trace"].(*traceEnvelope)
-		return ok && tr != nil && len(tr.History) > 0
+		return ok && hasTrajectory(tr)
 	}
 	// On the named result, so every return path carries it.
 	defer func() { out.Trajectory = out.Fault == faultNone && trajectory() }()
@@ -879,7 +879,7 @@ func postSearch(ctx context.Context, client *http.Client, call searchCall, body 
 		// nothing. Read off the body for the same reason as the session
 		// id, so the retry that drops the trace drops this with it. Never
 		// "off": absence is the undeclared state.
-		if tr, ok := body["trace"].(*traceEnvelope); ok && tr != nil && len(tr.History) > 0 && call.Mining {
+		if tr, ok := body["trace"].(*traceEnvelope); ok && hasTrajectory(tr) && call.Mining {
 			req.Header.Set("X-Jevlin-Mining", "on")
 		}
 	})

@@ -21,6 +21,18 @@ func traceWithHistoryAs(harness string) string {
 	return bridge
 }
 
+func traceReasoningOnly() string {
+	bridge, _ := encodeTraceBridge(&traceEnvelope{V: traceVersion, Harness: "cursor", SessionID: "abc", TurnID: "t", CallID: "c",
+		History: []traceHistory{{Role: "reasoning", Text: "checking the API"}}})
+	return bridge
+}
+
+func traceEmptyAssistant() string {
+	bridge, _ := encodeTraceBridge(&traceEnvelope{V: traceVersion, Harness: "claude-code", SessionID: "abc", TurnID: "t", CallID: "c",
+		History: []traceHistory{{Role: "assistant", Text: "   "}}})
+	return bridge
+}
+
 func traceIDsOnly() string {
 	bridge, _ := encodeTraceBridge(&traceEnvelope{V: traceVersion, Harness: "codex", SessionID: "abc", TurnID: "t", CallID: "c"})
 	return bridge
@@ -40,6 +52,8 @@ func TestMiningHeaderRidesOnlyBesideATrajectory(t *testing.T) {
 		{"trajectory and mining on", map[string]string{bridgeEnv: traceWithHistory()}, true, true, true},
 		{"trajectory, mining off", map[string]string{bridgeEnv: traceWithHistory()}, false, false, true},
 		{"ids alone are not a trajectory", map[string]string{bridgeEnv: traceIDsOnly()}, true, false, false},
+		{"a reasoning entry alone is not a trajectory", map[string]string{bridgeEnv: traceReasoningOnly()}, true, false, false},
+		{"an assistant entry with no text is not a trajectory", map[string]string{bridgeEnv: traceEmptyAssistant()}, true, false, false},
 		{"trace off", map[string]string{"JEVLIN_TRACE": "off"}, true, false, false},
 	}
 	for _, tc := range cases {
@@ -151,5 +165,49 @@ func TestTraceOffSpellings(t *testing.T) {
 		if got := traceOff(func(string) string { return v }); got != want {
 			t.Errorf("JEVLIN_TRACE=%q: %v, want %v", v, got, want)
 		}
+	}
+}
+
+func TestHasTrajectoryNeedsAssistantText(t *testing.T) {
+	cases := map[string]struct {
+		env  *traceEnvelope
+		want bool
+	}{
+		"nil":             {nil, false},
+		"ids alone":       {&traceEnvelope{V: traceVersion, SessionID: "s"}, false},
+		"reasoning alone": {&traceEnvelope{History: []traceHistory{{Role: "reasoning", Text: "thinking"}}}, false},
+		"empty assistant": {&traceEnvelope{History: []traceHistory{{Role: "assistant", Text: " \n"}}}, false},
+		"assistant text":  {&traceEnvelope{History: []traceHistory{{Role: "assistant", Text: "look up undici"}}}, true},
+		"assistant after reasoning": {&traceEnvelope{History: []traceHistory{
+			{Role: "reasoning", Text: "thinking"}, {Role: "assistant", Text: "look up undici"}}}, true},
+	}
+	for name, c := range cases {
+		if got := hasTrajectory(c.env); got != c.want {
+			t.Errorf("%s: %v, want %v", name, got, c.want)
+		}
+	}
+}
+
+// The status envelope's effective state agrees with the text report: the
+// stored decision stays where it was, and the state in force is beside it.
+func TestStatusEnvelopeSaysWhatMiningIsFromThisShell(t *testing.T) {
+	f := agentIdentityFacts{Decision: auth.MiningDecision{State: auth.MiningEnabled}}
+	var m struct {
+		Data struct {
+			Mining struct {
+				State, Trace, Effective string
+			} `json:"mining"`
+		} `json:"data"`
+	}
+	raw, _ := json.Marshal(statusEnvelope(f, nil))
+	_ = json.Unmarshal(raw, &m)
+	if m.Data.Mining.State != "enabled" || m.Data.Mining.Trace != "on" || m.Data.Mining.Effective != "enabled" {
+		t.Errorf("tracing on: %+v", m.Data.Mining)
+	}
+	f.TraceOff = true
+	raw, _ = json.Marshal(statusEnvelope(f, nil))
+	_ = json.Unmarshal(raw, &m)
+	if m.Data.Mining.State != "enabled" || m.Data.Mining.Trace != "off" || m.Data.Mining.Effective != "disabled" {
+		t.Errorf("tracing off: stored decision kept, effective state off: %+v", m.Data.Mining)
 	}
 }
