@@ -12,6 +12,21 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
+- **Trace off means mining off.** The trajectory is what mining pays for and what the router's
+  free price band is served on, so `JEVLIN_TRACE=off` now turns mining off with the trace: a
+  search without a trajectory spools no observation, declares nothing, is billed at list and
+  earns nothing. The machine envelope reports it as `mining.trajectory` (with the reason in
+  `mining.detail`), a human is told once on stderr, `jevlin status` says "OFF (trace is off)"
+  from such a shell beside the stored decision, and `jevlin mining enable`, `jevlin enroll`,
+  connect's enrolment and a detached flush all refuse from one. Hosts whose hooks carry no
+  assistant text (Codex, Hermes, a bare shell) send a trace of ids alone, which is not a
+  trajectory, and so do not mine until they do.
+- **The mining declaration.** When this installation is mining and the envelope carries a
+  trajectory, the search carries `X-Jevlin-Mining: on`; never without the trajectory, and
+  dropped with it on the compatibility retry.
+- **The router's price band** arrives as `usage.billing` / `usage.billing_reason`, rendered on
+  the decision line and mirrored into the machine envelope as they come.
+
 ## v0.6.1 — 2026-10-27
 
 The skill every agent reads now says it is supersearch, and the client gains `jevlin fetch

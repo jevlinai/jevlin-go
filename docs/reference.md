@@ -576,7 +576,17 @@ different on every search, rather than any id the hostname could be recovered fr
 header — the router groups quick reformulations by it there, and reads the trajectory from the
 envelope; the same identifier in both places, sent only while an envelope rides, and dropped with
 the envelope on the one compatibility retry. The trace is unauthenticated metadata: nothing
-treats it as proof of origin. `JEVLIN_TRACE=off` sends none.
+treats it as proof of origin. `JEVLIN_TRACE=off` sends none, and mining is off with it.
+
+The trajectory — the envelope's `history` with the assistant's text — is what mining pays for
+and what the router's free price band is served on. When this installation is mining and the
+envelope carries one, the search also carries the header `X-Jevlin-Mining: on`, the declaration
+the router prices the free band on; the header never rides without the trajectory, and the
+compatibility retry drops both. A search with no trajectory — tracing off, a host whose hook
+sends no text, a bare shell, or a history the size caps dropped — spools no observation, declares
+nothing, is billed at list and earns nothing; the machine envelope says so as `mining.trajectory`
+with the reason in `mining.detail`, and a human is told once on stderr. The router's price band
+and its reason arrive as `usage.billing` and `usage.billing_reason`, rendered as they come.
 
 ## The turn end
 

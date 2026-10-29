@@ -177,7 +177,7 @@ func TestSearchViewFlagForwardsOnlyMerged(t *testing.T) {
 			_, _ = w.Write([]byte(routerBody))
 		})
 		h := fixedSearchOps(root)
-		code, _, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "sr-fictional"},
+		code, _, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "sr-fictional", bridgeEnv: traceWithHistoryAs("claude-code")},
 			"-config", cfg, "-view", "sideways", "q")
 		if code != exitUsage || !strings.Contains(errOut, "-view") {
 			t.Fatalf("exit %d, stderr %q", code, errOut)
@@ -196,7 +196,7 @@ func TestSearchPostsToTheRouterPrintsVerbatimAndRecordsIntake(t *testing.T) {
 		_, _ = w.Write([]byte(routerBody))
 	})
 	h := fixedSearchOps(root)
-	code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "sr-fictional"},
+	code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "sr-fictional", bridgeEnv: traceWithHistoryAs("cli")},
 		"-config", cfg, "-tier", "fast", "how", "do", "ports", "work")
 	if code != exitOK || out != routerBody {
 		t.Fatalf("exit %d out %q err %q", code, out, errOut)
@@ -247,7 +247,7 @@ func TestSearchRecordsTheEpochItsOwnFlushStampHeld(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := fixedSearchOps(root)
-	code, _, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "sr-fictional"},
+	code, _, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "sr-fictional", bridgeEnv: traceWithHistoryAs("claude-code")},
 		"-config", cfg, "how", "do", "ports", "work")
 	if code != exitOK {
 		t.Fatalf("exit %d err %q", code, errOut)
@@ -366,19 +366,31 @@ func TestSearchFallsBackToTheWorkspaceLineageFileAndBumpsSeq(t *testing.T) {
 	}
 }
 
-func TestSearchKillSwitchSendsNoTraceAndStillMines(t *testing.T) {
+// The kill switch turns the trajectory off, and mining with it: the
+// trajectory is what mining pays for, so a search that carries none is
+// billed at list, spools nothing, declares nothing, and says so once.
+func TestSearchKillSwitchSendsNoTraceAndDoesNotMine(t *testing.T) {
 	fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Request-Id", "01a03e86-quiet")
 		_, _ = w.Write([]byte(routerBody))
 	})
 	h := fixedSearchOps(root)
-	runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k", "JEVLIN_TRACE": "off"}, "-config", cfg, "q")
-	_, sent := fr.last(t)
+	code, _, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k", "JEVLIN_TRACE": "off"}, "-config", cfg, "q")
+	if code != exitOK {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	req, sent := fr.last(t)
 	if bytes.Contains(sent, []byte(`"trace"`)) {
 		t.Errorf("trace sent despite the kill switch: %s", sent)
 	}
-	if recs, _, _ := readIntake(filepath.Join(root, "intake")); len(recs) != 1 {
-		t.Error("the search was not recorded for mining")
+	if req.Header.Get("X-Jevlin-Mining") != "" {
+		t.Error("mining was declared with the trajectory off")
+	}
+	if recs, _, _ := readIntake(filepath.Join(root, "intake")); len(recs) != 0 {
+		t.Errorf("the search was recorded for mining with no trajectory: %v", recs)
+	}
+	if !strings.Contains(errOut, "carried no trajectory") {
+		t.Errorf("a human is told once: %q", errOut)
 	}
 }
 

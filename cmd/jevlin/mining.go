@@ -52,6 +52,10 @@ func cmdMiningEnable(args []string, stdin io.Reader, stdout, stderr io.Writer, g
 		fmt.Fprintf(stderr, "jevlin: config (%s): %v\n", orDefaults(cfgSource), err)
 		return exitTransport
 	}
+	if traceOff(getenv) {
+		fmt.Fprintln(stderr, "jevlin: mining needs the trajectory, and JEVLIN_TRACE is off in this shell: searches from here carry none, are billed at list and earn nothing. Run `jevlin mining enable` from a shell with tracing on.")
+		return exitUsage
+	}
 	store, err := auth.OpenStore(cfg.Mining.StateDir)
 	if err != nil {
 		fmt.Fprintln(stderr, "jevlin:", err)

@@ -21,6 +21,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/jevlinai/jevlin-go/pkg/redact"
@@ -229,4 +230,18 @@ func prepareTraceText(text string) string {
 		text = text[start:]
 	}
 	return text
+}
+
+// traceOff is the one definition of "the participant switched tracing off"
+// (JEVLIN_TRACE=off, 0 or false). Everything that follows from it follows
+// from here: no envelope rides the search, no turn end is sent, and — since
+// the trajectory is what mining pays for and what the free tier is served
+// on — mining is off too: nothing is enrolled, nothing is spooled, the
+// search is billed at list and earns nothing.
+func traceOff(getenv func(string) string) bool {
+	switch strings.ToLower(strings.TrimSpace(getenv("JEVLIN_TRACE"))) {
+	case "off", "0", "false":
+		return true
+	}
+	return false
 }

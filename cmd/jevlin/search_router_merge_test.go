@@ -389,6 +389,7 @@ func TestTheRouterCitationsFieldsAreDecided(t *testing.T) {
 		{reflect.TypeFor[routerUsage](), []string{
 			"CostMicros cost_micros,omitempty", "CacheHit cache_hit,omitempty", "Pending pending,omitempty",
 			"LatencyMS latency_ms,omitempty", "DeadlineHit deadline_hit,omitempty",
+			"Billing billing,omitempty", "BillingReason billing_reason,omitempty",
 		}, "machineUsage (machineResultOf)"},
 	} {
 		var got []string

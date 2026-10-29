@@ -115,11 +115,7 @@ func turnEndEnabled(ops hookOps, hc hookContext) bool {
 	if !hc.turnEnd || hc.sessionsDir == "" {
 		return false
 	}
-	switch strings.ToLower(ops.getenv("JEVLIN_TRACE")) {
-	case "off", "0", "false":
-		return false
-	}
-	return true
+	return !traceOff(ops.getenv)
 }
 
 func turnSearchedPath(dir, turnID string) string {

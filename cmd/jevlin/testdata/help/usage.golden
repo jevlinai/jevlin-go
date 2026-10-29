@@ -42,7 +42,8 @@ the tool (what an agent runs):
              carries unless the request names one; in the agent,
              /jevlin tier <tier> does the same
   hook       internal: the hook runner the agents call around a search;
-             JEVLIN_TRACE=off turns traces off entirely
+             JEVLIN_TRACE=off turns traces off entirely — and mining with them:
+             nothing is sent, searches are billed at list and earn nothing
   flush      the mining plane, once: join the open epoch, promote recorded
              searches into the spool, submit. Started by search and by the
              session hooks; run it by hand to see what is pending

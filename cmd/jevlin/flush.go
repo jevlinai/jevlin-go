@@ -325,6 +325,13 @@ func runFlushAdmitted(ctx context.Context, cfg *config.Config, cfgPath string, f
 	// state; unsafe inspection is degraded and remains fail-closed.
 	decision, store := inspectMiningState(m.StateDir)
 	clearFlushStateHealth(store, flushLockHealthPrefix)
+	if traceOff(os.Getenv) {
+		// Inherited from a shell with tracing off: mining is off there,
+		// nothing was spooled from it, and a flush must neither refresh a
+		// credential nor promote intake on its behalf.
+		fmt.Fprintln(stderr, "jevlin flush: trace is off in this shell (JEVLIN_TRACE), so mining is off here; nothing to do")
+		return rep, exitOK
+	}
 	if store == nil && decision.State == auth.MiningDegraded {
 		fmt.Fprintf(stderr, "jevlin flush: mining state cannot be safely trusted%s\n", miningDecisionDetail(decision))
 		return rep, exitTransport

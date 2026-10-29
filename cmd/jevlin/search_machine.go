@@ -748,6 +748,10 @@ type machineUsage struct {
 	// answered at its deadline with arms still out: the search was cut
 	// short, and an empty or thin merged list is not evidence of absence.
 	DeadlineHit bool `json:"deadline_hit,omitempty"`
+	// Billing and BillingReason are the router's price band for this
+	// search and its reason, as they arrived.
+	Billing       string `json:"billing,omitempty"`
+	BillingReason string `json:"billing_reason,omitempty"`
 }
 
 // machineIndex is one arm's line in result.indexes. Results and LatencyMS
@@ -813,11 +817,13 @@ func machineResultOf(s routerSuccess, view string) *machineResult {
 	if r.Usage != nil {
 		out.LatencyMS = r.Usage.LatencyMS
 		out.Usage = &machineUsage{
-			CostMicros:  r.Usage.CostMicros,
-			CacheHit:    r.Usage.CacheHit,
-			Pending:     r.Usage.Pending,
-			LatencyMS:   r.Usage.LatencyMS,
-			DeadlineHit: r.Usage.DeadlineHit,
+			CostMicros:    r.Usage.CostMicros,
+			CacheHit:      r.Usage.CacheHit,
+			Pending:       r.Usage.Pending,
+			LatencyMS:     r.Usage.LatencyMS,
+			DeadlineHit:   r.Usage.DeadlineHit,
+			Billing:       r.Usage.Billing,
+			BillingReason: r.Usage.BillingReason,
 		}
 	}
 	if r.Indexes != nil {
@@ -978,9 +984,14 @@ type machineMining struct {
 	Configured bool `json:"configured"`
 	// Recorded says whether THIS search's observation was written. False
 	// with State "enabled" means capture failed; Health says why.
-	Recorded bool            `json:"recorded"`
-	Detail   string          `json:"detail,omitempty"`
-	Health   []machineHealth `json:"health,omitempty"`
+	Recorded bool `json:"recorded"`
+	// Trajectory says the answered POST carried an envelope with assistant
+	// text — what mining pays for and the free band is served on. False
+	// with State "enabled" and Recorded false means the search earned
+	// nothing for want of a trajectory, not for a capture failure.
+	Trajectory bool            `json:"trajectory"`
+	Detail     string          `json:"detail,omitempty"`
+	Health     []machineHealth `json:"health,omitempty"`
 }
 
 type machineHealth struct {

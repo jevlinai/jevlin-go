@@ -145,6 +145,11 @@ func cmdEnroll(args []string) int {
 		return 2
 	}
 
+	if traceOff(os.Getenv) {
+		fmt.Fprintln(os.Stderr, "jevlin: mining needs the trajectory, and JEVLIN_TRACE is off in this shell: searches from here carry none, are billed at list and earn nothing, so there is nothing to enroll for. Run enroll from a shell with tracing on.")
+		return 2
+	}
+
 	ctx, cancel := operatorContext(15 * time.Minute)
 	defer cancel()
 
@@ -591,6 +596,11 @@ type agentIdentityFacts struct {
 	StoreMissing bool
 	StoreErr     error
 
+	// TraceOff: JEVLIN_TRACE is off in the shell status runs in. Mining
+	// follows the trajectory, so from this shell it is off whatever the
+	// stored decision says; the decision is still shown, as stored.
+	TraceOff bool
+
 	Decision  auth.MiningDecision
 	Health    []auth.HealthRecord
 	HealthErr error
@@ -685,6 +695,7 @@ func gatherAgentIdentity(args []string, getenv func(string) string) (agentIdenti
 		return f, true
 	}
 	f.Decision = store.ReadMiningDecision()
+	f.TraceOff = traceOff(getenv)
 	f.Health, f.HealthErr = store.HealthRecords()
 	// What waits in intake does not depend on the registration, so it is
 	// counted before a registration that cannot be read ends the gathering.
@@ -803,9 +814,17 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) bool {
 		printMiningASConfiguration(stdout, f.Mining)
 		return false
 	}
-	if f.Decision.State == auth.MiningDegraded {
+	switch {
+	case f.Decision.State == auth.MiningDegraded:
 		fmt.Fprintf(stdout, "mining:  DEGRADED — stored decision could not be read%s\n", miningDecisionDetail(f.Decision))
-	} else {
+	case f.TraceOff:
+		// The trajectory is what mining pays for: with tracing off in
+		// this shell, searches from here carry none, are billed at list
+		// and earn nothing, whatever was decided. The decision is shown
+		// as stored so `mining enable` is not hidden behind the shell.
+		fmt.Fprintln(stdout, "mining:  OFF (trace is off: JEVLIN_TRACE is off in this shell, so searches from here carry no trajectory, are billed at list and earn nothing)")
+		fmt.Fprintf(stdout, "stored decision:  %s%s\n", miningDecisionText(f.Decision), miningDecisionDetail(f.Decision))
+	default:
 		fmt.Fprintf(stdout, "mining:  %s%s\n", miningDecisionText(f.Decision), miningDecisionDetail(f.Decision))
 	}
 	printMiningASConfiguration(stdout, f.Mining)

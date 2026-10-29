@@ -155,8 +155,11 @@ Each search carries a small `trace` so the router can group one task's searches:
 and turn ids (your agent's real ids never leave the machine), a call counter, and the assistant
 text just before the search, capped at 32 KB. That text is conversation content leaving your
 machine, and it goes only to the search router, inside the search request. The rewards service
-receives metadata only, never the query or the text. `export JEVLIN_TRACE=off` sends no trace;
-searches are metered and earn the same.
+receives metadata only, never the query or the text. `export JEVLIN_TRACE=off` sends no trace —
+and with it, mining is off: the trajectory is what mining pays for and what the free tier is
+served on, so searches from such a shell are billed at list and earn nothing. A host whose hook
+carries no assistant text (Codex and Hermes today, and a bare `jevlin search`) sends a trace of
+ids alone, which is not a trajectory either.
 
 The hooks keep lineage files in `~/.jevlin/sessions`, one per workspace (Cursor: per
 conversation). Only the agent that wrote a file reads it, so a second agent in a subdirectory

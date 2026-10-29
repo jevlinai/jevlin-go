@@ -184,6 +184,10 @@ type statusMiningJSON struct {
 	StateDirectoryPresent bool            `json:"state_directory_present"`
 	Health                []machineHealth `json:"health,omitempty"`
 	HealthError           string          `json:"health_error,omitempty"`
+	// Trace is "off" when JEVLIN_TRACE is off in the shell status ran in,
+	// "on" otherwise: with it off, mining is off from that shell whatever
+	// State says, since searches from it carry no trajectory.
+	Trace string `json:"trace,omitempty"`
 }
 
 // statusAgentJSON is the stored registration. Every field in it is already
@@ -276,6 +280,7 @@ func statusEnvelope(f agentIdentityFacts, as *statusASFacts) commandEnvelope {
 		StateDir:        f.StateDir,
 		Mining: statusMiningJSON{
 			State:                 string(f.Decision.State),
+			Trace:                 traceStateWord(f.TraceOff),
 			ASConfigured:          miningASConfigured(f.Mining),
 			StateDirectoryPresent: !f.StoreMissing,
 			Health:                healthOf(f.Health),
@@ -492,4 +497,12 @@ func printableClaimArtifacts(claim auth.ClaimBootstrap, baseURL string) (claimUR
 		return "", ""
 	}
 	return claim.ClaimURL, claim.ClaimCode
+}
+
+// traceStateWord is the status envelope's spelling of the trace switch.
+func traceStateWord(off bool) string {
+	if off {
+		return "off"
+	}
+	return "on"
 }

@@ -1492,6 +1492,15 @@ func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Cl
 		if !miningActive(store) {
 			return true, exitOK // local opt-out or disable (design decision 3)
 		}
+		if traceOff(getenv) {
+			// Mining needs the trajectory: a search from a shell with
+			// tracing off carries none, is billed at list and earns
+			// nothing, so enrolling from here would enrol an installation
+			// that cannot mine. Said once, and nothing is enrolled.
+			fmt.Fprintln(stdout, "mining needs the trajectory, and JEVLIN_TRACE is off in this shell, so this installation was not enrolled; "+
+				"run `jevlin connect` again from a shell with tracing on")
+			return true, exitOK
+		}
 		if !miningASConfigured(cfg.Mining) {
 			fmt.Fprintln(stdout, "the mining scope was granted, but no authorization server is configured — set mining.as_url/chain_id/slot_id, "+
 				"then run `jevlin connect` or `jevlin mining enable` again")

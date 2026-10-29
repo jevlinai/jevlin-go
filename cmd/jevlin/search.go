@@ -175,6 +175,12 @@ type searchCall struct {
 	MergedLimit *int
 	MaxChars    *int
 	Trace       *traceEnvelope
+	// Mining says this installation is mining: [miner] intake is
+	// configured and the persisted decision is enabled. With a trajectory
+	// in the body it becomes the X-Jevlin-Mining: on declaration the
+	// router prices the free band on; without one it is sent nowhere,
+	// because mining cannot be on with the trajectory off.
+	Mining bool
 }
 
 // searchOutcome is the structured result of running a search. Both
@@ -206,6 +212,14 @@ type searchOutcome struct {
 	Attempts int
 	Traced   bool
 	Retried  bool
+	// Trajectory: the POST that was answered carried an envelope with
+	// assistant text in its history — the thing mining pays for and the
+	// free tier is served on. False for a search with no envelope, for the
+	// bare-shell envelope of ids alone, for a host whose hook sends no
+	// text, for a history the size caps dropped, and for the retry that
+	// went without the trace. Traced says an envelope rode; this says it
+	// was worth something.
+	Trajectory bool
 	// FormsDropped: the retry went without objective and search_queries.
 	// Either the router refused the request as malformed_json while it
 	// carried them, or it refused the trace, and a router that old
@@ -391,6 +405,10 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	if view == "merged" || machine {
 		forwardView = "merged"
 	}
+	// The persisted mining decision, read before the POST rather than
+	// after it: the request carries the declaration. A local, lock-free,
+	// write-free read; the only writers are the interactive commands.
+	decision, mstore := inspectMiningState(cfg.Mining.StateDir)
 	out := performSearch(ctx, ops.now, searchCall{
 		Endpoint:      strings.TrimRight(cfg.Miner.RouterURL.String(), "/") + "/v1/search",
 		Key:           key,
@@ -406,6 +424,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		MergedLimit:   mergedLimit,
 		MaxChars:      maxChars,
 		Trace:         trace,
+		Mining:        cfg.Miner.Enabled && decision.State == auth.MiningEnabled,
 	})
 	if out.Retried {
 		fmt.Fprintln(stderr, "jevlin search: the router answered "+traceUnsupportedCode+"; retrying once without the trace")
@@ -415,7 +434,12 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		// The turn end is sent only for a turn in which a search was SERVED.
 		markTurnSearched(ops.hook, cfg.Miner, trace)
 	}
-	mining := recordSearchForMining(ops, cfg, out, *cfgPath, *noFlush, stderr)
+	mining := recordSearchForMining(ops, cfg, out, decision, mstore, *cfgPath, *noFlush, stderr)
+	if !machine && out.ok() && mining.State == string(auth.MiningEnabled) && !mining.Trajectory {
+		// For a human only: the machine envelope carries the same fact as
+		// mining.trajectory, and a model is not the one to fix a shell.
+		fmt.Fprintln(stderr, "jevlin: the search succeeded, but it carried no trajectory, so it was billed at list and earns nothing (mining needs the trajectory: JEVLIN_TRACE on, in a host whose hook carries the assistant's text)")
+	}
 
 	// Independent of cfg.Miner.Enabled/-no-flush above: a search-only
 	// unclaimed participant has neither [mining] nor [miner] configured
@@ -525,12 +549,11 @@ func renderSearchForHuman(out searchOutcome, format string, keySrc keySource, st
 // of the same store — and so a caller can tell a search that earned
 // nothing because mining is off from one that earned nothing because
 // capture broke.
-func recordSearchForMining(ops searchOps, cfg *config.Config, out searchOutcome, cfgPath string, noFlush bool, stderr io.Writer) machineMining {
-	// The persisted decision is read either way: it is a local disk read,
-	// it changes nothing, and a failed search still has a mining state
-	// worth reporting.
-	decision, mstore := inspectMiningState(cfg.Mining.StateDir)
-	snap := machineMining{State: string(decision.State), Configured: cfg.Miner.Enabled}
+func recordSearchForMining(ops searchOps, cfg *config.Config, out searchOutcome, decision auth.MiningDecision, mstore *auth.Store, cfgPath string, noFlush bool, stderr io.Writer) machineMining {
+	// The persisted decision was read before the POST (searchMain), so the
+	// request could carry the declaration; it is reported either way — a
+	// failed search still has a mining state worth reporting.
+	snap := machineMining{State: string(decision.State), Configured: cfg.Miner.Enabled, Trajectory: out.Trajectory}
 	if decision.Err != nil {
 		snap.Detail = boundMessage(decision.Err.Error())
 	}
@@ -558,6 +581,14 @@ func recordSearchForMining(ops searchOps, cfg *config.Config, out searchOutcome,
 			detail)
 	}
 	if decision.State != auth.MiningEnabled {
+		return finish()
+	}
+	if !out.Trajectory {
+		// Mining is on and the search carried no trajectory: nothing was
+		// declared to the router, nothing is spooled, and the search was
+		// billed at list. Said once here for a human; the machine envelope
+		// carries the same fact as mining.trajectory.
+		snap.Detail = "no trajectory was sent with this search, so it was billed at list and earns nothing; mining needs a trajectory with the assistant's text"
 		return finish()
 	}
 	rec := intakeRecord{
@@ -636,7 +667,7 @@ func readTierSetting(path string) ([]byte, error) {
 // performSearch runs the whole protocol operation under one context: at
 // most two POSTs, the second only on an explicit trace_unsupported, and
 // both sharing ctx's single absolute deadline.
-func performSearch(ctx context.Context, now func() time.Time, call searchCall) searchOutcome {
+func performSearch(ctx context.Context, now func() time.Time, call searchCall) (out searchOutcome) {
 	body := map[string]any{"query": call.Query}
 	if call.Tier != "" {
 		body["tier"] = call.Tier
@@ -668,7 +699,7 @@ func performSearch(ctx context.Context, now func() time.Time, call searchCall) s
 	if call.MaxChars != nil {
 		body["max_chars"] = *call.MaxChars
 	}
-	out := searchOutcome{Traced: call.Trace != nil}
+	out = searchOutcome{Traced: call.Trace != nil}
 	if out.Traced {
 		body["trace"] = call.Trace
 		// The router reads session identity in two places: trace.session_id
@@ -714,6 +745,15 @@ func performSearch(ctx context.Context, now func() time.Time, call searchCall) s
 		delete(body, "search_queries")
 		out.FormsDropped = true
 	}
+	// Decided from the body as it was finally sent: the trace-compatibility
+	// retry below deletes the envelope, and a trajectory that was not in
+	// the answered POST was not one.
+	trajectory := func() bool {
+		tr, ok := body["trace"].(*traceEnvelope)
+		return ok && tr != nil && len(tr.History) > 0
+	}
+	// On the named result, so every return path carries it.
+	defer func() { out.Trajectory = out.Fault == faultNone && trajectory() }()
 	switch {
 	case err != nil:
 	case out.Traced && searchTraceUnsupported(attempt.Status, attempt.Raw, attempt.BodyErr):
@@ -833,6 +873,15 @@ func postSearch(ctx context.Context, client *http.Client, call searchCall, body 
 			// key, and the header must disappear with it.
 			req.Header.Set("X-Session-Id", sid)
 		}
+		// The mining declaration, only beside a trajectory with text: the
+		// router prices the free band on the two together, and a
+		// declaration without a trajectory is recorded and changes
+		// nothing. Read off the body for the same reason as the session
+		// id, so the retry that drops the trace drops this with it. Never
+		// "off": absence is the undeclared state.
+		if tr, ok := body["trace"].(*traceEnvelope); ok && tr != nil && len(tr.History) > 0 && call.Mining {
+			req.Header.Set("X-Jevlin-Mining", "on")
+		}
 	})
 }
 
@@ -913,8 +962,7 @@ func searchTraceFailingOpen(ops searchOps, m config.Miner, stateDir string, gete
 }
 
 func searchTrace(ops searchOps, m config.Miner, stateDir string, getenv func(string) string) (env *traceEnvelope, foreignBridge bool) {
-	switch strings.ToLower(getenv("JEVLIN_TRACE")) {
-	case "off", "0", "false":
+	if traceOff(getenv) {
 		return nil, false
 	}
 	harness := getenv("JEVLIN_HARNESS")
@@ -1122,6 +1170,12 @@ type routerUsage struct {
 	// DeadlineHit says the router answered at its deadline with arms still
 	// out, so what came back is less than the search would have found.
 	DeadlineHit bool `json:"deadline_hit,omitempty"`
+	// Billing is the price band the router served this search in — free,
+	// reduced or credit — and BillingReason why a search that might have
+	// been zero-rated was not. Rendered as they arrive; this client
+	// branches on neither.
+	Billing       string `json:"billing,omitempty"`
+	BillingReason string `json:"billing_reason,omitempty"`
 }
 
 type routerCandidate struct {

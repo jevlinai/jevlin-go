@@ -328,6 +328,15 @@ func renderDecisionLine(r routerResponse) string {
 		}
 		b.WriteString("cost: ")
 		b.WriteString(formatCostDollars(r.Usage.CostMicros))
+		if r.Usage.Billing != "" {
+			b.WriteString("  billing: ")
+			b.WriteString(oneLine(r.Usage.Billing, renderProviderCap))
+			if r.Usage.BillingReason != "" {
+				b.WriteString(" (")
+				b.WriteString(oneLine(r.Usage.BillingReason, renderProviderCap))
+				b.WriteString(")")
+			}
+		}
 		if r.Usage.Pending > 0 {
 			fmt.Fprintf(&b, "  %d arm(s) still running", r.Usage.Pending)
 		}

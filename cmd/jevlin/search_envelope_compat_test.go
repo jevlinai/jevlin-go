@@ -30,6 +30,11 @@ var fullViewAdditions = map[string]bool{
 	"result.merged.[].source_id": true,
 	"result.filters_applied":     true,
 	"result.decision.build":      true,
+	// 0.7: the trajectory fact beside the mining state, and the router's
+	// price band on the usage block.
+	"mining.trajectory":           true,
+	"result.usage.billing":        true,
+	"result.usage.billing_reason": true,
 }
 
 // fullCaptures pairs each capture with the router answer it was made from.
@@ -51,7 +56,10 @@ func searchStdoutServing(t *testing.T, raw []byte, stdin string) string {
 	_, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(raw)
 	})
-	code, out, errOut := runSearchStdin(t, fixedSearchOps(root), map[string]string{"JEVLIN_API_KEY": "k"}, stdin, "-config", cfg)
+	// With a trajectory, as the captures were made with intake recorded:
+	// since 0.7 a search without one spools nothing and says so, which is
+	// an addition to the mining block, not to the view.
+	code, out, errOut := runSearchStdin(t, fixedSearchOps(root), map[string]string{"JEVLIN_API_KEY": "k", bridgeEnv: traceWithHistoryAs("cli")}, stdin, "-config", cfg)
 	if code != exitOK {
 		t.Fatalf("exit %d\nstdout: %s\nstderr: %s", code, out, errOut)
 	}
