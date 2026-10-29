@@ -1495,7 +1495,7 @@ func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Cl
 		if traceOff(getenv) {
 			// Mining needs the trajectory: a search from a shell with
 			// tracing off carries none, is billed at list and earns
-			// nothing, so enrolling from here would enrol an installation
+			// nothing, so enrolling from here would enroll an installation
 			// that cannot mine. Said once, and nothing is enrolled.
 			fmt.Fprintln(stdout, "mining needs the trajectory, and JEVLIN_TRACE is off in this shell, so this installation was not enrolled; "+
 				"run `jevlin connect` again from a shell with tracing on")
