@@ -323,10 +323,15 @@ func (r *rawConfig) applyBytes(source string, data []byte) error {
 		// A section of another shape (an older file's [[provider]] array)
 		// is a key format 1 does not define; a value of the wrong type in
 		// a format-1 key is a mistake in this file, and says so.
+		var unknown []string
 		for key := range doc {
 			if !formatOneSections[key] {
-				return unknownKeysError(source, []string{key})
+				unknown = append(unknown, key)
 			}
+		}
+		if len(unknown) > 0 {
+			sort.Strings(unknown)
+			return unknownKeysError(source, unknown)
 		}
 		return fmt.Errorf("config file %s: %w", source, err)
 	}
@@ -439,13 +444,14 @@ func (r *rawConfig) finishPlatform() (Platform, error) {
 	agentsRaw := r.agentsAPIURL
 	if agentsRaw == "" {
 		switch {
-		case baseRaw == DefaultPlatformBaseURL:
+		case sameOrigin(base, DefaultPlatformBaseURL):
 			agentsRaw = DefaultAgentsAPIURL
 		case isLoopbackHost(base.Hostname()):
 			agentsRaw = baseRaw
 		default:
 			return Platform{}, errors.New("agents.url: required when platform.url names anything other than the default " +
-				"platform — a devnet or staging deployment must name both")
+				"platform — a devnet or staging deployment must name both (JEVLIN_AGENTS_API_URL beside JEVLIN_PLATFORM_URL " +
+				"when the portal came from the environment)")
 		}
 	}
 	if _, err := ParseEndpoint(agentsRaw, "agents.url"); err != nil {
@@ -487,6 +493,27 @@ func (r *rawConfig) finishSearch() (Search, error) {
 		m.SessionsDir = filepath.Join(filepath.Dir(m.StateDir), "sessions")
 	}
 	return m, nil
+}
+
+// sameOrigin reports whether u names the same origin as the compiled URL
+// def: the scheme and host compared case-insensitively, a trailing slash or
+// a spelled-out default port making no difference.
+func sameOrigin(u *url.URL, def string) bool {
+	d, err := url.Parse(def)
+	if err != nil {
+		return false
+	}
+	port := func(x *url.URL) string {
+		if p := x.Port(); p != "" {
+			return p
+		}
+		if strings.EqualFold(x.Scheme, "https") {
+			return "443"
+		}
+		return "80"
+	}
+	return strings.EqualFold(u.Scheme, d.Scheme) && strings.EqualFold(u.Hostname(), d.Hostname()) && port(u) == port(d) &&
+		(u.Path == "" || u.Path == "/") && (d.Path == "" || d.Path == "/")
 }
 
 func isLoopbackHost(host string) bool {
