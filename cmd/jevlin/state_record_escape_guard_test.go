@@ -56,7 +56,7 @@ var stateRecordFiles = map[string]stateRecordClass{
 	"connect_resume.json":      {json: true},
 	"flush.json":               {json: true},
 	"dpop.key":                 {why: "a PEM key, read by the AS client and never printed"},
-	"refresh.token":            {why: "an opaque token, sent to the AS and never printed"},
+	"refresh.token":            {json: true, typ: reflect.TypeOf(auth.RefreshAuthorization{})},
 	"participation.secret":     {why: "32 random bytes, never printed"},
 	"trace.key":                {why: "32 random bytes keying the no-hook session id, never printed"},
 	"connect.lock":             {why: "a lock file; its content is never read"},

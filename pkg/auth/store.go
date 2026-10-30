@@ -28,6 +28,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jevlinai/jevlin-go/internal/egress"
+	"github.com/jevlinai/jevlin-go/internal/termtext"
 	"github.com/jevlinai/jevlin-go/pkg/fsx"
 
 	jose "github.com/go-jose/go-jose/v4"
@@ -274,7 +276,14 @@ func (s *Store) LoadRefreshToken() (rec RefreshAuthorization, ok bool, err error
 	if err != nil {
 		return RefreshAuthorization{}, false, err
 	}
-	if json.Unmarshal(raw, &rec) != nil || rec.V != refreshAuthorizationVersion || rec.AS == "" || rec.Token == "" {
+	if json.Unmarshal(raw, &rec) != nil || rec.V != refreshAuthorizationVersion || rec.Token == "" || termtext.HasControlChar(rec.Token) {
+		return RefreshAuthorization{}, false, ErrUnboundRefreshAuthorization
+	}
+	// The file is in a directory a sandboxed command can write, so what it
+	// records is held to what this client writes: an origin, exactly as
+	// egress spells one. Anything else — a sentence, a control or format
+	// character, a path — is no issuer at all, and is never repeated.
+	if o, err := egress.Origin(rec.AS); err != nil || o != rec.AS {
 		return RefreshAuthorization{}, false, ErrUnboundRefreshAuthorization
 	}
 	return rec, true, nil

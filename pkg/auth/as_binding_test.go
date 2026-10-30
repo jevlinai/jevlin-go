@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -162,5 +163,58 @@ func TestTheAssertionAndEveryProofGoOnlyToTheConfiguredAS(t *testing.T) {
 	}
 	if n := elsewhereConns(); n != 0 {
 		t.Errorf("%d connection(s) dialed off the configured AS", n)
+	}
+}
+
+// refresh.token sits in a directory a sandboxed command can write, so a
+// record is held to what this client writes: an issuer spelled exactly as an
+// origin, and a token with no control or format character. Anything else is
+// no authorization at all.
+func TestARefreshRecordIsHeldToWhatThisClientWrites(t *testing.T) {
+	state := filepath.Join(t.TempDir(), "state")
+	s, err := OpenStore(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, as := range []string{
+		"https://x\u2028y.example", "https://x\u200by.example", "https://x\u202ey.example",
+		"https://AS.example", "https://as.example/path", "https://as.example:443",
+		"see https://as.example now", "", "https://user@as.example",
+	} {
+		raw, _ := json.Marshal(RefreshAuthorization{V: 1, AS: as, Token: "rt"})
+		if err := os.WriteFile(filepath.Join(state, refreshTokenFile), raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if rec, ok, err := s.LoadRefreshToken(); !errors.Is(err, ErrUnboundRefreshAuthorization) || ok {
+			t.Errorf("as=%q loaded: %+v %v %v", as, rec, ok, err)
+		}
+	}
+	raw, _ := json.Marshal(RefreshAuthorization{V: 1, AS: "https://as.example", Token: "rt\u2028x"})
+	if err := os.WriteFile(filepath.Join(state, refreshTokenFile), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := s.LoadRefreshToken(); !errors.Is(err, ErrUnboundRefreshAuthorization) || ok {
+		t.Errorf("a token holding a line separator loaded: %v %v", ok, err)
+	}
+}
+
+// The refusal for an authorization issued elsewhere names the configured AS,
+// which the participant chose, and never what the record says.
+func TestTheRefusalNamesTheConfiguredASNotTheRecord(t *testing.T) {
+	other, _ := countingAS(t)
+	state := filepath.Join(t.TempDir(), "state")
+	const recorded = "https://recorded-issuer.example"
+	if err := clientFor(t, other.URL, state).store.SaveRefreshToken(recorded, "rt"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := clientFor(t, other.URL, state).Refresh(context.Background())
+	if !errors.Is(err, ErrAuthorizationElsewhere) || !egress.IsRefused(err) {
+		t.Fatalf("refresh: %v", err)
+	}
+	if strings.Contains(err.Error(), "recorded-issuer") {
+		t.Errorf("the refusal repeats the record's issuer: %v", err)
+	}
+	if !strings.Contains(err.Error(), testOrigin(t, other.URL)) {
+		t.Errorf("the refusal does not name the configured AS: %v", err)
 	}
 }

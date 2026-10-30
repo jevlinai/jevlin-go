@@ -310,10 +310,18 @@ func (c *OAuthClient) storedAuthorization() (string, bool, error) {
 		return "", ok, err
 	}
 	if err := egress.Check(refreshSecret, rec.AS, c.disc.origin); err != nil {
-		return "", false, err
+		// Named without the record's value: the file is sandbox-writable,
+		// and what is printed is the configured AS, which the participant
+		// chose, never what a record says.
+		return "", false, fmt.Errorf("%w: %w", ErrAuthorizationElsewhere,
+			&egress.RefusedError{Secret: refreshSecret, Bound: "another authorization server", Requested: c.disc.Origin()})
 	}
 	return rec.Token, true, nil
 }
+
+// ErrAuthorizationElsewhere is a stored authorization issued by another AS
+// than the one this client is configured for.
+var ErrAuthorizationElsewhere = errors.New("auth: the stored AS authorization was issued by another authorization server than this configuration names")
 
 // --- authorization code + PKCE over a loopback redirect (RFC 8252) ---
 
