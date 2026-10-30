@@ -426,6 +426,38 @@ func TestAutoCheckOnlyNotesAReleaseForAnNpmCopy(t *testing.T) {
 	}
 }
 
+// Whether the check crosses a minor release unattended is one switch,
+// autoApplyAcrossMinor. As shipped it installs one; turned off, it keeps the
+// release available and says which command installs it, and a patch release
+// is installed either way.
+func TestAutoCheckAcrossAMinorReleaseFollowsItsOneSwitch(t *testing.T) {
+	if !autoApplyAcrossMinor {
+		t.Fatal("the shipped switch changed; this test and the CHANGELOG say what it does")
+	}
+	f, cfgPath, _ := autoFixture(t, newLocalRelease(t, "0.4.0", map[string]string{"0.4.0": "0.4.0\n"}), "")
+	if code, out, errOut := f.runAuto(cfgPath); code != exitOK || f.content(f.exe) != "0.4.0" {
+		t.Fatalf("as shipped: exit %d, binary %s\n%s\n%s", code, f.content(f.exe), out, errOut)
+	}
+
+	autoApplyAcrossMinor = false
+	t.Cleanup(func() { autoApplyAcrossMinor = true })
+	f, cfgPath, stamp := autoFixture(t, newLocalRelease(t, "0.4.0", map[string]string{"0.4.0": "0.4.0\n"}), "")
+	code, out, errOut := f.runAuto(cfgPath)
+	if code != exitOK || f.content(f.exe) != "0.3.0" {
+		t.Fatalf("turned off: exit %d, binary %s\n%s\n%s", code, f.content(f.exe), out, errOut)
+	}
+	if st := readStampT(t, stamp); st.Outcome != updateAvailable || st.Latest != "0.4.0" {
+		t.Errorf("stamp %+v", st)
+	}
+	if !strings.Contains(out+errOut, "`jevlin upgrade` installs it") {
+		t.Errorf("the check does not say what installs it:\n%s\n%s", out, errOut)
+	}
+	f, cfgPath, _ = autoFixture(t, newLocalRelease(t, "0.3.1", map[string]string{"0.3.1": "0.3.1\n"}), "")
+	if code, out, errOut := f.runAuto(cfgPath); code != exitOK || f.content(f.exe) != "0.3.1" {
+		t.Fatalf("a patch release turned off: exit %d, binary %s\n%s\n%s", code, f.content(f.exe), out, errOut)
+	}
+}
+
 func TestAutoCheckWithModeNotifyNeverReplaces(t *testing.T) {
 	f, cfgPath, stamp := autoFixture(t, newLocalRelease(t, "0.3.1", map[string]string{"0.3.1": "0.3.1\n"}), "[update]\nmode = \"notify\"\n")
 	if code, out, errOut := f.runAuto(cfgPath); code != exitOK {
