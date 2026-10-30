@@ -657,7 +657,7 @@ func (r *setupRun) config() int {
 			r.printf("(dry run) would set %s aside as %s, an older configuration format, and write a new one\n", r.cfgPath, plan.aside)
 			return exitOK
 		}
-		if err := os.Rename(r.cfgPath, plan.aside); err != nil { // #nosec G703 -- the installation's own config path and a name beside it
+		if err := renameConfigAside(r.cfgPath, plan.aside); err != nil { // #nosec G703 -- the installation's own config path and a name beside it
 			fmt.Fprintln(r.d.stderr, "jevlin setup: setting the older configuration aside:", err)
 			return exitTransport
 		}
@@ -693,6 +693,11 @@ func (r *setupRun) config() int {
 	}
 	return exitOK
 }
+
+// renameConfigAside moves an older config to the name planSetupConfig chose
+// for it, a variable so a test can make the move fail: setup must then stop
+// with the older file where it was, never publish over it.
+var renameConfigAside = os.Rename
 
 // publishConfig is the one writer of jevlin.toml, a variable so a test can
 // make the write fail between setting an older file aside and publishing.

@@ -53,3 +53,39 @@ func TestSetupPutsTheOlderConfigBackWhenPublishingFails(t *testing.T) {
 		}
 	}
 }
+
+// When the older config cannot be moved aside at all, setup stops there:
+// the older file stays where it was, byte for byte, and nothing is
+// published over it.
+func TestSetupStopsWithTheOlderConfigInPlaceWhenItCannotSetItAside(t *testing.T) {
+	s := newSetupSandbox(t)
+	legacy := []byte("[[provider]]\nname = \"search-router\"\nupstream = \"https://api.jevlin.ai\"\n")
+	if err := os.MkdirAll(s.home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s.cfgPath(), legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prevRename, prevPublish := renameConfigAside, publishConfig
+	renameConfigAside = func(string, string) error { return errors.New("operation not permitted") }
+	published := 0
+	publishConfig = func(path string, data []byte) error { published++; return prevPublish(path, data) }
+	t.Cleanup(func() { renameConfigAside, publishConfig = prevRename, prevPublish })
+
+	code, _, errOut := s.run(nil, true, "-yes", "-no-profile", "-no-agents")
+	if code == exitOK {
+		t.Fatal("setup exited 0 with the older config not set aside")
+	}
+	if got, err := os.ReadFile(s.cfgPath()); err != nil || string(got) != string(legacy) { // #nosec G304 -- this test's sandbox
+		t.Errorf("the older config was not left byte for byte: %q, %v", got, err)
+	}
+	if published != 0 || lexists(s.cfgPath()+".old") {
+		t.Errorf("setup published %d time(s) or left a set-aside copy", published)
+	}
+	if !strings.Contains(errOut, "operation not permitted") {
+		t.Errorf("the message does not say why:\n%s", errOut)
+	}
+	if s.connectCalls != 0 {
+		t.Error("connect ran")
+	}
+}
