@@ -131,3 +131,32 @@ func TestSetupSaysKeptOnlyOfAKeyThatIsThere(t *testing.T) {
 		t.Errorf("setup said a registration was kept where there was none:\n%s", out)
 	}
 }
+
+// A format-1 file whose schema line is mistyped is the participant's own
+// file with a mistake in it: setup refuses it and leaves it byte for byte,
+// rather than setting it aside as an earlier version's and writing another.
+func TestSetupLeavesAFormatOneFileWithATypoInItsSchemaLine(t *testing.T) {
+	for name, body := range map[string]string{
+		"schema misspelled": "schem = 1\n\n[router]\nurl = \"https://router.invalid.test\"\n",
+		"Schema capital":    "Schema = 1\n\n[router]\nurl = \"https://router.invalid.test\"\n",
+		"schema in a table": "[router]\nschema = 1\nurl = \"https://router.invalid.test\"\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := newSetupSandbox(t)
+			if err := os.MkdirAll(s.home, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			writeFileT(t, s.cfgPath(), body)
+			code, out, errOut := s.run(nil, true, "-yes", "-no-profile", "-no-agents")
+			if code == exitOK {
+				t.Fatalf("setup accepted the file:\n%s\n%s", out, errOut)
+			}
+			if got := string(s.readFile(s.cfgPath())); got != body || lexists(s.cfgPath()+".old") {
+				t.Errorf("setup replaced or set aside a format-1 file with a typo:\n%s\n%s", out, errOut)
+			}
+			if !strings.Contains(errOut, "schema = 1") {
+				t.Errorf("the refusal does not say what is missing:\n%s", errOut)
+			}
+		})
+	}
+}

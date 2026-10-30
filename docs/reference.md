@@ -254,7 +254,11 @@ names the key (`router.url`, `platform.url`, `agents.url`).
 
 Those sections are the whole file. A `schema = 1` file holding any other key or section is
 refused by name (`format 1 does not define X; correct or remove it`), and nothing is guessed about
-what the key meant. A file with no `schema` line is one an older jevlin wrote, and every command
+what the key meant. A file with no `schema` line that still reads as format 1 (a key spelled like
+`schema`, in another case, a letter or two off or inside a table, or a `[router]` or `[agents]`
+table, or a `[platform] url`, none of which an older jevlin wrote) is a format-1 file with a
+mistake in it, refused saying the `schema = 1` line is missing. Any other file with no `schema`
+line is one an older jevlin wrote, and every command
 refuses it with one message, "this configuration is from an older jevlin; run `jevlin setup`".
 It is never reinterpreted, because its endpoints were chosen under rules this client no longer
 has. A file naming another schema number is refused with a message saying which schema this

@@ -40,7 +40,9 @@ the participants who mine; this client carries no compatibility with it.
   defaults to the compiled value. A file that is not format 1 is refused with "this
   configuration is from an older jevlin; run `jevlin setup`" and is never reinterpreted; setup
   sets it aside as `jevlin.toml.old` and writes format 1. A format-1 file holding a key the
-  format does not define is refused naming the key. `JEVLIN_ROUTER_URL`, `JEVLIN_PLATFORM_URL`
+  format does not define is refused naming the key, and one whose schema line is mistyped or
+  missing (a key spelled like `schema`, or a section no earlier version wrote) is refused and
+  left, never set aside as an older file. `JEVLIN_ROUTER_URL`, `JEVLIN_PLATFORM_URL`
   and `JEVLIN_AGENTS_API_URL` now apply at runtime, to every command, under the file's URL
   rules. `[[provider]]`, `[search] router_url`, `[search] tier`, `[platform] base_url` and
   `[platform] agents_api_url` are gone, and so is the retired-portal alias: a claim link must

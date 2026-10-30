@@ -283,6 +283,73 @@ type rawConfig struct {
 // formatOneSections are the top-level keys format 1 defines.
 var formatOneSections = map[string]bool{"schema": true, "router": true, "platform": true, "agents": true, "search": true, "update": true}
 
+// formatOneWithoutSchema says why a file with no schema line was written as
+// format 1 after all, or "" when nothing in it says so. No version before
+// format 1 wrote a schema key, a [router] or [agents] table, or a [platform]
+// url (its portal key was base_url); format 1 writes all of them. So a key
+// spelled like schema anywhere in the file (a case or two letters away, or
+// under a table), or one of those, is a format-1 file whose schema line is
+// mistyped or missing, not an older file to replace. [search] says nothing
+// either way: this client used that table before format 1 as well.
+func formatOneWithoutSchema(doc map[string]any) string {
+	if k := schemaLikeKey(doc, ""); k != "" {
+		return fmt.Sprintf("it holds %q, which reads as a mistyped schema line", k)
+	}
+	for _, table := range []string{"router", "agents"} {
+		if _, ok := doc[table].(map[string]any); ok {
+			return "it holds a [" + table + "] table, which only configuration format 1 has"
+		}
+	}
+	if p, ok := doc["platform"].(map[string]any); ok {
+		if _, ok := p["url"]; ok {
+			return "its [platform] table names url, which only configuration format 1 does"
+		}
+	}
+	return ""
+}
+
+// schemaLikeKey is the first key, at any depth, that is "schema" in another
+// case or within two edits of it, as a dotted path; or "".
+func schemaLikeKey(doc map[string]any, prefix string) string {
+	keys := make([]string, 0, len(doc))
+	for k := range doc {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if editDistance(strings.ToLower(k), "schema") <= 2 {
+			return prefix + k
+		}
+		if sub, ok := doc[k].(map[string]any); ok {
+			if found := schemaLikeKey(sub, prefix+k+"."); found != "" {
+				return found
+			}
+		}
+	}
+	return ""
+}
+
+// editDistance is the Levenshtein distance between a and b, by byte.
+func editDistance(a, b string) int {
+	prev := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		cur := make([]int, len(b)+1)
+		cur[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			cur[j] = min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
+		}
+		prev = cur
+	}
+	return prev[len(b)]
+}
+
 // unknownKeysError refuses a format-1 file holding keys the format does not
 // define. It is not ErrLegacyConfig: the file says it is format 1, so a key
 // it holds is a typo or a setting carried over by hand, and setup leaves the
@@ -308,6 +375,13 @@ func (r *rawConfig) applyBytes(source string, data []byte) error {
 	}
 	schema, ok := doc["schema"]
 	if !ok {
+		if why := formatOneWithoutSchema(doc); why != "" {
+			// Not ErrLegacyConfig: setup sets an older file aside and
+			// writes a new one, and this file is the participant's own
+			// format-1 file with a mistake in it, which is left for them.
+			return fmt.Errorf("config file %s: %s, but it has no `schema = 1` line at the top; "+
+				"correct it (a line `schema = 1` before the first table)", source, why)
+		}
 		return legacyError(source, "no schema line")
 	}
 	// The schema is judged before anything else in the file: a file of

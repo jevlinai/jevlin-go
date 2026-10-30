@@ -137,12 +137,12 @@ func TestNoFileAndAMinimalFileAreTheCompiledDefaults(t *testing.T) {
 	}
 }
 
-// Every file with no schema line is refused as ErrLegacyConfig with the one
-// message, whatever else it holds: a 0.6.1 file, a lone [[provider]] block,
-// an empty file, a comment, and format 1's own sections written without the
-// schema line. It is never called an unknown key: the sections an older
-// file holds are not this format's to name, and this is the one refusal
-// setup may answer by setting the file aside.
+// A file with no schema line is refused as ErrLegacyConfig with the one
+// message when nothing in it says it was written as format 1: a 0.6.1 file,
+// a lone [[provider]] block, an empty file, a comment. It is never called an
+// unknown key: the sections an older file holds are not this format's to
+// name, and this is the one refusal setup may answer by setting the file
+// aside. A file that does say so is TestAFormatOneFileWithoutItsSchemaLineIsNotCalledOlder's.
 func TestAFileWithNoSchemaLineIsLegacyWhateverElseItHolds(t *testing.T) {
 	for name, body := range map[string]string{
 		"empty":                         "",
@@ -152,8 +152,7 @@ func TestAFileWithNoSchemaLineIsLegacyWhateverElseItHolds(t *testing.T) {
 		"a table this client never had": "[other]\nenabled = true\nrouter_url = \"https://api.jevlin.ai\"\n",
 		"the old [search] router_url":   "[search]\nrouter_url = \"https://api.jevlin.ai\"\n",
 		"the old [platform] pair":       "[platform]\nbase_url = \"https://platform.jevlin.ai\"\nagents_api_url = \"https://agents-v1.jevlin.ai\"\n",
-		"format 1 sections, no line":    "[router]\nurl = \"https://api.jevlin.ai\"\n\n[search]\nturn_end = true\n",
-		"a wrong type, no line":         "[search]\nturn_end = \"yes\"\n",
+		"a [search] table, no line":     "[search]\nturn_end = \"yes\"\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := loadFile(t, body, noEnv)
@@ -165,6 +164,33 @@ func TestAFileWithNoSchemaLineIsLegacyWhateverElseItHolds(t *testing.T) {
 			}
 			if strings.Contains(err.Error(), "does not define") {
 				t.Errorf("an older file was called a format-1 file with a typo: %v", err)
+			}
+		})
+	}
+}
+
+// A file written as format 1 whose schema line is mistyped, misplaced or
+// missing is the participant's own file with a mistake in it: refused, not
+// ErrLegacyConfig, so setup leaves it instead of setting it aside and
+// writing another. What says format 1 is a key spelled like schema anywhere,
+// or a section no released version wrote.
+func TestAFormatOneFileWithoutItsSchemaLineIsNotCalledOlder(t *testing.T) {
+	for name, body := range map[string]string{
+		"schema misspelled":          "schem = 1\n\n[router]\nurl = \"https://router.example\"\n",
+		"schema capitalized":         "Schema = 1\n",
+		"schema inside a table":      "[router]\nschema = 1\nurl = \"https://router.example\"\n",
+		"schema two letters off":     "shcema = 1\n",
+		"format 1 sections, no line": "[router]\nurl = \"https://api.jevlin.ai\"\n\n[search]\nturn_end = true\n",
+		"an [agents] table":          "[agents]\nurl = \"https://agents.example\"\n",
+		"a [platform] url":           "[platform]\nurl = \"https://platform.example\"\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := loadFile(t, body, noEnv)
+			if err == nil || errors.Is(err, ErrLegacyConfig) {
+				t.Fatalf("err = %v, want a refusal that is not ErrLegacyConfig", err)
+			}
+			if !strings.Contains(err.Error(), "schema = 1") {
+				t.Errorf("the refusal does not say what is missing: %v", err)
 			}
 		})
 	}
