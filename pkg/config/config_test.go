@@ -406,3 +406,20 @@ func TestLoadBytesIsLoadOnBytes(t *testing.T) {
 		t.Errorf("LoadBytes with the environment: %v %v", cfg, err)
 	}
 }
+
+// A host that is not plain ASCII never loads: it would be dialed as another
+// name than the one shown. An empty query or fragment is refused too, since
+// it would ride on every path the client appends.
+func TestAnEndpointHostMustBePlainASCII(t *testing.T) {
+	for _, bad := range []string{"https://apİ.jevlin.ai", "https://ap%C4%B0.jevlin.ai", "https://x.example/?", "https://x.example/#"} {
+		if _, err := ParseEndpoint(bad, "router.url"); err == nil {
+			t.Errorf("%q loaded", bad)
+		}
+		if _, _, err := Load(nil, envOf(map[string]string{EnvRouterURL: bad})); err == nil {
+			t.Errorf("JEVLIN_ROUTER_URL=%q loaded", bad)
+		}
+	}
+	if _, err := ParseEndpoint("https://xn--jevlin-tyd.example", "router.url"); err != nil {
+		t.Errorf("an xn-- name was refused: %v", err)
+	}
+}

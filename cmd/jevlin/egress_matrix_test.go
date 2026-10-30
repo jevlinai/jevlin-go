@@ -429,3 +429,31 @@ func assertReached(t *testing.T, rec *egressRecorder, allowed string) {
 		}
 	}
 }
+
+// A router, agents API or AS named with a lookalike host never loads, so no
+// key is sent toward it and no command gets as far as dialing.
+func TestALookalikeEndpointIsRefusedBeforeAnyKeyIsSent(t *testing.T) {
+	rec := &egressRecorder{}
+	hookDials(t, rec)
+	home := t.TempDir()
+	for name, env := range map[string]map[string]string{
+		"JEVLIN_ROUTER_URL":     {config.EnvRouterURL: "https://apİ.jevlin.ai"},
+		"JEVLIN_AGENTS_API_URL": {config.EnvAgentsAPIURL: "https://agents-v1.jevlİn.ai"},
+		"JEVLIN_AS_URL":         {config.EnvASURL: "https://rewards-testnet.jevlİn.ai"},
+	} {
+		env["JEVLIN_HOME"] = home
+		env[apiKeyEnv] = matrixEnvKey
+		var out, errOut strings.Builder
+		code := searchMain(fixedSearchOps(t.TempDir()).ops, []string{"--stdin"}, strings.NewReader(`{"version":1,"query":"q"}`), &out, &errOut, envOf(env))
+		if code == exitOK || !strings.Contains(out.String(), "plain ASCII") {
+			t.Errorf("%s: exit %d\n%s", name, code, out.String())
+		}
+		var lout, lerr strings.Builder
+		if code := cmdLimits([]string{"-json"}, &lout, &lerr, envOf(env)); code == exitOK {
+			t.Errorf("%s: limits exit 0", name)
+		}
+	}
+	if got := rec.origins(); len(got) != 0 {
+		t.Errorf("a lookalike configuration reached %v", got)
+	}
+}

@@ -469,7 +469,16 @@ func ParseEndpoint(raw, field string) (*url.URL, error) {
 	if u.User != nil {
 		return nil, fmt.Errorf("%s: must not carry userinfo", field)
 	}
-	if u.RawQuery != "" || u.Fragment != "" || u.RawFragment != "" {
+	// A host written in Unicode (or percent-encoded into it) is dialed as
+	// its IDNA form, a name other than the one shown; only an ASCII host
+	// reads as what is dialed. A participant's own IDN is written in its
+	// xn-- form.
+	for _, c := range []byte(u.Hostname()) {
+		if c < 0x21 || c > 0x7e {
+			return nil, fmt.Errorf("%s: the host must be plain ASCII (write an internationalized name in its xn-- form)", field)
+		}
+	}
+	if u.ForceQuery || strings.ContainsAny(raw, "?#") {
 		return nil, fmt.Errorf("%s: must not carry a query or fragment", field)
 	}
 	if u.Scheme == "http" && !isLoopbackHost(u.Hostname()) {

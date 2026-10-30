@@ -172,3 +172,32 @@ func TestTransportChecksEveryRequestItCarries(t *testing.T) {
 		t.Errorf("%d connection(s) dialed to the other origin", n)
 	}
 }
+
+// A host that is not plain ASCII has no origin: Go's lowercasing folds "İ"
+// onto "i" while net/http dials the IDNA form, another name, so a lookalike
+// compared after folding would pass as the recorded origin. Written in
+// Unicode or percent-encoded into it, it is refused, and no connection is
+// made for it.
+func TestALookalikeHostIsRefusedNotFolded(t *testing.T) {
+	const bound = "https://api.jevlin.ai"
+	for _, raw := range []string{
+		"https://apİ.jevlİn.ai/v1/search",
+		"https://ap%C4%B0.jevlin.ai/v1/search",
+		"https://API.JEVLİN.AI/v1/search",
+		"https://api.jevlin.ai\u200b/v1/search",
+	} {
+		u, err := url.Parse(raw)
+		if err != nil {
+			continue // a URL that does not parse cannot be dialed either
+		}
+		if err := Check("k", bound, u); !IsRefused(err) {
+			t.Errorf("%q: Check = %v, want a refusal", raw, err)
+		}
+	}
+	if _, err := Origin("https://apİ.jevlin.ai"); err == nil {
+		t.Error("a Unicode host has an origin")
+	}
+	if err := Check("k", "https://apİ.jevlin.ai", mustURL(t, "https://api.jevlin.ai/x")); !IsRefused(err) {
+		t.Errorf("a Unicode bound origin passed: %v", err)
+	}
+}

@@ -58,6 +58,15 @@ func originOf(u *url.URL) (string, error) {
 	if u == nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil {
 		return "", errors.New("not an absolute http(s) URL without userinfo")
 	}
+	// Only an ASCII host has one spelling. Go's Unicode lowercasing folds
+	// some letters onto ASCII ones ("İ" becomes "i") while net/http dials
+	// the host's IDNA form, a different name: compared after folding, a
+	// lookalike would pass as the recorded origin and be dialed as another.
+	// A host written in Unicode, or percent-encoded into it, has no origin
+	// here, so it is refused whatever it is compared with.
+	if !asciiHost(u.Hostname()) {
+		return "", errors.New("a host that is not plain ASCII")
+	}
 	scheme, host, port := strings.ToLower(u.Scheme), strings.ToLower(u.Hostname()), u.Port()
 	if (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
 		port = ""
@@ -69,6 +78,16 @@ func originOf(u *url.URL) (string, error) {
 		return scheme + "://[" + host + "]", nil
 	}
 	return scheme + "://" + host, nil
+}
+
+// asciiHost reports whether every byte of host is printable ASCII.
+func asciiHost(host string) bool {
+	for i := 0; i < len(host); i++ {
+		if host[i] < 0x21 || host[i] > 0x7e {
+			return false
+		}
+	}
+	return true
 }
 
 // Check refuses dest unless its origin is bound's. bound is the origin the
