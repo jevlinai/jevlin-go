@@ -8,7 +8,7 @@ body:
       value: |
         Use this form for non-security feature requests.
 
-        **Do not describe security vulnerabilities here.** If the request involves credentials, wallet keys, participant custody, or the AS/platform wire contract, use private vulnerability reporting; see [SECURITY.md](https://github.com/jevlinai/jevlin-go/blob/main/SECURITY.md).
+        **Do not describe security vulnerabilities here.** If the request involves credentials, what an agent's sandbox can write, or the platform wire contract, use private vulnerability reporting; see [SECURITY.md](https://github.com/jevlinai/jevlin-go/blob/main/SECURITY.md).
 
   - type: textarea
     id: problem
@@ -34,11 +34,10 @@ body:
       label: Affected area
       options:
         - search / hook
-        - flush / mining plane
-        - connect / mining enable / mining disable
+        - fetch
+        - connect / login
         - pkg/platform (agent onboarding)
-        - pkg/auth (AS wire contract)
-        - wallet / payout
+        - pkg/auth (the key and registration store)
         - config / install
         - agents (coding-agent integration)
         - tooling / docs / CI
@@ -50,13 +49,13 @@ body:
     id: wire-impact
     attributes:
       label: Wire contract / participant-state impact
-      description: Does this change the AS wire contract, the search-platform contract, or what a participant's state directory holds?
+      description: Does this change the search-platform contract, the router's envelope, or what a participant's installation holds on disk?
       options:
         - no wire or state-directory impact
         - changes CLI behavior only
         - changes config keys / install flow
-        - changes the AS wire contract (owned by tokendrop-auth-server-design — needs an upstream spec change first)
         - changes the search-platform contract (owned by search-router — needs an upstream spec change first)
+        - changes the machine protocol (the `--stdin` / `-json` envelope header is versioned)
         - requires further analysis
     validations:
       required: true
@@ -65,7 +64,7 @@ body:
     id: state-impact
     attributes:
       label: State-directory / config impact
-      description: Note any expected change to an existing state directory, a new required config key, or a breaking change to an existing one.
+      description: Note any expected change to an existing state directory or installation directory, a new required config key, or a breaking change to an existing one.
       placeholder: |
         - New state file, or a change to an existing one?
         - New/changed config key?

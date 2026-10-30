@@ -12,6 +12,42 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
+The client is supersearch only. Mining moved off the client to the platform, which reconciles
+what the router served, so this client records, spools and submits nothing about a search, and
+holds no mining credential and no wallet. Everything about search, the hooks, the agent
+integrations, setup, connect, upgrade and uninstall is the code that shipped in 0.6.1 with the
+mining calls taken out, not a rewrite.
+
+- **Mining left the client.** `jevlin mining`, `enroll`, `join`, `provider`, `payout`,
+  `wallet`, `earnings` and `flush` are gone, and so are the mining question at setup and
+  connect, the mining decision, the health records, the intake and spool directories, the
+  flush lock and the Authorization Server client. `connect` registers the agent, prints the
+  claim link and polls until it is claimed; `status` reports the registration, the claim link
+  and the release check; `doctor` checks the stored search key, the registration, the trace
+  key, whether this copy is the latest release, the binary on PATH and, on Windows, state
+  access. `uninstall -purge-state` is confirmed by typing the installation path, and revokes
+  nothing. The search envelope keeps its `mining` object as a stub — `state` is always
+  `disabled`, `configured` and `recorded` are false, and `trajectory` says whether the search
+  carried a trace with assistant text — so a reader written for an earlier version still finds
+  the key. `search -no-flush` is accepted and does nothing.
+- **The config names the state directory under `[miner]`.** A fresh `jevlin.toml` has
+  `[[provider]]`, `[platform]` and `[miner] router_url / state_dir / sessions_dir`. An existing
+  config is never rewritten: a `[mining]` table from an earlier version still loads, and its
+  `state_dir` still names the state directory when `[miner] state_dir` is unset; every other
+  `[mining]` key, `[miner] enabled`, `intake_dir` and `flush_interval`, and the proxy-era tables
+  are accepted and ignored. Codex's permission profile grants the state and sessions directories
+  and reaches the router and the agents API; an earlier version's four-root profile is still
+  recognized as this installation's and replaced by `agents install`.
+
+  **Upgrade notes.** A 0.6.x installation keeps working: its config, credential, registration
+  and claim link are read as they are, and `jevlin agents install` (or the upgrade's own
+  refresh) rewrites the agent integrations and Codex's profile. The files an earlier version
+  kept — `payout.json`, `wallet/`, `flush.lock`, `intake/`, `spool/` and the mining decision —
+  are never read; `uninstall -purge-state` removes them with the rest, and names a wallet
+  directory before it does, since this client cannot read its words. A fresh config written by
+  this version (`[miner] state_dir`) does not load on a 0.6.x binary, which refuses the key; a
+  rollback keeps working on a config an earlier version wrote.
+
 ## v0.6.1 — 2026-10-27
 
 The skill every agent reads now says it is supersearch, and the client gains `jevlin fetch

@@ -50,7 +50,7 @@ body:
     id: why-it-matters
     attributes:
       label: Why it matters
-      description: Optional. What a participant loses when this happens — searches that earn nothing, a claim never picked up, a misleading report.
+      description: Optional. What a participant loses when this happens — a search that fails or asks for approval, a claim never picked up, a misleading report.
   - type: dropdown
     id: area
     attributes:
@@ -58,13 +58,12 @@ body:
       options:
         - search / hook (the tool-call path)
         - search --stdin / JSON envelope (the machine protocol)
-        - flush / mining plane (join, promote, submit)
-        - connect / mining enable / mining disable (agent onboarding)
-        - wallet / payout
+        - fetch
+        - connect / login (agent onboarding and the stored key)
         - setup
         - uninstall / upgrade
         - agents (skill/hook install for coding agents)
-        - doctor / status / earnings
+        - doctor / status / limits
         - unsure
     validations:
       required: true
@@ -72,11 +71,11 @@ body:
     id: severity
     attributes:
       label: Severity
-      description: How much it costs a participant. "Must-fix" means the main path — a participant on it earns nothing, loses custody of something, or is told something false about their own setup.
+      description: How much it costs a participant. "Must-fix" means the main path — a participant on it cannot search, loses a credential or a file of theirs, or is told something false about their own setup.
       options:
         - cosmetic — wrong or confusing wording, nothing behaves incorrectly
         - minor — a real defect off the main path, or one with a workaround
-        - must-fix — the main path is broken, custody is at risk, or a report is false
+        - must-fix — the main path is broken, a credential or a participant's file is at risk, or a report is false
         - unsure
     validations:
       required: true
@@ -84,5 +83,5 @@ body:
     id: logs
     attributes:
       label: Logs / output
-      description: Relevant command output. Redact any API key, refresh token, mnemonic, or wallet address you don't want public.
+      description: Relevant command output. Redact any API key or claim link you don't want public.
       render: shell
