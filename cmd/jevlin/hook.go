@@ -323,8 +323,11 @@ func hookDispatch(ops hookOps, args []string, stdin io.Reader, stdout, stderr io
 		claudeTurnEnd(ops, hc, payload)
 		ops.startBackground(hc)
 	default:
+		// A hook entry is written by `agents install`, never typed, so a
+		// subcommand this binary does not know is a hook file and a binary
+		// of different versions, not a usage error. It is named on stderr
+		// and the tool call goes on (invariant 1).
 		fmt.Fprintf(stderr, "jevlin hook: unknown subcommand %q\n", args[0])
-		return exitUsage
 	}
 	// Fail-open contract: the hook itself never fails a tool call.
 	return exitOK

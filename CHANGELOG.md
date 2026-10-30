@@ -37,6 +37,10 @@ the participants who mine; this client carries no compatibility with it.
   refused, the `[miner]` and `[mining]` tables of a mining-capable version included. Codex's
   permission profile grants the state and sessions directories and reaches the router and
   the agents API.
+- **A hook entry this binary does not know is harmless.** A hook subcommand the binary
+  does not recognize, a hook file and a binary of different versions, is named on stderr
+  and exits 0 with nothing written or started, so the host's tool call goes on; it used to
+  exit 2, which Claude Code reads from a PreToolUse hook as a block.
 - **A claim code is a token.** The platform's `claim_code` is held to letters, digits, `-`
   and `_`, on the wire and in the records beside the stored key, so what `connect` and
   `status` print and ask you to type cannot be a sentence.
