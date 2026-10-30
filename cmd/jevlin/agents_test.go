@@ -1052,19 +1052,19 @@ func TestTierPathFollowsTheInstallationHome(t *testing.T) {
 }
 
 // status says the band the next search will send, not merely the file:
-// with [search] tier set and no file, that is the config's band, and the
+// with [router] tier set and no file, that is the config's band, and the
 // line says which of the two set it.
 func TestAgentsTierStatusShowsTheEffectiveBand(t *testing.T) {
 	dir := t.TempDir()
 	cfg := filepath.Join(dir, "jevlin.toml")
-	if err := os.WriteFile(cfg, []byte("[search]\nrouter_url = \"http://127.0.0.1:8080\"\ntier = \"max\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(cfg, []byte("schema = 1\n\n[router]\nurl = \"http://127.0.0.1:8080\"\ntier = \"max\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	m, ops := newFakeMachine()
-	if code, out, _ := runAgents(t, ops, nil, "tier", "-config", cfg); code != exitOK || !strings.Contains(out, "search tier: max") || !strings.Contains(out, "([search] tier)") {
+	if code, out, _ := runAgents(t, ops, nil, "tier", "-config", cfg); code != exitOK || !strings.Contains(out, "search tier: max") || !strings.Contains(out, "([router] tier)") {
 		t.Errorf("config band not shown: %d %q", code, out)
 	}
-	if code, out, _ := runAgents(t, ops, nil, "status", "-config", cfg); code != exitOK || !strings.Contains(out, "search tier:    max") || !strings.Contains(out, "([search] tier)") {
+	if code, out, _ := runAgents(t, ops, nil, "status", "-config", cfg); code != exitOK || !strings.Contains(out, "search tier:    max") || !strings.Contains(out, "([router] tier)") {
 		t.Errorf("agents status: %d %q", code, out)
 	}
 	if code, out, _ := runAgents(t, ops, nil, "tier", "fast", "-config", cfg); code != exitOK || !strings.Contains(out, "search tier: fast") || !strings.Contains(out, "(agents tier)") {

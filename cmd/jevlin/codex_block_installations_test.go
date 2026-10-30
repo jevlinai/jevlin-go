@@ -77,9 +77,12 @@ func writeHomeConfig(t *testing.T, home string) string {
 			t.Fatal(err)
 		}
 	}
-	doc := fmt.Sprintf(`
+	doc := fmt.Sprintf(`schema = 1
+
+[router]
+url = "https://router.example.invalid"
+
 [search]
-router_url = "https://router.example.invalid"
 state_dir = %q
 sessions_dir = %q
 `, filepath.ToSlash(filepath.Join(home, "state")), filepath.ToSlash(filepath.Join(home, "sessions")))
@@ -93,7 +96,7 @@ sessions_dir = %q
 // sessions directory stays under the home, so the block this config produces
 // holds roots on both sides of it and no common home at all.
 //
-// It is a supported configuration, not a contrivance: search.state_dir is a
+// It is a supported configuration, not a contrivance: [search] state_dir is a
 // config key, and a participant who puts it on another volume — a bigger
 // disk, a synced directory, anything — has one.
 func writeRelocatedStateConfig(t *testing.T, home, stateDir string) string {
@@ -103,9 +106,12 @@ func writeRelocatedStateConfig(t *testing.T, home, stateDir string) string {
 			t.Fatal(err)
 		}
 	}
-	doc := fmt.Sprintf(`
+	doc := fmt.Sprintf(`schema = 1
+
+[router]
+url = "https://router.example.invalid"
+
 [search]
-router_url = "https://router.example.invalid"
 state_dir = %q
 sessions_dir = %q
 `, filepath.ToSlash(stateDir), filepath.ToSlash(filepath.Join(home, "sessions")))

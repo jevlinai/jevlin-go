@@ -2,6 +2,14 @@ package main
 
 // The stored key is sent only to the router and the agents API it is bound
 // to (credentials.go, "where the stored key may go").
+//
+// JEVLIN_ROUTER_URL, JEVLIN_PLATFORM_URL and JEVLIN_AGENTS_API_URL replace a
+// config's URLs at runtime, so a getenv that returned one would decide an
+// origin here before any config or recorded binding did. No getenv in this
+// file returns one: envOf's maps name only JEVLIN_CONFIG and JEVLIN_HOME,
+// noEnv names nothing, and installedAs only adds JEVLIN_CONFIG. Every origin
+// a case counts connections to, or reads back from credentials.json, comes
+// from the config file it wrote or the binding connect recorded.
 
 import (
 	"bytes"
@@ -281,17 +289,23 @@ func TestAForegroundConnectRecordsAnOlderKeysOrigins(t *testing.T) {
 	}
 }
 
-// The provider upstream that stands in for an unset router_url is where a
-// search goes, not a router anybody named, and is never written down.
-func TestAStandInRouterIsNeverRecorded(t *testing.T) {
+// A config naming no [router] url resolves to the compiled default router,
+// and nothing stands in for it: that is where every search under that
+// config carries the key, so that is the router connect records it as bound
+// to. Until configuration format 1 a provider upstream stood in for an unset
+// router_url and was never written down; there is no such stand-in now, and
+// the getenv here names no JEVLIN_ROUTER_URL, so the only origin this
+// connect can record is the compiled default.
+func TestAConnectUnderAConfigNamingNoRouterRecordsTheCompiledDefault(t *testing.T) {
 	withShortConnectTimings(t)
 	platform := newStubPlatform(t)
 	cfg, _ := connectConfig(t, platform.srv.URL, "")
 	if code, out, errOut := runConnect(t, cfg, nil); code != exitOK {
 		t.Fatalf("connect: exit %d\n%s\n%s", code, out, errOut)
 	}
-	if c := readStoredKey(t, cfg); c.Router != "" || c.AgentsAPI != origin(t, platform.srv.URL) {
-		t.Errorf("recorded router %q agents API %q", c.Router, c.AgentsAPI)
+	if c := readStoredKey(t, cfg); c.Router != origin(t, config.DefaultRouterURL) || c.AgentsAPI != origin(t, platform.srv.URL) {
+		t.Errorf("recorded router %q agents API %q; want %s, %s", c.Router, c.AgentsAPI,
+			origin(t, config.DefaultRouterURL), origin(t, platform.srv.URL))
 	}
 }
 
@@ -390,32 +404,29 @@ func TestOnlyTheInstallationsOwnConfigRecordsAnOrigin(t *testing.T) {
 	}
 }
 
-// With nothing recorded and no router in the installation's config, the
-// origin the key falls to is a built-in default nobody chose, and the
-// refusal does not present it as the key's.
-func TestARefusalNamesNoRouterTheInstallationNeverChose(t *testing.T) {
+// With nothing recorded and an installation whose own config names no
+// router (here: no config at all under JEVLIN_HOME), the key belongs to the
+// compiled default router, because that is the router every search of that
+// installation carries it to. A search under a config naming another router
+// is refused with the default named as the key's, as any other recorded
+// router would be, and sends nothing. Before format 1 the default was a
+// stand-in nobody chose and the refusal said the installation "names none";
+// the getenv here names no JEVLIN_ROUTER_URL, so the bound origin is the
+// compiled default itself and not an environment's.
+func TestAKeyRecordingNoRouterUnderAConfigNamingNoneBelongsToTheCompiledDefault(t *testing.T) {
 	own, cfg, root := newFakeRouter(t, nil)
 	storeKey(t, cfg, credentials{})
 	env := map[string]string{"JEVLIN_HOME": t.TempDir()}
-	code, out, _ := runSearchStdin(t, fixedSearchOps(root), env, `{"version":1,"query":"q"}`, "-config", cfg)
-	if code != exitUsage || !strings.Contains(out, `"code":"`+keyOriginCode+`"`) {
-		t.Fatalf("exit %d\n%s", code, out)
-	}
 	defaults, _, err := loadConfig("", envOf(env))
 	if err != nil {
 		t.Fatal(err)
 	}
-	standIn := origin(t, defaults.Search.RouterURL.String())
-	for _, gone := range []string{standIn, strings.TrimPrefix(standIn, "https://"), "belongs to", boundKey, root} {
-		if strings.Contains(out, gone) {
-			t.Errorf("the refusal says %q:\n%s", gone, out)
-		}
+	bound := origin(t, defaults.Search.RouterURL.String())
+	if bound != origin(t, config.DefaultRouterURL) {
+		t.Fatalf("the installation's router is %s, want the compiled default %s", bound, config.DefaultRouterURL)
 	}
-	for _, said := range []string{"names none", "JEVLIN_CONFIG", origin(t, own.srv.URL)} {
-		if !strings.Contains(out, said) {
-			t.Errorf("the refusal does not say %q:\n%s", said, out)
-		}
-	}
+	code, out, _ := runSearchStdin(t, fixedSearchOps(root), env, `{"version":1,"query":"q"}`, "-config", cfg)
+	assertOriginRefusal(t, code, out, bound, origin(t, own.srv.URL), root, cfg, credentialsPath(searchBlockOf(t, cfg)))
 	if n := own.requests(); n != 0 {
 		t.Fatalf("%d request(s) sent", n)
 	}

@@ -115,9 +115,11 @@ type credentials struct {
 // publishes and fills in a missing one (recordKeyBinding).
 
 // keyService is one place the stored key is sent. configured is where cfg
-// sends it, and whether cfg names that place itself: a provider upstream
-// standing in for an unset search.router_url is where a search goes, but not
-// a router the config named, so it is checked against and never recorded.
+// sends it, and whether cfg names that place: in configuration format 1
+// every endpoint resolves ([router] url, JEVLIN_ROUTER_URL or the compiled
+// default; the agents API likewise), so a loaded config always names both,
+// and the unnamed branch below is kept only as the shape a future endpoint
+// without a default would take.
 type keyService struct {
 	name       string
 	recorded   func(*credentials) string
@@ -129,10 +131,12 @@ var (
 		name:     "router",
 		recorded: func(c *credentials) string { return c.Router },
 		configured: func(cfg *config.Config) (string, bool) {
+			// Never nil in a loaded config: [router] url, JEVLIN_ROUTER_URL
+			// or the compiled default, and nothing else standing in.
 			if cfg.Search.RouterURL == nil {
 				return "", false
 			}
-			return cfg.Search.RouterURL.String(), cfg.Search.RouterConfigured
+			return cfg.Search.RouterURL.String(), true
 		},
 	}
 	agentsAPIKeyService = keyService{
@@ -282,10 +286,10 @@ func recordKeyBinding(m config.Search, cfgSource string, getenv func(string) str
 }
 
 // keyBindingOf is the binding a key minted for cfg's platform is published
-// with: cfg's router and agents API. An origin cfg does not name is left
-// unrecorded, and so falls to the installation's config; a provider
-// upstream standing in for an unset search.router_url is not a router the
-// config named.
+// with: cfg's router and agents API, as configuration format 1 resolves
+// them (the file, the endpoint variables, or the compiled defaults). An
+// origin cfg does not name would be left unrecorded, and so fall to the
+// installation's config; format 1 names both.
 func keyBindingOf(cfg *config.Config) credentials {
 	var c credentials
 	for _, f := range []struct {
@@ -693,7 +697,7 @@ func cmdLogin(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv f
 	}
 	if !*noVerify {
 		if router == "" {
-			fmt.Fprintln(stderr, "jevlin login: no router configured to verify against (search.router_url or a [[provider]] upstream); use -no-verify to store anyway")
+			fmt.Fprintln(stderr, "jevlin login: no router configured to verify against ([router] url); use -no-verify to store anyway")
 			return exitTransport
 		}
 		ctx, cancel := operatorContext(loginProbeTimeout)
@@ -713,8 +717,7 @@ func cmdLogin(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv f
 	}
 
 	// The router recorded is where the key may be sent from now on, under
-	// connect's rule (keyBindingOf): a router the config names, never the
-	// provider upstream standing in for one.
+	// connect's rule (keyBindingOf): the router this run is configured with.
 	stored := credentials{APIKey: key, Router: keyBindingOf(cfg).Router}
 	if err := writeCredentials(path, stored); err != nil {
 		fmt.Fprintln(stderr, "jevlin login: write:", err)

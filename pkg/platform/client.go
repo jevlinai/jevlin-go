@@ -261,8 +261,7 @@ func isLoopbackHostname(host string) bool {
 // an off-origin URL could point a participant at a page that is not
 // actually this platform's. Absolute HTTPS (or loopback, matching this
 // codebase's http(s)-or-loopback convention elsewhere), origin exactly
-// equal to baseURL's own — or, for a retired portal origin, its compiled
-// successor (retiredPortalSuccessors).
+// equal to baseURL's own; nothing widens it.
 //
 // The origin is not the whole of what is printed. url.Parse accepts a space,
 // U+3000 or any other non-ASCII rune in a path, so "<origin>/claim/X
@@ -303,34 +302,17 @@ func validatePlatformURL(raw, baseURL string) error {
 		return fmt.Errorf("platform: configured base URL does not parse: %w", err)
 	}
 	if u.Scheme != base.Scheme || u.Host != base.Host {
-		if retiredPortalSuccessors[base.Scheme+"://"+base.Host] == u.Scheme+"://"+u.Host {
-			return nil
-		}
-		return fmt.Errorf("platform: claim_url origin %s://%s does not match the configured platform.base_url origin %s://%s",
+		return fmt.Errorf("platform: claim_url origin %s://%s does not match the configured [platform] url origin %s://%s",
 			u.Scheme, u.Host, base.Scheme, base.Host)
 	}
 	return nil
-}
-
-// retiredPortalSuccessors maps a portal origin the platform no longer
-// issues links on to the one it moved to. setup writes platform.base_url
-// into every installation's config and never rewrites an existing one, so
-// an installation made before a move names the old origin for as long as
-// it exists, while the platform hands it links on the new one. The
-// successor is accepted for exactly its retired origin: both are compiled
-// in and both are the platform's, so what is printed is still never an
-// origin the agents API merely named. Nothing here is dialed (invariant
-// 12), and nothing runs backward — a base on the new origin accepts only
-// its own.
-var retiredPortalSuccessors = map[string]string{
-	"https://platform.nyks.dev": "https://platform.jevlin.ai",
 }
 
 // ValidateStoredClaimURL applies validatePlatformURL to a claim_url read
 // back from local state rather than straight off the wire. agent.json lives
 // in a sandbox-writable state_dir, so the copy there is only as trustworthy
 // as the last thing that wrote the file: it must pass the same check
-// against the configured platform.base_url before it is shown to anyone.
+// against the configured [platform] url before it is shown to anyone.
 func ValidateStoredClaimURL(raw, baseURL string) error {
 	return validatePlatformURL(raw, strings.TrimRight(baseURL, "/"))
 }

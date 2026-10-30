@@ -17,9 +17,11 @@ search, delivered it to an Authorization Server (AS) under OAuth and DPoP, enrol
 held a payout wallet. All of that was removed in one stripping, not rewritten: the search,
 hook, agent-integration, setup, connect, upgrade and uninstall code is the code that shipped,
 with the mining calls taken out. That version's line continues as its own binary for the
-participants who ran it; this client carries no compatibility with it: its config tables are
-refused as unknown, and the files it left on a machine (`payout.json`, `wallet/`, `flush.lock`,
-intake and spool directories) are neither read, moved nor named. Where a rule below says "an
+participants who ran it; this client carries no compatibility with it: its config has no
+`schema` line and is refused as an older format (`config.ErrLegacyConfig`), which `jevlin setup`
+sets aside as `jevlin.toml.old` before writing configuration format 1, keeping the registration;
+and the files it left on a machine (`payout.json`, `wallet/`, `flush.lock`,
+`mining_decision.json`, intake and spool directories) are neither read, moved nor named. Where a rule below says "an
 earlier version", that is what it means.
 
 ## Authority — the protocol is owned upstream, not here
@@ -70,8 +72,9 @@ the named tests.
    all under the same scrub and caps, with a skeleton of the turn's other tool calls. It is sent
    only when the installation set `[search] turn_end = true`. It MUST stay off by default; MUST
    send nothing for a turn in which no search was SERVED (a proposed, refused or failed search is
-   not one — `search` marks the turn after the router answers); MUST go only to a router the
-   config names (`Search.RouterConfigured`, never the provider upstream standing in); and MUST
+   not one — `search` marks the turn after the router answers); MUST go only to the router this run
+   is configured with: `[router] url`, `JEVLIN_ROUTER_URL` or the compiled default; there is no
+   fallback (`Search.RouterURL` is never nil and never a stand-in); and MUST
    NEVER carry a tool's input or output. Of a tool call it sends the name, the duration and the
    outcome — `turnStep` has no field for more, and one must not be added. A command is read for
    one purpose, to recognize our own search, and is not kept. Thinking blocks and a subagent's own
@@ -86,13 +89,21 @@ the named tests.
 4. **Secrets never in argv.** stdin or owner-only (0600) files, never a flag. The one documented
    exception is the search *query* (not a credential), called out where it happens.
 5. **Never assemble or call an unadvertised operational URL.** Every host this client dials is
-   **configured, not discovered**. `router_url`, `platform.base_url` and `platform.agents_api_url`
-   are all https-or-loopback, enforced at config load — every search sends the participant's
-   sr- key in `Authorization` to `router_url`, and `connect` sends the platform-issued key to
-   `agents_api_url`, a cleartext-credential exposure over anything else.
-   `platform.base_url` carries no credential — nothing is ever dialed there — it is the portal
-   origin a printed `claim_url` is checked against (invariant 12); the human portal and the machine
-   API are separate hosts. The sole exception is the self-updater: `internal/selfupdate`
+   **configured, not discovered**. The config is configuration format 1 (`pkg/config`): a file
+   beginning `schema = 1` with three endpoint sections, `[router] url`, `[platform] url` and
+   `[agents] url`, each defaulting to its compiled value in `pkg/config/defaults.go`
+   (`DefaultRouterURL`, `DefaultPlatformBaseURL`, `DefaultAgentsAPIURL`), and replaced at
+   runtime, after the file, by `JEVLIN_ROUTER_URL`, `JEVLIN_PLATFORM_URL` and
+   `JEVLIN_AGENTS_API_URL`. All three are https-or-loopback, with an ASCII host and no userinfo,
+   query or fragment, enforced at config load (`config.ParseEndpoint`) — every search sends the
+   participant's sr- key in `Authorization` to `[router] url`, and `connect` sends the
+   platform-issued key to `[agents] url`, a cleartext-credential exposure over anything else.
+   A file that is not format 1 — no `schema` line, another schema number, or a key format 1
+   does not define — is refused and never reinterpreted: an older file's endpoints were chosen
+   under rules this client no longer has, and guessing what they meant is how a key reaches a
+   host it was not issued for. `[platform] url` carries no credential — nothing is ever dialed
+   there — it is the portal origin a printed `claim_url` is checked against (invariant 12); the
+   human portal and the machine API are separate hosts. The sole exception is the self-updater: `internal/selfupdate`
    contacts only the compiled-in canonical `jevlinai/jevlin-go` GitHub release origin,
    carries no participant credential, follows only its bounded HTTPS GitHub redirect allowlist, and
    no environment variable, config or flag may redirect that origin.
@@ -118,18 +129,17 @@ the named tests.
     later invariants stay right.
 11. **A claim or console URL is printed, never opened.** `connect.go` imports no `os/exec`.
     Structural, and tested.
-12. **`platform.base_url` is compared against, never dialed.** It is the origin a platform-supplied
+12. **`[platform] url` is compared against, never dialed.** It is the origin a platform-supplied
     URL must match (`validatePlatformURL`): every byte printable ASCII, no user before the host,
     and the URL must read back as exactly the text given, so what is checked is all of what is
-    printed. A retired portal origin also matches its one compiled successor
-    (`retiredPortalSuccessors`: `platform.nyks.dev` → `platform.jevlin.ai`), because setup never
-    rewrites an existing config and the platform issues links on the new host; nothing else
-    widens. Every request goes to `agents_api_url`. The claim link lives in `claim.json` beside
+    printed. The origin must be the portal's own exactly: there is no retired-portal successor
+    and no alias, so a link on any other host, a portal this installation once named included,
+    is refused, and nothing widens the match. Every request goes to `[agents] url`. The claim link lives in `claim.json` beside
     `credentials.json` (`auth.ClaimRecord`), bound to its agent and written only from the
     platform's answer or the registration journal beside it: by a foreground run, or by a resume
     finishing that journal (which, in a sandbox, cannot write there and leaves it to the next
     foreground run), never in the sandbox-writable `agent.json`; it is checked again before it is printed
-    (`platform.ValidateStoredClaimURL`), because `platform.base_url` may have changed since.
+    (`platform.ValidateStoredClaimURL`), because `[platform] url` may have changed since.
 13. **Registration is one journaled transaction.** A complete `register` response is journaled
     (`registration_pending.json`) before `agent.json` or the credential is written, and finished
     from the journal on the next run, never by a second `register`. The journal is consulted before
@@ -477,7 +487,7 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `cmd/jevlin/testdata/hermes/oracle.py` to ask PyYAML what each meant before and after — the only judge of
   a by-line YAML edit that is not the code that made it.
 - **What the client writes into a participant's files** — `cmd/jevlin/setup_config.go`
-  renders `jevlin.toml`, fresh and migrated; `agents.go`, `setup_env.go` and
+  renders `jevlin.toml`, fresh, in configuration format 1; `agents.go`, `setup_env.go` and
   `hermes_install.go` render the blocks that go into a host's own config. Every byte any of them
   contributes is ASCII: Windows PowerShell 5.1 reads a file with no byte-order mark in the ANSI
   code page, so an em dash reaches a participant as `â€”`, and in a PowerShell
@@ -567,7 +577,7 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
 - **Where the stored key may go** — `cmd/jevlin/credentials.go` owns it (`keyService`,
   `resolveAPIKey`, `platformKey`): the key in `credentials.json` is sent only to the router and
   the agents API origins it records, which connect publishes from the registration journal
-  (`keyBindingOf` when the journal is saved, never a provider upstream standing in, and a
+  (`keyBindingOf` when the journal is saved, never a stand-in for either, and a
   connect under another agents API than the journal's is refused) and fills in for an older
   file only on a foreground run under the installation's own config (`recordKeyBinding`: a
   recorded origin never changes); a file without them belongs to the installation's own config
@@ -658,8 +668,10 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   record) moves whole or not at all, and a destination
   identity is a typed conflict that stops setup non-zero before anything moves and before
   connect runs (`TestSetupStopsOnAnIdentityConflictBeforeConnect`). `setup_config.go` owns TOML quoting and
-  the migration policy (parse first; `[search]` present → byte-identical; otherwise append
-  only the missing tables and parse again). `setup_env.go` owns the one-well-formed-block
+  the config policy (`planSetupConfig`: no file → a fresh format-1 file; a format-1 file that
+  loads → byte-identical; a file with no `schema` line → set aside as `jevlin.toml.old` (`.old.1`,
+  ... via `asideName`) and a fresh file written, never migrated; anything else → refused with
+  the error and its path, nothing written). `setup_env.go` owns the one-well-formed-block
   profile rule and the Windows `setup-env.json` delta journal, over backends in
   `setup_env_unix.go` and `setup_env_windows.go`; `setup_targets.go` owns `-with`, which
   reaches every target kind. `setup_test.go` drives setup in-process against a sandbox

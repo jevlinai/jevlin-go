@@ -61,7 +61,7 @@ func participantLines(t *testing.T, file string) []string {
 
 // staleOurTable makes our own table differ from what the renderer would
 // write now, so an install has something to do. It changes a value INSIDE
-// our markers and nothing else: one allowed host, as a router_url edit
+// our markers and nothing else: one allowed host, as a [router] url edit
 // would leave it.
 func staleOurTable(t *testing.T, file string) string {
 	t.Helper()

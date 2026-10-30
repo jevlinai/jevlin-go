@@ -64,7 +64,7 @@ func TestDoctorBinaryCheckFollowsTheConfigsInstallation(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfgPath := filepath.Join(other, setupConfigFile)
-	if err := os.WriteFile(cfgPath, nil, 0o600); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("schema = 1\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("JEVLIN_HOME", t.TempDir()) // keeps no binary

@@ -225,7 +225,7 @@ with jevlin goes through that one skill.
 | `/jevlin on` | This search is the default again. |
 | `/jevlin status` | Which of the two is the default right now. |
 | `/jevlin tier fast\|balanced\|max` | Sets the tier every search carries unless a request names one. |
-| `/jevlin tier default` | Unsets it; `[search] tier` in your config applies if set, else the router's default for your key. |
+| `/jevlin tier default` | Unsets it; `[router] tier` in your config applies if set, else the router's default for your key. |
 | `/jevlin tier` | The tier in force. |
 
 The settings are yours: the skill tells the agent never to change the default or the tier on

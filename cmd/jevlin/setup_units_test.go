@@ -1,8 +1,8 @@
 package main
 
 // The pieces of setup that decide something on their own, tested directly:
-// TOML quoting, the profile block editor, the Windows delta journal, the
-// identity bundle's conflict rule, and -with's resolver.
+// TOML quoting, the config policy, the profile block editor, the Windows
+// delta journal, the identity bundle's conflict rule, and -with's resolver.
 
 import (
 	"bytes"
@@ -51,14 +51,13 @@ func TestTOMLStringRoundTripsEveryCharacterClass(t *testing.T) {
 // Every path in the fresh config is quoted: a home that holds a quote and a
 // backslash still produces a config pkg/config loads, with the path intact.
 func TestFreshConfigQuotesEveryPath(t *testing.T) {
-	dir := t.TempDir()
 	home := `/tmp/we ird"q\b$;&'x/.jevlin`
 	v := resolveSetupValues(home, func(string) string { return "" })
 	data, err := renderFreshConfig(v)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := validateConfigFile(dir)(data); err != nil {
+	if err := validateConfigBytes(data); err != nil {
 		t.Fatalf("fresh config for %q does not load: %v\n%s", home, err, data)
 	}
 	var doc struct {
@@ -71,45 +70,104 @@ func TestFreshConfigQuotesEveryPath(t *testing.T) {
 	}
 }
 
-func TestMigrationPolicyUnits(t *testing.T) {
+// planSetupConfig's three outcomes and its one refusal. Nothing here is a
+// migration: a format-1 file that loads is left with nothing to write, a
+// file with no schema line is set aside under a name of its own and a fresh
+// format-1 file planned in its place, and every other file is refused with
+// errConfigInvalid and the path, leaving nothing planned.
+func TestConfigPolicyUnits(t *testing.T) {
 	dir := t.TempDir()
-	validate := validateConfigFile(dir)
 	v := resolveSetupValues(filepath.Join(dir, "home"), func(string) string { return "" })
-
 	path := filepath.Join(dir, "jevlin.toml")
-	provider := "[[provider]]\nname = \"search-router\"\nupstream = \"https://router.example\"\n"
+	none := func(string) bool { return false }
+	fresh, err := renderFreshConfig(v)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	// [search] present, as a table: left.
-	plan, err := planSetupConfig(path, []byte(provider+"\n[search]\nturn_end = true\n"), v, validate)
+	// No file: a fresh format-1 file, and nothing set aside.
+	plan, err := planSetupConfig(path, nil, v, validateConfigBytes, none)
+	if err != nil || plan.outcome != configFresh || !bytes.Equal(plan.data, fresh) || plan.aside != "" {
+		t.Fatalf("no file: %+v %v", plan, err)
+	}
+
+	// A format-1 file that loads is left byte for byte: nothing to write,
+	// nothing to set aside, whatever keys it holds and in whatever order.
+	formatOne := "schema = 1\n\n[search]\nturn_end = true\n\n[router]\ntier = \"max\"\nurl = \"https://router.example\"\n"
+	plan, err = planSetupConfig(path, []byte(formatOne), v, validateConfigBytes, none)
+	if err != nil || plan.outcome != configLeft || plan.data != nil || plan.aside != "" {
+		t.Fatalf("format 1: %+v %v", plan, err)
+	}
+	// A dotted key at the root is still format 1.
+	plan, err = planSetupConfig(path, []byte("schema = 1\nsearch.turn_end = true\n"), v, validateConfigBytes, none)
 	if err != nil || plan.outcome != configLeft || plan.data != nil {
-		t.Fatalf("[search] table: %+v %v", plan, err)
+		t.Fatalf("dotted format 1: %+v %v", plan, err)
 	}
-	// Present as a dotted key at the root: still the table, still left.
-	plan, err = planSetupConfig(path, []byte("search.turn_end = true\n"+provider), v, validate)
-	if err != nil || plan.outcome != configLeft || plan.data != nil {
-		t.Fatalf("dotted [search]: %+v %v", plan, err)
+
+	// A file with no schema line is an older format whatever else it
+	// holds: the [[provider]] array, the old [search] table, or a schema
+	// line inside a comment. It is set aside as path.old and the fresh
+	// file takes its place.
+	for name, legacy := range map[string]string{
+		"provider only":    "[[provider]]\nname = \"search-router\"\nupstream = \"https://router.example\"\n",
+		"old search table": "[search]\nrouter_url = \"https://router.example\"\nturn_end = true\n",
+		"old platform":     "[platform]\nbase_url = \"https://platform.example\"\nagents_api_url = \"https://agents.example\"\n",
+		"commented schema": "# schema = 1\n[search]\nturn_end = true\n",
+		"empty":            "",
+	} {
+		plan, err = planSetupConfig(path, []byte(legacy), v, validateConfigBytes, none)
+		if err != nil || plan.outcome != configReplaced || !bytes.Equal(plan.data, fresh) || plan.aside != path+".old" {
+			t.Fatalf("%s: %+v %v", name, plan, err)
+		}
 	}
-	// The text "[search]" inside a comment is not a table.
-	plan, err = planSetupConfig(path, []byte(provider+"# [search] later\n"), v, validate)
-	if err != nil || plan.outcome != configMigrated || strings.Join(plan.added, ",") != "[platform],[search]" {
-		t.Fatalf("commented [search]: %+v %v", plan, err)
+	// When path.old is taken the older file goes to path.old.1, so a
+	// participant's own set-aside copy is never overwritten.
+	taken := func(name string) bool { return name == path+".old" }
+	plan, err = planSetupConfig(path, []byte("[search]\nturn_end = true\n"), v, validateConfigBytes, taken)
+	if err != nil || plan.outcome != configReplaced || plan.aside != path+".old.1" {
+		t.Fatalf("with path.old taken: %+v %v", plan, err)
 	}
-	// [platform] present without [search]: only [search] is added.
-	plan, err = planSetupConfig(path, []byte("[platform]\nbase_url = \"https://platform.example\"\nagents_api_url = \"https://agents.example\"\n"), v, validate)
-	if err != nil || plan.outcome != configMigrated || strings.Join(plan.added, ",") != "[search]" {
-		t.Fatalf("[platform] alone: %+v %v", plan, err)
+
+	// Refused, with the path and the reason, and nothing planned: a
+	// format-1 file with a key format 1 does not define, one with a value
+	// that does not load, one of another schema, and a file that is not
+	// TOML at all. None of them is set aside: a file that says it is
+	// format 1 is the participant's current configuration.
+	for name, tc := range map[string]struct{ body, reason string }{
+		"unknown table":   {"schema = 1\n[log]\nlevel = \"info\"\n", "format 1 does not define log"},
+		"old key":         {"schema = 1\n[search]\nrouter_url = \"https://router.example\"\n", "format 1 does not define search.router_url"},
+		"old array":       {"schema = 1\n[[provider]]\nname = \"search-router\"\n", "format 1 does not define provider"},
+		"bad url":         {"schema = 1\n[router]\nurl = \"ftp://router.example\"\n", "router.url"},
+		"wrong type":      {"schema = 1\n[search]\nturn_end = \"yes\"\n", "turn_end"},
+		"another schema":  {"schema = 2\n", "schema"},
+		"not toml":        {"[search]\nturn_end = true\nthis is not toml\n", ""},
+		"duplicate table": {"schema = 1\n[search]\nturn_end = true\n[search]\n", ""},
+	} {
+		plan, err = planSetupConfig(path, []byte(tc.body), v, validateConfigBytes, none)
+		if !errors.Is(err, errConfigInvalid) || !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), tc.reason) {
+			t.Fatalf("%s: err = %v, want errConfigInvalid naming %s and %q", name, err, path, tc.reason)
+		}
+		if plan.outcome != configFresh || plan.data != nil || plan.aside != "" {
+			t.Fatalf("%s: a refusal planned something: %+v", name, plan)
+		}
 	}
-	// Invalid, whatever it says.
-	_, err = planSetupConfig(path, []byte("[search]\nturn_end = true\n[search]\n"), v, validate)
-	if !errors.Is(err, errConfigInvalid) || !strings.Contains(err.Error(), path) {
-		t.Fatalf("invalid config: %v", err)
+}
+
+// asideName takes the first free name of path.old, path.old.1, path.old.2,
+// ... and gives up, naming the path, rather than picking one that exists.
+func TestAsideNameTakesTheFirstFreeName(t *testing.T) {
+	path := filepath.Join("x", "jevlin.toml")
+	exists := map[string]bool{}
+	isTaken := func(name string) bool { return exists[name] }
+	for i, want := range []string{path + ".old", path + ".old.1", path + ".old.2"} {
+		got, err := asideName(path, isTaken)
+		if err != nil || got != want {
+			t.Fatalf("free name #%d = %q, %v; want %q", i, got, err, want)
+		}
+		exists[got] = true
 	}
-	// A file that parses but names a table this client does not have is
-	// refused before any migration is planned: it does not load, and a file
-	// that does not load is not one setup adds to.
-	_, err = planSetupConfig(path, []byte("[log]\nlevel = \"info\"\n"), v, validate)
-	if !errors.Is(err, errConfigInvalid) || !strings.Contains(err.Error(), path) {
-		t.Fatalf("a config with an unknown table: %v", err)
+	if got, err := asideName(path, func(string) bool { return true }); err == nil || got != "" || !strings.Contains(err.Error(), path) {
+		t.Fatalf("every name taken: %q, %v; want an error naming %s", got, err, path)
 	}
 }
 

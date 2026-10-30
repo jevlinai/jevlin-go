@@ -168,7 +168,7 @@ the whole file with "invalid type: map, expected a boolean" and does not start (
 remove the block between its two markers), and 0.131 to 0.157 has not been tried. Inside the sandbox Codex routes commands through a proxy on this machine, and the claim
 resume a search starts reaches the agents API through it. A process a search starts contacts
 only the hosts the profile lists, because Codex fails whichever command is running when anything
-inside the sandbox is refused a host. If you change `router_url` or the platform in your
+inside the sandbox is refused a host. If you change `[router] url` or `[agents] url` in your
 config, run `jevlin agents install` again; `jevlin agents status` says when the profile names other hosts
 than the config does.
 

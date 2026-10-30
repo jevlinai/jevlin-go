@@ -18,8 +18,9 @@ package main
 //     turn after the router answers. A search the model proposed and the
 //     user refused, or one that failed, marks nothing, and a turn with no
 //     mark sends nothing;
-//   - only to a router the config NAMES (search.router_url). The provider
-//     upstream that stands in for it when it is absent is never sent this;
+//   - only to the router this run is configured with ([router] url,
+//     JEVLIN_ROUTER_URL or the compiled default); nothing else stands in
+//     for it;
 //   - the same scrub and the same 32 KiB tail cap as trace history, applied
 //     before anything is written or sent;
 //   - the assistant's last message and, where the host's transcript can be
@@ -491,10 +492,10 @@ func cmdTurnEnd(args []string, getenv func(string) string) int {
 	// Deleted before the send, whatever comes next: one attempt, and no file
 	// of assistant text left behind by a send that hung.
 	_ = os.Remove(path)
-	// Only to a router the config names. With no search.router_url, RouterURL
-	// is the provider upstream standing in for it, and the assistant's answer
-	// is not that provider's to receive.
-	if err != nil || !cfg.Search.TurnEnd || !cfg.Search.RouterConfigured || cfg.Search.RouterURL == nil {
+	// Only to the router this run is configured with: [router] url,
+	// JEVLIN_ROUTER_URL or the compiled default, and nothing else standing
+	// in for it (invariant 2).
+	if err != nil || !cfg.Search.TurnEnd || cfg.Search.RouterURL == nil {
 		return exitOK
 	}
 	var rec turnEndRecord

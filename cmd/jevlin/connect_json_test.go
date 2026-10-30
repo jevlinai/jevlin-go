@@ -113,13 +113,17 @@ func connectFixture(t *testing.T) (cfgPath, stateDir string, calls *atomic.Int64
 	cfgPath = filepath.Join(root, "jevlin.toml")
 	platform, calls := countingPlatformStub(t)
 
-	toml := `[search]
+	toml := `schema = 1
+
+[search]
 state_dir = "` + filepath.ToSlash(stateDir) + `"
 sessions_dir = "` + filepath.ToSlash(filepath.Join(root, "sessions")) + `"
 
 [platform]
-base_url = "` + platform + `"
-agents_api_url = "` + platform + `"
+url = "` + platform + `"
+
+[agents]
+url = "` + platform + `"
 `
 	if err := os.WriteFile(cfgPath, []byte(toml), 0o600); err != nil {
 		t.Fatal(err)

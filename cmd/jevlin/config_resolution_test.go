@@ -21,6 +21,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
 // writeInstallationConfig writes home/jevlin.toml naming stateDir (under
@@ -32,7 +34,7 @@ func writeInstallationConfig(t *testing.T, home string) (cfgPath, stateDir strin
 	}
 	stateDir = filepath.Join(home, "state")
 	cfgPath = filepath.Join(home, setupConfigFile)
-	body := fmt.Sprintf("[search]\nstate_dir = %q\n", stateDir)
+	body := fmt.Sprintf("schema = 1\n\n[search]\nstate_dir = %q\n", stateDir)
 	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +64,7 @@ func TestConfigResolutionOrderEachStepWinsOverTheNext(t *testing.T) {
 
 	// A jevlin.toml in the working directory is not a step: whoever wrote
 	// the directory would choose where the participant's keys are sent.
-	if err := os.WriteFile(filepath.Join(dir, "jevlin.toml"), []byte("[search]\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "jevlin.toml"), []byte("schema = 1\n\n[search]\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if src := describeConfigSource("", homeEnv); src != installPath {
@@ -194,9 +196,14 @@ func TestDoctorNamesDefaultsWhenNoConfigFileExistsAnywhere(t *testing.T) {
 	// shell profile happens to export. Blank the two explicitly rather
 	// than relying on HOME alone: a real JEVLIN_CONFIG in this
 	// process's environment would otherwise make this "nothing resolves"
-	// test dial that developer's live installation.
+	// test dial that developer's live installation. The three endpoint
+	// variables apply at runtime too, so they are blanked for the same
+	// reason: "defaults" must mean the compiled ones.
 	t.Setenv("JEVLIN_CONFIG", "")
 	t.Setenv("JEVLIN_HOME", "")
+	t.Setenv(config.EnvRouterURL, "")
+	t.Setenv(config.EnvPlatformURL, "")
+	t.Setenv(config.EnvAgentsAPIURL, "")
 	cwd := t.TempDir()
 	t.Chdir(cwd)
 
@@ -297,10 +304,13 @@ func TestConnectStopsWithTheFileNamedWhenTheInstallationConfigCannotBeParsed(t *
 // TestLoadConfigIgnoresAPlantedWorkingDirectoryConfig is the attack the
 // cwd step allowed: a repo ships jevlin.toml naming its own router, and a
 // participant runs login/search/limits in that checkout. The installation
-// config, not the planted one, must decide where the sr- key goes.
+// config, not the planted one, must decide where the sr- key goes. The
+// planted file is a valid format-1 file on purpose: a file this client
+// would refuse proves only that it was refused, not that it was never a
+// step.
 func TestLoadConfigIgnoresAPlantedWorkingDirectoryConfig(t *testing.T) {
 	cwd := t.TempDir()
-	planted := "[search]\nrouter_url = \"https://evil.example\"\n"
+	planted := "schema = 1\n\n[router]\nurl = \"https://evil.example\"\n"
 	if err := os.WriteFile(filepath.Join(cwd, "jevlin.toml"), []byte(planted), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -320,8 +330,12 @@ func TestLoadConfigIgnoresAPlantedWorkingDirectoryConfig(t *testing.T) {
 			if src != "" && src != installPath {
 				t.Fatalf("config source = %q, want the installation config or defaults", src)
 			}
-			if u := cfg.Search.RouterURL; u != nil && u.Host == "evil.example" {
-				t.Fatalf("router taken from the planted cwd jevlin.toml: %v", u)
+			// Neither getenv sets JEVLIN_ROUTER_URL and the installation
+			// config names no router, so the only router this load can
+			// resolve to is the compiled default; anything else came from
+			// the planted file.
+			if u := cfg.Search.RouterURL; u == nil || u.Host == "evil.example" || u.String() != config.DefaultRouterURL {
+				t.Fatalf("router = %v, want the compiled default %s: the planted cwd jevlin.toml was read", u, config.DefaultRouterURL)
 			}
 		})
 	}

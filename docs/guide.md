@@ -33,6 +33,14 @@ it from there.
 | **Set up the coding agents found on this machine now? [Y/n]** | Writes a skill and, where the agent supports them, hooks into its config. You see the plan first, with what made each agent count as present. |
 | **Switch? [y/N]** | Asked only when Codex's config has a setting of your own that its permission profile would change, such as your own profile in `default_permissions`. It shows every line it would write. A bare Enter is no, which sets up the other agents and leaves Codex as it is. See [Codex](agents.md#codex). |
 
+Before any question, setup writes `~/.jevlin/jevlin.toml` in configuration format 1: a `schema = 1`
+line, `[router]`, `[platform]` and `[agents]` with their URLs, and `[search]` with the state and
+sessions directories ([reference, Config](reference.md#config) has every key). A config already
+there in that format is left byte for byte; one from an older jevlin, with no `schema` line, is set
+aside as `jevlin.toml.old` and a fresh file written, your registration and key kept (see
+[Moving from 0.6.x](#moving-from-06x)); one in format 1 with a mistake in it stops setup with the
+error, and nothing is written.
+
 Only an answer you typed counts. Interrupt a question, or close its input, and setup stops there
 with a non-zero exit, recording and writing nothing. The same holds for `agents install`'s
 **Proceed?**, Codex's **Switch?** and uninstall's confirmations: a typed no exits 0, no answer
@@ -96,7 +104,8 @@ Each skill carries this in its agent's shell, with your paths filled in. The
 ## Running setup again
 
 Nothing needs removing first: update the binary, then run `jevlin setup`. It keeps your
-identity and key, and lets `connect` finish or repair its own onboarding. It updates its
+identity and key, and lets `connect` finish or repair its own onboarding. It leaves a format-1
+config as it is and sets an older one aside as `jevlin.toml.old`. It updates its
 profile block and agent files in place, reporting one already correct as "nothing to write:
 already set up". For an installation elsewhere, set `JEVLIN_HOME` to it; setup has no other way
 to find it. `setup -home <dir>` alone makes a separate installation and leaves your profile and
@@ -211,6 +220,25 @@ When it fails, the first word after `upgrade:` says what to do:
 
 On Windows, `previous_in_use` means an older Jevlin or agent process still runs
 `jevlin.exe.previous`. Your binary was put back; close that process and run `upgrade` again.
+
+### Moving from 0.6.x
+
+This version reads only configuration format 1, and a 0.6.x installation's `jevlin.toml` is not
+that. On a native install the daily check replaces the binary with this version as it would any
+release; from then on every command that reads the config (`search`, `fetch`, `limits`, `status`,
+`doctor`, `connect`) stops with "this configuration is from an older jevlin; run `jevlin setup`",
+while the hooks, which fail open, run the agent's tool call without a lineage file, and the
+check itself goes no further until setup has run. On an npm install, run
+`npm install -g @jevlinsearch/jevlin@latest`, then `jevlin setup`.
+
+`jevlin setup` sets the old file aside as `jevlin.toml.old` (`.old.1`, `.old.2`, ... if the name
+is taken), writes `jevlin.toml` in format 1 naming the default hosts (or the ones `JEVLIN_ROUTER_URL`,
+`JEVLIN_PLATFORM_URL` and `JEVLIN_AGENTS_API_URL` name), keeps your
+registration and search key, and rewrites the hooks and skills of the agents it finds in place.
+Nothing in the old file is read or migrated: a setting you changed by hand, such as `turn_end` or
+`tier`, you copy into the new file yourself, under its format-1 key ([reference,
+Config](reference.md#config)). Files only the earlier version used are left untouched where they
+are, never read and never named; this version has no use for them, and you may delete them.
 
 ## Removing it and coming back
 

@@ -371,25 +371,24 @@ func writeTOML(t *testing.T, body string) string {
 	return path
 }
 
-// connectConfig builds a config for connect: [platform] pointed at
-// platformURL, and a [search] table whose state_dir and sessions_dir sit
-// under the test's own directory, because the default
+// connectConfig builds a format-1 config for connect: [platform] and
+// [agents] pointed at platformURL, and a [search] table whose state_dir and
+// sessions_dir sit under the test's own directory, because the default
 // (os.UserConfigDir()/jevlin/state) is not test-isolated and the
 // installation's own files — credentials.json, the registration journal,
 // the claim record — live in state_dir's parent. routerURL, when not
-// empty, is written as search.router_url, for a test that also searches;
-// "" leaves the router at the [[provider]] default, which nothing here
-// dials.
+// empty, is written as [router] url, for a test that also searches; ""
+// leaves the router at the compiled default, which nothing here dials.
 func connectConfig(t *testing.T, platformURL, routerURL string) (cfgPath, stateDir string) {
 	t.Helper()
 	dir := t.TempDir()
 	stateDir = filepath.Join(dir, "state")
 	var b strings.Builder
-	fmt.Fprintf(&b, "[platform]\nbase_url = %q\nagents_api_url = %q\n\n[search]\n", platformURL, platformURL)
+	fmt.Fprintf(&b, "schema = 1\n\n[platform]\nurl = %q\n\n[agents]\nurl = %q\n", platformURL, platformURL)
 	if routerURL != "" {
-		fmt.Fprintf(&b, "router_url = %q\n", routerURL)
+		fmt.Fprintf(&b, "\n[router]\nurl = %q\n", routerURL)
 	}
-	fmt.Fprintf(&b, "state_dir = %q\nsessions_dir = %q\n", stateDir, filepath.Join(dir, "sessions"))
+	fmt.Fprintf(&b, "\n[search]\nstate_dir = %q\nsessions_dir = %q\n", stateDir, filepath.Join(dir, "sessions"))
 	return writeTOML(t, b.String()), stateDir
 }
 
@@ -1107,7 +1106,7 @@ func TestALaterForegroundConnectMintsWhenThePlatformGainsTheRoute(t *testing.T) 
 	}
 }
 
-// A stored claim URL off the configured platform origin (platform.base_url
+// A stored claim URL off the configured platform origin ([platform] url
 // changed since it was stored) is treated like a lost link (invariant 12) —
 // never printed, and replaced on disk by a freshly minted one.
 func TestForegroundConnectNeverPrintsAStoredClaimURLOffThePlatformOrigin(t *testing.T) {

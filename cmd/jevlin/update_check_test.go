@@ -304,7 +304,7 @@ func autoFixture(t *testing.T, lr *localRelease, extra string) (*upgradeFixture,
 		// holds.
 		extra += "[update]\nmode = \"apply\"\n"
 	}
-	writeFileT(t, cfgPath, "[search]\nstate_dir = \""+filepath.ToSlash(stateDir)+"\"\n"+extra)
+	writeFileT(t, cfgPath, "schema = 1\n\n[search]\nstate_dir = \""+filepath.ToSlash(stateDir)+"\"\n"+extra)
 	return f, cfgPath, updateStampPath(f.home)
 }
 
@@ -591,7 +591,7 @@ func TestAutoCheckHoldsTheSameGateAsAManualUpgrade(t *testing.T) {
 		t.Fatal(err)
 	}
 	otherCfg := filepath.Join(other, setupConfigFile)
-	writeFileT(t, otherCfg, "[search]\nstate_dir = \""+filepath.ToSlash(filepath.Join(f.home, "state"))+"\"\n[update]\nmode = \"apply\"\n")
+	writeFileT(t, otherCfg, "schema = 1\n\n[search]\nstate_dir = \""+filepath.ToSlash(filepath.Join(f.home, "state"))+"\"\n[update]\nmode = \"apply\"\n")
 	gate, err := acquireLifecycleGate(lifecycleGatePath(f.home), 0)
 	if err != nil {
 		t.Fatal(err)

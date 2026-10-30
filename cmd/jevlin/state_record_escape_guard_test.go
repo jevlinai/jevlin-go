@@ -94,9 +94,9 @@ func installationFixture(t *testing.T) (cfgPath, home string) {
 
 	home = filepath.Join(t.TempDir(), "jevlin")
 	stateDir := filepath.Join(home, "state")
-	cfgPath = writeTOML(t, fmt.Sprintf("[[provider]]\nname = \"search-router\"\nupstream = \"https://router.fictional.test\"\n\n"+
-		"[platform]\nbase_url = %q\nagents_api_url = %q\n\n[search]\nrouter_url = %q\nstate_dir = %q\n",
-		platform.srv.URL, platform.srv.URL, router.URL, filepath.ToSlash(stateDir)))
+	cfgPath = writeTOML(t, fmt.Sprintf("schema = 1\n\n[router]\nurl = %q\n\n"+
+		"[platform]\nurl = %q\n\n[agents]\nurl = %q\n\n[search]\nstate_dir = %q\n",
+		router.URL, platform.srv.URL, platform.srv.URL, filepath.ToSlash(stateDir)))
 
 	if code, out, errOut := runConnect(t, cfgPath, nil); code != exitOK {
 		t.Fatalf("registering connect failed: %d\n%s\n%s", code, out, errOut)

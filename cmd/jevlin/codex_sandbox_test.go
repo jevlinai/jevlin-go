@@ -34,9 +34,12 @@ func sandboxTestConfig(t *testing.T) (cfgPath, home string) {
 			t.Fatal(err)
 		}
 	}
-	doc := fmt.Sprintf(`
+	doc := fmt.Sprintf(`schema = 1
+
+[router]
+url = "https://router.example.invalid"
+
 [search]
-router_url = "https://router.example.invalid"
 state_dir = %q
 sessions_dir = %q
 `, filepath.ToSlash(filepath.Join(home, "state")), filepath.ToSlash(filepath.Join(home, "sessions")))
@@ -203,7 +206,7 @@ func TestCodexInstallWithOnlyAStateDirDefaultsTheSessionsDirBesideIt(t *testing.
 	if err := os.MkdirAll(filepath.Join(home, "state"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	doc := fmt.Sprintf("[search]\nstate_dir = %q\n", filepath.ToSlash(filepath.Join(home, "state")))
+	doc := fmt.Sprintf("schema = 1\n\n[search]\nstate_dir = %q\n", filepath.ToSlash(filepath.Join(home, "state")))
 	cfgPath := filepath.Join(home, "jevlin.toml")
 	if err := os.WriteFile(cfgPath, []byte(doc), 0o600); err != nil {
 		t.Fatal(err)
@@ -281,9 +284,12 @@ func TestCodexInstallRefusesALayoutThatNestsTheInstallationInARoot(t *testing.T)
 }
 
 func nestedDoc(state, sessions string) string {
-	return fmt.Sprintf(`
+	return fmt.Sprintf(`schema = 1
+
+[router]
+url = "https://router.example.invalid"
+
 [search]
-router_url = "https://router.example.invalid"
 state_dir = %q
 sessions_dir = %q
 `, filepath.ToSlash(state), filepath.ToSlash(sessions))

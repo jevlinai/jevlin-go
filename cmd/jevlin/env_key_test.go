@@ -10,6 +10,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
 // With --stdin, the environment's key goes to the installation's own
@@ -113,10 +115,11 @@ func TestTheTurnEndSendsTheEnvironmentKeyOnlyToTheInstallationsRouter(t *testing
 	}
 }
 
-// With no router in the installation's config, the environment key's
-// refusal names none as the installation's: it says the config names none,
-// and how to choose one.
-func TestTheEnvironmentKeysRefusalNamesNoRouterTheInstallationNeverChose(t *testing.T) {
+// With no router in the installation's config, the installation's router is
+// the compiled default (configuration format 1 names every endpoint), so the
+// environment key is bound there, and a search under another config's router
+// is refused naming both origins — never the key, and never a path.
+func TestTheEnvironmentKeysRefusalNamesTheCompiledDefaultWhenTheInstallationNamesNoRouter(t *testing.T) {
 	own, cfg, root := newFakeRouter(t, nil)
 	env := map[string]string{"JEVLIN_HOME": t.TempDir(), apiKeyEnv: boundKey}
 	code, out, _ := runSearchStdin(t, fixedSearchOps(root), env, `{"version":1,"query":"q"}`, "-config", cfg)
@@ -127,13 +130,16 @@ func TestTheEnvironmentKeysRefusalNamesNoRouterTheInstallationNeverChose(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	standIn := origin(t, defaults.Search.RouterURL.String())
-	for _, gone := range []string{standIn, strings.TrimPrefix(standIn, "https://"), boundKey, root} {
+	installations := origin(t, defaults.Search.RouterURL.String())
+	if installations != origin(t, config.DefaultRouterURL) {
+		t.Fatalf("the installation's router is %s, not the compiled default; the environment supplied one", installations)
+	}
+	for _, gone := range []string{boundKey, root} {
 		if strings.Contains(out, gone) {
 			t.Errorf("the refusal says %q:\n%s", gone, out)
 		}
 	}
-	for _, said := range []string{apiKeyEnv, "names none", "JEVLIN_CONFIG", origin(t, own.srv.URL)} {
+	for _, said := range []string{apiKeyEnv, installations, origin(t, own.srv.URL)} {
 		if !strings.Contains(out, said) {
 			t.Errorf("the refusal does not say %q:\n%s", said, out)
 		}

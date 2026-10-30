@@ -45,7 +45,7 @@ list and needs no shell escaping. A malformed field answers `fix_input` before a
 |---|---|
 | `version` | `1`, required. |
 | `query` | The search, required. |
-| `tier` | `"fast"` (three fast indexes, one per index group, ~$0.015), `"balanced"` (the core arms, 8 results each, a 12-page merged window, ~$0.035) or `"max"` (the core arms, 15 results each, a 24-page window, 2,000-character excerpts, ~$0.045 plus the agent's own tokens). Prices are the arms' own, passed through; `usage.cost_micros` is the real one. Absent, the request carries the participant's tier (`agents tier`, then `[search] tier`), or no tier at all and the router applies the tenant's default. |
+| `tier` | `"fast"` (three fast indexes, one per index group, ~$0.015), `"balanced"` (the core arms, 8 results each, a 12-page merged window, ~$0.035) or `"max"` (the core arms, 15 results each, a 24-page window, 2,000-character excerpts, ~$0.045 plus the agent's own tokens). Prices are the arms' own, passed through; `usage.cost_micros` is the real one. Absent, the request carries the participant's tier (`agents tier`, then `[router] tier`), or no tier at all and the router applies the tenant's default. |
 | `recency` | `"day"`, `"week"`, `"month"` or `"year"`. A router that applies it says so in `result.filters_applied` (below). Without that report the results may be unfiltered: check each page's `published` date if it must hold. |
 | `domain_filter` | Up to 16 bare hostnames. Reported in `result.filters_applied` like `recency`; without the report, check each page's `url` host if it must hold. |
 | `max_results` | 1 to 25. A cap. |
@@ -194,29 +194,42 @@ without the trace, under the same deadline. Nothing else causes a second request
 
 ## Config
 
-Every key below is one a `jevlin` command reads. The value after `#` is what you get by leaving
-the key out.
+The file is configuration format 1. It begins `schema = 1`, and every section and key after
+that line is optional: the value after `#` is what you get by leaving the key out. A fresh
+`jevlin setup` writes the schema line, the three endpoint sections and `[search]`'s two
+directories, nothing else.
 
 ```toml
-[[provider]]
-upstream = "https://api.jevlin.ai"   # https only; the router_url fallback
+schema = 1
+
+[router]
+url  = "https://api.jevlin.ai"       # where searches, fetches, limits reads and turn ends go; https only
+tier = ""                            # fast | balanced | max; unset = the router's default. `agents tier` outranks it; another word is not sent and is named by `agents tier status`
 
 [platform]
-base_url       = "https://platform.jevlin.ai"    # the human portal and claim pages
-agents_api_url = "https://agents-v1.jevlin.ai"    # register/status — a separate host
+url = "https://platform.jevlin.ai"   # the human portal and claim pages; compared against, never dialed
+
+[agents]
+url = "https://agents-v1.jevlin.ai"  # where connect sends register and status, a separate host
 
 [search]
 state_dir    = "/home/you/.jevlin/state"      # default: <user config dir>/jevlin/state
 sessions_dir = "/home/you/.jevlin/sessions"   # per-workspace lineage files; default: beside state_dir
 turn_end     = false                          # default false: report a searched turn's final answer (see The turn end)
-tier         = ""                             # fast | balanced | max; unset = the router's default. `agents tier` outranks it; another word is ignored and named by `agents tier status`
-# router_url = "..."   defaults to the [[provider]] upstream
 
 [update]
-mode         = "apply"                        # default apply: apply | notify | off; the daily release check (see Files and locks). Another word checks and notifies only, and doctor names it
+mode = "apply"                                # apply | notify | off; the daily release check (see Files and locks). Another word checks and notifies only, and doctor names it
 ```
 
-`[search]` names the router searches go to and the two directories this installation keeps.
+`[router] url` is the one router this installation talks to; there is no other address a search
+falls back to. `[search]` names the two directories this installation keeps and the turn-end
+switch; `[router] tier` is the tier a search carries when neither the request nor `agents tier`
+names one.
+
+`JEVLIN_ROUTER_URL`, `JEVLIN_PLATFORM_URL` and `JEVLIN_AGENTS_API_URL` are read by every command,
+after the file: each replaces its URL for that run, under the same rules as the file's. Setup also
+writes them into a fresh config, so an installation set up with them keeps them. `JEVLIN_CONFIG`
+still chooses the file.
 
 **Who can open the state directory, on Windows.** `jevlin setup` gives `<home>\state` an access
 list that names only you. A `state_dir` that `setup` (when it is outside the installation) or
@@ -233,20 +246,25 @@ every run, which removes such an entry until the sandbox's own setup adds it aga
 installation's own directory, where `credentials.json`, the claim link (`claim.json`), an
 unfinished registration (`registration_pending.json`) and the release check's record
 (`update_check.json`) are kept: never the state directory, which an agent's sandbox may write.
-`base_url` is never dialed: a printed claim link must point there.
-`agents_api_url` is where `connect` sends requests. A non-default, non-loopback `base_url`
-without `agents_api_url` is refused; a loopback one alone defaults `agents_api_url` to it. Every
-URL must be https, or http on loopback.
+`[platform] url` is never dialed: a printed claim link must point there, at exactly that origin.
+`[agents] url` is where `connect` sends requests. A non-default, non-loopback `[platform] url`
+without `[agents] url` is refused; a loopback one alone defaults `[agents] url` to it. Every URL
+must be https, or http on loopback, with an ASCII host and no user, query or fragment; an error
+names the key (`router.url`, `platform.url`, `agents.url`).
 
-Those four tables are the whole file: `[[provider]]`'s `name` is accepted and read by no
-`jevlin` command, and any other key or table is an error. A config a mining-capable version of
-this client wrote (its `[miner]` and `[mining]` tables) is refused the same way; that line
-continues as its own binary, and a machine moving to this one runs `jevlin setup` on a fresh
-installation directory.
+Those sections are the whole file. A `schema = 1` file holding any other key or section is
+refused by name (`format 1 does not define X; correct or remove it`), and nothing is guessed about
+what the key meant. A file with no `schema` line is one an older jevlin wrote, and every command
+refuses it with one message, "this configuration is from an older jevlin; run `jevlin setup`".
+It is never reinterpreted, because its endpoints were chosen under rules this client no longer
+has. A file naming another schema number is refused with a message saying which schema this
+jevlin reads.
 
-Setup loads an existing config first and refuses one that does not load. One with a `[search]`
-table is left byte for byte. One without gains only the `[platform]` and `[search]` tables it
-lacks, appended, and must load before it is saved.
+Setup loads an existing config first. A format-1 file that loads is left byte for byte. A file
+with no `schema` line is set aside as `jevlin.toml.old` (`.old.1`, `.old.2`, ... if that name is
+taken), nothing in it changed, and a fresh format-1 file is written in its place; your
+registration and key are kept, and any setting you had changed by hand is yours to copy over. A
+format-1 file with a mistake in it is refused with the error and its path, and nothing is written.
 
 ## Environment variables
 
@@ -256,7 +274,7 @@ lacks, appended, and must load before it is saved.
 | `JEVLIN_HOME` | every command, setup | This machine's installation directory, instead of `~/.jevlin`. |
 | `JEVLIN_API_KEY` | search, limits, the turn end, fetch | The search key, overriding `credentials.json`. With a `-config` that is not the installation's own file, it is sent only when that config names the installation's router; to use another router, set `JEVLIN_CONFIG` to its config. |
 | `JEVLIN_TRACE` | search, hooks | `off` sends no trace. |
-| `JEVLIN_ROUTER_URL`, `JEVLIN_PLATFORM_URL`, `JEVLIN_AGENTS_API_URL` | setup | Values a fresh config is written with, instead of the defaults. |
+| `JEVLIN_ROUTER_URL`, `JEVLIN_PLATFORM_URL`, `JEVLIN_AGENTS_API_URL` | every command, setup | Each replaces its URL for the run, after the config file and under the file's own URL rules; setup also writes them into a fresh config instead of the defaults. |
 | `JEVLIN_BINARY`, `JEVLIN_SKIP_DOWNLOAD` | npm wrapper | Use a binary already on the machine; install without fetching. |
 | `JEVLIN_LAUNCH` | setup, upgrade, uninstall | Set by the npm wrapper, so the binary knows npm owns it. |
 | `JEVLIN_TRACE_BRIDGE` | search | The trace envelope an agent's hook put in front of the command. |
@@ -276,7 +294,7 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | `registration_pending.json` | A registration the platform answered that is not yet saved; finished by the next connect. | connect | No: it holds the new key. |
 | `claim.json` | The claim link and code for this installation's agent, while it is unclaimed. | connect | Yes; the next `jevlin connect` mints a fresh link, which ends the old one. |
 | `search-default` | `agents prefer`'s choice. | agents prefer | Yes; the skill default returns. |
-| `search-tier` | `agents tier`'s choice: the tier a search carries when the request names none. | agents tier | Yes; `[search] tier`, then the router's default, returns. |
+| `search-tier` | `agents tier`'s choice: the tier a search carries when the request names none. | agents tier | Yes; `[router] tier`, then the router's default, returns. |
 | `update_check.json` | The daily release check's record: when it ran, what it found, and a release a rollback holds. | upgrade | Yes; the next agent session checks again, though a rollback's hold is forgotten. |
 | `bin/jevlin` | A native binary, and `jevlin.previous` after an upgrade. | setup, upgrade | Through `uninstall -binary`. |
 | `state/` | The agent registration (`agent.json`), the trace key (`trace.key`), and connect's lock and resume stamp. | setup, connect, search | No: it is your registration. |
@@ -544,8 +562,8 @@ after the agent itself searched sends nothing, but one in which a subagent searc
 late, as completed, since the hook cannot tell it from a turn that ended. A turn is reported once:
 a search under a turn already reported does not report it again. Under Codex and opencode a
 subagent runs a turn of its own, and its search is joined to no turn end. Only to the router
-`search.router_url` names; without that line nothing is
-sent. With it on, what you typed in a searched turn is sent; what your tools read and wrote never is: not a file's contents, not a command, not its output. The model's private reasoning and a subagent's own steps are not sent either. The hook writes the record to an owner-only file in
+this run is configured with (`[router] url`, `JEVLIN_ROUTER_URL` or the compiled default); there is
+no other address it falls back to. With it on, what you typed in a searched turn is sent; what your tools read and wrote never is: not a file's contents, not a command, not its output. The model's private reasoning and a subagent's own steps are not sent either. The hook writes the record to an owner-only file in
 `sessions/` and a detached `jevlin turn-end` sends it once and deletes the file, sent or not.
 `JEVLIN_TRACE=off` turns it off too. Claude Code (2.1.196 or later), Cursor, opencode, Pi (0.80.4 or later), and Codex
 where its hooks are installed (macOS and Linux); other agents send none. Codex's turn is read from

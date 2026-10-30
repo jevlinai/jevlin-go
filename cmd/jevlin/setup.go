@@ -35,6 +35,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/jevlinai/jevlin-go/pkg/auth"
+	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
 const setupUsage = `usage: jevlin setup [-home dir] [-yes] [-no-profile] [-no-agents] [-with id]... [-dry-run]
@@ -174,12 +175,12 @@ type setupRun struct {
 	skipped []string
 
 	// configPlanData is set by config() to the bytes it is about to publish
-	// (configFresh or configMigrated; nil for configLeft, which changes
-	// nothing) — agentsStep() needs it: on a dry run, config() prints what
-	// it would write but never calls publishSetupConfig, so nothing is on
-	// disk yet for the agents step's own config read to find. It is set
-	// whether or not the run is dry, but only a dry run's agentsStep reads
-	// it — the real run has already published it to r.cfgPath by then.
+	// (configFresh or configReplaced; nil for configLeft, which changes
+	// nothing). On a dry run config() prints what it would write but never
+	// publishes it, so what is on disk is nothing or the older file: the
+	// steps after it read these bytes instead (plannedConfig, and the
+	// agents step). It is set whether or not the run is dry, but only a dry
+	// run reads it; the real run has already published it to r.cfgPath.
 	configPlanData []byte
 
 	lineIn io.Reader
@@ -634,11 +635,7 @@ func (r *setupRun) config() int {
 		fmt.Fprintln(r.d.stderr, "jevlin setup: refusing the config:", err)
 		return exitTransport
 	}
-	validate := validateConfigSyntax
-	if !r.dry {
-		validate = validateConfigFile(r.home)
-	}
-	plan, err := planSetupConfig(r.cfgPath, existing, r.values, validate)
+	plan, err := planSetupConfig(r.cfgPath, existing, r.values, validateConfigBytes, lexists)
 	if err != nil {
 		fmt.Fprintf(r.d.stderr, "\njevlin setup: %v\nNothing was changed in it. Fix or move the file aside, then run setup again.\n", err)
 		return exitTransport
@@ -648,17 +645,21 @@ func (r *setupRun) config() int {
 	}
 	switch plan.outcome {
 	case configLeft:
-		r.say("Config already has a [search] block: " + r.cfgPath + " (left as is)")
+		r.say("Config is already configuration format 1: " + r.cfgPath + " (left as is)")
 		return exitOK
 	case configFresh:
 		if r.dry {
 			r.printf("(dry run) would write %s\n", r.cfgPath)
 			return exitOK
 		}
-	case configMigrated:
+	case configReplaced:
 		if r.dry {
-			r.printf("(dry run) would add %s to %s, leaving its existing lines as they are\n", strings.Join(plan.added, " and "), r.cfgPath)
+			r.printf("(dry run) would set %s aside as %s, an older configuration format, and write a new one\n", r.cfgPath, plan.aside)
 			return exitOK
+		}
+		if err := os.Rename(r.cfgPath, plan.aside); err != nil { // #nosec G703 -- the installation's own config path and a name beside it
+			fmt.Fprintln(r.d.stderr, "jevlin setup: setting the older configuration aside:", err)
+			return exitTransport
 		}
 	}
 	if err := publishSetupConfig(r.cfgPath, plan.data); err != nil {
@@ -666,12 +667,38 @@ func (r *setupRun) config() int {
 		return exitTransport
 	}
 	r.changed = true
-	if plan.outcome == configMigrated {
-		r.say(fmt.Sprintf("Added %s to %s; its existing lines are unchanged", strings.Join(plan.added, " and "), r.cfgPath))
+	if plan.outcome == configReplaced {
+		r.say(fmt.Sprintf("Set %s aside as %s: it is an older configuration format, which this jevlin does not read", r.cfgPath, plan.aside))
+		r.say("Wrote " + r.cfgPath + " in configuration format 1; copy any setting you changed by hand from the old file. Your registration and key are kept.")
 	} else {
 		r.say("Wrote " + r.cfgPath)
 	}
 	return exitOK
+}
+
+// plannedConfig is the config this run leaves at r.cfgPath, and whether
+// there is one: on a dry run that would write the file, the bytes it would
+// write, since the file on disk is still nothing or an older one no command
+// loads; otherwise the file. A config that does not load is said here and
+// stops setup.
+func (r *setupRun) plannedConfig() (*config.Config, bool, int) {
+	var (
+		cfg *config.Config
+		err error
+	)
+	switch {
+	case r.dry && r.configPlanData != nil:
+		cfg, err = config.LoadBytes(r.configPlanData, r.d.getenv)
+	case lexists(r.cfgPath):
+		cfg, _, err = loadConfig(r.cfgPath, r.d.getenv)
+	default:
+		return nil, false, exitOK
+	}
+	if err != nil {
+		fmt.Fprintf(r.d.stderr, "jevlin setup: config %s: %v\n", r.cfgPath, err)
+		return nil, false, exitTransport
+	}
+	return cfg, true, exitOK
 }
 
 // traceKey creates the trace key the config's state directory will hold. A
@@ -689,12 +716,11 @@ func (r *setupRun) config() int {
 // since nothing after this step could run on it either.
 func (r *setupRun) traceKey() int {
 	stateDir := filepath.Join(r.home, "state")
-	if lexists(r.cfgPath) {
-		cfg, _, err := loadConfig(r.cfgPath, r.d.getenv)
-		if err != nil {
-			fmt.Fprintf(r.d.stderr, "jevlin setup: config %s: %v\n", r.cfgPath, err)
-			return exitTransport
-		}
+	cfg, ok, code := r.plannedConfig()
+	if code != exitOK {
+		return code
+	}
+	if ok {
 		stateDir = cfg.Search.StateDir
 	}
 	if stateDir == "" {

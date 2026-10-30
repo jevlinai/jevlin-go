@@ -1,0 +1,46 @@
+{
+  "hooks": {
+    "afterAgentResponse": [
+      {
+        "command": "'<BIN>' hook -config '<CFG>' cursor afterAgentResponse"
+      }
+    ],
+    "afterAgentThought": [
+      {
+        "command": "'<BIN>' hook -config '<CFG>' cursor afterAgentThought"
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "command": "'<BIN>' hook -config '<CFG>' cursor beforeShellExecution"
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "'<BIN>' hook -config '<CFG>' cursor beforeSubmitPrompt"
+      }
+    ],
+    "preCompact": [
+      {
+        "command": "'<BIN>' hook -config '<CFG>' cursor preCompact"
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "'<BIN>' hook -config '<CFG>' cursor preToolUse",
+        "matcher": "Shell"
+      }
+    ],
+    "sessionStart": [
+      {
+        "command": "'<BIN>' hook -config '<CFG>' cursor sessionStart"
+      }
+    ],
+    "stop": [
+      {
+        "command": "'<BIN>' hook -config '<CFG>' cursor stop"
+      }
+    ]
+  },
+  "version": 1
+}

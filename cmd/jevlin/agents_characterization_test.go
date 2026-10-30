@@ -450,9 +450,12 @@ func sandboxGoldenConfig(t *testing.T) (cfgPath, home string) {
 			t.Fatal(err)
 		}
 	}
-	doc := fmt.Sprintf(`
+	doc := fmt.Sprintf(`schema = 1
+
+[router]
+url = "https://router.example.invalid"
+
 [search]
-router_url = "https://router.example.invalid"
 state_dir = %q
 sessions_dir = %q
 `, home+"/state", home+"/sessions")

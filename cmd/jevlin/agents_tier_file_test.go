@@ -58,7 +58,7 @@ func configSearchFor(t *testing.T, cfgPath string) config.Search {
 	return cfg.Search
 }
 
-// A [search] tier this client cannot use loads as no tier (pkg/config), is
+// A [router] tier this client cannot use loads as no tier (pkg/config), is
 // never sent, and is named by status, so a participant who wrote one sees
 // why the router's default applies instead of a bare "unset".
 func TestAnUnknownConfigTierIsNamedByStatusAndNotSent(t *testing.T) {
@@ -67,18 +67,18 @@ func TestAnUnknownConfigTierIsNamedByStatusAndNotSent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := strings.Replace(string(raw), "[search]\n", "[search]\ntier = \"turbo\"\n", 1)
+	body := strings.Replace(string(raw), "[router]\n", "[router]\ntier = \"turbo\"\n", 1)
 	if body == string(raw) {
-		t.Fatalf("precondition: no [search] table in %q", raw)
+		t.Fatalf("precondition: no [router] table in %q", raw)
 	}
 	if err := os.WriteFile(cfg, []byte(body), 0o600); err != nil { // #nosec G703 -- a path in this test's own temp dir
 		t.Fatal(err)
 	}
 	if got := searchTierDefault(cfg, configSearchFor(t, cfg), os.Getenv); got != "" {
-		t.Fatalf("search would send %q for an unknown [search] tier", got)
+		t.Fatalf("search would send %q for an unknown [router] tier", got)
 	}
 	code, out, errOut := run("status")
 	if code != exitOK || !strings.Contains(out, "unset") || !strings.Contains(out, `"turbo"`) {
-		t.Fatalf("status with an unknown [search] tier: %d %q %q, want unset and the word named", code, out, errOut)
+		t.Fatalf("status with an unknown [router] tier: %d %q %q, want unset and the word named", code, out, errOut)
 	}
 }

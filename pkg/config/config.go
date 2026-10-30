@@ -1,16 +1,36 @@
-// Package config resolves the client's configuration exactly once at
-// startup — defaults, then a TOML file (JEVLIN_CONFIG names it), then flags
-// — into an immutable struct. Nothing re-reads configuration at request
-// time. Unsafe states are rejected here rather than warned about: a
-// routable plain-http router or platform host, which would put the
-// participant's key on the wire in the clear, and a credential-carrying
-// URL.
+// Package config resolves the client's configuration exactly once, into an
+// immutable struct: compiled defaults (defaults.go), then the TOML file a
+// command names, then the JEVLIN_* endpoint variables. Nothing re-reads it
+// later.
 //
-// The file has four tables: [[provider]], [search], [platform] and
-// [update]. Unknown keys and unknown tables are refused, because a typo in
-// a key this version reads is a silent misconfiguration. A file an earlier,
-// mining-capable version wrote names tables this version does not know and
-// is refused the same way; that version's line continues as its own binary.
+// The file is configuration format 1. It begins `schema = 1` and names every
+// endpoint in its own section:
+//
+//	schema = 1
+//
+//	[router]
+//	url = "https://api.jevlin.ai"
+//
+//	[platform]
+//	url = "https://platform.jevlin.ai"
+//
+//	[agents]
+//	url = "https://agents-v1.jevlin.ai"
+//
+//	[search]
+//	state_dir    = "/home/u/.jevlin/state"
+//	sessions_dir = "/home/u/.jevlin/sessions"
+//
+// Every section and key is optional; a missing one takes its compiled
+// default. A file without `schema = 1`, or with a key format 1 does not
+// define, is refused with one message and never reinterpreted: an older
+// file's endpoints were chosen under rules this client no longer has, and
+// guessing what they meant now is how a key reaches a host it was not issued
+// for. `jevlin setup` sets such a file aside and writes format 1.
+//
+// Unsafe states are rejected here rather than warned about later: every URL
+// that a credential is sent to must be https, or plain http on a loopback
+// host, and must carry no userinfo.
 package config
 
 import (
@@ -22,15 +42,28 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/BurntSushi/toml"
 )
 
-// defaultUpstream is the [[provider]] upstream when the file names none:
-// the router. [[provider]] is the table setup writes the router into;
-// search.router_url, when set, is read first.
-const defaultUpstream = DefaultRouterURL
+// Schema is the configuration format this client reads and setup writes.
+const Schema = 1
+
+// ErrLegacyConfig marks a file from before configuration format 1: one with
+// no schema line. Only such a file is one setup may set aside and replace; a
+// file that names a schema is the participant's current configuration, and a
+// mistake in it is refused, never replaced.
+var ErrLegacyConfig = errors.New("this configuration is from an older jevlin; run `jevlin setup`")
+
+// The runtime endpoint variables. Each replaces its URL after the file, under
+// the file's own URL rules; JEVLIN_CONFIG still chooses the file.
+const (
+	EnvRouterURL    = "JEVLIN_ROUTER_URL"
+	EnvPlatformURL  = "JEVLIN_PLATFORM_URL"
+	EnvAgentsAPIURL = "JEVLIN_AGENTS_API_URL"
+)
 
 // Platform is the search platform connect talks to (agent onboarding
 // design, search-platform-agent-onboarding-design.md). Both URLs are always
@@ -39,12 +72,12 @@ const defaultUpstream = DefaultRouterURL
 //
 // Two URLs, not one: search-router runs the human-facing portal and
 // claim pages on one host and the machine-facing /v1/agents/* API on
-// another. BaseURL is the portal — the origin a printed claim_url is
-// checked against (invariant 12). AgentsAPIURL is where the actual
-// register/status requests go. A single shared origin was this package's
-// original assumption; live testing found the real deployment splits it
-// in two, and pkg/platform.Client now takes both rather than deriving one
-// from the other.
+// another. BaseURL is the portal — [platform] url, the origin a printed
+// claim_url is checked against (invariant 12). AgentsAPIURL is [agents] url,
+// where the actual register/status requests go. A single shared origin was
+// this package's original assumption; live testing found the real
+// deployment splits it in two, and pkg/platform.Client now takes both rather
+// than deriving one from the other.
 type Platform struct {
 	BaseURL      string
 	AgentsAPIURL string
@@ -73,40 +106,37 @@ type Update struct {
 	UnknownMode string
 }
 
-// Search is the [search] block: where searches go and where this
-// installation keeps what the hooks and the search pass between
-// themselves.
+// Search is the search side of the client: where searches go and where this
+// installation keeps what the hooks and the search pass between themselves.
 type Search struct {
-	// RouterURL is where searches go. Empty means the [[provider]]
-	// upstream, the table setup names the router in.
+	// RouterURL is where searches, fetches, limits reads and turn ends go:
+	// [router] url, JEVLIN_ROUTER_URL, or the compiled default. Never nil
+	// in a loaded config, and there is no fallback to anything else.
 	RouterURL *url.URL
-	// RouterConfigured is true when search.router_url was written in the
-	// config, false when RouterURL is the provider upstream standing in for
-	// it. Searches go to either. Anything that must only ever reach the
-	// search router — the turn end — requires this.
-	RouterConfigured bool
 	// StateDir holds the installation's state: the trace key, the agent
 	// registration, the connect lock and the hooks' window state. The
 	// installation's own directory is its parent: credentials.json, the
 	// registration journal and the claim record live there, outside every
-	// directory a sandboxed agent may write. Defaults to
+	// directory a sandboxed agent may write. [search] state_dir; defaults to
 	// os.UserConfigDir()/jevlin/state.
 	StateDir string
 	// SessionsDir holds the per-workspace lineage sidecars the hooks
-	// write and `search` reads. Defaults beside StateDir.
+	// write and `search` reads. [search] sessions_dir; defaults beside
+	// StateDir.
 	SessionsDir string
 	// TurnEnd opts this installation in to reporting, when a turn that
-	// searched ends, the assistant's final message to the router. Off by
-	// default: it is model-written text leaving the machine.
+	// searched ends, the assistant's final message to the router. [search]
+	// turn_end; off by default: it is model-written text leaving the
+	// machine.
 	TurnEnd bool
 	// Tier is the search tier a request carries when neither the caller
 	// (the -tier flag, the stdin request's "tier") nor the participant's
-	// `jevlin agents tier` file named one: [search] tier, written by hand.
+	// `jevlin agents tier` file named one: [router] tier, written by hand.
 	// Empty means the request carries no tier and the router applies the
 	// tenant's default. One of SearchTiers when set, lower-cased and
 	// trimmed at load.
 	Tier string
-	// UnknownTier is a [search] tier that is not one of SearchTiers even
+	// UnknownTier is a [router] tier that is not one of SearchTiers even
 	// after that: kept aside so status can say why the router's default
 	// applies, and never sent. A word this client cannot use does not stop
 	// the config from loading, because that would stop search over a value
@@ -116,7 +146,7 @@ type Search struct {
 
 // SearchTiers is the router's tier vocabulary this client knows — the
 // cost bands of search-router internal/tenant. A config naming another
-// word is refused at load rather than sent, so a typo is caught here and
+// word is kept aside at load rather than sent, so a typo is caught here and
 // not as a 400 on every search.
 var SearchTiers = []string{"fast", "balanced", "max"}
 
@@ -137,33 +167,32 @@ type Config struct {
 	Update   Update
 }
 
-// fileConfig mirrors the TOML document.
+// fileConfig mirrors configuration format 1. Any key outside it is refused.
 type fileConfig struct {
-	// Provider is the table setup names the router in. Its upstream is the
-	// router when search.router_url is unset; name is accepted and unread.
-	Provider []struct {
-		Name     string `toml:"name"`
-		Upstream string `toml:"upstream"`
-	} `toml:"provider"`
+	Schema *int `toml:"schema"`
+	Router struct {
+		URL  string `toml:"url"`
+		Tier string `toml:"tier"`
+	} `toml:"router"`
+	Platform struct {
+		URL string `toml:"url"`
+	} `toml:"platform"`
+	Agents struct {
+		URL string `toml:"url"`
+	} `toml:"agents"`
 	Search struct {
-		RouterURL   string `toml:"router_url"`
 		StateDir    string `toml:"state_dir"`
 		SessionsDir string `toml:"sessions_dir"`
 		TurnEnd     bool   `toml:"turn_end"`
-		Tier        string `toml:"tier"`
 	} `toml:"search"`
-	Platform struct {
-		BaseURL      string `toml:"base_url"`
-		AgentsAPIURL string `toml:"agents_api_url"`
-	} `toml:"platform"`
 	Update struct {
 		Mode string `toml:"mode"`
 	} `toml:"update"`
 }
 
-// Load resolves the configuration from args (flags) and getenv. It returns
-// showVersion=true when -version was passed. Precedence: flags > TOML file
-// > defaults.
+// Load resolves the configuration. args may carry -config (the file) and
+// -version; with no -config, JEVLIN_CONFIG names the file. With neither, the
+// compiled defaults and the endpoint variables are the whole configuration.
 func Load(args []string, getenv func(string) string) (cfg *Config, showVersion bool, err error) {
 	fs := flag.NewFlagSet("jevlin", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -181,22 +210,25 @@ func Load(args []string, getenv func(string) string) (cfg *Config, showVersion b
 		return nil, true, nil
 	}
 
-	raw := newRawConfigDefaults()
-
-	// TOML file: only an explicit path (flag or env), which is required to
-	// exist. A jevlin.toml in the working directory is never picked up on
-	// its own: whoever wrote that directory (a cloned repo, an archive)
-	// would choose where the participant's keys are sent.
+	var raw rawConfig
+	// Only an explicit path (flag or env) is read, and it must exist. A
+	// jevlin.toml in the working directory is never picked up on its own:
+	// whoever wrote that directory (a cloned repo, an archive) would choose
+	// where the participant's keys are sent.
 	path := *flagConfig
 	if path == "" {
 		path = getenv("JEVLIN_CONFIG")
 	}
 	if path != "" {
-		if err := raw.applyFile(path); err != nil {
+		data, err := os.ReadFile(path) // #nosec G304 -- the config path is operator-supplied by design
+		if err != nil {
+			return nil, false, fmt.Errorf("config file: %w", err)
+		}
+		if err := raw.applyBytes(path, data); err != nil {
 			return nil, false, err
 		}
 	}
-
+	applyEnv(&raw, getenv)
 	cfg, err = raw.finish()
 	if err != nil {
 		return nil, false, err
@@ -204,161 +236,137 @@ func Load(args []string, getenv func(string) string) (cfg *Config, showVersion b
 	return cfg, false, nil
 }
 
-// LoadBytes is finish() applied to config file bytes already in hand,
-// instead of a path Load would read from disk. It exists for a caller that
-// knows what a file would contain before anything writes it there —
-// setup's dry run, which computes the exact bytes it would publish but (by
-// design) never does. There is no -config flag to override it: that names
-// a path on argv, and bytes already in memory have none.
-func LoadBytes(data []byte, _ func(string) string) (*Config, error) {
-	raw := newRawConfigDefaults()
+// LoadBytes is Load applied to config file bytes already in hand, for a
+// caller that knows what a file would contain before anything writes it
+// there — setup, which loads the exact bytes it is about to publish, and
+// its dry run, which never publishes them. There is no -config flag to
+// override it: that names a path on argv, and bytes already in memory have
+// none.
+func LoadBytes(data []byte, getenv func(string) string) (*Config, error) {
+	var raw rawConfig
 	if err := raw.applyBytes("config", data); err != nil {
 		return nil, err
 	}
+	applyEnv(&raw, getenv)
 	return raw.finish()
 }
 
-// newRawConfigDefaults is rawConfig before any file or flag has been
-// applied.
-func newRawConfigDefaults() rawConfig {
-	return rawConfig{
-		upstream:        defaultUpstream,
-		platformBaseURL: DefaultPlatformBaseURL,
+// applyEnv is the runtime endpoint overlay. Each variable replaces its URL,
+// and the URL is then held to the file's rules in finish.
+func applyEnv(r *rawConfig, getenv func(string) string) {
+	if v := getenv(EnvRouterURL); v != "" {
+		r.routerURL = v
+	}
+	if v := getenv(EnvPlatformURL); v != "" {
+		r.platformURL = v
+	}
+	if v := getenv(EnvAgentsAPIURL); v != "" {
+		r.agentsAPIURL = v
 	}
 }
 
-// rawConfig holds pre-validation values from all sources.
+// rawConfig holds pre-validation values from the file and the environment.
 type rawConfig struct {
-	upstream string
+	routerURL string
+	tier      string
 
-	routerURL   string
+	platformURL  string
+	agentsAPIURL string
+
 	stateDir    string
 	sessionsDir string
 	turnEnd     bool
-	tier        string
-
-	platformBaseURL string
-	agentsAPIURL    string
 
 	updateMode string
 }
 
-func (r *rawConfig) applyFile(path string) error {
-	data, err := os.ReadFile(path) // #nosec G304 -- the config path is operator-supplied by design
-	if err != nil {
-		return fmt.Errorf("config file: %w", err)
-	}
-	return r.applyBytes(path, data)
+// formatOneSections are the top-level keys format 1 defines.
+var formatOneSections = map[string]bool{"schema": true, "router": true, "platform": true, "agents": true, "search": true, "update": true}
+
+// unknownKeysError refuses a format-1 file holding keys the format does not
+// define. It is not ErrLegacyConfig: the file says it is format 1, so a key
+// it holds is a typo or a setting carried over by hand, and setup leaves the
+// file for the participant to correct rather than replacing it.
+func unknownKeysError(source string, keys []string) error {
+	return fmt.Errorf("config file %s: format 1 does not define %s; correct or remove it", source, strings.Join(keys, ", "))
 }
 
-// applyBytes is applyFile's parse-and-apply step, taken alone: source names
-// the bytes in an error message (a path for a real file, or a fixed label
-// for bytes that only exist in memory — LoadBytes has no path to give it).
+// legacyError is ErrLegacyConfig for one file, saying what made it so.
+func legacyError(source, why string) error {
+	return fmt.Errorf("config file %s: %w (%s)", source, ErrLegacyConfig, why)
+}
+
+// applyBytes parses one format-1 document. source names the bytes in an
+// error message (a path for a real file, or a fixed label for bytes that
+// only exist in memory — LoadBytes has no path to give it).
 func (r *rawConfig) applyBytes(source string, data []byte) error {
+	// Read as a plain document first: a file that is not TOML says so, and
+	// one with no schema line is an older file whatever else it holds.
+	var doc map[string]any
+	if _, err := toml.Decode(string(data), &doc); err != nil {
+		return fmt.Errorf("config file %s: %w", source, err)
+	}
+	schema, ok := doc["schema"]
+	if !ok {
+		return legacyError(source, "no schema line")
+	}
+	// The schema is judged before anything else in the file: a file of
+	// another schema may be newer, and its keys are not this format's to
+	// call unknown.
+	if n, isInt := schema.(int64); !isInt || n != Schema {
+		return fmt.Errorf("config file %s: its schema is not one this jevlin reads (it reads schema = %d); "+
+			"use the jevlin that wrote it, or write schema = %d", source, Schema, Schema)
+	}
 	var f fileConfig
 	md, err := toml.Decode(string(data), &f)
 	if err != nil {
+		// A section of another shape (an older file's [[provider]] array)
+		// is a key format 1 does not define; a value of the wrong type in
+		// a format-1 key is a mistake in this file, and says so.
+		for key := range doc {
+			if !formatOneSections[key] {
+				return unknownKeysError(source, []string{key})
+			}
+		}
 		return fmt.Errorf("config file %s: %w", source, err)
 	}
-	// Unknown keys are typos waiting to be silent; reject them.
 	if undecoded := md.Undecoded(); len(undecoded) > 0 {
 		keys := make([]string, len(undecoded))
 		for i, k := range undecoded {
 			keys[i] = k.String()
 		}
-		return fmt.Errorf("config file %s: unknown key(s): %s", source, strings.Join(keys, ", "))
+		sort.Strings(keys)
+		return unknownKeysError(source, keys)
 	}
-	switch len(f.Provider) {
-	case 0:
-	case 1:
-		if p := f.Provider[0]; p.Upstream != "" {
-			r.upstream = p.Upstream
-		}
-	default:
-		return errors.New("config: exactly one [[provider]] is supported")
-	}
+
+	r.routerURL = f.Router.URL
+	r.tier = f.Router.Tier
+	r.platformURL = f.Platform.URL
+	r.agentsAPIURL = f.Agents.URL
+	r.stateDir = f.Search.StateDir
+	r.sessionsDir = f.Search.SessionsDir
 	r.turnEnd = f.Search.TurnEnd
-	r.tier = f.Search.Tier
-	if f.Search.RouterURL != "" {
-		r.routerURL = f.Search.RouterURL
-	}
-	if f.Search.StateDir != "" {
-		r.stateDir = f.Search.StateDir
-	}
-	if f.Search.SessionsDir != "" {
-		r.sessionsDir = f.Search.SessionsDir
-	}
-	if f.Platform.BaseURL != "" {
-		r.platformBaseURL = f.Platform.BaseURL
-	}
-	if f.Platform.AgentsAPIURL != "" {
-		r.agentsAPIURL = f.Platform.AgentsAPIURL
-	}
-	if f.Update.Mode != "" {
-		r.updateMode = f.Update.Mode
-	}
+	r.updateMode = f.Update.Mode
 	return nil
 }
 
 func (r *rawConfig) finish() (*Config, error) {
-	upstream, err := parseUpstream(r.upstream)
-	if err != nil {
-		return nil, fmt.Errorf("provider.upstream: %w", err)
-	}
-	search, err := r.finishSearch(upstream)
+	search, err := r.finishSearch()
 	if err != nil {
 		return nil, err
 	}
-	platformBaseURL, err := parsePlatformURL(r.platformBaseURL, "platform.base_url")
+	platform, err := r.finishPlatform()
 	if err != nil {
 		return nil, err
 	}
-	// agents_api_url used to default unconditionally to the real platform,
-	// so a dev/test config naming only a loopback base_url (every existing
-	// stub-backed test does exactly this) would silently register against
-	// production the moment connect actually ran — which is exactly what
-	// happened once, live, before this fix. Three cases, only two of which
-	// have a safe implicit answer:
-	//   - base_url is exactly the real platform's default: agents_api_url
-	//     defaults to the real agents API. The ordinary case. The pair the
-	//     platform had before jevlin.ai is implied the same way, so a
-	//     config written against it keeps loading.
-	//   - base_url is loopback: assume the same local stub serves both
-	//     roles, matching every existing test's own setup.
-	//   - base_url names anything else (a devnet, a staging portal) and
-	//     agents_api_url is unset: refused. A custom non-loopback base_url
-	//     gives no safe signal about which API host it pairs with —
-	//     defaulting to production here is exactly the footgun this whole
-	//     fix exists to close, just for a devnet instead of a laptop.
-	agentsAPIRaw := r.agentsAPIURL
-	if agentsAPIRaw == "" {
-		switch platformBaseURL {
-		case DefaultPlatformBaseURL:
-			agentsAPIRaw = DefaultAgentsAPIURL
-		case LegacyPlatformBaseURL:
-			agentsAPIRaw = LegacyAgentsAPIURL
-		default:
-			pu, perr := url.Parse(platformBaseURL)
-			if perr != nil || !isLoopbackHost(pu.Hostname()) {
-				return nil, errors.New("platform.agents_api_url: required when platform.base_url names anything other " +
-					"than the default platform — a devnet or staging deployment must name both")
-			}
-			agentsAPIRaw = platformBaseURL
-		}
-	}
-	agentsAPIURL, err := parsePlatformURL(agentsAPIRaw, "platform.agents_api_url")
-	if err != nil {
-		return nil, err
-	}
-
 	return &Config{
 		Search:   search,
-		Platform: Platform{BaseURL: platformBaseURL, AgentsAPIURL: agentsAPIURL},
+		Platform: platform,
 		Update:   r.finishUpdate(),
 	}, nil
 }
 
-// finishUpdate resolves the [update] block the way [search] tier is resolved:
+// finishUpdate resolves the [update] block the way [router] tier is resolved:
 // the word is lowercased and trimmed, and one this version cannot name does
 // not stop the config from loading — a typo must not cost every search. It
 // is kept aside for doctor to name, and the mode falls to notify, not to the
@@ -375,35 +383,92 @@ func (r *rawConfig) finishUpdate() Update {
 	}
 }
 
-// parsePlatformURL validates a [platform] URL (base_url or agents_api_url)
-// the same way search.router_url is (invariant 5): https, or http only for
-// loopback — connect sends the platform-issued sr- key in Authorization to
-// agents_api_url (base_url never carries a credential, only a printed
-// claim_url is checked against it, but the same posture costs nothing to
-// hold for both). Both always resolve, since nothing dials either unless
-// connect actually runs, and the defaults are always valid https URLs.
-func parsePlatformURL(raw, field string) (string, error) {
+// ParseEndpoint holds a URL a credential is sent to, or one a printed URL is
+// checked against, to the rule every such URL shares (invariant 5): an
+// absolute http(s) URL with a host, https unless the host is loopback, and
+// no userinfo, query or fragment. field names the URL in the error.
+func ParseEndpoint(raw, field string) (*url.URL, error) {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
-		return "", fmt.Errorf("%s: must be an absolute http(s) URL", field)
+		return nil, fmt.Errorf("%s: must be an absolute http(s) URL", field)
 	}
 	if u.User != nil {
-		return "", fmt.Errorf("%s: must not carry userinfo", field)
+		return nil, fmt.Errorf("%s: must not carry userinfo", field)
 	}
+	// A host written in Unicode (or percent-encoded into it) is dialed as
+	// its IDNA form, a name other than the one shown; only an ASCII host
+	// reads as what is dialed. A participant's own IDN is written in its
+	// xn-- form.
+	for _, c := range []byte(u.Hostname()) {
+		if c < 0x21 || c > 0x7e {
+			return nil, fmt.Errorf("%s: the host must be plain ASCII (write an internationalized name in its xn-- form)", field)
+		}
+	}
+	if u.ForceQuery || strings.ContainsAny(raw, "?#") {
+		return nil, fmt.Errorf("%s: must not carry a query or fragment", field)
+	}
+	// Every search sends the participant's sr- key in Authorization, and
+	// connect the platform-issued key, so a routable plain-http host is a
+	// cleartext-credential exposure. The loopback carve-out is deliberate,
+	// for local development without TLS; testing against a ROUTABLE devnet
+	// needs TLS there, or the client co-located over loopback — that is
+	// the intended consequence, not a gap.
 	if u.Scheme == "http" && !isLoopbackHost(u.Hostname()) {
-		return "", fmt.Errorf("%s: plain http is permitted only for loopback hosts, got %q — "+
+		return nil, fmt.Errorf("%s: plain http is permitted only for loopback hosts, got %q — "+
 			"use https, or a loopback address for local development", field, u.Host)
 	}
-	return raw, nil
+	return u, nil
 }
 
-// finishSearch resolves the [search] block. The state directory defaults
-// under the user's config directory, and the sessions directory beside it,
-// so one tree holds everything the participant owns; the router defaults
-// to the provider upstream so a config that names the router there is a
-// config here by adding nothing.
-func (r *rawConfig) finishSearch(upstream *url.URL) (Search, error) {
+// finishPlatform resolves the portal and the agents API. The agents API
+// defaults to the compiled one only when the portal is the compiled one, and
+// to the portal itself when the portal is loopback (a local stub serving
+// both, which is every stub-backed test's own setup). A custom non-loopback
+// portal with no agents API named is refused: pairing it with the production
+// API would send a devnet's registrations, and the key they mint, to
+// production — which is exactly what happened once, live, before this rule.
+func (r *rawConfig) finishPlatform() (Platform, error) {
+	baseRaw := r.platformURL
+	if baseRaw == "" {
+		baseRaw = DefaultPlatformBaseURL
+	}
+	base, err := ParseEndpoint(baseRaw, "platform.url")
+	if err != nil {
+		return Platform{}, err
+	}
+	agentsRaw := r.agentsAPIURL
+	if agentsRaw == "" {
+		switch {
+		case baseRaw == DefaultPlatformBaseURL:
+			agentsRaw = DefaultAgentsAPIURL
+		case isLoopbackHost(base.Hostname()):
+			agentsRaw = baseRaw
+		default:
+			return Platform{}, errors.New("agents.url: required when platform.url names anything other than the default " +
+				"platform — a devnet or staging deployment must name both")
+		}
+	}
+	if _, err := ParseEndpoint(agentsRaw, "agents.url"); err != nil {
+		return Platform{}, err
+	}
+	return Platform{BaseURL: baseRaw, AgentsAPIURL: agentsRaw}, nil
+}
+
+// finishSearch resolves the router and the search side's directories. The
+// state directory defaults under the user's config directory, and the
+// sessions directory beside it, so one tree holds everything the participant
+// owns.
+func (r *rawConfig) finishSearch() (Search, error) {
+	routerRaw := r.routerURL
+	if routerRaw == "" {
+		routerRaw = DefaultRouterURL
+	}
+	router, err := ParseEndpoint(routerRaw, "router.url")
+	if err != nil {
+		return Search{}, err
+	}
 	m := Search{
+		RouterURL:   router,
 		StateDir:    r.stateDir,
 		SessionsDir: r.sessionsDir,
 		TurnEnd:     r.turnEnd,
@@ -421,29 +486,6 @@ func (r *rawConfig) finishSearch(upstream *url.URL) (Search, error) {
 	if m.SessionsDir == "" && m.StateDir != "" {
 		m.SessionsDir = filepath.Join(filepath.Dir(m.StateDir), "sessions")
 	}
-	if r.routerURL != "" {
-		m.RouterConfigured = true
-		u, err := url.Parse(r.routerURL)
-		if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
-			return Search{}, errors.New("search.router_url: must be an absolute http(s) URL")
-		}
-		if u.User != nil {
-			return Search{}, errors.New("search.router_url: must not carry userinfo")
-		}
-		// Every search sends the participant's sr- key in Authorization,
-		// so a routable plain-http router is a cleartext-credential
-		// exposure. The loopback carve-out is deliberate, for local
-		// development without TLS; testing against a ROUTABLE devnet
-		// router needs TLS on the devnet, or the client co-located over
-		// loopback — that is the intended consequence, not a gap.
-		if u.Scheme == "http" && !isLoopbackHost(u.Hostname()) {
-			return Search{}, fmt.Errorf("search.router_url: plain http is permitted only for loopback hosts, got %q — "+
-				"use https, or a loopback address for local development", u.Host)
-		}
-		m.RouterURL = u
-	} else {
-		m.RouterURL = upstream
-	}
 	return m, nil
 }
 
@@ -453,35 +495,4 @@ func isLoopbackHost(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
-}
-
-// parseUpstream validates the upstream as an origin plus fixed base path — not
-// a general URL. A credential smuggled in as https://user:pass@host would
-// become an Authorization header the client generates; a query or fragment
-// has no business in a base; and anything but https would put the bearer
-// credential on the wire in the clear.
-func parseUpstream(s string) (*url.URL, error) {
-	u, err := url.Parse(s)
-	if err != nil {
-		return nil, fmt.Errorf("invalid URL %q: %w", s, err)
-	}
-	switch {
-	case u.Scheme != "https":
-		return nil, fmt.Errorf("scheme must be https, got %q", u.Scheme)
-	case u.User != nil:
-		return nil, errors.New("must not carry userinfo")
-	case u.RawQuery != "":
-		return nil, errors.New("must not carry a query")
-	case u.Fragment != "" || u.RawFragment != "":
-		return nil, errors.New("must not carry a fragment")
-	case u.Host == "":
-		return nil, errors.New("missing host")
-	case u.RawPath != "":
-		return nil, errors.New("path must not be percent-encoded")
-	case strings.HasSuffix(u.Path, "/"):
-		return nil, errors.New("base path must not end with a slash")
-	case u.Opaque != "":
-		return nil, errors.New("must be an absolute URL with a host")
-	}
-	return u, nil
 }

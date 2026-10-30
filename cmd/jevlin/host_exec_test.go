@@ -373,15 +373,21 @@ func newExecInstallationIn(t *testing.T, dirName string) *execInstallation {
 		})
 	})
 
-	doc := fmt.Sprintf(`[search]
-router_url = %q
-state_dir = %q
-sessions_dir = %q
+	doc := fmt.Sprintf(`schema = 1
+
+[router]
+url = %q
 
 [platform]
-base_url = %q
-agents_api_url = %q
-`, router.URL, filepath.Join(home, "state"), in.sessions, platform.URL, platform.URL)
+url = %q
+
+[agents]
+url = %q
+
+[search]
+state_dir = %q
+sessions_dir = %q
+`, router.URL, platform.URL, platform.URL, filepath.Join(home, "state"), in.sessions)
 	if err := os.WriteFile(in.cfg, []byte(doc), 0o600); err != nil {
 		t.Fatal(err)
 	}

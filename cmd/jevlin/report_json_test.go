@@ -146,12 +146,18 @@ func TestDoctorDialsNothingInEitherMode(t *testing.T) {
 
 	root := t.TempDir()
 	cfgPath := filepath.Join(root, "jevlin.toml")
-	toml := `[platform]
-base_url = "` + srv.URL + `"
-agents_api_url = "` + srv.URL + `"
+	toml := `schema = 1
+
+[router]
+url = "` + srv.URL + `"
+
+[platform]
+url = "` + srv.URL + `"
+
+[agents]
+url = "` + srv.URL + `"
 
 [search]
-router_url = "` + srv.URL + `"
 state_dir = "` + filepath.ToSlash(filepath.Join(root, "state")) + `"
 `
 	if err := os.WriteFile(cfgPath, []byte(toml), 0o600); err != nil {
@@ -231,7 +237,9 @@ func statusFixture(t *testing.T) (cfgPath, root string, store *auth.Store) {
 	t.Helper()
 	root = t.TempDir()
 	cfgPath = filepath.Join(root, "jevlin.toml")
-	toml := `[search]
+	toml := `schema = 1
+
+[search]
 state_dir = "` + filepath.ToSlash(filepath.Join(root, "state")) + `"
 `
 	if err := os.WriteFile(cfgPath, []byte(toml), 0o600); err != nil {
@@ -392,7 +400,7 @@ func TestConnectJSONExposesClaimArtifactsAndNoCredential(t *testing.T) {
 }
 
 // A claim link is never shown unless it is on file beside credentials.json
-// and still on the configured platform.base_url origin (invariant 12): not
+// and still on the configured [platform] url origin (invariant 12): not
 // by status's text or JSON report, and not by connect's JSON envelope. Each
 // bad link is planted twice, the way a sandboxed command would plant it in
 // agent.json (which no longer holds a link at all) and as a claim record

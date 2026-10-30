@@ -55,14 +55,17 @@ func newFakeRouter(t *testing.T, handler http.HandlerFunc) (*fakeRouter, string,
 		t.Fatal(err)
 	}
 	cfg := filepath.Join(root, "jevlin.toml")
-	toml := `[[provider]]
-name = "search-router"
-upstream = "https://router.fictional.test"
+	// Configuration format 1, with [router] as the last table: the tier
+	// tests append a `tier = ...` line to this file, and TOML gives a bare
+	// key to the table above it.
+	toml := `schema = 1
 
 [search]
-router_url = "` + f.srv.URL + `"
 state_dir = "` + filepath.ToSlash(filepath.Join(root, "state")) + `"
 sessions_dir = "` + filepath.ToSlash(filepath.Join(root, "sessions")) + `"
+
+[router]
+url = "` + f.srv.URL + `"
 `
 	if err := os.WriteFile(cfg, []byte(toml), 0o600); err != nil {
 		t.Fatal(err)
@@ -717,7 +720,7 @@ func TestATraceKeyFromAStateDirThatIsNotThereIsAnErrorNotAPanic(t *testing.T) {
 	}
 }
 
-// [search] tier is the participant's default band: sent when neither the
+// [router] tier is the participant's default band: sent when neither the
 // -tier flag nor the stdin request named one, and never over a tier the
 // caller did name. Unset, the request carries no tier at all — the router
 // applies the tenant default, and this client does not guess it.
@@ -782,7 +785,7 @@ func TestSearchSendsTheConfiguredTierWhenTheCallerNamesNone(t *testing.T) {
 	}
 }
 
-// The participant's `agents tier` file outranks [search] tier, and the
+// The participant's `agents tier` file outranks [router] tier, and the
 // caller outranks both; a planted word in the file falls through.
 func TestSearchTierFileOutranksTheConfigAndYieldsToTheCaller(t *testing.T) {
 	fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {

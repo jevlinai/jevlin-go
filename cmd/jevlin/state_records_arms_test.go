@@ -16,7 +16,7 @@ import (
 // going red, each held here to what its comment promises.
 
 // An empty stored link is no link: nothing to check, nothing said on
-// stderr about a link "not on the configured platform.base_url".
+// stderr about a link not on the configured [platform] url.
 func TestAnEmptyClaimLinkIsNotReportedAsOffOrigin(t *testing.T) {
 	var errOut bytes.Buffer
 	if got := printableClaimURL("", "https://platform.example", &errOut); got != "" || errOut.Len() != 0 {

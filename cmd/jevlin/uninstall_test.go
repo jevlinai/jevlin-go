@@ -1062,7 +1062,7 @@ func TestPurgeRefusesEveryConfirmationButTheExactOne(t *testing.T) {
 func TestPurgeConfirmationIsTheInstallationPath(t *testing.T) {
 	s := newSetupSandbox(t)
 	writeInstallation(t, s.home, "identity")
-	writeFileT(t, s.cfgPath(), fmt.Sprintf("[search]\nstate_dir = %q\n", filepath.Join(s.home, "state")))
+	writeFileT(t, s.cfgPath(), fmt.Sprintf("schema = 1\n\n[search]\nstate_dir = %q\n", filepath.Join(s.home, "state")))
 	if token, what := purgeConfirmation(s.home); token != s.home || what != "the installation path" {
 		t.Errorf("the token is the canonical installation path: %q (%s)", token, what)
 	}

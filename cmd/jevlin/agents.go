@@ -435,7 +435,7 @@ func preferLabel(p string) string {
 // search default above: a file beside the config, absent until the
 // participant sets one, read by `search` at request time (never by the
 // skill, which tells the agent to leave `tier` alone). Precedence at a
-// search: the caller's tier, then this file, then [search] tier in the
+// search: the caller's tier, then this file, then [router] tier in the
 // config, then nothing — the router applies the tenant's default.
 const tierFile = "search-tier"
 
@@ -483,7 +483,7 @@ func readTier(ops agentOps, entry binEntry, getenv func(string) string) string {
 }
 
 // effectiveTier is the band the next search will send and where it comes
-// from — the file (`agents tier`), else [search] tier in the config, else
+// from — the file (`agents tier`), else [router] tier in the config, else
 // nothing — the same order searchTierDefault applies, so status never
 // says "unset" of a band the config is about to send (Devin review,
 // 2026-10-14). A config that cannot be loaded contributes nothing here;
@@ -494,10 +494,10 @@ func effectiveTier(ops agentOps, entry binEntry, getenv func(string) string) (ti
 	}
 	if cfg, _, err := loadConfig(entry.cfg, getenv); err == nil {
 		if cfg.Search.Tier != "" {
-			return cfg.Search.Tier, "[search] tier"
+			return cfg.Search.Tier, "[router] tier"
 		}
 		if cfg.Search.UnknownTier != "" {
-			return "", fmt.Sprintf("[search] tier %q is not a tier this client knows, so it is not sent", cfg.Search.UnknownTier)
+			return "", fmt.Sprintf("[router] tier %q is not a tier this client knows, so it is not sent", cfg.Search.UnknownTier)
 		}
 	}
 	return "", ""

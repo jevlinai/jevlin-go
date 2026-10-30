@@ -104,7 +104,8 @@ onboarding (one-time, per agent): register with the search platform, claim
 it at one URL, done. search works the moment connect stores the key,
 before the claim.
   setup      everything after the binary, asked as it goes — reuse a
-             previous installation, write or migrate the config, connect,
+             previous installation, write the config (configuration format
+             1; an older config is set aside as jevlin.toml.old), connect,
              the shell profile (PATH and JEVLIN_CONFIG; Windows: the user
              PATH and JEVLIN_CONFIG) and the coding agents found here.
              -yes answers the profile and agents questions, terminal or not,
@@ -171,12 +172,16 @@ working directory is never read unless named.
 status and doctor name the file they resolved, or say plainly that none was
 found and built-in defaults are in use; connect refuses outright when
 resolution finds no config file at all, and says to run jevlin setup.
-The [search] block names the router and the directories this installation
-keeps; [platform] names two hosts — base_url, the portal a printed claim
-URL is checked against and nothing dials (platform.jevlin.ai), and
-agents_api_url, where connect actually sends register/status
-(agents-v1.jevlin.ai). Searches take your sr- key from JEVLIN_API_KEY if it
-is set, else from the file login (or connect) wrote. Otherwise run connect
+The config is configuration format 1: schema = 1, then [router] url, the
+router every search goes to (api.jevlin.ai); [platform] url, the portal a
+printed claim URL is checked against and nothing dials (platform.jevlin.ai);
+[agents] url, where connect actually sends register/status
+(agents-v1.jevlin.ai); [search] state_dir, sessions_dir and turn_end; and
+[update] mode. Every key is optional. JEVLIN_ROUTER_URL, JEVLIN_PLATFORM_URL
+and JEVLIN_AGENTS_API_URL replace their URL for a run. A config with no
+schema line is from an older jevlin and every command says to run setup.
+Searches take your sr- key from JEVLIN_API_KEY if it is set, else from the
+file login (or connect) wrote. Otherwise run connect
 or login to set up search.
 `
 

@@ -306,14 +306,14 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	if cfg.Search.RouterURL == nil {
 		if machine {
 			return failSearchSetup(stdout, exitTransport, "no_router_configured", actionFixInput,
-				errors.New("no router configured (search.router_url or a [[provider]] upstream)"))
+				errors.New("no router configured ([router] url)"))
 		}
-		fmt.Fprintln(stderr, "jevlin: no router configured (search.router_url or a [[provider]] upstream)")
+		fmt.Fprintln(stderr, "jevlin: no router configured ([router] url)")
 		return exitTransport
 	}
 	// The caller's tier wins (the -tier flag, or the stdin request's
 	// "tier"); when neither named one, the participant's own default from
-	// `jevlin agents tier`, then [search] tier, is sent; when both are
+	// `jevlin agents tier`, then [router] tier, is sent; when both are
 	// unset, the request carries no tier and the router applies the
 	// tenant's default. The agent is told to leave the field alone
 	// (skill.md), so in practice this is the participant's setting unless
@@ -474,7 +474,7 @@ func renderSearchForHuman(out searchOutcome, format string, keySrc keySource, st
 		// codes this client knows. A 402 with an unrecognized code keeps
 		// the bare status line rather than guessing at advice. No portal
 		// URL is printed here: the portal's origin is configuration
-		// (platform.base_url), not something search resolves, and a
+		// ([platform] url), not something search resolves, and a
 		// hardcoded address would be wrong for every other deployment.
 		code := ""
 		if out.HasRouterErr {
@@ -499,7 +499,7 @@ func renderSearchForHuman(out searchOutcome, format string, keySrc keySource, st
 
 // searchTierDefault is the band a request carries when the caller named
 // none: the participant's `jevlin agents tier` file beside the config,
-// then [search] tier, then nothing — and nothing means the router applies
+// then [router] tier, then nothing — and nothing means the router applies
 // the tenant's default, which this client does not guess at.
 func searchTierDefault(cfgSource string, m config.Search, getenv func(string) string) string {
 	// The path is tierPathFor's and the read readTierSetting's, both the

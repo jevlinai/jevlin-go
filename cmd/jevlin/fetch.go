@@ -554,7 +554,7 @@ func fetchMain(now func() time.Time, args []string, stdin io.Reader, stdout, std
 	}
 	if cfg.Search.RouterURL == nil {
 		return failFetch(stdout, exitTransport, "no_router_configured", actionFixInput,
-			errors.New("no router configured (search.router_url or a [[provider]] upstream)"))
+			errors.New("no router configured ([router] url)"))
 	}
 	// The stored key goes only to the router it records (resolveAPIKey), and
 	// JEVLIN_API_KEY only to the installation's router, as for search and

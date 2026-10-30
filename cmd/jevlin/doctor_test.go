@@ -128,7 +128,7 @@ func TestTheReportNamesTheChecksThatCouldNotRun(t *testing.T) {
 // a doctor run against a real installation layout.
 func doctorConfig(t *testing.T, stateDir string) string {
 	t.Helper()
-	return writeTOML(t, "[search]\nstate_dir = "+strconv.Quote(stateDir)+"\n")
+	return writeTOML(t, "schema = 1\n\n[search]\nstate_dir = "+strconv.Quote(stateDir)+"\n")
 }
 
 // doctor diagnoses and changes nothing: the state directory and the

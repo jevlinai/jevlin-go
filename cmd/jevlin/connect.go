@@ -90,7 +90,7 @@ const unclaimedNoLinkMessage = "this agent is unclaimed, and no claim link is on
 	"connect again for a new one"
 
 // printableClaimURL returns a stored claim URL only when it still passes
-// invariant 12 against the configured platform.base_url, which may have
+// invariant 12 against the configured [platform] url, which may have
 // changed since the link was stored; a copy that fails is treated as
 // absent, and the rejected value itself is never echoed. The link comes
 // from the claim record beside credentials.json (claimFor), never from
@@ -101,7 +101,7 @@ func printableClaimURL(raw, baseURL string, stderr io.Writer) string {
 	}
 	if platform.ValidateStoredClaimURL(raw, baseURL) != nil {
 		if stderr != nil {
-			fmt.Fprintf(stderr, "jevlin: the stored claim link is not on the configured platform.base_url (%s); not printing it\n", baseURL)
+			fmt.Fprintf(stderr, "jevlin: the stored claim link is not on the configured [platform] url (%s); not printing it\n", baseURL)
 		}
 		return ""
 	}

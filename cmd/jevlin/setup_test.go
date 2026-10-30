@@ -565,17 +565,17 @@ func TestSetupSecondRunIsANoOp(t *testing.T) {
 	}
 }
 
-// An existing config with the table setup owns — a [search] of the
-// participant's own, with a key setup never writes and its lines in an
-// order setup would not choose — is left byte for byte.
-func TestSetupLeavesAConfigWithSearchByteIdentical(t *testing.T) {
+// An existing configuration-format-1 file — the participant's own, with a
+// key setup never writes, a comment, and its sections in an order setup
+// would not choose — is left byte for byte, and nothing is set aside.
+func TestSetupLeavesAFormatOneConfigByteIdentical(t *testing.T) {
 	s := newSetupSandbox(t)
 	s.platform.claim("credits")
 	if err := os.MkdirAll(s.home, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	body := "# mine, by hand\n[platform]\nbase_url = \"" + s.platform.srv.URL + "\"\n\n[search]\nturn_end = true\nstate_dir = " +
-		mustTOML(t, filepath.Join(s.home, "state")) + "\n"
+	body := "# mine, by hand\nschema = 1\n\n[search]\nturn_end = true\nstate_dir = " +
+		mustTOML(t, filepath.Join(s.home, "state")) + "\n\n[platform]\nurl = \"" + s.platform.srv.URL + "\"\n"
 	if err := os.WriteFile(s.cfgPath(), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -585,6 +585,12 @@ func TestSetupLeavesAConfigWithSearchByteIdentical(t *testing.T) {
 	}
 	if got := s.readFile(s.cfgPath()); string(got) != body {
 		t.Fatalf("config changed:\n--- want ---\n%s\n--- got ---\n%s", body, got)
+	}
+	if !strings.Contains(out, "Config is already configuration format 1: "+s.cfgPath()+" (left as is)") {
+		t.Errorf("setup did not say it left the config:\n%s", out)
+	}
+	if lexists(s.cfgPath() + ".old") {
+		t.Error("a format-1 config was set aside")
 	}
 }
 
@@ -597,66 +603,126 @@ func mustTOML(t *testing.T, s string) string {
 	return q
 }
 
-// A config naming only the router — valid, no [platform], no [search] —
-// gains only the two missing tables. Its own bytes stay the file's prefix,
-// and the result loads with the router it named.
-func TestSetupAppendsOnlyTheMissingTablesToAProviderOnlyConfig(t *testing.T) {
+// A file from an earlier version — valid TOML with no schema line, the
+// router named by its [[provider]] table — is not read for what it meant.
+// It is set aside as jevlin.toml.old, byte for byte, and a fresh format-1
+// file is written in its place, which loads with the router this
+// installation is configured for; the run says both.
+func TestSetupSetsALegacyConfigAsideAndWritesFormatOne(t *testing.T) {
 	s := newSetupSandbox(t)
 	s.platform.claim("credits")
 	if err := os.MkdirAll(s.home, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	provider := "# the router, by hand\n[[provider]]\nname = \"search-router\"\nupstream = \"https://router.invalid.test\"\n"
-	if err := os.WriteFile(s.cfgPath(), []byte(provider), 0o600); err != nil {
+	legacy := "# the router, by hand\n[[provider]]\nname = \"search-router\"\nupstream = \"https://router.invalid.test\"\n"
+	if err := os.WriteFile(s.cfgPath(), []byte(legacy), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	code, out, errOut := s.run(nil, false)
 	if code != exitOK {
 		t.Fatalf("setup exited %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
 	}
-	got := s.readFile(s.cfgPath())
-	if !bytes.HasPrefix(got, []byte(provider)) {
-		t.Fatalf("the config's own bytes were not kept as the prefix:\n%s", got)
+	aside := s.cfgPath() + ".old"
+	if got := s.readFile(aside); string(got) != legacy {
+		t.Fatalf("the older file was not set aside byte for byte:\n--- want ---\n%s\n--- got ---\n%s", legacy, got)
 	}
-	platform, search, err := configTablesDefined(got)
-	if err != nil || !platform || !search {
-		t.Fatalf("tables after migration: platform=%v search=%v err=%v\n%s", platform, search, err, got)
+	fresh, err := renderFreshConfig(resolveSetupValues(s.home, s.getenv))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if n := bytes.Count(got, []byte("[platform]")); n != 1 {
-		t.Errorf("[platform] appears %d times", n)
+	if got := s.readFile(s.cfgPath()); !bytes.Equal(got, fresh) {
+		t.Fatalf("the new config is not the fresh format-1 file:\n--- want ---\n%s\n--- got ---\n%s", fresh, got)
+	}
+	if lexists(aside + ".1") {
+		t.Error("a second copy was set aside")
 	}
 	cfg := loadSetupConfig(t, s.cfgPath())
-	if cfg.Search.RouterURL.String() != "https://router.invalid.test" || cfg.Search.StateDir != filepath.Join(s.home, "state") {
-		t.Errorf("migrated config lost the router it named or gained no [search] state_dir: %+v", cfg.Search)
+	if cfg.Search.RouterURL.String() != "https://router.invalid.test" || cfg.Search.StateDir != filepath.Join(s.home, "state") || cfg.Platform.BaseURL != s.platform.srv.URL {
+		t.Errorf("the new config does not load with this installation's values: %+v %+v", cfg.Search, cfg.Platform)
+	}
+	for _, want := range []string{
+		"Set " + s.cfgPath() + " aside as " + aside + ": it is an older configuration format",
+		"Wrote " + s.cfgPath() + " in configuration format 1; copy any setting you changed by hand from the old file. Your registration and key are kept.",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("setup output missing %q:\n%s", want, out)
+		}
+	}
+	if reg, _, _ := s.platform.counts(); reg != 1 {
+		t.Errorf("register calls = %d, want 1: connect did not run after the replacement", reg)
 	}
 }
 
-// A valid config that already has [platform] gains only [search].
-func TestSetupAppendsOnlySearchWhenPlatformExists(t *testing.T) {
+// When jevlin.toml.old is already taken — a copy the participant set aside
+// themselves — the older file goes to jevlin.toml.old.1 and the existing
+// .old keeps its bytes. The older file here is the earlier version's own
+// [platform] and [search] tables, which without a schema line are an older
+// format like any other.
+func TestSetupSetsALegacyConfigAsideUnderAFreeNameWhenOldIsTaken(t *testing.T) {
 	s := newSetupSandbox(t)
 	s.platform.claim("credits")
 	if err := os.MkdirAll(s.home, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	body := "[platform]\nbase_url = \"" + s.platform.srv.URL + "\"\nagents_api_url = \"" + s.platform.srv.URL + "\"\n"
+	legacy := "[platform]\nbase_url = \"" + s.platform.srv.URL + "\"\nagents_api_url = \"" + s.platform.srv.URL + "\"\n\n[search]\nturn_end = true\n"
+	theirs := "# the participant's own set-aside copy\n"
+	if err := os.WriteFile(s.cfgPath(), []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s.cfgPath()+".old", []byte(theirs), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut := s.run(nil, false)
+	if code != exitOK {
+		t.Fatalf("setup exited %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
+	}
+	if got := s.readFile(s.cfgPath() + ".old"); string(got) != theirs {
+		t.Fatalf("the participant's .old was overwritten:\n%s", got)
+	}
+	if got := s.readFile(s.cfgPath() + ".old.1"); string(got) != legacy {
+		t.Fatalf("the older file was not set aside as .old.1 byte for byte:\n%s", got)
+	}
+	if !strings.Contains(out, "Set "+s.cfgPath()+" aside as "+s.cfgPath()+".old.1:") {
+		t.Errorf("setup did not name the .old.1 copy:\n%s", out)
+	}
+	cfg := loadSetupConfig(t, s.cfgPath())
+	if cfg.Platform.BaseURL != s.platform.srv.URL || cfg.Search.TurnEnd {
+		t.Errorf("the new config is not the fresh file (turn_end is not carried over): %+v", cfg)
+	}
+}
+
+// A file that says it is format 1 is the participant's current
+// configuration: a mistake in it — here a key format 1 does not define, the
+// earlier version's search.router_url — is refused with the path and the
+// key, the file is left byte for byte and never set aside, and nothing runs
+// after the refusal.
+func TestSetupRefusesAFormatOneConfigWithAMistakeAndLeavesIt(t *testing.T) {
+	s := newSetupSandbox(t)
+	if err := os.MkdirAll(s.home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	body := "schema = 1\n\n[search]\nrouter_url = \"https://router.invalid.test\"\n"
 	if err := os.WriteFile(s.cfgPath(), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	code, out, errOut := s.run(nil, false)
-	if code != exitOK {
-		t.Fatalf("setup exited %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
+	if code == exitOK {
+		t.Fatalf("setup accepted a format-1 config with an unknown key\nstdout:\n%s", out)
 	}
-	got := s.readFile(s.cfgPath())
-	if !bytes.HasPrefix(got, []byte(body)) {
-		t.Fatalf("existing bytes not kept:\n%s", got)
+	for _, want := range []string{s.cfgPath(), "format 1 does not define search.router_url", "Nothing was changed in it."} {
+		if !strings.Contains(errOut, want) {
+			t.Errorf("refusal does not say %q:\n%s", want, errOut)
+		}
 	}
-	if n := bytes.Count(got, []byte("[platform]")); n != 1 {
-		t.Fatalf("[platform] appears %d times, want 1:\n%s", n, got)
+	if got := s.readFile(s.cfgPath()); string(got) != body {
+		t.Errorf("refused config was modified:\n%s", got)
 	}
-	if n := bytes.Count(got, []byte("[search]")); n != 1 {
-		t.Fatalf("[search] appears %d times, want 1:\n%s", n, got)
+	if lexists(s.cfgPath() + ".old") {
+		t.Error("a refused config was set aside")
 	}
-	loadSetupConfig(t, s.cfgPath())
+	if reg, _, _ := s.platform.counts(); reg != 0 {
+		t.Errorf("connect ran after the refusal (%d registers)", reg)
+	}
 }
 
 // A config that does not parse is refused whatever its text holds — here, a
@@ -774,8 +840,11 @@ func TestSetupUsesAnInstallationAlreadyInHome(t *testing.T) {
 // this client leaves them: identity (state/ with the agent record and the
 // trace key, and credentials.json beside it), pending (only an interrupted
 // registration's journal), claim (the claim record beside the credential),
-// sessions (a lineage file a hook left), config. Adoption reads none of
-// them; it moves them whole, and that is what these cases drive.
+// sessions (a lineage file a hook left), config (an earlier version's, with
+// no schema line). Adoption reads none of them; it moves them whole, and
+// that is what these cases drive.
+const legacyInstallationConfig = "[[provider]]\nname = \"search-router\"\nupstream = \"https://router.invalid.test\"\n"
+
 func writeInstallation(t *testing.T, dir string, parts ...string) {
 	t.Helper()
 	write := func(rel, body string) {
@@ -800,7 +869,9 @@ func writeInstallation(t *testing.T, dir string, parts ...string) {
 		case "sessions":
 			write(filepath.Join("sessions", "s-old.json"), `{"v":1}`)
 		case "config":
-			write(setupConfigFile, "[[provider]]\nname = \"search-router\"\nupstream = \"https://router.invalid.test\"\n")
+			// An earlier version's file, with no schema line: what a
+			// set-aside installation made before format 1 holds.
+			write(setupConfigFile, legacyInstallationConfig)
 		}
 	}
 }
@@ -1256,19 +1327,37 @@ func TestSetupNamesEveryPathWhenARollbackFails(t *testing.T) {
 	}
 }
 
-// An adopted config goes through the migration policy like any other.
-func TestSetupMigratesAnAdoptedConfig(t *testing.T) {
+// An adopted config goes through the config policy like any other: an
+// earlier version's file, moved in from the set-aside installation, is set
+// aside again as jevlin.toml.old with its bytes preserved, and a format-1
+// file is written in its place.
+func TestSetupReplacesAnAdoptedLegacyConfig(t *testing.T) {
 	s := newSetupSandbox(t)
 	sibling := s.home + ".bak"
 	writeInstallation(t, sibling, "identity", "config")
 	adopted := s.readFile(filepath.Join(sibling, setupConfigFile))
+	// The exit code is not asserted: the adopted identity is a stand-in
+	// (a 9-byte trace key, a credential with no v1 shape), so connect
+	// fails after the config step this test is about.
 	_, out, _ := s.run(tty("y"), true, "-no-agents", "-no-profile")
-	if !strings.Contains(out, "adopted the config") || !strings.Contains(out, "Added [platform] and [search] to "+s.cfgPath()) {
-		t.Fatalf("adopted config not migrated:\n%s", out)
+	aside := s.cfgPath() + ".old"
+	if !strings.Contains(out, "adopted the config") || !strings.Contains(out, "Set "+s.cfgPath()+" aside as "+aside+": it is an older configuration format") {
+		t.Fatalf("adopted config not set aside:\n%s", out)
 	}
-	if got := s.readFile(s.cfgPath()); !bytes.HasPrefix(got, adopted) {
-		t.Errorf("adopted config's bytes not kept:\n%s", got)
+	if got := s.readFile(aside); !bytes.Equal(got, adopted) {
+		t.Errorf("adopted config's bytes not kept under %s:\n%s", aside, got)
 	}
+	if lexists(filepath.Join(sibling, setupConfigFile)) {
+		t.Error("the adopted config is still in the source installation")
+	}
+	fresh, err := renderFreshConfig(resolveSetupValues(s.home, s.getenv))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.readFile(s.cfgPath()); !bytes.Equal(got, fresh) {
+		t.Errorf("the new config is not the fresh format-1 file:\n%s", got)
+	}
+	loadSetupConfig(t, s.cfgPath())
 }
 
 // -dry-run writes nothing, moves nothing and runs neither connect nor the
@@ -1356,13 +1445,13 @@ type configFixtureOutcome int
 const (
 	fixtureConfigFresh configFixtureOutcome = iota
 	fixtureConfigLeft
-	fixtureConfigMigrated
+	fixtureConfigReplaced
 )
 
 // seedConfigFixture writes what outcome needs onto s's disk before setup
-// runs: nothing (fresh), a complete config with [search] (left, untouched),
-// or a config naming only the router, with no [search] (migrated — setup
-// adds the missing tables).
+// runs: nothing (fresh), a complete format-1 config (left, untouched), or an
+// earlier version's config with no schema line (replaced — setup sets it
+// aside and writes format 1).
 func seedConfigFixture(t *testing.T, s *setupSandbox, outcome configFixtureOutcome) {
 	t.Helper()
 	if outcome == fixtureConfigFresh {
@@ -1379,7 +1468,7 @@ func seedConfigFixture(t *testing.T, s *setupSandbox, outcome configFixtureOutco
 		if err != nil {
 			t.Fatal(err)
 		}
-	case fixtureConfigMigrated:
+	case fixtureConfigReplaced:
 		data = []byte("[[provider]]\nname = \"search-router\"\nupstream = " + mustTOML(t, s.env["JEVLIN_ROUTER_URL"]) + "\n")
 	}
 	if err := os.WriteFile(s.cfgPath(), data, 0o600); err != nil {
@@ -1392,7 +1481,7 @@ func seedConfigFixture(t *testing.T, s *setupSandbox, outcome configFixtureOutco
 // returns the set of paths printPlan listed under "write": the exact text
 // both a dry run and the real run print for the plan, before the real run
 // goes on to commit it. Comparing this set between the two, for a fresh
-// installation, an existing one, and one being migrated, is the literal
+// installation, an existing one, and one being replaced, is the literal
 // test D.2 asks for.
 func agentPlanWriteLines(t *testing.T, id string, dry bool, outcome configFixtureOutcome) map[string]bool {
 	t.Helper()
@@ -1441,16 +1530,16 @@ func assertSameStringSet(t *testing.T, label string, dry, real map[string]bool) 
 }
 
 // TestDryRunAgentPlanPathsMatchTheRealRunAcrossAllHosts guards D.2:
-// on a fresh installation or one being migrated, the Codex plan a dry run
-// prints used to list only the skill plus an advisory note (fresh) or the
-// pre-migration roots (migrated), because codexSandboxRoots read the
-// config from disk and the real run's config either did not exist yet or
-// had not gained its [search] table yet — the dry run never publishes it
-// (validateConfigSyntax's own invariant: nothing is written anywhere to
-// load it through pkg/config). setup's dry run now plans every agent step
-// from the config it would write or add, parsed by the config package
-// itself (config.LoadBytes) from those exact bytes, so its listing equals
-// the real run's writes for both outcomes. The existing-config ("left")
+// on a fresh installation or one whose older config is being replaced, the
+// Codex plan a dry run prints used to list only the skill plus an advisory
+// note (fresh) or the roots of a config no command loads (replaced),
+// because codexSandboxRoots read the config from disk and the real run's
+// config either did not exist yet or was still the older file — the dry run
+// never publishes the new one (nothing is written anywhere to load it
+// through pkg/config). setup's dry run now plans every agent step from the
+// config it would write, parsed by the config package itself
+// (config.LoadBytes) from those exact bytes (plannedConfig), so its listing
+// equals the real run's writes for both outcomes. The existing-config ("left")
 // case is already correct — both a dry run and the real run read the same
 // bytes off disk, unmodified — and is pinned here so it cannot regress
 // alongside the other two.
@@ -1462,7 +1551,7 @@ func TestDryRunAgentPlanPathsMatchTheRealRunAcrossAllHosts(t *testing.T) {
 	}{
 		{"fresh", fixtureConfigFresh},
 		{"existing", fixtureConfigLeft},
-		{"migrated", fixtureConfigMigrated},
+		{"replaced", fixtureConfigReplaced},
 	}
 	for _, id := range goldenHostIDs {
 		for _, tc := range cases {
@@ -1627,9 +1716,9 @@ func agentObservedPlan(t *testing.T, id string, dry bool, outcome configFixtureO
 // TestDryRunAgentPlanContentMatchesTheRealRunAcrossAllHostsAndOutcomes is
 // D.2's content half: the path-set test above can agree on WHICH
 // paths a dry run and the real run write while still disagreeing on WHAT
-// they write there — a fresh or migrated config that renders with the
+// they write there — a fresh or replaced config that renders with the
 // wrong number of Codex sandbox roots (the sessions directory is derived
-// from the state directory only once [search] actually lands) changes
+// from the state directory only once the new [search] actually lands) changes
 // the Codex config.toml content, not its existence. For every host and all
 // three outcomes, this drives the setup CLI itself — once with -dry-run,
 // once without — against two independent sandboxes, capturing each run's
@@ -1649,7 +1738,7 @@ func TestDryRunAgentPlanContentMatchesTheRealRunAcrossAllHostsAndOutcomes(t *tes
 	}{
 		{"fresh", fixtureConfigFresh},
 		{"existing", fixtureConfigLeft},
-		{"migrated", fixtureConfigMigrated},
+		{"replaced", fixtureConfigReplaced},
 	}
 	for _, id := range goldenHostIDs {
 		for _, tc := range cases {
