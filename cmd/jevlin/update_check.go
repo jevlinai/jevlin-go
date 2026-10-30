@@ -55,6 +55,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/BurntSushi/toml"
+
 	"github.com/jevlinai/jevlin-go/internal/selfupdate"
 	"github.com/jevlinai/jevlin-go/internal/termtext"
 	"github.com/jevlinai/jevlin-go/pkg/config"
@@ -152,9 +154,57 @@ func installationUpdateRoot(home string, getenv func(string) string) string {
 	}
 	cfg, _, err := loadConfig(cfgPath, getenv)
 	if err != nil {
-		return ""
+		root, _ := refusedConfigUpdate(cfgPath)
+		return root
 	}
 	return updateRoot(cfg.Search)
+}
+
+// refusedConfigUpdate is the update root and mode for a config that exists
+// and does not load: above all an earlier version's, which every command
+// refuses until setup has run. That is the state an unattended update
+// leaves a machine in, and a root of "" there meant no hook started the
+// daily check again, and a rollback to the earlier version wrote no hold,
+// so the next day's check installed this one again. The root is the
+// installation directory, the parent of the state directory the file
+// names ([search] state_dir, or an earlier version's [mining] state_dir),
+// else the directory the file is in, which is the installation directory
+// in every layout setup writes; the mode is the file's [update] mode,
+// which both formats spell alike, else the default.
+func refusedConfigUpdate(cfgPath string) (root, mode string) {
+	if cfgPath == "" {
+		return "", ""
+	}
+	root, mode = filepath.Dir(cfgPath), config.UpdateApply
+	data, err := readExistingConfig(cfgPath)
+	if err != nil || data == nil {
+		return root, mode
+	}
+	var f struct {
+		Search struct {
+			StateDir string `toml:"state_dir"`
+		} `toml:"search"`
+		Mining struct {
+			StateDir string `toml:"state_dir"`
+		} `toml:"mining"`
+		Update struct {
+			Mode string `toml:"mode"`
+		} `toml:"update"`
+	}
+	if _, err := toml.Decode(string(data), &f); err != nil {
+		return root, mode
+	}
+	for _, dir := range []string{f.Search.StateDir, f.Mining.StateDir} {
+		if dir != "" && filepath.IsAbs(dir) {
+			root = filepath.Dir(dir)
+			break
+		}
+	}
+	switch m := strings.ToLower(strings.TrimSpace(f.Update.Mode)); m {
+	case config.UpdateNotify, config.UpdateOff:
+		mode = m
+	}
+	return root, mode
 }
 
 // stampBinary is the path a stamp names for the running binary: resolved,

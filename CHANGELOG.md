@@ -73,10 +73,12 @@ the participants who mine; this client carries no compatibility with it.
   the old file is copied over by hand, under its format-1 key. Files only the earlier version
   used are left untouched and never read; `jevlin uninstall -purge-state` does not remove them,
   and lists what it left in the installation directory by full path so you can delete them
-  yourself. A native install reaches
-  this version at its daily check, and from then on every command that reads the config says
-  to run `jevlin setup`, while the hooks run the agent's tool call without a lineage file
-  until it has. An npm install is updated with `npm install -g @jevlinsearch/jevlin@latest`,
+  yourself. A native 0.6.x install with automatic updates on, the default, installs this
+  version by itself at its next daily check, and then needs one `jevlin setup`: until it has,
+  every command that reads the config says to run `jevlin setup`, the hooks run the agent's
+  tool call without a lineage file, and the daily check goes on running. `jevlin upgrade
+  -rollback` returns to 0.6.x and holds this version, so the next check does not install it
+  again. An npm install is updated with `npm install -g @jevlinsearch/jevlin@latest`,
   then `jevlin setup`. The files a participant keeps (`credentials.json`, the registration
   journal, `claim.json`, the release check's record) live beside the state directory, in the
   installation directory, as before.

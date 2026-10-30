@@ -258,11 +258,16 @@ func hookDispatch(ops hookOps, args []string, stdin io.Reader, stdout, stderr io
 	hc := hookContext{cfgPath: cfgPath}
 	// The sessions directory comes from the config. A missing or broken
 	// config costs the lineage file, never the call: fail-open.
-	if cfg, _, err := loadConfig(cfgPath, ops.getenv); err == nil {
+	if cfg, src, err := loadConfig(cfgPath, ops.getenv); err == nil {
 		hc.sessionsDir = cfg.Search.SessionsDir
 		hc.turnEnd = cfg.Search.TurnEnd
 		hc.updateRoot = updateRoot(cfg.Search)
 		hc.updateMode = cfg.Update.Mode
+	} else {
+		// A config every command refuses (an earlier version's, after an
+		// unattended update) still says where the installation is, so the
+		// daily release check keeps running until setup has.
+		hc.updateRoot, hc.updateMode = refusedConfigUpdate(src)
 	}
 	// One leading byte-order mark is tolerated here for the same reason as on
 	// `search --stdin`: the shell in front of a hook is the host's choice,
