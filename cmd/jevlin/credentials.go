@@ -47,6 +47,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/jevlinai/jevlin-go/internal/netdial"
+	"github.com/jevlinai/jevlin-go/internal/termtext"
 	"github.com/jevlinai/jevlin-go/pkg/auth"
 	"github.com/jevlinai/jevlin-go/pkg/config"
 	"github.com/jevlinai/jevlin-go/pkg/fsx"
@@ -176,10 +177,21 @@ const keyOriginCode = "key_origin_mismatch"
 
 // urlOrigin is scheme://host[:port] in lower case, with the scheme's
 // default port left out, so https://h and https://h:443 are one origin.
+// The host must be plain ASCII: a host written in Unicode is dialed as its
+// IDNA form, a different name, and Go's case folding maps some letters
+// (U+0130) onto ASCII ones, so a lower-cased Unicode host could read as
+// the bound origin while the connection goes to the punycode name. The
+// config holds the same rule (config.ParseEndpoint); here it holds for what
+// credentials.json records too.
 func urlOrigin(raw string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
 		return "", errors.New("not an absolute http(s) URL")
+	}
+	for _, c := range []byte(u.Hostname()) {
+		if c < 0x21 || c > 0x7e {
+			return "", errors.New("not a URL with a plain ASCII host")
+		}
 	}
 	scheme, host, port := strings.ToLower(u.Scheme), strings.ToLower(u.Hostname()), u.Port()
 	if (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
@@ -205,7 +217,12 @@ func (s keyService) boundOrigin(c *credentials, getenv func(string) string) (ori
 		}
 		return o, true, nil
 	}
-	cfg, _, err := loadConfig("", getenv)
+	// The installation's own config file decides, never the environment:
+	// the endpoint variables apply to a run, and a hook inherits whatever
+	// its host's environment set, so an origin taken from them would bind
+	// (and recordKeyBinding would persist) a key to a place nothing in
+	// this installation chose.
+	cfg, _, err := loadConfig("", withoutEndpointVariables(getenv))
 	if err != nil {
 		return "", false, fmt.Errorf("credentials: the stored key records no %s, and this installation's own config cannot be read to name one: %w", s.name, err)
 	}
@@ -215,6 +232,19 @@ func (s keyService) boundOrigin(c *credentials, getenv func(string) string) (ori
 		return "", false, fmt.Errorf("credentials: the stored key records no %s, and this installation's own config names none", s.name)
 	}
 	return o, named, nil
+}
+
+// withoutEndpointVariables is getenv with the runtime endpoint variables
+// unset, for reading the installation's own config as the file alone says
+// it (boundOrigin, recordKeyBinding).
+func withoutEndpointVariables(getenv func(string) string) func(string) string {
+	return func(name string) string {
+		switch name {
+		case config.EnvRouterURL, config.EnvPlatformURL, config.EnvAgentsAPIURL:
+			return ""
+		}
+		return getenv(name)
+	}
 }
 
 // check refuses a request to dest that would carry the stored key c
@@ -516,6 +546,16 @@ func readCredentials(path string) (*credentials, error) {
 	}
 	if c.V != credentialsVersion || strings.TrimSpace(c.APIKey) == "" {
 		return nil, fmt.Errorf("credentials: %s is not a v%d credentials file with a key — re-run: jevlin login", path, credentialsVersion)
+	}
+	// What the file says is printed by login -show, doctor and search's
+	// human mode, so a string holding a character a terminal acts on
+	// (internal/termtext: a control, a format or a line-separator
+	// character) makes the file unreadable, and the message repeats none
+	// of it.
+	for _, field := range []string{c.APIKey, c.Router, c.AgentsAPI} {
+		if termtext.HasControlChar(field) {
+			return nil, fmt.Errorf("credentials: %s holds a character a terminal acts on; refusing — re-run: jevlin login", path)
+		}
 	}
 	return &c, nil
 }
