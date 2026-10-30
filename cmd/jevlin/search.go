@@ -77,7 +77,7 @@ type searchOps struct {
 	// onboarding design §5.5's "next invocation of anything" — in
 	// practice, search: the one path an agent invokes routinely). Called
 	// after every served search, independent of spawnFlush/-no-flush and
-	// of [mining]/[miner] being configured at all — a search-only
+	// of an AS being configured at all — a search-only
 	// unclaimed participant has neither. shouldResume gates it on a
 	// cheap local disk check first, so this never fires when there is
 	// nothing to resume.
@@ -407,8 +407,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	mining := recordSearchForMining(ops, cfg, out, *cfgPath, *noFlush, stderr)
 
 	// Independent of cfg.Miner.Enabled/-no-flush above: a search-only
-	// unclaimed participant has neither [mining] nor [miner] configured
-	// at all, and still needs the claim to resolve eventually. shouldResume
+	// unclaimed participant has no AS configured at all, and still needs the claim to resolve eventually. shouldResume
 	// is a cheap local disk check (agent onboarding design §5.5) — it
 	// costs nothing and spawns nothing when there is no stored
 	// registration to resume.
@@ -481,7 +480,7 @@ func renderSearchForHuman(out searchOutcome, format string, keySrc keySource, st
 		// codes this client knows. A 402 with an unrecognized code keeps
 		// the bare status line rather than guessing at advice. No portal
 		// URL is printed here: the portal's origin is configuration
-		// (platform.base_url), not something search resolves, and a
+		// ([platform] url), not something search resolves, and a
 		// hardcoded address would be wrong for every other deployment.
 		code := ""
 		if out.HasRouterErr {
@@ -533,7 +532,7 @@ func recordSearchForMining(ops searchOps, cfg *config.Config, out searchOutcome,
 	if !out.ok() || !cfg.Miner.Enabled {
 		return finish()
 	}
-	// [miner] enabled says intake is configured; the persisted decision is
+	// [mining] as_url says intake is configured; the persisted decision is
 	// the only runtime authority. An undecided participant is silent. An
 	// unreadable state is fail-closed for mining but visible as a concise
 	// diagnostic; neither state-store nor health failures may replace a

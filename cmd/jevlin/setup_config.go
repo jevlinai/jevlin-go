@@ -1,7 +1,7 @@
 package main
 
-// setup's config: one fresh file for a new installation, and a migration
-// policy for a file that is already there.
+// setup's config: one fresh file for a new installation, and what is done
+// with a file that is already there.
 //
 // Nothing here interpolates a path or a value into TOML text. Every string
 // goes through tomlString, which produces a valid TOML basic string whatever
@@ -12,13 +12,12 @@ package main
 // pkg/config before anything is published, so a file setup writes is one the
 // runtime has already accepted.
 //
-// An existing file is never rewritten. It is parsed first, always: a file
-// that does not parse is refused with the parse error and its path, whatever
-// its text happens to contain (a `[miner]` line in a file that does not parse
-// proves nothing). A valid file with a [miner] table is left byte for byte.
-// A valid file without one — a tokendrop-proxy config, most likely — gains
-// only the tables it lacks, found from the TOML metadata rather than by
-// string matching, and the result is parsed again before it is published.
+// An existing file is never rewritten. It is loaded first, always, through
+// pkg/config (planSetupConfig): a format-1 file that loads is left byte for
+// byte; a file with no schema line, from an earlier version, is set aside
+// under a name of its own and a fresh format-1 file takes its place; any
+// other file, a format-1 file with a mistake in it included, is refused with
+// the error and its path, and nothing is written.
 
 import (
 	"errors"

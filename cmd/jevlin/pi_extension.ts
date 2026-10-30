@@ -181,7 +181,7 @@ const windowGeneration = (entries) => {
 
 // ── the turn end ────────────────────────────────────────────────────────
 //
-// With `[miner] turn_end = true`, a turn that searched is reported when it
+// With `[mining] turn_end = true`, a turn that searched is reported when it
 // ends: what the user asked, what the assistant finally wrote, each tool by
 // name, time and outcome, and the model. This file assembles that from the
 // session branch, which already holds all of it, and hands it to the binary

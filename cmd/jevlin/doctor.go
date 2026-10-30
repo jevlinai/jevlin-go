@@ -691,8 +691,8 @@ func doctorASClient(_ context.Context, m config.Mining) asClient {
 
 // gatherDoctorFacts asks each source once, keeping failures rather than
 // returning on the first one — a degraded AS must not blank the report.
-// gatherDoctorFacts is the AS-and-store half, for callers with no [miner]
-// block to speak of. gatherDoctorFactsFor is the whole of it.
+// gatherDoctorFacts is the AS-and-store half, for callers with no intake
+// to speak of. gatherDoctorFactsFor is the whole of it.
 func gatherDoctorFacts(ctx context.Context, as asClient, m config.Mining) doctorFacts {
 	return gatherDoctorFactsFor(ctx, as, m, config.Miner{}, realIntakeProbeOps())
 }
@@ -970,7 +970,7 @@ const (
 // intakeProbeResult is what the probe established, with no wording applied
 // yet — doctorIntakeCheck turns it into a verdict.
 type intakeProbeResult struct {
-	// Ran is false when the probe deliberately did nothing: no [miner],
+	// Ran is false when the probe deliberately did nothing: no intake,
 	// mining not active, or the intake directory's parent is missing.
 	Ran bool
 	Dir string

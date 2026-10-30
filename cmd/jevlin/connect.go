@@ -101,7 +101,7 @@ const unclaimedNoLinkMessage = "this agent is unclaimed, and no claim link is on
 	"connect again for a new one"
 
 // printableClaimURL returns a stored claim URL only when it still passes
-// invariant 12 against the configured platform.base_url, which may have
+// invariant 12 against the configured [platform] url, which may have
 // changed since the link was stored; a copy that fails is treated as
 // absent, and the rejected value itself is never echoed. The link comes
 // from the claim record beside credentials.json (claimFor), never from
@@ -273,9 +273,8 @@ type registrationPublicationOptions struct {
 	previousPlatformKey  string
 	// binding is where the published key may be sent: the origins the
 	// journal recorded when the key was minted (pendingBinding). A journal
-	// an older client wrote records none, and its key falls to the
-	// installation's own config until a connect under that config records
-	// them.
+	// an older client wrote may record none, and nothing is read from the
+	// config in their place: a key with no recorded origin is sent nowhere.
 	binding credentials
 }
 
@@ -1813,9 +1812,8 @@ func buildMiningClient(ctx context.Context, m config.Mining) (*auth.OAuthClient,
 
 // shouldResume reports whether a stored registration is worth spawning a
 // detached connect -resume for. A pure disk read, no network — search.go
-// calls this after every served search, independent of [mining]/[miner]
-// being configured at all (a search-only unclaimed participant has
-// neither).
+// calls this after every served search, independent of an AS being
+// configured at all (a search-only unclaimed participant has none).
 //
 // WP2-review defect 3: the spawn must happen only while a resume can
 // actually do something. "Claimed, mining scope, not yet enrolled" used to

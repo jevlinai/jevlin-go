@@ -67,7 +67,7 @@ const (
 // loadConfig resolves the config exactly as describeConfigSource does
 // (ruling D-R1: -config, JEVLIN_CONFIG, the installation's own config,
 // then defaults) and returns the full config so
-// the miner can read [miner] and [mining]. pkg/config is not changed: the
+// the miner can read [router] and [mining]. pkg/config is not changed: the
 // resolved path, once found, is handed to config.Load as an explicit
 // -config, which is exactly what makes it required to exist — a guarantee
 // this function has already checked for the soft-discovered installation

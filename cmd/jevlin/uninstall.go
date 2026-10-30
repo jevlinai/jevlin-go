@@ -1131,8 +1131,8 @@ func (r *uninstallRun) purgeSet() (inside, outside []string) {
 // this plan is ever computed, resolved the same way excludeLifecycle
 // itself resolves it: through operationLockPaths, not a hand-rolled
 // re-reading of r.cfg. That matters beyond staying in sync with a single
-// source of truth — a config that loads but names no miner.intake_dir (no
-// [miner] block at all, or a bare proxy config) makes operationLockPaths
+// source of truth — a config that loads but names no intake directory and
+// no [mining] state_dir to derive one from makes operationLockPaths
 // return "" for the flush lock, meaning the exclusion takes no lock at
 // all; treating a nil r.cfg and an r.cfg with no intake dir the same way,
 // as an earlier version of this function did, wrongly predicted

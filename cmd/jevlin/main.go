@@ -113,10 +113,11 @@ it at one URL, done. search works the moment connect stores the key,
 before the claim; mining (if granted) enrolls and declares a payout
 unattended once claimed.
   setup      everything after the binary, asked as it goes — reuse a
-             previous installation, write or migrate the config, connect,
-             the shell profile (PATH, JEVLIN_CONFIG and, when a wallet
-             was made here, JEVLIN_WALLET_DIR; Windows: the user PATH and
-             JEVLIN_CONFIG only) and the coding agents found here.
+             previous installation, write the config (an older one is set
+             aside), connect, the shell profile (PATH, JEVLIN_CONFIG and,
+             when a wallet was made here, JEVLIN_WALLET_DIR; Windows: the
+             user PATH and JEVLIN_CONFIG only) and the coding agents found
+             here.
              -yes answers the profile and agents questions, terminal or not,
              never a question about a Codex setting of yours
              -yes may come from automated callers

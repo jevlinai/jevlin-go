@@ -2288,8 +2288,8 @@ func readWithMode(ops agentOps, path string) ([]byte, os.FileMode, error) {
 //     mining or not, and that resume writes connect.lock, the cooldown stamp
 //     and agent.json under the state dir. Gated off, a Codex-hosted agent's
 //     claim would never be picked up from a search.
-//   - The intake, sessions and spool dirs are added when [miner] enabled is
-//     set — where the miner records searches. We gate on the static config
+//   - The intake, sessions and spool dirs are added when intake is
+//     configured ([mining] as_url is set) — where the miner records searches. We gate on the static config
 //     flag, never the runtime mining decision (miningActive): agents install
 //     runs once, so a later `mining enable` must not need a reinstall to
 //     earn — that silent-earning gap is the bug this whole block fixes.
@@ -2381,8 +2381,8 @@ func dirWithin(dir, parent string) bool {
 }
 
 // codexOwnedRoots is every directory THIS config names that our block may
-// carry: the state dir and the three the miner writes, whatever [miner]
-// enabled says.
+// carry: the state dir and the three the miner writes, whether or not
+// intake is configured.
 //
 // It is the set the block's own roots are attributed against, and it is
 // deliberately wider than what codexSandboxRoots would write right now. The

@@ -11,7 +11,7 @@ package main
 // is at its ceiling or out of credit, which is exactly when a participant
 // runs this.
 //
-// The request carries the participant's sr- key to router_url — the same
+// The request carries the participant's sr- key to the router — the same
 // exposure as a search, so the same shape: the origin configured, never
 // discovered (invariant 5), same-origin redirects only (invariant 3), the
 // body read bounded. The response is the router's product API and is

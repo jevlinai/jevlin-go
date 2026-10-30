@@ -974,7 +974,7 @@ type machineMining struct {
 	// State is the persisted runtime decision, in its own canonical
 	// spelling: enabled, disabled, undecided or degraded.
 	State string `json:"state"`
-	// Configured is [miner] enabled — whether intake exists at all.
+	// Configured is whether intake exists at all: [mining] as_url is set.
 	Configured bool `json:"configured"`
 	// Recorded says whether THIS search's observation was written. False
 	// with State "enabled" means capture failed; Health says why.
