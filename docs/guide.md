@@ -265,7 +265,10 @@ files, which are safe to delete.
 
 `-purge-state` destroys the participant state. At a terminal, you type the installation path;
 `-yes` cannot answer it. Nothing is revoked: your claim on the platform is undone only at its
-console. Folders your config names outside the installation are left and listed. Close agent
+console. Folders your config names outside the installation are left and listed. Anything else
+still in the installation directory afterwards — files an earlier version or another program
+put there, which this version neither reads nor removes — is listed by full path, as it is in
+the dry run, so you can delete it yourself. Close agent
 sessions first, or a search may recreate folders. A run stopped at its confirmation leaves the
 installation exactly as it was.
 

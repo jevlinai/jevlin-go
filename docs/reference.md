@@ -273,13 +273,12 @@ format-1 file with a mistake in it is refused with the error and its path, and n
 | `JEVLIN_CONFIG` | every command | The config file, after `-config`. Setup's profile block sets it. |
 | `JEVLIN_HOME` | every command, setup | This machine's installation directory, instead of `~/.jevlin`. |
 | `JEVLIN_API_KEY` | search, limits, the turn end, fetch | The search key, overriding `credentials.json`. With a `-config` that is not the installation's own file, it is sent only when that config names the installation's router; to use another router, set `JEVLIN_CONFIG` to its config. |
-| `JEVLIN_TRACE` | search, hooks | `off` sends no trace. |
+| `JEVLIN_TRACE` | search, hooks | `off` turns the trace off entirely: the hooks write no bridge and no lineage file, and search sends none. |
 | `JEVLIN_ROUTER_URL`, `JEVLIN_PLATFORM_URL`, `JEVLIN_AGENTS_API_URL` | every command, setup | Each replaces its URL for the run, after the config file and under the file's own URL rules; setup also writes them into a fresh config instead of the defaults. |
 | `JEVLIN_BINARY`, `JEVLIN_SKIP_DOWNLOAD` | npm wrapper | Use a binary already on the machine; install without fetching. |
 | `JEVLIN_LAUNCH` | setup, upgrade, uninstall | Set by the npm wrapper, so the binary knows npm owns it. |
 | `JEVLIN_TRACE_BRIDGE` | search | The trace envelope an agent's hook put in front of the command. |
 | `JEVLIN_HARNESS`, `JEVLIN_LINEAGE`, `JEVLIN_SESSION` | search | Exported by Cursor's hooks: the agent, its lineage file and its hashed session. |
-| `JEVLIN_DETACHED` | connect | Marks a background child (`connect -resume`, `turn-end`, `upgrade -auto`): one try at the lifecycle gate, then it exits 0. |
 
 The last three are written by the hooks and the binary itself; you do not set them.
 

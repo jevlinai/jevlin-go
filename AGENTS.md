@@ -287,8 +287,10 @@ the named tests.
     agent id, a scope, a time) is a token, never a sentence (`pkg/auth/agent_id.go`,
     held on the platform's wire as well, before anything is journaled); no message repeats the
     agent id `agent.json` held; and a decode error repeats none of
-    the record (`auth.DecodeProblem`: the state dir's records, the update stamp, and the journal
-    and claim record beside the credential alike). And `agent.json` naming an agent the stored
+    the record (`auth.decodeError`'s `Error`, and `decodeProblem` beneath it, choose the client's
+    own words and quote nothing, for the state dir's records and the journal and claim record
+    beside the credential alike; the update stamp's `errUpdateStampForeign` is one fixed
+    sentence). And `agent.json` naming an agent the stored
     credential does not belong to is rebuilt from the platform (invariant 13).
     `cmd/jevlin/state_record_escape_guard_test.go` builds an installation through the real
     commands, plants each class of character, one at a time, in every string of every record it
@@ -716,8 +718,9 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   gate → `setup.lock`; the daily check takes its own `update_check.lock` first, in one attempt,
   and the upgrade's locks after it only to replace the binary, also in one attempt, so it can
   neither wait nor deadlock), how setup and connect pass the gate
-  (a person's command waits at most five seconds; a detached child, marked by `spawnDetached`,
-  makes one attempt and exits 0 recording nothing) and the exclusion a destructive operation holds:
+  (a person's command waits at most five seconds; the detached child, `connect -resume`, which
+  names itself by that flag and not by anything `spawnDetached` sets in its environment, makes
+  one attempt and exits 0 recording nothing) and the exclusion a destructive operation holds:
   the gate, then every operation lock, located from the config only once the gate is held.
   `lifecycle_test.go`'s `TestConnectCannotStartUnderAHeldExclusion` proves an operation starting
   after the check meets the gate before it reads or writes anything; `TestSetupHoldsSetupLockThroughItsWholeRun` proves setup
@@ -730,7 +733,11 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   compare-and-revert of the Windows user environment; `ownership.go` owns the one npm/native
   classifier setup, `uninstall -binary` and upgrade consult. `uninstall_test.go`'s
   `TestPurgeRefusesEveryConfirmationButTheExactOne`, `TestDefaultUninstallPreservesEveryParticipantByte`
-  and `TestWindowsUninstallRevertsOnlyWhatSetupStillOwns` guard them.
+  and `TestWindowsUninstallRevertsOnlyWhatSetupStillOwns` guard them. What a purge says it left
+  is `sayLeftInHome`'s: after removing its own set, which includes the configs setup set aside
+  (`jevlin.toml.old`, ...), it lists by full path every entry still in the installation
+  directory as not this version's to remove, so a file an earlier version left is named without
+  this client knowing its name; `uninstall_leftovers_test.go` guards it.
   **`ownership_match.go` owns which installation an integration belongs to**: one of this
   installation's binaries AND this installation's resolved config, because two installations
   share a binary whenever the second was made by running the first's copy, and matching on the

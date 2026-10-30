@@ -47,6 +47,14 @@ the participants who mine; this client carries no compatibility with it.
   be on exactly the `[platform] url` origin. The same format as jevlin-go PR 152, adopted
   here for the search-only client. Codex's permission profile grants the state and sessions
   directories and reaches the router and the agents API.
+- **`JEVLIN_TRACE=off` turns the hooks off too.** The lineage hook wrote a bridge and a lineage
+  file for search to drop; now it writes neither, so off means off entirely.
+- **`credentials.json` is held to the record rules.** A field holding a character a terminal acts
+  on makes the file unreadable, with a message that repeats none of it; an origin it records must
+  have a plain ASCII host; and a key recording no router is bound by the installation's config
+  file alone, never by `JEVLIN_ROUTER_URL`. `uninstall -purge-state` also removes the configs
+  setup set aside (`jevlin.toml.old`, ...) and lists, by full path, what it left in the
+  installation directory.
 - **A hook entry this binary does not know is harmless.** A hook subcommand the binary
   does not recognize, a hook file and a binary of different versions, is named on stderr
   and exits 0 with nothing written or started, so the host's tool call goes on; it used to
@@ -59,7 +67,9 @@ the participants who mine; this client carries no compatibility with it.
   `jevlin.toml.old`, writes `jevlin.toml` in configuration format 1, keeps the registration and
   the search key, and rewrites the hooks and skills in place; a setting changed by hand in the
   old file is copied over by hand, under its format-1 key. Files only the earlier version
-  used are left untouched, never read and never named, and may be deleted. A native install reaches
+  used are left untouched and never read; `jevlin uninstall -purge-state` does not remove them,
+  and lists what it left in the installation directory by full path so you can delete them
+  yourself. A native install reaches
   this version at its daily check, and from then on every command that reads the config says
   to run `jevlin setup`, while the hooks run the agent's tool call without a lineage file
   until it has. An npm install is updated with `npm install -g @jevlinsearch/jevlin@latest`,
