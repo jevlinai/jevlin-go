@@ -1752,7 +1752,11 @@ func normalizeAgentPlanRoots(p agentPlan, root string) agentPlan {
 	for i := 0; i < 2; i++ {
 		forms = append(forms, strings.ReplaceAll(forms[len(forms)-1], `\`, `\\`))
 	}
+	// A Claude Code rule names the root in its own spelling (`//c/Users/...`
+	// on Windows), which no escaping of the raw root reaches.
+	rule := claudeRulePath(root)
 	repl := func(s string) string {
+		s = strings.ReplaceAll(s, rule, "<ROOT>")
 		for i := len(forms) - 1; i >= 0; i-- {
 			s = strings.ReplaceAll(s, forms[i], "<ROOT>")
 		}

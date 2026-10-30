@@ -224,7 +224,12 @@ func TestAgentsInstallWritesClaudeSkillAndMergesHooksIntoSettings(t *testing.T) 
 			t.Errorf("allow rule %d: %s", i+1, r)
 		}
 	}
-	if allow[7] != "Edit(//home/u/.jevlin/requests/**)" || allow[8] != "Read(//home/u/.jevlin/requests/**)" {
+	// "/home/u" is absolute on POSIX only; on Windows it resolves under the
+	// current drive, which Claude Code's rules spell as a first element
+	// (TestClaudeRulePathSpellsWindowsDrivesAsAFirstElement pins that form).
+	reqDir, _ := filepath.Abs("/home/u/.jevlin/requests")
+	reqRule := claudeRulePath(reqDir) + "/**"
+	if allow[7] != "Edit("+reqRule+")" || allow[8] != "Read("+reqRule+")" {
 		t.Errorf("the requests folder's rules: %s, %s", allow[7], allow[8])
 	}
 	for _, r := range allow[1:] {

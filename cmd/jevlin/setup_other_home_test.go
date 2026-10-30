@@ -139,7 +139,8 @@ func TestSetupWithTheDefaultHomeNamedIsTheSameAsWithoutIt(t *testing.T) {
 		slashes := regexp.MustCompile(`\\+`)
 		fold := func(x string) string { return slashes.ReplaceAllString(x, "/") }
 		norm := func(x string) string {
-			x = strings.ReplaceAll(fold(x), fold(s.root), "<root>")
+			x = strings.ReplaceAll(fold(x), claudeRulePath(s.root), "<root>")
+			x = strings.ReplaceAll(x, fold(s.root), "<root>")
 			x = strings.ReplaceAll(x, s.platform.srv.URL, "<platform>")
 			return strings.ReplaceAll(x, s.as.srv.URL, "<as>")
 		}
