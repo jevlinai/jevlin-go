@@ -557,8 +557,8 @@ func (r *rawConfig) finishSearch() (Search, error) {
 	}
 	m := Search{
 		RouterURL:   router,
-		StateDir:    r.stateDir,
-		SessionsDir: r.sessionsDir,
+		StateDir:    cleanDir(r.stateDir),
+		SessionsDir: cleanDir(r.sessionsDir),
 		TurnEnd:     r.turnEnd,
 	}
 	if tier := strings.ToLower(strings.TrimSpace(r.tier)); KnownSearchTier(tier) {
@@ -596,6 +596,18 @@ func sameOrigin(u *url.URL, def string) bool {
 	}
 	return strings.EqualFold(u.Scheme, d.Scheme) && strings.EqualFold(u.Hostname(), d.Hostname()) && port(u) == port(d) &&
 		(u.Path == "" || u.Path == "/") && (d.Path == "" || d.Path == "/")
+}
+
+// cleanDir is a directory the file names, in this system's own spelling:
+// TOML has no path type, and a Windows path is most often written with
+// forward slashes, which every comparison and every message would otherwise
+// carry beside the backslashed paths filepath builds. Empty stays empty, so
+// the default still applies.
+func cleanDir(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	return filepath.Clean(dir)
 }
 
 func isLoopbackHost(host string) bool {
