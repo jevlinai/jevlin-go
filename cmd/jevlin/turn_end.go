@@ -456,6 +456,15 @@ func cursorTurnEnd(ops hookOps, hc hookContext, p cursorPayload, l *lineageFile)
 
 // ── the detached sender ─────────────────────────────────────────────────
 
+// spawnTurnEndSender is spawnDetached, the one process spawn on this path,
+// behind a variable: realHookOps names startTurnEnd itself as its
+// spawnTurnEnd, so a test that swaps that field never reaches this function,
+// and a startTurnEnd that returned nil without spawning stayed green
+// everywhere but an end-to-end run that needs node. turn_end_spawn_test.go
+// stands here, under the real hook entry, and reads the exact command line
+// the sender would be started with. Nothing but a test assigns it.
+var spawnTurnEndSender = spawnDetached
+
 func startTurnEnd(cfgPath, file string) error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -465,7 +474,7 @@ func startTurnEnd(cfgPath, file string) error {
 	if cfgPath != "" {
 		args = append(args, "-config", cfgPath)
 	}
-	return spawnDetached(exe, append(args, "-file", file))
+	return spawnTurnEndSender(exe, append(args, "-file", file))
 }
 
 // cmdTurnEnd sends one queued turn end. It is started by a hook, detached,
