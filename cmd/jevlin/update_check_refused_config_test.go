@@ -8,6 +8,7 @@ package main
 
 import (
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -41,8 +42,15 @@ func TestHooksOnARefusedConfigStillStartTheDailyCheck(t *testing.T) {
 		for _, e := range entries {
 			fs, ops := newFakeHookOps(map[string]string{})
 			run := runRealHookMain(t, fs, ops, cfg, e.args, e.payload)
-			if got := run.checks > 0; got != c.want {
-				t.Errorf("%s, hook %v: started %d check(s), want a check %v", c.name, e.args, run.checks, c.want)
+			want := c.want
+			if e.args[0] == "codex" {
+				// Nothing has established what runs a Codex hook on Windows,
+				// so a Codex entry does nothing there (hookCodexOn).
+				_, err := declaredShells(codexTarget{}, runtime.GOOS, channelHook)
+				want = want && err == nil
+			}
+			if got := run.checks > 0; got != want {
+				t.Errorf("%s, hook %v: started %d check(s), want a check %v", c.name, e.args, run.checks, want)
 			}
 		}
 	}

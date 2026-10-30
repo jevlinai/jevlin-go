@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -20,7 +21,9 @@ import (
 func sessionsFiles(fs *fakeHookFS) []string {
 	var got []string
 	for p := range fs.files {
-		if strings.HasPrefix(p, "/sessions") {
+		// The fake filesystem keys files by the path the code built, which
+		// on Windows is \sessions\...; one spelling covers both.
+		if strings.HasPrefix(filepath.ToSlash(p), "/sessions/") {
 			got = append(got, p)
 		}
 	}

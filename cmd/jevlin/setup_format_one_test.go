@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -34,6 +35,11 @@ func v061Fixture(t *testing.T, s *setupSandbox, name string) []byte {
 	r := strings.NewReplacer("<BIN>", s.exe, "<CFG>", s.cfgPath(), "<INSTALL>", s.home, "<HOME>", s.userHome)
 	return []byte(r.Replace(string(b)))
 }
+
+// hostCaptureApplies: the 0.6.1 host files under testdata/setup/v061 were
+// captured on macOS, and stand for what that version wrote on macOS and
+// Linux only.
+func hostCaptureApplies() bool { return runtime.GOOS != "windows" }
 
 // plantEarlierInstallation lays the 0.6.1 installation out in the sandbox
 // and primes the platform stub with its identity, so a status or /me call
@@ -71,7 +77,14 @@ func plantEarlierInstallation(t *testing.T, s *setupSandbox) []byte {
 	// them.
 	write(filepath.Join(s.home, "earlier-version.json"), []byte(`{"v":1}`+"\n"), 0o600)
 	write(filepath.Join(s.home, "earlier", "record.json"), []byte(`{"x":1}`+"\n"), 0o600)
-	// The host files that version's `agents install` wrote.
+	// The host files that version's `agents install` wrote, as captured on
+	// macOS: POSIX-quoted commands and Codex's permission profile. Windows
+	// renders both differently (PowerShell quoting, the roots-only block),
+	// and the capture's raw paths would not even be valid JSON or TOML
+	// there, so they are planted, and checked, only where they were taken.
+	if !hostCaptureApplies() {
+		return legacy
+	}
 	for name, path := range map[string]string{
 		"claude.settings.json": filepath.Join(s.userHome, ".claude", "settings.json"),
 		"codex.config.toml":    filepath.Join(s.userHome, ".codex", "config.toml"),
@@ -133,6 +146,16 @@ func TestSetupOverAnEarlierInstallationReplacesTheConfigAndKeepsTheRegistration(
 	// left. The Stop hook that version installed under another name is the
 	// one place the two renderings differ in a word, and the Codex profile's
 	// roots are where they differ in a directory.
+	// What the earlier version left and this one does not know: untouched.
+	for rel, before := range earlierOnly {
+		if after := s.readFile(filepath.Join(s.home, rel)); string(after) != string(before) {
+			t.Errorf("%s was changed", rel)
+		}
+	}
+
+	if !hostCaptureApplies() {
+		return
+	}
 	claude := string(s.readFile(filepath.Join(s.userHome, ".claude", "settings.json")))
 	if strings.Contains(claude, "' flush\"") || !strings.Contains(claude, "' stop\"") {
 		t.Errorf("Claude Code's settings keep the old Stop hook or lack the new one:\n%s", claude)
@@ -158,12 +181,6 @@ func TestSetupOverAnEarlierInstallationReplacesTheConfigAndKeepsTheRegistration(
 		}
 	}
 
-	// What the earlier version left and this one does not know: untouched.
-	for rel, before := range earlierOnly {
-		if after := s.readFile(filepath.Join(s.home, rel)); string(after) != string(before) {
-			t.Errorf("%s was changed", rel)
-		}
-	}
 }
 
 // A dry run over the same installation says what it would do with the
@@ -222,6 +239,9 @@ func TestSetupAfterTheReplacementIsANoOpForTheConfig(t *testing.T) {
 // (earlierBlockOfOurConfig) and rewrites it, rather than leaving it with
 // the earlier version's roots and hosts.
 func TestSetupReplacesAnEarlierCodexBlockWhoseStateRootMoved(t *testing.T) {
+	if !hostCaptureApplies() {
+		t.Skip("the 0.6.1 Codex block is captured from macOS; Windows writes the roots-only block, which TestOnlyAnEarlierBlocksOwnShapeIsVouchedFor's rule covers")
+	}
 	s := newSetupSandbox(t)
 	plantEarlierInstallation(t, s)
 	elsewhere := filepath.ToSlash(filepath.Join(s.root, "elsewhere"))

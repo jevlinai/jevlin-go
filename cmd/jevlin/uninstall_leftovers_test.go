@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -175,6 +176,12 @@ func TestPurgeThatLeavesNothingSaysNothingAboutIt(t *testing.T) {
 // earlier version or another program put there.
 func TestPurgeLeavesTheBinaryDirectoryToBinaryAndSaysSo(t *testing.T) {
 	s := installedWithOwnBinary(t)
+	if runtime.GOOS == "windows" {
+		// The installation's own binary is bin\jevlin.exe there
+		// (uninstallRun.binaryName); the fixture's has no extension.
+		s.exe += ".exe"
+		writeFileT(t, s.exe, "the binary")
+	}
 	code, out, errOut := s.uninstall(t, tty(s.home), true, "-purge-state")
 	if code != exitOK {
 		t.Fatalf("purge exited %d\n%s\n%s", code, out, errOut)
