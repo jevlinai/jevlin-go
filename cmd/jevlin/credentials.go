@@ -794,7 +794,12 @@ func loginShow(stdout, stderr io.Writer, getenv func(string) string, m config.Se
 			fmt.Fprintf(stdout, "nothing stored at %s\n", path)
 		}
 	} else if c, ferr := readCredentials(path); ferr == nil && c.Router != "" {
-		fmt.Fprintf(stdout, "  verified against %s when stored\n", c.Router)
+		// The origin, never the recorded text: the binding is the origin
+		// (keyService.check), and urlOrigin reads it back only from a URL
+		// with a plain ASCII host.
+		if o, err := urlOrigin(c.Router); err == nil {
+			fmt.Fprintf(stdout, "  verified against %s when stored\n", o)
+		}
 	}
 	return exitOK
 }

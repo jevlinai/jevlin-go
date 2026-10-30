@@ -37,6 +37,10 @@ import (
 // field of that type too, so a field the run happened to leave empty is
 // covered.
 //
+// A string the fixture holds as a URL is planted inside one as well
+// (urlShaped), in its host and its path, because the code that reads an
+// origin or prints a recorded URL is reached only by a value that parses.
+//
 // Each string is planted once per character class (plantedClasses), not
 // with one payload holding them all: a load check narrowed to refuse only
 // ESC still refused the combined payload, so the guard passed while a
@@ -174,9 +178,41 @@ func printingCommands(t *testing.T, cfgPath, home string) map[string]string {
 		_ = cmdAgents([]string{"status", "-config", cfgPath}, strings.NewReader(""), o, e, noEnv)
 	})
 	run("limits", func(o, e io.Writer) { _ = cmdLimits([]string{"-config", cfgPath}, o, e, noEnv) })
+	run("login -show", func(o, e io.Writer) {
+		_ = cmdLogin([]string{"-show", "-config", cfgPath}, strings.NewReader(""), o, e, noEnv)
+	})
 	_, so, se := runSearchStdin(t, fixedSearchOps(home), nil, `{"version":1,"query":"q"}`, "-config", cfgPath)
 	out["search --stdin"] = so + se
+	_, ho, he := runSearch(t, fixedSearchOps(home), nil, "-config", cfgPath, "q")
+	out["search"] = ho + he
 	return out
+}
+
+// urlShaped is planted, for a string that holds the URL fixture in the
+// fixture, inside a URL as well: in the path of that same URL, so the
+// origin still matches and every command goes on to print what it read,
+// and in the host of another. A value that is not a URL is refused before
+// anything reads an origin from it, so a plant of the bare class never
+// reaches the code that reads one: a recorded URL printed as it was stored,
+// or an origin taken from a host that kept its non-ASCII bytes.
+func urlShaped(fixture, planted string) []string {
+	return []string{strings.TrimRight(fixture, "/") + "/" + planted, "https://api" + planted + ".jevlin.ai"}
+}
+
+// valueAt is the string at leaf in a decoded record, or "".
+func valueAt(v any, at jsonLeaf) string {
+	for _, k := range at {
+		switch x := v.(type) {
+		case map[string]any:
+			v = x[k.(string)]
+		case []any:
+			v = x[k.(int)]
+		default:
+			return ""
+		}
+	}
+	s, _ := v.(string)
+	return s
 }
 
 // plantedClasses is one planted value per class of character a terminal
@@ -301,7 +337,7 @@ func TestNoStateRecordCarriesATerminalEscapeToTheOutput(t *testing.T) {
 		files = append(files, rel)
 	}
 	sort.Strings(files)
-	planted := 0
+	planted, urlPlanted := 0, map[string]bool{}
 	for _, rel := range files {
 		class, ok := installationRecords[rel]
 		if !ok {
@@ -333,22 +369,33 @@ func TestNoStateRecordCarriesATerminalEscapeToTheOutput(t *testing.T) {
 			}
 		}
 		for _, leaf := range leaves {
+			fixture := valueAt(doc, leaf)
+			isURL := strings.HasPrefix(fixture, "http")
+			if isURL {
+				urlPlanted[rel+" "+leaf.String()] = true
+			}
 			t.Run(rel+"/"+leaf.String(), func(t *testing.T) {
 				for class, planted := range plantedClasses {
-					restoreInstallation(t, home, snap)
-					var fresh any
-					if err := json.Unmarshal(snap[rel], &fresh); err != nil {
-						t.Fatal(err)
+					values := []string{planted}
+					if isURL {
+						values = append(values, urlShaped(fixture, planted)...)
 					}
-					raw, err := json.Marshal(plantAt(fresh, leaf, planted))
-					if err != nil {
-						t.Fatal(err)
-					}
-					if err := os.WriteFile(filepath.Join(home, filepath.FromSlash(rel)), raw, 0o600); err != nil {
-						t.Fatal(err)
-					}
-					for name, out := range printingCommands(t, cfgPath, home) {
-						requireNothingPlanted(t, name+" with "+rel+" "+leaf.String()+" planted with "+class, out, planted)
+					for _, value := range values {
+						restoreInstallation(t, home, snap)
+						var fresh any
+						if err := json.Unmarshal(snap[rel], &fresh); err != nil {
+							t.Fatal(err)
+						}
+						raw, err := json.Marshal(plantAt(fresh, leaf, value))
+						if err != nil {
+							t.Fatal(err)
+						}
+						if err := os.WriteFile(filepath.Join(home, filepath.FromSlash(rel)), raw, 0o600); err != nil {
+							t.Fatal(err)
+						}
+						for name, out := range printingCommands(t, cfgPath, home) {
+							requireNothingPlanted(t, name+" with "+rel+" "+leaf.String()+" planted with "+class+" as "+fmt.Sprintf("%q", value), out, planted)
+						}
 					}
 				}
 			})
@@ -357,6 +404,11 @@ func TestNoStateRecordCarriesATerminalEscapeToTheOutput(t *testing.T) {
 	}
 	if planted < 25 {
 		t.Fatalf("only %d strings were planted; the fixture no longer builds the records this guard is for", planted)
+	}
+	for _, leaf := range []string{`credentials.json "router"`, `credentials.json "agents_api"`} {
+		if !urlPlanted[leaf] {
+			t.Errorf("%s was not planted inside a URL; the fixture no longer records it as one", leaf)
+		}
 	}
 	restoreInstallation(t, home, snap)
 }
