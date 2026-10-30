@@ -514,6 +514,12 @@ func hookLineage(ops hookOps, hc hookContext, payload []byte, stdout io.Writer) 
 	} else if _, exists := p.ToolInput["trace_bridge"]; exists {
 		return // never overwrite a bridge that is somehow already there
 	}
+	// JEVLIN_TRACE=off turns traces off entirely: no bridge on the command
+	// and no lineage file, not a bridge that search then drops. The fetch
+	// allow above is not a trace and still answers.
+	if strings.EqualFold(strings.TrimSpace(ops.getenv("JEVLIN_TRACE")), "off") {
+		return
+	}
 
 	env := &traceEnvelope{
 		V:         traceVersion,
