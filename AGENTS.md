@@ -14,15 +14,15 @@ host's hook supplied one, the redacted trace (invariant 2).
 
 Until 0.6.1 this client was also the Twilight MINIS mining participant: it recorded each served
 search, delivered it to an Authorization Server (AS) under OAuth and DPoP, enrolled in epochs and
-held a payout wallet. All of that was removed in one stripping, not rewritten: the search,
+held payout keys. All of that was removed in one stripping, not rewritten: the search,
 hook, agent-integration, setup, connect, upgrade and uninstall code is the code that shipped,
 with the mining calls taken out. That version's line continues as its own binary for the
 participants who ran it; this client carries no compatibility with it: its config has no
 `schema` line and is refused as an older format (`config.ErrLegacyConfig`), which `jevlin setup`
 sets aside as `jevlin.toml.old` before writing configuration format 1, keeping the registration;
-and the files it left on a machine (`payout.json`, `wallet/`, `flush.lock`,
-`mining_decision.json`, intake and spool directories) are neither read, moved nor named. Where a rule below says "an
-earlier version", that is what it means.
+and the files it left on a machine are neither read, moved nor named: this client carries no
+list of them, and a purge lists whatever it finds left by path (`sayLeftInHome`). Where a rule
+below says "an earlier version", that is what it means.
 
 ## Authority — the protocol is owned upstream, not here
 The search platform's control plane (`platform.jevlin.ai` — `connect`; `pkg/platform`) is a
@@ -120,7 +120,7 @@ the named tests.
    is why this repo owns it and can hand it to another client by import, not copy. Enforced by
    `cmd/jevlin/boundary_test.go`.
 9. **The chain SDK module tree is banned.** A lean binary shipped to users must not pull the
-   Cosmos SDK's module tree; the wallet that once needed chain messages is gone, and the rule
+   Cosmos SDK's module tree; the code that once needed chain messages is gone, and the rule
    stays so it cannot come back by accident. `go.mod` carries no cosmos-sdk/cometbft dependency.
    Enforced by `TestNoChainImportsAnywhere`.
 10. **Retired with mining.** `mining_decision.json` was the one runtime authority on whether
@@ -158,8 +158,8 @@ the named tests.
     fresh registration. Separately and without `-force`, an ordinary foreground `connect` may
     replace a registration the platform has positively verified as expired; that replacement
     changes the platform agent and its key. `-resume` never registers, rebuilds or replaces.
-14. **Retired with mining.** The wallet, its send journal and its lock left with the payout
-    path. The number is kept so that references to the later invariants stay right.
+14. **Retired with mining.** The payout path, its send journal and its lock left with the
+    mining plane. The number is kept so that references to the later invariants stay right.
 15. **The machine protocol is versioned, closed and typed.** `search --stdin`, `fetch --stdin`,
     `status -json`, `doctor -json`, `connect -json` and `limits -json` emit one envelope with the mandatory header (`version`,
     `command`, `ok`, `exit_code`, `status`, `code`, `retryable`, `action`), a closed action set
@@ -574,7 +574,7 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `judgeStateDescriptor` is pure, so `state_acl_test.go` runs on every OS, including through
   `cmdDoctor` with a fake backend; `state_acl_windows_test.go` runs the real reader. The reader,
   the namer and `RestrictToOwner` live in `internal/winacl` because `pkg/` cannot import `cmd/`
-  (invariant 8) and an earlier version's wallet check needed the same ones; the package imports nothing of the
+  (invariant 8) and an earlier version's payout check needed the same ones; the package imports nothing of the
   module and judges nothing, and its descriptor-string parser is tested on every OS.
 - **Where the stored key may go** — `cmd/jevlin/credentials.go` owns it (`keyService`,
   `resolveAPIKey`, `platformKey`): the key in `credentials.json` is sent only to the router and

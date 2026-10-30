@@ -387,7 +387,7 @@ func TestAgentsMDTokensAreClassified(t *testing.T) {
 		"search-router/README.md":                 otherRepoPath,
 		"tokendrop-auth-server-design":            notAPath,
 		"credentials.json":                        notAPath,
-		"wallet/pending_tx.json":                  notAPath,
+		"earlier/pending_tx.json":                 notAPath,
 		"state/":                                  notAPath,
 		"~/.claude/settings.json":                 notAPath,
 		"net/http":                                notAPath,

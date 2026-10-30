@@ -82,7 +82,7 @@ func TestSelfupdateImportsNoWrapperAndNoCredential(t *testing.T) {
 // twilight-core is the same forbidden chain application, and the
 // Cosmos/CometBFT graph is banned for the same reason it is there — a
 // lean binary shipped to users must not pull the SDK's module tree. The
-// wallet that once needed chain messages left with mining; this is what
+// code that once needed chain messages left with mining; this is what
 // keeps the rule from coming back by accident, not just documents it.
 func TestNoChainImportsAnywhere(t *testing.T) {
 	banned := []string{
