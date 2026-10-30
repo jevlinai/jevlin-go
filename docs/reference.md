@@ -639,11 +639,14 @@ retry and each redirect alike, and refused before anything is sent when it does 
   the default, every call that carries the key prints one line on stderr naming it.
 - The AS's refresh authorization (`refresh.token` in the state directory) is recorded with the
   AS that issued it, and every DPoP proof, token and enrollment assertion goes only to the AS
-  the configuration names. A configuration that names another AS after enrollment reaches
-  nothing with the stored authorization; enroll again for it.
+  the configuration names. An authorization another AS issued, or one an earlier version stored
+  with no AS recorded, reaches nothing; `jevlin connect` enrolls this installation again with
+  the configured AS and replaces it, and `flush` and `doctor` say so. `mining disable` cannot
+  revoke such an authorization, says so, and promises no later revoke.
 
 A command whose configuration names another origin than the key's stops before any request, with
-`key_origin_mismatch` and `fix_input` in machine mode, naming both origins. Text a server sends
+`key_origin_mismatch` and `fix_input` in machine mode, naming both origins. A stored key that
+records no router stops with `credential_unbound` and `login`. Text a server sends
 back in an error is redacted before it is printed: keys, bearer tokens and JWT-shaped strings are
 replaced.
 
