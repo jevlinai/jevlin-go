@@ -53,8 +53,10 @@ import (
 // Schema is the configuration format this client reads and setup writes.
 const Schema = 1
 
-// ErrLegacyConfig marks a file that is not configuration format 1: no
-// schema line, or a key format 1 does not define.
+// ErrLegacyConfig marks a file from before configuration format 1: one with
+// no schema line. Only such a file is one setup may set aside and replace; a
+// file that names a schema is the participant's current configuration, and a
+// mistake in it is refused, never replaced.
 var ErrLegacyConfig = errors.New("this configuration is from an older jevlin; run `jevlin setup`")
 
 // The runtime endpoint variables. Each replaces its URL after the file, under
@@ -347,6 +349,14 @@ type rawConfig struct {
 // formatOneSections are the top-level keys format 1 defines.
 var formatOneSections = map[string]bool{"schema": true, "router": true, "platform": true, "agents": true, "mining": true, "update": true}
 
+// unknownKeysError refuses a format-1 file holding keys the format does not
+// define. It is not ErrLegacyConfig: the file says it is format 1, so a key
+// it holds is a typo or a setting carried over by hand, and setup leaves the
+// file for the participant to correct rather than replacing it.
+func unknownKeysError(source string, keys []string) error {
+	return fmt.Errorf("config file %s: format 1 does not define %s; correct or remove it", source, strings.Join(keys, ", "))
+}
+
 // legacyError is ErrLegacyConfig for one file, saying what made it so.
 func legacyError(source, why string) error {
 	return fmt.Errorf("config file %s: %w (%s)", source, ErrLegacyConfig, why)
@@ -361,18 +371,26 @@ func (r *rawConfig) applyBytes(source string, data []byte) error {
 	if _, err := toml.Decode(string(data), &doc); err != nil {
 		return fmt.Errorf("config file %s: %w", source, err)
 	}
-	if _, ok := doc["schema"]; !ok {
+	schema, ok := doc["schema"]
+	if !ok {
 		return legacyError(source, "no schema line")
+	}
+	// The schema is judged before anything else in the file: a file of
+	// another schema may be newer, and its keys are not this format's to
+	// call unknown.
+	if n, isInt := schema.(int64); !isInt || n != Schema {
+		return fmt.Errorf("config file %s: its schema is not one this jevlin reads (it reads schema = %d); "+
+			"use the jevlin that wrote it, or write schema = %d", source, Schema, Schema)
 	}
 	var f fileConfig
 	md, err := toml.Decode(string(data), &f)
 	if err != nil {
-		// A section of another shape, an older file's [[provider]] array,
-		// is a key format 1 does not define; a value of the wrong type in a
-		// format-1 key is a mistake in this file, and says so.
+		// A section of another shape (an older file's [[provider]] array)
+		// is a key format 1 does not define; a value of the wrong type in
+		// a format-1 key is a mistake in this file, and says so.
 		for key := range doc {
 			if !formatOneSections[key] {
-				return legacyError(source, "unknown key(s): "+key)
+				return unknownKeysError(source, []string{key})
 			}
 		}
 		return fmt.Errorf("config file %s: %w", source, err)
@@ -383,11 +401,7 @@ func (r *rawConfig) applyBytes(source string, data []byte) error {
 			keys[i] = k.String()
 		}
 		sort.Strings(keys)
-		return legacyError(source, "unknown key(s): "+strings.Join(keys, ", "))
-	}
-	if *f.Schema != Schema {
-		return fmt.Errorf("config file %s: schema = %d is not one this jevlin reads (it reads schema = %d); "+
-			"run `jevlin setup`, or the jevlin that wrote it", source, *f.Schema, Schema)
+		return unknownKeysError(source, keys)
 	}
 
 	r.routerURL = f.Router.URL

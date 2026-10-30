@@ -101,7 +101,9 @@ func TestSetupConfigPolicyUnits(t *testing.T) {
 		t.Fatalf("aside name with two taken: %+v %v", plan, err)
 	}
 	// A format-1 file that does not load, or a file that is not TOML: refused.
-	for _, bad := range []string{"schema = 1\n[router]\nurl = \"http://router.example\"\n", "[miner]\nenabled = true\n[miner]\n", "not toml at all ["} {
+	// A typo in a format-1 file is the participant's to correct: it is
+	// refused, never set aside and reset to defaults.
+	for _, bad := range []string{"schema = 1\n[router]\nurl = \"http://router.example\"\n", "schema = 1\n[mining]\nas_ulr = \"https://as.example\"\n", "schema = 2\n[newer]\nkey = 1\n", "[miner]\nenabled = true\n[miner]\n", "not toml at all ["} {
 		_, err = planSetupConfig(path, []byte(bad), v, validateConfigBytes, none)
 		if !errors.Is(err, errConfigInvalid) || !strings.Contains(err.Error(), path) {
 			t.Fatalf("invalid %q: %v", bad, err)

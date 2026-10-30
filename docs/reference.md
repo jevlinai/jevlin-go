@@ -242,14 +242,16 @@ turn_end       = false                             # report a searched turn's fi
 mode = "apply"                           # apply | notify | off; the daily release check (see Files and locks). Another word checks and notifies only, and doctor names it
 ```
 
-**A file that is not format 1 is refused.** With no `schema = 1` line, or with a key format 1
-does not define — an older file's `[[provider]]`, `[miner]` or `[proxy]`, or a typo — every
-command stops with "this configuration is from an older jevlin; run `jevlin setup`", naming the
-file and the keys it did not recognize. An older file is never reinterpreted, because its
-endpoints were chosen under rules this version does not have. `jevlin setup` sets such a file
-aside as `jevlin.toml.old` (or `.old.1` and on, when that name is taken) and writes a format-1
-file in its place; copy any setting you changed by hand from the old file. A format-1 file is
-left byte for byte, and one that does not load is refused.
+**A file that is not format 1 is refused.** With no `schema` line, every command stops with
+"this configuration is from an older jevlin; run `jevlin setup`", naming the file. An older file
+is never reinterpreted, because its endpoints were chosen under rules this version does not
+have. `jevlin setup` sets such a file aside as `jevlin.toml.old` (or `.old.1` and on, when that
+name is taken) and writes a format-1 file in its place; copy any setting you changed by hand
+from the old file. A file that says `schema = 1` is your current configuration, so a key format 1
+does not define — a typo, or an older file's `[miner]` or `[proxy]` copied in by hand — is
+named and refused, and setup leaves the file for you to correct rather than replacing it. A
+schema other than 1 is refused the same way: it may be from a newer jevlin. A format-1 file that
+loads is left byte for byte.
 
 **Every endpoint is Jevlin's unless you name another.** `[router] url`, `[platform] url`,
 `[agents] url` and `[mining] as_url` default to the compiled values above (`as_url` defaults to

@@ -18,10 +18,11 @@ and a config an earlier version wrote is refused until setup replaces it.
 - **Configuration format 1.** `jevlin.toml` begins `schema = 1` and names each endpoint in its
   own section: `[router] url`, `[platform] url`, `[agents] url`, and `[mining]` with `as_url`,
   the chain and slot, the payout answer, the directories and the turn end. Each defaults to the
-  compiled Jevlin host. A file without the schema line, or with a key format 1 does not define,
-  stops every command with "this configuration is from an older jevlin; run `jevlin setup`",
-  and is never reinterpreted. `jevlin setup` sets such a file aside as `jevlin.toml.old` and
-  writes format 1 in its place; copy any setting you changed by hand from the old file.
+  compiled Jevlin host. A file without the schema line stops every command with "this
+  configuration is from an older jevlin; run `jevlin setup`", and is never reinterpreted.
+  `jevlin setup` sets such a file aside as `jevlin.toml.old` and writes format 1 in its place;
+  copy any setting you changed by hand from the old file. A `schema = 1` file holding a key
+  format 1 does not define is refused by name and left for you to correct.
 - **Endpoints are explicit.** `JEVLIN_ROUTER_URL`, `JEVLIN_PLATFORM_URL`,
   `JEVLIN_AGENTS_API_URL` and `JEVLIN_AS_URL` now apply to every command, not only to setup,
   under the same rules as the file: https, or http on a loopback host, and no user name or

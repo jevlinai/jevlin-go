@@ -82,18 +82,13 @@ func TestNoFileAndAMinimalFileAreTheCompiledDefaults(t *testing.T) {
 
 // Every file that is not format 1 is refused with the one message, whatever
 // it says: an empty file, an older file's provider block or miner table, a
-// proxy-era section, a key format 1 does not define, or format-1 sections
-// with no schema line.
+// proxy-era section, or format-1 sections with no schema line.
 func TestAFileThatIsNotFormatOneIsRefusedWithOneMessage(t *testing.T) {
 	for name, body := range map[string]string{
 		"empty":                   "",
 		"comments only":           "# nothing here\n",
 		"an older provider block": "[[provider]]\nname = \"search-router\"\nupstream = \"https://api.jevlin.ai\"\n",
 		"an older miner table":    "[miner]\nenabled = true\nrouter_url = \"https://api.jevlin.ai\"\n",
-		"an older platform key":   "schema = 1\n[platform]\nbase_url = \"https://platform.jevlin.ai\"\n",
-		"a proxy listener":        "schema = 1\n[proxy]\nlisten = \"127.0.0.1:8787\"\n",
-		"privacy.log_content":     "schema = 1\n[privacy]\nlog_content = false\n",
-		"an unknown key":          "schema = 1\n[router]\nurl = \"https://api.jevlin.ai\"\nshade = \"blue\"\n",
 		"no schema line":          "[router]\nurl = \"https://api.jevlin.ai\"\n",
 	} {
 		_, err := loadFile(t, body, noEnv)
@@ -105,9 +100,23 @@ func TestAFileThatIsNotFormatOneIsRefusedWithOneMessage(t *testing.T) {
 			t.Errorf("%s: the message does not say what to do: %v", name, err)
 		}
 	}
-	_, err := loadFile(t, "schema = 1\n[router]\nshade = \"blue\"\n", noEnv)
-	if err == nil || !strings.Contains(err.Error(), "router.shade") {
-		t.Errorf("an unknown key is not named: %v", err)
+}
+
+// A file that says it is format 1 is the participant's current
+// configuration: a key the format does not define is refused by name, and is
+// not called older, so setup never sets the file aside over a typo.
+func TestAnUnknownKeyInAFormatOneFileIsNamedNotCalledOlder(t *testing.T) {
+	for body, key := range map[string]string{
+		"schema = 1\n[router]\nurl = \"https://api.jevlin.ai\"\nshade = \"blue\"\n": "router.shade",
+		"schema = 1\n[mining]\nas_ulr = \"https://as.example\"\n":                   "mining.as_ulr",
+		"schema = 1\n[platform]\nbase_url = \"https://platform.jevlin.ai\"\n":       "platform.base_url",
+		"schema = 1\n[proxy]\nlisten = \"127.0.0.1:8787\"\n":                        "proxy",
+		"schema = 1\n[[provider]]\nname = \"search-router\"\n":                      "provider",
+	} {
+		_, err := loadFile(t, body, noEnv)
+		if err == nil || errors.Is(err, ErrLegacyConfig) || !strings.Contains(err.Error(), key) {
+			t.Errorf("%q: %v", body, err)
+		}
 	}
 }
 
@@ -122,9 +131,11 @@ func TestAWrongValueIsNotCalledAnOlderFile(t *testing.T) {
 
 // A schema this client does not read is not called older: it may be newer.
 func TestAnotherSchemaNumberIsRefusedAsNotThisFormat(t *testing.T) {
-	_, err := loadFile(t, "schema = 2\n", noEnv)
-	if err == nil || errors.Is(err, ErrLegacyConfig) || !strings.Contains(err.Error(), "schema = 2") {
-		t.Fatalf("schema = 2: %v", err)
+	for _, body := range []string{"schema = 2\n", "schema = 2\n[newer]\nkey = 1\n", "schema = 0\n", "schema = \"1\"\n"} {
+		_, err := loadFile(t, body, noEnv)
+		if err == nil || errors.Is(err, ErrLegacyConfig) || !strings.Contains(err.Error(), "reads schema = 1") || strings.Contains(err.Error(), "does not define") {
+			t.Errorf("%q: %v", body, err)
+		}
 	}
 }
 
