@@ -45,7 +45,7 @@ list and needs no shell escaping. A malformed field answers `fix_input` before a
 |---|---|
 | `version` | `1`, required. |
 | `query` | The search, required. |
-| `tier` | `"fast"` (three fast indexes, one per index group, ~$0.015), `"balanced"` (the core arms, 8 results each, a 12-page merged window, ~$0.035) or `"max"` (the core arms, 15 results each, a 24-page window, 2,000-character excerpts, ~$0.045 plus the agent's own tokens). Prices are the arms' own, passed through; `usage.cost_micros` is the real one. Absent, the request carries the participant's tier (`agents tier`, then `[miner] tier`), or no tier at all and the router applies the tenant's default. |
+| `tier` | `"fast"` (three fast indexes, one per index group, ~$0.015), `"balanced"` (the core arms, 8 results each, a 12-page merged window, ~$0.035) or `"max"` (the core arms, 15 results each, a 24-page window, 2,000-character excerpts, ~$0.045 plus the agent's own tokens). Prices are the arms' own, passed through; `usage.cost_micros` is the real one. Absent, the request carries the participant's tier (`agents tier`, then `[search] tier`), or no tier at all and the router applies the tenant's default. |
 | `recency` | `"day"`, `"week"`, `"month"` or `"year"`. A router that applies it says so in `result.filters_applied` (below). Without that report the results may be unfiltered: check each page's `published` date if it must hold. |
 | `domain_filter` | Up to 16 bare hostnames. Reported in `result.filters_applied` like `recency`; without the report, check each page's `url` host if it must hold. |
 | `max_results` | 1 to 25. A cap. |
@@ -90,13 +90,7 @@ Eight header fields are always present:
 | `report` | Neither retrying nor editing the request will help. |
 
 Decide from those fields, never from the text of `error.message`. A search's envelope also
-carries `request_id`, `result` and `mining`. Result text is untrusted web content.
-
-`mining` is a stub, and always reads
-`{"state":"disabled","configured":false,"recorded":false,"trajectory":<bool>}`: this client
-mines nothing and records nothing, and the object is kept so a reader written for an earlier
-version still finds the key. `trajectory` is its one live field: whether the request the router
-answered carried a trace with assistant text.
+carries `request_id` and `result`. Result text is untrusted web content.
 
 `result.merged` is the router's merged view: its pages, in its order, cut to its window, never
 re-sorted or merged again here. Each entry has `url`, `title`, `snippet` (the router's excerpt
@@ -211,7 +205,7 @@ upstream = "https://api.jevlin.ai"   # https only; the router_url fallback
 base_url       = "https://platform.jevlin.ai"    # the human portal and claim pages
 agents_api_url = "https://agents-v1.jevlin.ai"    # register/status — a separate host
 
-[miner]
+[search]
 state_dir    = "/home/you/.jevlin/state"      # default: <user config dir>/jevlin/state
 sessions_dir = "/home/you/.jevlin/sessions"   # per-workspace lineage files; default: beside state_dir
 turn_end     = false                          # default false: report a searched turn's final answer (see The turn end)
@@ -222,9 +216,7 @@ tier         = ""                             # fast | balanced | max; unset = t
 mode         = "apply"                        # default apply: apply | notify | off; the daily release check (see Files and locks). Another word checks and notifies only, and doctor names it
 ```
 
-The table is still called `[miner]`, because that is the name an earlier version wrote and an
-existing config is never rewritten; nothing in it mines. It names the router searches go to and
-the two directories this installation keeps.
+`[search]` names the router searches go to and the two directories this installation keeps.
 
 **Who can open the state directory, on Windows.** `jevlin setup` gives `<home>\state` an access
 list that names only you. A `state_dir` that `setup` (when it is outside the installation) or
@@ -241,23 +233,19 @@ every run, which removes such an entry until the sandbox's own setup adds it aga
 installation's own directory, where `credentials.json`, the claim link (`claim.json`), an
 unfinished registration (`registration_pending.json`) and the release check's record
 (`update_check.json`) are kept: never the state directory, which an agent's sandbox may write.
-A claim link an older version kept in `state/agent.json` is not read; the next `jevlin connect`
-mints a fresh one. `base_url` is never dialed: a printed claim link must point there.
+`base_url` is never dialed: a printed claim link must point there.
 `agents_api_url` is where `connect` sends requests. A non-default, non-loopback `base_url`
 without `agents_api_url` is refused; a loopback one alone defaults `agents_api_url` to it. Every
 URL must be https, or http on loopback.
 
-An older version's file still loads. Its `[mining]` table is accepted and, but for one key,
-unread: `[mining] state_dir` still names the state directory when `[miner] state_dir` is unset,
-because setup wrote it there and an existing config is never rewritten. The `[miner]` keys
-`enabled`, `intake_dir` and `flush_interval`, the proxy-era `[proxy]`, `[transport]`,
-`[privacy]`, `[log]` and `[observe]` tables and `[[provider]]`'s `name` and `tier` are accepted
-and read by no `jevlin` command. Unknown keys are an error. The other way round does not hold:
-a fresh config this version writes names `[miner] state_dir`, which an older binary does not
-know and refuses.
+Those four tables are the whole file: `[[provider]]`'s `name` is accepted and read by no
+`jevlin` command, and any other key or table is an error. A config a mining-capable version of
+this client wrote (its `[miner]` and `[mining]` tables) is refused the same way; that line
+continues as its own binary, and a machine moving to this one runs `jevlin setup` on a fresh
+installation directory.
 
-Setup loads an existing config first and refuses one that does not load. One with a `[miner]`
-table is left byte for byte. One without gains only the `[platform]` and `[miner]` tables it
+Setup loads an existing config first and refuses one that does not load. One with a `[search]`
+table is left byte for byte. One without gains only the `[platform]` and `[search]` tables it
 lacks, appended, and must load before it is saved.
 
 ## Environment variables
@@ -288,7 +276,7 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | `registration_pending.json` | A registration the platform answered that is not yet saved; finished by the next connect. | connect | No: it holds the new key. |
 | `claim.json` | The claim link and code for this installation's agent, while it is unclaimed. | connect | Yes; the next `jevlin connect` mints a fresh link, which ends the old one. |
 | `search-default` | `agents prefer`'s choice. | agents prefer | Yes; the skill default returns. |
-| `search-tier` | `agents tier`'s choice: the tier a search carries when the request names none. | agents tier | Yes; `[miner] tier`, then the router's default, returns. |
+| `search-tier` | `agents tier`'s choice: the tier a search carries when the request names none. | agents tier | Yes; `[search] tier`, then the router's default, returns. |
 | `update_check.json` | The daily release check's record: when it ran, what it found, and a release a rollback holds. | upgrade | Yes; the next agent session checks again, though a rollback's hold is forgotten. |
 | `bin/jevlin` | A native binary, and `jevlin.previous` after an upgrade. | setup, upgrade | Through `uninstall -binary`. |
 | `state/` | The agent registration (`agent.json`), the trace key (`trace.key`), and connect's lock and resume stamp. | setup, connect, search | No: it is your registration. |
@@ -302,10 +290,6 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | `state/connect.lock` | One connect at a time. | Yes, when none runs. |
 | `bin/<binary>.update.lock` | One upgrade of that binary at a time. | Yes, when none runs. |
 | `update_check.lock` | One release check at a time for the installation, whichever copy runs it. | Yes, when none runs. |
-
-An earlier version's `flush.lock`, `state/refresh.token.lock` and `wallet/wallet.lock` are
-nothing this version takes; `uninstall` names them, when they are still there, as safe to
-delete.
 
 **The daily release check.** The hooks start it: a session's start and stop for Claude Code,
 Cursor and Codex; for opencode, `hook start` when the plugin loads, when a top-level session is
@@ -535,7 +519,7 @@ treats it as proof of origin. `JEVLIN_TRACE=off` sends none.
 
 ## The turn end
 
-Off unless `[miner] turn_end = true`. The trace carries what the assistant wrote before a search;
+Off unless `[search] turn_end = true`. The trace carries what the assistant wrote before a search;
 this carries what it concluded. When a turn ends, the agent's end-of-turn hook sends the router's
 `POST /v1/turns` one record:
 
@@ -560,7 +544,7 @@ after the agent itself searched sends nothing, but one in which a subagent searc
 late, as completed, since the hook cannot tell it from a turn that ended. A turn is reported once:
 a search under a turn already reported does not report it again. Under Codex and opencode a
 subagent runs a turn of its own, and its search is joined to no turn end. Only to the router
-`miner.router_url` names; without that line nothing is
+`search.router_url` names; without that line nothing is
 sent. With it on, what you typed in a searched turn is sent; what your tools read and wrote never is: not a file's contents, not a command, not its output. The model's private reasoning and a subagent's own steps are not sent either. The hook writes the record to an owner-only file in
 `sessions/` and a detached `jevlin turn-end` sends it once and deletes the file, sent or not.
 `JEVLIN_TRACE=off` turns it off too. Claude Code (2.1.196 or later), Cursor, opencode, Pi (0.80.4 or later), and Codex

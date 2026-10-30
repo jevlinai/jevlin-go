@@ -4,7 +4,7 @@ package main
 //
 // On Windows access is a DACL and a DACL is inherited. `jevlin setup` gives
 // <home>\state a protected owner-only one, and OpenStore gives the same to a
-// `[mining] state_dir` it creates (pkg/auth/perm.go). A directory that was made
+// `[search] state_dir` it creates (pkg/auth/perm.go). A directory that was made
 // some other way, or that a program has since granted an entry, can admit more:
 // a state_dir under D:\ inherits whatever D:\ grants, and a coding agent's
 // sandbox setup grants its sandbox group an entry on exactly this directory,

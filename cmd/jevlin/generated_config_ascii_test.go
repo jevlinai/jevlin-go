@@ -89,8 +89,8 @@ func TestEveryGeneratedConfigIsASCII(t *testing.T) {
 	})
 
 	t.Run("jevlin.toml, migrated", func(t *testing.T) {
-		// A proxy-era config with neither table: setup appends both, with a
-		// comment of its own.
+		// A config naming only the router, with neither table: setup appends
+		// both, with a comment of its own.
 		existing := []byte("[[provider]]\nname = \"search-router\"\nupstream = \"https://api.jevlin.ai\"\n")
 		plan, err := planSetupConfig(filepath.Join(home, setupConfigFile), existing, v, func([]byte) error { return nil })
 		if err != nil {
@@ -104,7 +104,7 @@ func TestEveryGeneratedConfigIsASCII(t *testing.T) {
 
 	t.Run("~/.codex/config.toml block", func(t *testing.T) {
 		asciiOrFail(t, "codexSandboxBlock", codexSandboxBlock([]string{
-			filepath.Join(home, "state"), filepath.Join(home, "intake"),
+			filepath.Join(home, "state"), filepath.Join(home, "sessions"),
 		}))
 	})
 

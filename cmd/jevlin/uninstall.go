@@ -57,9 +57,9 @@ nothing is revoked.
   -binary        also remove this installation's own copy of the binary; a copy npm
                  installed is npm's to remove
   -purge-state   also destroy this installation's participant state: the
-                 registration, stored key and config, and a wallet an earlier
-                 version made. Needs a terminal: you type the installation path
-                 to confirm, and -yes never answers it
+                 registration, stored key and config. Needs a terminal: you
+                 type the installation path to confirm, and -yes never
+                 answers it
   -dry-run       print what would be removed; change, ask and contact nothing
   -yes           answer the yes/no question, terminal or not; never -purge-state
 `
@@ -361,7 +361,7 @@ func checkPurgeTarget(home, userHome string) error {
 		return fmt.Errorf("%s is not a directory", home)
 	}
 	if !hasInstallation(home) && !lexists(filepath.Join(home, setupConfigFile)) {
-		return fmt.Errorf("%s holds no installation: no wallet key, registration, stored key or jevlin.toml", home)
+		return fmt.Errorf("%s holds no installation: no registration, stored key or jevlin.toml", home)
 	}
 	return nil
 }
@@ -1041,13 +1041,13 @@ func (r *uninstallRun) environmentWindows(apply bool) {
 func (r *uninstallRun) purgeSet() (inside, outside []string) {
 	join := func(name string) string { return filepath.Join(r.home, name) }
 	first := []string{
-		join("wallet"), join("sessions"), join("intake"), join("spool"),
-		join(credentialsFile), join(registrationJournalFile), join(payoutRecordFile), join(claimRecordFile), join(setupConfigFile), join(preferFile), join(tierFile),
+		join("sessions"),
+		join(credentialsFile), join(registrationJournalFile), join(claimRecordFile), join(setupConfigFile), join(preferFile), join(tierFile),
 		join(updateStampFile),
 	}
 	if entries, err := os.ReadDir(r.home); err == nil {
 		for _, e := range entries {
-			if strings.HasPrefix(e.Name(), "state.unenrolled-") || strings.HasPrefix(e.Name(), "wallet.incomplete-") {
+			if strings.HasPrefix(e.Name(), stateAsidePrefix+"-") {
 				first = append(first, join(e.Name()))
 			}
 		}
@@ -1055,9 +1055,7 @@ func (r *uninstallRun) purgeSet() (inside, outside []string) {
 	if !r.envKept {
 		first = append(first, join(setupEnvJournalFile))
 	}
-	// flush.lock is the lock an earlier version's flush took; it is removed
-	// with the rest of what that version left.
-	last := []string{join("state"), join("flush.lock"), join(updateLockFile), join(setupLockFile)}
+	last := []string{join("state"), join(updateLockFile), join(setupLockFile)}
 
 	if r.cfg != nil {
 		journal := join(setupEnvJournalFile)
@@ -1103,19 +1101,17 @@ type configuredPath struct {
 // configuredStatePaths is every participant path a config names — the
 // state and sessions directories — and the ones derived from them: beside
 // the state directory the stored credentials, the registration journal
-// (which can hold a platform key), the payout record an earlier version
-// kept and the claim record.
+// (which can hold a platform key) and the claim record.
 func configuredStatePaths(cfg *config.Config) []configuredPath {
-	mn := cfg.Miner
+	mn := cfg.Search
 	out := []configuredPath{
-		{"miner.state_dir", mn.StateDir}, {"miner.sessions_dir", mn.SessionsDir},
+		{"search.state_dir", mn.StateDir}, {"search.sessions_dir", mn.SessionsDir},
 	}
 	if mn.StateDir != "" {
 		out = append(out,
-			configuredPath{"the stored credentials beside miner.state_dir", filepath.Join(installRoot(mn), credentialsFile)},
-			configuredPath{"the registration journal beside miner.state_dir", filepath.Join(installRoot(mn), registrationJournalFile)},
-			configuredPath{"the payout record beside miner.state_dir", filepath.Join(installRoot(mn), payoutRecordFile)},
-			configuredPath{"the claim record beside miner.state_dir", filepath.Join(installRoot(mn), claimRecordFile)})
+			configuredPath{"the stored credentials beside search.state_dir", filepath.Join(installRoot(mn), credentialsFile)},
+			configuredPath{"the registration journal beside search.state_dir", filepath.Join(installRoot(mn), registrationJournalFile)},
+			configuredPath{"the claim record beside search.state_dir", filepath.Join(installRoot(mn), claimRecordFile)})
 	}
 	var named []configuredPath
 	for _, c := range out {
@@ -1223,9 +1219,7 @@ func (r *uninstallRun) ask(question string) (bool, error) {
 }
 
 // purgeConfirmation is what the participant must type: the installation
-// path. An earlier version asked for the wallet's address when one could be
-// read; this client reads no wallet, and the path is the one token every
-// installation has.
+// path, the one token every installation has.
 func purgeConfirmation(home string) (token, what string) {
 	return home, "the installation path"
 }
@@ -1234,15 +1228,10 @@ func purgeConfirmation(home string) (token, what string) {
 // nothing has been changed or sent when it refuses.
 func (r *uninstallRun) confirmPurge() (code int, ok bool) {
 	token, what := purgeConfirmation(r.home)
-	walletNote := ""
-	if lexists(filepath.Join(r.home, "wallet", walletKeyFile)) {
-		walletNote = "The wallet an earlier version made is among it: if it holds funds and you\n" +
-			"have not kept its 24 words, they are lost. "
-	}
 	line, err := promptSetup(r.d.stdout, fmt.Sprintf(
-		"\nThis destroys the participant state listed above. %sThis confirmation guards against accidents;\n"+
+		"\nThis destroys the participant state listed above. This confirmation guards against accidents;\n"+
 			"it cannot tell a person from a program typing at this terminal.\n"+
-			"Type %s to permanently remove this participant state:\n  %s\n> ", walletNote, what, token), r.d.stdin)
+			"Type %s to permanently remove this participant state:\n  %s\n> ", what, token), r.d.stdin)
 	if err != nil {
 		// Already the rule prompt.go now states, and the reason it is
 		// stated as one: this prompt was the only one in the binary that
@@ -1472,9 +1461,8 @@ func (r *uninstallRun) closing() {
 // sayLeftoverLocks names every lock file this installation still carries and
 // says it is safe to delete. The gate always said this of itself; dropin-miner#103 and
 // dropin-miner#115 are the same sentence owed by the rest of them -- the update lock an
-// upgrade leaves in bin/, the setup.lock and connect.lock a setup or a
-// connect leaves in the installation, and the flush.lock an earlier
-// version's flush left.
+// upgrade leaves in bin/, and the setup.lock and connect.lock a setup or a
+// connect leaves in the installation.
 //
 // Named rather than removed, and that is a conclusion rather than an
 // omission. Removing an operation lock is only safe while the GATE is held,
@@ -1505,43 +1493,22 @@ func (r *uninstallRun) sayLeftoverLocks() {
 	}
 }
 
-// Lock files an earlier version took, named so a participant who still
-// has them is told they are safe to delete: the flush lock in the
-// installation's own directory, the refresh-token lock in the state
-// directory, and the wallet's creation lock.
-const (
-	legacyFlushLockFile  = "flush.lock"
-	refreshTokenLockFile = "refresh.token.lock"
-	legacyWalletLockFile = "wallet.lock"
-)
-
-// leftoverLocks is the lock files that still exist for this installation:
-// first in lock order the gate, setup.lock, connect.lock, the binary's
-// update lock and the release check's lock beside it in the installation's
-// own directory, then the ones an earlier version took and that belong to
-// no lock order -- the flush lock beside setup.lock, the refresh-token lock
-// beside connect.lock in the state directory, and the wallet's creation
-// lock (dropin-miner#136). All of them are the same kind of file: empty, held only
-// while their command ran, made again by the next one that needs it. A path
-// that is gone -- uninstall -binary takes the update lock with the binary --
-// is left out rather than named.
+// leftoverLocks is the lock files that still exist for this installation,
+// in lock order: the gate, setup.lock, connect.lock, the binary's update
+// lock and the release check's lock beside it in the installation's own
+// directory. All of them are the same kind of file: empty, held only while
+// their command ran, made again by the next one that needs it. A path that
+// is gone -- uninstall -binary takes the update lock with the binary -- is
+// left out rather than named.
 func (r *uninstallRun) leftoverLocks() []string {
 	candidates := []string{lifecycleGatePath(r.home), filepath.Join(r.home, setupLockFile)}
-	stateDir := ""
 	if connectLock, err := operationLockPath(r.home, r.d.getenv); err == nil {
 		candidates = append(candidates, connectLock)
-		if connectLock != "" {
-			stateDir = filepath.Dir(connectLock)
-		}
 	}
 	if owned := r.ownedBinary(); owned != "" {
 		candidates = append(candidates, owned+updateLockSuffix)
 	}
-	candidates = append(candidates, filepath.Join(r.home, updateLockFile), filepath.Join(r.home, legacyFlushLockFile))
-	if stateDir != "" {
-		candidates = append(candidates, filepath.Join(stateDir, refreshTokenLockFile))
-	}
-	candidates = append(candidates, filepath.Join(r.home, "wallet", legacyWalletLockFile))
+	candidates = append(candidates, filepath.Join(r.home, updateLockFile))
 	var out []string
 	seen := map[string]bool{}
 	for _, p := range candidates {

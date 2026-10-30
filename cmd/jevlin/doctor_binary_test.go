@@ -47,7 +47,7 @@ func TestDoctorBinaryCheckNamesTheCopyThatShadowsThisOne(t *testing.T) {
 }
 
 // doctor -config naming another installation's jevlin.toml diagnoses that
-// installation, wallet and binary alike: the check names that one's
+// installation, state and binary alike: the check names that one's
 // bin/jevlin, not the binary of the home JEVLIN_HOME points at.
 func TestDoctorBinaryCheckFollowsTheConfigsInstallation(t *testing.T) {
 	name := "jevlin"

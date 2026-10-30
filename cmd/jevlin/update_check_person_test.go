@@ -171,7 +171,7 @@ func TestAFailedRestoreWaitsForAPerson(t *testing.T) {
 
 	// No check overwrites it, the next day or after.
 	cfg := mustLoadConfig(t, cfgPath)
-	if updateCheckDue(readUpdateStampFile, updateRoot(cfg.Miner), config.UpdateApply, "0.3.1", stampBinary(f.exe), time.Now().Add(72*time.Hour), func() bool { return true }) {
+	if updateCheckDue(readUpdateStampFile, updateRoot(cfg.Search), config.UpdateApply, "0.3.1", stampBinary(f.exe), time.Now().Add(72*time.Hour), func() bool { return true }) {
 		t.Error("a check is due over a record that waits for a person")
 	}
 	f.build = "0.3.1"
@@ -199,7 +199,7 @@ func TestACheckNeverReplacesAnotherInstallationsBinary(t *testing.T) {
 		t.Fatal(err)
 	}
 	otherCfg := filepath.Join(other, setupConfigFile)
-	writeFileT(t, otherCfg, "[mining]\nstate_dir = \""+filepath.ToSlash(filepath.Join(other, "state"))+"\"\n[update]\nmode = \"apply\"\n")
+	writeFileT(t, otherCfg, "[search]\nstate_dir = \""+filepath.ToSlash(filepath.Join(other, "state"))+"\"\n[update]\nmode = \"apply\"\n")
 	code, out, errOut := f.runAuto(otherCfg)
 	if code != exitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
@@ -219,7 +219,7 @@ func TestAnAutomaticUpgradeRecordsAFailedRefresh(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(m.home, "state"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	writeFileT(t, m.cfg, "[mining]\nstate_dir = \""+filepath.ToSlash(filepath.Join(m.home, "state"))+"\"\n[update]\nmode = \"apply\"\n")
+	writeFileT(t, m.cfg, "[search]\nstate_dir = \""+filepath.ToSlash(filepath.Join(m.home, "state"))+"\"\n[update]\nmode = \"apply\"\n")
 	m.runner.fail = true
 	if code, out, errOut := m.run("-auto", "-config", m.cfg); code != exitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
@@ -256,8 +256,8 @@ func (b *blockingSource) DownloadAssets(context.Context, selfupdate.ReleaseInfo,
 }
 
 // A lookup holds the check's own lock and nothing of the installation's, so
-// the flush the same hook started, and a person's connect or setup, are
-// admitted while it waits on the network. Before, every check of a native
+// a detached child the same hook started, and a person's connect or setup,
+// are admitted while it waits on the network. Before, every check of a native
 // copy held the installation's gate for the whole request, up to two
 // minutes, even under mode = "notify", which never replaces.
 func TestALookupHoldsNothingOfTheInstallation(t *testing.T) {
@@ -286,7 +286,7 @@ func TestALookupHoldsNothingOfTheInstallation(t *testing.T) {
 	close(src.release)
 	<-done
 	if detachedErr != nil {
-		t.Errorf("a flush was refused while a lookup ran: %v", detachedErr)
+		t.Errorf("a detached child was refused while a lookup ran: %v", detachedErr)
 	}
 }
 
@@ -340,7 +340,7 @@ func TestTheDefaultModeReplacesANativeCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfgPath := filepath.Join(f.home, setupConfigFile)
-	writeFileT(t, cfgPath, "[mining]\nstate_dir = \""+filepath.ToSlash(stateDir)+"\"\n")
+	writeFileT(t, cfgPath, "[search]\nstate_dir = \""+filepath.ToSlash(stateDir)+"\"\n")
 	if mode := mustLoadConfig(t, cfgPath).Update.Mode; mode != config.UpdateApply {
 		t.Fatalf("the default mode is %q, want apply", mode)
 	}

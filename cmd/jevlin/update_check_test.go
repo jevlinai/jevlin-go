@@ -109,13 +109,13 @@ func TestHooksStartTheReleaseCheckOnceADay(t *testing.T) {
 
 	fs.files[stamp] = stampBytes(t, updateStamp{CheckedAt: checkNow.Add(-time.Hour), Running: "0.3.1", Outcome: updateCurrent})
 	runHook(t, ops, hc, "window session-start", sess)
-	runHook(t, ops, hc, "flush", sess)
+	runHook(t, ops, hc, "stop", sess)
 	if len(checks) != 1 {
 		t.Fatalf("fresh stamp: checks %v; want no new check", checks)
 	}
 
 	fs.files[stamp] = stampBytes(t, updateStamp{CheckedAt: checkNow.Add(-25 * time.Hour), Running: "0.3.1", Outcome: updateCurrent})
-	runHook(t, ops, hc, "flush", sess)
+	runHook(t, ops, hc, "stop", sess)
 	if len(checks) != 2 {
 		t.Fatalf("stale stamp: checks %v; want a second", checks)
 	}
@@ -200,8 +200,8 @@ func TestHooksStartTheReleaseCheckOnceADay(t *testing.T) {
 }
 
 // opencode's plugin and Pi's extension have no session-start hook of the
-// host's: each starts `hook start <host>` itself, which starts the flush
-// and, when due, the check — the same path as Claude Code's session-start.
+// host's: each starts `hook start <host>` itself, which starts the check
+// when it is due — the same path as Claude Code's session-start.
 func TestHookStartIsTheJavaScriptHostsSessionStart(t *testing.T) {
 	fs, ops := newFakeHookOps(nil)
 	var checks []string
@@ -304,7 +304,7 @@ func autoFixture(t *testing.T, lr *localRelease, extra string) (*upgradeFixture,
 		// holds.
 		extra += "[update]\nmode = \"apply\"\n"
 	}
-	writeFileT(t, cfgPath, "[mining]\nstate_dir = \""+filepath.ToSlash(stateDir)+"\"\n"+extra)
+	writeFileT(t, cfgPath, "[search]\nstate_dir = \""+filepath.ToSlash(stateDir)+"\"\n"+extra)
 	return f, cfgPath, updateStampPath(f.home)
 }
 
@@ -351,7 +351,7 @@ func TestTheCheckKeepsItsStampAndLockBesideTheCredential(t *testing.T) {
 	if code, out, errOut := f.runAuto(cfgPath); code != exitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
 	}
-	root := updateRoot(mustLoadConfig(t, cfgPath).Miner)
+	root := updateRoot(mustLoadConfig(t, cfgPath).Search)
 	if root != f.home {
 		t.Fatalf("the check's directory is %s, want the installation's own, %s", root, f.home)
 	}
@@ -591,7 +591,7 @@ func TestAutoCheckHoldsTheSameGateAsAManualUpgrade(t *testing.T) {
 		t.Fatal(err)
 	}
 	otherCfg := filepath.Join(other, setupConfigFile)
-	writeFileT(t, otherCfg, "[mining]\nstate_dir = \""+filepath.ToSlash(filepath.Join(f.home, "state"))+"\"\n[update]\nmode = \"apply\"\n")
+	writeFileT(t, otherCfg, "[search]\nstate_dir = \""+filepath.ToSlash(filepath.Join(f.home, "state"))+"\"\n[update]\nmode = \"apply\"\n")
 	gate, err := acquireLifecycleGate(lifecycleGatePath(f.home), 0)
 	if err != nil {
 		t.Fatal(err)

@@ -288,7 +288,7 @@ func TestFetchUsesTheStoredKeyAndNeverArgv(t *testing.T) {
 		t.Fatal(err)
 	}
 	const stored = "sr-stored-fictional-0123456789"
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: stored}); err != nil {
+	if err := writeCredentials(credentialsPath(cfg.Search), credentials{APIKey: stored}); err != nil {
 		t.Fatal(err)
 	}
 	args := []string{"-config", cfgPath}
@@ -310,7 +310,7 @@ func TestFetchUsesTheStoredKeyAndNeverArgv(t *testing.T) {
 	}
 
 	// And with no key anywhere, nothing is sent and the action is connect.
-	if err := os.Remove(credentialsPath(cfg.Miner)); err != nil {
+	if err := os.Remove(credentialsPath(cfg.Search)); err != nil {
 		t.Fatal(err)
 	}
 	code, out, _ = runFetchStdin(t, map[string]string{}, `{"version":1,"pages":[{"url":"https://example.test/"}]}`, args...)

@@ -383,8 +383,8 @@ func TestSetupFreshNonInteractiveConnectsAndSkipsTheProfileAndAgents(t *testing.
 		t.Fatalf("setup exited %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
 	}
 	cfg := loadSetupConfig(t, s.cfgPath())
-	if cfg.Miner.StateDir != filepath.Join(s.home, "state") || cfg.Platform.BaseURL != s.platform.srv.URL {
-		t.Errorf("config is missing [miner] or [platform]: %+v %+v", cfg.Miner, cfg.Platform)
+	if cfg.Search.StateDir != filepath.Join(s.home, "state") || cfg.Platform.BaseURL != s.platform.srv.URL {
+		t.Errorf("config is missing [search] or [platform]: %+v %+v", cfg.Search, cfg.Platform)
 	}
 	if reg, _, _ := s.platform.counts(); reg != 1 {
 		t.Fatalf("register calls = %d, want 1: connect did not run exactly once", reg)
@@ -460,7 +460,7 @@ func TestSetupYesAnswersEnvironmentAndAgentsWithoutATerminal(t *testing.T) {
 	s.platform.claim("credits")
 	s.onPath["codex"] = true
 	sibling := s.home + ".bak"
-	writeInstallation(t, sibling, "wallet")
+	writeInstallation(t, sibling, "pending")
 	siblingBefore := snapshotTree(t, sibling)
 	before := snapshotTree(t, s.root)
 
@@ -479,7 +479,7 @@ func TestSetupYesAnswersEnvironmentAndAgentsWithoutATerminal(t *testing.T) {
 	} else if b, err := os.ReadFile(s.profilePath()); err != nil || profileBlockCount(b) != 1 { // #nosec G304 -- the sandbox's profile
 		t.Errorf("-yes without a terminal did not write one profile block: %v\n%s", err, out)
 	}
-	if !reflect.DeepEqual(siblingBefore, snapshotTree(t, sibling)) || lexists(filepath.Join(s.home, "wallet")) {
+	if !reflect.DeepEqual(siblingBefore, snapshotTree(t, sibling)) || lexists(filepath.Join(s.home, registrationJournalFile)) {
 		t.Error("-yes adopted a set-aside installation without a terminal")
 	}
 	assertOwnership(t, before, snapshotTree(t, s.root), ownedSet(append([]string{s.home, s.profilePath()}, targetOwnedPaths(paths, "codex")...)...)...)
@@ -565,23 +565,17 @@ func TestSetupSecondRunIsANoOp(t *testing.T) {
 	}
 }
 
-// legacyASURL stands where an earlier version's config named its
-// authorization server. pkg/config accepts the [mining] keys an earlier
-// version wrote and reads none of them but state_dir, so the value is never
-// dialed and any origin will do.
-const legacyASURL = "https://as.invalid.test"
-
-// An existing config with a [miner] table — here one an earlier version
-// wrote, [mining] and the intake keys included — is left byte for byte.
-func TestSetupLeavesAConfigWithMinerByteIdentical(t *testing.T) {
+// An existing config with the table setup owns — a [search] of the
+// participant's own, with a key setup never writes and its lines in an
+// order setup would not choose — is left byte for byte.
+func TestSetupLeavesAConfigWithSearchByteIdentical(t *testing.T) {
 	s := newSetupSandbox(t)
 	s.platform.claim("credits")
 	if err := os.MkdirAll(s.home, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	body := "# mine, by hand\n[platform]\nbase_url = \"" + s.platform.srv.URL + "\"\n\n[mining]\nas_url = \"" + legacyASURL +
-		"\"\nchain_id = \"twilight-1\"\nslot_id = 7\nstate_dir = " + mustTOML(t, filepath.Join(s.home, "state")) +
-		"\n\n[miner]\nenabled = true\nintake_dir = " + mustTOML(t, filepath.Join(s.home, "intake")) + "\n"
+	body := "# mine, by hand\n[platform]\nbase_url = \"" + s.platform.srv.URL + "\"\n\n[search]\nturn_end = true\nstate_dir = " +
+		mustTOML(t, filepath.Join(s.home, "state")) + "\n"
 	if err := os.WriteFile(s.cfgPath(), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -603,18 +597,17 @@ func mustTOML(t *testing.T, s string) string {
 	return q
 }
 
-// A tokendrop-proxy config — valid, no [platform], no [miner] — gains only
-// the two missing tables. Its own bytes stay the file's prefix, and the
-// result loads.
-func TestSetupAppendsOnlyTheMissingTablesToAProxyConfig(t *testing.T) {
+// A config naming only the router — valid, no [platform], no [search] —
+// gains only the two missing tables. Its own bytes stay the file's prefix,
+// and the result loads with the router it named.
+func TestSetupAppendsOnlyTheMissingTablesToAProviderOnlyConfig(t *testing.T) {
 	s := newSetupSandbox(t)
 	s.platform.claim("credits")
 	if err := os.MkdirAll(s.home, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	proxy := "[proxy]\nlisten = \"127.0.0.1:8787\"\n\n[[provider]]\nname = \"search-router\"\nupstream = \"https://router.invalid.test\"\n\n" +
-		"[mining]\nas_url = \"" + legacyASURL + "\"\nchain_id = \"twilight-1\"\nslot_id = 7\nstate_dir = " + mustTOML(t, filepath.Join(s.home, "state")) + "\n"
-	if err := os.WriteFile(s.cfgPath(), []byte(proxy), 0o600); err != nil {
+	provider := "# the router, by hand\n[[provider]]\nname = \"search-router\"\nupstream = \"https://router.invalid.test\"\n"
+	if err := os.WriteFile(s.cfgPath(), []byte(provider), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	code, out, errOut := s.run(nil, false)
@@ -622,31 +615,30 @@ func TestSetupAppendsOnlyTheMissingTablesToAProxyConfig(t *testing.T) {
 		t.Fatalf("setup exited %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
 	}
 	got := s.readFile(s.cfgPath())
-	if !bytes.HasPrefix(got, []byte(proxy)) {
-		t.Fatalf("the proxy config's own bytes were not kept as the prefix:\n%s", got)
+	if !bytes.HasPrefix(got, []byte(provider)) {
+		t.Fatalf("the config's own bytes were not kept as the prefix:\n%s", got)
 	}
-	platform, miner, err := configTablesDefined(got)
-	if err != nil || !platform || !miner {
-		t.Fatalf("tables after migration: platform=%v miner=%v err=%v\n%s", platform, miner, err, got)
+	platform, search, err := configTablesDefined(got)
+	if err != nil || !platform || !search {
+		t.Fatalf("tables after migration: platform=%v search=%v err=%v\n%s", platform, search, err, got)
 	}
 	if n := bytes.Count(got, []byte("[platform]")); n != 1 {
 		t.Errorf("[platform] appears %d times", n)
 	}
 	cfg := loadSetupConfig(t, s.cfgPath())
-	if cfg.Miner.RouterURL.String() != "https://router.invalid.test" || cfg.Miner.StateDir != filepath.Join(s.home, "state") {
-		t.Errorf("migrated config lost the proxy's router or gained no [miner] state_dir: %+v", cfg.Miner)
+	if cfg.Search.RouterURL.String() != "https://router.invalid.test" || cfg.Search.StateDir != filepath.Join(s.home, "state") {
+		t.Errorf("migrated config lost the router it named or gained no [search] state_dir: %+v", cfg.Search)
 	}
 }
 
-// A valid config that already has [platform] gains only [miner].
-func TestSetupAppendsOnlyMinerWhenPlatformExists(t *testing.T) {
+// A valid config that already has [platform] gains only [search].
+func TestSetupAppendsOnlySearchWhenPlatformExists(t *testing.T) {
 	s := newSetupSandbox(t)
 	s.platform.claim("credits")
 	if err := os.MkdirAll(s.home, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	body := "[platform]\nbase_url = \"" + s.platform.srv.URL + "\"\nagents_api_url = \"" + s.platform.srv.URL + "\"\n\n" +
-		"[mining]\nas_url = \"" + legacyASURL + "\"\nchain_id = \"twilight-1\"\nslot_id = 7\nstate_dir = " + mustTOML(t, filepath.Join(s.home, "state")) + "\n"
+	body := "[platform]\nbase_url = \"" + s.platform.srv.URL + "\"\nagents_api_url = \"" + s.platform.srv.URL + "\"\n"
 	if err := os.WriteFile(s.cfgPath(), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -661,20 +653,20 @@ func TestSetupAppendsOnlyMinerWhenPlatformExists(t *testing.T) {
 	if n := bytes.Count(got, []byte("[platform]")); n != 1 {
 		t.Fatalf("[platform] appears %d times, want 1:\n%s", n, got)
 	}
-	if n := bytes.Count(got, []byte("[miner]")); n != 1 {
-		t.Fatalf("[miner] appears %d times, want 1:\n%s", n, got)
+	if n := bytes.Count(got, []byte("[search]")); n != 1 {
+		t.Fatalf("[search] appears %d times, want 1:\n%s", n, got)
 	}
 	loadSetupConfig(t, s.cfgPath())
 }
 
 // A config that does not parse is refused whatever its text holds — here, a
-// [miner] line — and nothing runs after the refusal.
-func TestSetupRefusesAnInvalidConfigEvenWithMinerText(t *testing.T) {
+// [search] line — and nothing runs after the refusal.
+func TestSetupRefusesAnInvalidConfigEvenWithSearchText(t *testing.T) {
 	s := newSetupSandbox(t)
 	if err := os.MkdirAll(s.home, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	body := "[miner]\nenabled = true\nthis is not toml\n"
+	body := "[search]\nturn_end = true\nthis is not toml\n"
 	if err := os.WriteFile(s.cfgPath(), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -719,8 +711,8 @@ func TestSetupHomePathWithSpecialCharactersRoundTrips(t *testing.T) {
 		t.Fatalf("setup exited %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
 	}
 	cfg := loadSetupConfig(t, s.cfgPath())
-	if cfg.Miner.StateDir != filepath.Join(s.home, "state") || cfg.Miner.SessionsDir != filepath.Join(s.home, "sessions") {
-		t.Fatalf("paths did not round-trip: state=%q sessions=%q, want under %q", cfg.Miner.StateDir, cfg.Miner.SessionsDir, s.home)
+	if cfg.Search.StateDir != filepath.Join(s.home, "state") || cfg.Search.SessionsDir != filepath.Join(s.home, "sessions") {
+		t.Fatalf("paths did not round-trip: state=%q sessions=%q, want under %q", cfg.Search.StateDir, cfg.Search.SessionsDir, s.home)
 	}
 	if runtime.GOOS == "windows" {
 		return
@@ -763,7 +755,7 @@ func TestSetupUsesAnInstallationAlreadyInHome(t *testing.T) {
 		t.Fatal(err)
 	}
 	sibling := s.home + ".bak-1"
-	writeInstallation(t, sibling, "wallet")
+	writeInstallation(t, sibling, "pending")
 	siblingBefore := snapshotTree(t, sibling)
 
 	_, out, _ := s.run(nil, true, "-yes", "-no-agents", "-no-profile")
@@ -778,19 +770,12 @@ func TestSetupUsesAnInstallationAlreadyInHome(t *testing.T) {
 	}
 }
 
-// legacyWalletSidecar is a file an earlier version kept in its wallet
-// directory beside the key. This client reads nothing there; the name only
-// has to be one that is not the key, which is what makes a directory
-// holding it alone "a wallet directory with no wallet key".
-const legacyWalletSidecar = "wallet.json"
-
 // writeInstallation lays out a previous installation's files, in the shapes
-// an earlier version left them: wallet (its sealed key and sidecar),
-// identity (state/ with the files an earlier version's enrollment made, the
-// agent record and credentials), pending (only an interrupted
-// registration), spool (an earlier version's undelivered record), config.
-// This client reads none of the earlier version's files; adoption moves
-// them whole, and that is what these cases drive.
+// this client leaves them: identity (state/ with the agent record and the
+// trace key, and credentials.json beside it), pending (only an interrupted
+// registration's journal), claim (the claim record beside the credential),
+// sessions (a lineage file a hook left), config. Adoption reads none of
+// them; it moves them whole, and that is what these cases drive.
 func writeInstallation(t *testing.T, dir string, parts ...string) {
 	t.Helper()
 	write := func(rel, body string) {
@@ -804,55 +789,53 @@ func writeInstallation(t *testing.T, dir string, parts ...string) {
 	}
 	for _, part := range parts {
 		switch part {
-		case "wallet":
-			write(filepath.Join("wallet", walletKeyFile), "sealed-key")
-			write(filepath.Join("wallet", legacyWalletSidecar), `{"address":"twilight1old"}`)
 		case "identity":
-			write(filepath.Join("state", "dpop.key"), "old-dpop")
-			write(filepath.Join("state", "refresh.token"), "old-refresh")
+			write(filepath.Join("state", "trace.key"), "old-trace")
 			write(filepath.Join("state", "agent.json"), `{"agent_id":"old-agent","status":"claimed"}`)
 			write(credentialsFile, `{"api_key":"sr-old"}`)
 		case "pending":
 			write(registrationJournalFile, `{"agent_id":"pending-agent"}`)
-		case "spool":
-			write(filepath.Join("spool", "unsent-1.json"), `{"v":1}`)
+		case "claim":
+			write(claimRecordFile, `{"agent_id":"old-agent","claim_url":"https://platform.example/claim/X"}`)
+		case "sessions":
+			write(filepath.Join("sessions", "s-old.json"), `{"v":1}`)
 		case "config":
-			write(setupConfigFile, "[mining]\nstate_dir = \"/nowhere\"\n")
+			write(setupConfigFile, "[[provider]]\nname = \"search-router\"\nupstream = \"https://router.invalid.test\"\n")
 		}
 	}
 }
 
 // A set-aside installation, adopted at a terminal, moves by bundle: the
-// identity whole, the wallet whole, the spool merged — and the source,
-// emptied, is removed.
+// identity whole, with the claim record beside its credential, the sessions
+// merged — and the source, emptied, is removed.
 func TestSetupAdoptsASetAsideInstallationByBundles(t *testing.T) {
 	s := newSetupSandbox(t)
 	sibling := s.home + ".bak-20260101"
-	writeInstallation(t, sibling, "wallet", "identity", "spool")
+	writeInstallation(t, sibling, "identity", "claim", "sessions")
 	before := snapshotTree(t, s.root)
 
 	// Answer "use it". The adopted identity is claimed on the platform by
 	// nobody; connect's own outcome is not this case's concern.
 	_, out, _ := s.run(tty("y"), true, "-no-agents", "-no-profile")
-	for _, want := range []string{"adopted the identity", "adopted the wallet", "adopted spool (1 moved", "removed the now-empty " + sibling} {
+	for _, want := range []string{"adopted the identity", "adopted sessions (1 moved", "removed the now-empty " + sibling} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q:\n%s", want, out)
 		}
 	}
-	if got := string(s.readFile(filepath.Join(s.home, "state", "refresh.token"))); got != "old-refresh" {
-		t.Errorf("refresh token = %q", got)
+	if got := string(s.readFile(filepath.Join(s.home, "state", "trace.key"))); got != "old-trace" {
+		t.Errorf("trace key = %q", got)
 	}
 	if got := string(s.readFile(filepath.Join(s.home, credentialsFile))); !strings.Contains(got, "sr-old") {
 		t.Errorf("credentials did not travel with the state: %q", got)
 	}
-	if !lexists(filepath.Join(s.home, "wallet", walletKeyFile)) || !lexists(filepath.Join(s.home, "spool", "unsent-1.json")) {
-		t.Error("wallet or spool not adopted")
+	if !lexists(filepath.Join(s.home, claimRecordFile)) || !lexists(filepath.Join(s.home, "sessions", "s-old.json")) {
+		t.Error("claim record or sessions not adopted")
 	}
 	if lexists(sibling) {
 		t.Error("the emptied source was not removed")
 	}
 	if runtime.GOOS != "windows" {
-		for _, p := range []string{filepath.Join(s.home, "state"), filepath.Join(s.home, "wallet")} {
+		for _, p := range []string{filepath.Join(s.home, "state"), filepath.Join(s.home, "sessions")} {
 			if info, err := os.Stat(p); err != nil || info.Mode().Perm() != 0o700 {
 				t.Errorf("%s mode after adoption: %v %v", p, info.Mode().Perm(), err)
 			}
@@ -865,7 +848,7 @@ func TestSetupAdoptsASetAsideInstallationByBundles(t *testing.T) {
 func TestSetupLeavesANonEmptySourceWithANote(t *testing.T) {
 	s := newSetupSandbox(t)
 	sibling := s.home + "-old"
-	writeInstallation(t, sibling, "wallet")
+	writeInstallation(t, sibling, "identity")
 	if err := os.WriteFile(filepath.Join(sibling, "notes.txt"), []byte("mine"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -884,7 +867,7 @@ func TestSetupDoesNotAdoptWithoutATerminal(t *testing.T) {
 	s := newSetupSandbox(t)
 	s.platform.claim("credits")
 	sibling := s.home + ".old"
-	writeInstallation(t, sibling, "wallet", "identity")
+	writeInstallation(t, sibling, "identity", "sessions")
 	siblingBefore := snapshotTree(t, sibling)
 	_, out, _ := s.run(nil, false, "-yes")
 	if !strings.Contains(out, "Not an interactive shell — not touching it. Move it to "+s.home) {
@@ -893,8 +876,10 @@ func TestSetupDoesNotAdoptWithoutATerminal(t *testing.T) {
 	if !reflect.DeepEqual(siblingBefore, snapshotTree(t, sibling)) {
 		t.Error("the set-aside installation was touched without a terminal")
 	}
-	if lexists(filepath.Join(s.home, "wallet")) {
-		t.Error("a wallet was adopted without a terminal")
+	// The run connected, so home holds a credential: the fresh one, never
+	// the set-aside installation's.
+	if got, _ := os.ReadFile(filepath.Join(s.home, credentialsFile)); strings.Contains(string(got), "sr-old") || lexists(filepath.Join(s.home, "sessions", "s-old.json")) { // #nosec G304 -- the sandbox's own file
+		t.Error("the identity or a session file was adopted without a terminal")
 	}
 }
 
@@ -913,73 +898,44 @@ func TestSetupAdoptsASourceHoldingOnlyAPendingRegistration(t *testing.T) {
 	}
 }
 
-// A home holding only payout.json is what an earlier version's first
-// connect left when the participant answered its address question and
-// Register then failed. It is not an installation: setup used to report "a
-// payout address" as the previous installation and never offer the one set
-// aside beside it. The set-aside identity is offered and adopted, and the
-// home's record, the participant's latest answer, is kept where it is.
-func TestALonePayoutRecordDoesNotHideASetAsideInstallation(t *testing.T) {
-	s := newSetupSandbox(t)
-	sibling := s.home + ".bak"
-	writeInstallation(t, sibling, "identity")
-	const homeAddress = `{"address":"twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh"}`
-	writeFileT(t, filepath.Join(sibling, payoutRecordFile), `{"address":"twilight1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc"}`)
-	writeFileT(t, filepath.Join(s.home, payoutRecordFile), homeAddress)
-	_, out, _ := s.run(tty("y"), true, "-no-agents", "-no-profile")
-	if !strings.Contains(out, "A previous installation is set aside at "+sibling) {
-		t.Fatalf("the set-aside installation was not offered:\n%s", out)
-	}
-	if !lexists(filepath.Join(s.home, credentialsFile)) {
-		t.Fatalf("the set-aside identity was not adopted:\n%s", out)
-	}
-	if got, _ := os.ReadFile(filepath.Join(s.home, payoutRecordFile)); string(got) != homeAddress { // #nosec G304 -- the test's own sandbox
-		t.Errorf("the home's own payout record was replaced: %s", got)
-	}
-	if !lexists(filepath.Join(sibling, payoutRecordFile)) {
-		t.Error("the set-aside installation's payout record was not left where it was")
-	}
-}
-
-// A destination state/ that holds only the key an earlier version's
-// unfinished enrollment left is not an identity: it is set aside whole, and
-// the adopted identity takes its place.
-func TestSetupSetsAsideAnUnenrolledDestinationState(t *testing.T) {
+// A destination state/ that holds only the trace key a run that never
+// registered left is not an identity: it is set aside whole, named for the
+// unfinished registration, and the adopted identity takes its place.
+func TestSetupSetsAsideAnUnregisteredDestinationState(t *testing.T) {
 	s := newSetupSandbox(t)
 	if err := os.MkdirAll(filepath.Join(s.home, "state"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(s.home, "state", "dpop.key"), []byte("unfinished"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(s.home, "state", "trace.key"), []byte("unfinished"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	sibling := s.home + ".bak"
 	writeInstallation(t, sibling, "identity")
 	_, out, _ := s.run(tty("y"), true, "-no-agents", "-no-profile")
-	aside := filepath.Join(s.home, "state.unenrolled-"+fixedSetupClock().UTC().Format("20060102150405"))
-	if got := string(s.readFile(filepath.Join(aside, "dpop.key"))); got != "unfinished" {
+	aside := filepath.Join(s.home, stateAsidePrefix+"-"+fixedSetupClock().UTC().Format("20060102150405"))
+	if got := string(s.readFile(filepath.Join(aside, "trace.key"))); got != "unfinished" {
 		t.Fatalf("unfinished key not set aside whole at %s (%q):\n%s", aside, got, out)
 	}
-	if got := string(s.readFile(filepath.Join(s.home, "state", "dpop.key"))); got != "old-dpop" {
-		t.Errorf("adopted state's key = %q, want the enrolled one", got)
+	if !strings.Contains(out, "set aside "+filepath.Join(s.home, "state")+" from an unfinished registration as "+aside) {
+		t.Errorf("the set-aside is not named for what it was:\n%s", out)
+	}
+	if got := string(s.readFile(filepath.Join(s.home, "state", "trace.key"))); got != "old-trace" {
+		t.Errorf("adopted state's key = %q, want the registered one", got)
 	}
 }
 
 // A destination that already holds an identity is a conflict, and setup
 // stops on it: non-zero, before connect is ever invoked, with both paths and
 // the instruction to choose one installation. Nothing moves — not the
-// identity, and not the wallet that would otherwise have been adopted after
-// it. A state/ with a participation secret is identity without being an
-// installation marker, so this is reachable end to end.
+// identity, and not the sessions that would otherwise have been merged
+// after it. A claim record is identity without being an installation marker
+// (a home holding only claim.json is what a connect left when the platform
+// answered and publication then failed), so this is reachable end to end.
 func TestSetupStopsOnAnIdentityConflictBeforeConnect(t *testing.T) {
 	s := newSetupSandbox(t)
-	if err := os.MkdirAll(filepath.Join(s.home, "state"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(s.home, "state", "participation.secret"), []byte("mine"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeFileT(t, filepath.Join(s.home, claimRecordFile), `{"agent_id":"mine","claim_url":"https://platform.example/claim/M"}`)
 	sibling := s.home + ".bak"
-	writeInstallation(t, sibling, "identity", "wallet")
+	writeInstallation(t, sibling, "identity", "sessions")
 	siblingBefore := snapshotTree(t, sibling)
 	before := snapshotTree(t, s.root)
 
@@ -993,7 +949,7 @@ func TestSetupStopsOnAnIdentityConflictBeforeConnect(t *testing.T) {
 	if reg, status, _ := s.platform.counts(); reg+status != 0 {
 		t.Errorf("the platform was reached after an identity conflict: register=%d status=%d", reg, status)
 	}
-	for _, want := range []string{s.home, filepath.Join(s.home, "state", "participation.secret"), sibling, "Choose one installation", "run setup again"} {
+	for _, want := range []string{s.home, filepath.Join(s.home, claimRecordFile), sibling, "Choose one installation", "run setup again"} {
 		if !strings.Contains(errOut, want) {
 			t.Errorf("conflict report missing %q:\n%s", want, errOut)
 		}
@@ -1001,7 +957,7 @@ func TestSetupStopsOnAnIdentityConflictBeforeConnect(t *testing.T) {
 	if !reflect.DeepEqual(siblingBefore, snapshotTree(t, sibling)) {
 		t.Error("the source changed despite the conflict")
 	}
-	if lexists(filepath.Join(s.home, "wallet")) || lexists(filepath.Join(s.home, credentialsFile)) {
+	if lexists(filepath.Join(s.home, "sessions", "s-old.json")) || lexists(filepath.Join(s.home, credentialsFile)) {
 		t.Error("something was adopted despite the conflict")
 	}
 	if strings.Contains(out, "Setup complete.") {
@@ -1021,8 +977,8 @@ func (s *setupSandbox) assertAdoptionStopped(t *testing.T, code int, out, errOut
 	if s.connectCalls != 0 {
 		t.Errorf("connect was invoked %d time(s) after a failed adoption", s.connectCalls)
 	}
-	if reg, status, enroll := s.platform.counts(); reg+status+enroll != 0 {
-		t.Errorf("the platform was reached after a failed adoption: register=%d status=%d enroll=%d", reg, status, enroll)
+	if reg, status, me := s.platform.counts(); reg+status+me != 0 {
+		t.Errorf("the platform was reached after a failed adoption: register=%d status=%d me=%d", reg, status, me)
 	}
 	for _, want := range []string{"could not adopt the " + bundle, source, s.home} {
 		if !strings.Contains(errOut, want) {
@@ -1045,197 +1001,112 @@ func failMoveFrom(path string) func(from, to string) error {
 	}
 }
 
-// assertCustodyAtSource is the outer transaction's invariant when it fails:
-// the accepted installation's identity and wallet are both exactly where they
-// started, and the destination holds neither.
+// assertCustodyAtSource is the identity transaction's invariant when it
+// fails: every part of the accepted installation's identity is exactly where
+// it started, and the destination holds none of it.
 func (s *setupSandbox) assertCustodyAtSource(t *testing.T, sibling string, before map[string]fileSig) {
 	t.Helper()
 	if after := snapshotTree(t, sibling); !reflect.DeepEqual(before, after) {
-		t.Error("the source installation is not exactly as it was: the identity or the wallet was not rolled back")
+		t.Error("the source installation is not exactly as it was: the identity was not rolled back")
 	}
-	for _, rel := range []string{credentialsFile, filepath.Join("state", "refresh.token"), filepath.Join("state", "agent.json"), filepath.Join("wallet", walletKeyFile)} {
+	for _, rel := range []string{credentialsFile, registrationJournalFile, claimRecordFile, filepath.Join("state", "trace.key"), filepath.Join("state", "agent.json")} {
 		if lexists(filepath.Join(s.home, rel)) {
-			t.Errorf("the destination holds %s after a failed custody transaction", rel)
+			t.Errorf("the destination holds %s after a failed identity transaction", rel)
 		}
 	}
 }
 
-// A refused wallet — a symlink, or not a directory at all — after the
-// identity was adopted rolls the identity back too: both stay at the source,
-// the destination holds neither, and setup stops before connect with nothing
-// after the wallet moved.
-func TestSetupStopsWhenTheWalletIsRefused(t *testing.T) {
+// The parts that move after the state and the key — the registration
+// journal and the claim record beside the credential — failing to move, or
+// to be restricted after their move, roll the state and the key back too:
+// the whole identity stays at the source, the destination holds none of it,
+// and setup stops before connect with nothing after the identity moved.
+func TestSetupRollsBackTheStateAndKeyWhenALaterPartOfTheIdentityFails(t *testing.T) {
 	for _, c := range []struct {
-		name  string
-		setup func(t *testing.T, s *setupSandbox, sibling string)
+		name, part string
+		restrict   bool
 	}{
-		{"not a directory", func(t *testing.T, _ *setupSandbox, sibling string) {
-			if err := os.WriteFile(filepath.Join(sibling, "wallet"), []byte("not a wallet directory"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-		}},
-		{"symlink", func(t *testing.T, s *setupSandbox, sibling string) {
-			if runtime.GOOS == "windows" {
-				t.Skip("creating symlinks needs a privilege the Windows runner does not grant")
-			}
-			elsewhere := filepath.Join(s.root, "elsewhere-wallet")
-			writeInstallation(t, elsewhere, "wallet")
-			if err := os.Symlink(filepath.Join(elsewhere, "wallet"), filepath.Join(sibling, "wallet")); err != nil {
-				t.Fatal(err)
-			}
-		}},
+		{"journal move", "pending", false},
+		{"claim record move", "claim", false},
+		{"claim record restriction", "claim", true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			s := newSetupSandbox(t)
 			sibling := s.home + ".bak"
-			writeInstallation(t, sibling, "identity", "spool")
-			c.setup(t, s, sibling)
-			before := snapshotTree(t, sibling)
-
-			code, out, errOut := s.run(tty("y"), true, "-no-agents", "-no-profile")
-			s.assertAdoptionStopped(t, code, out, errOut, "wallet", sibling)
-			if !strings.Contains(out, "adopted the identity") {
-				t.Fatalf("the identity stage did not run first, so its rollback is not being tested:\n%s", out)
+			writeInstallation(t, sibling, "identity", c.part, "sessions")
+			file := registrationJournalFile
+			if c.part == "claim" {
+				file = claimRecordFile
 			}
-			if !strings.Contains(errOut, "the identity and the wallet are both where they started") {
-				t.Errorf("the report does not say the identity was rolled back:\n%s", errOut)
-			}
-			s.assertCustodyAtSource(t, sibling, before)
-			if lexists(filepath.Join(s.home, "spool", "unsent-1.json")) {
-				t.Error("a later bundle (spool) moved after the wallet was refused")
-			}
-		})
-	}
-}
-
-// The wallet failing to move, or to be restricted after its move, once the
-// identity has moved: the same invariant.
-func TestSetupRollsBackTheIdentityWhenTheWalletMoveOrRestrictionFails(t *testing.T) {
-	for _, c := range []string{"move", "restriction"} {
-		t.Run(c, func(t *testing.T) {
-			s := newSetupSandbox(t)
-			sibling := s.home + ".bak"
-			writeInstallation(t, sibling, "identity", "wallet")
-			if c == "move" {
-				s.move = failMoveFrom(filepath.Join(sibling, "wallet"))
-			} else {
-				dstWallet := filepath.Join(s.home, "wallet")
+			if c.restrict {
+				dst := filepath.Join(s.home, file)
 				s.restrict = func(path string, dir bool) error {
-					if path == dstWallet {
+					if path == dst {
 						return errors.New("injected restriction failure")
 					}
 					return restrictToOwner(path, dir)
 				}
+			} else {
+				s.move = failMoveFrom(filepath.Join(sibling, file))
 			}
 			before := snapshotTree(t, sibling)
 
 			code, out, errOut := s.run(tty("y"), true, "-no-agents", "-no-profile")
-			s.assertAdoptionStopped(t, code, out, errOut, "wallet", sibling)
-			if !strings.Contains(out, "adopted the identity") {
-				t.Fatalf("the identity stage did not run first:\n%s", out)
+			s.assertAdoptionStopped(t, code, out, errOut, identityBundle, sibling)
+			if strings.Contains(out, "adopted the identity") {
+				t.Fatalf("the identity was narrated as adopted although a part of it did not move:\n%s", out)
+			}
+			if !strings.Contains(errOut, "the identity is where it started") {
+				t.Errorf("the report does not say the identity was rolled back:\n%s", errOut)
 			}
 			s.assertCustodyAtSource(t, sibling, before)
 			if !dirEmpty(filepath.Join(s.home, "state")) {
 				t.Error("the destination's empty state/ was not restored")
 			}
+			if lexists(filepath.Join(s.home, "sessions", "s-old.json")) {
+				t.Error("the sessions were merged after the identity failed")
+			}
 		})
 	}
 }
 
-// A destination state/ set aside by the identity stage comes back when the
-// wallet stage then fails, alongside the identity itself.
-func TestSetupRestoresASetAsideStateWhenTheWalletFailsAfterTheIdentity(t *testing.T) {
+// A destination state/ set aside by the identity stage comes back when a
+// later part of the identity then fails, alongside the state and the key.
+func TestSetupRestoresASetAsideStateWhenALaterPartOfTheIdentityFails(t *testing.T) {
 	s := newSetupSandbox(t)
 	if err := os.MkdirAll(filepath.Join(s.home, "state"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(s.home, "state", "dpop.key"), []byte("unfinished"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(s.home, "state", "trace.key"), []byte("unfinished"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	sibling := s.home + ".bak"
-	writeInstallation(t, sibling, "identity", "wallet")
-	s.move = failMoveFrom(filepath.Join(sibling, "wallet"))
+	writeInstallation(t, sibling, "identity", "claim")
+	s.move = failMoveFrom(filepath.Join(sibling, claimRecordFile))
 	before := snapshotTree(t, sibling)
 
 	code, out, errOut := s.run(tty("y"), true, "-no-agents", "-no-profile")
-	s.assertAdoptionStopped(t, code, out, errOut, "wallet", sibling)
-	if !strings.Contains(out, "set aside "+filepath.Join(s.home, "state")) || !strings.Contains(out, "adopted the identity") {
-		t.Fatalf("the identity stage did not set the state aside and adopt first:\n%s", out)
+	s.assertAdoptionStopped(t, code, out, errOut, identityBundle, sibling)
+	if !strings.Contains(out, "set aside "+filepath.Join(s.home, "state")) {
+		t.Fatalf("the identity stage did not set the state aside first:\n%s", out)
 	}
-	s.assertCustodyAtSource(t, sibling, before)
-	if got, err := os.ReadFile(filepath.Join(s.home, "state", "dpop.key")); err != nil || string(got) != "unfinished" { // #nosec G304 -- the sandbox's own file
+	// Not assertCustodyAtSource: the destination's own state/ is back, so
+	// its trace key is rightly there. The source is exactly as it was, and
+	// the destination holds nothing of the source's.
+	if !reflect.DeepEqual(before, snapshotTree(t, sibling)) {
+		t.Error("the source installation is not exactly as it was: the identity was not rolled back")
+	}
+	for _, rel := range []string{credentialsFile, claimRecordFile, filepath.Join("state", "agent.json")} {
+		if lexists(filepath.Join(s.home, rel)) {
+			t.Errorf("the destination holds %s after a failed identity transaction", rel)
+		}
+	}
+	if got, err := os.ReadFile(filepath.Join(s.home, "state", "trace.key")); err != nil || string(got) != "unfinished" { // #nosec G304 -- the sandbox's own file
 		t.Fatalf("the set-aside destination state was not restored: %q %v", got, err)
 	}
-	if matches, _ := filepath.Glob(filepath.Join(s.home, "state.unenrolled-*")); len(matches) != 0 {
+	if matches, _ := filepath.Glob(filepath.Join(s.home, stateAsidePrefix+"-*")); len(matches) != 0 {
 		t.Errorf("a set-aside copy was left behind: %v", matches)
 	}
-}
-
-// A non-empty destination wallet/ is partial state: it is set aside as
-// wallet.incomplete-<time> and the chosen source wallet is adopted; if the
-// transaction then fails, it comes back and the source keeps its wallet.
-func TestSetupSetsAsideANonEmptyDestinationWallet(t *testing.T) {
-	partial := func(t *testing.T, s *setupSandbox) {
-		t.Helper()
-		if err := os.MkdirAll(filepath.Join(s.home, "wallet"), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(s.home, "wallet", legacyWalletSidecar), []byte("partial"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	incomplete := func(s *setupSandbox) string {
-		return filepath.Join(s.home, "wallet.incomplete-"+fixedSetupClock().UTC().Format("20060102150405"))
-	}
-
-	t.Run("adopted", func(t *testing.T) {
-		s := newSetupSandbox(t)
-		partial(t, s)
-		sibling := s.home + ".bak"
-		writeInstallation(t, sibling, "identity", "wallet")
-		_, out, errOut := s.run(tty("y"), true, "-no-agents", "-no-profile")
-		if strings.Contains(errOut, "could not adopt") {
-			t.Fatalf("adoption failed:\n%s", errOut)
-		}
-		if got, err := os.ReadFile(filepath.Join(incomplete(s), legacyWalletSidecar)); err != nil || string(got) != "partial" { // #nosec G304 -- the sandbox's own file
-			t.Fatalf("the partial destination wallet was not set aside: %q %v\n%s", got, err, out)
-		}
-		if got, err := os.ReadFile(filepath.Join(s.home, "wallet", walletKeyFile)); err != nil || string(got) != "sealed-key" { // #nosec G304 -- the sandbox's own file
-			t.Fatalf("the chosen source wallet was not adopted: %q %v", got, err)
-		}
-		if lexists(filepath.Join(sibling, "wallet")) {
-			t.Error("the source wallet is still at the source")
-		}
-	})
-
-	t.Run("rolled back", func(t *testing.T) {
-		s := newSetupSandbox(t)
-		partial(t, s)
-		sibling := s.home + ".bak"
-		writeInstallation(t, sibling, "identity", "wallet")
-		dstWallet := filepath.Join(s.home, "wallet")
-		s.restrict = func(path string, dir bool) error {
-			if path == dstWallet {
-				return errors.New("injected restriction failure")
-			}
-			return restrictToOwner(path, dir)
-		}
-		before := snapshotTree(t, sibling)
-		code, out, errOut := s.run(tty("y"), true, "-no-agents", "-no-profile")
-		s.assertAdoptionStopped(t, code, out, errOut, "wallet", sibling)
-		if got, err := os.ReadFile(filepath.Join(dstWallet, legacyWalletSidecar)); err != nil || string(got) != "partial" { // #nosec G304 -- the sandbox's own file
-			t.Fatalf("the set-aside destination wallet was not restored: %q %v", got, err)
-		}
-		if lexists(incomplete(s)) {
-			t.Error("a wallet.incomplete copy was left behind after the rollback")
-		}
-		if !reflect.DeepEqual(before, snapshotTree(t, sibling)) {
-			t.Error("the source installation is not exactly as it was")
-		}
-		if lexists(filepath.Join(s.home, credentialsFile)) || lexists(filepath.Join(dstWallet, walletKeyFile)) {
-			t.Error("the destination holds part of the source's custody after the rollback")
-		}
-	})
 }
 
 // A symlink anywhere inside the source state/ stops setup with zero connect
@@ -1246,7 +1117,7 @@ func TestSetupStopsOnASymlinkInsideTheSourceState(t *testing.T) {
 	}
 	s := newSetupSandbox(t)
 	sibling := s.home + ".bak"
-	writeInstallation(t, sibling, "identity", "wallet")
+	writeInstallation(t, sibling, "identity", "sessions")
 	if err := os.Symlink(filepath.Join(s.root, "anywhere"), filepath.Join(sibling, "state", "linked")); err != nil {
 		t.Fatal(err)
 	}
@@ -1260,7 +1131,7 @@ func TestSetupStopsOnASymlinkInsideTheSourceState(t *testing.T) {
 	if !reflect.DeepEqual(siblingBefore, snapshotTree(t, sibling)) {
 		t.Error("the source changed although the identity was refused")
 	}
-	if lexists(filepath.Join(s.home, credentialsFile)) || lexists(filepath.Join(s.home, "state", "refresh.token")) || lexists(filepath.Join(s.home, "wallet")) {
+	if lexists(filepath.Join(s.home, credentialsFile)) || lexists(filepath.Join(s.home, "state", "trace.key")) || lexists(filepath.Join(s.home, "sessions", "s-old.json")) {
 		t.Error("something was adopted after the identity was refused")
 	}
 }
@@ -1270,7 +1141,7 @@ func TestSetupStopsOnASymlinkInsideTheSourceState(t *testing.T) {
 func TestSetupStopsWhenTheSourceStateMoveFails(t *testing.T) {
 	s := newSetupSandbox(t)
 	sibling := s.home + ".bak"
-	writeInstallation(t, sibling, "identity", "wallet")
+	writeInstallation(t, sibling, "identity", "sessions")
 	s.move = failMoveFrom(filepath.Join(sibling, "state"))
 	siblingBefore := snapshotTree(t, sibling)
 
@@ -1301,7 +1172,7 @@ func TestSetupRestoresTheSourceStateWhenTheKeyMoveFails(t *testing.T) {
 	if !reflect.DeepEqual(siblingBefore, snapshotTree(t, sibling)) {
 		t.Error("the source state was not put back exactly as it was")
 	}
-	if lexists(filepath.Join(s.home, "state", "refresh.token")) || lexists(filepath.Join(s.home, credentialsFile)) {
+	if lexists(filepath.Join(s.home, "state", "trace.key")) || lexists(filepath.Join(s.home, credentialsFile)) {
 		t.Error("half the identity was left in the destination")
 	}
 }
@@ -1331,15 +1202,14 @@ func TestSetupTreatsAFailedRestrictionAsAFailedMove(t *testing.T) {
 	}
 }
 
-// A destination state/ set aside for an earlier version's unfinished
-// enrollment comes back when the adoption then fails, and no set-aside copy
-// is left behind.
+// A destination state/ set aside for an unfinished registration comes back
+// when the adoption then fails, and no set-aside copy is left behind.
 func TestSetupRestoresASetAsideDestinationStateWhenAdoptionFails(t *testing.T) {
 	s := newSetupSandbox(t)
 	if err := os.MkdirAll(filepath.Join(s.home, "state"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(s.home, "state", "dpop.key"), []byte("unfinished"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(s.home, "state", "trace.key"), []byte("unfinished"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	sibling := s.home + ".bak"
@@ -1348,14 +1218,14 @@ func TestSetupRestoresASetAsideDestinationStateWhenAdoptionFails(t *testing.T) {
 
 	code, out, errOut := s.run(tty("y"), true, "-no-agents", "-no-profile")
 	s.assertAdoptionStopped(t, code, out, errOut, identityBundle, sibling)
-	if got, err := os.ReadFile(filepath.Join(s.home, "state", "dpop.key")); err != nil || string(got) != "unfinished" { // #nosec G304 -- the sandbox's own file
+	if got, err := os.ReadFile(filepath.Join(s.home, "state", "trace.key")); err != nil || string(got) != "unfinished" { // #nosec G304 -- the sandbox's own file
 		t.Fatalf("the destination state was not restored: %q %v", got, err)
 	}
-	matches, _ := filepath.Glob(filepath.Join(s.home, "state.unenrolled-*"))
+	matches, _ := filepath.Glob(filepath.Join(s.home, stateAsidePrefix+"-*"))
 	if len(matches) != 0 {
 		t.Errorf("a set-aside copy was left behind: %v", matches)
 	}
-	if !lexists(filepath.Join(sibling, "state", "refresh.token")) {
+	if !lexists(filepath.Join(sibling, "state", "trace.key")) {
 		t.Error("the source state was not put back")
 	}
 }
@@ -1390,16 +1260,13 @@ func TestSetupNamesEveryPathWhenARollbackFails(t *testing.T) {
 func TestSetupMigratesAnAdoptedConfig(t *testing.T) {
 	s := newSetupSandbox(t)
 	sibling := s.home + ".bak"
-	writeInstallation(t, sibling, "wallet")
-	proxy := "[mining]\nas_url = \"" + legacyASURL + "\"\nchain_id = \"twilight-1\"\nslot_id = 7\nstate_dir = " + mustTOML(t, filepath.Join(s.home, "state")) + "\n"
-	if err := os.WriteFile(filepath.Join(sibling, setupConfigFile), []byte(proxy), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeInstallation(t, sibling, "identity", "config")
+	adopted := s.readFile(filepath.Join(sibling, setupConfigFile))
 	_, out, _ := s.run(tty("y"), true, "-no-agents", "-no-profile")
-	if !strings.Contains(out, "adopted the config") || !strings.Contains(out, "Added [platform] and [miner] to "+s.cfgPath()) {
+	if !strings.Contains(out, "adopted the config") || !strings.Contains(out, "Added [platform] and [search] to "+s.cfgPath()) {
 		t.Fatalf("adopted config not migrated:\n%s", out)
 	}
-	if got := s.readFile(s.cfgPath()); !bytes.HasPrefix(got, []byte(proxy)) {
+	if got := s.readFile(s.cfgPath()); !bytes.HasPrefix(got, adopted) {
 		t.Errorf("adopted config's bytes not kept:\n%s", got)
 	}
 }
@@ -1409,7 +1276,7 @@ func TestSetupMigratesAnAdoptedConfig(t *testing.T) {
 func TestSetupDryRunWritesNothing(t *testing.T) {
 	s := newSetupSandbox(t)
 	s.onPath["claude"] = true
-	writeInstallation(t, s.home+".bak", "wallet", "identity")
+	writeInstallation(t, s.home+".bak", "identity", "sessions")
 	before := snapshotTree(t, s.root)
 	code, out, errOut := s.run(tty("y"), true, "-dry-run", "-yes")
 	if code != exitOK {
@@ -1493,8 +1360,8 @@ const (
 )
 
 // seedConfigFixture writes what outcome needs onto s's disk before setup
-// runs: nothing (fresh), a complete config with [miner] (left, untouched),
-// or a proxy-only config with [mining] but no [miner] (migrated — setup
+// runs: nothing (fresh), a complete config with [search] (left, untouched),
+// or a config naming only the router, with no [search] (migrated — setup
 // adds the missing tables).
 func seedConfigFixture(t *testing.T, s *setupSandbox, outcome configFixtureOutcome) {
 	t.Helper()
@@ -1513,8 +1380,7 @@ func seedConfigFixture(t *testing.T, s *setupSandbox, outcome configFixtureOutco
 			t.Fatal(err)
 		}
 	case fixtureConfigMigrated:
-		data = []byte("[mining]\nas_url = " + mustTOML(t, legacyASURL) + "\nchain_id = \"twilight-1\"\nslot_id = 7\nstate_dir = " +
-			mustTOML(t, filepath.Join(s.home, "state")) + "\n")
+		data = []byte("[[provider]]\nname = \"search-router\"\nupstream = " + mustTOML(t, s.env["JEVLIN_ROUTER_URL"]) + "\n")
 	}
 	if err := os.WriteFile(s.cfgPath(), data, 0o600); err != nil {
 		t.Fatal(err)
@@ -1579,7 +1445,7 @@ func assertSameStringSet(t *testing.T, label string, dry, real map[string]bool) 
 // prints used to list only the skill plus an advisory note (fresh) or the
 // pre-migration roots (migrated), because codexSandboxRoots read the
 // config from disk and the real run's config either did not exist yet or
-// had not gained its [miner] table yet — the dry run never publishes it
+// had not gained its [search] table yet — the dry run never publishes it
 // (validateConfigSyntax's own invariant: nothing is written anywhere to
 // load it through pkg/config). setup's dry run now plans every agent step
 // from the config it would write or add, parsed by the config package
@@ -1762,9 +1628,8 @@ func agentObservedPlan(t *testing.T, id string, dry bool, outcome configFixtureO
 // D.2 (dropin-miner#59)'s content half: the path-set test above can agree on WHICH
 // paths a dry run and the real run write while still disagreeing on WHAT
 // they write there — a fresh or migrated config that renders with the
-// wrong number of Codex sandbox roots (Miner.Enabled reads false until
-// [miner] actually lands, even though finishMiner already derives
-// intake_dir/sessions_dir from the state dir before checking it) changes
+// wrong number of Codex sandbox roots (the sessions directory is derived
+// from the state directory only once [search] actually lands) changes
 // the Codex config.toml content, not its existence. For every host and all
 // three outcomes, this drives the setup CLI itself — once with -dry-run,
 // once without — against two independent sandboxes, capturing each run's
@@ -2159,12 +2024,10 @@ func TestSetupDryRunPrintsTheCodexQuestion(t *testing.T) {
 
 // legacyOpenCodexBlock is Codex's config as an earlier version of this
 // client left it: the old [sandbox_workspace_write] block with its network
-// open and the four directories that version's mining wrote to, under home.
-// Two of them this client no longer has, and the block is still this
-// installation's, because every root lies under the home that holds its
-// config (codexRootsOwner).
+// open and this installation's two directories as its roots, under home,
+// which is what makes the block this installation's (codexRootsOwner).
 func legacyOpenCodexBlock(home string) string {
-	roots := []string{filepath.Join(home, "intake"), filepath.Join(home, "sessions"), filepath.Join(home, "spool"), filepath.Join(home, "state")}
+	roots := []string{filepath.Join(home, "sessions"), filepath.Join(home, "state")}
 	q := make([]string, len(roots))
 	for i, r := range roots {
 		q[i] = mustTOMLString(r)

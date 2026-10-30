@@ -31,7 +31,7 @@ func TestDefaultsAreJevlin(t *testing.T) {
 		}
 	}
 	cfg := load(t, nil, noEnv)
-	if cfg.Miner.RouterURL.String() != DefaultRouterURL {
-		t.Errorf("the router default is not DefaultRouterURL: %v", cfg.Miner.RouterURL)
+	if cfg.Search.RouterURL.String() != DefaultRouterURL {
+		t.Errorf("the router default is not DefaultRouterURL: %v", cfg.Search.RouterURL)
 	}
 }

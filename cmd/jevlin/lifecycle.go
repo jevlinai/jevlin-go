@@ -360,8 +360,8 @@ func operationLockPath(home string, getenv func(string) string) (connectLock str
 	if loadErr != nil {
 		return "", &lifecycleConfigError{Path: cfgPath, Err: loadErr}
 	}
-	if cfg.Miner.StateDir != "" {
-		connectLock = connectLockPath(cfg.Miner.StateDir)
+	if cfg.Search.StateDir != "" {
+		connectLock = connectLockPath(cfg.Search.StateDir)
 	}
 	return connectLock, nil
 }

@@ -34,7 +34,7 @@ type claudeEntryCase struct {
 var claudeEntryCases = []claudeEntryCase{
 	{"lineage", "cursor-3.20.21-preToolUse-runs-claude-lineage.json", []string{"lineage"}, "PreToolUse"},
 	{"window session-start", "cursor-3.20.21-sessionStart-runs-claude-window-session-start.json", []string{"window", "session-start"}, "SessionStart"},
-	{"flush", "cursor-3.20.21-stop-runs-claude-flush.json", []string{"flush"}, "Stop"},
+	{"stop", "cursor-3.20.21-stop-runs-claude-flush.json", []string{"stop"}, "Stop"},
 }
 
 func cursorPayloadFixture(t *testing.T, name string) map[string]any {
@@ -192,15 +192,15 @@ func TestTheSamePayloadsFromClaudeCodeBehaveAsTheyDoToday(t *testing.T) {
 
 // dropin-miner#87's cost, stated as the thing a participant pays: with both hosts
 // installed Cursor runs OUR Cursor hook and OUR Claude Code hook at the same
-// event, with the same payload. One turn end is one flush, and one session
-// start is one flush.
+// event, with the same payload. One turn end is one release check, and one
+// session start is one release check.
 func TestOneCursorEventIsServedOnceWithBothHostsInstalled(t *testing.T) {
 	cfg := writeHookConfig(t)
 	for _, c := range []struct {
 		name, fixture  string
 		cursor, claude []string
 	}{
-		{"stop", "cursor-3.20.21-stop-runs-claude-flush.json", []string{"cursor", "stop"}, []string{"flush"}},
+		{"stop", "cursor-3.20.21-stop-runs-claude-flush.json", []string{"cursor", "stop"}, []string{"stop"}},
 		{"sessionStart", "cursor-3.20.21-sessionStart-runs-claude-window-session-start.json", []string{"cursor", "sessionStart"}, []string{"window", "session-start"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -280,7 +280,7 @@ func TestWhatCountsAsEvidenceOfAnotherHost(t *testing.T) {
 		// The rule is "the event this entry point is installed under", so an
 		// entry somebody re-wired by hand under another Claude Code event
 		// stands down too. Nothing installs that, and what it costs is one
-		// flush that the next search starts anyway.
+		// release check that the next hook starts anyway.
 		{"a Claude Code event this entry point is not installed under", func(m map[string]any) { m["hook_event_name"] = "PreToolUse" }, true},
 		{"no event name at all", func(m map[string]any) { delete(m, "hook_event_name") }, false},
 		{"Claude Code's event name and its own transcript", func(m map[string]any) {
@@ -300,7 +300,7 @@ func TestWhatCountsAsEvidenceOfAnotherHost(t *testing.T) {
 			fs, ops := newFakeHookOps(nil)
 			payload := asClaudeCode(cursorPayloadFixture(t, "cursor-3.20.21-stop-runs-claude-flush.json"), "Stop")
 			c.edit(payload)
-			got := runRealHookMain(t, fs, ops, cfg, []string{"flush"}, payload)
+			got := runRealHookMain(t, fs, ops, cfg, []string{"stop"}, payload)
 			if stoodDown := got.checks == 0; stoodDown != c.standDown {
 				t.Fatalf("checks=%d, stood down=%v, want %v", got.checks, stoodDown, c.standDown)
 			}
@@ -311,7 +311,7 @@ func TestWhatCountsAsEvidenceOfAnotherHost(t *testing.T) {
 	var checks int
 	ops = countingChecks(ops, &checks)
 	var stdout, stderr bytes.Buffer
-	hookMain(ops, []string{"-config", cfg, "flush"}, strings.NewReader("not json"), &stdout, &stderr)
+	hookMain(ops, []string{"-config", cfg, "stop"}, strings.NewReader("not json"), &stdout, &stderr)
 	if checks != 1 || len(fs.files) != 0 {
 		t.Errorf("an unparseable payload stopped the stop hook: checks %d, files %v", checks, keys(fs.files))
 	}
@@ -379,7 +379,7 @@ func TestTheCallerGateNamesExactlyTheEventsTheInstallWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entryPoints := [][]string{{"lineage"}, {"window", "session-start"}, {"window", "pre-compact"}, {"window", "post-compact"}, {"flush"}}
+	entryPoints := [][]string{{"lineage"}, {"window", "session-start"}, {"window", "pre-compact"}, {"window", "post-compact"}, {"stop"}}
 	seen := map[string]bool{}
 	for _, event := range spec.order {
 		group := spec.entries[event]
@@ -422,7 +422,7 @@ var codexIntoClaudeEntry = map[string][]string{
 	"SessionStart": {"window", "session-start"},
 	"PreCompact":   {"window", "pre-compact"},
 	"PostCompact":  {"window", "post-compact"},
-	"Stop":         {"flush"},
+	"Stop":         {"stop"},
 }
 
 // Every payload Codex sent, into the Claude Code entry for its event: nothing

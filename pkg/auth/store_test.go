@@ -198,29 +198,6 @@ func TestSaveLoadAgentRegistrationRoundTrips(t *testing.T) {
 	}
 }
 
-// The fields of a mining enrollment an earlier version kept in agent.json
-// decode as unknown fields and are ignored: the record still loads, and a
-// save writes it without them.
-func TestAnAgentRecordsOldEnrollmentFieldsAreIgnored(t *testing.T) {
-	s, dir := newStore(t)
-	raw := `{"agent_id":"agent-1","status":"claimed","scopes":["search","mining"],"last_enrollment_slot":"twilight-slot-3",` +
-		`"last_enrollment_at":"2026-09-09T00:00:00Z","slot_refusal":"ambiguous","offered_slots":["a","b"]}`
-	if err := os.WriteFile(filepath.Join(dir, agentRegistrationFile), []byte(raw), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	got, ok, err := s.LoadAgentRegistration()
-	if err != nil || !ok || got.AgentID != "agent-1" || got.Status != "claimed" || len(got.Scopes) != 2 {
-		t.Fatalf("a record with the old enrollment fields did not load: %+v ok=%v err=%v", got, ok, err)
-	}
-	if err := s.SaveAgentRegistration(got); err != nil {
-		t.Fatal(err)
-	}
-	saved, err := os.ReadFile(filepath.Join(dir, agentRegistrationFile)) // #nosec G304 -- the test's own state directory
-	if err != nil || strings.Contains(string(saved), "enrollment") || strings.Contains(string(saved), "slot") {
-		t.Fatalf("the saved record still carries enrollment fields: %s %v", saved, err)
-	}
-}
-
 // The registration is what a resumed process (a detached connect after a
 // later search) reads before making any network call, so it must survive
 // closing and reopening the store.

@@ -2,7 +2,7 @@ package main
 
 // The turn's conversation, for a turn that searched.
 //
-// With `[miner] turn_end = true`, the turn end carries more than the final
+// With `[search] turn_end = true`, the turn end carries more than the final
 // answer: what the user asked, what the assistant wrote along the way, which
 // tools it called, and where its searches fell — read from the host's own
 // transcript when the turn ends, the way a tracing plugin reads it.

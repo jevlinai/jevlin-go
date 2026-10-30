@@ -13,18 +13,15 @@ package main
 // a platform key beside someone else's agent.json is a registration that
 // belongs to nobody. So the identity moves whole or not at all, and a
 // destination that already holds an identity is a conflict — neither half
-// moves, the source is left exactly as it was, and both paths are named. A
-// wallet an earlier version made moves whole or stays: it is the
-// participant's key material, and this client no longer reads it. Session
-// files, and the spool and intake records an earlier version left, are
-// independent records and merge file by file, never overwriting one that is
-// already there.
+// moves, the source is left exactly as it was, and both paths are named.
+// Session files are independent records and merge file by file, never
+// overwriting one that is already there.
 //
 // Every source object is checked before it moves: a regular file or a
 // directory, never a symlink (a moved link would point the runtime's custody
 // checks at whatever it names), and owned by the current user. A sibling of
 // home can sit in a directory other accounts write to; one they created is
-// their registration and their wallet, and they would stay its owner after
+// their registration, and they would stay its owner after
 // the move. Each object is restricted to its owner again
 // immediately after the move, so no intermediate state is weaker than what
 // the auth store accepts at runtime.
@@ -45,38 +42,23 @@ import (
 // installationMarkers are the files whose presence makes a directory an
 // installation. registration_pending.json is one: an interrupted
 // registration is durable state, and ignoring it would mint a second
-// identity for the same participant. It sits beside credentials.json; the
-// state/ copy is an older release's and connect discards it unread. The
-// wallet key and the refresh token an earlier version made are markers
-// too: a directory holding either was an installation, and still is.
+// identity for the same participant. It sits beside credentials.json; one
+// in state/ is a sandboxed command's and connect discards it unread
+// (invariant 13), but a directory holding it was an installation.
 //
-// The payout record and the claim record are not markers, though they move
-// with the identity. A home holding only payout.json is what an earlier
-// version's first connect left when the participant answered the address
-// question and Register then failed; counting it as an installation made
-// setup report "a payout address" as the previous installation and never
-// offer the one actually set aside beside it.
+// The claim record is not a marker, though it moves with the identity: a
+// home holding only claim.json is what a first connect left when the
+// platform answered and Register's publication then failed.
 var installationMarkers = []string{
-	filepath.Join("wallet", walletKeyFile),
-	filepath.Join("state", "refresh.token"),
 	filepath.Join("state", "agent.json"),
 	filepath.Join("state", "registration_pending.json"),
 	registrationJournalFile,
 	credentialsFile,
 }
 
-// walletKeyFile and payoutRecordFile are the names an earlier version gave
-// the wallet's sealed key and the payout record. This client reads neither;
-// it moves them with an installation it adopts and removes them with one it
-// purges.
-const (
-	walletKeyFile    = "wallet.key"
-	payoutRecordFile = "payout.json"
-)
-
 // identityStateFiles are the state/ files that make a destination's state an
 // identity rather than an unfinished registration's leftovers.
-var identityStateFiles = []string{"refresh.token", "agent.json", "registration_pending.json", "participation.secret"}
+var identityStateFiles = []string{"agent.json", "registration_pending.json"}
 
 func lexists(path string) bool {
 	_, err := os.Lstat(path)
@@ -139,22 +121,14 @@ func setAsideInstallation(home string) string {
 // describeInstallation says what a directory holds, in the script's words.
 func describeInstallation(dir string) string {
 	var parts []string
-	if lexists(filepath.Join(dir, "wallet", walletKeyFile)) {
-		parts = append(parts, "a wallet")
-	}
 	if lexists(filepath.Join(dir, "state", "agent.json")) {
 		parts = append(parts, "registered")
-	} else if lexists(filepath.Join(dir, "state", "refresh.token")) {
-		parts = append(parts, "enrolled by an earlier version")
 	}
 	if lexists(filepath.Join(dir, registrationJournalFile)) || lexists(filepath.Join(dir, "state", "registration_pending.json")) {
 		parts = append(parts, "an unfinished registration")
 	}
 	if lexists(filepath.Join(dir, credentialsFile)) {
 		parts = append(parts, "stored API key")
-	}
-	if lexists(filepath.Join(dir, payoutRecordFile)) {
-		parts = append(parts, "a payout address")
 	}
 	return strings.Join(parts, ", ")
 }
@@ -217,10 +191,9 @@ func (a *adoption) doMove(from, to string) error {
 }
 
 // bundleTxn is a journal of changes, in order, each with the change that
-// undoes it. The custody transaction is one bundleTxn kept open across the
-// identity and the wallet; the per-file merges use a throwaway one only for
-// its move-and-restrict. It lives in memory for one run: nothing persists a
-// partial adoption.
+// undoes it. The identity transaction is one bundleTxn; the per-file merges
+// use a throwaway one only for its move-and-restrict. It lives in memory
+// for one run: nothing persists a partial adoption.
 type bundleTxn struct {
 	a     *adoption
 	done  []txnStep
@@ -277,11 +250,10 @@ func (t *bundleTxn) makeRoom(path string) error {
 	return nil
 }
 
-// fail rolls the whole journal back, newest change first — for the custody
-// transaction that is everything the identity and the wallet stages moved —
-// and returns the failure. A rollback that cannot finish stops at once and
-// names every path a part of either bundle is now at; nothing is attempted
-// after it.
+// fail rolls the whole journal back, newest change first — everything the
+// identity stage moved — and returns the failure. A rollback that cannot
+// finish stops at once and names every path a part of the bundle is now
+// at; nothing is attempted after it.
 func (t *bundleTxn) fail(bundle string, cause error) *adoptionFailure {
 	f := &adoptionFailure{Bundle: bundle, Reason: cause.Error(), Source: t.a.src, Destination: t.a.dst}
 	for i := len(t.done) - 1; i >= 0; i-- {
@@ -312,13 +284,12 @@ func (c *identityConflict) Error() string {
 	return fmt.Sprintf("identity conflict: %s (holds %s) and %s each hold an identity", c.Destination, c.Evidence, c.Source)
 }
 
-// adoptionFailure is the typed result of a custody transaction (the identity
-// and the wallet) that failed after the participant accepted the adoption:
-// Bundle names the stage that failed. Everything the transaction had moved,
-// in either stage, has been put back, unless RollbackFailed says otherwise,
-// in which case Surviving names every path a part of either bundle is now at.
+// adoptionFailure is the typed result of an identity transaction that failed
+// after the participant accepted the adoption. Everything the transaction
+// had moved has been put back, unless RollbackFailed says otherwise, in
+// which case Surviving names every path a part of the bundle is now at.
 type adoptionFailure struct {
-	Bundle         string // "identity (state and stored key)" or "wallet"
+	Bundle         string // "identity (state and stored key)"
 	Reason         string
 	Source         string
 	Destination    string
@@ -332,15 +303,12 @@ func (f *adoptionFailure) Error() string {
 
 // run adopts the accepted installation.
 //
-// The identity and the wallet are one outer custody transaction: one
-// journal, open across both stages and unwound newest-first on any conflict
-// after a move, refusal, or failure to move or restrict. The invariant, at
-// the point connect could run: either both custody bundles of the accepted
-// installation were adopted coherently, or both remain where they started —
-// never an identity adopted beside a wallet left behind, which this client
-// does not read but which is the participant's to keep with it. Spool,
-// intake, sessions and config are independent records with per-file rules,
-// and move only after that outer commit.
+// The identity is one transaction: one journal, unwound newest-first on any
+// conflict after a move, refusal, or failure to move or restrict. The
+// invariant, at the point connect could run: either the identity of the
+// accepted installation was adopted whole, or it remains where it started.
+// Sessions and config are independent records with per-file rules, and
+// move only after that commit.
 func (a *adoption) run() error {
 	info, err := os.Lstat(a.src)
 	if err != nil {
@@ -354,24 +322,24 @@ func (a *adoption) run() error {
 	}
 	t := a.txn(
 		filepath.Join(a.src, "state"), filepath.Join(a.src, credentialsFile), filepath.Join(a.src, registrationJournalFile),
-		filepath.Join(a.src, payoutRecordFile), filepath.Join(a.src, claimRecordFile), filepath.Join(a.src, "wallet"),
+		filepath.Join(a.src, claimRecordFile),
 		filepath.Join(a.dst, "state"), filepath.Join(a.dst, credentialsFile), filepath.Join(a.dst, registrationJournalFile),
-		filepath.Join(a.dst, payoutRecordFile), filepath.Join(a.dst, claimRecordFile), filepath.Join(a.dst, "wallet"),
-		a.aside("state.unenrolled"), a.aside("wallet.incomplete"),
+		filepath.Join(a.dst, claimRecordFile),
+		a.aside(stateAsidePrefix),
 	)
 	if err := a.identity(t); err != nil {
 		return err
 	}
-	if err := a.custody(t); err != nil {
-		return err
-	}
-	// Outer commit: both custody bundles are in place, or had nothing to move.
-	for _, name := range []string{"spool", "intake", "sessions"} {
-		a.merge(name)
-	}
+	// Committed: the identity is in place, or had nothing to move.
+	a.merge("sessions")
 	a.config()
 	return nil
 }
+
+// stateAsidePrefix names a destination state/ that held files but no
+// identity (a trace key, a lock) and was set aside for the adopted one:
+// <prefix>-<UTC time>. A purge removes them by this prefix.
+const stateAsidePrefix = "state.unregistered"
 
 const identityBundle = "identity (state and stored key)"
 
@@ -380,38 +348,21 @@ func (a *adoption) aside(prefix string) string {
 	return filepath.Join(a.dst, prefix+"-"+a.now.UTC().Format("20060102150405"))
 }
 
-// identity is the custody transaction's first stage: state/ and
-// credentials.json together, with the registration journal, the payout
-// record and the claim record that sit beside the credential, or none of
-// them. A destination that already holds an identity is returned as a
-// conflict; it is found before this stage moves anything, and this stage is
-// the first. A payout record already at the destination is not an identity:
-// it is the participant's latest answer to the address question, so it is
-// kept and the adopted installation's stays where it was set aside.
+// identity is the transaction: state/ and credentials.json together, with
+// the registration journal and the claim record that sit beside the
+// credential, or none of them. A destination that already holds an identity
+// is returned as a conflict; it is found before anything moves.
 func (a *adoption) identity(t *bundleTxn) error {
 	srcState, srcCreds := filepath.Join(a.src, "state"), filepath.Join(a.src, credentialsFile)
 	dstState, dstCreds := filepath.Join(a.dst, "state"), filepath.Join(a.dst, credentialsFile)
 	srcJournal, dstJournal := filepath.Join(a.src, registrationJournalFile), filepath.Join(a.dst, registrationJournalFile)
-	srcPayout, dstPayout := filepath.Join(a.src, payoutRecordFile), filepath.Join(a.dst, payoutRecordFile)
 	srcClaim, dstClaim := filepath.Join(a.src, claimRecordFile), filepath.Join(a.dst, claimRecordFile)
-	aside := a.aside("state.unenrolled")
+	aside := a.aside(stateAsidePrefix)
 	hasState, hasCreds, hasJournal, hasClaim := lexists(srcState), lexists(srcCreds), lexists(srcJournal), lexists(srcClaim)
-	hasPayout := lexists(srcPayout) && !lexists(dstPayout)
-	if lexists(srcPayout) && !hasPayout {
-		a.say("kept the payout address on file in %s; the one in %s is left there", a.dst, a.src)
-	}
-	if !hasState && !hasCreds && !hasJournal && !hasPayout && !hasClaim {
+	if !hasState && !hasCreds && !hasJournal && !hasClaim {
 		return nil
 	}
-	moving := []string{srcState, srcCreds, srcJournal, srcClaim}
-	if hasPayout {
-		// A source payout record left in place, because the destination
-		// keeps its own, is not moved and so not judged: refusing the whole
-		// adoption over a file it leaves where it is would be a refusal
-		// about nothing it does.
-		moving = append(moving, srcPayout)
-	}
-	for _, p := range moving {
+	for _, p := range []string{srcState, srcCreds, srcJournal, srcClaim} {
 		if !lexists(p) {
 			continue
 		}
@@ -452,14 +403,15 @@ func (a *adoption) identity(t *bundleTxn) error {
 	}
 
 	if setAside {
-		// An enrollment that never finished left a DPoP key (and perhaps a
-		// lock or a decision) behind. Its key would shadow the real one, so
-		// the whole directory goes aside — renamed, never deleted — and comes
-		// back if the adoption does not complete.
+		// A run that never registered left a trace key (and perhaps a
+		// lock) behind. Its key would key the adopted installation's session
+		// ids differently from before, so the whole directory goes aside —
+		// renamed, never deleted — and comes back if the adoption does not
+		// complete.
 		if err := t.move(dstState, aside); err != nil {
 			return t.fail(identityBundle, fmt.Errorf("could not set %s aside: %w", dstState, err))
 		}
-		a.say("set aside %s from an unfinished enrollment as %s", dstState, aside)
+		a.say("set aside %s from an unfinished registration as %s", dstState, aside)
 	} else if err := t.makeRoom(dstState); err != nil {
 		return t.fail(identityBundle, err)
 	}
@@ -481,53 +433,12 @@ func (a *adoption) identity(t *bundleTxn) error {
 			return t.fail(identityBundle, err)
 		}
 	}
-	if hasPayout {
-		if err := t.move(srcPayout, dstPayout); err != nil {
-			return t.fail(identityBundle, err)
-		}
-	}
 	if hasClaim {
 		if err := t.move(srcClaim, dstClaim); err != nil {
 			return t.fail(identityBundle, err)
 		}
 	}
 	a.say("adopted the identity (state and stored key)")
-	return nil
-}
-
-// custody is the custody transaction's second stage: the wallet, whole or
-// not at all. Any failure here unwinds the identity stage too.
-//
-// A destination wallet/ that is not empty is partial state, never a wallet to
-// keep: one holding a wallet key would have made the destination an
-// installation, and adoption would not have been offered. So it is set aside
-// as wallet.incomplete-<time> under the same rollback rules as an unfinished
-// state/, and the participant's chosen source wallet is never discarded in
-// its favor.
-func (a *adoption) custody(t *bundleTxn) error {
-	src, dst := filepath.Join(a.src, "wallet"), filepath.Join(a.dst, "wallet")
-	if !lexists(src) {
-		return nil
-	}
-	if err := validateTree(src); err != nil {
-		return t.fail("wallet", err)
-	}
-	if info, _ := os.Lstat(src); !info.IsDir() {
-		return t.fail("wallet", fmt.Errorf("%s is not a directory", src))
-	}
-	if lexists(dst) && !dirEmpty(dst) {
-		aside := a.aside("wallet.incomplete")
-		if err := t.move(dst, aside); err != nil {
-			return t.fail("wallet", fmt.Errorf("could not set %s aside: %w", dst, err))
-		}
-		a.say("set aside %s, a wallet directory with no wallet key, as %s", dst, aside)
-	} else if err := t.makeRoom(dst); err != nil {
-		return t.fail("wallet", err)
-	}
-	if err := t.move(src, dst); err != nil {
-		return t.fail("wallet", err)
-	}
-	a.say("adopted the wallet")
 	return nil
 }
 

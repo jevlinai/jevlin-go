@@ -3,6 +3,10 @@ package main
 import (
 	"bytes"
 	"errors"
+	"os"
+	"path/filepath"
+	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -124,5 +128,61 @@ func TestTheReportNamesTheChecksThatCouldNotRun(t *testing.T) {
 // a doctor run against a real installation layout.
 func doctorConfig(t *testing.T, stateDir string) string {
 	t.Helper()
-	return writeTOML(t, "[miner]\nstate_dir = "+strconv.Quote(stateDir)+"\n")
+	return writeTOML(t, "[search]\nstate_dir = "+strconv.Quote(stateDir)+"\n")
+}
+
+// doctor diagnoses and changes nothing: the state directory and the
+// installation directory around it are byte for byte what it found, in
+// both of its modes. The fixture is a registered installation whose trace
+// key is removed, the state of one made before connect wrote the key:
+// doctor used to make it there, through the store's creating read
+// (Store.TraceKey), so a command that only reports wrote a secret into the
+// directory it was asked about, and the "trace key" check could never say
+// "not made yet" because asking had made it. Store.LoadTraceKey is the
+// reading that does not create, and this holds doctor to it.
+func TestDoctorLeavesTheInstallationAsItFoundIt(t *testing.T) {
+	withShortConnectTimings(t)
+	platform := newStubPlatform(t)
+	cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
+	if code, out, errOut := runConnect(t, cfgPath, nil); code != exitOK {
+		t.Fatalf("registering connect failed: %d\n%s\n%s", code, out, errOut)
+	}
+	home := filepath.Dir(stateDir)
+	if err := os.Remove(auth.TraceKeyPath(stateDir)); err != nil {
+		t.Fatal(err)
+	}
+	// cmdDoctor reads the environment itself; the installation it
+	// diagnoses is this one, and nothing of the developer's.
+	t.Setenv("JEVLIN_HOME", home)
+	t.Setenv("JEVLIN_CONFIG", "")
+
+	before := snapshotTree(t, home)
+	for _, args := range [][]string{{"-config", cfgPath}, {"-config", cfgPath, "-json"}} {
+		var out, errOut bytes.Buffer
+		if code := cmdDoctor(args, &out, &errOut); code != exitOK {
+			t.Fatalf("doctor %v exited %d\n%s\n%s", args, code, out.String(), errOut.String())
+		}
+		if !strings.Contains(out.String(), "not made yet") {
+			t.Errorf("doctor %v does not report the trace key as not made yet:\n%s", args, out.String())
+		}
+		if lexists(auth.TraceKeyPath(stateDir)) {
+			t.Errorf("doctor %v made the trace key", args)
+		}
+		after := snapshotTree(t, home)
+		if !reflect.DeepEqual(before, after) {
+			var changed []string
+			for path := range before {
+				if sig, ok := after[path]; !ok || sig != before[path] {
+					changed = append(changed, path+" (changed or removed)")
+				}
+			}
+			for path := range after {
+				if _, ok := before[path]; !ok {
+					changed = append(changed, path+" (made)")
+				}
+			}
+			sort.Strings(changed)
+			t.Fatalf("doctor %v changed the installation:\n  %s", args, strings.Join(changed, "\n  "))
+		}
+	}
 }

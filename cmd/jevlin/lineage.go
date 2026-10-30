@@ -433,4 +433,4 @@ func (sc *lineageFile) envelope() *traceEnvelope {
 // directory, which with the standard layout is ~/.jevlin. credentials.json,
 // the registration journal, the claim record and the release check's stamp
 // live there, outside every directory a sandboxed agent may write.
-func installRoot(m config.Miner) string { return filepath.Dir(m.StateDir) }
+func installRoot(m config.Search) string { return filepath.Dir(m.StateDir) }

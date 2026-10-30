@@ -41,24 +41,24 @@ func loadErr(t *testing.T, args []string, getenv func(string) string) error {
 
 func TestDefaults(t *testing.T) {
 	cfg := load(t, nil, noEnv)
-	if cfg.Miner.RouterURL == nil || cfg.Miner.RouterURL.String() != DefaultRouterURL {
-		t.Errorf("router default: %v", cfg.Miner.RouterURL)
+	if cfg.Search.RouterURL == nil || cfg.Search.RouterURL.String() != DefaultRouterURL {
+		t.Errorf("router default: %v", cfg.Search.RouterURL)
 	}
-	if cfg.Miner.RouterConfigured {
+	if cfg.Search.RouterConfigured {
 		t.Error("no config file at all, yet RouterConfigured")
 	}
 	base, err := os.UserConfigDir()
 	if err != nil {
 		t.Skipf("no user config dir here: %v", err)
 	}
-	if want := filepath.Join(base, "jevlin", "state"); cfg.Miner.StateDir != want {
-		t.Errorf("state dir default: %q, want %q", cfg.Miner.StateDir, want)
+	if want := filepath.Join(base, "jevlin", "state"); cfg.Search.StateDir != want {
+		t.Errorf("state dir default: %q, want %q", cfg.Search.StateDir, want)
 	}
-	if want := filepath.Join(base, "jevlin", "sessions"); cfg.Miner.SessionsDir != want {
-		t.Errorf("sessions dir default: %q, want %q", cfg.Miner.SessionsDir, want)
+	if want := filepath.Join(base, "jevlin", "sessions"); cfg.Search.SessionsDir != want {
+		t.Errorf("sessions dir default: %q, want %q", cfg.Search.SessionsDir, want)
 	}
-	if cfg.Miner.TurnEnd || cfg.Miner.Tier != "" {
-		t.Errorf("miner defaults: %+v", cfg.Miner)
+	if cfg.Search.TurnEnd || cfg.Search.Tier != "" {
+		t.Errorf("search defaults: %+v", cfg.Search)
 	}
 	if cfg.Platform.BaseURL != DefaultPlatformBaseURL || cfg.Platform.AgentsAPIURL != DefaultAgentsAPIURL {
 		t.Errorf("platform defaults: %+v", cfg.Platform)
@@ -72,104 +72,80 @@ func TestDefaults(t *testing.T) {
 // defaults beside it, and an explicit one wins.
 func TestStateAndSessionsDirectories(t *testing.T) {
 	home := filepath.ToSlash(t.TempDir())
-	cfg := load(t, []string{"-config", writeTOML(t, "[miner]\nstate_dir = \""+home+"/state\"\n")}, noEnv)
-	if cfg.Miner.StateDir != filepath.FromSlash(home+"/state") {
-		t.Errorf("state dir: %q", cfg.Miner.StateDir)
+	cfg := load(t, []string{"-config", writeTOML(t, "[search]\nstate_dir = \""+home+"/state\"\n")}, noEnv)
+	if cfg.Search.StateDir != filepath.FromSlash(home+"/state") {
+		t.Errorf("state dir: %q", cfg.Search.StateDir)
 	}
-	if cfg.Miner.SessionsDir != filepath.Join(filepath.FromSlash(home), "sessions") {
-		t.Errorf("sessions dir: %q, want beside the state dir", cfg.Miner.SessionsDir)
+	if cfg.Search.SessionsDir != filepath.Join(filepath.FromSlash(home), "sessions") {
+		t.Errorf("sessions dir: %q, want beside the state dir", cfg.Search.SessionsDir)
 	}
-	cfg = load(t, []string{"-config", writeTOML(t, "[miner]\nstate_dir = \""+home+"/state\"\nsessions_dir = \""+home+"/elsewhere\"\n")}, noEnv)
-	if cfg.Miner.SessionsDir != filepath.FromSlash(home+"/elsewhere") {
-		t.Errorf("an explicit sessions dir lost: %q", cfg.Miner.SessionsDir)
-	}
-}
-
-// A config an earlier version wrote names the state directory under
-// [mining], and setup never rewrites an existing config: it is still read,
-// and [miner] state_dir wins where both are named.
-func TestLegacyMiningStateDirIsRead(t *testing.T) {
-	home := filepath.ToSlash(t.TempDir())
-	legacy := "[mining]\nas_url = \"https://as.example.com\"\nchain_id = \"twilight-1\"\nslot_id = 7\n" +
-		"state_dir = \"" + home + "/state\"\nspool_dir = \"" + home + "/spool\"\n\n" +
-		"[miner]\nenabled = true\nintake_dir = \"" + home + "/intake\"\nsessions_dir = \"" + home + "/sessions\"\n"
-	cfg := load(t, []string{"-config", writeTOML(t, legacy)}, noEnv)
-	if cfg.Miner.StateDir != filepath.FromSlash(home+"/state") {
-		t.Errorf("state dir from [mining]: %q", cfg.Miner.StateDir)
-	}
-	both := legacy + "state_dir = \"" + home + "/newer\"\n"
-	cfg = load(t, []string{"-config", writeTOML(t, both)}, noEnv)
-	if cfg.Miner.StateDir != filepath.FromSlash(home+"/newer") {
-		t.Errorf("[miner] state_dir did not win: %q", cfg.Miner.StateDir)
+	cfg = load(t, []string{"-config", writeTOML(t, "[search]\nstate_dir = \""+home+"/state\"\nsessions_dir = \""+home+"/elsewhere\"\n")}, noEnv)
+	if cfg.Search.SessionsDir != filepath.FromSlash(home+"/elsewhere") {
+		t.Errorf("an explicit sessions dir lost: %q", cfg.Search.SessionsDir)
 	}
 }
 
-// Every table and key an earlier version, or the proxy before it, wrote is
-// accepted: an installation that upgrades keeps loading its config. Nothing
-// of them is read, so a value that would once have been refused is not.
-func TestLegacyTablesAreAcceptedAndUnread(t *testing.T) {
-	body := `[proxy]
-listen = "127.0.0.1:8787"
-admin_listen = "127.0.0.1:8788"
-shutdown_grace = "5s"
-max_request_body_bytes = 1
-max_inbound_conns = 1
-
-[[provider]]
+// A config an earlier, mining-capable version wrote (0.6.x: a [miner] table
+// and a [mining] table, and the proxy-era tables before them) names tables
+// and keys this version does not have, and is refused as any unknown key
+// is. That version's installations continue on their own binary; this one
+// carries no reading of their files, so none of these may be accepted and
+// silently unread. Each shape is tried on its own, because a refusal of the
+// whole file proves only that one key was unknown.
+func TestAnEarlierVersionsConfigIsRefusedAsUnknownKeys(t *testing.T) {
+	whole := `[[provider]]
 name = "openrouter"
-tier = "A"
 upstream = "https://openrouter.ai/api"
-
-[transport]
-response_header_timeout = "1s"
-upstream_ca_file = "/nonexistent/ca.pem"
-
-[privacy]
-log_content = true
-
-[log]
-level = "debug"
-
-[observe]
-observation_memory_budget = 1
-ring_bytes = 1
-max_event_bytes = 1
-max_events = 1
-max_observed_body_bytes = 1
-max_depth = 1
-max_json_key_bytes = 1
 
 [mining]
 enabled = true
-as_url = "http://as.example.com"
+as_url = "https://as.example.com"
 chain_id = "twilight-1"
 slot_id = 7
-target_epoch = 3
-metadata_ttl = "1m"
-collector_interval = "1s"
-collector_base_backoff = "1s"
-collector_max_backoff = "1s"
-collector_max_attempts = 1
-payout_address = "twilight1abc"
-platform_slot = "slot"
+state_dir = "/tmp/state"
+spool_dir = "/tmp/spool"
 
 [miner]
 enabled = true
+router_url = "https://router.example"
+state_dir = "/tmp/state"
+sessions_dir = "/tmp/sessions"
 intake_dir = "/tmp/intake"
 flush_interval = "3m"
 `
-	cfg := load(t, []string{"-config", writeTOML(t, body)}, noEnv)
-	if cfg.Miner.RouterURL.String() != "https://openrouter.ai/api" {
-		t.Errorf("the provider upstream is the router when miner.router_url is unset: %v", cfg.Miner.RouterURL)
+	err := loadErr(t, []string{"-config", writeTOML(t, whole)}, noEnv)
+	if !strings.Contains(err.Error(), "unknown key") || !strings.Contains(err.Error(), "miner.") || !strings.Contains(err.Error(), "mining.") {
+		t.Fatalf("a 0.6.x config was not refused by its tables: %v", err)
 	}
-	if cfg.Miner.RouterConfigured {
-		t.Error("a provider upstream is not a configured router")
+	for name, body := range map[string]string{
+		"[miner]":                 "[miner]\nstate_dir = \"/tmp/state\"\n",
+		"[mining]":                "[mining]\nstate_dir = \"/tmp/state\"\n",
+		"[proxy]":                 "[proxy]\nlisten = \"127.0.0.1:8787\"\n",
+		"[transport]":             "[transport]\nresponse_header_timeout = \"1s\"\n",
+		"[privacy]":               "[privacy]\nlog_content = true\n",
+		"[log]":                   "[log]\nlevel = \"debug\"\n",
+		"[observe]":               "[observe]\nmax_events = 1\n",
+		"[flush]":                 "[flush]\ninterval = \"3m\"\n",
+		"[[provider]] tier":       "[[provider]]\nname = \"openrouter\"\ntier = \"A\"\nupstream = \"https://openrouter.ai/api\"\n",
+		"[search] enabled":        "[search]\nenabled = true\n",
+		"[search] intake_dir":     "[search]\nintake_dir = \"/tmp/intake\"\n",
+		"[search] flush_interval": "[search]\nflush_interval = \"3m\"\n",
+		"[search] spool_dir":      "[search]\nspool_dir = \"/tmp/spool\"\n",
+		"[search] as_url":         "[search]\nas_url = \"https://as.example.com\"\n",
+		"[platform] mining":       "[platform]\nmining = true\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := loadErr(t, []string{"-config", writeTOML(t, body)}, noEnv)
+			if !strings.Contains(err.Error(), "unknown key") {
+				t.Fatalf("accepted: %v", err)
+			}
+		})
 	}
 }
 
 func TestUnknownTOMLKeyRejected(t *testing.T) {
-	err := loadErr(t, []string{"-config", writeTOML(t, "[miner]\nrouter_ur = \"https://r.example\"\n")}, noEnv)
-	if !strings.Contains(err.Error(), "unknown key") || !strings.Contains(err.Error(), "miner.router_ur") {
+	err := loadErr(t, []string{"-config", writeTOML(t, "[search]\nrouter_ur = \"https://r.example\"\n")}, noEnv)
+	if !strings.Contains(err.Error(), "unknown key") || !strings.Contains(err.Error(), "search.router_ur") {
 		t.Fatalf("got %v", err)
 	}
 	err = loadErr(t, []string{"-config", writeTOML(t, "[flush]\ninterval = \"3m\"\n")}, noEnv)
@@ -220,16 +196,6 @@ func TestOneProviderOnly(t *testing.T) {
 	}
 }
 
-func TestDurationParsing(t *testing.T) {
-	var d duration
-	if err := d.UnmarshalText([]byte("90s")); err != nil || d.Seconds() != 90 {
-		t.Fatalf("got %v %v", d, err)
-	}
-	if err := d.UnmarshalText([]byte("soon")); err == nil {
-		t.Fatal("bad duration accepted")
-	}
-}
-
 func TestVersionFlag(t *testing.T) {
 	_, show, err := Load([]string{"-version"}, noEnv)
 	if err != nil || !show {
@@ -241,9 +207,9 @@ func TestUnexpectedArgRejected(t *testing.T) {
 	_ = loadErr(t, []string{"extra"}, noEnv)
 }
 
-func TestMinerRejectsRoutablePlainHTTPRouterURL(t *testing.T) {
+func TestSearchRejectsRoutablePlainHTTPRouterURL(t *testing.T) {
 	for _, host := range []string{"router.example.com", "203.0.113.10", "router.internal:8080"} {
-		body := "[miner]\nrouter_url = \"http://" + host + "\"\n"
+		body := "[search]\nrouter_url = \"http://" + host + "\"\n"
 		err := loadErr(t, []string{"-config", writeTOML(t, body)}, noEnv)
 		if err == nil {
 			t.Errorf("plain http router_url %q was accepted at load", host)
@@ -262,56 +228,56 @@ func TestMinerRejectsRoutablePlainHTTPRouterURL(t *testing.T) {
 // would be as much a defect as losing the rule. Testing against a ROUTABLE
 // devnet router still needs TLS on the devnet, or the client co-located
 // over loopback: the intended consequence, not a gap.
-func TestMinerAllowsPlainHTTPRouterURLOnLoopback(t *testing.T) {
+func TestSearchAllowsPlainHTTPRouterURLOnLoopback(t *testing.T) {
 	for _, host := range []string{"127.0.0.1:8080", "localhost:8080", "[::1]:8080"} {
-		body := "[miner]\nrouter_url = \"http://" + host + "\"\n"
+		body := "[search]\nrouter_url = \"http://" + host + "\"\n"
 		if _, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv); err != nil {
 			t.Errorf("loopback router_url %q was refused: %v", host, err)
 		}
 	}
 }
 
-func TestMinerRejectsUserinfoRouterURL(t *testing.T) {
-	err := loadErr(t, []string{"-config", writeTOML(t, "[miner]\nrouter_url = \"https://u:p@router.example\"\n")}, noEnv)
+func TestSearchRejectsUserinfoRouterURL(t *testing.T) {
+	err := loadErr(t, []string{"-config", writeTOML(t, "[search]\nrouter_url = \"https://u:p@router.example\"\n")}, noEnv)
 	if !strings.Contains(err.Error(), "userinfo") {
 		t.Fatalf("got %v", err)
 	}
 }
 
-// [miner] turn_end is off unless the config says otherwise: it sends
+// [search] turn_end is off unless the config says otherwise: it sends
 // model-written text off the machine, and a default must not.
-func TestMinerTurnEndIsOffByDefault(t *testing.T) {
+func TestSearchTurnEndIsOffByDefault(t *testing.T) {
 	for body, want := range map[string]bool{
-		"[miner]\nrouter_url = \"http://127.0.0.1:8080\"\n":                   false,
-		"[miner]\nrouter_url = \"http://127.0.0.1:8080\"\nturn_end = false\n": false,
-		"[miner]\nrouter_url = \"http://127.0.0.1:8080\"\nturn_end = true\n":  true,
+		"[search]\nrouter_url = \"http://127.0.0.1:8080\"\n":                   false,
+		"[search]\nrouter_url = \"http://127.0.0.1:8080\"\nturn_end = false\n": false,
+		"[search]\nrouter_url = \"http://127.0.0.1:8080\"\nturn_end = true\n":  true,
 	} {
 		cfg, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv)
 		if err != nil {
 			t.Fatalf("%q: %v", body, err)
 		}
-		if cfg.Miner.TurnEnd != want {
-			t.Errorf("%q: turn_end = %v, want %v", body, cfg.Miner.TurnEnd, want)
+		if cfg.Search.TurnEnd != want {
+			t.Errorf("%q: turn_end = %v, want %v", body, cfg.Search.TurnEnd, want)
 		}
 	}
 }
 
 // RouterConfigured tells a router the config names from the provider
 // upstream standing in for one.
-func TestMinerRouterConfigured(t *testing.T) {
-	named, _, err := Load([]string{"-config", writeTOML(t, "[miner]\nrouter_url = \"http://127.0.0.1:8080\"\n")}, noEnv)
+func TestSearchRouterConfigured(t *testing.T) {
+	named, _, err := Load([]string{"-config", writeTOML(t, "[search]\nrouter_url = \"http://127.0.0.1:8080\"\n")}, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !named.Miner.RouterConfigured || named.Miner.RouterURL == nil {
-		t.Errorf("a named router: configured=%v url=%v", named.Miner.RouterConfigured, named.Miner.RouterURL)
+	if !named.Search.RouterConfigured || named.Search.RouterURL == nil {
+		t.Errorf("a named router: configured=%v url=%v", named.Search.RouterConfigured, named.Search.RouterURL)
 	}
-	fallback, _, err := Load([]string{"-config", writeTOML(t, "[miner]\nturn_end = true\n")}, noEnv)
+	fallback, _, err := Load([]string{"-config", writeTOML(t, "[search]\nturn_end = true\n")}, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fallback.Miner.RouterConfigured {
-		t.Errorf("no miner.router_url, yet RouterConfigured; RouterURL = %v", fallback.Miner.RouterURL)
+	if fallback.Search.RouterConfigured {
+		t.Errorf("no search.router_url, yet RouterConfigured; RouterURL = %v", fallback.Search.RouterURL)
 	}
 }
 
@@ -434,17 +400,17 @@ func TestNonDefaultNonLoopbackBaseURLRequiresExplicitAgentsAPIURL(t *testing.T) 
 
 func TestLoadIgnoresJevlinTOMLInWorkingDirectory(t *testing.T) {
 	dir := t.TempDir()
-	body := "[miner]\nrouter_url = \"https://evil.example\"\n\n[platform]\nagents_api_url = \"https://evil.example\"\n"
+	body := "[search]\nrouter_url = \"https://evil.example\"\n\n[platform]\nagents_api_url = \"https://evil.example\"\n"
 	if err := os.WriteFile(filepath.Join(dir, "jevlin.toml"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Chdir(dir)
 
 	cfg := load(t, nil, noEnv)
-	if cfg.Miner.RouterConfigured {
-		t.Fatalf("cwd jevlin.toml was loaded: router %v", cfg.Miner.RouterURL)
+	if cfg.Search.RouterConfigured {
+		t.Fatalf("cwd jevlin.toml was loaded: router %v", cfg.Search.RouterURL)
 	}
-	if u := cfg.Miner.RouterURL; u != nil && u.Host == "evil.example" {
+	if u := cfg.Search.RouterURL; u != nil && u.Host == "evil.example" {
 		t.Fatalf("router taken from cwd jevlin.toml: %v", u)
 	}
 }
@@ -452,11 +418,11 @@ func TestLoadIgnoresJevlinTOMLInWorkingDirectory(t *testing.T) {
 // LoadBytes is Load over bytes already in hand: setup's dry run checks the
 // config it would write without writing it.
 func TestLoadBytesIsLoadOverBytes(t *testing.T) {
-	cfg, err := LoadBytes([]byte("[miner]\nrouter_url = \"http://127.0.0.1:8080\"\n"), noEnv)
-	if err != nil || !cfg.Miner.RouterConfigured {
+	cfg, err := LoadBytes([]byte("[search]\nrouter_url = \"http://127.0.0.1:8080\"\n"), noEnv)
+	if err != nil || !cfg.Search.RouterConfigured {
 		t.Fatalf("LoadBytes: %+v %v", cfg, err)
 	}
-	if _, err := LoadBytes([]byte("[miner]\nrouter_url = \"http://routable.example\"\n"), noEnv); err == nil {
+	if _, err := LoadBytes([]byte("[search]\nrouter_url = \"http://routable.example\"\n"), noEnv); err == nil {
 		t.Fatal("LoadBytes accepted what Load refuses")
 	}
 }
@@ -474,7 +440,7 @@ func TestUpdateModeDefaultsToApplyAndAnUnknownWordFallsToNotify(t *testing.T) {
 		"Off":     UpdateOff,
 		" apply ": UpdateApply,
 	} {
-		body := "[miner]\nrouter_url = \"http://127.0.0.1:8080\"\n"
+		body := "[search]\nrouter_url = \"http://127.0.0.1:8080\"\n"
 		if raw != "" {
 			body += "[update]\nmode = \"" + raw + "\"\n"
 		}
@@ -499,14 +465,14 @@ func TestUpdateModeDefaultsToApplyAndAnUnknownWordFallsToNotify(t *testing.T) {
 	}
 }
 
-// [miner] tier is the participant's own setting, written by hand, and a
+// [search] tier is the participant's own setting, written by hand, and a
 // word the client cannot use must not take the config down with it: a
 // failed load stops search for a value that changes nothing but which band
 // a request asks for. So case and surrounding space are forgiven, and a
 // word that is still not a band loads as no tier, kept aside for status to
 // name, and is never sent, so the router does not answer every search with
 // a 400 either.
-func TestMinerTierIsNormalizedAndAnUnknownWordIsIgnoredAtLoad(t *testing.T) {
+func TestSearchTierIsNormalizedAndAnUnknownWordIsIgnoredAtLoad(t *testing.T) {
 	for raw, want := range map[string]string{
 		"":         "",
 		"fast":     "fast",
@@ -515,7 +481,7 @@ func TestMinerTierIsNormalizedAndAnUnknownWordIsIgnoredAtLoad(t *testing.T) {
 		"Fast":     "fast",
 		" max ":    "max",
 	} {
-		body := "[miner]\nrouter_url = \"http://127.0.0.1:8080\"\n"
+		body := "[search]\nrouter_url = \"http://127.0.0.1:8080\"\n"
 		if raw != "" {
 			body += "tier = \"" + raw + "\"\n"
 		}
@@ -523,19 +489,19 @@ func TestMinerTierIsNormalizedAndAnUnknownWordIsIgnoredAtLoad(t *testing.T) {
 		if err != nil {
 			t.Fatalf("tier %q: %v", raw, err)
 		}
-		if cfg.Miner.Tier != want || cfg.Miner.UnknownTier != "" {
-			t.Errorf("tier %q: Tier = %q UnknownTier = %q, want %q and none", raw, cfg.Miner.Tier, cfg.Miner.UnknownTier, want)
+		if cfg.Search.Tier != want || cfg.Search.UnknownTier != "" {
+			t.Errorf("tier %q: Tier = %q UnknownTier = %q, want %q and none", raw, cfg.Search.Tier, cfg.Search.UnknownTier, want)
 		}
 	}
 	for _, unknown := range []string{"turbo", "auto", "max; echo x"} {
-		body := "[miner]\nrouter_url = \"http://127.0.0.1:8080\"\ntier = \"" + unknown + "\"\n"
+		body := "[search]\nrouter_url = \"http://127.0.0.1:8080\"\ntier = \"" + unknown + "\"\n"
 		cfg, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv)
 		if err != nil {
 			t.Errorf("tier %q stopped the config from loading: %v", unknown, err)
 			continue
 		}
-		if cfg.Miner.Tier != "" || cfg.Miner.UnknownTier != unknown {
-			t.Errorf("tier %q: Tier = %q UnknownTier = %q, want none and the word kept aside", unknown, cfg.Miner.Tier, cfg.Miner.UnknownTier)
+		if cfg.Search.Tier != "" || cfg.Search.UnknownTier != unknown {
+			t.Errorf("tier %q: Tier = %q UnknownTier = %q, want none and the word kept aside", unknown, cfg.Search.Tier, cfg.Search.UnknownTier)
 		}
 	}
 }

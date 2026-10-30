@@ -107,7 +107,7 @@ var classifiedFileCalls = map[fileCallSite]fileCallClass{
 	{"cmd/jevlin/hook.go", "realHookOps", "os.Remove"}:                                  {1, "root: removes a name, never what it points at"},
 	{"cmd/jevlin/hook.go", "realHookOps", "os.Rename"}:                                  {1, "root: renames our exclusively created temporary file onto a top-level name; a rename replaces the name, never what it pointed at"},
 	{"cmd/jevlin/lifecycle.go", "lifecycleExclusion.release", "os.Remove"}:              {1, "root and outside: removes lock files this operation created, by name"},
-	{"cmd/jevlin/miner.go", "listTempFiles", "os.ReadDir"}:                              {1, "root: lists a root's top level for the temporary-file sweep; O_DIRECTORY refuses a FIFO"},
+	{"cmd/jevlin/lineage.go", "listTempFiles", "os.ReadDir"}:                            {1, "root: lists a root's top level for the temporary-file sweep; O_DIRECTORY refuses a FIFO"},
 	{"cmd/jevlin/filelock_unix.go", "tryLockFile", "fsx.OpenLock"}:                      {1, "root and outside: connect.lock in the state dir, and the lifecycle locks; no link followed"},
 	{"cmd/jevlin/filelock_windows.go", "tryLockFile", "fsx.OpenLock"}:                   {1, "root and outside: connect.lock and the lifecycle locks; no reparse point followed, share mode 0"},
 	{"cmd/jevlin/ownership.go", "npmLayoutKind", "os.ReadFile"}:                         {1, "outside: an npm package's own package.json"},

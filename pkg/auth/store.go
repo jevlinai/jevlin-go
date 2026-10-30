@@ -55,7 +55,7 @@ type Store struct {
 	dir string
 }
 
-// OpenStore creates or opens the state directory ([miner] state_dir):
+// OpenStore creates or opens the state directory ([search] state_dir):
 // created 0700 (on Windows, every directory this call creates is restricted
 // to its owner as it is created and none is judged afterwards: perm.go), and
 // refused if it is a symlink or group/world-accessible.
@@ -442,7 +442,7 @@ type PendingRegistration struct {
 const pendingRegistrationVersion = 1
 
 // RegistrationJournal holds registration_pending.json. It is not part of
-// the state directory: a sandboxed agent may write [miner] state_dir, and
+// the state directory: a sandboxed agent may write [search] state_dir, and
 // the journal carries the authority to publish a platform key over
 // credentials.json (replace_expired, previous_key). It lives beside
 // credentials.json, so whoever can forge it could already rewrite the
@@ -539,7 +539,7 @@ func validatePendingRegistration(rec PendingRegistration) error {
 		return fmt.Errorf("auth: pending registration has unsupported version %d", rec.V)
 	}
 	if !boundedNonEmpty(rec.AgentID, 1, 512) || !boundedNonEmpty(rec.Key, 1, 4096) ||
-		!boundedNonEmpty(rec.ClaimURL, 1, 4096) || !bounded(rec.ClaimCode, 0, 512) ||
+		!boundedNonEmpty(rec.ClaimURL, 1, 4096) || ValidClaimCode(rec.ClaimCode) != nil ||
 		!bounded(rec.ClaimExpiresAt, 0, 128) || rec.Status != "unclaimed" ||
 		rec.PollIntervalMS < 0 || rec.PollIntervalMS > int64((24*time.Hour)/time.Millisecond) ||
 		(rec.ReplaceExpired && (!boundedNonEmpty(rec.PreviousAgentID, 1, 512) || !boundedNonEmpty(rec.PreviousKey, 1, 4096))) ||

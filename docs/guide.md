@@ -251,13 +251,12 @@ only when you say yes at a terminal, in pieces that belong together:
 
 | piece | what setup does |
 |---|---|
-| **Registration and key** | Move as one. If `~/.jevlin` has its own, setup stops before anything moves and names both: keep one, move the other away. A half-made key there is renamed `state.unenrolled-<time>`. |
-| **Session files, and the records an earlier version left** | Merge one file at a time, never overwriting. |
+| **Registration and key** | Move as one. If `~/.jevlin` has its own, setup stops before anything moves and names both: keep one, move the other away. A half-made state directory there is renamed `state.unregistered-<time>`. |
+| **Session files** | Merge one file at a time, never overwriting. |
 | **Config** | Moves only if `~/.jevlin` has none. |
 
-A wallet an earlier version made moves whole as well; this version never reads it. Symlinks and
-anything another account owns are not moved: a set-aside folder that is not yours is never
-offered. The set-aside folder is removed only once it is empty.
+Symlinks and anything another account owns are not moved: a set-aside folder that is not yours
+is never offered. The set-aside folder is removed only once it is empty.
 
 The profile lines are one block between `# >>> jevlin >>>` and `# <<< jevlin <<<`; delete it to
 undo them. If the block no longer has exactly one start and one end line, setup leaves the file

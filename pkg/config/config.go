@@ -6,14 +6,11 @@
 // participant's key on the wire in the clear, and a credential-carrying
 // URL.
 //
-// The file keeps the tables earlier versions wrote. A [mining] table, the
-// proxy-era [proxy], [transport], [privacy], [log] and [observe] tables, and
-// the [miner] keys that configured the mining intake are accepted so that a
-// config an earlier version wrote still loads; nothing reads them except
-// [mining] state_dir, which names the state directory where [miner]
-// state_dir does not. Unknown keys are still refused, because a typo in a
-// key this version reads is a silent misconfiguration, and the legacy
-// tables are a closed list.
+// The file has four tables: [[provider]], [search], [platform] and
+// [update]. Unknown keys and unknown tables are refused, because a typo in
+// a key this version reads is a silent misconfiguration. A file an earlier,
+// mining-capable version wrote names tables this version does not know and
+// is refused the same way; that version's line continues as its own binary.
 package config
 
 import (
@@ -26,14 +23,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/BurntSushi/toml"
 )
 
 // defaultUpstream is the [[provider]] upstream when the file names none:
-// the router. [[provider]] is the table an earlier version wrote the router
-// into, and the one setup still writes; miner.router_url is read first.
+// the router. [[provider]] is the table setup writes the router into;
+// search.router_url, when set, is read first.
 const defaultUpstream = DefaultRouterURL
 
 // Platform is the search platform connect talks to (agent onboarding
@@ -77,15 +73,14 @@ type Update struct {
 	UnknownMode string
 }
 
-// Miner is the [miner] block: where searches go and where this
+// Search is the [search] block: where searches go and where this
 // installation keeps what the hooks and the search pass between
-// themselves. The name is the table's, kept so a config an earlier version
-// wrote still loads; nothing in it mines.
-type Miner struct {
+// themselves.
+type Search struct {
 	// RouterURL is where searches go. Empty means the [[provider]]
-	// upstream, which is the table an earlier version named the router in.
+	// upstream, the table setup names the router in.
 	RouterURL *url.URL
-	// RouterConfigured is true when miner.router_url was written in the
+	// RouterConfigured is true when search.router_url was written in the
 	// config, false when RouterURL is the provider upstream standing in for
 	// it. Searches go to either. Anything that must only ever reach the
 	// search router — the turn end — requires this.
@@ -106,12 +101,12 @@ type Miner struct {
 	TurnEnd bool
 	// Tier is the search tier a request carries when neither the caller
 	// (the -tier flag, the stdin request's "tier") nor the participant's
-	// `jevlin agents tier` file named one: [miner] tier, written by hand.
+	// `jevlin agents tier` file named one: [search] tier, written by hand.
 	// Empty means the request carries no tier and the router applies the
 	// tenant's default. One of SearchTiers when set, lower-cased and
 	// trimmed at load.
 	Tier string
-	// UnknownTier is a [miner] tier that is not one of SearchTiers even
+	// UnknownTier is a [search] tier that is not one of SearchTiers even
 	// after that: kept aside so status can say why the router's default
 	// applies, and never sent. A word this client cannot use does not stop
 	// the config from loading, because that would stop search over a value
@@ -137,33 +132,26 @@ func KnownSearchTier(tier string) bool {
 
 // Config is the resolved, immutable configuration.
 type Config struct {
-	Miner    Miner
+	Search   Search
 	Platform Platform
 	Update   Update
 }
 
 // fileConfig mirrors the TOML document.
 type fileConfig struct {
-	// Provider is the table an earlier version named the router in, and
-	// the one setup writes. Its upstream is the router when
-	// miner.router_url is unset; name and tier are accepted and unread.
+	// Provider is the table setup names the router in. Its upstream is the
+	// router when search.router_url is unset; name is accepted and unread.
 	Provider []struct {
 		Name     string `toml:"name"`
-		Tier     string `toml:"tier"`
 		Upstream string `toml:"upstream"`
 	} `toml:"provider"`
-	Miner struct {
+	Search struct {
 		RouterURL   string `toml:"router_url"`
 		StateDir    string `toml:"state_dir"`
 		SessionsDir string `toml:"sessions_dir"`
 		TurnEnd     bool   `toml:"turn_end"`
 		Tier        string `toml:"tier"`
-		// The keys that configured the mining intake, accepted so that a
-		// config an earlier version wrote still loads, and unread.
-		Enabled       bool     `toml:"enabled"`
-		IntakeDir     string   `toml:"intake_dir"`
-		FlushInterval duration `toml:"flush_interval"`
-	} `toml:"miner"`
+	} `toml:"search"`
 	Platform struct {
 		BaseURL      string `toml:"base_url"`
 		AgentsAPIURL string `toml:"agents_api_url"`
@@ -171,67 +159,6 @@ type fileConfig struct {
 	Update struct {
 		Mode string `toml:"mode"`
 	} `toml:"update"`
-
-	// Mining is the table an earlier version configured the authorization
-	// server in. Only state_dir is read, as the state directory when
-	// miner.state_dir is unset: setup wrote it here, and an existing config
-	// is never rewritten. Every other key is accepted and unread.
-	Mining struct {
-		StateDir             string   `toml:"state_dir"`
-		Enabled              bool     `toml:"enabled"`
-		ASURL                string   `toml:"as_url"`
-		ChainID              string   `toml:"chain_id"`
-		SlotID               *uint64  `toml:"slot_id"`
-		TargetEpoch          *uint64  `toml:"target_epoch"`
-		MetadataTTL          duration `toml:"metadata_ttl"`
-		SpoolDir             string   `toml:"spool_dir"`
-		CollectorInterval    duration `toml:"collector_interval"`
-		CollectorBaseBackoff duration `toml:"collector_base_backoff"`
-		CollectorMaxBackoff  duration `toml:"collector_max_backoff"`
-		CollectorMaxAttempts int      `toml:"collector_max_attempts"`
-		PayoutAddress        string   `toml:"payout_address"`
-		PlatformSlot         string   `toml:"platform_slot"`
-	} `toml:"mining"`
-
-	// The proxy-era tables, accepted so that a config migrated from the
-	// proxy still loads, and unread: nothing listens, logs or observes.
-	Proxy struct {
-		Listen              string   `toml:"listen"`
-		AdminListen         string   `toml:"admin_listen"`
-		ShutdownGrace       duration `toml:"shutdown_grace"`
-		MaxRequestBodyBytes int64    `toml:"max_request_body_bytes"`
-		MaxInboundConns     int      `toml:"max_inbound_conns"`
-	} `toml:"proxy"`
-	Transport struct {
-		ResponseHeaderTimeout duration `toml:"response_header_timeout"`
-		UpstreamCAFile        string   `toml:"upstream_ca_file"`
-	} `toml:"transport"`
-	Privacy struct {
-		LogContent bool `toml:"log_content"`
-	} `toml:"privacy"`
-	Log struct {
-		Level string `toml:"level"`
-	} `toml:"log"`
-	Observe struct {
-		MemoryBudgetBytes    int64 `toml:"observation_memory_budget"`
-		RingBytes            int64 `toml:"ring_bytes"`
-		MaxEventBytes        int64 `toml:"max_event_bytes"`
-		MaxEvents            int64 `toml:"max_events"`
-		MaxObservedBodyBytes int64 `toml:"max_observed_body_bytes"`
-		MaxDepth             int   `toml:"max_depth"`
-		MaxJSONKeyBytes      int   `toml:"max_json_key_bytes"`
-	} `toml:"observe"`
-}
-
-type duration struct{ time.Duration }
-
-func (d *duration) UnmarshalText(b []byte) error {
-	v, err := time.ParseDuration(string(b))
-	if err != nil {
-		return err
-	}
-	d.Duration = v
-	return nil
 }
 
 // Load resolves the configuration from args (flags) and getenv. It returns
@@ -304,15 +231,11 @@ func newRawConfigDefaults() rawConfig {
 type rawConfig struct {
 	upstream string
 
-	minerRouterURL   string
-	minerStateDir    string
-	minerSessionsDir string
-	minerTurnEnd     bool
-	minerTier        string
-
-	// legacyStateDir is [mining] state_dir, read when [miner] state_dir is
-	// unset.
-	legacyStateDir string
+	routerURL   string
+	stateDir    string
+	sessionsDir string
+	turnEnd     bool
+	tier        string
 
 	platformBaseURL string
 	agentsAPIURL    string
@@ -354,19 +277,16 @@ func (r *rawConfig) applyBytes(source string, data []byte) error {
 	default:
 		return errors.New("config: exactly one [[provider]] is supported")
 	}
-	r.minerTurnEnd = f.Miner.TurnEnd
-	r.minerTier = f.Miner.Tier
-	if f.Miner.RouterURL != "" {
-		r.minerRouterURL = f.Miner.RouterURL
+	r.turnEnd = f.Search.TurnEnd
+	r.tier = f.Search.Tier
+	if f.Search.RouterURL != "" {
+		r.routerURL = f.Search.RouterURL
 	}
-	if f.Miner.StateDir != "" {
-		r.minerStateDir = f.Miner.StateDir
+	if f.Search.StateDir != "" {
+		r.stateDir = f.Search.StateDir
 	}
-	if f.Miner.SessionsDir != "" {
-		r.minerSessionsDir = f.Miner.SessionsDir
-	}
-	if f.Mining.StateDir != "" {
-		r.legacyStateDir = f.Mining.StateDir
+	if f.Search.SessionsDir != "" {
+		r.sessionsDir = f.Search.SessionsDir
 	}
 	if f.Platform.BaseURL != "" {
 		r.platformBaseURL = f.Platform.BaseURL
@@ -385,7 +305,7 @@ func (r *rawConfig) finish() (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("provider.upstream: %w", err)
 	}
-	miner, err := r.finishMiner(upstream)
+	search, err := r.finishSearch(upstream)
 	if err != nil {
 		return nil, err
 	}
@@ -432,13 +352,13 @@ func (r *rawConfig) finish() (*Config, error) {
 	}
 
 	return &Config{
-		Miner:    miner,
+		Search:   search,
 		Platform: Platform{BaseURL: platformBaseURL, AgentsAPIURL: agentsAPIURL},
 		Update:   r.finishUpdate(),
 	}, nil
 }
 
-// finishUpdate resolves the [update] block the way [miner] tier is resolved:
+// finishUpdate resolves the [update] block the way [search] tier is resolved:
 // the word is lowercased and trimmed, and one this version cannot name does
 // not stop the config from loading — a typo must not cost every search. It
 // is kept aside for doctor to name, and the mode falls to notify, not to the
@@ -456,7 +376,7 @@ func (r *rawConfig) finishUpdate() Update {
 }
 
 // parsePlatformURL validates a [platform] URL (base_url or agents_api_url)
-// the same way miner.router_url is (invariant 5): https, or http only for
+// the same way search.router_url is (invariant 5): https, or http only for
 // loopback — connect sends the platform-issued sr- key in Authorization to
 // agents_api_url (base_url never carries a credential, only a printed
 // claim_url is checked against it, but the same posture costs nothing to
@@ -477,24 +397,21 @@ func parsePlatformURL(raw, field string) (string, error) {
 	return raw, nil
 }
 
-// finishMiner resolves the [miner] block. The state directory defaults
+// finishSearch resolves the [search] block. The state directory defaults
 // under the user's config directory, and the sessions directory beside it,
 // so one tree holds everything the participant owns; the router defaults
 // to the provider upstream so a config that names the router there is a
 // config here by adding nothing.
-func (r *rawConfig) finishMiner(upstream *url.URL) (Miner, error) {
-	m := Miner{
-		StateDir:    r.minerStateDir,
-		SessionsDir: r.minerSessionsDir,
-		TurnEnd:     r.minerTurnEnd,
+func (r *rawConfig) finishSearch(upstream *url.URL) (Search, error) {
+	m := Search{
+		StateDir:    r.stateDir,
+		SessionsDir: r.sessionsDir,
+		TurnEnd:     r.turnEnd,
 	}
-	if tier := strings.ToLower(strings.TrimSpace(r.minerTier)); KnownSearchTier(tier) {
+	if tier := strings.ToLower(strings.TrimSpace(r.tier)); KnownSearchTier(tier) {
 		m.Tier = tier
 	} else if tier != "" {
-		m.UnknownTier = r.minerTier
-	}
-	if m.StateDir == "" {
-		m.StateDir = r.legacyStateDir
+		m.UnknownTier = r.tier
 	}
 	if m.StateDir == "" {
 		if base, err := os.UserConfigDir(); err == nil {
@@ -504,14 +421,14 @@ func (r *rawConfig) finishMiner(upstream *url.URL) (Miner, error) {
 	if m.SessionsDir == "" && m.StateDir != "" {
 		m.SessionsDir = filepath.Join(filepath.Dir(m.StateDir), "sessions")
 	}
-	if r.minerRouterURL != "" {
+	if r.routerURL != "" {
 		m.RouterConfigured = true
-		u, err := url.Parse(r.minerRouterURL)
+		u, err := url.Parse(r.routerURL)
 		if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
-			return Miner{}, errors.New("miner.router_url: must be an absolute http(s) URL")
+			return Search{}, errors.New("search.router_url: must be an absolute http(s) URL")
 		}
 		if u.User != nil {
-			return Miner{}, errors.New("miner.router_url: must not carry userinfo")
+			return Search{}, errors.New("search.router_url: must not carry userinfo")
 		}
 		// Every search sends the participant's sr- key in Authorization,
 		// so a routable plain-http router is a cleartext-credential
@@ -520,7 +437,7 @@ func (r *rawConfig) finishMiner(upstream *url.URL) (Miner, error) {
 		// router needs TLS on the devnet, or the client co-located over
 		// loopback — that is the intended consequence, not a gap.
 		if u.Scheme == "http" && !isLoopbackHost(u.Hostname()) {
-			return Miner{}, fmt.Errorf("miner.router_url: plain http is permitted only for loopback hosts, got %q — "+
+			return Search{}, fmt.Errorf("search.router_url: plain http is permitted only for loopback hosts, got %q — "+
 				"use https, or a loopback address for local development", u.Host)
 		}
 		m.RouterURL = u

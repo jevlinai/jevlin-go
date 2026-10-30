@@ -69,8 +69,8 @@ func TestTheSetAsideScanSkipsASiblingAnotherAccountOwns(t *testing.T) {
 	home := filepath.Join(root, ".jevlin")
 	mine := filepath.Join(root, ".jevlin.bak-1")
 	planted := filepath.Join(root, ".jevlin-old")
-	writeInstallation(t, mine, "wallet")
-	writeInstallation(t, planted, "wallet", "identity")
+	writeInstallation(t, mine, "pending")
+	writeInstallation(t, planted, "identity")
 	newer := time.Now().Add(time.Hour)
 	if err := os.Chtimes(planted, newer, newer); err != nil {
 		t.Fatal(err)
@@ -92,52 +92,56 @@ func TestTheSetAsideScanSkipsASiblingAnotherAccountOwns(t *testing.T) {
 }
 
 // An object inside an accepted installation that another account owns fails
-// its custody stage: everything is rolled back, the source is exactly as it
-// was, and connect does not run.
+// the identity transaction: everything is rolled back, the source is exactly
+// as it was, and connect does not run.
 func TestAdoptionRefusesCustodyAnotherAccountOwns(t *testing.T) {
-	for _, c := range []struct{ bundle, rel string }{
-		{identityBundle, filepath.Join("state", "refresh.token")},
-		{identityBundle, credentialsFile},
-		{"wallet", filepath.Join("wallet", walletKeyFile)},
-		{"wallet", "wallet"},
+	for _, rel := range []string{
+		filepath.Join("state", "trace.key"),
+		"state",
+		credentialsFile,
+		registrationJournalFile,
+		claimRecordFile,
 	} {
-		t.Run(c.rel, func(t *testing.T) {
+		t.Run(rel, func(t *testing.T) {
 			s := newSetupSandbox(t)
 			sibling := s.home + ".bak"
-			writeInstallation(t, sibling, "identity", "wallet")
-			ownedByAnotherAccount(t, filepath.Join(sibling, c.rel))
+			writeInstallation(t, sibling, "identity", "pending", "claim", "sessions")
+			ownedByAnotherAccount(t, filepath.Join(sibling, rel))
 			before := snapshotTree(t, sibling)
 
-			code, out, errOut := s.run(tty("y", "n"), true, "-no-agents", "-no-profile")
-			s.assertAdoptionStopped(t, code, out, errOut, c.bundle, sibling)
+			code, out, errOut := s.run(tty("y"), true, "-no-agents", "-no-profile")
+			s.assertAdoptionStopped(t, code, out, errOut, identityBundle, sibling)
 			if !strings.Contains(errOut, "owned by another account") {
 				t.Errorf("the failure does not name the owner:\n%s", errOut)
 			}
 			s.assertCustodyAtSource(t, sibling, before)
+			if lexists(filepath.Join(s.home, "sessions", "s-old.json")) {
+				t.Error("the sessions were merged after the identity was refused")
+			}
 		})
 	}
 }
 
-// A spool record another account owns stays where it is; the participant's
+// A session file another account owns stays where it is; the participant's
 // own records still merge.
 func TestAdoptionLeavesARecordAnotherAccountOwns(t *testing.T) {
 	s := newSetupSandbox(t)
 	sibling := s.home + ".bak"
-	writeInstallation(t, sibling, "wallet", "spool")
-	planted := filepath.Join(sibling, "spool", "unsent-2.json")
+	writeInstallation(t, sibling, "identity", "sessions")
+	planted := filepath.Join(sibling, "sessions", "s-planted.json")
 	if err := os.WriteFile(planted, []byte(`{"v":1}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	ownedByAnotherAccount(t, planted)
 
-	_, out, errOut := s.run(tty("y", "n"), true, "-no-agents", "-no-profile")
-	if !strings.Contains(out, "adopted spool (1 moved, 1 not a regular file or directory this user owns") {
-		t.Fatalf("the spool merge did not refuse the planted record:\n%s\nstderr:\n%s", out, errOut)
+	_, out, errOut := s.run(tty("y"), true, "-no-agents", "-no-profile")
+	if !strings.Contains(out, "adopted sessions (1 moved, 1 not a regular file or directory this user owns") {
+		t.Fatalf("the sessions merge did not refuse the planted record:\n%s\nstderr:\n%s", out, errOut)
 	}
-	if !lexists(planted) || lexists(filepath.Join(s.home, "spool", "unsent-2.json")) {
+	if !lexists(planted) || lexists(filepath.Join(s.home, "sessions", "s-planted.json")) {
 		t.Error("the planted record moved")
 	}
-	if !lexists(filepath.Join(s.home, "spool", "unsent-1.json")) {
+	if !lexists(filepath.Join(s.home, "sessions", "s-old.json")) {
 		t.Error("the participant's own record was not adopted")
 	}
 }
@@ -147,7 +151,7 @@ func TestAdoptionLeavesARecordAnotherAccountOwns(t *testing.T) {
 func TestAdoptionRefusesASourceAnotherAccountOwns(t *testing.T) {
 	root := t.TempDir()
 	src, dst := filepath.Join(root, ".jevlin.bak"), filepath.Join(root, ".jevlin")
-	writeInstallation(t, src, "identity", "wallet", "spool", "config")
+	writeInstallation(t, src, "identity", "sessions", "config")
 	if err := os.Mkdir(dst, 0o700); err != nil {
 		t.Fatal(err)
 	}

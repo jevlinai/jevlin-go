@@ -97,9 +97,9 @@ type agentIdentityFacts struct {
 }
 
 func gatherAgentIdentity(cfg *config.Config, src string, getenv func(string) string) agentIdentityFacts {
-	f := agentIdentityFacts{ConfigSource: src, StateDir: cfg.Miner.StateDir, PlatformBaseURL: cfg.Platform.BaseURL}
+	f := agentIdentityFacts{ConfigSource: src, StateDir: cfg.Search.StateDir, PlatformBaseURL: cfg.Platform.BaseURL}
 	f.Update, f.Now = gatherUpdateFacts(cfg, getenv), time.Now()
-	store, err := auth.OpenStoreExisting(cfg.Miner.StateDir)
+	store, err := auth.OpenStoreExisting(cfg.Search.StateDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			f.StoreMissing = true
@@ -113,7 +113,7 @@ func gatherAgentIdentity(cfg *config.Config, src string, getenv func(string) str
 		return f
 	}
 	if f.HasRegistration {
-		f.Claim, f.HasClaim = claimFor(cfg.Miner, f.Registration.AgentID, nil)
+		f.Claim, f.HasClaim = claimFor(cfg.Search, f.Registration.AgentID, nil)
 	}
 	return f
 }

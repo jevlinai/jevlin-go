@@ -68,7 +68,7 @@ func TestSetupForAnotherHomeLeavesTheProfileAndTheAgentsAlone(t *testing.T) {
 
 			var stdin *ttyReader
 			if tc.tty {
-				stdin = tty("n") // the mining question; nothing else may be asked
+				stdin = tty() // nothing may be asked: a read here ends without a line and aborts the run
 			}
 			code, out, errOut := s.run(stdin, tc.tty, append([]string{"-home", scratch}, tc.args...)...)
 			if code != exitOK {

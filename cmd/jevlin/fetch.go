@@ -552,14 +552,14 @@ func fetchMain(now func() time.Time, args []string, stdin io.Reader, stdout, std
 	if err != nil {
 		return failFetch(stdout, exitTransport, "config_unreadable", actionFixInput, err)
 	}
-	if cfg.Miner.RouterURL == nil {
+	if cfg.Search.RouterURL == nil {
 		return failFetch(stdout, exitTransport, "no_router_configured", actionFixInput,
-			errors.New("no router configured (miner.router_url or a [[provider]] upstream)"))
+			errors.New("no router configured (search.router_url or a [[provider]] upstream)"))
 	}
 	// The stored key goes only to the router it records (resolveAPIKey), and
 	// JEVLIN_API_KEY only to the installation's router, as for search and
 	// limits. Either refusal is the config's to fix, not a reason to connect.
-	key, keySrc, err := resolveAPIKey(getenv, cfg.Miner)
+	key, keySrc, err := resolveAPIKey(getenv, cfg.Search)
 	if err == nil && keySrc == keyFromEnv {
 		err = envKeyRefusedFor(*cfgPath, cfg, getenv)
 	}
@@ -576,7 +576,7 @@ func fetchMain(now func() time.Time, args []string, stdin io.Reader, stdout, std
 
 	ctx, cancel := searchDeadline(*timeout)
 	defer cancel()
-	out := performFetch(ctx, now, strings.TrimRight(cfg.Miner.RouterURL.String(), "/")+"/v1/fetch", key, req.body())
+	out := performFetch(ctx, now, strings.TrimRight(cfg.Search.RouterURL.String(), "/")+"/v1/fetch", key, req.body())
 	env, code := fetchEnvelopeOf(out)
 	emitMachine(stdout, env)
 	return code

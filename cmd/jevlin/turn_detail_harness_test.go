@@ -53,7 +53,7 @@ func TestATurnTheHarnessStartedIsSentWithoutUserText(t *testing.T) {
 			h := newTurnEndHarness(nil, true)
 			h.fs.files["/t/sess.jsonl"] = []byte(harnessTurnTranscript(start))
 			h.served(traceHash("sess|p1"))
-			runHook(t, h.ops, h.hc, "flush", claudeStop(map[string]any{
+			runHook(t, h.ops, h.hc, "stop", claudeStop(map[string]any{
 				"transcript_path": "/t/sess.jsonl", "last_assistant_message": "Here is what they found.",
 			}))
 			rec := h.record(t)
@@ -87,7 +87,7 @@ func harnessTurnRecord(t *testing.T, start map[string]any) (turnEndRecord, strin
 	h := newTurnEndHarness(nil, true)
 	h.fs.files["/t/sess.jsonl"] = []byte(harnessTurnTranscript(start))
 	h.served(traceHash("sess|p1"))
-	runHook(t, h.ops, h.hc, "flush", claudeStop(map[string]any{
+	runHook(t, h.ops, h.hc, "stop", claudeStop(map[string]any{
 		"transcript_path": "/t/sess.jsonl", "last_assistant_message": "Here is what they found.",
 	}))
 	return h.record(t), string(h.fs.files[h.queued[0]])

@@ -62,12 +62,12 @@ func TestFreshConfigQuotesEveryPath(t *testing.T) {
 		t.Fatalf("fresh config for %q does not load: %v\n%s", home, err, data)
 	}
 	var doc struct {
-		Miner struct {
+		Search struct {
 			StateDir string `toml:"state_dir"`
-		} `toml:"miner"`
+		} `toml:"search"`
 	}
-	if _, err := toml.Decode(string(data), &doc); err != nil || doc.Miner.StateDir != filepath.Join(home, "state") {
-		t.Fatalf("state_dir = %q (%v), want %q", doc.Miner.StateDir, err, filepath.Join(home, "state"))
+	if _, err := toml.Decode(string(data), &doc); err != nil || doc.Search.StateDir != filepath.Join(home, "state") {
+		t.Fatalf("state_dir = %q (%v), want %q", doc.Search.StateDir, err, filepath.Join(home, "state"))
 	}
 }
 
@@ -77,31 +77,39 @@ func TestMigrationPolicyUnits(t *testing.T) {
 	v := resolveSetupValues(filepath.Join(dir, "home"), func(string) string { return "" })
 
 	path := filepath.Join(dir, "jevlin.toml")
-	mining := "[mining]\nas_url = \"https://as.example\"\nchain_id = \"c\"\nslot_id = 1\nstate_dir = \"/s\"\n"
+	provider := "[[provider]]\nname = \"search-router\"\nupstream = \"https://router.example\"\n"
 
-	// [miner] present, even as a dotted key at the root: left.
-	plan, err := planSetupConfig(path, []byte(mining+"\n[miner]\nenabled = false\n"), v, validate)
+	// [search] present, as a table: left.
+	plan, err := planSetupConfig(path, []byte(provider+"\n[search]\nturn_end = true\n"), v, validate)
 	if err != nil || plan.outcome != configLeft || plan.data != nil {
-		t.Fatalf("[miner] table: %+v %v", plan, err)
+		t.Fatalf("[search] table: %+v %v", plan, err)
 	}
-	// The text "[miner]" inside a comment is not a table.
-	plan, err = planSetupConfig(path, []byte(mining+"# [miner] later\n"), v, validate)
-	if err != nil || plan.outcome != configMigrated || strings.Join(plan.added, ",") != "[platform],[miner]" {
-		t.Fatalf("commented [miner]: %+v %v", plan, err)
+	// Present as a dotted key at the root: still the table, still left.
+	plan, err = planSetupConfig(path, []byte("search.turn_end = true\n"+provider), v, validate)
+	if err != nil || plan.outcome != configLeft || plan.data != nil {
+		t.Fatalf("dotted [search]: %+v %v", plan, err)
+	}
+	// The text "[search]" inside a comment is not a table.
+	plan, err = planSetupConfig(path, []byte(provider+"# [search] later\n"), v, validate)
+	if err != nil || plan.outcome != configMigrated || strings.Join(plan.added, ",") != "[platform],[search]" {
+		t.Fatalf("commented [search]: %+v %v", plan, err)
+	}
+	// [platform] present without [search]: only [search] is added.
+	plan, err = planSetupConfig(path, []byte("[platform]\nbase_url = \"https://platform.example\"\nagents_api_url = \"https://agents.example\"\n"), v, validate)
+	if err != nil || plan.outcome != configMigrated || strings.Join(plan.added, ",") != "[search]" {
+		t.Fatalf("[platform] alone: %+v %v", plan, err)
 	}
 	// Invalid, whatever it says.
-	_, err = planSetupConfig(path, []byte("[miner]\nenabled = true\n[miner]\n"), v, validate)
+	_, err = planSetupConfig(path, []byte("[search]\nturn_end = true\n[search]\n"), v, validate)
 	if !errors.Is(err, errConfigInvalid) || !strings.Contains(err.Error(), path) {
 		t.Fatalf("invalid config: %v", err)
 	}
-	// A proxy-era config with neither table loads once both are appended:
-	// its own tables are accepted and unread. (A migration whose result
-	// would not load is refused rather than published, but with every
-	// legacy table accepted there is no longer a file that parses alone
-	// and fails with the two tables appended, so that path has no case.)
-	plan, err = planSetupConfig(path, []byte("[log]\nlevel = \"info\"\n"), v, validate)
-	if err != nil || plan.outcome != configMigrated || strings.Join(plan.added, ",") != "[platform],[miner]" {
-		t.Fatalf("proxy-era config: %+v %v", plan, err)
+	// A file that parses but names a table this client does not have is
+	// refused before any migration is planned: it does not load, and a file
+	// that does not load is not one setup adds to.
+	_, err = planSetupConfig(path, []byte("[log]\nlevel = \"info\"\n"), v, validate)
+	if !errors.Is(err, errConfigInvalid) || !strings.Contains(err.Error(), path) {
+		t.Fatalf("a config with an unknown table: %v", err)
 	}
 }
 
@@ -238,8 +246,12 @@ func TestUserEnvironmentJournalRecordsDeltas(t *testing.T) {
 	}
 }
 
+// Every file that makes a destination an identity: the two state/ records
+// (identityStateFiles) and the three beside the credential. A state/ holding
+// anything else is an unfinished registration's and is set aside instead
+// (TestSetupSetsAsideAnUnregisteredDestinationState).
 func TestIdentityBundleConflictsWithADestinationAgentJSON(t *testing.T) {
-	for _, existing := range []string{"agent.json", "refresh.token", "registration_pending.json", "participation.secret", credentialsFile, "home/" + registrationJournalFile, "home/" + claimRecordFile} {
+	for _, existing := range []string{"agent.json", "registration_pending.json", credentialsFile, "home/" + registrationJournalFile, "home/" + claimRecordFile} {
 		t.Run(existing, func(t *testing.T) {
 			root := t.TempDir()
 			src, dst := filepath.Join(root, "src"), filepath.Join(root, "dst")
@@ -283,13 +295,7 @@ func TestIdentityBundleConflictsWithADestinationAgentJSON(t *testing.T) {
 func TestIdentityBundleMovesStateAndKeyTogether(t *testing.T) {
 	root := t.TempDir()
 	src, dst := filepath.Join(root, "src"), filepath.Join(root, "dst")
-	writeInstallation(t, src, "identity")
-	if err := os.WriteFile(filepath.Join(src, payoutRecordFile), []byte(`{"address":"twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(src, claimRecordFile), []byte(`{"agent_id":"old-agent","claim_url":"https://platform.example/claim/X"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeInstallation(t, src, "identity", "pending", "claim")
 	if err := os.MkdirAll(filepath.Join(dst, "state"), 0o700); err != nil { // setup's own empty state/
 		t.Fatal(err)
 	}
@@ -297,7 +303,7 @@ func TestIdentityBundleMovesStateAndKeyTogether(t *testing.T) {
 	if err := a.run(); err != nil {
 		t.Fatalf("unexpected adoption error: %v", err)
 	}
-	for _, rel := range []string{filepath.Join("state", "refresh.token"), filepath.Join("state", "dpop.key"), credentialsFile, payoutRecordFile, claimRecordFile} {
+	for _, rel := range []string{filepath.Join("state", "trace.key"), filepath.Join("state", "agent.json"), credentialsFile, registrationJournalFile, claimRecordFile} {
 		if !lexists(filepath.Join(dst, rel)) || lexists(filepath.Join(src, rel)) {
 			t.Errorf("%s did not move with the bundle", rel)
 		}

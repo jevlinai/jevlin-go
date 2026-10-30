@@ -11,9 +11,9 @@ package main
 // and nothing said to run `agents install` again.
 //
 // On real files, and with real configs: the roots are read out of the block
-// and compared against the four directories each installation's config NAMES
-// — state_dir, spool_dir, intake_dir, sessions_dir — so a fake filesystem
-// would be testing the fixture rather than the rule.
+// and compared against the two directories each installation's config NAMES
+// — state_dir and sessions_dir — so a fake filesystem would be testing the
+// fixture rather than the rule.
 //
 // Not against the home its config sits in. That was this file's first
 // reading, and it is true of the default layout and of nothing else;
@@ -31,8 +31,8 @@ import (
 )
 
 // twoCodexInstallations is one machine, one binary, and two installations of
-// it, each with its own config whose mining directories lie under its own
-// home — which is how the block names the installation that wrote it.
+// it, each with its own config whose state and sessions directories lie under
+// its own home — which is how the block names the installation that wrote it.
 type twoCodexInstallations struct {
 	t      *testing.T
 	ops    agentOps
@@ -62,37 +62,27 @@ func newTwoCodexInstallations(t *testing.T) *twoCodexInstallations {
 	ops.binaryLocation = func(string) ([]string, error) { return nil, nil } // the sandbox is in the temp dir
 	ops.isTerminal = func() bool { return false }
 	m := &twoCodexInstallations{t: t, ops: ops, paths: ops.paths(noEnv)}
-	m.first = writeMiningHomeConfig(t, filepath.Join(root, "user", ".jevlin"))
-	m.second = writeMiningHomeConfig(t, filepath.Join(root, "dm-disposable"))
+	m.first = writeHomeConfig(t, filepath.Join(root, "user", ".jevlin"))
+	m.second = writeHomeConfig(t, filepath.Join(root, "dm-disposable"))
 	return m
 }
 
-// writeMiningHomeConfig is one installation's home: a real config whose
-// four mining directories sit under it, which is what codexSandboxRoots
-// writes into the block and what the attribution reads back.
-func writeMiningHomeConfig(t *testing.T, home string) string {
+// writeHomeConfig is one installation's home: a real config whose state and
+// sessions directories sit under it, which is what codexSandboxRoots writes
+// into the block and what the attribution reads back.
+func writeHomeConfig(t *testing.T, home string) string {
 	t.Helper()
-	for _, d := range []string{"state", "spool", "intake", "sessions"} {
+	for _, d := range []string{"state", "sessions"} {
 		if err := os.MkdirAll(filepath.Join(home, d), 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
 	doc := fmt.Sprintf(`
-[mining]
-enabled = true
-as_url = "https://as.example.invalid"
-chain_id = "twilight-1"
-slot_id = 7
-state_dir = %q
-spool_dir = %q
-
-[miner]
-enabled = true
+[search]
 router_url = "https://router.example.invalid"
-intake_dir = %q
+state_dir = %q
 sessions_dir = %q
-`, filepath.ToSlash(filepath.Join(home, "state")), filepath.ToSlash(filepath.Join(home, "spool")),
-		filepath.ToSlash(filepath.Join(home, "intake")), filepath.ToSlash(filepath.Join(home, "sessions")))
+`, filepath.ToSlash(filepath.Join(home, "state")), filepath.ToSlash(filepath.Join(home, "sessions")))
 	cfg := filepath.Join(home, setupConfigFile)
 	writeFileT(t, cfg, doc)
 	return cfg
@@ -100,35 +90,25 @@ sessions_dir = %q
 
 // writeRelocatedStateConfig is the shape the home-prefix reading got wrong:
 // an ordinary installation whose state_dir is somewhere else entirely. The
-// three mining directories stay under the home, so the block this config
-// produces holds roots on both sides of it and no common home at all.
+// sessions directory stays under the home, so the block this config produces
+// holds roots on both sides of it and no common home at all.
 //
-// It is a supported configuration, not a contrivance: mining.state_dir is a
+// It is a supported configuration, not a contrivance: search.state_dir is a
 // config key, and a participant who puts it on another volume — a bigger
 // disk, a synced directory, anything — has one.
 func writeRelocatedStateConfig(t *testing.T, home, stateDir string) string {
 	t.Helper()
-	for _, d := range []string{stateDir, filepath.Join(home, "spool"), filepath.Join(home, "intake"), filepath.Join(home, "sessions")} {
+	for _, d := range []string{stateDir, filepath.Join(home, "sessions")} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
 	doc := fmt.Sprintf(`
-[mining]
-enabled = true
-as_url = "https://as.example.invalid"
-chain_id = "twilight-1"
-slot_id = 7
-state_dir = %q
-spool_dir = %q
-
-[miner]
-enabled = true
+[search]
 router_url = "https://router.example.invalid"
-intake_dir = %q
+state_dir = %q
 sessions_dir = %q
-`, filepath.ToSlash(stateDir), filepath.ToSlash(filepath.Join(home, "spool")),
-		filepath.ToSlash(filepath.Join(home, "intake")), filepath.ToSlash(filepath.Join(home, "sessions")))
+`, filepath.ToSlash(stateDir), filepath.ToSlash(filepath.Join(home, "sessions")))
 	cfg := filepath.Join(home, setupConfigFile)
 	writeFileT(t, cfg, doc)
 	return cfg
@@ -247,8 +227,9 @@ func TestASecondInstallationLeavesTheFirstsCodexSandboxBlock(t *testing.T) {
 // The profile is left even when it is the only thing of the first
 // installation's on the host — and, since a Codex can run one profile, the
 // rest of Codex is left with it: a second skill whose searches the
-// first's profile would not let record is a host that looks installed and
-// earns nothing. Without this the sentence above could be the skill's alone.
+// first's profile would not let reach the router or write their lineage is
+// a host that looks installed and searches nowhere. Without this the
+// sentence above could be the skill's alone.
 func TestAnotherInstallationsProfileLeavesCodexWhollyToIt(t *testing.T) {
 	m := newTwoCodexInstallations(t)
 	m.install(m.first)

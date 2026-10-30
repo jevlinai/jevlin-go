@@ -38,7 +38,7 @@ func TestAgentsTierTreatsALinkAsANameNotItsTarget(t *testing.T) {
 	if info, err := os.Lstat(path); err != nil || !info.Mode().IsRegular() {
 		t.Fatalf("the setting is not a regular file at its name: %v %v", info, err)
 	}
-	if got := searchTierDefault(cfg, configMinerFor(t, cfg), os.Getenv); got != "max" {
+	if got := searchTierDefault(cfg, configSearchFor(t, cfg), os.Getenv); got != "max" {
 		t.Fatalf("search sends %q after `agents tier max`, want max", got)
 	}
 

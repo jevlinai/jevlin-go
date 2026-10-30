@@ -4,7 +4,7 @@ package main
 //
 // A search's trace carries what the assistant wrote BEFORE it searched. The
 // answer is written after the last search, when no request is being made, so
-// the router never saw it. With `[miner] turn_end = true` — off by default —
+// the router never saw it. With `[search] turn_end = true` — off by default —
 // the host's end-of-turn hook reports the turn's final message to the
 // router's POST /v1/turns, under the same hashed session and turn ids the
 // turn's searches carried.
@@ -18,7 +18,7 @@ package main
 //     turn after the router answers. A search the model proposed and the
 //     user refused, or one that failed, marks nothing, and a turn with no
 //     mark sends nothing;
-//   - only to a router the config NAMES (miner.router_url). The provider
+//   - only to a router the config NAMES (search.router_url). The provider
 //     upstream that stands in for it when it is absent is never sent this;
 //   - the same scrub and the same 32 KiB tail cap as trace history, applied
 //     before anything is written or sent;
@@ -29,7 +29,7 @@ package main
 //
 // Shape. The hook does no network I/O: it writes the prepared record to an
 // owner-only file under the sessions directory and starts a detached
-// `jevlin turn-end`, exactly as it starts a flush. The text is never an
+// `jevlin turn-end`. The text is never an
 // argument. The child sends once and deletes the file whatever happens; a
 // lost turn end is a missing convenience, never a retry loop.
 
@@ -69,7 +69,7 @@ const (
 	turnFailed      = "failed"
 )
 
-// turnEndRecord is the request body of POST /v1/turns, and the spool file.
+// turnEndRecord is the request body of POST /v1/turns, and the queued file.
 type turnEndRecord struct {
 	SessionID       string `json:"session_id"`
 	TurnID          string `json:"turn_id"`
@@ -173,7 +173,7 @@ func sessionSearchedPath(dir, sessionID string) string {
 // marks were never taken. A host this client does not know to share a turn
 // with its subagent is treated the same way, so a mark is never left that
 // nothing will take.
-func markTurnSearched(ops hookOps, m config.Miner, trace *traceEnvelope) {
+func markTurnSearched(ops hookOps, m config.Search, trace *traceEnvelope) {
 	if !m.TurnEnd || m.SessionsDir == "" || trace == nil || !hashedIDRe.MatchString(trace.TurnID) {
 		return
 	}
@@ -484,24 +484,24 @@ func cmdTurnEnd(args []string, getenv func(string) string) int {
 	// under the name queueTurnEnd gives it. The path is an argument, and an
 	// argument is not a reason to read, send and delete an arbitrary file.
 	path := filepath.Clean(*file)
-	if cfg.Miner.SessionsDir == "" || filepath.Dir(path) != filepath.Clean(cfg.Miner.SessionsDir) || !strings.HasSuffix(path, turnEndSuffix) {
+	if cfg.Search.SessionsDir == "" || filepath.Dir(path) != filepath.Clean(cfg.Search.SessionsDir) || !strings.HasSuffix(path, turnEndSuffix) {
 		return exitOK
 	}
 	body, err := fsx.ReadRegular(path, turnEndMaxBytes)
 	// Deleted before the send, whatever comes next: one attempt, and no file
 	// of assistant text left behind by a send that hung.
 	_ = os.Remove(path)
-	// Only to a router the config names. With no miner.router_url, RouterURL
+	// Only to a router the config names. With no search.router_url, RouterURL
 	// is the provider upstream standing in for it, and the assistant's answer
 	// is not that provider's to receive.
-	if err != nil || !cfg.Miner.TurnEnd || !cfg.Miner.RouterConfigured || cfg.Miner.RouterURL == nil {
+	if err != nil || !cfg.Search.TurnEnd || !cfg.Search.RouterConfigured || cfg.Search.RouterURL == nil {
 		return exitOK
 	}
 	var rec turnEndRecord
 	if err := json.Unmarshal(body, &rec); err != nil || rec.SessionID == "" || rec.TurnID == "" {
 		return exitOK
 	}
-	key, keySrc, err := resolveAPIKey(getenv, cfg.Miner)
+	key, keySrc, err := resolveAPIKey(getenv, cfg.Search)
 	if err == nil && keySrc == keyFromEnv {
 		err = envKeyRefusedFor(*cfgPath, cfg, getenv)
 	}
@@ -509,7 +509,7 @@ func cmdTurnEnd(args []string, getenv func(string) string) int {
 		return exitOK
 	}
 	client := &http.Client{Timeout: turnEndTimeout, CheckRedirect: auth.SameOriginRedirects, Transport: loginProbeTransport}
-	_ = sendTurnEnd(client, strings.TrimRight(cfg.Miner.RouterURL.String(), "/"), key, rec)
+	_ = sendTurnEnd(client, strings.TrimRight(cfg.Search.RouterURL.String(), "/"), key, rec)
 	return exitOK
 }
 

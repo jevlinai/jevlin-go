@@ -134,8 +134,8 @@ func hookMainWith(ops hookOps, hc hookContext, args []string, stdin *bytes.Reade
 		if len(args) > 1 {
 			ops.startBackground(hc)
 		}
-	case "flush":
-		claudeTurnEnd(ops, hc, payload) // as hookMain does, before the flush
+	case "stop":
+		claudeTurnEnd(ops, hc, payload) // as hookMain does, before the release check
 		ops.startBackground(hc)
 	default:
 		return exitUsage
@@ -169,7 +169,7 @@ func TestIsSearchCommandRecognizesOursAndNothingElse(t *testing.T) {
 	}
 	no := []string{
 		`jevlin-search q`,
-		`jevlin flush`,
+		`jevlin stop`,
 		`myjevlin search q`,
 		`grep jevlin search.go`,
 		`tokendrop-proxy search q`,
@@ -633,7 +633,7 @@ func TestHookCursorWithoutAConversationDoesNothingButAllow(t *testing.T) {
 func writeHookConfig(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "jevlin.toml")
-	if err := os.WriteFile(path, []byte("[miner]\nsessions_dir = \"/sessions\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("[search]\nsessions_dir = \"/sessions\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return path
@@ -686,7 +686,7 @@ func TestHookMainLineageStillRewritesWhenTheSidecarWriteFails(t *testing.T) {
 // TestHookMainNeverExitsNonZeroForAKnownSubcommand covers the rest of the
 // fail-open surface hookMain's own comment claims: whatever a known
 // subcommand's handler does internally — persistence failing, a refused
-// flush spawn, a malformed payload — hookMain(...) still returns exitOK,
+// release-check spawn, a malformed payload — hookMain(...) still returns exitOK,
 // because a coding agent's hook step is a gate in front of every tool
 // call and a nonzero exit there is what actually blocks the agent.
 func TestHookMainNeverExitsNonZeroForAKnownSubcommand(t *testing.T) {
@@ -698,7 +698,7 @@ func TestHookMainNeverExitsNonZeroForAKnownSubcommand(t *testing.T) {
 	}{
 		{"window session-start, persist fails", []string{"-config", cfgPath, "window", "session-start"}, mustJSON(t, map[string]any{"session_id": "s"})},
 		{"cursor sessionStart, persist fails", []string{"-config", cfgPath, "cursor", "sessionStart"}, mustJSON(t, map[string]any{"conversation_id": "c"})},
-		{"flush, spawn refused", []string{"-config", cfgPath, "flush"}, nil},
+		{"stop, spawn refused", []string{"-config", cfgPath, "stop"}, nil},
 		{"lineage, malformed payload", []string{"-config", cfgPath, "lineage"}, []byte("not json")},
 		{"codex Stop, spawn refused", []string{"-config", cfgPath, "codex", "Stop"}, readHookFixture(t, "codex-0.158.0-linux-Stop.json")},
 		{"codex PreToolUse, malformed payload", []string{"-config", cfgPath, "codex", "PreToolUse"}, []byte("not json")},

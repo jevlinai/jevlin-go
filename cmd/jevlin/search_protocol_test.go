@@ -212,7 +212,8 @@ func TestANonPositiveTimeoutIsRefusedRatherThanUnbounded(t *testing.T) {
 	}
 }
 
-func TestASearchTimeoutRecordsNoMiningEvidenceAndNoHealthFailure(t *testing.T) {
+// A search that times out is a transport failure that prints no body.
+func TestASearchTimeoutExitsTransportAndPrintsNoBody(t *testing.T) {
 	rt := &recordingTransport{fn: func(_ int, req *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusOK, Header: http.Header{},
@@ -354,7 +355,9 @@ type readMarker struct{ read *bool }
 func (m readMarker) Read(p []byte) (int, error) { *m.read = true; return 0, io.EOF }
 func (m readMarker) Close() error               { return nil }
 
-func TestAnInvalidSuccessRecordsNoMiningEvidence(t *testing.T) {
+// A 200 whose body is not a valid answer is a server error, and the
+// malformed body never reaches stdout.
+func TestAnInvalidSuccessIsAServerErrorAndPrintsNoBody(t *testing.T) {
 	for _, tc := range []struct{ name, body string }{
 		{"malformed", `{"request_id":`},
 		{"no request identity", `{"candidates":[]}`},

@@ -235,7 +235,7 @@ loop or piped on, runs as written and carries the per-shell identity. The fetch 
 shows is allowed without a prompt as well, as written, and anything else that fetches is asked
 about. A Codex search carries no assistant text.
 
-With `[miner] turn_end = true`, Codex's `Stop` hook also reports a turn in which a jevlin search was
+With `[search] turn_end = true`, Codex's `Stop` hook also reports a turn in which a jevlin search was
 served (see [The turn end](reference.md#the-turn-end)). It reads the turn from Codex's own session
 file: what you asked, what the assistant wrote along the way, its final answer, and each tool call by
 name and outcome, never a tool's input or output. A subagent's turn sends nothing of its own. Without

@@ -25,10 +25,9 @@ package main
 //	    command; stamp turn/call),
 //	    afterAgentThought / afterAgentResponse (the text before a search),
 //	    preCompact (bump the window), stop (the turn end).
-//	hook [-config file] flush
+//	hook [-config file] stop
 //	    Claude Code Stop: the turn is over. Queue the turn end, when the
-//	    installation opted in, and start the release check when due. The
-//	    subcommand keeps the name the installed hooks were written with.
+//	    installation opted in, and start the release check when due.
 //	hook [-config file] start <host>
 //	    A JavaScript host's adapter (opencode's plugin, Pi's extension) at a
 //	    session's start. Reads nothing: starts the daily release check when
@@ -39,7 +38,7 @@ package main
 //	    rendered search, and allow it), SessionStart (seed the window),
 //	    PreCompact / PostCompact (bump the window), Stop (the turn end).
 //
-// The lineage, window and flush entry points are installed for Claude Code
+// The lineage, window and stop entry points are installed for Claude Code
 // and for nobody else. Another host that loads Claude Code's settings and
 // runs them with its own payload (Cursor does, dropin-miner#87) gets nothing from them,
 // and nor does Codex: see claudeEntryStandsDown. The codex entry points are installed for Codex, and
@@ -187,7 +186,7 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv fu
 type hookContext struct {
 	cfgPath     string
 	sessionsDir string
-	// turnEnd is [miner] turn_end: this installation reports a turn's final
+	// turnEnd is [search] turn_end: this installation reports a turn's final
 	// message. See turn_end.go.
 	turnEnd bool
 	// updateRoot and updateMode are what the daily release check's decision
@@ -253,16 +252,16 @@ func hookDispatch(ops hookOps, args []string, stdin io.Reader, stdout, stderr io
 		cfgPath, args = args[1], args[2:]
 	}
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: jevlin hook [-config file] lineage | window <phase> | cursor <event> | codex <event> | turn <host> | start <host> | flush")
+		fmt.Fprintln(stderr, "usage: jevlin hook [-config file] lineage | window <phase> | cursor <event> | codex <event> | turn <host> | start <host> | stop")
 		return exitUsage
 	}
 	hc := hookContext{cfgPath: cfgPath}
 	// The sessions directory comes from the config. A missing or broken
 	// config costs the lineage file, never the call: fail-open.
 	if cfg, _, err := loadConfig(cfgPath, ops.getenv); err == nil {
-		hc.sessionsDir = cfg.Miner.SessionsDir
-		hc.turnEnd = cfg.Miner.TurnEnd
-		hc.updateRoot = updateRoot(cfg.Miner)
+		hc.sessionsDir = cfg.Search.SessionsDir
+		hc.turnEnd = cfg.Search.TurnEnd
+		hc.updateRoot = updateRoot(cfg.Search)
 		hc.updateMode = cfg.Update.Mode
 	}
 	// One leading byte-order mark is tolerated here for the same reason as on
@@ -317,7 +316,7 @@ func hookDispatch(ops hookOps, args []string, stdin io.Reader, stdout, stderr io
 		if len(args) > 1 {
 			ops.startBackground(hc)
 		}
-	case "flush":
+	case "stop":
 		// Claude Code's Stop: the turn is over. Its final message is queued
 		// — when the installation opted in and the turn searched — and the
 		// release check starts when it is due.
@@ -337,7 +336,7 @@ func hookDispatch(ops hookOps, args []string, stdin io.Reader, stdout, stderr io
 // Third-Party Plugins, Skills, and Other Configs", on by default) and runs
 // them beside its own, with ITS payload. Measured from Cursor 3.20.21's hook
 // log on macOS and Windows: `window session-start` at sessionStart,
-// `lineage` at preToolUse, `flush` (the stop hook) at stop — three extra processes every
+// `lineage` at preToolUse, `stop` at stop — three extra processes every
 // turn, and with v0.2.9 a `lineage` answer Cursor honored,
 // which sent a Cursor search to the router labeled claude-code (dropin-miner#91).
 //
@@ -356,7 +355,7 @@ func claudeEntryEvent(args []string) (event string, ok bool) {
 	switch args[0] {
 	case "lineage":
 		return "PreToolUse", true
-	case "flush":
+	case "stop":
 		return "Stop", true
 	case "window":
 		if len(args) < 2 {

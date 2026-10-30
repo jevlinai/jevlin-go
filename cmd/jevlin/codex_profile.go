@@ -116,8 +116,8 @@ type codexService struct{ name, host string }
 // claim resume).
 func codexServices(cfg *config.Config) []codexService {
 	var out []codexService
-	if cfg.Miner.RouterURL != nil {
-		out = append(out, codexService{"the router", cfg.Miner.RouterURL.Hostname()})
+	if cfg.Search.RouterURL != nil {
+		out = append(out, codexService{"the router", cfg.Search.RouterURL.Hostname()})
 	}
 	if cfg.Platform.AgentsAPIURL != "" {
 		if u, err := url.Parse(cfg.Platform.AgentsAPIURL); err == nil {

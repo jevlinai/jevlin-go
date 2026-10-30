@@ -534,7 +534,6 @@ type searchEnvelope struct {
 	RequestID    string         `json:"request_id,omitempty"`
 	RetryAfterMS *int64         `json:"retry_after_ms,omitempty"`
 	Result       *machineResult `json:"result,omitempty"`
-	Mining       *machineMining `json:"mining,omitempty"`
 	Error        *machineError  `json:"error,omitempty"`
 }
 
@@ -963,30 +962,6 @@ func positionsOf(candidates []routerCandidate, listings []routerFoundBy) []machi
 	return positions
 }
 
-// machineMining is the economic half of the answer, and it is separate
-// from ok on purpose: a successful search is a successful search whatever
-// mining does. Mining moved off the client to the platform, so State is
-// always "disabled" and Configured false here; the object stays because
-// the skill, the opencode plugin and the Pi extension read it, and
-// removing a field is a protocol change for no benefit. Nothing here is
-// called "earned" — the platform reconciles what the router served, and
-// this client never claims a reward on its own say-so.
-type machineMining struct {
-	// State is "disabled": nothing is mined by this client.
-	State string `json:"state"`
-	// Configured is false: there is no intake here.
-	Configured bool `json:"configured"`
-	// Recorded is false: this client records nothing for mining.
-	Recorded bool `json:"recorded"`
-	// Trajectory says the answered POST carried an envelope with assistant
-	// text — the one fact about a search's trace a caller can act on, and
-	// the one the platform's mining is served on.
-	Trajectory bool `json:"trajectory"`
-}
-
-// miningStateDisabled is the one state machineMining reports.
-const miningStateDisabled = "disabled"
-
 // ── classification ──────────────────────────────────────────────────────
 
 // searchClassification is the recovery advice for one outcome. It is
@@ -1116,12 +1091,11 @@ func machineCodeLike(s string) (string, bool) {
 // It reads the normalized request id off the outcome rather than the raw
 // body, so the identity in the envelope is the identity the observation
 // was recorded against.
-func searchEnvelopeOf(out searchOutcome, mining *machineMining, view string) (searchEnvelope, int) {
+func searchEnvelopeOf(out searchOutcome, view string) (searchEnvelope, int) {
 	c := classifySearch(out)
 	env := searchEnvelope{
 		machineHeader: newMachineHeader("search", c.ExitCode, c.Code, c.Retryable, c.Action),
 		HTTPStatus:    out.HTTPStatus,
-		Mining:        mining,
 	}
 	if out.HasRetryAfter && (c.Retryable || out.HTTPStatus == 429) {
 		ms := out.RetryAfterMS
@@ -1143,7 +1117,7 @@ func searchEnvelopeOf(out searchOutcome, mining *machineMining, view string) (se
 }
 
 // failSearchInput answers a request this client refused to send. It never
-// reaches the router, so there is no HTTP status and no mining state to
+// reaches the router, so there is no HTTP status to
 // report.
 func failSearchInput(stdout io.Writer, err *inputError) int {
 	env := searchEnvelope{

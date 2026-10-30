@@ -395,9 +395,9 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 		say("[update] mode is off; nothing checked")
 		return exitOK
 	}
-	root := updateRoot(cfg.Miner)
+	root := updateRoot(cfg.Search)
 	if root == "" {
-		say("the config names no installation directory (miner.intake_dir); nothing checked")
+		say("the config names no state directory (search.state_dir); nothing checked")
 		return exitOK
 	}
 	exe, err := d.executable()

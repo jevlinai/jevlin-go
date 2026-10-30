@@ -117,3 +117,26 @@ func TestTheTokenShapesAdmitWhatThePlatformSends(t *testing.T) {
 		}
 	}
 }
+
+// A claim code is a token a person is told to type and a connect prints,
+// so it is held to letters, digits, '-' and '_' of at most 128 bytes, or
+// empty where the field is optional. The domain is enumerated rather than
+// sampled: the shapes a sentence needs (a space, punctuation, a control
+// character, a non-ASCII letter) and the one past the length bound are
+// each refused on their own.
+func TestValidClaimCode(t *testing.T) {
+	for _, ok := range []string{"", "AB12-CD34", "MINT_01", "x", "0", strings.Repeat("a", 128)} {
+		if err := ValidClaimCode(ok); err != nil {
+			t.Errorf("%q refused: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{
+		" ", "AB12 CD34", " AB12", "AB12 ", "AB12.CD34", "AB12:CD34", "AB12/CD34",
+		"AB12\r\nCD34", "AB\x1b]52;c;x\a", "AB12\u200f", "é", proseNotice,
+		strings.Repeat("a", 129),
+	} {
+		if ValidClaimCode(bad) == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}

@@ -52,6 +52,9 @@ func checkClaimBootstrap(b ClaimBootstrap) error {
 	if b.ClaimURL == "" {
 		return errors.New("auth: claim record has no claim_url")
 	}
+	if err := ValidClaimCode(b.ClaimCode); err != nil {
+		return err
+	}
 	if field := recordTextProblem(b); field != "" {
 		return fmt.Errorf("auth: claim record's %s holds a control, format or separator character", field)
 	}

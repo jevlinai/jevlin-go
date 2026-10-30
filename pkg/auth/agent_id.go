@@ -17,7 +17,7 @@ import (
 //
 // tokenShape is an ASCII letter or digit, then letters, digits, '.', '_', ':'
 // and '-'. The platform's agent ids are UUIDs and its scopes words ("search",
-// "mining", "credits"); ':' admits a namespaced name. No space, no other
+// "credits"); ':' admits a namespaced name. No space, no other
 // punctuation, no non-ASCII.
 var tokenShape = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]*$`)
 
@@ -30,7 +30,10 @@ const (
 	agentIDMax   = 128
 	scopeMax     = 64
 	timestampMax = 40
+	claimCodeMax = 128
 )
+
+var claimCodeShape = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 // ValidAgentID is the shape an agent id must have before this client puts it
 // in a URL path or a record: a token (tokenShape) of at most agentIDMax bytes.
@@ -47,6 +50,18 @@ func ValidAgentID(id string) error {
 		return errors.New("auth: agent id names a route, not an agent")
 	case len(id) > agentIDMax || !tokenShape.MatchString(id):
 		return errors.New("auth: agent id is not an identifier (letters, digits, '.', '_', ':' and '-')")
+	}
+	return nil
+}
+
+// ValidClaimCode is the shape of a claim code the platform mints: letters,
+// digits, '-' and '_', at most claimCodeMax bytes, or empty where the field
+// is optional. A person is told to type the code, and a connect or status
+// prints it, so it is held to a token like the agent id: it cannot hold a
+// space, and so cannot say a sentence.
+func ValidClaimCode(code string) error {
+	if code != "" && (len(code) > claimCodeMax || !claimCodeShape.MatchString(code)) {
+		return errors.New("auth: a claim code is not a token (letters, digits, '-' and '_')")
 	}
 	return nil
 }

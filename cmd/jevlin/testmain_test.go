@@ -1,9 +1,9 @@
 package main
 
 // Every test in this package runs with the participant's own directories out
-// of reach. pkg/config defaults mining.state_dir to os.UserConfigDir(), the
-// wallet defaults beside it, and agents install writes under the home
-// directory: a test that leaves one of those out of its config would
+// of reach. pkg/config defaults search.state_dir to os.UserConfigDir(), the
+// sessions directory defaults beside it, and agents install writes under the
+// home directory: a test that leaves one of those out of its config would
 // otherwise read or write the real machine's installation. That happened
 // once, from a setup test whose config named no state_dir; the per-test
 // sandbox fixed that test, and this makes it true of the whole package.

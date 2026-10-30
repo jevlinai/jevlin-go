@@ -96,7 +96,7 @@ func TestTheEnvironmentKeyGoesToTheInstallationsRouterInEveryForm(t *testing.T) 
 // it does the stored one: silently, exit 0, nothing dialed.
 func TestTheTurnEndSendsTheEnvironmentKeyOnlyToTheInstallationsRouter(t *testing.T) {
 	f := newTurnEndFixture(t)
-	if _, err := readCredentials(credentialsPath(minerOf(t, f.ownCfg))); err == nil {
+	if _, err := readCredentials(credentialsPath(searchBlockOf(t, f.ownCfg))); err == nil {
 		t.Fatal("this test is about the environment's key, and a key is stored")
 	}
 	env := envOf(map[string]string{"JEVLIN_CONFIG": f.ownCfg, apiKeyEnv: boundKey})
@@ -127,7 +127,7 @@ func TestTheEnvironmentKeysRefusalNamesNoRouterTheInstallationNeverChose(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	standIn := origin(t, defaults.Miner.RouterURL.String())
+	standIn := origin(t, defaults.Search.RouterURL.String())
 	for _, gone := range []string{standIn, strings.TrimPrefix(standIn, "https://"), boundKey, root} {
 		if strings.Contains(out, gone) {
 			t.Errorf("the refusal says %q:\n%s", gone, out)
@@ -147,7 +147,7 @@ func TestFetchSendsTheEnvironmentKeyOnlyToTheInstallationsRouter(t *testing.T) {
 	own, cfg, root := newFakeRouter(t, fetchAnswering)
 	other, otherConns := countingServer(t, http.HandlerFunc(fetchAnswering))
 	otherCfg := sameStateOtherURL(t, cfg, own.srv.URL, other.URL)
-	if _, err := os.Stat(credentialsPath(minerOf(t, cfg))); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Stat(credentialsPath(searchBlockOf(t, cfg))); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("this test needs no stored key: %v", err)
 	}
 	env := map[string]string{"JEVLIN_CONFIG": cfg, apiKeyEnv: boundKey}

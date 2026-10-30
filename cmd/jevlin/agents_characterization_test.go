@@ -433,8 +433,8 @@ func TestUninstallPlanGoldenPerHost(t *testing.T) {
 // ── Codex's marked-sandbox-block branch, as its own golden pair ─────────
 
 // sandboxGoldenConfig writes a real config (codexSandboxRoots' loadConfig
-// call reads the real filesystem, not the fake ops) into t.TempDir(), with
-// the miner enabled, so all four writable roots resolve — the branch
+// call reads the real filesystem, not the fake ops) into t.TempDir(), naming
+// the state and sessions directories, so both roots are named — the branch
 // codex_sandbox_test.go's sandboxTestConfig exercises. Every path here is
 // built with an explicit forward slash rather than filepath.Join, and
 // os.MkdirAll/os.WriteFile/os.ReadFile all accept that on every OS this
@@ -445,26 +445,17 @@ func TestUninstallPlanGoldenPerHost(t *testing.T) {
 func sandboxGoldenConfig(t *testing.T) (cfgPath, home string) {
 	t.Helper()
 	home = filepath.ToSlash(t.TempDir())
-	for _, d := range []string{"state", "spool", "intake", "sessions"} {
+	for _, d := range []string{"state", "sessions"} {
 		if err := os.MkdirAll(home+"/"+d, 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
 	doc := fmt.Sprintf(`
-[mining]
-enabled = true
-as_url = "https://as.example.invalid"
-chain_id = "twilight-1"
-slot_id = 7
-state_dir = %q
-spool_dir = %q
-
-[miner]
-enabled = true
+[search]
 router_url = "https://router.example.invalid"
-intake_dir = %q
+state_dir = %q
 sessions_dir = %q
-`, home+"/state", home+"/spool", home+"/intake", home+"/sessions")
+`, home+"/state", home+"/sessions")
 	cfgPath = home + "/jevlin.toml"
 	if err := os.WriteFile(cfgPath, []byte(doc), 0o600); err != nil {
 		t.Fatal(err)

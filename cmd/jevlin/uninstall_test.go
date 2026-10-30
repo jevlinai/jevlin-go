@@ -60,12 +60,11 @@ func (s *setupSandbox) uninstall(t *testing.T, stdin io.Reader, interactive bool
 
 // installed is a sandbox after a real, complete setup that set up Claude
 // Code, Codex and Pi, wrote the profile block (Windows: the user environment)
-// and holds a registration, a stored key, a session, a preference, and what
-// an earlier version left behind: a wallet, a spool, an intake directory, a
-// payout record and the half-made directories an interrupted run left. The
-// legacy files are there because uninstall still has to deal with them: a
-// default run keeps every one of them byte for byte and a purge removes
-// them, and the purge's prompt names the wallet.
+// and holds a registration, a stored key, a session, a preference, a
+// registration journal and the state directory an adoption set aside from
+// an unfinished registration. Every one of them is in the purge set, which
+// is why they are planted: a default run keeps each byte for byte and a
+// purge removes each.
 func installed(t *testing.T) *setupSandbox {
 	t.Helper()
 	s := newSetupSandbox(t)
@@ -75,18 +74,13 @@ func installed(t *testing.T) *setupSandbox {
 	if code, out, errOut := s.run(nil, false, "-yes", "-with", "claude", "-with", "codex", "-with", "pi"); code != exitOK {
 		t.Fatalf("setup exited %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
 	}
-	writeWalletFixture(t, filepath.Join(s.home, "wallet"))
 	for rel, body := range map[string]string{
-		filepath.Join("spool", "unsent-1.json"):             `{"v":1}`,
-		filepath.Join("intake", "req-1.json"):               `{"v":1}`,
-		filepath.Join("sessions", "s-1.json"):               `{}`,
-		preferFile:                                          "builtin\n",
-		filepath.Join("state.unenrolled-20260101", "x.key"): "half",
-		filepath.Join("wallet.incomplete-20260101", "junk"): "partial",
-		// Beside credentials.json: a payout record an earlier version kept
-		// and a registration journal, which can hold a platform key, so a
-		// default uninstall keeps them byte for byte and a purge removes them.
-		payoutRecordFile:        `{"address":"twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh"}`,
+		filepath.Join("sessions", "s-1.json"): `{}`,
+		preferFile:                            "builtin\n",
+		filepath.Join(stateAsidePrefix+"-20260101", "x.key"): "half",
+		// Beside credentials.json: a registration journal, which can hold a
+		// platform key, so a default uninstall keeps it byte for byte and a
+		// purge removes it.
 		registrationJournalFile: `{"v":1}`,
 	} {
 		writeFileT(t, filepath.Join(s.home, rel), body)
@@ -152,15 +146,6 @@ func TestDryRunGroupsEveryHostsLinesUnderItsOwnHeading(t *testing.T) {
 	}
 }
 
-// writeWalletFixture lays out the wallet an earlier version made: its sealed
-// key, which this client never reads. It is what makes the purge's prompt
-// warn about the wallet (confirmPurge), and one of the legacy entries a
-// purge removes.
-func writeWalletFixture(t *testing.T, dir string) {
-	t.Helper()
-	writeFileT(t, filepath.Join(dir, walletKeyFile), "sealed-key-bytes")
-}
-
 // participantBytes is every participant byte under the installation, minus
 // the empty lock files coordination makes: what a run that is not a purge
 // must leave exactly as it found it.
@@ -180,9 +165,9 @@ func participantBytes(t *testing.T, s *setupSandbox) map[string]fileSig {
 
 func participantState(s *setupSandbox) []string {
 	h := func(rel string) string { return filepath.Join(s.home, rel) }
-	return []string{h("wallet"), h("state"), h("spool"), h("intake"), h("sessions"), h(credentialsFile),
-		h(registrationJournalFile), h(payoutRecordFile), h(claimRecordFile),
-		h(setupConfigFile), h(preferFile), h("state.unenrolled-20260101"), h("wallet.incomplete-20260101")}
+	return []string{h("state"), h("sessions"), h(credentialsFile),
+		h(registrationJournalFile), h(claimRecordFile),
+		h(setupConfigFile), h(preferFile), h(stateAsidePrefix + "-20260101")}
 }
 
 func snapshotState(t *testing.T, s *setupSandbox) map[string]map[string]fileSig {
@@ -209,7 +194,7 @@ func setConfigKey(t *testing.T, s *setupSandbox, key, value string) {
 	}
 	writeFileT(t, s.cfgPath(), line.ReplaceAllLiteralString(string(cfg), fmt.Sprintf("%s = %q", key, value)))
 	if key == "sessions_dir" {
-		if c, _, err := loadConfig(s.cfgPath(), s.getenv); err != nil || c.Miner.SessionsDir != value {
+		if c, _, err := loadConfig(s.cfgPath(), s.getenv); err != nil || c.Search.SessionsDir != value {
 			t.Fatalf("the fixture config must name the outside sessions_dir: %v", err)
 		}
 	}
@@ -933,9 +918,6 @@ func TestPurgeRemovesStateAfterTheExactTypedConfirmation(t *testing.T) {
 	if !strings.Contains(out, "Type the installation path to permanently remove this participant state:\n  "+s.home+"\n") {
 		t.Errorf("the confirmation prompt must ask for the installation path and show it:\n%s", out)
 	}
-	if !strings.Contains(out, "The wallet an earlier version made is among it") {
-		t.Errorf("with an earlier version's wallet present, the prompt must warn that it goes too:\n%s", out)
-	}
 	for _, p := range participantState(s) {
 		if lexists(p) {
 			t.Errorf("purge left %s", p)
@@ -1080,7 +1062,7 @@ func TestPurgeRefusesEveryConfirmationButTheExactOne(t *testing.T) {
 func TestPurgeConfirmationIsTheInstallationPath(t *testing.T) {
 	s := newSetupSandbox(t)
 	writeInstallation(t, s.home, "identity")
-	writeFileT(t, s.cfgPath(), fmt.Sprintf("[miner]\nstate_dir = %q\n", filepath.Join(s.home, "state")))
+	writeFileT(t, s.cfgPath(), fmt.Sprintf("[search]\nstate_dir = %q\n", filepath.Join(s.home, "state")))
 	if token, what := purgeConfirmation(s.home); token != s.home || what != "the installation path" {
 		t.Errorf("the token is the canonical installation path: %q (%s)", token, what)
 	}
@@ -1130,14 +1112,10 @@ func installedOwningItsBinary(t *testing.T) *setupSandbox {
 	if code, out, errOut := s.run(nil, false, "-yes", "-with", "claude", "-with", "codex", "-with", "pi"); code != exitOK {
 		t.Fatalf("setup exited %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
 	}
-	writeWalletFixture(t, filepath.Join(s.home, "wallet"))
 	for rel, body := range map[string]string{
-		filepath.Join("spool", "unsent-1.json"):             `{"v":1}`,
-		filepath.Join("intake", "req-1.json"):               `{"v":1}`,
-		filepath.Join("sessions", "s-1.json"):               `{}`,
-		preferFile:                                          "builtin\n",
-		filepath.Join("state.unenrolled-20260101", "x.key"): "half",
-		filepath.Join("wallet.incomplete-20260101", "junk"): "partial",
+		filepath.Join("sessions", "s-1.json"): `{}`,
+		preferFile:                            "builtin\n",
+		filepath.Join(stateAsidePrefix+"-20260101", "x.key"): "half",
 	} {
 		writeFileT(t, filepath.Join(s.home, rel), body)
 	}
@@ -1251,7 +1229,7 @@ func TestPurgeLeavesAStateDirectoryOutsideTheInstallation(t *testing.T) {
 	}
 	traceKey := auth.TraceKeyPath(outsideState)
 	setConfigKey(t, s, "state_dir", outsideState)
-	if c, _, err := loadConfig(s.cfgPath(), s.getenv); err != nil || c.Miner.StateDir != outsideState {
+	if c, _, err := loadConfig(s.cfgPath(), s.getenv); err != nil || c.Search.StateDir != outsideState {
 		t.Fatalf("the fixture config must name the outside state_dir: %v", err)
 	}
 	code, out, errOut := s.uninstall(t, tty(s.home), true, "-purge-state")

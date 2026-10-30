@@ -24,19 +24,19 @@ import (
 // Codex as a shell command runs its hooks there, with Codex's loopback proxy
 // as its only route out; a check would ask that proxy for GitHub, a host
 // Codex's profile does not list, and fail whatever Codex command is running
-// (invariant 1). The flush, which reaches only hosts the profile lists,
-// still starts.
+// (invariant 1). The hook's own work, which reaches only hosts the profile
+// lists, still happens.
 func TestTheRealHooksStartTheCheckOnlyOutsideASandbox(t *testing.T) {
 	root := t.TempDir()
 	cfg := filepath.Join(root, "jevlin.toml")
-	writeFileT(t, cfg, "[miner]\nsessions_dir = \"/sessions\"\nintake_dir = \""+filepath.ToSlash(filepath.Join(root, "intake"))+"\"\n")
+	writeFileT(t, cfg, "[search]\nsessions_dir = \"/sessions\"\nstate_dir = \""+filepath.ToSlash(filepath.Join(root, "state"))+"\"\n")
 	entries := []struct {
 		name    string
 		args    []string
 		payload map[string]any
 	}{
 		{"Claude Code session start", []string{"window", "session-start"}, map[string]any{"hook_event_name": "SessionStart"}},
-		{"Claude Code Stop", []string{"flush"}, map[string]any{"hook_event_name": "Stop"}},
+		{"Claude Code Stop", []string{"stop"}, map[string]any{"hook_event_name": "Stop"}},
 		{"Cursor stop", []string{"cursor", "stop"}, cursorPayloadFixture(t, "cursor-3.20.21-stop-runs-claude-flush.json")},
 		{"opencode start", []string{"start", "opencode"}, map[string]any{}},
 		{"Pi start", []string{"start", "pi"}, map[string]any{}},

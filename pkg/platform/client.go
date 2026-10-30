@@ -205,8 +205,8 @@ func (c *Client) Register(ctx context.Context, name, client string, requestedSco
 	if err := validatePlatformURL(wire.ClaimURL, c.portalBaseURL); err != nil {
 		return nil, err
 	}
-	if hasControlChar(wire.ClaimCode) {
-		return nil, errors.New("platform: claim_code contains a control character; refusing")
+	if err := auth.ValidClaimCode(wire.ClaimCode); err != nil {
+		return nil, fmt.Errorf("platform: claim_code: %w; refusing", err)
 	}
 	if err := auth.ValidTimestamp(wire.ClaimExpiresAt); err != nil {
 		return nil, fmt.Errorf("platform: register response: claim_expires_at: %w; refusing", err)
@@ -534,8 +534,8 @@ func (c *Client) Me(ctx context.Context, key string) (*AgentIdentity, error) {
 	if err := auth.ValidAgentID(wire.AgentID); err != nil {
 		return nil, fmt.Errorf("platform: self-lookup response: %w; refusing", err)
 	}
-	if hasControlChar(wire.ClaimCode) {
-		return nil, errors.New("platform: claim_code contains a control character; refusing")
+	if err := auth.ValidClaimCode(wire.ClaimCode); err != nil {
+		return nil, fmt.Errorf("platform: claim_code: %w; refusing", err)
 	}
 	if wire.ClaimURL != "" {
 		if err := validatePlatformURL(wire.ClaimURL, c.portalBaseURL); err != nil {
@@ -610,8 +610,8 @@ func (c *Client) ClaimCode(ctx context.Context, agentID, key string) (*ClaimBoot
 	if err := validatePlatformURL(wire.ClaimURL, c.portalBaseURL); err != nil {
 		return nil, err
 	}
-	if hasControlChar(wire.ClaimCode) {
-		return nil, errors.New("platform: claim_code contains a control character; refusing")
+	if err := auth.ValidClaimCode(wire.ClaimCode); err != nil {
+		return nil, fmt.Errorf("platform: claim_code: %w; refusing", err)
 	}
 	if err := auth.ValidTimestamp(wire.ClaimExpiresAt); err != nil {
 		return nil, fmt.Errorf("platform: claim-code response: claim_expires_at: %w; refusing", err)

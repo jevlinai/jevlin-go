@@ -2,10 +2,9 @@ package fsx
 
 // Directories a sandboxed agent can also write.
 //
-// Codex's workspace-write sandbox is given this client's state directory, and
-// with mining its intake, sessions and spool directories, as writable roots.
-// This process often runs outside that sandbox (a hook, a flush a hook
-// started, connect's resume) and works in the same directories, so whatever a
+// Codex's workspace-write sandbox is given this client's state and sessions
+// directories as writable roots. This process often runs outside that
+// sandbox (a hook, connect's resume) and works in the same directories, so whatever a
 // sandboxed command leaves at a name there is input, not this process's own
 // file. Live, on Codex 0.160.0's macOS sandbox, a command in a writable root
 // could create a symlink pointing out of it, a hard link to a file outside it
@@ -136,8 +135,8 @@ func OpenLock(path string) (*os.File, error) {
 }
 
 // OpenLockExisting opens an existing lock file read-only: the fallback where
-// a sandbox denies the read-write open (flush.lock, under Codex's macOS
-// sandbox). OpenLock's rules hold: no link followed, only a regular file, and
+// a sandbox denies the read-write open. OpenLock's rules hold: no link
+// followed, only a regular file, and
 // nothing created or written. Share mode 0 is kept on Windows.
 func OpenLockExisting(path string) (*os.File, error) {
 	f, err := openLockExisting(path)

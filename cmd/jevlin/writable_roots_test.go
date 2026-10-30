@@ -117,7 +117,7 @@ func TestMarkTurnSearchedNeverWritesThroughALinkAtTheMark(t *testing.T) {
 			dir, canary := rootAndCanary(t)
 			ops := fixedSuffixOps()
 			plantOrSkip(t, kind, plant, canary, turnSearchedPath(dir, traceHash("turn-1")))
-			markTurnSearched(ops, config.Miner{TurnEnd: true, SessionsDir: dir}, &traceEnvelope{TurnID: traceHash("turn-1")})
+			markTurnSearched(ops, config.Search{TurnEnd: true, SessionsDir: dir}, &traceEnvelope{TurnID: traceHash("turn-1")})
 			requireCanaryIntact(t, canary)
 		})
 	}

@@ -913,10 +913,10 @@ func (a codexAllowed) blockedSentence() string {
 
 // routerBlocked is the block that closes the router's host, if one does.
 func (a codexAllowed) routerBlocked(cfg *config.Config) (codexBlock, bool) {
-	if cfg == nil || cfg.Miner.RouterURL == nil {
+	if cfg == nil || cfg.Search.RouterURL == nil {
 		return codexBlock{}, false
 	}
-	router := codexHostKey(cfg.Miner.RouterURL.Hostname())
+	router := codexHostKey(cfg.Search.RouterURL.Hostname())
 	for _, b := range a.blocked {
 		if codexHostKey(b.host) == router {
 			return b, true

@@ -122,7 +122,7 @@ func printableClaimURL(raw, baseURL string, stderr io.Writer) string {
 // On any failure the caller falls back to exactly the B.3 dead end this
 // closes — against a platform without the route (404) nothing changes but
 // one line on stderr.
-func remintClaimLink(ctx context.Context, client *platform.Client, store *auth.Store, m config.Miner, reg *auth.AgentRegistration, key string, stderr io.Writer) (auth.ClaimBootstrap, bool) {
+func remintClaimLink(ctx context.Context, client *platform.Client, store *auth.Store, m config.Search, reg *auth.AgentRegistration, key string, stderr io.Writer) (auth.ClaimBootstrap, bool) {
 	fresh, err := client.ClaimCode(ctx, reg.AgentID, key)
 	if err != nil {
 		fmt.Fprintln(stderr, "jevlin: could not mint a fresh claim link:", err)
@@ -152,7 +152,7 @@ func remintClaimLink(ctx context.Context, client *platform.Client, store *auth.S
 // reports that the run ends here, with code. A record that could not be
 // persisted is retried from scratch by the next run, which is why nothing
 // else is written first.
-func publishRebuiltRegistration(ctx context.Context, client *platform.Client, store *auth.Store, m config.Miner, identity *platform.AgentIdentity, credKey string, stdout, stderr io.Writer) (reg auth.AgentRegistration, code int, stop bool) {
+func publishRebuiltRegistration(ctx context.Context, client *platform.Client, store *auth.Store, m config.Search, identity *platform.AgentIdentity, credKey string, stdout, stderr io.Writer) (reg auth.AgentRegistration, code int, stop bool) {
 	reg = auth.AgentRegistration{
 		AgentID:        identity.AgentID,
 		Status:         identity.Status,
@@ -197,7 +197,7 @@ func publishRebuiltRegistration(ctx context.Context, client *platform.Client, st
 // found no agent for the key, or named the very agent the status call did
 // not know, and the caller keeps the behavior it had before. Never called
 // by -resume or under -force, which replaces rather than recovers.
-func rebuildUnknownRegistration(ctx context.Context, client *platform.Client, store *auth.Store, m config.Miner, old auth.AgentRegistration, credKey string, stdout, stderr io.Writer) (reg auth.AgentRegistration, code int, stop, ok bool) {
+func rebuildUnknownRegistration(ctx context.Context, client *platform.Client, store *auth.Store, m config.Search, old auth.AgentRegistration, credKey string, stdout, stderr io.Writer) (reg auth.AgentRegistration, code int, stop, ok bool) {
 	identity, err := client.Me(ctx, credKey)
 	if err != nil {
 		if !errors.Is(err, platform.ErrAgentNotFound) {
@@ -324,7 +324,7 @@ func credentialFileState(path string) (exists bool, key string, err error) {
 	return true, creds.APIKey, nil
 }
 
-func preflightFreshRegistration(m config.Miner, force bool) error {
+func preflightFreshRegistration(m config.Search, force bool) error {
 	exists, key, err := credentialFileState(credentialsPath(m))
 	if !exists {
 		return nil
@@ -360,7 +360,7 @@ func publishPlatformCredential(path, key string, opts registrationPublicationOpt
 	return errors.New("cannot publish platform credential: credentials.json contains a different platform key")
 }
 
-func publishPendingRegistration(store *auth.Store, m config.Miner, pending auth.PendingRegistration, opts registrationPublicationOptions) (auth.AgentRegistration, error) {
+func publishPendingRegistration(store *auth.Store, m config.Search, pending auth.PendingRegistration, opts registrationPublicationOptions) (auth.AgentRegistration, error) {
 	if err := publishPlatformCredential(credentialsPath(m), pending.Key, opts); err != nil {
 		return auth.AgentRegistration{}, err
 	}
@@ -493,10 +493,9 @@ func connectCommand(args []string, stdin io.Reader, stdout, stderr io.Writer, ge
 		// Structural, like the two sentinels above: resolution ran and
 		// found nothing, before anything of an installation was opened or
 		// written. Not retryable — running it again with the same
-		// environment resolves nothing new — and not human_decision_required,
-		// since there is no registration state to decide about yet; fix_input
-		// is what applies to an environment/config problem a participant
-		// must correct before this command can do anything.
+		// environment resolves nothing new; fix_input is what applies to an
+		// environment/config problem a participant must correct before this
+		// command can do anything.
 		emitMachine(stdout, commandEnvelope{
 			machineHeader: newMachineHeader("connect", exitTransport, "config_not_found", false, actionFixInput),
 			Error:         clientMessage(errConnectNoConfig),
@@ -553,10 +552,10 @@ func connectKeyRefusal(cfgPath string, getenv func(string) string) error {
 // the one in credentials.json, and the one a registration journal is about
 // to publish, which is bound to the agents API that minted it.
 func connectOriginRefusal(cfg *config.Config, getenv func(string) string) error {
-	if err := storedKeyRefusedFor(agentsAPIKeyService, cfg.Miner, cfg.Platform.AgentsAPIURL, getenv); err != nil {
+	if err := storedKeyRefusedFor(agentsAPIKeyService, cfg.Search, cfg.Platform.AgentsAPIURL, getenv); err != nil {
 		return err
 	}
-	journal, err := registrationJournal(cfg.Miner)
+	journal, err := registrationJournal(cfg.Search)
 	if err != nil {
 		return nil
 	}
@@ -695,7 +694,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 		}
 		return exitUsage
 	}
-	store, err := auth.OpenStore(cfg.Miner.StateDir)
+	store, err := auth.OpenStore(cfg.Search.StateDir)
 	if err != nil {
 		fmt.Fprintln(stderr, "jevlin:", err)
 		return exitTransport
@@ -712,14 +711,14 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 		// exits immediately) still counts toward the cooldown shouldResume
 		// consults. Best effort: a failed write here costs pacing
 		// accuracy, not correctness.
-		_ = writeResumeStamp(resumeStampPath(cfg.Miner.StateDir), resumeStamp{LastAttempt: time.Now()})
+		_ = writeResumeStamp(resumeStampPath(cfg.Search.StateDir), resumeStamp{LastAttempt: time.Now()})
 	}
 
 	// Single-flight. This lock is held for cmdConnect's ENTIRE run —
 	// register, the whole poll loop. A second connect/connect -resume
 	// finds it held and exits quietly rather than racing the first for the
 	// same registration.
-	lock, held, err := tryLockFile(connectLockPath(cfg.Miner.StateDir))
+	lock, held, err := tryLockFile(connectLockPath(cfg.Search.StateDir))
 	// Admission ends here: from now on this run is excluded by connect.lock
 	// alone, and the gate must not be held through a poll loop.
 	gate.release()
@@ -768,7 +767,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 	} else if discarded {
 		fmt.Fprintln(stderr, "jevlin: discarded registration_pending.json from the state directory unread; a sandboxed command can write there")
 	}
-	journal, err := registrationJournal(cfg.Miner)
+	journal, err := registrationJournal(cfg.Search)
 	if err != nil {
 		fmt.Fprintln(stderr, "jevlin:", err)
 		return exitTransport
@@ -779,7 +778,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 		return exitTransport
 	}
 	if hasPending {
-		reg, err = publishPendingRegistration(store, cfg.Miner, pending, registrationPublicationOptions{
+		reg, err = publishPendingRegistration(store, cfg.Search, pending, registrationPublicationOptions{
 			allowCorruptPreserve: true,
 			replacingExpired:     pending.ReplaceExpired,
 			previousPlatformKey:  pending.PreviousKey,
@@ -849,7 +848,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 						if !errors.Is(meErr, platform.ErrAgentNotFound) {
 							fmt.Fprintln(stderr, "jevlin: could not rebuild the registration from the platform:", meErr)
 						}
-						if perr := preflightFreshRegistration(cfg.Miner, *force); perr != nil {
+						if perr := preflightFreshRegistration(cfg.Search, *force); perr != nil {
 							fmt.Fprintln(stderr, "jevlin:", perr)
 						}
 						return exitTransport
@@ -861,7 +860,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 							return exitTransport
 						}
 					}
-					rebuilt, code, stop := publishRebuiltRegistration(ctx, client, store, cfg.Miner, identity, credKey, stdout, stderr)
+					rebuilt, code, stop := publishRebuiltRegistration(ctx, client, store, cfg.Search, identity, credKey, stdout, stderr)
 					if stop {
 						return code
 					}
@@ -914,7 +913,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 					}
 					return exitTransport
 				case meErr == nil:
-					rebuilt, code, stop := publishRebuiltRegistration(ctx, client, store, cfg.Miner, identity, meKey, stdout, stderr)
+					rebuilt, code, stop := publishRebuiltRegistration(ctx, client, store, cfg.Search, identity, meKey, stdout, stderr)
 					if rebuilt.AgentID != "" {
 						// Only the id /me returned is named, once persisted:
 						// a message never repeats what agent.json, in a
@@ -973,7 +972,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 					// and never the new record. /v1/agents/me says which,
 					// and that answer is rebuilt, not a new registration.
 					if !*force {
-						rebuilt, code, stop, ok := rebuildUnknownRegistration(ctx, client, store, cfg.Miner, oldReg, oldKey, stdout, stderr)
+						rebuilt, code, stop, ok := rebuildUnknownRegistration(ctx, client, store, cfg.Search, oldReg, oldKey, stdout, stderr)
 						if stop {
 							return code
 						}
@@ -1007,7 +1006,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 					fmt.Fprintln(stderr, "jevlin: persist pending registration:", err)
 					return exitTransport
 				}
-				reg, err = publishPendingRegistration(store, cfg.Miner, pending, registrationPublicationOptions{
+				reg, err = publishPendingRegistration(store, cfg.Search, pending, registrationPublicationOptions{
 					force:                *force,
 					replacingExpired:     true,
 					allowCorruptPreserve: true,
@@ -1028,7 +1027,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 		}
 
 		if !existed {
-			if err := preflightFreshRegistration(cfg.Miner, *force); err != nil {
+			if err := preflightFreshRegistration(cfg.Search, *force); err != nil {
 				fmt.Fprintln(stderr, "jevlin:", err)
 				return exitTransport
 			}
@@ -1044,7 +1043,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 				fmt.Fprintln(stderr, "jevlin: persist pending registration:", err)
 				return exitTransport
 			}
-			reg, err = publishPendingRegistration(store, cfg.Miner, pending, registrationPublicationOptions{
+			reg, err = publishPendingRegistration(store, cfg.Search, pending, registrationPublicationOptions{
 				force:                *force,
 				allowCorruptPreserve: true,
 				binding:              pendingBinding(pending),
@@ -1073,7 +1072,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 	if !*resume {
 		// A key an older client stored records no origins; it is bound to
 		// the installation's config until they are written down here.
-		if err := recordKeyBinding(cfg.Miner, cfgSource, getenv); err != nil {
+		if err := recordKeyBinding(cfg.Search, cfgSource, getenv); err != nil {
 			fmt.Fprintln(stderr, "jevlin: could not record where the stored key may be sent:", err)
 		}
 	}
@@ -1092,10 +1091,10 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 		// A stored link that fails invariant 12 (agent.json is sandbox-
 		// writable) is handled exactly like a missing one: re-minted, which
 		// also overwrites the bad copy on disk, or not printed at all.
-		claim, _ := claimFor(cfg.Miner, reg.AgentID, stderr)
+		claim, _ := claimFor(cfg.Search, reg.AgentID, stderr)
 		claimURL, claimCode := printableClaimURL(claim.ClaimURL, cfg.Platform.BaseURL, stderr), claim.ClaimCode
 		if claimURL == "" {
-			if fresh, ok := remintClaimLink(ctx, client, store, cfg.Miner, &reg, key, stderr); ok {
+			if fresh, ok := remintClaimLink(ctx, client, store, cfg.Search, &reg, key, stderr); ok {
 				claimURL, claimCode = fresh.ClaimURL, fresh.ClaimCode
 			}
 		}
@@ -1132,7 +1131,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 			// so this local reg is already current — a registration
 			// recovered without a claim link stays durable through the
 			// timeout narration too, not just the initial print.
-			if claim, _ := claimFor(cfg.Miner, reg.AgentID, nil); reg.Status == "unclaimed" && printableClaimURL(claim.ClaimURL, cfg.Platform.BaseURL, nil) == "" {
+			if claim, _ := claimFor(cfg.Search, reg.AgentID, nil); reg.Status == "unclaimed" && printableClaimURL(claim.ClaimURL, cfg.Platform.BaseURL, nil) == "" {
 				fmt.Fprintln(stdout, "\n"+unclaimedNoLinkMessage)
 			} else {
 				fmt.Fprintln(stdout, "\nnot claimed yet. Approve it at the URL above, then run `jevlin connect` again")
@@ -1238,7 +1237,7 @@ func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Cl
 // costs nothing when there is nothing to resume — the overwhelmingly
 // common case.
 func shouldResume(cfg *config.Config, getenv func(string) string) bool {
-	stateDir := cfg.Miner.StateDir
+	stateDir := cfg.Search.StateDir
 	if stateDir == "" {
 		return false
 	}

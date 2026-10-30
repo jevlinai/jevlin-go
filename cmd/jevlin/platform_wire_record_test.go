@@ -22,7 +22,7 @@ func TestARegisterResponseTheRecordWouldRefuseIsNeverJournaled(t *testing.T) {
 	if code == exitOK {
 		t.Fatalf("connect accepted a register response with a bidi mark in agent_id:\n%s", errOut)
 	}
-	for _, p := range []string{testJournalPath(t, cfgPath), credentialsPath(cfg.Miner), filepath.Join(stateDir, "agent.json")} {
+	for _, p := range []string{testJournalPath(t, cfgPath), credentialsPath(cfg.Search), filepath.Join(stateDir, "agent.json")} {
 		if _, err := os.Lstat(p); !os.IsNotExist(err) {
 			t.Errorf("%s was written for a response connect refused: %v", p, err)
 		}

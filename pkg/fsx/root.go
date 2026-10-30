@@ -17,8 +17,7 @@ import (
 // leads out of the root. A link that stays inside gives a sandboxed command
 // nothing it could not already write.
 //
-// A root can itself sit inside another writable root: the spool's default is
-// <state_dir>/spool, and the state dir is always one. A sandboxed command can
+// A root can itself sit inside another writable root. A sandboxed command can
 // rename such a root aside and put a link in its place, so a caller that
 // keeps working in it holds the identity it opened (Identity, SameDirectory)
 // and opens it again bound to that identity, never trusting the path twice.

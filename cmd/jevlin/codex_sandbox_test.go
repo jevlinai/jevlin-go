@@ -35,7 +35,7 @@ func sandboxTestConfig(t *testing.T) (cfgPath, home string) {
 		}
 	}
 	doc := fmt.Sprintf(`
-[miner]
+[search]
 router_url = "https://router.example.invalid"
 state_dir = %q
 sessions_dir = %q
@@ -193,18 +193,17 @@ func TestCodexWindowsInstallWritesRootsWithoutNetwork(t *testing.T) {
 	}
 }
 
-// A config from an earlier version, [mining] state_dir and the intake off:
-// the detached claim resume still writes the state dir after every served
-// search, so the profile must exist with the state dir as a writable root,
-// and the sessions directory the config does not name defaults beside it.
-func TestCodexInstallWithALegacyConfigStillWritesStateDirRoot(t *testing.T) {
+// A config naming only state_dir: the detached claim resume writes the state
+// dir after every served search, so the profile must exist with the state
+// dir as a writable root, and the sessions directory the config does not
+// name defaults beside it.
+func TestCodexInstallWithOnlyAStateDirDefaultsTheSessionsDirBesideIt(t *testing.T) {
 	onCodexOS(t, "linux")
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, "state"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	doc := fmt.Sprintf("[mining]\nstate_dir = %q\n\n[miner]\nenabled = false\n",
-		filepath.ToSlash(filepath.Join(home, "state")))
+	doc := fmt.Sprintf("[search]\nstate_dir = %q\n", filepath.ToSlash(filepath.Join(home, "state")))
 	cfgPath := filepath.Join(home, "jevlin.toml")
 	if err := os.WriteFile(cfgPath, []byte(doc), 0o600); err != nil {
 		t.Fatal(err)
@@ -283,7 +282,7 @@ func TestCodexInstallRefusesALayoutThatNestsTheInstallationInARoot(t *testing.T)
 
 func nestedDoc(state, sessions string) string {
 	return fmt.Sprintf(`
-[miner]
+[search]
 router_url = "https://router.example.invalid"
 state_dir = %q
 sessions_dir = %q

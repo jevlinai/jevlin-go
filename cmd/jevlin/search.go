@@ -17,8 +17,8 @@ package main
 //     up from the working directory); or, with no hook at all, a hashed
 //     per-shell session identity. JEVLIN_TRACE=off sends none.
 //
-// Nothing about the search is recorded for mining: the client never
-// self-reports volume, and mining moved to the platform, where the
+// Nothing about the search is recorded anywhere: mining moved to the
+// platform, where the
 // router's own ledger holds the evidence.
 //
 // Two knowing trade-offs, documented rather than hidden: an argv query
@@ -192,13 +192,6 @@ type searchOutcome struct {
 	Attempts int
 	Traced   bool
 	Retried  bool
-	// Trajectory: the POST that was answered carried an envelope with
-	// assistant text in its history. False for a search with no envelope,
-	// for the bare-shell envelope of ids alone, for a host whose hook sends
-	// no text, for a history the size caps dropped, and for the retry that
-	// went without the trace. Traced says an envelope rode; this says it
-	// carried the assistant's words.
-	Trajectory bool
 	// FormsDropped: the retry went without objective and search_queries.
 	// Either the router refused the request as malformed_json while it
 	// carried them, or it refused the trace, and a router that old
@@ -228,10 +221,6 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	tier := fs.String("tier", "", "search tier accepted by the router, e.g. fast; empty = the router's default")
 	format := fs.String("format", "json", "output: json (the router's bytes, verbatim) or model (compact text for an agent)")
 	viewFlag := fs.String("view", "", `router view: "merged" adds the router's own cross-provider merged list and per-arm indexes to the raw response; empty or "full" asks for none`)
-	// -no-flush is accepted and does nothing: the flush it turned off is
-	// gone, and a script or an installed hook that still passes it must
-	// not fail its search over a flag that changes nothing.
-	fs.Bool("no-flush", false, "accepted for compatibility; there is no flush to skip")
 	timeout := fs.Duration("timeout", defaultSearchTimeout, "whole-search deadline, covering connect, headers, body and the one trace-compatibility retry")
 	fs.Bool("stdin", false, "read one version-1 JSON search request from stdin and answer with the machine envelope")
 	if err := fs.Parse(args); err != nil {
@@ -314,25 +303,25 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		fmt.Fprintf(stderr, "jevlin: config (%s): %v\n", orDefaults(cfgSource), err)
 		return exitTransport
 	}
-	if cfg.Miner.RouterURL == nil {
+	if cfg.Search.RouterURL == nil {
 		if machine {
 			return failSearchSetup(stdout, exitTransport, "no_router_configured", actionFixInput,
-				errors.New("no router configured (miner.router_url or a [[provider]] upstream)"))
+				errors.New("no router configured (search.router_url or a [[provider]] upstream)"))
 		}
-		fmt.Fprintln(stderr, "jevlin: no router configured (miner.router_url or a [[provider]] upstream)")
+		fmt.Fprintln(stderr, "jevlin: no router configured (search.router_url or a [[provider]] upstream)")
 		return exitTransport
 	}
 	// The caller's tier wins (the -tier flag, or the stdin request's
 	// "tier"); when neither named one, the participant's own default from
-	// `jevlin agents tier`, then [miner] tier, is sent; when both are
+	// `jevlin agents tier`, then [search] tier, is sent; when both are
 	// unset, the request carries no tier and the router applies the
 	// tenant's default. The agent is told to leave the field alone
 	// (skill.md), so in practice this is the participant's setting unless
 	// the agent escalated.
 	if *tier == "" {
-		*tier = searchTierDefault(cfgSource, cfg.Miner, getenv)
+		*tier = searchTierDefault(cfgSource, cfg.Search, getenv)
 	}
-	key, keySrc, err := resolveAPIKey(getenv, cfg.Miner)
+	key, keySrc, err := resolveAPIKey(getenv, cfg.Search)
 	if err == nil && keySrc == keyFromEnv {
 		err = envKeyRefusedFor(*cfgPath, cfg, getenv)
 	}
@@ -363,7 +352,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	ctx, cancel := searchDeadline(*timeout)
 	defer cancel()
 
-	trace, foreignBridge := searchTraceFailingOpen(ops, cfg.Miner, cfg.Miner.StateDir, getenv, stderr)
+	trace, foreignBridge := searchTraceFailingOpen(ops, cfg.Search, cfg.Search.StateDir, getenv, stderr)
 	if foreignBridge {
 		// Said on stderr, and only there. `-format json` prints the router's
 		// own bytes, so there is no envelope of ours to put it in without
@@ -388,7 +377,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		forwardView = "merged"
 	}
 	out := performSearch(ctx, ops.now, searchCall{
-		Endpoint:      strings.TrimRight(cfg.Miner.RouterURL.String(), "/") + "/v1/search",
+		Endpoint:      strings.TrimRight(cfg.Search.RouterURL.String(), "/") + "/v1/search",
 		Key:           key,
 		Query:         query,
 		Tier:          *tier,
@@ -409,9 +398,8 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 
 	if out.ok() {
 		// The turn end is sent only for a turn in which a search was SERVED.
-		markTurnSearched(ops.hook, cfg.Miner, trace)
+		markTurnSearched(ops.hook, cfg.Search, trace)
 	}
-	mining := miningStateOf(out)
 
 	// An unclaimed participant still needs the claim to resolve eventually.
 	// shouldResume is a cheap local disk check (agent onboarding design
@@ -428,7 +416,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	}
 
 	if machine {
-		env, code := searchEnvelopeOf(out, &mining, view)
+		env, code := searchEnvelopeOf(out, view)
 		emitMachine(stdout, env)
 		return code
 	}
@@ -509,22 +497,11 @@ func renderSearchForHuman(out searchOutcome, format string, keySrc keySource, st
 	}
 }
 
-// miningStateOf is the mining half of the envelope, kept as a stub while
-// mining moves to the platform: the skill, the opencode plugin and the Pi
-// extension read the object, so the field stays, and it says the one true
-// thing this client can say — nothing is mined here. Trajectory says
-// whether the answered POST carried an envelope with assistant text, the
-// one fact about a search's trace a caller can use, and the one the
-// platform's own mining is served on.
-func miningStateOf(out searchOutcome) machineMining {
-	return machineMining{State: miningStateDisabled, Configured: false, Trajectory: out.Trajectory}
-}
-
 // searchTierDefault is the band a request carries when the caller named
 // none: the participant's `jevlin agents tier` file beside the config,
-// then [miner] tier, then nothing — and nothing means the router applies
+// then [search] tier, then nothing — and nothing means the router applies
 // the tenant's default, which this client does not guess at.
-func searchTierDefault(cfgSource string, m config.Miner, getenv func(string) string) string {
+func searchTierDefault(cfgSource string, m config.Search, getenv func(string) string) string {
 	// The path is tierPathFor's and the read readTierSetting's, both the
 	// command's own, so `agents tier status` and the search agree.
 	if t := readTierFile(readTierSetting, tierPathFor(cfgSource, getenv)); t != "" {
@@ -626,14 +603,6 @@ func performSearch(ctx context.Context, now func() time.Time, call searchCall) (
 		delete(body, "search_queries")
 		out.FormsDropped = true
 	}
-	// Decided from the body as it was finally sent: the trace-compatibility
-	// retry below deletes the envelope, and a trajectory that was not in
-	// the answered POST was not one. On the named result, so every return
-	// path carries it.
-	defer func() {
-		tr, ok := body["trace"].(*traceEnvelope)
-		out.Trajectory = out.Fault == faultNone && ok && hasTrajectory(tr)
-	}()
 	switch {
 	case err != nil:
 	case out.Traced && searchTraceUnsupported(attempt.Status, attempt.Raw, attempt.BodyErr):
@@ -822,7 +791,7 @@ func postRouter(ctx context.Context, client *http.Client, endpoint, key string, 
 // said on stderr only, as a foreign bridge is: the machine envelope is what
 // the model reads. The panic's value is not repeated, because it can quote
 // the text being scrubbed.
-func searchTraceFailingOpen(ops searchOps, m config.Miner, stateDir string, getenv func(string) string, stderr io.Writer) (env *traceEnvelope, foreignBridge bool) {
+func searchTraceFailingOpen(ops searchOps, m config.Search, stateDir string, getenv func(string) string, stderr io.Writer) (env *traceEnvelope, foreignBridge bool) {
 	defer func() {
 		if recover() != nil {
 			env, foreignBridge = nil, false
@@ -832,7 +801,7 @@ func searchTraceFailingOpen(ops searchOps, m config.Miner, stateDir string, gete
 	return searchTrace(ops, m, stateDir, getenv)
 }
 
-func searchTrace(ops searchOps, m config.Miner, stateDir string, getenv func(string) string) (env *traceEnvelope, foreignBridge bool) {
+func searchTrace(ops searchOps, m config.Search, stateDir string, getenv func(string) string) (env *traceEnvelope, foreignBridge bool) {
 	switch strings.ToLower(getenv("JEVLIN_TRACE")) {
 	case "off", "0", "false":
 		return nil, false
@@ -924,7 +893,7 @@ func searchTrace(ops searchOps, m config.Miner, stateDir string, getenv func(str
 	}), foreignBridge
 }
 
-// ── the router's answer, as much of it as the miner reads ───────────────
+// ── the router's answer, as much of it as this client reads ─────────────
 
 type routerResponse struct {
 	RequestID  string            `json:"request_id"`

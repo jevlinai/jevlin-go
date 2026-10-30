@@ -129,7 +129,7 @@ func activeOperation(err error) string {
 // installationConfigTemplate is an installation's config with its state and
 // sessions directories filled in, which is all the exclusion needs: the
 // connect lock is located from the state directory.
-const installationConfigTemplate = "[miner]\nstate_dir = %q\nsessions_dir = %q\n"
+const installationConfigTemplate = "[search]\nstate_dir = %q\nsessions_dir = %q\n"
 
 func writeFileT(t *testing.T, path, body string) {
 	t.Helper()
@@ -430,7 +430,7 @@ func connectInstallation(t *testing.T) (home, cfgPath, stateDir string) {
 	home = filepath.Join(t.TempDir(), "home")
 	stateDir = filepath.Join(home, "state")
 	cfgPath = filepath.Join(home, setupConfigFile)
-	writeFileT(t, cfgPath, fmt.Sprintf("[platform]\nbase_url = %q\nagents_api_url = %q\n\n[miner]\nstate_dir = %q\n",
+	writeFileT(t, cfgPath, fmt.Sprintf("[platform]\nbase_url = %q\nagents_api_url = %q\n\n[search]\nstate_dir = %q\n",
 		platform.srv.URL, platform.srv.URL, stateDir))
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		t.Fatal(err)

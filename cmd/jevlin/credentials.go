@@ -116,7 +116,7 @@ type credentials struct {
 
 // keyService is one place the stored key is sent. configured is where cfg
 // sends it, and whether cfg names that place itself: a provider upstream
-// standing in for an unset miner.router_url is where a search goes, but not
+// standing in for an unset search.router_url is where a search goes, but not
 // a router the config named, so it is checked against and never recorded.
 type keyService struct {
 	name       string
@@ -129,10 +129,10 @@ var (
 		name:     "router",
 		recorded: func(c *credentials) string { return c.Router },
 		configured: func(cfg *config.Config) (string, bool) {
-			if cfg.Miner.RouterURL == nil {
+			if cfg.Search.RouterURL == nil {
 				return "", false
 			}
-			return cfg.Miner.RouterURL.String(), cfg.Miner.RouterConfigured
+			return cfg.Search.RouterURL.String(), cfg.Search.RouterConfigured
 		},
 	}
 	agentsAPIKeyService = keyService{
@@ -233,7 +233,7 @@ func (s keyService) check(c *credentials, dest string, getenv func(string) strin
 // storedKeyRefusedFor is check against the key on file, for a command that
 // refuses before it does anything else: nil when there is no readable key
 // (the command's own key read reports that), or when it may go to dest.
-func storedKeyRefusedFor(s keyService, m config.Miner, dest string, getenv func(string) string) error {
+func storedKeyRefusedFor(s keyService, m config.Search, dest string, getenv func(string) string) error {
 	creds, err := readCredentials(credentialsPath(m))
 	if err != nil {
 		return nil
@@ -254,7 +254,7 @@ func storedKeyRefusedFor(s keyService, m config.Miner, dest string, getenv func(
 // so one taken from the installation's config while the participant runs
 // with another would hold that other config's router refused for good.
 // Best effort: the binding holds the same either way.
-func recordKeyBinding(m config.Miner, cfgSource string, getenv func(string) string) error {
+func recordKeyBinding(m config.Search, cfgSource string, getenv func(string) string) error {
 	if own := installationConfigPath(getenv); cfgSource == "" || own == "" || !sameConfigPath(cfgSource, own) {
 		return nil
 	}
@@ -284,7 +284,7 @@ func recordKeyBinding(m config.Miner, cfgSource string, getenv func(string) stri
 // keyBindingOf is the binding a key minted for cfg's platform is published
 // with: cfg's router and agents API. An origin cfg does not name is left
 // unrecorded, and so falls to the installation's config; a provider
-// upstream standing in for an unset miner.router_url is not a router the
+// upstream standing in for an unset search.router_url is not a router the
 // config named.
 func keyBindingOf(cfg *config.Config) credentials {
 	var c credentials
@@ -362,13 +362,13 @@ func (e *envKeyOriginError) Error() string {
 // credentialsPath is the file in the installation's own directory, the
 // parent of the state directory: with the standard layout that is
 // ~/.jevlin/credentials.json.
-func credentialsPath(m config.Miner) string {
+func credentialsPath(m config.Search) string {
 	return filepath.Join(installRoot(m), credentialsFile)
 }
 
 // registrationJournal is registration_pending.json beside credentials.json,
 // outside the state directory a sandboxed agent may write.
-func registrationJournal(m config.Miner) (*auth.RegistrationJournal, error) {
+func registrationJournal(m config.Search) (*auth.RegistrationJournal, error) {
 	return auth.OpenRegistrationJournal(installRoot(m))
 }
 
@@ -376,12 +376,12 @@ func registrationJournal(m config.Miner) (*auth.RegistrationJournal, error) {
 // code (auth.ClaimRecord), written only from the platform's answer or the
 // registration journal beside it, by a foreground run or by a resume
 // finishing that journal; a resume in Codex's sandbox cannot write here.
-func claimRecord(m config.Miner) (*auth.ClaimRecord, error) {
+func claimRecord(m config.Search) (*auth.ClaimRecord, error) {
 	if m.StateDir == "" {
 		// installRoot would be ".", the working directory: a config always
 		// has a state directory unless no user config directory could be
 		// found, and the record must not land wherever the command ran.
-		return nil, errors.New("no miner.state_dir, so no directory for the claim record")
+		return nil, errors.New("no search.state_dir, so no directory for the claim record")
 	}
 	return auth.OpenClaimRecord(installRoot(m))
 }
@@ -390,7 +390,7 @@ func claimRecord(m config.Miner) (*auth.ClaimRecord, error) {
 // file for that agent. A record that cannot be read is reported on stderr
 // (when given) and treated as absent: the caller's answer to a missing link
 // is a re-mint or the no-link message, never another source.
-func claimFor(m config.Miner, agentID string, stderr io.Writer) (auth.ClaimBootstrap, bool) {
+func claimFor(m config.Search, agentID string, stderr io.Writer) (auth.ClaimBootstrap, bool) {
 	record, err := claimRecord(m)
 	if err != nil {
 		return auth.ClaimBootstrap{}, false
@@ -406,7 +406,7 @@ func claimFor(m config.Miner, agentID string, stderr io.Writer) (auth.ClaimBoots
 }
 
 // saveClaim writes the claim link beside credentials.json.
-func saveClaim(m config.Miner, b auth.ClaimBootstrap) error {
+func saveClaim(m config.Search, b auth.ClaimBootstrap) error {
 	record, err := claimRecord(m)
 	if err != nil {
 		return err
@@ -419,7 +419,7 @@ func saveClaim(m config.Miner, b auth.ClaimBootstrap) error {
 // key is returned only when cfg's agents API is the one it is bound to;
 // every caller sends it to cfg.Platform.AgentsAPIURL.
 func platformKey(cfg *config.Config, getenv func(string) string) (string, error) {
-	creds, err := readCredentials(credentialsPath(cfg.Miner))
+	creds, err := readCredentials(credentialsPath(cfg.Search))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return "", errors.New("no platform key on file (credentials.json); run `jevlin connect` first")
@@ -447,7 +447,7 @@ func looksLikePlatformKey(key string) bool {
 // unparseable) preserves its error rather than selecting another source.
 // The stored key is returned only when m's router is the one it is bound to
 // (a *keyOriginError otherwise); every caller sends it to m.RouterURL.
-func resolveAPIKey(getenv func(string) string, m config.Miner) (string, keySource, error) {
+func resolveAPIKey(getenv func(string) string, m config.Search) (string, keySource, error) {
 	if k := getenv(apiKeyEnv); k != "" {
 		return k, keyFromEnv, nil
 	}
@@ -649,11 +649,11 @@ func cmdLogin(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv f
 		fmt.Fprintf(stderr, "jevlin: config (%s): %v\n", orDefaults(cfgSource), err)
 		return exitTransport
 	}
-	path := credentialsPath(cfg.Miner)
+	path := credentialsPath(cfg.Search)
 
 	switch {
 	case *show:
-		return loginShow(stdout, stderr, getenv, cfg.Miner, path)
+		return loginShow(stdout, stderr, getenv, cfg.Search, path)
 	case *forget:
 		if err := os.Remove(path); err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
@@ -688,12 +688,12 @@ func cmdLogin(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv f
 	}
 
 	router := ""
-	if cfg.Miner.RouterURL != nil {
-		router = strings.TrimRight(cfg.Miner.RouterURL.String(), "/")
+	if cfg.Search.RouterURL != nil {
+		router = strings.TrimRight(cfg.Search.RouterURL.String(), "/")
 	}
 	if !*noVerify {
 		if router == "" {
-			fmt.Fprintln(stderr, "jevlin login: no router configured to verify against (miner.router_url or a [[provider]] upstream); use -no-verify to store anyway")
+			fmt.Fprintln(stderr, "jevlin login: no router configured to verify against (search.router_url or a [[provider]] upstream); use -no-verify to store anyway")
 			return exitTransport
 		}
 		ctx, cancel := operatorContext(loginProbeTimeout)
@@ -733,7 +733,7 @@ func cmdLogin(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv f
 
 // loginShow reports resolution without printing a key: which source
 // would win, masked, and what the others hold.
-func loginShow(stdout, stderr io.Writer, getenv func(string) string, m config.Miner, path string) int {
+func loginShow(stdout, stderr io.Writer, getenv func(string) string, m config.Search, path string) int {
 	key, source, err := resolveAPIKey(getenv, m)
 	if err != nil {
 		fmt.Fprintln(stderr, "jevlin login:", err)

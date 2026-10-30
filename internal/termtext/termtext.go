@@ -21,8 +21,7 @@ import "unicode"
 // U+E007F, which spell text no terminal shows but a model reading the output
 // does), and the line and paragraph separators (Zl, Zp: U+2028 and U+2029,
 // which some renderers break a line at). None of them belongs in a claim URL,
-// a claim code, an agent id, a scope, a slot name, a refusal message, a
-// payout address or a health record's detail, and each can forge, reorder or
+// a claim code, an agent id, a scope or a time, and each can forge, reorder or
 // hide what a terminal shows. Letters, marks and the no-break space are
 // left alone: a participant's name is "José", a path can be in Japanese.
 //

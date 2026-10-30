@@ -55,8 +55,7 @@ func joinLabels(ls []string) string {
 }
 
 // agentsParagraph says what answering yes writes, from the registry's own
-// labels, and claims nothing about earning: whether a search earns is the
-// mining decision's business, not the skill's. What it says of Codex is
+// labels. What it says of Codex is
 // what the planner for this OS writes (codexSandboxOS): the permission
 // profile off Windows, and on Windows the writable directories alone, with
 // no network.

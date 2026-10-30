@@ -156,7 +156,7 @@ func TestNeitherTheResumeNorForceRebuildsAnUnknownAgent(t *testing.T) {
 func TestAnUnknownAgentWithADeadKeyStillRefuses(t *testing.T) {
 	platform, cfgPath, stateDir, _, otherID := unknownAgentFixture(t, map[string]any{"status": "expired"})
 	cfg := mustLoadConfig(t, cfgPath)
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-a-key-nobody-minted"}); err != nil { // #nosec G101 -- canned test credential
+	if err := writeCredentials(credentialsPath(cfg.Search), credentials{APIKey: "sr-a-key-nobody-minted"}); err != nil { // #nosec G101 -- canned test credential
 		t.Fatal(err)
 	}
 	code, _, errOut := runConnect(t, cfgPath, nil)

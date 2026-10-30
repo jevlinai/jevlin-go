@@ -3,19 +3,19 @@
 // naming a SID, and giving an object a protected owner-only list.
 //
 // It exists because the two cannot share a file any other way. pkg/ must not
-// import cmd/jevlin (AGENTS.md invariant 8), and the wrapper's wallet check and
-// the shared store's state directory need the same three operations; a copy in
-// each is a second parser of the same descriptor string, which is the kind of
-// thing that drifts. This package imports nothing of the module, so neither
-// side can reach the other through it.
+// import cmd/jevlin (AGENTS.md invariant 8), and the wrapper's state access
+// check and the shared store's state directory need the same three
+// operations; a copy in each is a second parser of the same descriptor
+// string, which is the kind of thing that drifts. This package imports
+// nothing of the module, so neither side can reach the other through it.
 //
 // What is here without a build tag is the part that needs no Windows API — the
 // values and the parser of a descriptor's string form — so it is tested on
 // every OS. Reading, naming and setting are winacl_windows.go.
 //
 // Nothing in this package judges an access list. Whether an entry is a problem
-// is the caller's question: the wallet counts who can read it, the state
-// directory's doctor check counts who else can open it.
+// is the caller's question: the state directory's doctor check counts who
+// else can open it.
 package winacl
 
 import (

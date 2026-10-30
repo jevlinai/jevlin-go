@@ -225,7 +225,7 @@ func TestAgentsInstallWritesClaudeSkillAndMergesHooksIntoSettings(t *testing.T) 
 		}
 	}
 	for _, r := range allow[1:] {
-		if strings.Contains(r, "hook") || strings.Contains(r, "flush") || strings.Contains(r, "wallet") {
+		if strings.Contains(r, "hook") || strings.Contains(r, "connect") || strings.Contains(r, "upgrade") {
 			t.Errorf("a rule allows more than search and fetch: %s", r)
 		}
 	}
@@ -630,7 +630,7 @@ func TestEveryHookSpellingIsReplacedOnInstallAndRemovedOnUninstall(t *testing.T)
 	// Five spellings must be five distinct strings, or this test is weaker
 	// than it reads.
 	seen := map[string]bool{}
-	for _, s := range spellings("flush") {
+	for _, s := range spellings("stop") {
 		if seen[s] {
 			t.Fatalf("two spellings are the same string: %q", s)
 		}
@@ -641,7 +641,7 @@ func TestEveryHookSpellingIsReplacedOnInstallAndRemovedOnUninstall(t *testing.T)
 	ops.executable = func() (string, error) { return bin, nil }
 
 	claudeStop := []any{map[string]any{"hooks": []any{map[string]any{"type": "command", "command": "say done"}}}}
-	for _, c := range spellings("flush") {
+	for _, c := range spellings("stop") {
 		claudeStop = append(claudeStop, map[string]any{"hooks": []any{map[string]any{"type": "command", "command": c}}})
 	}
 	cursorStop := []any{map[string]any{"command": "./hooks/mine.sh"}}
@@ -673,7 +673,7 @@ func TestEveryHookSpellingIsReplacedOnInstallAndRemovedOnUninstall(t *testing.T)
 			want, user        string
 			command           func(any) string
 		}{
-			{"Claude", settings, "Stop", wantHookCommand(t, claude, entry, "flush"), "say done", claudeGroupCommand},
+			{"Claude", settings, "Stop", wantHookCommand(t, claude, entry, "stop"), "say done", claudeGroupCommand},
 			{"Cursor", cursorPath, "stop", wantHookCommand(t, cursor, entry, "cursor", "stop"), "./hooks/mine.sh", cursorEntryCommand},
 		} {
 			list, _ := hooksOf(t, m, c.path)[c.event].([]any)
@@ -758,7 +758,7 @@ func TestInstallReplacesOneStaleEntryPerEventInPlace(t *testing.T) {
 		{"SessionStart", []string{"window", "session-start"}},
 		{"PreCompact", []string{"window", "pre-compact"}},
 		{"PostCompact", []string{"window", "post-compact"}},
-		{"Stop", []string{"flush"}},
+		{"Stop", []string{"stop"}},
 	}
 	cursorEvents := []string{"sessionStart", "beforeShellExecution", "afterAgentThought", "afterAgentResponse", "preCompact", "stop"}
 
@@ -1052,19 +1052,19 @@ func TestTierPathFollowsTheInstallationHome(t *testing.T) {
 }
 
 // status says the band the next search will send, not merely the file:
-// with [miner] tier set and no file, that is the config's band, and the
+// with [search] tier set and no file, that is the config's band, and the
 // line says which of the two set it.
 func TestAgentsTierStatusShowsTheEffectiveBand(t *testing.T) {
 	dir := t.TempDir()
 	cfg := filepath.Join(dir, "jevlin.toml")
-	if err := os.WriteFile(cfg, []byte("[miner]\nrouter_url = \"http://127.0.0.1:8080\"\ntier = \"max\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(cfg, []byte("[search]\nrouter_url = \"http://127.0.0.1:8080\"\ntier = \"max\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	m, ops := newFakeMachine()
-	if code, out, _ := runAgents(t, ops, nil, "tier", "-config", cfg); code != exitOK || !strings.Contains(out, "search tier: max") || !strings.Contains(out, "([miner] tier)") {
+	if code, out, _ := runAgents(t, ops, nil, "tier", "-config", cfg); code != exitOK || !strings.Contains(out, "search tier: max") || !strings.Contains(out, "([search] tier)") {
 		t.Errorf("config band not shown: %d %q", code, out)
 	}
-	if code, out, _ := runAgents(t, ops, nil, "status", "-config", cfg); code != exitOK || !strings.Contains(out, "search tier:    max") || !strings.Contains(out, "([miner] tier)") {
+	if code, out, _ := runAgents(t, ops, nil, "status", "-config", cfg); code != exitOK || !strings.Contains(out, "search tier:    max") || !strings.Contains(out, "([search] tier)") {
 		t.Errorf("agents status: %d %q", code, out)
 	}
 	if code, out, _ := runAgents(t, ops, nil, "tier", "fast", "-config", cfg); code != exitOK || !strings.Contains(out, "search tier: fast") || !strings.Contains(out, "(agents tier)") {

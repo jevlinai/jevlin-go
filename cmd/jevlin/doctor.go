@@ -215,24 +215,24 @@ func cmdDoctor(args []string, stdout, stderr io.Writer) int {
 // returning on the first one — one unreadable file must not blank the
 // report.
 func gatherDoctorFacts(cfg *config.Config, src string, getenv func(string) string) doctorFacts {
-	f := doctorFacts{ConfigSource: src, StateDir: cfg.Miner.StateDir, Now: time.Now()}
+	f := doctorFacts{ConfigSource: src, StateDir: cfg.Search.StateDir, Now: time.Now()}
 	f.Update = gatherUpdateFacts(cfg, getenv)
 	f.Binary = gatherBinaryFacts(doctorInstallationHome(src, getenv))
 	if stateACL.managed {
-		f.State = inspectStateAccess(cfg.Miner.StateDir, auth.CredentialFiles())
+		f.State = inspectStateAccess(cfg.Search.StateDir, auth.CredentialFiles())
 	}
-	switch creds, err := readCredentials(credentialsPath(cfg.Miner)); {
+	switch creds, err := readCredentials(credentialsPath(cfg.Search)); {
 	case err == nil:
 		f.HasCredential = creds.APIKey != ""
-		if cfg.Miner.RouterURL != nil {
-			if cerr := routerKeyService.check(creds, cfg.Miner.RouterURL.String(), getenv); cerr != nil {
+		if cfg.Search.RouterURL != nil {
+			if cerr := routerKeyService.check(creds, cfg.Search.RouterURL.String(), getenv); cerr != nil {
 				f.CredentialErr = cerr
 			}
 		}
 	case !errors.Is(err, fs.ErrNotExist):
 		f.CredentialErr = err
 	}
-	store, err := auth.OpenStoreExisting(cfg.Miner.StateDir)
+	store, err := auth.OpenStoreExisting(cfg.Search.StateDir)
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
 			f.RegistrationErr, f.TraceKeyErr = err, err

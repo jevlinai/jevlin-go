@@ -56,7 +56,7 @@ func backgroundTurns(withP4, p4Search bool) string {
 // subagent's search is answered: the turn that launched the subagent, and
 // the subagent's own lane under the session.
 func (h *turnEndHarness) subagentServed(prompt string) {
-	markTurnSearched(h.ops, config.Miner{TurnEnd: true, SessionsDir: h.hc.sessionsDir}, &traceEnvelope{
+	markTurnSearched(h.ops, config.Search{TurnEnd: true, SessionsDir: h.hc.sessionsDir}, &traceEnvelope{
 		Harness: "claude-code", SessionID: traceHash("sess|agent-1"), ParentSessionID: traceHash("sess"),
 		TurnID: traceHash("sess|" + prompt),
 	})
@@ -84,7 +84,7 @@ func (h *turnEndHarness) records(t *testing.T) []turnEndRecord {
 func TestABackgroundSubagentsSearchIsReportedLateWithTheTurnThatLaunchedIt(t *testing.T) {
 	h := newTurnEndHarness(nil, true)
 	h.fs.files["/t/sess.jsonl"] = []byte(backgroundTurns(false, false))
-	runHook(t, h.ops, h.hc, "flush", claudeStop(map[string]any{"prompt_id": "p3",
+	runHook(t, h.ops, h.hc, "stop", claudeStop(map[string]any{"prompt_id": "p3",
 		"transcript_path": "/t/sess.jsonl", "last_assistant_message": "I started a subagent on it."}))
 	if len(h.queued) != 0 {
 		t.Fatalf("p3's own Stop queued %d turn ends before any search was served", len(h.queued))
@@ -92,7 +92,7 @@ func TestABackgroundSubagentsSearchIsReportedLateWithTheTurnThatLaunchedIt(t *te
 
 	h.subagentServed("p3")
 	h.fs.files["/t/sess.jsonl"] = []byte(backgroundTurns(true, false))
-	runHook(t, h.ops, h.hc, "flush", claudeStop(map[string]any{"prompt_id": "p4",
+	runHook(t, h.ops, h.hc, "stop", claudeStop(map[string]any{"prompt_id": "p4",
 		"transcript_path": "/t/sess.jsonl", "last_assistant_message": "The subagent found the release date."}))
 	rec := h.record(t)
 	if rec.TurnID != traceHash("sess|p3") || rec.SessionID != traceHash("sess") {
@@ -116,7 +116,7 @@ func TestABackgroundSubagentsSearchIsReportedLateWithTheTurnThatLaunchedIt(t *te
 	if _, ok := h.fs.files[turnSearchedPath(h.hc.sessionsDir, traceHash("sess|p3"))]; ok {
 		t.Errorf("a search under p3 after p3's end marked it again")
 	}
-	runHook(t, h.ops, h.hc, "flush", claudeStop(map[string]any{"prompt_id": "p5",
+	runHook(t, h.ops, h.hc, "stop", claudeStop(map[string]any{"prompt_id": "p5",
 		"transcript_path": "/t/sess.jsonl", "last_assistant_message": "Anything else?"}))
 	if len(h.queued) != 0 {
 		t.Errorf("a later Stop queued %d more turn ends, want none: p3 ends once", len(h.queued))
@@ -130,7 +130,7 @@ func TestALateTurnAndTheEndingTurnAreBothReported(t *testing.T) {
 	h.subagentServed("p3")
 	h.served(traceHash("sess|p4"))
 	h.fs.files["/t/sess.jsonl"] = []byte(backgroundTurns(true, true))
-	runHook(t, h.ops, h.hc, "flush", claudeStop(map[string]any{"prompt_id": "p4",
+	runHook(t, h.ops, h.hc, "stop", claudeStop(map[string]any{"prompt_id": "p4",
 		"transcript_path": "/t/sess.jsonl", "last_assistant_message": "The subagent found the release date."}))
 	recs := h.records(t)
 	if len(recs) != 2 || recs[0].TurnID != traceHash("sess|p3") || recs[1].TurnID != traceHash("sess|p4") {
@@ -155,7 +155,7 @@ func TestOnlyASubagentsSearchSendsAStopLookingAtEarlierTurns(t *testing.T) {
 	h.served(traceHash("sess|p3"))
 	h.served(traceHash("sess|p4"))
 	h.fs.files["/t/sess.jsonl"] = []byte(backgroundTurns(true, true))
-	runHook(t, h.ops, h.hc, "flush", claudeStop(map[string]any{"prompt_id": "p4", "transcript_path": "/t/sess.jsonl"}))
+	runHook(t, h.ops, h.hc, "stop", claudeStop(map[string]any{"prompt_id": "p4", "transcript_path": "/t/sess.jsonl"}))
 	if rec := h.record(t); rec.TurnID != traceHash("sess|p4") {
 		t.Errorf("reported turn %s, want p4's own alone", rec.TurnID)
 	}
@@ -172,7 +172,7 @@ func TestOnlyASubagentsSearchSendsAStopLookingAtEarlierTurns(t *testing.T) {
 // under every host, and only a Claude Code subagent marks the turn as a
 // subagent's and marks its session.
 func TestOnlyAClaudeCodeSubagentsSearchLeavesAMark(t *testing.T) {
-	m := config.Miner{TurnEnd: true, SessionsDir: "/home/sessions"}
+	m := config.Search{TurnEnd: true, SessionsDir: "/home/sessions"}
 	turn := traceHash("thread|t1")
 	for name, tc := range map[string]struct {
 		trace            *traceEnvelope
@@ -215,7 +215,7 @@ func TestAnInterruptedTurnsOwnMarkIsNotReportedLate(t *testing.T) {
 	h.served(traceHash("sess|p2")) // p2's main agent searched; p2 was interrupted, and no Stop came
 	h.subagentServed("p3")
 	h.fs.files["/t/sess.jsonl"] = []byte(backgroundTurns(true, false))
-	runHook(t, h.ops, h.hc, "flush", claudeStop(map[string]any{"prompt_id": "p4",
+	runHook(t, h.ops, h.hc, "stop", claudeStop(map[string]any{"prompt_id": "p4",
 		"transcript_path": "/t/sess.jsonl", "last_assistant_message": "The subagent found the release date."}))
 	if rec := h.record(t); rec.TurnID != traceHash("sess|p3") {
 		t.Errorf("reported turn %s, want p3's alone", rec.TurnID)
@@ -232,7 +232,7 @@ func TestATurnsStopTakesEveryMarkItsSubagentLeft(t *testing.T) {
 	h := newTurnEndHarness(nil, true)
 	h.subagentServed("p3")
 	h.fs.files["/t/sess.jsonl"] = []byte(backgroundTurns(false, false))
-	runHook(t, h.ops, h.hc, "flush", claudeStop(map[string]any{"prompt_id": "p3",
+	runHook(t, h.ops, h.hc, "stop", claudeStop(map[string]any{"prompt_id": "p3",
 		"transcript_path": "/t/sess.jsonl", "last_assistant_message": "I started a subagent on it."}))
 	if rec := h.record(t); rec.TurnID != traceHash("sess|p3") {
 		t.Fatalf("reported turn %s, want p3's", rec.TurnID)
@@ -249,7 +249,7 @@ func TestATurnsStopTakesEveryMarkItsSubagentLeft(t *testing.T) {
 // and nothing that waits for a turn end that will not come.
 func TestAnOpencodeTurnWithASubagentsSearchLeavesOnlyItsEndedMark(t *testing.T) {
 	h := newTurnEndHarness(nil, true)
-	markTurnSearched(h.ops, config.Miner{TurnEnd: true, SessionsDir: h.hc.sessionsDir}, &traceEnvelope{
+	markTurnSearched(h.ops, config.Search{TurnEnd: true, SessionsDir: h.hc.sessionsDir}, &traceEnvelope{
 		Harness: "opencode", SessionID: traceHash("ses_child"), ParentSessionID: traceHash("ses_1"),
 		TurnID: traceHash("ses_child|msg_c1"),
 	})
@@ -284,7 +284,7 @@ func TestASearchLandingWhileTheTurnIsTakenMarksNothing(t *testing.T) {
 		}
 		return err
 	}
-	runHook(t, h.ops, h.hc, "flush", claudeStop(map[string]any{"prompt_id": "p3",
+	runHook(t, h.ops, h.hc, "stop", claudeStop(map[string]any{"prompt_id": "p3",
 		"transcript_path": "/t/sess.jsonl", "last_assistant_message": "I started a subagent on it."}))
 	if !landed {
 		t.Fatal("p3's Stop never removed p3's mark; the search did not land during the take")
@@ -306,7 +306,7 @@ func TestASearchLandingWhileTheTurnIsTakenMarksNothing(t *testing.T) {
 func TestAMarkBesideAnEndedMarkIsNotASecondEnd(t *testing.T) {
 	fs, ops := newFakeHookOps(nil)
 	dir, turn := "/home/sessions", traceHash("sess|p3")
-	markTurnSearched(ops, config.Miner{TurnEnd: true, SessionsDir: dir}, &traceEnvelope{TurnID: turn})
+	markTurnSearched(ops, config.Search{TurnEnd: true, SessionsDir: dir}, &traceEnvelope{TurnID: turn})
 	if !takeTurnSearched(ops, dir, turn) {
 		t.Fatal("the turn's own take found no mark")
 	}
@@ -334,12 +334,12 @@ func TestAnIDThatIsNotAHashNamesNoMark(t *testing.T) {
 		"a parent session that is no hash":           {Harness: "claude-code", SessionID: traceHash("sess|a"), ParentSessionID: "ended|" + victim, TurnID: victim},
 	} {
 		h := newTurnEndHarness(nil, true)
-		markTurnSearched(h.ops, config.Miner{TurnEnd: true, SessionsDir: h.hc.sessionsDir}, trace)
+		markTurnSearched(h.ops, config.Search{TurnEnd: true, SessionsDir: h.hc.sessionsDir}, trace)
 		if len(h.fs.files) != 0 {
 			t.Errorf("%s: wrote %d marks, want none", name, len(h.fs.files))
 		}
 		h.served(victim)
-		runHook(t, h.ops, h.hc, "flush", claudeStop(map[string]any{"prompt_id": "p9"}))
+		runHook(t, h.ops, h.hc, "stop", claudeStop(map[string]any{"prompt_id": "p9"}))
 		if len(h.queued) != 1 {
 			t.Errorf("%s: p9's own served search was reported %d times, want once", name, len(h.queued))
 		}
@@ -407,7 +407,7 @@ func TestAStopReadsOnlyTheTurnsItReports(t *testing.T) {
 				}
 				return readFile(p)
 			}
-			runHook(t, h.ops, h.hc, "flush", claudeStop(map[string]any{"prompt_id": "p4",
+			runHook(t, h.ops, h.hc, "stop", claudeStop(map[string]any{"prompt_id": "p4",
 				"transcript_path": "/t/sess.jsonl", "last_assistant_message": "The subagent found the release date."}))
 			if !reflect.DeepEqual(read, tc.want) {
 				t.Errorf("read turns %v, want %v", read, tc.want)

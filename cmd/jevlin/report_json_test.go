@@ -150,7 +150,7 @@ func TestDoctorDialsNothingInEitherMode(t *testing.T) {
 base_url = "` + srv.URL + `"
 agents_api_url = "` + srv.URL + `"
 
-[miner]
+[search]
 router_url = "` + srv.URL + `"
 state_dir = "` + filepath.ToSlash(filepath.Join(root, "state")) + `"
 `
@@ -231,7 +231,7 @@ func statusFixture(t *testing.T) (cfgPath, root string, store *auth.Store) {
 	t.Helper()
 	root = t.TempDir()
 	cfgPath = filepath.Join(root, "jevlin.toml")
-	toml := `[miner]
+	toml := `[search]
 state_dir = "` + filepath.ToSlash(filepath.Join(root, "state")) + `"
 `
 	if err := os.WriteFile(cfgPath, []byte(toml), 0o600); err != nil {

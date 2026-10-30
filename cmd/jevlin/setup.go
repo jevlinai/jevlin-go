@@ -575,14 +575,14 @@ func printAdoptionFailure(w io.Writer, f *adoptionFailure) {
 	fmt.Fprintf(w, "\njevlin setup: could not adopt the %s\n  from %s\n  into %s\n  because: %s\n",
 		f.Bundle, f.Source, f.Destination, f.Reason)
 	if f.RollbackFailed != "" {
-		fmt.Fprintf(w, "Putting it back failed too (%s). Setup stopped at once; the parts of the identity and the wallet are now at:\n", f.RollbackFailed)
+		fmt.Fprintf(w, "Putting it back failed too (%s). Setup stopped at once; the parts of the identity are now at:\n", f.RollbackFailed)
 		for _, p := range f.Surviving {
 			fmt.Fprintf(w, "  %s\n", p)
 		}
 		fmt.Fprintf(w, "Nothing else was moved and connect was not run. Put those back together by hand before running setup again.\n")
 		return
 	}
-	fmt.Fprintf(w, "Everything adoption had moved was put back: the identity and the wallet are both where they started.\n"+
+	fmt.Fprintf(w, "Everything adoption had moved was put back: the identity is where it started.\n"+
 		"Nothing else was moved, and connect was not run.\n"+
 		"Fix the reason above, or keep %s out of %s and let setup start fresh, then run setup again.\n",
 		f.Source, filepath.Dir(f.Destination))
@@ -648,7 +648,7 @@ func (r *setupRun) config() int {
 	}
 	switch plan.outcome {
 	case configLeft:
-		r.say("Config already has a [miner] block: " + r.cfgPath + " (left as is)")
+		r.say("Config already has a [search] block: " + r.cfgPath + " (left as is)")
 		return exitOK
 	case configFresh:
 		if r.dry {
@@ -695,7 +695,7 @@ func (r *setupRun) traceKey() int {
 			fmt.Fprintf(r.d.stderr, "jevlin setup: config %s: %v\n", r.cfgPath, err)
 			return exitTransport
 		}
-		stateDir = cfg.Miner.StateDir
+		stateDir = cfg.Search.StateDir
 	}
 	if stateDir == "" {
 		return exitOK

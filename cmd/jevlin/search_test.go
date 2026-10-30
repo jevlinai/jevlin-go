@@ -1,20 +1,23 @@
 package main
 
 // The search command against a fake router: the query and key go out,
-// the router's bytes come back, the served request is recorded for
-// mining, and the trace comes from the right place. All identifiers are
-// synthetic.
+// the router's bytes come back, and the trace comes from the right place.
+// All identifiers are synthetic.
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -56,7 +59,7 @@ func newFakeRouter(t *testing.T, handler http.HandlerFunc) (*fakeRouter, string,
 name = "search-router"
 upstream = "https://router.fictional.test"
 
-[miner]
+[search]
 router_url = "` + f.srv.URL + `"
 state_dir = "` + filepath.ToSlash(filepath.Join(root, "state")) + `"
 sessions_dir = "` + filepath.ToSlash(filepath.Join(root, "sessions")) + `"
@@ -170,12 +173,13 @@ func TestSearchViewFlagForwardsOnlyMerged(t *testing.T) {
 	})
 }
 
-func TestSearchPostsToTheRouterPrintsVerbatimAndRecordsIntake(t *testing.T) {
+func TestSearchPostsToTheRouterPrintsVerbatimAndKeepsNoRecord(t *testing.T) {
 	fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Request-Id", "01a03e86-fictional")
 		_, _ = w.Write([]byte(routerBody))
 	})
 	h := fixedSearchOps(root)
+	before := treeDigest(t, root)
 	code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "sr-fictional"},
 		"-config", cfg, "-tier", "fast", "how", "do", "ports", "work")
 	if code != exitOK || out != routerBody {
@@ -197,13 +201,50 @@ func TestSearchPostsToTheRouterPrintsVerbatimAndRecordsIntake(t *testing.T) {
 	if sid == "" || strings.Contains(sid, "4242") || strings.Contains(sid, "fictional-host") {
 		t.Errorf("session id leaks raw parts: %q", sid)
 	}
-	// Nothing about the search is kept: no record of it anywhere under
-	// the installation.
+	// Nothing about the search is kept: the installation holds exactly the
+	// files it held before, and none of them changed. The names an earlier
+	// version recorded under are asked for too, so a record coming back
+	// under one of them is named rather than counted.
 	for _, dir := range []string{"intake", "spool"} {
 		if _, err := os.Stat(filepath.Join(root, dir)); err == nil {
 			t.Errorf("a search left a %s directory behind", dir)
 		}
 	}
+	if after := treeDigest(t, root); after != before {
+		t.Errorf("a search changed the installation:\nbefore %s\nafter  %s", before, after)
+	}
+}
+
+// treeDigest is every regular file under root with its size and content
+// hash, one per line, so a before/after comparison names what changed.
+func treeDigest(t *testing.T, root string) string {
+	t.Helper()
+	var lines []string
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, _ := filepath.Rel(root, path)
+		if d.Type()&fs.ModeSymlink != 0 {
+			lines = append(lines, rel+" (link)")
+			return nil
+		}
+		data, err := os.ReadFile(path) // #nosec G304 G122 -- a path WalkDir handed back under this test's own temp dir
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(data)
+		lines = append(lines, fmt.Sprintf("%s %d %x", filepath.ToSlash(rel), len(data), sum[:8]))
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(lines)
+	return strings.Join(lines, "\n")
 }
 
 func TestSearchNeedsAKeyAndDoesNotCallTheRouterWithoutOne(t *testing.T) {
@@ -420,7 +461,7 @@ func TestFallbackSessionIDIsKeyed(t *testing.T) {
 	sid := func(key []byte, keyErr error) string {
 		h := fixedSearchOps(t.TempDir())
 		h.ops.traceKey = func(string) ([]byte, error) { return key, keyErr }
-		env, _ := searchTrace(h.ops, config.Miner{}, "", getenv)
+		env, _ := searchTrace(h.ops, config.Search{}, "", getenv)
 		if env == nil {
 			t.Fatal("no trace")
 		}
@@ -485,7 +526,7 @@ func TestASearchSendsTheSessionIDKeyedByTheStateDirsKey(t *testing.T) {
 			for i := range ids {
 				h := fixedSearchOps(root)
 				h.ops.traceKey = realSearchOps().traceKey
-				code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "-no-flush", "q")
+				code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "q")
 				if code != exitOK {
 					t.Fatalf("search %d exited %d\n%s\n%s", i, code, out, errOut)
 				}
@@ -567,7 +608,7 @@ func TestASearchThatRefusesTheKeyOnDiskSendsAOneOffIDAndLeavesTheKeyAlone(t *tes
 			for i := range ids {
 				h := fixedSearchOps(root)
 				h.ops.traceKey = realSearchOps().traceKey
-				code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "-no-flush", "q")
+				code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "q")
 				if code != exitOK {
 					t.Fatalf("search %d exited %d: a key it refuses must not fail the search\n%s\n%s", i, code, out, errOut)
 				}
@@ -665,8 +706,8 @@ func TestSearchRefusesASecondConfig(t *testing.T) {
 
 // loadTraceKey answers a state directory it cannot open with an error, and
 // the search sends a one-off id. Deleting that check made a search whose
-// state_dir did not exist dereference a nil store (invariant 1: a
-// mining-side failure never fails the search).
+// state_dir did not exist dereference a nil store (invariant 1: a failure
+// beside the search never fails the search).
 func TestATraceKeyFromAStateDirThatIsNotThereIsAnErrorNotAPanic(t *testing.T) {
 	for _, dir := range []string{filepath.Join(t.TempDir(), "no-such-state-dir"), ""} {
 		key, err := loadTraceKey(dir)
@@ -676,7 +717,7 @@ func TestATraceKeyFromAStateDirThatIsNotThereIsAnErrorNotAPanic(t *testing.T) {
 	}
 }
 
-// [miner] tier is the participant's default band: sent when neither the
+// [search] tier is the participant's default band: sent when neither the
 // -tier flag nor the stdin request named one, and never over a tier the
 // caller did name. Unset, the request carries no tier at all — the router
 // applies the tenant default, and this client does not guess it.
@@ -741,7 +782,7 @@ func TestSearchSendsTheConfiguredTierWhenTheCallerNamesNone(t *testing.T) {
 	}
 }
 
-// The participant's `agents tier` file outranks [miner] tier, and the
+// The participant's `agents tier` file outranks [search] tier, and the
 // caller outranks both; a planted word in the file falls through.
 func TestSearchTierFileOutranksTheConfigAndYieldsToTheCaller(t *testing.T) {
 	fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {

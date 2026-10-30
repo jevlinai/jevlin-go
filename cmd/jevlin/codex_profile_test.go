@@ -49,7 +49,7 @@ func capturedCodexConfig(t *testing.T, name string) (m *fakeMachine, ops agentOp
 		t.Fatal(err)
 	}
 	cfgPath = filepath.Join(home, "jevlin.toml")
-	doc := "[mining]\nstate_dir = " + mustTOMLString(state) + "\n\n[miner]\nenabled = false\nrouter_url = \"https://api.jevlin.ai\"\n"
+	doc := "[search]\nrouter_url = \"https://api.jevlin.ai\"\nstate_dir = " + mustTOMLString(state) + "\n"
 	if err := os.WriteFile(cfgPath, []byte(doc), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestStatusComparesTheProfileWithEveryHostTheConfigNames(t *testing.T) {
 	// Each of the two, changed in the config, makes the profile stale.
 	for _, change := range []struct{ from, to string }{
 		{`router_url = "https://router.example.invalid"`, `router_url = "https://router2.example.invalid"`},
-		{"[miner]", "[platform]\nagents_api_url = \"https://agents2.example.invalid\"\n\n[miner]"},
+		{"[search]", "[platform]\nagents_api_url = \"https://agents2.example.invalid\"\n\n[search]"},
 	} {
 		orig, err := os.ReadFile(cfgPath) // #nosec G304 -- this test's own config
 		if err != nil {
@@ -222,21 +222,20 @@ func TestStatusComparesTheProfileWithEveryHostTheConfigNames(t *testing.T) {
 
 // The hosts are the router's and the platform agents API's, and nothing
 // else — in particular never platform.base_url, which nothing dials
-// (invariant 12). An earlier version's [mining] as_url names no host now.
+// (invariant 12).
 func TestTheAllowedHostsAreDerivedFromTheConfig(t *testing.T) {
 	for _, tc := range []struct {
 		name, doc string
 		want      string
 	}{
-		{"router only, platform defaulted", "[miner]\nrouter_url = \"https://r.example.invalid/v1\"\n", "agents-v1.jevlin.ai|r.example.invalid"},
-		{"an earlier version's AS is not a host", "[mining]\nas_url = \"https://AS.example.invalid:8443\"\nchain_id = \"c\"\nslot_id = 1\n[miner]\nrouter_url = \"https://r.example.invalid\"\n", "agents-v1.jevlin.ai|r.example.invalid"},
-		{"a platform of its own, base_url not dialed", "[platform]\nbase_url = \"https://portal.example.invalid\"\nagents_api_url = \"https://api.example.invalid\"\n[miner]\nrouter_url = \"https://r.example.invalid\"\n", "api.example.invalid|r.example.invalid"},
-		{"a loopback router is never listed", "[miner]\nrouter_url = \"http://127.0.0.1:18780\"\n", "agents-v1.jevlin.ai"},
-		{"nor an unspecified address", "[miner]\nrouter_url = \"https://0.0.0.0:8443\"\n", "agents-v1.jevlin.ai"},
-		{"nor the IPv6 unspecified address", "[miner]\nrouter_url = \"https://[::]:8443\"\n", "agents-v1.jevlin.ai"},
-		{"nor a name under localhost", "[miner]\nrouter_url = \"https://router.localhost\"\n", "agents-v1.jevlin.ai"},
-		{"nor a loopback AS or platform", "[platform]\nbase_url = \"http://localhost:9\"\nagents_api_url = \"http://[::1]:9\"\n[mining]\nas_url = \"http://127.0.0.2:9\"\nchain_id = \"c\"\nslot_id = 1\n[miner]\nrouter_url = \"https://r.example.invalid\"\n", "r.example.invalid"},
-		{"one host serving two roles", "[mining]\nas_url = \"https://r.example.invalid\"\nchain_id = \"c\"\nslot_id = 1\n[miner]\nrouter_url = \"https://r.example.invalid\"\n", "agents-v1.jevlin.ai|r.example.invalid"},
+		{"router only, platform defaulted", "[search]\nrouter_url = \"https://r.example.invalid/v1\"\n", "agents-v1.jevlin.ai|r.example.invalid"},
+		{"a platform of its own, base_url not dialed", "[platform]\nbase_url = \"https://portal.example.invalid\"\nagents_api_url = \"https://api.example.invalid\"\n[search]\nrouter_url = \"https://r.example.invalid\"\n", "api.example.invalid|r.example.invalid"},
+		{"a loopback router is never listed", "[search]\nrouter_url = \"http://127.0.0.1:18780\"\n", "agents-v1.jevlin.ai"},
+		{"nor an unspecified address", "[search]\nrouter_url = \"https://0.0.0.0:8443\"\n", "agents-v1.jevlin.ai"},
+		{"nor the IPv6 unspecified address", "[search]\nrouter_url = \"https://[::]:8443\"\n", "agents-v1.jevlin.ai"},
+		{"nor a name under localhost", "[search]\nrouter_url = \"https://router.localhost\"\n", "agents-v1.jevlin.ai"},
+		{"nor a loopback platform", "[platform]\nbase_url = \"http://localhost:9\"\nagents_api_url = \"http://[::1]:9\"\n[search]\nrouter_url = \"https://r.example.invalid\"\n", "r.example.invalid"},
+		{"one host serving two roles", "[platform]\nagents_api_url = \"https://r.example.invalid\"\n[search]\nrouter_url = \"https://r.example.invalid\"\n", "r.example.invalid"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := filepath.Join(t.TempDir(), "jevlin.toml")
@@ -305,7 +304,7 @@ func TestALoopbackRouterIsNamedInThePlanAndNotListed(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfgPath := filepath.Join(home, "jevlin.toml")
-	doc := "[mining]\nstate_dir = " + mustTOMLString(state) + "\n\n[miner]\nenabled = false\nrouter_url = \"http://127.0.0.1:18780\"\n"
+	doc := "[search]\nrouter_url = \"http://127.0.0.1:18780\"\nstate_dir = " + mustTOMLString(state) + "\n"
 	if err := os.WriteFile(cfgPath, []byte(doc), 0o600); err != nil {
 		t.Fatal(err)
 	}

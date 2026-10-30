@@ -110,8 +110,8 @@ func (e *decodeError) Error() string { return "auth: decode " + e.what + ": " + 
 func (e *decodeError) Unwrap() error { return e.err }
 
 // DecodeProblem says why a record did not decode in the client's own words,
-// for a caller outside this package that decodes a record of its own in a
-// directory a sandboxed command can write (cmd/jevlin's flush stamp).
+// for a caller outside this package that decodes a record of its own
+// (cmd/jevlin's update stamp and resume stamp).
 func DecodeProblem(err error) string { return decodeProblem(err) }
 
 func decodeProblem(err error) string {

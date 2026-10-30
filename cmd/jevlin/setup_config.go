@@ -14,8 +14,8 @@ package main
 //
 // An existing file is never rewritten. It is parsed first, always: a file
 // that does not parse is refused with the parse error and its path, whatever
-// its text happens to contain (a `[miner]` line in a file that does not parse
-// proves nothing). A valid file with a [miner] table is left byte for byte.
+// its text happens to contain (a `[search]` line in a file that does not parse
+// proves nothing). A valid file with a [search] table is left byte for byte.
 // A valid file without one — a tokendrop-proxy config, most likely — gains
 // only the tables it lacks, found from the TOML metadata rather than by
 // string matching, and the result is parsed again before it is published.
@@ -137,10 +137,10 @@ func platformTable(v setupValues) (string, error) {
 	return b.String(), nil
 }
 
-// minerTable is the [miner] block a fresh config gets: the state directory
+// searchTable is the [search] block a fresh config gets: the state directory
 // and the sessions directory under the installation. The router comes from
 // the [[provider]] upstream above it, as it always has.
-func minerTable(v setupValues) (string, error) {
+func searchTable(v setupValues) (string, error) {
 	lines, err := quoteAll(
 		"state_dir", filepath.Join(v.home, "state"),
 		"sessions_dir", filepath.Join(v.home, "sessions"),
@@ -149,7 +149,7 @@ func minerTable(v setupValues) (string, error) {
 		return "", err
 	}
 	var b strings.Builder
-	b.WriteString("[miner]\n")
+	b.WriteString("[search]\n")
 	writeTOMLLines(&b, lines)
 	return b.String(), nil
 }
@@ -177,11 +177,11 @@ func renderFreshConfig(v setupValues) ([]byte, error) {
 	// with no byte-order mark in the system's ANSI code page, so a comment
 	// with an em dash once showed the participant `\u00e2\u20ac\u201d`
 	// where the dash should be (dropin-miner#88).
-	miner, err := minerTable(v)
+	search, err := searchTable(v)
 	if err != nil {
 		return nil, err
 	}
-	b.WriteString(miner)
+	b.WriteString(search)
 	return []byte(b.String()), nil
 }
 
@@ -190,8 +190,8 @@ type configOutcome int
 
 const (
 	configFresh    configOutcome = iota // no file: a new one is written
-	configLeft                          // valid, with [miner]: untouched
-	configMigrated                      // valid, without [miner]: missing tables appended
+	configLeft                          // valid, with [search]: untouched
+	configMigrated                      // valid, without [search]: missing tables appended
 )
 
 // configPlan is the policy's answer before anything is written.
@@ -202,15 +202,15 @@ type configPlan struct {
 }
 
 // configTablesDefined reads the TOML metadata for the two tables setup owns.
-// Structural, never a text search: `[miner]` inside a comment or a string is
-// not a table, and a dotted `miner.enabled = true` at the root is.
-func configTablesDefined(data []byte) (platform, miner bool, err error) {
+// Structural, never a text search: `[search]` inside a comment or a string is
+// not a table, and a dotted `search.state_dir = "..."` at the root is.
+func configTablesDefined(data []byte) (platform, search bool, err error) {
 	var doc map[string]any
 	md, err := toml.Decode(string(data), &doc)
 	if err != nil {
 		return false, false, err
 	}
-	return md.IsDefined("platform"), md.IsDefined("miner"), nil
+	return md.IsDefined("platform"), md.IsDefined("search"), nil
 }
 
 // errConfigInvalid marks a refusal of the existing file, as opposed to a
@@ -235,11 +235,11 @@ func planSetupConfig(path string, existing []byte, v setupValues, validate func(
 	if err := validate(existing); err != nil {
 		return configPlan{}, fmt.Errorf("%w: %s: %v", errConfigInvalid, path, err)
 	}
-	hasPlatform, hasMiner, err := configTablesDefined(existing)
+	hasPlatform, hasSearch, err := configTablesDefined(existing)
 	if err != nil {
 		return configPlan{}, fmt.Errorf("%w: %s: %v", errConfigInvalid, path, err)
 	}
-	if hasMiner {
+	if hasSearch {
 		return configPlan{outcome: configLeft}, nil
 	}
 
@@ -253,12 +253,12 @@ func planSetupConfig(path string, existing []byte, v setupValues, validate func(
 		tail.WriteString("\n" + t)
 		added = append(added, "[platform]")
 	}
-	t, err := minerTable(v)
+	t, err := searchTable(v)
 	if err != nil {
 		return configPlan{}, err
 	}
 	tail.WriteString("\n" + t)
-	added = append(added, "[miner]")
+	added = append(added, "[search]")
 
 	next := append([]byte(nil), existing...)
 	if len(next) > 0 && next[len(next)-1] != '\n' {

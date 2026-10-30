@@ -28,7 +28,7 @@ func TestPurgeRemovesTheRegistrationJournalBesideTheCredential(t *testing.T) {
 // a purge reports and leaves.
 func TestConfiguredStatePathsNameTheJournalBesideTheStateDir(t *testing.T) {
 	state := filepath.Join(t.TempDir(), "elsewhere", "state")
-	cfg := &config.Config{Miner: config.Miner{StateDir: state}}
+	cfg := &config.Config{Search: config.Search{StateDir: state}}
 	want := filepath.Join(filepath.Dir(state), registrationJournalFile)
 
 	for _, c := range configuredStatePaths(cfg) {

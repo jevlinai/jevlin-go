@@ -4,7 +4,7 @@ package main
 // (originally leak demos — green when vulnerable). Two chokepoints now
 // scrub trace history text: capTrace (trace.go), which sits downstream of
 // every path that builds a traceEnvelope before it is encoded into the
-// bridge or marshaled into the search body; and saveLineage (miner.go),
+// bridge or marshaled into the search body; and saveLineage (lineage.go),
 // which every lineage-sidecar write passes through, including
 // hookCursor's afterAgentThought/afterAgentResponse handlers that write
 // straight into a lineageFile and never touch a traceEnvelope at all.

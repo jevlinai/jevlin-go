@@ -5,8 +5,7 @@ package main
 // someone adds the wrong import. Ported from tokendrop-proxy's
 // cmd/jevlin/boundary_test.go (goList/moduleRoot, the machinery),
 // stating this repo's own boundaries rather than the proxy's — this
-// module has no internal/forward, internal/observe, or
-// internal/mining/sign to guard.
+// module has no internal/forward or internal/observe to guard.
 
 import (
 	"fmt"
@@ -82,10 +81,9 @@ func TestSelfupdateImportsNoWrapperAndNoCredential(t *testing.T) {
 // proxy's cmd/jevlin/boundary_test.go rule 1, adapted to this module:
 // twilight-core is the same forbidden chain application, and the
 // Cosmos/CometBFT graph is banned for the same reason it is there — a
-// lean binary shipped to users must not pull the SDK's module tree.
-// wallet_tx.go hand-encodes the six protobuf messages a bank send needs
-// instead of importing cosmos-sdk to build them; this is what proves
-// that decision holds, not just documents it.
+// lean binary shipped to users must not pull the SDK's module tree. The
+// wallet that once needed chain messages left with mining; this is what
+// keeps the rule from coming back by accident, not just documents it.
 func TestNoChainImportsAnywhere(t *testing.T) {
 	banned := []string{
 		"github.com/twilight-project/twilight-core",
@@ -201,9 +199,11 @@ func isHTTPClientLiteral(e ast.Expr) bool {
 // — one built with its own net.Dialer instead, or with DialContext left
 // unset, is invisible to it.
 //
-// A DialContext field is set two ways in this module: inline, inside an
-// &http.Transport{...} composite literal (pkg/auth's two, wallet_tx.go's),
-// or as a separate assignment after http.DefaultTransport.Clone() (the
+// A DialContext field can be set two ways: inline, inside an
+// &http.Transport{...} composite literal (none today, since the clients
+// that built one left with mining, but the form is still swept so one
+// coming back is seen), or as a separate assignment after
+// http.DefaultTransport.Clone() (the
 // login probe and the search client, via client.go's shared
 // cloneDefaultTransport; pkg/platform's client; internal/selfupdate's
 // source) — Clone() itself produces no composite literal to inspect, so

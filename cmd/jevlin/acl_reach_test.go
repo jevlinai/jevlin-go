@@ -4,7 +4,7 @@ package main
 //
 // Reading a DACL, and above all resolving a SID to an account (which can reach
 // a domain controller), belongs in the commands that report on a machine and
-// nowhere on the path a search, a hook or a flush takes (AGENTS.md invariant
+// nowhere on the path a search, a hook or a turn end takes (AGENTS.md invariant
 // 1). pkg/auth's own guard (perm_reads_test.go) holds the shared store to that.
 // This holds the wrapper: inspectStateAccess, the stateACL backend, winacl.Read
 // and winacl.PrincipalName appear only in the files that report, and a call
@@ -36,8 +36,6 @@ func mayReachACLReader(name string) (ok bool, why string) {
 		return true, "doctor gathers the facts for its checks"
 	case strings.HasPrefix(name, "state_acl"):
 		return true, "the state access check and its platform half"
-	case strings.HasPrefix(name, "wallet_acl"):
-		return true, "the wallet access check and its platform half"
 	case name == "setup_env_windows.go":
 		return true, "ownedByCurrentUser names the owner in the message of a refusal at adoption, after the decision and off every search path"
 	}
@@ -103,7 +101,7 @@ func TestOnlyTheReportingFilesReachTheACLReaderAndNamer(t *testing.T) {
 		}
 		scanned++
 		for _, finding := range aclReachFindings(fset, name, f) {
-			t.Errorf("%s: only doctor.go, state_acl*.go, wallet_acl*.go and setup_env_windows.go may reach the reader and the namer (invariant 1)", finding)
+			t.Errorf("%s: only doctor.go, state_acl*.go and setup_env_windows.go may reach the reader and the namer (invariant 1)", finding)
 		}
 		// Positive control: the scan finds the references where they are, so a
 		// parser or pattern that sees nothing cannot pass for a clean tree.
@@ -137,14 +135,16 @@ func TestTheACLReachScanSeesEveryFormItClaimsTo(t *testing.T) {
 		{"a call to inspectStateAccess", "trace.go", "package main\nfunc loadTraceKey() { inspectStateAccess(\"d\", nil) }\n", 1},
 		{"a read of the backend", "search.go", "package main\nfunc f() bool { return stateACL.managed }\n", 1},
 		{"winacl.Read", "trace.go", "package main\nimport \"" + winaclImport + "\"\nfunc f() { winacl.Read(\"p\") }\n", 1},
-		{"winacl.PrincipalName through an alias", "flush.go", "package main\nimport w \"" + winaclImport + "\"\nfunc f() { w.PrincipalName(\"s\") }\n", 1},
+		{"winacl.PrincipalName through an alias", "turn_end.go", "package main\nimport w \"" + winaclImport + "\"\nfunc f() { w.PrincipalName(\"s\") }\n", 1},
 		{"a function value, not a call", "search.go", "package main\nimport \"" + winaclImport + "\"\nvar read = winacl.Read\n", 1},
 		{"a dot import", "search.go", "package main\nimport . \"" + winaclImport + "\"\nfunc f() { Read(\"p\") }\n", 1},
 		{"winacl.RestrictToOwner is not the reader", "setup.go", "package main\nimport \"" + winaclImport + "\"\nfunc f() { winacl.RestrictToOwner(\"p\", true) }\n", 0},
-		{"winacl.CurrentUser is not the namer", "wallet_store.go", "package main\nimport \"" + winaclImport + "\"\nfunc f() { winacl.CurrentUser() }\n", 0},
+		{"winacl.CurrentUser is not the namer", "search.go", "package main\nimport \"" + winaclImport + "\"\nfunc f() { winacl.CurrentUser() }\n", 0},
 		{"the same call in doctor.go", "doctor.go", "package main\nfunc f() { inspectStateAccess(\"d\", nil) }\n", 0},
 		{"the same call in state_acl_windows.go", "state_acl_windows.go", "package main\nimport \"" + winaclImport + "\"\nvar r = winacl.Read\n", 0},
-		{"the same call in wallet_acl_windows.go", "wallet_acl_windows.go", "package main\nimport \"" + winaclImport + "\"\nvar r = winacl.PrincipalName\n", 0},
+		// The wallet left with mining, and its access check's allowance with
+		// it: a file under that name is any other file now.
+		{"the same call in a file an earlier version allowed", "wallet_acl_windows.go", "package main\nimport \"" + winaclImport + "\"\nvar r = winacl.PrincipalName\n", 1},
 	}
 	for _, c := range cases {
 		fset := token.NewFileSet()

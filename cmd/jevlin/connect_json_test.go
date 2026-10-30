@@ -113,7 +113,7 @@ func connectFixture(t *testing.T) (cfgPath, stateDir string, calls *atomic.Int64
 	cfgPath = filepath.Join(root, "jevlin.toml")
 	platform, calls := countingPlatformStub(t)
 
-	toml := `[miner]
+	toml := `[search]
 state_dir = "` + filepath.ToSlash(stateDir) + `"
 sessions_dir = "` + filepath.ToSlash(filepath.Join(root, "sessions")) + `"
 

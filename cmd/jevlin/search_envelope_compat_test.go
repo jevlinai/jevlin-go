@@ -32,13 +32,12 @@ var fullViewAdditions = map[string]bool{
 	"result.decision.build":      true,
 }
 
-// fullViewRetired is the one key whose VALUES changed on purpose since the
-// capture: the mining object, a stub since mining moved off the client
-// (state "disabled", nothing configured or recorded, and a trajectory
-// flag the capture never had). It is removed from both sides before the
-// comparison, so the rest of the envelope is still held byte for byte;
-// its own shape is search_machine_test.go's to hold.
-var fullViewRetired = map[string]bool{"mining": true}
+// captureRetired is the one key the capture carries that today's envelope
+// does not: the mining object. Mining moved off the client and then out of
+// it, so the key went with it; it is removed from the CAPTURE side only,
+// and today's envelope is compared whole, so a mining key reappearing in
+// the envelope fails here as any other unnamed addition would.
+var captureRetired = map[string]bool{"mining": true}
 
 // v043Capture is a capture with the retired keys removed, the form today's
 // envelope is compared against.
@@ -54,7 +53,7 @@ func v043Capture(t *testing.T, name string) []byte {
 	if !bytes.Equal(append(same, '\n'), raw) {
 		t.Fatalf("jsonWithout changed the capture with nothing to drop:\n%s\n%s", same, raw)
 	}
-	want, err := jsonWithout(bytes.TrimSuffix(raw, []byte("\n")), fullViewRetired)
+	want, err := jsonWithout(bytes.TrimSuffix(raw, []byte("\n")), captureRetired)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,13 +61,10 @@ func v043Capture(t *testing.T, name string) []byte {
 }
 
 // fullViewDropped is what today's envelope loses before the comparison:
-// the additions and the retired keys.
+// the additions, and nothing else.
 func fullViewDropped() map[string]bool {
 	out := map[string]bool{}
 	for k := range fullViewAdditions {
-		out[k] = true
-	}
-	for k := range fullViewRetired {
 		out[k] = true
 	}
 	return out

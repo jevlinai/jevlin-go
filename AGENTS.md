@@ -16,10 +16,11 @@ Until 0.6.1 this client was also the Twilight MINIS mining participant: it recor
 search, delivered it to an Authorization Server (AS) under OAuth and DPoP, enrolled in epochs and
 held a payout wallet. All of that was removed in one stripping, not rewritten: the search,
 hook, agent-integration, setup, connect, upgrade and uninstall code is the code that shipped,
-with the mining calls taken out. Where a rule below says "an earlier version", that is what it
-means, and the files an earlier version left on a participant's machine (`payout.json`,
-`wallet/`, `flush.lock`, intake and spool directories) are adopted, moved or named by this
-client, never read.
+with the mining calls taken out. That version's line continues as its own binary for the
+participants who ran it; this client carries no compatibility with it: its config tables are
+refused as unknown, and the files it left on a machine (`payout.json`, `wallet/`, `flush.lock`,
+intake and spool directories) are neither read, moved nor named. Where a rule below says "an
+earlier version", that is what it means.
 
 ## Authority — the protocol is owned upstream, not here
 The search platform's control plane (`platform.jevlin.ai` — `connect`; `pkg/platform`) is a
@@ -67,10 +68,10 @@ the named tests.
    privacy surface, not a default. The **turn end** (`turn_end.go`, `turn_detail.go`, `turn_hosts.go`, `codex_turn_end.go`) is the only other one: for
    a turn that searched, the user's message, the assistant's visible text, and its final message,
    all under the same scrub and caps, with a skeleton of the turn's other tool calls. It is sent
-   only when the installation set `[miner] turn_end = true`. It MUST stay off by default; MUST
+   only when the installation set `[search] turn_end = true`. It MUST stay off by default; MUST
    send nothing for a turn in which no search was SERVED (a proposed, refused or failed search is
    not one — `search` marks the turn after the router answers); MUST go only to a router the
-   config names (`Miner.RouterConfigured`, never the provider upstream standing in); and MUST
+   config names (`Search.RouterConfigured`, never the provider upstream standing in); and MUST
    NEVER carry a tool's input or output. Of a tool call it sends the name, the duration and the
    outcome — `turnStep` has no field for more, and one must not be added. A command is read for
    one purpose, to recognize our own search, and is not kept. Thinking blocks and a subagent's own
@@ -112,9 +113,9 @@ the named tests.
    stays so it cannot come back by accident. `go.mod` carries no cosmos-sdk/cometbft dependency.
    Enforced by `TestNoChainImportsAnywhere`.
 10. **Retired with mining.** `mining_decision.json` was the one runtime authority on whether
-    mining was on. This client reads no such file: a search is a search, and the envelope's
-    `mining` object is a stub that says `disabled` (invariant 15). The number is kept so that
-    references to the later invariants stay right.
+    mining was on. This client reads no such file: a search is a search, and the envelope
+    carries nothing about mining (invariant 15). The number is kept so that references to the
+    later invariants stay right.
 11. **A claim or console URL is printed, never opened.** `connect.go` imports no `os/exec`.
     Structural, and tested.
 12. **`platform.base_url` is compared against, never dialed.** It is the origin a platform-supplied
@@ -148,9 +149,7 @@ the named tests.
     replace a registration the platform has positively verified as expired; that replacement
     changes the platform agent and its key. `-resume` never registers, rebuilds or replaces.
 14. **Retired with mining.** The wallet, its send journal and its lock left with the payout
-    path; a `wallet/` directory an earlier version made is adopted, moved or named by this
-    client, never opened. The number is kept so that references to the later invariants stay
-    right.
+    path. The number is kept so that references to the later invariants stay right.
 15. **The machine protocol is versioned, closed and typed.** `search --stdin`, `fetch --stdin`,
     `status -json`, `doctor -json`, `connect -json` and `limits -json` emit one envelope with the mandatory header (`version`,
     `command`, `ok`, `exit_code`, `status`, `code`, `retryable`, `action`), a closed action set
@@ -158,11 +157,8 @@ the named tests.
     0 through 4. Classification is by typed errors and exact codes, never by message text
     (one retry, licensed by two exact codes: `trace_unsupported`, and `malformed_json` to a request
     carrying `objective` or `search_queries`; a router 401 is `login`, never `connect`).
-    The search envelope's `mining` object is kept as a stub — `state` always `disabled`,
-    `configured` and `recorded` always false, `trajectory` whether the POST carried an envelope
-    with assistant text (`machineMining`, `miningStateOf`) — so a reader written for an earlier
-    version still finds the key; nothing in it is ever called earned.
-    Machine mode never invents a participant decision. The mandatory header and its semantics are what is versioned
+    The search envelope carries no `mining` object and nothing about earning: a search is a
+    search. Machine mode never invents a participant decision. The mandatory header and its semantics are what is versioned
     (`machineVersion` in `machine.go`): changing the required header's shape or the meaning of
     `ok`, `status`, `code`, `retryable`, `action` or `exit_code` requires a protocol version
     change; command-specific payload additions that preserve that contract do not.
@@ -519,9 +515,8 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `TestSetupConnectsUnderItsOwnAdmission` exists to forbid. So the destructive exclusion is the
   only place a lock file can be removed, and the locks an upgrade, a setup or a connect leaves are
   named instead: `uninstall`'s `sayLeftoverLocks` lists the gate, `setup.lock`, `connect.lock`,
-  the binary's update lock, the release check's `update_check.lock` and the lock files an
-  earlier version took (`flush.lock`, `refresh.token.lock`, the wallet's) that still
-  exist, as safe to delete, in both modes.
+  the binary's update lock and the release check's `update_check.lock` that still exist, as
+  safe to delete, in both modes.
   `lock_leftover_test.go` holds it to the invariant either way round — a lock still on disk is
   named, one the run removed is not — and scopes its search to that section, because a purge plan
   prints the full path of everything it removes. `lifecycle_created_locks_test.go` guards the
@@ -645,9 +640,9 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   same way (`allowRenderedFetch`), and Cursor's recognizer knows it as a form
   (`renderedFormsForShell`); `fetch_allow_test.go` holds all three to the exact command.
 - **Whose lineage file a search may use** — `search.go`'s `searchTrace` owns the channel rule and
-  the declared file's session guard; `miner.go`'s `lineageForCwd` owns the walk, which with a
+  the declared file's session guard; `lineage.go`'s `lineageForCwd` owns the walk, which with a
   session exported climbs past a file of another session to the searching session's own, and
-  without one takes the nearest file of the searching harness. `miner.go`'s `replaceViaTemp` is the one writer
+  without one takes the nearest file of the searching harness. `lineage.go`'s `replaceViaTemp` is the one writer
   behind the lineage files and the window state: a failed write or rename removes
   its temporary file, which is `<file>.<pid>-<random>.tmp` and created exclusively (hard
   invariant 19), and the sweep takes only such a file (or the `<file>.<pid>.tmp` earlier versions
@@ -659,12 +654,11 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
 - **Setup** — `setup.go` owns the order (binary, previous
   installation, owner-only directories, adoption, config, connect, environment, agents).
   `setup_adopt.go` owns what counts as an installation and adoption by bundle — the
-  identity (`state/`, `credentials.json`, and beside it the registration journal, the claim
-  record and the payout record an earlier version kept) moves whole or not at all, as does a
-  `wallet/` directory an earlier version made, and a destination
+  identity (`state/`, `credentials.json`, and beside it the registration journal and the claim
+  record) moves whole or not at all, and a destination
   identity is a typed conflict that stops setup non-zero before anything moves and before
   connect runs (`TestSetupStopsOnAnIdentityConflictBeforeConnect`). `setup_config.go` owns TOML quoting and
-  the migration policy (parse first; `[miner]` present → byte-identical; otherwise append
+  the migration policy (parse first; `[search]` present → byte-identical; otherwise append
   only the missing tables and parse again). `setup_env.go` owns the one-well-formed-block
   profile rule and the Windows `setup-env.json` delta journal, over backends in
   `setup_env_unix.go` and `setup_env_windows.go`; `setup_targets.go` owns `-with`, which
@@ -903,7 +897,7 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
 - **An issue body has a shape**, because a defect is read by
   whoever fixes it months later: provenance first (where it was seen — the soak and its condition,
   the platform, the version or the CI run and head), then `**What happened.**` with the evidence in
-  a fenced block and the code named (`lineagePath`, `miner.go`) — the reproduction in it, or a
+  a fenced block and the code named (`lineagePath`, `lineage.go`) — the reproduction in it, or a
   `**Steps to reproduce.**` list when there is one — then `**Expected.**`, which is what the fixer
   implements against, `**Likely cause.**` where there is one, and `**Why it matters.**` in the
   participant's terms. It closes with `Severity:` — `cosmetic`, `minor` or `must-fix` — and the

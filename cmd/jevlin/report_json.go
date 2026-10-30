@@ -202,7 +202,7 @@ func connectEnvelope(cfgPath string, getenv func(string) string, exitCode int, n
 	report := connectReport{}
 	cfg, _, err := loadConfig(cfgPath, getenv)
 	if err == nil {
-		if store, serr := auth.OpenStoreExisting(cfg.Miner.StateDir); serr == nil {
+		if store, serr := auth.OpenStoreExisting(cfg.Search.StateDir); serr == nil {
 			if reg, ok, rerr := store.LoadAgentRegistration(); rerr == nil && ok {
 				report.AgentID = reg.AgentID
 				report.Status = reg.Status
@@ -213,7 +213,7 @@ func connectEnvelope(cfgPath string, getenv func(string) string, exitCode int, n
 				// stored key is), and the envelope must not show what the run
 				// said it would not.
 				if exitCode == exitOK {
-					claim, _ := claimFor(cfg.Miner, reg.AgentID, nil)
+					claim, _ := claimFor(cfg.Search, reg.AgentID, nil)
 					report.ClaimURL, report.ClaimCode = printableClaimArtifacts(claim, cfg.Platform.BaseURL)
 				}
 				report.ClaimExpiresAt = reg.ClaimExpiresAt

@@ -279,9 +279,7 @@ func (f *stubPlatform) setStatusError(statusError bool) {
 
 // counts is how often each of the stub's routes a connect run may call
 // was called: register, the status poll, and the by-key self-lookup
-// /v1/agents/me (also meCallCount, for a test that asks only that). The
-// third value was the enroll count while the client could enroll for
-// mining; that route is gone with it.
+// /v1/agents/me (also meCallCount, for a test that asks only that).
 func (f *stubPlatform) counts() (register, status, me int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -374,12 +372,12 @@ func writeTOML(t *testing.T, body string) string {
 }
 
 // connectConfig builds a config for connect: [platform] pointed at
-// platformURL, and a [miner] table whose state_dir and sessions_dir sit
+// platformURL, and a [search] table whose state_dir and sessions_dir sit
 // under the test's own directory, because the default
 // (os.UserConfigDir()/jevlin/state) is not test-isolated and the
 // installation's own files — credentials.json, the registration journal,
 // the claim record — live in state_dir's parent. routerURL, when not
-// empty, is written as miner.router_url, for a test that also searches;
+// empty, is written as search.router_url, for a test that also searches;
 // "" leaves the router at the [[provider]] default, which nothing here
 // dials.
 func connectConfig(t *testing.T, platformURL, routerURL string) (cfgPath, stateDir string) {
@@ -387,7 +385,7 @@ func connectConfig(t *testing.T, platformURL, routerURL string) (cfgPath, stateD
 	dir := t.TempDir()
 	stateDir = filepath.Join(dir, "state")
 	var b strings.Builder
-	fmt.Fprintf(&b, "[platform]\nbase_url = %q\nagents_api_url = %q\n\n[miner]\n", platformURL, platformURL)
+	fmt.Fprintf(&b, "[platform]\nbase_url = %q\nagents_api_url = %q\n\n[search]\n", platformURL, platformURL)
 	if routerURL != "" {
 		fmt.Fprintf(&b, "router_url = %q\n", routerURL)
 	}
@@ -399,7 +397,7 @@ func connectConfig(t *testing.T, platformURL, routerURL string) (cfgPath, stateD
 // credentials.json, not in the state directory.
 func testJournal(t *testing.T, cfgPath string) *auth.RegistrationJournal {
 	t.Helper()
-	j, err := registrationJournal(mustLoadConfig(t, cfgPath).Miner)
+	j, err := registrationJournal(mustLoadConfig(t, cfgPath).Search)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,7 +408,7 @@ func testJournal(t *testing.T, cfgPath string) *auth.RegistrationJournal {
 // as a publication, a rebuild or a re-mint would have.
 func seedClaim(t *testing.T, cfgPath, agentID, claimURL, claimCode string) {
 	t.Helper()
-	if err := saveClaim(mustLoadConfig(t, cfgPath).Miner, auth.ClaimBootstrap{AgentID: agentID, ClaimURL: claimURL, ClaimCode: claimCode}); err != nil {
+	if err := saveClaim(mustLoadConfig(t, cfgPath).Search, auth.ClaimBootstrap{AgentID: agentID, ClaimURL: claimURL, ClaimCode: claimCode}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -418,13 +416,13 @@ func seedClaim(t *testing.T, cfgPath, agentID, claimURL, claimCode string) {
 // storedClaim is the claim record on file for agentID, zero when none is.
 func storedClaim(t *testing.T, cfgPath, agentID string) auth.ClaimBootstrap {
 	t.Helper()
-	claim, _ := claimFor(mustLoadConfig(t, cfgPath).Miner, agentID, nil)
+	claim, _ := claimFor(mustLoadConfig(t, cfgPath).Search, agentID, nil)
 	return claim
 }
 
 func testJournalPath(t *testing.T, cfgPath string) string {
 	t.Helper()
-	return filepath.Join(installRoot(mustLoadConfig(t, cfgPath).Miner), registrationJournalFile)
+	return filepath.Join(installRoot(mustLoadConfig(t, cfgPath).Search), registrationJournalFile)
 }
 
 func mustLoadConfig(t *testing.T, cfgPath string) *config.Config {
@@ -610,7 +608,7 @@ func TestDetachedResumePollsOnceAndExits(t *testing.T) {
 }
 
 func TestShouldResumeIsALocalCheckWithNoStoredRegistration(t *testing.T) {
-	if shouldResume(&config.Config{Miner: config.Miner{StateDir: filepath.Join(t.TempDir(), "state")}}, noEnv) {
+	if shouldResume(&config.Config{Search: config.Search{StateDir: filepath.Join(t.TempDir(), "state")}}, noEnv) {
 		t.Fatal("shouldResume true with nothing on disk")
 	}
 	if shouldResume(&config.Config{}, noEnv) {
@@ -644,21 +642,21 @@ func shouldResumeFixture(t *testing.T, status string, scopes []string) (stateDir
 func TestShouldResumeOnlyForAnUnclaimedRegistration(t *testing.T) {
 	t.Run("unclaimed: still actionable", func(t *testing.T) {
 		stateDir := shouldResumeFixture(t, "unclaimed", nil)
-		if !shouldResume(&config.Config{Miner: config.Miner{StateDir: stateDir}}, noEnv) {
+		if !shouldResume(&config.Config{Search: config.Search{StateDir: stateDir}}, noEnv) {
 			t.Fatal("shouldResume false for an unclaimed registration still worth polling")
 		}
 	})
 
 	t.Run("claimed: settled", func(t *testing.T) {
 		stateDir := shouldResumeFixture(t, "claimed", []string{"credits"})
-		if shouldResume(&config.Config{Miner: config.Miner{StateDir: stateDir}}, noEnv) {
+		if shouldResume(&config.Config{Search: config.Search{StateDir: stateDir}}, noEnv) {
 			t.Fatal("shouldResume true for a claimed registration")
 		}
 	})
 
 	t.Run("expired: settled", func(t *testing.T) {
 		stateDir := shouldResumeFixture(t, "expired", nil)
-		if shouldResume(&config.Config{Miner: config.Miner{StateDir: stateDir}}, noEnv) {
+		if shouldResume(&config.Config{Search: config.Search{StateDir: stateDir}}, noEnv) {
 			t.Fatal("shouldResume true for an expired registration")
 		}
 	})
@@ -677,7 +675,7 @@ func TestConnectRefusesToOverwriteAnExistingCredentialsFileUnlessForced(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	credPath := credentialsPath(cfg.Miner)
+	credPath := credentialsPath(cfg.Search)
 	if err := os.MkdirAll(filepath.Dir(credPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -784,7 +782,7 @@ func TestConnectRefusesCorruptRegistrationWithExistingPlatformCredential(t *test
 	if err := os.WriteFile(filepath.Join(stateDir, "agent.json"), corrupt, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	credPath := credentialsPath(cfg.Miner)
+	credPath := credentialsPath(cfg.Search)
 	if err := os.MkdirAll(filepath.Dir(credPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -856,11 +854,11 @@ func registerAgent(t *testing.T, platform *stubPlatform) (agentID, key string) {
 // stored, but the local registration is gone."
 func setupLostRegistration(t *testing.T, cfg *config.Config, key string, corrupt bool) []byte {
 	t.Helper()
-	stateDir := cfg.Miner.StateDir
+	stateDir := cfg.Search.StateDir
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	credPath := credentialsPath(cfg.Miner)
+	credPath := credentialsPath(cfg.Search)
 	if err := os.MkdirAll(filepath.Dir(credPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -897,7 +895,7 @@ func TestConnectRebuildsClaimedRegistrationFromThePlatform(t *testing.T) {
 			agentID, key := registerAgent(t, platform)
 			platform.claim("credits")
 			setupLostRegistration(t, cfg, key, corrupt)
-			corruptBytes, _ := os.ReadFile(filepath.Join(cfg.Miner.StateDir, "agent.json")) // #nosec G304 -- test controls its temporary state directory
+			corruptBytes, _ := os.ReadFile(filepath.Join(cfg.Search.StateDir, "agent.json")) // #nosec G304 -- test controls its temporary state directory
 			registerCallsBefore, _, _ := platform.counts()
 
 			code, out, errOut := runConnect(t, cfgPath, nil)
@@ -1445,7 +1443,7 @@ func TestForegroundConnectReplacesExpiredRegistrationAndPropagatesNewIdentity(t 
 	if !ok || reg.AgentID != "agent-2" || storedClaim(t, cfgPath, "agent-2").ClaimURL != newURL || storedClaim(t, cfgPath, "agent-2").ClaimCode != "EF56-GH02" || reg.Status != "unclaimed" {
 		t.Fatalf("durable replacement registration = %+v ok=%v", reg, ok)
 	}
-	if got, err := os.ReadFile(credentialsPath(mustLoadConfig(t, cfgPath).Miner)); err != nil || !strings.Contains(string(got), "sr-stubkey-2") {
+	if got, err := os.ReadFile(credentialsPath(mustLoadConfig(t, cfgPath).Search)); err != nil || !strings.Contains(string(got), "sr-stubkey-2") {
 		t.Fatalf("new platform key was not published: err=%v contents=%q", err, got)
 	}
 	if _, ok, err := testJournal(t, cfgPath).Load(); err != nil || ok {
@@ -1539,7 +1537,7 @@ func TestExpiredRegistrationWithMissingCredentialRefusesForceReplacement(t *test
 	}
 	seedClaim(t, cfgPath, "agent-expired", platform.srv.URL+"/claim/OLD", "OLD")
 	cfg := mustLoadConfig(t, cfgPath)
-	credPath := credentialsPath(cfg.Miner)
+	credPath := credentialsPath(cfg.Search)
 	if err := os.Remove(credPath); err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
@@ -1581,7 +1579,7 @@ func TestExpiredRegistrationStatusFailureRefusesForceReplacement(t *testing.T) {
 	}
 	seedClaim(t, cfgPath, "agent-expired", platform.srv.URL+"/claim/OLD", "OLD")
 	cfg := mustLoadConfig(t, cfgPath)
-	credPath := credentialsPath(cfg.Miner)
+	credPath := credentialsPath(cfg.Search)
 	if err := writeCredentials(credPath, credentials{APIKey: "sr-old-key"}); err != nil { // #nosec G101 -- canned test credential
 		t.Fatal(err)
 	}
@@ -1665,7 +1663,7 @@ func TestPendingRegistrationRecoveryPublishesWithoutRegister(t *testing.T) {
 	if !ok || reg.AgentID != pending.AgentID || storedClaim(t, cfgPath, pending.AgentID).ClaimURL != pending.ClaimURL {
 		t.Fatalf("journaled registration was not published: %+v ok=%v", reg, ok)
 	}
-	if got, err := os.ReadFile(credentialsPath(cfg.Miner)); err != nil || !strings.Contains(string(got), pending.Key) {
+	if got, err := os.ReadFile(credentialsPath(cfg.Search)); err != nil || !strings.Contains(string(got), pending.Key) {
 		t.Fatalf("journaled platform key was not published: err=%v contents=%q", err, got)
 	}
 	if _, ok, err := testJournal(t, cfgPath).Load(); err != nil || ok {
@@ -1708,7 +1706,7 @@ func TestPendingJournalRecoveryNeverCallsMeEvenWithACorruptRegistrationAndCreden
 	// A platform credential is on file and agent.json is corrupt — the
 	// exact combination that, absent a pending journal, would route into
 	// the B.3 rebuild instead of a plain refusal.
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: pending.Key}); err != nil {
+	if err := writeCredentials(credentialsPath(cfg.Search), credentials{APIKey: pending.Key}); err != nil {
 		t.Fatal(err)
 	}
 	corruptBytes := []byte("{not json")
@@ -1754,7 +1752,7 @@ func TestPendingExpiredReplacementRecoveryCompletesAcrossRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	seedClaim(t, cfgPath, "agent-old", oldURL, "OLD")
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-old-key"}); err != nil { // #nosec G101 -- canned test credential
+	if err := writeCredentials(credentialsPath(cfg.Search), credentials{APIKey: "sr-old-key"}); err != nil { // #nosec G101 -- canned test credential
 		t.Fatal(err)
 	}
 	if err := testJournal(t, cfgPath).Save(auth.PendingRegistration{
@@ -1781,7 +1779,7 @@ func TestPendingExpiredReplacementRecoveryCompletesAcrossRestart(t *testing.T) {
 	if !ok || reg.AgentID != "agent-new" || storedClaim(t, cfgPath, "agent-new").ClaimURL != platform.srv.URL+"/claim/NEW" || reg.Status != "unclaimed" {
 		t.Fatalf("replacement journal did not complete publication: %+v ok=%v", reg, ok)
 	}
-	if got, err := os.ReadFile(credentialsPath(cfg.Miner)); err != nil || !strings.Contains(string(got), "sr-new-key") {
+	if got, err := os.ReadFile(credentialsPath(cfg.Search)); err != nil || !strings.Contains(string(got), "sr-new-key") {
 		t.Fatalf("replacement key was not published after restart: err=%v contents=%q", err, got)
 	}
 	if _, ok, err := testJournal(t, cfgPath).Load(); err != nil || ok {
@@ -1801,7 +1799,7 @@ func TestForgedStateDirJournalCannotReplaceCredential(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-victim-key"}); err != nil { // #nosec G101 -- canned test credential
+	if err := writeCredentials(credentialsPath(cfg.Search), credentials{APIKey: "sr-victim-key"}); err != nil { // #nosec G101 -- canned test credential
 		t.Fatal(err)
 	}
 	forged := auth.PendingRegistration{
@@ -1832,7 +1830,7 @@ func TestForgedStateDirJournalCannotReplaceCredential(t *testing.T) {
 	if !strings.Contains(errOut, "discarded registration_pending.json") {
 		t.Errorf("no diagnostic for the discarded state-dir journal: %q", errOut)
 	}
-	if got, err := os.ReadFile(credentialsPath(cfg.Miner)); err != nil || !strings.Contains(string(got), "sr-victim-key") || strings.Contains(string(got), "sr-attacker-key") {
+	if got, err := os.ReadFile(credentialsPath(cfg.Search)); err != nil || !strings.Contains(string(got), "sr-victim-key") || strings.Contains(string(got), "sr-attacker-key") {
 		t.Fatalf("forged state-dir journal replaced the credential: err=%v contents=%q", err, got)
 	}
 	if lexists(legacy) {
@@ -1858,7 +1856,7 @@ func TestPendingRegistrationConflictDoesNotOverwriteOrRegister(t *testing.T) {
 	if err := testJournal(t, cfgPath).Save(pending); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-other-key"}); err != nil { // #nosec G101 -- canned test credential
+	if err := writeCredentials(credentialsPath(cfg.Search), credentials{APIKey: "sr-other-key"}); err != nil { // #nosec G101 -- canned test credential
 		t.Fatal(err)
 	}
 
@@ -1918,7 +1916,7 @@ func TestAJournalWinsOverAnAgentRecordNamingAnotherAgent(t *testing.T) {
 	if _, ok, err := testJournal(t, cfgPath).Load(); err != nil || ok {
 		t.Fatalf("the journal was not finished: ok=%v err=%v", ok, err)
 	}
-	if got, err := readCredentials(credentialsPath(cfg.Miner)); err != nil || got.APIKey != "sr-journal-key" {
+	if got, err := readCredentials(credentialsPath(cfg.Search)); err != nil || got.APIKey != "sr-journal-key" {
 		t.Fatalf("credentials.json = %+v %v", got, err)
 	}
 }

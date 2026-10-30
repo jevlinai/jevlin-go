@@ -22,7 +22,7 @@ const maxLinkHops = 40
 // share writing. And holds are brief and real: the upgrade's re-render runs
 // from a hook while the host is running and may be reading its own settings,
 // and a rename in this module has already failed on a momentarily held
-// target on Windows (miner.go's replaceViaTemp, seen on the 0.2.10 release
+// target on Windows (lineage.go's replaceViaTemp, seen on the 0.2.10 release
 // check). So ReplaceFile retries the publication -- only the publication,
 // with the staged file kept -- replaceAttempts times, replaceDelay apart,
 // and only for an error heldBriefly names, which is constant false off

@@ -83,7 +83,7 @@ func TestAJournalPublishesOverWhateverIsAtTheAgentRecordsName(t *testing.T) {
 			if _, ok, err := testJournal(t, cfgPath).Load(); err != nil || ok {
 				t.Fatalf("the journal was not finished: ok=%v err=%v", ok, err)
 			}
-			if got, err := readCredentials(credentialsPath(cfg.Miner)); err != nil || got.APIKey != "sr-journal-key" {
+			if got, err := readCredentials(credentialsPath(cfg.Search)); err != nil || got.APIKey != "sr-journal-key" {
 				t.Fatalf("credentials.json = %+v %v", got, err)
 			}
 			if got, err := os.ReadFile(outside); err != nil || string(got) != "the participant's own file" { // #nosec G304 -- the test's own file

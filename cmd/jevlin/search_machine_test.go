@@ -743,52 +743,6 @@ func TestRetryAfterReachesTheEnvelopeWhenTheRouterSuppliesIt(t *testing.T) {
 	}
 }
 
-// ── §12 the mining object, a stub this client keeps for its readers ─────
-
-// The envelope keeps a mining object so a caller written for an earlier
-// version still finds the key: it says disabled, nothing configured and
-// nothing recorded, on every search. Trajectory is the one fact in it that
-// varies — whether the POST carried an envelope with assistant text — and
-// nothing in the envelope is ever called earned.
-func TestTheMiningObjectIsAStubAndNeverClaimsEarnings(t *testing.T) {
-	for _, tc := range []struct {
-		name       string
-		env        map[string]string
-		trajectory bool
-	}{
-		{"no trace", map[string]string{"JEVLIN_API_KEY": "k"}, false},
-		{"a trace with assistant text", map[string]string{"JEVLIN_API_KEY": "k", bridgeEnv: assistantBridge(t, "the assistant said so")}, true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			_, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
-				_, _ = w.Write([]byte(routerBody))
-			})
-			h := fixedSearchOps(root)
-			code, out, _ := runSearchStdin(t, h, tc.env, `{"version":1,"query":"q"}`, "-config", cfg)
-			if code != exitOK {
-				t.Fatalf("exit %d: %s", code, out)
-			}
-			env := decodeEnvelope(t, out)
-			if env["ok"] != true {
-				t.Errorf("ok %v", env["ok"])
-			}
-			mining, ok := env["mining"].(map[string]any)
-			if !ok {
-				t.Fatalf("no mining object: %s", out)
-			}
-			if mining["state"] != miningStateDisabled || mining["configured"] != false || mining["recorded"] != false {
-				t.Errorf("mining = %v, want the disabled stub", mining)
-			}
-			if mining["trajectory"] != tc.trajectory {
-				t.Errorf("trajectory %v, want %v", mining["trajectory"], tc.trajectory)
-			}
-			if strings.Contains(strings.ToLower(out), "earn") {
-				t.Errorf("the envelope claims earnings: %s", out)
-			}
-		})
-	}
-}
-
 // ── §18 secret absence ──────────────────────────────────────────────────
 
 func TestNoSeededSecretReachesTheEnvelopeOrTheHumanError(t *testing.T) {
@@ -827,16 +781,4 @@ func TestNoSeededSecretReachesTheEnvelopeOrTheHumanError(t *testing.T) {
 	if got := envField(t, decodeEnvelope(t, machineOut), "action"); got != actionLogin {
 		t.Errorf("action %v", got)
 	}
-}
-
-// assistantBridge is a trace bridge whose history holds one assistant entry
-// saying text, as a host's hook would have put it in the environment.
-func assistantBridge(t *testing.T, text string) string {
-	t.Helper()
-	bridge, err := encodeTraceBridge(&traceEnvelope{V: traceVersion, Harness: "claude-code", SessionID: "abc", TurnID: "t", CallID: "c",
-		History: []traceHistory{{Role: "assistant", Text: text}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return bridge
 }

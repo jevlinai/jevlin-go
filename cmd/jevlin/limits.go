@@ -79,15 +79,15 @@ func cmdLimits(args []string, stdout, stderr io.Writer, getenv func(string) stri
 		fmt.Fprintf(stderr, "jevlin: config (%s): %v\n", orDefaults(cfgSource), err)
 		return exitTransport
 	}
-	if cfg.Miner.RouterURL == nil {
+	if cfg.Search.RouterURL == nil {
 		if machine {
 			return failLimits(stdout, exitTransport, "no_router_configured", actionFixInput,
-				errors.New("no router configured (miner.router_url or a [[provider]] upstream)"))
+				errors.New("no router configured (search.router_url or a [[provider]] upstream)"))
 		}
-		fmt.Fprintln(stderr, "jevlin: no router configured (miner.router_url or a [[provider]] upstream)")
+		fmt.Fprintln(stderr, "jevlin: no router configured (search.router_url or a [[provider]] upstream)")
 		return exitTransport
 	}
-	key, keySrc, err := resolveAPIKey(getenv, cfg.Miner)
+	key, keySrc, err := resolveAPIKey(getenv, cfg.Search)
 	if err == nil && keySrc == keyFromEnv {
 		err = envKeyRefusedFor(*cfgPath, cfg, getenv)
 	}
@@ -113,7 +113,7 @@ func cmdLimits(args []string, stdout, stderr io.Writer, getenv func(string) stri
 		return exitClientErr
 	}
 
-	endpoint := strings.TrimRight(cfg.Miner.RouterURL.String(), "/") + "/v1/limits"
+	endpoint := strings.TrimRight(cfg.Search.RouterURL.String(), "/") + "/v1/limits"
 	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
 		if machine {

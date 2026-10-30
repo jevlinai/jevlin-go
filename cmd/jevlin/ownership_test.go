@@ -688,7 +688,7 @@ func writeJSONFile(t *testing.T, m *fakeMachine, path string, v any) {
 
 // The block names no binary and no config; it names DIRECTORIES. So it is
 // attributed by them — against the directories THIS config names, which are
-// four config keys and not a layout.
+// two config keys and not a layout.
 //
 // The first version of this test asserted the layout ("all under that
 // installation's home") and passed, because the default layout does put them
@@ -699,17 +699,17 @@ func writeJSONFile(t *testing.T, m *fakeMachine, path string, v any) {
 func TestTheCodexSandboxBlockIsAttributedByTheDirectoriesItsConfigNames(t *testing.T) {
 	root := t.TempDir()
 	home := filepath.Join(root, "install")
-	cfg := writeMiningHomeConfig(t, home)
+	cfg := writeHomeConfig(t, home)
 	entry := binEntry{command: filepath.Join(home, "bin", "jevlin"), cfg: cfg}
 
 	blockOf := func(dirs ...string) []byte { return appendMarkedBlock(nil, codexSandboxBlock(dirs)) }
 
-	// A subset of the four is ours: with [miner] off only the state dir is
-	// written, and that rendering stays ours after `mining enable`.
+	// A subset of the roots is ours: a block an earlier render wrote with
+	// the state dir alone is still this installation's.
 	if r := removeOurSandboxBlock(blockOf(filepath.Join(home, "state")), entry, noEnv); !r.had || !r.ours {
 		t.Errorf("a state-dir-only block of ours was not recognized (had=%v ours=%v)", r.had, r.ours)
 	}
-	if r := removeOurSandboxBlock(blockOf(filepath.Join(home, "intake"), filepath.Join(home, "state")), entry, noEnv); !r.had || !r.ours {
+	if r := removeOurSandboxBlock(blockOf(filepath.Join(home, "sessions"), filepath.Join(home, "state")), entry, noEnv); !r.had || !r.ours {
 		t.Errorf("this installation's own sandbox block was not recognized (had=%v ours=%v)", r.had, r.ours)
 	}
 	// Another installation's, and a mixture: one root that is not one of

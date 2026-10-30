@@ -114,7 +114,7 @@ working directory is never read unless named.
 status and doctor name the file they resolved, or say plainly that none was
 found and built-in defaults are in use; connect refuses outright when
 resolution finds no config file at all, and says to run jevlin setup.
-The [miner] block names the router and the directories this installation
+The [search] block names the router and the directories this installation
 keeps; [platform] names two hosts — base_url, the portal a printed claim
 URL is checked against and nothing dials (platform.jevlin.ai), and
 agents_api_url, where connect actually sends register/status

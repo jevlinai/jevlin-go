@@ -36,7 +36,7 @@ func connectedUnclaimed(t *testing.T) (platform *stubPlatform, cfgPath, stateDir
 // The review's must-fix: a planted agent.json that keeps this installation's
 // agent id but carries another agent's link on the platform's own origin.
 // The platform knows the agent, the link passes the origin check, and
-// connect, status, connect -json and mining enable all printed it; claiming
+// connect, status and connect -json all printed it; claiming
 // it would have put the attacker's agent in the participant's account.
 func TestALinkPlantedInTheAgentRecordIsNeverPrinted(t *testing.T) {
 	platform, cfgPath, stateDir, agentID, claimURL, claimCode := connectedUnclaimed(t)

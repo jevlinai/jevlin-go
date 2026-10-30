@@ -2,10 +2,10 @@ package main
 
 // The daily release check (docs/guide.md "Upgrading").
 //
-// Every hook that starts a flush — a session's start and end, on every host
-// — also reads one stamp, update_check.json beside credentials.json, and when
-// no check has run in the last day starts `jevlin upgrade -auto` as a
-// detached child, the exact shape of the flush. The hook reads one bounded
+// Every hook at a session's start and end, on every host, reads one stamp,
+// update_check.json beside credentials.json, and when no check has run in
+// the last day starts `jevlin upgrade -auto` as a detached child. The hook
+// reads one bounded
 // file and starts at most one process; it contacts nothing. The child is the
 // one process a day that reaches the compiled-in GitHub release origin, with
 // no credential: the self-updater's own path, invariant 5's one exception,
@@ -23,7 +23,7 @@ package main
 // its only route out, and a check started from it would ask that proxy for
 // GitHub, a host the profile does not list, failing whatever Codex command
 // is running. A hook whose environment says so starts no check
-// (hookInsideASandbox); its flush still starts, as it always did.
+// (hookInsideASandbox).
 //
 // The stamp and its lock live in the installation's own directory, beside
 // credentials.json, and never in the state directory. A sandboxed command
@@ -134,7 +134,7 @@ func updateLockPath(root string) string  { return filepath.Join(root, updateLock
 // lock live: beside credentials.json (installRoot), which no sandbox may
 // write. A config naming no state directory has none, and then no check
 // runs: installRoot would be ".", wherever the command happened to run.
-func updateRoot(m config.Miner) string {
+func updateRoot(m config.Search) string {
 	if m.StateDir == "" {
 		return ""
 	}
@@ -154,7 +154,7 @@ func installationUpdateRoot(home string, getenv func(string) string) string {
 	if err != nil {
 		return ""
 	}
-	return updateRoot(cfg.Miner)
+	return updateRoot(cfg.Search)
 }
 
 // stampBinary is the path a stamp names for the running binary: resolved,
@@ -418,7 +418,7 @@ func updateFactsFor(cfg *config.Config, exe string, exeErr error, getenv func(st
 			f.Fix = npmRemovalGuidance(kind, "upgrade")
 		}
 	}
-	if root := updateRoot(cfg.Miner); root != "" {
+	if root := updateRoot(cfg.Search); root != "" {
 		f.Stamp, f.Present, f.Err = readUpdateStamp(readUpdateStampFile, updateStampPath(root))
 	}
 	if err == nil && f.thisCopy() && stampNeedsAPerson(f.Stamp) {

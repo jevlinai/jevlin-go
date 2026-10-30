@@ -330,7 +330,7 @@ func newExecInstallationIn(t *testing.T, dirName string) *execInstallation {
 		sessions: filepath.Join(home, "sessions"),
 		router:   &execRouter{},
 	}
-	for _, d := range []string{filepath.Dir(in.bin), in.sessions, filepath.Join(home, "state"), filepath.Join(home, "intake"), filepath.Join(home, "spool")} {
+	for _, d := range []string{filepath.Dir(in.bin), in.sessions, filepath.Join(home, "state")} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -373,20 +373,15 @@ func newExecInstallationIn(t *testing.T, dirName string) *execInstallation {
 		})
 	})
 
-	doc := fmt.Sprintf(`[mining]
-state_dir = %q
-spool_dir = %q
-
-[miner]
+	doc := fmt.Sprintf(`[search]
 router_url = %q
-intake_dir = %q
+state_dir = %q
 sessions_dir = %q
 
 [platform]
 base_url = %q
 agents_api_url = %q
-`, filepath.Join(home, "state"), filepath.Join(home, "spool"), router.URL,
-		filepath.Join(home, "intake"), in.sessions, platform.URL, platform.URL)
+`, router.URL, filepath.Join(home, "state"), in.sessions, platform.URL, platform.URL)
 	if err := os.WriteFile(in.cfg, []byte(doc), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1045,10 +1040,11 @@ func execCodexPayload(in *execInstallation, name string) any {
 	return m
 }
 
-// The hook events that spawn a detached flush (Claude Code's SessionStart
-// and Stop, Cursor's sessionStart and stop, Codex's SessionStart and Stop) are
-// not run here: a flush that outlives its test holds files in the test's
-// temporary directory. H3's hook execution test runs every installed hook.
+// The hook events that start the detached daily release check (Claude Code's
+// SessionStart and Stop, Cursor's sessionStart and stop, Codex's SessionStart
+// and Stop) are not run here: a child that outlives its test holds files in
+// the test's temporary directory. H3's hook execution test runs every
+// installed hook.
 var hookCases = map[string][]hookCase{
 	"codex": {
 		{

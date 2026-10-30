@@ -283,7 +283,7 @@ func TestInspectStateAccessAsksForNamedObjectsOnly(t *testing.T) {
 	fake := useFakeStateACL(t)
 	dir := filepath.Join(t.TempDir(), "state")
 	key, agent := filepath.Join(dir, "trace.key"), filepath.Join(dir, "agent.json")
-	for _, p := range []string{key, agent, filepath.Join(dir, "stray.json"), filepath.Join(dir, "spool", "a.json")} {
+	for _, p := range []string{key, agent, filepath.Join(dir, "stray.json"), filepath.Join(dir, "sub", "a.json")} {
 		writeFileT(t, p, "x")
 	}
 	fake.desc[dir] = winacl.Descriptor{Owner: stateTestUser, ACEs: []winacl.ACE{allowACE(stateTestUser, 0, stateFullControl), allowACE(stateTestUsers, 0, stateReadExecute)}}

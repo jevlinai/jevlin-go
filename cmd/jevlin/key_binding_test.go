@@ -42,7 +42,7 @@ func countingServer(t *testing.T, h http.Handler) (*httptest.Server, func() int6
 }
 
 // sameStateOtherURL writes a copy of the config at cfgPath, in a directory
-// of its own, with every from replaced by to: the same state, intake and
+// of its own, with every from replaced by to: the same state and
 // credentials, another server.
 func sameStateOtherURL(t *testing.T, cfgPath, from, to string) string {
 	t.Helper()
@@ -67,26 +67,26 @@ func (f *fakeRouter) requests() int {
 	return len(f.reqs)
 }
 
-func minerOf(t *testing.T, cfgPath string) config.Miner {
+func searchBlockOf(t *testing.T, cfgPath string) config.Search {
 	t.Helper()
 	cfg, _, err := loadConfig(cfgPath, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return cfg.Miner
+	return cfg.Search
 }
 
 func storeKey(t *testing.T, cfgPath string, c credentials) {
 	t.Helper()
 	c.APIKey = boundKey
-	if err := writeCredentials(credentialsPath(minerOf(t, cfgPath)), c); err != nil {
+	if err := writeCredentials(credentialsPath(searchBlockOf(t, cfgPath)), c); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func readStoredKey(t *testing.T, cfgPath string) *credentials {
 	t.Helper()
-	c, err := readCredentials(credentialsPath(minerOf(t, cfgPath)))
+	c, err := readCredentials(credentialsPath(searchBlockOf(t, cfgPath)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,9 +246,9 @@ func TestConnectRecordsWhereItsKeyMayGo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.AgentsAPI != origin(t, platform.srv.URL) || c.Router != origin(t, cfgv.Miner.RouterURL.String()) {
+	if c.AgentsAPI != origin(t, platform.srv.URL) || c.Router != origin(t, cfgv.Search.RouterURL.String()) {
 		t.Errorf("connect recorded router %q, agents API %q; want %s, %s", c.Router, c.AgentsAPI,
-			origin(t, cfgv.Miner.RouterURL.String()), origin(t, platform.srv.URL))
+			origin(t, cfgv.Search.RouterURL.String()), origin(t, platform.srv.URL))
 	}
 }
 
@@ -260,7 +260,7 @@ func TestAForegroundConnectRecordsAnOlderKeysOrigins(t *testing.T) {
 	c := readStoredKey(t, cfg)
 	wantRouter, wantAPI := c.Router, c.AgentsAPI
 	strip := func() {
-		if err := writeCredentials(credentialsPath(minerOf(t, cfg)), credentials{APIKey: c.APIKey}); err != nil {
+		if err := writeCredentials(credentialsPath(searchBlockOf(t, cfg)), credentials{APIKey: c.APIKey}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -350,7 +350,7 @@ func twoConfigInstallation(t *testing.T) (home, own, custom string, a, b *httpte
 		t.Fatalf("connect: exit %d\n%s\n%s", code, out, errOut)
 	}
 	c := readStoredKey(t, own)
-	if err := writeCredentials(credentialsPath(minerOf(t, own)), credentials{APIKey: c.APIKey}); err != nil {
+	if err := writeCredentials(credentialsPath(searchBlockOf(t, own)), credentials{APIKey: c.APIKey}); err != nil {
 		t.Fatal(err)
 	}
 	return home, own, custom, a, b, aConns, bConns
@@ -384,7 +384,7 @@ func TestOnlyTheInstallationsOwnConfigRecordsAnOrigin(t *testing.T) {
 
 	// What is recorded wins: the installation's default config still names
 	// router A, and a search with custom.toml is served by B.
-	code, _, errOutS := runSearch(t, fixedSearchOps(t.TempDir()), map[string]string{"JEVLIN_HOME": home}, "-config", custom, "-no-flush", "q")
+	code, _, errOutS := runSearch(t, fixedSearchOps(t.TempDir()), map[string]string{"JEVLIN_HOME": home}, "-config", custom, "q")
 	if code != exitOK || bConns() == 0 {
 		t.Fatalf("search with custom.toml: exit %d, %d connection(s) to its router\n%s", code, bConns(), errOutS)
 	}
@@ -405,7 +405,7 @@ func TestARefusalNamesNoRouterTheInstallationNeverChose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	standIn := origin(t, defaults.Miner.RouterURL.String())
+	standIn := origin(t, defaults.Search.RouterURL.String())
 	for _, gone := range []string{standIn, strings.TrimPrefix(standIn, "https://"), "belongs to", boundKey, root} {
 		if strings.Contains(out, gone) {
 			t.Errorf("the refusal says %q:\n%s", gone, out)
@@ -440,7 +440,7 @@ func newTurnEndFixture(t *testing.T) turnEndFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := strings.Replace(string(b), "[miner]\n", "[miner]\nturn_end = true\n", 1)
+	body := strings.Replace(string(b), "[search]\n", "[search]\nturn_end = true\n", 1)
 	write := func(router string) string {
 		p := filepath.Join(t.TempDir(), "jevlin.toml")
 		if err := os.WriteFile(p, []byte(strings.ReplaceAll(body, fr.srv.URL, router)), 0o600); err != nil { // #nosec G703 -- a path under t.TempDir
@@ -453,7 +453,7 @@ func newTurnEndFixture(t *testing.T) turnEndFixture {
 		ownURL: ownSrv.URL, otherURL: other.URL,
 		ownConns: ownConns, otherConns: otherConns,
 	}
-	sessions := minerOf(t, f.ownCfg).SessionsDir
+	sessions := searchBlockOf(t, f.ownCfg).SessionsDir
 	if err := os.MkdirAll(sessions, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -508,7 +508,7 @@ func TestAJournalsKeyGoesOnlyToTheAgentsAPIThatMintedIt(t *testing.T) {
 	otherCfg := sameStateOtherURL(t, cfg, platform.srv.URL, other.URL)
 	// Even as the installation's own config, another agents API is refused.
 	env := envOf(map[string]string{"JEVLIN_CONFIG": otherCfg})
-	credPath := credentialsPath(minerOf(t, cfg))
+	credPath := credentialsPath(searchBlockOf(t, cfg))
 
 	var stdout, stderr bytes.Buffer
 	if code := cmdConnect([]string{"-config", otherCfg}, &bytes.Buffer{}, &stdout, &stderr, env); code != exitUsage {
@@ -558,7 +558,7 @@ func TestFetchSendsTheStoredKeyOnlyToItsRouter(t *testing.T) {
 
 	code, out, _ := runFetchStdin(t, env, fetchOneURL, "-config", otherCfg)
 	assertOriginRefusal(t, code, out, origin(t, own.srv.URL), origin(t, other.URL),
-		root, cfg, otherCfg, credentialsPath(minerOf(t, cfg)))
+		root, cfg, otherCfg, credentialsPath(searchBlockOf(t, cfg)))
 	if n := otherConns(); n != 0 {
 		t.Fatalf("%d connection(s) reached a router the key does not belong to", n)
 	}
