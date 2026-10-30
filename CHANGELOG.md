@@ -46,8 +46,9 @@ the participants who mine; this client carries no compatibility with it.
   and `JEVLIN_AGENTS_API_URL` now apply at runtime, to every command, under the file's URL
   rules. `[[provider]]`, `[search] router_url`, `[search] tier`, `[platform] base_url` and
   `[platform] agents_api_url` are gone, and so is the retired-portal alias: a claim link must
-  be on exactly the `[platform] url` origin. The same format as jevlin-go PR 152, adopted
-  here for the search-only client. Codex's permission profile grants the state and sessions
+  be on exactly the `[platform] url` origin. The format follows the shape of jevlin-go PR 152
+  (a schema line, then one section per endpoint), with a `[search]` table where that PR has
+  `[mining]`; this file's keys are the ones above. Codex's permission profile grants the state and sessions
   directories and reaches the router and the agents API.
 - **`JEVLIN_TRACE=off` turns the hooks off too.** The lineage hook wrote a bridge and a lineage
   file for search to drop; now it writes neither, so off means off entirely. Cursor's hooks keep
