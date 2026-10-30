@@ -2465,7 +2465,7 @@ func planCodexSandbox(ops agentOps, label, path string, roots []string, entry bi
 	stripped, _ := removeMarkedBlock(existing)
 	if bytes.Contains(stripped, []byte("["+codexSandboxTable+"]")) {
 		p.refused = append(p.refused, fmt.Sprintf(
-			"%s: %s already defines [%s]; add these settings to it by hand so searches can record:\n%s",
+			"%s: %s already defines [%s]; add these settings to it by hand so searches can reach the router and write their session files:\n%s",
 			label, path, codexSandboxTable, indentBlock(codexWindowsSettings(roots))))
 		return false, true
 	}
@@ -2561,7 +2561,7 @@ func tables(n int) string {
 const codexSandboxTable = "sandbox_workspace_write"
 
 // codexWindowsWhy is the plan line for the Windows block (D6).
-const codexWindowsWhy = "sandbox: writable_roots so searches can record; no network: Codex asks before a search reaches the router"
+const codexWindowsWhy = "sandbox: writable_roots so searches can write their session files; no network: Codex asks before a search reaches the router"
 
 // sandboxSettings is the table every version before the permission profile
 // wrote, network_access included. Nothing renders it any more; it is the

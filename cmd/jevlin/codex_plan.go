@@ -110,7 +110,7 @@ func planCodexConfig(ops agentOps, label, path string, entry binEntry, getenv fu
 		if why := codexSandboxProblem(entry, getenv); why != "" {
 			p.notes = append(p.notes, label+": not widening the sandbox: "+why)
 		} else {
-			p.notes = append(p.notes, label+": shell commands run sandboxed; if searches record nothing, allow this command network access and let it write to your jevlin home")
+			p.notes = append(p.notes, label+": shell commands run sandboxed; if searches fail or carry no session, allow this command network access and let it write to your jevlin home")
 		}
 		return codexConfigPlan{}
 	}

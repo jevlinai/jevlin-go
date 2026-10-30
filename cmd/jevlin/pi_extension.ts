@@ -58,9 +58,9 @@ const HOST_COMMAND_CHAR_LIMIT = process.platform === "win32" ? 8000 : 0
 const INSTALL_CONFIG = "{{INSTALL_CONFIG}}"
 
 // The binary of the installation above, for the two processes this extension
-// starts: `hook start pi` when a session begins, which starts the flush and,
-// once a day, the release check — what Claude Code's session-start hook does
-// — and `hook turn pi` when a run settles, which is handed a finished turn
+// starts: `hook start pi` when a session begins, which starts, once a day,
+// the release check — what Claude Code's session-start hook does — and
+// `hook turn pi` when a run settles, which is handed a finished turn
 // (see reportTurn). Empty when the file was rendered with none, and then
 // nothing is started. Nothing is read back from either.
 const JEVLIN_BIN = "{{JEVLIN_BIN}}"

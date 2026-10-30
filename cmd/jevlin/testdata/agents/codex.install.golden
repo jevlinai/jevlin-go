@@ -9,6 +9,6 @@
     }
   ],
   "notes": [
-    "Codex: shell commands run sandboxed; if searches record nothing, allow this command network access and let it write to your jevlin home"
+    "Codex: shell commands run sandboxed; if searches fail or carry no session, allow this command network access and let it write to your jevlin home"
   ]
 }
