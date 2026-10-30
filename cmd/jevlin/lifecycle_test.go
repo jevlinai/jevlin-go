@@ -10,9 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"io"
 	"os"
 	"path/filepath"
@@ -635,54 +632,5 @@ func TestTheSetAsideScanNeverOffersTheLifecycleGate(t *testing.T) {
 	writeFileT(t, filepath.Join(aside, credentialsFile), "{}")
 	if got := setAsideInstallation(home); got != aside {
 		t.Errorf("a real set-aside installation is still found: got %q, want %q", got, aside)
-	}
-}
-
-// ── the detached marker ─────────────────────────────────────────────────
-
-func TestDetachedChildrenCarryTheMarker(t *testing.T) {
-	parent := []string{"PATH=/bin", detachedChildEnv + "=0"}
-	child := detachedEnvironment(parent)
-	if child[len(child)-1] != detachedChildEnv+"=1" || len(parent) != 2 || parent[1] != detachedChildEnv+"=0" {
-		t.Errorf("the child gets the marker last, so it wins over an inherited value, and the parent's slice is untouched: %v / %v", child, parent)
-	}
-	for value, want := range map[string]bool{"1": true, "": false, "0": false, "true": false} {
-		if got := detachedChild(envOf(map[string]string{detachedChildEnv: value})); got != want {
-			t.Errorf("detachedChild(%q) = %v, want %v", value, got, want)
-		}
-	}
-
-	// spawnDetached is the single choke point for every detached child, on
-	// both platforms, whichever this test runs on.
-	for _, file := range []string{"detach_unix.go", "detach_windows.go"} {
-		f, err := parser.ParseFile(token.NewFileSet(), file, nil, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		marked := false
-		ast.Inspect(f, func(n ast.Node) bool {
-			fn, ok := n.(*ast.FuncDecl)
-			if !ok || fn.Name.Name != "spawnDetached" {
-				return true
-			}
-			ast.Inspect(fn.Body, func(n ast.Node) bool {
-				as, ok := n.(*ast.AssignStmt)
-				if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
-					return true
-				}
-				sel, ok := as.Lhs[0].(*ast.SelectorExpr)
-				call, isCall := as.Rhs[0].(*ast.CallExpr)
-				if ok && sel.Sel.Name == "Env" && isCall {
-					if id, ok := call.Fun.(*ast.Ident); ok && id.Name == "detachedEnvironment" {
-						marked = true
-					}
-				}
-				return true
-			})
-			return false
-		})
-		if !marked {
-			t.Errorf("%s: spawnDetached must set cmd.Env = detachedEnvironment(...) so every detached child is marked", file)
-		}
 	}
 }

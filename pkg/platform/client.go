@@ -336,16 +336,6 @@ type AgentStatus struct {
 	ConsoleURL string
 }
 
-// HasScope reports whether scope was granted at the claim.
-func (s *AgentStatus) HasScope(scope string) bool {
-	for _, sc := range s.Scopes {
-		if sc == scope {
-			return true
-		}
-	}
-	return false
-}
-
 // Status calls GET /v1/agents/{id}, the client's poll. Authentication
 // here is diagnostic (§5.2): the key must belong to the agent, but an
 // expired-unclaimed key still authenticates so the client can learn

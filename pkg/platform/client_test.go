@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -149,7 +150,7 @@ func TestPollReportsUnclaimedThenClaimed(t *testing.T) {
 	}
 	claimed = true
 	st, err = c.Status(context.Background(), "agent-1", "sr-abc123")
-	if err != nil || st.Status != "claimed" || !st.HasScope("mining") {
+	if err != nil || st.Status != "claimed" || !slices.Contains(st.Scopes, "mining") {
 		t.Fatalf("got %+v err=%v", st, err)
 	}
 
@@ -222,7 +223,7 @@ func TestStatusDropsAnInvalidConsoleURLWithoutFailingTheWholePoll(t *testing.T) 
 	if st.ConsoleURL != "" {
 		t.Fatalf("ConsoleURL = %q, want dropped (empty) for an off-origin value", st.ConsoleURL)
 	}
-	if !st.HasScope("mining") {
+	if !slices.Contains(st.Scopes, "mining") {
 		t.Fatalf("the rest of the response (scopes) should still be usable: %+v", st)
 	}
 }
@@ -239,7 +240,7 @@ func TestStatusIgnoresTheMiningBlock(t *testing.T) {
 		})
 	}
 	st, err := New(stub.srv.URL, stub.srv.URL).Status(context.Background(), "agent-1", "sr-key")
-	if err != nil || st.Status != "claimed" || !st.HasScope("search") {
+	if err != nil || st.Status != "claimed" || !slices.Contains(st.Scopes, "search") {
 		t.Fatalf("got %+v err=%v", st, err)
 	}
 }
@@ -448,7 +449,7 @@ func TestStatusRejectsValueOutsideTheEnum(t *testing.T) {
 	if st.Status != "unclaimed" {
 		t.Fatalf("status = %q, want it normalized to %q", st.Status, "unclaimed")
 	}
-	if st.HasScope("mining") {
+	if len(st.Scopes) != 0 {
 		t.Fatal("an unrecognized status must not be trusted to carry real scopes either")
 	}
 }

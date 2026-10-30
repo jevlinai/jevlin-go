@@ -109,11 +109,10 @@ func (e *decodeError) Error() string { return "auth: decode " + e.what + ": " + 
 
 func (e *decodeError) Unwrap() error { return e.err }
 
-// DecodeProblem says why a record did not decode in the client's own words,
-// for a caller outside this package that decodes a record of its own
-// (cmd/jevlin's update stamp and resume stamp).
-func DecodeProblem(err error) string { return decodeProblem(err) }
-
+// decodeProblem is the client's own words for why a record did not decode.
+// It is this package's: cmd/jevlin's records never print a decode error at
+// all; the update stamp answers with one fixed sentence and the resume stamp
+// with an empty record.
 func decodeProblem(err error) string {
 	var syntax *json.SyntaxError
 	var typ *json.UnmarshalTypeError

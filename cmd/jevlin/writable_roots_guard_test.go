@@ -20,11 +20,13 @@ package main
 // What it sees: references by any import name (aliases resolved through
 // the file's imports; a dot import of a watched package is itself a
 // failure), in os, io/ioutil, syscall, golang.org/x/sys/unix,
-// golang.org/x/sys/windows and this module's pkg/fsx. os.OpenRoot is listed
-// only inside pkg/fsx, so an *os.Root anywhere else is a failure. What it
-// does not see: methods on a handle a listed open returned (the open's
-// entry answers for its handle), and a call through a function value that
-// came from another package. Those are a review's to catch.
+// golang.org/x/sys/windows and this module's pkg/fsx. os.OpenRoot is
+// watched and nowhere listed, so an *os.Root anywhere is a failure until
+// someone classifies it (an earlier version's files kept a directory below
+// a root and had one; nothing does now). What it does not see: methods on a
+// handle a listed open returned (the open's entry answers for its handle),
+// and a call through a function value that came from another package. Those
+// are a review's to catch.
 //
 // The reasons fall in four kinds. "root" is a writable root, safe by
 // construction: a name removed or renamed (neither follows a link), the
@@ -63,8 +65,7 @@ var watchedFileCalls = map[string]map[string]bool{
 		"RemoveDirectory", "CreateHardLink", "CreateSymbolicLink", "SetFileInformationByHandle", "NtCreateFile",
 		"NtSetInformationFile"),
 	"github.com/jevlinai/jevlin-go/pkg/fsx": nameSet("WriteFileAtomic", "WriteFileExclusive", "ReplaceFile", "MoveFileDurable",
-		"RemoveFileDurable", "CreateNew", "ReadRegular", "ReadRegularNoFollow", "OpenLock", "OpenLockExisting", "OpenRoot",
-		"SyncDirectory"),
+		"RemoveFileDurable", "CreateNew", "ReadRegular", "ReadRegularNoFollow", "OpenLock", "SyncDirectory"),
 }
 
 func nameSet(names ...string) map[string]bool {
@@ -111,7 +112,7 @@ var classifiedFileCalls = map[fileCallSite]fileCallClass{
 	{"cmd/jevlin/filelock_unix.go", "tryLockFile", "fsx.OpenLock"}:                      {1, "root and outside: connect.lock in the state dir, and the lifecycle locks; no link followed"},
 	{"cmd/jevlin/filelock_windows.go", "tryLockFile", "fsx.OpenLock"}:                   {1, "root and outside: connect.lock and the lifecycle locks; no reparse point followed, share mode 0"},
 	{"cmd/jevlin/ownership.go", "npmLayoutKind", "os.ReadFile"}:                         {1, "outside: an npm package's own package.json"},
-	{"cmd/jevlin/setup.go", "setupRun.config", "os.Rename"}:                             {1, "outside: jevlin.toml, set aside under a name beside it in the installation's own root"},
+	{"cmd/jevlin/setup.go", "setupRun.config", "os.Rename"}:                             {2, "outside: jevlin.toml, set aside under a name beside it in the installation's own root, and put back when the new file cannot be published"},
 	{"cmd/jevlin/setup.go", "setupRun.admit", "os.MkdirAll"}:                            {1, "outside: the installation directory"},
 	{"cmd/jevlin/setup.go", "setupRun.directories", "os.MkdirAll"}:                      {1, "root: setup creates the installation home and the roots themselves, never a path below one"},
 	{"cmd/jevlin/setup_adopt.go", "adoption.doMove", "fsx.MoveFileDurable"}:             {1, "outside: setup's adoption, from a set-aside sibling, ownership-checked, at a terminal"},
@@ -145,7 +146,7 @@ var classifiedFileCalls = map[fileCallSite]fileCallClass{
 	{"cmd/jevlin/uninstall.go", "uninstallRun.applyBinary", "os.RemoveAll"}:             {1, "outside: the binary's directory"},
 	{"cmd/jevlin/uninstall.go", "uninstallRun.applyEnvironment", "fsx.WriteFileAtomic"}: {1, "outside: the shell profile"},
 	{"cmd/jevlin/uninstall.go", "uninstallRun.applyPurge", "os.RemoveAll"}:              {1, "root: purge removes the directories; RemoveAll removes a link, never what it points at"},
-	{"cmd/jevlin/uninstall.go", "uninstallRun.closing", "os.ReadDir"}:                   {1, "outside: the installation home"},
+	{"cmd/jevlin/uninstall.go", "uninstallRun.sayLeftInHome", "os.ReadDir"}:             {1, "outside: the installation home, listed after a purge to name what it left"},
 	{"cmd/jevlin/uninstall.go", "uninstallRun.purgeSet", "os.ReadDir"}:                  {1, "outside: the installation home"},
 	{"cmd/jevlin/uninstall.go", "uninstallRun.removeHomeIfEmpty", "os.ReadDir"}:         {1, "outside: the installation home"},
 	{"cmd/jevlin/uninstall.go", "uninstallRun.removeHomeIfEmpty", "os.Remove"}:          {1, "outside: the installation directory"},
@@ -186,7 +187,6 @@ var classifiedFileCalls = map[fileCallSite]fileCallClass{
 	{"pkg/fsx/confined.go", "CreateNew", "os.OpenFile"}:                                 {1, "fsx: O_EXCL, never an existing name"},
 	{"pkg/fsx/confined.go", "CreateNew", "os.Remove"}:                                   {1, "fsx: removes the file it just created"},
 	{"pkg/fsx/confined_unix.go", "openLock", "os.OpenFile"}:                             {1, "fsx: O_NOFOLLOW, then a regular-file check"},
-	{"pkg/fsx/confined_unix.go", "openLockExisting", "os.OpenFile"}:                     {1, "fsx: O_NOFOLLOW and O_NONBLOCK, then a regular-file check"},
 	{"pkg/fsx/confined_unix.go", "openNoFollow", "os.OpenFile"}:                         {1, "fsx: O_NOFOLLOW and O_NONBLOCK, then a regular-file check"},
 	{"pkg/fsx/confined_unix.go", "openNoWait", "os.OpenFile"}:                           {1, "fsx: O_NONBLOCK, then a regular-file check"},
 	{"pkg/fsx/confined_windows.go", "openExclusive", "windows.CreateFile"}:              {1, "fsx: FILE_FLAG_OPEN_REPARSE_POINT, then an attribute check"},
@@ -200,8 +200,6 @@ var classifiedFileCalls = map[fileCallSite]fileCallClass{
 	{"pkg/fsx/publication_windows.go", "publish", "windows.MoveFileEx"}:                 {1, "fsx: publishes its own staged file, write-through"},
 	{"pkg/fsx/publication_windows.go", "removeDurable", "os.CreateTemp"}:                {1, "fsx: the exclusive random staging name"},
 	{"pkg/fsx/publication_windows.go", "removeDurable", "os.Remove"}:                    {1, "fsx: removes its own staging name"},
-	{"pkg/fsx/root.go", "OpenRoot", "os.OpenRoot"}:                                      {1, "fsx: the only os.Root in the module; Lstat first, then SameFile on what opened"},
-	{"pkg/fsx/root_windows.go", "Root.pinDir", "windows.CreateFile"}:                    {1, "fsx: pins a directory without FILE_SHARE_DELETE, checked against the root's own resolution"},
 }
 
 func TestEveryFileOperationIsClassifiedForTheWritableRoots(t *testing.T) {
@@ -232,7 +230,7 @@ func TestEveryFileOperationIsClassifiedForTheWritableRoots(t *testing.T) {
 	sort.Strings(wrong)
 	for _, s := range unlisted {
 		t.Errorf("unclassified file operation: %s\n\tIf it can touch the state or sessions directory, use pkg/fsx's confined operations"+
-			" (CreateNew, ReadRegular, OpenLock, Root); then add it to classifiedFileCalls with the reason it is safe.", s)
+			" (CreateNew, ReadRegular, OpenLock); then add it to classifiedFileCalls with the reason it is safe.", s)
 	}
 	for _, s := range wrong {
 		t.Errorf("classifiedFileCalls is out of date: %s", s)

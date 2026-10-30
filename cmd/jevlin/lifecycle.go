@@ -50,10 +50,13 @@ package main
 // resolving them in one command and not another would split the gate.
 //
 // Waiting. A person's command — foreground connect, setup — waits at most
-// lifecycleForegroundWait for the gate, then refuses and exits non-zero. A
-// detached child (the connect -resume a search started) makes one attempt
+// lifecycleForegroundWait for the gate, then refuses and exits non-zero. The
+// detached child, the connect -resume a search started, makes one attempt
 // and, when the gate is held, exits 0 quietly and records nothing: an
-// uninstall or upgrade window is short. Nothing here is on the search path.
+// uninstall or upgrade window is short. It is known by its -resume flag,
+// which only the detached resume is given; nothing in its environment marks
+// it, and nothing reads the environment to decide. Nothing here is on the
+// search path.
 //
 // A gate that cannot be opened at all — as opposed to one somebody holds —
 // admits an ordinary operation without it: the destructive side opens the
@@ -72,10 +75,6 @@ import (
 const (
 	lifecycleGateSuffix = ".lifecycle.lock"
 	setupLockFile       = "setup.lock"
-	// detachedChildEnv is set by spawnDetached, the single choke point for
-	// every detached child, so a child can tell it was not started by a
-	// person without a flag a person could also type.
-	detachedChildEnv = "JEVLIN_DETACHED"
 	// lifecycleBusyRetryAfter is the retry hint a machine caller gets.
 	lifecycleBusyRetryAfter = 5 * time.Second
 )
@@ -220,14 +219,9 @@ type admission int
 
 const (
 	admitForeground      admission = iota // a person's command: wait, then refuse
-	admitDetached                         // a detached child: one attempt, quiet exit
+	admitDetached                         // a detached child (connect -resume): one attempt, quiet exit
 	admitAlreadyAdmitted                  // the caller holds admission for this run
 )
-
-// detachedChild reports whether this process was started by spawnDetached.
-func detachedChild(getenv func(string) string) bool {
-	return getenv(detachedChildEnv) == "1"
-}
 
 // admitOrdinary passes the gate for setup or connect. The returned
 // lock, possibly nil, is released by the caller as soon as it holds its own
@@ -435,11 +429,4 @@ func (ex *lifecycleExclusion) release() {
 		}
 	}
 	ex.gate.release()
-}
-
-// detachedEnvironment is a detached child's environment: the parent's, with
-// detachedChildEnv set. Later duplicates win in os/exec, so an inherited
-// value cannot mask it.
-func detachedEnvironment(parent []string) []string {
-	return append(append([]string(nil), parent...), detachedChildEnv+"=1")
 }

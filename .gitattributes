@@ -1,7 +1,8 @@
-# Line endings are part of the protocol here: the BIP39 wordlist is hashed
-# against the official SHA-256, and the skill and plugin files are embedded
-# into the binary byte for byte. A CRLF checkout would ship a wallet that
-# derives the wrong keys. Everything text stays LF on every platform.
+# Line endings are part of what ships: the skill and plugin files are
+# embedded into the binary byte for byte, and a CRLF checkout would embed
+# different bytes than the ones that were reviewed and ship an installation
+# whose rendered files differ from the goldens the tests hold them to.
+# Everything text stays LF on every platform.
 * text=auto eol=lf
 *.txt text eol=lf
 *.md text eol=lf

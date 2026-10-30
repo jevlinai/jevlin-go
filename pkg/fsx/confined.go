@@ -24,8 +24,10 @@ package fsx
 //
 // Writing directly inside a writable root needs nothing more, because the
 // root itself cannot be replaced from inside. A path that goes through a
-// directory below it can be redirected by replacing that directory, so that
-// goes through Root.
+// directory below it can be redirected by replacing that directory, and
+// nothing here opens one: every caller names a root's own top level. An
+// earlier version's files kept a directory below a root and went through an
+// os.Root for it; that type left with them.
 
 import (
 	"errors"
@@ -131,22 +133,6 @@ func OpenLock(path string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	return requireRegularLock(f, path)
-}
-
-// OpenLockExisting opens an existing lock file read-only: the fallback where
-// a sandbox denies the read-write open. OpenLock's rules hold: no link
-// followed, only a regular file, and
-// nothing created or written. Share mode 0 is kept on Windows.
-func OpenLockExisting(path string) (*os.File, error) {
-	f, err := openLockExisting(path)
-	if err != nil {
-		return nil, err
-	}
-	return requireRegularLock(f, path)
-}
-
-func requireRegularLock(f *os.File, path string) (*os.File, error) {
 	info, err := f.Stat()
 	if err != nil {
 		_ = f.Close()

@@ -25,7 +25,7 @@ import (
 // sandbox (hard invariant 19), and status, doctor and connect print from its
 // records; the records beside credentials.json (the registration journal,
 // the claim record, the update stamp) are held to the same rule, because a
-// decode error must repeat none of them either (auth.DecodeProblem). Rather
+// decode error must repeat none of them either (auth.decodeError). Rather
 // than list the fields someone thought of, this builds an installation
 // through the real commands, takes every file they left in it, and plants a
 // terminal escape in every string a record holds, one at a time, then runs

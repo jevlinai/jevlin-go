@@ -1,7 +1,6 @@
 package fsx
 
 import (
-	"bytes"
 	"errors"
 	"io/fs"
 	"os"
@@ -147,86 +146,6 @@ func TestOpenLockNeverWritesAHardLinkedFile(t *testing.T) {
 	requireCanary(t, canary)
 }
 
-func TestOpenRootRefusesASymlinkedRoot(t *testing.T) {
-	root, _ := writableRoot(t)
-	elsewhere := t.TempDir()
-	link := filepath.Join(filepath.Dir(root), "linked-root")
-	symlinkOrSkip(t, elsewhere, link)
-	if r, err := OpenRoot(link); err == nil {
-		_ = r.Close()
-		t.Fatal("a root spelled through a symlink was opened")
-	}
-	r, err := OpenRoot(root)
-	if err != nil {
-		t.Fatalf("a real root: %v", err)
-	}
-	_ = r.Close()
-}
-
-// The spool's quarantine is the one directory below a root: a sandboxed
-// command can replace it with a link out of the root, and a move into it
-// must then fail rather than land outside.
-func TestRootRefusesASubdirectoryReplacedByALinkOut(t *testing.T) {
-	root, _ := writableRoot(t)
-	outside := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "rec.json"), []byte("record"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	symlinkOrSkip(t, outside, filepath.Join(root, "quarantine"))
-
-	r, err := OpenRoot(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = r.Close() }()
-	if err := r.MkdirAll("quarantine", 0o700); err == nil {
-		t.Error("MkdirAll accepted a subdirectory that is a link out of the root")
-	}
-	if _, err := r.ReadDir("quarantine"); err == nil {
-		t.Error("ReadDir listed a directory outside the root")
-	}
-	if err := r.MoveDurable("rec.json", filepath.Join("quarantine", "rec.json")); err == nil {
-		t.Error("MoveDurable moved a record through a link out of the root")
-	}
-	entries, err := os.ReadDir(outside)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 0 {
-		t.Fatalf("something reached the directory outside the root: %v", entries)
-	}
-	if _, err := os.Stat(filepath.Join(root, "rec.json")); err != nil {
-		t.Fatalf("the record left its place: %v", err)
-	}
-}
-
-func TestRootMovesIntoARealSubdirectory(t *testing.T) {
-	root, _ := writableRoot(t)
-	if err := os.WriteFile(filepath.Join(root, "rec.json"), []byte("record"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	r, err := OpenRoot(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = r.Close() }()
-	if err := r.MkdirAll("quarantine", 0o700); err != nil {
-		t.Fatal(err)
-	}
-	dest := filepath.Join("quarantine", "rec.json")
-	if err := r.MoveDurable("rec.json", dest); err != nil {
-		t.Fatal(err)
-	}
-	got, err := r.ReadRegular(dest, 64)
-	if err != nil || !bytes.Equal(got, []byte("record")) {
-		t.Fatalf("read back %q, %v", got, err)
-	}
-	entries, err := r.ReadDir("quarantine")
-	if err != nil || len(entries) != 1 {
-		t.Fatalf("quarantine lists %v, %v", entries, err)
-	}
-}
-
 // ReadRegularNoFollow's open refuses a link at the name, so a check made on
 // the name before it cannot be outrun by swapping one in.
 func TestReadRegularNoFollowRefusesALink(t *testing.T) {
@@ -243,61 +162,5 @@ func TestReadRegularNoFollowRefusesALink(t *testing.T) {
 	data, info, err := ReadRegularNoFollow(real, 1<<20)
 	if err != nil || string(data) != "ours" || !info.Mode().IsRegular() {
 		t.Fatalf("a regular file: %q, %v, %v", data, info, err)
-	}
-}
-
-func TestRootWritesRemovesAndPublishesExclusively(t *testing.T) {
-	root, _ := writableRoot(t)
-	r, err := OpenRoot(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = r.Close() }()
-	if err := r.WriteFileAtomic("a.json", []byte("one"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.WriteFileAtomic("a.json", []byte("two"), 0o600); err != nil {
-		t.Fatalf("replacing: %v", err)
-	}
-	if got, err := r.ReadRegular("a.json", 64); err != nil || string(got) != "two" {
-		t.Fatalf("read back %q, %v", got, err)
-	}
-	if err := r.WriteFileExclusive("a.json", []byte("three"), 0o600); !errors.Is(err, fs.ErrExist) {
-		t.Fatalf("exclusive over an existing file: %v, want fs.ErrExist", err)
-	}
-	if err := r.RemoveDurable("a.json"); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.RemoveDurable("a.json"); err != nil {
-		t.Fatalf("removing an absent file: %v", err)
-	}
-	entries, err := r.ReadDir(".")
-	if err != nil || len(entries) != 0 {
-		t.Fatalf("the root still lists %v (staging names left behind?), %v", entries, err)
-	}
-}
-
-// A root reopened by path is held to the directory it was first opened on.
-func TestRootSameDirectoryRefusesASwappedDirectory(t *testing.T) {
-	root, _ := writableRoot(t)
-	first, err := OpenRoot(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	id := first.Identity()
-	_ = first.Close()
-	if err := os.Rename(root, root+".aside"); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(root, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	again, err := OpenRoot(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = again.Close() }()
-	if again.SameDirectory(id) {
-		t.Fatal("a directory swapped in at the root's path passed as the one first opened")
 	}
 }
