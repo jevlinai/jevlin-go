@@ -363,13 +363,20 @@ func runFlushAdmitted(ctx context.Context, cfg *config.Config, cfgPath string, f
 		return rep, code
 	}
 
+	// Enrolled means holding an authorization this configuration's AS
+	// issued: one another AS issued, or one an earlier version stored with no
+	// issuer, is sent to none, and `jevlin connect` replaces it.
 	enrolled := func() bool {
-		_, ok, err := store.LoadRefreshToken()
+		ok, err := store.AuthorizationFor(m.ASBaseURL)
 		return err == nil && ok
 	}
 	if !enrolled() {
-		_ = store.MarkHealth(auth.HealthFlush, auth.HealthAuthUnavailable, "no refresh authorization is available")
-		fmt.Fprintln(stderr, "jevlin flush: this installation is not enrolled; run: jevlin enroll")
+		_ = store.MarkHealth(auth.HealthFlush, auth.HealthAuthUnavailable, "no refresh authorization this AS issued is available")
+		fix := "jevlin enroll"
+		if _, ok, err := store.LoadAgentRegistration(); err == nil && ok {
+			fix = "jevlin connect" // it enrolls this installation with the configured AS
+		}
+		fmt.Fprintln(stderr, "jevlin flush: this installation is not enrolled with this authorization server; run: "+fix)
 		return rep, exitClientErr
 	}
 

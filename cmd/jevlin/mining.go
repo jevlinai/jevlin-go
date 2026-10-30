@@ -218,7 +218,14 @@ func cmdMiningDisable(args []string, stdout, stderr io.Writer, getenv func(strin
 	// AS family and no agent.json at all. Keying only on LastEnrollmentSlot
 	// left that installation's family untouched forever — "nothing to
 	// disable" was true of the registration, never of the mining itself.
+	// An authorization this configuration's AS did not issue (an earlier
+	// version's token, or another AS's) is still something to stop, but not
+	// something this client can revoke: no revoke is promised for it.
 	_, hasRefresh, err := store.LoadRefreshToken()
+	notRevocable := auth.NotUsableHere(err)
+	if notRevocable {
+		hasRefresh, err = true, nil
+	}
 	if err != nil {
 		fmt.Fprintln(stderr, "jevlin:", err)
 		return exitTransport
@@ -254,15 +261,23 @@ func cmdMiningDisable(args []string, stdout, stderr io.Writer, getenv func(strin
 	ctx, cancel := operatorContext(30 * time.Second)
 	defer cancel()
 	revoked := !hasRefresh
-	if !revoked {
+	if !revoked && !notRevocable {
 		if !miningASConfigured(cfg.Mining) {
 			fmt.Fprintln(stdout, "no authorization server configured; local mining is stopped and the stored authorization was not revoked")
 		} else {
 			oauthClient, _, berr := buildMiningClient(ctx, cfg.Mining)
-			if berr == nil && oauthClient.Revoke(ctx) == nil {
-				revoked = true
+			if berr == nil {
+				rerr := oauthClient.Revoke(ctx)
+				revoked = rerr == nil
+				notRevocable = auth.NotUsableHere(rerr)
 			}
 		}
+	}
+	if notRevocable {
+		// Nothing later can revoke it either, so no marker promises that.
+		fmt.Fprintln(stdout, "the stored authorization was not issued by this configuration's authorization server, "+
+			"so it cannot be revoked from here; local mining is stopped, and the next enrollment replaces it")
+		revoked = true
 	}
 	if revoked {
 		if err := store.ClearRevokePending(); err != nil {
@@ -304,9 +319,11 @@ func retryPendingRevoke(ctx context.Context, store *auth.Store, oauthClient *aut
 	if err != nil || !pending {
 		return
 	}
-	if err := oauthClient.Revoke(ctx); err != nil {
-		return
+	if err := oauthClient.Revoke(ctx); err != nil && !auth.NotUsableHere(err) {
+		return // the next run tries again
 	}
+	// Revoked, or an authorization this AS did not issue, which no later
+	// run can revoke either: the marker would only keep starting resumes.
 	_ = store.ClearRevokePending()
 }
 

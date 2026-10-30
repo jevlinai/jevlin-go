@@ -137,7 +137,10 @@ type doctorFacts struct {
 
 	// The local half, which answers whether or not the AS does.
 	HasRefresh bool
-	LocalErr   error
+	// AuthElsewhere: an authorization is stored, but not one this
+	// configuration's AS issued (it records no issuer, or another).
+	AuthElsewhere bool
+	LocalErr      error
 	// HasRegistration/RegistrationSlot/RegistrationAt come from the
 	// agent-onboarding registration (agent.json), the one durable local
 	// record of a past mining enrollment succeeding — see
@@ -274,6 +277,10 @@ func doctorEnrolledCheck(f doctorFacts) doctorCheck {
 		c.Verdict = verdictUnknown
 		c.Detail = fmt.Sprintf("cannot read this installation's state directory — %v", redact.Error(f.LocalErr))
 		c.Fix = "check mining.state_dir exists and is owner-only"
+	case f.AuthElsewhere:
+		c.Verdict = verdictNo
+		c.Detail = "the stored authorization was not issued by this configuration's AS, so it is sent to none"
+		c.Fix = doctorEnrollFix(f, "run `jevlin connect`: it enrolls this installation with this AS")
 	case !f.HasRefresh:
 		c.Verdict = verdictNo
 		c.Detail = "this installation holds no authorization, so it cannot talk to the AS at all"
@@ -718,8 +725,16 @@ func gatherDoctorFactsFor(ctx context.Context, as asClient, m config.Mining, min
 		f.LocalStateKnown = true
 		f.MiningDecision = store.ReadMiningDecision()
 		_, ok, err := store.LoadRefreshToken()
-		if err != nil {
+		switch {
+		case auth.NotUsableHere(err):
+			f.AuthElsewhere = true
+		case err != nil:
 			f.LocalErr = err
+		}
+		if ok && m.ASBaseURL != "" {
+			if mine, aerr := store.AuthorizationFor(m.ASBaseURL); aerr == nil && !mine {
+				ok, f.AuthElsewhere = false, true
+			}
 		}
 		f.HasRefresh = ok
 		if f.HasRefresh {

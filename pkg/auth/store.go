@@ -245,7 +245,7 @@ const refreshAuthorizationVersion = 1
 // AS that issued it: written by an earlier client, or by something else. It
 // is sent nowhere; enrolling again replaces it.
 var ErrUnboundRefreshAuthorization = errors.New("auth: the stored AS authorization does not record the AS that issued it, " +
-	"so it is sent to none; run jevlin connect (or jevlin enroll) to authorize this installation again")
+	"so it is sent to none; run `jevlin connect` to authorize this installation again")
 
 // SaveRefreshToken durably replaces the renewable refresh authorization,
 // recording asOrigin as its issuer (rotation makes this a frequent,

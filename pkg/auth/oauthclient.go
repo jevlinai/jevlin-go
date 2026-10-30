@@ -321,7 +321,35 @@ func (c *OAuthClient) storedAuthorization() (string, bool, error) {
 
 // ErrAuthorizationElsewhere is a stored authorization issued by another AS
 // than the one this client is configured for.
-var ErrAuthorizationElsewhere = errors.New("auth: the stored AS authorization was issued by another authorization server than this configuration names")
+var ErrAuthorizationElsewhere = errors.New("auth: the stored AS authorization was issued by another authorization server than this configuration names; " +
+	"run `jevlin connect` to authorize this installation with it")
+
+// NotUsableHere reports whether err says the stored authorization is not one
+// this configuration's AS issued: it records no issuer, or another one. Such
+// an authorization can be neither refreshed nor revoked from here; enrolling
+// again replaces it.
+func NotUsableHere(err error) bool {
+	return errors.Is(err, ErrUnboundRefreshAuthorization) || errors.Is(err, ErrAuthorizationElsewhere)
+}
+
+// AuthorizationFor reports whether the stored authorization was issued by
+// the AS at asBaseURL: false when none is stored, when it records no issuer,
+// or when it records another. err is a failure to read the store, which says
+// nothing either way.
+func (s *Store) AuthorizationFor(asBaseURL string) (bool, error) {
+	rec, ok, err := s.LoadRefreshToken()
+	if errors.Is(err, ErrUnboundRefreshAuthorization) {
+		return false, nil
+	}
+	if err != nil || !ok {
+		return false, err
+	}
+	want, err := egress.Origin(asBaseURL)
+	if err != nil {
+		return false, nil
+	}
+	return rec.AS == want, nil
+}
 
 // --- authorization code + PKCE over a loopback redirect (RFC 8252) ---
 

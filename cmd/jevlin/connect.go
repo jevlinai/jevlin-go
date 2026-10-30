@@ -1479,7 +1479,12 @@ func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Cl
 		return true, exitOK // search-only claim: nothing further for connect to do
 	}
 
-	if reg.LastEnrollmentSlot == "" {
+	// Enroll when no enrollment is recorded, and also when one is recorded
+	// but the authorization on file is not this configuration's AS's: an
+	// earlier version's token that records no issuer, or a token another AS
+	// issued before as_url changed. Either can be neither refreshed nor
+	// revoked from here, and this is the one command the refusals name.
+	if reg.LastEnrollmentSlot == "" || !enrollmentUsable(store, cfg.Mining) {
 		if !miningActive(store) {
 			return true, exitOK // local opt-out or disable (design decision 3)
 		}
@@ -1558,6 +1563,18 @@ func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Cl
 		}
 	}
 	return true, exitOK
+}
+
+// enrollmentUsable reports whether the authorization on file was issued by
+// this configuration's AS. With no AS configured there is nothing to enroll
+// against, and a store that cannot be read says nothing, so both count as
+// usable: neither is a reason to enroll again.
+func enrollmentUsable(store *auth.Store, m config.Mining) bool {
+	if !miningASConfigured(m) {
+		return true
+	}
+	ok, err := store.AuthorizationFor(m.ASBaseURL)
+	return err != nil || ok
 }
 
 // legacyPayoutNotice is what a run says about a payout.json in the state
@@ -1864,7 +1881,7 @@ func shouldResume(cfg *config.Config, getenv func(string) string) bool {
 		if !hasScope(reg.Scopes, "mining") {
 			return false // search-only claim: settled, nothing left to resume
 		}
-		if reg.LastEnrollmentSlot == "" {
+		if reg.LastEnrollmentSlot == "" || !enrollmentUsable(store, cfg.Mining) {
 			if !miningActive(store) || reg.SlotRefusal != "" {
 				return false // opted out/disabled, a multi-slot refusal on file, or nothing configured — either way, permanent until reconfigured
 			}

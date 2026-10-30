@@ -1285,7 +1285,11 @@ func (r *uninstallRun) revocationDecision() (reason string, try bool) {
 	if err != nil {
 		return "no stored authorization to revoke", false
 	}
-	if _, has, err := store.LoadRefreshToken(); err != nil || !has {
+	_, has, err := store.LoadRefreshToken()
+	if auth.NotUsableHere(err) {
+		return "the stored authorization was not issued by this configuration's authorization server, so it cannot be revoked from here", false
+	}
+	if err != nil || !has {
 		return "no stored authorization to revoke", false
 	}
 	if !miningASConfigured(m) {
