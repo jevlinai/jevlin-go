@@ -48,8 +48,12 @@ the participants who mine; this client carries no compatibility with it.
   **Upgrade notes.** There is no upgrade path from the 0.6.x line: its config is refused, its
   `wallet/`, `payout.json`, intake and spool directories and lock files are neither read nor
   removed, and a machine moving to this client runs `jevlin setup` on a fresh installation
-  directory. The files a participant keeps (`credentials.json`, the registration journal,
-  `claim.json`, the release check's record) live beside the state directory, in the
+  directory. That setup registers a new agent with a new search key; the 0.6.x
+  registration is not adopted, because the refused config stops setup before adoption, and
+  its claim stays on the account as it was. A 0.6.x installation, its hooks included, is
+  removed by its own binary's `uninstall`; this client's `uninstall` refuses its config the
+  same way `setup` does. The files a participant keeps (`credentials.json`, the registration
+  journal, `claim.json`, the release check's record) live beside the state directory, in the
   installation directory, as before.
 
 ## v0.6.1 — 2026-10-27
