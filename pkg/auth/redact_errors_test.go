@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -44,5 +45,26 @@ func TestATokenEndpointRefusalIsRedactedAndKeepsItsType(t *testing.T) {
 	}
 	if in.ErrorDescription == re.ErrorDescription {
 		t.Error("the original error was redacted in place, or not at all")
+	}
+}
+
+// A token endpoint that answers with no error code is described by its
+// status, which the scrubbed error keeps, and never by a panic.
+func TestATokenEndpointRefusalWithNoCodeStillSaysItsStatus(t *testing.T) {
+	in := &oauth2.RetrieveError{
+		Response: &http.Response{Status: "502 Bad Gateway", StatusCode: http.StatusBadGateway, Header: http.Header{"Set-Cookie": {"s=" + echoedSecret}}},
+		Body:     []byte("upstream echoed " + echoedSecret),
+	}
+	var msg string
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("Error() panicked: %v", r)
+			}
+		}()
+		msg = scrubRetrieveError(in).Error()
+	}()
+	if !strings.Contains(msg, "502 Bad Gateway") || strings.Contains(msg, echoedSecret) {
+		t.Errorf("the scrubbed error: %q", msg)
 	}
 }

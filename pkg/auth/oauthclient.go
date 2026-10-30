@@ -287,7 +287,13 @@ func scrubRetrieveError(err error) error {
 		return err
 	}
 	scrubbed := *re
+	// The response goes, with its headers and body reader; its status
+	// stays, because RetrieveError.Error reads it when the endpoint sent no
+	// error code, and on a nil response that read panics.
 	scrubbed.Response = nil
+	if re.Response != nil {
+		scrubbed.Response = &http.Response{Status: redact.String(re.Response.Status), StatusCode: re.Response.StatusCode}
+	}
 	scrubbed.ErrorDescription = redact.String(re.ErrorDescription)
 	scrubbed.ErrorURI = redact.String(re.ErrorURI)
 	scrubbed.Body = []byte(redact.String(string(re.Body)))
