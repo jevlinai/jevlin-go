@@ -240,7 +240,8 @@ the old file named none, it names the defaults, and `JEVLIN_ROUTER_URL`, `JEVLIN
 `JEVLIN_AGENTS_API_URL`, when set, choose over both. Nothing else is migrated: a setting you
 changed by hand, such as `turn_end` or `tier`, you copy into the new file yourself, under its
 format-1 key ([reference, Config](reference.md#config)). Files only the earlier version used are left untouched where they
-are, never read and never named; this version has no use for them, and you may delete them.
+are, never read and never named. This version has no use for them, but one of them may hold a key
+the earlier version used, so look before deleting any of them.
 
 ## Removing it and coming back
 
@@ -270,7 +271,8 @@ files, which are safe to delete.
 console. Folders your config names outside the installation are left and listed. Anything else
 still in the installation directory afterwards — files an earlier version or another program
 put there, which this version neither reads nor removes — is listed by full path, as it is in
-the dry run, so you can delete it yourself. Close agent
+the dry run; one of them may hold a key an earlier version used, so look before deleting any of
+them. Close agent
 sessions first, or a search may recreate folders. A run stopped at its confirmation leaves the
 installation exactly as it was.
 

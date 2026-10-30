@@ -72,8 +72,8 @@ the participants who mine; this client carries no compatibility with it.
   search key, and rewrites the hooks and skills in place; any other setting changed by hand in
   the old file is copied over by hand, under its format-1 key. Files only the earlier version
   used are left untouched and never read; `jevlin uninstall -purge-state` does not remove them,
-  and lists what it left in the installation directory by full path so you can delete them
-  yourself. A native 0.6.x install with automatic updates on, the default, installs this
+  and lists what it left in the installation directory by full path. One of them may hold a key
+  the earlier version used, so look before deleting any of them. A native 0.6.x install with automatic updates on, the default, installs this
   version by itself at its next daily check, and then needs one `jevlin setup`: until it has,
   every command that reads the config says to run `jevlin setup`, the hooks run the agent's
   tool call without a lineage file, and the daily check goes on running. `jevlin upgrade

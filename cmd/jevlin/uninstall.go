@@ -1511,7 +1511,7 @@ func (r *uninstallRun) sayLeftInHome(purged []string, dry bool) {
 			verb = "Would leave in"
 		}
 		r.printf("\n%s %s, not this version's to remove: files an earlier version or another program put\n"+
-			"there. Delete them yourself if you no longer want them.\n", verb, r.home)
+			"there. One may hold a key an earlier version used; look before deleting any of them.\n", verb, r.home)
 		for _, p := range left {
 			r.printf("  %s\n", p)
 		}

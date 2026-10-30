@@ -557,5 +557,8 @@ func (a *adoption) finish() {
 	for _, e := range entries {
 		names = append(names, e.Name())
 	}
-	a.say("left the rest of %s in place (%s); delete it when you like", a.src, strings.Join(names, ", "))
+	// Not called deletable: this client keeps no list of what an earlier
+	// version left, and one of those files can hold a key.
+	a.say("left the rest of %s in place (%s): this version neither reads nor moves it, and it may hold a key an earlier version used, so look before deleting any of it",
+		a.src, strings.Join(names, ", "))
 }
