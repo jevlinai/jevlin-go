@@ -15,7 +15,10 @@ package main
 // An existing file is never rewritten. It is loaded first, always, through
 // pkg/config (planSetupConfig): a format-1 file that loads is left byte for
 // byte; a file with no schema line, from an earlier version, is set aside
-// under a name of its own and a fresh format-1 file takes its place; any
+// under a name of its own and a fresh format-1 file takes its place, written
+// with the directories and endpoints the earlier file named (earlierConfig),
+// because the registration and its key live beside that state directory and
+// are bound to those endpoints; any
 // other file, a format-1 file with a mistake in it included, is refused with
 // the error and its path, and nothing is written.
 
@@ -27,6 +30,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/BurntSushi/toml"
 
 	"github.com/jevlinai/jevlin-go/pkg/config"
 	"github.com/jevlinai/jevlin-go/pkg/fsx"
@@ -78,21 +83,110 @@ type setupValues struct {
 	router       string
 	platformURL  string
 	agentsAPIURL string
+	// stateDir and sessionsDir are written as given; empty is the default
+	// layout under home.
+	stateDir    string
+	sessionsDir string
+	// fromEnv names the endpoints a JEVLIN_* variable chose for this run,
+	// which a value carried from an earlier file does not replace.
+	fromEnv map[string]bool
 }
 
 func resolveSetupValues(home string, getenv func(string) string) setupValues {
+	v := setupValues{home: home, fromEnv: map[string]bool{}}
 	pick := func(name, def string) string {
-		if v := getenv(name); v != "" {
-			return v
+		if e := getenv(name); e != "" {
+			v.fromEnv[name] = true
+			return e
 		}
 		return def
 	}
-	return setupValues{
-		home:         home,
-		router:       pick("JEVLIN_ROUTER_URL", config.DefaultRouterURL),
-		platformURL:  pick("JEVLIN_PLATFORM_URL", config.DefaultPlatformBaseURL),
-		agentsAPIURL: pick("JEVLIN_AGENTS_API_URL", config.DefaultAgentsAPIURL),
+	v.router = pick(config.EnvRouterURL, config.DefaultRouterURL)
+	v.platformURL = pick(config.EnvPlatformURL, config.DefaultPlatformBaseURL)
+	v.agentsAPIURL = pick(config.EnvAgentsAPIURL, config.DefaultAgentsAPIURL)
+	return v
+}
+
+// earlierConfig is what a config an earlier version wrote says about where
+// this installation keeps its identity and which endpoints it talks to:
+// the [mining] state directory (the registration, the agent record and
+// credentials.json sit beside it), the [miner] sessions directory, the
+// router ([miner] router_url, or the one search-router [[provider]]
+// upstream setup wrote), and the [platform] portal and agents API. The key
+// connect stored is bound to that router and agents API, so a fresh file
+// that named the compiled defaults instead would leave the key refused for
+// every search, and one that named the default state directory would make
+// connect register a second agent beside the first. Nothing else is
+// carried: a setting changed by hand is copied by hand, under its format-1
+// key. A file that does not decode carries nothing.
+type earlierConfig struct {
+	stateDir, sessionsDir             string
+	router, platformURL, agentsAPIURL string
+}
+
+func readEarlierConfig(data []byte) earlierConfig {
+	var f struct {
+		Provider []struct {
+			Name     string `toml:"name"`
+			Upstream string `toml:"upstream"`
+		} `toml:"provider"`
+		Mining struct {
+			StateDir string `toml:"state_dir"`
+		} `toml:"mining"`
+		Miner struct {
+			RouterURL   string `toml:"router_url"`
+			SessionsDir string `toml:"sessions_dir"`
+		} `toml:"miner"`
+		Platform struct {
+			BaseURL      string `toml:"base_url"`
+			AgentsAPIURL string `toml:"agents_api_url"`
+		} `toml:"platform"`
 	}
+	if _, err := toml.Decode(string(data), &f); err != nil {
+		return earlierConfig{}
+	}
+	e := earlierConfig{
+		stateDir:     f.Mining.StateDir,
+		sessionsDir:  f.Miner.SessionsDir,
+		router:       f.Miner.RouterURL,
+		platformURL:  f.Platform.BaseURL,
+		agentsAPIURL: f.Platform.AgentsAPIURL,
+	}
+	// The provider upstream was the router only in the shape setup wrote;
+	// an upstream an earlier proxy configuration named is not a router.
+	if e.router == "" && len(f.Provider) == 1 && f.Provider[0].Name == "search-router" {
+		e.router = f.Provider[0].Upstream
+	}
+	// An earlier version kept the sessions directory beside the state
+	// directory unless told otherwise, as format 1 does.
+	if e.sessionsDir == "" && e.stateDir != "" {
+		e.sessionsDir = filepath.Join(filepath.Dir(e.stateDir), "sessions")
+	}
+	return e
+}
+
+// carrying is v with what an earlier file named in place of a default; an
+// endpoint a variable chose for this run stays the variable's.
+func (v setupValues) carrying(e earlierConfig) setupValues {
+	for _, f := range []struct {
+		env   string
+		value string
+		field *string
+	}{
+		{config.EnvRouterURL, e.router, &v.router},
+		{config.EnvPlatformURL, e.platformURL, &v.platformURL},
+		{config.EnvAgentsAPIURL, e.agentsAPIURL, &v.agentsAPIURL},
+	} {
+		if f.value != "" && !v.fromEnv[f.env] {
+			*f.field = f.value
+		}
+	}
+	if e.stateDir != "" {
+		v.stateDir, v.sessionsDir = e.stateDir, e.sessionsDir
+	} else if e.sessionsDir != "" {
+		v.sessionsDir = e.sessionsDir
+	}
+	return v
 }
 
 // tomlLines renders `key = value` pairs with the values quoted and the
@@ -148,9 +242,16 @@ func renderFreshConfig(v setupValues) ([]byte, error) {
 	// with no byte-order mark in the system's ANSI code page, so a comment
 	// with an em dash once showed the participant `\u00e2\u20ac\u201d`
 	// where the dash should be.
+	stateDir, sessionsDir := v.stateDir, v.sessionsDir
+	if stateDir == "" {
+		stateDir = filepath.Join(v.home, "state")
+	}
+	if sessionsDir == "" {
+		sessionsDir = filepath.Join(v.home, "sessions")
+	}
 	dirs, err := quoteAll(
-		"state_dir", filepath.Join(v.home, "state"),
-		"sessions_dir", filepath.Join(v.home, "sessions"),
+		"state_dir", stateDir,
+		"sessions_dir", sessionsDir,
 	)
 	if err != nil {
 		return nil, err
@@ -210,6 +311,7 @@ func planSetupConfig(path string, existing []byte, v setupValues, validate func(
 	case err == nil:
 		return configPlan{outcome: configLeft}, nil
 	case errors.Is(err, config.ErrLegacyConfig):
+		v = v.carrying(readEarlierConfig(existing))
 		data, ferr := fresh()
 		if ferr != nil {
 			return configPlan{}, ferr

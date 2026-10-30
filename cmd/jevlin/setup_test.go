@@ -642,7 +642,7 @@ func TestSetupSetsALegacyConfigAsideAndWritesFormatOne(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Set " + s.cfgPath() + " aside as " + aside + ": it is an older configuration format",
-		"Wrote " + s.cfgPath() + " in configuration format 1; copy any setting you changed by hand from the old file. Your registration and key are kept.",
+		"Wrote " + s.cfgPath() + " in configuration format 1, with the directories and endpoints the old file named; copy any other setting you changed by hand from the old file.\n",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("setup output missing %q:\n%s", want, out)

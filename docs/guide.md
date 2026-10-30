@@ -232,12 +232,14 @@ check itself goes no further until setup has run. On an npm install, run
 `npm install -g @jevlinsearch/jevlin@latest`, then `jevlin setup`.
 
 `jevlin setup` sets the old file aside as `jevlin.toml.old` (`.old.1`, `.old.2`, ... if the name
-is taken), writes `jevlin.toml` in format 1 naming the default hosts (or the ones `JEVLIN_ROUTER_URL`,
-`JEVLIN_PLATFORM_URL` and `JEVLIN_AGENTS_API_URL` name), keeps your
-registration and search key, and rewrites the hooks and skills of the agents it finds in place.
-Nothing in the old file is read or migrated: a setting you changed by hand, such as `turn_end` or
-`tier`, you copy into the new file yourself, under its format-1 key ([reference,
-Config](reference.md#config)). Files only the earlier version used are left untouched where they
+is taken), writes `jevlin.toml` in format 1, keeps your registration and search key, and rewrites
+the hooks and skills of the agents it finds in place. The new file names the state and sessions
+directories, the router, the portal and the agents API the old file named, because your
+registration and key live beside that state directory and the key is bound to those hosts; where
+the old file named none, it names the defaults, and `JEVLIN_ROUTER_URL`, `JEVLIN_PLATFORM_URL` and
+`JEVLIN_AGENTS_API_URL`, when set, choose over both. Nothing else is migrated: a setting you
+changed by hand, such as `turn_end` or `tier`, you copy into the new file yourself, under its
+format-1 key ([reference, Config](reference.md#config)). Files only the earlier version used are left untouched where they
 are, never read and never named; this version has no use for them, and you may delete them.
 
 ## Removing it and coming back

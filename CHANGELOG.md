@@ -67,9 +67,10 @@ the participants who mine; this client carries no compatibility with it.
   `status` print and ask you to type cannot be a sentence.
 
   **Upgrade notes.** Moving from 0.6.x is `jevlin setup`. It sets the old config aside as
-  `jevlin.toml.old`, writes `jevlin.toml` in configuration format 1, keeps the registration and
-  the search key, and rewrites the hooks and skills in place; a setting changed by hand in the
-  old file is copied over by hand, under its format-1 key. Files only the earlier version
+  `jevlin.toml.old`, writes `jevlin.toml` in configuration format 1 with the state and sessions
+  directories, router, portal and agents API the old file named, keeps the registration and the
+  search key, and rewrites the hooks and skills in place; any other setting changed by hand in
+  the old file is copied over by hand, under its format-1 key. Files only the earlier version
   used are left untouched and never read; `jevlin uninstall -purge-state` does not remove them,
   and lists what it left in the installation directory by full path so you can delete them
   yourself. A native install reaches

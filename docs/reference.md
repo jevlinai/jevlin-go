@@ -262,8 +262,10 @@ jevlin reads.
 
 Setup loads an existing config first. A format-1 file that loads is left byte for byte. A file
 with no `schema` line is set aside as `jevlin.toml.old` (`.old.1`, `.old.2`, ... if that name is
-taken), nothing in it changed, and a fresh format-1 file is written in its place; your
-registration and key are kept, and any setting you had changed by hand is yours to copy over. A
+taken), nothing in it changed, and a fresh format-1 file is written in its place, naming the
+state and sessions directories, router, portal and agents API the old file named (an endpoint
+variable set for the run still chooses its own); your registration and key are kept, and any
+other setting you had changed by hand is yours to copy over. A
 format-1 file with a mistake in it is refused with the error and its path, and nothing is written.
 
 ## Environment variables

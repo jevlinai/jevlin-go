@@ -116,7 +116,12 @@ func TestConfigPolicyUnits(t *testing.T) {
 		"empty":            "",
 	} {
 		plan, err = planSetupConfig(path, []byte(legacy), v, validateConfigBytes, none)
-		if err != nil || plan.outcome != configReplaced || !bytes.Equal(plan.data, fresh) || plan.aside != path+".old" {
+		// The fresh file, with what the older one named carried into it.
+		carried, rerr := renderFreshConfig(v.carrying(readEarlierConfig([]byte(legacy))))
+		if rerr != nil {
+			t.Fatal(rerr)
+		}
+		if err != nil || plan.outcome != configReplaced || !bytes.Equal(plan.data, carried) || plan.aside != path+".old" {
 			t.Fatalf("%s: %+v %v", name, plan, err)
 		}
 	}

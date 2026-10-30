@@ -681,7 +681,13 @@ func (r *setupRun) config() int {
 	r.changed = true
 	if plan.outcome == configReplaced {
 		r.say(fmt.Sprintf("Set %s aside as %s: it is an older configuration format, which this jevlin does not read", r.cfgPath, plan.aside))
-		r.say("Wrote " + r.cfgPath + " in configuration format 1; copy any setting you changed by hand from the old file. Your registration and key are kept.")
+		kept := ""
+		// Said only of a key that is there to keep: beside the state
+		// directory the new file names, which is the earlier file's own.
+		if cfg, err := config.LoadBytes(plan.data, r.d.getenv); err == nil && lexists(credentialsPath(cfg.Search)) {
+			kept = " Your registration and key are kept."
+		}
+		r.say("Wrote " + r.cfgPath + " in configuration format 1, with the directories and endpoints the old file named; copy any other setting you changed by hand from the old file." + kept)
 	} else {
 		r.say("Wrote " + r.cfgPath)
 	}
