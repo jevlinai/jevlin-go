@@ -1,6 +1,0 @@
-data: {"id":"gen-sse-one","choices":[{"delta":{"content":"a"},"finish_reason":null}]}
-
-data: {"id":"gen-sse-two","choices":[{"delta":{"content":"b"},"finish_reason":"stop"}]}
-
-data: [DONE]
-

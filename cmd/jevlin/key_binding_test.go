@@ -231,14 +231,8 @@ func keyedConnect(t *testing.T) (platform *stubPlatform, cfg, stateDir string) {
 	t.Helper()
 	withShortConnectTimings(t)
 	platform = newStubPlatform(t)
-	cfg, stateDir = connectConfig(t, platform.srv.URL, "")
 	router, _ := countingServer(t, nil)
-	f, err := os.OpenFile(cfg, os.O_APPEND|os.O_WRONLY, 0o600) // #nosec G304 -- this test's own config
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _ = io.WriteString(f, "\n[miner]\nrouter_url = \""+router.URL+"\"\n")
-	_ = f.Close()
+	cfg, stateDir = connectConfig(t, platform.srv.URL, router.URL)
 	if code, out, errOut := runConnect(t, cfg, nil); code != exitOK {
 		t.Fatalf("connect: exit %d\n%s\n%s", code, out, errOut)
 	}
@@ -327,14 +321,8 @@ func TestTheStoredKeyGoesOnlyToTheAgentsAPIItRecords(t *testing.T) {
 	code := cmdConnect([]string{"-config", otherCfg, "-json"}, &bytes.Buffer{}, &stdout, io.Discard, env)
 	assertOriginRefusal(t, code, stdout.String(), bound, requested, otherCfg, cfg)
 
-	// mining enable.
-	stdout.Reset()
-	stderr.Reset()
-	if code := cmdMining([]string{"enable", "-config", otherCfg}, &bytes.Buffer{}, &stdout, &stderr, env); code == exitOK {
-		t.Errorf("mining enable: exit 0\n%s", stdout.String())
-	}
-
 	if n := otherConns(); n != 0 {
+
 		t.Fatalf("%d connection(s) reached an agents API the key does not belong to", n)
 	}
 	// And the key's own agents API still answers.
@@ -353,16 +341,10 @@ func twoConfigInstallation(t *testing.T) (home, own, custom string, a, b *httpte
 	t.Helper()
 	withShortConnectTimings(t)
 	platform := newStubPlatform(t)
-	own, _ = connectConfig(t, platform.srv.URL, "")
-	home = filepath.Dir(own)
 	a, aConns = countingServer(t, nil)
 	b, bConns = countingServer(t, nil)
-	f, err := os.OpenFile(own, os.O_APPEND|os.O_WRONLY, 0o600) // #nosec G304 -- this test's own config
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _ = io.WriteString(f, "\n[miner]\nrouter_url = \""+a.URL+"\"\n")
-	_ = f.Close()
+	own, _ = connectConfig(t, platform.srv.URL, a.URL)
+	home = filepath.Dir(own)
 	custom = sameStateOtherURL(t, own, a.URL, b.URL)
 	if code, out, errOut := runConnect(t, own, nil); code != exitOK {
 		t.Fatalf("connect: exit %d\n%s\n%s", code, out, errOut)

@@ -19,11 +19,9 @@ package main
 // detail.
 //
 // The hosts are derived from the config and from nothing else: the
-// router the search posts to; the AS, which the flush a search spawns
-// reaches for its discovery document, token and submission endpoints, all
-// same-origin checked; and the platform's agents API, which the detached
-// `connect -resume` a search spawns reaches. Those are the only network
-// destinations on the path from a sandboxed search, and the list carries
+// router the search posts to, and the platform's agents API, which the
+// detached `connect -resume` a search spawns reaches. Those are the only
+// network destinations on the path from a sandboxed search, and the list carries
 // hard invariant 1: on macOS a detached child outlives the command that
 // spawned it, and a denied CONNECT from it fails whichever tool call is
 // running at that moment, the search's own or a later, unrelated one.
@@ -114,17 +112,12 @@ func codexLoopbackServices(cfg *config.Config) []string {
 type codexService struct{ name, host string }
 
 // codexServices is every destination a sandboxed search and the processes
-// it spawns can reach: the router; the authorization server when as_url is
-// set (the flush); the platform's agents API (the claim resume).
+// it spawns can reach: the router, and the platform's agents API (the
+// claim resume).
 func codexServices(cfg *config.Config) []codexService {
 	var out []codexService
 	if cfg.Miner.RouterURL != nil {
 		out = append(out, codexService{"the router", cfg.Miner.RouterURL.Hostname()})
-	}
-	if cfg.Mining.ASBaseURL != "" {
-		if u, err := url.Parse(cfg.Mining.ASBaseURL); err == nil {
-			out = append(out, codexService{"the authorization server", u.Hostname()})
-		}
 	}
 	if cfg.Platform.AgentsAPIURL != "" {
 		if u, err := url.Parse(cfg.Platform.AgentsAPIURL); err == nil {

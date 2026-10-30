@@ -1,6 +1,0 @@
-{
-  "error": {
-    "code": "ENROLLMENT_CLOSED",
-    "message": "Enrollment for this target epoch is closed."
-  }
-}

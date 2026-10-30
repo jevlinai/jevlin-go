@@ -21,8 +21,6 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
-
-	"github.com/jevlinai/jevlin-go/pkg/auth"
 )
 
 const (
@@ -966,43 +964,28 @@ func positionsOf(candidates []routerCandidate, listings []routerFoundBy) []machi
 }
 
 // machineMining is the economic half of the answer, and it is separate
-// from ok on purpose: a successful search with mining disabled, undecided
-// or degraded is still a successful search. Nothing here is called
-// "earned" — the AS reconciles observations against the provider, and this
-// client never claims a reward on its own say-so.
+// from ok on purpose: a successful search is a successful search whatever
+// mining does. Mining moved off the client to the platform, so State is
+// always "disabled" and Configured false here; the object stays because
+// the skill, the opencode plugin and the Pi extension read it, and
+// removing a field is a protocol change for no benefit. Nothing here is
+// called "earned" — the platform reconciles what the router served, and
+// this client never claims a reward on its own say-so.
 type machineMining struct {
-	// State is the persisted runtime decision, in its own canonical
-	// spelling: enabled, disabled, undecided or degraded.
+	// State is "disabled": nothing is mined by this client.
 	State string `json:"state"`
-	// Configured is [miner] enabled — whether intake exists at all.
+	// Configured is false: there is no intake here.
 	Configured bool `json:"configured"`
-	// Recorded says whether THIS search's observation was written. False
-	// with State "enabled" means capture failed; Health says why.
-	Recorded bool            `json:"recorded"`
-	Detail   string          `json:"detail,omitempty"`
-	Health   []machineHealth `json:"health,omitempty"`
+	// Recorded is false: this client records nothing for mining.
+	Recorded bool `json:"recorded"`
+	// Trajectory says the answered POST carried an envelope with assistant
+	// text — the one fact about a search's trace a caller can act on, and
+	// the one the platform's mining is served on.
+	Trajectory bool `json:"trajectory"`
 }
 
-type machineHealth struct {
-	Component string `json:"component"`
-	Reason    string `json:"reason"`
-	Detail    string `json:"detail,omitempty"`
-}
-
-func healthOf(records []auth.HealthRecord) []machineHealth {
-	if len(records) == 0 {
-		return nil
-	}
-	out := make([]machineHealth, 0, len(records))
-	for _, r := range records {
-		out = append(out, machineHealth{
-			Component: string(r.Component),
-			Reason:    string(r.Reason),
-			Detail:    boundMessage(r.Detail),
-		})
-	}
-	return out
-}
+// miningStateDisabled is the one state machineMining reports.
+const miningStateDisabled = "disabled"
 
 // ── classification ──────────────────────────────────────────────────────
 

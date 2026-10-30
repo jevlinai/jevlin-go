@@ -1315,7 +1315,6 @@ func codexBridgedCommand(t *testing.T, in *execInstallation, command string) str
 	ops := realHookOps()
 	ops.executable = func() (string, error) { return in.bin, nil }
 	ops.getenv = func(string) string { return "" }
-	ops.spawnFlush = nil
 	payload := codexPayloadFixture(t, "codex-0.158.0-linux-PreToolUse-bash.json")
 	payload["cwd"] = in.root
 	var out bytes.Buffer

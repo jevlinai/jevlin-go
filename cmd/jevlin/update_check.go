@@ -131,14 +131,14 @@ func updateStampPath(root string) string { return filepath.Join(root, updateStam
 func updateLockPath(root string) string  { return filepath.Join(root, updateLockFile) }
 
 // updateRoot is the installation's own directory, where the stamp and its
-// lock live: beside credentials.json (minerRoot), which no sandbox may write.
-// A config naming no intake directory has none, and then no check runs:
-// minerRoot would be ".", wherever the command happened to run.
+// lock live: beside credentials.json (installRoot), which no sandbox may
+// write. A config naming no state directory has none, and then no check
+// runs: installRoot would be ".", wherever the command happened to run.
 func updateRoot(m config.Miner) string {
-	if m.IntakeDir == "" {
+	if m.StateDir == "" {
 		return ""
 	}
-	return minerRoot(m)
+	return installRoot(m)
 }
 
 // installationUpdateRoot is updateRoot for a command that knows the
@@ -363,9 +363,9 @@ func updateCheckArgs(cfgPath string) []string {
 	return args
 }
 
-// startUpdateCheck launches `upgrade -auto` as a detached child, the exact
-// shape of startFlush: best effort, output goes nowhere, the next hook tries
-// again if this one could not even start.
+// startUpdateCheck launches `upgrade -auto` as a detached child: best
+// effort, output goes nowhere, the next hook tries again if this one could
+// not even start.
 func startUpdateCheck(cfgPath string) error {
 	exe, err := os.Executable()
 	if err != nil {

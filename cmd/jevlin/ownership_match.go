@@ -213,9 +213,10 @@ func (ref installationRef) commandIsOurs(command string) bool {
 // The block runs no command, so it names no binary and no config. What it
 // names is DIRECTORIES — the roots a sandboxed search must be able to write —
 // so the roots are the reading, and they are attributed against the
-// directories this installation's config NAMES: state_dir, spool_dir,
-// intake_dir and sessions_dir, compared as paths (codexOwnedRoots). Every
-// root in the block must be one of them.
+// directories this installation's config NAMES: state_dir and sessions_dir,
+// and the intake and spool directories an earlier version derived beside
+// them, compared as paths (codexOwnedRoots). Every root in the block must
+// be one of them.
 //
 // They are config keys, not a layout, and that is the whole correction here.
 // The first version of this asked whether every root lay under the directory

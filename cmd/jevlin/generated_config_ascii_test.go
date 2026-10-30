@@ -73,9 +73,6 @@ func asciiSetupValues(home string) setupValues {
 		router:       "https://api.jevlin.ai",
 		platformURL:  "https://platform.jevlin.ai",
 		agentsAPIURL: "https://agents-v1.jevlin.ai",
-		asURL:        "https://rewards-testnet.jevlin.ai",
-		chainID:      "twilight-testnet-1",
-		slotID:       3,
 	}
 }
 
@@ -88,24 +85,7 @@ func TestEveryGeneratedConfigIsASCII(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// The line dropin-miner#88 was filed about, still present and still saying what
-		// it said: the case would pass just as well on a file that had lost
-		// the comment altogether.
-		if !strings.Contains(string(b), "# target_epoch deliberately unset") {
-			t.Fatalf("the target_epoch comment is gone; this case would then prove nothing:\n%s", b)
-		}
 		asciiOrFail(t, "renderFreshConfig", b)
-	})
-
-	t.Run("jevlin.toml, fresh with the scripted mining answer", func(t *testing.T) {
-		sv := v
-		sv.scriptedMine = true
-		sv.payoutAddress = "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn"
-		b, err := renderFreshConfig(sv)
-		if err != nil {
-			t.Fatal(err)
-		}
-		asciiOrFail(t, "renderFreshConfig (scripted)", b)
 	})
 
 	t.Run("jevlin.toml, migrated", func(t *testing.T) {

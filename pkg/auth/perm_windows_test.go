@@ -129,15 +129,6 @@ func TestOpenStoreCreatesOwnerOnlyDACL(t *testing.T) {
 // its secrets, and then goes through every way in.
 func TestAnotherPrincipalsEntryRefusesNothingOnLoad(t *testing.T) {
 	s, dir := newStore(t)
-	if _, err := s.DPoPKey(); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.SaveRefreshToken("refresh-token"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.ParticipationSecret(); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := s.EnsureTraceKey(); err != nil {
 		t.Fatal(err)
 	}
@@ -162,15 +153,6 @@ func TestAnotherPrincipalsEntryRefusesNothingOnLoad(t *testing.T) {
 	}
 	if _, err := OpenStore(dir); err != nil {
 		t.Errorf("OpenStore refused a state dir another principal can open: %v", err)
-	}
-	if _, err := s.DPoPKeyExisting(); err != nil {
-		t.Errorf("dpop.key refused: %v", err)
-	}
-	if tok, ok, err := s.LoadRefreshToken(); err != nil || !ok || tok != "refresh-token" {
-		t.Errorf("refresh.token = %q, %v, %v; want it loaded", tok, ok, err)
-	}
-	if _, err := s.ParticipationSecret(); err != nil {
-		t.Errorf("participation.secret refused: %v", err)
 	}
 	if _, err := s.TraceKey(); err != nil {
 		t.Errorf("trace.key refused: %v", err)

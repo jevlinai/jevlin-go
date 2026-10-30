@@ -21,6 +21,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/jevlinai/jevlin-go/pkg/redact"
@@ -229,4 +230,23 @@ func prepareTraceText(text string) string {
 		text = text[start:]
 	}
 	return text
+}
+
+// hasTrajectory is the one definition of "this envelope carries a
+// trajectory": at least one history entry the assistant wrote, with text
+// in it after the size caps have had their say. Ids alone are not one; a
+// host's reasoning entry alone (Cursor's thought, before any response) is
+// not one; an entry whose text was omitted as oversize is not one. It is
+// the router's own definition (the last assistant entry with text), so
+// what this client reports is what the router sees.
+func hasTrajectory(env *traceEnvelope) bool {
+	if env == nil {
+		return false
+	}
+	for _, h := range env.History {
+		if h.Role == "assistant" && strings.TrimSpace(h.Text) != "" {
+			return true
+		}
+	}
+	return false
 }

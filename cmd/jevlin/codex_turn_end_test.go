@@ -61,9 +61,7 @@ func (r *codexTurnRun) run(t *testing.T) (*turnEndRecord, []byte) {
 	if out := runCodexOn(t, r.ops, r.hc, "darwin", "Stop", r.stop); out != "" {
 		t.Errorf("Stop printed %q; Codex reads a Stop hook's output as a decision", out)
 	}
-	if len(r.fs.flushes) != 1 {
-		t.Errorf("Stop started %d flushes, want one", len(r.fs.flushes))
-	}
+
 	if len(r.queued) == 0 {
 		return nil, nil
 	}

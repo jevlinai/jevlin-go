@@ -20,8 +20,7 @@ import (
 )
 
 type fakeHookFS struct {
-	files   map[string][]byte
-	flushes []string
+	files map[string][]byte
 	// mtimes holds a modification time for the files a test has aged; any
 	// other file reads as written at the fake's fixed "now", which is fresh.
 	mtimes map[string]time.Time
@@ -92,9 +91,8 @@ func newFakeHookOps(env map[string]string) (*fakeHookFS, hookOps) {
 			}
 			return b, nil
 		},
-		spawnFlush: func(cfg string) error { f.flushes = append(f.flushes, cfg); return nil },
-		now:        func() time.Time { return time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC) },
-		pid:        42,
+		now: func() time.Time { return time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC) },
+		pid: 42,
 	}
 }
 
@@ -533,14 +531,11 @@ func TestHookLineageFloorsAtAnAutonomousLoopTickIsMetaEntryWithNoToolCall(t *tes
 	testHookLineageFloorsAtANoToolCallIsMetaEntry(t, "claude_code_ismeta_autonomous_loop.jsonl", "toolu_bash3")
 }
 
-func TestHookWindowCountsExactlyOnePerCompactionAndSessionStartFlushes(t *testing.T) {
+func TestHookWindowCountsExactlyOnePerCompaction(t *testing.T) {
 	fs, ops := newFakeHookOps(nil)
 	hc := hookContext{cfgPath: "/c.toml", sessionsDir: "/sessions"}
 	sess := map[string]any{"session_id": "s"}
 	runHook(t, ops, hc, "window session-start", sess)
-	if len(fs.flushes) != 1 || fs.flushes[0] != "/c.toml" {
-		t.Fatalf("session-start did not start a flush: %v", fs.flushes)
-	}
 	if got := hookWindowID(ops, hc, "s"); got != "none" {
 		t.Fatalf("fresh window: %q", got)
 	}
@@ -563,7 +558,7 @@ func TestHookWindowCountsExactlyOnePerCompactionAndSessionStartFlushes(t *testin
 }
 
 func TestHookCursorEventsBuildTheLineageFileAndAnswerTheHost(t *testing.T) {
-	fs, ops := newFakeHookOps(nil)
+	_, ops := newFakeHookOps(nil)
 	hc := hookContext{cfgPath: "/c.toml", sessionsDir: "/sessions"}
 	base := map[string]any{"conversation_id": "conv-1", "generation_id": "gen-1", "workspace_roots": []string{"/w/proj"}}
 	with := func(kv map[string]any) map[string]any {
@@ -584,9 +579,6 @@ func TestHookCursorEventsBuildTheLineageFileAndAnswerTheHost(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(out), &start); err != nil || start.Env["JEVLIN_HARNESS"] != "cursor" || start.Env[lineageEnv] != path {
 		t.Fatalf("sessionStart output: %s", out)
-	}
-	if len(fs.flushes) != 1 {
-		t.Errorf("sessionStart did not flush: %v", fs.flushes)
 	}
 
 	runHook(t, ops, hc, "cursor afterAgentThought", with(map[string]any{"text": "I should search for this"}))
@@ -618,9 +610,6 @@ func TestHookCursorEventsBuildTheLineageFileAndAnswerTheHost(t *testing.T) {
 		t.Errorf("window after two compactions: %q", l.Window)
 	}
 	runHook(t, ops, hc, "cursor stop", base)
-	if len(fs.flushes) != 2 {
-		t.Errorf("stop did not flush: %v", fs.flushes)
-	}
 }
 
 func TestHookCursorWithoutAConversationDoesNothingButAllow(t *testing.T) {
@@ -718,7 +707,8 @@ func TestHookMainNeverExitsNonZeroForAKnownSubcommand(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			_, ops := newFakeHookOps(nil)
-			ops.spawnFlush = func(string) error { return errors.New("spawn refused") }
+			ops.spawnUpdateCheck = func(string) error { return errors.New("spawn refused") }
+
 			var stdout, stderr bytes.Buffer
 			code := hookMain(ops, c.args, bytes.NewReader(c.payload), &stdout, &stderr)
 			if code != exitOK {

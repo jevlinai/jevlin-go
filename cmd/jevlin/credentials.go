@@ -56,7 +56,6 @@ const (
 	credentialsFile         = "credentials.json"
 	credentialsVersion      = 1
 	registrationJournalFile = "registration_pending.json"
-	payoutRecordFile        = "payout.json"
 	claimRecordFile         = "claim.json"
 
 	apiKeyEnv = "JEVLIN_API_KEY" // #nosec G101 -- an env var NAME, not a credential value
@@ -93,7 +92,7 @@ const (
 
 // credentials is the on-disk shape. Router and AgentsAPI are where the key
 // may be sent: the router a search, a limits read, a turn end and a fetch
-// go to, and the platform's agents API that connect and mining enable call.
+// go to, and the platform's agents API that connect calls.
 // Each is an origin (login has always written its router as the full URL it
 // verified against, which reduces to the same origin), and keyService.check
 // holds every request carrying the stored key to it.
@@ -360,47 +359,17 @@ func (e *envKeyOriginError) Error() string {
 		apiKeyEnv, e.bound, e.requested, choose)
 }
 
-// credentialsPath is the file beside the intake directory: with the
-// standard layout that is ~/.jevlin/credentials.json.
+// credentialsPath is the file in the installation's own directory, the
+// parent of the state directory: with the standard layout that is
+// ~/.jevlin/credentials.json.
 func credentialsPath(m config.Miner) string {
-	return filepath.Join(minerRoot(m), credentialsFile)
+	return filepath.Join(installRoot(m), credentialsFile)
 }
 
 // registrationJournal is registration_pending.json beside credentials.json,
 // outside the state directory a sandboxed agent may write.
 func registrationJournal(m config.Miner) (*auth.RegistrationJournal, error) {
-	return auth.OpenRegistrationJournal(minerRoot(m))
-}
-
-// payoutRecord is payout.json beside credentials.json, outside the state
-// directory a sandboxed agent may write: the address a resume declares
-// unattended must be one the participant decided (auth.PayoutRecord).
-func payoutRecord(m config.Miner) (*auth.PayoutRecord, error) {
-	if m.IntakeDir == "" {
-		// minerRoot would be ".", the working directory: a config always
-		// derives intake_dir from state_dir, so only a hand-built one gets
-		// here, and the record must not land wherever the command ran.
-		return nil, errors.New("no miner.intake_dir, so no directory for the payout record")
-	}
-	return auth.OpenPayoutRecord(minerRoot(m))
-}
-
-// loadPayoutAddress reads the address on file beside credentials.json.
-func loadPayoutAddress(m config.Miner) (string, bool, error) {
-	record, err := payoutRecord(m)
-	if err != nil {
-		return "", false, err
-	}
-	return record.Load()
-}
-
-// savePayoutAddress writes the address beside credentials.json.
-func savePayoutAddress(m config.Miner, address string) error {
-	record, err := payoutRecord(m)
-	if err != nil {
-		return err
-	}
-	return record.Save(address)
+	return auth.OpenRegistrationJournal(installRoot(m))
 }
 
 // claimRecord is claim.json beside credentials.json: the claim link and
@@ -408,10 +377,13 @@ func savePayoutAddress(m config.Miner, address string) error {
 // registration journal beside it, by a foreground run or by a resume
 // finishing that journal; a resume in Codex's sandbox cannot write here.
 func claimRecord(m config.Miner) (*auth.ClaimRecord, error) {
-	if m.IntakeDir == "" {
-		return nil, errors.New("no miner.intake_dir, so no directory for the claim record")
+	if m.StateDir == "" {
+		// installRoot would be ".", the working directory: a config always
+		// has a state directory unless no user config directory could be
+		// found, and the record must not land wherever the command ran.
+		return nil, errors.New("no miner.state_dir, so no directory for the claim record")
 	}
-	return auth.OpenClaimRecord(minerRoot(m))
+	return auth.OpenClaimRecord(installRoot(m))
 }
 
 // claimFor is the stored claim link for agentID, ok=false when none is on
@@ -443,7 +415,7 @@ func saveClaim(m config.Miner, b auth.ClaimBootstrap) error {
 }
 
 // platformKey uses only the credential connect stored for platform calls.
-// The search-only environment override does not apply to enrollment. The
+// The search-only environment override does not apply to the platform. The
 // key is returned only when cfg's agents API is the one it is bound to;
 // every caller sends it to cfg.Platform.AgentsAPIURL.
 func platformKey(cfg *config.Config, getenv func(string) string) (string, error) {
@@ -495,8 +467,8 @@ func resolveAPIKey(getenv func(string) string, m config.Miner) (string, keySourc
 }
 
 // readCredentials reads and validates the file. Mode checks are gated by
-// posixModes exactly as the wallet's are: Go reports 0777 for every file
-// on Windows, where the directory ACL is the guard.
+// posixModes: Go reports 0777 for every file on Windows, where the
+// directory ACL is the guard.
 // credentialsMaxBytes bounds credentials.json, a version and a key.
 const credentialsMaxBytes = 64 << 10
 
@@ -735,7 +707,7 @@ func cmdLogin(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv f
 			fmt.Fprintf(stderr, "jevlin login: %s answered HTTP %s, so the key could not be verified\n  nothing was stored; retry, or store unverified with -no-verify\n", router, status)
 			return exitServerErr
 		case outcome == probeRefused:
-			fmt.Fprintf(stderr, "jevlin login: %s refused this key (HTTP %s); nothing was stored\n  keys are minted at platform.jevlin.ai → Keys, and must belong to the account you enrolled with\n", router, status)
+			fmt.Fprintf(stderr, "jevlin login: %s refused this key (HTTP %s); nothing was stored\n  keys are minted at platform.jevlin.ai → Keys, and must belong to the account you registered with\n", router, status)
 			return exitClientErr
 		}
 	}

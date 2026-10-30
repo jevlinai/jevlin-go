@@ -21,8 +21,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/jevlinai/jevlin-go/pkg/auth"
 )
 
 // writeInstallationConfig writes home/jevlin.toml naming stateDir (under
@@ -147,14 +145,6 @@ func TestStatusReadsTheInstallationConfigWhenNothingElseResolves(t *testing.T) {
 	installHome := filepath.Join(home, ".jevlin")
 	_, stateDir := writeInstallationConfig(t, installHome)
 
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SaveMiningEnabled(true); err != nil {
-		t.Fatal(err)
-	}
-
 	cwd := t.TempDir() // deliberately no jevlin.toml here
 	t.Chdir(cwd)
 
@@ -171,9 +161,6 @@ func TestStatusReadsTheInstallationConfigWhenNothingElseResolves(t *testing.T) {
 	}
 	if !strings.Contains(text, stateDir) {
 		t.Fatalf("status did not name the state directory it read:\n%s", text)
-	}
-	if !strings.Contains(text, "mining:  ON") {
-		t.Fatalf("status read the wrong installation (mining should be ON here):\n%s", text)
 	}
 
 	// -json carries the same two facts as data, not prose.

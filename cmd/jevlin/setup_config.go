@@ -25,7 +25,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -77,48 +76,25 @@ func tomlString(s string) (string, error) {
 // setupValues is everything the config is written from: pkg/config's
 // defaults, overridden by the JEVLIN_* setup-time overrides.
 type setupValues struct {
-	home          string
-	router        string
-	platformURL   string
-	agentsAPIURL  string
-	asURL         string
-	chainID       string
-	slotID        uint64
-	scriptedMine  bool   // no terminal and JEVLIN_MINING=1
-	payoutAddress string // only with scriptedMine
+	home         string
+	router       string
+	platformURL  string
+	agentsAPIURL string
 }
 
-func resolveSetupValues(home string, getenv func(string) string, interactive bool) (setupValues, error) {
+func resolveSetupValues(home string, getenv func(string) string) setupValues {
 	pick := func(name, def string) string {
 		if v := getenv(name); v != "" {
 			return v
 		}
 		return def
 	}
-	v := setupValues{
+	return setupValues{
 		home:         home,
 		router:       pick("JEVLIN_ROUTER_URL", config.DefaultRouterURL),
 		platformURL:  pick("JEVLIN_PLATFORM_URL", config.DefaultPlatformBaseURL),
 		agentsAPIURL: pick("JEVLIN_AGENTS_API_URL", config.DefaultAgentsAPIURL),
-		asURL:        pick("JEVLIN_AS_URL", config.DefaultASBaseURL),
-		chainID:      pick("JEVLIN_CHAIN", config.DefaultChainID),
-		slotID:       config.DefaultSlotID,
 	}
-	if raw := getenv("JEVLIN_SLOT"); raw != "" {
-		slot, err := strconv.ParseUint(raw, 10, 64)
-		if err != nil {
-			return setupValues{}, fmt.Errorf("JEVLIN_SLOT=%q is not a slot number", raw)
-		}
-		v.slotID = slot
-	}
-	// [mining] enabled = true is a scripted first answer, and only a run
-	// with nobody to ask may give it. At a terminal the answer is connect's
-	// question, never this file.
-	if !interactive && getenv("JEVLIN_MINING") == "1" {
-		v.scriptedMine = true
-		v.payoutAddress = getenv("JEVLIN_PAYOUT_ADDRESS")
-	}
-	return v, nil
 }
 
 // tomlLines renders `key = value` pairs with the values quoted and the
@@ -161,15 +137,17 @@ func platformTable(v setupValues) (string, error) {
 	return b.String(), nil
 }
 
+// minerTable is the [miner] block a fresh config gets: the state directory
+// and the sessions directory under the installation. The router comes from
+// the [[provider]] upstream above it, as it always has.
 func minerTable(v setupValues) (string, error) {
 	lines, err := quoteAll(
-		"intake_dir", filepath.Join(v.home, "intake"),
+		"state_dir", filepath.Join(v.home, "state"),
 		"sessions_dir", filepath.Join(v.home, "sessions"),
 	)
 	if err != nil {
 		return "", err
 	}
-	lines = append([]tomlLine{{"enabled", "true"}}, lines...)
 	var b strings.Builder
 	b.WriteString("[miner]\n")
 	writeTOMLLines(&b, lines)
@@ -192,44 +170,13 @@ func renderFreshConfig(v setupValues) ([]byte, error) {
 		return nil, err
 	}
 	b.WriteString(platform)
-	b.WriteString("\n[mining]\n")
-
-	var mining []tomlLine
-	if v.scriptedMine {
-		mining = append(mining, tomlLine{"enabled", "true"})
-		if v.payoutAddress != "" {
-			addr, err := tomlString(v.payoutAddress)
-			if err != nil {
-				return nil, fmt.Errorf("payout_address: %w", err)
-			}
-			mining = append(mining, tomlLine{"payout_address", addr})
-		}
-	}
-	rest, err := quoteAll("as_url", v.asURL, "chain_id", v.chainID)
-	if err != nil {
-		return nil, err
-	}
-	mining = append(mining, rest...)
-	mining = append(mining, tomlLine{"slot_id", strconv.FormatUint(v.slotID, 10)})
-	dirs, err := quoteAll(
-		"state_dir", filepath.Join(v.home, "state"),
-		"spool_dir", filepath.Join(v.home, "spool"),
-	)
-	if err != nil {
-		return nil, err
-	}
-	writeTOMLLines(&b, mining)
-	// ASCII, and every comment this client generates into a config is
-	// (asciiGeneratedConfig guards it). This line used to carry an em dash;
-	// Windows PowerShell 5.1 reads a file with no byte-order mark in the
-	// system's ANSI code page, so `Get-Content jevlin.toml` showed the
-	// participant `\u00e2\u20ac\u201d` where the dash should be (dropin-miner#88). The
-	// rule is ASCII rather than "not that character": the next non-ASCII
-	// punctuation would read exactly as badly.
-	b.WriteString("# target_epoch deliberately unset - flush asks the AS which epoch to join.\n")
-	writeTOMLLines(&b, dirs)
 	b.WriteString("\n")
 
+	// Every byte this client generates into a config is ASCII
+	// (asciiGeneratedConfig guards it): Windows PowerShell 5.1 reads a file
+	// with no byte-order mark in the system's ANSI code page, so a comment
+	// with an em dash once showed the participant `\u00e2\u20ac\u201d`
+	// where the dash should be (dropin-miner#88).
 	miner, err := minerTable(v)
 	if err != nil {
 		return nil, err

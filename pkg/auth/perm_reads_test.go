@@ -115,7 +115,7 @@ func TestThePackageReadsNoAccessListAndResolvesNoAccount(t *testing.T) {
 			t.Error(finding)
 		}
 	}
-	if scanned < 10 {
+	if scanned < 5 {
 		t.Fatalf("scanned %d source files; the package has more than that, so the glob found the wrong directory", scanned)
 	}
 }

@@ -3,7 +3,7 @@ package platform
 // TestNoBareHTTPClientInThisPackage is this package's own copy of
 // cmd/jevlin/boundary_test.go's module-wide sweep, scoped to this
 // directory: every http.Client{} construction here must set
-// CheckRedirect, because Status and Enroll carry the participant's sr-
+// CheckRedirect, because Status, Me and ClaimCode carry the participant's sr-
 // key in Authorization. One constructor already does this
 // (newPlatformClient) — this is what keeps a second, bare one from
 // being added next to it later.

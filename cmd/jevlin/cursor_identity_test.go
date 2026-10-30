@@ -450,7 +450,6 @@ func TestCursorRewrittenSearchReachesTheRouterAsCursor(t *testing.T) {
 			hc := hookContext{cfgPath: in.cfg, sessionsDir: in.sessions}
 			ops := realHookOps()
 			ops.executable = func() (string, error) { return in.bin, nil }
-			ops.spawnFlush = nil
 			ops.getenv = func(string) string { return "" }
 			var out bytes.Buffer
 			hookCursor(ops, hc, "sessionStart", mustJSON(t, map[string]any{"conversation_id": "exec-conversation", "workspace_roots": []string{in.root}, "cursor_version": "3.21.16"}), &out, io.Discard)

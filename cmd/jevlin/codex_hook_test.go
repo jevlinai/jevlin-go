@@ -282,11 +282,10 @@ func TestACodexSubagentsSearchNamesItsParent(t *testing.T) {
 
 // One generation per compaction, from the payloads Codex sent: a session
 // starts, compacts (PreCompact, PostCompact, then a SessionStart whose source
-// is "compact"), and its next search reads window 1. SessionStart and Stop
-// start one flush each; nothing else does.
+// is "compact"), and its next search reads window 1.
 func TestCodexWindowCountsOneGenerationPerCompaction(t *testing.T) {
 	in := newCodexTestInstall(t, "/home/u/.jevlin/jevlin.toml")
-	fs, ops := in.ops(nil)
+	_, ops := in.ops(nil)
 	compact := codexPayloadFixture(t, "codex-0.160.0-macos-SessionStart-compact.json")
 	// Derived: that session's first SessionStart, which the compaction run
 	// did not keep as a fixture.
@@ -321,21 +320,17 @@ func TestCodexWindowCountsOneGenerationPerCompaction(t *testing.T) {
 	if w := window(); w != "1" {
 		t.Errorf("window after one compaction: %q, want 1", w)
 	}
-	if len(fs.flushes) != 2 {
-		t.Errorf("%d flushes, want one per SessionStart", len(fs.flushes))
-	}
-	runCodexOn(t, ops, hcFor(in), "darwin", "Stop", codexPayloadFixture(t, "codex-0.158.0-linux-Stop.json"))
-	if len(fs.flushes) != 3 {
-		t.Errorf("Stop started %d flushes, want one", len(fs.flushes)-2)
+	if out := runCodexOn(t, ops, hcFor(in), "darwin", "Stop", codexPayloadFixture(t, "codex-0.158.0-linux-Stop.json")); out != "" {
+		t.Errorf("Stop printed %q", out)
 	}
 }
 
-// Stop starts one flush and prints nothing: Codex reads a Stop hook's output
-// as a decision. An installation that did not opt in to the turn end gets
-// nothing else, not even with a served search's mark there: no turn end and
-// no copy of the turn's final message. What an opted-in installation gets is
+// Stop prints nothing: Codex reads a Stop hook's output as a decision. An
+// installation that did not opt in to the turn end gets nothing else, not
+// even with a served search's mark there: no turn end and no copy of the
+// turn's final message. What an opted-in installation gets is
 // codex_turn_end_test.go's.
-func TestCodexStopStartsOneFlushAndPrintsNothing(t *testing.T) {
+func TestCodexStopPrintsNothing(t *testing.T) {
 	stop := codexPayloadFixture(t, "codex-0.158.0-linux-Stop.json")
 	hc := hookContext{cfgPath: "/home/u/.jevlin/jevlin.toml", sessionsDir: "/sessions"}
 	fs, ops := newFakeHookOps(nil)
@@ -348,8 +343,8 @@ func TestCodexStopStartsOneFlushAndPrintsNothing(t *testing.T) {
 	if out := runCodexOn(t, ops, hc, "linux", "Stop", stop); out != "" {
 		t.Errorf("Stop printed %q; Codex reads a Stop hook's output as a decision", out)
 	}
-	if len(fs.flushes) != 1 || spawnedTurnEnds != 0 {
-		t.Errorf("flushes %d, turn ends %d; want one flush and nothing else", len(fs.flushes), spawnedTurnEnds)
+	if spawnedTurnEnds != 0 {
+		t.Errorf("turn ends %d; want nothing started", spawnedTurnEnds)
 	}
 	if got := keys(fs.files); len(got) != 1 || got[0] != mark {
 		t.Errorf("files after Stop: %v, want only the untouched turn mark", got)
@@ -377,8 +372,8 @@ func TestCodexHooksDoNothingWhereNoRunnerIsEstablished(t *testing.T) {
 	for _, goos := range []string{"windows", "freebsd"} {
 		for event, payload := range cases {
 			fs, ops := in.ops(nil)
-			if out := runCodexOn(t, ops, hcFor(in), goos, event, payload); out != "" || len(fs.files) != 0 || len(fs.flushes) != 0 {
-				t.Errorf("%s on %s: stdout %q files %v flushes %d", event, goos, out, keys(fs.files), len(fs.flushes))
+			if out := runCodexOn(t, ops, hcFor(in), goos, event, payload); out != "" || len(fs.files) != 0 {
+				t.Errorf("%s on %s: stdout %q files %v", event, goos, out, keys(fs.files))
 			}
 		}
 	}
@@ -387,7 +382,7 @@ func TestCodexHooksDoNothingWhereNoRunnerIsEstablished(t *testing.T) {
 	for event, payload := range cases {
 		runCodexOn(t, ops, hcFor(in), "linux", event, payload)
 	}
-	if len(fs.files) == 0 || len(fs.flushes) == 0 {
+	if len(fs.files) == 0 {
 		t.Fatal("the control did nothing either, so the silences above prove nothing")
 	}
 }
@@ -423,32 +418,35 @@ func runCodexEntryRaw(t *testing.T, in codexTestInstall, event string, raw []byt
 	t.Helper()
 	fs, ops := in.ops(nil)
 	var stdout, stderr bytes.Buffer
+	var checks int
+	ops = countingChecks(ops, &checks)
 	if code := hookMain(ops, []string{"-config", in.cfg, "codex", event}, bytes.NewReader(raw), &stdout, &stderr); code != exitOK {
 		t.Fatalf("hook codex %s exited %d (stderr %q); a hook never fails its host", event, code, stderr.String())
 	}
 	files := keys(fs.files)
 	sort.Strings(files)
-	return hookRun{stdout: stdout.String(), files: files, flushes: len(fs.flushes)}
+	return hookRun{stdout: stdout.String(), files: files, checks: checks}
 }
 
 // Every captured payload, into the entry point Codex was configured to run it
-// with, does what that entry is for.
+// with, does what that entry is for. Stop writes nothing for an installation
+// that did not opt in to the turn end (codex_turn_end_test.go has the one
+// that did).
 func TestCodexEntriesServeTheRealCodexPayloads(t *testing.T) {
 	for _, c := range []struct {
 		fixture, event  string
 		lineage, window bool
-		flushes         int
 	}{
-		{"codex-0.158.0-linux-PreToolUse-bash.json", "PreToolUse", true, false, 0},
-		{"codex-0.160.0-macos-PreToolUse-bash.json", "PreToolUse", true, false, 0},
-		{"codex-0.160.0-macos-app-PreToolUse-bash.json", "PreToolUse", true, false, 0},
-		{"codex-0.158.0-linux-PreToolUse-bash-subagent.json", "PreToolUse", true, false, 0},
-		{"codex-0.158.0-linux-SessionStart-startup.json", "SessionStart", false, true, 1},
-		{"codex-0.158.0-linux-SessionStart-resume.json", "SessionStart", false, true, 1},
-		{"codex-0.160.0-macos-SessionStart-compact.json", "SessionStart", false, true, 1},
-		{"codex-0.160.0-macos-PreCompact-auto.json", "PreCompact", false, true, 0},
-		{"codex-0.160.0-macos-PostCompact-auto.json", "PostCompact", false, true, 0},
-		{"codex-0.158.0-linux-Stop.json", "Stop", false, false, 1},
+		{"codex-0.158.0-linux-PreToolUse-bash.json", "PreToolUse", true, false},
+		{"codex-0.160.0-macos-PreToolUse-bash.json", "PreToolUse", true, false},
+		{"codex-0.160.0-macos-app-PreToolUse-bash.json", "PreToolUse", true, false},
+		{"codex-0.158.0-linux-PreToolUse-bash-subagent.json", "PreToolUse", true, false},
+		{"codex-0.158.0-linux-SessionStart-startup.json", "SessionStart", false, true},
+		{"codex-0.158.0-linux-SessionStart-resume.json", "SessionStart", false, true},
+		{"codex-0.160.0-macos-SessionStart-compact.json", "SessionStart", false, true},
+		{"codex-0.160.0-macos-PreCompact-auto.json", "PreCompact", false, true},
+		{"codex-0.160.0-macos-PostCompact-auto.json", "PostCompact", false, true},
+		{"codex-0.158.0-linux-Stop.json", "Stop", false, false},
 	} {
 		t.Run(c.fixture, func(t *testing.T) {
 			payload := codexPayloadFixture(t, c.fixture)
@@ -470,9 +468,10 @@ func TestCodexEntriesServeTheRealCodexPayloads(t *testing.T) {
 				want = append(want, filepath.Join("/sessions", hookStateFile))
 			}
 			sort.Strings(want)
-			if !slices.Equal(got.files, want) || got.flushes != c.flushes {
-				t.Errorf("files %v flushes %d, want %v and %d", got.files, got.flushes, want, c.flushes)
+			if !slices.Equal(got.files, want) {
+				t.Errorf("files %v, want %v", got.files, want)
 			}
+
 		})
 	}
 }
@@ -556,9 +555,10 @@ func TestWhatContradictsACodexEntry(t *testing.T) {
 				t.Fatalf("codexEntryStandsDown = %v, want %v", got, c.standDown)
 			}
 			got := runCodexEntryRaw(t, newCodexTestInstall(t, writeHookConfig(t)), "Stop", raw)
-			if want := !c.standDown && codexServesHere(); (got.flushes == 1) != want {
-				t.Fatalf("through hookMain: flushes %d, want served=%v", got.flushes, want)
+			if want := !c.standDown && codexServesHere(); (got.checks == 1) != want {
+				t.Fatalf("through hookMain: release checks %d, want served=%v", got.checks, want)
 			}
+
 		})
 	}
 	// Not a JSON object at all: no claim to be Codex, and nothing is done.

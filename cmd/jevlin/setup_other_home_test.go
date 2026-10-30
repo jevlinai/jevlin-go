@@ -140,8 +140,7 @@ func TestSetupWithTheDefaultHomeNamedIsTheSameAsWithoutIt(t *testing.T) {
 		fold := func(x string) string { return slashes.ReplaceAllString(x, "/") }
 		norm := func(x string) string {
 			x = strings.ReplaceAll(fold(x), fold(s.root), "<root>")
-			x = strings.ReplaceAll(x, s.platform.srv.URL, "<platform>")
-			return strings.ReplaceAll(x, s.as.srv.URL, "<as>")
+			return strings.ReplaceAll(x, s.platform.srv.URL, "<platform>")
 		}
 		files := map[string]fileSig{}
 		for p, sig := range snapshotTree(t, s.userHome) {
@@ -257,7 +256,7 @@ func TestUninstallsRestoreHintIsCompleteForAnotherHome(t *testing.T) {
 		t.Fatalf("setup -home: exit %d\n%s\n%s", code, out, errOut)
 	}
 
-	code, out, errOut := s.uninstall(t, nil, false, nil, "-yes", "-home", scratch)
+	code, out, errOut := s.uninstall(t, nil, false, "-yes", "-home", scratch)
 	if code != exitOK {
 		t.Fatalf("uninstall -home: exit %d\n%s\n%s", code, out, errOut)
 	}
@@ -272,7 +271,7 @@ func TestUninstallsRestoreHintIsCompleteForAnotherHome(t *testing.T) {
 		}
 	}
 
-	code, out, errOut = s.uninstall(t, nil, false, nil, "-yes")
+	code, out, errOut = s.uninstall(t, nil, false, "-yes")
 	if code != exitOK {
 		t.Fatalf("uninstall: exit %d\n%s\n%s", code, out, errOut)
 	}

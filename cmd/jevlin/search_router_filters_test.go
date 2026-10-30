@@ -149,12 +149,12 @@ func TestASourceIDIsCarriedInEveryView(t *testing.T) {
 // additions: the main fixture's capture, with source_id the only difference.
 func TestTheFullViewWithSourceIDsOnlyAddsThem(t *testing.T) {
 	raw, _ := withSourceIDs(t)
-	want := readSearchTestdata(t, "full-a0ff6ca/merged-view-success.main.envelope.json")
+	want := v043Capture(t, "full-a0ff6ca/merged-view-success.main.envelope.json")
 	out := searchStdoutServing(t, raw, `{"version":1,"query":"q","view":"full"}`)
 	if !strings.Contains(out, `"source_id":"s_`) {
 		t.Fatal("the envelope carries no source_id; the comparison below would prove nothing")
 	}
-	got, err := jsonWithout([]byte(strings.TrimSuffix(out, "\n")), fullViewAdditions)
+	got, err := jsonWithout([]byte(strings.TrimSuffix(out, "\n")), fullViewDropped())
 	if err != nil {
 		t.Fatal(err)
 	}

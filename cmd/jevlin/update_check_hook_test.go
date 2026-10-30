@@ -68,11 +68,9 @@ func TestTheRealHooksStartTheCheckOnlyOutsideASandbox(t *testing.T) {
 					checks = append(checks, cfgPath)
 					return nil
 				}
-				run := runRealHookMain(t, fs, ops, cfg, e.args, e.payload)
-				if run.flushes != 1 {
-					t.Errorf("flushes %d, want 1", run.flushes)
-				}
+				runRealHookMain(t, fs, ops, cfg, e.args, e.payload)
 				want := 0
+
 				if env.check {
 					want = 1
 				}

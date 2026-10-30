@@ -14,18 +14,17 @@ import (
 // the absence of an answer, and the operation stops there having
 // recorded, written and sent nothing.
 //
-// dropin-miner#81 is what a prompt that guesses instead costs. At
-// `Enable mining rewards? [y/N]` the read error was discarded, so an
-// interrupt produced an empty line, an empty line is not "y", and
-// state/mining_decision.json was written {"version":1,"enabled":false} —
-// a decision the participant never made, on the one file invariant 10
-// calls the only runtime authority on whether mining is on. connect then
-// went on to register, and setup's closing line invited a re-run that
-// would reuse the saved "no" without asking again. The empty line is not
-// the defect; treating the absence of a line as a line is. The same
-// shape with the opposite default is worse: `agents install`'s
-// `Proceed? [Y/n]` answers an empty line yes, so an interrupt there
-// meant "yes, write every agent file".
+// dropin-miner#81 is what a prompt that guesses instead costs. At the
+// mining question an earlier version asked (`Enable mining rewards?
+// [y/N]`) the read error was discarded, so an interrupt produced an empty
+// line, an empty line is not "y", and a decision file was written with a
+// decision the participant never made; connect then went on to register,
+// and setup's closing line invited a re-run that would reuse the saved
+// "no" without asking again. The question is gone with mining; the rule
+// it taught stays. The empty line is not the defect; treating the
+// absence of a line as a line is. The same shape with the opposite
+// default is worse: `agents install`'s `Proceed? [Y/n]` answers an empty
+// line yes, so an interrupt there meant "yes, write every agent file".
 //
 // The signal handler is honored by keying on the read itself rather
 // than on a context. An interrupt is what ends the read without a line,
@@ -66,21 +65,7 @@ func promptSetup(w io.Writer, question string, r io.Reader) (string, error) {
 // answer even when no newline followed them: a pipe that ends without a
 // trailing newline still delivered what it was asked for, and that is
 // the reading the prompts which already handled their read error — the
-// enrollment token, the provider key, the sr- key, the keyfile
-// passphrase, the purge confirmation — were each written against.
-//
-// Two of those did not move here and should be named rather than left to
-// be rediscovered: enroll.go's enrollment-token and provider-key prompts
-// still carry their own copy of this classification, spelled
-// `err != nil && strings.TrimSpace(line) == ""`. It agrees with this one
-// in substance today — a read that delivered only whitespace is as good
-// as one that delivered nothing — and both are correct. But they are two
-// answers to the question this file exists to answer once, and they will
-// not follow if the rule here ever changes. They read os.Stdin directly
-// rather than a reader passed in, so routing them through promptBufio
-// needs a seam they do not have; giving them one is a change to how
-// `enroll` and `provider` take their input, which is worth doing on its
-// own and not as a rider on this.
+// sr- key and the purge confirmation — were each written against.
 func answerOrAbort(line string, err error) (string, error) {
 	if err != nil && line == "" {
 		return "", errPromptAborted

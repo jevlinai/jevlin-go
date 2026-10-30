@@ -103,15 +103,15 @@ func TestHooksStartTheReleaseCheckOnceADay(t *testing.T) {
 	sess := map[string]any{"session_id": "s"}
 
 	runHook(t, ops, hc, "window session-start", sess)
-	if len(checks) != 1 || checks[0] != "/c.toml" || len(fs.flushes) != 1 {
-		t.Fatalf("no stamp: checks %v flushes %v; want one of each", checks, fs.flushes)
+	if len(checks) != 1 || checks[0] != "/c.toml" {
+		t.Fatalf("no stamp: checks %v; want one", checks)
 	}
 
 	fs.files[stamp] = stampBytes(t, updateStamp{CheckedAt: checkNow.Add(-time.Hour), Running: "0.3.1", Outcome: updateCurrent})
 	runHook(t, ops, hc, "window session-start", sess)
 	runHook(t, ops, hc, "flush", sess)
-	if len(checks) != 1 || len(fs.flushes) != 3 {
-		t.Fatalf("fresh stamp: checks %v flushes %v; want no new check and two more flushes", checks, fs.flushes)
+	if len(checks) != 1 {
+		t.Fatalf("fresh stamp: checks %v; want no new check", checks)
 	}
 
 	fs.files[stamp] = stampBytes(t, updateStamp{CheckedAt: checkNow.Add(-25 * time.Hour), Running: "0.3.1", Outcome: updateCurrent})
@@ -217,8 +217,8 @@ func TestHookStartIsTheJavaScriptHostsSessionStart(t *testing.T) {
 	for _, host := range []string{"opencode", "pi"} {
 		runHook(t, ops, hc, "start "+host, nil)
 	}
-	if len(fs.flushes) != 2 || len(checks) != 1 {
-		t.Fatalf("flushes %v checks %v; want a flush per start and one check", fs.flushes, checks)
+	if len(checks) != 1 {
+		t.Fatalf("checks %v; want one check for two starts", checks)
 	}
 	// Rendered for an installation, both adapters name the binary and the
 	// start they hand it; rendered with none, neither starts anything.
@@ -246,12 +246,12 @@ func TestHookStartIsTheJavaScriptHostsSessionStart(t *testing.T) {
 // A test that gives the hook no spawner, as every existing hook test does,
 // must not have the hook read the stamp or fail: the fake's files are the
 // test's own.
-func TestAHookWithoutACheckSpawnerStartsOnlyTheFlush(t *testing.T) {
+func TestAHookWithoutACheckSpawnerStartsNothing(t *testing.T) {
 	fs, ops := newFakeHookOps(nil)
 	hc := hookContext{cfgPath: "/c.toml", sessionsDir: "/sessions", updateRoot: "/home", updateMode: config.UpdateApply}
 	runHook(t, ops, hc, "window session-start", map[string]any{"session_id": "s"})
-	if len(fs.flushes) != 1 {
-		t.Fatalf("flushes %v", fs.flushes)
+	if _, ok := fs.files[filepath.Join("/sessions", hookStateFile)]; !ok {
+		t.Fatalf("the session start did not run: %v", keys(fs.files))
 	}
 }
 

@@ -1,63 +1,47 @@
 package main
 
-// The drop-in miner's shared pieces: what `search`, `flush` and the hooks
-// pass between themselves through the filesystem, since no process
-// outlives a tool call.
+// What `search` and the hooks pass between themselves through the
+// filesystem, since no process outlives a tool call.
 //
-//   intake    one small JSON file per served search (request id, timings,
-//             status). Written by `search` the moment the router answers,
-//             promoted into the spool by the next `flush` under whatever
-//             (slot, epoch) that flush finds joined. Metadata only — no
-//             query, no result, nothing the router did not already record.
 //   sidecar   one JSON file per workspace (per conversation, for Cursor)
-//             holding the lineage the hooks
-//             learned (hashed session/turn/call ids, the window generation,
-//             the assistant text just before the search). `search` reads
-//             it when no bridge arrived in its environment, so a host that
-//             cannot rewrite a shell command still threads its searches.
-//   lock      one flock/handle per flush so two agents searching at once
-//             queue rather than double-submit.
-//   detach    how `search` and the hooks start a flush without waiting for
-//             it: a child with no terminal that exits when the work is done.
+//             holding the lineage the hooks learned (hashed session/turn/
+//             call ids, the window generation, the assistant text just
+//             before the search). `search` reads it when no bridge arrived
+//             in its environment, so a host that cannot rewrite a shell
+//             command still threads its searches.
+//   root      the installation's own directory, the parent of the state
+//             directory: credentials.json, the registration journal, the
+//             claim record and the release check's stamp live there, where
+//             no sandbox writes.
 //
-// None of this is a daemon. A flush that finds nothing to do exits in
-// well under a second; a machine with no searches runs nothing at all.
+// None of this is a daemon. Between tool calls nothing runs.
 
 import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jevlinai/jevlin-go/pkg/config"
-	"github.com/jevlinai/jevlin-go/pkg/fsx"
-	"github.com/jevlinai/jevlin-go/pkg/mining/spool"
-	"github.com/jevlinai/jevlin-go/pkg/observe"
 )
 
 const (
-	intakeVersion  = 1
 	lineageVersion = 1
 	// lineageMaxAge is how long a workspace's lineage stays believable. A
 	// sidecar older than this describes a conversation that is over; a
 	// search after it belongs to a new one, so `search` falls back to its
 	// per-shell session identity rather than thread into the old lane.
 	lineageMaxAge = 12 * time.Hour
-	// stampMaxBytes and intakeMaxBytes bound what is read back from the
-	// state and intake directories, writable roots of Codex's sandbox: a
-	// stamp is a few dozen bytes and an intake record a closed field set,
-	// so a larger file at either name is not one this client wrote.
-	stampMaxBytes  = 64 << 10
-	intakeMaxBytes = 1 << 20
+	// stampMaxBytes bounds what is read back from the state directory, a
+	// writable root of Codex's sandbox: a stamp is a few dozen bytes, so a
+	// larger file at its name is not one this client wrote.
+	stampMaxBytes = 64 << 10
 	// lineageWalkUp bounds how many parent directories `search` climbs
 	// looking for the workspace a hook wrote for. Hooks key on the project
 	// root; agents run commands from subdirectories of it.
@@ -66,8 +50,7 @@ const (
 
 // loadConfig resolves the config exactly as describeConfigSource does
 // (ruling D-R1: -config, JEVLIN_CONFIG, the installation's own config,
-// then defaults) and returns the full config so
-// the miner can read [miner] and [mining]. pkg/config is not changed: the
+// then defaults) and returns the full config. pkg/config is not changed: the
 // resolved path, once found, is handed to config.Load as an explicit
 // -config, which is exactly what makes it required to exist — a guarantee
 // this function has already checked for the soft-discovered installation
@@ -90,115 +73,12 @@ func loadConfig(cfgPath string, getenv func(string) string) (*config.Config, str
 	return cfg, src, nil
 }
 
-// ── intake ──────────────────────────────────────────────────────────────
-
-// intakeRecord is everything `search` keeps about one served request. It
-// is the search-router observation shape the proxy's observer would have
-// produced, minus the parsing: the CLI has the response in hand.
-type intakeRecord struct {
-	ClientRecordID string    `json:"client_record_id,omitempty"`
-	V              int       `json:"v"`
-	RequestID      string    `json:"request_id"`
-	Host           string    `json:"host,omitempty"`
-	StatusCode     int       `json:"status_code"`
-	StartedAt      time.Time `json:"started_at"`
-	FinishedAt     time.Time `json:"finished_at"`
-	ChosenProvider string    `json:"chosen_provider,omitempty"`
-}
-
-// observation renders the record as the observer would have: the search
-// router profile, the request id as the provider event id, a complete
-// outcome. promote.Build does the rest and rejects anything it should.
-func (r intakeRecord) observation() *observe.Observation {
-	return &observe.Observation{
-		Profile:       observe.ProfileSearchRouter,
-		GenerationID:  r.RequestID,
-		ResolvedModel: r.ChosenProvider,
-		StatusCode:    r.StatusCode,
-		StartedAt:     r.StartedAt,
-		FinishedAt:    r.FinishedAt,
-		SawDone:       true,
-		Outcome:       observe.Complete(observe.TerminationDone),
-	}
-}
-
 func randomSuffix() string {
 	var b [6]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return fmt.Sprintf("%d", time.Now().UnixNano()%1_000_000)
 	}
 	return hex.EncodeToString(b[:])
-}
-
-// writeIntake durably records one served request: temp file, then rename,
-// 0600, so a flush never reads a half-written record. The filename sorts
-// by time so promotion keeps arrival order.
-func writeIntake(dir string, rec intakeRecord) (string, error) {
-	if rec.RequestID == "" {
-		return "", errors.New("intake: request id is required")
-	}
-	if rec.ClientRecordID == "" {
-		id, err := spool.NewClientRecordID()
-		if err != nil {
-			return "", err
-		}
-		rec.ClientRecordID = id
-	}
-	rec.V = intakeVersion
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", err
-	}
-	data, err := json.Marshal(rec)
-	if err != nil {
-		return "", err
-	}
-	name := fmt.Sprintf("%020d-%s.json", rec.FinishedAt.UnixNano(), randomSuffix())
-	final := filepath.Join(dir, name)
-	if err := fsx.WriteFileAtomic(dir, name, data, 0o600); err != nil {
-		return "", err
-	}
-	return final, nil
-}
-
-type intakeFile struct {
-	path string
-	rec  intakeRecord
-}
-
-// readIntake lists the records waiting for promotion, oldest first. A
-// file that will not parse is reported by path and left alone; a flush
-// must never delete what it did not understand.
-func readIntake(dir string) (records []intakeFile, unreadable []string, err error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, nil, nil
-		}
-		return nil, nil, err
-	}
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
-			continue
-		}
-		names = append(names, e.Name())
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		path := filepath.Join(dir, name)
-		data, rerr := fsx.ReadRegular(path, intakeMaxBytes)
-		if rerr != nil {
-			unreadable = append(unreadable, path)
-			continue
-		}
-		var rec intakeRecord
-		if jerr := json.Unmarshal(data, &rec); jerr != nil || rec.V != intakeVersion || rec.RequestID == "" {
-			unreadable = append(unreadable, path)
-			continue
-		}
-		records = append(records, intakeFile{path: path, rec: rec})
-	}
-	return records, unreadable, nil
 }
 
 // ── sidecar ─────────────────────────────────────────────────────────────
@@ -326,7 +206,7 @@ var (
 // (tempNameFor), created exclusively, and renames it over path, so a reader
 // never sees a half-written file and no link at the temporary name is written
 // through. It is the one writer behind the
-// lineage files, the window state and the flush stamp.
+// lineage files and the window state.
 //
 // A failed write or rename removes the temporary file before returning (dropin-miner#100).
 // On Windows a rename fails while the target is momentarily held — seen on
@@ -377,9 +257,8 @@ func removeTemp(ops hookOps, tmp string) {
 //   - the NAME is "<file>.<pid>-<random>.tmp", or the "<file>.<pid>.tmp"
 //     earlier versions wrote, where <file> is the file being written or —
 //     for a lineage write only — any lineage file's name. The sessions
-//     directory is this code's own; the flush stamp shares the state dir
-//     with other writers, and the window state can live in a plugin root,
-//     so those two sweep only their own.
+//     directory is this code's own; the window state can live in a plugin
+//     root, so it sweeps only its own.
 //   - the PID is not this process's.
 //   - the AGE is more than lineageMaxAge. That is the lineage code's own
 //     answer to "how long can a session plausibly last": past it the session
@@ -548,127 +427,10 @@ func (sc *lineageFile) envelope() *traceEnvelope {
 	return env
 }
 
-// ── flush stamp ─────────────────────────────────────────────────────────
+// ── the installation's own directory ───────────────────────────────────
 
-// flushStamp remembers what the last flush learned from the AS, so the
-// next one within miner.flush_interval can skip the target/join round
-// trip and go straight to promotion and delivery.
-type flushStamp struct {
-	V           int       `json:"v"`
-	SlotID      uint64    `json:"slot_id"`
-	TargetEpoch uint64    `json:"target_epoch"`
-	LastAS      time.Time `json:"last_as"`
-	LastFlush   time.Time `json:"last_flush"`
-}
-
-func minerRoot(m config.Miner) string { return filepath.Dir(m.IntakeDir) }
-
-// flushStampPath is the stamp under mining.state_dir, which a sandboxed agent
-// can write (the miner root is not). With no state directory there is no
-// stamp: every read is the zero stamp and every write fails, which costs a
-// target lookup per flush and nothing else. A config with an authorization
-// server always has a state directory (pkg/config refuses one without).
-func flushStampPath(m config.Mining) string {
-	if m.StateDir == "" {
-		return ""
-	}
-	return filepath.Join(m.StateDir, "flush.json")
-}
-
-func flushLockPath(m config.Miner) string { return filepath.Join(minerRoot(m), "flush.lock") }
-
-// loadFlushStamp reads the stamp; with no state directory there is none.
-func loadFlushStamp(path string) flushStamp {
-	if path == "" {
-		return flushStamp{}
-	}
-	return readFlushStamp(path)
-}
-
-func readFlushStamp(path string) flushStamp {
-	data, err := fsx.ReadRegular(path, stampMaxBytes)
-	if err != nil {
-		return flushStamp{}
-	}
-	var st flushStamp
-	if json.Unmarshal(data, &st) != nil || st.V != 1 {
-		return flushStamp{}
-	}
-	return st
-}
-
-func writeFlushStamp(path string, st flushStamp) error {
-	if path == "" {
-		return errors.New("mining.state_dir is empty, so the flush stamp has nowhere to live")
-	}
-	st.V = 1
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	data, err := json.Marshal(st)
-	if err != nil {
-		return err
-	}
-	return replaceViaTemp(realHookOps(), path, data, time.Now(), false)
-}
-
-// ── recorded-search epoch (D's own evidence, not F's stamp) ─────────────
-//
-// doctor's recording check needs to tell a search that ran in the epoch
-// the AS reports as current from a hook flush that touched nothing: F's
-// flush stamp updates on either, so it cannot make that distinction alone.
-// This is D's own file, beside the intake records a search writes but
-// never counted as one: recordedEpochFile has no .json suffix, so neither
-// readIntake's promotion scan nor countIntakeJSON's doctor count ever see
-// it. It names the target epoch F's flush stamp held the moment a search
-// was last recorded — read-only, since F owns the stamp itself — not the
-// epoch a fresh AS call would report right now, so it can lag the real
-// target between flushes. That lag can only ever make doctor conclude "no
-// recent activity" where "activity, unresolved" was warranted, never the
-// reverse, which is the direction a check that never says NO may err in.
-const recordedEpochFile = "recorded_epoch"
-
-// recordSearchEpoch is best-effort and silent: a failure here diagnoses
-// nothing about the search that just ran, promotes nothing and blocks
-// nothing, so it is not worth a health record or a line to the user —
-// only a future `doctor` run losing one input it would rather have had.
-func recordSearchEpoch(dir string, epoch uint64) {
-	_ = fsx.WriteFileAtomic(dir, recordedEpochFile, []byte(strconv.FormatUint(epoch, 10)), 0o600)
-}
-
-// readSearchEpoch reads back what recordSearchEpoch wrote. Absent — no
-// search has ever been recorded here, or its marker predates this
-// feature — is not an error; present, ok=false means the file exists but
-// could not be parsed, fed to the same undetermined path doctor's other
-// unreadable inputs use, rather than silently read as "nothing happened."
-func readSearchEpoch(dir string) (epoch uint64, present bool, err error) {
-	data, rerr := fsx.ReadRegular(filepath.Join(dir, recordedEpochFile), stampMaxBytes)
-	if errors.Is(rerr, fs.ErrNotExist) {
-		return 0, false, nil
-	}
-	if rerr != nil {
-		return 0, false, rerr
-	}
-	n, perr := strconv.ParseUint(strings.TrimSpace(string(data)), 10, 64)
-	if perr != nil {
-		return 0, false, fmt.Errorf("recorded_epoch: %w", perr)
-	}
-	return n, true, nil
-}
-
-// ── detached flush ──────────────────────────────────────────────────────
-
-// startFlush launches `flush` as a detached child of this process and
-// returns without waiting. Best effort by contract: a machine that cannot
-// spawn keeps its intake on disk for the next search or session to flush.
-func startFlush(cfgPath string) error {
-	exe, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	args := []string{"flush"}
-	if cfgPath != "" {
-		args = append(args, "-config", cfgPath)
-	}
-	return spawnDetached(exe, args)
-}
+// installRoot is the installation's own directory: the parent of the state
+// directory, which with the standard layout is ~/.jevlin. credentials.json,
+// the registration journal, the claim record and the release check's stamp
+// live there, outside every directory a sandboxed agent may write.
+func installRoot(m config.Miner) string { return filepath.Dir(m.StateDir) }

@@ -157,20 +157,22 @@ func TestTheStructuredPathIsTaughtBeforeTheHumanOne(t *testing.T) {
 // which field means mining is on. `configured` reports only that the miner
 // block exists; reading it as "mining is on" is the mistake this asserts
 // against.
-func TestHostsAreToldSearchSuccessIsNotMiningCredit(t *testing.T) {
+func TestHostsAreToldNothingIsMined(t *testing.T) {
 	entry := guidanceEntry()
 	for _, s := range targetsByKind(targetHost) {
 		t.Run(s.ID(), func(t *testing.T) {
 			text := instructionTextFor(t, s.ID(), entry)
 			lower := strings.ToLower(text)
-			if !strings.Contains(lower, "does not mean") && !strings.Contains(lower, "not mean anything was earned") {
-				t.Errorf("%s is not told that a successful search is not earnings:\n%s", s.Label(), text)
+			// The envelope's mining object is a stub, and a host that reads
+			// it must be told so, or a "disabled" state reads as a failure.
+			if !strings.Contains(lower, "nothing is mined") {
+				t.Errorf("%s is not told that this client mines nothing:\n%s", s.Label(), text)
 			}
-			if !strings.Contains(text, "mining") || !strings.Contains(text, "state") {
-				t.Errorf("%s is not pointed at the mining state:\n%s", s.Label(), text)
+			if !strings.Contains(text, "mining") {
+				t.Errorf("%s is not told what the mining object is:\n%s", s.Label(), text)
 			}
-			if regexp.MustCompile(`(?i)configured[^.\n]{0,30}mining is on`).MatchString(text) {
-				t.Errorf("%s is told that configured means mining is on:\n%s", s.Label(), text)
+			if regexp.MustCompile(`(?i)(earn|reward|payout)`).MatchString(text) && !strings.Contains(lower, "earns nothing") {
+				t.Errorf("%s is told a search earns something:\n%s", s.Label(), text)
 			}
 		})
 	}

@@ -1,8 +1,8 @@
 package main
 
 // jevlin setup, driven in-process against a sandbox: a fake user home,
-// the installation directory inside it, the onboarding tests' stub platform
-// and AS, connect run for real (cmdConnect, not a stub), and an agentOps
+// the installation directory inside it, the onboarding tests' stub
+// platform, connect run for real (cmdConnect, not a stub), and an agentOps
 // whose PATH lookup finds exactly the agents a case says are installed.
 //
 // Every case snapshots the whole sandbox before and after, and asserts that
@@ -50,7 +50,6 @@ type setupSandbox struct {
 	home     string // the installation directory
 	exe      string
 	platform *stubPlatform
-	as       *stubOnboardingAS
 	env      map[string]string
 	onPath   map[string]bool
 	userEnv  *fakeUserEnv
@@ -80,15 +79,14 @@ func newSetupSandbox(t *testing.T) *setupSandbox {
 		userHome: filepath.Join(root, "user"),
 		exe:      filepath.Join(root, "bin", "jevlin"),
 		platform: newStubPlatform(t),
-		as:       newStubAS(t),
 		onPath:   map[string]bool{},
 		userEnv:  newFakeUserEnv(),
 	}
 	s.home = filepath.Join(s.userHome, ".jevlin")
 	// Every default that reads the real environment — os.UserHomeDir,
-	// os.UserConfigDir (pkg/config's default state_dir, the default wallet
-	// directory) — resolves inside the sandbox, so a config that leaves a
-	// directory out cannot reach the participant's own machine.
+	// os.UserConfigDir (pkg/config's default state_dir) — resolves inside
+	// the sandbox, so a config that leaves a directory out cannot reach the
+	// participant's own machine.
 	t.Setenv("HOME", s.userHome)
 	t.Setenv("USERPROFILE", s.userHome)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(s.userHome, ".config"))
@@ -104,7 +102,6 @@ func newSetupSandbox(t *testing.T) *setupSandbox {
 	}
 	s.env = map[string]string{ // #nosec G101 -- env var names and stub URLs, no credential
 		"JEVLIN_HOME":           s.home,
-		"JEVLIN_AS_URL":         s.as.srv.URL,
 		"JEVLIN_ROUTER_URL":     "https://router.invalid.test",
 		"JEVLIN_PLATFORM_URL":   s.platform.srv.URL,
 		"JEVLIN_AGENTS_API_URL": s.platform.srv.URL,
@@ -162,16 +159,13 @@ func (s *setupSandbox) deps(stdin io.Reader, stdout, stderr io.Writer, interacti
 	}
 }
 
-// run executes setup. interactive also forces connect's terminal check, so
-// an interactive case is interactive all the way through.
+// run executes setup. interactive is setup's own terminal check; connect
+// asks nothing of the participant, so it needs none.
 func (s *setupSandbox) run(stdin io.Reader, interactive bool, args ...string) (code int, stdout, stderr string) {
 	s.t.Helper()
 	if stdin == nil {
 		stdin = &ttyReader{}
 	}
-	orig := connectInteractive
-	connectInteractive = func(io.Reader, io.Writer) bool { return interactive }
-	defer func() { connectInteractive = orig }()
 	var out, errOut bytes.Buffer
 	code = setupMain(s.deps(stdin, &out, &errOut, interactive), args)
 	return code, out.String(), errOut.String()
@@ -191,9 +185,9 @@ func (s *setupSandbox) readFile(path string) []byte {
 func (s *setupSandbox) paths() agentPaths { return s.agentOps(false).paths(s.getenv) }
 
 // ttyReader models a terminal: each Read returns at most one line, the way
-// a line-disciplined tty delivers input, so connect's buffered reader and
-// setup's byte-at-a-time reader take turns on one stdin exactly as they do
-// at a real terminal.
+// a line-disciplined tty delivers input, so setup's byte-at-a-time reader
+// and the Codex question's buffered one take turns on one stdin exactly as
+// they do at a real terminal.
 type ttyReader struct{ lines []string }
 
 func tty(lines ...string) *ttyReader {
@@ -363,15 +357,6 @@ func ownedSet(paths ...string) []string {
 
 // ── helpers for asserting outcomes ────────────────────────────────────────
 
-func miningDecisionOf(t *testing.T, stateDir string) auth.MiningDecisionState {
-	t.Helper()
-	store, err := auth.OpenStoreExisting(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return store.ReadMiningDecision().State
-}
-
 func loadSetupConfig(t *testing.T, path string) *config.Config {
 	t.Helper()
 	cfg, _, err := config.Load([]string{"-config", path}, func(string) string { return "" })
@@ -385,10 +370,9 @@ func profileBlockCount(b []byte) int { return bytes.Count(b, []byte(profileMarke
 
 // ── the cases ─────────────────────────────────────────────────────────────
 
-// A fresh install with no terminal and no JEVLIN_MINING: connect runs and
-// persists "off" from the file's silence, [mining] carries no enabled key,
-// and neither a profile nor an agent is touched.
-func TestSetupFreshNonInteractiveWritesNoEnabledAndEndsStopped(t *testing.T) {
+// A fresh install with no terminal: the config is written and connect runs
+// once, and neither a profile nor an agent is touched.
+func TestSetupFreshNonInteractiveConnectsAndSkipsTheProfileAndAgents(t *testing.T) {
 	s := newSetupSandbox(t)
 	s.platform.claim("credits")
 	s.onPath["claude"] = true
@@ -399,17 +383,11 @@ func TestSetupFreshNonInteractiveWritesNoEnabledAndEndsStopped(t *testing.T) {
 		t.Fatalf("setup exited %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
 	}
 	cfg := loadSetupConfig(t, s.cfgPath())
-	if cfg.MiningEnabledExplicit {
-		t.Errorf("[mining] enabled was written with no JEVLIN_MINING opt-in:\n%s", s.readFile(s.cfgPath()))
-	}
-	if !cfg.Miner.Enabled || cfg.Platform.BaseURL != s.platform.srv.URL {
+	if cfg.Miner.StateDir != filepath.Join(s.home, "state") || cfg.Platform.BaseURL != s.platform.srv.URL {
 		t.Errorf("config is missing [miner] or [platform]: %+v %+v", cfg.Miner, cfg.Platform)
 	}
 	if reg, _, _ := s.platform.counts(); reg != 1 {
 		t.Fatalf("register calls = %d, want 1: connect did not run exactly once", reg)
-	}
-	if got := miningDecisionOf(t, filepath.Join(s.home, "state")); got != auth.MiningDisabled {
-		t.Fatalf("decision = %s, want disabled", got)
 	}
 	if !strings.Contains(out, "Not an interactive shell — not touching any agent") {
 		t.Errorf("agents step did not refuse without a terminal:\n%s", out)
@@ -441,73 +419,18 @@ func TestSetupFreshNonInteractiveWritesNoEnabledAndEndsStopped(t *testing.T) {
 	assertOwnership(t, before, after, s.home)
 }
 
-// The scripted opt-in: no terminal and JEVLIN_MINING=1 with a payout
-// address writes enabled = true and the address, and connect enrolls and
-// declares with nobody present.
-func TestSetupScriptedMiningOptInEnrollsAndDeclares(t *testing.T) {
-	s := newSetupSandbox(t)
-	s.platform.claim("mining")
-	const addr = "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn"
-	s.env["JEVLIN_MINING"] = "1"
-	s.env["JEVLIN_PAYOUT_ADDRESS"] = addr
-	before := snapshotTree(t, s.root)
-
-	code, out, errOut := s.run(nil, false)
-	if code != exitOK {
-		t.Fatalf("setup exited %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
-	}
-	cfg := loadSetupConfig(t, s.cfgPath())
-	if !cfg.MiningEnabledExplicit || !cfg.Mining.Enabled || cfg.Mining.PayoutAddress != addr {
-		t.Fatalf("scripted answer not written: explicit=%v enabled=%v address=%q", cfg.MiningEnabledExplicit, cfg.Mining.Enabled, cfg.Mining.PayoutAddress)
-	}
-	if got := miningDecisionOf(t, filepath.Join(s.home, "state")); got != auth.MiningEnabled {
-		t.Fatalf("decision = %s, want enabled", got)
-	}
-	if reg, ok := loadAgent(t, filepath.Join(s.home, "state")); !ok || reg.LastEnrollmentSlot == "" {
-		t.Fatalf("connect did not enroll: %+v", reg)
-	}
-	if got := s.as.declaredAddress(); got != addr {
-		t.Fatalf("declared %q, want %q", got, addr)
-	}
-	assertOwnership(t, before, snapshotTree(t, s.root), s.home)
-}
-
-// JEVLIN_MINING=1 at a terminal is ignored: the answer is connect's
-// question, and enabled = true is never written by an interactive run.
-func TestSetupNeverWritesEnabledAtATerminal(t *testing.T) {
-	s := newSetupSandbox(t)
-	s.platform.claim("credits")
-	s.env["JEVLIN_MINING"] = "1"
-	code, out, errOut := s.run(tty("n"), true, "-yes", "-no-agents", "-no-profile")
-	if code != exitOK {
-		t.Fatalf("setup exited %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
-	}
-	if cfg := loadSetupConfig(t, s.cfgPath()); cfg.MiningEnabledExplicit {
-		t.Fatalf("an interactive run wrote [mining] enabled:\n%s", s.readFile(s.cfgPath()))
-	}
-	if got := miningDecisionOf(t, filepath.Join(s.home, "state")); got != auth.MiningDisabled {
-		t.Fatalf("decision = %s, want the terminal's no", got)
-	}
-}
-
 // Interactive, yes to everything setup asks: the profile block (POSIX) or
 // the user environment (Windows) is set once, and the detected agent is set
-// up. The mining question is still connect's, answered here with no.
+// up. The terminal is never read: -yes answers both questions.
 func TestSetupInteractiveYesToEverything(t *testing.T) {
 	s := newSetupSandbox(t)
 	s.platform.claim("credits")
 	s.onPath["codex"] = true
 	before := snapshotTree(t, s.root)
 
-	code, out, errOut := s.run(tty("n"), true, "-yes")
+	code, out, errOut := s.run(tty(), true, "-yes")
 	if code != exitOK {
 		t.Fatalf("setup exited %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
-	}
-	if !strings.Contains(errOut, "Enable mining rewards?") {
-		t.Errorf("connect did not ask its own question at a terminal:\n%s", errOut)
-	}
-	if got := miningDecisionOf(t, filepath.Join(s.home, "state")); got != auth.MiningDisabled {
-		t.Fatalf("decision = %s, want the terminal's no; -yes must never answer it", got)
 	}
 	paths := s.paths()
 	if !lexists(paths.codexSkill) {
@@ -530,8 +453,8 @@ func TestSetupInteractiveYesToEverything(t *testing.T) {
 }
 
 // -yes answers the environment and agents questions without a terminal, on
-// both systems, so a scripted install can pass it. It still never answers
-// the mining question, and never adopts a set-aside installation.
+// both systems, so a scripted install can pass it. It never adopts a
+// set-aside installation.
 func TestSetupYesAnswersEnvironmentAndAgentsWithoutATerminal(t *testing.T) {
 	s := newSetupSandbox(t)
 	s.platform.claim("credits")
@@ -559,12 +482,6 @@ func TestSetupYesAnswersEnvironmentAndAgentsWithoutATerminal(t *testing.T) {
 	if !reflect.DeepEqual(siblingBefore, snapshotTree(t, sibling)) || lexists(filepath.Join(s.home, "wallet")) {
 		t.Error("-yes adopted a set-aside installation without a terminal")
 	}
-	if cfg := loadSetupConfig(t, s.cfgPath()); cfg.MiningEnabledExplicit {
-		t.Error("-yes wrote a mining answer")
-	}
-	if got := miningDecisionOf(t, filepath.Join(s.home, "state")); got != auth.MiningDisabled {
-		t.Errorf("decision = %s, want the config's silence (off); -yes must never answer it", got)
-	}
 	assertOwnership(t, before, snapshotTree(t, s.root), ownedSet(append([]string{s.home, s.profilePath()}, targetOwnedPaths(paths, "codex")...)...)...)
 }
 
@@ -576,17 +493,14 @@ func TestSetupSecondRunIsANoOp(t *testing.T) {
 	s.platform.claim("credits")
 	s.onPath["claude"] = true
 	s.onPath["codex"] = true
-	if code, out, errOut := s.run(tty("n"), true, "-yes"); code != exitOK {
+	if code, out, errOut := s.run(tty(), true, "-yes"); code != exitOK {
 		t.Fatalf("first setup exited %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
 	}
 
-	// A record waiting in the spool and one in intake must survive the rerun.
-	spooled := filepath.Join(s.home, "spool", "record-1.json")
-	intake := filepath.Join(s.home, "intake", "served-1.json")
-	for _, p := range []string{spooled, intake} {
-		if err := os.WriteFile(p, []byte(`{"v":1}`), 0o600); err != nil {
-			t.Fatal(err)
-		}
+	// A lineage file a hook left in sessions must survive the rerun.
+	session := filepath.Join(s.home, "sessions", "s-1.json")
+	if err := os.WriteFile(session, []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
 	}
 
 	paths := s.paths()
@@ -604,12 +518,11 @@ func TestSetupSecondRunIsANoOp(t *testing.T) {
 	stateDir := filepath.Join(s.home, "state")
 	regBefore, _ := loadAgent(t, stateDir)
 	credsBefore := s.readFile(filepath.Join(s.home, credentialsFile))
-	dpopBefore, _ := os.ReadFile(filepath.Join(stateDir, "dpop.key")) // #nosec G304 -- absent until an enrollment; compared either way
+	traceKeyBefore := s.readFile(auth.TraceKeyPath(stateDir))
 	envBefore := map[string]string{}
 	for k, v := range s.userEnv.values {
 		envBefore[k] = v
 	}
-	decisionBefore := miningDecisionOf(t, stateDir)
 
 	code, out, errOut := s.run(tty(), true, "-yes")
 	if code != exitOK {
@@ -638,16 +551,11 @@ func TestSetupSecondRunIsANoOp(t *testing.T) {
 	if !bytes.Equal(s.readFile(filepath.Join(s.home, credentialsFile)), credsBefore) {
 		t.Error("the search credential changed")
 	}
-	if dpopAfter, _ := os.ReadFile(filepath.Join(stateDir, "dpop.key")); !bytes.Equal(dpopAfter, dpopBefore) { // #nosec G304 -- as above
-		t.Error("the DPoP key changed")
+	if !bytes.Equal(s.readFile(auth.TraceKeyPath(stateDir)), traceKeyBefore) {
+		t.Error("the trace key changed")
 	}
-	if got := miningDecisionOf(t, stateDir); got != decisionBefore {
-		t.Errorf("mining decision %s -> %s", decisionBefore, got)
-	}
-	for _, p := range []string{spooled, intake} {
-		if !lexists(p) {
-			t.Errorf("%s was lost", p)
-		}
+	if !lexists(session) {
+		t.Errorf("%s was lost", session)
 	}
 	if strings.Contains(out, "\nwrote ") {
 		t.Errorf("an agent file was rewritten on a second run:\n%s", out)
@@ -657,14 +565,21 @@ func TestSetupSecondRunIsANoOp(t *testing.T) {
 	}
 }
 
-// An existing config with a [miner] table is left byte for byte.
+// legacyASURL stands where an earlier version's config named its
+// authorization server. pkg/config accepts the [mining] keys an earlier
+// version wrote and reads none of them but state_dir, so the value is never
+// dialed and any origin will do.
+const legacyASURL = "https://as.invalid.test"
+
+// An existing config with a [miner] table — here one an earlier version
+// wrote, [mining] and the intake keys included — is left byte for byte.
 func TestSetupLeavesAConfigWithMinerByteIdentical(t *testing.T) {
 	s := newSetupSandbox(t)
 	s.platform.claim("credits")
 	if err := os.MkdirAll(s.home, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	body := "# mine, by hand\n[platform]\nbase_url = \"" + s.platform.srv.URL + "\"\n\n[mining]\nas_url = \"" + s.as.srv.URL +
+	body := "# mine, by hand\n[platform]\nbase_url = \"" + s.platform.srv.URL + "\"\n\n[mining]\nas_url = \"" + legacyASURL +
 		"\"\nchain_id = \"twilight-1\"\nslot_id = 7\nstate_dir = " + mustTOML(t, filepath.Join(s.home, "state")) +
 		"\n\n[miner]\nenabled = true\nintake_dir = " + mustTOML(t, filepath.Join(s.home, "intake")) + "\n"
 	if err := os.WriteFile(s.cfgPath(), []byte(body), 0o600); err != nil {
@@ -698,7 +613,7 @@ func TestSetupAppendsOnlyTheMissingTablesToAProxyConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	proxy := "[proxy]\nlisten = \"127.0.0.1:8787\"\n\n[[provider]]\nname = \"search-router\"\nupstream = \"https://router.invalid.test\"\n\n" +
-		"[mining]\nas_url = \"" + s.as.srv.URL + "\"\nchain_id = \"twilight-1\"\nslot_id = 7\nstate_dir = " + mustTOML(t, filepath.Join(s.home, "state")) + "\n"
+		"[mining]\nas_url = \"" + legacyASURL + "\"\nchain_id = \"twilight-1\"\nslot_id = 7\nstate_dir = " + mustTOML(t, filepath.Join(s.home, "state")) + "\n"
 	if err := os.WriteFile(s.cfgPath(), []byte(proxy), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -718,8 +633,8 @@ func TestSetupAppendsOnlyTheMissingTablesToAProxyConfig(t *testing.T) {
 		t.Errorf("[platform] appears %d times", n)
 	}
 	cfg := loadSetupConfig(t, s.cfgPath())
-	if cfg.Listen.Address != "127.0.0.1:8787" || !cfg.Miner.Enabled {
-		t.Errorf("migrated config lost the proxy's settings or gained no miner: %+v %+v", cfg.Listen, cfg.Miner)
+	if cfg.Miner.RouterURL.String() != "https://router.invalid.test" || cfg.Miner.StateDir != filepath.Join(s.home, "state") {
+		t.Errorf("migrated config lost the proxy's router or gained no [miner] state_dir: %+v", cfg.Miner)
 	}
 }
 
@@ -731,7 +646,7 @@ func TestSetupAppendsOnlyMinerWhenPlatformExists(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := "[platform]\nbase_url = \"" + s.platform.srv.URL + "\"\nagents_api_url = \"" + s.platform.srv.URL + "\"\n\n" +
-		"[mining]\nas_url = \"" + s.as.srv.URL + "\"\nchain_id = \"twilight-1\"\nslot_id = 7\nstate_dir = " + mustTOML(t, filepath.Join(s.home, "state")) + "\n"
+		"[mining]\nas_url = \"" + legacyASURL + "\"\nchain_id = \"twilight-1\"\nslot_id = 7\nstate_dir = " + mustTOML(t, filepath.Join(s.home, "state")) + "\n"
 	if err := os.WriteFile(s.cfgPath(), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -799,13 +714,13 @@ func TestSetupHomePathWithSpecialCharactersRoundTrips(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	code, out, errOut := s.run(tty("n"), true, "-yes", "-no-agents")
+	code, out, errOut := s.run(tty(), true, "-yes", "-no-agents")
 	if code != exitOK {
 		t.Fatalf("setup exited %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
 	}
 	cfg := loadSetupConfig(t, s.cfgPath())
-	if cfg.Mining.StateDir != filepath.Join(s.home, "state") || cfg.Miner.IntakeDir != filepath.Join(s.home, "intake") {
-		t.Fatalf("paths did not round-trip: state=%q intake=%q, want under %q", cfg.Mining.StateDir, cfg.Miner.IntakeDir, s.home)
+	if cfg.Miner.StateDir != filepath.Join(s.home, "state") || cfg.Miner.SessionsDir != filepath.Join(s.home, "sessions") {
+		t.Fatalf("paths did not round-trip: state=%q sessions=%q, want under %q", cfg.Miner.StateDir, cfg.Miner.SessionsDir, s.home)
 	}
 	if runtime.GOOS == "windows" {
 		return
@@ -844,9 +759,6 @@ func TestSetupUsesAnInstallationAlreadyInHome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveMiningEnabled(false); err != nil {
-		t.Fatal(err)
-	}
 	if err := store.SaveAgentRegistration(auth.AgentRegistration{AgentID: "prior", Status: "claimed", Scopes: []string{"credits"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -861,17 +773,24 @@ func TestSetupUsesAnInstallationAlreadyInHome(t *testing.T) {
 	if strings.Contains(out, "set aside at") {
 		t.Errorf("offered a sibling although home holds an installation:\n%s", out)
 	}
-	if !strings.Contains(out, "stored mining decision came with this installation: mining is OFF") {
-		t.Errorf("did not announce the stored decision:\n%s", out)
-	}
 	if !reflect.DeepEqual(siblingBefore, snapshotTree(t, sibling)) {
 		t.Error("the sibling was touched")
 	}
 }
 
-// writeInstallation lays out a previous installation's files. parts names
-// what it holds: wallet, identity (state + credentials), pending (only an
-// interrupted registration), spool, config.
+// legacyWalletSidecar is a file an earlier version kept in its wallet
+// directory beside the key. This client reads nothing there; the name only
+// has to be one that is not the key, which is what makes a directory
+// holding it alone "a wallet directory with no wallet key".
+const legacyWalletSidecar = "wallet.json"
+
+// writeInstallation lays out a previous installation's files, in the shapes
+// an earlier version left them: wallet (its sealed key and sidecar),
+// identity (state/ with the files an earlier version's enrollment made, the
+// agent record and credentials), pending (only an interrupted
+// registration), spool (an earlier version's undelivered record), config.
+// This client reads none of the earlier version's files; adoption moves
+// them whole, and that is what these cases drive.
 func writeInstallation(t *testing.T, dir string, parts ...string) {
 	t.Helper()
 	write := func(rel, body string) {
@@ -887,7 +806,7 @@ func writeInstallation(t *testing.T, dir string, parts ...string) {
 		switch part {
 		case "wallet":
 			write(filepath.Join("wallet", walletKeyFile), "sealed-key")
-			write(filepath.Join("wallet", walletSidecarFile), `{"address":"twilight1old"}`)
+			write(filepath.Join("wallet", legacyWalletSidecar), `{"address":"twilight1old"}`)
 		case "identity":
 			write(filepath.Join("state", "dpop.key"), "old-dpop")
 			write(filepath.Join("state", "refresh.token"), "old-refresh")
@@ -912,10 +831,9 @@ func TestSetupAdoptsASetAsideInstallationByBundles(t *testing.T) {
 	writeInstallation(t, sibling, "wallet", "identity", "spool")
 	before := snapshotTree(t, s.root)
 
-	// Answer "use it", then connect's mining question. The adopted identity
-	// is claimed on the platform by nobody; connect's own outcome is not this
-	// case's concern.
-	_, out, _ := s.run(tty("y", "n"), true, "-no-agents", "-no-profile")
+	// Answer "use it". The adopted identity is claimed on the platform by
+	// nobody; connect's own outcome is not this case's concern.
+	_, out, _ := s.run(tty("y"), true, "-no-agents", "-no-profile")
 	for _, want := range []string{"adopted the identity", "adopted the wallet", "adopted spool (1 moved", "removed the now-empty " + sibling} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q:\n%s", want, out)
@@ -951,7 +869,7 @@ func TestSetupLeavesANonEmptySourceWithANote(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(sibling, "notes.txt"), []byte("mine"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, out, _ := s.run(tty("y", "n"), true, "-no-agents", "-no-profile")
+	_, out, _ := s.run(tty("y"), true, "-no-agents", "-no-profile")
 	if !strings.Contains(out, "left the rest of "+sibling+" in place (notes.txt)") {
 		t.Errorf("no note for the non-empty source:\n%s", out)
 	}
@@ -986,7 +904,7 @@ func TestSetupAdoptsASourceHoldingOnlyAPendingRegistration(t *testing.T) {
 	s := newSetupSandbox(t)
 	sibling := s.home + ".bak"
 	writeInstallation(t, sibling, "pending")
-	_, out, _ := s.run(tty("y", "n"), true, "-no-agents", "-no-profile")
+	_, out, _ := s.run(tty("y"), true, "-no-agents", "-no-profile")
 	if !strings.Contains(out, "A previous installation is set aside at "+sibling) {
 		t.Fatalf("a pending registration did not count as an installation:\n%s", out)
 	}
@@ -995,12 +913,12 @@ func TestSetupAdoptsASourceHoldingOnlyAPendingRegistration(t *testing.T) {
 	}
 }
 
-// A home holding only payout.json is what a first connect leaves when the
-// participant answered the address question and Register then failed. It
-// is not an installation: setup used to report "a payout address" as the
-// previous installation and never offer the one set aside beside it. Now
-// the set-aside identity is offered and adopted, and the home's payout
-// record, the participant's latest answer, is kept.
+// A home holding only payout.json is what an earlier version's first
+// connect left when the participant answered its address question and
+// Register then failed. It is not an installation: setup used to report "a
+// payout address" as the previous installation and never offer the one set
+// aside beside it. The set-aside identity is offered and adopted, and the
+// home's record, the participant's latest answer, is kept where it is.
 func TestALonePayoutRecordDoesNotHideASetAsideInstallation(t *testing.T) {
 	s := newSetupSandbox(t)
 	sibling := s.home + ".bak"
@@ -1008,7 +926,7 @@ func TestALonePayoutRecordDoesNotHideASetAsideInstallation(t *testing.T) {
 	const homeAddress = `{"address":"twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh"}`
 	writeFileT(t, filepath.Join(sibling, payoutRecordFile), `{"address":"twilight1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc"}`)
 	writeFileT(t, filepath.Join(s.home, payoutRecordFile), homeAddress)
-	_, out, _ := s.run(tty("y", "n"), true, "-no-agents", "-no-profile")
+	_, out, _ := s.run(tty("y"), true, "-no-agents", "-no-profile")
 	if !strings.Contains(out, "A previous installation is set aside at "+sibling) {
 		t.Fatalf("the set-aside installation was not offered:\n%s", out)
 	}
@@ -1023,8 +941,9 @@ func TestALonePayoutRecordDoesNotHideASetAsideInstallation(t *testing.T) {
 	}
 }
 
-// A destination state/ that holds only an unfinished enrollment's DPoP key is
-// set aside whole, and the adopted identity takes its place.
+// A destination state/ that holds only the key an earlier version's
+// unfinished enrollment left is not an identity: it is set aside whole, and
+// the adopted identity takes its place.
 func TestSetupSetsAsideAnUnenrolledDestinationState(t *testing.T) {
 	s := newSetupSandbox(t)
 	if err := os.MkdirAll(filepath.Join(s.home, "state"), 0o700); err != nil {
@@ -1035,7 +954,7 @@ func TestSetupSetsAsideAnUnenrolledDestinationState(t *testing.T) {
 	}
 	sibling := s.home + ".bak"
 	writeInstallation(t, sibling, "identity")
-	_, out, _ := s.run(tty("y", "n"), true, "-no-agents", "-no-profile")
+	_, out, _ := s.run(tty("y"), true, "-no-agents", "-no-profile")
 	aside := filepath.Join(s.home, "state.unenrolled-"+fixedSetupClock().UTC().Format("20060102150405"))
 	if got := string(s.readFile(filepath.Join(aside, "dpop.key"))); got != "unfinished" {
 		t.Fatalf("unfinished key not set aside whole at %s (%q):\n%s", aside, got, out)
@@ -1064,7 +983,7 @@ func TestSetupStopsOnAnIdentityConflictBeforeConnect(t *testing.T) {
 	siblingBefore := snapshotTree(t, sibling)
 	before := snapshotTree(t, s.root)
 
-	code, out, errOut := s.run(tty("y", "n"), true, "-yes", "-no-agents", "-no-profile")
+	code, out, errOut := s.run(tty("y"), true, "-yes", "-no-agents", "-no-profile")
 	if code == exitOK {
 		t.Fatalf("setup exited 0 after an identity conflict\nstdout:\n%s\nstderr:\n%s", out, errOut)
 	}
@@ -1173,7 +1092,7 @@ func TestSetupStopsWhenTheWalletIsRefused(t *testing.T) {
 			c.setup(t, s, sibling)
 			before := snapshotTree(t, sibling)
 
-			code, out, errOut := s.run(tty("y", "n"), true, "-no-agents", "-no-profile")
+			code, out, errOut := s.run(tty("y"), true, "-no-agents", "-no-profile")
 			s.assertAdoptionStopped(t, code, out, errOut, "wallet", sibling)
 			if !strings.Contains(out, "adopted the identity") {
 				t.Fatalf("the identity stage did not run first, so its rollback is not being tested:\n%s", out)
@@ -1210,7 +1129,7 @@ func TestSetupRollsBackTheIdentityWhenTheWalletMoveOrRestrictionFails(t *testing
 			}
 			before := snapshotTree(t, sibling)
 
-			code, out, errOut := s.run(tty("y", "n"), true, "-no-agents", "-no-profile")
+			code, out, errOut := s.run(tty("y"), true, "-no-agents", "-no-profile")
 			s.assertAdoptionStopped(t, code, out, errOut, "wallet", sibling)
 			if !strings.Contains(out, "adopted the identity") {
 				t.Fatalf("the identity stage did not run first:\n%s", out)
@@ -1238,7 +1157,7 @@ func TestSetupRestoresASetAsideStateWhenTheWalletFailsAfterTheIdentity(t *testin
 	s.move = failMoveFrom(filepath.Join(sibling, "wallet"))
 	before := snapshotTree(t, sibling)
 
-	code, out, errOut := s.run(tty("y", "n"), true, "-no-agents", "-no-profile")
+	code, out, errOut := s.run(tty("y"), true, "-no-agents", "-no-profile")
 	s.assertAdoptionStopped(t, code, out, errOut, "wallet", sibling)
 	if !strings.Contains(out, "set aside "+filepath.Join(s.home, "state")) || !strings.Contains(out, "adopted the identity") {
 		t.Fatalf("the identity stage did not set the state aside and adopt first:\n%s", out)
@@ -1261,7 +1180,7 @@ func TestSetupSetsAsideANonEmptyDestinationWallet(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(s.home, "wallet"), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(s.home, "wallet", walletSidecarFile), []byte("partial"), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(s.home, "wallet", legacyWalletSidecar), []byte("partial"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -1274,11 +1193,11 @@ func TestSetupSetsAsideANonEmptyDestinationWallet(t *testing.T) {
 		partial(t, s)
 		sibling := s.home + ".bak"
 		writeInstallation(t, sibling, "identity", "wallet")
-		_, out, errOut := s.run(tty("y", "n"), true, "-no-agents", "-no-profile")
+		_, out, errOut := s.run(tty("y"), true, "-no-agents", "-no-profile")
 		if strings.Contains(errOut, "could not adopt") {
 			t.Fatalf("adoption failed:\n%s", errOut)
 		}
-		if got, err := os.ReadFile(filepath.Join(incomplete(s), walletSidecarFile)); err != nil || string(got) != "partial" { // #nosec G304 -- the sandbox's own file
+		if got, err := os.ReadFile(filepath.Join(incomplete(s), legacyWalletSidecar)); err != nil || string(got) != "partial" { // #nosec G304 -- the sandbox's own file
 			t.Fatalf("the partial destination wallet was not set aside: %q %v\n%s", got, err, out)
 		}
 		if got, err := os.ReadFile(filepath.Join(s.home, "wallet", walletKeyFile)); err != nil || string(got) != "sealed-key" { // #nosec G304 -- the sandbox's own file
@@ -1302,9 +1221,9 @@ func TestSetupSetsAsideANonEmptyDestinationWallet(t *testing.T) {
 			return restrictToOwner(path, dir)
 		}
 		before := snapshotTree(t, sibling)
-		code, out, errOut := s.run(tty("y", "n"), true, "-no-agents", "-no-profile")
+		code, out, errOut := s.run(tty("y"), true, "-no-agents", "-no-profile")
 		s.assertAdoptionStopped(t, code, out, errOut, "wallet", sibling)
-		if got, err := os.ReadFile(filepath.Join(dstWallet, walletSidecarFile)); err != nil || string(got) != "partial" { // #nosec G304 -- the sandbox's own file
+		if got, err := os.ReadFile(filepath.Join(dstWallet, legacyWalletSidecar)); err != nil || string(got) != "partial" { // #nosec G304 -- the sandbox's own file
 			t.Fatalf("the set-aside destination wallet was not restored: %q %v", got, err)
 		}
 		if lexists(incomplete(s)) {
@@ -1333,7 +1252,7 @@ func TestSetupStopsOnASymlinkInsideTheSourceState(t *testing.T) {
 	}
 	siblingBefore := snapshotTree(t, sibling)
 
-	code, out, errOut := s.run(tty("y", "n"), true, "-no-agents", "-no-profile")
+	code, out, errOut := s.run(tty("y"), true, "-no-agents", "-no-profile")
 	s.assertAdoptionStopped(t, code, out, errOut, identityBundle, sibling)
 	if !strings.Contains(errOut, "symlink") {
 		t.Errorf("the reason does not name the symlink:\n%s", errOut)
@@ -1355,7 +1274,7 @@ func TestSetupStopsWhenTheSourceStateMoveFails(t *testing.T) {
 	s.move = failMoveFrom(filepath.Join(sibling, "state"))
 	siblingBefore := snapshotTree(t, sibling)
 
-	code, out, errOut := s.run(tty("y", "n"), true, "-no-agents", "-no-profile")
+	code, out, errOut := s.run(tty("y"), true, "-no-agents", "-no-profile")
 	s.assertAdoptionStopped(t, code, out, errOut, identityBundle, sibling)
 	if !strings.Contains(errOut, "was put back") {
 		t.Errorf("the report does not say the step was rolled back:\n%s", errOut)
@@ -1377,7 +1296,7 @@ func TestSetupRestoresTheSourceStateWhenTheKeyMoveFails(t *testing.T) {
 	s.move = failMoveFrom(filepath.Join(sibling, credentialsFile))
 	siblingBefore := snapshotTree(t, sibling)
 
-	code, out, errOut := s.run(tty("y", "n"), true, "-no-agents", "-no-profile")
+	code, out, errOut := s.run(tty("y"), true, "-no-agents", "-no-profile")
 	s.assertAdoptionStopped(t, code, out, errOut, identityBundle, sibling)
 	if !reflect.DeepEqual(siblingBefore, snapshotTree(t, sibling)) {
 		t.Error("the source state was not put back exactly as it was")
@@ -1402,7 +1321,7 @@ func TestSetupTreatsAFailedRestrictionAsAFailedMove(t *testing.T) {
 	}
 	siblingBefore := snapshotTree(t, sibling)
 
-	code, out, errOut := s.run(tty("y", "n"), true, "-no-agents", "-no-profile")
+	code, out, errOut := s.run(tty("y"), true, "-no-agents", "-no-profile")
 	s.assertAdoptionStopped(t, code, out, errOut, identityBundle, sibling)
 	if !reflect.DeepEqual(siblingBefore, snapshotTree(t, sibling)) {
 		t.Error("the source was not put back after a failed restriction")
@@ -1412,8 +1331,9 @@ func TestSetupTreatsAFailedRestrictionAsAFailedMove(t *testing.T) {
 	}
 }
 
-// A destination state/ set aside for an unfinished enrollment comes back when
-// the adoption then fails, and no set-aside copy is left behind.
+// A destination state/ set aside for an earlier version's unfinished
+// enrollment comes back when the adoption then fails, and no set-aside copy
+// is left behind.
 func TestSetupRestoresASetAsideDestinationStateWhenAdoptionFails(t *testing.T) {
 	s := newSetupSandbox(t)
 	if err := os.MkdirAll(filepath.Join(s.home, "state"), 0o700); err != nil {
@@ -1426,7 +1346,7 @@ func TestSetupRestoresASetAsideDestinationStateWhenAdoptionFails(t *testing.T) {
 	writeInstallation(t, sibling, "identity")
 	s.move = failMoveFrom(filepath.Join(sibling, credentialsFile))
 
-	code, out, errOut := s.run(tty("y", "n"), true, "-no-agents", "-no-profile")
+	code, out, errOut := s.run(tty("y"), true, "-no-agents", "-no-profile")
 	s.assertAdoptionStopped(t, code, out, errOut, identityBundle, sibling)
 	if got, err := os.ReadFile(filepath.Join(s.home, "state", "dpop.key")); err != nil || string(got) != "unfinished" { // #nosec G304 -- the sandbox's own file
 		t.Fatalf("the destination state was not restored: %q %v", got, err)
@@ -1454,7 +1374,7 @@ func TestSetupNamesEveryPathWhenARollbackFails(t *testing.T) {
 		return fsx.MoveFileDurable(from, to)
 	}
 
-	code, out, errOut := s.run(tty("y", "n"), true, "-no-agents", "-no-profile")
+	code, out, errOut := s.run(tty("y"), true, "-no-agents", "-no-profile")
 	s.assertAdoptionStopped(t, code, out, errOut, identityBundle, sibling)
 	if !strings.Contains(errOut, "Putting it back failed too") {
 		t.Fatalf("the failed rollback is not reported:\n%s", errOut)
@@ -1471,11 +1391,11 @@ func TestSetupMigratesAnAdoptedConfig(t *testing.T) {
 	s := newSetupSandbox(t)
 	sibling := s.home + ".bak"
 	writeInstallation(t, sibling, "wallet")
-	proxy := "[mining]\nas_url = \"" + s.as.srv.URL + "\"\nchain_id = \"twilight-1\"\nslot_id = 7\nstate_dir = " + mustTOML(t, filepath.Join(s.home, "state")) + "\n"
+	proxy := "[mining]\nas_url = \"" + legacyASURL + "\"\nchain_id = \"twilight-1\"\nslot_id = 7\nstate_dir = " + mustTOML(t, filepath.Join(s.home, "state")) + "\n"
 	if err := os.WriteFile(filepath.Join(sibling, setupConfigFile), []byte(proxy), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, out, _ := s.run(tty("y", "n"), true, "-no-agents", "-no-profile")
+	_, out, _ := s.run(tty("y"), true, "-no-agents", "-no-profile")
 	if !strings.Contains(out, "adopted the config") || !strings.Contains(out, "Added [platform] and [miner] to "+s.cfgPath()) {
 		t.Fatalf("adopted config not migrated:\n%s", out)
 	}
@@ -1549,10 +1469,7 @@ func TestSetupNoAgentsWithCodexInstallsExactlyCodex(t *testing.T) {
 	s.onPath["claude"] = true
 	s.onPath["cursor"] = true
 	before := snapshotTree(t, s.root)
-	// "n" answers the mining question, which -yes deliberately does not
-	// (S6). Before dropin-miner#81 an empty tty answered it by accident: the read
-	// error was discarded and the resulting empty line counted as "no".
-	code, out, errOut := s.run(tty("n"), true, "-yes", "-no-profile", "-no-agents", "-with", "codex")
+	code, out, errOut := s.run(tty(), true, "-yes", "-no-profile", "-no-agents", "-with", "codex")
 	if code != exitOK {
 		t.Fatalf("setup exited %d\n%s\n%s", code, out, errOut)
 	}
@@ -1590,16 +1507,13 @@ func seedConfigFixture(t *testing.T, s *setupSandbox, outcome configFixtureOutco
 	var data []byte
 	switch outcome {
 	case fixtureConfigLeft:
-		v, err := resolveSetupValues(s.home, s.getenv, false)
-		if err != nil {
-			t.Fatal(err)
-		}
-		data, err = renderFreshConfig(v)
+		var err error
+		data, err = renderFreshConfig(resolveSetupValues(s.home, s.getenv))
 		if err != nil {
 			t.Fatal(err)
 		}
 	case fixtureConfigMigrated:
-		data = []byte("[mining]\nas_url = " + mustTOML(t, s.as.srv.URL) + "\nchain_id = \"twilight-1\"\nslot_id = 7\nstate_dir = " +
+		data = []byte("[mining]\nas_url = " + mustTOML(t, legacyASURL) + "\nchain_id = \"twilight-1\"\nslot_id = 7\nstate_dir = " +
 			mustTOML(t, filepath.Join(s.home, "state")) + "\n")
 	}
 	if err := os.WriteFile(s.cfgPath(), data, 0o600); err != nil {
@@ -2031,7 +1945,7 @@ func TestSetupEditsASymlinkedProfileThroughTheLink(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := snapshotTree(t, s.root)
-	code, out, errOut := s.run(tty("n"), true, "-yes", "-no-agents")
+	code, out, errOut := s.run(tty(), true, "-yes", "-no-agents")
 	if code != exitOK {
 		t.Fatalf("setup exited %d\n%s\n%s", code, out, errOut)
 	}
@@ -2060,7 +1974,7 @@ func TestSetupRefusesMalformedProfileMarkers(t *testing.T) {
 	if err := os.WriteFile(s.profilePath(), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	code, out, errOut := s.run(tty("n"), true, "-yes", "-no-agents")
+	code, out, errOut := s.run(tty(), true, "-yes", "-no-agents")
 	if code != exitOK {
 		t.Fatalf("setup exited %d; a malformed profile must not stop it\n%s\n%s", code, out, errOut)
 	}
@@ -2102,7 +2016,7 @@ func TestSetupWindowsJournalRecordsDeltas(t *testing.T) {
 	s.userEnv.values["Path"] = `C:\Windows;` + strings.ToUpper(binDir) + `\`
 	s.userEnv.values["JEVLIN_CONFIG"] = `C:\old\jevlin.toml`
 
-	if code, out, errOut := s.run(tty("n"), true, "-yes", "-no-agents"); code != exitOK {
+	if code, out, errOut := s.run(tty(), true, "-yes", "-no-agents"); code != exitOK {
 		t.Fatalf("setup exited %d\n%s\n%s", code, out, errOut)
 	}
 	journalPath := filepath.Join(s.home, setupEnvJournalFile)
@@ -2190,7 +2104,7 @@ func TestSetupYesDoesNotAnswerTheCodexQuestion(t *testing.T) {
 	s := newSetupSandbox(t)
 	s.platform.claim("credits")
 	path, before := s.seedWorkspaceDefault()
-	code, out, errOut := s.run(tty("n", "n"), true, "-yes", "-no-profile", "-no-agents", "-with", "codex", "-with", "claude")
+	code, out, errOut := s.run(tty("n"), true, "-yes", "-no-profile", "-no-agents", "-with", "codex", "-with", "claude")
 	if code != exitOK {
 		t.Fatalf("setup exited %d\n%s\n%s", code, out, errOut)
 	}
@@ -2213,7 +2127,7 @@ func TestSetupStopsOnAnUnansweredCodexQuestion(t *testing.T) {
 	s := newSetupSandbox(t)
 	s.platform.claim("credits")
 	path, before := s.seedWorkspaceDefault()
-	code, out, errOut := s.run(tty("n"), true, "-yes", "-no-profile", "-no-agents", "-with", "codex", "-with", "claude")
+	code, out, errOut := s.run(tty(), true, "-yes", "-no-profile", "-no-agents", "-with", "codex", "-with", "claude")
 	if code != exitUsage {
 		t.Errorf("setup exited %d with Codex's question unanswered, want 2\n%s\n%s", code, out, errOut)
 	}
@@ -2243,6 +2157,21 @@ func TestSetupDryRunPrintsTheCodexQuestion(t *testing.T) {
 	}
 }
 
+// legacyOpenCodexBlock is Codex's config as an earlier version of this
+// client left it: the old [sandbox_workspace_write] block with its network
+// open and the four directories that version's mining wrote to, under home.
+// Two of them this client no longer has, and the block is still this
+// installation's, because every root lies under the home that holds its
+// config (codexRootsOwner).
+func legacyOpenCodexBlock(home string) string {
+	roots := []string{filepath.Join(home, "intake"), filepath.Join(home, "sessions"), filepath.Join(home, "spool"), filepath.Join(home, "state")}
+	q := make([]string, len(roots))
+	for i, r := range roots {
+		q[i] = mustTOMLString(r)
+	}
+	return "model = \"gpt-5\"\n" + agentsMarkerBegin + "\n[sandbox_workspace_write]\nnetwork_access = true\nwritable_roots = [" + strings.Join(q, ", ") + "]\n" + agentsMarkerEnd + "\n"
+}
+
 // setup's own agents question unanswered still closes our old open block,
 // and writes nothing else.
 func TestSetupClosesTheOldBlockWhenItsAgentsQuestionGoesUnanswered(t *testing.T) {
@@ -2253,16 +2182,11 @@ func TestSetupClosesTheOldBlockWhenItsAgentsQuestionGoesUnanswered(t *testing.T)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	roots := []string{filepath.Join(s.home, "intake"), filepath.Join(s.home, "sessions"), filepath.Join(s.home, "spool"), filepath.Join(s.home, "state")}
-	q := make([]string, len(roots))
-	for i, r := range roots {
-		q[i] = mustTOMLString(r)
-	}
-	before := "model = \"gpt-5\"\n" + agentsMarkerBegin + "\n[sandbox_workspace_write]\nnetwork_access = true\nwritable_roots = [" + strings.Join(q, ", ") + "]\n" + agentsMarkerEnd + "\n"
+	before := legacyOpenCodexBlock(s.home)
 	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	code, out, errOut := s.run(tty("n"), true, "-no-profile")
+	code, out, errOut := s.run(tty(), true, "-no-profile")
 	if code != exitUsage {
 		t.Errorf("setup exited %d with its agents question unanswered, want 2\n%s\n%s", code, out, errOut)
 	}
@@ -2287,16 +2211,11 @@ func TestSetupClosesTheOldBlockOnATypedNo(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	roots := []string{filepath.Join(s.home, "intake"), filepath.Join(s.home, "sessions"), filepath.Join(s.home, "spool"), filepath.Join(s.home, "state")}
-	q := make([]string, len(roots))
-	for i, r := range roots {
-		q[i] = mustTOMLString(r)
-	}
-	before := "model = \"gpt-5\"\n" + agentsMarkerBegin + "\n[sandbox_workspace_write]\nnetwork_access = true\nwritable_roots = [" + strings.Join(q, ", ") + "]\n" + agentsMarkerEnd + "\n"
+	before := legacyOpenCodexBlock(s.home)
 	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	code, out, errOut := s.run(tty("n", "n"), true, "-no-profile")
+	code, out, errOut := s.run(tty("n"), true, "-no-profile")
 	if code != exitOK {
 		t.Errorf("setup exited %d after a typed no, want 0\n%s\n%s", code, out, errOut)
 	}
@@ -2320,11 +2239,11 @@ func TestTheAgentsParagraphSaysWhatEachCodexFormWrites(t *testing.T) {
 		notWrites     string // one it never writes
 	}{
 		{"linux",
-			[]string{"writes a permission profile into its config.toml", "network access to the\nsearch hosts only, through Codex's proxy"},
+			[]string{"writes a permission profile into its config.toml", "network access to the search hosts only, through Codex's proxy"},
 			[]string{"opens no network"},
 			"[permissions.jevlin.network.domains]", "[" + codexSandboxTable + "]"},
 		{"windows",
-			[]string{"sessions and spool directories — as writable", "It opens no network: a\nsearch from Codex needs Codex's approval to reach the router."},
+			[]string{"state and sessions directories as\nwritable", "It opens no network: a search from Codex\nneeds Codex's approval to reach the router."},
 			[]string{"permission profile", "proxy", "network access to"},
 			"[" + codexSandboxTable + "]", "network_access"},
 	} {

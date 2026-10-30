@@ -14,27 +14,30 @@ package main
 //	    silence.
 //	hook [-config file] window <session-start|pre-compact|post-compact>
 //	    Claude Code lifecycle. Maintains the context-window generation the
-//	    lineage hook reads. session-start also starts a flush.
+//	    lineage hook reads. session-start also starts the daily release
+//	    check when it is due.
 //	hook [-config file] cursor <event>
 //	    Cursor hooks. Every event updates the session's lineage file and
 //	    `search` reads it:
-//	    sessionStart (seed, flush, export the identity to the session's
-//	    later hooks), preToolUse (put that identity on our exact rendered
-//	    search, dropin-miner#118), beforeShellExecution (allow our command; stamp
-//	    turn/call),
+//	    sessionStart (seed, export the identity to the session's later
+//	    hooks, the release check), preToolUse (put that identity on our
+//	    exact rendered search, dropin-miner#118), beforeShellExecution (allow our
+//	    command; stamp turn/call),
 //	    afterAgentThought / afterAgentResponse (the text before a search),
-//	    preCompact (bump the window), stop (flush).
+//	    preCompact (bump the window), stop (the turn end).
 //	hook [-config file] flush
-//	    Claude Code Stop. Start a detached flush.
+//	    Claude Code Stop: the turn is over. Queue the turn end, when the
+//	    installation opted in, and start the release check when due. The
+//	    subcommand keeps the name the installed hooks were written with.
 //	hook [-config file] start <host>
 //	    A JavaScript host's adapter (opencode's plugin, Pi's extension) at a
-//	    session's start. Reads nothing: starts the flush and, when due, the
-//	    daily release check, exactly as session-start does for Claude Code.
+//	    session's start. Reads nothing: starts the daily release check when
+//	    due, exactly as session-start does for Claude Code.
 //	hook [-config file] codex <Event>
 //	    Codex hooks, the event in Codex's own spelling (codex_hook.go):
 //	    PreToolUse (put the trace bridge on this installation's exact
-//	    rendered search, and allow it), SessionStart (seed the window,
-//	    flush), PreCompact / PostCompact (bump the window), Stop (flush).
+//	    rendered search, and allow it), SessionStart (seed the window),
+//	    PreCompact / PostCompact (bump the window), Stop (the turn end).
 //
 // The lineage, window and flush entry points are installed for Claude Code
 // and for nobody else. Another host that loads Claude Code's settings and
@@ -113,8 +116,6 @@ type hookOps struct {
 	// readTail returns at most max bytes from the END of the file, or an
 	// error; a file larger than hookMaxTranscript is reported as an error.
 	readTail func(path string, max int64) ([]byte, error)
-	// spawnFlush starts a detached flush. Best effort.
-	spawnFlush func(cfgPath string) error
 	// spawnUpdateCheck starts the detached daily release check, when
 	// startBackground finds it due (update_check.go). Best effort.
 	spawnUpdateCheck func(cfgPath string) error
@@ -144,7 +145,6 @@ func realHookOps() hookOps {
 		remove:           os.Remove,
 		listTemps:        listTempFiles,
 		readTail:         readFileTail,
-		spawnFlush:       startFlush,
 		spawnUpdateCheck: startUpdateCheck,
 		spawnTurnEnd:     startTurnEnd,
 		tempSuffix:       traceRandomID,
@@ -183,7 +183,7 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv fu
 }
 
 // hookContext is what every subcommand needs from the config: where the
-// lineage files live, and which config a spawned flush should read.
+// lineage files live, and which config a spawned child should read.
 type hookContext struct {
 	cfgPath     string
 	sessionsDir string
@@ -197,15 +197,11 @@ type hookContext struct {
 	updateMode string
 }
 
-// startBackground starts what a hook leaves running after it exits: the
-// flush, and, when the day's release check is due, that check. Both are
-// best effort and neither is waited on. The stamp is read only when there
-// is something to start, and through the hook's own read, which never
-// waits on what a sandboxed command left at the name.
+// startBackground starts what a hook leaves running after it exits: when
+// the day's release check is due, that check. Best effort and not waited
+// on. The stamp is read through the hook's own read, which never waits on
+// what a sandboxed command left at the name.
 func (ops hookOps) startBackground(hc hookContext) {
-	if ops.spawnFlush != nil {
-		_ = ops.spawnFlush(hc.cfgPath)
-	}
 	if ops.spawnUpdateCheck == nil || ops.readFile == nil || hookInsideASandbox(ops.getenv) {
 		return
 	}
@@ -323,8 +319,8 @@ func hookDispatch(ops hookOps, args []string, stdin io.Reader, stdout, stderr io
 		}
 	case "flush":
 		// Claude Code's Stop: the turn is over. Its final message is queued
-		// first — when the installation opted in and the turn searched — and
-		// then the flush starts, as before.
+		// — when the installation opted in and the turn searched — and the
+		// release check starts when it is due.
 		claudeTurnEnd(ops, hc, payload)
 		ops.startBackground(hc)
 	default:
@@ -341,8 +337,8 @@ func hookDispatch(ops hookOps, args []string, stdin io.Reader, stdout, stderr io
 // Third-Party Plugins, Skills, and Other Configs", on by default) and runs
 // them beside its own, with ITS payload. Measured from Cursor 3.20.21's hook
 // log on macOS and Windows: `window session-start` at sessionStart,
-// `lineage` at preToolUse, `flush` at stop — three extra processes and a
-// second flush every turn, and with v0.2.9 a `lineage` answer Cursor honored,
+// `lineage` at preToolUse, `flush` (the stop hook) at stop — three extra processes every
+// turn, and with v0.2.9 a `lineage` answer Cursor honored,
 // which sent a Cursor search to the router labeled claude-code (dropin-miner#91).
 //
 // The decision is taken from the payload, never from the environment: the
@@ -981,7 +977,7 @@ func hookCursorOn(goos string, ops hookOps, hc hookContext, event string, payloa
 			apply(l)
 		})
 	}
-	flush := func() { ops.startBackground(hc) }
+	background := func() { ops.startBackground(hc) }
 
 	switch event {
 	case "sessionStart":
@@ -990,7 +986,7 @@ func hookCursorOn(goos string, ops hookOps, hc hookContext, event string, payloa
 				l.Window = "none"
 			}
 		})
-		flush()
+		background()
 		env := map[string]string{"JEVLIN_HARNESS": "cursor"}
 		if path != "" {
 			env[lineageEnv] = path
@@ -1101,9 +1097,9 @@ func hookCursorOn(goos string, ops hookOps, hc hookContext, event string, payloa
 				l.TurnSearches, l.SearchesTurnID = nil, ""
 			})
 		}
-		flush()
+		background()
 	case "sessionEnd":
-		flush()
+		background()
 	}
 }
 

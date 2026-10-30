@@ -20,15 +20,16 @@ import (
 func emptyMiner(t *testing.T) config.Miner {
 	t.Helper()
 	root := t.TempDir()
-	return config.Miner{IntakeDir: filepath.Join(root, "intake"), SessionsDir: filepath.Join(root, "sessions")}
+	return config.Miner{StateDir: filepath.Join(root, "state"), SessionsDir: filepath.Join(root, "sessions")}
 }
 
 func TestResolveAPIKeyOrderIsEnvThenFile(t *testing.T) {
 	m := emptyMiner(t)
 	path := credentialsPath(m)
-	if filepath.Dir(path) != filepath.Dir(m.IntakeDir) || filepath.Base(path) != credentialsFile {
-		t.Fatalf("credentials file is not beside the intake dir: %s", path)
+	if filepath.Dir(path) != filepath.Dir(m.StateDir) || filepath.Base(path) != credentialsFile {
+		t.Fatalf("credentials file is not beside the state dir: %s", path)
 	}
+
 	if err := writeCredentials(path, credentials{APIKey: "sr-canary-stored", Router: "https://router.fictional.test"}); err != nil { // #nosec G101 -- "sr-canary-stored", not a credential
 		t.Fatal(err)
 	}

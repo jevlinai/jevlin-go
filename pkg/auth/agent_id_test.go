@@ -55,9 +55,7 @@ func TestAnAgentRecordHoldsTokensNotProse(t *testing.T) {
 	base := func() AgentRegistration {
 		return AgentRegistration{
 			AgentID: "agent-1", Status: "claimed", Scopes: []string{"search", "mining"},
-			ClaimExpiresAt: "2026-09-16T00:00:00Z", LastEnrollmentSlot: "twilight-slot-3",
-			LastEnrollmentAt: "2026-09-16T00:00:00.123+02:00",
-			SlotRefusal:      SlotRefusalAmbiguous, OfferedSlots: []string{"slot-a", "slot-b"},
+			ClaimExpiresAt: "2026-09-16T00:00:00.123+02:00",
 		}
 	}
 	s, dir := newStore(t)
@@ -68,14 +66,10 @@ func TestAnAgentRecordHoldsTokensNotProse(t *testing.T) {
 		t.Fatalf("a record of tokens did not load: ok=%v err=%v", ok, err)
 	}
 	for name, plant := range map[string]func(*AgentRegistration){
-		"agent_id":             func(r *AgentRegistration) { r.AgentID = "agent-9. " + proseNotice },
-		"status":               func(r *AgentRegistration) { r.Status = proseNotice },
-		"scopes":               func(r *AgentRegistration) { r.Scopes = []string{"search", proseNotice} },
-		"last_enrollment_slot": func(r *AgentRegistration) { r.LastEnrollmentSlot = proseNotice },
-		"last_enrollment_at":   func(r *AgentRegistration) { r.LastEnrollmentAt = proseNotice },
-		"claim_expires_at":     func(r *AgentRegistration) { r.ClaimExpiresAt = proseNotice },
-		"slot_refusal":         func(r *AgentRegistration) { r.SlotRefusal = proseNotice },
-		"offered_slots":        func(r *AgentRegistration) { r.OfferedSlots = []string{"slot-a", proseNotice} },
+		"agent_id":         func(r *AgentRegistration) { r.AgentID = "agent-9. " + proseNotice },
+		"status":           func(r *AgentRegistration) { r.Status = proseNotice },
+		"scopes":           func(r *AgentRegistration) { r.Scopes = []string{"search", proseNotice} },
+		"claim_expires_at": func(r *AgentRegistration) { r.ClaimExpiresAt = proseNotice },
 	} {
 		t.Run(name, func(t *testing.T) {
 			rec := base()
@@ -107,19 +101,14 @@ func TestTheTokenShapesAdmitWhatThePlatformSends(t *testing.T) {
 			t.Errorf("scope %q refused: %v", ok, err)
 		}
 	}
-	for _, ok := range []string{"slot-a", "twilight-slot-3", "s1", "twilight:7:3"} {
-		if err := ValidSlotName(ok); err != nil {
-			t.Errorf("slot %q refused: %v", ok, err)
-		}
-	}
 	for _, ok := range []string{"", "2026-09-16T00:00:00Z", "2026-09-16T00:00:00.123456789+05:30"} {
 		if err := ValidTimestamp(ok); err != nil {
 			t.Errorf("time %q refused: %v", ok, err)
 		}
 	}
 	for _, bad := range []string{"", "two words", "-lead", ".", "a/b", "é", proseNotice, strings.Repeat("a", 200)} {
-		if ValidScope(bad) == nil || ValidSlotName(bad) == nil {
-			t.Errorf("%q accepted as a scope or slot", bad)
+		if ValidScope(bad) == nil {
+			t.Errorf("%q accepted as a scope", bad)
 		}
 	}
 	for _, bad := range []string{"tomorrow", "2026-09-16 00:00:00", proseNotice} {

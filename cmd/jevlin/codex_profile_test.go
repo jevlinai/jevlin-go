@@ -178,8 +178,8 @@ func TestAProxyTableCodexDeletedIsNamedAndRestored(t *testing.T) {
 	}
 }
 
-// Status names the profile, its hosts against all three the
-// config names, and a stale one.
+// Status names the profile, its hosts against both the config names, and a
+// stale one.
 func TestStatusComparesTheProfileWithEveryHostTheConfigNames(t *testing.T) {
 	cfgPath, _ := sandboxTestConfig(t)
 	m, ops := newFakeMachine("codex")
@@ -187,17 +187,16 @@ func TestStatusComparesTheProfileWithEveryHostTheConfigNames(t *testing.T) {
 		t.Fatalf("install: exit %d\n%s", code, out)
 	}
 	_, out := runAgentsAt(t, ops, "", "status", "-config", cfgPath)
-	if !strings.Contains(out, `permissions: profile "jevlin" (extends ":workspace") in `+codexConfigShown(ops)+`; hosts agents-v1.jevlin.ai, as.example.invalid, router.example.invalid; network_proxy on`) {
+	if !strings.Contains(out, `permissions: profile "jevlin" (extends ":workspace") in `+codexConfigShown(ops)+`; hosts agents-v1.jevlin.ai, router.example.invalid; network_proxy on`) {
 		t.Errorf("status does not name the profile and its hosts:\n%s", out)
 	}
 	if strings.Contains(out, "agents install refreshes it") {
 		t.Errorf("a current profile is called stale:\n%s", out)
 	}
-	// Each of the three, changed in the config, makes the profile stale.
+	// Each of the two, changed in the config, makes the profile stale.
 	for _, change := range []struct{ from, to string }{
 		{`router_url = "https://router.example.invalid"`, `router_url = "https://router2.example.invalid"`},
-		{`as_url = "https://as.example.invalid"`, `as_url = "https://as2.example.invalid"`},
-		{"[mining]", "[platform]\nagents_api_url = \"https://agents2.example.invalid\"\n\n[mining]"},
+		{"[miner]", "[platform]\nagents_api_url = \"https://agents2.example.invalid\"\n\n[miner]"},
 	} {
 		orig, err := os.ReadFile(cfgPath) // #nosec G304 -- this test's own config
 		if err != nil {
@@ -221,16 +220,16 @@ func TestStatusComparesTheProfileWithEveryHostTheConfigNames(t *testing.T) {
 	_ = m
 }
 
-// The hosts are the router's, the AS's when as_url is set, and the
-// platform agents API's, and nothing else — in particular never
-// platform.base_url, which nothing dials (invariant 12).
+// The hosts are the router's and the platform agents API's, and nothing
+// else — in particular never platform.base_url, which nothing dials
+// (invariant 12). An earlier version's [mining] as_url names no host now.
 func TestTheAllowedHostsAreDerivedFromTheConfig(t *testing.T) {
 	for _, tc := range []struct {
 		name, doc string
 		want      string
 	}{
 		{"router only, platform defaulted", "[miner]\nrouter_url = \"https://r.example.invalid/v1\"\n", "agents-v1.jevlin.ai|r.example.invalid"},
-		{"with an AS", "[mining]\nas_url = \"https://AS.example.invalid:8443\"\nchain_id = \"c\"\nslot_id = 1\n[miner]\nrouter_url = \"https://r.example.invalid\"\n", "agents-v1.jevlin.ai|as.example.invalid|r.example.invalid"},
+		{"an earlier version's AS is not a host", "[mining]\nas_url = \"https://AS.example.invalid:8443\"\nchain_id = \"c\"\nslot_id = 1\n[miner]\nrouter_url = \"https://r.example.invalid\"\n", "agents-v1.jevlin.ai|r.example.invalid"},
 		{"a platform of its own, base_url not dialed", "[platform]\nbase_url = \"https://portal.example.invalid\"\nagents_api_url = \"https://api.example.invalid\"\n[miner]\nrouter_url = \"https://r.example.invalid\"\n", "api.example.invalid|r.example.invalid"},
 		{"a loopback router is never listed", "[miner]\nrouter_url = \"http://127.0.0.1:18780\"\n", "agents-v1.jevlin.ai"},
 		{"nor an unspecified address", "[miner]\nrouter_url = \"https://0.0.0.0:8443\"\n", "agents-v1.jevlin.ai"},

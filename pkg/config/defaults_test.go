@@ -1,84 +1,37 @@
 package config
 
-// §4.5: one defaults table, and the per-chain wallet node default.
-
 import (
 	"net/url"
-	"regexp"
-	"strings"
 	"testing"
 )
 
-var bareIPURL = regexp.MustCompile(`^https?://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+`)
-
-// TestDefaultsAreTestnet: every scalar default is the testnet value and
-// every URL is https; DefaultWalletNodes has exactly one row,
-// twilight-testnet-1, its URL is https, and no default anywhere
-// contains "devnet", an IP literal, or plain-http :26657.
-func TestDefaultsAreTestnet(t *testing.T) {
-	scalars := map[string]string{
-		"DefaultChainID":         DefaultChainID,
-		"DefaultASBaseURL":       DefaultASBaseURL,
+// Every network default is an https URL on a jevlin.ai host, or the legacy
+// pair this version still implies the agents API for. A cutover changes
+// these literals; this is what notices a miss or a scheme downgrade.
+func TestDefaultsAreJevlin(t *testing.T) {
+	for name, raw := range map[string]string{
 		"DefaultRouterURL":       DefaultRouterURL,
 		"DefaultPlatformBaseURL": DefaultPlatformBaseURL,
 		"DefaultAgentsAPIURL":    DefaultAgentsAPIURL,
-		"DefaultWalletDenom":     DefaultWalletDenom,
-		"DefaultBech32HRP":       DefaultBech32HRP,
-	}
-	if DefaultChainID != "twilight-testnet-1" {
-		t.Errorf("DefaultChainID = %q, want twilight-testnet-1", DefaultChainID)
-	}
-	if DefaultSlotID != 3 {
-		t.Errorf("DefaultSlotID = %d, want 3", DefaultSlotID)
-	}
-	if DefaultWalletDenom != "utwlt" {
-		t.Errorf("DefaultWalletDenom = %q, want utwlt", DefaultWalletDenom)
-	}
-	if DefaultBech32HRP != "twilight" {
-		t.Errorf("DefaultBech32HRP = %q, want twilight", DefaultBech32HRP)
-	}
-
-	urlFields := map[string]string{
-		"DefaultASBaseURL":       DefaultASBaseURL,
-		"DefaultRouterURL":       DefaultRouterURL,
-		"DefaultPlatformBaseURL": DefaultPlatformBaseURL,
-		"DefaultAgentsAPIURL":    DefaultAgentsAPIURL,
-	}
-	for name, raw := range urlFields {
+		"LegacyPlatformBaseURL":  LegacyPlatformBaseURL,
+		"LegacyAgentsAPIURL":     LegacyAgentsAPIURL,
+	} {
 		u, err := url.Parse(raw)
-		if err != nil || u.Scheme != "https" {
-			t.Errorf("%s = %q is not https", name, raw)
+		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Path != "" {
+			t.Errorf("%s = %q: want an https origin with no path and no credential (%v)", name, raw, err)
 		}
 	}
-
-	if len(DefaultWalletNodes) != 1 {
-		t.Fatalf("DefaultWalletNodes has %d rows, want exactly 1", len(DefaultWalletNodes))
-	}
-	node, ok := DefaultWalletNodes["twilight-testnet-1"]
-	if !ok {
-		t.Fatal(`DefaultWalletNodes is missing the "twilight-testnet-1" row`)
-	}
-	if u, err := url.Parse(node); err != nil || u.Scheme != "https" {
-		t.Errorf("DefaultWalletNodes[twilight-testnet-1] = %q is not https", node)
-	}
-
-	all := make(map[string]string, len(scalars)+1)
-	for k, v := range scalars {
-		all[k] = v
-	}
-	all["DefaultWalletNodes[twilight-testnet-1]"] = node
-	for name, v := range all {
-		lower := strings.ToLower(v)
-		if strings.Contains(lower, "devnet") {
-			t.Errorf("%s = %q contains \"devnet\"", name, v)
+	for name, raw := range map[string]string{
+		"DefaultRouterURL":       DefaultRouterURL,
+		"DefaultPlatformBaseURL": DefaultPlatformBaseURL,
+		"DefaultAgentsAPIURL":    DefaultAgentsAPIURL,
+	} {
+		if u, _ := url.Parse(raw); u.Host != "api.jevlin.ai" && u.Host != "platform.jevlin.ai" && u.Host != "agents-v1.jevlin.ai" {
+			t.Errorf("%s = %q: not a jevlin.ai host", name, raw)
 		}
-		if strings.Contains(v, ":26657") && strings.HasPrefix(v, "http://") {
-			t.Errorf("%s = %q is a plain-http :26657 node URL", name, v)
-		}
-		// No default anywhere is a bare IP literal: a deleted wallet node
-		// default once was one.
-		if bareIPURL.MatchString(v) {
-			t.Errorf("%s = %q is a bare IP literal URL", name, v)
-		}
+	}
+	cfg := load(t, nil, noEnv)
+	if cfg.Miner.RouterURL.String() != DefaultRouterURL {
+		t.Errorf("the router default is not DefaultRouterURL: %v", cfg.Miner.RouterURL)
 	}
 }

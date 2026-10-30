@@ -63,7 +63,6 @@ func plantedLinks() map[string]func(canary, name string) error {
 func fixedSuffixOps() hookOps {
 	ops := realHookOps()
 	ops.tempSuffix = func() string { return "feedfacefeedface" }
-	ops.spawnFlush = func(string) error { return nil }
 	ops.spawnTurnEnd = func(string, string) error { return nil }
 	return ops
 }
@@ -75,9 +74,9 @@ func plantOrSkip(t *testing.T, kind string, plant func(canary, name string) erro
 	}
 }
 
-// replaceViaTemp writes the lineage files, the window state and the flush
-// stamp. Its temporary name is now unpredictable, but even at the exact name
-// it never opens what is there.
+// replaceViaTemp writes the lineage files and the window state. Its
+// temporary name is now unpredictable, but even at the exact name it never
+// opens what is there.
 func TestReplaceViaTempNeverWritesThroughALinkAtItsTemporaryName(t *testing.T) {
 	for kind, plant := range plantedLinks() {
 		t.Run(kind, func(t *testing.T) {
@@ -221,27 +220,6 @@ func TestResumeStampNeverWritesThroughALinkAtItsOldTemporaryName(t *testing.T) {
 			}
 		})
 	}
-}
-
-// flush.lock sits in the installation's own directory, which a layout that
-// nests it in a writable root would expose (agents install refuses that
-// layout, and this holds either way): a link at the name is refused, and a
-// dangling one does not create its target.
-func TestFlushLockNeverFollowsALinkAtItsName(t *testing.T) {
-	dir, canary := rootAndCanary(t)
-	path := filepath.Join(dir, "flush.lock")
-	plantOrSkip(t, "symlink", plantedLinks()["symlink"], canary+"-absent", path)
-	f, held, _, err := tryFlushLock(path)
-	if f != nil {
-		_ = f.Close()
-	}
-	if held || err == nil {
-		t.Fatalf("flush.lock as a link was taken (held=%t, err=%v)", held, err)
-	}
-	if _, err := os.Lstat(canary + "-absent"); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("the link's target was created: %v", err)
-	}
-	requireCanaryIntact(t, canary)
 }
 
 // readCredentials checks the name, then reads: a link swapped in between,

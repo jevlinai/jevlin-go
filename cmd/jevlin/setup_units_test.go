@@ -53,10 +53,7 @@ func TestTOMLStringRoundTripsEveryCharacterClass(t *testing.T) {
 func TestFreshConfigQuotesEveryPath(t *testing.T) {
 	dir := t.TempDir()
 	home := `/tmp/we ird"q\b$;&'x/.jevlin`
-	v, err := resolveSetupValues(home, func(string) string { return "" }, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	v := resolveSetupValues(home, func(string) string { return "" })
 	data, err := renderFreshConfig(v)
 	if err != nil {
 		t.Fatal(err)
@@ -65,19 +62,20 @@ func TestFreshConfigQuotesEveryPath(t *testing.T) {
 		t.Fatalf("fresh config for %q does not load: %v\n%s", home, err, data)
 	}
 	var doc struct {
-		Mining struct {
+		Miner struct {
 			StateDir string `toml:"state_dir"`
-		} `toml:"mining"`
+		} `toml:"miner"`
 	}
-	if _, err := toml.Decode(string(data), &doc); err != nil || doc.Mining.StateDir != filepath.Join(home, "state") {
-		t.Fatalf("state_dir = %q (%v), want %q", doc.Mining.StateDir, err, filepath.Join(home, "state"))
+	if _, err := toml.Decode(string(data), &doc); err != nil || doc.Miner.StateDir != filepath.Join(home, "state") {
+		t.Fatalf("state_dir = %q (%v), want %q", doc.Miner.StateDir, err, filepath.Join(home, "state"))
 	}
 }
 
 func TestMigrationPolicyUnits(t *testing.T) {
 	dir := t.TempDir()
 	validate := validateConfigFile(dir)
-	v, _ := resolveSetupValues(filepath.Join(dir, "home"), func(string) string { return "" }, false)
+	v := resolveSetupValues(filepath.Join(dir, "home"), func(string) string { return "" })
+
 	path := filepath.Join(dir, "jevlin.toml")
 	mining := "[mining]\nas_url = \"https://as.example\"\nchain_id = \"c\"\nslot_id = 1\nstate_dir = \"/s\"\n"
 
@@ -96,11 +94,14 @@ func TestMigrationPolicyUnits(t *testing.T) {
 	if !errors.Is(err, errConfigInvalid) || !strings.Contains(err.Error(), path) {
 		t.Fatalf("invalid config: %v", err)
 	}
-	// A migration whose result would not load is refused, not published: no
-	// [mining] AS, so [miner] enabled cannot be valid.
-	_, err = planSetupConfig(path, []byte("[log]\nlevel = \"info\"\n"), v, validate)
-	if err == nil || !strings.Contains(err.Error(), "left as it is") {
-		t.Fatalf("unloadable migration: %v", err)
+	// A proxy-era config with neither table loads once both are appended:
+	// its own tables are accepted and unread. (A migration whose result
+	// would not load is refused rather than published, but with every
+	// legacy table accepted there is no longer a file that parses alone
+	// and fails with the two tables appended, so that path has no case.)
+	plan, err = planSetupConfig(path, []byte("[log]\nlevel = \"info\"\n"), v, validate)
+	if err != nil || plan.outcome != configMigrated || strings.Join(plan.added, ",") != "[platform],[miner]" {
+		t.Fatalf("proxy-era config: %+v %v", plan, err)
 	}
 }
 

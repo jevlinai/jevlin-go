@@ -54,14 +54,13 @@ func TestALinkPlantedInTheAgentRecordIsNeverPrinted(t *testing.T) {
 	_ = statusMain([]string{"-config", cfgPath}, &text, &textErr, noEnv)
 	_ = statusMain([]string{"-config", cfgPath, "-json"}, &js, &jsErr, noEnv)
 	emitMachine(&envelope, connectEnvelope(cfgPath, noEnv, exitOK, ""))
-	_, mOut, mErr := runMiningEnable(t, cfgPath)
 	for name, got := range map[string]string{
 		"connect":       out + errOut,
 		"status":        text.String() + textErr.String(),
 		"status -json":  js.String() + jsErr.String(),
 		"connect -json": envelope.String(),
-		"mining enable": mOut + mErr,
 	} {
+
 		if strings.Contains(got, planted) {
 			t.Errorf("%s printed the planted link:\n%s", name, got)
 		}

@@ -76,17 +76,17 @@ func codexAgentsSentence(goos string) string {
 	codex := codexTarget{}.Label()
 	if goos == "windows" {
 		return fmt.Sprintf(`For %s it also
-writes into its config.toml the jevlin state directory — plus the intake,
-sessions and spool directories — as writable, never the config, the stored
-key or the wallet, so a search can record itself. It opens no network: a
-search from Codex needs Codex's approval to reach the router.`, codex)
+writes into its config.toml the jevlin state and sessions directories as
+writable, never the config or the stored key, so a search can keep its
+lineage and the claim can resolve. It opens no network: a search from Codex
+needs Codex's approval to reach the router.`, codex)
 	}
 	return fmt.Sprintf(`For %s it also
-writes a permission profile into its config.toml: the jevlin state
-directory — plus the intake, sessions and spool directories — made writable,
-never the config, the stored key or the wallet, and network access to the
-search hosts only, through Codex's proxy, so a search can record itself and
-the claim can resolve. Every other host stays closed to Codex's commands.
+writes a permission profile into its config.toml: the jevlin state and
+sessions directories made writable, never the config or the stored key, and
+network access to the search hosts only, through Codex's proxy, so a search
+can keep its lineage and the claim can resolve. Every other host stays closed
+to Codex's commands.
 A change to a Codex setting of your own is asked about separately.`, codex)
 }
 

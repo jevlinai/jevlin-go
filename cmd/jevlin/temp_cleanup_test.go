@@ -87,23 +87,6 @@ func TestAFailedTempWriteIsRemovedAsWell(t *testing.T) {
 	}
 }
 
-// The flush stamp writes through the operating system directly, so it is
-// driven on a real disk. A rename onto a non-empty directory fails on every
-// OS this client ships for, which is the forced error.
-func TestAFailedFlushStampRenameLeavesNoTemp(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "flush.json")
-	if err := os.MkdirAll(filepath.Join(path, "occupied"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := writeFlushStamp(path, flushStamp{TargetEpoch: 9}); err == nil {
-		t.Fatal("renaming onto a non-empty directory succeeded; the forced error did not happen and this test proves nothing")
-	}
-	if left, _ := filepath.Glob(filepath.Join(dir, "*.tmp")); len(left) != 0 {
-		t.Errorf("a failed rename left its temporary file behind: %v", left)
-	}
-}
-
 // The same on a real disk for the lineage writer, so os.Remove and the real
 // directory listing are what ran, not the fake's.
 func TestOnARealDiskAFailedLineageRenameLeavesNoTempAndOldOnesAreSwept(t *testing.T) {

@@ -14,7 +14,7 @@ import (
 
 // The state directory is a writable root of Codex's sandbox (hard invariant
 // 19), so a record read back from it is only what the last writer left
-// there. status, doctor, connect and mining enable print these records'
+// there. status, doctor and connect print these records'
 // strings to the participant's terminal; a control, format or separator
 // character in one (termtext's rule, which takes in C1 and bidi) is a
 // terminal escape or a reordered line in jevlin's own output, with

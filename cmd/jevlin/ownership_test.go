@@ -208,14 +208,14 @@ func TestUninstallingOneInstallationLeavesAnothersIntegrations(t *testing.T) {
 			if purge {
 				// -purge-state needs the typed confirmation at a terminal.
 				var code int
-				code, out, _ = s.uninstall(t, tty(uninstalled), true, nil, "-purge-state", "-home", uninstalled)
+				code, out, _ = s.uninstall(t, tty(uninstalled), true, "-purge-state", "-home", uninstalled)
 				if code != exitOK {
 					t.Fatalf("uninstall -purge-state exited %d\n%s", code, out)
 				}
 			} else {
 				var code int
 				var errOut string
-				code, out, errOut = s.uninstall(t, nil, false, nil, "-yes", "-home", uninstalled)
+				code, out, errOut = s.uninstall(t, nil, false, "-yes", "-home", uninstalled)
 				if code != exitOK {
 					t.Fatalf("uninstall exited %d\n%s\n%s", code, out, errOut)
 				}

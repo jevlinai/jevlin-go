@@ -61,31 +61,19 @@ func TestAnExpiredRecordTheKeyCannotSettleStillRefuses(t *testing.T) {
 	}
 }
 
-// A payout.json in the state directory that does not load (not bech32) is
-// as unused as one that names another address: nothing recorded, nothing
-// declared, nothing echoed.
-func TestALegacyPayoutRecordThatDoesNotLoadIsNotUsed(t *testing.T) {
-	_, as, cfgPath, stateDir := enrolledButUndeclared(t)
-	writeFileT(t, filepath.Join(stateDir, "payout.json"), `{"address":"send-funds-to-evil.example"}`)
-	code, out, errOut := runConnect(t, cfgPath, nil)
-	if code != exitOK {
-		t.Fatalf("connect exited %d\n%s\n%s", code, out, errOut)
-	}
-	if n := as.declarationAttempts(); n != 0 {
-		t.Fatalf("declared %q", as.declaredAddress())
-	}
-	if _, ok, _ := testPayoutRecord(t, stateDir).Load(); ok {
-		t.Fatal("an address that does not load was recorded")
-	}
-	if strings.Contains(out+errOut, "evil.example") {
-		t.Fatalf("the planted text was repeated:\n%s%s", out, errOut)
-	}
-}
+// Two addresses an earlier version's payout record could hold: the
+// installation's own and one a sandboxed command planted. The record is
+// moved with the identity and never read, so any two distinct strings do.
+const (
+	participantAddress = "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn"
+	plantedAddress     = "twilight1planted0000000000000000000000000000000"
+)
 
 // The adoption transaction validates every object it moves before moving
-// any: a payout.json in the source that is a symlink stops the identity
-// bundle, and nothing moves. Its failure after a move restores the payout
-// and claim records with the rest, and describeInstallation names them.
+// any: a payout.json (an earlier version's record, moved with the identity)
+// in the source that is a symlink stops the identity bundle, and nothing
+// moves. Its failure after a move restores the payout and claim records
+// with the rest, and describeInstallation names them.
 func TestTheIdentityBundleHoldsThePayoutAndClaimRecordsToItsRules(t *testing.T) {
 	t.Run("a link in the source", func(t *testing.T) {
 		root := t.TempDir()
@@ -178,10 +166,8 @@ func TestTheIdentityBundleHoldsThePayoutAndClaimRecordsToItsRules(t *testing.T) 
 // pkg/auth's own entry points refuse an empty directory, whatever the
 // caller: an empty one would put the record in the working directory.
 func TestTheRecordsBesideTheCredentialNeedADirectory(t *testing.T) {
-	if _, err := auth.OpenPayoutRecord(""); err == nil {
-		t.Error("OpenPayoutRecord(\"\") succeeded")
-	}
 	if _, err := auth.OpenClaimRecord(""); err == nil {
+
 		t.Error("OpenClaimRecord(\"\") succeeded")
 	}
 	if _, err := auth.OpenRegistrationJournal(""); err == nil {

@@ -98,21 +98,6 @@ func TestNetworkFenceCoversThePlatformClient(t *testing.T) {
 	assertRefused(t, err, fenceProbeHost+":443")
 }
 
-// TestNetworkFenceCoversTheWalletRPCClient drives newRPCClient at the
-// TEST-NET-1 address rather than a hostname, covering the IP-literal path
-// through the fence — and, unlike D1b, needs no per-test seam-arming: the
-// Transport wallet_tx.go builds now names netdial.DialContext directly, so
-// TestMain's Guard() covers it for every test in this package, not just
-// this one.
-func TestNetworkFenceCoversTheWalletRPCClient(t *testing.T) {
-	client := newRPCClient("https://" + fenceProbeIP)
-	ctx, cancel := context.WithTimeout(context.Background(), fencedCallTimeout)
-	defer cancel()
-	var out any
-	err := client.get(ctx, "/status", nil, &out)
-	assertRefused(t, err, fenceProbeIP+":443")
-}
-
 // TestFenceClassifiesProductionHostnamesAsRefused is the pure, no-dial half
 // of proving coverage: every real default hostname this module's clients
 // point at, checked as a plain string against the fence's own decision
@@ -125,11 +110,10 @@ func TestNetworkFenceCoversTheWalletRPCClient(t *testing.T) {
 // proves the fence would refuse that real hostname if it ever tried.
 func TestFenceClassifiesProductionHostnamesAsRefused(t *testing.T) {
 	hosts := []string{
-		config.DefaultRouterURL,                          // login probe, search client
-		config.DefaultAgentsAPIURL,                       // pkg/platform
-		config.DefaultASBaseURL,                          // pkg/auth discovery + DPoP/credential
-		config.DefaultWalletNodes[config.DefaultChainID], // wallet_tx.go
-		"https://api.github.com",                         // internal/selfupdate (compiled-in, no override seam)
+		config.DefaultRouterURL,    // login probe, search client
+		config.DefaultAgentsAPIURL, // pkg/platform
+		"https://api.github.com",   // internal/selfupdate (compiled-in, no override seam)
+
 	}
 	for _, raw := range hosts {
 		host := mustHost(t, raw)

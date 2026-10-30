@@ -6,19 +6,20 @@ package main
 //
 // posts the query straight to the search router and prints the answer.
 // No daemon, no proxy, no tool server: a skill names this command and any
-// agent that can run a command can use it. What makes it a miner:
+// agent that can run a command can use it.
 //
 //   - the router meters the request against the participant's own key,
-//     which is sent in Authorization exactly as a proxy would forward it;
-//   - the served request id (X-Request-Id) is written to the intake
-//     directory the moment the answer arrives, and a detached flush is
-//     started to join the open epoch and submit it;
+//     which is sent in Authorization;
 //   - the trace envelope rides in the body so the router can group one
 //     task's searches. It comes from, in order: the JEVLIN_TRACE_BRIDGE
 //     variable a hook put in front of this command; the workspace lineage
 //     file a hook wrote (named by JEVLIN_LINEAGE, or found by walking
 //     up from the working directory); or, with no hook at all, a hashed
 //     per-shell session identity. JEVLIN_TRACE=off sends none.
+//
+// Nothing about the search is recorded for mining: the client never
+// self-reports volume, and mining moved to the platform, where the
+// router's own ledger holds the evidence.
 //
 // Two knowing trade-offs, documented rather than hidden: an argv query
 // rides in process arguments (visible in `ps` and shell history on the
@@ -34,7 +35,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
 	"os"
 	"strconv"
@@ -54,14 +54,6 @@ const (
 	renderCitationCap = 8
 )
 
-// intakeWriteBlocked reports whether an intake write failed because the
-// directory is not writable from inside an agent's sandbox — EACCES on
-// Linux (Landlock), EROFS on macOS (Seatbelt). The EROFS case is matched by
-// string so the check stays correct on every GOOS without a syscall import.
-func intakeWriteBlocked(err error) bool {
-	return errors.Is(err, fs.ErrPermission) || strings.Contains(err.Error(), "read-only file system")
-}
-
 type searchOps struct {
 	getppid  func() int
 	hostname func() (string, error)
@@ -69,17 +61,12 @@ type searchOps struct {
 	// creating it on first use. nil or an error means there is none.
 	traceKey func(stateDir string) ([]byte, error)
 	getwd    func() (string, error)
-	// spawnFlush starts the detached flush after a served search; nil
-	// means "do not" (tests, or -no-flush).
-	spawnFlush func(cfgPath string) error
 	// spawnConnectResume starts the detached connect -resume (agent
 	// onboarding design §5.5's "next invocation of anything" — in
 	// practice, search: the one path an agent invokes routinely). Called
-	// after every served search, independent of spawnFlush/-no-flush and
-	// of [mining]/[miner] being configured at all — a search-only
-	// unclaimed participant has neither. shouldResume gates it on a
-	// cheap local disk check first, so this never fires when there is
-	// nothing to resume.
+	// after every served search. shouldResume gates it on a cheap local
+	// disk check first, so this never fires when there is nothing to
+	// resume.
 	spawnConnectResume func(cfgPath string) error
 	now                func() time.Time
 	// hook is the filesystem the lineage file is read and bumped through.
@@ -92,7 +79,6 @@ func realSearchOps() searchOps {
 		hostname:           os.Hostname,
 		traceKey:           loadTraceKey,
 		getwd:              os.Getwd,
-		spawnFlush:         startFlush,
 		spawnConnectResume: startConnectResume,
 		now:                time.Now,
 		hook:               realHookOps(),
@@ -206,6 +192,13 @@ type searchOutcome struct {
 	Attempts int
 	Traced   bool
 	Retried  bool
+	// Trajectory: the POST that was answered carried an envelope with
+	// assistant text in its history. False for a search with no envelope,
+	// for the bare-shell envelope of ids alone, for a host whose hook sends
+	// no text, for a history the size caps dropped, and for the retry that
+	// went without the trace. Traced says an envelope rode; this says it
+	// carried the assistant's words.
+	Trajectory bool
 	// FormsDropped: the retry went without objective and search_queries.
 	// Either the router refused the request as malformed_json while it
 	// carried them, or it refused the trace, and a router that old
@@ -235,7 +228,10 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	tier := fs.String("tier", "", "search tier accepted by the router, e.g. fast; empty = the router's default")
 	format := fs.String("format", "json", "output: json (the router's bytes, verbatim) or model (compact text for an agent)")
 	viewFlag := fs.String("view", "", `router view: "merged" adds the router's own cross-provider merged list and per-arm indexes to the raw response; empty or "full" asks for none`)
-	noFlush := fs.Bool("no-flush", false, "do not start a flush after this search")
+	// -no-flush is accepted and does nothing: the flush it turned off is
+	// gone, and a script or an installed hook that still passes it must
+	// not fail its search over a flag that changes nothing.
+	fs.Bool("no-flush", false, "accepted for compatibility; there is no flush to skip")
 	timeout := fs.Duration("timeout", defaultSearchTimeout, "whole-search deadline, covering connect, headers, body and the one trace-compatibility retry")
 	fs.Bool("stdin", false, "read one version-1 JSON search request from stdin and answer with the machine envelope")
 	if err := fs.Parse(args); err != nil {
@@ -367,7 +363,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	ctx, cancel := searchDeadline(*timeout)
 	defer cancel()
 
-	trace, foreignBridge := searchTraceFailingOpen(ops, cfg.Miner, cfg.Mining.StateDir, getenv, stderr)
+	trace, foreignBridge := searchTraceFailingOpen(ops, cfg.Miner, cfg.Miner.StateDir, getenv, stderr)
 	if foreignBridge {
 		// Said on stderr, and only there. `-format json` prints the router's
 		// own bytes, so there is no envelope of ours to put it in without
@@ -415,13 +411,11 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		// The turn end is sent only for a turn in which a search was SERVED.
 		markTurnSearched(ops.hook, cfg.Miner, trace)
 	}
-	mining := recordSearchForMining(ops, cfg, out, *cfgPath, *noFlush, stderr)
+	mining := miningStateOf(out)
 
-	// Independent of cfg.Miner.Enabled/-no-flush above: a search-only
-	// unclaimed participant has neither [mining] nor [miner] configured
-	// at all, and still needs the claim to resolve eventually. shouldResume
-	// is a cheap local disk check (agent onboarding design §5.5) — it
-	// costs nothing and spawns nothing when there is no stored
+	// An unclaimed participant still needs the claim to resolve eventually.
+	// shouldResume is a cheap local disk check (agent onboarding design
+	// §5.5) — it costs nothing and spawns nothing when there is no stored
 	// registration to resume.
 	// Gated on a completed response, which is the boundary this command
 	// had before the outcome was made structured: a transport failure or a
@@ -515,97 +509,15 @@ func renderSearchForHuman(out searchOutcome, format string, keySrc keySource, st
 	}
 }
 
-// recordSearchForMining is the mining side of a served search, and it is
-// deliberately the only thing between the router's answer and the exit
-// code. Nothing in here can change what the search returned: AGENTS.md
-// invariant 1 — a mining-side write, spawn or state failure must never
-// turn a successful search into a failed one.
-// It returns the mining state as a value so the machine envelope reports
-// the same thing the human stderr lines say, rather than a second reading
-// of the same store — and so a caller can tell a search that earned
-// nothing because mining is off from one that earned nothing because
-// capture broke.
-func recordSearchForMining(ops searchOps, cfg *config.Config, out searchOutcome, cfgPath string, noFlush bool, stderr io.Writer) machineMining {
-	// The persisted decision is read either way: it is a local disk read,
-	// it changes nothing, and a failed search still has a mining state
-	// worth reporting.
-	decision, mstore := inspectMiningState(cfg.Mining.StateDir)
-	snap := machineMining{State: string(decision.State), Configured: cfg.Miner.Enabled}
-	if decision.Err != nil {
-		snap.Detail = boundMessage(decision.Err.Error())
-	}
-	finish := func() machineMining {
-		if mstore != nil {
-			records, _ := mstore.HealthRecords()
-			snap.Health = healthOf(records)
-		}
-		return snap
-	}
-	if !out.ok() || !cfg.Miner.Enabled {
-		return finish()
-	}
-	// [miner] enabled says intake is configured; the persisted decision is
-	// the only runtime authority. An undecided participant is silent. An
-	// unreadable state is fail-closed for mining but visible as a concise
-	// diagnostic; neither state-store nor health failures may replace a
-	// successful router answer.
-	if decision.State == auth.MiningDegraded {
-		detail := miningDecisionDetail(decision)
-		if mstore != nil {
-			_ = mstore.MarkHealth(auth.HealthDecision, auth.HealthDecisionUnreadable, detail)
-		}
-		fmt.Fprintf(stderr, "jevlin: the search succeeded, but mining capture is unavailable because local mining state cannot be safely trusted%s\n",
-			detail)
-	}
-	if decision.State != auth.MiningEnabled {
-		return finish()
-	}
-	rec := intakeRecord{
-		RequestID:  out.Success.RequestID,
-		Host:       cfg.Miner.RouterURL.Host,
-		StatusCode: out.HTTPStatus,
-		StartedAt:  out.Started,
-		FinishedAt: out.Finished,
-	}
-	if c := out.Success.Response.chosen(); c != nil {
-		rec.ChosenProvider = c.Provider
-	}
-	if _, err := writeIntake(cfg.Miner.IntakeDir, rec); err != nil {
-		reason := auth.HealthIntakeUnwritable
-		if intakeWriteBlocked(err) {
-			reason = auth.HealthSandboxRestricted
-			fmt.Fprintf(stderr, "jevlin: the search worked, but its mining observation could NOT be\n"+
-				"  recorded — %s is not writable from inside this agent's sandbox, so\n"+
-				"  searches run here earn nothing. Let the agent write to that directory.\n"+
-				"  For Codex, re-run `jevlin agents install`, which now configures it.\n",
-				minerRoot(cfg.Miner))
-		} else {
-			fmt.Fprintln(stderr, "jevlin search: could not record the request for mining:", err)
-		}
-		if mstore != nil {
-			_ = mstore.MarkHealth(auth.HealthCapture, reason, err.Error())
-		}
-		return finish()
-	}
-	snap.Recorded = true
-	// Best-effort, for doctor's own recording check only: the target epoch
-	// F's flush stamp holds right now, read-only (F owns that stamp).
-	// Never on the path above, which runs only when the search itself, or
-	// its own intake write, has already failed — this never turns a
-	// successful search into anything the participant sees fail.
-	recordSearchEpoch(cfg.Miner.IntakeDir, loadFlushStamp(flushStampPath(cfg.Mining)).TargetEpoch)
-	if mstore != nil {
-		_ = mstore.ClearHealth(auth.HealthCapture)
-	}
-	if !noFlush && ops.spawnFlush != nil {
-		if err := ops.spawnFlush(cfgPath); err != nil {
-			if mstore != nil {
-				_ = mstore.MarkHealth(auth.HealthFlush, auth.HealthFlushSpawnFailed, err.Error())
-			}
-			fmt.Fprintln(stderr, "jevlin search: could not start mining flush:", err)
-		}
-	}
-	return finish()
+// miningStateOf is the mining half of the envelope, kept as a stub while
+// mining moves to the platform: the skill, the opencode plugin and the Pi
+// extension read the object, so the field stays, and it says the one true
+// thing this client can say — nothing is mined here. Trajectory says
+// whether the answered POST carried an envelope with assistant text, the
+// one fact about a search's trace a caller can use, and the one the
+// platform's own mining is served on.
+func miningStateOf(out searchOutcome) machineMining {
+	return machineMining{State: miningStateDisabled, Configured: false, Trajectory: out.Trajectory}
 }
 
 // searchTierDefault is the band a request carries when the caller named
@@ -636,7 +548,7 @@ func readTierSetting(path string) ([]byte, error) {
 // performSearch runs the whole protocol operation under one context: at
 // most two POSTs, the second only on an explicit trace_unsupported, and
 // both sharing ctx's single absolute deadline.
-func performSearch(ctx context.Context, now func() time.Time, call searchCall) searchOutcome {
+func performSearch(ctx context.Context, now func() time.Time, call searchCall) (out searchOutcome) {
 	body := map[string]any{"query": call.Query}
 	if call.Tier != "" {
 		body["tier"] = call.Tier
@@ -668,7 +580,7 @@ func performSearch(ctx context.Context, now func() time.Time, call searchCall) s
 	if call.MaxChars != nil {
 		body["max_chars"] = *call.MaxChars
 	}
-	out := searchOutcome{Traced: call.Trace != nil}
+	out = searchOutcome{Traced: call.Trace != nil}
 	if out.Traced {
 		body["trace"] = call.Trace
 		// The router reads session identity in two places: trace.session_id
@@ -714,6 +626,14 @@ func performSearch(ctx context.Context, now func() time.Time, call searchCall) s
 		delete(body, "search_queries")
 		out.FormsDropped = true
 	}
+	// Decided from the body as it was finally sent: the trace-compatibility
+	// retry below deletes the envelope, and a trajectory that was not in
+	// the answered POST was not one. On the named result, so every return
+	// path carries it.
+	defer func() {
+		tr, ok := body["trace"].(*traceEnvelope)
+		out.Trajectory = out.Fault == faultNone && ok && hasTrajectory(tr)
+	}()
 	switch {
 	case err != nil:
 	case out.Traced && searchTraceUnsupported(attempt.Status, attempt.Raw, attempt.BodyErr):

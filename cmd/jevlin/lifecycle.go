@@ -8,20 +8,20 @@ package main
 // the lock that coordinates it. The gate holds no participant state and is
 // never deleted.
 //
-// The gate plays two roles. For setup, connect and flush it is an admission
+// The gate plays two roles. For setup and connect it is an admission
 // gate: take it, take the operation's own lock, let it go, then run under the
 // operation lock alone. For an operation that destroys or replaces the
 // installation it is a whole-operation lock, held from before anything is
 // inspected until the work is done, together with every operation lock it
-// probed. A new setup, connect or flush therefore cannot begin between the
+// probed. A new setup or connect therefore cannot begin between the
 // destructive operation's check and its work: to begin, it would need the
 // gate.
 //
 // Lock order, everywhere, with no exceptions:
 //
-//	H.lifecycle.lock → setup.lock → connect.lock → flush.lock
+//	H.lifecycle.lock → setup.lock → connect.lock
 //	H.lifecycle.lock → setup.lock → <resolved binary>.update.lock   (upgrade)
-//	H.lifecycle.lock → setup.lock → connect.lock → flush.lock → <resolved binary>.update.lock   (uninstall -binary)
+//	H.lifecycle.lock → setup.lock → connect.lock → <resolved binary>.update.lock   (uninstall -binary)
 //	update_check.lock → H.lifecycle.lock → setup.lock → <resolved binary>.update.lock   (upgrade -auto)
 //
 // The daily check's update_check.lock, in the installation's own directory,
@@ -38,10 +38,10 @@ package main
 // again: setup already holds setup.lock, and taking the gate after it would
 // be the reverse order.
 //
-// Who is keyed where. connect and flush key the gate on the directory of the
-// config file they are about to load — chosen exactly as loadConfig chooses
+// Who is keyed where. connect keys the gate on the directory of the
+// config file it is about to load — chosen exactly as loadConfig chooses
 // it (-config, then JEVLIN_CONFIG, then the installation's own config
-// when that file exists) — and they know that
+// when that file exists) — and it knows that
 // path before loading anything. setup keys it on the installation
 // directory it writes, whose config is H/jevlin.toml; on the installer
 // layout the two keys are the same path. Every path that names a gate goes
@@ -49,12 +49,11 @@ package main
 // of the same directory do not give two gates. Symlinks are not resolved:
 // resolving them in one command and not another would split the gate.
 //
-// Waiting. A person's command — foreground connect, setup, a manual flush —
-// waits at most lifecycleForegroundWait for the gate, then refuses and exits
-// non-zero. A detached child (a flush search or a hook started, or connect
-// -resume) makes one attempt and, when the gate is held, exits 0 quietly and
-// records nothing: the health vocabulary is closed, and an uninstall or
-// upgrade window is short. Nothing here is on the search path.
+// Waiting. A person's command — foreground connect, setup — waits at most
+// lifecycleForegroundWait for the gate, then refuses and exits non-zero. A
+// detached child (the connect -resume a search started) makes one attempt
+// and, when the gate is held, exits 0 quietly and records nothing: an
+// uninstall or upgrade window is short. Nothing here is on the search path.
 //
 // A gate that cannot be opened at all — as opposed to one somebody holds —
 // admits an ordinary operation without it: the destructive side opens the
@@ -230,7 +229,7 @@ func detachedChild(getenv func(string) string) bool {
 	return getenv(detachedChildEnv) == "1"
 }
 
-// admitOrdinary passes the gate for setup, connect or flush. The returned
+// admitOrdinary passes the gate for setup or connect. The returned
 // lock, possibly nil, is released by the caller as soon as it holds its own
 // operation lock. errLifecycleBusy is the only error: a gate that cannot be
 // opened admits without it (see the file comment).
@@ -256,7 +255,7 @@ func admitOrdinary(gatePath string, mode admission) (*lifecycleLock, error) {
 
 // lifecycleActiveError names the operation found running.
 type lifecycleActiveError struct {
-	Operation string // "setup", "connect" or "flush"
+	Operation string // "setup" or "connect"
 	Lock      string
 }
 
@@ -287,11 +286,11 @@ type lifecycleExclusion struct {
 
 	// created is the operation-lock paths hold() brought into existence,
 	// in the order it took them. Taking a lock opens its file with
-	// O_CREATE (tryLockFile, minerlock_*.go), so probing an installation
-	// that has never flushed creates a flush.lock that was not there
+	// O_CREATE (tryLockFile, filelock_*.go), so probing an installation
+	// that has never connected creates a connect.lock that was not there
 	// before — dropin-miner#86, where an uninstall -purge-state aborted at its
 	// confirmation printed "No participant state or integrations were
-	// changed" over a new empty flush.lock it had just made.
+	// changed" over a new empty lock file it had just made.
 	created []string
 
 	// removeCreated is whether release() removes those files when the
@@ -299,9 +298,7 @@ type lifecycleExclusion struct {
 	// run that stops must leave the installation as it found it.
 	// excludeForUpgrade does not, and deliberately — an upgrade's lock
 	// files are installation furniture that uninstall -binary already
-	// knows how to remove (S19), and the flush lock an upgrade wants
-	// present is created on purpose one line after the exclusion is taken
-	// (ensureUpgradeFlushLock). dropin-miner#86 is about the destructive-abort path;
+	// knows how to remove (S19). dropin-miner#86 is about the destructive-abort path;
 	// widening it to upgrade needs its own evidence, not this one's.
 	removeCreated bool
 
@@ -322,10 +319,10 @@ func (ex *lifecycleExclusion) proceeded() {
 }
 
 // excludeLifecycle takes the gate of home, then setup.lock, then — located
-// from home's config, loaded only once the gate is held — connect.lock and
-// flush.lock. Any operation found running, a config that exists but will not
-// load, or a gate that cannot be opened is a refusal, returned with nothing
-// held. With no config file the installer layout's lock paths are probed.
+// from home's config, loaded only once the gate is held — connect.lock. Any
+// operation found running, a config that exists but will not load, or a
+// gate that cannot be opened is a refusal, returned with nothing held. With
+// no config file the installer layout's lock path is probed.
 func excludeLifecycle(home string, getenv func(string) string, wait time.Duration) (*lifecycleExclusion, error) {
 	gate, err := acquireLifecycleGate(lifecycleGatePath(home), wait)
 	if err != nil {
@@ -336,16 +333,13 @@ func excludeLifecycle(home string, getenv func(string) string, wait time.Duratio
 		ex.release()
 		return nil, err
 	}
-	connectLock, flushLock, err := operationLockPaths(home, getenv)
+	connectLock, err := operationLockPath(home, getenv)
 	if err != nil {
 		ex.release()
 		return nil, err
 	}
-	for _, op := range []struct{ name, path string }{{"connect", connectLock}, {"flush", flushLock}} {
-		if op.path == "" {
-			continue
-		}
-		if err := ex.hold(op.name, op.path); err != nil {
+	if connectLock != "" {
+		if err := ex.hold("connect", connectLock); err != nil {
 			ex.release()
 			return nil, err
 		}
@@ -353,34 +347,29 @@ func excludeLifecycle(home string, getenv func(string) string, wait time.Duratio
 	return ex, nil
 }
 
-// operationLockPaths locates connect.lock and flush.lock for home. An empty
-// path is a lock no operation can take under this config.
-func operationLockPaths(home string, getenv func(string) string) (connectLock, flushLock string, err error) {
+// operationLockPath locates connect.lock for home. An empty path is a lock
+// no operation can take under this config.
+func operationLockPath(home string, getenv func(string) string) (connectLock string, err error) {
 	cfgPath := filepath.Join(home, setupConfigFile)
 	if _, statErr := os.Lstat(cfgPath); errors.Is(statErr, fs.ErrNotExist) {
-		return connectLockPath(filepath.Join(home, "state")), filepath.Join(home, "flush.lock"), nil
+		return connectLockPath(filepath.Join(home, "state")), nil
 	} else if statErr != nil {
-		return "", "", &lifecycleConfigError{Path: cfgPath, Err: statErr}
+		return "", &lifecycleConfigError{Path: cfgPath, Err: statErr}
 	}
 	cfg, _, loadErr := loadConfig(cfgPath, getenv)
 	if loadErr != nil {
-		return "", "", &lifecycleConfigError{Path: cfgPath, Err: loadErr}
+		return "", &lifecycleConfigError{Path: cfgPath, Err: loadErr}
 	}
-	if cfg.Mining.StateDir != "" {
-		connectLock = connectLockPath(cfg.Mining.StateDir)
+	if cfg.Miner.StateDir != "" {
+		connectLock = connectLockPath(cfg.Miner.StateDir)
 	}
-	if cfg.Miner.IntakeDir != "" {
-		flushLock = flushLockPath(cfg.Miner)
-	}
-	return connectLock, flushLock, nil
+	return connectLock, nil
 }
 
 // lockableDir is whether path's directory rules out taking a lock there at
 // all: only a directory that clearly does not exist does. Every other stat
 // outcome — the directory exists, or some other error (permission denied,
-// say) — leaves the attempt to tryLockFile itself, so a predictor of this
-// same outcome (uninstall.go's predictedFlushLockPath) must not treat an
-// error other than "not exist" as "does not exist" either.
+// say) — leaves the attempt to tryLockFile itself.
 func lockableDir(path string) bool {
 	_, err := os.Stat(filepath.Dir(path))
 	return !errors.Is(err, fs.ErrNotExist)
@@ -427,7 +416,7 @@ func (ex *lifecycleExclusion) releaseOperation(path string) {
 // removes the lock files this exclusion created when the operation never
 // proceeded (dropin-miner#86). Every lock is let go above before any file is removed
 // below, because Windows will not delete a file that is open. A lock file
-// that already existed is never removed: the participant's own flush lock
+// that already existed is never removed: the participant's own connect lock
 // is not this operation's to clean up. Nor is the gate, which is a sibling
 // of the installation and is documented as left behind and named.
 func (ex *lifecycleExclusion) release() {

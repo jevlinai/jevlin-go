@@ -16,8 +16,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/jevlinai/jevlin-go/pkg/auth"
 )
 
 func runSearchStdin(t *testing.T, h *searchHarness, env map[string]string, stdin string, args ...string) (int, string, string) {
@@ -745,33 +743,28 @@ func TestRetryAfterReachesTheEnvelopeWhenTheRouterSuppliesIt(t *testing.T) {
 	}
 }
 
-// ── §12 mining state, separate from search success ──────────────────────
+// ── §12 the mining object, a stub this client keeps for its readers ─────
 
-func TestMiningStateIsReportedWithoutChangingSearchSuccess(t *testing.T) {
+// The envelope keeps a mining object so a caller written for an earlier
+// version still finds the key: it says disabled, nothing configured and
+// nothing recorded, on every search. Trajectory is the one fact in it that
+// varies — whether the POST carried an envelope with assistant text — and
+// nothing in the envelope is ever called earned.
+func TestTheMiningObjectIsAStubAndNeverClaimsEarnings(t *testing.T) {
 	for _, tc := range []struct {
-		name      string
-		enabled   bool
-		wantState string
-		wantRec   bool
+		name       string
+		env        map[string]string
+		trajectory bool
 	}{
-		{"mining on", true, string(auth.MiningEnabled), true},
-		{"mining off", false, string(auth.MiningDisabled), false},
+		{"no trace", map[string]string{"JEVLIN_API_KEY": "k"}, false},
+		{"a trace with assistant text", map[string]string{"JEVLIN_API_KEY": "k", bridgeEnv: assistantBridge(t, "the assistant said so")}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
 				_, _ = w.Write([]byte(routerBody))
 			})
-			store, err := auth.OpenStore(filepath.Join(root, "state"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := store.SaveMiningEnabled(tc.enabled); err != nil {
-				t.Fatal(err)
-			}
 			h := fixedSearchOps(root)
-			code, out, _ := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"},
-				`{"version":1,"query":"q"}`, "-config", cfg)
-			// A successful search is successful whatever mining is doing.
+			code, out, _ := runSearchStdin(t, h, tc.env, `{"version":1,"query":"q"}`, "-config", cfg)
 			if code != exitOK {
 				t.Fatalf("exit %d: %s", code, out)
 			}
@@ -783,47 +776,16 @@ func TestMiningStateIsReportedWithoutChangingSearchSuccess(t *testing.T) {
 			if !ok {
 				t.Fatalf("no mining object: %s", out)
 			}
-			if mining["state"] != tc.wantState {
-				t.Errorf("mining state %v, want %q", mining["state"], tc.wantState)
+			if mining["state"] != miningStateDisabled || mining["configured"] != false || mining["recorded"] != false {
+				t.Errorf("mining = %v, want the disabled stub", mining)
 			}
-			if mining["recorded"] != tc.wantRec {
-				t.Errorf("mining recorded %v, want %v", mining["recorded"], tc.wantRec)
+			if mining["trajectory"] != tc.trajectory {
+				t.Errorf("trajectory %v, want %v", mining["trajectory"], tc.trajectory)
 			}
-			// Nothing anywhere calls this earned.
 			if strings.Contains(strings.ToLower(out), "earn") {
 				t.Errorf("the envelope claims earnings: %s", out)
 			}
 		})
-	}
-}
-
-// A capture failure degrades mining and says so, and the search still
-// succeeds (AGENTS.md invariant 1).
-func TestACaptureFailureDegradesMiningButNotTheSearch(t *testing.T) {
-	_, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(routerBody))
-	})
-	// Make the intake directory unusable by putting a file where it goes.
-	if err := os.WriteFile(filepath.Join(root, "intake"), []byte("not a directory"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	h := fixedSearchOps(root)
-	code, out, _ := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"},
-		`{"version":1,"query":"q"}`, "-config", cfg)
-	if code != exitOK {
-		t.Fatalf("a mining capture failure changed the search exit: %d %s", code, out)
-	}
-	env := decodeEnvelope(t, out)
-	if env["ok"] != true {
-		t.Fatalf("ok %v", env["ok"])
-	}
-	mining, _ := env["mining"].(map[string]any)
-	if mining == nil || mining["recorded"] != false {
-		t.Fatalf("mining: %v", mining)
-	}
-	health, _ := mining["health"].([]any)
-	if len(health) == 0 {
-		t.Errorf("a capture failure left no open health reason: %v", mining)
 	}
 }
 
@@ -865,4 +827,16 @@ func TestNoSeededSecretReachesTheEnvelopeOrTheHumanError(t *testing.T) {
 	if got := envField(t, decodeEnvelope(t, machineOut), "action"); got != actionLogin {
 		t.Errorf("action %v", got)
 	}
+}
+
+// assistantBridge is a trace bridge whose history holds one assistant entry
+// saying text, as a host's hook would have put it in the environment.
+func assistantBridge(t *testing.T, text string) string {
+	t.Helper()
+	bridge, err := encodeTraceBridge(&traceEnvelope{V: traceVersion, Harness: "claude-code", SessionID: "abc", TurnID: "t", CallID: "c",
+		History: []traceHistory{{Role: "assistant", Text: text}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bridge
 }

@@ -189,7 +189,7 @@ func TestCursorSurvivesAnUninstallSetupRoundTrip(t *testing.T) {
 			}
 			installed := snapshotTree(t, cursorDir)
 
-			if code, out, errOut := s.uninstall(t, nil, false, nil, "-yes"); code != exitOK {
+			if code, out, errOut := s.uninstall(t, nil, false, "-yes"); code != exitOK {
 				t.Fatalf("uninstall exited %d\n%s\n%s", code, out, errOut)
 			}
 			if lexists(paths.cursorSkill) {

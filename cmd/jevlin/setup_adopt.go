@@ -3,19 +3,20 @@ package main
 // A previous installation, found and — only when the participant says so at
 // a terminal — adopted.
 //
-// Nothing we ship deletes the installation directory: it holds the wallet,
-// the registration and the stored key. A participant who removed the miner
+// Nothing we ship deletes the installation directory: it holds the
+// registration and the stored key. A participant who removed the client
 // and comes back, or set the directory aside, should get those back rather
-// than a second wallet and a second registration.
+// than a second registration.
 //
 // Adoption moves bundles, never loose files, because some state is only
 // meaningful together. The identity bundle is state/ and credentials.json:
-// a refresh token without the DPoP key it is bound to fails every request,
-// and a platform key beside someone else's agent.json is a registration that
+// a platform key beside someone else's agent.json is a registration that
 // belongs to nobody. So the identity moves whole or not at all, and a
 // destination that already holds an identity is a conflict — neither half
-// moves, the source is left exactly as it was, and both paths are named.
-// The wallet moves whole or stays. Spool, intake and session files are
+// moves, the source is left exactly as it was, and both paths are named. A
+// wallet an earlier version made moves whole or stays: it is the
+// participant's key material, and this client no longer reads it. Session
+// files, and the spool and intake records an earlier version left, are
 // independent records and merge file by file, never overwriting one that is
 // already there.
 //
@@ -29,7 +30,6 @@ package main
 // the auth store accepts at runtime.
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -39,7 +39,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jevlinai/jevlin-go/pkg/auth"
 	"github.com/jevlinai/jevlin-go/pkg/fsx"
 )
 
@@ -47,14 +46,16 @@ import (
 // installation. registration_pending.json is one: an interrupted
 // registration is durable state, and ignoring it would mint a second
 // identity for the same participant. It sits beside credentials.json; the
-// state/ copy is an older release's and connect discards it unread.
+// state/ copy is an older release's and connect discards it unread. The
+// wallet key and the refresh token an earlier version made are markers
+// too: a directory holding either was an installation, and still is.
 //
 // The payout record and the claim record are not markers, though they move
-// with the identity. A home holding only payout.json is what a first connect
-// leaves when the participant answered the address question and Register
-// then failed; counting it as an installation made setup report "a payout
-// address" as the previous installation and never offer the one actually
-// set aside beside it.
+// with the identity. A home holding only payout.json is what an earlier
+// version's first connect left when the participant answered the address
+// question and Register then failed; counting it as an installation made
+// setup report "a payout address" as the previous installation and never
+// offer the one actually set aside beside it.
 var installationMarkers = []string{
 	filepath.Join("wallet", walletKeyFile),
 	filepath.Join("state", "refresh.token"),
@@ -64,8 +65,17 @@ var installationMarkers = []string{
 	credentialsFile,
 }
 
+// walletKeyFile and payoutRecordFile are the names an earlier version gave
+// the wallet's sealed key and the payout record. This client reads neither;
+// it moves them with an installation it adopts and removes them with one it
+// purges.
+const (
+	walletKeyFile    = "wallet.key"
+	payoutRecordFile = "payout.json"
+)
+
 // identityStateFiles are the state/ files that make a destination's state an
-// identity rather than an unfinished enrollment's leftovers.
+// identity rather than an unfinished registration's leftovers.
 var identityStateFiles = []string{"refresh.token", "agent.json", "registration_pending.json", "participation.secret"}
 
 func lexists(path string) bool {
@@ -127,20 +137,15 @@ func setAsideInstallation(home string) string {
 }
 
 // describeInstallation says what a directory holds, in the script's words.
-// The wallet address comes from the public sidecar; no process is run and no
-// passphrase is needed.
 func describeInstallation(dir string) string {
 	var parts []string
 	if lexists(filepath.Join(dir, "wallet", walletKeyFile)) {
-		addr := "?"
-		var sc sidecar
-		if err := readWalletFile(filepath.Join(dir, "wallet"), walletSidecarFile, &sc); err == nil && sc.Address != "" {
-			addr = sc.Address
-		}
-		parts = append(parts, "wallet "+addr)
+		parts = append(parts, "a wallet")
 	}
-	if lexists(filepath.Join(dir, "state", "refresh.token")) || lexists(filepath.Join(dir, "state", "agent.json")) {
-		parts = append(parts, "enrolled")
+	if lexists(filepath.Join(dir, "state", "agent.json")) {
+		parts = append(parts, "registered")
+	} else if lexists(filepath.Join(dir, "state", "refresh.token")) {
+		parts = append(parts, "enrolled by an earlier version")
 	}
 	if lexists(filepath.Join(dir, registrationJournalFile)) || lexists(filepath.Join(dir, "state", "registration_pending.json")) {
 		parts = append(parts, "an unfinished registration")
@@ -151,25 +156,7 @@ func describeInstallation(dir string) string {
 	if lexists(filepath.Join(dir, payoutRecordFile)) {
 		parts = append(parts, "a payout address")
 	}
-	if treeHasFiles(filepath.Join(dir, "spool")) {
-		parts = append(parts, "unsent spool")
-	}
 	return strings.Join(parts, ", ")
-}
-
-func treeHasFiles(dir string) bool {
-	found := false
-	_ = filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if !d.IsDir() {
-			found = true
-			return filepath.SkipAll
-		}
-		return nil
-	})
-	return found
 }
 
 // validateTree refuses anything but regular files and directories the current
@@ -350,8 +337,8 @@ func (f *adoptionFailure) Error() string {
 // after a move, refusal, or failure to move or restrict. The invariant, at
 // the point connect could run: either both custody bundles of the accepted
 // installation were adopted coherently, or both remain where they started —
-// never an identity adopted beside a wallet left behind, which would register
-// and pay out against custody the participant did not keep together. Spool,
+// never an identity adopted beside a wallet left behind, which this client
+// does not read but which is the participant's to keep with it. Spool,
 // intake, sessions and config are independent records with per-file rules,
 // and move only after that outer commit.
 func (a *adoption) run() error {
@@ -540,15 +527,6 @@ func (a *adoption) custody(t *bundleTxn) error {
 	if err := t.move(src, dst); err != nil {
 		return t.fail("wallet", err)
 	}
-	// A move keeps each object's access list as it was at the source, entries
-	// inherited there included, and restricting the directory does not remove
-	// an entry a file already carries: the whole tree is secured, and a wallet
-	// object that cannot be is a failed wallet stage (wallet_acl.go).
-	if !a.dry {
-		if _, err := secureWalletTree(dst, a.restrict); err != nil {
-			return t.fail("wallet", err)
-		}
-	}
 	a.say("adopted the wallet")
 	return nil
 }
@@ -669,18 +647,4 @@ func (a *adoption) finish() {
 		names = append(names, e.Name())
 	}
 	a.say("left the rest of %s in place (%s); delete it when you like", a.src, strings.Join(names, ", "))
-}
-
-// storedMiningDecision reads a decision that came with an installation
-// through the one mining authority (invariant 10), without creating anything:
-// the state directory is opened only if it already exists.
-func storedMiningDecision(stateDir string) auth.MiningDecisionState {
-	store, err := auth.OpenStoreExisting(stateDir)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return auth.MiningUndecided
-		}
-		return auth.MiningDegraded
-	}
-	return store.ReadMiningDecision().State
 }

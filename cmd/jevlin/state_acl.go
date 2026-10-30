@@ -294,3 +294,7 @@ func stateOthersDetail(objects []stateObject) string {
 	}
 	return strings.Join(clauses, "; ")
 }
+
+// singleLineError renders err on one line, for a report that prints one
+// line per check.
+func singleLineError(err error) string { return strings.ReplaceAll(err.Error(), "\n", "; ") }

@@ -2,36 +2,30 @@ package main
 
 // connect: the agent-onboarding client (agent onboarding design,
 // search-platform-agent-onboarding-design.md §5.5). It registers with
-// the search platform, prints the claim URL and code, polls (bounded)
-// until claimed, and — the moment status shows the mining scope granted
-// — enrolls unattended, reusing RedeemEnrollmentAssertion exactly as
-// `enroll -assertion` does today. search works from the moment this
-// stores the key, before any of that.
+// the search platform, prints the claim URL and code, and polls (bounded)
+// until claimed. search works from the moment this stores the key, before
+// the claim.
 //
 // Resume is one poll, not a loop (§5.5): after a served search, search.go
 // checks the local registration file with no network and spawns a
-// detached `connect -resume`, the same spawnFlush pattern. The resume
-// performs exactly one poll, acts, exits — anything else is a daemon by
-// another name.
+// detached `connect -resume`. The resume performs exactly one poll, acts,
+// exits — anything else is a daemon by another name.
 //
-// Structural invariant 11: this file and mining.go carry no os/exec
-// import. Nothing about registering, polling or enrolling legitimately
-// launches a process; the only spawn in this codebase is search.go's
-// existing detached child, and TestConnectAndMiningNeverImportOSExec
-// (boundary_test.go) enforces it.
+// Structural invariant 11: this file carries no os/exec import. Nothing
+// about registering or polling legitimately launches a process; the only
+// spawns in this codebase are search.go's and the hooks' detached
+// children, and TestConnectNeverImportsOSExec (boundary_test.go) enforces
+// it.
 //
-// WP2-adversarial-review hardening (design 009b08d §5.5 "Client hardening
-// rules"): every entry point below — cmdConnect and the detached resume
-// it spawns — takes connect.lock for its ENTIRE run, exactly as runFlush
-// takes flush.lock, so two invocations (a foreground connect and a
-// search-spawned resume, or several resumes racing a burst of searches)
-// can never interleave. A resume cooldown stamp keeps shouldResume from
-// approving a spawn faster than resumes can possibly complete. Every
+// Every entry point below — cmdConnect and the detached resume it spawns —
+// takes connect.lock for its ENTIRE run, so two invocations (a foreground
+// connect and a search-spawned resume, or several resumes racing a burst of
+// searches) can never interleave. A resume cooldown stamp keeps shouldResume
+// from approving a spawn faster than resumes can possibly complete. Every
 // mutation to the stored registration re-reads the on-disk record first
 // and fails loudly, never silently, on a write error.
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -51,11 +45,6 @@ import (
 	"github.com/jevlinai/jevlin-go/pkg/fsx"
 	"github.com/jevlinai/jevlin-go/pkg/platform"
 )
-
-// connectInteractive is the terminal-detection seam for cmdConnect. The
-// production value is the real terminal check; tests may force the same
-// interactive branch while still driving cmdConnect end to end.
-var connectInteractive = isInteractive
 
 // connectPollBudget and resumePollInterval are vars, not consts, solely
 // so a test can shrink them (save, override, t.Cleanup restore) instead
@@ -165,12 +154,10 @@ func remintClaimLink(ctx context.Context, client *platform.Client, store *auth.S
 // else is written first.
 func publishRebuiltRegistration(ctx context.Context, client *platform.Client, store *auth.Store, m config.Miner, identity *platform.AgentIdentity, credKey string, stdout, stderr io.Writer) (reg auth.AgentRegistration, code int, stop bool) {
 	reg = auth.AgentRegistration{
-		AgentID:            identity.AgentID,
-		Status:             identity.Status,
-		Scopes:             identity.Scopes,
-		ClaimExpiresAt:     identity.ClaimExpiresAt,
-		LastEnrollmentSlot: identity.LastEnrollmentSlot,
-		LastEnrollmentAt:   identity.LastEnrollmentAt,
+		AgentID:        identity.AgentID,
+		Status:         identity.Status,
+		Scopes:         identity.Scopes,
+		ClaimExpiresAt: identity.ClaimExpiresAt,
 	}
 	if serr := store.SaveAgentRegistration(reg); serr != nil {
 		fmt.Fprintln(stderr, "jevlin: rebuilt registration from the platform but could not persist it:", serr)
@@ -448,13 +435,9 @@ func publishPendingRegistration(store *auth.Store, m config.Miner, pending auth.
 // from what the run persisted.
 //
 // The registration implementation is shared: the same single-flight lock,
-// the same pending-registration recovery, the same poll loop, the same
-// decisions. Machine mode adds only safety gates at the points where a
-// participant decision would otherwise be required — connectNeedsHumanDecision
-// before this run starts, and the mid-run gate inside connectRun for the one
-// case that pre-check cannot see ahead of time (below) — and never
-// substitutes an answer of its own; a JSON mode that took a different path
-// through registration would be a second, less-tested registration client.
+// the same pending-registration recovery, the same poll loop. A JSON mode
+// that took a different path through registration would be a second,
+// less-tested registration client.
 func cmdConnect(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
 	return connectCommand(args, stdin, stdout, stderr, getenv, false)
 }
@@ -470,24 +453,12 @@ func connectCommand(args []string, stdin io.Reader, stdout, stderr io.Writer, ge
 	if !jsonRequested(args) {
 		return connectRun(args, stdin, stdout, stderr, getenv, false, admitted)
 	}
-	cfgPath, force, parseErr := connectMachineFlags(args)
-	// Selecting an output format must not select an answer. Machine mode
-	// is not a terminal, so the ask-before-registering step would take its
-	// non-interactive branch and write a first mining decision from
-	// whatever mining.enabled happens to default to — a participant
-	// decision manufactured by a flag about formatting. Where that would
-	// happen, stop before Register and say so structurally instead.
-	//
-	// Ruling D-R1, ahead of the human-decision pre-check below: with no
-	// config file resolved at all, loadConfig still succeeds (it falls
-	// back to built-in defaults, which is exactly the state connect must
-	// refuse to register against), so connectNeedsHumanDecision would
-	// otherwise evaluate the mining question against a config nobody
-	// wrote and, on a bare machine, misreport this as
-	// human_decision_required rather than the narrower "no installation"
-	// refusal it actually is. describeConfigSource is the same pure,
-	// side-effect-free resolution connectRun itself uses, so this and
-	// connectRun's own mid-run check can never disagree.
+	cfgPath, parseErr := connectMachineFlags(args)
+	// Ruling D-R1: with no config file resolved at all, loadConfig still
+	// succeeds (it falls back to built-in defaults, which is exactly the
+	// state connect must refuse to register against). describeConfigSource
+	// is the same pure, side-effect-free resolution connectRun itself uses,
+	// so this and connectRun's own check can never disagree.
 	if parseErr == nil && describeConfigSource(cfgPath, getenv) == "" {
 		emitMachine(stdout, commandEnvelope{
 			machineHeader: newMachineHeader("connect", exitTransport, "config_not_found", false, actionFixInput),
@@ -503,25 +474,6 @@ func connectCommand(args []string, stdin io.Reader, stdout, stderr io.Writer, ge
 			emitMachine(stdout, keyOriginEnvelope(err))
 			return exitUsage
 		}
-	}
-	// Only when the command itself parsed. An invalid command is not a
-	// lifecycle state: with a parse failure there is no -config to speak
-	// of, so the gate would answer about the DEFAULT config and state
-	// directory, and on a fresh machine a mistyped flag would come back as
-	// human_decision_required. A pre-check that exists to choose an output
-	// format must never reinterpret a broken command as a state of the
-	// installation.
-	if parseErr == nil && connectNeedsHumanDecision(cfgPath, force, getenv) {
-		emitMachine(stdout, commandEnvelope{
-			machineHeader: newMachineHeader("connect", exitUsage, "human_decision_required", false, actionConnect),
-			Error: &machineError{
-				Message: "this installation has no mining decision on file and the config does not " +
-					"set mining.enabled, so registering would have to invent one. Run `jevlin connect` " +
-					"at a terminal, or set mining.enabled explicitly, then run this again.",
-				Source: "client",
-			},
-		})
-		return exitUsage
 	}
 	var narration bytes.Buffer
 	code := connectRun(args, stdin, io.Discard, &narration, getenv, true, admitted)
@@ -564,28 +516,6 @@ func connectCommand(args []string, stdin io.Reader, stdout, stderr io.Writer, ge
 			Error: &machineError{
 				Message: "agent.json names another agent than the stored key's, and -force does not rebuild a " +
 					"registration; run `jevlin connect` without -force to rebuild it from the platform",
-				Source: "client",
-			},
-		})
-		return exitUsage
-	}
-	if code == exitHumanDecisionRequired {
-		// Reached mid-run, past the pre-check above: a rebuild (B.3) can
-		// only learn a recovered identity is expired AFTER calling
-		// /v1/agents/me, which this pre-check deliberately never does (it
-		// is a pure disk read). The signal is structural — a sentinel exit
-		// code, never a prose match — and the public classification is
-		// identical to the pre-check's own (exitUsage, human_decision_required,
-		// action=connect); only the explanatory message differs, naming the
-		// recovered-expired case specifically rather than reusing the
-		// pre-check's generic "no mining decision on file" wording.
-		emitMachine(stdout, commandEnvelope{
-			machineHeader: newMachineHeader("connect", exitUsage, "human_decision_required", false, actionConnect),
-			Error: &machineError{
-				Message: "this installation's stored registration could not be read, and rebuilding it from " +
-					"the platform found an expired identity; replacing it needs a mining decision this run " +
-					"cannot invent. Run `jevlin connect` at a terminal, or set mining.enabled explicitly, " +
-					"then run this again.",
 				Source: "client",
 			},
 		})
@@ -652,85 +582,9 @@ func keyOriginEnvelope(err error) commandEnvelope {
 	}
 }
 
-// connectNeedsHumanDecision reports whether a `connect -json` run would
-// reach the ask-before-registering step with nothing to answer it.
-//
-// It mirrors the conditions under which connectRun actually calls
-// decideRegistrationOutcome, rather than refusing on the decision alone: a
-// registration already on file and not expired goes straight to polling,
-// and a pending registration is republished — neither asks anything, and
-// neither should be blocked. The three things that answer the question are
-// an explicit mining.enabled in the config, a persisted decision of any
-// state but undecided, and a registration that does not need minting.
-//
-// It reads; it never writes. Deciding not to decide must not itself
-// persist a decision — and, for a corrupt registration in particular, must
-// not preserve, replace or rewrite the bytes it could not read.
-func connectNeedsHumanDecision(cfgPath string, force bool, getenv func(string) string) bool {
-	cfg, _, err := loadConfig(cfgPath, getenv)
-	if err != nil {
-		return false // connectRun reports the config error itself
-	}
-	if cfg.MiningEnabledExplicit {
-		return false // the file answered: the scripted path stays open
-	}
-	if journal, jerr := registrationJournal(cfg.Miner); jerr == nil {
-		if _, ok, perr := journal.Load(); perr == nil && ok {
-			// Register already happened for this one; recovery republishes it
-			// and asks nothing. Blocking it here would break the journal.
-			return false
-		}
-	}
-	store, err := auth.OpenStoreExisting(cfg.Mining.StateDir)
-	if err != nil {
-		// No state directory at all is a first run: undecided, and a
-		// fresh Register is exactly what would follow.
-		return errors.Is(err, fs.ErrNotExist) && preflightFreshRegistration(cfg.Miner, force) == nil
-	}
-	if store.ReadMiningDecision().State != auth.MiningUndecided {
-		return false // a persisted decision is authoritative, as always
-	}
-
-	reg, ok, rerr := store.LoadAgentRegistration()
-	switch {
-	case errors.Is(rerr, auth.ErrAgentRegistrationCorrupt):
-		// A corrupt agent.json beside a stored platform credential, with no
-		// -force, now attempts a /v1/agents/me reconstruction before fresh
-		// registration (B.3) — this pre-check cannot make that call itself,
-		// being a pure disk read. In that exact starting state,
-		// preflightFreshRegistration below still refuses (the credential
-		// already exists), so this pre-check correctly answers false either
-		// way: nothing is asked here. If the rebuild instead succeeds and
-		// reveals an expired identity, the mid-run machine gate inside
-		// connectRun (guarded on its own explicit machine flag) is what
-		// handles the resulting participant decision — not this pre-check.
-	case rerr != nil:
-		// Any other read failure stops connectRun before it asks
-		// anything, so there is no decision to guard.
-		return false
-	case !ok:
-		// Absent: the fresh-registration branch, same as corrupt.
-	case reg.Status == "expired":
-		// The replace path asks the question too, and reaches Register
-		// without the fresh-registration preflight.
-		return true
-	default:
-		return false // a usable registration is only polled
-	}
-
-	// Absent or corrupt: connectRun runs this exact preflight before
-	// Register, and a refusal there means the run stops with a credential
-	// conflict rather than ever asking. Calling the same helper keeps the
-	// gate honest about where the question actually is, instead of
-	// re-deriving the rule from prose.
-	return preflightFreshRegistration(cfg.Miner, force) == nil
-}
-
-// connectMachineFlags re-reads the two flags machine mode needs before the
-// run starts: -config for the envelope's own store lookup, and -force
-// because whether a fresh registration is even possible depends on it.
-// Parsing twice is cheaper than threading them out of a function with
-// thirty exit points.
+// connectMachineFlags re-reads the flag machine mode needs before the run
+// starts: -config for the envelope's own store lookup. Parsing twice is
+// cheaper than threading it out of a function with thirty exit points.
 //
 // It declares the same flags as connectRun — one grammar, not two — and it
 // reports a parse failure rather than swallowing it. Swallowing it was the
@@ -738,25 +592,25 @@ func connectNeedsHumanDecision(cfgPath string, force bool, getenv func(string) s
 // flag was answered as if it were a question about the default
 // installation. The caller must be able to tell "the command is invalid"
 // from "the command is valid and says nothing".
-func connectMachineFlags(args []string) (cfgPath string, force bool, err error) {
+func connectMachineFlags(args []string) (cfgPath string, err error) {
 	fs := flag.NewFlagSet("connect", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	cfg := fs.String("config", "", "")
 	fs.String("name", "", "")
 	fs.Bool("resume", false, "")
-	forced := fs.Bool("force", false, "")
+	fs.Bool("force", false, "")
 	fs.Bool("json", false, "")
 	if err := fs.Parse(args); err != nil {
-		return "", false, err
+		return "", err
 	}
-	return *cfg, *forced, nil
+	return *cfg, nil
 }
 
 // machine is explicit, never inferred from stdout == io.Discard: the one
-// place inside this function that needs to know is the expired-replacement
-// branch below, and detecting it from the writer would be guessing the
-// caller's intent from an implementation detail of how cmdConnect happens
-// to capture narration today.
+// place inside this function that needs to know is the record-naming-
+// another-agent branch below, and detecting it from the writer would be
+// guessing the caller's intent from an implementation detail of how
+// cmdConnect happens to capture narration today.
 func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string, machine, admitted bool) int {
 	fs := newFlagSet("connect", stderr)
 	cfgPath := fs.String("config", "", "path to TOML config file")
@@ -841,7 +695,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 		}
 		return exitUsage
 	}
-	store, err := auth.OpenStore(cfg.Mining.StateDir)
+	store, err := auth.OpenStore(cfg.Miner.StateDir)
 	if err != nil {
 		fmt.Fprintln(stderr, "jevlin:", err)
 		return exitTransport
@@ -858,16 +712,14 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 		// exits immediately) still counts toward the cooldown shouldResume
 		// consults. Best effort: a failed write here costs pacing
 		// accuracy, not correctness.
-		_ = writeResumeStamp(resumeStampPath(cfg.Mining.StateDir), resumeStamp{LastAttempt: time.Now()})
+		_ = writeResumeStamp(resumeStampPath(cfg.Miner.StateDir), resumeStamp{LastAttempt: time.Now()})
 	}
 
-	// WP2-adversarial-review finding 1: single-flight. This lock is held
-	// for cmdConnect's ENTIRE run — register, ask, the whole poll loop,
-	// enroll, declare — exactly the shape runFlush already uses for
-	// flush.lock. A second connect/connect -resume finds it held and
-	// exits quietly rather than racing the first for the same enrollment
-	// token, the same dpop.key, or the same declaration.
-	lock, held, err := tryLockFile(connectLockPath(cfg.Mining.StateDir))
+	// Single-flight. This lock is held for cmdConnect's ENTIRE run —
+	// register, the whole poll loop. A second connect/connect -resume
+	// finds it held and exits quietly rather than racing the first for the
+	// same registration.
+	lock, held, err := tryLockFile(connectLockPath(cfg.Miner.StateDir))
 	// Admission ends here: from now on this run is excluded by connect.lock
 	// alone, and the gate must not be held through a poll loop.
 	gate.release()
@@ -902,23 +754,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 	ctx, cancel := operatorContext(outerBound)
 	defer cancel()
 
-	// Design item 2.3: "the resume and the flush retry" a pending
-	// AS-side revocation `mining disable` could not confirm. Neither
-	// the foreground loop nor -resume waits for this — best-effort, and
-	// unrelated to the claim/poll work below, which proceeds either way
-	// (a search-only registration can never have a pending revoke, but
-	// nothing here assumes that). buildMiningClient is only worth the
-	// AS round trip when there is actually a marker and an AS to ask —
-	// a search-only agent with no [mining] block would otherwise fail
-	// this and print nothing useful about it.
-	if pending, perr := store.LoadRevokePending(); perr == nil && pending && miningASConfigured(cfg.Mining) {
-		if oauthClient, _, berr := buildMiningClient(ctx, cfg.Mining); berr == nil {
-			retryPendingRevoke(ctx, store, oauthClient)
-		}
-	}
-
 	client := platform.New(cfg.Platform.AgentsAPIURL, cfg.Platform.BaseURL)
-	br := bufio.NewReader(stdin)
 
 	interval := resumePollInterval
 	var reg auth.AgentRegistration
@@ -1158,27 +994,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 			}
 
 			if replace {
-				// Machine mode only: the pre-check in cmdConnect (see
-				// connectNeedsHumanDecision) cannot know this branch would
-				// be reached at all when the starting record was corrupt or
-				// absent — that conclusion only exists after the B.3
-				// rebuild's own /v1/agents/me call answered "expired" for a
-				// key the pre-check never dials. Ask the identical question
-				// here, mid-run, before decideRegistrationOutcome would
-				// otherwise take its non-interactive branch and persist an
-				// implicit decision. Interactive connect is untouched: this
-				// whole block is skipped when machine is false.
-				if machine {
-					decision := store.ReadMiningDecision()
-					if decision.State == auth.MiningUndecided && !cfg.MiningEnabledExplicit {
-						return exitHumanDecisionRequired
-					}
-				}
-				outcome, code := decideRegistrationOutcome(stdin, br, stdout, stderr, getenv, cfg, store, connectInteractive(stdin, stdout))
-				if code != exitOK {
-					return code
-				}
-				fresh, registerErr := client.Register(ctx, *name, clientIdentifier(), registrationHint(outcome))
+				fresh, registerErr := client.Register(ctx, *name, clientIdentifier(), nil)
 				if registerErr != nil {
 					fmt.Fprintln(stderr, "jevlin: register:", registerErr)
 					return exitTransport
@@ -1216,17 +1032,9 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 				fmt.Fprintln(stderr, "jevlin:", err)
 				return exitTransport
 			}
-			// Ask before registering: requested_scopes is the hint the claim
-			// page pre-ticks its mining grant from, and the terminal answer
-			// (or, non-interactively, [mining].enabled) is the only source
-			// for it now that there is no -mining flag. participantHasOtherAgent
-			// is always false here — this registration doesn't exist yet, so
-			// there is nothing to compare against.
-			outcome, code := decideRegistrationOutcome(stdin, br, stdout, stderr, getenv, cfg, store, connectInteractive(stdin, stdout))
-			if code != exitOK {
-				return code
-			}
-			fresh, err := client.Register(ctx, *name, clientIdentifier(), registrationHint(outcome))
+			// No scope is requested: the claim page decides what the agent
+			// is granted, and this client asks for nothing it would act on.
+			fresh, err := client.Register(ctx, *name, clientIdentifier(), nil)
 			if err != nil {
 				fmt.Fprintln(stderr, "jevlin: register:", err)
 				return exitTransport
@@ -1256,7 +1064,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 	}
 
 	// Platform calls use the stored agent credential; the search environment
-	// override does not apply to this installation's enrollment.
+	// override does not apply to this installation's registration.
 	key, err = platformKey(cfg, getenv)
 	if err != nil {
 		fmt.Fprintln(stderr, "jevlin:", err)
@@ -1304,7 +1112,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 
 	if *resume {
 		callCtx, callCancel := context.WithTimeout(ctx, roundTrip)
-		_, code := pollOnce(callCtx, stdout, stderr, client, store, cfg, &reg, key, getenv)
+		_, code := pollOnce(callCtx, stdout, stderr, client, store, &reg, key)
 		callCancel()
 		return code
 	}
@@ -1312,7 +1120,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 	deadline := time.Now().Add(connectPollBudget)
 	for {
 		callCtx, callCancel := context.WithTimeout(ctx, roundTrip)
-		done, code := pollOnce(callCtx, stdout, stderr, client, store, cfg, &reg, key, getenv)
+		done, code := pollOnce(callCtx, stdout, stderr, client, store, &reg, key)
 		callCancel()
 		if done {
 			return code
@@ -1355,93 +1163,22 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 	}
 }
 
-// decideRegistrationOutcome is cmdConnect's first-run "ask before
-// registering" step (interactive forced by the caller so a test can
-// drive it without a real terminal — see isInteractive's own
-// constraints). A decision already on the store here means a PRIOR
-// connect got as far as asking but never reached Register: most
-// plausibly this exact register call failing last time.
-//
-//   - A prior "no" is read back outright — re-asking an already-declined
-//     question on every failed retry is its own kind of unsafe, and
-//     there is nothing else to fill in.
-//   - A prior "yes" WITH an address already on file is read back too.
-//   - A prior "yes" with NO address on file yet (a crash between the two
-//     writes on a first run, or an adopted state dir carrying a decision
-//     but no address) is NOT read back whole — that would register with
-//     the mining hint and silently never ask for an address at all, in
-//     violation of design rule 5 ("ask before registering," not "ask
-//     once, ever"). finishMiningEnabled asks only the missing half: the
-//     address, not the enable question again.
-//
-// Only an absent decision (UNDECIDED) falls through to askMiningQuestion.
-// A present but unreadable decision is DEGRADED and must be repaired
-// explicitly; treating it as a first decision would let configuration or a
-// new terminal answer overwrite the local runtime authority.
-func decideRegistrationOutcome(stdin io.Reader, br *bufio.Reader, stdout, stderr io.Writer, getenv func(string) string, cfg *config.Config, store *auth.Store, interactive bool) (miningEnableOutcome, int) {
-	decision := store.ReadMiningDecision()
-	switch decision.State {
-	case auth.MiningUndecided:
-		return askMiningQuestion(stdin, br, stdout, stderr, getenv, cfg, store, interactive, false)
-	case auth.MiningDisabled:
-		return miningEnableOutcome{}, exitOK
-	case auth.MiningDegraded:
-		fmt.Fprintln(stderr, "jevlin: mining decision is degraded; run `mining enable` or `mining disable` to repair it explicitly")
-		return miningEnableOutcome{}, exitTransport
-	case auth.MiningEnabled:
-		if address, ok, err := loadPayoutAddress(cfg.Miner); err == nil && ok {
-			return miningEnableOutcome{enabled: true, payoutAddress: address}, exitOK
-		}
-		return finishMiningEnabled(stdin, br, stdout, stderr, getenv, cfg, store, interactive)
-	default:
-		fmt.Fprintln(stderr, "jevlin: mining decision has an unknown state; run `mining enable` or `mining disable` to repair it explicitly")
-		return miningEnableOutcome{}, exitTransport
-	}
-}
-
-// registrationHint turns the mining question's outcome into register's
-// requested_scopes: the claim page's mining pre-tick reads this hint, so
-// it must reflect what was actually just decided (or read back — see the
-// register-failure retry above), never a value fixed before the question
-// was ever asked.
-func registrationHint(outcome miningEnableOutcome) []string {
-	if outcome.enabled {
-		return []string{"mining"}
-	}
-	return nil
-}
-
-// pollOnce checks status once and acts on it: advances the stored
-// registration; the moment status shows claimed with the mining scope and
-// no enrollment recorded yet, enrolls; and — whether just enrolled this
-// call or already enrolled from a past one — declares a payout address on
-// file if it is not yet settled. Shared by the foreground loop and the
-// detached resume, which calls this exactly once
+// pollOnce checks status once and acts on it: it advances the stored
+// registration and says what the platform says. Shared by the foreground
+// loop and the detached resume, which calls this exactly once
 // (TestDetachedResumePollsOnceAndExits).
 //
-// "Enrolled" and "declared" are deliberately separate facts
-// (WP2-review defect 2): reg.LastEnrollmentSlot != "" used to short-circuit
-// this whole function, which meant an address that arrived AFTER
-// enrollment (mining enable, run later; or a scripted install that only
-// gained mining.payout_address after its first successful poll) was never
-// declared, and a declaration that failed transiently right after
-// enrollment was never retried. Enrollment and declaration are now two
-// independent steps below; either can be a no-op on a given call without
-// short-circuiting the other.
-//
 // done=true means there is nothing further for THIS process to do:
-// claimed-and-settled, expired, mining not granted, or a local opt-out.
-// done=false means "keep polling" (still unclaimed, or a transient
-// error worth retrying in the foreground — a resume does not retry,
-// it simply exits and lets the next resume try again).
-func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Client, store *auth.Store, cfg *config.Config, reg *auth.AgentRegistration, key string, getenv func(string) string) (done bool, code int) {
-	// WP2-adversarial-review finding 6: re-read the on-disk record before
-	// mutating it — reg may be stale relative to whatever the most recent
-	// write actually persisted (this function is called repeatedly across
-	// a foreground loop's iterations, and separately by every detached
-	// resume's own single call; connect.lock keeps those from
-	// interleaving, but nothing here should assume that as the ONLY
-	// reason the in-memory copy might be stale).
+// claimed, or expired. done=false means "keep polling" (still unclaimed,
+// or a transient error worth retrying in the foreground — a resume does not
+// retry, it simply exits and lets the next resume try again).
+func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Client, store *auth.Store, reg *auth.AgentRegistration, key string) (done bool, code int) {
+	// Re-read the on-disk record before mutating it — reg may be stale
+	// relative to whatever the most recent write actually persisted (this
+	// function is called repeatedly across a foreground loop's iterations,
+	// and separately by every detached resume's own single call;
+	// connect.lock keeps those from interleaving, but nothing here should
+	// assume that as the ONLY reason the in-memory copy might be stale).
 	if fresh, ok, ferr := store.LoadAgentRegistration(); ferr == nil && ok && fresh.AgentID == reg.AgentID {
 		*reg = fresh
 	}
@@ -1459,18 +1196,9 @@ func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Cl
 	reg.Status = st.Status
 	reg.Scopes = st.Scopes
 	reg.ClaimExpiresAt = st.ClaimExpiresAt
-	// WP2-adversarial-review finding 20 stops at status: the claim URL/code
-	// are NOT cleared from durable storage, deliberately — mining.go's
-	// re-approval message ("mining is not yet granted... re-approve it
-	// at: <ClaimURL>", §2.2's last case) reads the exact same stored
-	// value later, after the agent is already claimed for search. Clearing
-	// it here would silently break that already-shipped flow. status
-	// itself already satisfies "never print them again" without any
-	// change: printAgentIdentityStatus's "claimed" branch has never
-	// printed ClaimURL — only its "unclaimed" branch does.
 	if serr := store.SaveAgentRegistration(*reg); serr != nil {
-		// finding 6: fail loudly. Continuing as if this succeeded would
-		// mean the next call re-derives status from a stale copy again.
+		// Fail loudly. Continuing as if this succeeded would mean the next
+		// call re-derives status from a stale copy again.
 		fmt.Fprintln(stderr, "jevlin:", serr)
 		return true, exitTransport
 	}
@@ -1482,361 +1210,26 @@ func pollOnce(ctx context.Context, stdout, stderr io.Writer, client *platform.Cl
 	case "unclaimed":
 		return false, exitOK
 	}
-
-	// claimed.
-	if !st.HasScope("mining") {
-		return true, exitOK // search-only claim: nothing further for connect to do
-	}
-
-	if reg.LastEnrollmentSlot == "" {
-		if !miningActive(store) {
-			return true, exitOK // local opt-out or disable (design decision 3)
-		}
-		if !miningASConfigured(cfg.Mining) {
-			fmt.Fprintln(stdout, "the mining scope was granted, but no authorization server is configured — set mining.as_url/chain_id/slot_id, "+
-				"then run `jevlin connect` or `jevlin mining enable` again")
-			return true, exitOK
-		}
-
-		slot, refusal := chooseSlot(st.MiningSlots, cfg.Mining.PlatformSlot)
-		if slot == "" {
-			if refusal == "" {
-				refusal = auth.SlotRefusalNoSlot
-			}
-			// WP2-adversarial-review finding 15: persisted so shouldResume
-			// stops spawning a resume that can only hit this same wall
-			// again, and so status can name it explicitly. Best-effort —
-			// the refusal is reported to the caller either way. A code and
-			// the slots offered, never the sentence.
-			reg.SlotRefusal, reg.OfferedSlots = refusal, st.MiningSlots
-			_ = store.SaveAgentRegistration(*reg)
-			fmt.Fprintln(stderr, "jevlin:", slotRefusalText(refusal, st.MiningSlots, cfg.Mining.PlatformSlot))
-			return true, exitTransport
-		}
-		reg.SlotRefusal, reg.OfferedSlots = "", nil
-		token, err := client.Enroll(ctx, reg.AgentID, key, slot)
-		if err != nil {
-			fmt.Fprintln(stderr, "jevlin: enroll:", err)
-			return true, exitTransport
-		}
-		oauthClient, _, err := buildMiningClient(ctx, cfg.Mining)
-		if err != nil {
-			fmt.Fprintln(stderr, "jevlin:", err)
-			return true, exitTransport
-		}
-		if _, err := oauthClient.RedeemEnrollmentAssertion(ctx, token); err != nil {
-			fmt.Fprintln(stderr, "jevlin: redeem enrollment:", err)
-			return true, exitTransport
-		}
-		reg.LastEnrollmentSlot = slot
-		reg.LastEnrollmentAt = time.Now().UTC().Format(time.RFC3339)
-		if serr := store.SaveAgentRegistration(*reg); serr != nil {
-			// finding 6: the assertion is already redeemed at the AS —
-			// the AS now believes this installation is enrolled whether
-			// or not this write lands. Silently continuing here would
-			// mean the NEXT poll re-attempts enrollment against a token
-			// that has already been spent, which fails in a much more
-			// confusing way than reporting the real problem now.
-			fmt.Fprintln(stderr, "jevlin: enrolled, but could not persist the record:", serr)
-			return true, exitTransport
-		}
-		fmt.Fprintln(stdout, "enrolled for mining on", slot)
-	}
-
-	// Enrolled now — just above, or on a past call. Declare whatever
-	// local address exists and is not yet settled (already active, or
-	// held pending an operator); addressSettled avoids the AS round trip
-	// once there is nothing left to say. finding 10: the opt-out gates
-	// this exactly as it gates enrollment above — an installation that
-	// opted out after enrolling once must not keep declaring.
-	if miningActive(store) {
-		address, source, aerr := payoutAddressToDeclare(cfg, store, getenv)
-		if aerr == nil && source == payoutNone {
-			if _, legacy, _ := store.LoadLegacyPayoutAddress(); legacy {
-				fmt.Fprintln(stdout, legacyPayoutNotice)
-			}
-		}
-		recordPayoutAddress(cfg, store, address, source, stdout)
-		if aerr == nil && source != payoutNone && !addressSettled(store, address) {
-			_, miningClient, err := buildMiningClient(ctx, cfg.Mining)
-			if err != nil {
-				fmt.Fprintln(stderr, "jevlin:", err)
-				return true, exitOK // enrollment (if any, this call) already succeeded; a declare failure is not fatal to this poll
-			}
-			declarePayoutIfSafe(ctx, miningClient, store, address, stdout, stderr)
-		}
-	}
+	// claimed: search was already working on the stored key, and the claim
+	// has tied the agent to an account. Nothing further for connect to do.
+	fmt.Fprintf(stdout, "claimed (scopes: %s)\n", strings.Join(st.Scopes, ", "))
 	return true, exitOK
-}
-
-// legacyPayoutNotice is what a run says about a payout.json in the state
-// directory it will not use. It never repeats the address: the file may be
-// a sandboxed command's, and an address in jevlin's own output reads as the
-// participant's.
-const legacyPayoutNotice = "payout: no address is on file beside credentials.json, and the payout.json in the state " +
-	"directory is not used (it is not this installation's own wallet address). Run `jevlin mining enable` at a " +
-	"terminal to choose the address to be paid at."
-
-// payoutSource says where payoutAddressToDeclare found an address.
-type payoutSource int
-
-const (
-	payoutNone     payoutSource = iota
-	payoutRecorded              // the record beside credentials.json
-	payoutConfig                // [mining] payout_address, not yet recorded
-	payoutWallet                // a state-directory payout.json that is this installation's own wallet address
-)
-
-// payoutAddressToDeclare is the address this installation would declare,
-// read with no side effect, so the poll, shouldResume, status and doctor's
-// held-note gate all answer the one question the same way: the record beside
-// credentials.json; else the config's [mining] payout_address, the
-// participant's scripted answer (the config's directory is outside every
-// writable root), when it is a twilight address; else a payout.json an older
-// version left in the state directory, only when it is this installation's
-// own wallet address, which lives beside credentials.json too. An invalid
-// config address does not hide the wallet's.
-//
-// The legacy rule used to be "the AS already has that address in force",
-// and the review showed a sandboxed command can make that true by itself: it
-// runs `jevlin payout set` with its own address in the window before the
-// participant's first declaration and plants a matching payout.json. The
-// wallet is evidence nothing in the state directory can forge; anything
-// else in the file is never recorded, never declared and never repeated.
-func payoutAddressToDeclare(cfg *config.Config, store *auth.Store, getenv func(string) string) (string, payoutSource, error) {
-	if address, ok, err := loadPayoutAddress(cfg.Miner); err != nil || ok {
-		if err != nil {
-			return "", payoutNone, err
-		}
-		return address, payoutRecorded, nil
-	}
-	if a := cfg.Mining.PayoutAddress; a != "" && isTwilightAddress(a) {
-		return a, payoutConfig, nil
-	}
-	if legacy, ok, err := store.LoadLegacyPayoutAddress(); err == nil && ok && legacy == walletAddressOnFile(getenv) {
-		return legacy, payoutWallet, nil
-	}
-	return "", payoutNone, nil
-}
-
-// recordPayoutAddress records an address payoutAddressToDeclare found
-// outside the record, best effort: a resume Codex's sandbox started cannot
-// write beside credentials.json, the address is the participant's either
-// way and is still declared, and the next foreground run records it. The
-// state directory's copy is removed only once its address is recorded.
-func recordPayoutAddress(cfg *config.Config, store *auth.Store, address string, source payoutSource, stdout io.Writer) {
-	if source != payoutConfig && source != payoutWallet {
-		return
-	}
-	if savePayoutAddress(cfg.Miner, address) != nil || source != payoutWallet {
-		return
-	}
-	_ = store.RemoveLegacyPayoutAddress()
-	fmt.Fprintln(stdout, "payout: the payout.json an older version kept in the state directory names this "+
-		"installation's own wallet; it is now recorded beside credentials.json")
-}
-
-// isTwilightAddress is the rule every payout address this client records
-// meets: twilight bech32.
-func isTwilightAddress(a string) bool {
-	hrp, _, err := auth.DecodeBech32Address(a)
-	return err == nil && hrp == auth.TwilightHRP
-}
-
-// declarePayoutIfSafe is §5.5's read-before-declare rule (design f0ddb69):
-// the AS classifies a declaration as first or change on the PARTICIPANT's
-// activation history, not the installation, so a second agent declaring
-// blind can turn an ordinary "same address again" into a held change an
-// operator has to clear. Read the participant's current binding first:
-// no active binding, or it already matches local, and declaring is safe
-// (a first declaration, or a no-op repeat of the active one — WP4b:
-// "a declaration of the same address is not a change"). An active
-// binding naming a DIFFERENT address means a real change is in flight
-// from some other agent or a prior manual declare; this call declares
-// nothing and leaves it for status/an operator, per the design text
-// ("declares nothing ... status reports both addresses").
-//
-// WP2-adversarial-review finding 7: the pre-read above narrows the common
-// cases, but it is a read, not a lock — the declare call below can still
-// come back HELD for a reason the pre-read could not see (ADDRESS_IN_USE:
-// a DIFFERENT participant already holds this exact address, which has
-// nothing to do with THIS participant's own active binding) or because
-// another installation of this same participant declared in the window
-// between the pre-read and this call. The returned *auth.PayoutDeclaration
-// — specifically its Effective field, never the mere absence of a
-// transport error — is what decides whether this is recorded as settled.
-func declarePayoutIfSafe(ctx context.Context, miningClient *auth.MiningClient, store *auth.Store, localAddress string, stdout, stderr io.Writer) {
-	// PayoutStanding answers "no active binding" as a normal 200 with
-	// Active == nil (payout.go: "Active is the address in force, or
-	// nil") — unlike DeclarePayoutAddress's decode path, it has no 404
-	// special case, so any error here is a real one, not "nothing
-	// declared yet."
-	standing, err := miningClient.PayoutStanding(ctx)
-	if err != nil {
-		fmt.Fprintln(stderr, "jevlin: payout standing:", err)
-		return
-	}
-	if standing != nil && standing.Active != nil && standing.Active.Address == localAddress {
-		// Already in force — a redundant DeclarePayoutAddress call would
-		// be harmless (WP4b: "a declaration of the same address is not a
-		// change") but is still an AS round trip that changes nothing.
-		// Recording it lets a later poll skip even the standing read.
-		_ = store.ClearPayoutBindingHeld()
-		_ = store.SavePayoutDeclared(localAddress)
-		return
-	}
-	if standing != nil && standing.Active != nil {
-		if serr := store.SavePayoutBindingHeld(localAddress, standing.Active.Address, auth.HeldReplacesActive); serr != nil {
-			fmt.Fprintln(stderr, "jevlin:", serr)
-		}
-		fmt.Fprintf(stdout, "payout address NOT declared: the AS already has %s active for this participant, "+
-			"this installation would declare %s. Run `jevlin status` for both addresses; changing the "+
-			"binding is an operator-activated change, not something this client can do unattended.\n",
-			standing.Active.Address, localAddress)
-		return
-	}
-	doc, derr := miningClient.DeclarePayoutAddress(ctx, localAddress)
-	if derr != nil {
-		fmt.Fprintln(stderr, "jevlin: payout declaration:", derr)
-		return
-	}
-	if !doc.Effective {
-		reason := doc.HeldFor
-		if reason == "" {
-			reason = "unspecified"
-		}
-		if serr := store.SavePayoutBindingHeld(localAddress, doc.Address, doc.HeldFor); serr != nil {
-			fmt.Fprintln(stderr, "jevlin:", serr)
-		}
-		fmt.Fprintf(stdout, "payout address NOT declared: the AS held it (%s). Run `jevlin status` for detail; "+
-			"changing the binding is an operator-activated change, not something this client can do unattended.\n", reason)
-		return
-	}
-	_ = store.ClearPayoutBindingHeld()
-	_ = store.SavePayoutDeclared(localAddress)
-	fmt.Fprintln(stdout, "payout address declared:", localAddress)
-}
-
-// addressSettled reports whether address needs no further declare attempt
-// this poll.
-//
-// WP2-adversarial-review finding 8: only a CONFIRMED, matching declaration
-// (SavePayoutDeclared) is terminal. A hold (LoadPayoutBindingHeld) used to
-// be treated as terminal too, which meant an operator activating the
-// change later was never noticed — status kept showing a stale HELD
-// forever, because nothing ever asked the AS again. A hold is re-checked
-// on every foreground command (status, connect, mining enable each call
-// this indirectly by re-attempting the declare) and by the resume, paced
-// by resumeCooldown.
-func addressSettled(store *auth.Store, address string) bool {
-	declared, ok, err := store.LoadPayoutDeclared()
-	return err == nil && ok && declared == address
-}
-
-// chooseSlot picks which platform-advertised slot to enroll into.
-//
-// WP2-review ruling on judgment call 1: one slot offered, take it. More
-// than one, refuse and require mining.platform_slot naming which one —
-// automatic matching against the AS's own audience is a question for the
-// AS discovery document, not something this client guesses at. refusal is
-// empty unless a genuine refusal happened (more than one slot, and either
-// no platform_slot configured or one that names none of them): it is the
-// code agent.json records (auth.SlotRefusal*), and slotRefusalText says it.
-func chooseSlot(slots []string, platformSlot string) (slot, refusal string) {
-	switch len(slots) {
-	case 0:
-		return "", ""
-	case 1:
-		return slots[0], ""
-	}
-	if platformSlot != "" {
-		for _, s := range slots {
-			if s == platformSlot {
-				return s, ""
-			}
-		}
-		return "", auth.SlotRefusalUnmatched
-	}
-	return "", auth.SlotRefusalAmbiguous
-}
-
-// slotRefusalText is the client's own sentence for a slot refusal agent.json
-// records as a code, naming the slots offered (tokens, auth.ValidSlotName)
-// and the configured platform_slot, so a refusal names what was offered and
-// the message is actionable without the record carrying any text of its own.
-func slotRefusalText(refusal string, offered []string, platformSlot string) string {
-	switch refusal {
-	case auth.SlotRefusalNoSlot:
-		return "mining scope granted, but the platform offered no slot"
-	case auth.SlotRefusalUnmatched:
-		return fmt.Sprintf("mining.platform_slot %q does not match any slot the platform offered (%s)",
-			platformSlot, strings.Join(offered, ", "))
-	case auth.SlotRefusalAmbiguous:
-		return fmt.Sprintf("the platform offered more than one mining slot (%s); set mining.platform_slot to name which one",
-			strings.Join(offered, ", "))
-	}
-	return ""
-}
-
-// buildMiningClient constructs the AS mining client from an
-// already-resolved config.Mining, mirroring enroll.go's miningClients
-// construction exactly (same steps, same error wrapping) without its
-// own config.Load call — miningClients hardcodes os.Getenv, and connect
-// already has a resolved *config.Config built with the injected getenv.
-func buildMiningClient(ctx context.Context, m config.Mining) (*auth.OAuthClient, *auth.MiningClient, error) {
-	store, err := auth.OpenStore(m.StateDir)
-	if err != nil {
-		return nil, nil, fmt.Errorf("key store: %w", err)
-	}
-	disc, err := auth.NewDiscoverer(auth.DiscoveryConfig{
-		BaseURL: m.ASBaseURL, ChainID: m.ChainID, SlotID: m.SlotID, TTL: m.MetadataTTL,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("discovery: %w", err)
-	}
-	oauthClient, err := auth.NewOAuthClient(ctx, disc, store)
-	if err != nil {
-		return nil, nil, fmt.Errorf("authorization server: %w", err)
-	}
-	return oauthClient, auth.NewMiningClient(disc, oauthClient, store), nil
 }
 
 // ── detached resume ─────────────────────────────────────────────────────
 
 // shouldResume reports whether a stored registration is worth spawning a
 // detached connect -resume for. A pure disk read, no network — search.go
-// calls this after every served search, independent of [mining]/[miner]
-// being configured at all (a search-only unclaimed participant has
-// neither).
+// calls this after every served search.
 //
-// WP2-review defect 3: the spawn must happen only while a resume can
-// actually do something. "Claimed, mining scope, not yet enrolled" used to
-// be treated as permanently actionable, but two sub-states of it never
-// resolve on their own — a local opt-out and a granted scope with no
-// [mining] block configured at all — and a resume in either state just
-// polls the platform and exits, forever, on every single search. Both
-// return false. Symmetrically, an ALREADY-enrolled registration is still
-// actionable if it has an on-file payout address that addressSettled says
-// is not yet settled — an enrolled-but-undeclared installation is not
-// done (WP2-adversarial-review finding 8: nor is one whose declaration is
-// HELD — that gets re-checked here too, paced by resumeCooldown, not the
-// 5s connect.lock/resume-only pacing on its own).
-//
-// WP2-adversarial-review finding 1: paced by resumeCooldown so a burst of
-// searches cannot approve more spawns than connect.lock could ever let
-// run concurrently anyway. Finding 10: mirrors miningActive exactly,
-// the same check pollOnce uses before both enrollment and declaration.
-// Finding 15: a persisted multi-slot refusal is treated the same as
-// "unconfigured" — permanent until the config actually changes. Finding
-// 17: a registration record that fails to load (corrupt, empty) resumes
-// nothing; recovery is a manual connect, not a silent background retry.
-//
-// A revoke_pending marker (mining disable, when the AS-side revocation
-// could not complete) is worth a resume on its own, independent of
-// reg.Status entirely — retrying it is the resume's job, alongside
-// pollOnce's, per design item 2.3 ("the resume and the flush retry
-// while the marker exists"); there would otherwise be no other reason
-// left to spawn one once mining is stopped locally.
+// The spawn must happen only while a resume can actually do something:
+// an unclaimed registration, whose claim a person may have approved since.
+// A claimed or expired one is settled, and a resume for it would poll the
+// platform and exit, forever, on every single search. Paced by
+// resumeCooldown so a burst of searches cannot approve more spawns than
+// connect.lock could ever let run concurrently anyway. A registration
+// record that fails to load (corrupt, empty) resumes nothing; recovery is
+// a manual connect, not a silent background retry.
 //
 // Deliberately NOT auth.OpenStore(stateDir) first: that creates the
 // state directory (MkdirAll) if it does not exist, which would give
@@ -1845,7 +1238,7 @@ func buildMiningClient(ctx context.Context, m config.Mining) (*auth.OAuthClient,
 // costs nothing when there is nothing to resume — the overwhelmingly
 // common case.
 func shouldResume(cfg *config.Config, getenv func(string) string) bool {
-	stateDir := cfg.Mining.StateDir
+	stateDir := cfg.Miner.StateDir
 	if stateDir == "" {
 		return false
 	}
@@ -1855,62 +1248,20 @@ func shouldResume(cfg *config.Config, getenv func(string) string) bool {
 	if st := readResumeStamp(resumeStampPath(stateDir)); time.Since(st.LastAttempt) < resumeCooldown {
 		return false
 	}
-	store, err := auth.OpenStore(stateDir)
+	store, err := auth.OpenStoreExisting(stateDir)
 	if err != nil {
 		return false
 	}
-	if pending, perr := store.LoadRevokePending(); perr == nil && pending {
-		return true
-	}
 	reg, ok, err := store.LoadAgentRegistration()
 	if err != nil || !ok {
-		return false // finding 17: corrupt or absent — nothing to resume
+		return false // corrupt or absent — nothing to resume
 	}
-	switch reg.Status {
-	case "unclaimed":
-		return true
-	case "claimed":
-		if !hasScope(reg.Scopes, "mining") {
-			return false // search-only claim: settled, nothing left to resume
-		}
-		if reg.LastEnrollmentSlot == "" {
-			if !miningActive(store) || reg.SlotRefusal != "" {
-				return false // opted out/disabled, a multi-slot refusal on file, or nothing configured — either way, permanent until reconfigured
-			}
-			if !miningASConfigured(cfg.Mining) {
-				return false
-			}
-			return true
-		}
-		if !miningActive(store) {
-			return false
-		}
-		// The resume records and declares only what payoutAddressToDeclare
-		// finds; with nothing there, a resume has nothing to do, so none is
-		// spawned for it.
-		address, source, aerr := payoutAddressToDeclare(cfg, store, getenv)
-		if aerr != nil || source == payoutNone {
-			return false // enrolled, nothing to declare
-		}
-		return !addressSettled(store, address)
-	default:
-		return false // expired, or unrecognized: nothing a resume can do
-	}
+	return reg.Status == "unclaimed"
 }
 
-func hasScope(scopes []string, want string) bool {
-	for _, s := range scopes {
-		if s == want {
-			return true
-		}
-	}
-	return false
-}
-
-// startConnectResume launches `connect -resume` as a detached child,
-// the exact shape of startFlush (miner.go): best effort, output goes
-// nowhere, the next search or resume tries again if this one could not
-// even start.
+// startConnectResume launches `connect -resume` as a detached child:
+// best effort, output goes nowhere, the next search or resume tries again
+// if this one could not even start.
 func startConnectResume(cfgPath string) error {
 	exe, err := os.Executable()
 	if err != nil {

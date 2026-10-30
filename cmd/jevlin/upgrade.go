@@ -268,7 +268,6 @@ func upgradeRun(d upgradeDeps, homeFlag string, requested *selfupdate.Version, r
 		return fail(err)
 	}
 	defer ex.release()
-	ensureUpgradeFlushLock(home, d.getenv, d.stderr)
 
 	updater := selfupdate.Updater{Verifier: d.verifier, Runner: d.runner, GOOS: d.goos, GOARCH: d.goarch}
 	if rollback {
@@ -363,21 +362,6 @@ func installPrepared(ctx context.Context, updater selfupdate.Updater, prepared s
 	err := updater.Install(ctx, prepared)
 	prepared.DiscardAfterInstall(err)
 	return err
-}
-
-// ensureUpgradeFlushLock creates the installation's flush lock when it is
-// absent, so a flush a sandboxed agent starts after the upgrade can take it
-// read-only. It runs inside the upgrade's exclusion and never fails the
-// upgrade: a lock it cannot create is said, and the first flush outside a
-// sandbox creates it.
-func ensureUpgradeFlushLock(home string, getenv func(string) string, stderr io.Writer) {
-	_, path, err := operationLockPaths(home, getenv)
-	if err == nil {
-		_, err = ensureFlushLockFile(path)
-	}
-	if err != nil {
-		fmt.Fprintf(stderr, "jevlin upgrade: note: the flush lock could not be created (%v); a flush inside an agent's sandbox will not run until one outside it has\n", err)
-	}
 }
 
 // upgradeAuto is the daily check (update_check.go): the detached child a
@@ -532,7 +516,6 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 		return failed(err)
 	}
 	defer ex.release()
-	ensureUpgradeFlushLock(home, d.getenv, d.stderr)
 	updater := selfupdate.Updater{Source: d.source(), Verifier: d.verifier, Runner: d.runner, GOOS: d.goos, GOARCH: d.goarch}
 	prepared, err := updater.Prepare(ctx, resolved, current, &latest)
 	if err != nil {
