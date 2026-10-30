@@ -1101,7 +1101,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 		if claimURL == "" {
 			fmt.Fprintln(stdout, unclaimedNoLinkMessage)
 		} else {
-			fmt.Fprintln(stdout, "claim this agent:")
+			fmt.Fprintln(stdout, "claim this agent: open this link in a browser and sign in")
 			fmt.Fprintln(stdout, "  "+claimURL)
 			if claimCode != "" {
 				fmt.Fprintln(stdout, "code:", claimCode)

@@ -6,7 +6,7 @@ jevlin in the order you meet it. Per-agent detail: [agents.md](agents.md); table
 
 | | |
 |---|---|
-| **A moment to claim your agent** | Setup prints a link. Sign in at `platform.jevlin.ai` (or create an account) and claim the agent. Search works before you do; the claim is what ties the agent to your account. |
+| **A moment to claim your agent** | Setup prints a link; open it in a browser, sign in at `platform.jevlin.ai` (or create an account) and claim the agent. Search works before you do; the claim is what ties the agent to your account. |
 
 ## Setup
 
