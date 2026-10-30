@@ -269,7 +269,7 @@ func codexRootsOwner(roots []string, entry binEntry, getenv func(string) string)
 	}
 	for _, r := range roots {
 		if !dirsInclude(owned, r) {
-			if rootsUnderOurConfig(roots, entry) {
+			if rootsUnderOurConfig(roots, entry) || earlierBlockOfOurConfig(roots, entry) {
 				return true, "", ""
 			}
 			return false, describeSandboxOwner(roots), ""
@@ -291,6 +291,35 @@ func codexRootsOwner(roots []string, entry binEntry, getenv func(string) string)
 func rootsUnderOurConfig(roots []string, entry binEntry) bool {
 	home := commonParentDir(roots)
 	return home != "" && entry.cfg != "" && sameConfigFile(filepath.Join(home, setupConfigFile), entry.cfg)
+}
+
+// earlierBlockOfOurConfig: is this the block an earlier version wrote for
+// this installation, with its state directory moved? That version granted
+// four roots, its intake, sessions, spool and state directories, and setup
+// put the first three in the installation directory, beside the config,
+// whatever state_dir said. A participant who moved state_dir elsewhere left
+// a block whose roots share no parent but the filesystem's, so
+// rootsUnderOurConfig cannot vouch for it, and setup left it in place with
+// its intake and spool roots and the hosts that version allowed. Those
+// three in the directory holding this installation's own config are what
+// make it this installation's, wherever its state root points; install
+// rewrites it with the roots the config names now.
+func earlierBlockOfOurConfig(roots []string, entry binEntry) bool {
+	if len(roots) != 4 || entry.cfg == "" {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, r := range roots {
+		name := filepath.Base(filepath.Clean(r))
+		seen[name] = true
+		if name == "state" {
+			continue
+		}
+		if !sameConfigFile(filepath.Join(filepath.Dir(filepath.Clean(r)), setupConfigFile), entry.cfg) {
+			return false
+		}
+	}
+	return seen["intake"] && seen["sessions"] && seen["spool"] && seen["state"]
 }
 
 // codexStaleRoots is the roots of a block this installation owns that its

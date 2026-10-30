@@ -214,3 +214,60 @@ func TestSetupAfterTheReplacementIsANoOpForTheConfig(t *testing.T) {
 		t.Error("the second run changed the installation")
 	}
 }
+
+// An earlier installation whose state directory was moved out of the
+// installation directory left a Codex block whose state root lies
+// elsewhere, beside intake, sessions and spool roots in the installation
+// directory. Setup recognizes it as this installation's
+// (earlierBlockOfOurConfig) and rewrites it, rather than leaving it with
+// the earlier version's roots and hosts.
+func TestSetupReplacesAnEarlierCodexBlockWhoseStateRootMoved(t *testing.T) {
+	s := newSetupSandbox(t)
+	plantEarlierInstallation(t, s)
+	elsewhere := filepath.ToSlash(filepath.Join(s.root, "elsewhere"))
+	codexPath := filepath.Join(s.userHome, ".codex", "config.toml")
+	block := string(s.readFile(codexPath))
+	moved := strings.Replace(block, "\""+filepath.ToSlash(s.home)+"/state\"", "\""+elsewhere+"/state\"", 1)
+	if moved == block {
+		t.Fatalf("the fixture's block names no state root under %s:\n%s", s.home, block)
+	}
+	writeFileT(t, codexPath, moved)
+
+	code, out, errOut := s.run(nil, true, "-yes", "-no-profile", "-with", "codex")
+	if code != exitOK {
+		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
+	}
+	if strings.Contains(out, "left the jevlin block") || strings.Contains(out, "belongs to") {
+		t.Errorf("setup left the block as another installation's:\n%s", out)
+	}
+	after := string(s.readFile(codexPath))
+	for _, stale := range []string{elsewhere + "/state", "/intake\"", "/spool\"", "rewards-testnet"} {
+		if strings.Contains(after, stale) {
+			t.Errorf("setup left %q in Codex's profile:\n%s", stale, after)
+		}
+	}
+}
+
+// Only that shape is vouched for: three of the four roots in the
+// directory holding this installation's config, the fourth named state.
+func TestOnlyAnEarlierBlocksOwnShapeIsVouchedFor(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	entry := binEntry{cfg: filepath.Join(home, setupConfigFile)}
+	in := func(name string) string { return filepath.Join(home, name) }
+	away := filepath.Join(t.TempDir(), "state")
+	other := filepath.Join(t.TempDir(), "other")
+	for _, c := range []struct {
+		roots []string
+		want  bool
+	}{
+		{[]string{in("intake"), in("sessions"), in("spool"), away}, true},
+		{[]string{in("intake"), in("sessions"), filepath.Join(other, "spool"), away}, false},
+		{[]string{in("intake"), in("sessions"), in("spool")}, false},
+		{[]string{in("intake"), in("sessions"), in("cache"), away}, false},
+		{[]string{in("intake"), in("sessions"), in("spool"), filepath.Join(other, "elsewhere")}, false},
+	} {
+		if got := earlierBlockOfOurConfig(c.roots, entry); got != c.want {
+			t.Errorf("%v: %v, want %v", c.roots, got, c.want)
+		}
+	}
+}

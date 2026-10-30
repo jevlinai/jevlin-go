@@ -78,7 +78,9 @@ the participants who mine; this client carries no compatibility with it.
   every command that reads the config says to run `jevlin setup`, the hooks run the agent's
   tool call without a lineage file, and the daily check goes on running. `jevlin upgrade
   -rollback` returns to 0.6.x and holds this version, so the next check does not install it
-  again. An npm install is updated with `npm install -g @jevlinsearch/jevlin@latest`,
+  again. Codex's permission block is rewritten by that `jevlin setup`, including one whose state
+  root a moved `state_dir` put outside the installation directory, and not by the update
+  itself: until setup runs, the block keeps what 0.6.x granted. An npm install is updated with `npm install -g @jevlinsearch/jevlin@latest`,
   then `jevlin setup`. The files a participant keeps (`credentials.json`, the registration
   journal, `claim.json`, the release check's record) live beside the state directory, in the
   installation directory, as before.
