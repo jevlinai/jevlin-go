@@ -1,6 +1,6 @@
 package main
 
-// Who is calling a Claude-format hook (dropin-miner#87). Cursor loads Claude Code's hooks
+// Who is calling a Claude-format hook. Cursor loads Claude Code's hooks
 // from ~/.claude/settings.json and runs them with its own payload; the three
 // payloads under testdata/hook/cursor-3.20.21-*.json are what it sent, taken
 // from Cursor's own hook log and scrubbed. They are inputs, never edited on
@@ -21,7 +21,7 @@ import (
 )
 
 // cursorOnlyKeys are the keys every Cursor payload carries and Claude Code's
-// never do (dropin-miner#87's measurement). The control removes exactly these.
+// never do (as measured on the captured payloads). The control removes exactly these.
 var cursorOnlyKeys = []string{"cursor_version", "conversation_id", "generation_id"}
 
 type claudeEntryCase struct {
@@ -45,7 +45,7 @@ func cursorPayloadFixture(t *testing.T, name string) map[string]any {
 	}
 	for _, k := range append([]string{"hook_event_name"}, cursorOnlyKeys...) {
 		if _, ok := m[k]; !ok {
-			t.Fatalf("%s carries no %q: it is not the payload dropin-miner#87 measured, and a test run against it proves nothing", name, k)
+			t.Fatalf("%s carries no %q: it is not the payload that was measured, and a test run against it proves nothing", name, k)
 		}
 	}
 	return m
@@ -69,20 +69,6 @@ func asClaudeCode(m map[string]any, event string) map[string]any {
 	if event == "PreToolUse" {
 		out["tool_name"] = "Bash"
 		out["cwd"] = "/home/u/project"
-		// The capture predates the rename: the search it carries runs
-		// dropin-miner's binary, which this client's lineage hook does not
-		// take for its own. The control asks what the hook does with ITS
-		// search, so the derivation names this client's binary.
-		if in, ok := out["tool_input"].(map[string]any); ok {
-			if cmd, ok := in["command"].(string); ok {
-				renamed := map[string]any{}
-				for k, v := range in {
-					renamed[k] = v
-				}
-				renamed["command"] = strings.ReplaceAll(cmd, "/bin/dropin-miner", "/bin/jevlin")
-				out["tool_input"] = renamed
-			}
-		}
 	}
 	return out
 }
@@ -190,7 +176,7 @@ func TestTheSamePayloadsFromClaudeCodeBehaveAsTheyDoToday(t *testing.T) {
 	}
 }
 
-// dropin-miner#87's cost, stated as the thing a participant pays: with both hosts
+// The double run's cost, stated as the thing a participant pays: with both hosts
 // installed Cursor runs OUR Cursor hook and OUR Claude Code hook at the same
 // event, with the same payload. One turn end is one release check, and one
 // session start is one release check.
@@ -229,7 +215,7 @@ func TestOneCursorEventIsServedOnceWithBothHostsInstalled(t *testing.T) {
 // H2 made the lineage hook silent for `tool_name: "Shell"` — by accident of
 // the tool-name rule, not because it knew who was calling. Absent or "Bash",
 // the same Cursor payload was still rewritten with a claude-code bridge,
-// which is how dropin-miner#91's search reached the router under the wrong harness. The
+// which is how a search reached the router under the wrong harness. The
 // stand-down must not depend on the tool name, the working directory, or
 // anything else the lineage hook happens to look at.
 func TestLineageStandsDownForCursorWhateverTheToolName(t *testing.T) {

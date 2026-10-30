@@ -1,6 +1,6 @@
 package main
 
-// dropin-miner#81, one case per prompt this binary asks.
+// The prompt rule, one case per prompt this binary asks.
 //
 // The defect the Windows tester met was not "an interrupt is mishandled at
 // one prompt": it was that a prompt which discards its read error cannot
@@ -14,7 +14,7 @@ package main
 // decides, and -yes still answers exactly what it answered before, which
 // is why the typed-answer cases and the last case are here.
 //
-// The question dropin-miner#81 was filed against, connect's mining question, is
+// The question the defect was filed against, connect's mining question, is
 // gone with mining: connect asks nothing now. The rule it taught outlives
 // it, and every prompt the binary still asks is driven here.
 
@@ -249,7 +249,7 @@ func TestAnInterruptAtUninstallsConfirmationRemovesNothing(t *testing.T) {
 	})
 }
 
-// The purge confirmation already had this guard before dropin-miner#81 — it is the one
+// The purge confirmation already had this guard before the shared rule — it is the one
 // prompt in the binary that did. It is pinned here so the shared rule
 // cannot quietly regress the prompt it was generalized from. The typed
 // token is the installation path; -yes has no part in it.

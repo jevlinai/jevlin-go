@@ -176,7 +176,7 @@ func renderFreshConfig(v setupValues) ([]byte, error) {
 	// (asciiGeneratedConfig guards it): Windows PowerShell 5.1 reads a file
 	// with no byte-order mark in the system's ANSI code page, so a comment
 	// with an em dash once showed the participant `\u00e2\u20ac\u201d`
-	// where the dash should be (dropin-miner#88).
+	// where the dash should be.
 	search, err := searchTable(v)
 	if err != nil {
 		return nil, err

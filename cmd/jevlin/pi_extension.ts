@@ -54,7 +54,7 @@ const HOST_COMMAND_CHAR_LIMIT = process.platform === "win32" ? 8000 : 0
 // this line. Pi's skill names the installation in the command it teaches, so
 // this extension is attributable through its sibling; it carries the line
 // anyway, because the two halves are removed independently and a machine can
-// have the extension with no skill (dropin-miner#73).
+// have the extension with no skill.
 const INSTALL_CONFIG = "{{INSTALL_CONFIG}}"
 
 // The binary of the installation above, for the two processes this extension

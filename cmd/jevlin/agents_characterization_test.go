@@ -95,7 +95,7 @@ type goldenWrite struct {
 
 // goldenRemove carries the surface as well as the path: a removal belongs to
 // a host, and printPlan groups by that. Recording only the path is what let
-// dropin-miner#88's grouping defect live in a green golden.
+// the grouping defect live in a green golden.
 type goldenRemove struct {
 	Surface string `json:"surface"`
 	Path    string `json:"path"`

@@ -1,6 +1,6 @@
 package main
 
-// dropin-miner#84: `setup -home <dir>` does not reach past the installation it names.
+// `setup -home <dir>` does not reach past the installation it names.
 //
 // It is the documented way to make a disposable installation for a
 // destructive test, and in v0.2.9 it still planned the real user's ~/.claude,

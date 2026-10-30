@@ -404,7 +404,7 @@ func TestHookLineageParentPointerIsTheSubagentsAlone(t *testing.T) {
 
 // The four fixtures below are derived from a real Claude Code transcript
 // (record types and field layout byte-faithful, prose and ids scrubbed) of
-// exactly dropin-miner#65's shape: assistant text -> Skill tool_use -> tool_result ->
+// exactly the reported shape: assistant text -> Skill tool_use -> tool_result ->
 // isMeta user text (the skill body Claude Code injects) -> attachments ->
 // Bash tool_use. Before the fix, `isUserTurn` took the isMeta entry as the
 // floor and the assistant's sentence was never found.
@@ -436,7 +436,7 @@ func TestHookLineageSkipsTheSkillsIsMetaEntryAndFindsTheAssistantSentence(t *tes
 		t.Fatalf("output: %s", out)
 	}
 	env := decodeBridgeFromCommand(t, resp.Out.Input["command"].(string))
-	if len(env.History) != 1 || env.History[0].Text != "Now performing one web search through my own dropin-miner skill (the Skill tool), per the test spec." {
+	if len(env.History) != 1 || env.History[0].Text != "Now performing one web search through my own jevlin skill (the Skill tool), per the test spec." {
 		t.Errorf("the isMeta entry was taken as the floor, or the wrong turn's prose leaked: %+v", env.History)
 	}
 }
@@ -458,7 +458,7 @@ func TestHookLineageSkipsTheSkillsIsMetaEntryInASubagentTranscript(t *testing.T)
 	}
 	_ = json.Unmarshal([]byte(out), &resp)
 	env := decodeBridgeFromCommand(t, resp.Out.Input["command"].(string))
-	if len(env.History) != 1 || env.History[0].Text != "Searching the web via my own dropin-miner skill for this subtask." {
+	if len(env.History) != 1 || env.History[0].Text != "Searching the web via my own jevlin skill for this subtask." {
 		t.Errorf("subagent's own isMeta entry was taken as the floor: %+v", env.History)
 	}
 }
@@ -483,7 +483,7 @@ func TestHookLineageSkipsTheSkillsIsMetaEntryOnAWindowsTranscriptPath(t *testing
 	}
 	_ = json.Unmarshal([]byte(out), &resp)
 	env := decodeBridgeFromCommand(t, resp.Out.Input["command"].(string))
-	if len(env.History) != 1 || env.History[0].Text != "Now performing one web search through my own dropin-miner skill (the Skill tool), per the test spec." {
+	if len(env.History) != 1 || env.History[0].Text != "Now performing one web search through my own jevlin skill (the Skill tool), per the test spec." {
 		t.Errorf("Windows-style transcript path broke the isMeta exclusion: %+v", env.History)
 	}
 }

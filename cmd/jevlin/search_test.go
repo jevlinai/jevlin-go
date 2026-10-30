@@ -290,7 +290,7 @@ func TestSearchFallsBackToTheWorkspaceLineageFileAndBumpsSeq(t *testing.T) {
 	// The search says whose it is, the way Cursor's own sessionStart hook
 	// makes it say: JEVLIN_HARNESS beside the sidecar that hook wrote.
 	// Without it the walk adopts nothing, because a search naming no host
-	// cannot be shown to own anything it finds up the tree — dropin-miner#97, and
+	// cannot be shown to own anything it finds up the tree — see
 	// TestASearchDoesNotAdoptAnotherHostsLineage. Through 0.2.10 this case
 	// passed with no harness set at all, which is exactly the defect.
 	runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k", "JEVLIN_HARNESS": "cursor"}, "-config", cfg, "q")

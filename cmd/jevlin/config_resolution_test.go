@@ -1,6 +1,6 @@
 package main
 
-// Ruling D-R1 (issue dropin-miner#58): the config a command reads is resolved
+// Ruling D-R1: the config a command reads is resolved
 // -config, then JEVLIN_CONFIG, then the installation's own config
 // ($JEVLIN_HOME/jevlin.toml, else ~/.jevlin/jevlin.toml, when that file
 // exists), then built-in defaults. A jevlin.toml in the working directory
@@ -8,7 +8,7 @@ package main
 // loadConfig, configGatePath and every command naming its source all call,
 // so the gate always keys on exactly the file that gets loaded.
 //
-// The soak that found dropin-miner#58 read a stale, unclaimed installation under the
+// The soak that found the defect read a stale, unclaimed installation under the
 // compiled-in default state directory while a claimed installation
 // sat at ~/.jevlin, because no step of the old order ever looked there.
 // The tests below drive that exact shape, not just the function in
@@ -150,8 +150,8 @@ func TestStatusReadsTheInstallationConfigWhenNothingElseResolves(t *testing.T) {
 
 	var out, errOut bytes.Buffer
 	// No -config flag and an env with no JEVLIN_CONFIG/JEVLIN_HOME:
-	// exactly the "shell opened before the profile block loads" case dropin-miner#58
-	// named. Resolution falls all the way to step 4.
+	// exactly the "shell opened before the profile block loads" case the
+	// report named. Resolution falls all the way to step 4.
 	if code := statusMain(nil, &out, &errOut, noEnv); code != exitOK {
 		t.Fatalf("status exited %d: %s", code, errOut.String())
 	}

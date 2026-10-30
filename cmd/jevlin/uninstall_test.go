@@ -89,7 +89,7 @@ func installed(t *testing.T) *setupSandbox {
 	return s
 }
 
-// TestDryRunGroupsEveryHostsLinesUnderItsOwnHeading is dropin-miner#88, item 1, from the
+// TestDryRunGroupsEveryHostsLinesUnderItsOwnHeading guards a defect from the
 // Windows soak: the dry run printed opencode's, Pi's and Hermes' removals
 // under the "Cursor" heading. The cause was that a removal carried only a
 // path while a write carried its host, and the printer emitted a heading only
@@ -348,7 +348,7 @@ func TestDefaultUninstallPreservesEveryParticipantByte(t *testing.T) {
 			t.Errorf("the closing message must say %q:\n%s", want, out)
 		}
 	}
-	// dropin-miner#88: the order of those two is the whole point. setup -home is the way
+	// The order of those two is the whole point. setup -home is the way
 	// back; connect on its own is the thing not to do. The old wording put
 	// the warning last, where it read as the next step.
 	if i, j := strings.Index(out, "To keep using this installation"), strings.Index(out, "Do not run `jevlin connect` on its own"); i < 0 || j < 0 || j < i {
@@ -926,10 +926,10 @@ func TestPurgeRemovesStateAfterTheExactTypedConfirmation(t *testing.T) {
 	if !lexists(filepath.Join(outside, "keep.json")) || !strings.Contains(out, outside) {
 		t.Error("a configured directory outside the installation must survive and be reported")
 	}
-	// The gate survives a purge and the closing output names it. Since dropin-miner#103
-	// and dropin-miner#115 it is named in the same list as every other lock still there,
-	// so the search is scoped to that section rather than to the whole
-	// output, which also prints the full path of everything removed.
+	// The gate survives a purge and the closing output names it. It is now named
+	// in the same list as every other lock still there, so the search is scoped
+	// to that section rather than to the whole output, which also prints the
+	// full path of everything removed.
 	gateIdx := strings.Index(out, leftoverHeading)
 	if !lexists(lifecycleGatePath(s.home)) || gateIdx < 0 || !strings.Contains(out[gateIdx:], lifecycleGatePath(s.home)) {
 		t.Error("the lifecycle gate survives a purge, and the closing output names it as safe to delete")

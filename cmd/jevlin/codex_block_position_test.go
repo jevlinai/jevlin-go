@@ -1,6 +1,6 @@
 package main
 
-// dropin-miner#99: our block is written where it is found, and no byte outside our
+// Our block is written where it is found, and no byte outside our
 // markers moves.
 //
 // The block used to be stripped and appended on every write, so a file's

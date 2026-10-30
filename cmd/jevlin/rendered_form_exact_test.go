@@ -359,7 +359,7 @@ func TestAConfigPathSpelledWithForwardSlashesIsStillClean(t *testing.T) {
 }
 
 // reencodedByCursorOnWindows is what Cursor's Windows hook wrapper hands a
-// hook (dropin-miner#113): each UTF-8 byte of the payload read as one cp1252
+// hook: each UTF-8 byte of the payload read as one cp1252
 // character, then written out as UTF-8 again.
 func reencodedByCursorOnWindows(s string) string {
 	high := map[byte]rune{}

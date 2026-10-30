@@ -1,6 +1,6 @@
 package main
 
-// Cursor's identity, carried on the command by its preToolUse hook (dropin-miner#118).
+// Cursor's identity, carried on the command by its preToolUse hook.
 //
 // Cursor applies a sessionStart hook's `env` to the session's later hooks and
 // to nothing its agent's shell inherits — measured on macOS and Windows, and
@@ -31,8 +31,9 @@ import (
 // call. RECONSTRUCTED, not captured: the field set is the K-review capture
 // from Cursor 3.20.21 (testdata/hook/cursor-3.20.21-preToolUse-runs-claude-
 // lineage.json) with cursor_version set to 3.21.16 and hook_event_name kept
-// as Cursor reports it. It is replaced by a real 3.21 capture when the
-// Windows tester sends one.
+// as Cursor reports it. The command's binary and config paths are spelled
+// as this client's; the capture ran the predecessor binary. It is replaced
+// by a real 3.21 capture when the Windows tester sends one.
 const cursorPreToolUseFixture = "testdata/hook/cursor-3.21.16-preToolUse-shell.reconstructed.json"
 
 // cursorPreToolUsePayload is the fixture with its command replaced.
@@ -231,8 +232,8 @@ func TestCursorPreToolUseLeavesEverythingElseAlone(t *testing.T) {
 }
 
 // TestCursorPreToolUseNeverEchoesTextItsRunnerReencoded: on an OS where
-// Cursor's hook runner re-encodes non-ASCII text before this hook reads it
-// (dropin-miner#113), a command carrying any is not rewritten — the rewrite would hand
+// Cursor's hook runner re-encodes non-ASCII text before this hook reads it,
+// a command carrying any is not rewritten — the rewrite would hand
 // Cursor back a different query. Where the runner is POSIX, the bytes are the
 // agent's own and the search is labeled like any other.
 func TestCursorPreToolUseNeverEchoesTextItsRunnerReencoded(t *testing.T) {

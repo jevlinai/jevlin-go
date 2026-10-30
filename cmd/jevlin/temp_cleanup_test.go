@@ -1,6 +1,6 @@
 package main
 
-// A failed rename cleans up after itself, and old leftovers are swept (dropin-miner#100).
+// A failed rename cleans up after itself, and old leftovers are swept.
 //
 // Three writers go through replaceViaTemp — the lineage files, the window
 // state, the flush stamp — so each is driven through its own entry point:

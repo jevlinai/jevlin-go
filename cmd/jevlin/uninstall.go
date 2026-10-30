@@ -248,7 +248,7 @@ func (r *uninstallRun) run(homeFlag string) int {
 
 	switch {
 	case r.dry:
-		// The same section the real run closes with, in both modes (dropin-miner#129).
+		// The same section the real run closes with, in both modes.
 		// A dry run is the form a participant reads before deciding, and
 		// "these files will still be here, and here is why" is exactly what
 		// a decision is made on; it was only ever printed from closing(),
@@ -276,7 +276,7 @@ func (r *uninstallRun) run(homeFlag string) int {
 
 	// Past the decision: the operation lock files this run's exclusion had
 	// to create are now part of the installation it is changing, not
-	// something an abort has to undo (dropin-miner#86, lifecycle.go's release).
+	// something an abort has to undo (lifecycle.go's release).
 	r.ex.proceeded()
 
 	r.applyIntegrations()
@@ -403,8 +403,8 @@ func (r *uninstallRun) exclude() (*lifecycleExclusion, error) {
 	// removeCreated for the same reason excludeLifecycle sets it: a
 	// default run that is declined at "Remove what is listed above?"
 	// prints that nothing was changed, and a setup.lock this probe made
-	// would make that false too (dropin-miner#86). The issue reported -purge-state,
-	// but nothing about the defect was particular to it.
+	// would make that false too. The defect was reported against
+	// -purge-state, but nothing about it was particular to that flag.
 	ex := &lifecycleExclusion{home: r.home, gate: gate, removeCreated: true}
 	if err := ex.hold("setup", filepath.Join(r.home, setupLockFile)); err != nil {
 		ex.release()
@@ -552,7 +552,7 @@ func (r *uninstallRun) uninstallTargets(ops agentOps, apply func(p *agentPlan)) 
 		case attributionForeign:
 			hold(leftForeign(other))
 		case attributionUnknown:
-			// dropin-miner#73: an uninstall that cannot attribute a file leaves it and
+			// An uninstall that cannot attribute a file leaves it and
 			// says so. The case is narrow — every skill, hook command and
 			// JavaScript adapter install writes names its config, so an
 			// artifact naming none was not written by this client's install
@@ -627,7 +627,7 @@ var installedCommand = regexp.MustCompile(`(` + renderedWordRe + `) (?:search|ho
 // command at all — it rewrites commands, it does not run any — so until it
 // carried one, the attribution had nothing to match and read it as unowned.
 // A disposable installation's purge therefore removed the main installation's
-// plugin, which is dropin-miner#73's own last comment.
+// plugin, which is the attribution defect's own last report.
 // The last alternative is a BARE path: Hermes' splitter takes one, and
 // hermesQuoteArg deliberately leaves an ordinary POSIX path unquoted because
 // the same string is the snippet a participant is asked to paste by hand.
@@ -664,7 +664,7 @@ const (
 // attributeRemoved decides, from the bytes on disk, whether the files a
 // target would remove are this installation's.
 //
-// Both halves must agree, which is the whole of dropin-miner#73: two installations that
+// Both halves must agree, which is the whole of the attribution defect: two installations that
 // share a binary are told apart only by the config each names, and matching
 // on the binary alone made every uninstall plan the removal of both. A file
 // that names an installation other than this one is foreign; a file that
@@ -845,7 +845,7 @@ func configsInclude(named []string, cfg string) bool {
 // all (samePath), so nothing about attribution changed when this printed the
 // first one; only the sentence was wrong, and only on Windows, where
 // opencode's INSTALL_CONFIG line is JSON-quoted and came out as
-// C:\\Users\\... on both runners (dropin-miner#123, and dropin-miner#112's own message before it).
+// C:\\Users\\... on both runners (and in an earlier report's own message before it).
 // Taking the last reading of the last word that is not ours is decoded
 // whichever word it comes from, because a word's readings are contiguous and
 // its decoded one is last.
@@ -1282,7 +1282,7 @@ func (r *uninstallRun) applyEnvironment() {
 
 // otherInstallationHint completes the restore hint for a home that is not
 // this machine's default installation. setup -home leaves the shell profile
-// and the coding agents alone for such a home (dropin-miner#84) — they belong to the
+// and the coding agents alone for such a home — they belong to the
 // default one — so "run setup -home" on its own would promise a restore it
 // no longer performs. It says what does, both ways: the agents command for an
 // installation that really is a separate one, and JEVLIN_HOME for one that
@@ -1418,7 +1418,7 @@ func (r *uninstallRun) closing() {
 			r.printf("  (nothing is there)\n")
 		}
 		if !r.binary {
-			// dropin-miner#88: the old wording ended on `connect`, which read as the
+			// The old wording ended on `connect`, which read as the
 			// next step. It is the opposite — setup -home is what reuses
 			// this registration, and a bare connect is what replaces it,
 			// because uninstall has just removed the profile block (on
@@ -1459,10 +1459,10 @@ func (r *uninstallRun) closing() {
 }
 
 // sayLeftoverLocks names every lock file this installation still carries and
-// says it is safe to delete. The gate always said this of itself; dropin-miner#103 and
-// dropin-miner#115 are the same sentence owed by the rest of them -- the update lock an
-// upgrade leaves in bin/, and the setup.lock and connect.lock a setup or a
-// connect leaves in the installation.
+// says it is safe to delete. The gate always said this of itself; the rest of
+// them are owed the same sentence -- the update lock an upgrade leaves in
+// bin/, and the setup.lock and connect.lock a setup or a connect leaves in
+// the installation.
 //
 // Named rather than removed, and that is a conclusion rather than an
 // omission. Removing an operation lock is only safe while the GATE is held,

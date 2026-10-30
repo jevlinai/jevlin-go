@@ -288,7 +288,7 @@ type lifecycleExclusion struct {
 	// in the order it took them. Taking a lock opens its file with
 	// O_CREATE (tryLockFile, filelock_*.go), so probing an installation
 	// that has never connected creates a connect.lock that was not there
-	// before — dropin-miner#86, where an uninstall -purge-state aborted at its
+	// before — the defect where an uninstall -purge-state aborted at its
 	// confirmation printed "No participant state or integrations were
 	// changed" over a new empty lock file it had just made.
 	created []string
@@ -298,7 +298,7 @@ type lifecycleExclusion struct {
 	// run that stops must leave the installation as it found it.
 	// excludeForUpgrade does not, and deliberately — an upgrade's lock
 	// files are installation furniture that uninstall -binary already
-	// knows how to remove (S19). dropin-miner#86 is about the destructive-abort path;
+	// knows how to remove (S19). The defect above is about the destructive-abort path;
 	// widening it to upgrade needs its own evidence, not this one's.
 	removeCreated bool
 
@@ -414,7 +414,7 @@ func (ex *lifecycleExclusion) releaseOperation(path string) {
 
 // release lets go of everything, operation locks first, then the gate, and
 // removes the lock files this exclusion created when the operation never
-// proceeded (dropin-miner#86). Every lock is let go above before any file is removed
+// proceeded. Every lock is let go above before any file is removed
 // below, because Windows will not delete a file that is open. A lock file
 // that already existed is never removed: the participant's own connect lock
 // is not this operation's to clean up. Nor is the gate, which is a sibling

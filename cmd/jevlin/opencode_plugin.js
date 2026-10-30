@@ -30,7 +30,7 @@ import { delimiter as shellPathDelimiter, join as shellPathJoin } from "node:pat
 // The shell opencode runs its bash tool in on THIS machine, written in by
 // the installer from the host's declaration. The bridge is an environment
 // assignment, and its syntax is the shell's: a POSIX prefix handed to
-// PowerShell is looked up as a program name and the search never runs (dropin-miner#68).
+// PowerShell is looked up as a program name and the search never runs.
 const HOST_SHELL = "{{HOST_SHELL}}"
 
 // The names ShellSelect's META table reads as a POSIX login shell and as
@@ -125,8 +125,8 @@ const HOST_COMMAND_CHAR_LIMIT = process.platform === "win32" ? 30000 : 0
 // runs no command of ours and needs no config — it is how `uninstall` knows
 // whose file this is. Every other artifact names its installation in a
 // command it teaches; this one teaches none, so before this line existed an
-// uninstall had nothing to match and removed another installation's plugin
-// (dropin-miner#73). Two installations share this one path, so it names the one that ran
+// uninstall had nothing to match and removed another installation's plugin.
+// Two installations share this one path, so it names the one that ran
 // `agents install` last, and the other leaves it alone.
 const INSTALL_CONFIG = "{{INSTALL_CONFIG}}"
 

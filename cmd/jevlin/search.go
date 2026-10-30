@@ -358,7 +358,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		// own bytes, so there is no envelope of ours to put it in without
 		// rewriting the router's answer; and the machine envelope is what the
 		// MODEL reads, and a model that knows this variable exists is one of
-		// the ways a foreign bridge arrives (dropin-miner#91). A participant debugging a
+		// the ways a foreign bridge arrives. A participant debugging a
 		// trace runs the search by hand in the host's terminal, where the
 		// same variables are set and this line is in front of them — the
 		// same place the trace_unsupported retry below is reported.
@@ -765,12 +765,12 @@ func postRouter(ctx context.Context, client *http.Client, endpoint, key string, 
 // searchTrace picks the envelope for this search: the host's own channel —
 // bridge or lineage file — or the per-shell fallback. nil means send none.
 //
-// A search believes its host's channel, not whatever variable it finds (dropin-miner#91).
+// A search believes its host's channel, not whatever variable it finds.
 // A host has one channel. Those that can rewrite a command hand the envelope
 // over in JEVLIN_TRACE_BRIDGE; Cursor cannot, so its session-start hook
 // exports JEVLIN_LINEAGE, and by that declaration says it writes no
 // bridge. For such a search a bridge variable is somebody else's — another
-// host's hook run by this one (dropin-miner#87), a model that read this repository's
+// host's hook run by this one, a model that read this repository's
 // documentation — and it is dropped unread: not
 // decoded, not compared, not used as a fallback when the lineage file turns
 // out to be missing. foreignBridge reports that this happened, so the caller
@@ -827,10 +827,10 @@ func searchTrace(ops searchOps, m config.Search, stateDir string, getenv func(st
 	)
 	// session is the hashed id of the session this shell was started in,
 	// when the host exported one. It is the test of ownership for the file
-	// the host declared, exactly as it is for the walk (dropin-miner#104).
+	// the host declared, exactly as it is for the walk.
 	//
 	// The declared path says WHERE a session's lineage lives, not WHOSE it
-	// currently holds (dropin-miner#109). Cursor keys the file by workspace alone, and
+	// currently holds. Cursor keys the file by workspace alone, and
 	// every hook event writes the current conversation's id into it, so two
 	// conversations open on one workspace — two chat tabs on a project —
 	// share one file and take turns owning it. Both shells name that same
@@ -841,7 +841,7 @@ func searchTrace(ops searchOps, m config.Search, stateDir string, getenv func(st
 	// the same reason, and ends at its own per-shell identity under the
 	// declared harness. With no session exported the declared file is
 	// believed as before: every shell started before the variable existed.
-	// Cursor now keys the file by conversation as well (dropin-miner#109), so a file of
+	// Cursor now keys the file by conversation as well, so a file of
 	// its own is what a Cursor search declares; this guard stays for every
 	// file a session did not name for itself.
 	session := getenv(sessionEnv)
@@ -854,7 +854,7 @@ func searchTrace(ops searchOps, m config.Search, stateDir string, getenv func(st
 		if cwd, err := ops.getwd(); err == nil {
 			// harness is what says whose search this is. Without it the walk
 			// answers nothing, because anything it found up the tree would be
-			// another session's (dropin-miner#97).
+			// another session's.
 			lf, path = lineageForCwd(ops.hook, m.SessionsDir, cwd, harness, session, now)
 		}
 	}

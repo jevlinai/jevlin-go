@@ -148,7 +148,7 @@ func readCodexRegion(file []byte) (r codexRegion, had bool, why string) {
 	if r.legacy && !r.atTop && r.foreignRoot != "" {
 		// The old block sat anywhere, so bare keys before its first table
 		// belong to whatever table preceded the block; moving them would
-		// re-parent them (dropin-miner#82's reading, unchanged).
+		// re-parent them (the earlier reading, unchanged).
 		return r, true, "it holds keys before its first table that belong to the table above the block; remove the block by hand and run this again"
 	}
 	// The net, in both directions: what is about to be treated as ours

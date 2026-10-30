@@ -14,7 +14,7 @@ import (
 // the absence of an answer, and the operation stops there having
 // recorded, written and sent nothing.
 //
-// dropin-miner#81 is what a prompt that guesses instead costs. At the
+// The earlier defect is what a prompt that guesses instead costs. At the
 // mining question an earlier version asked (`Enable mining rewards?
 // [y/N]`) the read error was discarded, so an interrupt produced an empty
 // line, an empty line is not "y", and a decision file was written with a

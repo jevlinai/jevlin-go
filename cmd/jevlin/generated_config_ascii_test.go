@@ -1,7 +1,6 @@
 package main
 
-// dropin-miner#88 item 3: every byte this client writes into a configuration file is
-// ASCII.
+// Every byte this client writes into a configuration file is ASCII.
 //
 // Windows PowerShell 5.1 reads a file with no byte-order mark in the
 // system's ANSI code page, so a UTF-8 em dash arrives as three cp1252
@@ -122,11 +121,11 @@ func TestTheASCIIScanFindsTheByteItIsLookingFor(t *testing.T) {
 	if i := firstNonASCII([]byte("# target_epoch deliberately unset - flush asks the AS.\n")); i != -1 {
 		t.Fatalf("firstNonASCII = %d on an ASCII line, want -1", i)
 	}
-	// The exact line dropin-miner#88 was filed about, before the fix.
+	// The exact line the defect was filed about, before the fix.
 	before := []byte("# target_epoch deliberately unset \u2014 flush asks the AS.\n")
 	i := firstNonASCII(before)
 	if i < 0 {
-		t.Fatal("firstNonASCII missed the em dash that dropin-miner#88 was filed about")
+		t.Fatal("firstNonASCII missed the em dash the defect was filed about")
 	}
 	if want := strings.Index(string(before), "\u2014"); i != want {
 		t.Fatalf("firstNonASCII = %d, want %d (the em dash's first byte)", i, want)

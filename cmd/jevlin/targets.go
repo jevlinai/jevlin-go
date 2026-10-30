@@ -50,8 +50,8 @@ type targetStatus struct {
 // machine — "cursor-agent on PATH", "~/.cursor" — and the empty string when
 // nothing does. It is a signal rather than a bool because the participant is
 // entitled to know why a host was or was not offered: setup's "Found on this
-// machine" and `agents status` both print it, and dropin-miner#61 was reported as
-// "Cursor not on PATH" on a machine where Cursor was plainly installed.
+// machine" and `agents status` both print it, and a report read "Cursor
+// not on PATH" on a machine where Cursor was plainly installed.
 type installTarget interface {
 	ID() string
 	Label() string
@@ -94,7 +94,7 @@ type statusNoter interface {
 // the skill hands the host, by the shell the host executes tool calls in; a
 // hook entry the install writes, by the host's hook runner. v0.2.9 rendered
 // all of them with Go's %q and a Bash heredoc, as though every host on every
-// OS ran Bash, and the soak's Windows defects (dropin-miner#66–dropin-miner#69) are that one
+// OS ran Bash, and the soak's Windows defects are that one
 // assumption failing in four places. So each host declares, per OS, what
 // actually runs each kind of string and where that fact comes from.
 //
@@ -149,7 +149,7 @@ const (
 	chosenPerCall shellChoice = "per-call"
 	// chosenByParticipant: one shell runs every call, and which one is the
 	// participant's own configuration — Cursor's editor runs its terminal
-	// according to terminal.integrated.defaultProfile.windows (dropin-miner#96). Nothing
+	// according to terminal.integrated.defaultProfile.windows. Nothing
 	// in the call says which it is and nothing this client installs can, so
 	// the label has to speak about the machine instead.
 	chosenByParticipant shellChoice = "participant"
@@ -402,7 +402,7 @@ func detectCommand(ops agentOps, names ...string) string {
 // detectConfigDir is the second kind of signal: the directory the host keeps
 // its own configuration in. A populated config directory is the participant
 // using the host; the shell command is incidental, and for two of Cursor's
-// three configurations it is simply absent (dropin-miner#61).
+// three configurations it is simply absent.
 func detectConfigDir(ops agentOps, dir string) string {
 	if !pathExists(ops, dir) {
 		return ""
@@ -453,19 +453,19 @@ func (claudeTarget) Shells(goos string) hostShells {
 	switch goos {
 	case "darwin", "linux":
 		return hostShells{
-			tool: established("docs tools-reference (sources ~/.zshrc, ~/.bashrc or ~/.profile); live: soak dropin-miner#57 macOS", shellPOSIX),
-			hook: established("docs hooks: \"sh -c on macOS and Linux\"; live: soak dropin-miner#57 macOS", shellPOSIX),
+			tool: established("docs tools-reference (sources ~/.zshrc, ~/.bashrc or ~/.profile); live: macOS soak", shellPOSIX),
+			hook: established("docs hooks: \"sh -c on macOS and Linux\"; live: macOS soak", shellPOSIX),
 		}
 	case "windows":
 		return hostShells{
-			// Two tools, two shells, and the model chooses per call (dropin-miner#77,
-			// H-R5): the Bash tool runs through Git Bash, and the PowerShell
-			// tool — on by default for claude.ai and Console accounts, and the
-			// only one where Git for Windows is absent — runs through
-			// PowerShell. A skill that taught only the heredoc would be wrong
-			// for every call the model made with the second.
-			tool: establishedChosenBy(chosenPerCall, "live: soak dropin-miner#57 Windows (Git Bash); docs setup: \"With Git for Windows, Claude Code uses Git Bash for the Bash tool\"; docs tools-reference: the PowerShell tool is \"on by default for claude.ai and Console accounts\" and \"Claude treats PowerShell as the primary shell\" when enabled", shellPOSIX, shellPowerShell),
-			hook: established("docs hooks: \"Git Bash on Windows, or PowerShell when Git Bash isn't installed\"; live: soak dropin-miner#57 Windows", shellPOSIX),
+			// Two tools, two shells, and the model chooses per call (H-R5): the
+			// Bash tool runs through Git Bash, and the PowerShell tool — on by
+			// default for claude.ai and Console accounts, and the only one
+			// where Git for Windows is absent — runs through PowerShell. A
+			// skill that taught only the heredoc would be wrong for every call
+			// the model made with the second.
+			tool: establishedChosenBy(chosenPerCall, "live: Windows soak (Git Bash); docs setup: \"With Git for Windows, Claude Code uses Git Bash for the Bash tool\"; docs tools-reference: the PowerShell tool is \"on by default for claude.ai and Console accounts\" and \"Claude treats PowerShell as the primary shell\" when enabled", shellPOSIX, shellPowerShell),
+			hook: established("docs hooks: \"Git Bash on Windows, or PowerShell when Git Bash isn't installed\"; live: Windows soak", shellPOSIX),
 		}
 	}
 	return hostShells{tool: cellUnknown, hook: cellUnknown}
@@ -548,7 +548,7 @@ func (codexTarget) Shells(goos string) hostShells {
 	switch goos {
 	case "darwin", "linux":
 		return hostShells{
-			tool: established("source codex-rs shell_detect.rs default_user_shell (user's shell, else zsh/bash); live: soak dropin-miner#57 macOS", shellPOSIX),
+			tool: established("source codex-rs shell_detect.rs default_user_shell (user's shell, else zsh/bash); live: macOS soak", shellPOSIX),
 			hook: established("live: 2026-10-05, codex exec, codex-cli 0.160.0 macOS and 0.158.0 Linux: the rendered hook command, binary and config single-quoted under a path with a space, ran and read its config; a probe entry's $0 was /bin/zsh on macOS and /bin/bash on Linux, its parent Codex", shellPOSIX),
 		}
 	case "windows":
@@ -839,13 +839,13 @@ type sandboxRemoval struct {
 // it names DIRECTORIES — so its roots are read, the writable_roots of the
 // old table or the filesystem keys of the profile, and roots that are not
 // this installation's belong to another installation whose searches would go
-// silent if this one removed them (dropin-miner#73).
+// silent if this one removed them.
 //
 // What is inside the markers is split by who wrote it (codex_region.go):
 // Codex appends its own tables into a block that is last, and writes root
 // keys and a [features] table into one that is not. Ours go; every other
 // table survives in its original bytes at the end of the file, and every
-// other root key where the region was (dropin-miner#82, C1).
+// other root key where the region was (C1).
 func removeOurSandboxBlock(existing []byte, entry binEntry, getenv func(string) string) sandboxRemoval {
 	r := removeCodexRegion(existing)
 	if !r.had {
@@ -878,7 +878,7 @@ func removeOurSandboxBlock(existing []byte, entry binEntry, getenv func(string) 
 // marked block, in the one spelling sandboxSettings writes them: a single
 // line of %q-quoted paths. It is given our table's text rather than the
 // whole block, so a writable_roots line in a table somebody else appended
-// into the block cannot be read as ours (dropin-miner#82).
+// into the block cannot be read as ours.
 func markedSandboxRoots(block string) []string {
 	m := sandboxRootsLine.FindStringSubmatch(block)
 	if m == nil {
@@ -1084,7 +1084,7 @@ func (cursorTarget) Kind() targetKind { return targetHost }
 // Cursor's agent runs commands in the user's terminal shell on macOS and
 // Linux. On Windows it runs them in PowerShell by default (the CLI's
 // ps-script-*.ps1) or in whatever terminal.integrated.defaultProfile.windows
-// names — Git Bash on the machine dropin-miner#96 was found on — so that cell declares
+// names — Git Bash on one machine seen live — so that cell declares
 // both and the skill teaches a form for each. Its hooks ran on macOS; on
 // Linux nothing names the runner; on Windows
 // no hook was observed live, and the hooks.json string fails to parse as
@@ -1095,8 +1095,8 @@ func (cursorTarget) Shells(goos string) hostShells {
 	switch goos {
 	case "darwin":
 		return hostShells{
-			tool: established("live: soak dropin-miner#57/#66 macOS (Cursor CLI ran the heredoc search)", shellPOSIX),
-			hook: established("live: soak dropin-miner#61 macOS (sessionStart and afterAgentThought fired a command beginning with a quoted path)", shellPOSIX),
+			tool: established("live: macOS soaks (Cursor CLI ran the heredoc search)", shellPOSIX),
+			hook: established("live: macOS soak (sessionStart and afterAgentThought fired a command beginning with a quoted path)", shellPOSIX),
 		}
 	case "linux":
 		return hostShells{
@@ -1111,13 +1111,13 @@ func (cursorTarget) Shells(goos string) hostShells {
 			hook: shellCell{
 				evidence: evidenceRuled,
 				shells:   []shellKind{shellPOSIX},
-				source:   "no live Linux run; macOS proven live (dropin-miner#61); PowerShell is not a Linux default and cmd does not exist there; ruled by the same argument as H-R5's tool cell",
+				source:   "no live Linux run; macOS proven live; PowerShell is not a Linux default and cmd does not exist there; ruled by the same argument as H-R5's tool cell",
 			},
 		}
 	case "windows":
 		return hostShells{
 			// Two shells, and the participant picks — not per call, once, in
-			// terminal.integrated.defaultProfile.windows (dropin-miner#96). The CLI and a
+			// terminal.integrated.defaultProfile.windows. The CLI and a
 			// default editor install use PowerShell, which is why it is first
 			// and why 0.2.10 declared it alone; an editor whose profile is Git
 			// Bash wrapped that PowerShell form in powershell.exe -Command and
@@ -1125,11 +1125,11 @@ func (cursorTarget) Shells(goos string) hostShells {
 			// saw it, so the query reached the router as caf? ?? and the search
 			// answered a different question. A single declared shell cannot
 			// describe a host whose shell the participant selects.
-			tool: establishedChosenBy(chosenByParticipant, "live: soak dropin-miner#67 Windows (Cursor CLI, ps-script-*.ps1) and forum.cursor.com/t/154914 staff: agent shell \"defaults to PowerShell\"; live: 0.2.10 release check Windows 11 row R5 (dropin-miner#96), editor with terminal.integrated.defaultProfile.windows = Git Bash ran the Bash heredoc byte-exact and mangled the PowerShell form", shellPowerShell, shellPOSIX),
+			tool: establishedChosenBy(chosenByParticipant, "live: Windows soak (Cursor CLI, ps-script-*.ps1) and forum.cursor.com/t/154914 staff: agent shell \"defaults to PowerShell\"; live: 0.2.10 release check Windows 11 row R5, editor with terminal.integrated.defaultProfile.windows = Git Bash ran the Bash heredoc byte-exact and mangled the PowerShell form", shellPowerShell, shellPOSIX),
 			hook: shellCell{
 				evidence: evidenceRuled,
 				shells:   []shellKind{shellCmd, shellPowerShell},
-				source:   "no hook observed live (dropin-miner#69); the hooks.json string fails as PowerShell and runs under cmd (Windows team, sitting 2); ruled: proven under cmd, PowerShell 5.1 and pwsh",
+				source:   "no hook observed live; the hooks.json string fails as PowerShell and runs under cmd (Windows team, sitting 2); ruled: proven under cmd, PowerShell 5.1 and pwsh",
 			},
 		}
 	}
@@ -1142,8 +1142,9 @@ func (cursorTarget) Shells(goos string) hostShells {
 // `cursor-agent`; and an editor whose participant never ran the palette
 // command has neither, while keeping a populated ~/.cursor the whole time.
 // v0.2.9 looked for `cursor` alone, so it saw a Cursor user in exactly one of
-// those three configurations — dropin-miner#61, where setup reported "Claude Code, Codex"
-// on a machine with /Applications/Cursor.app, ~/.cursor and cursor-agent.
+// those three configurations — one report had setup saying "Claude Code,
+// Codex" on a machine with /Applications/Cursor.app, ~/.cursor and
+// cursor-agent.
 //
 // The config directory is last because a command is the better answer to
 // print: it says which Cursor is here. But it is not weaker evidence. It is
@@ -1247,7 +1248,7 @@ func (opencodeTarget) Shells(goos string) hostShells {
 		}
 	case "windows":
 		return hostShells{
-			tool: established("live: soak dropin-miner#67/#68 Windows (PowerShell); source shell.ts win(): pwsh, powershell, Git Bash, cmd", shellPowerShell),
+			tool: established("live: Windows soaks (PowerShell); source shell.ts win(): pwsh, powershell, Git Bash, cmd", shellPowerShell),
 			hook: cellNoChannel,
 		}
 	}
@@ -1303,7 +1304,7 @@ func (piTarget) Shells(goos string) hostShells {
 		}
 	case "windows":
 		return hostShells{
-			tool: established("live: soak dropin-miner#57 Windows (Bash); docs coding-agent/docs/windows.md: \"Pi uses Git Bash by default on Windows\"", shellPOSIX),
+			tool: established("live: Windows soak (Bash); docs coding-agent/docs/windows.md: \"Pi uses Git Bash by default on Windows\"", shellPOSIX),
 			hook: cellNoChannel,
 		}
 	}
@@ -1381,7 +1382,7 @@ func (hermesTarget) Shells(goos string) hostShells {
 		}
 	case "windows":
 		return hostShells{
-			tool: established("live: soak dropin-miner#57 Windows (Bash); docs windows-native.md: \"Hermes's terminal tool runs commands through Git Bash\"", shellPOSIX),
+			tool: established("live: Windows soak (Bash); docs windows-native.md: \"Hermes's terminal tool runs commands through Git Bash\"", shellPOSIX),
 			hook: hook,
 		}
 	}

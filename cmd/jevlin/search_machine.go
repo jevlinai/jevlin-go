@@ -635,8 +635,8 @@ type machineMergedPage struct {
 	FoundBy []string `json:"found_by"`
 	// FoundIn is where those providers cited the page in the result the
 	// router stores under request_id: one entry per FoundBy provider, in
-	// the same order. It is what keeps a merged-only envelope joinable
-	// (dropin-miner#126). With "view":"merged" the candidates list is omitted, so
+	// the same order. It is what keeps a merged-only envelope joinable.
+	// With "view":"merged" the candidates list is omitted, so
 	// without these positions nothing maps a page back into the stored
 	// result's candidates.
 	FoundIn []machineMergedPosition `json:"found_in"`

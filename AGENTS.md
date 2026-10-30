@@ -929,11 +929,12 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
 - **A reviewed commit is never amended or rebased.** A correction is a new commit that says
   what it corrects, so a review always has a fixed object: the head a reviewer examined is
   still in the history, and what changed since is exactly the commits after it.
-- **Human documents carry no issue or version numbers from the predecessor project.** A reader
-  of a README, a guide or a template cannot open an issue in the repository this one was
-  imported from, or place one of its release numbers, so the document states the rule on its
-  own. Code comments may keep such an issue reference where the history explains the code,
-  because the reader of a comment is the one who can follow it.
+- **Nothing here carries an issue or version number from the predecessor project.** A reader
+  of a README, a guide, a template or a code comment cannot open an issue in the repository
+  this one was imported from, or place one of its release numbers, so the text states the
+  rule, and the defect it answers, in its own words. Comments that once pointed at such an
+  issue now describe the defect instead; the captured host payloads under `testdata` name
+  this client's binary, with the rewrite said where a test loads them.
 - **`npm/package.json`'s version and `CHANGELOG.md`'s release headings move only in a release
   PR**, so the commit to tag is unambiguous: the one where the version, the heading and the
   tag agree. Between releases a change a participant should hear about may add a bullet under

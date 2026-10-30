@@ -1,8 +1,8 @@
 package main
 
-// dropin-miner#103 and dropin-miner#115: a lock file a finished operation created and did not remove
-// is a file a person auditing a machine finds and cannot place. The gate
-// always named itself as safe to delete; these are the rest of them.
+// A lock file a finished operation created and did not remove is a file a
+// person auditing a machine finds and cannot place. The gate always named
+// itself as safe to delete; these are the rest of them.
 
 import (
 	"os"
@@ -21,8 +21,7 @@ func updateLockFor(s *setupSandbox) string {
 // allLocks puts every lock file a Jevlin command leaves on disk and returns
 // them in the order the summary names them. The gate, setup.lock and
 // connect.lock are there from the real setup this sandbox ran; the update
-// lock is written because no upgrade runs in a test sandbox (dropin-miner#103,
-// dropin-miner#115).
+// lock is written because no upgrade runs in a test sandbox.
 func allLocks(t *testing.T, s *setupSandbox) []string {
 	t.Helper()
 	update := updateLockFor(s)
@@ -95,7 +94,7 @@ func TestUninstallNamesEveryLockItLeavesAsSafeToDelete(t *testing.T) {
 	}
 }
 
-// dropin-miner#129: the dry run is the form a participant reads before deciding, so it
+// The dry run is the form a participant reads before deciding, so it
 // says what the real run says about what will still be there. It listed
 // nothing, in both modes, because sayLeftoverLocks was reached only from
 // closing(), which a dry run does not reach.
