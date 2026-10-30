@@ -48,7 +48,10 @@ the participants who mine; this client carries no compatibility with it.
   here for the search-only client. Codex's permission profile grants the state and sessions
   directories and reaches the router and the agents API.
 - **`JEVLIN_TRACE=off` turns the hooks off too.** The lineage hook wrote a bridge and a lineage
-  file for search to drop; now it writes neither, so off means off entirely.
+  file for search to drop; now it writes neither, so off means off entirely. Cursor's hooks keep
+  no lineage file (and so none of the prompt, the reasoning or the answer) and label no search,
+  and Codex's add no bridge and allow the search as it came. `0` and `false` work as `off` does,
+  in the hooks as in the search.
 - **`credentials.json` is held to the record rules.** A field holding a character a terminal acts
   on makes the file unreadable, with a message that repeats none of it; an origin it records must
   have a plain ASCII host; and a key recording no router is bound by the installation's config

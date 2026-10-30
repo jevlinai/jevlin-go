@@ -517,7 +517,7 @@ func hookLineage(ops hookOps, hc hookContext, payload []byte, stdout io.Writer) 
 	// JEVLIN_TRACE=off turns traces off entirely: no bridge on the command
 	// and no lineage file, not a bridge that search then drops. The fetch
 	// allow above is not a trace and still answers.
-	if strings.EqualFold(strings.TrimSpace(ops.getenv("JEVLIN_TRACE")), "off") {
+	if traceOff(ops.getenv) {
 		return
 	}
 
@@ -975,8 +975,13 @@ func hookCursorOn(goos string, ops hookOps, hc hookContext, event string, payloa
 		}
 	}
 	now := ops.now()
+	// With traces off nothing of the conversation is kept: no lineage file
+	// is written, so the user's prompt, the reasoning and the answer never
+	// reach the sessions directory, and preToolUse labels no search. The
+	// permission answers and the background starts are unchanged.
+	off := traceOff(ops.getenv)
 	update := func(apply func(*lineageFile)) {
-		if path == "" || p.ConversationID == "" {
+		if off || path == "" || p.ConversationID == "" {
 			return
 		}
 		_ = updateLineage(ops, path, now, func(l *lineageFile) {
@@ -1043,6 +1048,9 @@ func hookCursorOn(goos string, ops hookOps, hc hookContext, event string, payloa
 		}
 		fmt.Fprintln(stdout, `{"permission":"allow"}`)
 	case "preToolUse":
+		if off {
+			return // beforeShellExecution answers the permission; there is no label to add
+		}
 		shells, err := declaredShells(cursorTarget{}, goos, channelTool)
 		if err != nil {
 			return

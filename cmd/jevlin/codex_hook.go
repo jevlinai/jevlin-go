@@ -177,6 +177,12 @@ func codexLineage(ops hookOps, hc hookContext, goos string, payload []byte, stdo
 	if !isSearchForm(form) {
 		return
 	}
+	// With traces off the search gets the allow alone, as the fetch does:
+	// no bridge and no lineage file.
+	if traceOff(ops.getenv) {
+		codexAllowAsIs(p.ToolInput, stdout)
+		return
+	}
 
 	env := &traceEnvelope{
 		V:         traceVersion,

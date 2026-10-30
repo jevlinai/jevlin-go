@@ -113,14 +113,7 @@ func prepareFinalText(text string) (prepared string, chars int, truncated bool) 
 
 // turnEndEnabled: the installation opted in, and tracing is not switched off.
 func turnEndEnabled(ops hookOps, hc hookContext) bool {
-	if !hc.turnEnd || hc.sessionsDir == "" {
-		return false
-	}
-	switch strings.ToLower(ops.getenv("JEVLIN_TRACE")) {
-	case "off", "0", "false":
-		return false
-	}
-	return true
+	return hc.turnEnd && hc.sessionsDir != "" && !traceOff(ops.getenv)
 }
 
 func turnSearchedPath(dir, turnID string) string {

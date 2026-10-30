@@ -801,9 +801,19 @@ func searchTraceFailingOpen(ops searchOps, m config.Search, stateDir string, get
 	return searchTrace(ops, m, stateDir, getenv)
 }
 
-func searchTrace(ops searchOps, m config.Search, stateDir string, getenv func(string) string) (env *traceEnvelope, foreignBridge bool) {
-	switch strings.ToLower(getenv("JEVLIN_TRACE")) {
+// traceOff: JEVLIN_TRACE switches traces off entirely, read the same way
+// by the search, the turn end and every hook that builds a trace, so no
+// spelling the search accepts leaves a hook still keeping the session.
+func traceOff(getenv func(string) string) bool {
+	switch strings.ToLower(strings.TrimSpace(getenv("JEVLIN_TRACE"))) {
 	case "off", "0", "false":
+		return true
+	}
+	return false
+}
+
+func searchTrace(ops searchOps, m config.Search, stateDir string, getenv func(string) string) (env *traceEnvelope, foreignBridge bool) {
+	if traceOff(getenv) {
 		return nil, false
 	}
 	harness := getenv("JEVLIN_HARNESS")

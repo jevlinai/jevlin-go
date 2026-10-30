@@ -9,7 +9,7 @@ import (
 // bridge onto the command and no lineage file, instead of writing both for
 // search to drop.
 func TestTheLineageHookWritesNothingWhenTraceIsOff(t *testing.T) {
-	for _, value := range []string{"off", "OFF", " off "} {
+	for _, value := range []string{"off", "OFF", " off ", "0", "false"} {
 		t.Run(strings.TrimSpace(value), func(t *testing.T) {
 			fs, ops := newFakeHookOps(map[string]string{"JEVLIN_TRACE": value})
 			fs.files["/t/s.jsonl"] = readHookFixture(t, "claude_code_skill_ismeta.jsonl")
