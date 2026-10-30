@@ -87,8 +87,6 @@ type uninstallDeps struct {
 	targets     []installTarget
 	userEnv     userEnvironment
 	windows     bool
-	// revoke revokes the AS token family of m; the decision whether to try
-	// is uninstall's own.
 }
 
 func cmdUninstall(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
@@ -142,6 +140,10 @@ type uninstallRun struct {
 	residual []string
 	// updateLock is the binary's own update lock, held by -binary's exclusion.
 	updateLock string
+	// purged is the purge set applyPurge went through, whether or not each
+	// removal succeeded: what the closing summary may not call somebody
+	// else's, because a removal that failed was named as a problem instead.
+	purged []string
 }
 
 func (r *uninstallRun) printf(format string, args ...any) { fmt.Fprintf(r.d.stdout, format, args...) }
@@ -255,6 +257,10 @@ func (r *uninstallRun) run(homeFlag string) int {
 		// which a dry run does not reach. Computed from the files present
 		// now, which is what it says: a dry run takes no exclusion, so it
 		// creates none of them and none of them is about to go.
+		if r.purge {
+			inside, _ := r.purgeSet()
+			r.sayLeftInHome(inside, true)
+		}
 		r.sayLeftoverLocks()
 		r.printf("\nDry run: nothing was changed, asked or contacted.\n")
 		return exitOK
@@ -1037,7 +1043,11 @@ func (r *uninstallRun) environmentWindows(apply bool) {
 // purgeSet is every participant-state entry under home a purge removes, in
 // the order it removes them — lock-bearing entries last, so the operation
 // locks are held as long as possible — and every configured state path
-// outside home, which is left alone.
+// outside home, which is left alone. The set is what this version writes
+// into the installation: its records, the state directories setup set aside,
+// and the configurations setup set aside as `jevlin.toml.old`, `.old.1`, ...
+// (asideName). Anything else in the directory is not this version's to
+// remove, and the closing summary names it (sayLeftInHome).
 func (r *uninstallRun) purgeSet() (inside, outside []string) {
 	join := func(name string) string { return filepath.Join(r.home, name) }
 	first := []string{
@@ -1047,7 +1057,7 @@ func (r *uninstallRun) purgeSet() (inside, outside []string) {
 	}
 	if entries, err := os.ReadDir(r.home); err == nil {
 		for _, e := range entries {
-			if strings.HasPrefix(e.Name(), stateAsidePrefix+"-") {
+			if strings.HasPrefix(e.Name(), stateAsidePrefix+"-") || isConfigAside(e.Name()) {
 				first = append(first, join(e.Name()))
 			}
 		}
@@ -1091,6 +1101,15 @@ func (r *uninstallRun) purgeSet() (inside, outside []string) {
 	sort.Strings(outside)
 	return inside, outside
 }
+
+// configAsideRe is the names setup's asideName gives an older configuration
+// it sets aside beside jevlin.toml: jevlin.toml.old, jevlin.toml.old.1, ...
+// and nothing looser, so a file a participant named after the config is not
+// taken for one of them.
+var configAsideRe = regexp.MustCompile(`^` + regexp.QuoteMeta(setupConfigFile+".old") + `(\.[1-9][0-9]*)?$`)
+
+// isConfigAside reports whether name is a configuration setup set aside.
+func isConfigAside(name string) bool { return configAsideRe.MatchString(name) }
 
 // configuredPath is one participant path the config names or derives.
 type configuredPath struct {
@@ -1300,6 +1319,7 @@ func (r *uninstallRun) otherInstallationHint() string {
 
 func (r *uninstallRun) applyPurge() {
 	inside, _ := r.purgeSet()
+	r.purged = inside
 	for _, p := range inside {
 		// Windows will not delete an open file: an operation lock inside p is
 		// released immediately before, with the gate still held.
@@ -1441,12 +1461,7 @@ func (r *uninstallRun) closing() {
 		return
 	}
 	r.printf("\nPlatform authorization: revoked only at the console; removing local state does not revoke it.\n")
-	if entries, err := os.ReadDir(r.home); err == nil && len(entries) > 0 {
-		r.printf("\nLeft in %s:\n", r.home)
-		for _, e := range entries {
-			r.printf("  %s\n", e.Name())
-		}
-	}
+	r.sayLeftInHome(r.purged, false)
 	if _, outside := r.purgeSet(); len(outside) > 0 {
 		r.printf("\nLeft outside %s, as configured:\n", r.home)
 		for _, p := range outside {
@@ -1456,6 +1471,55 @@ func (r *uninstallRun) closing() {
 	r.sayLeftoverLocks()
 	r.printf("Other commands were excluded while the locks were held; an agent session still open can\n" +
 		"recreate sessions/ by searching, which is harmless.\n")
+}
+
+// sayLeftInHome names, with its full path, every entry still in the
+// installation directory that a purge does not remove: not the purge set
+// (purged — in a dry run what purgeSet finds now, in a real run what
+// applyPurge went through, because an entry of it still there was named as
+// a problem, not left on purpose), not a lock file sayLeftoverLocks names
+// beneath this, and not the directory holding this installation's own
+// binary, which -purge-state leaves to -binary and says so. What remains is
+// what an earlier version or another program put there. This client holds no list
+// of the earlier version's file names — it reads none of them and names none
+// of them by name — so it cannot remove them on its own say-so, and one of
+// them can hold a key: a participant who has just destroyed their identity is
+// told exactly what still exists, rather than finding it later and being
+// unable to place it. A directory that is empty or gone prints nothing.
+func (r *uninstallRun) sayLeftInHome(purged []string, dry bool) {
+	entries, err := os.ReadDir(r.home)
+	if err != nil {
+		return
+	}
+	skip := map[string]bool{}
+	for _, p := range append(append([]string{}, purged...), r.leftoverLocks()...) {
+		skip[p] = true
+	}
+	ownBinary := lexists(r.ownedBinary())
+	if ownBinary || r.binary {
+		skip[filepath.Dir(r.ownedBinary())] = true
+	}
+	var left []string
+	for _, e := range entries {
+		if p := filepath.Join(r.home, e.Name()); !skip[p] {
+			left = append(left, p)
+		}
+	}
+	if len(left) > 0 {
+		verb := "Left in"
+		if dry {
+			verb = "Would leave in"
+		}
+		r.printf("\n%s %s, not this version's to remove: files an earlier version or another program put\n"+
+			"there. Delete them yourself if you no longer want them.\n", verb, r.home)
+		for _, p := range left {
+			r.printf("  %s\n", p)
+		}
+	}
+	if ownBinary && !r.binary {
+		r.printf("\n%s holds this installation's binary, which -purge-state leaves; `jevlin uninstall -binary` removes it.\n",
+			filepath.Dir(r.ownedBinary()))
+	}
 }
 
 // sayLeftoverLocks names every lock file this installation still carries and
