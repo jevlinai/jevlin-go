@@ -14,9 +14,9 @@ package main
 // decides, and -yes still answers exactly what it answered before, which
 // is why the typed-answer cases and the last case are here.
 //
-// The question the defect was filed against, connect's mining question, is
-// gone with mining: connect asks nothing now. The rule it taught outlives
-// it, and every prompt the binary still asks is driven here.
+// The question the defect was filed against is gone: connect asks nothing
+// now. The rule it taught outlives it, and every prompt the binary still
+// asks is driven here.
 
 import (
 	"bytes"
