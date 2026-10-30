@@ -17,9 +17,27 @@ func TestAnOriginWithANonASCIIHostIsNotOneTheKeyGoesTo(t *testing.T) {
 		"https://api.jevlin.ai\u200b",
 		"https://caf\u00e9.example",
 		"https://api.jevlin.ai:4\u0661",
+		// Percent-encoded into the host: Hostname returns it decoded.
+		"https://api.jevl%C4%B0n.ai",
 	} {
 		if o, err := urlOrigin(raw); err == nil {
 			t.Errorf("urlOrigin(%q) = %q, want a refusal", raw, o)
+		}
+	}
+	// Both keys' services refuse a lookalike destination for an ASCII
+	// binding, the case the folding let through.
+	for _, c := range []struct {
+		s     keyService
+		creds credentials
+		dest  string
+	}{
+		{routerKeyService, credentials{Router: "https://api.jevlin.ai"}, "https://api.jevl\u0130n.ai"},
+		{routerKeyService, credentials{Router: "https://api.jevlin.ai"}, "https://api.jevl%C4%B0n.ai"},
+		{agentsAPIKeyService, credentials{AgentsAPI: "https://agents-v1.jevlin.ai"}, "https://agents-v1.jevl\u0130n.ai"},
+	} {
+		c.creds.V, c.creds.APIKey = credentialsVersion, boundKey
+		if err := c.s.check(&c.creds, c.dest, noEnv); err == nil {
+			t.Errorf("the %s bound to %q passed %q", c.s.name, c.creds.Router+c.creds.AgentsAPI, c.dest)
 		}
 	}
 	for _, raw := range []string{"https://api.jevlin.ai", "https://API.JEVLIN.AI:443/", "http://127.0.0.1:8080"} {
