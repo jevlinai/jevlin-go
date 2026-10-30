@@ -662,7 +662,19 @@ func (r *setupRun) config() int {
 			return exitTransport
 		}
 	}
-	if err := publishSetupConfig(r.cfgPath, plan.data); err != nil {
+	if err := publishConfig(r.cfgPath, plan.data); err != nil {
+		if plan.outcome == configReplaced {
+			// An installation with no jevlin.toml reads as one not set up
+			// yet, and every command would run on the compiled defaults
+			// without saying so. The old file goes back where it was, and
+			// either way the message says where it is.
+			if back := os.Rename(plan.aside, r.cfgPath); back != nil { // #nosec G703 -- the two names in the installation's own directory
+				fmt.Fprintf(r.d.stderr, "jevlin setup: %v\nThe older configuration is at %s and could not be put back (%v); move it back to %s yourself, or run setup again.\n", err, plan.aside, back, r.cfgPath)
+				return exitTransport
+			}
+			fmt.Fprintf(r.d.stderr, "jevlin setup: %v\nThe older configuration was put back at %s; nothing was changed.\n", err, r.cfgPath)
+			return exitTransport
+		}
 		fmt.Fprintln(r.d.stderr, "jevlin setup:", err)
 		return exitTransport
 	}
@@ -675,6 +687,10 @@ func (r *setupRun) config() int {
 	}
 	return exitOK
 }
+
+// publishConfig is the one writer of jevlin.toml, a variable so a test can
+// make the write fail between setting an older file aside and publishing.
+var publishConfig = publishSetupConfig
 
 // plannedConfig is the config this run leaves at r.cfgPath, and whether
 // there is one: on a dry run that would write the file, the bytes it would
