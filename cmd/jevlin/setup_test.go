@@ -707,6 +707,34 @@ func TestSetupSetsAnOlderConfigAsideAndWritesFormatOne(t *testing.T) {
 	}
 }
 
+// A dry run over an older config says what the real run would do and
+// changes nothing. The steps after the config read the config the run would
+// leave, which on a dry run is the bytes it would write: the file on disk is
+// still the older one, and no command loads that.
+func TestSetupDryRunOverAnOlderConfigPlansTheReplacement(t *testing.T) {
+	s := newSetupSandbox(t)
+	if err := os.MkdirAll(s.home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s.cfgPath(), []byte("[miner]\nenabled = true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotTree(t, s.root)
+	code, out, errOut := s.run(nil, false, "-dry-run", "-no-profile", "-no-agents")
+	if code != exitOK {
+		t.Fatalf("dry run exited %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
+	}
+	if after := snapshotTree(t, s.root); !reflect.DeepEqual(before, after) {
+		assertOwnership(t, before, after)
+		t.Fatal("dry run changed the sandbox")
+	}
+	for _, want := range []string{"would set " + s.cfgPath() + " aside", "would create " + auth.TraceKeyPath(filepath.Join(s.home, "state"))} {
+		if !strings.Contains(out, want) {
+			t.Errorf("dry run output missing %q:\n%s", want, out)
+		}
+	}
+}
+
 // A format-1 config is left exactly as it is.
 func TestSetupLeavesAFormatOneConfigByteForByte(t *testing.T) {
 	s := newSetupSandbox(t)

@@ -38,6 +38,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/jevlinai/jevlin-go/pkg/auth"
+	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
 const setupUsage = `usage: jevlin setup [-home dir] [-yes] [-no-profile] [-no-agents] [-with id]... [-dry-run]
@@ -179,12 +180,12 @@ type setupRun struct {
 	skipped []string
 
 	// configPlanData is set by config() to the bytes it is about to publish
-	// (configFresh or configMigrated; nil for configLeft, which changes
-	// nothing) — agentsStep() needs it: on a dry run, config() prints what
-	// it would write but never calls publishSetupConfig, so nothing is on
-	// disk yet for the agents step's own config read to find. It is set
-	// whether or not the run is dry, but only a dry run's agentsStep reads
-	// it — the real run has already published it to r.cfgPath by then.
+	// (configFresh or configReplaced; nil for configLeft, which changes
+	// nothing). On a dry run config() prints what it would write but never
+	// publishes it, so what is on disk is nothing or the older file: the
+	// steps after it read these bytes instead (plannedConfig, and the
+	// agents step). It is set whether or not the run is dry, but only a dry
+	// run reads it; the real run has already published it to r.cfgPath.
 	configPlanData []byte
 
 	lineIn io.Reader
@@ -746,17 +747,41 @@ func (r *setupRun) config() int {
 	return exitOK
 }
 
+// plannedConfig is the config this run leaves at r.cfgPath, and whether
+// there is one: on a dry run that would write the file, the bytes it would
+// write, since the file on disk is still nothing or an older one no command
+// loads; otherwise the file. A config that does not load is said here and
+// stops setup.
+func (r *setupRun) plannedConfig() (*config.Config, bool, int) {
+	var (
+		cfg *config.Config
+		err error
+	)
+	switch {
+	case r.dry && r.configPlanData != nil:
+		cfg, err = config.LoadBytes(r.configPlanData, r.d.getenv)
+	case lexists(r.cfgPath):
+		cfg, _, err = loadConfig(r.cfgPath, r.d.getenv)
+	default:
+		return nil, false, exitOK
+	}
+	if err != nil {
+		fmt.Fprintf(r.d.stderr, "jevlin setup: config %s: %v\n", r.cfgPath, err)
+		return nil, false, exitTransport
+	}
+	return cfg, true, exitOK
+}
+
 // flushLock creates the flush lock the config names when it is absent. A flush
 // inside a sandbox that denies writes to the miner root can take the lock only
 // read-only, which needs the file to exist already (flushlock.go).
 func (r *setupRun) flushLock() int {
 	path := filepath.Join(r.home, "flush.lock")
-	if lexists(r.cfgPath) {
-		cfg, _, err := loadConfig(r.cfgPath, r.d.getenv)
-		if err != nil {
-			fmt.Fprintf(r.d.stderr, "jevlin setup: config %s: %v\n", r.cfgPath, err)
-			return exitTransport
-		}
+	cfg, ok, code := r.plannedConfig()
+	if code != exitOK {
+		return code
+	}
+	if ok {
 		path = ""
 		if cfg.Miner.IntakeDir != "" {
 			path = flushLockPath(cfg.Miner)
@@ -793,12 +818,11 @@ func (r *setupRun) flushLock() int {
 // it here, since nothing after this step could run on it either.
 func (r *setupRun) traceKey() int {
 	stateDir := filepath.Join(r.home, "state")
-	if lexists(r.cfgPath) {
-		cfg, _, err := loadConfig(r.cfgPath, r.d.getenv)
-		if err != nil {
-			fmt.Fprintf(r.d.stderr, "jevlin setup: config %s: %v\n", r.cfgPath, err)
-			return exitTransport
-		}
+	cfg, ok, code := r.plannedConfig()
+	if code != exitOK {
+		return code
+	}
+	if ok {
 		stateDir = cfg.Mining.StateDir
 	}
 	if stateDir == "" {
