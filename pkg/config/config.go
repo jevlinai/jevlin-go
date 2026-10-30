@@ -243,8 +243,16 @@ func Load(args []string, getenv func(string) string) (cfg *Config, showVersion b
 // override it: that names a path on argv, and bytes already in memory have
 // none.
 func LoadBytes(data []byte, getenv func(string) string) (*Config, error) {
+	return LoadBytesAs(data, "config", getenv)
+}
+
+// LoadBytesAs is LoadBytes with source naming the bytes in an error, for a
+// caller that has the path they were read from or are about to be written
+// to: setup's refusal of a file then names that file, rather than "config
+// file config".
+func LoadBytesAs(data []byte, source string, getenv func(string) string) (*Config, error) {
 	var raw rawConfig
-	if err := raw.applyBytes("config", data); err != nil {
+	if err := raw.applyBytes(source, data); err != nil {
 		return nil, err
 	}
 	applyEnv(&raw, getenv)

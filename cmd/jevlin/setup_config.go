@@ -288,13 +288,13 @@ var errConfigInvalid = errors.New("config is not valid")
 // and a fresh format-1 file takes its place. A format-1 file that does not
 // load is refused, because it is the participant's current configuration and
 // setup does not guess what it should have said.
-func planSetupConfig(path string, existing []byte, v setupValues, validate func([]byte) error, exists func(string) bool) (configPlan, error) {
+func planSetupConfig(path string, existing []byte, v setupValues, validate func(data []byte, source string) error, exists func(string) bool) (configPlan, error) {
 	fresh := func() ([]byte, error) {
 		data, err := renderFreshConfig(v)
 		if err != nil {
 			return nil, err
 		}
-		if err := validate(data); err != nil {
+		if err := validate(data, path); err != nil {
 			return nil, fmt.Errorf("the config setup would write does not load (%w); nothing was written", err)
 		}
 		return data, nil
@@ -306,7 +306,7 @@ func planSetupConfig(path string, existing []byte, v setupValues, validate func(
 		}
 		return configPlan{outcome: configFresh, data: data}, nil
 	}
-	err := validate(existing)
+	err := validate(existing, path)
 	switch {
 	case err == nil:
 		return configPlan{outcome: configLeft}, nil
@@ -322,7 +322,12 @@ func planSetupConfig(path string, existing []byte, v setupValues, validate func(
 		}
 		return configPlan{outcome: configReplaced, data: data, aside: aside}, nil
 	default:
-		return configPlan{}, fmt.Errorf("%w: %s: %v", errConfigInvalid, path, err)
+		// A parse or schema error names the file already (validate's source
+		// is path); a value's rule names only its key, and gets the path.
+		if !strings.Contains(err.Error(), path) {
+			return configPlan{}, fmt.Errorf("%w: %s: %v", errConfigInvalid, path, err)
+		}
+		return configPlan{}, fmt.Errorf("%w: %v", errConfigInvalid, err)
 	}
 }
 
@@ -341,9 +346,10 @@ func asideName(path string, exists func(string) bool) (string, error) {
 }
 
 // validateConfigBytes loads data through pkg/config exactly as every command
-// will, with no environment, so only the file's own bytes are judged.
-func validateConfigBytes(data []byte) error {
-	_, err := config.LoadBytes(data, func(string) string { return "" })
+// will, with no environment, so only the file's own bytes are judged; an
+// error names the file as source.
+func validateConfigBytes(data []byte, source string) error {
+	_, err := config.LoadBytesAs(data, source, func(string) string { return "" })
 	return err
 }
 

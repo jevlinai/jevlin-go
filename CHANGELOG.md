@@ -82,7 +82,10 @@ the participants who mine; this client carries no compatibility with it.
   -rollback` returns to 0.6.x and holds this version, so the next check does not install it
   again. Codex's permission block is rewritten by that `jevlin setup`, including one whose state
   root a moved `state_dir` put outside the installation directory, and not by the update
-  itself: until setup runs, the block keeps what 0.6.x granted. An npm install is updated with `npm install -g @jevlinsearch/jevlin@latest`,
+  itself: until setup runs, the block keeps what 0.6.x granted. `jevlin uninstall` run before
+  setup removes the hooks and skills, which name the installation's binary and config, but
+  leaves Codex's permission block, which it can attribute only through a config that loads; run
+  `jevlin setup` first to have uninstall remove that too. An npm install is updated with `npm install -g @jevlinsearch/jevlin@latest`,
   then `jevlin setup`. The files a participant keeps (`credentials.json`, the registration
   journal, `claim.json`, the release check's record) live beside the state directory, in the
   installation directory, as before.

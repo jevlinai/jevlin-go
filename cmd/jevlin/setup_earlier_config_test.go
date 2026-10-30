@@ -160,3 +160,16 @@ func TestSetupLeavesAFormatOneFileWithATypoInItsSchemaLine(t *testing.T) {
 		})
 	}
 }
+
+// A refused format-1 file is named by its path, once, never as "config
+// file config", whether the parse or one of its values refused it.
+func TestSetupsRefusalNamesTheFileItRefused(t *testing.T) {
+	path := filepath.Join(t.TempDir(), setupConfigFile)
+	v := resolveSetupValues(filepath.Dir(path), noEnv)
+	for _, body := range []string{"schema = 1\n\n[mining]\nstate_dir = \"/x\"\n", "schema = 1\n\n[router]\nurl = \"ftp://x\"\n"} {
+		_, err := planSetupConfig(path, []byte(body), v, validateConfigBytes, func(string) bool { return false })
+		if err == nil || strings.Count(err.Error(), path) != 1 || strings.Contains(err.Error(), "config file config") {
+			t.Errorf("%q: %v", body, err)
+		}
+	}
+}

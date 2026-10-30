@@ -57,7 +57,7 @@ func TestFreshConfigQuotesEveryPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := validateConfigBytes(data); err != nil {
+	if err := validateConfigBytes(data, "fresh.toml"); err != nil {
 		t.Fatalf("fresh config for %q does not load: %v\n%s", home, err, data)
 	}
 	var doc struct {
