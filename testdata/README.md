@@ -9,8 +9,6 @@ package.
 | `vectors/` | the draw's golden vectors, read by `pkg/mining/draw` | the AS contract |
 | `fixtures/wire/` | the AS wire corpus with its `SHA256SUMS`, checksum-mirrored and never edited here (`fixtures/README-wire-mirror.md`) | the AS contract |
 | `fixtures/chain/` | CometBFT JSON-RPC responses captured from a public devnet node, read by `earnings` | this repository |
-| `fixtures/json/` | synthetic search-router responses, read by `pkg/observe` | this repository |
-| `fixtures/sse/` | synthetic OpenRouter streams, read by `pkg/observe` | this repository |
 
 ## No captured traffic
 

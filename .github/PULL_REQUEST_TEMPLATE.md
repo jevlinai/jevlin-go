@@ -53,7 +53,7 @@ Required when the change touches the earning path, custody, or the wire contract
 - [ ] AS-facing types still conform to the frozen wire fixtures; the provider response decode stays permissive
 - [ ] Durable before visible, remove only on ack (invariant 7): a spool write is fsync'd via temp-file + atomic rename before the result is shown, and a spool record leaves delivery only on a durable AS ack
 - [ ] A claim/console URL is printed, never opened (invariant 11): `connect.go`/`mining.go` import no `os/exec`
-- [ ] `platform.base_url` is validated and compared against, never dialed; only `agents_api_url` is (invariant 12)
+- [ ] `[platform] url` is validated and compared against, never dialed; only `[agents] url` is (invariant 12)
 - [ ] Tests never contact a real `*.jevlin.ai`, `*.twilight.org` or `*.nyks.dev` host — `httptest` stubs only
 - [ ] `pkg/` still does not import `cmd/`, and still carries no chain-SDK import
 

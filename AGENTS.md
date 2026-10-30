@@ -85,10 +85,11 @@ the named tests.
    exception is the search *query* (not a credential), called out where it happens.
 5. **Never assemble or call an unadvertised operational URL.** Endpoints come from the discovery document; the
    AS origin is **configured, not discovered**; service-document endpoints are same-origin checked.
-   The configuration is format 1 (`pkg/config`): `[router] url`, `[platform] url`, `[agents] url`
-   and `[mining] as_url` default to the compiled Jevlin hosts (`pkg/config/defaults.go`), may be
-   replaced by the file or the `JEVLIN_*_URL` variables, and are all https-or-loopback with no
-   userinfo, enforced at load — every search sends the participant's sr- key to the router, and
+   The configuration is format 1 (`pkg/config`): `[router] url`, `[platform] url` and
+   `[agents] url` default to the compiled Jevlin hosts (`pkg/config/defaults.go`); `[mining]
+   as_url` has no default at load, and setup writes the compiled one, because an AS is configured
+   only where mining is meant to be. Each may be replaced by the file or a `JEVLIN_*_URL`
+   variable, and all are https-or-loopback with no userinfo, enforced at load — every search sends the participant's sr- key to the router, and
    `connect`/`mining enable` send the platform-issued key to the agents API. A file that is not
    format 1 is refused, never reinterpreted. **And a secret goes only to the origin it was issued
    for** (`internal/egress`): every request carrying the sr- key, the platform key, the refresh

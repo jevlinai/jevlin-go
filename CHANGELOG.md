@@ -22,7 +22,12 @@ and a config an earlier version wrote is refused until setup replaces it.
   configuration is from an older jevlin; run `jevlin setup`", and is never reinterpreted.
   `jevlin setup` sets such a file aside as `jevlin.toml.old` and writes format 1 in its place;
   copy any setting you changed by hand from the old file. A `schema = 1` file holding a key
-  format 1 does not define is refused by name and left for you to correct.
+  format 1 does not define is refused by name and left for you to correct. Where a setting
+  went: `[miner] router_url` is `[router] url`, `[miner] tier` is `[router] tier`,
+  `[platform] base_url` is `[platform] url`, `[platform] agents_api_url` is `[agents] url`,
+  and `[miner] intake_dir`, `sessions_dir`, `flush_interval` and `turn_end` moved to
+  `[mining]` under the same names. `[miner] enabled` is gone: intake is on exactly when
+  `[mining] as_url` is set. Every other `[mining]` key and `[update] mode` are unchanged.
 - **Endpoints are explicit.** `JEVLIN_ROUTER_URL`, `JEVLIN_PLATFORM_URL`,
   `JEVLIN_AGENTS_API_URL` and `JEVLIN_AS_URL` now apply to every command, not only to setup,
   under the same rules as the file: https, or http on a loopback host, and no user name or

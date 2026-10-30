@@ -207,7 +207,7 @@ re-run `jevlin agents install`. `recording` never says `NO`; **`could not determ
 reason, and is not a fault either.
 
 **`intake writable could not determine`** means neither the intake directory nor its parent
-exists, which happens only when `miner.intake_dir` names a custom path; `doctor` will not build
+exists, which happens only when `[mining] intake_dir` names a custom path; `doctor` will not build
 a tree to test it. An `OK` speaks only for your terminal, not an agent's sandbox. With Codex,
 re-running `jevlin agents install` fixes a `NO`.
 

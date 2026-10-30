@@ -9,14 +9,14 @@ them rather than copy them. Nothing under `pkg/` imports `cmd/` (AGENTS.md, inva
 | package | what it does | who owns its contract |
 |---|---|---|
 | `pkg/auth` | AS discovery, OAuth with DPoP, enrollment, submission, the key and authorization store, the wallet keys | the AS wire contract, in `tokendrop-auth-server-design` |
-| `pkg/config` | resolves the configuration once, from defaults, file, environment and flags | shared with `tokendrop-proxy`; the `[platform]` block is this repository's |
+| `pkg/config` | reads configuration format 1 once, from defaults, the file and the endpoint variables | this repository |
 | `pkg/fsx` | the atomic, fsync'd file write everything durable goes through | this repository |
 | `pkg/mining/collector` | delivers spooled observations to the AS, off the response path | the AS wire contract |
 | `pkg/mining/draw` | the participation secret and the frozen draw derivation | the AS wire contract; the golden vectors travel with it |
 | `pkg/mining/promote` | turns a finished observation into a `ProviderObservationV1` record | the AS wire contract |
 | `pkg/mining/scope` | the participation context a mining pass snapshots | the AS wire contract |
 | `pkg/mining/spool` | the durable observation queue and its quarantine | the AS wire contract |
-| `pkg/observe` | watches provider responses without retaining them | the AS wire contract |
+| `pkg/observe` | the observation a served search leaves: request id, host, status and times | the AS wire contract |
 | `pkg/platform` | register, poll and enroll against the search platform's control plane | the search platform's agent-onboarding design, owned by `search-router` |
 | `pkg/redact` | the one place a log handler is built; no credential reaches a log | this repository |
 | `pkg/wire` | the AS data models, checksum-verified against `testdata/fixtures/wire` | the AS wire contract |
