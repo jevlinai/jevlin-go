@@ -64,6 +64,10 @@ const SEARCH_RE = /(?:^|[\s;&|(]|\$\()\s*(?:&\s*)?(?:[A-Za-z]:)?["']?(?:[^\s"']*
 const SEARCH_LEADS_RE = /^\s*(?:[A-Za-z_][A-Za-z0-9_]*=[^\s"'\\]*\s+)*(?:[A-Za-z]:)?["']?(?:[^\s"']*[\\/])?jevlin(?:\.exe)?["']?\s+search(?:\s|$)/
 
 const TRACE_BRIDGE_ENV = "JEVLIN_TRACE_BRIDGE"
+// JEVLIN_TRACE=off (or 0, or false) turns the trace off entirely: no bridge
+// is written, and the search runs as the agent wrote it. The same switch
+// the binary reads (traceOff in search.go).
+const traceOff = () => ["off", "0", "false"].includes(String(process.env.JEVLIN_TRACE ?? "").trim().toLowerCase())
 
 const traceHash = (raw) => createHash("sha256").update(TRACE_PREFIX + raw).digest("hex").slice(0, 32)
 

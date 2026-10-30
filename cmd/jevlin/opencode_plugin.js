@@ -385,6 +385,7 @@ export const JevlinLineage = async ({ client }) => {
         } catch {
           // no history is fine; the ids still thread the search
         }
+        if (traceOff()) return
         const shell = hostShell()
         const bridge = traceBridge(env, bridgeBudgetFor(cmd, shell, HOST_COMMAND_CHAR_LIMIT))
         if (bridge === null) return

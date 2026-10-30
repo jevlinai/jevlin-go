@@ -378,6 +378,7 @@ export default function (pi) {
       const text = historyForToolCall(entries, where)
       if (text) env.history = [{ role: "assistant", text }]
 
+      if (traceOff()) return
       const bridge = traceBridge(env, bridgeBudgetFor(cmd, HOST_SHELL, HOST_COMMAND_CHAR_LIMIT))
       if (bridge === null) return // oversized even without history: no bridge
       // H-R4: remove every bridge assignment we recognize, prepend our own,
