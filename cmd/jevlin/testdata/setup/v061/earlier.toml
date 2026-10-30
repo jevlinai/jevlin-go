@@ -1,0 +1,10 @@
+# The config jevlin 0.6.1's setup wrote, captured from a real run, with the
+# two tables this client never had removed. What matters to this client is
+# the shape every earlier version shared: no schema line.
+[[provider]]
+name     = "search-router"
+upstream = "https://api.jevlin.ai"
+
+[platform]
+base_url       = "https://platform.jevlin.ai"
+agents_api_url = "https://agents-v1.jevlin.ai"

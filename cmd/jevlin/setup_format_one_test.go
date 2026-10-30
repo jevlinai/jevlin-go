@@ -50,7 +50,7 @@ func plantEarlierInstallation(t *testing.T, s *setupSandbox) []byte {
 			t.Fatal(err)
 		}
 	}
-	legacy := v061Fixture(t, s, "jevlin.toml")
+	legacy := v061Fixture(t, s, "earlier.toml")
 	write(s.cfgPath(), legacy, 0o600)
 	// The agent record that version wrote carries fields this one does not
 	// read; they are ignored, not refused, and the agent id is kept.
