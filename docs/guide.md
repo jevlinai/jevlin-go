@@ -227,17 +227,23 @@ This version reads only configuration format 1, and a 0.6.x installation's `jevl
 that. On a native install the daily check replaces the binary with this version as it would any
 release; from then on every command that reads the config (`search`, `fetch`, `limits`, `status`,
 `doctor`, `connect`) stops with "this configuration is from an older jevlin; run `jevlin setup`",
-while the hooks, which fail open, run the agent's tool call without a lineage file, and the
-check itself goes no further until setup has run. On an npm install, run
+while the hooks, which fail open, run the agent's tool call without a lineage file. The daily
+check goes on running meanwhile, with the installation directory and `[update] mode` the old file
+names, so a later release still reaches the machine, and `jevlin upgrade -rollback` to 0.6.x holds
+this one where 0.6.x looks for the hold. On an npm install, run
 `npm install -g @jevlinsearch/jevlin@latest`, then `jevlin setup`.
 
 `jevlin setup` sets the old file aside as `jevlin.toml.old` (`.old.1`, `.old.2`, ... if the name
 is taken), writes `jevlin.toml` in format 1, keeps your registration and search key, and rewrites
 the hooks and skills of the agents it finds in place. The new file names the state and sessions
-directories, the router, the portal and the agents API the old file named, because your
-registration and key live beside that state directory and the key is bound to those hosts; where
-the old file named none, it names the defaults, and `JEVLIN_ROUTER_URL`, `JEVLIN_PLATFORM_URL` and
-`JEVLIN_AGENTS_API_URL`, when set, choose over both. Nothing else is migrated: a setting you
+directories, the router, the portal and the agents API the old file named, because your agent
+record is in that state directory and your key is bound to those hosts; where the old file named
+none, it names the defaults, and `JEVLIN_ROUTER_URL`, `JEVLIN_PLATFORM_URL` and
+`JEVLIN_AGENTS_API_URL`, when set, choose over both. The key and the files kept with it
+(`credentials.json`, the registration journal, `claim.json`, the release check's record) belong
+in the state directory's parent; 0.6.x kept them in its intake directory's parent instead, so
+where those two differ setup moves them, and stops before changing anything if a file of the same
+name is already there. Nothing else is migrated: a setting you
 changed by hand, such as `turn_end` or `tier`, you copy into the new file yourself, under its
 format-1 key ([reference, Config](reference.md#config)). Files only the earlier version used are left untouched where they
 are, never read and never named. This version has no use for them, but one of them may hold a key

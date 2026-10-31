@@ -386,16 +386,26 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 	say := func(format string, a ...any) {
 		fmt.Fprintf(d.stderr, "jevlin upgrade -auto: "+format+"\n", a...)
 	}
+	// The check needs only where the installation is and its [update] mode.
+	// A config every command refuses still says both (refusedConfigUpdate):
+	// that is the state an unattended update leaves a machine in, and the
+	// check is what can bring it a release that runs there.
+	var root, mode string
 	cfg, src, err := loadConfig(cfgPath, d.getenv)
-	if err != nil {
+	switch {
+	case err == nil:
+		root, mode = updateRoot(cfg.Search), cfg.Update.Mode
+	case src != "" && lexists(src):
+		root, mode = refusedConfigUpdate(src)
+		say("config (%s) is refused (%v); checking for a release with the installation it names", src, err)
+	default:
 		say("config (%s): %v", orDefaults(src), err)
 		return exitTransport
 	}
-	if cfg.Update.Mode == config.UpdateOff {
+	if mode == config.UpdateOff {
 		say("[update] mode is off; nothing checked")
 		return exitOK
 	}
-	root := updateRoot(cfg.Search)
 	if root == "" {
 		say("the config names no state directory (search.state_dir); nothing checked")
 		return exitOK
@@ -426,7 +436,7 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 	now := d.clock()
 	current := d.build()
 	stampPath := updateStampPath(root)
-	if !updateCheckDue(readUpdateStampFile, root, cfg.Update.Mode, current, resolved, now, func() bool { return native }) {
+	if !updateCheckDue(readUpdateStampFile, root, mode, current, resolved, now, func() bool { return native }) {
 		say("not due: checked within the day, or the last automatic upgrade needs a person (jevlin status)")
 		return exitOK
 	}
@@ -434,7 +444,7 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 	if prev, ok, perr := readUpdateStamp(readUpdateStampFile, stampPath); perr == nil && ok && stampIsThisCopy(prev, current, resolved) {
 		held = prev.Held
 	}
-	stamp := updateStamp{CheckedAt: now, Binary: resolved, Held: held, Mode: cfg.Update.Mode, Outcome: updateStarted}
+	stamp := updateStamp{CheckedAt: now, Binary: resolved, Held: held, Mode: mode, Outcome: updateStarted}
 	record := func(st updateStamp) bool {
 		if werr := writeUpdateStamp(stampPath, st); werr != nil {
 			say("the stamp could not be written (%v)", werr)
@@ -494,7 +504,7 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 		keep = "this copy was rolled back from " + held
 	case !native:
 		keep = "this copy is not replaced here"
-	case cfg.Update.Mode != config.UpdateApply:
+	case mode != config.UpdateApply:
 		keep = "[update] mode is notify"
 	default:
 		home, err = resolveInstallationHome(homeFlag, d.getenv, d.userHome, exe)

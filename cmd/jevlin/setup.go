@@ -643,6 +643,17 @@ func (r *setupRun) config() int {
 	if plan.data != nil {
 		r.configPlanData = plan.data
 	}
+	// An earlier version kept credentials.json and the files beside it next
+	// to its intake directory; this one reads them next to the state
+	// directory the new file names. Where those differ they move, and
+	// anything in the way stops setup here, before a byte is written.
+	moves, conflict := identityMoves(plan.identityFrom, plan.identityTo)
+	if conflict != nil {
+		fmt.Fprintf(r.d.stderr, "\njevlin setup: the earlier version kept its key and registration in %s, and this one reads them in %s, beside the state directory; %v.\n"+
+			"Nothing was changed. Move whichever of %s exist from %s to %s yourself, then run setup again.\n",
+			plan.identityFrom, plan.identityTo, conflict, strings.Join(identityFiles, ", "), plan.identityFrom, plan.identityTo)
+		return exitTransport
+	}
 	switch plan.outcome {
 	case configLeft:
 		r.say("Config is already configuration format 1: " + r.cfgPath + " (left as is)")
@@ -655,6 +666,9 @@ func (r *setupRun) config() int {
 	case configReplaced:
 		if r.dry {
 			r.printf("(dry run) would set %s aside as %s, an older configuration format, and write a new one\n", r.cfgPath, plan.aside)
+			for _, m := range moves {
+				r.printf("(dry run) would move %s to %s, beside the state directory\n", m[0], m[1])
+			}
 			return exitOK
 		}
 		if err := renameConfigAside(r.cfgPath, plan.aside); err != nil { // #nosec G703 -- the installation's own config path and a name beside it
@@ -681,6 +695,15 @@ func (r *setupRun) config() int {
 	r.changed = true
 	if plan.outcome == configReplaced {
 		r.say(fmt.Sprintf("Set %s aside as %s: it is an older configuration format, which this jevlin does not read", r.cfgPath, plan.aside))
+		if err := moveIdentity(moves); err != nil {
+			fmt.Fprintf(r.d.stderr, "jevlin setup: moving the earlier version's key and registration from %s to %s: %v\n"+
+				"The new config is written. Move whichever of %s are still in %s to %s yourself, then run setup again.\n",
+				plan.identityFrom, plan.identityTo, err, strings.Join(identityFiles, ", "), plan.identityFrom, plan.identityTo)
+			return exitTransport
+		}
+		if len(moves) > 0 {
+			r.say(fmt.Sprintf("Moved the earlier version's key and registration from %s to %s, beside the state directory, where this jevlin reads them", plan.identityFrom, plan.identityTo))
+		}
 		kept := ""
 		// Said only of a key that is there to keep: beside the state
 		// directory the new file names, which is the earlier file's own.

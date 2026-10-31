@@ -64,6 +64,8 @@ func TestARefusedConfigsUpdateRootIsItsInstallationDirectory(t *testing.T) {
 	elsewhere := filepath.Join(root, "elsewhere", "state")
 	for _, c := range []struct{ body, want string }{
 		{earlierConfigBody(elsewhere, ""), filepath.Dir(elsewhere)},
+		// 0.6.x kept the stamp beside [miner] intake_dir, wherever state_dir was.
+		{earlierConfigBody(elsewhere, "\n[miner]\nintake_dir = \""+filepath.ToSlash(filepath.Join(filepath.Dir(cfg), "intake"))+"\"\n"), filepath.Dir(cfg)},
 		{"[[provider]]\nname = \"search-router\"\n", filepath.Dir(cfg)},
 		{"not = [toml", filepath.Dir(cfg)},
 	} {
@@ -91,5 +93,32 @@ func TestARollbackOnARefusedConfigHoldsTheReleaseItLeft(t *testing.T) {
 	}
 	if st := readStampT(t, stamp); st.Outcome != updateRolledBack || st.Held != "0.3.1" {
 		t.Fatalf("the rollback on an earlier config held nothing: %+v", st)
+	}
+}
+
+// The check a hook starts on a refused config runs: it looks the release
+// up, writes its stamp, and under the default mode installs it, since a
+// release that runs on this machine is what it needs.
+func TestTheDailyCheckOnARefusedConfigLooksForARelease(t *testing.T) {
+	f, cfgPath, stamp := autoFixture(t, newLocalRelease(t, "0.3.1", map[string]string{"0.3.1": "0.3.1\n"}), "")
+	writeFileT(t, cfgPath, earlierConfigBody(filepath.Join(f.home, "state"), ""))
+	if _, _, err := loadConfig(cfgPath, noEnv); err == nil {
+		t.Fatal("the fixture's config loads; it must be one every command refuses")
+	}
+	code, out, errOut := f.runAuto(cfgPath)
+	if code != exitOK || f.content(f.exe) != "0.3.1" {
+		t.Fatalf("the check on a refused config: exit %d, binary %s\n%s\n%s", code, f.content(f.exe), out, errOut)
+	}
+	if st := readStampT(t, stamp); st.Outcome != updateUpgraded {
+		t.Errorf("the stamp after the check: %+v", st)
+	}
+}
+
+// The earlier file's own [update] mode = "off" still means no check.
+func TestTheDailyCheckOnARefusedConfigKeepsItsModeOff(t *testing.T) {
+	f, cfgPath, _ := autoFixture(t, newLocalRelease(t, "0.3.1", map[string]string{"0.3.1": "0.3.1\n"}), "")
+	writeFileT(t, cfgPath, earlierConfigBody(filepath.Join(f.home, "state"), "\n[update]\nmode = \"off\"\n"))
+	if code, _, _ := f.runAuto(cfgPath); code != exitOK || f.content(f.exe) != "0.3.0" {
+		t.Fatalf("mode off on a refused config: exit %d, binary %s", code, f.content(f.exe))
 	}
 }

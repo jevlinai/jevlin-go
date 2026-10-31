@@ -17,8 +17,10 @@ package main
 // byte; a file with no schema line, from an earlier version, is set aside
 // under a name of its own and a fresh format-1 file takes its place, written
 // with the directories and endpoints the earlier file named (earlierConfig),
-// because the registration and its key live beside that state directory and
-// are bound to those endpoints; any
+// because the agent record is in that state directory and the key is bound
+// to those endpoints; the key and the files kept with it, which 0.6.x kept
+// beside its intake directory, move beside the state directory where the
+// two differ (identityMoves); any
 // other file, a format-1 file with a mistake in it included, is refused with
 // the error and its path, and nothing is written.
 
@@ -122,6 +124,24 @@ func resolveSetupValues(home string, getenv func(string) string) setupValues {
 type earlierConfig struct {
 	stateDir, sessionsDir             string
 	router, platformURL, agentsAPIURL string
+	// intakeDir is [miner] intake_dir as written. 0.6.x kept
+	// credentials.json, the registration journal, claim.json and the
+	// release check's record beside it (its minerRoot), not beside the
+	// state directory: identityRoot.
+	intakeDir string
+}
+
+// identityRoot is the directory an earlier version kept the files beside
+// credentials.json in: the parent of [miner] intake_dir, else of the state
+// directory, which is where that version defaulted the intake directory;
+// "" when the file names neither.
+func (e earlierConfig) identityRoot() string {
+	for _, dir := range []string{e.intakeDir, e.stateDir} {
+		if dir != "" {
+			return filepath.Dir(filepath.Clean(dir))
+		}
+	}
+	return ""
 }
 
 func readEarlierConfig(data []byte) earlierConfig {
@@ -136,6 +156,7 @@ func readEarlierConfig(data []byte) earlierConfig {
 		Miner struct {
 			RouterURL   string `toml:"router_url"`
 			SessionsDir string `toml:"sessions_dir"`
+			IntakeDir   string `toml:"intake_dir"`
 		} `toml:"miner"`
 		Platform struct {
 			BaseURL      string `toml:"base_url"`
@@ -151,6 +172,7 @@ func readEarlierConfig(data []byte) earlierConfig {
 		router:       f.Miner.RouterURL,
 		platformURL:  f.Platform.BaseURL,
 		agentsAPIURL: f.Platform.AgentsAPIURL,
+		intakeDir:    f.Miner.IntakeDir,
 	}
 	// The provider upstream was the router only in the shape setup wrote;
 	// an upstream an earlier proxy configuration named is not a router.
@@ -275,6 +297,11 @@ type configPlan struct {
 	outcome configOutcome
 	data    []byte // the bytes to publish (fresh or replaced); nil when left
 	aside   string // where an older file is moved (configReplaced)
+	// identityFrom and identityTo are where an earlier version kept the
+	// files beside credentials.json and where this one reads them (the
+	// parent of the state directory the new file names), when the two
+	// differ (configReplaced); identityMoves.
+	identityFrom, identityTo string
 }
 
 // errConfigInvalid marks a refusal of the existing file, as opposed to a
@@ -311,7 +338,8 @@ func planSetupConfig(path string, existing []byte, v setupValues, validate func(
 	case err == nil:
 		return configPlan{outcome: configLeft}, nil
 	case errors.Is(err, config.ErrLegacyConfig):
-		v = v.carrying(readEarlierConfig(existing))
+		earlier := readEarlierConfig(existing)
+		v = v.carrying(earlier)
 		data, ferr := fresh()
 		if ferr != nil {
 			return configPlan{}, ferr
@@ -320,7 +348,15 @@ func planSetupConfig(path string, existing []byte, v setupValues, validate func(
 		if aerr != nil {
 			return configPlan{}, aerr
 		}
-		return configPlan{outcome: configReplaced, data: data, aside: aside}, nil
+		plan := configPlan{outcome: configReplaced, data: data, aside: aside}
+		if from := earlier.identityRoot(); from != "" {
+			if cfg, err := config.LoadBytes(data, func(string) string { return "" }); err == nil {
+				if to := installRoot(cfg.Search); !samePath(from, to) {
+					plan.identityFrom, plan.identityTo = from, to
+				}
+			}
+		}
+		return plan, nil
 	default:
 		// A parse or schema error names the file already (validate's source
 		// is path); a value's rule names only its key, and gets the path.
@@ -383,4 +419,47 @@ func readExistingConfig(path string) ([]byte, error) {
 
 func publishSetupConfig(path string, data []byte) error {
 	return fsx.WriteFileAtomic(filepath.Dir(path), filepath.Base(path), data, 0o600)
+}
+
+// identityFiles are the files an installation keeps beside credentials.json,
+// outside every directory a sandbox may write: what an earlier version kept
+// beside its intake directory and this one keeps beside its state
+// directory.
+var identityFiles = []string{credentialsFile, registrationJournalFile, claimRecordFile, updateStampFile}
+
+// identityMoves is each identity file present in from, with the name it
+// takes in to. A file already at a destination is a conflict, and so is a
+// destination directory that does not exist: both stop setup before
+// anything is written, with the exact moves to make by hand.
+func identityMoves(from, to string) (moves [][2]string, conflict error) {
+	if from == "" || to == "" {
+		return nil, nil
+	}
+	for _, name := range identityFiles {
+		src := filepath.Join(from, name)
+		if !lexists(src) {
+			continue
+		}
+		dst := filepath.Join(to, name)
+		if lexists(dst) {
+			return nil, fmt.Errorf("%s is already there, so the earlier version's %s cannot take its place", dst, src)
+		}
+		moves = append(moves, [2]string{src, dst})
+	}
+	if len(moves) > 0 && !lexists(to) {
+		return nil, fmt.Errorf("%s, beside the state directory the new config names, does not exist", to)
+	}
+	return moves, nil
+}
+
+// moveIdentity renames each file of moves into place, a variable so a test
+// can fail one. A rename is atomic per file; a failure stops at that file,
+// and the caller says what is where.
+var moveIdentity = func(moves [][2]string) error {
+	for _, m := range moves {
+		if err := os.Rename(m[0], m[1]); err != nil { // #nosec G703 -- an earlier installation's own files and the directory beside its state directory
+			return err
+		}
+	}
+	return nil
 }

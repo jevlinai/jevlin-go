@@ -166,11 +166,13 @@ func installationUpdateRoot(home string, getenv func(string) string) string {
 // leaves a machine in, and a root of "" there meant no hook started the
 // daily check again, and a rollback to the earlier version wrote no hold,
 // so the next day's check installed this one again. The root is the
-// installation directory, the parent of the state directory the file
-// names ([search] state_dir, or an earlier version's [mining] state_dir),
-// else the directory the file is in, which is the installation directory
-// in every layout setup writes; the mode is the file's [update] mode,
-// which both formats spell alike, else the default.
+// installation directory as the file's own version placed it: for an
+// earlier version's file the parent of its [miner] intake_dir, where 0.6.x
+// kept the stamp beside credentials.json, else of its [mining] state_dir
+// (the intake directory's default parent); for a format-1 file the parent
+// of [search] state_dir; else the directory the file is in, which is the
+// installation directory in every layout setup writes. The mode is the
+// file's [update] mode, which both formats spell alike, else the default.
 func refusedConfigUpdate(cfgPath string) (root, mode string) {
 	if cfgPath == "" {
 		return "", ""
@@ -187,6 +189,9 @@ func refusedConfigUpdate(cfgPath string) (root, mode string) {
 		Mining struct {
 			StateDir string `toml:"state_dir"`
 		} `toml:"mining"`
+		Miner struct {
+			IntakeDir string `toml:"intake_dir"`
+		} `toml:"miner"`
 		Update struct {
 			Mode string `toml:"mode"`
 		} `toml:"update"`
@@ -194,9 +199,9 @@ func refusedConfigUpdate(cfgPath string) (root, mode string) {
 	if _, err := toml.Decode(string(data), &f); err != nil {
 		return root, mode
 	}
-	for _, dir := range []string{f.Search.StateDir, f.Mining.StateDir} {
+	for _, dir := range []string{f.Miner.IntakeDir, f.Mining.StateDir, f.Search.StateDir} {
 		if dir != "" && filepath.IsAbs(dir) {
-			root = filepath.Dir(dir)
+			root = filepath.Dir(filepath.Clean(dir))
 			break
 		}
 	}

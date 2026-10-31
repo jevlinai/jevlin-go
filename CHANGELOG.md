@@ -88,8 +88,9 @@ the participants who mine; this client carries no compatibility with it.
   leaves Codex's permission block, which it can attribute only through a config that loads; run
   `jevlin setup` first to have uninstall remove that too. An npm install is updated with `npm install -g @jevlinsearch/jevlin@latest`,
   then `jevlin setup`. The files a participant keeps (`credentials.json`, the registration
-  journal, `claim.json`, the release check's record) live beside the state directory, in the
-  installation directory, as before.
+  journal, `claim.json`, the release check's record) live in the installation directory, the
+  state directory's parent; 0.6.x kept them beside its intake directory, and where the two differ
+  setup moves them, stopping before it changes anything if a file of the same name is there.
 
 ## v0.6.1 — 2026-10-27
 

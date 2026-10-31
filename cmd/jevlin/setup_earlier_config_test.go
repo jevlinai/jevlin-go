@@ -12,9 +12,11 @@ import (
 // earlierInstallationElsewhere lays out a 0.6.1 installation whose config
 // named a state directory outside the installation directory and a router,
 // portal and agents API other than the compiled defaults (the stub's), the
-// way that version's setup wrote them, with the registration and its key
-// beside that state directory. The person then runs setup with nothing in
-// the environment but JEVLIN_HOME, as after an unattended update.
+// way that version's setup wrote them: the agent record in that state
+// directory, and the key where 0.6.1 kept it, beside [miner] intake_dir,
+// which is the installation directory (its minerRoot). The person then runs
+// setup with nothing in the environment but JEVLIN_HOME, as after an
+// unattended update.
 func earlierInstallationElsewhere(t *testing.T, s *setupSandbox, router string, withKey bool) (stateDir string) {
 	t.Helper()
 	elsewhere := filepath.Join(s.root, "elsewhere")
@@ -47,7 +49,7 @@ sessions_dir = "`+h+`/sessions"
 		return stateDir
 	}
 	writeFileT(t, filepath.Join(stateDir, "agent.json"), `{"agent_id":"agent-old","status":"claimed","scopes":["search"]}`+"\n")
-	if err := writeCredentials(filepath.Join(elsewhere, credentialsFile), credentials{
+	if err := writeCredentials(filepath.Join(s.home, credentialsFile), credentials{
 		APIKey: "sr-old", Router: router, AgentsAPI: s.platform.srv.URL,
 	}); err != nil {
 		t.Fatal(err)
@@ -90,6 +92,35 @@ func TestSetupOverAnEarlierConfigKeepsItsDirectoriesAndEndpoints(t *testing.T) {
 	}
 	if _, _, err := resolveAPIKey(noEnv, cfg.Search); err != nil {
 		t.Errorf("the kept key is refused for every search: %v", err)
+	}
+	// It moved from beside the intake directory to beside the state one.
+	if c, err := readCredentials(credentialsPath(cfg.Search)); err != nil || c.APIKey != "sr-old" || lexists(filepath.Join(s.home, credentialsFile)) {
+		t.Errorf("the key is not beside the state directory alone: %+v %v\n%s", c, err, out)
+	}
+}
+
+// Something already beside the moved state directory under an identity
+// file's name stops setup before anything is written, naming both.
+func TestSetupStopsWhenTheEarlierKeyCannotTakeItsPlace(t *testing.T) {
+	s := newSetupSandbox(t)
+	stateDir := earlierInstallationElsewhere(t, s, s.env[config.EnvRouterURL], true)
+	theirs := filepath.Join(filepath.Dir(stateDir), credentialsFile)
+	if err := writeCredentials(theirs, credentials{APIKey: "sr-another"}); err != nil {
+		t.Fatal(err)
+	}
+	before := string(s.readFile(s.cfgPath()))
+	code, out, errOut := s.run(nil, true, "-yes", "-no-profile", "-no-agents")
+	if code == exitOK {
+		t.Fatalf("setup went on over a key in the way:\n%s", out)
+	}
+	if string(s.readFile(s.cfgPath())) != before || lexists(s.cfgPath()+".old") {
+		t.Errorf("setup changed the config before refusing")
+	}
+	if !lexists(filepath.Join(s.home, credentialsFile)) || !strings.Contains(errOut, theirs) {
+		t.Errorf("the refusal moved the key or does not name what is in the way:\n%s", errOut)
+	}
+	if register, _, _ := s.platform.counts(); register != 0 {
+		t.Errorf("setup registered")
 	}
 }
 
