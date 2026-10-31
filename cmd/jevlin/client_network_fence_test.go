@@ -18,7 +18,7 @@ package main
 //
 // TestFenceClassifiesProductionHostnamesAsRefused separately proves the
 // module's real default hostnames — api.jevlin.ai, agents-v1.jevlin.ai,
-// rpc-testnet.twilight.org, api.github.com, rewards-testnet.jevlin.ai — are classified as refused
+// api.github.com — are classified as refused
 // by the fence's decision function, as plain strings, with no dial and no
 // network of any kind. That is the half of "prove it is covered" this file
 // can do safely for a client (internal/selfupdate's) whose target host is a

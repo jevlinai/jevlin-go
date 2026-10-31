@@ -1,4 +1,4 @@
-{"type":"user","message":{"role":"user","content":"Subtask: find the current Byzantine fault tolerance quorum size used by Twilight and report it."}}
+{"type":"user","message":{"role":"user","content":"Subtask: find the current Byzantine fault tolerance quorum size used by the network under study and report it."}}
 {"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Searching the web via my own jevlin skill for this subtask."}]}}
 {"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_subskill1","name":"Skill","input":{"skill":"jevlin","args":"{\"version\":1,\"query\":\"Byzantine fault tolerance quorum size\"}"},"caller":{"type":"direct"}}]}}
 {"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_subskill1","content":"Launching skill: jevlin"}]},"toolUseResult":{"success":true,"commandName":"jevlin"}}

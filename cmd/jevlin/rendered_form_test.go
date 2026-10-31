@@ -116,7 +116,7 @@ func TestRecognizerRefusesAnythingButTheRenderedForm(t *testing.T) {
 			"a body with trailing text":     f.renderedSearch(t, sh, body+" trailing"),
 			"a different binary":            strings.Replace(rendered, f.entry.command, filepath.Join(t.TempDir(), "other"), 1),
 			"a different config":            strings.Replace(rendered, f.entry.cfg, filepath.Join(t.TempDir(), "other.toml"), 1),
-			"a different subcommand":        strings.Replace(rendered, " search ", " enroll ", 1),
+			"a different subcommand":        strings.Replace(rendered, " search ", " status ", 1),
 			"an extra flag":                 strings.Replace(rendered, " --stdin", " --stdin -format json", 1),
 			"the body's terminator inlined": f.renderedSearch(t, sh, body+"\nJSON\n"+body),
 		}

@@ -104,7 +104,7 @@ func TestTheSkillTeachesTheQueryFormsOnceReleased(t *testing.T) {
 			if !sawObjective || !sawForms {
 				t.Errorf("%s/%s: an example with objective %v, with search_queries %v; want one of each", id, goos, sawObjective, sawForms)
 			}
-			reading, ok := skillSection(skill, "## Reading the answer", "## Mining is not search")
+			reading, ok := skillSection(skill, "## Reading the answer", "")
 			if !ok {
 				t.Fatal("no ## Reading the answer section found")
 			}

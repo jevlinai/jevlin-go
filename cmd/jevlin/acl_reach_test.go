@@ -142,10 +142,9 @@ func TestTheACLReachScanSeesEveryFormItClaimsTo(t *testing.T) {
 		{"winacl.CurrentUser is not the namer", "search.go", "package main\nimport \"" + winaclImport + "\"\nfunc f() { winacl.CurrentUser() }\n", 0},
 		{"the same call in doctor.go", "doctor.go", "package main\nfunc f() { inspectStateAccess(\"d\", nil) }\n", 0},
 		{"the same call in state_acl_windows.go", "state_acl_windows.go", "package main\nimport \"" + winaclImport + "\"\nvar r = winacl.Read\n", 0},
-		// An earlier version allowed a payout access check by file name; the
-		// check left with mining, and a file under that name is any other
-		// file now.
-		{"the same call in a file an earlier version allowed", "payout_acl_windows.go", "package main\nimport \"" + winaclImport + "\"\nvar r = winacl.PrincipalName\n", 1},
+		// A file the list does not name is refused, whatever its name
+		// says about access.
+		{"the same call in a file the list does not name", "other_acl_windows.go", "package main\nimport \"" + winaclImport + "\"\nvar r = winacl.PrincipalName\n", 1},
 	}
 	for _, c := range cases {
 		fset := token.NewFileSet()

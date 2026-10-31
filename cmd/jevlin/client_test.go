@@ -1,7 +1,7 @@
 package main
 
 // The agent-command helpers. Every test injects getenv — a developer's
-// real TOKENDROP_LISTEN or JEVLIN_CONFIG must never leak into a test,
+// real JEVLIN_ROUTER_URL or JEVLIN_CONFIG must never leak into a test,
 // because env beats the config file in config.Load's precedence.
 
 import (

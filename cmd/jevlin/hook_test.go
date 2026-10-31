@@ -172,7 +172,7 @@ func TestIsSearchCommandRecognizesOursAndNothingElse(t *testing.T) {
 		`jevlin stop`,
 		`myjevlin search q`,
 		`grep jevlin search.go`,
-		`tokendrop-proxy search q`,
+		`otherproxy search q`,
 		``,
 	}
 	for _, c := range yes {

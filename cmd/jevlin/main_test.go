@@ -96,9 +96,9 @@ func TestUsageTextDoctorSection(t *testing.T) {
 		}
 	}
 
-	// The checks an earlier version ran against the mining plane are not
-	// promised: a help text that still named them would send a participant
-	// looking for a line doctor no longer prints.
+	// Checks this client does not run are not promised: a help text that
+	// named one would send a participant looking for a line doctor does not
+	// print.
 	for _, gone := range []string{"enrolled", "earning", "intake", "probe", "payout access"} {
 		if strings.Contains(flat, gone) {
 			t.Errorf("doctor section: still names %q, a check this client no longer runs\n%s", gone, s)

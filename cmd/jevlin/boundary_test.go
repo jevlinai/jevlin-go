@@ -79,11 +79,10 @@ func TestSelfupdateImportsNoWrapperAndNoCredential(t *testing.T) {
 
 // TestNoChainImportsAnywhere is AGENTS.md invariant 9. Ported from the
 // proxy's cmd/jevlin/boundary_test.go rule 1, adapted to this module:
-// twilight-core is the same forbidden chain application, and the
-// Cosmos/CometBFT graph is banned for the same reason it is there — a
-// lean binary shipped to users must not pull the SDK's module tree. The
-// code that once needed chain messages left with mining; this is what
-// keeps the rule from coming back by accident, not just documents it.
+// the chain application's module and the Cosmos/CometBFT graph are banned
+// for the same reason they are there — a lean binary shipped to users must
+// not pull the SDK's module tree. Nothing here needs chain messages; this
+// is what keeps such an import from arriving by accident.
 func TestNoChainImportsAnywhere(t *testing.T) {
 	banned := []string{
 		"github.com/twilight-project/twilight-core",
@@ -200,9 +199,8 @@ func isHTTPClientLiteral(e ast.Expr) bool {
 // unset, is invisible to it.
 //
 // A DialContext field can be set two ways: inline, inside an
-// &http.Transport{...} composite literal (none today, since the clients
-// that built one left with mining, but the form is still swept so one
-// coming back is seen), or as a separate assignment after
+// &http.Transport{...} composite literal (none today, but the form is
+// still swept so a new one is seen), or as a separate assignment after
 // http.DefaultTransport.Clone() (the
 // login probe and the search client, via client.go's shared
 // cloneDefaultTransport; pkg/platform's client; internal/selfupdate's

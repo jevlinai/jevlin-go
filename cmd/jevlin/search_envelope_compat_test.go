@@ -33,10 +33,9 @@ var fullViewAdditions = map[string]bool{
 }
 
 // captureRetired is the one key the capture carries that today's envelope
-// does not: the mining object. Mining moved off the client and then out of
-// it, so the key went with it; it is removed from the CAPTURE side only,
-// and today's envelope is compared whole, so a mining key reappearing in
-// the envelope fails here as any other unnamed addition would.
+// does not. It is removed from the CAPTURE side only, and today's envelope
+// is compared whole, so the key reappearing in the envelope fails here as
+// any other unnamed addition would.
 var captureRetired = map[string]bool{"mining": true}
 
 // v043Capture is a capture with the retired keys removed, the form today's

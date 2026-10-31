@@ -66,7 +66,8 @@ func TestARefusedConfigsUpdateRootIsItsInstallationDirectory(t *testing.T) {
 	elsewhere := filepath.Join(root, "elsewhere", "state")
 	for _, c := range []struct{ body, want string }{
 		{earlierConfigBody(elsewhere, ""), filepath.Dir(elsewhere)},
-		// 0.6.x kept the stamp beside [miner] intake_dir, wherever state_dir was.
+		// 0.6.x kept the stamp beside its intake directory, wherever the state
+		// directory was.
 		{earlierConfigBody(elsewhere, "\n[miner]\nintake_dir = \""+filepath.ToSlash(filepath.Join(filepath.Dir(cfg), "intake"))+"\"\n"), filepath.Dir(cfg)},
 		{"[[provider]]\nname = \"search-router\"\n", filepath.Dir(cfg)},
 		{"not = [toml", filepath.Dir(cfg)},

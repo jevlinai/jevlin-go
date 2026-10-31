@@ -13,8 +13,8 @@ import (
 // named a state directory outside the installation directory and a router,
 // portal and agents API other than the compiled defaults (the stub's), the
 // way that version's setup wrote them: the agent record in that state
-// directory, and the key where 0.6.1 kept it, beside [miner] intake_dir,
-// which is the installation directory (its minerRoot). The person then runs
+// directory, and the key where 0.6.1 kept it, beside the earlier intake
+// directory, which is the installation directory. The person then runs
 // setup with nothing in the environment but JEVLIN_HOME, as after an
 // unattended update.
 func earlierInstallationElsewhere(t *testing.T, s *setupSandbox, router string, withKey bool) (stateDir string) {
@@ -35,7 +35,7 @@ agents_api_url = "`+s.platform.srv.URL+`"
 
 [mining]
 as_url    = "https://as.invalid.test"
-chain_id  = "twilight-testnet-1"
+chain_id  = "example-testnet-1"
 slot_id   = 3
 state_dir = "`+filepath.ToSlash(stateDir)+`"
 spool_dir = "`+h+`/spool"

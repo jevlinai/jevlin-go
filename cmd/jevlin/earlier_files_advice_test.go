@@ -9,7 +9,7 @@ import (
 // What an earlier version left in a directory setup adopts from, or in an
 // installation a purge empties, is named by path and never called
 // deletable: this client keeps no list of those files, and one of them can
-// hold a key (an earlier version kept its payout wallet's there).
+// hold a key (an earlier version kept a signing key there).
 func TestNothingAnEarlierVersionLeftIsCalledDeletable(t *testing.T) {
 	invitations := []string{"delete it when you like", "Delete them yourself", "you may delete"}
 	says := func(t *testing.T, what, out string) {

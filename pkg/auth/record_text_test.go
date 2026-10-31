@@ -57,7 +57,7 @@ func validAgentRegistrationJSON(t *testing.T) map[string]any {
 	t.Helper()
 	raw, err := json.Marshal(AgentRegistration{
 		AgentID: "agent-1",
-		Status:  "claimed", Scopes: []string{"search", "mining"}, ClaimExpiresAt: "2026-09-16T00:00:00Z",
+		Status:  "claimed", Scopes: []string{"search", "credits"}, ClaimExpiresAt: "2026-09-16T00:00:00Z",
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -120,7 +120,7 @@ func TestSkillTeachesTiersOptionsAndMergedList(t *testing.T) {
 				// signals a degraded search sends are read as degraded, not
 				// as an empty web: an index's status, deadline_hit, a page's
 				// date, corroboration and the identifiers it contains.
-				reading, ok := skillSection(skill, "## Reading the answer", "## Mining is not search")
+				reading, ok := skillSection(skill, "## Reading the answer", "")
 				if !ok {
 					t.Fatal("no ## Reading the answer section found")
 				}
@@ -200,7 +200,7 @@ func TestSkillTeachesReadingAPageInFull(t *testing.T) {
 				if strings.Contains(skill, "{{") || strings.Contains(skill, "}}") {
 					t.Errorf("a placeholder is left in the rendered skill:\n%s", skill)
 				}
-				fetch, ok := skillSection(skill, "## Reading a page in full", "## Mining is not search")
+				fetch, ok := skillSection(skill, "## Reading a page in full", "")
 				if !ok {
 					t.Fatal("no ## Reading a page in full section found")
 				}

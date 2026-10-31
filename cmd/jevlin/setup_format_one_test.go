@@ -61,7 +61,7 @@ func plantEarlierInstallation(t *testing.T, s *setupSandbox) []byte {
 	// The agent record that version wrote carries fields this one does not
 	// read; they are ignored, not refused, and the agent id is kept.
 	write(filepath.Join(s.home, "state", "agent.json"), []byte(`{"agent_id":"agent-old","status":"claimed","scopes":["search"],`+
-		`"last_enrollment_slot":"slot-3","last_enrollment_at":"2026-10-20T10:00:00Z"}`+"\n"), 0o600)
+		`"last_entry_name":"slot-3","last_entry_at":"2026-10-20T10:00:00Z"}`+"\n"), 0o600)
 	if err := writeCredentials(filepath.Join(s.home, credentialsFile), credentials{
 		APIKey: "sr-old", Router: s.env["JEVLIN_ROUTER_URL"], AgentsAPI: s.platform.srv.URL,
 	}); err != nil {

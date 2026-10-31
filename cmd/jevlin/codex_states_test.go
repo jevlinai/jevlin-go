@@ -41,7 +41,7 @@ func codexStates() []codexState {
 	return []codexState{
 		{name: "fresh", before: "model = \"gpt-5\"\n\n[tui]\nscreen_reader_detection_done = true\n"},
 		{name: "empty", before: ""},
-		{name: "old-block", before: "[tui]\nscreen_reader_detection_done = true\n\n" + agentsMarkerBegin + "\n# Lets jevlin's search reach the router and record its mining\n# observation under your jevlin home. Without this, Codex's default\n# sandbox blocks the write and searches earn nothing.\n[sandbox_workspace_write]\nnetwork_access = true\nwritable_roots = [STATEROOTS]\n[hooks.state.\"/home/u/.codex/hooks.json:PreToolUse:0:0\"]\ntrusted_hash = \"sha256:0\"\n" + agentsMarkerEnd + "\n"},
+		{name: "old-block", before: "[tui]\nscreen_reader_detection_done = true\n\n" + agentsMarkerBegin + "\n# Lets jevlin's search reach the router and write under your jevlin\n# home. Without this, Codex's default sandbox blocks the write.\n[sandbox_workspace_write]\nnetwork_access = true\nwritable_roots = [STATEROOTS]\n[hooks.state.\"/home/u/.codex/hooks.json:PreToolUse:0:0\"]\ntrusted_hash = \"sha256:0\"\n" + agentsMarkerEnd + "\n"},
 		{name: "own-profile-network-absent", before: workProfile, answer: "y"},
 		{name: "own-profile-network-off", before: workProfile + "\n[permissions.work.network]\nenabled = false\n", answer: "y"},
 		{name: "own-profile-network-open", before: workProfile + "\n[permissions.work.network]\nenabled = true\n", answer: "y"},

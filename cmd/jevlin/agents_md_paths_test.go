@@ -48,7 +48,6 @@ import (
 var otherRepositories = map[string]bool{
 	"tokendrop-auth-server-design": true,
 	"search-router":                true,
-	"twilight-project":             true,
 }
 
 var (
@@ -393,7 +392,7 @@ func TestAgentsMDTokensAreClassified(t *testing.T) {
 		"net/http":                                notAPath,
 		"GET /v1/agents/me":                       notAPath,
 		"/tx":                                     notAPath,
-		"Enable mining rewards? [y/N]":            notAPath,
+		"Proceed? [Y/n]":                          notAPath,
 		"jevlinai/jevlin-go":                      notAPath,
 		"searchTrace":                             goIdentifier,
 		"hermesRunIsRenderedExactly":              goIdentifier,
