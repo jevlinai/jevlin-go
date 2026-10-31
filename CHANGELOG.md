@@ -20,8 +20,8 @@ client to the platform, which reconciles what the router served, so this client 
 spools and submits nothing about a search, holds no mining credential and no wallet, and
 says nothing about mining in its envelope. Everything about search, the hooks, the agent
 integrations, setup, connect, upgrade and uninstall is the code that shipped in 0.6.1 with
-the mining calls taken out, not a rewrite. The 0.6.1 line continues as its own binary for
-the participants who mine; this client carries no compatibility with it.
+the mining calls taken out, not a rewrite. 0.6.1 is the last release with mining and remains
+available; this client reads no 0.6.x configuration.
 
 - **Mining left the client.** `jevlin mining`, `enroll`, `join`, `provider`, `payout`,
   `wallet`, `earnings` and `flush` are gone, and so are the mining question at setup and
