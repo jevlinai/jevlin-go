@@ -193,7 +193,7 @@ func cmdDoctor(args []string, stdout, stderr io.Writer) int {
 			})
 			return exitTransport
 		}
-		fmt.Fprintf(stderr, "jevlin: config (%s): %v\n", orDefaults(src), err)
+		fmt.Fprintln(stderr, "jevlin: "+configProblem(src, err))
 		return exitTransport
 	}
 

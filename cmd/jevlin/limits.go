@@ -76,7 +76,7 @@ func cmdLimits(args []string, stdout, stderr io.Writer, getenv func(string) stri
 		if machine {
 			return failLimits(stdout, exitTransport, "config_unreadable", actionFixInput, err)
 		}
-		fmt.Fprintf(stderr, "jevlin: config (%s): %v\n", orDefaults(cfgSource), err)
+		fmt.Fprintln(stderr, "jevlin: "+configProblem(cfgSource, err))
 		return exitTransport
 	}
 	if cfg.Search.RouterURL == nil {

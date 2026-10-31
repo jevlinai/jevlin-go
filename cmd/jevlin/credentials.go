@@ -690,7 +690,7 @@ func cmdLogin(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv f
 
 	cfg, cfgSource, err := loadConfig(*cfgPath, getenv)
 	if err != nil {
-		fmt.Fprintf(stderr, "jevlin: config (%s): %v\n", orDefaults(cfgSource), err)
+		fmt.Fprintln(stderr, "jevlin: "+configProblem(cfgSource, err))
 		return exitTransport
 	}
 	path := credentialsPath(cfg.Search)

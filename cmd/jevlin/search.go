@@ -300,7 +300,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		if machine {
 			return failSearchSetup(stdout, exitTransport, "config_unreadable", actionFixInput, err)
 		}
-		fmt.Fprintf(stderr, "jevlin: config (%s): %v\n", orDefaults(cfgSource), err)
+		fmt.Fprintln(stderr, "jevlin: "+configProblem(cfgSource, err))
 		return exitTransport
 	}
 	if cfg.Search.RouterURL == nil {

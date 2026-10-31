@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -55,6 +56,16 @@ const exitForceDoesNotRebuild = -4
 // first; this is the net behind it, translated to fix_input with code
 // key_origin_mismatch like that pre-check.
 const exitKeyOffOrigin = -5
+
+// configProblem is a config that did not load, said with its source once:
+// pkg/config names the file in a parse or schema error already, and a
+// value's rule names only its key.
+func configProblem(cfgSource string, err error) string {
+	if cfgSource != "" && strings.Contains(err.Error(), cfgSource) {
+		return fmt.Sprintf("config: %v", err)
+	}
+	return fmt.Sprintf("config (%s): %v", orDefaults(cfgSource), err)
+}
 
 func orDefaults(cfgSource string) string {
 	if cfgSource == "" {

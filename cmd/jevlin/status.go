@@ -39,7 +39,7 @@ func statusMain(args []string, stdout, stderr io.Writer, getenv func(string) str
 			})
 			return exitTransport
 		}
-		fmt.Fprintf(stderr, "jevlin: config (%s): %v\n", orDefaults(src), err)
+		fmt.Fprintln(stderr, "jevlin: "+configProblem(src, err))
 		return exitTransport
 	}
 

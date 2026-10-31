@@ -12,11 +12,9 @@
 *.toml text eol=lf
 *.sh text eol=lf
 *.ps1 text eol=crlf
-# CRLF bytes are this fixture's subject, and its checksum and test depend on
-# them; text=auto would normalize them to LF on the next `git add`.
-testdata/fixtures/sse/crlf_endings.sse -text
-# The same for a Codex config golden whose subject is a participant's CRLF
-# lines surviving an install and an uninstall byte for byte.
+# CRLF bytes are this Codex config golden's subject, a participant's CRLF
+# lines surviving an install and an uninstall byte for byte; text=auto would
+# normalize them to LF on the next `git add`.
 cmd/jevlin/testdata/codex/states/default-permissions-workspace-crlf.after.toml -text
 *.png binary
 *.tar.gz binary

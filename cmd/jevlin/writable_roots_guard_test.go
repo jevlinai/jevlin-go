@@ -125,7 +125,6 @@ var classifiedFileCalls = map[fileCallSite]fileCallClass{
 	{"cmd/jevlin/setup_adopt.go", "adoption.mergeDir", "os.Remove"}:                     {1, "outside: setup's adoption"},
 	{"cmd/jevlin/setup_adopt.go", "bundleTxn.makeRoom", "os.Mkdir"}:                     {1, "outside: setup's adoption"},
 	{"cmd/jevlin/setup_adopt.go", "bundleTxn.makeRoom", "os.Remove"}:                    {1, "outside: setup's adoption"},
-	{"cmd/jevlin/setup_adopt.go", "dirEmpty", "os.ReadDir"}:                             {1, "outside: setup's adoption"},
 	{"cmd/jevlin/setup_adopt.go", "setAsideInstallation", "os.ReadDir"}:                 {1, "outside: lists the installation home's parent"},
 	{"cmd/jevlin/setup_config.go", "publishSetupConfig", "fsx.WriteFileAtomic"}:         {1, "outside: jevlin.toml"},
 	{"cmd/jevlin/setup_config.go", "<package level>", "os.Rename"}:                      {1, "outside: moveIdentity, which moves an earlier version's credentials.json and the files kept with it from beside its intake directory to beside its state directory, both the installation's own directories"},

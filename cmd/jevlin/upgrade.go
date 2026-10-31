@@ -399,7 +399,7 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 		root, mode = refusedConfigUpdate(src)
 		say("config (%s) is refused (%v); checking for a release with the installation it names", src, err)
 	default:
-		say("config (%s): %v", orDefaults(src), err)
+		say("%s", configProblem(src, err))
 		return exitTransport
 	}
 	if mode == config.UpdateOff {

@@ -2225,3 +2225,13 @@ func TestTheAgentsParagraphSaysWhatEachCodexFormWrites(t *testing.T) {
 		})
 	}
 }
+
+// dirEmpty reports whether path is a real, empty directory.
+func dirEmpty(path string) bool {
+	info, err := os.Lstat(path)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	entries, err := os.ReadDir(path)
+	return err == nil && len(entries) == 0
+}
