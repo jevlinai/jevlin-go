@@ -650,7 +650,7 @@ func (r *setupRun) config() int {
 	moves, conflict := identityMoves(plan.identityFrom, plan.identityTo)
 	if conflict != nil {
 		fmt.Fprintf(r.d.stderr, "\njevlin setup: the earlier version kept its key and registration in %s, and this one reads them in %s, beside the state directory; %v.\n"+
-			"Nothing was changed. Move whichever of %s exist from %s to %s yourself, then run setup again.\n",
+			"Nothing was changed in the config or the key. Move whichever of %s exist from %s to %s yourself, then run setup again.\n",
 			plan.identityFrom, plan.identityTo, conflict, strings.Join(identityFiles, ", "), plan.identityFrom, plan.identityTo)
 		return exitTransport
 	}
@@ -669,15 +669,30 @@ func (r *setupRun) config() int {
 			for _, m := range moves {
 				r.printf("(dry run) would move %s to %s, beside the state directory\n", m[0], m[1])
 			}
+			if plan.identityFrom == "" && relativeEarlierDirs(existing) {
+				r.printf("(dry run) the older config names its state or intake directory by a relative path, so nothing is moved; move credentials.json and the files beside it next to the new state directory yourself\n")
+			}
 			return exitOK
 		}
+		// The key moves first, while the older config is still in place: a
+		// move that fails leaves everything as it was (moveIdentity puts back
+		// what it moved), so the next run plans it again, rather than finding
+		// a format-1 file that names a state directory with no key beside it.
+		if err := moveIdentity(moves); err != nil {
+			fmt.Fprintf(r.d.stderr, "jevlin setup: moving the earlier version's key and registration from %s to %s: %v\n"+
+				"Nothing was changed in the config or the key. Fix that, or move whichever of %s exist from %s to %s yourself, then run setup again.\n",
+				plan.identityFrom, plan.identityTo, err, strings.Join(identityFiles, ", "), plan.identityFrom, plan.identityTo)
+			return exitTransport
+		}
 		if err := renameConfigAside(r.cfgPath, plan.aside); err != nil { // #nosec G703 -- the installation's own config path and a name beside it
+			undoIdentity(moves)
 			fmt.Fprintln(r.d.stderr, "jevlin setup: setting the older configuration aside:", err)
 			return exitTransport
 		}
 	}
 	if err := publishConfig(r.cfgPath, plan.data); err != nil {
 		if plan.outcome == configReplaced {
+			undoIdentity(moves)
 			// An installation with no jevlin.toml reads as one not set up
 			// yet, and every command would run on the compiled defaults
 			// without saying so. The old file goes back where it was, and
@@ -695,12 +710,6 @@ func (r *setupRun) config() int {
 	r.changed = true
 	if plan.outcome == configReplaced {
 		r.say(fmt.Sprintf("Set %s aside as %s: it is an older configuration format, which this jevlin does not read", r.cfgPath, plan.aside))
-		if err := moveIdentity(moves); err != nil {
-			fmt.Fprintf(r.d.stderr, "jevlin setup: moving the earlier version's key and registration from %s to %s: %v\n"+
-				"The new config is written. Move whichever of %s are still in %s to %s yourself, then run setup again.\n",
-				plan.identityFrom, plan.identityTo, err, strings.Join(identityFiles, ", "), plan.identityFrom, plan.identityTo)
-			return exitTransport
-		}
 		if len(moves) > 0 {
 			r.say(fmt.Sprintf("Moved the earlier version's key and registration from %s to %s, beside the state directory, where this jevlin reads them", plan.identityFrom, plan.identityTo))
 		}

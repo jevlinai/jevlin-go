@@ -29,8 +29,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"unicode/utf8"
 
 	"github.com/BurntSushi/toml"
@@ -134,10 +136,15 @@ type earlierConfig struct {
 // identityRoot is the directory an earlier version kept the files beside
 // credentials.json in: the parent of [miner] intake_dir, else of the state
 // directory, which is where that version defaulted the intake directory;
-// "" when the file names neither.
+// "" when the file names neither, or names it relative, which setup would
+// read against whatever directory it was run from (refusedConfigUpdate
+// skips one for the same reason).
 func (e earlierConfig) identityRoot() string {
 	for _, dir := range []string{e.intakeDir, e.stateDir} {
 		if dir != "" {
+			if !filepath.IsAbs(dir) {
+				return ""
+			}
 			return filepath.Dir(filepath.Clean(dir))
 		}
 	}
@@ -214,10 +221,20 @@ func (v setupValues) carrying(e earlierConfig) setupValues {
 			*f.field = f.value
 		}
 	}
-	if e.stateDir != "" {
-		v.stateDir, v.sessionsDir = e.stateDir, e.sessionsDir
-	} else if e.sessionsDir != "" {
-		v.sessionsDir = e.sessionsDir
+	// A directory is carried only when it is absolute: a relative one would
+	// be read against whatever directory each command runs from, and the
+	// installation's own default is where an earlier version kept it as
+	// well when setup wrote it.
+	abs := func(dir string) string {
+		if filepath.IsAbs(dir) {
+			return dir
+		}
+		return ""
+	}
+	if state := abs(e.stateDir); state != "" {
+		v.stateDir, v.sessionsDir = state, abs(e.sessionsDir)
+	} else if sessions := abs(e.sessionsDir); sessions != "" {
+		v.sessionsDir = sessions
 	}
 	return v
 }
@@ -362,7 +379,7 @@ func planSetupConfig(path string, existing []byte, v setupValues, validate func(
 		plan := configPlan{outcome: configReplaced, data: data, aside: aside}
 		if from := earlier.identityRoot(); from != "" {
 			if cfg, err := config.LoadBytes(data, func(string) string { return "" }); err == nil {
-				if to := installRoot(cfg.Search); !samePath(from, to) {
+				if to := installRoot(cfg.Search); filepath.IsAbs(to) && !sameDirectory(from, to) {
 					plan.identityFrom, plan.identityTo = from, to
 				}
 			}
@@ -441,7 +458,9 @@ var identityFiles = []string{credentialsFile, registrationJournalFile, claimReco
 // identityMoves is each identity file present in from, with the name it
 // takes in to. A file already at a destination is a conflict, and so is a
 // destination directory that does not exist: both stop setup before
-// anything is written, with the exact moves to make by hand.
+// anything is written, with the exact moves to make by hand. The one
+// exception is the release check's record, which says only when the last
+// check ran: the earlier version's replaces one already there.
 func identityMoves(from, to string) (moves [][2]string, conflict error) {
 	if from == "" || to == "" {
 		return nil, nil
@@ -452,7 +471,7 @@ func identityMoves(from, to string) (moves [][2]string, conflict error) {
 			continue
 		}
 		dst := filepath.Join(to, name)
-		if lexists(dst) {
+		if lexists(dst) && name != updateStampFile {
 			return nil, fmt.Errorf("%s is already there, so the earlier version's %s cannot take its place", dst, src)
 		}
 		moves = append(moves, [2]string{src, dst})
@@ -463,14 +482,87 @@ func identityMoves(from, to string) (moves [][2]string, conflict error) {
 	return moves, nil
 }
 
-// moveIdentity renames each file of moves into place, a variable so a test
-// can fail one. A rename is atomic per file; a failure stops at that file,
-// and the caller says what is where.
+// sameDirectory reports whether a and b name one directory, through a link
+// or in another case on a filesystem that ignores it, as well as by text.
+func sameDirectory(a, b string) bool {
+	if samePath(a, b) {
+		return true
+	}
+	ia, errA := os.Stat(a)
+	ib, errB := os.Stat(b)
+	return errA == nil && errB == nil && os.SameFile(ia, ib)
+}
+
+// moveIdentity moves each file of moves into place, a variable so a test
+// can fail one. A move that fails puts back the ones made before it, so the
+// files are all in one place or the other, and reports the failure.
 var moveIdentity = func(moves [][2]string) error {
-	for _, m := range moves {
-		if err := os.Rename(m[0], m[1]); err != nil { // #nosec G703 -- an earlier installation's own files and the directory beside its state directory
+	for i, m := range moves {
+		if err := moveIdentityFile(m[0], m[1]); err != nil {
+			for j := i - 1; j >= 0; j-- {
+				_ = moveIdentityFile(moves[j][1], moves[j][0])
+			}
 			return err
 		}
 	}
 	return nil
+}
+
+// undoIdentity puts moves back, for a run that fails after moving them.
+func undoIdentity(moves [][2]string) {
+	for j := len(moves) - 1; j >= 0; j-- {
+		_ = moveIdentityFile(moves[j][1], moves[j][0])
+	}
+}
+
+// identityFileMaxBytes bounds the read of an identity file copied across
+// filesystems: credentials.json, the journal, the claim record and the
+// release check's record are each a few hundred bytes.
+const identityFileMaxBytes = 1 << 20
+
+// moveIdentityFile moves one file durably. A rename cannot cross
+// filesystems, and a state directory on another disk than the earlier
+// installation's intake directory is one setup must handle, so there the
+// file is copied owner-only and synced, published by rename in the
+// destination's directory, and only then removed from the source.
+func moveIdentityFile(src, dst string) error {
+	err := renameIdentityFile(src, dst)
+	var stage *fsx.StageError
+	switch {
+	case err == nil, errors.As(err, &stage) && stage.Published:
+		return nil
+	case !crossDevice(err):
+		return err
+	}
+	data, _, rerr := fsx.ReadRegularNoFollow(src, identityFileMaxBytes)
+	if rerr != nil {
+		return rerr
+	}
+	if werr := fsx.WriteFileAtomic(filepath.Dir(dst), filepath.Base(dst), data, 0o600); werr != nil {
+		return werr
+	}
+	return fsx.RemoveFileDurable(src)
+}
+
+// renameIdentityFile is the durable rename moveIdentityFile tries first, a
+// variable so a test can refuse it the way another filesystem does.
+var renameIdentityFile = fsx.MoveFileDurable
+
+// crossDevice reports whether err is a rename refused because the two
+// names are on different filesystems: EXDEV, or Windows'
+// ERROR_NOT_SAME_DEVICE (17, which is EEXIST elsewhere).
+func crossDevice(err error) bool {
+	return errors.Is(err, syscall.EXDEV) || (runtime.GOOS == "windows" && errors.Is(err, syscall.Errno(17)))
+}
+
+// relativeEarlierDirs reports whether an earlier config names its intake or
+// state directory by a relative path, for which setup plans no move.
+func relativeEarlierDirs(data []byte) bool {
+	e := readEarlierConfig(data)
+	for _, dir := range []string{e.intakeDir, e.stateDir} {
+		if dir != "" && !filepath.IsAbs(dir) {
+			return true
+		}
+	}
+	return false
 }
