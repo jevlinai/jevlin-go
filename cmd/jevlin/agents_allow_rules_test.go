@@ -90,7 +90,7 @@ func TestASupersededAllowRuleIsReplacedRatherThanAddedBeside(t *testing.T) {
 	}
 
 	allow := allowOf(t, m, claudeSettingsPath)
-	want := append([]string{mine, foreign}, claudeAllowRules(entry)...)
+	want := append([]string{mine, foreign}, currentClaudeAllow(ops, entry)...)
 	if len(allow) != len(want) {
 		t.Fatalf("allow rules after the install: %d, want %d\n got %q\nwant %q", len(allow), len(want), allow, want)
 	}
@@ -133,7 +133,7 @@ func TestASupersededAllowRuleIsReplacedRatherThanAddedBeside(t *testing.T) {
 // any other superseded spelling.
 func TestADuplicatedAllowRuleOfOursCollapsesToOne(t *testing.T) {
 	m, ops := newFakeMachine("claude")
-	current := claudeAllowRules(installedEntry(t, ops))
+	current := currentClaudeAllow(ops, installedEntry(t, ops))
 	if len(current) < 2 {
 		t.Fatalf("this test duplicates one of our rules among the others and needs at least two: %q", current)
 	}
@@ -195,7 +195,7 @@ func TestUninstallRemovesASupersededAllowRuleToo(t *testing.T) {
 // them: the set is what is current, not its arrangement.
 func TestAnAllowRuleSetAlreadyCurrentIsLeftInPlace(t *testing.T) {
 	m, ops := newFakeMachine("claude")
-	current := claudeAllowRules(installedEntry(t, ops))
+	current := currentClaudeAllow(ops, installedEntry(t, ops))
 	if len(current) < 3 {
 		t.Fatalf("this test interleaves the participant's rule among ours and needs at least three: %q", current)
 	}
@@ -222,9 +222,12 @@ func TestAnAllowRuleSetAlreadyCurrentIsLeftInPlace(t *testing.T) {
 // own rule stays where it was.
 func TestAnInstallFromBeforeTheFetchGainsItsAllowRules(t *testing.T) {
 	m, ops := newFakeMachine("claude")
-	current := claudeAllowRules(installedEntry(t, ops))
+	current := currentClaudeAllow(ops, installedEntry(t, ops))
 	var searchOnly, fetchRules []string
 	for _, r := range current {
+		if !strings.HasPrefix(r, "Bash(") {
+			continue // the request folder's rules are the next test's
+		}
 		if strings.Contains(r, " fetch ") {
 			fetchRules = append(fetchRules, r)
 		} else {
@@ -259,4 +262,12 @@ func TestAnInstallFromBeforeTheFetchGainsItsAllowRules(t *testing.T) {
 	if allow := allowOf(t, m, claudeSettingsPath); len(allow) != 1 || allow[0] != "Bash(git status:*)" {
 		t.Errorf("uninstall left %q", allow)
 	}
+}
+
+// currentClaudeAllow is every rule an install writes for Claude Code: the
+// search and fetch rules, the request folder's, and the Read rule that lets
+// the skill's reference.md be read without a question.
+func currentClaudeAllow(ops agentOps, entry binEntry) []string {
+	getenv := func(string) string { return "" }
+	return append(claudeAllowRules(entry), claudeSkillRule(ops.paths(getenv).claudeSkill))
 }

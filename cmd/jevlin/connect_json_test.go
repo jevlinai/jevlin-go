@@ -65,10 +65,10 @@ func TestGuidanceStillSendsA401ToLoginNotConnect(t *testing.T) {
 			continue // the snippet is short by design; the skill carries the 401 rule
 		}
 		flat := strings.Join(strings.Fields(instructionTextFor(t, s.ID(), entry)), " ")
-		if !strings.Contains(flat, "401 maps to `login`") {
+		if !strings.Contains(flat, "a router 401, is always `login`") {
 			t.Errorf("%s is not told that a 401 maps to login:\n%s", s.Label(), flat)
 		}
-		if !strings.Contains(flat, "does not mean this installation has never registered") {
+		if !strings.Contains(flat, "a registered installation whose key was rotated or expired gets exactly the same status") {
 			t.Errorf("%s is not told that a 401 does not prove absence of registration", s.Label())
 		}
 	}

@@ -59,7 +59,7 @@ func TestConnectRebuildsAReplacementTheOldRecordHides(t *testing.T) {
 	if !ok || reg.AgentID != ownID || reg.Status != "unclaimed" {
 		t.Fatalf("agent.json = %+v ok=%v, want the stored key's own agent", reg, ok)
 	}
-	if !strings.Contains(out, "claim this agent:") {
+	if !strings.Contains(out, "This agent is registered.") {
 		t.Fatalf("the rebuilt agent's claim link was not printed:\n%s", out)
 	}
 }
@@ -87,7 +87,7 @@ func TestConnectNeverPrintsTheClaimLinkOfAnAgentTheKeyIsNot(t *testing.T) {
 	if strings.Contains(out, otherCode) {
 		t.Fatalf("connect printed the planted agent's claim link:\n%s", out)
 	}
-	if !strings.Contains(out, "code: "+ownCode) {
+	if !strings.Contains(out, "type the code "+hyphenatedClaimCode(ownCode)) {
 		t.Fatalf("connect did not print the stored key's own claim code %s:\n%s", ownCode, out)
 	}
 	if reg, ok := loadAgent(t, stateDir); !ok || reg.AgentID != ownID {

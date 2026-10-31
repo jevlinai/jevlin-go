@@ -52,7 +52,7 @@ func renderedSkillFor(id string, entry binEntry, goos string) string {
 		panic("no target " + id)
 	}
 	shells, _ := toolShellsForSkill(tg, goos)
-	skill, err := renderSkill(entry, preferOn, note, shells)
+	skill, _, err := renderSkill(entry, preferOn, note, shells)
 	if err != nil {
 		panic(err)
 	}
@@ -462,7 +462,8 @@ func renderedHostStrings(t *testing.T, goos string) string {
 	for _, id := range goldenHostIDs {
 		switch id {
 		case "claude", "codex", "cursor", "pi", "hermes":
-			skill := renderedSkillFor(id, entry, goos)
+			skill, reference := renderedSkillPairFor(t, id, entry, goos, preferOn)
+			skill += "\n" + reference
 			section(id + ": skill command blocks")
 			for _, blk := range skillCommandBlocks(skill) {
 				value("fence "+blk.lang, blk.body)

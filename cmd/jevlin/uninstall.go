@@ -1060,7 +1060,7 @@ func (r *uninstallRun) purgeSet() (inside, outside []string) {
 	first := []string{
 		join("sessions"),
 		join(credentialsFile), join(registrationJournalFile), join(claimRecordFile), join(setupConfigFile), join(preferFile), join(tierFile),
-		join(updateStampFile),
+		join(fastSetFile), join(requestsDirName), join(updateStampFile),
 	}
 	if entries, err := os.ReadDir(r.home); err == nil {
 		for _, e := range entries {

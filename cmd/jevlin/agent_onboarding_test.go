@@ -941,7 +941,7 @@ func TestConnectRebuildsUnclaimedRegistrationWithClaimLink(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("connect did not rebuild: code=%d stderr=%s", code, errOut)
 	}
-	if !strings.Contains(out, "claim this agent:") || !strings.Contains(out, "AB12-CD34") {
+	if !strings.Contains(out, "This agent is registered.") || !strings.Contains(out, "AB12-CD34") {
 		t.Fatalf("did not print the recovered claim link: stdout=%q", out)
 	}
 	reg, ok := loadAgent(t, stateDir)
@@ -981,7 +981,7 @@ func TestConnectRebuildsUnclaimedRegistrationWithoutClaimLink(t *testing.T) {
 	if !strings.Contains(out, "no claim link is on file for it") {
 		t.Fatalf("missing the recovered-without-link fallback: stdout=%q", out)
 	}
-	if strings.Contains(out, "claim this agent:") {
+	if strings.Contains(out, "This agent is registered.") {
 		t.Fatalf("printed the ordinary print-and-wait narration despite no claim link: stdout=%q", out)
 	}
 	if strings.Contains(out, "  \n") {
@@ -1008,7 +1008,7 @@ func TestConnectRebuildsUnclaimedRegistrationWithoutClaimLink(t *testing.T) {
 	if !strings.Contains(out, "no claim link is on file for it") {
 		t.Fatalf("second run dropped the recovered-without-link fallback: stdout=%q", out)
 	}
-	if strings.Contains(out, "claim this agent:") {
+	if strings.Contains(out, "This agent is registered.") {
 		t.Fatalf("second run printed the ordinary print-and-wait narration despite no claim link: stdout=%q", out)
 	}
 	if strings.Contains(out, "  \n") {
@@ -1049,10 +1049,10 @@ func TestForegroundConnectMintsAFreshClaimLinkForALostOne(t *testing.T) {
 		t.Fatalf("connect exited %d, stderr=%s", code, errOut)
 	}
 	freshURL := platform.srv.URL + "/claim/MINT-01"
-	if !strings.Contains(out, "claim this agent:") || !strings.Contains(out, freshURL) {
+	if !strings.Contains(out, "This agent is registered.") || !strings.Contains(out, freshURL) {
 		t.Fatalf("the fresh claim link was not printed: stdout=%q", out)
 	}
-	if !strings.Contains(out, "code: MINT-01") {
+	if !strings.Contains(out, "type the code MINT-01") {
 		t.Fatalf("the fresh claim code was not printed: stdout=%q", out)
 	}
 	if strings.Contains(out, "no claim link is on file") {
@@ -1097,7 +1097,7 @@ func TestALaterForegroundConnectMintsWhenThePlatformGainsTheRoute(t *testing.T) 
 		t.Fatalf("connect exited %d, stderr=%s", code, errOut)
 	}
 	freshURL := platform.srv.URL + "/claim/MINT-01"
-	if !strings.Contains(out, "claim this agent:") || !strings.Contains(out, freshURL) {
+	if !strings.Contains(out, "This agent is registered.") || !strings.Contains(out, freshURL) {
 		t.Fatalf("the later run did not mint and print a fresh link: stdout=%q", out)
 	}
 	reg, ok := loadAgent(t, stateDir)
@@ -1131,7 +1131,7 @@ func TestForegroundConnectNeverPrintsAStoredClaimURLOffThePlatformOrigin(t *test
 		t.Fatalf("connect printed the off-origin stored claim URL: stdout=%q stderr=%q", out, errOut)
 	}
 	freshURL := platform.srv.URL + "/claim/MINT-01"
-	if !strings.Contains(out, "claim this agent:") || !strings.Contains(out, freshURL) {
+	if !strings.Contains(out, "This agent is registered.") || !strings.Contains(out, freshURL) {
 		t.Fatalf("connect did not mint and print a fresh link in its place: stdout=%q", out)
 	}
 	if reg, _ := loadAgent(t, stateDir); storedClaim(t, cfgPath, reg.AgentID).ClaimURL != freshURL {
@@ -1945,7 +1945,7 @@ func TestForegroundLoopSleepIsBoundedByRemainingBudget(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("connect exited %d, want %d", code, exitOK)
 	}
-	if !strings.Contains(out, "not claimed yet") {
+	if !strings.Contains(out, "Not claimed yet.") {
 		t.Fatalf("expected the timeout message, got: %q", out)
 	}
 	// Generous slack (10x the budget) for scheduling noise, but nowhere

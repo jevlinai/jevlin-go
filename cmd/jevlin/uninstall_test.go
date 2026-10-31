@@ -77,6 +77,10 @@ func installed(t *testing.T) *setupSandbox {
 	for rel, body := range map[string]string{
 		filepath.Join("sessions", "s-1.json"): `{}`,
 		preferFile:                            "builtin\n",
+		fastSetFile:                           "economy\n",
+		// The Claude Code skill's request folder holds a question word for
+		// word: a default uninstall keeps it, a purge removes it.
+		filepath.Join(requestsDirName, "q-1.json"):           `{"version":1,"query":"a private question"}`,
 		filepath.Join(stateAsidePrefix+"-20260101", "x.key"): "half",
 		// Beside credentials.json: a registration journal, which can hold a
 		// platform key, so a default uninstall keeps it byte for byte and a
@@ -167,7 +171,8 @@ func participantState(s *setupSandbox) []string {
 	h := func(rel string) string { return filepath.Join(s.home, rel) }
 	return []string{h("state"), h("sessions"), h(credentialsFile),
 		h(registrationJournalFile), h(claimRecordFile),
-		h(setupConfigFile), h(preferFile), h(stateAsidePrefix + "-20260101")}
+		h(setupConfigFile), h(preferFile), h(fastSetFile), h(requestsDirName),
+		h(stateAsidePrefix + "-20260101")}
 }
 
 func snapshotState(t *testing.T, s *setupSandbox) map[string]map[string]fileSig {
@@ -1115,6 +1120,10 @@ func installedOwningItsBinary(t *testing.T) *setupSandbox {
 	for rel, body := range map[string]string{
 		filepath.Join("sessions", "s-1.json"): `{}`,
 		preferFile:                            "builtin\n",
+		fastSetFile:                           "economy\n",
+		// The Claude Code skill's request folder holds a question word for
+		// word: a default uninstall keeps it, a purge removes it.
+		filepath.Join(requestsDirName, "q-1.json"):           `{"version":1,"query":"a private question"}`,
 		filepath.Join(stateAsidePrefix+"-20260101", "x.key"): "half",
 	} {
 		writeFileT(t, filepath.Join(s.home, rel), body)
@@ -1401,5 +1410,28 @@ func TestATargetRefusalIsReportedOnce(t *testing.T) {
 	}
 	if n := strings.Count(out.String()+errOut.String(), "left the one thing it cannot remove"); n != 2 {
 		t.Errorf("the refusal is reported %d times, want twice (the plan and the failure)\n%s\n%s", n, out, errOut)
+	}
+}
+
+// The fast preset and the Claude Code skill's request folder are this
+// version's own: a purge removes them, and never names them among the files
+// it leaves as not its own. The request folder holds questions word for word.
+func TestAPurgeRemovesThePresetAndTheRequestsFolder(t *testing.T) {
+	s := installed(t)
+	preset, requests := filepath.Join(s.home, fastSetFile), filepath.Join(s.home, requestsDirName)
+	if !lexists(preset) || !lexists(requests) {
+		t.Fatal("the fixture planted neither the preset nor the request folder")
+	}
+	code, out, errOut := s.uninstall(t, tty(s.home), true, "-purge-state")
+	if code != exitOK {
+		t.Fatalf("purge exited %d\n%s\n%s", code, out, errOut)
+	}
+	for _, p := range []string{preset, requests} {
+		if lexists(p) {
+			t.Errorf("the purge left %s", p)
+		}
+		if strings.Contains(out, "\n  "+p+"\n") {
+			t.Errorf("the purge names %s as left behind:\n%s", p, out)
+		}
 	}
 }

@@ -64,7 +64,7 @@ warn about one a shared group can write. On Windows only the temp-directory rule
 
 One request goes to the router at `api.jevlin.ai`, which holds the provider keys. In the
 `balanced` and `max` [tiers](#three-tiers), the core arms run on every fan-out, under a
-per-query cost ceiling; `fast` asks three fast indexes, one per index group:
+per-query cost ceiling; `fast` asks only the fast indexes its preset names. The core arms:
 
 | kind | arms |
 |---|---|
@@ -104,17 +104,17 @@ jevlin search -format model "what is proof of authority consensus"
 
 ## Three tiers
 
-Every search runs in one of three tiers. `fast` asks three fast indexes, one per index group
-(Exa, Brave and Perplexity search as the router is deployed today), and answers in about a
-second; `balanced` and `max` fan out to the core arms. A tier is also a per-query cost ceiling
+Every search runs in one of three tiers. `fast` asks the fast indexes of a named preset,
+`economy` (two, the default) or `standard` (three), and answers in about a second; `balanced`
+and `max` fan out to the core arms. A tier is also a per-query cost ceiling
 on the router, and a set that would exceed the ceiling is trimmed rather than refused, with
 `decision.trimmed` naming what went.
 
 | tier | what runs | for | what it costs |
 |---|---|---|---|
-| `fast` | three fast indexes, one per index group, the quickest | a routine lookup, the default for a new key | about $0.015 a search |
-| `balanced` | the core arms, 8 results each, a 12-page merged window, every arm's text | when the agent needs more than one source, or the first answer came back thin | about $0.035 |
-| `max` | the core arms, 15 results each, a 24-page window, 2,000-character excerpts | corroboration: the same page found by independent indexes, and the most text per page | about $0.045, plus the tokens your agent spends reading it |
+| `fast` | the fast indexes of a preset: `economy` asks two, `standard` three; the quickest | a routine lookup, the default for a new key | about $0.0013 a search on `economy`, $0.0053 on `standard` |
+| `balanced` | the core arms, 8 results each, a 12-page merged window, every arm's text | when the agent needs more than one source, or the first answer came back thin | about $0.022 |
+| `max` | the core arms, 15 results each, a 24-page window, 2,000-character excerpts | corroboration: the same page found by independent indexes, and the most text per page | about $0.027, plus the tokens your agent spends reading it |
 
 The dollar figures are the arms' own prices passed through with no markup; `usage.cost_micros`
 on every response is the real number. `max` and a named `providers` set (below) are the two
@@ -126,7 +126,7 @@ Who chooses:
   from a shell, sets the tier every search carries unless a request names one. `/jevlin tier
   default` unsets it and `/jevlin tier` says what is in force.
 - **The agent**, one step at a time: the skill tells it to leave `tier` alone so your tier
-  applies, to ask for `balanced` only when it needs several sources beyond the three fast
+  applies, to ask for `balanced` only when it needs several sources beyond the fast tier's
   indexes (a thin result, indexes that disagree, the full set attributed), and never to send
   `max` on its own. `max` is yours to choose.
 - **The router**, when nobody did: a request that names no tier, with none set, carries none, and
@@ -187,9 +187,13 @@ to copy or paste. Then it asks, in this order:
 | **Set up the coding agents found on this machine now?** | Writes a skill and hooks into each agent's own config, after showing you what. |
 | **Switch?** | Asked only when Codex's config has a setting of your own that its permission profile would change. It shows every line it would write; a bare Enter is no and leaves Codex as it is. |
 
-After the config is written, and before the shell profile, it prints a link where you claim
-your agent on `platform.jevlin.ai` and waits up to three minutes for you to. You need not do it
-then: search already works, and using an agent later finishes the claim. The
+After the config is written, and before the shell profile, it prints the steps to claim your
+agent: a link to open (sign in on `platform.jevlin.ai`, or create an account, and you come back
+to the page), the agent's name to check and confirm, and a code to type at `/claim` if the link
+does not open. It then waits up to three minutes for you. You need not do it then: search
+already works, within an unclaimed agent's limits (the fast tier, with a daily cap), and the
+next search finishes the claim once you have confirmed. Claiming lifts the limits and opens the
+other tiers. The link is valid for a week; `jevlin connect` prints a fresh one. The
 [guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#setup) says what each answer does and which flags answer them for you.
 
 ## Then check
@@ -254,7 +258,7 @@ registration or the claim needs attention.
 | `jevlin limits` | This key's spend caps, rate windows and today's spend, read from the router. A claimed key gets 120 searches a minute, 3,000 an hour and 16 at once; an unclaimed one 10, 120 and 2, with $0.10 a day. |
 | `jevlin agents install\|status\|uninstall` | Sets up, reports or removes the skills and hooks of each agent. |
 | `jevlin agents prefer on\|off\|status` | What `/jevlin on\|off\|status` runs: which search is the default. |
-| `jevlin agents tier <tier>\|default\|status` | What `/jevlin tier` runs: the tier every search carries. |
+| `jevlin agents tier <tier> [preset]\|default\|status` | What `/jevlin tier` runs: the tier every search carries, and for `fast` the preset (`economy`, `standard`). |
 | `jevlin connect` | Registers with the search platform, prints the claim link, polls until claimed. |
 | `jevlin login` | Stores a key you already have, read from stdin, for searches without a registration. |
 | `jevlin upgrade` | A native install: the latest release, verified before it runs; `-rollback` swaps back. |

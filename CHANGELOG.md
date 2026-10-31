@@ -23,6 +23,12 @@ integrations, setup, connect, upgrade and uninstall is the code that shipped in 
 the mining calls taken out, not a rewrite. 0.6.1 is the last release with mining and remains
 available; this client reads no 0.6.x configuration.
 
+`jevlin connect`, and so setup, now prints the whole claim procedure for an unclaimed agent:
+what works before the claim, the three steps (open the link, sign in or create an account,
+check the agent's name and confirm) and the code to type at the claim page if the link does not
+open, shown as `AB12-CD34`. The timeout line says search keeps working and the next search or
+connect completes the claim.
+
 - **Mining left the client.** `jevlin mining`, `enroll`, `join`, `provider`, `payout`,
   `wallet`, `earnings` and `flush` are gone, and so are the mining question at setup and
   connect, the mining decision, the health records, the intake and spool directories, the
@@ -72,6 +78,25 @@ available; this client reads no 0.6.x configuration.
 - **A claim code is a token.** The platform's `claim_code` is held to letters, digits, `-`
   and `_`, on the wire and in the records beside the stored key, so what `connect` and
   `status` print and ask you to type cannot be a sentence.
+- **A leaner skill, fast presets, and Claude Code's one-line call.** The installed skill is two
+  files for every host: `SKILL.md` keeps the search, the request and how to read the result, and
+  a `reference.md` beside it holds the settings, the failure actions and the fields a result
+  carries; Claude Code may read it without a question (a `Read` rule for the skill folder).
+  `jevlin agents tier fast <preset>` stores which fast indexes a fast search runs, from the
+  presets the router lists at `GET /v1/fast-sets`; a fast search sends it as `fast_set` only
+  when that list names it, so a withdrawn name never fails a search, a name the router
+  does not list is refused when it is set, and `jevlin agents tier status` lists the presets
+  with their estimated price per search. An agent search (`search --stdin`) that sizes nothing
+  asks for 500 characters of excerpt per page (`page_chars`, 200 to 4000, also accepted in the
+  request) and, where the router's window would be larger (with `search_queries`, or on `max`),
+  a 16-page list, so its output stays under about 20,000 characters on every tier. For Claude
+  Code the skill teaches the search and fetch calls as one line, `... --stdin <<< '<request>'`,
+  which the permission rules `jevlin agents install` writes match; Claude Code does not match a
+  multi-line heredoc against them, so the call the skill taught before was refused in a headless
+  session and asked about in an interactive one.
+  A request holding an apostrophe or a `$` is written with the Write tool to a file in a
+  `requests` folder beside the config and sent with `--stdin < <file>`, under an `Edit` and a
+  `Read` rule for that folder. `jevlin setup` writes the new skill and rules.
 - **The daily check installs patch releases only.** From this version on, the unattended check
   installs a newer release of the same minor version (0.7.0 to 0.7.1) as before, and leaves one
   of another minor (0.8.0) for you: it records it as available, `status` and `doctor` say it is

@@ -40,9 +40,16 @@ earlier version wrote differently, and `jevlin agents install` refreshes it.
 
 A skill in `~/.claude/skills/jevlin/`. In `~/.claude/settings.json`: five hooks (`PreToolUse` on
 the Bash and PowerShell tools threads each search into the turn, three track the context window,
-`Stop` reports the turn end and starts the daily release check) and six `permissions.allow` rules, the single-quoted, quoted and bare spellings
-of the search command and of `fetch --stdin`. Every rule ends with the installation's
-`-config <file>`, and before setup has written that file it names the path setup will write.
+`Stop` reports the turn end and starts the daily release check) and nine `permissions.allow`
+rules: the single-quoted, quoted and bare spellings of the search command and of `fetch --stdin`,
+each ending with the installation's `-config <file>` (before setup has written that file it names
+the path setup will write); an `Edit` and a `Read` rule for the `requests` folder beside that
+config; and a `Read` rule for the skill's own folder, so the agent opens the `reference.md` beside
+`SKILL.md` without a question. The folder is for a request that holds a `'` or a `$`, which cannot ride on the one-line
+call: the skill has the agent write it there with the Write tool, which Claude Code governs by
+`Edit` rules, and the call reads it with `--stdin < <file>`, which Claude Code checks against
+`Read` rules. Nothing creates the folder (the Write tool does) and nothing prunes it; the text is
+also in the transcript Claude Code keeps.
 Reinstalling replaces those rules rather than adding more, including rules an earlier version
 wrote without a config, so an installation set up before `fetch` existed gains its rules on the
 next `jevlin agents install`, `jevlin setup` or `jevlin upgrade`, and asks before each fetch
@@ -54,7 +61,8 @@ Bash on macOS and Linux. On Windows the model picks Git Bash or PowerShell per c
 teaches both. The hook prefixes the search with the trace, which an allow rule (matched on how a
 command begins) no longer matches, so the hook answers `allow` itself for exactly the search the
 skill renders. Otherwise every search waits for approval, and a headless session refuses it. The
-hook also answers `allow` for exactly the fetch the skill renders, which it does not rewrite: the
+hook answers `allow` for the same search read from a request file, when the file is directly
+inside the `requests` folder and holds one version-1 request. It also answers `allow` for exactly the fetch the skill renders, which it does not rewrite: the
 allow rules cover it under the Bash tool, and the hook under the PowerShell tool, which they cannot
 name.
 

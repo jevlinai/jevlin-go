@@ -9,6 +9,13 @@
     },
     {
       "surface": "Cursor",
+      "path": "/home/u/.cursor/skills/jevlin/reference.md",
+      "mode": 384,
+      "why": "skill reference",
+      "content": "\u003creference.md, rendered for this OS; see testdata/hosts/*.golden\u003e"
+    },
+    {
+      "surface": "Cursor",
       "path": "/home/u/.cursor/hooks.json",
       "mode": 384,
       "why": "hooks",

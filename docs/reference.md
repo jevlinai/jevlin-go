@@ -13,7 +13,7 @@ Values to look up. Every flag is in `jevlin help` and `jevlin <command> -h`.
 | `fetch --stdin` | The full text of pages a search returned, for agents (JSON in, JSON out). See [Reading a page in full](#reading-a-page-in-full). |
 | `agents install\|status\|uninstall` | Sets up, reports or removes the skills and hooks of each agent. |
 | `agents prefer on\|off\|status` | Whether this search or the agent's own is the default. |
-| `agents tier fast\|balanced\|max\|default\|status` | The tier every search carries unless the request names one; `default` unsets it. |
+| `agents tier fast [preset]\|balanced\|max\|default\|status` | The tier every search carries unless the request names one; `default` unsets it. After `fast`, a preset name (`economy`, `standard`) picks which fast indexes run, and a preset named alone is taken as `fast <preset>` when the router lists it; `status` lists the router's presets with their estimated price per search. |
 | `connect` | Registers with the search platform, prints the claim link, polls until claimed. `-json` for one envelope. |
 | `login` | Stores a key you already have for searches, read from stdin or `-key-env VAR` and checked against the router first; `-show` says where a search would get its key, `-forget` removes the file. |
 | `status` | What this installation has and has not completed. `-json` for one envelope. |
@@ -45,12 +45,13 @@ list and needs no shell escaping. A malformed field answers `fix_input` before a
 |---|---|
 | `version` | `1`, required. |
 | `query` | The search, required. |
-| `tier` | `"fast"` (three fast indexes, one per index group, ~$0.015), `"balanced"` (the core arms, 8 results each, a 12-page merged window, ~$0.035) or `"max"` (the core arms, 15 results each, a 24-page window, 2,000-character excerpts, ~$0.045 plus the agent's own tokens). Prices are the arms' own, passed through; `usage.cost_micros` is the real one. Absent, the request carries the participant's tier (`agents tier`, then `[router] tier`), or no tier at all and the router applies the tenant's default. |
+| `tier` | `"fast"` (the fast indexes of the stored preset: `economy` asks two, ~$0.0013, `standard` three, ~$0.0053), `"balanced"` (the core arms, 8 results each, a 12-page merged window, ~$0.022) or `"max"` (the core arms, 15 results each, a 24-page window, 2,000-character excerpts, ~$0.027 plus the agent's own tokens). Prices are the arms' own, passed through; `usage.cost_micros` is the real one. Absent, the request carries the participant's tier (`agents tier`, then `[router] tier`), or no tier at all and the router applies the tenant's default. |
 | `recency` | `"day"`, `"week"`, `"month"` or `"year"`. A router that applies it says so in `result.filters_applied` (below). Without that report the results may be unfiltered: check each page's `published` date if it must hold. |
 | `domain_filter` | Up to 16 bare hostnames. Reported in `result.filters_applied` like `recency`; without the report, check each page's `url` host if it must hold. |
 | `max_results` | 1 to 25. A cap. |
-| `merged_limit` | 1 to 50: how many pages `result.merged` holds. Absent, the router's window applies (12 pages on `fast` and `balanced`, 24 on `max`, more when `search_queries` are sent). |
-| `max_chars` | A positive integer: the characters of page text across the whole merged list. Absent, only the router's per-page cut applies. |
+| `merged_limit` | 1 to 50: how many pages `result.merged` holds. Absent, the router's window applies (12 pages on `fast` and `balanced`, 24 on `max`, for each form when `search_queries` are sent), except that a `--stdin` search is sent 16 wherever that window would be larger: with `search_queries`, or on `max`. 16 is also the number the skill teaches beside `search_queries`. |
+| `max_chars` | A positive integer: the characters of page text across the whole merged list, spent in list order, so later pages get less. With `page_chars` too, the router cuts each page at `page_chars` and then spends `max_chars` across the list; with `max_chars` alone, no `page_chars` is added. |
+| `page_chars` | 200 to 4000: the characters of excerpt each page keeps. Absent, and with no `max_chars`, a `--stdin` search is sent 500, which with the window above keeps it under about 20,000 characters on every tier. |
 | `providers` | Up to 16 provider names: restrict the fan-out, or reach an extended arm that fires only when named. The router owns the list; an unknown name is its call. Needs `balanced` or `max`: on `fast` the router answers 400 `invalid_request`. Billed at the named arms' prices. |
 | `view` | `"merged"` (default) or `"full"`. Absent or `"merged"`, the envelope carries the merged list without the per-provider `candidates`, and each page without `excerpts` and `canonical_url`, which repeat its `snippet` and `url`. `"full"` adds all three, for the providers' own answer texts. Either way the router is asked for its merged view, and the envelope's `merged` is that list. The human form's `-view merged` with `-format json` shows the router's raw answer with it. |
 | `objective` | What you are trying to find out, in your own words: a non-blank string of at most 4096 bytes. The router passes it to the providers that take a goal and does not rank by it. |
@@ -300,6 +301,8 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | `claim.json` | The claim link and code for this installation's agent, while it is unclaimed. | connect | Yes; the next `jevlin connect` mints a fresh link, which ends the old one. |
 | `search-default` | `agents prefer`'s choice. | agents prefer | Yes; the skill default returns. |
 | `search-tier` | `agents tier`'s choice: the tier a search carries when the request names none. | agents tier | Yes; `[router] tier`, then the router's default, returns. |
+| `search-fast-set` | `agents tier fast <preset>`'s choice: the preset a fast search sends as `fast_set`. The skill never sets it. | agents tier | Yes; `agents tier default` removes it. |
+| `requests/` | Claude Code only: a search or fetch request holding a `'` or a `$`, written by the agent with the Write tool and read by the call with `--stdin < <file>`. Each file is the request word for word. The call reads it through the shell, so jevlin never sees its name and does not delete it; nothing prunes the folder, and `uninstall -purge-state` removes it. | the agent | Yes, with no search running. |
 | `update_check.json` | The daily release check's record: when it ran, what it found, and a release a rollback holds. | upgrade | Yes; the next agent session checks again, though a rollback's hold is forgotten. |
 | `bin/jevlin` | A native binary, and `jevlin.previous` after an upgrade. | setup, upgrade | Through `uninstall -binary`. |
 | `state/` | The agent registration (`agent.json`), the trace key (`trace.key`), and connect's lock and resume stamp. | setup, connect, search | No: it is your registration. |

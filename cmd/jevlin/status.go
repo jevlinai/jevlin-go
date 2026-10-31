@@ -160,7 +160,7 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) {
 			// foreground connect mints a fresh one.
 			fmt.Fprintln(stdout, "agent:  unclaimed — no claim link is on file for it here. Run `jevlin connect` for a fresh one.")
 		} else if claimURL := printableClaimURL(f.Claim.ClaimURL, f.PlatformBaseURL, stderr); claimURL != "" {
-			fmt.Fprintf(stdout, "agent:  unclaimed — claim at %s (open it in a browser and sign in)\n", claimURL)
+			fmt.Fprintf(stdout, "agent:  unclaimed — claim at %s (open it, sign in or create an account, then confirm; `jevlin connect` shows the steps)\n", claimURL)
 		} else {
 			fmt.Fprintln(stdout, "agent:  unclaimed — the stored claim link failed validation and is not shown. "+
 				"Run `jevlin connect` for a fresh one.")

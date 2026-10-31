@@ -6,7 +6,7 @@ jevlin in the order you meet it. Per-agent detail: [agents.md](agents.md); table
 
 | | |
 |---|---|
-| **A moment to claim your agent** | Setup prints a link; open it in a browser, sign in at `platform.jevlin.ai` (or create an account) and claim the agent. Search works before you do; the claim is what ties the agent to your account. |
+| **A moment to claim your agent** | Setup prints the steps: open the link in a browser, sign in at `platform.jevlin.ai` (or create an account; you come back to the page), check the agent's name and confirm. If the link does not open, type the printed code (shown as `AB12-CD34`; case and the hyphen do not matter) at `/claim` on the same site. Search works before you do, within an unclaimed agent's limits: the fast tier only, with a daily cap, which `jevlin limits` shows. The claim lifts the limits and opens the other tiers. |
 
 ## Setup
 
@@ -56,9 +56,12 @@ exits non-zero.
 
 ## The claim link
 
-Setup prints a claim link once the config is written, before the shell profile, and waits up to
-three minutes for you to visit it. You need not do it then: search already works, and using an
-agent later resumes the claim on its own. The link
+Setup prints the claim steps once the config is written, before the shell profile, and waits up to
+three minutes for you to finish them: open the link, sign in or create an account, check the
+agent's name and confirm, or type the printed code at `/claim` if the link does not open. You need
+not do it then: search already works, within an unclaimed agent's limits, and using an
+agent later resumes the claim on its own. The link is valid for a week; after that `jevlin connect`
+prints a fresh one. The link
 is kept in `~/.jevlin/claim.json`, beside your stored key, and only for the agent it was issued
 to; it is never read from the state directory, which an agent's sandbox may write. Before
 `jevlin connect` prints it, it asks the platform which agent your key belongs to: a claimed agent
@@ -123,16 +126,16 @@ The choice is saved beside your config and survives reinstalls. While it is off,
 
 ## Choosing a tier
 
-Every search carries a tier, which decides which engines run and what one query may cost: `fast` is three fast indexes, one per
-index group, quicker than the others, about $0.015 at the arms' own prices; `balanced` is the
-core arms with 8 results each and a 12-page merged window, about $0.035; `max` is the same arms
-asked for 15 results each, a 24-page window and 2,000-character excerpts, about $0.045 plus the
-tokens your agent spends reading it. Nothing is marked up; `usage.cost_micros` is the number.
+Every search carries a tier, which decides which engines run and what one query may cost: `fast` is the fast indexes of
+a named preset, quicker than the others: `economy`, the default, asks two, about $0.0013 at the
+arms' own prices, and `standard` three, about $0.0053; `balanced` is the core arms with 8
+results each and a 12-page merged window, about $0.022; `max` is the same arms asked for 15
+results each, a 24-page window and 2,000-character excerpts, about $0.027 plus the tokens your agent spends reading it. Nothing is marked up; `usage.cost_micros` is the number.
 `/jevlin tier
 balanced` in an agent, or `jevlin agents tier balanced` from a shell, sets the tier every search
 carries unless the request names one; `/jevlin tier default` unsets it, and `/jevlin tier` says
 what is in force. The skill tells your agent to leave `tier` alone so your tier applies, and to
-ask for `balanced` only when you need several sources beyond the three fast indexes, a thin
+ask for `balanced` only when you need several sources beyond the fast tier's indexes, a thin
 result or indexes that disagree; it never sends `max` on its own. With no
 tier set, the request carries none and the router applies the default for your key.
 
