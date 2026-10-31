@@ -3,8 +3,12 @@
 // its exit code. Nothing is interpreted here, so `npx jevlin search q`
 // is exactly `jevlin search q`.
 //
-// One thing is added for the child: JEVLIN_LAUNCH=npm:<kind>, where
-// kind is global, local or unknown. `jevlin setup` writes this
+// Two things are added for the child: JEVLIN_LAUNCH=npm:<kind>, where
+// kind is global, local or unknown, and, for a global install,
+// JEVLIN_LAUNCH_BIN, the directory holding npm's `jevlin` command (the shim
+// that runs this file), which is the directory a person's PATH needs. The
+// binary this launcher starts lives inside the package, and that directory
+// is never the one to put on PATH. `jevlin setup` writes this
 // binary's path into every hook and skill, so it refuses to run from a copy
 // npm or a project will discard — an exec cache or a project's own
 // node_modules. Only this launcher knows which kind of install it is, and it
@@ -64,7 +68,27 @@ function launchKind(packageDir, execPath, env, platform, exists) {
   return "local"
 }
 
-module.exports = { launchKind, npmGlobalRoots }
+// launchBinDir is the directory holding npm's `jevlin` command for a global
+// install: <prefix>/bin on POSIX, where the package is at
+// <prefix>/lib/node_modules/@jevlinsearch/jevlin, and <prefix> on Windows,
+// where it is at <prefix>\node_modules\@jevlinsearch\jevlin. null when the
+// layout is neither or the command is not there, so a guess is never passed
+// on: setup then derives it from the path or says it cannot.
+function launchBinDir(packageDir, platform, exists) {
+  const p = platform === "win32" ? path.win32 : path.posix
+  let modules = p.dirname(packageDir)
+  if (p.basename(modules).startsWith("@")) modules = p.dirname(modules)
+  const command = "jevlin"
+  if (platform === "win32") {
+    const dir = p.dirname(modules)
+    return p.basename(modules) === "node_modules" && exists(p.join(dir, command + ".cmd")) ? dir : null
+  }
+  if (p.basename(modules) !== "node_modules" || p.basename(p.dirname(modules)) !== "lib") return null
+  const dir = p.join(p.dirname(p.dirname(modules)), "bin")
+  return exists(p.join(dir, command)) ? dir : null
+}
+
+module.exports = { launchKind, launchBinDir, npmGlobalRoots }
 
 if (require.main === module) {
   const bin =
@@ -81,6 +105,11 @@ if (require.main === module) {
   }
   const kind = launchKind(path.dirname(__dirname), process.execPath, process.env, process.platform, exists)
   const env = Object.assign({}, process.env, { JEVLIN_LAUNCH: "npm:" + kind })
+  // Only ever what this launcher computed: one inherited from outside is not
+  // a statement about this install.
+  delete env.JEVLIN_LAUNCH_BIN
+  const binDir = kind === "global" ? launchBinDir(path.dirname(__dirname), process.platform, exists) : null
+  if (binDir) env.JEVLIN_LAUNCH_BIN = binDir
   const result = spawnSync(bin, process.argv.slice(2), { stdio: "inherit", env })
   if (result.error) {
     console.error(`jevlin: cannot run ${bin}: ${result.error.message}`)

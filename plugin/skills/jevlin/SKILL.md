@@ -59,10 +59,36 @@ archive verified against its `checksums.txt`, put on PATH.
 jevlin setup -yes
 ```
 
+If `jevlin` is not found after the install, npm's global `bin` directory is not
+on PATH. Do not stop: run npm's command by its full path, which is the same
+program. On macOS and Linux:
+
+```bash
+"$(npm prefix -g)/bin/jevlin" setup -yes
+```
+
+On Windows PowerShell:
+
+```powershell
+& "$(npm prefix -g)\jevlin.cmd" setup -yes
+```
+
+Use the same full-path form for `doctor` and `status` until the user has a new
+terminal.
+
 `-yes` answers the shell-profile and coding-agents questions: it adds
 `jevlin` to PATH and writes the skill (or, for opencode, the plugin) and
 hooks into every agent it finds (Claude Code, Cursor, Codex, opencode, Pi,
 Hermes). Nothing is mined: the client is search only.
+
+Setup ends its shell step with a line beginning "To use jevlin in this
+terminal now, run:" and one command under it. Show that command to the user
+exactly as printed, and tell them it puts `jevlin` on PATH only for a terminal
+that is already open: a terminal opened afterwards needs nothing, and an agent
+session started before setup needs a restart. Skills and hooks name the binary
+by its full path, so searching does not depend on it. If setup printed no such
+line, `jevlin` was already on PATH, or the shell step was skipped; `jevlin
+doctor` says which.
 
 One question `-yes` does not answer: replacing a Codex setting the user
 chose themselves (a default permission profile of their own, or
@@ -90,7 +116,8 @@ lists this agent as installed, the same two things step 1 checks. A row that
 still says `not installed` after setup is one setup could not answer for the
 user (the Codex question above, or a file it refused to touch): show them the
 row and ask them to run `jevlin agents install -client <agent>` at a terminal
-and answer it there. Then tell the user to restart
+and answer it there. If `jevlin` still is not found in a new terminal,
+`jevlin doctor` names the directory to add to PATH. Then tell the user to restart
 any agent session that was already open, this one included, so it loads the
 installed `jevlin` skill. That skill teaches the search: one JSON
 request on stdin, one JSON envelope back. Do not search from this skill, and

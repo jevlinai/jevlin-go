@@ -17,6 +17,12 @@ found is set up with `jevlin setup -with <id>` or `jevlin agents install -client
 **Rendered per shell.** Each command a skill teaches is written for the shell that agent runs on
 your OS, with your paths filled in. An unestablished shell would get Bash, and the plan says so.
 
+**By full path.** The skill and the hooks name the binary by its full path, so an agent searches
+whether or not a bare `jevlin` is on PATH. Only the command a person types needs PATH: setup's
+shell step sets it up and prints the command for the terminal in use, and `jevlin doctor` says
+which directory is missing. For an npm install that directory is npm's global `bin` directory,
+not the package's.
+
 **Whose it is.** A skill, hook entry or allow rule is this installation's only when it runs one
 of this installation's binaries **and** names this installation's config. Uninstall removes only
 those, and leaves and reports what names another installation or none (one `jevlin agents

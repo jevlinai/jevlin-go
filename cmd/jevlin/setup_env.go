@@ -176,20 +176,31 @@ func removeProfileBlock(existing []byte) (next []byte, block []string, found boo
 // profileBlockConfig is the JEVLIN_CONFIG a block exports, as written:
 // shell-quoted, the way setup writes it.
 func profileBlockConfig(block []string) (string, bool) {
-	const prefix = "export JEVLIN_CONFIG="
-	for _, l := range block {
-		if strings.HasPrefix(l, prefix) {
-			return strings.TrimPrefix(l, prefix), true
+	for _, prefix := range []string{"export JEVLIN_CONFIG=", "set -gx JEVLIN_CONFIG "} {
+		for _, l := range block {
+			if strings.HasPrefix(l, prefix) {
+				return strings.TrimPrefix(l, prefix), true
+			}
 		}
 	}
 	return "", false
 }
 
-// profileBlockNamesConfig reports whether a block exports exactly cfgPath,
-// in the form setup writes it.
+// profileBlockNamesConfig reports whether a block exports exactly cfgPath, in
+// the form setup writes for the line's own shell: a POSIX `export` line holds
+// the POSIX quoting and a fish `set` line the fish quoting. The two quotings
+// differ for a backslash, so reading either through the other would let one
+// installation claim another's block.
 func profileBlockNamesConfig(block []string, cfgPath string) bool {
-	value, ok := profileBlockConfig(block)
-	return ok && value == shellQuote(cfgPath)
+	for _, l := range block {
+		if v, ok := strings.CutPrefix(l, "export JEVLIN_CONFIG="); ok && v == shellQuote(cfgPath) {
+			return true
+		}
+		if v, ok := strings.CutPrefix(l, "set -gx JEVLIN_CONFIG "); ok && v == fishQuote(cfgPath) {
+			return true
+		}
+	}
+	return false
 }
 
 // ── Windows: the User environment and its journal ─────────────────────────
@@ -258,6 +269,17 @@ func pathEntryEquivalent(a, b string) bool {
 	return ca != "" && strings.EqualFold(ca, cb)
 }
 
+// removePathEntry is pathValue without the entries equivalent to entry.
+func removePathEntry(pathValue, entry string) string {
+	var kept []string
+	for _, e := range strings.Split(pathValue, ";") {
+		if e != "" && !pathEntryEquivalent(e, entry) {
+			kept = append(kept, e)
+		}
+	}
+	return strings.Join(kept, ";")
+}
+
 func pathHasEntry(pathValue, entry string) bool {
 	for _, e := range strings.Split(pathValue, ";") {
 		if pathEntryEquivalent(e, entry) {
@@ -294,6 +316,15 @@ func planUserEnvironment(env userEnvironment, prior *envJournal, binDir, cfgPath
 
 	present := pathHasEntry(pathValue, binDir)
 	addedBefore := prior != nil && prior.Path.AddedBySetup && pathEntryEquivalent(prior.Path.Entry, binDir)
+	// The journal holds one PATH entry. An earlier run that added a different
+	// one (an npm install's setup before it named npm's directory added
+	// <home>\bin) would lose it when this run records its own, and uninstall
+	// could never take it out; so this run takes it out now, in the same change.
+	if prior != nil && prior.Path.AddedBySetup && !addedBefore && pathHasEntry(pathValue, prior.Path.Entry) {
+		pathValue = removePathEntry(pathValue, prior.Path.Entry)
+		c.addPath = true
+		c.newPath = pathValue
+	}
 	switch {
 	case !present:
 		// Absent now: setup adds it, whether or not it did once before and

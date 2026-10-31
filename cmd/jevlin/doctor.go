@@ -17,7 +17,9 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -89,6 +91,10 @@ type doctorFacts struct {
 	// when the installation keeps one.
 	Binary binaryFacts
 
+	// NpmShim is the same for a global npm install, which keeps no binary at
+	// <home>/bin: whether npm's `jevlin` command is what PATH answers.
+	NpmShim npmShimFacts
+
 	// Now is sampled once, by the gatherer. Nothing downstream calls
 	// time.Now(), so a judgment over these facts is reproducible.
 	Now time.Time
@@ -107,6 +113,9 @@ func assembleDoctor(f doctorFacts) []doctorCheck {
 	}
 	if f.Binary.Checked {
 		checks = append(checks, doctorBinaryCheck(f.Binary))
+	}
+	if f.NpmShim.Checked {
+		checks = append(checks, doctorNpmShimCheck(f.NpmShim))
 	}
 	if f.State.Checked {
 		checks = append(checks, doctorStateCheck(f.State))
@@ -218,6 +227,8 @@ func gatherDoctorFacts(cfg *config.Config, src string, getenv func(string) strin
 	f := doctorFacts{ConfigSource: src, StateDir: cfg.Search.StateDir, Now: time.Now()}
 	f.Update = gatherUpdateFacts(cfg, getenv)
 	f.Binary = gatherBinaryFacts(doctorInstallationHome(src, getenv))
+	exe, _ := os.Executable()
+	f.NpmShim = gatherNpmShimFacts(exe, runtime.GOOS, getenv, exec.LookPath)
 	if stateACL.managed {
 		f.State = inspectStateAccess(cfg.Search.StateDir, auth.CredentialFiles())
 	}

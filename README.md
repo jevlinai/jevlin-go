@@ -29,18 +29,14 @@ jevlin setup
 Install it globally, never with `npx`: setup writes the binary's path into your agents' skills
 and hooks, and npm throws away an `npx` cache or a project's `node_modules`.
 
-### `jevlin: command not found` after `npm install -g`
-
-npm puts a global package's commands in `$(npm prefix -g)/bin`, and some setups (a Node installed
-without a version manager, or a custom prefix) do not have that directory on `PATH`. Add it, then
-open a new shell:
-
-```bash
-export PATH="$(npm prefix -g)/bin:$PATH"
-```
-
-Put that line in your shell's startup file (`~/.zshrc` or `~/.bashrc`) to keep it. On Windows the
-global directory is `npm prefix -g` itself, with no `bin`.
+If `jevlin: command not found` follows the install, npm's global `bin` directory is not on your
+PATH (`npm prefix -g` names the prefix; the command is in its `bin` directory, and in the prefix
+itself on Windows). Run setup through npm's command instead, by its full path:
+`"$(npm prefix -g)/bin/jevlin" setup -yes` (on Windows PowerShell,
+`& "$(npm prefix -g)\jevlin.cmd" setup -yes`). Setup puts the same
+directory in your shell profile, and prints the one command that makes the terminal you are in
+see it now; `"$(npm prefix -g)/bin/jevlin" doctor` names it too. Your agents' skills and hooks name the binary by its
+full path and do not depend on this.
 
 An agent can run this install itself. The marketplaces carry a setup skill, not the search:
 it installs the client and runs `jevlin setup`, which writes the agent's own skill and hooks.
@@ -187,7 +183,7 @@ to copy or paste. Then it asks, in this order:
 | question | what your answer does |
 |---|---|
 | **Use it?** | Asked only when an earlier installation was set aside beside `~/.jevlin`. Yes moves it back. |
-| **Add them to ~/.zshrc?** | Or whichever profile your shell reads. Puts `jevlin` on PATH and sets `JEVLIN_CONFIG`. On Windows it asks **Set them for your user?** instead. |
+| **Add them to ~/.zshrc?** | Or the file your shell reads: `~/.zshrc` for zsh, `~/.bash_profile` for bash on macOS (`~/.bashrc` on Linux, or when `~/.bash_profile` already sources it), `~/.config/fish/config.fish` for fish, in fish syntax. For any other shell it prints the lines and writes nothing. Puts `jevlin` on PATH (for an npm install, npm's global `bin` directory, where the `jevlin` command is) and sets `JEVLIN_CONFIG`. It then prints the one command that makes the terminal you are in see them now; a terminal opened later does not need it. On Windows it asks **Set them for your user?** instead, and the new Path reaches terminals opened afterwards. |
 | **Set up the coding agents found on this machine now?** | Writes a skill and hooks into each agent's own config, after showing you what. |
 | **Switch?** | Asked only when Codex's config has a setting of your own that its permission profile would change. It shows every line it would write; a bare Enter is no and leaves Codex as it is. |
 

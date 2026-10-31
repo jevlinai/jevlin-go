@@ -84,15 +84,35 @@ func TestNpmInstallsLaunchWithTheMarkerTheirLayoutSays(t *testing.T) {
 			t.Fatalf("%s: npm put no launcher at %s: %v", c.name, launcher, err)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-		cmd := exec.CommandContext(ctx, node, launcher, "-e", "process.stdout.write(process.env.JEVLIN_LAUNCH || '')") // #nosec G204 -- node from PATH running the launcher npm installed here
-		cmd.Env = append(env, "JEVLIN_BINARY="+node)
+		cmd := exec.CommandContext(ctx, node, launcher, "-e", "process.stdout.write((process.env.JEVLIN_LAUNCH || '') + '\\n' + (process.env.JEVLIN_LAUNCH_BIN || ''))") // #nosec G204 -- node from PATH running the launcher npm installed here
+		cmd.Env = append(env, "JEVLIN_BINARY="+node, "JEVLIN_LAUNCH_BIN=/inherited/not/ours")
 		out, err := cmd.CombinedOutput()
 		cancel()
 		if err != nil {
 			t.Fatalf("%s: the launcher failed: %v\n%s", c.name, err, out)
 		}
-		if got := strings.TrimSpace(string(out)); got != c.want {
-			t.Errorf("%s: the launcher marked it %q, want %q", c.name, got, c.want)
+		marker, binDir, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
+		if marker != c.want {
+			t.Errorf("%s: the launcher marked it %q, want %q", c.name, marker, c.want)
+		}
+		// A global install's command is in npm's bin directory, which the
+		// launcher names for setup; a project's is not on any PATH, and a
+		// value inherited from outside is not passed on.
+		wantBin := ""
+		if c.want == "npm:global" {
+			wantBin = filepath.Join(global, "bin")
+			if runtime.GOOS == "windows" {
+				wantBin = global
+			}
+		}
+		real := func(p string) string {
+			if r, err := filepath.EvalSymlinks(p); err == nil {
+				return r
+			}
+			return p
+		}
+		if real(binDir) != real(wantBin) {
+			t.Errorf("%s: JEVLIN_LAUNCH_BIN = %q, want %q", c.name, binDir, wantBin)
 		}
 	}
 }

@@ -128,6 +128,14 @@ connect completes the claim.
   state directory's parent; 0.6.x kept them beside its intake directory, and where the two differ
   setup moves them, stopping before it changes anything if a file of the same name is there.
 
+After `npm install -g`, setup puts npm's global `bin` directory on PATH, the directory holding
+the `jevlin` command, and no longer the package directory holding the real binary, which made
+the raw binary the command and later made setup and upgrade refuse it. It writes the startup
+file the shell reads: `~/.zshrc` for zsh, `~/.bash_profile` for bash on macOS, `~/.bashrc` for
+bash on Linux, fish's `config.fish` in fish syntax, and for any other shell only prints the
+lines. It ends the shell step with the one command that makes the current terminal find
+`jevlin`, and `jevlin doctor` now checks PATH for an npm install too.
+
 ## v0.6.1 — 2026-10-27
 
 The skill every agent reads now says it is supersearch, and the client gains `jevlin fetch

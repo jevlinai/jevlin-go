@@ -72,3 +72,93 @@ func doctorBinaryCheck(f binaryFacts) doctorCheck {
 	}
 	return c
 }
+
+// npmShimFacts is the same question for an npm install, which keeps no binary
+// at <home>/bin: the `jevlin` a person types is npm's shim, in npm's global
+// bin directory, and it answers only when that directory is on PATH. Without
+// this check doctor said nothing about PATH exactly when an npm install
+// needs it said.
+type npmShimFacts struct {
+	Checked   bool         // this process is a global npm install's binary
+	Dir       string       // npm's bin directory, "" when it cannot be told
+	OnPath    string       // what the bare name resolves to on PATH, "" for none
+	Here      bool         // OnPath is in Dir: this package's shim answers
+	DirOnPath bool         // Dir is one of PATH's entries at all
+	Dialect   shellDialect // the shell the fix is spelled for
+}
+
+// gatherNpmShimFacts looks when the launcher marked this process a global npm
+// install, and also when the package binary was run by its own path, which is
+// how the skills, the hooks and setup's closing lines run it and which carries
+// no marker: a binary inside a global npm layout is that install either way.
+// lookPath is exec.LookPath in production.
+func gatherNpmShimFacts(exe string, goos string, getenv func(string) string, lookPath func(string) (string, error)) npmShimFacts {
+	switch classifyLaunch(exe, getenv("JEVLIN_LAUNCH")) {
+	case launchNPMGlobal:
+	case launchNPMDirect:
+		if npmShimDirFromPackagePath(exe) == "" {
+			return npmShimFacts{}
+		}
+	default:
+		return npmShimFacts{}
+	}
+	f := npmShimFacts{Checked: true, Dir: npmBinDir(exe, getenv), Dialect: dialectPOSIX}
+	switch {
+	case goos == "windows":
+		f.Dialect = dialectPowerShell
+	case filepath.Base(getenv("SHELL")) == "fish":
+		f.Dialect = dialectFish
+	}
+	f.DirOnPath = dirOnPath(getenv("PATH"), f.Dir)
+	if onPath, err := lookPath("jevlin"); err == nil {
+		f.OnPath = onPath
+		f.Here = f.Dir != "" && sameDir(filepath.Dir(onPath), f.Dir)
+	}
+	return f
+}
+
+// sameDir compares two directories through any link in them, so a shim found
+// by a symlinked prefix is still the shim.
+func sameDir(a, b string) bool {
+	if samePath(a, b) {
+		return true
+	}
+	ra, errA := filepath.EvalSymlinks(a)
+	rb, errB := filepath.EvalSymlinks(b)
+	return errA == nil && errB == nil && samePath(ra, rb)
+}
+
+// doctorNpmShimCheck judges the facts. A failure here is a diagnosis (NO),
+// not an error: the agents' skills and hooks name the binary by its full path
+// and are unaffected, and only the person's typed `jevlin` is.
+func doctorNpmShimCheck(f npmShimFacts) doctorCheck {
+	c := doctorCheck{Name: "npm command on PATH"}
+	fix := "put npm's global bin directory (the one holding the `jevlin` command) on PATH"
+	if f.Dir != "" {
+		fix = "put " + f.Dir + " on PATH: run " + currentShellFix(f.Dialect, f.Dir) + " in this terminal, and add it to your shell's startup file (`jevlin setup` does that); a new terminal is needed after that"
+	}
+	switch {
+	case f.OnPath == "":
+		c.Verdict = verdictNo
+		c.Detail = "nothing on PATH answers `jevlin`"
+		if f.Dir != "" {
+			c.Detail += "; npm's command is in " + f.Dir
+		}
+		c.Fix = fix
+	case f.Here:
+		c.Verdict = verdictOK
+		c.Detail = "`jevlin` runs this package's npm command, " + f.OnPath
+	case f.Dir == "":
+		c.Verdict = verdictOK
+		c.Detail = "`jevlin` resolves to " + f.OnPath + " (npm's own bin directory could not be told, so it is not compared)"
+	case !f.DirOnPath:
+		c.Verdict = verdictNo
+		c.Detail = fmt.Sprintf("`jevlin` runs %s; this package's command is in %s, which is not on PATH", f.OnPath, f.Dir)
+		c.Fix = fix
+	default:
+		c.Verdict = verdictNo
+		c.Detail = fmt.Sprintf("`jevlin` runs %s, not this package's command in %s — another copy stands earlier on PATH", f.OnPath, f.Dir)
+		c.Fix = "move " + f.Dir + " ahead of it in PATH, or remove the other copy; the agents' files name this installation's binary by path and are unaffected"
+	}
+	return c
+}
