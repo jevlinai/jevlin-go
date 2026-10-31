@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -509,8 +510,13 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 	case !autoAppliesAcross(v, latest):
 		keep = "it is a new minor release, which is not installed automatically; `jevlin upgrade` installs it"
 	default:
+		// The binary's installation is the one whose config started the
+		// check: the directory that config is in. The check's root is not
+		// that when state_dir lies outside the installation directory, as
+		// after setup moved an earlier installation's key beside it.
 		home, err = resolveInstallationHome(homeFlag, d.getenv, d.userHome, exe)
-		if err != nil || !samePath(home, root) {
+		ours := samePath(home, root) || (src != "" && samePath(home, filepath.Dir(src)))
+		if err != nil || !ours {
 			// A binary another installation shares is that installation's to
 			// update, under its own config's mode.
 			keep = "the binary belongs to another installation, whose own config decides"
