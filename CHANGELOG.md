@@ -23,6 +23,12 @@ integrations, setup, connect, upgrade and uninstall is the code that shipped in 
 the mining calls taken out, not a rewrite. 0.6.1 is the last release with mining and remains
 available; this client reads no 0.6.x configuration.
 
+`jevlin connect`, and so setup, now prints the whole claim procedure for an unclaimed agent:
+what works before the claim, the three steps (open the link, sign in or create an account,
+check the agent's name and confirm) and the code to type at the claim page if the link does not
+open, shown as `AB12-CD34`. The timeout line says search keeps working and the next search or
+connect completes the claim.
+
 - **Mining left the client.** `jevlin mining`, `enroll`, `join`, `provider`, `payout`,
   `wallet`, `earnings` and `flush` are gone, and so are the mining question at setup and
   connect, the mining decision, the health records, the intake and spool directories, the

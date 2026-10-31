@@ -6,7 +6,7 @@ jevlin in the order you meet it. Per-agent detail: [agents.md](agents.md); table
 
 | | |
 |---|---|
-| **A moment to claim your agent** | Setup prints a link; open it in a browser, sign in at `platform.jevlin.ai` (or create an account) and claim the agent. Search works before you do; the claim is what ties the agent to your account. |
+| **A moment to claim your agent** | Setup prints the steps: open the link in a browser, sign in at `platform.jevlin.ai` (or create an account; you come back to the page), check the agent's name and confirm. If the link does not open, type the printed code (shown as `AB12-CD34`; case and the hyphen do not matter) at `/claim` on the same site. Search works before you do, within an unclaimed agent's limits: the fast tier only, with a daily cap, which `jevlin limits` shows. The claim lifts the limits and opens the other tiers. |
 
 ## Setup
 
@@ -56,9 +56,12 @@ exits non-zero.
 
 ## The claim link
 
-Setup prints a claim link once the config is written, before the shell profile, and waits up to
-three minutes for you to visit it. You need not do it then: search already works, and using an
-agent later resumes the claim on its own. The link
+Setup prints the claim steps once the config is written, before the shell profile, and waits up to
+three minutes for you to finish them: open the link, sign in or create an account, check the
+agent's name and confirm, or type the printed code at `/claim` if the link does not open. You need
+not do it then: search already works, within an unclaimed agent's limits, and using an
+agent later resumes the claim on its own. The link is valid for a week; after that `jevlin connect`
+prints a fresh one. The link
 is kept in `~/.jevlin/claim.json`, beside your stored key, and only for the agent it was issued
 to; it is never read from the state directory, which an agent's sandbox may write. Before
 `jevlin connect` prints it, it asks the platform which agent your key belongs to: a claimed agent

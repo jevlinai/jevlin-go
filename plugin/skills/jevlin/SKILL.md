@@ -71,11 +71,12 @@ would change and "Some agent could not be set up", and still exits 0. That is
 the user's call, at a terminal: show them what setup printed and go on to
 step 4.
 
-If setup prints a claim link such as `https://platform.jevlin.ai/claim/<code>`,
-show it to the user exactly as printed. Never open it yourself and never
-shorten, paraphrase or summarize it away. Nothing blocks on it: search already
-works, and the claim lifts the installation off the unclaimed tier when they
-get to it.
+If setup prints the claim steps (they begin "This agent is registered" and
+hold a link such as `https://platform.jevlin.ai/claim/<code>` and a code),
+show the user the whole block exactly as printed: the link, the three steps
+and the code line. Never open the link yourself and never shorten, paraphrase
+or summarize any of it away. Nothing blocks on it: search already works within
+an unclaimed agent's limits, and the claim lifts them when the user gets to it.
 
 ## 4. Verify, then hand over
 
@@ -98,7 +99,7 @@ do not paste search instructions of your own.
 ## Rules
 
 - Never put a key in a command line or a file yourself; setup handles the key.
-- Show the claim link verbatim. Everything else setup prints is for the user
-  to read, not for you to act on.
+- Show the whole claim block verbatim, not only the link. Everything else setup
+  prints is for the user to read, not for you to act on.
 - If `jevlin setup` is refused or fails, show the user what it printed and
   stop; `jevlin doctor` explains an installation that is not healthy.
