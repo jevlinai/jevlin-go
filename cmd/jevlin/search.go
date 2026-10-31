@@ -162,7 +162,10 @@ type searchCall struct {
 	// preset and rides only with tier "fast".
 	PageChars *int
 	FastSet   string
-	Trace     *traceEnvelope
+	// Cache is "" or "refresh" (--fresh, or "cache" in a --stdin request)
+	// and goes out only when set: the router's default is the field's absence.
+	Cache string
+	Trace *traceEnvelope
 }
 
 // searchOutcome is the structured result of running a search. Both
@@ -225,6 +228,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	viewFlag := fs.String("view", "", `router view: "merged" adds the router's own cross-provider merged list and per-arm indexes to the raw response; empty or "full" asks for none`)
 	timeout := fs.Duration("timeout", defaultSearchTimeout, "whole-search deadline, covering connect, headers, body and the one trace-compatibility retry")
 	fs.Bool("stdin", false, "read one version-1 JSON search request from stdin and answer with the machine envelope")
+	fresh := fs.Bool("fresh", false, "run the search live instead of serving a result cached in the last 15 minutes; costs the same as any live search")
 	if err := fs.Parse(args); err != nil {
 		if machine {
 			return failSearchInput(stdout, inputErrorf(codeInvalidFlags, "the flags could not be parsed"))
@@ -241,6 +245,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	var objective *string
 	var searchQueries []string
 	var mergedLimit, maxChars, pageChars *int
+	var cache string
 	if machine {
 		// No positional query in machine mode: two sources for the same
 		// value is how a caller ends up sending one and escaping the
@@ -271,7 +276,16 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		mergedLimit = req.mergedLimit
 		maxChars = req.maxChars
 		pageChars = req.pageChars
+		cache = req.cache
+		// Two sources for one value: a --stdin request says "cache" itself.
+		if *fresh {
+			return failSearchInput(stdout, inputErrorf(codeInvalidFlags,
+				"--fresh is for the command line; a --stdin request carries \"cache\": \"refresh\""))
+		}
 	} else {
+		if *fresh {
+			cache = "refresh"
+		}
 		query = strings.TrimSpace(strings.Join(fs.Args(), " "))
 		if query == "" {
 			fmt.Fprintln(stderr, "jevlin search: a query is required: jevlin search [-tier fast] [-format model] <query words>, or --stdin")
@@ -397,6 +411,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		MergedLimit:   mergedLimit,
 		MaxChars:      maxChars,
 		PageChars:     pageChars,
+		Cache:         cache,
 		FastSet:       fastSetFor(ctx, *tier, cfgSource, strings.TrimRight(cfg.Search.RouterURL.String(), "/"), key, getenv),
 		Trace:         trace,
 	})
@@ -570,6 +585,9 @@ func performSearch(ctx context.Context, now func() time.Time, call searchCall) (
 	}
 	if call.FastSet != "" {
 		body["fast_set"] = call.FastSet
+	}
+	if call.Cache != "" {
+		body["cache"] = call.Cache
 	}
 	out = searchOutcome{Traced: call.Trace != nil}
 	if out.Traced {
@@ -1030,8 +1048,11 @@ type routerBuild struct {
 type routerUsage struct {
 	CostMicros int64 `json:"cost_micros,omitempty"`
 	CacheHit   bool  `json:"cache_hit,omitempty"`
-	Pending    int   `json:"pending,omitempty"`
-	LatencyMS  int64 `json:"latency_ms,omitempty"`
+	// CacheRefresh says the request asked for a live search (cache
+	// "refresh") and got one.
+	CacheRefresh bool  `json:"cache_refresh,omitempty"`
+	Pending      int   `json:"pending,omitempty"`
+	LatencyMS    int64 `json:"latency_ms,omitempty"`
 	// DeadlineHit says the router answered at its deadline with arms still
 	// out, so what came back is less than the search would have found.
 	DeadlineHit bool `json:"deadline_hit,omitempty"`

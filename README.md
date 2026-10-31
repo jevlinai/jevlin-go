@@ -102,6 +102,12 @@ which does put it there.
 jevlin search -format model "what is proof of authority consensus"
 ```
 
+The router keeps a search's answer for up to 15 minutes and serves a repeat of it from there.
+For live news, or anything a result that old would get wrong, a person adds `--fresh` to run
+the search live instead; it costs the same as any live search, and the fresh answer is kept for
+the next caller. A `--stdin` request says the same with `"cache": "refresh"`. An agent is never
+told to set it.
+
 ## Three tiers
 
 Every search runs in one of three tiers. `fast` asks the fast indexes of a named preset,
