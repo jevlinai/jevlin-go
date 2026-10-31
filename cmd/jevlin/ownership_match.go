@@ -269,7 +269,7 @@ func codexRootsOwner(roots []string, entry binEntry, getenv func(string) string)
 	}
 	for _, r := range roots {
 		if !dirsInclude(owned, r) {
-			if rootsUnderOurConfig(roots, entry) || earlierBlockOfOurConfig(roots, entry) {
+			if rootsUnderOurConfig(roots, entry) || earlierBlockOfOurConfig(roots, entry, owned) {
 				return true, "", ""
 			}
 			return false, describeSandboxOwner(roots), ""
@@ -295,27 +295,55 @@ func rootsUnderOurConfig(roots []string, entry binEntry) bool {
 
 // earlierBlockOfOurConfig: is this the block an earlier version wrote for
 // this installation, with its state directory moved? That version granted
-// four roots, its intake, sessions, spool and state directories, and setup
-// put the first three in the installation directory, beside the config,
-// whatever state_dir said. A participant who moved state_dir elsewhere left
-// a block whose roots share no parent but the filesystem's, so
+// four roots, its intake, sessions, spool and state directories. Setup put
+// the first three in the installation directory, beside the config,
+// whatever state_dir said; a config that named only state_dir had all four
+// derived from it instead: intake and sessions beside the state directory,
+// the spool inside it. Either way a participant who moved state_dir left a
+// block whose roots share no parent but the filesystem's, so
 // rootsUnderOurConfig cannot vouch for it, and setup left it in place with
-// its intake and spool roots and the hosts that version allowed. Those
-// three in the directory holding this installation's own config are what
-// make it this installation's, wherever its state root points; install
-// rewrites it with the roots the config names now.
-func earlierBlockOfOurConfig(roots []string, entry binEntry) bool {
+// its intake and spool roots and the hosts that version allowed.
+//
+// So a block of exactly those four is this installation's when each root is
+// a directory this installation's config names now (owned), or lies in the
+// directory holding this installation's config, or is the intake or spool
+// directory that version derived from a state directory this config names:
+// beside it, or (the spool) inside it. Install rewrites it with the roots
+// the config names now.
+func earlierBlockOfOurConfig(roots []string, entry binEntry, owned []string) bool {
 	if len(roots) != 4 || entry.cfg == "" {
+		return false
+	}
+	var ownedState []string
+	for _, d := range owned {
+		if filepath.Base(filepath.Clean(d)) == "state" {
+			ownedState = append(ownedState, filepath.Clean(d))
+		}
+	}
+	derived := func(name, r string) bool {
+		parent := filepath.Dir(filepath.Clean(r))
+		for _, st := range ownedState {
+			if (name == "intake" || name == "spool") && samePath(parent, filepath.Dir(st)) {
+				return true
+			}
+			if name == "spool" && samePath(parent, st) {
+				return true
+			}
+		}
 		return false
 	}
 	seen := map[string]bool{}
 	for _, r := range roots {
 		name := filepath.Base(filepath.Clean(r))
 		seen[name] = true
-		if name == "state" {
-			continue
-		}
-		if !sameConfigFile(filepath.Join(filepath.Dir(filepath.Clean(r)), setupConfigFile), entry.cfg) {
+		switch {
+		case dirsInclude(owned, r):
+		case sameConfigFile(filepath.Join(filepath.Dir(filepath.Clean(r)), setupConfigFile), entry.cfg):
+		case derived(name, r):
+		case name == "state":
+			// The setup-written layout: the state root may point anywhere,
+			// the other three vouch for it.
+		default:
 			return false
 		}
 	}

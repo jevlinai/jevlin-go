@@ -286,8 +286,27 @@ func TestOnlyAnEarlierBlocksOwnShapeIsVouchedFor(t *testing.T) {
 		{[]string{in("intake"), in("sessions"), in("cache"), away}, false},
 		{[]string{in("intake"), in("sessions"), in("spool"), filepath.Join(other, "elsewhere")}, false},
 	} {
-		if got := earlierBlockOfOurConfig(c.roots, entry); got != c.want {
+		if got := earlierBlockOfOurConfig(c.roots, entry, nil); got != c.want {
 			t.Errorf("%v: %v, want %v", c.roots, got, c.want)
+		}
+	}
+
+	// The layout an earlier config naming only state_dir derived: intake and
+	// sessions beside the state directory, the spool inside it. The state
+	// and sessions directories are this installation's config's now.
+	moved := filepath.Join(t.TempDir(), "elsewhere")
+	st, owned := filepath.Join(moved, "state"), []string{filepath.Join(moved, "state"), filepath.Join(moved, "sessions")}
+	for _, c := range []struct {
+		roots []string
+		want  bool
+	}{
+		{[]string{filepath.Join(moved, "intake"), filepath.Join(moved, "sessions"), filepath.Join(st, "spool"), st}, true},
+		{[]string{filepath.Join(moved, "intake"), filepath.Join(moved, "sessions"), filepath.Join(moved, "spool"), st}, true},
+		{[]string{filepath.Join(other, "intake"), filepath.Join(moved, "sessions"), filepath.Join(st, "spool"), st}, false},
+		{[]string{filepath.Join(moved, "intake"), filepath.Join(other, "sessions"), filepath.Join(st, "spool"), st}, false},
+	} {
+		if got := earlierBlockOfOurConfig(c.roots, entry, owned); got != c.want {
+			t.Errorf("derived %v: %v, want %v", c.roots, got, c.want)
 		}
 	}
 }
