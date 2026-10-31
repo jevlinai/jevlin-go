@@ -11,6 +11,7 @@ Values to look up. Every flag is in `jevlin help` and `jevlin <command> -h`.
 | `upgrade` | Replaces a native binary with a verified release; `-rollback` swaps back. `-auto` is the daily check the hooks start, not a command a person runs. |
 | `search` | One web search. `--stdin` for agents (JSON in, JSON out); `<query words>` for a person. |
 | `fetch --stdin` | The full text of pages a search returned, for agents (JSON in, JSON out). See [Reading a page in full](#reading-a-page-in-full). |
+| `mcp` | `search --stdin` and `fetch --stdin` as MCP tools, over stdio, for a host that registers it. See [MCP server](#mcp-server). |
 | `agents install\|status\|uninstall` | Sets up, reports or removes the skills and hooks of each agent. |
 | `agents prefer on\|off\|status` | Whether this search or the agent's own is the default. |
 | `agents tier fast [preset]\|balanced\|max\|default\|status` | The tier every search carries unless the request names one; `default` unsets it. After `fast`, a preset name (`economy`, `standard`) picks which fast indexes run, and a preset named alone is taken as `fast <preset>` when the router lists it; `status` lists the router's presets with their estimated price per search. |
@@ -193,6 +194,52 @@ A fetch is one request and is never retried by the client.
 `-timeout`, default 60s, bounds the whole search: connect, TLS, headers, body and the one
 retry. If the router answers the exact code `trace_unsupported`, the client retries once
 without the trace, under the same deadline. Nothing else causes a second request.
+
+## MCP server
+
+`jevlin mcp` serves the two machine paths as Model Context Protocol tools, `search` and
+`fetch`, over stdio: newline-delimited JSON-RPC 2.0 on stdin and stdout. A host starts it when
+it needs it and holds it open; it ends when the host closes its stdin. stdout carries nothing but
+protocol messages; `-log` writes one line per message to stderr, naming the method, the tool and
+the outcome code and never what a request carried.
+
+A tool's arguments are the `--stdin` request for that command, and `version` may be left out.
+The answer is the same envelope `--stdin` prints, as the result's one text item, and from
+protocol revision 2025-06-18 on as `structuredContent` too. A request the machine path refuses,
+and a call before setup or without a key, comes back as a tool result with `isError` set and that
+envelope's `code` and `action`; the server keeps running. Each tool's input schema has exactly
+the request's fields. The server speaks protocol revisions 2025-11-25, 2025-06-18, 2025-03-26 and
+2024-11-05, and serves requests one at a time, in the order they arrive.
+
+A search made here goes to the router with the client's own name as the trace's harness,
+`mcp:<name>` (or `mcp` when the name is not a plain token), and with one session per host
+process. `JEVLIN_HARNESS`, when the host's environment sets it, takes precedence.
+
+Setup does not register the server. To add it by hand, with `jevlin` on the host's `PATH` (or
+its full path in its place):
+
+- Claude Code:
+
+  ```bash
+  claude mcp add jevlin -- jevlin mcp
+  ```
+
+- Codex, in `~/.codex/config.toml`:
+
+  ```toml
+  [mcp_servers.jevlin]
+  command = "jevlin"
+  args = ["mcp"]
+  ```
+
+- Cursor, in `~/.cursor/mcp.json`:
+
+  ```json
+  {"mcpServers": {"jevlin": {"command": "jevlin", "args": ["mcp"]}}}
+  ```
+
+The server reads the config the way every command does; for an installation other than the
+machine's own, add `-config <file>` after `mcp`.
 
 ## Config
 
