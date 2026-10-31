@@ -13,7 +13,7 @@ Values to look up. Every flag is in `jevlin help` and `jevlin <command> -h`.
 | `fetch --stdin` | The full text of pages a search returned, for agents (JSON in, JSON out). See [Reading a page in full](#reading-a-page-in-full). |
 | `agents install\|status\|uninstall` | Sets up, reports or removes the skills and hooks of each agent. |
 | `agents prefer on\|off\|status` | Whether this search or the agent's own is the default. |
-| `agents tier fast [preset]\|balanced\|max\|default\|status` | The tier every search carries unless the request names one; `default` unsets it. After `fast`, a preset name (`economy`, `standard`) picks which fast indexes run; `status` lists the router's presets with their estimated price per search. |
+| `agents tier fast [preset]\|balanced\|max\|default\|status` | The tier every search carries unless the request names one; `default` unsets it. After `fast`, a preset name (`economy`, `standard`) picks which fast indexes run, and a preset named alone is taken as `fast <preset>` when the router lists it; `status` lists the router's presets with their estimated price per search. |
 | `connect` | Registers with the search platform, prints the claim link, polls until claimed. `-json` for one envelope. |
 | `login` | Stores a key you already have for searches, read from stdin or `-key-env VAR` and checked against the router first; `-show` says where a search would get its key, `-forget` removes the file. |
 | `status` | What this installation has and has not completed. `-json` for one envelope. |

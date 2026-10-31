@@ -144,3 +144,44 @@ func TestTierStatusWarnsOfAStoredPresetTheRouterDoesNotList(t *testing.T) {
 		t.Errorf("no warning:\n%s", out)
 	}
 }
+
+// The skill's reference tells the agent to run the tier command with the
+// words the user named, and a user may name the preset alone
+// (`/jevlin tier standard`). That is `fast standard` when the router's list
+// names it; a word the list does not name, or any word while the list
+// cannot be read, is refused, so a mistyped tier never switches to fast.
+func TestAPresetNamedAloneIsTheFastTierWithThatPreset(t *testing.T) {
+	listed := true
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if !listed {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write([]byte(realFastSets))
+	}))
+	t.Cleanup(srv.Close)
+	cfg := writeTOML(t, "schema = 1\n\n[router]\nurl = \""+srv.URL+"\"\n")
+	m, ops := newFakeMachine("claude")
+	env := map[string]string{"JEVLIN_API_KEY": "k", "JEVLIN_CONFIG": cfg}
+	stored := func() string {
+		for p, b := range m.files {
+			if strings.HasSuffix(p, "/"+fastSetFile) {
+				return strings.TrimSpace(string(b))
+			}
+		}
+		return ""
+	}
+	code, out, errOut := runAgents(t, ops, env, "tier", "-config", cfg, "standard")
+	if code != exitOK || !strings.Contains(out, "search tier: fast") || stored() != "standard" {
+		t.Fatalf("tier standard: exit %d, preset %q\n%s%s", code, stored(), out, errOut)
+	}
+	for _, word := range []string{"balanaced", "econmy"} {
+		if code, _, _ := runAgents(t, ops, env, "tier", "-config", cfg, word); code != exitUsage {
+			t.Errorf("tier %s: exit %d, want usage", word, code)
+		}
+	}
+	listed = false
+	if code, _, _ := runAgents(t, ops, env, "tier", "-config", cfg, "economy"); code != exitUsage || stored() != "standard" {
+		t.Errorf("a lone word with the list unreadable: exit %d, preset %q", code, stored())
+	}
+}

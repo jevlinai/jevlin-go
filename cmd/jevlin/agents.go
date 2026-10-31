@@ -913,8 +913,11 @@ func agentsTier(ops agentOps, args []string, stdout, stderr io.Writer, getenv fu
 		return exitUsage
 	}
 	// The verb may come before or after the flags, as with prefer. After
-	// "fast" one more word may name the user's preset.
-	want, preset := "status", ""
+	// "fast" one more word may name the user's preset; a preset named on
+	// its own (`/jevlin tier standard`) is taken as `fast standard`, but
+	// only once the router's list names it, so a mistyped tier never
+	// switches the user to fast.
+	want, preset, lone := "status", "", false
 	if rest := fs.Args(); len(rest) > 0 {
 		want = strings.ToLower(rest[0])
 		if err := fs.Parse(rest[1:]); err != nil {
@@ -928,6 +931,8 @@ func agentsTier(ops agentOps, args []string, stdout, stderr io.Writer, getenv fu
 	}
 	switch {
 	case want == "status", want == "default", config.KnownSearchTier(want):
+	case fastSetNameRE.MatchString(want):
+		want, preset, lone = "fast", want, true
 	default:
 		fmt.Fprintf(stderr, "jevlin agents tier: want %s, default or status\n%s", strings.Join(config.SearchTiers, ", "), agentsUsage)
 		return exitUsage
@@ -958,6 +963,9 @@ func agentsTier(ops agentOps, args []string, stdout, stderr io.Writer, getenv fu
 		// it is refused when the router can say; when it cannot, the name
 		// is kept and the one line says it was not checked.
 		switch doc, err := fetchFastSets(entry.cfg, getenv); {
+		case lone && (err != nil || !doc.lists(preset)):
+			fmt.Fprintf(stderr, "jevlin agents tier: want %s, default, status, or a preset the router lists\n%s", strings.Join(config.SearchTiers, ", "), agentsUsage)
+			return exitUsage
 		case err == nil && !doc.lists(preset):
 			fmt.Fprintf(stderr, "jevlin agents tier: this router does not list %q; it lists %s\n", preset, strings.Join(doc.names(), ", "))
 			return exitUsage
