@@ -271,7 +271,6 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		mergedLimit = req.mergedLimit
 		maxChars = req.maxChars
 		pageChars = req.pageChars
-		mergedLimit, pageChars = agentOutputDefaults(mergedLimit, maxChars, pageChars, searchQueries)
 	} else {
 		query = strings.TrimSpace(strings.Join(fs.Args(), " "))
 		if query == "" {
@@ -324,6 +323,9 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	// the agent escalated.
 	if *tier == "" {
 		*tier = searchTierDefault(cfgSource, cfg.Search, getenv)
+	}
+	if machine {
+		mergedLimit, pageChars = agentOutputDefaults(mergedLimit, maxChars, pageChars, searchQueries, *tier)
 	}
 	key, keySrc, err := resolveAPIKey(getenv, cfg.Search)
 	if err == nil && keySrc == keyFromEnv {

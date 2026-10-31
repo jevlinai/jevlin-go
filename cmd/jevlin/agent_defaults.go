@@ -16,22 +16,27 @@ const (
 	// the whole list, spent in list order, so later pages would get nothing;
 	// a per-page cap gives every page the same share.
 	defaultPageChars = 500
-	// defaultRewordedLimit is the window a request with search_queries gets:
-	// every wording adds pages, and the router's default of 12 would cut
-	// them off.
-	defaultRewordedLimit = 20
+	// defaultAgentLimit is the window an agent search gets where the
+	// router's own would be larger: 12 pages per form on fast and
+	// balanced and 24 on max, times one plus the search_queries forms. It
+	// is the number the skill teaches beside search_queries, so an agent
+	// that sends it and one that does not get the same list.
+	defaultAgentLimit = 16
 )
 
-// agentOutputDefaults fills in what the request did not size. A caller that
-// sent max_chars chose its own budget, and the router takes one excerpt
-// control at a time, so the per-page default stays out of its way.
-func agentOutputDefaults(mergedLimit, maxChars, pageChars *int, searchQueries []string) (*int, *int) {
+// agentOutputDefaults fills in what the request did not size, for the tier
+// the search will carry. A caller that sent max_chars chose its own budget,
+// so the per-page default stays out of its way; the router applies both
+// when a caller sends both (page_chars to each page, then max_chars across
+// the list), and both are sent as given. The window is sent only where the
+// router's default would exceed it: with search_queries, or on max.
+func agentOutputDefaults(mergedLimit, maxChars, pageChars *int, searchQueries []string, tier string) (*int, *int) {
 	if pageChars == nil && maxChars == nil {
 		n := defaultPageChars
 		pageChars = &n
 	}
-	if mergedLimit == nil && len(searchQueries) > 0 {
-		n := defaultRewordedLimit
+	if mergedLimit == nil && (len(searchQueries) > 0 || tier == "max") {
+		n := defaultAgentLimit
 		mergedLimit = &n
 	}
 	return mergedLimit, pageChars

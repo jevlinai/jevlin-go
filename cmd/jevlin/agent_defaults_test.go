@@ -70,7 +70,7 @@ func TestAnAgentSearchSizesWhatTheCallerDidNot(t *testing.T) {
 		{"the caller's page cap", `{"version":1,"query":"q","page_chars":1200}`, float64(1200), nil, nil},
 		{"the lower bound", `{"version":1,"query":"q","page_chars":200}`, float64(200), nil, nil},
 		{"the upper bound", `{"version":1,"query":"q","page_chars":4000}`, float64(4000), nil, nil},
-		{"rewordings widen the window", `{"version":1,"query":"q","search_queries":["a","b"]}`, float64(500), float64(20), nil},
+		{"rewordings widen the window", `{"version":1,"query":"q","search_queries":["a","b"]}`, float64(500), float64(defaultAgentLimit), nil},
 		{"the caller's window", `{"version":1,"query":"q","search_queries":["a"],"merged_limit":16}`, float64(500), float64(16), nil},
 		{"a whole-list budget is the caller's choice", `{"version":1,"query":"q","max_chars":3000}`, nil, nil, float64(3000)},
 	} {
@@ -188,8 +188,10 @@ func TestAFastPresetTheRouterDoesNotListIsNotSent(t *testing.T) {
 }
 
 // routerHonoring answers the way the router's merged view does: merged_limit
-// pages, each excerpt cut at page_chars. The page shape is the recorded
-// fixture's, repeated, so every field a page carries is counted.
+// pages, else the router's own window (12 per form, 24 on max, times one plus
+// the search_queries forms, within 50), each excerpt cut at page_chars. The
+// page shape is the recorded fixture's, repeated, so every field a page
+// carries is counted.
 func routerHonoring(t *testing.T) func(map[string]any) []byte {
 	raw := readSearchTestdata(t, filepath.Join("router", "merged-view-success.merge-v2.json"))
 	var doc map[string]any
@@ -199,6 +201,12 @@ func routerHonoring(t *testing.T) func(map[string]any) []byte {
 	proto := doc["merged"].([]any)[0].(map[string]any)
 	return func(sent map[string]any) []byte {
 		limit := 12
+		if sent["tier"] == "max" {
+			limit = 24
+		}
+		if forms, ok := sent["search_queries"].([]any); ok {
+			limit = min(limit*(1+len(forms)), 50)
+		}
 		if n, ok := sent["merged_limit"].(float64); ok {
 			limit = int(n)
 		}
@@ -227,18 +235,34 @@ func routerHonoring(t *testing.T) func(map[string]any) []byte {
 	}
 }
 
-// The target: no agent search above about 20,000 characters, for the
-// largest request an agent is taught to send, a query with three wordings.
+// The target: no agent search above about 20,000 characters, on any tier,
+// for a plain request and for the largest one an agent is taught to send, a
+// query with three wordings. On fast and balanced a plain request keeps the
+// router's 12-page window; anywhere the router's window is larger, the
+// agent window is sent.
 func TestAgentSearchOutputStaysBounded(t *testing.T) {
 	const bound = 20000
-	stdin := `{"version":1,"query":"q","objective":"o","search_queries":["second wording","third wording"]}`
-	out, sent := servingWith(t, nil, stdin, routerHonoring(t))
-	if sent["merged_limit"] != float64(defaultRewordedLimit) || sent["page_chars"] != float64(defaultPageChars) {
-		t.Fatalf("defaults not sent: %v", sent)
-	}
-	t.Logf("largest agent search output: %d characters (bound %d)", len(out), bound)
-	if len(out) > bound {
-		t.Errorf("the envelope is %d characters, over %d", len(out), bound)
+	plain := `{"version":1,"query":"q","objective":"o"}`
+	reworded := `{"version":1,"query":"q","objective":"o","search_queries":["second wording","third wording"]}`
+	for _, tc := range []struct {
+		tier, stdin string
+		limit       any
+	}{
+		{"fast", plain, nil},
+		{"balanced", plain, nil},
+		{"max", plain, float64(defaultAgentLimit)},
+		{"fast", reworded, float64(defaultAgentLimit)},
+		{"balanced", reworded, float64(defaultAgentLimit)},
+		{"max", reworded, float64(defaultAgentLimit)},
+	} {
+		out, sent := servingWith(t, map[string]string{"search-tier": tc.tier + "\n"}, tc.stdin, routerHonoring(t))
+		if sent["tier"] != tc.tier || sent["merged_limit"] != tc.limit || sent["page_chars"] != float64(defaultPageChars) {
+			t.Fatalf("%s %s: sent tier %v merged_limit %v page_chars %v", tc.tier, tc.stdin, sent["tier"], sent["merged_limit"], sent["page_chars"])
+		}
+		t.Logf("%s, %d wordings: %d characters (bound %d)", tc.tier, strings.Count(tc.stdin, "wording"), len(out), bound)
+		if len(out) > bound {
+			t.Errorf("%s %s: the envelope is %d characters, over %d", tc.tier, tc.stdin, len(out), bound)
+		}
 	}
 }
 

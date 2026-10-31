@@ -82,11 +82,12 @@ available; this client reads no 0.6.x configuration.
   does not list is refused when it is set, and `jevlin agents tier status` lists the presets
   with their estimated price per search. An agent search (`search --stdin`) that sizes nothing
   asks for 500 characters of excerpt per page (`page_chars`, 200 to 4000, also accepted in the
-  request) and, with `search_queries` and no `merged_limit`, a 20-page list, so its output stays
-  under about 20,000 characters. For Claude Code the skill teaches the search and fetch calls
-  as one line, `... --stdin <<< '<request>'`, which the permission rules `jevlin agents install`
-  writes match; Claude Code does not match a multi-line heredoc against them, so the call the
-  skill taught before was refused in a headless session and asked about in an interactive one.
+  request) and, where the router's window would be larger (with `search_queries`, or on `max`),
+  a 16-page list, so its output stays under about 20,000 characters on every tier. For Claude
+  Code the skill teaches the search and fetch calls as one line, `... --stdin <<< '<request>'`,
+  which the permission rules `jevlin agents install` writes match; Claude Code does not match a
+  multi-line heredoc against them, so the call the skill taught before was refused in a headless
+  session and asked about in an interactive one.
   A request holding an apostrophe or a `$` is written with the Write tool to a file in a
   `requests` folder beside the config and sent with `--stdin < <file>`, under an `Edit` and a
   `Read` rule for that folder. `jevlin setup` writes the new skill and rules.
