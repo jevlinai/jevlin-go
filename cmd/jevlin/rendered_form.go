@@ -69,6 +69,8 @@ type renderedFormMatch struct {
 	cfg       string
 	body      string
 	wantsBody bool
+	// file: body is the path of a request file, not the request.
+	file bool
 }
 
 // matchedRenderedForms is the grammar half of the recognizer: every form this
@@ -86,16 +88,36 @@ type renderedFormMatch struct {
 // while every search in Cursor's second terminal would have prompted (the
 // prompting defect again, for the second terminal).
 func matchedRenderedForms(command, cfg string, shells []shellKind) []renderedFormMatch {
+	return matchedRenderedFormsIn(command, cfg, shells, false)
+}
+
+// matchedRenderedFormsIn is matchedRenderedForms, and with oneLine also the
+// one-line POSIX search and fetch that Claude Code's skill teaches.
+func matchedRenderedFormsIn(command, cfg string, shells []shellKind, oneLine bool) []renderedFormMatch {
 	if command == "" {
 		return nil
 	}
 	command = strings.TrimSuffix(command, "\n")
 	var out []renderedFormMatch
 	for _, sh := range shells {
-		for _, candidate := range renderedFormsForShell(cfg, sh) {
+		candidates := renderedFormsForShell(cfg, sh)
+		if oneLine && sh == shellPOSIX {
+			candidates = append(candidates, renderedOneLineForms(cfg)...)
+		}
+		for _, candidate := range candidates {
 			got, ok := matchRendered(command, candidate)
 			if !ok {
 				continue
+			}
+			if candidate.quotedBody {
+				// The body is one single-quoted word, quote escapes and
+				// all; re-quoting what was read back is the test that
+				// nothing else stands in it.
+				unquoted, ok := readQuotedBody(got.body)
+				if !ok {
+					continue
+				}
+				got.body = unquoted
 			}
 			bin, binOK := readRenderedPath(sh, got.bin)
 			cfgPath, cfgOK := readRenderedPath(sh, got.cfg)
@@ -109,6 +131,7 @@ func matchedRenderedForms(command, cfg string, shells []shellKind) []renderedFor
 				cfg:       cfgPath,
 				body:      got.body,
 				wantsBody: candidate.wantsBody,
+				file:      candidate.fileBody,
 			})
 		}
 	}
@@ -121,10 +144,23 @@ func matchedRenderedForms(command, cfg string, shells []shellKind) []renderedFor
 // is the config this hook was started with — the same one the skill's command
 // names, because one install wrote both.
 func recognizeRenderedForm(command string, executable func() (string, error), cfg string, shells []shellKind) *recognizedForm {
+	return recognizeRenderedFormIn(command, executable, cfg, shells, false, nil)
+}
+
+// recognizeClaudeForm is recognizeRenderedForm for Claude Code, whose Bash
+// tool is taught the one-line call.
+//
+// readFile reads a request file for the file form; nil recognizes no file
+// form.
+func recognizeClaudeForm(command string, executable func() (string, error), cfg string, shells []shellKind, readFile func(string) ([]byte, error)) *recognizedForm {
+	return recognizeRenderedFormIn(command, executable, cfg, shells, true, readFile)
+}
+
+func recognizeRenderedFormIn(command string, executable func() (string, error), cfg string, shells []shellKind, oneLine bool, readFile func(string) ([]byte, error)) *recognizedForm {
 	if executable == nil {
 		return nil
 	}
-	for _, m := range matchedRenderedForms(command, cfg, shells) {
+	for _, m := range matchedRenderedFormsIn(command, cfg, shells, oneLine) {
 		if !binaryPathRunsAsRead(runtime.GOOS, m.bin) || !sameBinary(m.bin, executable) {
 			continue
 		}
@@ -141,6 +177,13 @@ func recognizeRenderedForm(command string, executable func() (string, error), cf
 			continue
 		}
 		if m.wantsBody {
+			if m.file {
+				body, ok := requestFileBody(m.body, cfg, readFile)
+				if !ok {
+					continue
+				}
+				m.body = body
+			}
 			if !isOneVersionOneRequest(m.body) {
 				continue
 			}
@@ -159,6 +202,10 @@ type renderedCommand struct {
 	text      string
 	path      []string
 	wantsBody bool
+	// quotedBody: the body is a single-quoted POSIX word, not raw text.
+	quotedBody bool
+	// fileBody: that word names a request file, read from standard input.
+	fileBody bool
 }
 
 // binPlaceholder and cfgPlaceholder mark the two paths inside a rendered
@@ -219,6 +266,37 @@ func renderedFormsForShell(cfg string, sh shellKind) []renderedCommand {
 		out = append(out, renderedCommand{text: placeholders.Replace(tier) + " status", path: []string{"agents", "tier"}})
 	}
 	return out
+}
+
+// renderedOneLineForms is the one-line search and fetch, with the body a
+// placeholder at the end of the line.
+func renderedOneLineForms(cfg string) []renderedCommand {
+	const binMarker, cfgMarker = "JEVLIN_RENDERED_BINARY", "JEVLIN_RENDERED_CONFIG"
+	entry := binEntry{command: binMarker}
+	if cfg != "" {
+		entry.cfg = cfgMarker
+	}
+	placeholders := strings.NewReplacer(binMarker, binPlaceholder, cfgMarker, cfgPlaceholder)
+	var out []renderedCommand
+	if cmd, err := entry.stdinCommandForShell(shellPOSIX); err == nil {
+		out = append(out, renderedCommand{text: placeholders.Replace(cmd) + " <<< " + bodyPlaceholder, path: []string{"search"}, wantsBody: true, quotedBody: true})
+		out = append(out, renderedCommand{text: placeholders.Replace(cmd) + " < " + bodyPlaceholder, path: []string{"search"}, wantsBody: true, quotedBody: true, fileBody: true})
+	}
+	if cmd, err := entry.fetchCommandForShell(shellPOSIX); err == nil {
+		out = append(out, renderedCommand{text: placeholders.Replace(cmd) + " <<< " + bodyPlaceholder, path: []string{"fetch"}, wantsBody: true, quotedBody: true})
+		out = append(out, renderedCommand{text: placeholders.Replace(cmd) + " < " + bodyPlaceholder, path: []string{"fetch"}, wantsBody: true, quotedBody: true, fileBody: true})
+	}
+	return out
+}
+
+// readQuotedBody reads a body written as one single-quoted POSIX word back
+// out of its quoting, and reports whether that is all the region held.
+func readQuotedBody(raw string) (string, bool) {
+	if len(raw) < 2 || raw[0] != '\'' || raw[len(raw)-1] != '\'' {
+		return "", false
+	}
+	body := strings.ReplaceAll(raw[1:len(raw)-1], `'\''`, "'")
+	return body, posixQuoteArg(body) == raw
 }
 
 // matched is what a rendered form yielded: the binary path the command

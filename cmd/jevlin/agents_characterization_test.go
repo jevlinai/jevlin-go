@@ -246,6 +246,9 @@ func withSkillPlaceholder(g goldenPlan) goldenPlan {
 		if strings.Contains(w.Path, "SKILL.md") {
 			g.Writes[i].Content = "<SKILL.md, rendered for this OS; see testdata/hosts/*.golden>"
 		}
+		if strings.HasSuffix(w.Path, "/skills/jevlin/reference.md") {
+			g.Writes[i].Content = "<reference.md, rendered for this OS; see testdata/hosts/*.golden>"
+		}
 	}
 	// The same applies to the two notes that carry rendered text: opencode's
 	// AGENTS.md line is the search command for its shell, and the
@@ -923,7 +926,7 @@ func TestAgentsPreferAcrossAllSixHosts(t *testing.T) {
 	}
 	for id, p := range skillPaths {
 		skill := string(m.files[slash(p)])
-		if !strings.Contains(skill, "turned OFF as the default") || strings.Contains(skill, "Prefer it over a built-in web search") {
+		if !strings.Contains(skill, "turned OFF as the default") || strings.Contains(skill, "Use it instead of a built-in web search") {
 			t.Errorf("%s skill was not rewritten to the off rendering:\n%s", id, skill)
 		}
 	}
@@ -944,7 +947,7 @@ func TestAgentsPreferAcrossAllSixHosts(t *testing.T) {
 	}
 	for id, p := range skillPaths {
 		skill := string(m.files[slash(p)])
-		if strings.Contains(skill, "turned OFF as the default") || !strings.Contains(skill, "Prefer it over a built-in web search") {
+		if strings.Contains(skill, "turned OFF as the default") || !strings.Contains(skill, "Use it instead of a built-in web search") {
 			t.Errorf("%s skill was not returned to the on rendering:\n%s", id, skill)
 		}
 	}

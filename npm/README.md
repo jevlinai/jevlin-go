@@ -29,6 +29,19 @@ jevlin setup
 Install it globally, never with `npx`: setup writes the binary's path into your agents' skills
 and hooks, and npm throws away an `npx` cache or a project's `node_modules`.
 
+### `jevlin: command not found` after `npm install -g`
+
+npm puts a global package's commands in `$(npm prefix -g)/bin`, and some setups (a Node installed
+without a version manager, or a custom prefix) do not have that directory on `PATH`. Add it, then
+open a new shell:
+
+```bash
+export PATH="$(npm prefix -g)/bin:$PATH"
+```
+
+Put that line in your shell's startup file (`~/.zshrc` or `~/.bashrc`) to keep it. On Windows the
+global directory is `npm prefix -g` itself, with no `bin`.
+
 An agent can run this install itself. The marketplaces carry a setup skill, not the search:
 it installs the client and runs `jevlin setup`, which writes the agent's own skill and hooks.
 Without setup there is no search.
@@ -55,7 +68,7 @@ warn about one a shared group can write. On Windows only the temp-directory rule
 
 One request goes to the router at `api.jevlin.ai`, which holds the provider keys. In the
 `balanced` and `max` [tiers](#three-tiers), the core arms run on every fan-out, under a
-per-query cost ceiling; `fast` asks three fast indexes, one per index group:
+per-query cost ceiling; `fast` asks only the fast indexes its preset names. The core arms:
 
 | kind | arms |
 |---|---|
@@ -95,17 +108,17 @@ jevlin search -format model "what is proof of authority consensus"
 
 ## Three tiers
 
-Every search runs in one of three tiers. `fast` asks three fast indexes, one per index group
-(Exa, Brave and Perplexity search as the router is deployed today), and answers in about a
-second; `balanced` and `max` fan out to the core arms. A tier is also a per-query cost ceiling
+Every search runs in one of three tiers. `fast` asks the fast indexes of a named preset,
+`economy` (two, the default) or `standard` (three), and answers in about a second; `balanced`
+and `max` fan out to the core arms. A tier is also a per-query cost ceiling
 on the router, and a set that would exceed the ceiling is trimmed rather than refused, with
 `decision.trimmed` naming what went.
 
 | tier | what runs | for | what it costs |
 |---|---|---|---|
-| `fast` | three fast indexes, one per index group, the quickest | a routine lookup, the default for a new key | about $0.015 a search |
-| `balanced` | the core arms, 8 results each, a 12-page merged window, every arm's text | when the agent needs more than one source, or the first answer came back thin | about $0.035 |
-| `max` | the core arms, 15 results each, a 24-page window, 2,000-character excerpts | corroboration: the same page found by independent indexes, and the most text per page | about $0.045, plus the tokens your agent spends reading it |
+| `fast` | the fast indexes of a preset: `economy` asks two, `standard` three; the quickest | a routine lookup, the default for a new key | about $0.0013 a search on `economy`, $0.0053 on `standard` |
+| `balanced` | the core arms, 8 results each, a 12-page merged window, every arm's text | when the agent needs more than one source, or the first answer came back thin | about $0.022 |
+| `max` | the core arms, 15 results each, a 24-page window, 2,000-character excerpts | corroboration: the same page found by independent indexes, and the most text per page | about $0.027, plus the tokens your agent spends reading it |
 
 The dollar figures are the arms' own prices passed through with no markup; `usage.cost_micros`
 on every response is the real number. `max` and a named `providers` set (below) are the two
@@ -117,7 +130,7 @@ Who chooses:
   from a shell, sets the tier every search carries unless a request names one. `/jevlin tier
   default` unsets it and `/jevlin tier` says what is in force.
 - **The agent**, one step at a time: the skill tells it to leave `tier` alone so your tier
-  applies, to ask for `balanced` only when it needs several sources beyond the three fast
+  applies, to ask for `balanced` only when it needs several sources beyond the fast tier's
   indexes (a thin result, indexes that disagree, the full set attributed), and never to send
   `max` on its own. `max` is yours to choose.
 - **The router**, when nobody did: a request that names no tier, with none set, carries none, and
@@ -249,7 +262,7 @@ registration or the claim needs attention.
 | `jevlin limits` | This key's spend caps, rate windows and today's spend, read from the router. A claimed key gets 120 searches a minute, 3,000 an hour and 16 at once; an unclaimed one 10, 120 and 2, with $0.10 a day. |
 | `jevlin agents install\|status\|uninstall` | Sets up, reports or removes the skills and hooks of each agent. |
 | `jevlin agents prefer on\|off\|status` | What `/jevlin on\|off\|status` runs: which search is the default. |
-| `jevlin agents tier <tier>\|default\|status` | What `/jevlin tier` runs: the tier every search carries. |
+| `jevlin agents tier <tier> [preset]\|default\|status` | What `/jevlin tier` runs: the tier every search carries, and for `fast` the preset (`economy`, `standard`). |
 | `jevlin connect` | Registers with the search platform, prints the claim link, polls until claimed. |
 | `jevlin login` | Stores a key you already have, read from stdin, for searches without a registration. |
 | `jevlin upgrade` | A native install: the latest release, verified before it runs; `-rollback` swaps back. |

@@ -9,6 +9,13 @@
     },
     {
       "surface": "Codex",
+      "path": "/home/u/.codex/skills/jevlin/reference.md",
+      "mode": 384,
+      "why": "skill reference",
+      "content": "\u003creference.md, rendered for this OS; see testdata/hosts/*.golden\u003e"
+    },
+    {
+      "surface": "Codex",
       "path": "/home/u/.codex/config.toml",
       "mode": 384,
       "why": "sandbox: writable_roots so searches can write their session files; no network: Codex asks before a search reaches the router",

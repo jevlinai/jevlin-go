@@ -25,7 +25,8 @@ func instructionTextFor(t *testing.T, surfaceID string, entry binEntry) string {
 	if surfaceID == "opencode" {
 		return rulesSnippet(entry)
 	}
-	return renderedSkillFor(surfaceID, entry, runtime.GOOS)
+	skill, reference := renderedSkillPairFor(t, surfaceID, entry, runtime.GOOS, preferOn)
+	return skill + "\n" + reference
 }
 
 func guidanceEntry() binEntry {

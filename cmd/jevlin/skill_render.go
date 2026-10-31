@@ -19,69 +19,11 @@ import (
 )
 
 // exampleRequest is the request body the skill shows.
-const exampleRequest = `{"version":1,"query":"exact query text"}`
+const exampleRequest = `{"version":1,"query":"exact query text","objective":"what you need to find out"}`
 
 // exampleFetchRequest is the fetch body the skill shows: one page by the
 // source_id a search returned, which the agent replaces with its own.
-const exampleFetchRequest = `{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"max_chars":10000}`
-
-// skillTeachesQueryForms is the switch for the query forms (Jevlin-core
-// #55). The client sends objective and search_queries whenever a caller
-// does, and a router that predates them costs that search one refused
-// request and a retry without them (forms_dropped). A skill that tells
-// every agent to send them would make every search pay that, so the
-// paragraph that teaches them, and the reading of the fields #55 adds to
-// the merged view, render only while this is true.
-//
-// It is on: #55 is on the live router. It shipped off, and went on in the
-// release that followed #55 reaching the router, because a skill is
-// rewritten on a participant's machine by the upgrade and cannot be
-// taken back from there. Turn it off only if the router stops taking the
-// forms. A test that renders with it set sets it and restores it, and is
-// never parallel.
-var skillTeachesQueryForms = true
-
-// formsSection is the Request options paragraph on the query forms, and
-// formsReadingSection the Reading the answer paragraph on what #55 adds to
-// the merged view. Each begins with its own paragraph break, because each
-// replaces a marker at the end of a line: with the gate off they render as
-// nothing, and the skill is exactly what it was without them.
-func formsSection() string {
-	if !skillTeachesQueryForms {
-		return ""
-	}
-	return `
-
-Two more help the router find what one wording of the question misses:
-
-- ` + "`objective`" + ` — one sentence, the user's goal in your own words. Send it
-  on every search.
-  ` + "`" + `{"version":1,"query":"pgx pool exhausted","objective":"find why a Go service's pgx connection pool runs out under load"}` + "`" + `
-- ` + "`search_queries`" + ` — up to 4 more wordings, each searched beside
-  ` + "`query`" + `. Each costs about as much as another search, so send two or
-  three when the first search came back thin, or when the question has a
-  name you are not sure of: the identifier as the user wrote it, the
-  vendor's name for it, and the plain-words version.
-  ` + "`" + `{"version":1,"query":"ERR_OSSL_EVP_UNSUPPORTED","search_queries":["Node.js 17 OpenSSL 3 error","digital envelope routines unsupported"]}` + "`" + `
-
-If ` + "`result.forms_dropped`" + ` is ` + "`true`" + `, the router did not take them and the
-search ran on ` + "`query`" + ` alone. That is not a failure.`
-}
-
-func formsReadingSection() string {
-	if !skillTeachesQueryForms {
-		return ""
-	}
-	return `
-
-Each entry's ` + "`votes`" + ` counts the index groups and wordings that listed
-the page, and ` + "`result.coverage`" + ` sums the search the same way: the
-fan-out's own evidence, stronger than ` + "`found_by`" + ` alone. A page's
-` + "`snippet`" + ` is every provider's text for it, joined. The list is the
-router's window: ` + "`result.merged_total`" + ` says how many pages there were,
-and when it is more than ` + "`result.merged_limit`" + `, more pages exist: raise
-` + "`merged_limit`" + ` or narrow the query.`
-}
+const exampleFetchRequest = `{"version":1,"pages":[{"source_id":"s_0123456789abcdef0123456789abcdef"}],"query":"the fact you need","max_chars":8000}`
 
 // shellLabel names a shell the way a participant's host does.
 func shellLabel(sh shellKind) string {
@@ -106,6 +48,10 @@ type skillShells struct {
 	kinds  []shellKind
 	choice shellChoice
 	goos   string
+	// oneLine renders the POSIX call as one line (a here-string) rather
+	// than a heredoc. Claude Code's allow rules match a command line, and
+	// do not match a multi-line one.
+	oneLine bool
 }
 
 // condition is the sentence above one block of a multi-shell host's skill:
@@ -154,7 +100,8 @@ func (s skillShells) lead() string {
 // told which host and OS that applies to instead of finding out from a
 // search that never runs.
 func toolShellsForSkill(t installTarget, goos string) (shells skillShells, note string) {
-	fallback := skillShells{kinds: []shellKind{shellPOSIX}, goos: goos}
+	_, oneLine := t.(claudeTarget)
+	fallback := skillShells{kinds: []shellKind{shellPOSIX}, goos: goos, oneLine: oneLine}
 	declared, err := declaredShells(t, goos, channelTool)
 	if err != nil {
 		return fallback, fmt.Sprintf(
@@ -164,7 +111,7 @@ func toolShellsForSkill(t installTarget, goos string) (shells skillShells, note 
 	if len(declared) == 0 {
 		return fallback, ""
 	}
-	return skillShells{kinds: declared, choice: toolShellChoice(t, goos), goos: goos}, ""
+	return skillShells{kinds: declared, choice: toolShellChoice(t, goos), goos: goos, oneLine: oneLine}, ""
 }
 
 // fenced wraps a rendered script in its fence.
@@ -202,10 +149,16 @@ func callSection(entry binEntry, shells skillShells) (string, error) {
 	body, err := perShellSection(shells, true,
 		func(sh shellKind) (string, error) {
 			lang, script, err := searchBlockForShell(sh, entry, exampleRequest)
+			if shells.oneLine && sh == shellPOSIX {
+				lang, script, err = oneLineSearchBlock(entry, exampleRequest)
+			}
 			if err != nil {
 				return "", err
 			}
 			note := quotingNote(sh)
+			if shells.oneLine && sh == shellPOSIX {
+				note = oneLineQuotingNote(entry)
+			}
 			if sh == shellPowerShell && shells.choice == chosenByParticipant && slices.Contains(shells.kinds, shellPOSIX) {
 				note += apostropheNote
 			}
@@ -223,8 +176,14 @@ func callSection(entry binEntry, shells skillShells) (string, error) {
 func fetchSection(entry binEntry, shells skillShells) (string, error) {
 	return perShellSection(shells, false, func(sh shellKind) (string, error) {
 		lang, script, err := fetchBlockForShell(sh, entry, exampleFetchRequest)
+		if shells.oneLine && sh == shellPOSIX {
+			lang, script, err = oneLineFetchBlock(entry, exampleFetchRequest)
+		}
 		if err != nil {
 			return "", err
+		}
+		if shells.oneLine && sh == shellPOSIX {
+			return fenced(lang, script) + oneLineFetchNote(entry), nil
 		}
 		return fenced(lang, script), nil
 	})
@@ -249,6 +208,33 @@ character arrive exactly as written on Windows PowerShell 5.1. Keep both lines
 when you substitute your own query.`
 	}
 	return ""
+}
+
+// oneLineQuotingNote replaces the heredoc's note where the call is one line.
+// A request holding a quote or a dollar sign cannot ride on that line (Claude
+// Code refuses the command), and writing them as JSON escapes was decoded
+// back by the model before it sent the call, so it goes through a file the
+// agent writes in the installation's requests folder (claude_requests.go).
+func oneLineQuotingNote(entry binEntry) string {
+	note := `
+The request is one single-quoted word after ` + "`<<<`" + `, so the call stays on one
+line.`
+	if dir := requestsDirFor(entry.cfg); dir != "" {
+		file := posixQuoteArg(requestFilePath(dir, "q-4821.json"))
+		note += ` A request holding a ` + "`'`" + ` or a ` + "`$`" + ` cannot go on that line: write it with
+the Write tool to a new file in ` + "`" + dir + "`" + ` (a new name each time), then run it
+with ` + "`--stdin < " + file + "`" + ` instead of ` + "`--stdin <<< '…'`" + `.`
+	}
+	return note + ` Never pipe or redirect the call's output.`
+}
+
+// oneLineFetchNote follows the one-line fetch where there is a requests
+// folder: a request holding a quote or a dollar sign goes the same way.
+func oneLineFetchNote(entry binEntry) string {
+	if requestsDirFor(entry.cfg) == "" {
+		return ""
+	}
+	return "\nA fetch holding a `'` or a `$` uses a request file too.\n"
 }
 
 // apostropheNote follows the PowerShell form where a Bash terminal may read
@@ -285,23 +271,6 @@ func tierSection(entry binEntry, shells skillShells) (string, error) {
 		if sh == shellPowerShell {
 			lang = "powershell"
 		}
-		return fenced(lang, cmd+" <tier>"), nil
-	})
-}
-
-// humanSection is the human terminal form, per shell. It keeps the query in
-// argv, which H-R2 leaves alone: it is the form a person types, and it is
-// never what an agent or a machine caller uses.
-func humanSection(entry binEntry, shells skillShells) (string, error) {
-	return perShellSection(shells, false, func(sh shellKind) (string, error) {
-		cmd, err := entry.searchCommandForShell(sh)
-		if err != nil {
-			return "", err
-		}
-		lang := "bash"
-		if sh == shellPowerShell {
-			lang = "powershell"
-		}
-		return fenced(lang, cmd+` "<query>"`), nil
+		return fenced(lang, cmd+" <words>"), nil
 	})
 }

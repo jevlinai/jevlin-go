@@ -130,12 +130,6 @@ func (e binEntry) fetchCommandForShell(sh shellKind) (string, error) {
 	return renderShellCommand(sh, append(tokens, literalToken("--stdin")))
 }
 
-// searchCommandForShell is the human form's prefix, without a query.
-func (e binEntry) searchCommandForShell(sh shellKind) (string, error) {
-	tokens := append([]cmdToken{pathToken(e.command), literalToken("search")}, e.configTokens()...)
-	return renderShellCommand(sh, append(tokens, literalToken("-format"), literalToken("model")))
-}
-
 // ── the request body, carried in the shell's own grammar ────────────────
 //
 // The body has to reach the binary byte for byte: the query is in it, and a
@@ -195,6 +189,33 @@ func stdinBlockForShell(sh shellKind, cmd, body, what string) (lang, script stri
 	default:
 		return "", "", fmt.Errorf("no %s block form for the %q shell", what, sh)
 	}
+}
+
+// oneLineSearchBlock and oneLineFetchBlock render the POSIX call as a single
+// line, the request in a single-quoted here-string:
+//
+//	'<bin>' search -config '<cfg>' --stdin <<< '<request>'
+//
+// Claude Code matches a Bash command against its allow rules as one command
+// line, and does not match a multi-line heredoc against a rule for its
+// prefix, so the heredoc form is asked about on every search. A here-string
+// is bash and zsh, which is what its Bash tool runs, and is not POSIX sh.
+// A single-quoted word cannot hold a bare quote: posixQuoteArg writes each
+// as '\” , and the request must have no raw newline.
+func oneLineSearchBlock(e binEntry, body string) (lang, script string, err error) {
+	cmd, err := e.stdinCommandForShell(shellPOSIX)
+	if err != nil {
+		return "", "", err
+	}
+	return "bash", cmd + " <<< " + posixQuoteArg(body), nil
+}
+
+func oneLineFetchBlock(e binEntry, body string) (lang, script string, err error) {
+	cmd, err := e.fetchCommandForShell(shellPOSIX)
+	if err != nil {
+		return "", "", err
+	}
+	return "bash", cmd + " <<< " + posixQuoteArg(body), nil
 }
 
 // hookCommandForShell is the command a host writes into its own config and

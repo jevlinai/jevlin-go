@@ -642,7 +642,10 @@ func TestCursorWindowsSkillWritesApostrophesEscaped(t *testing.T) {
 	if skill := renderedSkillFor("cursor", entry, "windows"); !strings.Contains(skill, "`\\u0027`") {
 		t.Errorf("Cursor's Windows skill does not say to write an apostrophe as \\u0027:\n%s", skill)
 	}
-	for _, id := range []string{"claude", "codex"} {
+	// Claude Code's own one-line call carries the same escape for its own
+	// reason (a bare quote ends the call's quoting); it is held in
+	// claude_one_line_call_test.go, so only Codex is asserted without it here.
+	for _, id := range []string{"codex"} {
 		if skill := renderedSkillFor(id, entry, "windows"); strings.Contains(skill, "`\\u0027`") {
 			t.Errorf("%s's Windows skill carries the Git Bash apostrophe note", id)
 		}
