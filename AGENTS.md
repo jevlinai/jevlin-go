@@ -5,24 +5,18 @@ Agent instructions for jevlin: supersearch for coding agents. Loaded every sessi
 ## What this is
 jevlin is **supersearch for coding agents**, one call to every search engine in the set with each result attributed: a **no-daemon** Go CLI a coding agent shells out
 to (`jevlin search …`) plus a lifecycle hook. Between calls nothing runs — no reverse proxy,
-no resident process. The client mines nothing: mining moved off the client to the platform,
-which reconciles what the router served, so nothing here records, spools or submits anything
-about a search. What the client holds on the participant's own machine is the platform-issued
+no resident process. Nothing here records, spools or submits anything about a search. What the client holds on the participant's own machine is the platform-issued
 search key (`credentials.json`), the agent registration and its claim link, and a trace key
 that keys the session ids a search carries. Everything a search sends is the query and, when a
 host's hook supplied one, the redacted trace (invariant 2).
 
-Until 0.6.1 this client was also the Twilight MINIS mining participant: it recorded each served
-search, delivered it to an Authorization Server (AS) under OAuth and DPoP, enrolled in epochs and
-held payout keys. All of that was removed in one stripping, not rewritten: the search,
-hook, agent-integration, setup, connect, upgrade and uninstall code is the code that shipped,
-with the mining calls taken out. That version's line continues as its own binary for the
-participants who ran it; this client carries no compatibility with it: its config has no
-`schema` line and is refused as an older format (`config.ErrLegacyConfig`), which `jevlin setup`
-sets aside as `jevlin.toml.old` before writing configuration format 1, keeping the registration;
-and the files it left on a machine are neither read, moved nor named: this client carries no
-list of them, and a purge lists whatever it finds left by path (`sayLeftInHome`). Where a rule
-below says "an earlier version", that is what it means.
+A config an earlier version wrote has no `schema` line and is refused as an older format
+(`config.ErrLegacyConfig`); `jevlin setup` sets it aside as `jevlin.toml.old` before writing
+configuration format 1, keeping the registration: it carries the earlier config's directories
+and endpoints, and moves the key and the registration files beside it from where that config
+kept them. Any other file an earlier version left on a machine is neither read, moved nor named:
+this client carries no list of them, and a purge lists whatever it finds left by path
+(`sayLeftInHome`). Where a rule below says "an earlier version", that is what it means.
 
 ## Authority — the protocol is owned upstream, not here
 The search platform's control plane (`platform.jevlin.ai` — `connect`; `pkg/platform`) is a
@@ -110,23 +104,16 @@ the named tests.
 6. **Permissive for the router's response, strict for what this client emits.** The router's
    response shape is not frozen and is decoded permissively (no `DisallowUnknownFields`) on
    purpose — the router owns its product API, and a field it adds must not break a search.
-   What this client emits to an agent is the versioned, closed envelope of invariant 15. (Until
-   0.6.1 this invariant was the AS wire's strict/permissive asymmetry; the number is kept so
-   that references to the later invariants in code and tests stay right.)
-7. **Retired with mining.** "Durable before visible; remove only on ack" governed the spool, which
-   left with the mining plane. Nothing about a served search is persisted. The number is kept so
-   that references to the later invariants stay right.
+   What this client emits to an agent is the versioned, closed envelope of invariant 15.
+7. **Retired.** The number is kept so that references to later invariants stay right.
 8. **`pkg/` MUST NOT import `cmd/`.** Keeping `pkg/` wrapper-agnostic is what makes it importable and
    is why this repo owns it and can hand it to another client by import, not copy. Enforced by
    `cmd/jevlin/boundary_test.go`.
 9. **The chain SDK module tree is banned.** A lean binary shipped to users must not pull the
-   Cosmos SDK's module tree; the code that once needed chain messages is gone, and the rule
-   stays so it cannot come back by accident. `go.mod` carries no cosmos-sdk/cometbft dependency.
+   Cosmos SDK's module tree; nothing here needs chain messages, and the rule keeps such an
+   import from arriving by accident. `go.mod` carries no cosmos-sdk/cometbft dependency.
    Enforced by `TestNoChainImportsAnywhere`.
-10. **Retired with mining.** `mining_decision.json` was the one runtime authority on whether
-    mining was on. This client reads no such file: a search is a search, and the envelope
-    carries nothing about mining (invariant 15). The number is kept so that references to the
-    later invariants stay right.
+10. **Retired.** The number is kept so that references to later invariants stay right.
 11. **A claim or console URL is printed, never opened.** `connect.go` imports no `os/exec`.
     Structural, and tested.
 12. **`[platform] url` is compared against, never dialed.** It is the origin a platform-supplied
@@ -158,8 +145,7 @@ the named tests.
     fresh registration. Separately and without `-force`, an ordinary foreground `connect` may
     replace a registration the platform has positively verified as expired; that replacement
     changes the platform agent and its key. `-resume` never registers, rebuilds or replaces.
-14. **Retired with mining.** The payout path, its send journal and its lock left with the
-    mining plane. The number is kept so that references to the later invariants stay right.
+14. **Retired.** The number is kept so that references to later invariants stay right.
 15. **The machine protocol is versioned, closed and typed.** `search --stdin`, `fetch --stdin`,
     `status -json`, `doctor -json`, `connect -json` and `limits -json` emit one envelope with the mandatory header (`version`,
     `command`, `ok`, `exit_code`, `status`, `code`, `retryable`, `action`), a closed action set
@@ -167,8 +153,7 @@ the named tests.
     0 through 4. Classification is by typed errors and exact codes, never by message text
     (one retry, licensed by two exact codes: `trace_unsupported`, and `malformed_json` to a request
     carrying `objective` or `search_queries`; a router 401 is `login`, never `connect`).
-    The search envelope carries no `mining` object and nothing about earning: a search is a
-    search. Machine mode never invents a participant decision. The mandatory header and its semantics are what is versioned
+    Machine mode never invents a participant decision. The mandatory header and its semantics are what is versioned
     (`machineVersion` in `machine.go`): changing the required header's shape or the meaning of
     `ok`, `status`, `code`, `retryable`, `action` or `exit_code` requires a protocol version
     change; command-specific payload additions that preserve that contract do not.
@@ -238,9 +223,9 @@ the named tests.
     answers and never turns an interrupt into an answer. `prompt.go` owns the rule and the two
     readers that apply it (`promptBufio` over the shared `bufio.Reader` a command's prompts take
     turns on, `promptSetup` over `readSetupLine`); a bare `line, _ := br.ReadString('\n')` at a
-    question is the defect, not a shortcut: at the mining question an earlier version asked, a
+    question is the defect, not a shortcut: at a `[y/N]` question an earlier version asked, a
     discarded read error made an interrupt an empty line, an empty line was not `y`, and a
-    decision nobody made was written — and then `connect` registered. The question is gone; the
+    decision nobody made was written — and then `connect` registered. That question is gone; the
     rule is not.
     A typed refusal and an unanswered question are different outcomes and must stay
     distinguishable by exit code, which is why the ones that change nothing either way
@@ -574,7 +559,7 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `judgeStateDescriptor` is pure, so `state_acl_test.go` runs on every OS, including through
   `cmdDoctor` with a fake backend; `state_acl_windows_test.go` runs the real reader. The reader,
   the namer and `RestrictToOwner` live in `internal/winacl` because `pkg/` cannot import `cmd/`
-  (invariant 8) and an earlier version's payout check needed the same ones; the package imports nothing of the
+  (invariant 8) and `pkg/auth` calls `RestrictToOwner`; the package imports nothing of the
   module and judges nothing, and its descriptor-string parser is tested on every OS.
 - **Where the stored key may go** — `cmd/jevlin/credentials.go` owns it (`keyService`,
   `resolveAPIKey`, `platformKey`): the key in `credentials.json` is sent only to the router and
@@ -884,9 +869,9 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   bytes — never by retyping what you think was there — and rerun green. Report the baseline SHA,
   the mutation, the test that went red, and the failing line.
 - **Scope the search wide before trusting a targeted fix.** `credentials.go`'s bare client (invariant
-  3) survived a redirect-guard review aimed at the AS-facing clients because that review's scope was
-  "the clients that carry a credential to the AS" — true, but too narrow; the login probe carries a
-  credential to the *router*. The module-wide `cmd/jevlin/boundary_test.go` sweep found it where the targeted
+  3) survived a redirect-guard review aimed at the clients of one service because that review's
+  scope was "the clients that carry a credential to that service" — true, but too narrow; the
+  login probe carries a credential to the *router*. The module-wide `cmd/jevlin/boundary_test.go` sweep found it where the targeted
   review could not, on the first run. Prefer a structural, scope-agnostic guard over a review's
   enumerated list whenever the two disagree about where the boundary is.
 
