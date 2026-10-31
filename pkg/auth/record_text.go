@@ -20,8 +20,8 @@ import (
 // terminal escape or a reordered line in jevlin's own output, with
 // jevlin's authority behind it. The platform client refuses those
 // characters in every field of what it receives that reaches a record
-// (pkg/platform: the agent id, the claim link, code and times, the scopes,
-// the slots and the last enrollment), and the save side refuses what the
+// (pkg/platform: the agent id, the claim link, code and times, and the
+// scopes), and the save side refuses what the
 // load side would, so a record this client wrote never holds one, and a
 // record that does was not written by it.
 

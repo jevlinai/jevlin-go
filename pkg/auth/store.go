@@ -283,10 +283,8 @@ func (s *Store) traceKey() (key []byte, created bool, err error) {
 // re-verified against GET /v1/agents/{id} on every poll — never trusted as
 // an authority on its own, only as what to resume from.
 //
-// It carries no claim link. Older versions kept claim_url and claim_code
-// here, and the fields of a mining enrollment (last_enrollment_slot,
-// last_enrollment_at, slot_refusal, offered_slots); they decode as unknown
-// fields and are ignored, because this file is in a state directory a
+// It carries no claim link. Older versions kept claim_url, claim_code and
+// other fields here; they decode as unknown fields and are ignored, because this file is in a state directory a
 // sandboxed command can rewrite and the link is what a person is told to
 // open. The link lives in ClaimRecord, beside credentials.json.
 type AgentRegistration struct {

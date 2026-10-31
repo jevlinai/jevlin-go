@@ -13,8 +13,7 @@ package main
 // the router URL from the config, the deadline, the redirect policy, the
 // user agent and the bounded read. The request is strict and validated
 // before anything is sent; the answer is one envelope with the machine
-// header. Nothing is recorded for mining: a fetch is not a search, and the
-// router reconciles nothing against it.
+// header. A fetch records nothing on this machine.
 
 import (
 	"bytes"
@@ -432,8 +431,8 @@ func performFetch(ctx context.Context, now func() time.Time, endpoint, key strin
 		return out
 	}
 	// The body's id wins, as it does for a search; the header stands in when
-	// the body has none. A fetch records nothing for mining, so an answer
-	// with neither is still an answer, and simply carries no id.
+	// the body has none. Nothing here depends on the id, so an answer with
+	// neither is still an answer, and simply carries no id.
 	out.RequestID = strings.TrimSpace(out.Response.RequestID)
 	if out.RequestID == "" {
 		out.RequestID = strings.TrimSpace(attempt.Header.Get("X-Request-Id"))

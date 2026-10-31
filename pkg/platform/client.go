@@ -6,9 +6,8 @@
 // own contract, this design doc. Two hosts, not one — live testing found
 // agents-v1.jevlin.ai serves register/status while platform.jevlin.ai is
 // the human portal a claim_url/console_url points at; see Client's own
-// doc comment. The mining enrollment route (§5.3) is not called: mining
-// moved off the client, and the status body's mining block decodes as
-// fields this client does not read.
+// doc comment. Of the status body, this client reads the fields
+// AgentStatus names and no others.
 package platform
 
 import (
@@ -317,9 +316,8 @@ func ValidateStoredClaimURL(raw, baseURL string) error {
 	return validatePlatformURL(raw, strings.TrimRight(baseURL, "/"))
 }
 
-// AgentStatus is what Status returns (§5.2), flattened. The body's mining
-// block (available, slots, last_enrollment, participant_has_other_agent)
-// is not read: mining moved off the client.
+// AgentStatus is what Status returns (§5.2), flattened. A field of the
+// body it does not name is not read.
 type AgentStatus struct {
 	Status         string // "unclaimed" | "claimed" | "expired"
 	Scopes         []string
@@ -400,7 +398,7 @@ func decodeAgentStatusWire(data []byte, portalBaseURL string) (AgentStatus, erro
 	// not be trusted as anything more specific than "keep polling" — the
 	// alternative, falling through the switch statements callers build
 	// on this value, has previously let an unrecognized string like
-	// "PENDING_REVIEW" reach the enroll-and-redeem path. unclaimed is
+	// "PENDING_REVIEW" reach a path meant for a known status. unclaimed is
 	// the one status every caller already treats as "nothing to do yet,
 	// try again later," which is the correct, safe default here.
 	switch wire.Status {

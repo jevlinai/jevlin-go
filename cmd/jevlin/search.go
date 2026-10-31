@@ -17,9 +17,7 @@ package main
 //     up from the working directory); or, with no hook at all, a hashed
 //     per-shell session identity. JEVLIN_TRACE=off sends none.
 //
-// Nothing about the search is recorded anywhere: mining moved to the
-// platform, where the
-// router's own ledger holds the evidence.
+// Nothing about the search is recorded on this machine.
 //
 // Two knowing trade-offs, documented rather than hidden: an argv query
 // rides in process arguments (visible in `ps` and shell history on the

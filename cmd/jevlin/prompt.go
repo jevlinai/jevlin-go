@@ -14,14 +14,14 @@ import (
 // the absence of an answer, and the operation stops there having
 // recorded, written and sent nothing.
 //
-// The earlier defect is what a prompt that guesses instead costs. At the
-// mining question an earlier version asked (`Enable mining rewards?
-// [y/N]`) the read error was discarded, so an interrupt produced an empty
-// line, an empty line is not "y", and a decision file was written with a
-// decision the participant never made; connect then went on to register,
-// and setup's closing line invited a re-run that would reuse the saved
-// "no" without asking again. The question is gone with mining; the rule
-// it taught stays. The empty line is not the defect; treating the
+// The earlier defect is what a prompt that guesses instead costs. At a
+// yes/no question an earlier version asked (`[y/N]`) the read error was
+// discarded, so an interrupt produced an empty line, an empty line is not
+// "y", and a decision file was written with a decision the participant
+// never made; connect then went on to register, and setup's closing line
+// invited a re-run that would reuse the saved "no" without asking again.
+// That question is gone; the rule it taught stays. The empty line is not
+// the defect; treating the
 // absence of a line as a line is. The same shape with the opposite
 // default is worse: `agents install`'s `Proceed? [Y/n]` answers an empty
 // line yes, so an interrupt there meant "yes, write every agent file".

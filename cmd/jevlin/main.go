@@ -3,9 +3,8 @@
 // It is not a daemon, not a proxy, and not a tool server. It is one
 // binary that a coding agent runs to search the web through the Jevlin
 // search router, plus the hooks that thread each search into the agent's
-// trajectory. Between tool calls nothing runs. Mining moved off the client
-// to the platform: nothing here records, spools or submits anything about
-// a search.
+// trajectory. Between tool calls nothing runs, and nothing here records,
+// spools or submits anything about a search.
 package main
 
 import (

@@ -113,10 +113,10 @@ func resolveSetupValues(home string, getenv func(string) string) setupValues {
 
 // earlierConfig is what a config an earlier version wrote says about where
 // this installation keeps its identity and which endpoints it talks to:
-// the [mining] state directory (the registration, the agent record and
-// credentials.json sit beside it), the [miner] sessions directory, the
-// router ([miner] router_url, or the one search-router [[provider]]
-// upstream setup wrote), and the [platform] portal and agents API. The key
+// its state directory (the registration, the agent record and
+// credentials.json sit beside it), its sessions directory, its router (the
+// router URL it names, or the one search-router [[provider]] upstream
+// setup wrote), and the [platform] portal and agents API. The key
 // connect stored is bound to that router and agents API, so a fresh file
 // that named the compiled defaults instead would leave the key refused for
 // every search, and one that named the default state directory would make
@@ -126,15 +126,15 @@ func resolveSetupValues(home string, getenv func(string) string) setupValues {
 type earlierConfig struct {
 	stateDir, sessionsDir             string
 	router, platformURL, agentsAPIURL string
-	// intakeDir is [miner] intake_dir as written. 0.6.x kept
+	// intakeDir is the earlier intake directory as written. 0.6.x kept
 	// credentials.json, the registration journal, claim.json and the
-	// release check's record beside it (its minerRoot), not beside the
-	// state directory: identityRoot.
+	// release check's record beside it, in the installation directory,
+	// not beside the state directory: identityRoot.
 	intakeDir string
 }
 
 // identityRoot is the directory an earlier version kept the files beside
-// credentials.json in: the parent of [miner] intake_dir, else of the state
+// credentials.json in: the parent of its intake directory, else of the state
 // directory, which is where that version defaulted the intake directory;
 // "" when the file names neither, or names it relative, which setup would
 // read against whatever directory it was run from (refusedConfigUpdate
@@ -157,10 +157,11 @@ func readEarlierConfig(data []byte) earlierConfig {
 			Name     string `toml:"name"`
 			Upstream string `toml:"upstream"`
 		} `toml:"provider"`
-		Mining struct {
+		// The earlier config's tables, under the names it wrote.
+		EarlierState struct {
 			StateDir string `toml:"state_dir"`
 		} `toml:"mining"`
-		Miner struct {
+		EarlierClient struct {
 			RouterURL   string `toml:"router_url"`
 			SessionsDir string `toml:"sessions_dir"`
 			IntakeDir   string `toml:"intake_dir"`
@@ -174,12 +175,12 @@ func readEarlierConfig(data []byte) earlierConfig {
 		return earlierConfig{}
 	}
 	e := earlierConfig{
-		stateDir:     f.Mining.StateDir,
-		sessionsDir:  f.Miner.SessionsDir,
-		router:       f.Miner.RouterURL,
+		stateDir:     f.EarlierState.StateDir,
+		sessionsDir:  f.EarlierClient.SessionsDir,
+		router:       f.EarlierClient.RouterURL,
 		platformURL:  f.Platform.BaseURL,
 		agentsAPIURL: f.Platform.AgentsAPIURL,
-		intakeDir:    f.Miner.IntakeDir,
+		intakeDir:    f.EarlierClient.IntakeDir,
 	}
 	// The provider upstream was the router only in the shape setup wrote;
 	// an upstream an earlier proxy configuration named is not a router.
