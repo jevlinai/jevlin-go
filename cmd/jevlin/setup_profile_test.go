@@ -16,8 +16,8 @@ func TestTheCurrentShellFixIsSpelledForTheShell(t *testing.T) {
 		{"posix", dialectPOSIX, "/usr/local/bin", `export PATH="$PATH:/usr/local/bin"`},
 		{"posix, a directory with a space", dialectPOSIX, "/home/Jane Doe/npm/bin", `export PATH="$PATH:/home/Jane Doe/npm/bin"`},
 		{"posix, characters a shell would expand", dialectPOSIX, "/x/$HOME/`id`/\"q\"", `export PATH="$PATH:/x/\$HOME/\` + "`id\\`" + `/\"q\""`},
-		{"fish", dialectFish, "/usr/local/bin", `fish_add_path '/usr/local/bin'`},
-		{"fish, a quote", dialectFish, "/x/it's", `fish_add_path '/x/it\'s'`},
+		{"fish", dialectFish, "/usr/local/bin", `set -gx PATH $PATH '/usr/local/bin'`},
+		{"fish, a quote", dialectFish, "/x/it's", `set -gx PATH $PATH '/x/it\'s'`},
 		{"powershell", dialectPowerShell, `C:\Users\u\AppData\Roaming\npm`, `$env:Path += ";C:\Users\u\AppData\Roaming\npm"`},
 		{"powershell, a dollar and a quote", dialectPowerShell, `C:\x$y"z`, "$env:Path += \";C:\\x`$y`\"z\""},
 	} {

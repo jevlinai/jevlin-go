@@ -806,7 +806,7 @@ func (r *setupRun) traceKey() int {
 }
 
 func (r *setupRun) closing() {
-	cmd, hint := r.displayPath(r.exe)+" ", " -config "+r.displayPath(r.cfgPath)
+	cmd, hint := r.invocation()+" ", " -config "+r.displayPath(r.cfgPath)
 	if r.shortCommands {
 		cmd, hint = "jevlin ", ""
 	}
@@ -824,7 +824,7 @@ func (r *setupRun) closing() {
 			"If %s is in fact this machine's installation, kept somewhere other than the default, run\n"+
 			"setup with JEVLIN_HOME set to it instead of -home: that names it as the default, and setup\n"+
 			"then looks after the profile and the agents too.\n",
-			r.home, joinLabels(r.skipped), r.defaultHome, r.displayPath(r.exe), r.displayPath(r.cfgPath), r.home)
+			r.home, joinLabels(r.skipped), r.defaultHome, r.invocation(), r.displayPath(r.cfgPath), r.home)
 	case len(r.skipped) > 0:
 		r.printf("Setup complete, but setup skipped the %s (no terminal, or asked not to). Finish with:\n\n    %ssetup%s -yes\n",
 			joinLabels(r.skipped), cmd, hint)

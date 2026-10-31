@@ -936,17 +936,25 @@ type profileEdit struct {
 // zsh, bash and fish (profileFiles), whichever shell is current now — and removes a block only when
 // it is one well-formed block exporting this installation's config.
 func (r *uninstallRun) profilePlan() (edits []profileEdit, notes []string) {
-	if r.d.userHome == "" {
+	return profileBlockEdits(r.d.userHome, r.d.getenv, r.cfgPath)
+}
+
+// profileBlockEdits is every profile of userHome that holds one well-formed
+// jevlin block naming cfgPath, as the edit that removes it, and a note for each
+// profile it will not touch. Uninstall removes with it; setup uses it to find
+// the block an earlier run left in a file its shell no longer reads.
+func profileBlockEdits(userHome string, getenv func(string) string, cfgPath string) (edits []profileEdit, notes []string) {
+	if userHome == "" {
 		return nil, nil
 	}
 	seen := map[string]bool{}
-	for _, candidate := range profileFiles(r.d.userHome, r.d.getenv) {
+	for _, candidate := range profileFiles(userHome, getenv) {
 		if !lexists(candidate) {
 			continue
 		}
 		target, existing, mode, err := profileTarget(candidate)
 		if err != nil {
-			notes = append(notes, fmt.Sprintf("not touching %s: %v", tilde(r.d.userHome, candidate), err))
+			notes = append(notes, fmt.Sprintf("not touching %s: %v", tilde(userHome, candidate), err))
 			continue
 		}
 		if seen[target] {
@@ -956,16 +964,16 @@ func (r *uninstallRun) profilePlan() (edits []profileEdit, notes []string) {
 		next, block, found, err := removeProfileBlock(existing)
 		if errors.Is(err, errProfileMalformed) {
 			notes = append(notes, fmt.Sprintf("not touching %s: %v. Remove the jevlin lines between %q and %q by hand",
-				tilde(r.d.userHome, candidate), err, profileMarkerStart, profileMarkerEnd))
+				tilde(userHome, candidate), err, profileMarkerStart, profileMarkerEnd))
 			continue
 		}
 		if !found {
 			continue
 		}
-		if !profileBlockNamesConfig(block, r.cfgPath) {
+		if !profileBlockNamesConfig(block, cfgPath) {
 			value, _ := profileBlockConfig(block)
 			notes = append(notes, fmt.Sprintf("left the jevlin block in %s: it sets JEVLIN_CONFIG=%s, not this installation's %s",
-				tilde(r.d.userHome, candidate), value, r.cfgPath))
+				tilde(userHome, candidate), value, cfgPath))
 			continue
 		}
 		edits = append(edits, profileEdit{display: candidate, target: target, next: next, mode: mode})

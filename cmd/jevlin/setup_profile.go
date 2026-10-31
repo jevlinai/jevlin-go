@@ -37,7 +37,10 @@ func doubleQuoted(d shellDialect, s string) string {
 func currentShellFix(d shellDialect, dir string) string {
 	switch d {
 	case dialectFish:
-		return "fish_add_path " + fishQuote(dir)
+		// The block's own line: for this session only. fish_add_path would
+		// write fish_user_paths, a universal variable that persists and that
+		// nothing here could take out again.
+		return "set -gx PATH $PATH " + fishQuote(dir)
 	case dialectPowerShell:
 		return "$env:Path += " + doubleQuoted(d, ";"+dir)
 	}
@@ -45,13 +48,15 @@ func currentShellFix(d shellDialect, dir string) string {
 	return `export PATH="$PATH:` + inner[1:]
 }
 
-// dirOnPath: is dir one of the entries of a PATH value?
+// dirOnPath: is dir one of the entries of a PATH value, through any link in
+// either (node resolves the launcher's real path, so a prefix reached through
+// a symlink is the same directory)?
 func dirOnPath(pathVar, dir string) bool {
 	if dir == "" {
 		return false
 	}
 	for _, e := range filepath.SplitList(pathVar) {
-		if e != "" && samePath(e, dir) {
+		if e != "" && sameDir(e, dir) {
 			return true
 		}
 	}

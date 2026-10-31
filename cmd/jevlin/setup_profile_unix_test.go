@@ -83,6 +83,15 @@ func (s *setupSandbox) npmInstall(launcherBin string) (prefix string) {
 	return prefix
 }
 
+// npmShim puts the command npm's launcher stands behind in dir.
+func (s *setupSandbox) npmShim(dir string) {
+	s.t.Helper()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		s.t.Fatal(err)
+	}
+	writeFileT(s.t, filepath.Join(dir, "jevlin"), "shim")
+}
+
 func TestSetupUnderNpmPutsNpmsBinDirectoryOnPathNotThePackages(t *testing.T) {
 	for _, c := range []struct {
 		name     string
@@ -93,6 +102,7 @@ func TestSetupUnderNpmPutsNpmsBinDirectoryOnPathNotThePackages(t *testing.T) {
 			s.platform.claim("credits")
 			prefix := s.npmInstall("")
 			shimDir := filepath.Join(prefix, "bin")
+			s.npmShim(shimDir)
 			if c.launcher {
 				s.env[launchBinEnv] = shimDir
 			}
@@ -116,22 +126,23 @@ func TestSetupUnderNpmPutsNpmsBinDirectoryOnPathNotThePackages(t *testing.T) {
 	}
 }
 
-func TestSetupUnderNpmWritesNoPathLineWhenTheDirectoryIsAlreadyOnPath(t *testing.T) {
+// The process PATH is what the agent that ran setup sees, so it says nothing
+// about a person's next terminal: the block is written the same either way,
+// and the PATH only decides whether the command for this terminal is printed.
+func TestSetupUnderNpmWritesTheBlockAndNoFixWhenTheDirectoryIsAlreadyOnPath(t *testing.T) {
 	s := newSetupSandbox(t)
 	s.platform.claim("credits")
 	prefix := s.npmInstall(filepath.Join(s.root, "npmprefix", "bin"))
 	shimDir := filepath.Join(prefix, "bin")
+	s.npmShim(shimDir)
 	s.env["PATH"] = "/usr/bin" + string(os.PathListSeparator) + shimDir
 	code, out, errOut := s.run(tty(), true, "-yes", "-no-agents")
 	if code != exitOK {
 		t.Fatalf("setup exited %d\n%s%s", code, out, errOut)
 	}
 	profile := string(s.readFile(s.profilePath()))
-	if strings.Contains(profile, "PATH") || !strings.Contains(profile, "JEVLIN_CONFIG") {
-		t.Errorf("the profile should set JEVLIN_CONFIG and no PATH:\n%s", profile)
-	}
-	if !strings.Contains(out, shimDir+" is already on PATH") {
-		t.Errorf("setup did not say the directory is already on PATH:\n%s", out)
+	if !strings.Contains(profile, shellQuote(shimDir)) || !strings.Contains(profile, "JEVLIN_CONFIG") {
+		t.Errorf("the block should carry the PATH line and JEVLIN_CONFIG as for a native install:\n%s", profile)
 	}
 	if strings.Contains(out, "To use jevlin in this terminal now") {
 		t.Errorf("setup offered a fix for a PATH that already has the directory:\n%s", out)
@@ -152,7 +163,7 @@ func TestSetupWritesTheFishFileInFishSyntaxAndSaysHowToFixThisShell(t *testing.T
 	if !strings.Contains(body, "set -gx JEVLIN_CONFIG ") || strings.Contains(body, "export ") || strings.Contains(body, "case ") {
 		t.Errorf("config.fish is not in fish syntax:\n%s", body)
 	}
-	if !strings.Contains(out, "fish_add_path ") || strings.Contains(out, "export PATH=") {
+	if !strings.Contains(out, "set -gx PATH $PATH ") || strings.Contains(out, "export PATH=") {
 		t.Errorf("the fix for this shell is not fish's:\n%s", out)
 	}
 	if _, err := os.Lstat(filepath.Join(s.userHome, ".zshrc")); err == nil {
@@ -212,5 +223,37 @@ func TestUninstallRemovesTheBlocksSetupWritesForBashLoginAndFish(t *testing.T) {
 		if err != nil || string(got) != want {
 			t.Errorf("%s = %q (%v), want %q", name, got, err, want)
 		}
+	}
+}
+
+// A login file that really reads ~/.bashrc, in the spellings people write.
+func TestALoginFileThatSourcesBashrcIsRecognized(t *testing.T) {
+	for _, body := range []string{
+		"[ -f ~/.bashrc ] && . ~/.bashrc\n",
+		"if [ -r \"$HOME/.bashrc\" ]; then\n  . \"$HOME/.bashrc\"\nfi\n",
+		"source ~/.bashrc\n",
+		"test -f ${HOME}/.bashrc && source '${HOME}/.bashrc' # shared\n",
+		"if [ -f ~/.bashrc ]; then . ~/.bashrc; fi\n",
+	} {
+		p := filepath.Join(t.TempDir(), ".bash_profile")
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if !fileSourcesBashrc(p) {
+			t.Errorf("a login file that sources .bashrc was not recognized:\n%s", body)
+		}
+	}
+}
+
+// dirOnPath answers for the real directory: a prefix reached through a link
+// is the one node resolved the launcher to.
+func TestDirOnPathSeesThroughALink(t *testing.T) {
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "via")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	if !dirOnPath(link+string(os.PathListSeparator)+"/usr/bin", real) || !dirOnPath(real, link) {
+		t.Error("a directory on PATH through a symlink was not found")
 	}
 }

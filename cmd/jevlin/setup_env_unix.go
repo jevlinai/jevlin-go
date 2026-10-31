@@ -51,14 +51,13 @@ func systemUserEnvironment() userEnvironment { return nil }
 func (r *setupRun) environmentStep() (code int) {
 	choice := chooseProfile(r.d.userHome, runtime.GOOS, r.d.getenv, lexists)
 	binDir, pathNote := r.pathDirectory(filepath.Dir(r.exe))
+	// The block is written the same way for every install (its own guard
+	// makes the PATH line harmless where the directory is already there): the
+	// process PATH says what the agent that ran setup can see, which is not
+	// what a person's next terminal will. It decides only whether to print
+	// the command for this terminal.
 	onPath := dirOnPath(r.d.getenv("PATH"), binDir)
-	// An npm install whose bin directory is already on PATH, or cannot be
-	// told, gets no PATH line; the profile then sets only JEVLIN_CONFIG.
-	lineDir := binDir
-	if r.npmGlobal() && (binDir == "" || onPath) {
-		lineDir = ""
-	}
-	lines := envLinesFor(choice.dialect, lineDir, r.cfgPath)
+	lines := envLinesFor(choice.dialect, binDir, r.cfgPath)
 
 	r.say("Shell environment")
 	if r.leftForOtherInstallation("shell profile", "Your shell profile belongs to that one", "pointing PATH and JEVLIN_CONFIG here would repoint your real environment at this installation") {
@@ -66,14 +65,11 @@ func (r *setupRun) environmentStep() (code int) {
 	}
 	defer func() {
 		if code == exitOK && !r.dry {
-			r.printPathFix(choice.dialect, binDir, onPath)
+			r.printPathFix(choice.dialect, binDir, onPath, choice.fixOK)
 		}
 	}()
 	if pathNote != "" {
 		r.printf("%s\n", pathNote)
-	}
-	if r.npmGlobal() && onPath {
-		r.printf("%s is already on PATH, so no PATH line is written.\n", binDir)
 	}
 	r.printf("These lines make the other commands short. Your key is not among them: a\n" +
 		"search reads it from the stored credentials file (or JEVLIN_API_KEY, if a\n" +
@@ -107,13 +103,20 @@ func (r *setupRun) environmentStep() (code int) {
 			candidate, err, profileMarkerStart, profileMarkerEnd)
 		return exitOK
 	}
-	if bytes.Equal(next, existing) {
+	remove := r.earlierBlocks(choice, target)
+	alreadyHas := bytes.Equal(next, existing)
+	if alreadyHas && len(remove) == 0 {
 		r.shortCommands = true
 		r.printf("%s already has them.\n", candidate)
 		return exitOK
 	}
 	if r.dry {
-		r.printf("(dry run) would write a jevlin block to %s\n", candidate)
+		if !alreadyHas {
+			r.printf("(dry run) would write a jevlin block to %s\n", candidate)
+		}
+		for _, e := range remove {
+			r.printf("(dry run) would remove the earlier jevlin block from %s\n", e.display)
+		}
 		return exitOK
 	}
 	if !r.d.interactive && !r.yes {
@@ -121,7 +124,11 @@ func (r *setupRun) environmentStep() (code int) {
 		r.skip("shell profile")
 		return exitOK
 	}
-	add, err := r.ask("Add them to " + tilde(r.d.userHome, candidate) + "?")
+	question := "Add them to " + tilde(r.d.userHome, candidate) + "?"
+	if alreadyHas {
+		question = "Remove the earlier jevlin block from " + tilde(r.d.userHome, remove[0].display) + "?"
+	}
+	add, err := r.ask(question)
 	if err != nil {
 		return r.abort("your shell profile was not touched and the coding agents were not set up")
 	}
@@ -129,18 +136,51 @@ func (r *setupRun) environmentStep() (code int) {
 		r.say("Left your shell profile alone")
 		return exitOK
 	}
-	// fish's directory may not exist yet; every other profile sits in the home.
-	if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
-		r.printf("Could not write %s: %v. Add the lines above by hand.\n", candidate, err)
-		return exitOK
+	if !alreadyHas {
+		// fish's directory may not exist yet; every other profile sits in the home.
+		if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
+			r.printf("Could not write %s: %v. Add the lines above by hand.\n", candidate, err)
+			return exitOK
+		}
+		if err := fsx.WriteFileAtomic(filepath.Dir(target), filepath.Base(target), next, mode); err != nil {
+			r.printf("Could not write %s: %v. Add the lines above by hand.\n", candidate, err)
+			return exitOK
+		}
+		r.changed = true
+		r.say("Added a jevlin block to " + candidate)
 	}
-	if err := fsx.WriteFileAtomic(filepath.Dir(target), filepath.Base(target), next, mode); err != nil {
-		r.printf("Could not write %s: %v. Add the lines above by hand.\n", candidate, err)
-		return exitOK
+	for _, e := range remove {
+		if err := fsx.WriteFileAtomic(filepath.Dir(e.target), filepath.Base(e.target), e.next, e.mode); err != nil {
+			r.printf("Could not remove the earlier jevlin block from %s: %v. Delete the lines between %q and %q by hand.\n", e.display, err, profileMarkerStart, profileMarkerEnd)
+			continue
+		}
+		r.changed = true
+		r.printf("Removed the earlier jevlin block from %s, which your shell does not read.\n", e.display)
 	}
-	r.changed = true
 	r.shortCommands = true
-	r.say("Added a jevlin block to " + candidate)
 	r.printf("  open a new shell, or: source %s\n", shellQuote(candidate))
 	return exitOK
+}
+
+// earlierBlocks finds the jevlin block this installation's earlier setup left
+// in another profile. Where the shell setup now writes for reads a different
+// file than that setup chose (bash on macOS, whose login shell never reads
+// ~/.bashrc), the block there is dead weight and, for an npm install, names
+// the directory this change stops using: it is returned to be removed in the
+// same confirmed step. A block in any other profile may serve another shell of
+// the participant's, so it is named and left.
+func (r *setupRun) earlierBlocks(choice profileChoice, target string) (remove []profileEdit) {
+	edits, _ := profileBlockEdits(r.d.userHome, r.d.getenv, r.cfgPath)
+	bashrc := filepath.Join(r.d.userHome, ".bashrc")
+	for _, e := range edits {
+		if samePath(e.target, target) {
+			continue
+		}
+		if runtime.GOOS == "darwin" && choice.shell == "bash" && samePath(e.display, bashrc) {
+			remove = append(remove, e)
+			continue
+		}
+		r.printf("%s also holds a jevlin block for this installation; setup leaves it.\n", e.display)
+	}
+	return remove
 }

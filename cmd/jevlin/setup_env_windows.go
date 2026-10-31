@@ -148,20 +148,20 @@ func (registryUserEnvironment) Broadcast() {
 
 func (r *setupRun) environmentStep() (code int) {
 	binDir, pathNote := r.pathDirectory(filepath.Join(r.home, "bin"))
-	if binDir == "" {
-		binDir = filepath.Join(r.home, "bin") // as before; the note says the npm directory is for the person to add
-	}
 	r.say("User environment")
 	if r.leftForOtherInstallation("user environment", "Your user PATH and JEVLIN_CONFIG belong to that one", "setting them here would repoint your real environment at this installation") {
 		return exitOK
 	}
 	defer func() {
 		if code == exitOK && !r.dry {
-			r.printPathFix(dialectPowerShell, binDir, dirOnPath(r.d.getenv("PATH"), binDir))
+			r.printPathFix(dialectPowerShell, binDir, dirOnPath(r.d.getenv("PATH"), binDir), true)
 		}
 	}()
 	if pathNote != "" {
+		// npm's directory is unknown, absent or unsafe: no user Path entry is
+		// made, and no command is offered for this terminal.
 		r.printf("%s\n", pathNote)
+		return exitOK
 	}
 	r.printf("These make the other commands short: %s on your user PATH, and\n"+
 		"JEVLIN_CONFIG=%s. Your key is not among them: a search reads it from the\n"+

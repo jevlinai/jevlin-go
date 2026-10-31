@@ -137,7 +137,7 @@ var classifiedFileCalls = map[fileCallSite]fileCallClass{
 	{"cmd/jevlin/setup_env.go", "profileTarget", "os.ReadFile"}:                         {1, "outside: the shell profile"},
 	{"cmd/jevlin/setup_env.go", "readEnvJournal", "os.ReadFile"}:                        {1, "outside: the environment journal"},
 	{"cmd/jevlin/setup_env_unix.go", "restrictToOwner", "os.Chmod"}:                     {2, "root: chmods the home and the roots themselves (by path, on a directory), never a path below one"},
-	{"cmd/jevlin/setup_env_unix.go", "setupRun.environmentStep", "fsx.WriteFileAtomic"}: {1, "outside: the shell profile"},
+	{"cmd/jevlin/setup_env_unix.go", "setupRun.environmentStep", "fsx.WriteFileAtomic"}: {2, "outside: the shell profile, and the earlier jevlin block in another profile of the participant's home"},
 	{"cmd/jevlin/setup_env_unix.go", "setupRun.environmentStep", "os.MkdirAll"}:         {1, "outside: the directory of fish's config.fish under the participant's home"},
 	{"cmd/jevlin/setup_profile_unix.go", "fileSourcesBashrc", "os.ReadFile"}:            {1, "outside: the participant's own bash login file, read to see whether it sources .bashrc"},
 	{"cmd/jevlin/turn_end.go", "cmdTurnEnd", "fsx.ReadRegular"}:                         {1, "root: the queued turn end, read without waiting and bounded"},
