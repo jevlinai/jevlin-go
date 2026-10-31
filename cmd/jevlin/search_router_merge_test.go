@@ -387,7 +387,7 @@ func TestTheRouterCitationsFieldsAreDecided(t *testing.T) {
 			"Requested requested,omitempty", "SentTo sent_to,omitempty", "NotSent not_sent,omitempty", "Dropped dropped,omitempty",
 		}, "machineDomainFilter (filtersAppliedOf)"},
 		{reflect.TypeFor[routerUsage](), []string{
-			"CostMicros cost_micros,omitempty", "CacheHit cache_hit,omitempty", "Pending pending,omitempty",
+			"CostMicros cost_micros,omitempty", "CacheHit cache_hit,omitempty", "CacheRefresh cache_refresh,omitempty", "Pending pending,omitempty",
 			"LatencyMS latency_ms,omitempty", "DeadlineHit deadline_hit,omitempty",
 		}, "machineUsage (machineResultOf)"},
 	} {

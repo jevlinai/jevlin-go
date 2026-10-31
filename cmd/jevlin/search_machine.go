@@ -54,6 +54,7 @@ const (
 	codeInvalidMergedLimit   = "invalid_merged_limit"
 	codeInvalidMaxChars      = "invalid_max_chars"
 	codeInvalidPageChars     = "invalid_page_chars"
+	codeInvalidCache         = "invalid_cache"
 )
 
 // inputError is a local refusal with a stable machine code. It is a type
@@ -96,6 +97,9 @@ type machineSearchRequest struct {
 	// pageChars caps each page's excerpt (the router's page_chars),
 	// where maxChars is one budget for the whole list.
 	pageChars *int
+	// cache is "" (the router's default) or "refresh". A request that says
+	// "default" is the same as one that says nothing, and is sent as nothing.
+	cache string
 }
 
 // wireSearchRequest is the decoded shape. Pointers distinguish an absent
@@ -119,6 +123,7 @@ type wireSearchRequest struct {
 	MergedLimit   json.RawMessage `json:"merged_limit"`
 	MaxChars      json.RawMessage `json:"max_chars"`
 	PageChars     json.RawMessage `json:"page_chars"`
+	Cache         json.RawMessage `json:"cache"`
 }
 
 // decodeMachineSearchRequest reads exactly one v1 request from r.
@@ -225,6 +230,13 @@ func decodeMachineSearchRequest(r io.Reader) (machineSearchRequest, error) {
 		}
 		req.pageChars = &n
 	}
+	if len(wire.Cache) > 0 {
+		cache, err := validateCache(wire.Cache)
+		if err != nil {
+			return machineSearchRequest{}, err
+		}
+		req.cache = cache
+	}
 	return req, nil
 }
 
@@ -299,6 +311,27 @@ func validateRecency(raw json.RawMessage) (string, *inputError) {
 		return "", inputErrorf(codeInvalidRecency, `"recency" must be one of "day", "week", "month", "year"`)
 	}
 	return s, nil
+}
+
+// validateCache mirrors the router's closed vocabulary for "cache", so a bad
+// value costs the caller no router call. "default" is what omitting the field
+// means, so it is returned as "" and never goes on the wire; "refresh" skips
+// the router's response-cache read and runs the search live.
+func validateCache(raw json.RawMessage) (string, *inputError) {
+	if isJSONNull(raw) {
+		return "", inputErrorf(codeInvalidCache, `"cache" must not be null`)
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return "", inputErrorf(codeInvalidCache, `"cache" must be a string`)
+	}
+	switch s {
+	case "default":
+		return "", nil
+	case "refresh":
+		return s, nil
+	}
+	return "", inputErrorf(codeInvalidCache, `"cache" must be omitted, "default" or "refresh"`)
 }
 
 // domainFilterMax is the router's own cap on the "domain_filter" array,
@@ -775,8 +808,12 @@ func filtersAppliedOf(f *routerFiltersApplied) *machineFiltersApplied {
 type machineUsage struct {
 	CostMicros int64 `json:"cost_micros,omitempty"`
 	CacheHit   bool  `json:"cache_hit,omitempty"`
-	Pending    int   `json:"pending,omitempty"`
-	LatencyMS  int64 `json:"latency_ms,omitempty"`
+	// CacheRefresh, present only when true as CacheHit is, says the search
+	// ran live because the request asked for it (cache "refresh"), and that
+	// the router wrote the fresh result back for the next caller.
+	CacheRefresh bool  `json:"cache_refresh,omitempty"`
+	Pending      int   `json:"pending,omitempty"`
+	LatencyMS    int64 `json:"latency_ms,omitempty"`
 	// DeadlineHit, present only when true as CacheHit is, says the router
 	// answered at its deadline with arms still out: the search was cut
 	// short, and an empty or thin merged list is not evidence of absence.
@@ -846,11 +883,12 @@ func machineResultOf(s routerSuccess, view string) *machineResult {
 	if r.Usage != nil {
 		out.LatencyMS = r.Usage.LatencyMS
 		out.Usage = &machineUsage{
-			CostMicros:  r.Usage.CostMicros,
-			CacheHit:    r.Usage.CacheHit,
-			Pending:     r.Usage.Pending,
-			LatencyMS:   r.Usage.LatencyMS,
-			DeadlineHit: r.Usage.DeadlineHit,
+			CostMicros:   r.Usage.CostMicros,
+			CacheHit:     r.Usage.CacheHit,
+			CacheRefresh: r.Usage.CacheRefresh,
+			Pending:      r.Usage.Pending,
+			LatencyMS:    r.Usage.LatencyMS,
+			DeadlineHit:  r.Usage.DeadlineHit,
 		}
 	}
 	if r.Indexes != nil {
