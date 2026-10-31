@@ -302,6 +302,7 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | `search-default` | `agents prefer`'s choice. | agents prefer | Yes; the skill default returns. |
 | `search-tier` | `agents tier`'s choice: the tier a search carries when the request names none. | agents tier | Yes; `[router] tier`, then the router's default, returns. |
 | `search-fast-set` | `agents tier fast <preset>`'s choice: the preset a fast search sends as `fast_set`. The skill never sets it. | agents tier | Yes; `agents tier default` removes it. |
+| `requests/` | Claude Code only: a search or fetch request holding a `'` or a `$`, written by the agent with the Write tool and read by the call with `--stdin < <file>`. Each file is the request word for word. The call reads it through the shell, so jevlin never sees its name and does not delete it; nothing prunes the folder, and `uninstall -purge-state` removes it. | the agent | Yes, with no search running. |
 | `update_check.json` | The daily release check's record: when it ran, what it found, and a release a rollback holds. | upgrade | Yes; the next agent session checks again, though a rollback's hold is forgotten. |
 | `bin/jevlin` | A native binary, and `jevlin.previous` after an upgrade. | setup, upgrade | Through `uninstall -binary`. |
 | `state/` | The agent registration (`agent.json`), the trace key (`trace.key`), and connect's lock and resume stamp. | setup, connect, search | No: it is your registration. |
