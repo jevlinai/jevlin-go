@@ -7,6 +7,7 @@ package main
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -136,5 +137,90 @@ func TestGatherBinaryFactsSeesThroughPATH(t *testing.T) {
 	f = gatherBinaryFacts(home)
 	if !f.Checked || f.OnPath != "" {
 		t.Fatalf("an empty PATH still resolved something: %+v", f)
+	}
+}
+
+func TestDoctorNpmShimCheckNamesTheDirectoryToAdd(t *testing.T) {
+	dir := "/usr/local/bin"
+	shim := dir + "/jevlin"
+
+	if c := doctorNpmShimCheck(npmShimFacts{Checked: true, Dir: dir, OnPath: shim, Here: true}); c.Verdict != verdictOK || c.Fix != "" {
+		t.Errorf("this package's shim on PATH judged %s (fix %q): %s", c.Verdict, c.Fix, c.Detail)
+	}
+
+	c := doctorNpmShimCheck(npmShimFacts{Checked: true, Dir: dir, Dialect: dialectPOSIX})
+	if c.Verdict != verdictNo || !strings.Contains(c.Detail, dir) || !strings.Contains(c.Fix, `export PATH="$PATH:`+dir+`"`) {
+		t.Errorf("an empty PATH answer: %s — %s — %s", c.Verdict, c.Detail, c.Fix)
+	}
+	if c := doctorNpmShimCheck(npmShimFacts{Checked: true, Dir: dir, Dialect: dialectFish}); !strings.Contains(c.Fix, "fish_add_path '"+dir+"'") {
+		t.Errorf("fish is not told fish's command: %s", c.Fix)
+	}
+	if c := doctorNpmShimCheck(npmShimFacts{Checked: true, Dir: `C:\Users\u\npm`, Dialect: dialectPowerShell}); !strings.Contains(c.Fix, `$env:Path += ";C:\Users\u\npm"`) {
+		t.Errorf("PowerShell is not told its command: %s", c.Fix)
+	}
+
+	other := "/opt/other/jevlin"
+	c = doctorNpmShimCheck(npmShimFacts{Checked: true, Dir: dir, OnPath: other})
+	if c.Verdict != verdictNo || !strings.Contains(c.Detail, other) || !strings.Contains(c.Detail, dir) || !strings.Contains(c.Fix, dir) {
+		t.Errorf("another copy answering first: %s — %s — %s", c.Verdict, c.Detail, c.Fix)
+	}
+
+	// npm's directory could not be told: what answers is reported, and no
+	// directory is invented.
+	c = doctorNpmShimCheck(npmShimFacts{Checked: true, OnPath: other})
+	if c.Verdict != verdictOK || !strings.Contains(c.Detail, other) {
+		t.Errorf("an unknown directory with an answer: %s — %s", c.Verdict, c.Detail)
+	}
+	c = doctorNpmShimCheck(npmShimFacts{Checked: true})
+	if c.Verdict != verdictNo || strings.Contains(c.Fix, "PATH=") {
+		t.Errorf("an unknown directory and no answer: %s — %s", c.Verdict, c.Fix)
+	}
+
+	// An unchecked fact adds no row.
+	for _, check := range assembleDoctor(doctorFacts{NpmShim: npmShimFacts{}}) {
+		if check.Name == "npm command on PATH" {
+			t.Fatal("an unchecked npm fact still produced a row")
+		}
+	}
+	found := false
+	for _, check := range assembleDoctor(doctorFacts{NpmShim: npmShimFacts{Checked: true, Dir: dir}}) {
+		found = found || check.Name == "npm command on PATH"
+	}
+	if !found {
+		t.Fatal("a global npm install got no PATH row")
+	}
+}
+
+func TestGatherNpmShimFactsLooksOnlyAtAGlobalNpmInstall(t *testing.T) {
+	pkgExe := "/usr/local/lib/node_modules/@jevlinsearch/jevlin/bin/jevlin"
+	env := func(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
+	lookup := func(path string, err error) func(string) (string, error) {
+		return func(string) (string, error) { return path, err }
+	}
+	// A native binary, or a project's copy, is not asked about.
+	for _, c := range []struct{ exe, launch string }{
+		{"/home/u/.jevlin/bin/jevlin", ""},
+		{"/work/app/node_modules/@jevlinsearch/jevlin/bin/jevlin", "npm:local"},
+	} {
+		if f := gatherNpmShimFacts(c.exe, "linux", env(map[string]string{"JEVLIN_LAUNCH": c.launch}), lookup("/usr/local/bin/jevlin", nil)); f.Checked {
+			t.Errorf("%s (%q) was checked: %+v", c.exe, c.launch, f)
+		}
+	}
+	g := env(map[string]string{"JEVLIN_LAUNCH": "npm:global", "SHELL": "/usr/bin/fish"})
+	f := gatherNpmShimFacts(pkgExe, "linux", g, lookup("/usr/local/bin/jevlin", nil))
+	if !f.Checked || f.Dir != "/usr/local/bin" || !f.Here || f.Dialect != dialectFish {
+		t.Errorf("the shim in npm's directory: %+v", f)
+	}
+	f = gatherNpmShimFacts(pkgExe, "linux", g, lookup("/elsewhere/jevlin", nil))
+	if !f.Checked || f.Here || f.OnPath != "/elsewhere/jevlin" {
+		t.Errorf("another copy first: %+v", f)
+	}
+	f = gatherNpmShimFacts(pkgExe, "linux", g, lookup("", exec.ErrNotFound))
+	if !f.Checked || f.OnPath != "" || f.Here {
+		t.Errorf("nothing on PATH: %+v", f)
+	}
+	f = gatherNpmShimFacts(`C:\u\npm\node_modules\@jevlinsearch\jevlin\bin\jevlin.exe`, "windows", g, lookup("", exec.ErrNotFound))
+	if f.Dialect != dialectPowerShell || f.Dir != `C:\u\npm` {
+		t.Errorf("windows: %+v", f)
 	}
 }
