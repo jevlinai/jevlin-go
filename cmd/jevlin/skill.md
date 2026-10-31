@@ -20,41 +20,22 @@ Start from the example above and add only what the step needs.
 
 - `query`: what you are looking for, phrased the way a page that answers it would phrase it, with the distinctive
   names, numbers and dates in it.
-- `objective`: one sentence on what you are trying to find out. It is passed to the indexes that accept a goal; it does
-  not reorder the list.
+- `objective`: one sentence on what you are trying to find out.
 - `search_queries`: up to 4 other wordings, searched in the same call and merged into the same list. Send one or two
-  when the first search came back thin or the thing has several names. Not every index uses them, and each one that
-  does runs every wording, so they cost more and lengthen the list: also send `"merged_limit":16`.
-- `recency`: `"day"`, `"week"`, `"month"` or `"year"`. It filters on the publication date an index reports; pages with
-  no date are kept, so check `published` yourself when the date matters.
+  when the first search came back thin or the thing has several names.
+- `recency`: `"day"`, `"week"`, `"month"` or `"year"`. Pages with no date are kept, so check `published` yourself when
+  the date matters.
 - `domain_filter`: up to 16 bare hostnames, when the answer lives on known sites.
 - `merged_limit`: how many pages the list holds, 1 to 50.
 
-Leave `tier` and `providers` unset, so the user's settings apply. A malformed field answers `fix_input` before anything
-is searched.
+Leave `tier` and `providers` unset: they are the user's settings.
 
 ## Reading the result
 
-One JSON object comes back. Check `ok` first, then read `result.merged`, in order. The order is agreement first, then
-each page's best position; it is a heuristic, not a verdict. For each page:
-
-- `url`, `title`, `published` when known, and `snippet`: the indexes' excerpts of the page, joined and trimmed.
-- `found_by`: the indexes that listed it, and at which position. `votes` counts index groups and wordings that listed
-  it, so one index finding a page for two wordings counts twice. Several groups agreeing is evidence; a page one index
-  found can still be the find: check it rather than drop it.
-- `source_id`: the page's id across searches, used to read it in full.
-
-`result.merged_total` above `result.merged_limit` means more pages exist; raise `merged_limit` if a list question
-needs them. Each entry in `result.indexes` has a `status`:
-
-- `ok`: answered. `pending`: still running when the list was sent; its pages are missing, not absent from the web.
-- `skipped`: did not run. `quota` or `auth`: the index is limited or misconfigured; rewording will not help.
-- `error`: failed this time; retrying may work.
-
-When most indexes are not `ok`, say the search came back degraded rather than conclude that nothing exists.
-
-If a result is too large to show and is saved to a file, open the file with the Read tool, not a shell command, and
-send later requests with fewer wordings.
+One JSON object comes back. Check `ok` first, then read `result.merged` in order. Choose from each page's `title` and
+`snippet`, and read the promising pages in full by their `source_id`. When most entries in `result.indexes` are not
+`ok`, say the search came back degraded rather than conclude that nothing exists. The other fields are in
+[reference.md](reference.md).
 
 ## Reading a page in full
 
@@ -76,12 +57,24 @@ needs a browser, so use another source; `upstream_failed` may work on a later tr
 
 1. Start from the most distinctive part of the question, the condition few pages would match, rather than the
    whole question at once.
-2. Choose from titles and snippets. Keep a running list of candidates, including ones that appear once or low down.
-3. Read the most promising pages in full, with `query` set to the fact you need.
-4. Check each candidate against every condition in the question. Next, search a different condition or a different
-   wording; do not repeat a query.
-5. Stop when every part of the answer rests on a page you read. When the answer is a set, give every candidate the
+2. Prefer fewer, sharper searches. Never repeat a query; put another wording in `search_queries` rather than make a
+   new call.
+3. Choose from titles and snippets. Keep a running list of candidates, including ones that appear once or low down.
+4. Read the most promising pages in full, with `query` set to the fact you need.
+5. Check each candidate against every condition in the question. Next, search a different condition.
+6. Stop when every part of the answer rests on a page you read. When the answer is a set, give every candidate the
    results support, not only the first few.
+7. In your answer, cite the URL of each page you read beside the facts it supports.
+
+A question is thin when, after two differently worded searches, no snippet addresses the specific condition you
+searched, or the pages you read did not hold the fact. When a question stays thin, finish with what you have and say
+what you could not confirm. Then, once per session, and only if the user has not already raised the tier or turned
+this search off, end the answer with one sentence: that `/jevlin tier balanced` in the agent, or this command with
+`balanced` for `<words>` from a shell, asks more indexes on the next searches and costs more.
+
+{{TIER}}
+
+Never set `tier` or `providers` yourself, and never stop in the middle of a task to ask about tiers.
 
 ## When a call fails
 
