@@ -302,7 +302,7 @@ func hookDispatch(ops hookOps, args []string, stdin io.Reader, stdout, stderr io
 		}
 	case "hermes":
 		if len(args) > 1 {
-			hookHermes(args[1], payload, stdout)
+			hookHermes(ops.getenv, args[1], payload, stdout)
 		}
 	case "codex":
 		if len(args) > 1 {

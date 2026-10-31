@@ -297,7 +297,7 @@ func hermesBridgedCommand(t *testing.T, command string) string {
 		"tool_input": map[string]any{"command": command}, "extra": map[string]any{"tool_call_id": "synthetic-call"},
 	})
 	var out bytes.Buffer
-	hookHermes("pre_tool_call", payload, &out)
+	hookHermes(noEnv, "pre_tool_call", payload, &out)
 	var got hermesModifyDirective
 	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
 		t.Fatalf("the Hermes hook rewrote nothing for %q: %v (%q)", command, err, out.String())

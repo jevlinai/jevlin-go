@@ -40,3 +40,23 @@ func TestTheLineageHookWritesNothingWhenTraceIsOff(t *testing.T) {
 		t.Fatalf("the control did not trace: stdout %q, files %v", out, keys(fs.files))
 	}
 }
+
+// Hermes' hook only adds a bridge; with traces off it adds none, in every
+// spelling, after a control run that does.
+func TestTheHermesHookWritesNoBridgeWhenTraceIsOff(t *testing.T) {
+	payload := map[string]any{
+		"hook_event_name": "pre_tool_call", "tool_name": "terminal",
+		"tool_input": map[string]any{"command": `jevlin search -format model "q"`, "timeout": 30},
+		"session_id": "sess-1", "cwd": "/w", "extra": map[string]any{"tool_call_id": "c1", "turn_id": "t1"},
+	}
+	_, on := newFakeHookOps(nil)
+	if out, _ := runHook(t, on, hookContext{}, "hermes pre_tool_call", payload); !strings.Contains(out, bridgeEnv) {
+		t.Fatalf("control: no bridge with traces on: %q", out)
+	}
+	for _, v := range []string{"off", "0", "false", " OFF "} {
+		_, ops := newFakeHookOps(map[string]string{"JEVLIN_TRACE": v})
+		if out, _ := runHook(t, ops, hookContext{}, "hermes pre_tool_call", payload); out != "" {
+			t.Errorf("JEVLIN_TRACE=%q: the hook answered %q", v, out)
+		}
+	}
+}

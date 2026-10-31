@@ -127,7 +127,7 @@ func hookMainWith(ops hookOps, hc hookContext, args []string, stdin *bytes.Reade
 	case "cursor":
 		hookCursor(ops, hc, args[1], payload, stdout, stderr)
 	case "hermes":
-		hookHermes(args[1], payload, stdout)
+		hookHermes(ops.getenv, args[1], payload, stdout)
 	case "turn":
 		hookHostTurn(ops, hc, args[1], payload)
 	case "start":
