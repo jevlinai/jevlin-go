@@ -9,10 +9,7 @@ package main
 // launcher, and a later setup or upgrade from it is refused as an npm copy run
 // around its launcher. The directory is the one holding the shim.
 
-import (
-	"path/filepath"
-	"strings"
-)
+import "strings"
 
 // launchBinEnv is what the npm launcher exports for the directory holding its
 // shim, for a global install only.
@@ -29,14 +26,16 @@ func npmBinDir(exe string, getenv func(string) string) string {
 	return npmShimDirFromPackagePath(exe)
 }
 
-// plainAbsolutePath: absolute in either OS's spelling, and printable.
+// plainAbsolutePath: absolute in either OS's spelling (judged by the text, not
+// by the OS running, so the same value is judged the same everywhere), and
+// printable.
 func plainAbsolutePath(p string) bool {
 	for _, r := range p {
 		if r < 0x20 || r == 0x7f {
 			return false
 		}
 	}
-	return filepath.IsAbs(p) || isWindowsAbs(p)
+	return strings.HasPrefix(p, "/") || isWindowsAbs(p)
 }
 
 // isWindowsAbs reads a drive path (C:\x, C:/x) or a UNC path whatever OS this
