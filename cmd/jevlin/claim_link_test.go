@@ -65,7 +65,7 @@ func TestALinkPlantedInTheAgentRecordIsNeverPrinted(t *testing.T) {
 			t.Errorf("%s printed the planted link:\n%s", name, got)
 		}
 	}
-	if !strings.Contains(out, claimURL) || !strings.Contains(out, "code: "+claimCode) {
+	if !strings.Contains(out, claimURL) || !strings.Contains(out, "type the code "+hyphenatedClaimCode(claimCode)) {
 		t.Errorf("connect did not print the agent's own link from the claim record:\n%s", out)
 	}
 	if !strings.Contains(text.String(), claimURL) {
@@ -87,7 +87,7 @@ func TestAClaimedAgentShowsNoLinkWhateverItsRecordSays(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("connect exited %d: %s", code, errOut)
 	}
-	if strings.Contains(out, "claim this agent") || strings.Contains(out, "/claim/") {
+	if strings.Contains(out, "This agent is registered.") || strings.Contains(out, "/claim/") {
 		t.Fatalf("connect printed a claim link for a claimed agent:\n%s", out)
 	}
 	if reg, _ := loadAgent(t, stateDir); reg.Status != "claimed" {
@@ -107,7 +107,7 @@ func TestNoLinkIsShownWhenThePlatformCannotSayWhoseKeyItIs(t *testing.T) {
 	if code != exitTransport {
 		t.Fatalf("connect exited %d, want %d:\n%s%s", code, exitTransport, out, errOut)
 	}
-	if strings.Contains(out+errOut, claimURL) || strings.Contains(out, "claim this agent") {
+	if strings.Contains(out+errOut, claimURL) || strings.Contains(out, "This agent is registered.") {
 		t.Fatalf("connect showed a claim link it could not check:\n%s%s", out, errOut)
 	}
 	if platform.claimCodeCallCount() != mints {

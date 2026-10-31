@@ -178,9 +178,13 @@ to copy or paste. Then it asks, in this order:
 | **Set up the coding agents found on this machine now?** | Writes a skill and hooks into each agent's own config, after showing you what. |
 | **Switch?** | Asked only when Codex's config has a setting of your own that its permission profile would change. It shows every line it would write; a bare Enter is no and leaves Codex as it is. |
 
-After the config is written, and before the shell profile, it prints a link where you claim
-your agent on `platform.jevlin.ai` and waits up to three minutes for you to. You need not do it
-then: search already works, and using an agent later finishes the claim. The
+After the config is written, and before the shell profile, it prints the steps to claim your
+agent: a link to open (sign in on `platform.jevlin.ai`, or create an account, and you come back
+to the page), the agent's name to check and confirm, and a code to type at `/claim` if the link
+does not open. It then waits up to three minutes for you. You need not do it then: search
+already works, within an unclaimed agent's limits (the fast tier, with a daily cap), and the
+next search finishes the claim once you have confirmed. Claiming lifts the limits and opens the
+other tiers. The link is valid for a week; `jevlin connect` prints a fresh one. The
 [guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#setup) says what each answer does and which flags answer them for you.
 
 ## Then check
