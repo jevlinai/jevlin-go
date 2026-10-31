@@ -20,9 +20,8 @@ this client carries no list of them, and a purge lists whatever it finds left by
 
 ## Authority — the protocol is owned upstream, not here
 The search platform's control plane (`platform.jevlin.ai` — `connect`; `pkg/platform`) is a
-contract owned upstream, by `search-router`'s own design doc
-(`tokendrop-auth-server-design/docs/implementation/search-platform-agent-onboarding-design.md`,
-authored for the `search-router` repository and mirrored there — not owned here).
+contract owned upstream, by the platform's agent-onboarding design, kept with the platform
+contract — not owned here.
 **Conform upward.** A frozen requirement that looks wrong is a **spec escalation** to the design
 side — never a local reading chosen because it's easier to build. `pkg/platform` conforms to it:
 implementer here, authority elsewhere. The router's search and fetch protocol is `search-router`'s
