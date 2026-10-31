@@ -179,6 +179,13 @@ func readEarlierConfig(data []byte) earlierConfig {
 	if e.router == "" && len(f.Provider) == 1 && f.Provider[0].Name == "search-router" {
 		e.router = f.Provider[0].Upstream
 	}
+	// The portal's retired origin is carried as its successor. 0.6.x matched
+	// a claim link on the successor for a config naming the retired portal
+	// (its one compiled alias); format 1 has no alias, so carried as written
+	// it would refuse every claim link the platform now issues.
+	if o, err := urlOrigin(e.platformURL); err == nil && o == retiredPortal {
+		e.platformURL = config.DefaultPlatformBaseURL
+	}
 	// An earlier version kept the sessions directory beside the state
 	// directory unless told otherwise, as format 1 does.
 	if e.sessionsDir == "" && e.stateDir != "" {
@@ -186,6 +193,10 @@ func readEarlierConfig(data []byte) earlierConfig {
 	}
 	return e
 }
+
+// retiredPortal is the portal origin the platform moved from, whose
+// successor is config.DefaultPlatformBaseURL.
+const retiredPortal = "https://platform.nyks.dev"
 
 // carrying is v with what an earlier file named in place of a default; an
 // endpoint a variable chose for this run stays the variable's.

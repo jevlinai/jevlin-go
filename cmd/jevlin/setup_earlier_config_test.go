@@ -204,3 +204,18 @@ func TestSetupsRefusalNamesTheFileItRefused(t *testing.T) {
 		}
 	}
 }
+
+// An earlier file naming the retired portal carries its successor: 0.6.x
+// matched claim links on the successor through its one alias, and format 1
+// has none. Any other portal is carried as written.
+func TestTheRetiredPortalIsCarriedAsItsSuccessor(t *testing.T) {
+	for body, want := range map[string]string{
+		"[platform]\nbase_url = \"https://platform.nyks.dev\"\nagents_api_url = \"https://agents-v1.nyks.dev\"\n":        config.DefaultPlatformBaseURL,
+		"[platform]\nbase_url = \"https://platform.nyks.dev/\"\nagents_api_url = \"https://agents-v1.nyks.dev\"\n":       config.DefaultPlatformBaseURL,
+		"[platform]\nbase_url = \"https://portal.devnet.example\"\nagents_api_url = \"https://agents.devnet.example\"\n": "https://portal.devnet.example",
+	} {
+		if got := readEarlierConfig([]byte(body)).platformURL; got != want {
+			t.Errorf("%q: portal %q, want %q", body, got, want)
+		}
+	}
+}
