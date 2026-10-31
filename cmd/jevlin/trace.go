@@ -59,13 +59,18 @@ type traceEnvelope struct {
 	HostMeta        json.RawMessage `json:"host_meta,omitempty"`
 }
 
+// tracePrefix is the public domain separator of traceHash. The copy in
+// agent_trace_common.js (TRACE_PREFIX) is held to it by
+// TestTheJSTraceHashIsTheGoTraceHash.
+const tracePrefix = "jevlin-trace-v1|"
+
 // traceHash derives a stable identifier using domain-separated SHA-256
 // with a public prefix, truncated to 16 bytes and encoded as hex.
 func traceHash(raw string) string {
 	if raw == "" {
 		return ""
 	}
-	sum := sha256.Sum256([]byte("tokendrop-trace-v1|" + raw))
+	sum := sha256.Sum256([]byte(tracePrefix + raw))
 	return hex.EncodeToString(sum[:16])
 }
 

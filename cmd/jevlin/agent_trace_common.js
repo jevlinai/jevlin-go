@@ -35,7 +35,7 @@ import { basename as traceBasename } from "node:path"
 // trace.go, so a host id hashed here and one hashed in Go agree. It is not
 // keyed and is not a secret: it exists so a stable identifier can leave the
 // machine without the host's own id leaving with it.
-const TRACE_PREFIX = "tokendrop-trace-v1|"
+const TRACE_PREFIX = "jevlin-trace-v1|"
 // The visible-text cap: what may ride as history, after scrubbing.
 const TRACE_HISTORY_CAP = 32 * 1024
 // The complete-source budget: an entry larger than this is omitted whole

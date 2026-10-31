@@ -55,6 +55,10 @@ the participants who mine; this client carries no compatibility with it.
   no lineage file (and so none of the prompt, the reasoning or the answer) and label no search,
   and Codex's add no bridge and allow the search as it came. `0` and `false` work as `off` does,
   in the hooks as in the search.
+- **Trace ids are derived under a new prefix.** The trace hashes a host's session, turn and
+  call ids with the prefix `jevlin-trace-v1|`, so the session ids this version sends differ
+  from those 0.6.x sent for the same host session. The opencode and Pi adapters hash the same
+  way, and `jevlin setup` writes them again.
 - **`credentials.json` is held to the record rules.** A field holding a character a terminal acts
   on makes the file unreadable, with a message that repeats none of it; an origin it records must
   have a plain ASCII host; and a key recording no router is bound by the installation's config

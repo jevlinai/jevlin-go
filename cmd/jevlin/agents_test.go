@@ -454,7 +454,7 @@ func TestAgentsOpencodePluginRewritesOurCommandOnly(t *testing.T) {
 		t.Fatalf("exit %d\n%s", code, out)
 	}
 	js := string(m.files["/home/u/.config/opencode/plugins/jevlin.js"])
-	for _, want := range []string{`input.tool !== "bash"`, "JEVLIN_TRACE_BRIDGE=", "tokendrop-trace-v1|", "export const JevlinLineage"} {
+	for _, want := range []string{`input.tool !== "bash"`, "JEVLIN_TRACE_BRIDGE=", "jevlin-trace-v1|", "export const JevlinLineage"} {
 		if !strings.Contains(js, want) {
 			t.Errorf("plugin lacks %q", want)
 		}

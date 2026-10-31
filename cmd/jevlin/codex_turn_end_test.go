@@ -23,10 +23,11 @@ import (
 	"testing"
 )
 
-// The call id the loopback router received with this turn's search, in the
-// run that wrote the fixtures: traceHash(session | tool_use_id), sent by
-// PreToolUse's bridge.
-const codexFixtureSearchCallID = "29c6aea0fd6743bbc7f456a29a606499"
+// The call id PreToolUse's bridge sends with this turn's search:
+// traceHash(session | the command's item id, exec-eb061948-...). The run
+// that wrote the fixtures predates the jevlin-trace-v1| prefix; the
+// router received the same inputs' hash under the earlier one.
+const codexFixtureSearchCallID = "b8d6144514ca654a02399f91f96fc791"
 
 type codexTurnRun struct {
 	fs     *fakeHookFS
