@@ -176,10 +176,11 @@ func removeProfileBlock(existing []byte) (next []byte, block []string, found boo
 // profileBlockConfig is the JEVLIN_CONFIG a block exports, as written:
 // shell-quoted, the way setup writes it.
 func profileBlockConfig(block []string) (string, bool) {
-	const prefix = "export JEVLIN_CONFIG="
-	for _, l := range block {
-		if strings.HasPrefix(l, prefix) {
-			return strings.TrimPrefix(l, prefix), true
+	for _, prefix := range []string{"export JEVLIN_CONFIG=", "set -gx JEVLIN_CONFIG "} {
+		for _, l := range block {
+			if strings.HasPrefix(l, prefix) {
+				return strings.TrimPrefix(l, prefix), true
+			}
 		}
 	}
 	return "", false
@@ -189,7 +190,7 @@ func profileBlockConfig(block []string) (string, bool) {
 // in the form setup writes it.
 func profileBlockNamesConfig(block []string, cfgPath string) bool {
 	value, ok := profileBlockConfig(block)
-	return ok && value == shellQuote(cfgPath)
+	return ok && (value == shellQuote(cfgPath) || value == fishQuote(cfgPath))
 }
 
 // ── Windows: the User environment and its journal ─────────────────────────

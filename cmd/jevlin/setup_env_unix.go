@@ -11,7 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
+	"runtime"
 	"syscall"
 
 	"github.com/jevlinai/jevlin-go/pkg/fsx"
@@ -48,29 +48,32 @@ func ownedByCurrentUser(path string, info fs.FileInfo) error {
 // environment setup leaves.
 func systemUserEnvironment() userEnvironment { return nil }
 
-// profileCandidate is the profile setup writes to: the one of the shell $SHELL
-// names, else ~/.bashrc when there is one.
-func profileCandidate(userHome string, getenv func(string) string) string {
-	shell := getenv("SHELL")
-	switch {
-	case strings.HasSuffix(shell, "zsh"):
-		return filepath.Join(userHome, ".zshrc")
-	case strings.HasSuffix(shell, "bash"):
-		return filepath.Join(userHome, ".bashrc")
+func (r *setupRun) environmentStep() (code int) {
+	choice := chooseProfile(r.d.userHome, runtime.GOOS, r.d.getenv, lexists)
+	binDir, pathNote := r.pathDirectory(filepath.Dir(r.exe))
+	onPath := dirOnPath(r.d.getenv("PATH"), binDir)
+	// An npm install whose bin directory is already on PATH, or cannot be
+	// told, gets no PATH line; the profile then sets only JEVLIN_CONFIG.
+	lineDir := binDir
+	if r.npmGlobal() && (binDir == "" || onPath) {
+		lineDir = ""
 	}
-	if lexists(filepath.Join(userHome, ".bashrc")) {
-		return filepath.Join(userHome, ".bashrc")
-	}
-	return ""
-}
-
-func (r *setupRun) environmentStep() int {
-	binDir := filepath.Dir(r.exe)
-	lines := profileEnvLines(binDir, r.cfgPath)
+	lines := envLinesFor(choice.dialect, lineDir, r.cfgPath)
 
 	r.say("Shell environment")
 	if r.leftForOtherInstallation("shell profile", "Your shell profile belongs to that one", "pointing PATH and JEVLIN_CONFIG here would repoint your real environment at this installation") {
 		return exitOK
+	}
+	defer func() {
+		if code == exitOK && !r.dry {
+			r.printPathFix(choice.dialect, binDir, onPath)
+		}
+	}()
+	if pathNote != "" {
+		r.printf("%s\n", pathNote)
+	}
+	if r.npmGlobal() && onPath {
+		r.printf("%s is already on PATH, so no PATH line is written.\n", binDir)
 	}
 	r.printf("These lines make the other commands short. Your key is not among them: a\n" +
 		"search reads it from the stored credentials file (or JEVLIN_API_KEY, if a\n" +
@@ -79,9 +82,13 @@ func (r *setupRun) environmentStep() int {
 		r.printf("    %s\n", l)
 	}
 
-	candidate := profileCandidate(r.d.userHome, r.d.getenv)
+	candidate := choice.path
 	if candidate == "" {
-		r.printf("No ~/.bashrc or ~/.zshrc to add them to.\n")
+		if choice.shell == "" {
+			r.printf("$SHELL is not set, so setup does not know which file your shell reads. Add the lines above to its startup file by hand.\n")
+		} else {
+			r.printf("Setup does not write for %s. Add the lines above to its startup file by hand.\n", choice.shell)
+		}
 		return exitOK
 	}
 	if r.noProfile {
@@ -122,6 +129,11 @@ func (r *setupRun) environmentStep() int {
 		r.say("Left your shell profile alone")
 		return exitOK
 	}
+	// fish's directory may not exist yet; every other profile sits in the home.
+	if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
+		r.printf("Could not write %s: %v. Add the lines above by hand.\n", candidate, err)
+		return exitOK
+	}
 	if err := fsx.WriteFileAtomic(filepath.Dir(target), filepath.Base(target), next, mode); err != nil {
 		r.printf("Could not write %s: %v. Add the lines above by hand.\n", candidate, err)
 		return exitOK
@@ -131,15 +143,4 @@ func (r *setupRun) environmentStep() int {
 	r.say("Added a jevlin block to " + candidate)
 	r.printf("  open a new shell, or: source %s\n", shellQuote(candidate))
 	return exitOK
-}
-
-// profileEnvLines are the lines setup puts in the profile, quoted. The
-// PATH test compares the quoted directory literally inside a case pattern,
-// so a directory holding a glob character is matched as itself.
-func profileEnvLines(binDir, cfgPath string) []string {
-	q := shellQuote(binDir)
-	return []string{
-		`case ":$PATH:" in *:` + q + `:*) ;; *) export PATH="$PATH:"` + q + ` ;; esac`,
-		"export JEVLIN_CONFIG=" + shellQuote(cfgPath),
-	}
 }

@@ -932,16 +932,15 @@ type profileEdit struct {
 	mode    fs.FileMode
 }
 
-// profilePlan looks only where setup can have written — ~/.zshrc and
-// ~/.bashrc, whichever shell is current now — and removes a block only when
+// profilePlan looks only where setup can have written — the startup files of
+// zsh, bash and fish (profileFiles), whichever shell is current now — and removes a block only when
 // it is one well-formed block exporting this installation's config.
 func (r *uninstallRun) profilePlan() (edits []profileEdit, notes []string) {
 	if r.d.userHome == "" {
 		return nil, nil
 	}
 	seen := map[string]bool{}
-	for _, name := range []string{".zshrc", ".bashrc"} {
-		candidate := filepath.Join(r.d.userHome, name)
+	for _, candidate := range profileFiles(r.d.userHome, r.d.getenv) {
 		if !lexists(candidate) {
 			continue
 		}

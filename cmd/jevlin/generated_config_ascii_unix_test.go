@@ -16,6 +16,8 @@ import (
 
 func TestTheGeneratedShellProfileBlockIsASCII(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "jevlin")
-	lines := profileEnvLines(filepath.Join(home, "bin"), filepath.Join(home, setupConfigFile))
-	asciiOrFail(t, "profileBlock", []byte(profileBlock(lines)))
+	for name, d := range map[string]shellDialect{"posix": dialectPOSIX, "fish": dialectFish} {
+		lines := envLinesFor(d, filepath.Join(home, "bin"), filepath.Join(home, setupConfigFile))
+		asciiOrFail(t, "profileBlock ("+name+")", []byte(profileBlock(lines)))
+	}
 }
