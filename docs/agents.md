@@ -34,11 +34,12 @@ earlier version wrote differently, and `jevlin agents install` refreshes it.
 
 A skill in `~/.claude/skills/jevlin/`. In `~/.claude/settings.json`: five hooks (`PreToolUse` on
 the Bash and PowerShell tools threads each search into the turn, three track the context window,
-`Stop` reports the turn end and starts the daily release check) and eight `permissions.allow`
+`Stop` reports the turn end and starts the daily release check) and nine `permissions.allow`
 rules: the single-quoted, quoted and bare spellings of the search command and of `fetch --stdin`,
 each ending with the installation's `-config <file>` (before setup has written that file it names
-the path setup will write), and an `Edit` and a `Read` rule for the `requests` folder beside that
-config. The folder is for a request that holds a `'` or a `$`, which cannot ride on the one-line
+the path setup will write); an `Edit` and a `Read` rule for the `requests` folder beside that
+config; and a `Read` rule for the skill's own folder, so the agent opens the `reference.md` beside
+`SKILL.md` without a question. The folder is for a request that holds a `'` or a `$`, which cannot ride on the one-line
 call: the skill has the agent write it there with the Write tool, which Claude Code governs by
 `Edit` rules, and the call reads it with `--stdin < <file>`, which Claude Code checks against
 `Read` rules. Nothing creates the folder (the Write tool does) and nothing prunes it; the text is
