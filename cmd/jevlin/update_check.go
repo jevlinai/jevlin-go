@@ -548,6 +548,9 @@ func updateLineText(f updateFacts, now time.Time) string {
 		if st.Held != "" {
 			return fmt.Sprintf("%s is the latest release, and this copy was rolled back from %s, so it is not installed automatically (checked %s) — %s installs it", st.Latest, st.Held, age, f.Fix)
 		}
+		if newMinor(st.Running, st.Latest) {
+			return fmt.Sprintf("%s is available, a new minor release, which is not installed automatically and may need `jevlin setup` after it is; this copy is %s (checked %s) — %s", st.Latest, st.Running, age, f.Fix)
+		}
 		return fmt.Sprintf("%s is available and this copy is %s (checked %s) — %s", st.Latest, st.Running, age, f.Fix)
 	case updateFailed:
 		if stampNeedsAPerson(st) {
@@ -559,6 +562,15 @@ func updateLineText(f updateFacts, now time.Time) string {
 	default: // started
 		return fmt.Sprintf("a check started %s", age)
 	}
+}
+
+// newMinor reports whether latest is a release of another major or minor
+// version than running, both in their canonical spelling: the releases the
+// daily check leaves to a person (autoAppliesAcross).
+func newMinor(running, latest string) bool {
+	r, err1 := selfupdate.ParseVersion(running)
+	l, err2 := selfupdate.ParseVersion(latest)
+	return err1 == nil && err2 == nil && !autoAppliesAcross(r, l)
 }
 
 // manualInterventionDetail and manualInterventionFix are what status and

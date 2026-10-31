@@ -506,6 +506,8 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 		keep = "this copy is not replaced here"
 	case mode != config.UpdateApply:
 		keep = "[update] mode is notify"
+	case !autoAppliesAcross(v, latest):
+		keep = "it is a new minor release, which is not installed automatically; `jevlin upgrade` installs it"
 	default:
 		home, err = resolveInstallationHome(homeFlag, d.getenv, d.userHome, exe)
 		if err != nil || !samePath(home, root) {
@@ -548,6 +550,24 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 		record(stamp)
 	}
 	return exitOK
+}
+
+// autoApplyAcrossMinor is the one switch for whether the daily check
+// installs, unattended, a release whose major or minor version differs from
+// this copy's. Before 1.0 such a release may change what the installation
+// must hold, as 0.7.0 did with the configuration format, after which every
+// command refused the older file until `jevlin setup` ran. It is off: such
+// a release is recorded as available, which status and doctor say, and a
+// person installs it with `jevlin upgrade`. A patch release of this copy's
+// own minor is installed as before. It governs this copy's check only:
+// whether an installed copy moves to a release is that copy's code, so a
+// change here reaches the release after the one that ships it.
+const autoApplyAcrossMinor = false
+
+// autoAppliesAcross reports whether the daily check may install to over
+// from without a person.
+func autoAppliesAcross(from, to selfupdate.Version) bool {
+	return autoApplyAcrossMinor || (from.Major == to.Major && from.Minor == to.Minor)
 }
 
 // versionAbove reports whether v is newer than the release token held.

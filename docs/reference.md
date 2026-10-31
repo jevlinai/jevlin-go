@@ -335,7 +335,10 @@ again the next day. Under `"notify"`, or for a copy npm
 installed, which is never replaced, it only records that a newer release exists. A word `mode` does not know counts as `notify`, and
 `doctor` names it. It never moves to an older release, never installs a release a person rolled
 back from (below), and never replaces a binary that belongs to another installation than the
-config that started it.
+config that started it. Under any mode it installs only a release of this copy's own minor
+version (0.7.0 to 0.7.1, never 0.7.x to 0.8.0): a release of another minor may change what an
+installation must hold, as 0.7.0 did with the config, so it is recorded as available, `status`
+and `doctor` say it is a new minor release left for you, and `jevlin upgrade` installs it.
 
 The record is about one binary, the resolved path it names, at the version its outcome left
 there: the release an upgrade installed, the one a rollback restored, the one a check ran as.

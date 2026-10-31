@@ -68,6 +68,11 @@ the participants who mine; this client carries no compatibility with it.
 - **A claim code is a token.** The platform's `claim_code` is held to letters, digits, `-`
   and `_`, on the wire and in the records beside the stored key, so what `connect` and
   `status` print and ask you to type cannot be a sentence.
+- **The daily check installs patch releases only.** From this version on, the unattended check
+  installs a newer release of the same minor version (0.7.0 to 0.7.1) as before, and leaves one
+  of another minor (0.8.0) for you: it records it as available, `status` and `doctor` say it is
+  a new minor release, and `jevlin upgrade` installs it. `[update] mode` is unchanged. A 0.6.x
+  installation is governed by 0.6.x's own check, which installs this release (below).
 
   **Upgrade notes.** Moving from 0.6.x is `jevlin setup`. It sets the old config aside as
   `jevlin.toml.old`, writes `jevlin.toml` in configuration format 1 with the state and sessions
