@@ -152,7 +152,7 @@ func TestDoctorNpmShimCheckNamesTheDirectoryToAdd(t *testing.T) {
 	if c.Verdict != verdictNo || !strings.Contains(c.Detail, dir) || !strings.Contains(c.Fix, `export PATH="$PATH:`+dir+`"`) {
 		t.Errorf("an empty PATH answer: %s — %s — %s", c.Verdict, c.Detail, c.Fix)
 	}
-	if c := doctorNpmShimCheck(npmShimFacts{Checked: true, Dir: dir, Dialect: dialectFish}); !strings.Contains(c.Fix, "fish_add_path '"+dir+"'") {
+	if c := doctorNpmShimCheck(npmShimFacts{Checked: true, Dir: dir, Dialect: dialectFish}); !strings.Contains(c.Fix, "set -gx PATH $PATH '"+dir+"'") {
 		t.Errorf("fish is not told fish's command: %s", c.Fix)
 	}
 	if c := doctorNpmShimCheck(npmShimFacts{Checked: true, Dir: `C:\Users\u\npm`, Dialect: dialectPowerShell}); !strings.Contains(c.Fix, `$env:Path += ";C:\Users\u\npm"`) {
@@ -160,7 +160,7 @@ func TestDoctorNpmShimCheckNamesTheDirectoryToAdd(t *testing.T) {
 	}
 
 	other := "/opt/other/jevlin"
-	c = doctorNpmShimCheck(npmShimFacts{Checked: true, Dir: dir, OnPath: other})
+	c = doctorNpmShimCheck(npmShimFacts{Checked: true, Dir: dir, OnPath: other, DirOnPath: true})
 	if c.Verdict != verdictNo || !strings.Contains(c.Detail, other) || !strings.Contains(c.Detail, dir) || !strings.Contains(c.Fix, dir) {
 		t.Errorf("another copy answering first: %s — %s — %s", c.Verdict, c.Detail, c.Fix)
 	}

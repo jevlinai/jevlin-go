@@ -79,17 +79,27 @@ func doctorBinaryCheck(f binaryFacts) doctorCheck {
 // this check doctor said nothing about PATH exactly when an npm install
 // needs it said.
 type npmShimFacts struct {
-	Checked bool         // this process is a global npm install's binary
-	Dir     string       // npm's bin directory, "" when it cannot be told
-	OnPath  string       // what the bare name resolves to on PATH, "" for none
-	Here    bool         // OnPath is in Dir: this package's shim answers
-	Dialect shellDialect // the shell the fix is spelled for
+	Checked   bool         // this process is a global npm install's binary
+	Dir       string       // npm's bin directory, "" when it cannot be told
+	OnPath    string       // what the bare name resolves to on PATH, "" for none
+	Here      bool         // OnPath is in Dir: this package's shim answers
+	DirOnPath bool         // Dir is one of PATH's entries at all
+	Dialect   shellDialect // the shell the fix is spelled for
 }
 
-// gatherNpmShimFacts looks only when the launcher marked this process a global
-// npm install. lookPath is exec.LookPath in production.
+// gatherNpmShimFacts looks when the launcher marked this process a global npm
+// install, and also when the package binary was run by its own path, which is
+// how the skills, the hooks and setup's closing lines run it and which carries
+// no marker: a binary inside a global npm layout is that install either way.
+// lookPath is exec.LookPath in production.
 func gatherNpmShimFacts(exe string, goos string, getenv func(string) string, lookPath func(string) (string, error)) npmShimFacts {
-	if classifyLaunch(exe, getenv("JEVLIN_LAUNCH")) != launchNPMGlobal {
+	switch classifyLaunch(exe, getenv("JEVLIN_LAUNCH")) {
+	case launchNPMGlobal:
+	case launchNPMDirect:
+		if npmShimDirFromPackagePath(exe) == "" {
+			return npmShimFacts{}
+		}
+	default:
 		return npmShimFacts{}
 	}
 	f := npmShimFacts{Checked: true, Dir: npmBinDir(exe, getenv), Dialect: dialectPOSIX}
@@ -99,6 +109,7 @@ func gatherNpmShimFacts(exe string, goos string, getenv func(string) string, loo
 	case filepath.Base(getenv("SHELL")) == "fish":
 		f.Dialect = dialectFish
 	}
+	f.DirOnPath = dirOnPath(getenv("PATH"), f.Dir)
 	if onPath, err := lookPath("jevlin"); err == nil {
 		f.OnPath = onPath
 		f.Here = f.Dir != "" && sameDir(filepath.Dir(onPath), f.Dir)
@@ -140,6 +151,10 @@ func doctorNpmShimCheck(f npmShimFacts) doctorCheck {
 	case f.Dir == "":
 		c.Verdict = verdictOK
 		c.Detail = "`jevlin` resolves to " + f.OnPath + " (npm's own bin directory could not be told, so it is not compared)"
+	case !f.DirOnPath:
+		c.Verdict = verdictNo
+		c.Detail = fmt.Sprintf("`jevlin` runs %s; this package's command is in %s, which is not on PATH", f.OnPath, f.Dir)
+		c.Fix = fix
 	default:
 		c.Verdict = verdictNo
 		c.Detail = fmt.Sprintf("`jevlin` runs %s, not this package's command in %s — another copy stands earlier on PATH", f.OnPath, f.Dir)
