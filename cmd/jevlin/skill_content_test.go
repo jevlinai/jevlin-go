@@ -135,7 +135,8 @@ func TestTheAgentIsToldTheWorkflowAndNeverATierOrAPrice(t *testing.T) {
 					for _, want := range []string{
 						"Prefer fewer, sharper searches", "Never repeat a query",
 						"cite the URL of each page you read",
-						"after two differently worded searches", "once per session",
+						"after two searches with different wordings", "one call carrying `search_queries` counts as two",
+						"once per session", "That command is the user's to run; never run it yourself.",
 						"`/jevlin tier balanced`", "agents tier",
 						"Never set `tier` or `providers` yourself",
 						"never stop in the middle of a task to ask about tiers",

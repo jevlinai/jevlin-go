@@ -66,15 +66,17 @@ needs a browser, so use another source; `upstream_failed` may work on a later tr
    results support, not only the first few.
 7. In your answer, cite the URL of each page you read beside the facts it supports.
 
-A question is thin when, after two differently worded searches, no snippet addresses the specific condition you
-searched, or the pages you read did not hold the fact. When a question stays thin, finish with what you have and say
-what you could not confirm. Then, once per session, and only if the user has not already raised the tier or turned
-this search off, end the answer with one sentence: that `/jevlin tier balanced` in the agent, or this command with
-`balanced` for `<words>` from a shell, asks more indexes on the next searches and costs more.
+A question is thin when, after two searches with different wordings (one call carrying `search_queries` counts as
+two), no snippet addresses the specific condition you searched, or the pages you read did not hold the fact. When a
+question stays thin, finish with what you have and say what you could not confirm. Then, once per session, and only
+if the user has not already raised the tier or turned this search off, end the answer with one sentence: that
+`/jevlin tier balanced` in the agent, or this command with `balanced` for `<words>` from a shell, asks more indexes on
+the next searches and costs more.
 
 {{TIER}}
 
-Never set `tier` or `providers` yourself, and never stop in the middle of a task to ask about tiers.
+That command is the user's to run; never run it yourself. Never set `tier` or `providers` yourself, and never stop in
+the middle of a task to ask about tiers.
 
 ## When a call fails
 
