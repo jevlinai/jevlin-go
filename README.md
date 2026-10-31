@@ -68,7 +68,7 @@ warn about one a shared group can write. On Windows only the temp-directory rule
 
 One request goes to the router at `api.jevlin.ai`, which holds the provider keys. In the
 `balanced` and `max` [tiers](#three-tiers), the core arms run on every fan-out, under a
-per-query cost ceiling; `fast` asks three fast indexes, one per index group:
+per-query cost ceiling; `fast` asks only the fast indexes its preset names. The core arms:
 
 | kind | arms |
 |---|---|
@@ -108,17 +108,17 @@ jevlin search -format model "what is proof of authority consensus"
 
 ## Three tiers
 
-Every search runs in one of three tiers. `fast` asks three fast indexes, one per index group
-(Exa, Brave and Perplexity search as the router is deployed today), and answers in about a
-second; `balanced` and `max` fan out to the core arms. A tier is also a per-query cost ceiling
+Every search runs in one of three tiers. `fast` asks the fast indexes of a named preset,
+`economy` (two, the default) or `standard` (three), and answers in about a second; `balanced`
+and `max` fan out to the core arms. A tier is also a per-query cost ceiling
 on the router, and a set that would exceed the ceiling is trimmed rather than refused, with
 `decision.trimmed` naming what went.
 
 | tier | what runs | for | what it costs |
 |---|---|---|---|
-| `fast` | three fast indexes, one per index group, the quickest | a routine lookup, the default for a new key | about $0.015 a search |
-| `balanced` | the core arms, 8 results each, a 12-page merged window, every arm's text | when the agent needs more than one source, or the first answer came back thin | about $0.035 |
-| `max` | the core arms, 15 results each, a 24-page window, 2,000-character excerpts | corroboration: the same page found by independent indexes, and the most text per page | about $0.045, plus the tokens your agent spends reading it |
+| `fast` | the fast indexes of a preset: `economy` asks two, `standard` three; the quickest | a routine lookup, the default for a new key | about $0.0013 a search on `economy`, $0.0053 on `standard` |
+| `balanced` | the core arms, 8 results each, a 12-page merged window, every arm's text | when the agent needs more than one source, or the first answer came back thin | about $0.022 |
+| `max` | the core arms, 15 results each, a 24-page window, 2,000-character excerpts | corroboration: the same page found by independent indexes, and the most text per page | about $0.027, plus the tokens your agent spends reading it |
 
 The dollar figures are the arms' own prices passed through with no markup; `usage.cost_micros`
 on every response is the real number. `max` and a named `providers` set (below) are the two
@@ -130,7 +130,7 @@ Who chooses:
   from a shell, sets the tier every search carries unless a request names one. `/jevlin tier
   default` unsets it and `/jevlin tier` says what is in force.
 - **The agent**, one step at a time: the skill tells it to leave `tier` alone so your tier
-  applies, to ask for `balanced` only when it needs several sources beyond the three fast
+  applies, to ask for `balanced` only when it needs several sources beyond the fast tier's
   indexes (a thin result, indexes that disagree, the full set attributed), and never to send
   `max` on its own. `max` is yours to choose.
 - **The router**, when nobody did: a request that names no tier, with none set, carries none, and

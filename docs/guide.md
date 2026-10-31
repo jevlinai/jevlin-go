@@ -123,16 +123,16 @@ The choice is saved beside your config and survives reinstalls. While it is off,
 
 ## Choosing a tier
 
-Every search carries a tier, which decides which engines run and what one query may cost: `fast` is three fast indexes, one per
-index group, quicker than the others, about $0.015 at the arms' own prices; `balanced` is the
-core arms with 8 results each and a 12-page merged window, about $0.035; `max` is the same arms
-asked for 15 results each, a 24-page window and 2,000-character excerpts, about $0.045 plus the
-tokens your agent spends reading it. Nothing is marked up; `usage.cost_micros` is the number.
+Every search carries a tier, which decides which engines run and what one query may cost: `fast` is the fast indexes of
+a named preset, quicker than the others: `economy`, the default, asks two, about $0.0013 at the
+arms' own prices, and `standard` three, about $0.0053; `balanced` is the core arms with 8
+results each and a 12-page merged window, about $0.022; `max` is the same arms asked for 15
+results each, a 24-page window and 2,000-character excerpts, about $0.027 plus the tokens your agent spends reading it. Nothing is marked up; `usage.cost_micros` is the number.
 `/jevlin tier
 balanced` in an agent, or `jevlin agents tier balanced` from a shell, sets the tier every search
 carries unless the request names one; `/jevlin tier default` unsets it, and `/jevlin tier` says
 what is in force. The skill tells your agent to leave `tier` alone so your tier applies, and to
-ask for `balanced` only when you need several sources beyond the three fast indexes, a thin
+ask for `balanced` only when you need several sources beyond the fast tier's indexes, a thin
 result or indexes that disagree; it never sends `max` on its own. With no
 tier set, the request carries none and the router applies the default for your key.
 
