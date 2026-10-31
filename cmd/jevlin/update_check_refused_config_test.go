@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
 func earlierConfigBody(stateDir, extra string) string {
@@ -120,5 +122,20 @@ func TestTheDailyCheckOnARefusedConfigKeepsItsModeOff(t *testing.T) {
 	writeFileT(t, cfgPath, earlierConfigBody(filepath.Join(f.home, "state"), "\n[update]\nmode = \"off\"\n"))
 	if code, _, _ := f.runAuto(cfgPath); code != exitOK || f.content(f.exe) != "0.3.0" {
 		t.Fatalf("mode off on a refused config: exit %d, binary %s", code, f.content(f.exe))
+	}
+}
+
+// A refused config's [update] mode reads as both formats read it.
+func TestARefusedConfigsModeReadsAsBothFormatsReadIt(t *testing.T) {
+	cfg := filepath.Join(t.TempDir(), setupConfigFile)
+	for mode, want := range map[string]string{"": config.UpdateApply, "apply": config.UpdateApply, "notify": config.UpdateNotify, "off": config.UpdateOff, "manual": config.UpdateNotify} {
+		extra := ""
+		if mode != "" {
+			extra = "\n[update]\nmode = \"" + mode + "\"\n"
+		}
+		writeFileT(t, cfg, earlierConfigBody("/x/state", extra))
+		if _, got := refusedConfigUpdate(cfg); got != want {
+			t.Errorf("mode %q read as %q, want %q", mode, got, want)
+		}
 	}
 }

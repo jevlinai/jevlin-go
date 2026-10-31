@@ -205,9 +205,14 @@ func refusedConfigUpdate(cfgPath string) (root, mode string) {
 			break
 		}
 	}
+	// As both formats read it: no mode is apply, and a word neither knows is
+	// notify, never apply.
 	switch m := strings.ToLower(strings.TrimSpace(f.Update.Mode)); m {
-	case config.UpdateNotify, config.UpdateOff:
+	case "", config.UpdateApply:
+	case config.UpdateOff:
 		mode = m
+	default:
+		mode = config.UpdateNotify
 	}
 	return root, mode
 }
