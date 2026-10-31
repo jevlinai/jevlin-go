@@ -71,7 +71,9 @@ the participants who mine; this client carries no compatibility with it.
 - **The daily check installs patch releases only.** From this version on, the unattended check
   installs a newer release of the same minor version (0.7.0 to 0.7.1) as before, and leaves one
   of another minor (0.8.0) for you: it records it as available, `status` and `doctor` say it is
-  a new minor release, and `jevlin upgrade` installs it. `[update] mode` is unchanged. A 0.6.x
+  a new minor release, and `jevlin upgrade` installs it. The check asks only for the latest
+  release, so once that is another minor it finds no later patch of this one; `jevlin upgrade
+  -version X.Y.Z` installs one by name. `[update] mode` is unchanged. A 0.6.x
   installation is governed by 0.6.x's own check, which installs this release (below).
 
   **Upgrade notes.** Moving from 0.6.x is `jevlin setup`. It sets the old config aside as
