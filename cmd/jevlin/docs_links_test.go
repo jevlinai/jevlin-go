@@ -240,7 +240,7 @@ func TestGithubSlugMatchesGitHubsAnchors(t *testing.T) {
 		"Making it the default, or not": "making-it-the-default-or-not",
 		"When doctor is unsure":         "when-doctor-is-unsure",
 		"Claude Code":                   "claude-code",
-		"Where rewards land":            "where-rewards-land",
+		"Where the key lives":           "where-the-key-lives",
 	} {
 		if got := githubSlug(heading); got != want {
 			t.Errorf("githubSlug(%q) = %q, want %q", heading, got, want)

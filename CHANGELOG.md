@@ -12,6 +12,97 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
+Run `jevlin setup` after installing this version. It reads only configuration format 1, and
+sets a config from any earlier version aside before writing one.
+
+The client is supersearch only, and nothing in it is called a miner. Mining moved off the
+client to the platform, which reconciles what the router served, so this client records,
+spools and submits nothing about a search, holds no mining credential and no wallet, and
+says nothing about mining in its envelope. Everything about search, the hooks, the agent
+integrations, setup, connect, upgrade and uninstall is the code that shipped in 0.6.1 with
+the mining calls taken out, not a rewrite. 0.6.1 is the last release with mining and remains
+available; this client reads no 0.6.x configuration.
+
+- **Mining left the client.** `jevlin mining`, `enroll`, `join`, `provider`, `payout`,
+  `wallet`, `earnings` and `flush` are gone, and so are the mining question at setup and
+  connect, the mining decision, the health records, the intake and spool directories, the
+  flush lock and the Authorization Server client. `connect` registers the agent, prints the
+  claim link and polls until it is claimed; `status` reports the registration, the claim link
+  and the release check; `doctor` checks the stored search key, the registration, the trace
+  key, whether this copy is the latest release, the binary on PATH and, on Windows, state
+  access, and leaves the state directory as it found it. `uninstall -purge-state` is
+  confirmed by typing the installation path, and revokes nothing. The search envelope no
+  longer carries a `mining` object; `search -no-flush` is gone; Claude Code's Stop hook is
+  `jevlin hook stop`.
+- **Configuration format 1.** `jevlin.toml` begins `schema = 1` and names each endpoint in its
+  own section: `[router] url` and `tier`, `[platform] url`, `[agents] url`, then `[search]`
+  (`state_dir`, `sessions_dir`, `turn_end`) and `[update] mode`. Every key is optional and
+  defaults to the compiled value. A file that is not format 1 is refused with "this
+  configuration is from an older jevlin; run `jevlin setup`" and is never reinterpreted; setup
+  sets it aside as `jevlin.toml.old` and writes format 1. A format-1 file holding a key the
+  format does not define is refused naming the key, and one whose schema line is mistyped or
+  missing (a key spelled like `schema`, or a section no earlier version wrote) is refused and
+  left, never set aside as an older file. `JEVLIN_ROUTER_URL`, `JEVLIN_PLATFORM_URL`
+  and `JEVLIN_AGENTS_API_URL` now apply at runtime, to every command, under the file's URL
+  rules. `[[provider]]`, `[search] router_url`, `[search] tier`, `[platform] base_url` and
+  `[platform] agents_api_url` are gone, and so is the retired-portal alias: a claim link must
+  be on exactly the `[platform] url` origin. The format follows the shape of jevlin-go PR 152
+  (a schema line, then one section per endpoint), with a `[search]` table where that PR has
+  `[mining]`; this file's keys are the ones above. Codex's permission profile grants the state and sessions
+  directories and reaches the router and the agents API.
+- **`JEVLIN_TRACE=off` turns the hooks off too.** The lineage hook wrote a bridge and a lineage
+  file for search to drop; now it writes neither, so off means off entirely. Cursor's hooks keep
+  no lineage file (and so none of the prompt, the reasoning or the answer) and label no search,
+  and Codex's add no bridge and allow the search as it came. `0` and `false` work as `off` does,
+  in the hooks as in the search.
+- **Trace ids are derived under a new prefix.** The trace hashes a host's session, turn and
+  call ids with the prefix `jevlin-trace-v1|`, so the session ids this version sends differ
+  from those 0.6.x sent for the same host session. The opencode and Pi adapters hash the same
+  way, and `jevlin setup` writes them again.
+- **`credentials.json` is held to the record rules.** A field holding a character a terminal acts
+  on makes the file unreadable, with a message that repeats none of it; an origin it records must
+  have a plain ASCII host; and a key recording no router is bound by the installation's config
+  file alone, never by `JEVLIN_ROUTER_URL`. `uninstall -purge-state` also removes the configs
+  setup set aside (`jevlin.toml.old`, ...) and lists, by full path, what it left in the
+  installation directory.
+- **A hook entry this binary does not know is harmless.** A hook subcommand the binary
+  does not recognize, a hook file and a binary of different versions, is named on stderr
+  and exits 0 with nothing written or started, so the host's tool call goes on; it used to
+  exit 2, which Claude Code reads from a PreToolUse hook as a block.
+- **A claim code is a token.** The platform's `claim_code` is held to letters, digits, `-`
+  and `_`, on the wire and in the records beside the stored key, so what `connect` and
+  `status` print and ask you to type cannot be a sentence.
+- **The daily check installs patch releases only.** From this version on, the unattended check
+  installs a newer release of the same minor version (0.7.0 to 0.7.1) as before, and leaves one
+  of another minor (0.8.0) for you: it records it as available, `status` and `doctor` say it is
+  a new minor release, and `jevlin upgrade` installs it. The check asks only for the latest
+  release, so once that is another minor it finds no later patch of this one; `jevlin upgrade
+  -version X.Y.Z` installs one by name. `[update] mode` is unchanged. A 0.6.x
+  installation is governed by 0.6.x's own check, which installs this release (below).
+
+  **Upgrade notes.** Moving from 0.6.x is `jevlin setup`. It sets the old config aside as
+  `jevlin.toml.old`, writes `jevlin.toml` in configuration format 1 with the state and sessions
+  directories, router, portal and agents API the old file named, keeps the registration and the
+  search key, and rewrites the hooks and skills in place; any other setting changed by hand in
+  the old file is copied over by hand, under its format-1 key. Files only the earlier version
+  used are left untouched and never read; `jevlin uninstall -purge-state` does not remove them,
+  and lists what it left in the installation directory by full path. One of them may hold a key
+  the earlier version used, so look before deleting any of them. A native 0.6.x install with automatic updates on, the default, installs this
+  version by itself at its next daily check, and then needs one `jevlin setup`: until it has,
+  every command that reads the config says to run `jevlin setup`, the hooks run the agent's
+  tool call without a lineage file, and the daily check goes on running. `jevlin upgrade
+  -rollback` returns to 0.6.x and holds this version, so the next check does not install it
+  again. Codex's permission block is rewritten by that `jevlin setup`, including one whose state
+  root a moved `state_dir` put outside the installation directory, and not by the update
+  itself: until setup runs, the block keeps what 0.6.x granted. `jevlin uninstall` run before
+  setup removes the hooks and skills, which name the installation's binary and config, but
+  leaves Codex's permission block, which it can attribute only through a config that loads; run
+  `jevlin setup` first to have uninstall remove that too. An npm install is updated with `npm install -g @jevlinsearch/jevlin@latest`,
+  then `jevlin setup`. The files a participant keeps (`credentials.json`, the registration
+  journal, `claim.json`, the release check's record) live in the installation directory, the
+  state directory's parent; 0.6.x kept them beside its intake directory, and where the two differ
+  setup moves them, stopping before it changes anything if a file of the same name is there.
+
 ## v0.6.1 — 2026-10-27
 
 The skill every agent reads now says it is supersearch, and the client gains `jevlin fetch

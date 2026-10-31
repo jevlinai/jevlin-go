@@ -15,20 +15,21 @@ import (
 	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
-// emptyMiner is a Miner whose credentials path is inside a fresh temp dir,
+// emptySearch is a Search block whose credentials path is inside a fresh temp dir,
 // so no test can read a developer's real file.
-func emptyMiner(t *testing.T) config.Miner {
+func emptySearch(t *testing.T) config.Search {
 	t.Helper()
 	root := t.TempDir()
-	return config.Miner{IntakeDir: filepath.Join(root, "intake"), SessionsDir: filepath.Join(root, "sessions")}
+	return config.Search{StateDir: filepath.Join(root, "state"), SessionsDir: filepath.Join(root, "sessions")}
 }
 
 func TestResolveAPIKeyOrderIsEnvThenFile(t *testing.T) {
-	m := emptyMiner(t)
+	m := emptySearch(t)
 	path := credentialsPath(m)
-	if filepath.Dir(path) != filepath.Dir(m.IntakeDir) || filepath.Base(path) != credentialsFile {
-		t.Fatalf("credentials file is not beside the intake dir: %s", path)
+	if filepath.Dir(path) != filepath.Dir(m.StateDir) || filepath.Base(path) != credentialsFile {
+		t.Fatalf("credentials file is not beside the state dir: %s", path)
 	}
+
 	if err := writeCredentials(path, credentials{APIKey: "sr-canary-stored", Router: "https://router.fictional.test"}); err != nil { // #nosec G101 -- "sr-canary-stored", not a credential
 		t.Fatal(err)
 	}
@@ -59,7 +60,7 @@ func TestResolveAPIKeyRefusesAFileOthersCanRead(t *testing.T) {
 	if !posixModes {
 		t.Skip("mode bits are not meaningful on Windows")
 	}
-	m := emptyMiner(t)
+	m := emptySearch(t)
 	path := credentialsPath(m)
 	if err := writeCredentials(path, credentials{APIKey: "sr-canary-stored"}); err != nil { // #nosec G101 -- "sr-canary-stored", not a credential
 		t.Fatal(err)
@@ -84,7 +85,7 @@ func TestResolveAPIKeyRefusesAFileOthersCanRead(t *testing.T) {
 }
 
 func TestResolveAPIKeyRefusesASymlinkAndACorruptFile(t *testing.T) {
-	m := emptyMiner(t)
+	m := emptySearch(t)
 	path := credentialsPath(m)
 	real := filepath.Join(t.TempDir(), "elsewhere.json")
 	if err := writeCredentials(real, credentials{APIKey: "sr-canary-linked"}); err != nil { // #nosec G101 -- "sr-canary-linked", not a credential

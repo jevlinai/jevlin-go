@@ -16,7 +16,7 @@ package main
 //
 // Only then, and never as a condition of success, are the host integrations
 // this installation owns rendered again by the binary now installed
-// (upgrade_rerender.go, dropin-miner#111).
+// (upgrade_rerender.go).
 //
 // Failures print one class token — retry, release_invalid, ownership,
 // filesystem, lifecycle_busy, refused or manual_intervention — chosen from
@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -268,7 +269,6 @@ func upgradeRun(d upgradeDeps, homeFlag string, requested *selfupdate.Version, r
 		return fail(err)
 	}
 	defer ex.release()
-	ensureUpgradeFlushLock(home, d.getenv, d.stderr)
 
 	updater := selfupdate.Updater{Verifier: d.verifier, Runner: d.runner, GOOS: d.goos, GOARCH: d.goarch}
 	if rollback {
@@ -365,21 +365,6 @@ func installPrepared(ctx context.Context, updater selfupdate.Updater, prepared s
 	return err
 }
 
-// ensureUpgradeFlushLock creates the installation's flush lock when it is
-// absent, so a flush a sandboxed agent starts after the upgrade can take it
-// read-only. It runs inside the upgrade's exclusion and never fails the
-// upgrade: a lock it cannot create is said, and the first flush outside a
-// sandbox creates it.
-func ensureUpgradeFlushLock(home string, getenv func(string) string, stderr io.Writer) {
-	_, path, err := operationLockPaths(home, getenv)
-	if err == nil {
-		_, err = ensureFlushLockFile(path)
-	}
-	if err != nil {
-		fmt.Fprintf(stderr, "jevlin upgrade: note: the flush lock could not be created (%v); a flush inside an agent's sandbox will not run until one outside it has\n", err)
-	}
-}
-
 // upgradeAuto is the daily check (update_check.go): the detached child a
 // hook starts. Nobody is at the terminal, so it says what it did on stderr,
 // records it in the stamp, which status and doctor read, and exits 0 on
@@ -402,18 +387,28 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 	say := func(format string, a ...any) {
 		fmt.Fprintf(d.stderr, "jevlin upgrade -auto: "+format+"\n", a...)
 	}
+	// The check needs only where the installation is and its [update] mode.
+	// A config every command refuses still says both (refusedConfigUpdate):
+	// that is the state an unattended update leaves a machine in, and the
+	// check is what can bring it a release that runs there.
+	var root, mode string
 	cfg, src, err := loadConfig(cfgPath, d.getenv)
-	if err != nil {
-		say("config (%s): %v", orDefaults(src), err)
+	switch {
+	case err == nil:
+		root, mode = updateRoot(cfg.Search), cfg.Update.Mode
+	case src != "" && lexists(src):
+		root, mode = refusedConfigUpdate(src)
+		say("config (%s) is refused (%v); checking for a release with the installation it names", src, err)
+	default:
+		say("%s", configProblem(src, err))
 		return exitTransport
 	}
-	if cfg.Update.Mode == config.UpdateOff {
+	if mode == config.UpdateOff {
 		say("[update] mode is off; nothing checked")
 		return exitOK
 	}
-	root := updateRoot(cfg.Miner)
 	if root == "" {
-		say("the config names no installation directory (miner.intake_dir); nothing checked")
+		say("the config names no state directory (search.state_dir); nothing checked")
 		return exitOK
 	}
 	exe, err := d.executable()
@@ -442,7 +437,7 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 	now := d.clock()
 	current := d.build()
 	stampPath := updateStampPath(root)
-	if !updateCheckDue(readUpdateStampFile, root, cfg.Update.Mode, current, resolved, now, func() bool { return native }) {
+	if !updateCheckDue(readUpdateStampFile, root, mode, current, resolved, now, func() bool { return native }) {
 		say("not due: checked within the day, or the last automatic upgrade needs a person (jevlin status)")
 		return exitOK
 	}
@@ -450,7 +445,7 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 	if prev, ok, perr := readUpdateStamp(readUpdateStampFile, stampPath); perr == nil && ok && stampIsThisCopy(prev, current, resolved) {
 		held = prev.Held
 	}
-	stamp := updateStamp{CheckedAt: now, Binary: resolved, Held: held, Mode: cfg.Update.Mode, Outcome: updateStarted}
+	stamp := updateStamp{CheckedAt: now, Binary: resolved, Held: held, Mode: mode, Outcome: updateStarted}
 	record := func(st updateStamp) bool {
 		if werr := writeUpdateStamp(stampPath, st); werr != nil {
 			say("the stamp could not be written (%v)", werr)
@@ -510,11 +505,18 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 		keep = "this copy was rolled back from " + held
 	case !native:
 		keep = "this copy is not replaced here"
-	case cfg.Update.Mode != config.UpdateApply:
+	case mode != config.UpdateApply:
 		keep = "[update] mode is notify"
+	case !autoAppliesAcross(v, latest):
+		keep = "it is a new minor release, which is not installed automatically; `jevlin upgrade` installs it"
 	default:
+		// The binary's installation is the one whose config started the
+		// check: the directory that config is in. The check's root is not
+		// that when state_dir lies outside the installation directory, as
+		// after setup moved an earlier installation's key beside it.
 		home, err = resolveInstallationHome(homeFlag, d.getenv, d.userHome, exe)
-		if err != nil || !samePath(home, root) {
+		ours := samePath(home, root) || (src != "" && samePath(home, filepath.Dir(src)))
+		if err != nil || !ours {
 			// A binary another installation shares is that installation's to
 			// update, under its own config's mode.
 			keep = "the binary belongs to another installation, whose own config decides"
@@ -532,7 +534,6 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 		return failed(err)
 	}
 	defer ex.release()
-	ensureUpgradeFlushLock(home, d.getenv, d.stderr)
 	updater := selfupdate.Updater{Source: d.source(), Verifier: d.verifier, Runner: d.runner, GOOS: d.goos, GOARCH: d.goarch}
 	prepared, err := updater.Prepare(ctx, resolved, current, &latest)
 	if err != nil {
@@ -555,6 +556,24 @@ func upgradeAuto(d upgradeDeps, cfgPath, homeFlag string) int {
 		record(stamp)
 	}
 	return exitOK
+}
+
+// autoApplyAcrossMinor is the one switch for whether the daily check
+// installs, unattended, a release whose major or minor version differs from
+// this copy's. Before 1.0 such a release may change what the installation
+// must hold, as 0.7.0 did with the configuration format, after which every
+// command refused the older file until `jevlin setup` ran. It is off: such
+// a release is recorded as available, which status and doctor say, and a
+// person installs it with `jevlin upgrade`. A patch release of this copy's
+// own minor is installed as before. It governs this copy's check only:
+// whether an installed copy moves to a release is that copy's code, so a
+// change here reaches the release after the one that ships it.
+const autoApplyAcrossMinor = false
+
+// autoAppliesAcross reports whether the daily check may install to over
+// from without a person.
+func autoAppliesAcross(from, to selfupdate.Version) bool {
+	return autoApplyAcrossMinor || (from.Major == to.Major && from.Minor == to.Minor)
 }
 
 // versionAbove reports whether v is newer than the release token held.

@@ -4,12 +4,15 @@ package main
 //
 // The property under test is not that JSON comes out. It is that the JSON
 // and the text report are two renderings of one set of gathered facts:
-// same checks, same verdicts, same counts, same decisions, no extra
-// network call, and nothing derived by reading the other's prose.
+// same checks, same verdicts, same counts, same decisions, no network
+// call either does not make, and nothing derived by reading the other's
+// prose.
 
 import (
 	"bytes"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -44,13 +47,6 @@ func dataOf(t *testing.T, env map[string]any) map[string]any {
 
 func TestDoctorJSONRendersTheSameChecksTheTextReportDoes(t *testing.T) {
 	f := healthyFacts()
-	f.LocalStateKnown = true
-	f.MiningDecision = auth.MiningDecision{State: auth.MiningEnabled, Present: true}
-	f.ASConfigured, f.ASConfigKnown = true, true
-	f.SpoolDir = t.TempDir()
-	f.Health = []auth.HealthRecord{{
-		Version: 1, Component: auth.HealthFlush, Reason: auth.HealthSpoolBacklog, Detail: "12 records",
-	}}
 	checks := assembleDoctor(f)
 
 	var buf bytes.Buffer
@@ -73,21 +69,15 @@ func TestDoctorJSONRendersTheSameChecksTheTextReportDoes(t *testing.T) {
 			t.Errorf("check %d detail = %v, want %q", i, c["detail"], checks[i].Detail)
 		}
 	}
-	mining, _ := data["mining"].(map[string]any)
-	if mining["state"] != string(auth.MiningEnabled) || mining["state_known"] != true {
-		t.Errorf("mining: %v", mining)
+	// Ruling D-R1: the config the report is against, and that it is a file
+	// rather than built-in defaults, are explicit fields.
+	if data["config_source"] != f.ConfigSource || data["config_defaulted"] != false || data["state_dir"] != f.StateDir {
+		t.Errorf("config fields: %v", data)
 	}
-	health, _ := data["health"].([]any)
-	if len(health) != 1 {
-		t.Fatalf("health: %v", data["health"])
-	}
-	h0, _ := health[0].(map[string]any)
-	if h0["component"] != string(auth.HealthFlush) || h0["reason"] != string(auth.HealthSpoolBacklog) {
-		t.Errorf("health record: %v", h0)
-	}
-	queue, _ := data["queue"].(map[string]any)
-	if queue == nil {
-		t.Error("no queue state in the JSON report")
+	// Every check ran, which is an empty list, not an omitted key.
+	listed, ok := data["checks_that_could_not_run"].([]any)
+	if !ok || len(listed) != 0 {
+		t.Errorf("checks_that_could_not_run = %v (%T), want an empty list", data["checks_that_could_not_run"], data["checks_that_could_not_run"])
 	}
 }
 
@@ -95,10 +85,9 @@ func TestDoctorJSONRendersTheSameChecksTheTextReportDoes(t *testing.T) {
 // and must never arrive as false.
 func TestDoctorJSONKeepsUnknownChecksUnknown(t *testing.T) {
 	f := healthyFacts()
-	f.DocErr = errASDown
-	f.EpochErr, f.StatusErr, f.StandingErr, f.ActivityErr = errASDown, errASDown, errASDown, errASDown
-	f.ASConfigured, f.ASConfigKnown, f.LocalStateKnown = true, true, true
-	f.SpoolDir = t.TempDir()
+	// An unreadable update stamp is the one input that leaves a check
+	// unable to answer rather than answering no.
+	f.Update.Err = errors.New("stamp: not JSON")
 	checks := assembleDoctor(f)
 
 	var buf bytes.Buffer
@@ -116,7 +105,7 @@ func TestDoctorJSONKeepsUnknownChecksUnknown(t *testing.T) {
 		}
 	}
 	if len(unknown) == 0 {
-		t.Fatal("no check came back UNKNOWN with the AS down")
+		t.Fatal("no check came back UNKNOWN with the update stamp unreadable")
 	}
 	listed, _ := data["checks_that_could_not_run"].([]any)
 	if len(listed) != len(unknown) {
@@ -129,60 +118,129 @@ func TestDoctorJSONKeepsUnknownChecksUnknown(t *testing.T) {
 	}
 }
 
-// The JSON report must not buy its structure with an extra round trip.
-func TestDoctorJSONMakesNoMoreASCallsThanTheTextReport(t *testing.T) {
-	var calls atomic.Int64
-	as := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		calls.Add(1)
+// countingConnections wraps an httptest server so a test can count the
+// connections dialed to it — the observable, rather than handler hits.
+func countingConnections(t *testing.T, h http.Handler) (*httptest.Server, func() int64) {
+	t.Helper()
+	var conns atomic.Int64
+	srv := httptest.NewUnstartedServer(h)
+	srv.Config.ConnState = func(_ net.Conn, st http.ConnState) {
+		if st == http.StateNew {
+			conns.Add(1)
+		}
+	}
+	srv.Start()
+	t.Cleanup(srv.Close)
+	return srv, conns.Load
+}
+
+// Every check is local (doctor.go): the report reads the config, the
+// credential, the store and the update stamp, and asks nobody. The JSON
+// report must not buy its structure with a round trip the text report does
+// not make — and here neither makes one, to the router or the platform,
+// with both configured and the stored key bound to them.
+func TestDoctorDialsNothingInEitherMode(t *testing.T) {
+	srv, conns := countingConnections(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
-	defer as.Close()
 
 	root := t.TempDir()
 	cfgPath := filepath.Join(root, "jevlin.toml")
-	toml := `[mining]
-enabled = true
-as_url = "` + as.URL + `"
-chain_id = "fictional-1"
-slot_id = 3
+	toml := `schema = 1
+
+[router]
+url = "` + srv.URL + `"
+
+[platform]
+url = "` + srv.URL + `"
+
+[agents]
+url = "` + srv.URL + `"
+
+[search]
 state_dir = "` + filepath.ToSlash(filepath.Join(root, "state")) + `"
-spool_dir = "` + filepath.ToSlash(filepath.Join(root, "spool")) + `"
 `
 	if err := os.WriteFile(cfgPath, []byte(toml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeCredentials(filepath.Join(root, "credentials.json"), credentials{APIKey: "sr-fictional", Router: srv.URL, AgentsAPI: srv.URL}); err != nil {
 		t.Fatal(err)
 	}
 
 	var text, jsonOut bytes.Buffer
 	cmdDoctor([]string{"-config", cfgPath}, &text, io.Discard)
-	afterText := calls.Load()
 	cmdDoctor([]string{"-config", cfgPath, "-json"}, &jsonOut, io.Discard)
-	afterJSON := calls.Load() - afterText
 
-	if afterJSON > afterText {
-		t.Errorf("the JSON report made %d AS calls, the text report made %d", afterJSON, afterText)
+	if n := conns(); n != 0 {
+		t.Errorf("doctor dialed the configured host %d time(s)", n)
 	}
-	// Ruling D-R1: doctor now names the config it resolved before anything
+	// Ruling D-R1: doctor names the config it resolved before anything
 	// else, so the report starts with that line, then the checks.
 	if !strings.HasPrefix(text.String(), "config:  "+cfgPath+"\n") {
 		t.Errorf("the text report changed shape: %q", text.String())
 	}
-	if !strings.Contains(text.String(), "\n  mining") {
-		t.Errorf("the text report is missing the mining line: %q", text.String())
+	if !strings.Contains(text.String(), "\n  search key") {
+		t.Errorf("the text report is missing the search key line: %q", text.String())
 	}
-	decodeCommandEnvelope(t, jsonOut.String(), "doctor")
+	data := dataOf(t, decodeCommandEnvelope(t, jsonOut.String(), "doctor"))
+	if data["config_source"] != cfgPath {
+		t.Errorf("config_source = %v, want %q", data["config_source"], cfgPath)
+	}
+}
+
+// A check's fix renders through the existing check shape — no new
+// top-level field, so an SDK that already walks `checks` sees it without
+// changing.
+func TestDoctorJSONCarriesACheckFixThroughTheCheckShape(t *testing.T) {
+	f := healthyFacts()
+	// A release this copy is not, so `fix` is populated on one check and
+	// the serializer's handling of it is exercised rather than assumed.
+	f.Update.Stamp.Latest, f.Update.Stamp.Outcome, f.Update.Fix = "v0.8.0", updateAvailable, "jevlin upgrade"
+	checks := assembleDoctor(f)
+
+	var buf bytes.Buffer
+	emitMachine(&buf, doctorEnvelope(f, checks, doctorExit(checks)))
+	data := dataOf(t, decodeCommandEnvelope(t, buf.String(), "doctor"))
+
+	got := map[string]map[string]any{}
+	for _, raw := range data["checks"].([]any) {
+		c, _ := raw.(map[string]any)
+		name, _ := c["name"].(string)
+		got[name] = c
+	}
+	c, ok := got["up to date"]
+	if !ok {
+		t.Fatalf("%q is missing from doctor -json: %s", "up to date", buf.String())
+	}
+	if c["verdict"] != string(verdictNo) {
+		t.Errorf("up to date verdict = %v, want NO", c["verdict"])
+	}
+	detail, _ := c["detail"].(string)
+	if !strings.Contains(detail, "v0.8.0 is available") {
+		t.Errorf("detail = %q", detail)
+	}
+	if c["fix"] != "jevlin upgrade" {
+		t.Errorf("the check's fix did not reach JSON: %v", c["fix"])
+	}
+	for _, name := range []string{"search key", "registration", "trace key"} {
+		if _, present := got[name]["fix"]; present {
+			t.Errorf("%q carries a fix with nothing to fix: %v", name, got[name])
+		}
+	}
 }
 
 // ── status ──────────────────────────────────────────────────────────────
 
-// statusFixture writes a config and a state directory holding a claimed
-// registration with an open health record.
+// statusFixture writes a config and opens its state directory, with no
+// registration in it yet.
 func statusFixture(t *testing.T) (cfgPath, root string, store *auth.Store) {
 	t.Helper()
 	root = t.TempDir()
 	cfgPath = filepath.Join(root, "jevlin.toml")
-	toml := `[mining]
+	toml := `schema = 1
+
+[search]
 state_dir = "` + filepath.ToSlash(filepath.Join(root, "state")) + `"
-spool_dir = "` + filepath.ToSlash(filepath.Join(root, "spool")) + `"
 `
 	if err := os.WriteFile(cfgPath, []byte(toml), 0o600); err != nil {
 		t.Fatal(err)
@@ -196,16 +254,9 @@ spool_dir = "` + filepath.ToSlash(filepath.Join(root, "spool")) + `"
 }
 
 func TestStatusJSONAndTextComeFromTheSameFacts(t *testing.T) {
-	cfgPath, _, store := statusFixture(t)
-	if err := store.SaveMiningEnabled(false); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.MarkHealth(auth.HealthCapture, auth.HealthSandboxRestricted, "intake is read-only here"); err != nil {
-		t.Fatal(err)
-	}
+	cfgPath, root, store := statusFixture(t)
 	reg := auth.AgentRegistration{
-		AgentID: "agent-fictional-1", Status: "claimed", Scopes: []string{"search", "mining"},
-		LastEnrollmentSlot: "slot-3",
+		AgentID: "agent-fictional-1", Status: "claimed", Scopes: []string{"search", "fetch"},
 	}
 	if err := store.SaveAgentRegistration(reg); err != nil {
 		t.Fatal(err)
@@ -222,31 +273,33 @@ func TestStatusJSONAndTextComeFromTheSameFacts(t *testing.T) {
 	}
 	data := dataOf(t, decodeCommandEnvelope(t, jsonOut.String(), "status"))
 
-	mining, _ := data["mining"].(map[string]any)
-	if mining["state"] != string(auth.MiningDisabled) {
-		t.Errorf("mining state %v", mining["state"])
+	// Ruling D-R1: the same config line the text report opens with.
+	if data["config_source"] != cfgPath || data["config_defaulted"] != false ||
+		data["state_dir"] != filepath.Join(root, "state") {
+		t.Errorf("config fields: %v", data)
 	}
-	// The same decision the text renderer printed, in its canonical
-	// spelling rather than the text renderer's display word.
-	if !strings.Contains(text.String(), "mining:  OFF") {
-		t.Errorf("the text report no longer says OFF: %q", text.String())
-	}
-	health, _ := mining["health"].([]any)
-	if len(health) != 1 {
-		t.Fatalf("health: %v", mining["health"])
-	}
-	h0, _ := health[0].(map[string]any)
-	if h0["reason"] != string(auth.HealthSandboxRestricted) {
-		t.Errorf("health reason %v", h0["reason"])
-	}
-	if !strings.Contains(text.String(), string(auth.HealthSandboxRestricted)) {
-		t.Error("the text report dropped the health reason the JSON report carries")
+	if !strings.HasPrefix(text.String(), "config:  "+cfgPath+"\n") {
+		t.Errorf("the text report no longer opens with the config: %q", text.String())
 	}
 
 	agent, _ := data["agent"].(map[string]any)
+	scopes, _ := agent["scopes"].([]any)
 	if agent["agent_id"] != "agent-fictional-1" || agent["status"] != "claimed" ||
-		agent["claimed"] != true || agent["enrolled_slot"] != "slot-3" {
+		agent["claimed"] != true || len(scopes) != 2 || scopes[0] != "search" || scopes[1] != "fetch" {
 		t.Errorf("agent: %v", agent)
+	}
+	// The same registration the text renderer printed, scopes included.
+	if !strings.Contains(text.String(), "agent:  claimed (scopes: search, fetch)") {
+		t.Errorf("the text report no longer says claimed with the scopes: %q", text.String())
+	}
+	// The update object is always present: no stamp is "checked: false",
+	// not an omitted key, with the mode in force.
+	update, _ := data["update"].(map[string]any)
+	if update == nil || update["checked"] != false || update["mode"] != config.UpdateApply {
+		t.Errorf("update: %v", data["update"])
+	}
+	if !strings.Contains(text.String(), "update:  ") {
+		t.Errorf("the text report dropped the update line the JSON report carries: %q", text.String())
 	}
 	if jsonErr.String() != "" {
 		t.Errorf("status -json wrote to stderr: %q", jsonErr.String())
@@ -254,17 +307,24 @@ func TestStatusJSONAndTextComeFromTheSameFacts(t *testing.T) {
 }
 
 // Whatever the store says, both renderers must say the same thing about
-// it. This walks the four decisions rather than asserting one.
-func TestStatusRenderersAgreeAcrossEveryMiningDecision(t *testing.T) {
+// it. This walks every registration status rather than asserting one.
+func TestStatusRenderersAgreeAcrossEveryRegistrationStatus(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		setup func(*auth.Store) error
-		want  auth.MiningDecisionState
-		text  string
+		name   string
+		setup  func(*auth.Store) error
+		status string // the JSON agent.status; "" means no agent object
+		text   string
 	}{
-		{"enabled", func(s *auth.Store) error { return s.SaveMiningEnabled(true) }, auth.MiningEnabled, "mining:  ON"},
-		{"disabled", func(s *auth.Store) error { return s.SaveMiningEnabled(false) }, auth.MiningDisabled, "mining:  OFF"},
-		{"undecided", func(*auth.Store) error { return nil }, auth.MiningUndecided, "mining:  NOT DECIDED"},
+		{"unregistered", func(*auth.Store) error { return nil }, "", "agent:   not registered"},
+		{"unclaimed", func(s *auth.Store) error {
+			return s.SaveAgentRegistration(auth.AgentRegistration{AgentID: "agent-fictional-2", Status: "unclaimed"})
+		}, "unclaimed", "agent:  unclaimed"},
+		{"expired", func(s *auth.Store) error {
+			return s.SaveAgentRegistration(auth.AgentRegistration{AgentID: "agent-fictional-3", Status: "expired"})
+		}, "expired", "agent:  expired"},
+		{"claimed", func(s *auth.Store) error {
+			return s.SaveAgentRegistration(auth.AgentRegistration{AgentID: "agent-fictional-4", Status: "claimed", Scopes: []string{"search"}})
+		}, "claimed", "agent:  claimed (scopes: search)"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfgPath, _, store := statusFixture(t)
@@ -278,9 +338,14 @@ func TestStatusRenderersAgreeAcrossEveryMiningDecision(t *testing.T) {
 			statusMain(append(args, "-json"), &jsonOut, io.Discard, noEnv)
 
 			data := dataOf(t, decodeCommandEnvelope(t, jsonOut.String(), "status"))
-			mining, _ := data["mining"].(map[string]any)
-			if mining["state"] != string(tc.want) {
-				t.Errorf("JSON state %v, want %q", mining["state"], tc.want)
+			agent, hasAgent := data["agent"].(map[string]any)
+			switch {
+			case tc.status == "" && hasAgent:
+				t.Errorf("JSON reports an agent where none is registered: %v", agent)
+			case tc.status != "" && !hasAgent:
+				t.Errorf("JSON reports no agent: %v", data)
+			case tc.status != "" && (agent["status"] != tc.status || agent["claimed"] != (tc.status == "claimed")):
+				t.Errorf("JSON agent %v, want status %q", agent, tc.status)
 			}
 			if !strings.Contains(text.String(), tc.text) {
 				t.Errorf("text report %q does not contain %q", text.String(), tc.text)
@@ -335,7 +400,7 @@ func TestConnectJSONExposesClaimArtifactsAndNoCredential(t *testing.T) {
 }
 
 // A claim link is never shown unless it is on file beside credentials.json
-// and still on the configured platform.base_url origin (invariant 12): not
+// and still on the configured [platform] url origin (invariant 12): not
 // by status's text or JSON report, and not by connect's JSON envelope. Each
 // bad link is planted twice, the way a sandboxed command would plant it in
 // agent.json (which no longer holds a link at all) and as a claim record
@@ -426,55 +491,5 @@ func TestNothingOpensAClaimURL(t *testing.T) {
 				}
 			}
 		}
-	}
-}
-
-// The two checks added for dropin-miner#21 render through the existing check shape —
-// no new top-level field, so an SDK that already walks `checks` sees them
-// without changing.
-func TestDoctorJSONCarriesTheIntakeAndRecordingChecks(t *testing.T) {
-	f := healthyFacts()
-	f.SpoolDir = t.TempDir()
-	// A failing probe, so `fix` is populated on one of them and the
-	// serializer's handling of it is exercised rather than assumed.
-	f.IntakeProbe = intakeProbeResult{
-		Ran: true, Dir: f.IntakeDir,
-		Stage: probeStageWrite, Err: os.ErrPermission,
-	}
-	checks := assembleDoctor(f)
-
-	var buf bytes.Buffer
-	emitMachine(&buf, doctorEnvelope(f, checks, doctorExit(checks)))
-	data := dataOf(t, decodeCommandEnvelope(t, buf.String(), "doctor"))
-
-	got := map[string]map[string]any{}
-	for _, raw := range data["checks"].([]any) {
-		c, _ := raw.(map[string]any)
-		name, _ := c["name"].(string)
-		got[name] = c
-	}
-	for _, name := range []string{"intake writable", "recording"} {
-		c, ok := got[name]
-		if !ok {
-			t.Fatalf("%q is missing from doctor -json: %s", name, buf.String())
-		}
-		if c["verdict"] == nil || c["verdict"] == "" {
-			t.Errorf("%q has no verdict", name)
-		}
-		if c["detail"] == nil || c["detail"] == "" {
-			t.Errorf("%q has no detail", name)
-		}
-	}
-	if got["intake writable"]["verdict"] != string(verdictNo) {
-		t.Errorf("intake writable verdict = %v, want NO", got["intake writable"]["verdict"])
-	}
-	fix, _ := got["intake writable"]["fix"].(string)
-	if !strings.Contains(fix, "agents install") {
-		t.Errorf("the failing probe's fix did not reach JSON: %v", got["intake writable"]["fix"])
-	}
-	// A failed probe leaves `recording` undetermined, with its reason.
-	detail, _ := got["recording"]["detail"].(string)
-	if !strings.HasPrefix(detail, "could not determine — ") {
-		t.Errorf("recording detail = %q, want a could-not-determine reason", detail)
 	}
 }

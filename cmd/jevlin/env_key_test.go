@@ -10,6 +10,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
 // With --stdin, the environment's key goes to the installation's own
@@ -96,7 +98,7 @@ func TestTheEnvironmentKeyGoesToTheInstallationsRouterInEveryForm(t *testing.T) 
 // it does the stored one: silently, exit 0, nothing dialed.
 func TestTheTurnEndSendsTheEnvironmentKeyOnlyToTheInstallationsRouter(t *testing.T) {
 	f := newTurnEndFixture(t)
-	if _, err := readCredentials(credentialsPath(minerOf(t, f.ownCfg))); err == nil {
+	if _, err := readCredentials(credentialsPath(searchBlockOf(t, f.ownCfg))); err == nil {
 		t.Fatal("this test is about the environment's key, and a key is stored")
 	}
 	env := envOf(map[string]string{"JEVLIN_CONFIG": f.ownCfg, apiKeyEnv: boundKey})
@@ -113,10 +115,11 @@ func TestTheTurnEndSendsTheEnvironmentKeyOnlyToTheInstallationsRouter(t *testing
 	}
 }
 
-// With no router in the installation's config, the environment key's
-// refusal names none as the installation's: it says the config names none,
-// and how to choose one.
-func TestTheEnvironmentKeysRefusalNamesNoRouterTheInstallationNeverChose(t *testing.T) {
+// With no router in the installation's config, the installation's router is
+// the compiled default (configuration format 1 names every endpoint), so the
+// environment key is bound there, and a search under another config's router
+// is refused naming both origins — never the key, and never a path.
+func TestTheEnvironmentKeysRefusalNamesTheCompiledDefaultWhenTheInstallationNamesNoRouter(t *testing.T) {
 	own, cfg, root := newFakeRouter(t, nil)
 	env := map[string]string{"JEVLIN_HOME": t.TempDir(), apiKeyEnv: boundKey}
 	code, out, _ := runSearchStdin(t, fixedSearchOps(root), env, `{"version":1,"query":"q"}`, "-config", cfg)
@@ -127,13 +130,16 @@ func TestTheEnvironmentKeysRefusalNamesNoRouterTheInstallationNeverChose(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	standIn := origin(t, defaults.Miner.RouterURL.String())
-	for _, gone := range []string{standIn, strings.TrimPrefix(standIn, "https://"), boundKey, root} {
+	installations := origin(t, defaults.Search.RouterURL.String())
+	if installations != origin(t, config.DefaultRouterURL) {
+		t.Fatalf("the installation's router is %s, not the compiled default; the environment supplied one", installations)
+	}
+	for _, gone := range []string{boundKey, root} {
 		if strings.Contains(out, gone) {
 			t.Errorf("the refusal says %q:\n%s", gone, out)
 		}
 	}
-	for _, said := range []string{apiKeyEnv, "names none", "JEVLIN_CONFIG", origin(t, own.srv.URL)} {
+	for _, said := range []string{apiKeyEnv, installations, origin(t, own.srv.URL)} {
 		if !strings.Contains(out, said) {
 			t.Errorf("the refusal does not say %q:\n%s", said, out)
 		}
@@ -147,7 +153,7 @@ func TestFetchSendsTheEnvironmentKeyOnlyToTheInstallationsRouter(t *testing.T) {
 	own, cfg, root := newFakeRouter(t, fetchAnswering)
 	other, otherConns := countingServer(t, http.HandlerFunc(fetchAnswering))
 	otherCfg := sameStateOtherURL(t, cfg, own.srv.URL, other.URL)
-	if _, err := os.Stat(credentialsPath(minerOf(t, cfg))); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Stat(credentialsPath(searchBlockOf(t, cfg))); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("this test needs no stored key: %v", err)
 	}
 	env := map[string]string{"JEVLIN_CONFIG": cfg, apiKeyEnv: boundKey}

@@ -176,7 +176,7 @@ func TestUninstallBinaryKeepsTheBinaryAHookFileItCouldNotWriteStillRuns(t *testi
 		skipPermissionTest(t, "this account writes a read-only file anyway (root)")
 	}
 
-	code, out, errOut := s.uninstall(t, nil, false, nil, "-yes", "-binary")
+	code, out, errOut := s.uninstall(t, nil, false, "-yes", "-binary")
 	if code == exitOK {
 		t.Fatalf("uninstall -binary exited 0 with a hook file it could not write\n%s\n%s", out, errOut)
 	}

@@ -30,7 +30,7 @@ import { delimiter as shellPathDelimiter, join as shellPathJoin } from "node:pat
 // The shell opencode runs its bash tool in on THIS machine, written in by
 // the installer from the host's declaration. The bridge is an environment
 // assignment, and its syntax is the shell's: a POSIX prefix handed to
-// PowerShell is looked up as a program name and the search never runs (dropin-miner#68).
+// PowerShell is looked up as a program name and the search never runs.
 const HOST_SHELL = "{{HOST_SHELL}}"
 
 // The names ShellSelect's META table reads as a POSIX login shell and as
@@ -125,8 +125,8 @@ const HOST_COMMAND_CHAR_LIMIT = process.platform === "win32" ? 30000 : 0
 // runs no command of ours and needs no config — it is how `uninstall` knows
 // whose file this is. Every other artifact names its installation in a
 // command it teaches; this one teaches none, so before this line existed an
-// uninstall had nothing to match and removed another installation's plugin
-// (dropin-miner#73). Two installations share this one path, so it names the one that ran
+// uninstall had nothing to match and removed another installation's plugin.
+// Two installations share this one path, so it names the one that ran
 // `agents install` last, and the other leaves it alone.
 const INSTALL_CONFIG = "{{INSTALL_CONFIG}}"
 
@@ -136,14 +136,14 @@ const INSTALL_CONFIG = "{{INSTALL_CONFIG}}"
 const JEVLIN_BIN = "{{JEVLIN_BIN}}"
 
 // startSession hands the binary a session's start: `hook start opencode`,
-// which starts the flush and, once a day, the release check — what Claude
-// Code's session-start and Stop hooks do between them. Nothing is piped and
+// which starts, once a day, the release check — what Claude Code's
+// session-start and Stop hooks do between them. Nothing is piped and
 // nothing is read back. Fire and forget. It runs when this plugin loads
 // (opencode started, whatever session it opens), when a top-level session is
 // created, and when a top-level session goes idle: a session resumed day
 // after day is never created again, and its idle is the one event it still
-// sends. The binary's stamp decides whether anything but the flush runs, so
-// the extra starts cost one process each and no request. A subagent's child
+// sends. The binary's stamp decides whether anything runs, so the extra
+// starts cost one process each and no request. A subagent's child
 // session is the same person's same day and starts nothing.
 const startSession = async () => {
   if (!JEVLIN_BIN) return
@@ -385,6 +385,7 @@ export const JevlinLineage = async ({ client }) => {
         } catch {
           // no history is fine; the ids still thread the search
         }
+        if (traceOff()) return
         const shell = hostShell()
         const bridge = traceBridge(env, bridgeBudgetFor(cmd, shell, HOST_COMMAND_CHAR_LIMIT))
         if (bridge === null) return

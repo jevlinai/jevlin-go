@@ -1,7 +1,6 @@
 package main
 
-// dropin-miner#88 item 3: every byte this client writes into a configuration file is
-// ASCII.
+// Every byte this client writes into a configuration file is ASCII.
 //
 // Windows PowerShell 5.1 reads a file with no byte-order mark in the
 // system's ANSI code page, so a UTF-8 em dash arrives as three cp1252
@@ -73,9 +72,6 @@ func asciiSetupValues(home string) setupValues {
 		router:       "https://api.jevlin.ai",
 		platformURL:  "https://platform.jevlin.ai",
 		agentsAPIURL: "https://agents-v1.jevlin.ai",
-		asURL:        "https://rewards-testnet.jevlin.ai",
-		chainID:      "twilight-testnet-1",
-		slotID:       3,
 	}
 }
 
@@ -88,43 +84,26 @@ func TestEveryGeneratedConfigIsASCII(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// The line dropin-miner#88 was filed about, still present and still saying what
-		// it said: the case would pass just as well on a file that had lost
-		// the comment altogether.
-		if !strings.Contains(string(b), "# target_epoch deliberately unset") {
-			t.Fatalf("the target_epoch comment is gone; this case would then prove nothing:\n%s", b)
-		}
 		asciiOrFail(t, "renderFreshConfig", b)
 	})
 
-	t.Run("jevlin.toml, fresh with the scripted mining answer", func(t *testing.T) {
-		sv := v
-		sv.scriptedMine = true
-		sv.payoutAddress = "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn"
-		b, err := renderFreshConfig(sv)
-		if err != nil {
-			t.Fatal(err)
-		}
-		asciiOrFail(t, "renderFreshConfig (scripted)", b)
-	})
-
-	t.Run("jevlin.toml, migrated", func(t *testing.T) {
-		// A proxy-era config with neither table: setup appends both, with a
-		// comment of its own.
+	t.Run("jevlin.toml, replaced", func(t *testing.T) {
+		// An older file, with no schema line: setup sets it aside and
+		// writes format 1 in its place.
 		existing := []byte("[[provider]]\nname = \"search-router\"\nupstream = \"https://api.jevlin.ai\"\n")
-		plan, err := planSetupConfig(filepath.Join(home, setupConfigFile), existing, v, func([]byte) error { return nil })
+		plan, err := planSetupConfig(filepath.Join(home, setupConfigFile), existing, v, validateConfigBytes, func(string) bool { return false })
 		if err != nil {
 			t.Fatal(err)
 		}
-		if plan.outcome != configMigrated {
-			t.Fatalf("outcome %v, want configMigrated", plan.outcome)
+		if plan.outcome != configReplaced {
+			t.Fatalf("outcome %v, want configReplaced", plan.outcome)
 		}
-		asciiOrFail(t, "planSetupConfig (migrated)", plan.data)
+		asciiOrFail(t, "planSetupConfig (replaced)", plan.data)
 	})
 
 	t.Run("~/.codex/config.toml block", func(t *testing.T) {
 		asciiOrFail(t, "codexSandboxBlock", codexSandboxBlock([]string{
-			filepath.Join(home, "state"), filepath.Join(home, "intake"),
+			filepath.Join(home, "state"), filepath.Join(home, "sessions"),
 		}))
 	})
 
@@ -142,11 +121,11 @@ func TestTheASCIIScanFindsTheByteItIsLookingFor(t *testing.T) {
 	if i := firstNonASCII([]byte("# target_epoch deliberately unset - flush asks the AS.\n")); i != -1 {
 		t.Fatalf("firstNonASCII = %d on an ASCII line, want -1", i)
 	}
-	// The exact line dropin-miner#88 was filed about, before the fix.
+	// The exact line the defect was filed about, before the fix.
 	before := []byte("# target_epoch deliberately unset \u2014 flush asks the AS.\n")
 	i := firstNonASCII(before)
 	if i < 0 {
-		t.Fatal("firstNonASCII missed the em dash that dropin-miner#88 was filed about")
+		t.Fatal("firstNonASCII missed the em dash the defect was filed about")
 	}
 	if want := strings.Index(string(before), "\u2014"); i != want {
 		t.Fatalf("firstNonASCII = %d, want %d (the em dash's first byte)", i, want)

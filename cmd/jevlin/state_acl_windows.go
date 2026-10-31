@@ -2,10 +2,15 @@
 
 package main
 
-import "github.com/jevlinai/jevlin-go/internal/winacl"
+import (
+	"io/fs"
+	"syscall"
 
-// systemStateACL reads through internal/winacl, the same reader the wallet check
-// uses; a reparse point is recognized as wallet_acl_windows.go recognizes one.
+	"github.com/jevlinai/jevlin-go/internal/winacl"
+)
+
+// systemStateACL reads through internal/winacl; a reparse point is recognized
+// by its attribute (isReparsePoint).
 func systemStateACL() stateACLBackend {
 	return stateACLBackend{
 		managed: true,
@@ -14,4 +19,14 @@ func systemStateACL() stateACLBackend {
 		name:    winacl.PrincipalName,
 		isLink:  isReparsePoint,
 	}
+}
+
+// isReparsePoint is the attribute itself rather than the mode Go derives from
+// it: a directory junction is neither ModeSymlink nor ModeDir, and a reparse
+// point of any kind is what the check refuses to read through.
+func isReparsePoint(info fs.FileInfo) bool {
+	if data, ok := info.Sys().(*syscall.Win32FileAttributeData); ok {
+		return data.FileAttributes&syscall.FILE_ATTRIBUTE_REPARSE_POINT != 0
+	}
+	return info.Mode()&(fs.ModeSymlink|fs.ModeIrregular) != 0
 }

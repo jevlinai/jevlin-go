@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/jevlinai/jevlin-go/pkg/auth"
-	"github.com/jevlinai/jevlin-go/pkg/redact"
 )
 
 // ── doctor ──────────────────────────────────────────────────────────────
@@ -24,29 +23,11 @@ type doctorReport struct {
 	// D-R1); ConfigDefaulted is true when resolution found none and this
 	// report is against built-in defaults — told apart explicitly so an
 	// empty ConfigSource is never read as "no config" by accident.
-	ConfigSource     string            `json:"config_source,omitempty"`
-	ConfigDefaulted  bool              `json:"config_defaulted"`
-	StateDir         string            `json:"state_dir,omitempty"`
-	Mining           doctorMiningJSON  `json:"mining"`
-	ASConfigured     *bool             `json:"as_configured,omitempty"`
-	ASBaseURL        string            `json:"as_base_url,omitempty"`
-	Health           []machineHealth   `json:"health,omitempty"`
-	HealthError      string            `json:"health_error,omitempty"`
-	Checks           []doctorCheckJSON `json:"checks"`
-	ChecksCannotRun  []string          `json:"checks_that_could_not_run"`
-	Queue            queueState        `json:"queue"`
-	RegistrationSlot string            `json:"last_enrollment_slot,omitempty"`
-	RegistrationAt   string            `json:"last_enrollment_at,omitempty"`
-}
-
-type doctorMiningJSON struct {
-	// State is the persisted runtime decision in its canonical spelling,
-	// not a rendering of it: enabled, disabled, undecided, degraded.
-	State  string `json:"state"`
-	Detail string `json:"detail,omitempty"`
-	// StateKnown is false when the state directory could not be read at
-	// all. An unknown decision is not a decision of "off".
-	StateKnown bool `json:"state_known"`
+	ConfigSource    string            `json:"config_source,omitempty"`
+	ConfigDefaulted bool              `json:"config_defaulted"`
+	StateDir        string            `json:"state_dir,omitempty"`
+	Checks          []doctorCheckJSON `json:"checks"`
+	ChecksCannotRun []string          `json:"checks_that_could_not_run"`
 }
 
 type doctorCheckJSON struct {
@@ -64,29 +45,10 @@ func doctorEnvelope(f doctorFacts, checks []doctorCheck, exitCode int) commandEn
 		ConfigSource:    f.ConfigSource,
 		ConfigDefaulted: f.ConfigSource == "",
 		StateDir:        f.StateDir,
-		Mining: doctorMiningJSON{
-			State:      string(f.MiningDecision.State),
-			StateKnown: f.LocalStateKnown,
-		},
-		ASBaseURL: f.ASBaseURL,
-		Health:    healthOf(f.Health),
-		Queue:     spoolQueueState(f.SpoolDir),
-		Checks:    make([]doctorCheckJSON, 0, len(checks)),
+		Checks:          make([]doctorCheckJSON, 0, len(checks)),
 		// Never nil: an empty list is "every check ran", which is a
 		// different statement from "this field was omitted".
-		ChecksCannotRun:  []string{},
-		RegistrationSlot: f.RegistrationSlot,
-		RegistrationAt:   f.RegistrationAt,
-	}
-	if f.MiningDecision.Err != nil {
-		report.Mining.Detail = boundMessage(f.MiningDecision.Err.Error())
-	}
-	if f.ASConfigKnown {
-		configured := f.ASConfigured
-		report.ASConfigured = &configured
-	}
-	if f.HealthErr != nil {
-		report.HealthError = boundMessage(redact.Error(f.HealthErr).Error())
+		ChecksCannotRun: []string{},
 	}
 	for _, c := range checks {
 		report.Checks = append(report.Checks, doctorCheckJSON{
@@ -118,18 +80,12 @@ func doctorEnvelope(f doctorFacts, checks []doctorCheck, exitCode int) commandEn
 type statusReport struct {
 	// ConfigSource/ConfigDefaulted/StateDir: see doctorReport's fields of
 	// the same name (ruling D-R1).
-	ConfigSource    string                   `json:"config_source,omitempty"`
-	ConfigDefaulted bool                     `json:"config_defaulted"`
-	StateDir        string                   `json:"state_dir,omitempty"`
-	Mining          statusMiningJSON         `json:"mining"`
-	Agent           *statusAgentJSON         `json:"agent,omitempty"`
-	AgentErr        string                   `json:"agent_error,omitempty"`
-	PayoutHold      *statusPayoutHoldJSON    `json:"payout_hold,omitempty"`
-	RegionRefusal   *statusRegionRefusalJSON `json:"region_refusal,omitempty"`
-	Delivery        *statusDeliveryJSON      `json:"delivery,omitempty"`
-	Conflicts       []auth.ConflictedEpoch   `json:"epoch_conflicts,omitempty"`
-	AS              *statusASJSON            `json:"authorization_server,omitempty"`
-	Update          statusUpdateJSON         `json:"update"`
+	ConfigSource    string           `json:"config_source,omitempty"`
+	ConfigDefaulted bool             `json:"config_defaulted"`
+	StateDir        string           `json:"state_dir,omitempty"`
+	Agent           *statusAgentJSON `json:"agent,omitempty"`
+	AgentErr        string           `json:"agent_error,omitempty"`
+	Update          statusUpdateJSON `json:"update"`
 }
 
 // statusUpdateJSON is the daily release check (update_check.go): the mode
@@ -177,20 +133,9 @@ func statusUpdateJSONOf(f updateFacts) statusUpdateJSON {
 	return out
 }
 
-type statusMiningJSON struct {
-	State                 string          `json:"state"`
-	Detail                string          `json:"detail,omitempty"`
-	ASConfigured          bool            `json:"as_configured"`
-	StateDirectoryPresent bool            `json:"state_directory_present"`
-	Health                []machineHealth `json:"health,omitempty"`
-	HealthError           string          `json:"health_error,omitempty"`
-}
-
 // statusAgentJSON is the stored registration. Every field in it is already
 // printed by the text report or shown to the participant at claim time;
-// the agent API key, the refresh authorization, the DPoP key and any
-// wallet material are held elsewhere in the store and none of them is read
-// here.
+// the agent API key is held elsewhere and is not read here.
 type statusAgentJSON struct {
 	AgentID        string   `json:"agent_id,omitempty"`
 	Status         string   `json:"status"`
@@ -199,102 +144,24 @@ type statusAgentJSON struct {
 	ClaimURL       string   `json:"claim_url,omitempty"`
 	ClaimCode      string   `json:"claim_code,omitempty"`
 	ClaimExpiresAt string   `json:"claim_expires_at,omitempty"`
-	EnrolledSlot   string   `json:"enrolled_slot,omitempty"`
-	EnrolledAt     string   `json:"enrolled_at,omitempty"`
-	PayoutAddress  string   `json:"payout_address,omitempty"`
-	SlotRefusal    string   `json:"slot_refusal,omitempty"`
-	// LegacyPayoutUnused: a payout.json in the state directory and none on
-	// file beside credentials.json. Its address is never reported.
-	LegacyPayoutUnused bool `json:"legacy_payout_unused,omitempty"`
 }
 
-type statusPayoutHoldJSON struct {
-	Reason string `json:"reason"`
-	Active string `json:"active"`
-	Local  string `json:"local"`
-}
-
-// statusDeliveryJSON is evidence recorded and not yet delivered, present
-// while mining is on: the count, when the oldest was made, and whether
-// Codex on Linux is holding it (codexDeliveryUnapproved, issue #80). A
-// count that could not be taken is absent, with WaitingUnknown, never 0:
-// a model reads 0 as "nothing waiting".
-type statusDeliveryJSON struct {
-	Waiting              *int   `json:"waiting,omitempty"`
-	WaitingUnknown       bool   `json:"waiting_unknown,omitempty"`
-	OldestWaiting        string `json:"oldest_waiting_at,omitempty"`
-	CodexHooksUnapproved bool   `json:"codex_hooks_unapproved"`
-}
-
-// statusRegionRefusalJSON is the driver's note of the AS's last region
-// refusal (ADR-MINIS-0026). Hold is true for the temporary code.
-type statusRegionRefusalJSON struct {
-	Code  string `json:"code"`
-	Slot  uint64 `json:"slot_id"`
-	Epoch uint64 `json:"target_epoch"`
-	At    string `json:"at"`
-	Hold  bool   `json:"hold"`
-	Text  string `json:"text"`
-}
-
-type statusASJSON struct {
-	SetupError  string             `json:"setup_error,omitempty"`
-	BaseURL     string             `json:"base_url,omitempty"`
-	ChainID     string             `json:"chain_id,omitempty"`
-	SlotID      uint64             `json:"slot_id,omitempty"`
-	Epoch       *uint64            `json:"epoch,omitempty"`
-	EpochPinned bool               `json:"epoch_pinned"`
-	EpochError  string             `json:"epoch_error,omitempty"`
-	Status      *statusEpochJSON   `json:"epoch_status,omitempty"`
-	StatusError string             `json:"epoch_status_error,omitempty"`
-	Provider    *statusBindingJSON `json:"provider,omitempty"`
-	ProviderErr string             `json:"provider_error,omitempty"`
-	Queue       *queueState        `json:"queue,omitempty"`
-}
-
-type statusEpochJSON struct {
-	Phase               string `json:"phase"`
-	DistributionMode    string `json:"distribution_mode"`
-	Joinable            bool   `json:"joinable"`
-	JoinStatus          string `json:"join_status"`
-	ParticipationStatus string `json:"participation_status"`
-	CapabilityAvailable bool   `json:"capability_available"`
-}
-
-type statusBindingJSON struct {
-	Provider       string `json:"provider"`
-	Status         string `json:"status"`
-	SourceProfile  string `json:"source_profile"`
-	KeyFingerprint string `json:"key_fingerprint"`
-	LastVerifiedAt string `json:"last_verified_at,omitempty"`
-}
-
-func statusEnvelope(f agentIdentityFacts, as *statusASFacts) commandEnvelope {
+func statusEnvelope(f agentIdentityFacts) commandEnvelope {
 	report := statusReport{
 		ConfigSource:    f.ConfigSource,
 		ConfigDefaulted: f.ConfigSource == "",
 		StateDir:        f.StateDir,
-		Mining: statusMiningJSON{
-			State:                 string(f.Decision.State),
-			ASConfigured:          miningASConfigured(f.Mining),
-			StateDirectoryPresent: !f.StoreMissing,
-			Health:                healthOf(f.Health),
-		},
-		Conflicts: f.Conflicts,
-		Update:    statusUpdateJSONOf(f.Update),
+		Update:          statusUpdateJSONOf(f.Update),
 	}
-	if f.Decision.Err != nil {
-		report.Mining.Detail = boundMessage(f.Decision.Err.Error())
-	}
-	if f.HealthErr != nil {
-		report.Mining.HealthError = boundMessage(redact.Error(f.HealthErr).Error())
-	}
-	if f.RegistrationErr != nil {
+	switch {
+	case f.StoreErr != nil:
+		report.AgentErr = boundMessage(f.StoreErr.Error())
+	case f.RegistrationErr != nil:
 		report.AgentErr = boundMessage(f.RegistrationErr.Error())
-	} else if f.HasRegistration {
+	case f.HasRegistration:
 		reg := f.Registration
 		claimURL, claimCode := printableClaimArtifacts(f.Claim, f.PlatformBaseURL)
-		agent := &statusAgentJSON{
+		report.Agent = &statusAgentJSON{
 			AgentID:        reg.AgentID,
 			Status:         reg.Status,
 			Claimed:        reg.Status == "claimed",
@@ -302,94 +169,12 @@ func statusEnvelope(f agentIdentityFacts, as *statusASFacts) commandEnvelope {
 			ClaimURL:       claimURL,
 			ClaimCode:      claimCode,
 			ClaimExpiresAt: reg.ClaimExpiresAt,
-			EnrolledSlot:   reg.LastEnrollmentSlot,
-			EnrolledAt:     reg.LastEnrollmentAt,
-			SlotRefusal:    slotRefusalText(reg.SlotRefusal, reg.OfferedSlots, f.Mining.PlatformSlot),
 		}
-		if f.PayoutAddressErr == nil && f.HasPayoutAddress {
-			agent.PayoutAddress = f.PayoutAddress
-		}
-		agent.LegacyPayoutUnused = f.LegacyPayout
-		report.Agent = agent
-	}
-	if f.HasHeld {
-		reason := f.Held.HeldFor
-		if reason == "" {
-			reason = "REPLACES_ACTIVE" // this client's own pre-check, not an AS-returned reason
-		}
-		report.PayoutHold = &statusPayoutHoldJSON{Reason: reason, Active: f.Held.Active, Local: f.Held.Local}
-	}
-	if f.Decision.State == auth.MiningEnabled {
-		d := &statusDeliveryJSON{CodexHooksUnapproved: f.CodexUndelivered}
-		if f.WaitingErr != nil {
-			d.WaitingUnknown = true
-		} else {
-			n := f.Waiting
-			d.Waiting = &n
-		}
-		if !f.OldestWaiting.IsZero() {
-			d.OldestWaiting = f.OldestWaiting.UTC().Format(time.RFC3339)
-		}
-		report.Delivery = d
-	}
-	if f.HasRegion {
-		report.RegionRefusal = &statusRegionRefusalJSON{
-			Code: f.Region.Code, Slot: f.Region.SlotID, Epoch: f.Region.TargetEpoch, At: f.Region.At,
-			Hold: auth.RegionHold(f.Region.Code), Text: auth.RegionRefusalText(f.Region.Code),
-		}
-	}
-	if as != nil {
-		report.AS = statusASJSONOf(*as)
 	}
 	return commandEnvelope{
 		machineHeader: newMachineHeader("status", exitOK, "ok", false, actionNone),
 		Data:          report,
 	}
-}
-
-func statusASJSONOf(f statusASFacts) *statusASJSON {
-	out := &statusASJSON{EpochPinned: f.EpochPinned}
-	if f.ClientErr != nil {
-		out.SetupError = boundMessage(redact.Error(f.ClientErr).Error())
-		return out
-	}
-	out.BaseURL, out.ChainID, out.SlotID = f.Mining.ASBaseURL, f.Mining.ChainID, f.Mining.SlotID
-	if !f.EpochKnown {
-		if f.EpochErr != nil {
-			out.EpochError = boundMessage(redact.Error(f.EpochErr).Error())
-		}
-		return out
-	}
-	epoch := f.Epoch
-	out.Epoch = &epoch
-	if f.StatusErr != nil {
-		out.StatusError = boundMessage(redact.Error(f.StatusErr).Error())
-		return out
-	}
-	if st := f.Status; st != nil {
-		out.Status = &statusEpochJSON{
-			Phase:               st.Phase,
-			DistributionMode:    st.DistributionMode,
-			Joinable:            st.Joinable,
-			JoinStatus:          st.JoinStatus,
-			ParticipationStatus: st.ParticipationStatus,
-			CapabilityAvailable: st.CapabilityAvailable,
-		}
-	}
-	if f.BindingErr != nil {
-		out.ProviderErr = boundMessage(redact.Error(f.BindingErr).Error())
-	} else if b := f.Binding; b != nil {
-		out.Provider = &statusBindingJSON{
-			Provider:       b.Provider,
-			Status:         b.Status,
-			SourceProfile:  b.SourceProfile,
-			KeyFingerprint: b.KeyFingerprint,
-			LastVerifiedAt: b.LastSuccessfulVerificationAt,
-		}
-	}
-	queue := f.Queue
-	out.Queue = &queue
-	return out
 }
 
 // ── connect ─────────────────────────────────────────────────────────────
@@ -402,12 +187,6 @@ type connectReport struct {
 	ClaimURL       string   `json:"claim_url,omitempty"`
 	ClaimCode      string   `json:"claim_code,omitempty"`
 	ClaimExpiresAt string   `json:"claim_expires_at,omitempty"`
-	EnrolledSlot   string   `json:"enrolled_slot,omitempty"`
-	SlotRefusal    string   `json:"slot_refusal,omitempty"`
-	// MiningDecision is the persisted runtime decision this connect left
-	// behind, so a caller can tell "registered, mining on" from
-	// "registered, mining never decided here" without a second command.
-	MiningDecision string `json:"mining_decision,omitempty"`
 }
 
 // connectEnvelope reads back what the run persisted rather than narrating
@@ -416,16 +195,14 @@ type connectReport struct {
 // envelope built from it says what is true now, including after a run that
 // failed partway.
 //
-// Nothing here reads or exposes the agent API key, the refresh
-// authorization, the DPoP key or any wallet material, and nothing opens
-// the claim URL: it is printed for a person, exactly as the text path
-// prints it.
+// Nothing here reads or exposes the agent API key, and nothing opens the
+// claim URL: it is printed for a person, exactly as the text path prints
+// it.
 func connectEnvelope(cfgPath string, getenv func(string) string, exitCode int, narration string) commandEnvelope {
 	report := connectReport{}
 	cfg, _, err := loadConfig(cfgPath, getenv)
 	if err == nil {
-		if store, serr := auth.OpenStoreExisting(cfg.Mining.StateDir); serr == nil {
-			report.MiningDecision = string(store.ReadMiningDecision().State)
+		if store, serr := auth.OpenStoreExisting(cfg.Search.StateDir); serr == nil {
 			if reg, ok, rerr := store.LoadAgentRegistration(); rerr == nil && ok {
 				report.AgentID = reg.AgentID
 				report.Status = reg.Status
@@ -436,12 +213,10 @@ func connectEnvelope(cfgPath string, getenv func(string) string, exitCode int, n
 				// stored key is), and the envelope must not show what the run
 				// said it would not.
 				if exitCode == exitOK {
-					claim, _ := claimFor(cfg.Miner, reg.AgentID, nil)
+					claim, _ := claimFor(cfg.Search, reg.AgentID, nil)
 					report.ClaimURL, report.ClaimCode = printableClaimArtifacts(claim, cfg.Platform.BaseURL)
 				}
 				report.ClaimExpiresAt = reg.ClaimExpiresAt
-				report.EnrolledSlot = reg.LastEnrollmentSlot
-				report.SlotRefusal = slotRefusalText(reg.SlotRefusal, reg.OfferedSlots, cfg.Mining.PlatformSlot)
 			}
 		}
 	}

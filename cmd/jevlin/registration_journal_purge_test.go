@@ -14,7 +14,7 @@ func TestPurgeRemovesTheRegistrationJournalBesideTheCredential(t *testing.T) {
 	s := installed(t)
 	journal := filepath.Join(s.home, registrationJournalFile)
 	writeFileT(t, journal, `{"v":1}`)
-	code, out, errOut := s.uninstall(t, tty(walletFixtureAddress(t)), true, &revokeRecorder{}, "-purge-state")
+	code, out, errOut := s.uninstall(t, tty(s.home), true, "-purge-state")
 	if code != exitOK {
 		t.Fatalf("purge exited %d\n%s\n%s", code, out, errOut)
 	}
@@ -23,13 +23,14 @@ func TestPurgeRemovesTheRegistrationJournalBesideTheCredential(t *testing.T) {
 	}
 }
 
-// A configured intake outside the installation puts the journal beside it,
-// outside too: it is named with the other configured paths, which a purge
-// reports and leaves.
-func TestConfiguredStatePathsNameTheJournalBesideTheIntake(t *testing.T) {
-	intake := filepath.Join(t.TempDir(), "elsewhere", "intake")
-	cfg := &config.Config{Miner: config.Miner{IntakeDir: intake}}
-	want := filepath.Join(filepath.Dir(intake), registrationJournalFile)
+// A configured state directory outside the installation puts the journal
+// beside it, outside too: it is named with the other configured paths, which
+// a purge reports and leaves.
+func TestConfiguredStatePathsNameTheJournalBesideTheStateDir(t *testing.T) {
+	state := filepath.Join(t.TempDir(), "elsewhere", "state")
+	cfg := &config.Config{Search: config.Search{StateDir: state}}
+	want := filepath.Join(filepath.Dir(state), registrationJournalFile)
+
 	for _, c := range configuredStatePaths(cfg) {
 		if c.path == want {
 			return

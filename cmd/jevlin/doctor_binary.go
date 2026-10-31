@@ -26,7 +26,7 @@ type binaryFacts struct {
 // gatherBinaryFacts compares PATH's answer with the binary the installation
 // at home keeps: the one doctor is diagnosing (doctorInstallationHome), so
 // `doctor -config <another installation's jevlin.toml>` asks about that
-// installation's binary, as its wallet check does.
+// installation's binary, as its state access check does.
 func gatherBinaryFacts(home string) binaryFacts {
 	own := ownBinaryAt(home, os.Stat)
 	if own == "" {

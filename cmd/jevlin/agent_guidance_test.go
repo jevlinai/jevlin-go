@@ -153,24 +153,17 @@ func TestTheStructuredPathIsTaughtBeforeTheHumanOne(t *testing.T) {
 	}
 }
 
-// Search success and mining state are separate, and the skill has to say
-// which field means mining is on. `configured` reports only that the miner
-// block exists; reading it as "mining is on" is the mistake this asserts
-// against.
-func TestHostsAreToldSearchSuccessIsNotMiningCredit(t *testing.T) {
+// Nothing about this client mines or earns, so no host's instruction text
+// may say so in any form: a sentence denying it would still put the word in
+// front of a model that then explains it to a person.
+func TestHostsAreToldNothingAboutMining(t *testing.T) {
 	entry := guidanceEntry()
+	forbidden := regexp.MustCompile(`(?i)\b(min(e|ed|es|ing|er|ers)|earn(s|ed|ing)?|reward(s|ed)?|payout(s)?)\b`)
 	for _, s := range targetsByKind(targetHost) {
 		t.Run(s.ID(), func(t *testing.T) {
 			text := instructionTextFor(t, s.ID(), entry)
-			lower := strings.ToLower(text)
-			if !strings.Contains(lower, "does not mean") && !strings.Contains(lower, "not mean anything was earned") {
-				t.Errorf("%s is not told that a successful search is not earnings:\n%s", s.Label(), text)
-			}
-			if !strings.Contains(text, "mining") || !strings.Contains(text, "state") {
-				t.Errorf("%s is not pointed at the mining state:\n%s", s.Label(), text)
-			}
-			if regexp.MustCompile(`(?i)configured[^.\n]{0,30}mining is on`).MatchString(text) {
-				t.Errorf("%s is told that configured means mining is on:\n%s", s.Label(), text)
+			if m := forbidden.FindString(text); m != "" {
+				t.Errorf("%s is told about %q:\n%s", s.Label(), m, text)
 			}
 		})
 	}

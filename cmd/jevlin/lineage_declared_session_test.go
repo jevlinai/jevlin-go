@@ -1,8 +1,8 @@
 package main
 
-// The declared lineage file is adopted only when it holds this session (dropin-miner#109).
+// The declared lineage file is adopted only when it holds this session.
 //
-// Cursor keyed the lineage file by workspace alone until dropin-miner#109's fix, and every
+// Cursor once keyed the lineage file by workspace alone, and every
 // hook event wrote the current conversation's id into it. Two conversations
 // open on one workspace shared one file, and both shells named it in
 // JEVLIN_LINEAGE. No nesting and no lost variable: two chat tabs on a
@@ -73,7 +73,7 @@ func TestTheDeclaredFileOfThisConversationIsAdopted(t *testing.T) {
 
 // With no session exported the declared file is believed by its path, as it
 // was: every shell started before the variable existed. Asserted, so that it
-// is a decision. It is also dropin-miner#109's defect, still open for those shells, and
+// is a decision. It is also the shared-file defect, still open for those shells, and
 // this test says so rather than hiding it.
 func TestWithoutTheSessionVariableTheDeclaredFileIsBelievedAsBefore(t *testing.T) {
 	p, env := otherConversationOwnsTheFile(t)

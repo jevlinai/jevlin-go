@@ -1,21 +1,20 @@
 package main
 
-// dropin-miner#86: an aborted destructive run leaves the installation as it found it,
+// An aborted destructive run leaves the installation as it found it,
 // including the lock files its own exclusion had to create.
 //
 // Taking an operation lock opens its file with O_CREATE (tryLockFile), so
-// probing an installation that has never flushed makes a flush.lock that
-// was not there before. The Windows tester's `uninstall -home <disposable>
-// -purge-state -yes`, answered with an empty line so the confirmation
-// aborted, printed "That does not match. No participant state or
-// integrations were changed." over a new empty flush.lock it had just
-// made. The sentence was false, and a dry run could not have predicted the
-// file.
+// probing an installation that has never connected makes a connect.lock
+// that was not there before. The Windows tester's `uninstall -home
+// <disposable> -purge-state -yes`, answered with an empty line so the
+// confirmation aborted, printed "That does not match. No participant state
+// or integrations were changed." over a new empty lock file it had just
+// made (it was the flush lock then, which an earlier version's flush took).
+// The sentence was false, and a dry run could not have predicted the file.
 //
 // The cases below are about which files the exclusion may remove, so they
-// name the three locks it takes rather than only the one the issue
-// reported: a rule scoped to flush.lock would be a second special case, not
-// the rule.
+// name every lock it takes rather than only the one the issue reported: a
+// rule scoped to one lock would be a second special case, not the rule.
 
 import (
 	"os"
@@ -24,24 +23,22 @@ import (
 	"testing"
 )
 
-// exclusionLocks is the three operation locks excludeLifecycle takes for
+// exclusionLocks is the two operation locks excludeLifecycle takes for
 // this installation, resolved the way it resolves them rather than
 // hand-written, so a case cannot drift from what the exclusion actually
 // touches.
 func exclusionLocks(t *testing.T, s *setupSandbox) []string {
 	t.Helper()
-	connectLock, flushLock, err := operationLockPaths(s.home, s.getenv)
+	connectLock, err := operationLockPath(s.home, s.getenv)
 	if err != nil {
-		t.Fatalf("operationLockPaths: %v", err)
+		t.Fatalf("operationLockPath: %v", err)
 	}
 	locks := []string{filepath.Join(s.home, setupLockFile)}
-	for _, p := range []string{connectLock, flushLock} {
-		if p != "" {
-			locks = append(locks, p)
-		}
+	if connectLock != "" {
+		locks = append(locks, connectLock)
 	}
-	if len(locks) != 3 {
-		t.Fatalf("want setup, connect and flush locks for this installation, got %v", locks)
+	if len(locks) != 2 {
+		t.Fatalf("want the setup and connect locks for this installation, got %v", locks)
 	}
 	return locks
 }
@@ -55,7 +52,7 @@ func removeAllT(t *testing.T, paths ...string) {
 	}
 }
 
-// An installation that has never flushed or connected — the disposable one
+// An installation that has never connected — the disposable one
 // a destructive test is run against — has none of these files. An aborted
 // purge must leave it that way.
 func TestAnAbortedPurgeLeavesNoLockFileItsExclusionCreated(t *testing.T) {
@@ -66,7 +63,7 @@ func TestAnAbortedPurgeLeavesNoLockFileItsExclusionCreated(t *testing.T) {
 
 	// An empty line at the typed confirmation: -yes does not satisfy it,
 	// and the run aborts having changed nothing.
-	code, out, errOut := s.uninstall(t, strings.NewReader("\n"), true, nil, "-purge-state", "-yes")
+	code, out, errOut := s.uninstall(t, strings.NewReader("\n"), true, "-purge-state", "-yes")
 	if code == exitOK {
 		t.Fatalf("the purge proceeded on an empty confirmation\n%s\n%s", out, errOut)
 	}
@@ -94,17 +91,17 @@ func TestAnAbortedPurgeLeavesAPreexistingLockFileByteIdentical(t *testing.T) {
 	// One that existed before, with bytes of its own so "left alone" is a
 	// stronger claim than "still exists".
 	preexisting := locks[len(locks)-1]
-	writeFileT(t, preexisting, "flush lock from an earlier run\n")
+	writeFileT(t, preexisting, "connect lock from an earlier run\n")
 	before := snapshotTree(t, s.root)
 
-	code, out, errOut := s.uninstall(t, strings.NewReader("\n"), true, nil, "-purge-state", "-yes")
+	code, out, errOut := s.uninstall(t, strings.NewReader("\n"), true, "-purge-state", "-yes")
 	if code == exitOK {
 		t.Fatalf("the purge proceeded on an empty confirmation\n%s\n%s", out, errOut)
 	}
 	if !lexists(preexisting) {
 		t.Fatalf("an aborted purge removed %s, which it did not create", preexisting)
 	}
-	if got := string(s.readFile(preexisting)); got != "flush lock from an earlier run\n" {
+	if got := string(s.readFile(preexisting)); got != "connect lock from an earlier run\n" {
 		t.Fatalf("an aborted purge rewrote a lock file it did not create: %q", got)
 	}
 	for _, p := range locks[:len(locks)-1] {
@@ -124,7 +121,7 @@ func TestAnAbortedUninstallLeavesNoLockFileItsExclusionCreated(t *testing.T) {
 	removeAllT(t, locks...)
 	before := snapshotTree(t, s.root)
 
-	code, out, errOut := s.uninstall(t, strings.NewReader("n\n"), true, nil)
+	code, out, errOut := s.uninstall(t, strings.NewReader("n\n"), true)
 	if code != exitOK {
 		t.Fatalf("a declined uninstall exited %d\n%s\n%s", code, out, errOut)
 	}
@@ -146,7 +143,7 @@ func TestAnUninstallThatProceedsKeepsTheLocksItTook(t *testing.T) {
 	removeAllT(t, locks...)
 	setupLock := filepath.Join(s.home, setupLockFile)
 
-	code, out, errOut := s.uninstall(t, strings.NewReader("y\n"), true, nil)
+	code, out, errOut := s.uninstall(t, strings.NewReader("y\n"), true)
 	if code != exitOK {
 		t.Fatalf("uninstall exited %d\n%s\n%s", code, out, errOut)
 	}
@@ -167,11 +164,12 @@ func TestAPurgeThatProceedsIsUnchanged(t *testing.T) {
 	s := installed(t)
 	removeAllT(t, exclusionLocks(t, s)...)
 
-	code, out, errOut := s.uninstall(t, tty(walletFixtureAddress(t)), true, &revokeRecorder{}, "-purge-state")
+	code, out, errOut := s.uninstall(t, tty(s.home), true, "-purge-state")
 	if code != exitOK {
 		t.Fatalf("the purge exited %d\n%s\n%s", code, out, errOut)
 	}
-	for _, rel := range []string{"state", "spool", "intake", "wallet", setupConfigFile} {
+	for _, rel := range []string{"state", "sessions", setupConfigFile} {
+
 		if lexists(filepath.Join(s.home, rel)) {
 			t.Errorf("-purge-state left %s", rel)
 		}

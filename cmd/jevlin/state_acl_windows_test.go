@@ -8,8 +8,8 @@ package main
 // state_acl_test.go holds the judgment and the verdicts on every OS; this is
 // what shows the real reader feeds them.
 //
-// The second principal is the logon session SID, as in wallet_acl_windows_test.go:
-// a group every process of this logon holds and no default access list names,
+// The second principal is the logon session SID: a group every process of this
+// logon holds and no default access list names,
 // granted an inheritable read entry the way a coding agent's sandbox setup
 // grants its sandbox group one.
 
@@ -102,14 +102,13 @@ func TestSetupResetsTheStateDirectoryToOwnerOnlyAndDoctorSaysSo(t *testing.T) {
 // client produces and no participant would intend: doctor says NO and what to
 // do. The directory is one the participant pointed state_dir at, not setup's.
 func TestDoctorStateAccessReportsADirectoryWithNoAccessList(t *testing.T) {
-	as := newFakeAS(t)
 	root := t.TempDir()
 	stateDir := filepath.Join(root, "state")
 	if err := os.Mkdir(stateDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	setNullDACL(t, stateDir)
-	cfgPath := doctorConfig(t, as.srv.URL, stateDir, filepath.Join(root, "spool"))
+	cfgPath := doctorConfig(t, stateDir)
 
 	check := doctorStateCheckFor(t, cfgPath)
 	detail, _ := check["detail"].(string)
@@ -154,17 +153,16 @@ func makeJunction(t *testing.T, link, target string) {
 // access list, which would be a NO if the junction were followed; the line
 // says it could not read the directory instead, and names the link.
 func TestDoctorStateAccessDoesNotReadThroughAJunctionAsTheStateDirectory(t *testing.T) {
-	as := newFakeAS(t)
 	root := t.TempDir()
 	target := filepath.Join(root, "elsewhere")
 	if err := os.Mkdir(target, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	writeFileT(t, filepath.Join(target, "dpop.key"), "x")
+	writeFileT(t, filepath.Join(target, "trace.key"), "x")
 	setNullDACL(t, target)
 	stateDir := filepath.Join(root, "state")
 	makeJunction(t, stateDir, target)
-	cfgPath := doctorConfig(t, as.srv.URL, stateDir, filepath.Join(root, "spool"))
+	cfgPath := doctorConfig(t, stateDir)
 
 	check := doctorStateCheckFor(t, cfgPath)
 	detail, _ := check["detail"].(string)
@@ -179,9 +177,8 @@ func TestDoctorStateAccessDoesNotReadThroughAJunctionAsTheStateDirectory(t *test
 // A junction at a credential's name is not read through either, and the rest
 // of the directory is still judged: a state directory that is the user's alone
 // reads as such for everything but the name that is a link. The target has no
-// access list, which would be a NO against dpop.key if it were followed.
+// access list, which would be a NO against trace.key if it were followed.
 func TestDoctorStateAccessDoesNotReadThroughAJunctionAtACredentialName(t *testing.T) {
-	as := newFakeAS(t)
 	root := t.TempDir()
 	stateDir := filepath.Join(root, "state")
 	if err := os.Mkdir(stateDir, 0o700); err != nil {
@@ -196,9 +193,9 @@ func TestDoctorStateAccessDoesNotReadThroughAJunctionAtACredentialName(t *testin
 		t.Fatal(err)
 	}
 	setNullDACL(t, target)
-	link := filepath.Join(stateDir, "dpop.key")
+	link := filepath.Join(stateDir, "trace.key")
 	makeJunction(t, link, target)
-	cfgPath := doctorConfig(t, as.srv.URL, stateDir, filepath.Join(root, "spool"))
+	cfgPath := doctorConfig(t, stateDir)
 
 	check := doctorStateCheckFor(t, cfgPath)
 	detail, _ := check["detail"].(string)
@@ -213,7 +210,7 @@ func TestDoctorStateAccessDoesNotReadThroughAJunctionAtACredentialName(t *testin
 // The read is by handle, so replacing a credential with a junction between the
 // check on its name and the read does not make doctor report another object's
 // list under the credential's path. The target has no access list: read by
-// name through the junction, this would be a NO against dpop.key, and the
+// name through the junction, this would be a NO against trace.key, and the
 // assertion is that it is the refusal of a link instead. A junction is made and
 // removed first to establish that this runner can make one, so the swap itself
 // cannot be what skips.
@@ -226,7 +223,7 @@ func TestDoctorStateAccessReadsWhatItCheckedNotWhatIsThereByThen(t *testing.T) {
 	if err := winacl.RestrictToOwner(stateDir, true); err != nil {
 		t.Fatal(err)
 	}
-	key := filepath.Join(stateDir, "dpop.key")
+	key := filepath.Join(stateDir, "trace.key")
 	writeFileT(t, key, "x")
 	target := filepath.Join(root, "elsewhere")
 	if err := os.Mkdir(target, 0o700); err != nil {
@@ -257,7 +254,7 @@ func TestDoctorStateAccessReadsWhatItCheckedNotWhatIsThereByThen(t *testing.T) {
 	}
 	t.Cleanup(func() { stateCheckedHook = saved })
 
-	f := inspectStateAccess(stateDir, []string{"dpop.key"})
+	f := inspectStateAccess(stateDir, []string{"trace.key"})
 	if !swapped {
 		t.Fatal("the credential was not replaced between the check and the read, so this proved nothing")
 	}
@@ -268,5 +265,98 @@ func TestDoctorStateAccessReadsWhatItCheckedNotWhatIsThereByThen(t *testing.T) {
 		if o.Path == key {
 			t.Errorf("a list was reported under %s although it was a junction by the time it was read: %+v", key, o)
 		}
+	}
+}
+
+// ── fixtures shared with the state access cases ─────────────────────────
+
+// logonSessionSID is the SID the tests grant: a group every process of this
+// logon session holds, and one no default access list names.
+func logonSessionSID(t *testing.T) *windows.SID {
+	t.Helper()
+	groups, err := windows.GetCurrentProcessToken().GetTokenGroups()
+	if err != nil {
+		skipPermissionTest(t, "the token's groups cannot be read: "+err.Error())
+		return nil
+	}
+	for _, g := range groups.AllGroups() {
+		if g.Attributes&windows.SE_GROUP_LOGON_ID == windows.SE_GROUP_LOGON_ID && g.Attributes&windows.SE_GROUP_ENABLED != 0 {
+			sid, err := g.Sid.Copy()
+			if err != nil {
+				t.Fatal(err)
+			}
+			return sid
+		}
+	}
+	skipPermissionTest(t, "this token holds no enabled logon session SID")
+	return nil
+}
+
+// grantRead adds a read-and-execute entry for sid to path's DACL, keeping the
+// list's protection as it was. inheritable makes it an (OI)(CI) entry, which
+// Windows carries down to everything beneath that inherits.
+func grantRead(t *testing.T, path string, sid *windows.SID, inheritable bool) {
+	t.Helper()
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		t.Fatal(err)
+	}
+	control, _, err := sd.Control()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, _, err := sd.DACL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inherit := uint32(windows.NO_INHERITANCE)
+	if inheritable {
+		inherit = windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT
+	}
+	const fileGenericReadExecute = 0x001200A9
+	acl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
+		AccessPermissions: fileGenericReadExecute,
+		AccessMode:        windows.GRANT_ACCESS,
+		Inheritance:       inherit,
+		Trustee: windows.TRUSTEE{
+			TrusteeForm:  windows.TRUSTEE_IS_SID,
+			TrusteeType:  windows.TRUSTEE_IS_GROUP,
+			TrusteeValue: windows.TrusteeValueFromSID(sid),
+		},
+	}}, old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := windows.SECURITY_INFORMATION(windows.DACL_SECURITY_INFORMATION | windows.UNPROTECTED_DACL_SECURITY_INFORMATION)
+	if control&windows.SE_DACL_PROTECTED != 0 {
+		info = windows.DACL_SECURITY_INFORMATION | windows.PROTECTED_DACL_SECURITY_INFORMATION
+	}
+	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, info, nil, nil, acl, nil); err != nil {
+		skipPermissionTest(t, fmt.Sprintf("add a read entry to %s: %v", path, err))
+	}
+}
+
+// entryFor reports whether path's DACL holds an entry for sid, and whether
+// that entry is inherited.
+func entryFor(t *testing.T, path string, sid *windows.SID) (found, inherited bool) {
+	t.Helper()
+	for _, e := range daclEntries(t, path).aces {
+		if e.sid.Equals(sid) {
+			return true, e.flags&windows.INHERITED_ACE != 0
+		}
+	}
+	return false, false
+}
+
+// firstSetup is a complete setup against the sandbox's platform, which leaves
+// the state directory and credentials.json a doctor run can judge.
+func firstSetup(t *testing.T, s *setupSandbox) {
+	t.Helper()
+	s.platform.claim("credits")
+	if code, out, errOut := s.run(tty(), true, "-yes", "-no-agents", "-no-profile"); code != exitOK {
+		t.Fatalf("first setup exited %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
+	}
+	if !lexists(filepath.Join(s.home, credentialsFile)) {
+		t.Fatal("the first setup stored no credentials.json")
 	}
 }

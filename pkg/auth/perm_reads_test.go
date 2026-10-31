@@ -14,8 +14,8 @@ import (
 
 // Nothing in this package reads an access list or resolves an account name.
 // Every state read in a search goes through this package, so a DACL read here
-// is a DACL read on the earning path (AGENTS.md invariant 1), and a refusal
-// here turns mining DEGRADED for an installation whose agent sandbox was
+// is a DACL read on the search path (AGENTS.md invariant 1), and a refusal
+// here would fail every search for an installation whose agent sandbox was
 // granted the state directory on purpose (perm.go).
 //
 // The Windows half of the package cannot be compiled on the OS that runs most
@@ -115,7 +115,7 @@ func TestThePackageReadsNoAccessListAndResolvesNoAccount(t *testing.T) {
 			t.Error(finding)
 		}
 	}
-	if scanned < 10 {
+	if scanned < 5 {
 		t.Fatalf("scanned %d source files; the package has more than that, so the glob found the wrong directory", scanned)
 	}
 }

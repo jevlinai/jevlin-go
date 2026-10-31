@@ -12,18 +12,15 @@ package main
 //     beside it — adopted by bundle, and only when a terminal says yes
 //  3. the directories, owner-only before any secret moves; then adoption
 //  4. the config: written fresh, or an existing one migrated (never rewritten);
-//     then the files a sandboxed search can only read: the flush lock and the
-//     trace key
-//  5. connect, in-process, which asks the mining question itself
+//     then the file a sandboxed search can only read: the trace key
+//  5. connect, in-process
 //  6. the environment: a profile block on POSIX, the User environment on
 //     Windows
 //  7. the coding agents
 //  8. the closing message
 //
-// The mining question is connect's, and nothing here answers it: -yes
-// answers setup's own questions only, and `[mining] enabled = true` is
-// written only by a run with no terminal and JEVLIN_MINING=1. Setup runs
-// no process other than itself.
+// -yes answers setup's own questions only. Setup runs no process other
+// than itself.
 
 import (
 	"errors"
@@ -38,15 +35,15 @@ import (
 	"golang.org/x/term"
 
 	"github.com/jevlinai/jevlin-go/pkg/auth"
+	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
 const setupUsage = `usage: jevlin setup [-home dir] [-yes] [-no-profile] [-no-agents] [-with id]... [-dry-run]
 
 Everything after the binary, asked as it goes: a previous installation to
-reuse, the config, connect (registration, the mining question and the claim
-link), the shell profile (PATH, JEVLIN_CONFIG and, when a wallet was made
-here, JEVLIN_WALLET_DIR; on Windows, the user PATH and JEVLIN_CONFIG
-only) and the coding agents found on this machine.
+reuse, the config, connect (registration and the claim link), the shell
+profile (PATH and JEVLIN_CONFIG; on Windows, the user PATH and
+JEVLIN_CONFIG) and the coding agents found on this machine.
 
   -home dir     the installation directory (default $JEVLIN_HOME, else ~/.jevlin).
                 A directory other than that default is a separate installation:
@@ -56,9 +53,8 @@ only) and the coding agents found on this machine.
   -yes          answer yes to setup's shell-profile (Windows: user environment) and
                 coding-agents questions, with or without a terminal; automated
                 callers may pass it. Also yes to reusing a set-aside
-                installation, at a terminal only. Never answers connect's
-                mining question, or a question about a Codex setting of
-                your own
+                installation, at a terminal only. Never answers a question
+                about a Codex setting of your own
   -no-profile   leave the shell profile (on Windows, the user environment) alone
   -no-agents    do not look for coding agents; -with still sets up what it names
   -with id      set up this target whether or not it was found; repeatable
@@ -167,24 +163,24 @@ type setupRun struct {
 
 	// otherHome: -home names a directory that is not this machine's
 	// installation, defaultHome. The profile and the agents belong to that
-	// one, so both steps are skipped whatever else was passed (dropin-miner#84).
+	// one, so both steps are skipped whatever else was passed.
 	otherHome   bool
 	defaultHome string
 
 	// skipped names steps this run declined to touch — no terminal without
-	// -yes, or -no-profile/-no-agents (dropin-miner#75) — as distinct from a step that
+	// -yes, or -no-profile/-no-agents — as distinct from a step that
 	// found nothing to do (already in place, or no agent to configure).
 	// closing() uses it: "already in place" is true only when this stays
 	// empty, never when a step was merely never attempted.
 	skipped []string
 
 	// configPlanData is set by config() to the bytes it is about to publish
-	// (configFresh or configMigrated; nil for configLeft, which changes
-	// nothing) — agentsStep() needs it: on a dry run, config() prints what
-	// it would write but never calls publishSetupConfig, so nothing is on
-	// disk yet for the agents step's own config read to find. It is set
-	// whether or not the run is dry, but only a dry run's agentsStep reads
-	// it — the real run has already published it to r.cfgPath by then.
+	// (configFresh or configReplaced; nil for configLeft, which changes
+	// nothing). On a dry run config() prints what it would write but never
+	// publishes it, so what is on disk is nothing or the older file: the
+	// steps after it read these bytes instead (plannedConfig, and the
+	// agents step). It is set whether or not the run is dry, but only a dry
+	// run reads it; the real run has already published it to r.cfgPath.
 	configPlanData []byte
 
 	lineIn io.Reader
@@ -345,10 +341,7 @@ func (r *setupRun) run(homeFlag string, with []string) int {
 	r.home = home
 	r.cfgPath = filepath.Join(home, setupConfigFile)
 	r.defaultHome, r.otherHome = otherInstallation(homeFlag, home, d.getenv("JEVLIN_HOME"), d.userHome)
-	if r.values, err = resolveSetupValues(home, d.getenv, d.interactive); err != nil {
-		fmt.Fprintln(d.stderr, "jevlin setup:", err)
-		return exitUsage
-	}
+	r.values = resolveSetupValues(home, d.getenv)
 
 	// A dry run writes nothing, so there is nothing for it to exclude or be
 	// excluded from; every other run holds setup.lock to its end.
@@ -386,16 +379,9 @@ func (r *setupRun) run(homeFlag string, with []string) int {
 			r.changed = true
 		}
 	}
-	if code := r.walletAccess(); code != exitOK {
-		return code
-	}
-	r.miningDecisionNote()
 
 	// ── 4. config ──
 	if code := r.config(); code != exitOK {
-		return code
-	}
-	if code := r.flushLock(); code != exitOK {
 		return code
 	}
 	if code := r.traceKey(); code != exitOK {
@@ -405,21 +391,12 @@ func (r *setupRun) run(homeFlag string, with []string) int {
 	// ── 5. connect ──
 	r.say("Search context")
 	r.printf("Recent agent context may accompany search to the Jevlin search router as part of the trajectory/search product.\n")
-	r.printf("JEVLIN_TRACE=off disables trace transmission. Mining/AS receives metadata observations only.\n")
+	r.printf("JEVLIN_TRACE=off disables trace transmission.\n")
 	r.say("Connecting")
 	if r.dry {
 		r.printf("(dry run) would run: %s connect -config %s\n", r.displayPath(exe), r.displayPath(r.cfgPath))
 	} else {
-		walletDir := filepath.Join(home, "wallet")
-		getenv := func(k string) string {
-			// A wallet connect creates lands beside the rest of this
-			// installation, not in the OS config directory.
-			if k == walletDirEnv {
-				return walletDir
-			}
-			return d.getenv(k)
-		}
-		if code := d.connect([]string{"-config", r.cfgPath}, d.stdin, d.stdout, d.stderr, getenv); code != exitOK {
+		if code := d.connect([]string{"-config", r.cfgPath}, d.stdin, d.stdout, d.stderr, d.getenv); code != exitOK {
 			fmt.Fprintf(d.stderr, "\njevlin setup: connect failed (exit %d); run setup again when that is fixed — it picks up where this left off\n", code)
 			return exitTransport
 		}
@@ -447,7 +424,7 @@ func (r *setupRun) run(homeFlag string, with []string) int {
 // machine's installation somewhere else. When no default can be named at
 // all there is nothing to compare against, and nothing is withheld.
 //
-// dropin-miner#84: `setup -home <scratch>` is the documented way to make a disposable
+// `setup -home <scratch>` is the documented way to make a disposable
 // installation for a destructive test, and it planned the real user's
 // ~/.claude, ~/.codex, ~/.cursor, Pi and Hermes files and the user PATH and
 // JEVLIN_CONFIG all the same — repointing the participant's real agents
@@ -484,10 +461,10 @@ func sameInstallationDir(a, b string) bool {
 }
 
 // leftForOtherInstallation is the first thing the profile step and the agents
-// step ask. It uses the mechanism D4 added for dropin-miner#75 — the step is named as
-// skipped, so the closing line cannot claim everything is in place — and it
-// is asked before -yes, -with, -no-profile or the terminal are, because none
-// of them changes whose profile and whose agents these are.
+// step ask. It uses the mechanism D4 added — the step is named as skipped, so
+// the closing line cannot claim everything is in place — and it is asked
+// before -yes, -with, -no-profile or the terminal are, because none of them
+// changes whose profile and whose agents these are.
 func (r *setupRun) leftForOtherInstallation(step, theirs, consequence string) bool {
 	if !r.otherHome {
 		return false
@@ -541,7 +518,7 @@ func (r *setupRun) previousInstallation() int {
 	if hasInstallation(r.home) {
 		r.foundInPlace = true
 		r.say(fmt.Sprintf("Previous installation found in %s: %s", r.home, describeInstallation(r.home)))
-		r.printf("Its wallet, registration and key are used as they are; only what is missing is set up.\n")
+		r.printf("Its registration and key are used as they are; only what is missing is set up.\n")
 		return exitOK
 	}
 	found := setAsideInstallation(r.home)
@@ -550,7 +527,7 @@ func (r *setupRun) previousInstallation() int {
 	}
 	r.say("A previous installation is set aside at " + found)
 	r.printf("It holds: %s\n", describeInstallation(found))
-	r.printf("Using it means the same wallet, the same registration and no new tokens to generate.\n")
+	r.printf("Using it means the same registration and the same key.\n")
 	switch {
 	case r.dry:
 		r.printf("(dry run) setup would ask whether to use it; if yes, it would move:\n")
@@ -572,7 +549,7 @@ func (r *setupRun) previousInstallation() int {
 		if use {
 			r.adoptFrom = found
 		} else {
-			r.printf("Left it alone. A fresh wallet and registration follow.\n")
+			r.printf("Left it alone. A fresh registration follows.\n")
 		}
 	}
 	return exitOK
@@ -599,14 +576,14 @@ func printAdoptionFailure(w io.Writer, f *adoptionFailure) {
 	fmt.Fprintf(w, "\njevlin setup: could not adopt the %s\n  from %s\n  into %s\n  because: %s\n",
 		f.Bundle, f.Source, f.Destination, f.Reason)
 	if f.RollbackFailed != "" {
-		fmt.Fprintf(w, "Putting it back failed too (%s). Setup stopped at once; the parts of the identity and the wallet are now at:\n", f.RollbackFailed)
+		fmt.Fprintf(w, "Putting it back failed too (%s). Setup stopped at once; the parts of the identity are now at:\n", f.RollbackFailed)
 		for _, p := range f.Surviving {
 			fmt.Fprintf(w, "  %s\n", p)
 		}
 		fmt.Fprintf(w, "Nothing else was moved and connect was not run. Put those back together by hand before running setup again.\n")
 		return
 	}
-	fmt.Fprintf(w, "Everything adoption had moved was put back: the identity and the wallet are both where they started.\n"+
+	fmt.Fprintf(w, "Everything adoption had moved was put back: the identity is where it started.\n"+
 		"Nothing else was moved, and connect was not run.\n"+
 		"Fix the reason above, or keep %s out of %s and let setup start fresh, then run setup again.\n",
 		f.Source, filepath.Dir(f.Destination))
@@ -623,7 +600,7 @@ func printIdentityConflict(w io.Writer, c *identityConflict) {
 
 func (r *setupRun) directories() int {
 	dirs := []string{r.home}
-	for _, sub := range []string{"state", "spool", "intake", "sessions"} {
+	for _, sub := range []string{"state", "sessions"} {
 		dirs = append(dirs, filepath.Join(r.home, sub))
 	}
 	if r.dry {
@@ -652,64 +629,13 @@ func (r *setupRun) directories() int {
 	return exitOK
 }
 
-// walletAccess gives the installation's wallet directory, and every directory
-// and file beneath it, its own owner-only access list where the platform has
-// access lists to manage (wallet_acl.go). It runs after adoption, which has
-// already secured a wallet it moved, and before connect. A wallet object it
-// cannot secure stops setup rather than being a warning: a setup that finished
-// would leave that object readable by whoever else the installation directory
-// admits, while saying the installation is set up. A dry run changes no access
-// list, as it creates no directory.
-func (r *setupRun) walletAccess() int {
-	dir := filepath.Join(r.home, "wallet")
-	if r.dry || !lexists(dir) {
-		return exitOK
-	}
-	changed, err := secureWalletTree(dir, r.d.restrictFn())
-	if err != nil {
-		fmt.Fprintf(r.d.stderr, "\njevlin setup: could not make the wallet in %s readable only by you:\n%s\n"+
-			"connect was not run. Fix the reason above, then run setup again.\n",
-			dir, indentLines(err.Error(), "  "))
-		return exitTransport
-	}
-	if changed {
-		r.changed = true
-		r.say("Made the wallet in " + dir + " readable only by you")
-	}
-	return exitOK
-}
-
-func indentLines(s, prefix string) string {
-	return prefix + strings.ReplaceAll(s, "\n", "\n"+prefix)
-}
-
-// miningDecisionNote says what a decision that came with this installation
-// is, rather than let connect's silence on the question read as "it forgot
-// to ask": connect does not ask again while a decision is on file.
-func (r *setupRun) miningDecisionNote() {
-	switch storedMiningDecision(filepath.Join(r.home, "state")) {
-	case auth.MiningEnabled:
-		r.say("A stored mining decision came with this installation: mining is ON. connect will not ask again.")
-	case auth.MiningDisabled:
-		r.say("A stored mining decision came with this installation: mining is OFF.")
-		r.printf("To turn it on: %s mining enable -config %s\n", r.displayPath(r.exe), r.displayPath(r.cfgPath))
-	case auth.MiningDegraded:
-		r.say("A stored mining decision came with this installation, and it cannot be read.")
-		r.printf("Mining stays off until it is repaired: %s mining enable (or mining disable) -config %s\n", r.displayPath(r.exe), r.displayPath(r.cfgPath))
-	}
-}
-
 func (r *setupRun) config() int {
 	existing, err := readExistingConfig(r.cfgPath)
 	if err != nil {
 		fmt.Fprintln(r.d.stderr, "jevlin setup: refusing the config:", err)
 		return exitTransport
 	}
-	validate := validateConfigSyntax
-	if !r.dry {
-		validate = validateConfigFile(r.home)
-	}
-	plan, err := planSetupConfig(r.cfgPath, existing, r.values, validate)
+	plan, err := planSetupConfig(r.cfgPath, existing, r.values, validateConfigBytes, lexists)
 	if err != nil {
 		fmt.Fprintf(r.d.stderr, "\njevlin setup: %v\nNothing was changed in it. Fix or move the file aside, then run setup again.\n", err)
 		return exitTransport
@@ -717,64 +643,121 @@ func (r *setupRun) config() int {
 	if plan.data != nil {
 		r.configPlanData = plan.data
 	}
+	// An earlier version kept credentials.json and the files beside it next
+	// to its intake directory; this one reads them next to the state
+	// directory the new file names. Where those differ they move, and
+	// anything in the way stops setup here, before a byte is written.
+	moves, conflict := identityMoves(plan.identityFrom, plan.identityTo)
+	if conflict != nil {
+		fmt.Fprintf(r.d.stderr, "\njevlin setup: the earlier version kept its key and registration in %s, and this one reads them in %s, beside the state directory; %v.\n"+
+			"Nothing was changed in the config or the key. Move whichever of %s exist from %s to %s yourself, then run setup again.\n",
+			plan.identityFrom, plan.identityTo, conflict, strings.Join(identityFiles, ", "), plan.identityFrom, plan.identityTo)
+		return exitTransport
+	}
 	switch plan.outcome {
 	case configLeft:
-		r.say("Config already has a [miner] block: " + r.cfgPath + " (left as is)")
+		r.say("Config is already configuration format 1: " + r.cfgPath + " (left as is)")
 		return exitOK
 	case configFresh:
 		if r.dry {
 			r.printf("(dry run) would write %s\n", r.cfgPath)
 			return exitOK
 		}
-	case configMigrated:
+	case configReplaced:
 		if r.dry {
-			r.printf("(dry run) would add %s to %s, leaving its existing lines as they are\n", strings.Join(plan.added, " and "), r.cfgPath)
+			r.printf("(dry run) would set %s aside as %s, an older configuration format, and write a new one\n", r.cfgPath, plan.aside)
+			for _, m := range moves {
+				r.printf("(dry run) would move %s to %s, beside the state directory\n", m[0], m[1])
+			}
+			if plan.identityFrom == "" && relativeEarlierDirs(existing) {
+				r.printf("(dry run) the older config names its state or intake directory by a relative path, so nothing is moved; move credentials.json and the files beside it next to the new state directory yourself\n")
+			}
 			return exitOK
 		}
+		// The key moves first, while the older config is still in place: a
+		// move that fails leaves everything as it was (moveIdentity puts back
+		// what it moved), so the next run plans it again, rather than finding
+		// a format-1 file that names a state directory with no key beside it.
+		if err := moveIdentity(moves); err != nil {
+			fmt.Fprintf(r.d.stderr, "jevlin setup: moving the earlier version's key and registration from %s to %s: %v\n"+
+				"Nothing was changed in the config or the key. Fix that, or move whichever of %s exist from %s to %s yourself, then run setup again.\n",
+				plan.identityFrom, plan.identityTo, err, strings.Join(identityFiles, ", "), plan.identityFrom, plan.identityTo)
+			return exitTransport
+		}
+		if err := renameConfigAside(r.cfgPath, plan.aside); err != nil { // #nosec G703 -- the installation's own config path and a name beside it
+			undoIdentity(moves)
+			fmt.Fprintln(r.d.stderr, "jevlin setup: setting the older configuration aside:", err)
+			return exitTransport
+		}
 	}
-	if err := publishSetupConfig(r.cfgPath, plan.data); err != nil {
+	if err := publishConfig(r.cfgPath, plan.data); err != nil {
+		if plan.outcome == configReplaced {
+			undoIdentity(moves)
+			// An installation with no jevlin.toml reads as one not set up
+			// yet, and every command would run on the compiled defaults
+			// without saying so. The old file goes back where it was, and
+			// either way the message says where it is.
+			if back := os.Rename(plan.aside, r.cfgPath); back != nil { // #nosec G703 -- the two names in the installation's own directory
+				fmt.Fprintf(r.d.stderr, "jevlin setup: %v\nThe older configuration is at %s and could not be put back (%v); move it back to %s yourself, or run setup again.\n", err, plan.aside, back, r.cfgPath)
+				return exitTransport
+			}
+			fmt.Fprintf(r.d.stderr, "jevlin setup: %v\nThe older configuration was put back at %s; nothing was changed.\n", err, r.cfgPath)
+			return exitTransport
+		}
 		fmt.Fprintln(r.d.stderr, "jevlin setup:", err)
 		return exitTransport
 	}
 	r.changed = true
-	if plan.outcome == configMigrated {
-		r.say(fmt.Sprintf("Added %s to %s; its existing lines are unchanged", strings.Join(plan.added, " and "), r.cfgPath))
+	if plan.outcome == configReplaced {
+		r.say(fmt.Sprintf("Set %s aside as %s: it is an older configuration format, which this jevlin does not read", r.cfgPath, plan.aside))
+		if len(moves) > 0 {
+			r.say(fmt.Sprintf("Moved the earlier version's key and registration from %s to %s, beside the state directory, where this jevlin reads them", plan.identityFrom, plan.identityTo))
+		}
+		kept := ""
+		// Said only of a key that is there to keep: beside the state
+		// directory the new file names, which is the earlier file's own.
+		if cfg, err := config.LoadBytes(plan.data, r.d.getenv); err == nil && lexists(credentialsPath(cfg.Search)) {
+			kept = " Your registration and key are kept."
+		}
+		r.say("Wrote " + r.cfgPath + " in configuration format 1, with the directories and endpoints the old file named; copy any other setting you changed by hand from the old file." + kept)
 	} else {
 		r.say("Wrote " + r.cfgPath)
 	}
 	return exitOK
 }
 
-// flushLock creates the flush lock the config names when it is absent. A flush
-// inside a sandbox that denies writes to the miner root can take the lock only
-// read-only, which needs the file to exist already (flushlock.go).
-func (r *setupRun) flushLock() int {
-	path := filepath.Join(r.home, "flush.lock")
-	if lexists(r.cfgPath) {
-		cfg, _, err := loadConfig(r.cfgPath, r.d.getenv)
-		if err != nil {
-			fmt.Fprintf(r.d.stderr, "jevlin setup: config %s: %v\n", r.cfgPath, err)
-			return exitTransport
-		}
-		path = ""
-		if cfg.Miner.IntakeDir != "" {
-			path = flushLockPath(cfg.Miner)
-		}
+// renameConfigAside moves an older config to the name planSetupConfig chose
+// for it, a variable so a test can make the move fail: setup must then stop
+// with the older file where it was, never publish over it.
+var renameConfigAside = os.Rename
+
+// publishConfig is the one writer of jevlin.toml, a variable so a test can
+// make the write fail between setting an older file aside and publishing.
+var publishConfig = publishSetupConfig
+
+// plannedConfig is the config this run leaves at r.cfgPath, and whether
+// there is one: on a dry run that would write the file, the bytes it would
+// write, since the file on disk is still nothing or an older one no command
+// loads; otherwise the file. A config that does not load is said here and
+// stops setup.
+func (r *setupRun) plannedConfig() (*config.Config, bool, int) {
+	var (
+		cfg *config.Config
+		err error
+	)
+	switch {
+	case r.dry && r.configPlanData != nil:
+		cfg, err = config.LoadBytes(r.configPlanData, r.d.getenv)
+	case lexists(r.cfgPath):
+		cfg, _, err = loadConfig(r.cfgPath, r.d.getenv)
+	default:
+		return nil, false, exitOK
 	}
-	if path == "" || lexists(path) {
-		return exitOK
-	}
-	if r.dry {
-		r.printf("(dry run) would create %s\n", path)
-		return exitOK
-	}
-	created, err := ensureFlushLockFile(path)
 	if err != nil {
-		fmt.Fprintf(r.d.stderr, "jevlin setup: create the flush lock %s: %v\n", path, err)
-		return exitTransport
+		fmt.Fprintf(r.d.stderr, "jevlin setup: config %s: %v\n", r.cfgPath, err)
+		return nil, false, exitTransport
 	}
-	r.changed = r.changed || created
-	return exitOK
+	return cfg, true, exitOK
 }
 
 // traceKey creates the trace key the config's state directory will hold. A
@@ -787,18 +770,17 @@ func (r *setupRun) flushLock() int {
 // write: this step is what makes a search's id stable where it cannot.
 //
 // A failure to make the key is said and does not stop setup: the key serves
-// a stable id, not mining, and connect, which reads the same directory,
-// stops on the problems that matter. A config that does not load does stop
-// it here, since nothing after this step could run on it either.
+// a stable id, and connect, which reads the same directory, stops on the
+// problems that matter. A config that does not load does stop it here,
+// since nothing after this step could run on it either.
 func (r *setupRun) traceKey() int {
 	stateDir := filepath.Join(r.home, "state")
-	if lexists(r.cfgPath) {
-		cfg, _, err := loadConfig(r.cfgPath, r.d.getenv)
-		if err != nil {
-			fmt.Fprintf(r.d.stderr, "jevlin setup: config %s: %v\n", r.cfgPath, err)
-			return exitTransport
-		}
-		stateDir = cfg.Mining.StateDir
+	cfg, ok, code := r.plannedConfig()
+	if code != exitOK {
+		return code
+	}
+	if ok {
+		stateDir = cfg.Search.StateDir
 	}
 	if stateDir == "" {
 		return exitOK
@@ -853,23 +835,19 @@ func (r *setupRun) closing() {
 	}
 	r.printf(`
 1. If a claim URL was printed above and nobody has visited it yet, do that
-   whenever you're ready — nothing else here depends on timing it. Once
-   claimed, mining (if you said yes) enrolls and declares a payout on its
-   own, from the next search.
+   whenever you're ready — nothing else here depends on timing it. Search
+   works before the claim; the claim is what ties the agent to your account.
 
 2. Restart any coding agent that is already open, then search as usual. To
    try it by hand:
      %ssearch%s -format model "what is proof of authority consensus"
 
 3. Check in any time:
-     %sstatus%s   %sdoctor%s   %spayout show%s
+     %sstatus%s   %sdoctor%s
 
 Notes
-  * Nothing runs between searches. Each search records itself and starts a
-    short flush that joins the open epoch and submits; the session hooks do
-    the same when an agent starts and stops.
-  * First reward takes 1-2 hours — you join an epoch two ahead. One verified
-    search per epoch makes you eligible; the pot splits equally.
+  * Nothing runs between searches. The session hooks thread each search into
+    the agent's trajectory and, once a day, check for a new release.
 %s
-`, cmd, hint, cmd, hint, cmd, hint, cmd, hint, rule)
+`, cmd, hint, cmd, hint, cmd, hint, rule)
 }

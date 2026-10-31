@@ -48,7 +48,7 @@ func (h *turnEndHarness) record(t *testing.T) turnEndRecord {
 // served leaves the mark `jevlin search` leaves after the router answers a
 // search made in the given turn.
 func (h *turnEndHarness) served(turn string) {
-	markTurnSearched(h.ops, config.Miner{TurnEnd: true, SessionsDir: h.hc.sessionsDir}, &traceEnvelope{TurnID: turn})
+	markTurnSearched(h.ops, config.Search{TurnEnd: true, SessionsDir: h.hc.sessionsDir}, &traceEnvelope{TurnID: turn})
 }
 
 // proposed leaves what the lineage hook leaves BEFORE a search runs: the
@@ -79,7 +79,7 @@ func TestClaudeTurnEndIsQueuedForATurnThatSearched(t *testing.T) {
 	turn := traceHash("sess|p1")
 	h.served(turn)
 
-	runHook(t, h.ops, h.hc, "flush", claudeStop(nil))
+	runHook(t, h.ops, h.hc, "stop", claudeStop(nil))
 	rec := h.record(t)
 	if rec.SessionID != traceHash("sess") || rec.TurnID != turn || rec.Harness != "claude-code" || rec.Status != turnCompleted {
 		t.Errorf("record ids = %+v", rec)
@@ -93,7 +93,7 @@ func TestClaudeTurnEndIsQueuedForATurnThatSearched(t *testing.T) {
 	}
 	// The mark is taken: the same turn ending again reports nothing.
 	h.queued = nil
-	runHook(t, h.ops, h.hc, "flush", claudeStop(nil))
+	runHook(t, h.ops, h.hc, "stop", claudeStop(nil))
 	if len(h.queued) != 0 {
 		t.Errorf("a turn ended twice: %v", h.queued)
 	}
@@ -105,7 +105,7 @@ func TestClaudeTurnEndIsQueuedForATurnThatSearched(t *testing.T) {
 func TestClaudeTurnEndAfterASubagentSearch(t *testing.T) {
 	h := newTurnEndHarness(nil, true)
 	h.served(traceHash("sess|p1"))
-	runHook(t, h.ops, h.hc, "flush", claudeStop(nil))
+	runHook(t, h.ops, h.hc, "stop", claudeStop(nil))
 	if rec := h.record(t); rec.SessionID != traceHash("sess") {
 		t.Errorf("session = %q, want the orchestrator's", rec.SessionID)
 	}
@@ -118,7 +118,7 @@ func TestClaudeTurnEndAfterASubagentSearch(t *testing.T) {
 func TestClaudeTurnEndNeedsAServedSearch(t *testing.T) {
 	h := newTurnEndHarness(nil, true)
 	h.proposed(t, traceHash("sess"), traceHash("sess|p1"))
-	runHook(t, h.ops, h.hc, "flush", claudeStop(nil))
+	runHook(t, h.ops, h.hc, "stop", claudeStop(nil))
 	if len(h.queued) != 0 {
 		t.Errorf("a proposed search was taken for a served one: %v", h.queued)
 	}
@@ -129,15 +129,15 @@ func TestClaudeTurnEndNeedsAServedSearch(t *testing.T) {
 func TestMarkTurnSearched(t *testing.T) {
 	turn := traceHash("sess|p1")
 	for name, tc := range map[string]struct {
-		m     config.Miner
+		m     config.Search
 		trace *traceEnvelope
 		want  bool
 	}{
-		"opted in":        {config.Miner{TurnEnd: true, SessionsDir: "/home/sessions"}, &traceEnvelope{TurnID: turn}, true},
-		"not opted in":    {config.Miner{SessionsDir: "/home/sessions"}, &traceEnvelope{TurnID: turn}, false},
-		"no sessions dir": {config.Miner{TurnEnd: true}, &traceEnvelope{TurnID: turn}, false},
-		"no turn id":      {config.Miner{TurnEnd: true, SessionsDir: "/home/sessions"}, &traceEnvelope{SessionID: "s"}, false},
-		"no trace":        {config.Miner{TurnEnd: true, SessionsDir: "/home/sessions"}, nil, false},
+		"opted in":        {config.Search{TurnEnd: true, SessionsDir: "/home/sessions"}, &traceEnvelope{TurnID: turn}, true},
+		"not opted in":    {config.Search{SessionsDir: "/home/sessions"}, &traceEnvelope{TurnID: turn}, false},
+		"no sessions dir": {config.Search{TurnEnd: true}, &traceEnvelope{TurnID: turn}, false},
+		"no turn id":      {config.Search{TurnEnd: true, SessionsDir: "/home/sessions"}, &traceEnvelope{SessionID: "s"}, false},
+		"no trace":        {config.Search{TurnEnd: true, SessionsDir: "/home/sessions"}, nil, false},
 	} {
 		fs, ops := newFakeHookOps(nil)
 		markTurnSearched(ops, tc.m, tc.trace)
@@ -178,7 +178,7 @@ func TestClaudeTurnEndSendsNothing(t *testing.T) {
 			if tc.searched != "" {
 				h.served(tc.searched)
 			}
-			runHook(t, h.ops, h.hc, "flush", claudeStop(tc.over))
+			runHook(t, h.ops, h.hc, "stop", claudeStop(tc.over))
 			// Nothing handed to the sender, and no record written for it.
 			for path := range h.fs.files {
 				if strings.HasSuffix(path, turnEndSuffix) {
@@ -201,7 +201,7 @@ func TestClaudeTurnEndWithoutAMessageIsStatusOnly(t *testing.T) {
 	} {
 		h := newTurnEndHarness(nil, true)
 		h.served(traceHash("sess|p1"))
-		runHook(t, h.ops, h.hc, "flush", claudeStop(map[string]any{"last_assistant_message": msg}))
+		runHook(t, h.ops, h.hc, "stop", claudeStop(map[string]any{"last_assistant_message": msg}))
 		if rec := h.record(t); rec.Status != turnCompleted || rec.FinalText != "" || rec.FinalChars != 0 || rec.Truncated {
 			t.Errorf("%s: %+v", name, rec)
 		}
@@ -215,7 +215,7 @@ func TestTurnEndTextIsScrubbedThenCapped(t *testing.T) {
 	h.served(traceHash("sess|p1"))
 	secret := "sk-" + strings.Repeat("A", 40)
 	long := strings.Repeat("word ", traceHistoryCap/5+100) + "the key is " + secret + " and that is the end"
-	runHook(t, h.ops, h.hc, "flush", claudeStop(map[string]any{"last_assistant_message": long}))
+	runHook(t, h.ops, h.hc, "stop", claudeStop(map[string]any{"last_assistant_message": long}))
 	rec := h.record(t)
 	if strings.Contains(string(h.fs.files[h.queued[0]]), secret) || !strings.Contains(rec.FinalText, "[REDACTED]") {
 		t.Error("the secret reached the queued file")

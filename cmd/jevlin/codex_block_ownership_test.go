@@ -1,9 +1,10 @@
 package main
 
-// dropin-miner#82 and dropin-miner#88 item 4, driven through `agents install` and `agents uninstall`
-// against the shapes Codex actually leaves behind.
+// The destroyed config and the tables restored by hand below our block, driven
+// through `agents install` and `agents uninstall` against the shapes Codex
+// actually leaves behind.
 //
-// The damage dropin-miner#82 reports is the reason these cases exist rather than a unit
+// The damage reported is the reason these cases exist rather than a unit
 // test of the split alone: the tester's uninstall left a 0-byte
 // ~/.codex/config.toml, destroying Codex's folder trust and its `[windows]
 // sandbox = "unelevated"` choice, and the setup that followed restored only
@@ -31,7 +32,7 @@ type codexPlacement int
 
 const (
 	insideOurBlock codexPlacement = iota // what Codex does: append to the end of the file
-	afterOurBlock                        // dropin-miner#88 item 4: restored by hand below the end marker
+	afterOurBlock                        // restored by hand below the end marker
 	beforeOurBlock                       // tables above our block: by hand, never by install
 	ourBlockAlone                        // nothing of Codex's at all: our block last
 )
@@ -58,7 +59,7 @@ func installedCodexConfig(t *testing.T, where codexPlacement) (m *fakeMachine, o
 	case insideOurBlock:
 		// Codex appends to the end of the file. Our block is last, so its
 		// end marker is the last line and the append lands between the
-		// markers — which is the whole of dropin-miner#82.
+		// markers — which is the whole of the destroyed-config defect.
 		i := strings.LastIndex(installed, agentsMarkerEnd)
 		if i < 0 {
 			t.Fatalf("no end marker in the installed config:\n%s", installed)
@@ -85,8 +86,8 @@ func holdsOurTable(file string) bool {
 	return strings.Contains(file, "["+codexSandboxTable+"]") || strings.Contains(file, "[permissions."+codexProfileName) || strings.Contains(file, "default_permissions")
 }
 
-// keptVerbatim is the assertion dropin-miner#82 is about: the host's tables are still
-// there, byte for byte, and our own is not.
+// keptVerbatim is the assertion the destroyed-config defect is about: the
+// host's tables are still there, byte for byte, and our own is not.
 func keptVerbatim(t *testing.T, got string) {
 	t.Helper()
 	for _, want := range []string{codexTrust, codexWindows} {
@@ -157,7 +158,7 @@ func TestUninstallWithNothingOfCodexsInTheBlockIsUnchanged(t *testing.T) {
 	}
 }
 
-// dropin-miner#88 item 4: the idempotence check compares our block's content, not the
+// The idempotence check compares our block's content, not the
 // file's tail. With Codex's tables restored below the end marker, the block
 // is unchanged and there is nothing to do.
 func TestASecondInstallHasNothingToDoWhateverFollowsOurBlock(t *testing.T) {
@@ -250,7 +251,7 @@ func TestInstallMovesCodexsTablesOutOfOurBlockRatherThanDeletingThem(t *testing.
 // A block whose tables cannot be read is left exactly as it is, and said so
 // — the refuse-rather-than-guess rule the installer uses everywhere else.
 // Deleting a region this client cannot parse is how a participant's config
-// gets destroyed, which is the whole of dropin-miner#82.
+// gets destroyed, which is the whole of the defect this file pins.
 func TestABlockThatCannotBeReadIsLeftAloneAndReported(t *testing.T) {
 	cfgPath, _ := sandboxTestConfig(t)
 	m, ops := newFakeMachine("codex")
@@ -297,10 +298,10 @@ func TestAnotherInstallationsBlockIsStillLeftAloneWithHostTablesInIt(t *testing.
 	if got := string(m.files["/home/u/.codex/config.toml"]); got != seeded {
 		t.Errorf("another installation's block was touched:\n--- before ---\n%s\n--- after ---\n%s", seeded, got)
 	}
-	// The reason names the owner, in the words a left skill is named in
-	// (dropin-miner#128). Taken from the production reading rather than typed: the
-	// sentence spells the home the roots lie under, and a typed copy of it
-	// would pass while production named something else.
+	// The reason names the owner, in the words a left skill is named in.
+	// Taken from the production reading rather than typed: the sentence
+	// spells the home the roots lie under, and a typed copy of it would
+	// pass while production named something else.
 	if want := belongsTo(describeSandboxOwner(otherRoots)); !strings.Contains(out, want) {
 		t.Errorf("the reason was not reported\nwant to find: %s\ngot:\n%s", want, out)
 	}

@@ -1,7 +1,7 @@
 package main
 
-// setup's config: one fresh file for a new installation, and a migration
-// policy for a file that is already there.
+// setup's config: one fresh file for a new installation, and what is done
+// with a file that is already there.
 //
 // Nothing here interpolates a path or a value into TOML text. Every string
 // goes through tomlString, which produces a valid TOML basic string whatever
@@ -12,21 +12,27 @@ package main
 // pkg/config before anything is published, so a file setup writes is one the
 // runtime has already accepted.
 //
-// An existing file is never rewritten. It is parsed first, always: a file
-// that does not parse is refused with the parse error and its path, whatever
-// its text happens to contain (a `[miner]` line in a file that does not parse
-// proves nothing). A valid file with a [miner] table is left byte for byte.
-// A valid file without one — a tokendrop-proxy config, most likely — gains
-// only the tables it lacks, found from the TOML metadata rather than by
-// string matching, and the result is parsed again before it is published.
+// An existing file is never rewritten. It is loaded first, always, through
+// pkg/config (planSetupConfig): a format-1 file that loads is left byte for
+// byte; a file with no schema line, from an earlier version, is set aside
+// under a name of its own and a fresh format-1 file takes its place, written
+// with the directories and endpoints the earlier file named (earlierConfig),
+// because the agent record is in that state directory and the key is bound
+// to those endpoints; the key and the files kept with it, which 0.6.x kept
+// beside its intake directory, move beside the state directory where the
+// two differ (identityMoves); any
+// other file, a format-1 file with a mistake in it included, is refused with
+// the error and its path, and nothing is written.
 
 import (
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"unicode/utf8"
 
 	"github.com/BurntSushi/toml"
@@ -77,48 +83,161 @@ func tomlString(s string) (string, error) {
 // setupValues is everything the config is written from: pkg/config's
 // defaults, overridden by the JEVLIN_* setup-time overrides.
 type setupValues struct {
-	home          string
-	router        string
-	platformURL   string
-	agentsAPIURL  string
-	asURL         string
-	chainID       string
-	slotID        uint64
-	scriptedMine  bool   // no terminal and JEVLIN_MINING=1
-	payoutAddress string // only with scriptedMine
+	home         string
+	router       string
+	platformURL  string
+	agentsAPIURL string
+	// stateDir and sessionsDir are written as given; empty is the default
+	// layout under home.
+	stateDir    string
+	sessionsDir string
+	// fromEnv names the endpoints a JEVLIN_* variable chose for this run,
+	// which a value carried from an earlier file does not replace.
+	fromEnv map[string]bool
 }
 
-func resolveSetupValues(home string, getenv func(string) string, interactive bool) (setupValues, error) {
+func resolveSetupValues(home string, getenv func(string) string) setupValues {
+	v := setupValues{home: home, fromEnv: map[string]bool{}}
 	pick := func(name, def string) string {
-		if v := getenv(name); v != "" {
-			return v
+		if e := getenv(name); e != "" {
+			v.fromEnv[name] = true
+			return e
 		}
 		return def
 	}
-	v := setupValues{
-		home:         home,
-		router:       pick("JEVLIN_ROUTER_URL", config.DefaultRouterURL),
-		platformURL:  pick("JEVLIN_PLATFORM_URL", config.DefaultPlatformBaseURL),
-		agentsAPIURL: pick("JEVLIN_AGENTS_API_URL", config.DefaultAgentsAPIURL),
-		asURL:        pick("JEVLIN_AS_URL", config.DefaultASBaseURL),
-		chainID:      pick("JEVLIN_CHAIN", config.DefaultChainID),
-		slotID:       config.DefaultSlotID,
-	}
-	if raw := getenv("JEVLIN_SLOT"); raw != "" {
-		slot, err := strconv.ParseUint(raw, 10, 64)
-		if err != nil {
-			return setupValues{}, fmt.Errorf("JEVLIN_SLOT=%q is not a slot number", raw)
+	v.router = pick(config.EnvRouterURL, config.DefaultRouterURL)
+	v.platformURL = pick(config.EnvPlatformURL, config.DefaultPlatformBaseURL)
+	v.agentsAPIURL = pick(config.EnvAgentsAPIURL, config.DefaultAgentsAPIURL)
+	return v
+}
+
+// earlierConfig is what a config an earlier version wrote says about where
+// this installation keeps its identity and which endpoints it talks to:
+// its state directory (the registration, the agent record and
+// credentials.json sit beside it), its sessions directory, its router (the
+// router URL it names, or the one search-router [[provider]] upstream
+// setup wrote), and the [platform] portal and agents API. The key
+// connect stored is bound to that router and agents API, so a fresh file
+// that named the compiled defaults instead would leave the key refused for
+// every search, and one that named the default state directory would make
+// connect register a second agent beside the first. Nothing else is
+// carried: a setting changed by hand is copied by hand, under its format-1
+// key. A file that does not decode carries nothing.
+type earlierConfig struct {
+	stateDir, sessionsDir             string
+	router, platformURL, agentsAPIURL string
+	// intakeDir is the earlier intake directory as written. 0.6.x kept
+	// credentials.json, the registration journal, claim.json and the
+	// release check's record beside it, in the installation directory,
+	// not beside the state directory: identityRoot.
+	intakeDir string
+}
+
+// identityRoot is the directory an earlier version kept the files beside
+// credentials.json in: the parent of its intake directory, else of the state
+// directory, which is where that version defaulted the intake directory;
+// "" when the file names neither, or names it relative, which setup would
+// read against whatever directory it was run from (refusedConfigUpdate
+// skips one for the same reason).
+func (e earlierConfig) identityRoot() string {
+	for _, dir := range []string{e.intakeDir, e.stateDir} {
+		if dir != "" {
+			if !filepath.IsAbs(dir) {
+				return ""
+			}
+			return filepath.Dir(filepath.Clean(dir))
 		}
-		v.slotID = slot
 	}
-	// [mining] enabled = true is a scripted first answer, and only a run
-	// with nobody to ask may give it. At a terminal the answer is connect's
-	// question, never this file.
-	if !interactive && getenv("JEVLIN_MINING") == "1" {
-		v.scriptedMine = true
-		v.payoutAddress = getenv("JEVLIN_PAYOUT_ADDRESS")
+	return ""
+}
+
+func readEarlierConfig(data []byte) earlierConfig {
+	var f struct {
+		Provider []struct {
+			Name     string `toml:"name"`
+			Upstream string `toml:"upstream"`
+		} `toml:"provider"`
+		// The earlier config's tables, under the names it wrote.
+		EarlierState struct {
+			StateDir string `toml:"state_dir"`
+		} `toml:"mining"`
+		EarlierClient struct {
+			RouterURL   string `toml:"router_url"`
+			SessionsDir string `toml:"sessions_dir"`
+			IntakeDir   string `toml:"intake_dir"`
+		} `toml:"miner"`
+		Platform struct {
+			BaseURL      string `toml:"base_url"`
+			AgentsAPIURL string `toml:"agents_api_url"`
+		} `toml:"platform"`
 	}
-	return v, nil
+	if _, err := toml.Decode(string(data), &f); err != nil {
+		return earlierConfig{}
+	}
+	e := earlierConfig{
+		stateDir:     f.EarlierState.StateDir,
+		sessionsDir:  f.EarlierClient.SessionsDir,
+		router:       f.EarlierClient.RouterURL,
+		platformURL:  f.Platform.BaseURL,
+		agentsAPIURL: f.Platform.AgentsAPIURL,
+		intakeDir:    f.EarlierClient.IntakeDir,
+	}
+	// The provider upstream was the router only in the shape setup wrote;
+	// an upstream an earlier proxy configuration named is not a router.
+	if e.router == "" && len(f.Provider) == 1 && f.Provider[0].Name == "search-router" {
+		e.router = f.Provider[0].Upstream
+	}
+	// The portal's retired origin is carried as its successor. 0.6.x matched
+	// a claim link on the successor for a config naming the retired portal
+	// (its one compiled alias); format 1 has no alias, so carried as written
+	// it would refuse every claim link the platform now issues.
+	if o, err := urlOrigin(e.platformURL); err == nil && o == retiredPortal {
+		e.platformURL = config.DefaultPlatformBaseURL
+	}
+	// An earlier version kept the sessions directory beside the state
+	// directory unless told otherwise, as format 1 does.
+	if e.sessionsDir == "" && e.stateDir != "" {
+		e.sessionsDir = filepath.Join(filepath.Dir(e.stateDir), "sessions")
+	}
+	return e
+}
+
+// retiredPortal is the portal origin the platform moved from, whose
+// successor is config.DefaultPlatformBaseURL.
+const retiredPortal = "https://platform.nyks.dev"
+
+// carrying is v with what an earlier file named in place of a default; an
+// endpoint a variable chose for this run stays the variable's.
+func (v setupValues) carrying(e earlierConfig) setupValues {
+	for _, f := range []struct {
+		env   string
+		value string
+		field *string
+	}{
+		{config.EnvRouterURL, e.router, &v.router},
+		{config.EnvPlatformURL, e.platformURL, &v.platformURL},
+		{config.EnvAgentsAPIURL, e.agentsAPIURL, &v.agentsAPIURL},
+	} {
+		if f.value != "" && !v.fromEnv[f.env] {
+			*f.field = f.value
+		}
+	}
+	// A directory is carried only when it is absolute: a relative one would
+	// be read against whatever directory each command runs from, and the
+	// installation's own default is where an earlier version kept it as
+	// well when setup wrote it.
+	abs := func(dir string) string {
+		if filepath.IsAbs(dir) {
+			return dir
+		}
+		return ""
+	}
+	if state := abs(e.stateDir); state != "" {
+		v.stateDir, v.sessionsDir = state, abs(e.sessionsDir)
+	} else if sessions := abs(e.sessionsDir); sessions != "" {
+		v.sessionsDir = sessions
+	}
+	return v
 }
 
 // tomlLines renders `key = value` pairs with the values quoted and the
@@ -150,213 +269,152 @@ func writeTOMLLines(b *strings.Builder, lines []tomlLine) {
 	}
 }
 
-func platformTable(v setupValues) (string, error) {
-	lines, err := quoteAll("base_url", v.platformURL, "agents_api_url", v.agentsAPIURL)
-	if err != nil {
-		return "", err
-	}
-	var b strings.Builder
-	b.WriteString("[platform]\n")
-	writeTOMLLines(&b, lines)
-	return b.String(), nil
-}
-
-func minerTable(v setupValues) (string, error) {
-	lines, err := quoteAll(
-		"intake_dir", filepath.Join(v.home, "intake"),
-		"sessions_dir", filepath.Join(v.home, "sessions"),
-	)
-	if err != nil {
-		return "", err
-	}
-	lines = append([]tomlLine{{"enabled", "true"}}, lines...)
-	var b strings.Builder
-	b.WriteString("[miner]\n")
-	writeTOMLLines(&b, lines)
-	return b.String(), nil
-}
-
-// renderFreshConfig is a fresh installation's config, with every value quoted.
+// renderFreshConfig is a fresh installation's config in configuration
+// format 1, with every value quoted: the schema line, one section per
+// endpoint, and [search] with the state and sessions directories under the
+// installation.
 func renderFreshConfig(v setupValues) ([]byte, error) {
 	var b strings.Builder
-	provider, err := quoteAll("name", "search-router", "upstream", v.router)
-	if err != nil {
-		return nil, err
-	}
-	b.WriteString("[[provider]]\n")
-	writeTOMLLines(&b, provider)
-	b.WriteString("\n")
-
-	platform, err := platformTable(v)
-	if err != nil {
-		return nil, err
-	}
-	b.WriteString(platform)
-	b.WriteString("\n[mining]\n")
-
-	var mining []tomlLine
-	if v.scriptedMine {
-		mining = append(mining, tomlLine{"enabled", "true"})
-		if v.payoutAddress != "" {
-			addr, err := tomlString(v.payoutAddress)
-			if err != nil {
-				return nil, fmt.Errorf("payout_address: %w", err)
-			}
-			mining = append(mining, tomlLine{"payout_address", addr})
+	fmt.Fprintf(&b, "schema = %d\n", config.Schema)
+	for _, section := range []struct{ name, url string }{
+		{"router", v.router},
+		{"platform", v.platformURL},
+		{"agents", v.agentsAPIURL},
+	} {
+		lines, err := quoteAll("url", section.url)
+		if err != nil {
+			return nil, fmt.Errorf("[%s] %w", section.name, err)
 		}
+		b.WriteString("\n[" + section.name + "]\n")
+		writeTOMLLines(&b, lines)
 	}
-	rest, err := quoteAll("as_url", v.asURL, "chain_id", v.chainID)
-	if err != nil {
-		return nil, err
+	// Every byte this client generates into a config is ASCII
+	// (asciiGeneratedConfig guards it): Windows PowerShell 5.1 reads a file
+	// with no byte-order mark in the system's ANSI code page, so a comment
+	// with an em dash once showed the participant `\u00e2\u20ac\u201d`
+	// where the dash should be.
+	stateDir, sessionsDir := v.stateDir, v.sessionsDir
+	if stateDir == "" {
+		stateDir = filepath.Join(v.home, "state")
 	}
-	mining = append(mining, rest...)
-	mining = append(mining, tomlLine{"slot_id", strconv.FormatUint(v.slotID, 10)})
+	if sessionsDir == "" {
+		sessionsDir = filepath.Join(v.home, "sessions")
+	}
 	dirs, err := quoteAll(
-		"state_dir", filepath.Join(v.home, "state"),
-		"spool_dir", filepath.Join(v.home, "spool"),
+		"state_dir", stateDir,
+		"sessions_dir", sessionsDir,
 	)
 	if err != nil {
 		return nil, err
 	}
-	writeTOMLLines(&b, mining)
-	// ASCII, and every comment this client generates into a config is
-	// (asciiGeneratedConfig guards it). This line used to carry an em dash;
-	// Windows PowerShell 5.1 reads a file with no byte-order mark in the
-	// system's ANSI code page, so `Get-Content jevlin.toml` showed the
-	// participant `\u00e2\u20ac\u201d` where the dash should be (dropin-miner#88). The
-	// rule is ASCII rather than "not that character": the next non-ASCII
-	// punctuation would read exactly as badly.
-	b.WriteString("# target_epoch deliberately unset - flush asks the AS which epoch to join.\n")
+	b.WriteString("\n[search]\n")
 	writeTOMLLines(&b, dirs)
-	b.WriteString("\n")
-
-	miner, err := minerTable(v)
-	if err != nil {
-		return nil, err
-	}
-	b.WriteString(miner)
 	return []byte(b.String()), nil
 }
 
-// configOutcome is what the migration policy decided for one file.
+// configOutcome is what setup decided for one file.
 type configOutcome int
 
 const (
 	configFresh    configOutcome = iota // no file: a new one is written
-	configLeft                          // valid, with [miner]: untouched
-	configMigrated                      // valid, without [miner]: missing tables appended
+	configLeft                          // format 1 and valid: untouched
+	configReplaced                      // an older format: set aside, and a new one written
 )
 
-// configPlan is the policy's answer before anything is written.
+// configPlan is the decision before anything is written.
 type configPlan struct {
 	outcome configOutcome
-	data    []byte   // the bytes to publish (fresh or migrated); nil when left
-	added   []string // table names appended, for the narration
-}
-
-// configTablesDefined reads the TOML metadata for the two tables setup owns.
-// Structural, never a text search: `[miner]` inside a comment or a string is
-// not a table, and a dotted `miner.enabled = true` at the root is.
-func configTablesDefined(data []byte) (platform, miner bool, err error) {
-	var doc map[string]any
-	md, err := toml.Decode(string(data), &doc)
-	if err != nil {
-		return false, false, err
-	}
-	return md.IsDefined("platform"), md.IsDefined("miner"), nil
+	data    []byte // the bytes to publish (fresh or replaced); nil when left
+	aside   string // where an older file is moved (configReplaced)
+	// identityFrom and identityTo are where an earlier version kept the
+	// files beside credentials.json and where this one reads them (the
+	// parent of the state directory the new file names), when the two
+	// differ (configReplaced); identityMoves.
+	identityFrom, identityTo string
 }
 
 // errConfigInvalid marks a refusal of the existing file, as opposed to a
 // failure to read it.
 var errConfigInvalid = errors.New("config is not valid")
 
-// planSetupConfig applies the migration policy to path. existing is the
-// file's current bytes, or nil when there is none.
-func planSetupConfig(path string, existing []byte, v setupValues, validate func([]byte) error) (configPlan, error) {
-	if existing == nil {
+// planSetupConfig decides what setup does with the config at path. existing
+// is the file's current bytes, or nil when there is none. A valid format-1
+// file is left byte for byte. An older file is never reinterpreted: it is set
+// aside under a name of its own, so nothing the participant wrote is lost,
+// and a fresh format-1 file takes its place. A format-1 file that does not
+// load is refused, because it is the participant's current configuration and
+// setup does not guess what it should have said.
+func planSetupConfig(path string, existing []byte, v setupValues, validate func(data []byte, source string) error, exists func(string) bool) (configPlan, error) {
+	fresh := func() ([]byte, error) {
 		data, err := renderFreshConfig(v)
 		if err != nil {
-			return configPlan{}, err
+			return nil, err
 		}
-		if err := validate(data); err != nil {
-			return configPlan{}, fmt.Errorf("the config setup would write does not load (%w); nothing was written", err)
+		if err := validate(data, path); err != nil {
+			return nil, fmt.Errorf("the config setup would write does not load (%w); nothing was written", err)
+		}
+		return data, nil
+	}
+	if existing == nil {
+		data, err := fresh()
+		if err != nil {
+			return configPlan{}, err
 		}
 		return configPlan{outcome: configFresh, data: data}, nil
 	}
-
-	// Parse first, always, and whatever the text contains.
-	if err := validate(existing); err != nil {
-		return configPlan{}, fmt.Errorf("%w: %s: %v", errConfigInvalid, path, err)
-	}
-	hasPlatform, hasMiner, err := configTablesDefined(existing)
-	if err != nil {
-		return configPlan{}, fmt.Errorf("%w: %s: %v", errConfigInvalid, path, err)
-	}
-	if hasMiner {
+	err := validate(existing, path)
+	switch {
+	case err == nil:
 		return configPlan{outcome: configLeft}, nil
-	}
-
-	var tail strings.Builder
-	var added []string
-	if !hasPlatform {
-		t, err := platformTable(v)
-		if err != nil {
-			return configPlan{}, err
+	case errors.Is(err, config.ErrLegacyConfig):
+		earlier := readEarlierConfig(existing)
+		v = v.carrying(earlier)
+		data, ferr := fresh()
+		if ferr != nil {
+			return configPlan{}, ferr
 		}
-		tail.WriteString("\n" + t)
-		added = append(added, "[platform]")
-	}
-	t, err := minerTable(v)
-	if err != nil {
-		return configPlan{}, err
-	}
-	tail.WriteString("\n" + t)
-	added = append(added, "[miner]")
-
-	next := append([]byte(nil), existing...)
-	if len(next) > 0 && next[len(next)-1] != '\n' {
-		next = append(next, '\n')
-	}
-	next = append(next, "\n# Added by jevlin setup.\n"...)
-	next = append(next, strings.TrimPrefix(tail.String(), "\n")...)
-	if err := validate(next); err != nil {
-		return configPlan{}, fmt.Errorf("%s would not load after adding %s (%v); it was left as it is — add them by hand",
-			path, strings.Join(added, " and "), err)
-	}
-	return configPlan{outcome: configMigrated, data: next, added: added}, nil
-}
-
-// validateConfigFile loads data through pkg/config exactly as every command
-// will: it is written to an owner-only temporary file in dir, loaded with no
-// environment (so only the file's own bytes are judged), and removed.
-func validateConfigFile(dir string) func([]byte) error {
-	return func(data []byte) error {
-		f, err := os.CreateTemp(dir, ".jevlin-validate-*.toml")
-		if err != nil {
-			return err
+		aside, aerr := asideName(path, exists)
+		if aerr != nil {
+			return configPlan{}, aerr
 		}
-		name := f.Name()
-		defer func() { _ = os.Remove(name) }()
-		if err := f.Chmod(0o600); err != nil {
-			_ = f.Close()
-			return err
+		plan := configPlan{outcome: configReplaced, data: data, aside: aside}
+		if from := earlier.identityRoot(); from != "" {
+			if cfg, err := config.LoadBytes(data, func(string) string { return "" }); err == nil {
+				if to := installRoot(cfg.Search); filepath.IsAbs(to) && !sameDirectory(from, to) {
+					plan.identityFrom, plan.identityTo = from, to
+				}
+			}
 		}
-		if _, err := f.Write(data); err != nil {
-			_ = f.Close()
-			return err
+		return plan, nil
+	default:
+		// A parse or schema error names the file already (validate's source
+		// is path); a value's rule names only its key, and gets the path.
+		if !strings.Contains(err.Error(), path) {
+			return configPlan{}, fmt.Errorf("%w: %s: %v", errConfigInvalid, path, err)
 		}
-		if err := f.Close(); err != nil {
-			return err
-		}
-		_, _, err = config.Load([]string{"-config", name}, func(string) string { return "" })
-		return err
+		return configPlan{}, fmt.Errorf("%w: %v", errConfigInvalid, err)
 	}
 }
 
-// validateConfigSyntax is the dry run's check: the TOML must decode, but
-// nothing is written anywhere to load it through pkg/config.
-func validateConfigSyntax(data []byte) error {
-	_, _, err := configTablesDefined(data)
+// asideName is the first of path.old, path.old.1, ... that does not exist.
+func asideName(path string, exists func(string) bool) (string, error) {
+	for i := 0; i < 100; i++ {
+		name := path + ".old"
+		if i > 0 {
+			name += "." + strconv.Itoa(i)
+		}
+		if !exists(name) {
+			return name, nil
+		}
+	}
+	return "", fmt.Errorf("%s: no free name to set the older configuration aside under; move %s.old* away", path, path)
+}
+
+// validateConfigBytes loads data through pkg/config exactly as every command
+// will, with no environment, so only the file's own bytes are judged; an
+// error names the file as source.
+func validateConfigBytes(data []byte, source string) error {
+	_, err := config.LoadBytesAs(data, source, func(string) string { return "" })
 	return err
 }
 
@@ -390,4 +448,130 @@ func readExistingConfig(path string) ([]byte, error) {
 
 func publishSetupConfig(path string, data []byte) error {
 	return fsx.WriteFileAtomic(filepath.Dir(path), filepath.Base(path), data, 0o600)
+}
+
+// identityFiles are the files an installation keeps beside credentials.json,
+// outside every directory a sandbox may write: what an earlier version kept
+// beside its intake directory and this one keeps beside its state
+// directory.
+var identityFiles = []string{credentialsFile, registrationJournalFile, claimRecordFile, updateStampFile}
+
+// identityMoves is each identity file present in from, with the name it
+// takes in to. A file already at a destination is a conflict, and so is a
+// destination directory that does not exist: both stop setup before
+// anything is written, with the exact moves to make by hand. The one
+// exception is the release check's record, which says only when the last
+// check ran: the earlier version's replaces one already there.
+func identityMoves(from, to string) (moves [][2]string, conflict error) {
+	if from == "" || to == "" {
+		return nil, nil
+	}
+	for _, name := range identityFiles {
+		src := filepath.Join(from, name)
+		if !lexists(src) {
+			continue
+		}
+		dst := filepath.Join(to, name)
+		if lexists(dst) && name != updateStampFile {
+			return nil, fmt.Errorf("%s is already there, so the earlier version's %s cannot take its place", dst, src)
+		}
+		moves = append(moves, [2]string{src, dst})
+	}
+	if len(moves) > 0 && !lexists(to) {
+		return nil, fmt.Errorf("%s, beside the state directory the new config names, does not exist", to)
+	}
+	return moves, nil
+}
+
+// sameDirectory reports whether a and b name one directory, through a link
+// or in another case on a filesystem that ignores it, as well as by text.
+func sameDirectory(a, b string) bool {
+	if samePath(a, b) {
+		return true
+	}
+	ia, errA := os.Stat(a)
+	ib, errB := os.Stat(b)
+	return errA == nil && errB == nil && os.SameFile(ia, ib)
+}
+
+// moveIdentity moves each file of moves into place, a variable so a test
+// can fail one. A move that fails puts back the ones made before it, so the
+// files are all in one place or the other, and reports the failure.
+var moveIdentity = func(moves [][2]string) error {
+	for i, m := range moves {
+		if err := moveIdentityFile(m[0], m[1]); err != nil {
+			for j := i - 1; j >= 0; j-- {
+				_ = moveIdentityFile(moves[j][1], moves[j][0])
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+// undoIdentity puts moves back, for a run that fails after moving them.
+func undoIdentity(moves [][2]string) {
+	for j := len(moves) - 1; j >= 0; j-- {
+		_ = moveIdentityFile(moves[j][1], moves[j][0])
+	}
+}
+
+// identityFileMaxBytes bounds the read of an identity file copied across
+// filesystems: credentials.json, the journal, the claim record and the
+// release check's record are each a few hundred bytes.
+const identityFileMaxBytes = 1 << 20
+
+// moveIdentityFile moves one file durably. A rename cannot cross
+// filesystems, and a state directory on another disk than the earlier
+// installation's intake directory is one setup must handle, so there the
+// file is copied owner-only and synced, published by rename in the
+// destination's directory, and only then removed from the source.
+func moveIdentityFile(src, dst string) error {
+	// The release check's record is the one file a move replaces
+	// (identityMoves); a move does not replace a file on Windows, so the
+	// one there goes first.
+	if filepath.Base(dst) == updateStampFile && lexists(dst) && lexists(src) {
+		if err := fsx.RemoveFileDurable(dst); err != nil {
+			return err
+		}
+	}
+	err := renameIdentityFile(src, dst)
+	var stage *fsx.StageError
+	switch {
+	case err == nil, errors.As(err, &stage) && stage.Published:
+		return nil
+	case !crossDevice(err):
+		return err
+	}
+	data, _, rerr := fsx.ReadRegularNoFollow(src, identityFileMaxBytes)
+	if rerr != nil {
+		return rerr
+	}
+	if werr := fsx.WriteFileAtomic(filepath.Dir(dst), filepath.Base(dst), data, 0o600); werr != nil {
+		return werr
+	}
+	return fsx.RemoveFileDurable(src)
+}
+
+// renameIdentityFile is the durable rename moveIdentityFile tries first, a
+// variable so a test can refuse it the way another filesystem does.
+var renameIdentityFile = fsx.MoveFileDurable
+
+// crossDevice reports whether err is a rename refused because the two
+// names are on different filesystems: EXDEV, or Windows'
+// ERROR_NOT_SAME_DEVICE (17, which is EEXIST elsewhere).
+func crossDevice(err error) bool {
+	return errors.Is(err, syscall.EXDEV) || (runtime.GOOS == "windows" && errors.Is(err, syscall.Errno(17)))
+}
+
+// relativeEarlierDirs reports whether an earlier config names its intake or
+// state directory by a relative path, for which setup plans no move.
+func relativeEarlierDirs(data []byte) bool {
+	e := readEarlierConfig(data)
+	for _, dir := range []string{e.intakeDir, e.stateDir} {
+		if dir != "" && !filepath.IsAbs(dir) {
+			return true
+		}
+	}
+	return false
 }

@@ -11,7 +11,7 @@ package main
 // is at its ceiling or out of credit, which is exactly when a participant
 // runs this.
 //
-// The request carries the participant's sr- key to router_url — the same
+// The request carries the participant's sr- key to the router — the same
 // exposure as a search, so the same shape: the origin configured, never
 // discovered (invariant 5), same-origin redirects only (invariant 3), the
 // body read bounded. The response is the router's product API and is
@@ -76,18 +76,18 @@ func cmdLimits(args []string, stdout, stderr io.Writer, getenv func(string) stri
 		if machine {
 			return failLimits(stdout, exitTransport, "config_unreadable", actionFixInput, err)
 		}
-		fmt.Fprintf(stderr, "jevlin: config (%s): %v\n", orDefaults(cfgSource), err)
+		fmt.Fprintln(stderr, "jevlin: "+configProblem(cfgSource, err))
 		return exitTransport
 	}
-	if cfg.Miner.RouterURL == nil {
+	if cfg.Search.RouterURL == nil {
 		if machine {
 			return failLimits(stdout, exitTransport, "no_router_configured", actionFixInput,
-				errors.New("no router configured (miner.router_url or a [[provider]] upstream)"))
+				errors.New("no router configured ([router] url)"))
 		}
-		fmt.Fprintln(stderr, "jevlin: no router configured (miner.router_url or a [[provider]] upstream)")
+		fmt.Fprintln(stderr, "jevlin: no router configured ([router] url)")
 		return exitTransport
 	}
-	key, keySrc, err := resolveAPIKey(getenv, cfg.Miner)
+	key, keySrc, err := resolveAPIKey(getenv, cfg.Search)
 	if err == nil && keySrc == keyFromEnv {
 		err = envKeyRefusedFor(*cfgPath, cfg, getenv)
 	}
@@ -113,7 +113,7 @@ func cmdLimits(args []string, stdout, stderr io.Writer, getenv func(string) stri
 		return exitClientErr
 	}
 
-	endpoint := strings.TrimRight(cfg.Miner.RouterURL.String(), "/") + "/v1/limits"
+	endpoint := strings.TrimRight(cfg.Search.RouterURL.String(), "/") + "/v1/limits"
 	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
 		if machine {

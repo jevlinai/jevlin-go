@@ -36,7 +36,7 @@ func connectedUnclaimed(t *testing.T) (platform *stubPlatform, cfgPath, stateDir
 // The review's must-fix: a planted agent.json that keeps this installation's
 // agent id but carries another agent's link on the platform's own origin.
 // The platform knows the agent, the link passes the origin check, and
-// connect, status, connect -json and mining enable all printed it; claiming
+// connect, status and connect -json all printed it; claiming
 // it would have put the attacker's agent in the participant's account.
 func TestALinkPlantedInTheAgentRecordIsNeverPrinted(t *testing.T) {
 	platform, cfgPath, stateDir, agentID, claimURL, claimCode := connectedUnclaimed(t)
@@ -54,14 +54,13 @@ func TestALinkPlantedInTheAgentRecordIsNeverPrinted(t *testing.T) {
 	_ = statusMain([]string{"-config", cfgPath}, &text, &textErr, noEnv)
 	_ = statusMain([]string{"-config", cfgPath, "-json"}, &js, &jsErr, noEnv)
 	emitMachine(&envelope, connectEnvelope(cfgPath, noEnv, exitOK, ""))
-	_, mOut, mErr := runMiningEnable(t, cfgPath)
 	for name, got := range map[string]string{
 		"connect":       out + errOut,
 		"status":        text.String() + textErr.String(),
 		"status -json":  js.String() + jsErr.String(),
 		"connect -json": envelope.String(),
-		"mining enable": mOut + mErr,
 	} {
+
 		if strings.Contains(got, planted) {
 			t.Errorf("%s printed the planted link:\n%s", name, got)
 		}

@@ -8,7 +8,7 @@ package main
 // entry, an allow rule or a skill is "ours" by its BINARY PATH alone would
 // make uninstalling either installation plan the removal of both
 // installations' integrations: every entry runs the same binary, so every
-// entry would match (dropin-miner#73, soak row S20). The shell-profile block is matched
+// entry would match (soak row S20). The shell-profile block is matched
 // by the config it names, and that is the rule.
 //
 // So the rule is the profile block's, applied everywhere: an integration is
@@ -56,7 +56,7 @@ func refFor(entry binEntry) installationRef {
 // binaryPrefixes is every spelling of `<bin> ` this client writes: the three
 // shells' quoting, %q, and the bare path.
 // PowerShell's carries the call operator, because that is what the renderer
-// emits and a command without it is an expression, not a call (dropin-miner#69).
+// emits and a command without it is an expression, not a call.
 func binaryPrefixes(bin string) []string {
 	return []string{
 		posixQuoteArg(bin) + " ",
@@ -213,9 +213,9 @@ func (ref installationRef) commandIsOurs(command string) bool {
 // The block runs no command, so it names no binary and no config. What it
 // names is DIRECTORIES — the roots a sandboxed search must be able to write —
 // so the roots are the reading, and they are attributed against the
-// directories this installation's config NAMES: state_dir, spool_dir,
-// intake_dir and sessions_dir, compared as paths (codexOwnedRoots). Every
-// root in the block must be one of them.
+// directories this installation's config NAMES: state_dir and sessions_dir,
+// compared as paths (codexOwnedRoots). Every root in the block must be one
+// of them.
 //
 // They are config keys, not a layout, and that is the whole correction here.
 // The first version of this asked whether every root lay under the directory
@@ -236,7 +236,7 @@ func (ref installationRef) commandIsOurs(command string) bool {
 // installation's is not one this installation wrote, and rewriting it would
 // replace roots another installation's searches depend on. Left and named is
 // recoverable by hand; replaced is a Codex that earns nothing and says
-// nothing (dropin-miner#128).
+// nothing.
 //
 // Two cases answer "not ours" without naming an owner, because neither can be
 // attributed at all: a block with no readable roots, and an installation
@@ -269,7 +269,7 @@ func codexRootsOwner(roots []string, entry binEntry, getenv func(string) string)
 	}
 	for _, r := range roots {
 		if !dirsInclude(owned, r) {
-			if rootsUnderOurConfig(roots, entry) {
+			if rootsUnderOurConfig(roots, entry) || earlierBlockOfOurConfig(roots, entry, owned) {
 				return true, "", ""
 			}
 			return false, describeSandboxOwner(roots), ""
@@ -291,6 +291,63 @@ func codexRootsOwner(roots []string, entry binEntry, getenv func(string) string)
 func rootsUnderOurConfig(roots []string, entry binEntry) bool {
 	home := commonParentDir(roots)
 	return home != "" && entry.cfg != "" && sameConfigFile(filepath.Join(home, setupConfigFile), entry.cfg)
+}
+
+// earlierBlockOfOurConfig: is this the block an earlier version wrote for
+// this installation, with its state directory moved? That version granted
+// four roots, its intake, sessions, spool and state directories. Setup put
+// the first three in the installation directory, beside the config,
+// whatever state_dir said; a config that named only state_dir had all four
+// derived from it instead: intake and sessions beside the state directory,
+// the spool inside it. Either way a participant who moved state_dir left a
+// block whose roots share no parent but the filesystem's, so
+// rootsUnderOurConfig cannot vouch for it, and setup left it in place with
+// its intake and spool roots and the hosts that version allowed.
+//
+// So a block of exactly those four is this installation's when each root is
+// a directory this installation's config names now (owned), or lies in the
+// directory holding this installation's config, or is the intake or spool
+// directory that version derived from a state directory this config names:
+// beside it, or (the spool) inside it. Install rewrites it with the roots
+// the config names now.
+func earlierBlockOfOurConfig(roots []string, entry binEntry, owned []string) bool {
+	if len(roots) != 4 || entry.cfg == "" {
+		return false
+	}
+	var ownedState []string
+	for _, d := range owned {
+		if filepath.Base(filepath.Clean(d)) == "state" {
+			ownedState = append(ownedState, filepath.Clean(d))
+		}
+	}
+	derived := func(name, r string) bool {
+		parent := filepath.Dir(filepath.Clean(r))
+		for _, st := range ownedState {
+			if (name == "intake" || name == "spool") && samePath(parent, filepath.Dir(st)) {
+				return true
+			}
+			if name == "spool" && samePath(parent, st) {
+				return true
+			}
+		}
+		return false
+	}
+	seen := map[string]bool{}
+	for _, r := range roots {
+		name := filepath.Base(filepath.Clean(r))
+		seen[name] = true
+		switch {
+		case dirsInclude(owned, r):
+		case sameConfigFile(filepath.Join(filepath.Dir(filepath.Clean(r)), setupConfigFile), entry.cfg):
+		case derived(name, r):
+		case name == "state":
+			// The setup-written layout: the state root may point anywhere,
+			// the other three vouch for it.
+		default:
+			return false
+		}
+	}
+	return seen["intake"] && seen["sessions"] && seen["spool"] && seen["state"]
 }
 
 // codexStaleRoots is the roots of a block this installation owns that its

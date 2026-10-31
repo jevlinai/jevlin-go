@@ -1,15 +1,13 @@
 // Package platform is the client for the search platform's public
 // control plane (agent onboarding design, search-platform-agent-
-// onboarding-design.md §5.1-§5.3): register, poll, enroll. It is a
-// separate package from pkg/auth on purpose — two contracts, two owners.
-// pkg/auth implements the AS contract (owned by
-// tokendrop-auth-server-design); this implements search-router's own
-// contract, this design doc. Two hosts, not one — live testing found
-// agents-v1.jevlin.ai serves register/status/enroll while
-// platform.jevlin.ai is the human portal a claim_url/console_url points
-// at; see Client's own doc comment. Nothing here touches the AS;
-// RedeemEnrollmentAssertion (pkg/auth) still does that, unchanged, once
-// this package hands back a token.
+// onboarding-design.md §5.1-§5.2): register and poll. It is a separate
+// package from pkg/auth on purpose — two contracts, two owners. pkg/auth
+// keeps the records this client holds; this implements search-router's
+// own contract, this design doc. Two hosts, not one — live testing found
+// agents-v1.jevlin.ai serves register/status while platform.jevlin.ai is
+// the human portal a claim_url/console_url points at; see Client's own
+// doc comment. Of the status body, this client reads the fields
+// AgentStatus names and no others.
 package platform
 
 import (
@@ -49,17 +47,6 @@ const (
 	maxPollInterval = 60 * time.Second
 )
 
-// Known refusal codes from §5.3's enroll route and §6's threat list. A
-// caller (cmd/jevlin/connect.go) branches on these rather than
-// parsing prose — e.g. re-printing the claim URL specifically on
-// CodeNotClaimed.
-const (
-	CodeNotClaimed             = "not_claimed"
-	CodeMiningNotGranted       = "mining_not_granted"
-	CodeAttributionUnavailable = "attribution_unavailable"
-	CodeUnknownSlot            = "unknown_slot"
-)
-
 // ErrAgentNotFound is Status's answer to a 404: an unknown agent, or a
 // key that does not belong to it — the design deliberately gives both
 // the same answer (§5.2), one no oracle.
@@ -89,9 +76,9 @@ var platformTransport = func() *http.Transport {
 // construct, mirroring pkg/auth/credentialclient.go's
 // newCredentialClient in shape: bounded, same-origin redirects via
 // auth.SameOriginRedirects (exported by that package precisely for
-// reuse like this — see its own doc comment) because Status and Enroll
-// carry the participant's freshly-minted sr- key in Authorization, even
-// though Register itself carries no credential yet.
+// reuse like this — see its own doc comment) because Status, Me and
+// ClaimCode carry the participant's freshly-minted sr- key in
+// Authorization, even though Register itself carries no credential yet.
 // TestNoBareHTTPClientInThisPackage enforces this module-wide, the same
 // sweep cmd/jevlin/boundary_test.go runs.
 func newPlatformClient() *http.Client {
@@ -103,7 +90,7 @@ func newPlatformClient() *http.Client {
 }
 
 // Client talks to two search-platform origins (config.Platform):
-// apiBaseURL for the actual register/status/enroll requests
+// apiBaseURL for the actual register/status requests
 // (AgentsAPIURL — search-router's "Agents" host), and portalBaseURL
 // solely to validate a returned claim_url's origin (BaseURL —
 // search-router's "Platform" host, the human portal and claim pages).
@@ -217,8 +204,8 @@ func (c *Client) Register(ctx context.Context, name, client string, requestedSco
 	if err := validatePlatformURL(wire.ClaimURL, c.portalBaseURL); err != nil {
 		return nil, err
 	}
-	if hasControlChar(wire.ClaimCode) {
-		return nil, errors.New("platform: claim_code contains a control character; refusing")
+	if err := auth.ValidClaimCode(wire.ClaimCode); err != nil {
+		return nil, fmt.Errorf("platform: claim_code: %w; refusing", err)
 	}
 	if err := auth.ValidTimestamp(wire.ClaimExpiresAt); err != nil {
 		return nil, fmt.Errorf("platform: register response: claim_expires_at: %w; refusing", err)
@@ -246,7 +233,7 @@ func clampPollInterval(d time.Duration) time.Duration {
 
 // hasControlChar is internal/termtext's rule: any control, format or line
 // separator character. None legitimately appears in an agent id, a claim
-// URL, a claim code, a claim time, a scope, a slot name or a refusal message.
+// URL, a claim code, a claim time, a scope or a refusal message.
 // A REFUSAL, not a strip, because a platform response containing one is
 // not a shape this client trusts enough to guess what was meant
 // (WP2-adversarial-review finding 12). pkg/auth reads its records back
@@ -273,8 +260,7 @@ func isLoopbackHostname(host string) bool {
 // an off-origin URL could point a participant at a page that is not
 // actually this platform's. Absolute HTTPS (or loopback, matching this
 // codebase's http(s)-or-loopback convention elsewhere), origin exactly
-// equal to baseURL's own — or, for a retired portal origin, its compiled
-// successor (retiredPortalSuccessors).
+// equal to baseURL's own; nothing widens it.
 //
 // The origin is not the whole of what is printed. url.Parse accepts a space,
 // U+3000 or any other non-ASCII rune in a path, so "<origin>/claim/X
@@ -315,80 +301,37 @@ func validatePlatformURL(raw, baseURL string) error {
 		return fmt.Errorf("platform: configured base URL does not parse: %w", err)
 	}
 	if u.Scheme != base.Scheme || u.Host != base.Host {
-		if retiredPortalSuccessors[base.Scheme+"://"+base.Host] == u.Scheme+"://"+u.Host {
-			return nil
-		}
-		return fmt.Errorf("platform: claim_url origin %s://%s does not match the configured platform.base_url origin %s://%s",
+		return fmt.Errorf("platform: claim_url origin %s://%s does not match the configured [platform] url origin %s://%s",
 			u.Scheme, u.Host, base.Scheme, base.Host)
 	}
 	return nil
-}
-
-// retiredPortalSuccessors maps a portal origin the platform no longer
-// issues links on to the one it moved to. setup writes platform.base_url
-// into every installation's config and never rewrites an existing one, so
-// an installation made before a move names the old origin for as long as
-// it exists, while the platform hands it links on the new one. The
-// successor is accepted for exactly its retired origin: both are compiled
-// in and both are the platform's, so what is printed is still never an
-// origin the agents API merely named. Nothing here is dialed (invariant
-// 12), and nothing runs backward — a base on the new origin accepts only
-// its own.
-var retiredPortalSuccessors = map[string]string{
-	"https://platform.nyks.dev": "https://platform.jevlin.ai",
 }
 
 // ValidateStoredClaimURL applies validatePlatformURL to a claim_url read
 // back from local state rather than straight off the wire. agent.json lives
 // in a sandbox-writable state_dir, so the copy there is only as trustworthy
 // as the last thing that wrote the file: it must pass the same check
-// against the configured platform.base_url before it is shown to anyone.
+// against the configured [platform] url before it is shown to anyone.
 func ValidateStoredClaimURL(raw, baseURL string) error {
 	return validatePlatformURL(raw, strings.TrimRight(baseURL, "/"))
 }
 
-// AgentStatus is what Status returns (§5.2), flattened.
+// AgentStatus is what Status returns (§5.2), flattened. A field of the
+// body it does not name is not read.
 type AgentStatus struct {
-	Status             string // "unclaimed" | "claimed" | "expired"
-	Scopes             []string
-	ClaimExpiresAt     string
-	ClaimedAt          string
-	MiningAvailable    bool
-	MiningSlots        []string
-	LastEnrollmentSlot string
-	LastEnrollmentAt   string
-	// ParticipantHasOtherMiningAgent is true when this agent's owning
-	// participant already has the mining scope granted on a DIFFERENT
-	// claimed agent (design f0ddb69 §2.3/§5.5: several agents per
-	// participant draw one share; only one holds a given epoch, so
-	// enabling mining on more than one is wasteful and noisy, not
-	// forbidden). Only the platform can know this — it sees every agent
-	// under the participant's org, which no single installation does.
-	// Originally assumed beyond §5.2's literal spec text; the router's
-	// published skill file (read 2026-10-02) documents
-	// participant_has_other_agent on the poll response with exactly this
-	// meaning — "the participant earns one share no matter how many of
-	// their agents enroll" — so the shape is confirmed.
-	ParticipantHasOtherMiningAgent bool
+	Status         string // "unclaimed" | "claimed" | "expired"
+	Scopes         []string
+	ClaimExpiresAt string
+	ClaimedAt      string
 	// ConsoleURL is the agent's project page on the platform, once
 	// claimed — search-router added this specifically so a re-approval
 	// message can send a human straight to the real console instead of
 	// making them submit an already-consumed claim code first, just to
-	// reach a "go to console" link from the resulting error page (found
-	// live testing §2.2's "mining added later" case). Empty when absent
-	// (an older platform, or an unclaimed agent, for which there is no
-	// project yet) — callers fall back to the generic claim address.
+	// reach a "go to console" link from the resulting error page. Empty
+	// when absent (an older platform, or an unclaimed agent, for which
+	// there is no project yet) — callers fall back to the generic claim
+	// address.
 	ConsoleURL string
-}
-
-// HasScope reports whether scope was granted at the claim.
-func (s *AgentStatus) HasScope(scope string) bool {
-	for _, sc := range s.Scopes {
-		if sc == scope {
-			return true
-		}
-	}
-	return false
 }
 
 // Status calls GET /v1/agents/{id}, the client's poll. Authentication
@@ -435,21 +378,11 @@ type agentStatusWire struct {
 	ClaimExpiresAt string   `json:"claim_expires_at"`
 	ClaimedAt      string   `json:"claimed_at"`
 	ConsoleURL     string   `json:"console_url"`
-	Mining         struct {
-		Available      bool     `json:"available"`
-		Slots          []string `json:"slots"`
-		LastEnrollment *struct {
-			Slot     string `json:"slot"`
-			MintedAt string `json:"minted_at"`
-		} `json:"last_enrollment"`
-		// ParticipantHasOtherAgent: see AgentStatus's own doc comment.
-		ParticipantHasOtherAgent bool `json:"participant_has_other_agent"`
-	} `json:"mining"`
 }
 
 // decodeAgentStatusWire normalizes a status-poll body (§5.2) into an
-// AgentStatus: status enum validation, the mining block, slot control
-// characters, and console_url's origin-lock all happen here once, so
+// AgentStatus: status enum validation, the scopes' shape and console_url's
+// origin-lock all happen here once, so
 // Status and Me — which answers with the same body plus agent_id/claim
 // fields — cannot drift on how they interpret otherwise-identical bytes.
 func decodeAgentStatusWire(data []byte, portalBaseURL string) (AgentStatus, error) {
@@ -465,7 +398,7 @@ func decodeAgentStatusWire(data []byte, portalBaseURL string) (AgentStatus, erro
 	// not be trusted as anything more specific than "keep polling" — the
 	// alternative, falling through the switch statements callers build
 	// on this value, has previously let an unrecognized string like
-	// "PENDING_REVIEW" reach the enroll-and-redeem path. unclaimed is
+	// "PENDING_REVIEW" reach a path meant for a known status. unclaimed is
 	// the one status every caller already treats as "nothing to do yet,
 	// try again later," which is the correct, safe default here.
 	switch wire.Status {
@@ -475,20 +408,12 @@ func decodeAgentStatusWire(data []byte, portalBaseURL string) (AgentStatus, erro
 		wire.Scopes = nil
 	}
 	// Every identifier here lands in agent.json, which status prints, so each
-	// is held to the shape a record holds it to (auth.ValidSlotName and the
+	// is held to the shape a record holds it to (auth.ValidScope and the
 	// rest): a token, never a sentence, and never a control character.
-	for _, slot := range wire.Mining.Slots {
-		if auth.ValidSlotName(slot) != nil {
-			return AgentStatus{}, errors.New("platform: a slot name in the status response is not an identifier; refusing")
-		}
-	}
 	for _, sc := range wire.Scopes {
 		if auth.ValidScope(sc) != nil {
 			return AgentStatus{}, errors.New("platform: a scope in the status response is not an identifier; refusing")
 		}
-	}
-	if le := wire.Mining.LastEnrollment; le != nil && (auth.ValidSlotName(le.Slot) != nil || auth.ValidTimestamp(le.MintedAt) != nil) {
-		return AgentStatus{}, errors.New("platform: last_enrollment in the status response is not a slot name and a time; refusing")
 	}
 	if auth.ValidTimestamp(wire.ClaimExpiresAt) != nil || auth.ValidTimestamp(wire.ClaimedAt) != nil {
 		return AgentStatus{}, errors.New("platform: a claim time in the status response is not a timestamp; refusing")
@@ -498,28 +423,19 @@ func decodeAgentStatusWire(data []byte, portalBaseURL string) (AgentStatus, erro
 	// when invalid. Unlike claim_url, which IS the point of a register
 	// call (a registration with no trustworthy claim link is useless),
 	// console_url is supplementary to an otherwise-good status poll: the
-	// scopes and enrollment progress this response also carries are
-	// still worth having even if a hostile or buggy console_url arrived
-	// alongside them.
+	// scopes this response also carries are still worth having even if a
+	// hostile or buggy console_url arrived alongside them.
 	consoleURL := wire.ConsoleURL
 	if consoleURL != "" && validatePlatformURL(consoleURL, portalBaseURL) != nil {
 		consoleURL = ""
 	}
-	out := AgentStatus{
-		Status:                         wire.Status,
-		Scopes:                         wire.Scopes,
-		ClaimExpiresAt:                 wire.ClaimExpiresAt,
-		ClaimedAt:                      wire.ClaimedAt,
-		MiningAvailable:                wire.Mining.Available,
-		MiningSlots:                    wire.Mining.Slots,
-		ParticipantHasOtherMiningAgent: wire.Mining.ParticipantHasOtherAgent,
-		ConsoleURL:                     consoleURL,
-	}
-	if wire.Mining.LastEnrollment != nil {
-		out.LastEnrollmentSlot = wire.Mining.LastEnrollment.Slot
-		out.LastEnrollmentAt = wire.Mining.LastEnrollment.MintedAt
-	}
-	return out, nil
+	return AgentStatus{
+		Status:         wire.Status,
+		Scopes:         wire.Scopes,
+		ClaimExpiresAt: wire.ClaimExpiresAt,
+		ClaimedAt:      wire.ClaimedAt,
+		ConsoleURL:     consoleURL,
+	}, nil
 }
 
 // AgentIdentity is what the key alone can recover: the agent's id and
@@ -588,8 +504,8 @@ func (c *Client) Me(ctx context.Context, key string) (*AgentIdentity, error) {
 	if err := auth.ValidAgentID(wire.AgentID); err != nil {
 		return nil, fmt.Errorf("platform: self-lookup response: %w; refusing", err)
 	}
-	if hasControlChar(wire.ClaimCode) {
-		return nil, errors.New("platform: claim_code contains a control character; refusing")
+	if err := auth.ValidClaimCode(wire.ClaimCode); err != nil {
+		return nil, fmt.Errorf("platform: claim_code: %w; refusing", err)
 	}
 	if wire.ClaimURL != "" {
 		if err := validatePlatformURL(wire.ClaimURL, c.portalBaseURL); err != nil {
@@ -664,8 +580,8 @@ func (c *Client) ClaimCode(ctx context.Context, agentID, key string) (*ClaimBoot
 	if err := validatePlatformURL(wire.ClaimURL, c.portalBaseURL); err != nil {
 		return nil, err
 	}
-	if hasControlChar(wire.ClaimCode) {
-		return nil, errors.New("platform: claim_code contains a control character; refusing")
+	if err := auth.ValidClaimCode(wire.ClaimCode); err != nil {
+		return nil, fmt.Errorf("platform: claim_code: %w; refusing", err)
 	}
 	if err := auth.ValidTimestamp(wire.ClaimExpiresAt); err != nil {
 		return nil, fmt.Errorf("platform: claim-code response: claim_expires_at: %w; refusing", err)
@@ -677,67 +593,11 @@ func (c *Client) ClaimCode(ctx context.Context, agentID, key string) (*ClaimBoot
 	}, nil
 }
 
-// Enroll calls POST /v1/agents/enroll, returning the enrollment token
-// exactly as the AS receives it (§5.3, §7) — the caller
-// (cmd/jevlin/connect.go) redeems it via
-// auth.OAuthClient.RedeemEnrollmentAssertion, unchanged.
-//
-// The response's token field name is not given literally in §5.3 (only
-// "the enrollment token exactly as the /mining page mints it today" is
-// specified); {"token": "..."} was assumed as the minimal natural shape,
-// and the router's published skill file (read 2026-10-02) confirms it
-// literally: {"token": "…", "slot": "…", "expires_at": "…"}. The two
-// extra fields are not read — the token is handed on whole, and slot is
-// what this client already asked for.
-func (c *Client) Enroll(ctx context.Context, agentID, key, slot string) (string, error) {
-	raw, err := json.Marshal(map[string]string{"slot": slot})
-	if err != nil {
-		return "", fmt.Errorf("platform: encode enroll request: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.apiBaseURL+"/v1/agents/enroll", bytes.NewReader(raw))
-	if err != nil {
-		return "", fmt.Errorf("platform: build enroll request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+key)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("platform: enroll request failed: %w", err)
-	}
-	defer drainAndClose(resp.Body)
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
-	if err != nil {
-		return "", fmt.Errorf("platform: read enroll response: %w", err)
-	}
-	// The scope check this line depends on lives on the SERVER (§5.3:
-	// "Requires: ... mining in scopes"). This client only surfaces
-	// whatever status/code the server sent — it does not re-derive the
-	// decision. That is deliberate: a client-side "is mining granted"
-	// check here would be a second, driftable copy of the server's own
-	// gate (agent onboarding design §6.2: "checks the scope on the key
-	// that authenticated, never a request field").
-	if resp.StatusCode != http.StatusOK {
-		return "", refusal(resp.StatusCode, data)
-	}
-	var wire struct {
-		Token string `json:"token"`
-	}
-	if err := json.Unmarshal(data, &wire); err != nil {
-		return "", fmt.Errorf("platform: parse enroll response: %w", err)
-	}
-	if wire.Token == "" {
-		return "", errors.New("platform: enroll response carried no token")
-	}
-	return wire.Token, nil
-}
-
 // RefusalError is a structured refusal from the platform's public
 // routes: a machine-readable code plus the message, so a caller can act
 // on WHICH refusal this is rather than parsing prose. The envelope
-// shape ({"error":{"code","message"}}) was assumed to match the AS's
-// own (pkg/auth's joinRefusal); the router's published skill file (read
-// 2026-10-02) confirms it, and states the rule refusal() below already
+// shape ({"error":{"code","message"}}) is the router's published skill
+// file's (read 2026-10-02), which states the rule refusal() below already
 // applies: the same code is mirrored top-level, and a client branches
 // on the top-level code, never on the message.
 type RefusalError struct {

@@ -177,7 +177,7 @@ func TestStateDescriptorJudgmentResolvesOnlyWhatItReports(t *testing.T) {
 // doctor's verdicts, from the facts.
 func TestDoctorStateAccessCheck(t *testing.T) {
 	dir := filepath.Join("home", "state")
-	key := filepath.Join(dir, "dpop.key")
+	key := filepath.Join(dir, "trace.key")
 	agent := filepath.Join(dir, "agent.json")
 	cases := []struct {
 		name        string
@@ -263,7 +263,7 @@ func TestDoctorStateAccessCheck(t *testing.T) {
 // of fixing the directory, not of fixing a file.
 func TestStateFixNamesTheObjectsAndOnlyAsksForTheChildStepOnTheDirectory(t *testing.T) {
 	dir := filepath.Join("home", "state")
-	key := filepath.Join(dir, "dpop.key")
+	key := filepath.Join(dir, "trace.key")
 	const child = "Replace owner on subcontainers and objects"
 	if fix := stateFix(dir, []string{key}); !strings.Contains(fix, "give "+key+" an access list") || strings.Contains(fix, dir+",") || strings.Contains(fix, child) {
 		t.Errorf("a credential alone: %q; want it to name the file, not the directory, and not ask for the child step", fix)
@@ -282,8 +282,8 @@ func TestStateFixNamesTheObjectsAndOnlyAsksForTheChildStepOnTheDirectory(t *test
 func TestInspectStateAccessAsksForNamedObjectsOnly(t *testing.T) {
 	fake := useFakeStateACL(t)
 	dir := filepath.Join(t.TempDir(), "state")
-	key, agent := filepath.Join(dir, "dpop.key"), filepath.Join(dir, "agent.json")
-	for _, p := range []string{key, agent, filepath.Join(dir, "stray.json"), filepath.Join(dir, "spool", "a.json")} {
+	key, agent := filepath.Join(dir, "trace.key"), filepath.Join(dir, "agent.json")
+	for _, p := range []string{key, agent, filepath.Join(dir, "stray.json"), filepath.Join(dir, "sub", "a.json")} {
 		writeFileT(t, p, "x")
 	}
 	fake.desc[dir] = winacl.Descriptor{Owner: stateTestUser, ACEs: []winacl.ACE{allowACE(stateTestUser, 0, stateFullControl), allowACE(stateTestUsers, 0, stateReadExecute)}}
@@ -324,12 +324,12 @@ func TestInspectStateAccessDoesNotFollowALink(t *testing.T) {
 	fake := useFakeStateACL(t)
 	root := t.TempDir()
 	real := filepath.Join(root, "real")
-	writeFileT(t, filepath.Join(real, "dpop.key"), "x")
+	writeFileT(t, filepath.Join(real, "trace.key"), "x")
 	writeFileT(t, filepath.Join(root, "outside.json"), "x")
 
 	t.Run("a credential that is a link", func(t *testing.T) {
 		dir := filepath.Join(root, "state")
-		writeFileT(t, filepath.Join(dir, "dpop.key"), "x")
+		writeFileT(t, filepath.Join(dir, "trace.key"), "x")
 		link := filepath.Join(dir, "agent.json")
 		if err := os.Symlink(filepath.Join(root, "outside.json"), link); err != nil {
 			t.Skipf("symlinks unavailable here: %v", err)
@@ -369,7 +369,7 @@ func TestInspectStateAccessDoesNotFollowALink(t *testing.T) {
 func TestInspectStateAccessRefusesWhatTheReadFindsIsALink(t *testing.T) {
 	fake := useFakeStateACL(t)
 	dir := filepath.Join(t.TempDir(), "state")
-	key := filepath.Join(dir, "dpop.key")
+	key := filepath.Join(dir, "trace.key")
 	writeFileT(t, key, "x")
 	fake.failOn[key] = &fs.PathError{Op: "open", Path: key, Err: winacl.ErrReparsePoint}
 
@@ -396,14 +396,14 @@ func TestInspectStateAccessRefusesWhatTheReadFindsIsALink(t *testing.T) {
 func TestStateCheckedHookRunsAfterTheCheckAndBeforeTheRead(t *testing.T) {
 	fake := useFakeStateACL(t)
 	dir := filepath.Join(t.TempDir(), "state")
-	key := filepath.Join(dir, "dpop.key")
+	key := filepath.Join(dir, "trace.key")
 	writeFileT(t, key, "x")
 	var events []string
 	saved := stateCheckedHook
 	stateCheckedHook = func(path string) { events = append(events, "hook "+path+" after reads "+strconv.Itoa(len(fake.read))) }
 	t.Cleanup(func() { stateCheckedHook = saved })
 
-	inspectStateAccess(dir, []string{"dpop.key", "absent.key"})
+	inspectStateAccess(dir, []string{"trace.key", "absent.key"})
 	want := []string{"hook " + dir + " after reads 0", "hook " + key + " after reads 1"}
 	if !reflect.DeepEqual(events, want) {
 		t.Errorf("events = %q, want %q: once per object that exists, each before its own read and after the previous one's", events, want)
@@ -430,13 +430,12 @@ func listNames(t *testing.T, dir string) []string {
 // OS whose real backend would never have run it.
 func TestDoctorReportsStateAccessWhereAccessListsAreManaged(t *testing.T) {
 	fake := useFakeStateACL(t)
-	as := newFakeAS(t)
 	root := t.TempDir()
-	stateDir, spoolDir := filepath.Join(root, "state"), filepath.Join(root, "spool")
+	stateDir := filepath.Join(root, "state")
 	if err := os.Mkdir(stateDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	cfgPath := doctorConfig(t, as.srv.URL, stateDir, spoolDir)
+	cfgPath := doctorConfig(t, stateDir)
 	fake.desc[stateDir] = winacl.Descriptor{Owner: stateTestUser, ACEs: []winacl.ACE{allowACE(stateTestUser, 0, stateFullControl), allowACE(stateTestLogon, aceInherited, stateReadExecute)}}
 	before := listNames(t, stateDir)
 
@@ -482,13 +481,13 @@ func TestDoctorHasNoStateAccessCheckWhereAccessListsAreNotManaged(t *testing.T) 
 	if stateACL.managed {
 		t.Skip("this platform manages access lists")
 	}
-	as := newFakeAS(t)
 	root := t.TempDir()
 	stateDir := filepath.Join(root, "state")
 	if err := os.Mkdir(stateDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	cfgPath := doctorConfig(t, as.srv.URL, stateDir, filepath.Join(root, "spool"))
+	cfgPath := doctorConfig(t, stateDir)
+
 	var out, errOut bytes.Buffer
 	_ = cmdDoctor([]string{"-config", cfgPath}, &out, &errOut)
 	if strings.Contains(out.String(), "state access") {

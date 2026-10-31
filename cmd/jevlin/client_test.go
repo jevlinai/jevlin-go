@@ -1,7 +1,7 @@
 package main
 
 // The agent-command helpers. Every test injects getenv — a developer's
-// real TOKENDROP_LISTEN or JEVLIN_CONFIG must never leak into a test,
+// real JEVLIN_ROUTER_URL or JEVLIN_CONFIG must never leak into a test,
 // because env beats the config file in config.Load's precedence.
 
 import (
@@ -50,7 +50,7 @@ func installedAs(getenv func(string) string, args []string) func(string) string 
 // The env-only half of key resolution; the credentials file's place in the
 // order is covered in credentials_test.go.
 func TestAPIKeyUsesOnlySearchEnvironment(t *testing.T) {
-	m := emptyMiner(t)
+	m := emptySearch(t)
 	got, src, err := resolveAPIKey(envOf(map[string]string{ // #nosec G101 -- env-var names and synthetic canaries, not credentials
 		"JEVLIN_API_KEY": "canary-tenant-key",
 		"OPENAI_API_KEY": "canary-personal-key",

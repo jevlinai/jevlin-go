@@ -1,6 +1,6 @@
 package main
 
-// dropin-miner#106 and dropin-miner#125: our marked block is cut out only when it can be vouched for.
+// Our marked block is cut out only when it can be vouched for.
 //
 // Whose it is, what is in it, and what follows it — hermes_install.go's
 // removeOurHermesBlock, asked by uninstall and by install's refresh alike.
@@ -39,10 +39,10 @@ func hermesLineOf(t *testing.T, config, text string) int {
 }
 
 // Two installations sharing a binary share this one block in this one file —
-// the second was set up by running the first's copy. dropin-miner#73 fixed that for every
-// host but this one: uninstalling the disposable installation took the hook the
-// real one relies on, and `agents install` from it did the same and then wrote
-// its own.
+// the second was set up by running the first's copy. ownership_match.go's rule
+// fixed that for every host but this one: uninstalling the disposable
+// installation took the hook the real one relies on, and `agents install` from
+// it did the same and then wrote its own.
 func TestAnotherInstallationsHermesBlockIsLeftAndNamed(t *testing.T) {
 	for name, tc := range hermesResavedEntries {
 		owner := tc.entry
@@ -184,7 +184,7 @@ func TestAParticipantsLineInsideOurHermesBlockIsNamedAndKept(t *testing.T) {
 	}
 }
 
-// dropin-miner#125. Hermes' ruamel writer keeps our end marker attached to our matcher
+// Hermes' ruamel writer keeps our end marker attached to our matcher
 // line, so what it adds to the hooks: mapping our block opened lands after the
 // end marker and is still inside our mapping. Status and install are right
 // about these files and stay right; uninstall used to cut marker to marker and

@@ -35,7 +35,7 @@ import { basename as traceBasename } from "node:path"
 // trace.go, so a host id hashed here and one hashed in Go agree. It is not
 // keyed and is not a secret: it exists so a stable identifier can leave the
 // machine without the host's own id leaving with it.
-const TRACE_PREFIX = "tokendrop-trace-v1|"
+const TRACE_PREFIX = "jevlin-trace-v1|"
 // The visible-text cap: what may ride as history, after scrubbing.
 const TRACE_HISTORY_CAP = 32 * 1024
 // The complete-source budget: an entry larger than this is omitted whole
@@ -64,6 +64,10 @@ const SEARCH_RE = /(?:^|[\s;&|(]|\$\()\s*(?:&\s*)?(?:[A-Za-z]:)?["']?(?:[^\s"']*
 const SEARCH_LEADS_RE = /^\s*(?:[A-Za-z_][A-Za-z0-9_]*=[^\s"'\\]*\s+)*(?:[A-Za-z]:)?["']?(?:[^\s"']*[\\/])?jevlin(?:\.exe)?["']?\s+search(?:\s|$)/
 
 const TRACE_BRIDGE_ENV = "JEVLIN_TRACE_BRIDGE"
+// JEVLIN_TRACE=off (or 0, or false) turns the trace off entirely: no bridge
+// is written, and the search runs as the agent wrote it. The same switch
+// the binary reads (traceOff in search.go).
+const traceOff = () => ["off", "0", "false"].includes(String(process.env.JEVLIN_TRACE ?? "").trim().toLowerCase())
 
 const traceHash = (raw) => createHash("sha256").update(TRACE_PREFIX + raw).digest("hex").slice(0, 32)
 
@@ -1173,7 +1177,7 @@ const bridgeBudgetFor = (cmd, shell, limit) => {
 //
 // H-R4: only a bridge THIS adapter generated for THIS call may carry this
 // adapter's harness. So an adapter never stands down because a bridge is
-// already there — a model can write one itself, and dropin-miner#68 is what that looks
+// already there — a model can write one itself, and this is what that looks
 // like at the router: a trace the model assembled, attributed to us. It
 // removes every assignment it RECOGNIZES and prepends its own.
 //

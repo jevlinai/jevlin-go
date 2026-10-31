@@ -250,9 +250,8 @@ var transportFieldsSkippedInComparison = map[string]bool{
 // change what ForceAttemptHTTP2, TLSHandshakeTimeout, IdleConnTimeout,
 // MaxIdleConns or ExpectContinueTimeout it carries, for the four clients
 // that clone http.DefaultTransport, or give a Proxy to a bare Transport
-// that was not built with one: pkg/auth's two AS transports carry
-// loopbackProxy and the wallet's chain client none, and the caller names
-// which in want, compared by function.
+// that was not built with one: the caller names which Proxy function it
+// expects in want, compared by function.
 //
 // Iterating exported fields by name (rather than a whole-struct
 // reflect.DeepEqual with a couple of fields zeroed first) is deliberate:

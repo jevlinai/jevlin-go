@@ -7,26 +7,22 @@ package main
 // state: every registered target's skills, hooks and plugins that run this
 // installation's binary, the shell-profile block that names this
 // installation's config (Windows: the user PATH entry and JEVLIN_CONFIG,
-// reverted against setup's journal, compare-and-revert). The wallet, the
-// identity, the stored key, recorded searches and the config all stay, and
-// nothing remote is revoked.
+// reverted against setup's journal, compare-and-revert). The identity, the
+// stored key and the config all stay, and nothing remote is revoked.
 //
 // -binary also removes the installation's own copy of the binary, only when
 // the running executable is that copy and no package manager owns it.
 // -purge-state also destroys the participant state under the installation
-// directory, only after the participant types the wallet address (or the
-// installation path) at a terminal; -yes never answers it. Neither implies
-// the other.
+// directory, only after the participant types the installation path at a
+// terminal; -yes never answers it. Neither implies the other.
 //
 // Everything is planned first, printed, confirmed, and only then done, in
-// one order: integrations, environment, authorization revocation (purge
-// only, bounded, best effort), state, binary. A destructive run holds the
-// lifecycle exclusion (lifecycle.go) from before it inspects anything until
-// it is done, so no setup, connect or flush that honors the gate can start
-// underneath it; a default run excludes only setup.
+// one order: integrations, environment, state, binary. A destructive run
+// holds the lifecycle exclusion (lifecycle.go) from before it inspects
+// anything until it is done, so no setup or connect that honors the gate
+// can start underneath it; a default run excludes only setup.
 
 import (
-	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -43,7 +39,6 @@ import (
 	"golang.org/x/term"
 
 	"github.com/jevlinai/jevlin-go/internal/selfupdate"
-	"github.com/jevlinai/jevlin-go/pkg/auth"
 	"github.com/jevlinai/jevlin-go/pkg/config"
 	"github.com/jevlinai/jevlin-go/pkg/fsx"
 )
@@ -53,18 +48,18 @@ const uninstallUsage = `usage: jevlin uninstall [-home dir] [-binary] [-purge-st
 Takes out what setup put on this machine for one installation: the coding
 agents' skills, hooks and plugins that run its binary, and the shell-profile
 block that names its config (on Windows, the user PATH entry and
-JEVLIN_CONFIG setup set). The wallet, registration, stored key, recorded
-searches and config stay, and nothing is revoked.
+JEVLIN_CONFIG setup set). The registration, stored key and config stay, and
+nothing is revoked.
 
   -home dir      the installation (default $JEVLIN_HOME, else the directory of a
                  JEVLIN_CONFIG named jevlin.toml, else the installation this
                  binary runs from, else ~/.jevlin)
   -binary        also remove this installation's own copy of the binary; a copy npm
                  installed is npm's to remove
-  -purge-state   also destroy this installation's participant state: the wallet,
-                 registration, stored key, recorded searches and config. Needs a
-                 terminal: you type the wallet address (or the installation path)
-                 to confirm, and -yes never answers it
+  -purge-state   also destroy this installation's participant state: the
+                 registration, stored key and config. Needs a terminal: you
+                 type the installation path to confirm, and -yes never
+                 answers it
   -dry-run       print what would be removed; change, ask and contact nothing
   -yes           answer the yes/no question, terminal or not; never -purge-state
 `
@@ -73,9 +68,6 @@ searches and config stay, and nothing is revoked.
 // may have run: taking a lock can create its empty file, so "nothing" would
 // be untrue, but no participant state and no integration has been touched.
 const noParticipantChange = "No participant state or integrations were changed."
-
-// purgeRevokeTimeout bounds the one network call a purge makes.
-const purgeRevokeTimeout = 8 * time.Second
 
 // uninstallProbeCommand is a binary no installation has: planning a target's
 // uninstall for it yields exactly the parts that do not depend on which
@@ -95,9 +87,6 @@ type uninstallDeps struct {
 	targets     []installTarget
 	userEnv     userEnvironment
 	windows     bool
-	// revoke revokes the AS token family of m; the decision whether to try
-	// is uninstall's own.
-	revoke func(ctx context.Context, m config.Mining) error
 }
 
 func cmdUninstall(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
@@ -122,19 +111,7 @@ func systemUninstallDeps(stdin io.Reader, stdout, stderr io.Writer, getenv func(
 		targets:     installTargets,
 		userEnv:     systemUserEnvironment(),
 		windows:     runtime.GOOS == "windows",
-		revoke:      revokeMiningFamily,
 	}
-}
-
-// revokeMiningFamily is mining disable's revocation and nothing else: the AS
-// token family through /oauth/revoke. No revoke-pending marker is written;
-// a purge is about to remove the directory it would live in.
-func revokeMiningFamily(ctx context.Context, m config.Mining) error {
-	oauthClient, _, err := buildMiningClient(ctx, m)
-	if err != nil {
-		return err
-	}
-	return oauthClient.Revoke(ctx)
 }
 
 type uninstallRun struct {
@@ -163,6 +140,10 @@ type uninstallRun struct {
 	residual []string
 	// updateLock is the binary's own update lock, held by -binary's exclusion.
 	updateLock string
+	// purged is the purge set applyPurge went through, whether or not each
+	// removal succeeded: what the closing summary may not call somebody
+	// else's, because a removal that failed was named as a problem instead.
+	purged []string
 }
 
 func (r *uninstallRun) printf(format string, args ...any) { fmt.Fprintf(r.d.stdout, format, args...) }
@@ -269,13 +250,17 @@ func (r *uninstallRun) run(homeFlag string) int {
 
 	switch {
 	case r.dry:
-		// The same section the real run closes with, in both modes (dropin-miner#129).
+		// The same section the real run closes with, in both modes.
 		// A dry run is the form a participant reads before deciding, and
 		// "these files will still be here, and here is why" is exactly what
 		// a decision is made on; it was only ever printed from closing(),
 		// which a dry run does not reach. Computed from the files present
 		// now, which is what it says: a dry run takes no exclusion, so it
 		// creates none of them and none of them is about to go.
+		if r.purge {
+			inside, _ := r.purgeSet()
+			r.sayLeftInHome(inside, true)
+		}
 		r.sayLeftoverLocks()
 		r.printf("\nDry run: nothing was changed, asked or contacted.\n")
 		return exitOK
@@ -297,14 +282,12 @@ func (r *uninstallRun) run(homeFlag string) int {
 
 	// Past the decision: the operation lock files this run's exclusion had
 	// to create are now part of the installation it is changing, not
-	// something an abort has to undo (dropin-miner#86, lifecycle.go's release).
+	// something an abort has to undo (lifecycle.go's release).
 	r.ex.proceeded()
 
 	r.applyIntegrations()
 	r.applyEnvironment()
-	revocation := ""
 	if r.purge {
-		revocation = r.revokeAuthorization()
 		r.applyPurge()
 	}
 	if r.binary {
@@ -317,7 +300,7 @@ func (r *uninstallRun) run(homeFlag string) int {
 	if r.purge {
 		r.removeHomeIfEmpty()
 	}
-	r.closing(revocation)
+	r.closing()
 	if r.failures > 0 {
 		return exitTransport
 	}
@@ -384,14 +367,14 @@ func checkPurgeTarget(home, userHome string) error {
 		return fmt.Errorf("%s is not a directory", home)
 	}
 	if !hasInstallation(home) && !lexists(filepath.Join(home, setupConfigFile)) {
-		return fmt.Errorf("%s holds no installation: no wallet key, registration, stored key or jevlin.toml", home)
+		return fmt.Errorf("%s holds no installation: no registration, stored key or jevlin.toml", home)
 	}
 	return nil
 }
 
 // exclude takes the lifecycle exclusion a destructive run needs, or, for a
 // default run, only the gate and setup.lock: removing integrations does not
-// disturb a connect or a flush, but it must not cross a setup writing them.
+// disturb a connect, but it must not cross a setup writing them.
 func (r *uninstallRun) exclude() (*lifecycleExclusion, error) {
 	if r.purge || r.binary {
 		ex, err := excludeLifecycle(r.home, r.d.getenv, lifecycleForegroundWait)
@@ -399,7 +382,7 @@ func (r *uninstallRun) exclude() (*lifecycleExclusion, error) {
 			return ex, err
 		}
 		// -binary also takes the binary's own update lock, the identity an
-		// upgrade holds (lock order: gate, setup, connect, flush, then this).
+		// upgrade holds (lock order: gate, setup, connect, then this).
 		// A held lock is an upgrade of this binary in progress; refusing now
 		// leaves every integration, the environment and every binary file
 		// as they are, and the leftovers beside the binary may be that
@@ -426,8 +409,8 @@ func (r *uninstallRun) exclude() (*lifecycleExclusion, error) {
 	// removeCreated for the same reason excludeLifecycle sets it: a
 	// default run that is declined at "Remove what is listed above?"
 	// prints that nothing was changed, and a setup.lock this probe made
-	// would make that false too (dropin-miner#86). The issue reported -purge-state,
-	// but nothing about the defect was particular to it.
+	// would make that false too. The defect was reported against
+	// -purge-state, but nothing about it was particular to that flag.
 	ex := &lifecycleExclusion{home: r.home, gate: gate, removeCreated: true}
 	if err := ex.hold("setup", filepath.Join(r.home, setupLockFile)); err != nil {
 		ex.release()
@@ -523,9 +506,8 @@ func (r *uninstallRun) plan() {
 		for _, p := range outside {
 			r.printf("  left:  %s (configured outside %s; not removed)\n", p, r.home)
 		}
-		r.printf("  %s\n", r.revocationPlan())
 		r.printf("  Close any open coding-agent sessions first: searches and hooks are not paused by\n" +
-			"  uninstall, and one that runs afterwards can recreate intake/ or sessions/.\n")
+			"  uninstall, and one that runs afterwards can recreate sessions/.\n")
 	}
 	if r.binary {
 		r.say("Binary")
@@ -576,7 +558,7 @@ func (r *uninstallRun) uninstallTargets(ops agentOps, apply func(p *agentPlan)) 
 		case attributionForeign:
 			hold(leftForeign(other))
 		case attributionUnknown:
-			// dropin-miner#73: an uninstall that cannot attribute a file leaves it and
+			// An uninstall that cannot attribute a file leaves it and
 			// says so. The case is narrow — every skill, hook command and
 			// JavaScript adapter install writes names its config, so an
 			// artifact naming none was not written by this client's install
@@ -651,7 +633,7 @@ var installedCommand = regexp.MustCompile(`(` + renderedWordRe + `) (?:search|ho
 // command at all — it rewrites commands, it does not run any — so until it
 // carried one, the attribution had nothing to match and read it as unowned.
 // A disposable installation's purge therefore removed the main installation's
-// plugin, which is dropin-miner#73's own last comment.
+// plugin, which is the attribution defect's own last report.
 // The last alternative is a BARE path: Hermes' splitter takes one, and
 // hermesQuoteArg deliberately leaves an ordinary POSIX path unquoted because
 // the same string is the snippet a participant is asked to paste by hand.
@@ -688,7 +670,7 @@ const (
 // attributeRemoved decides, from the bytes on disk, whether the files a
 // target would remove are this installation's.
 //
-// Both halves must agree, which is the whole of dropin-miner#73: two installations that
+// Both halves must agree, which is the whole of the attribution defect: two installations that
 // share a binary are told apart only by the config each names, and matching
 // on the binary alone made every uninstall plan the removal of both. A file
 // that names an installation other than this one is foreign; a file that
@@ -869,7 +851,7 @@ func configsInclude(named []string, cfg string) bool {
 // all (samePath), so nothing about attribution changed when this printed the
 // first one; only the sentence was wrong, and only on Windows, where
 // opencode's INSTALL_CONFIG line is JSON-quoted and came out as
-// C:\\Users\\... on both runners (dropin-miner#123, and dropin-miner#112's own message before it).
+// C:\\Users\\... on both runners (and in an earlier report's own message before it).
 // Taking the last reading of the last word that is not ours is decoded
 // whichever word it comes from, because a word's readings are contiguous and
 // its decoded one is last.
@@ -1061,17 +1043,21 @@ func (r *uninstallRun) environmentWindows(apply bool) {
 // purgeSet is every participant-state entry under home a purge removes, in
 // the order it removes them — lock-bearing entries last, so the operation
 // locks are held as long as possible — and every configured state path
-// outside home, which is left alone.
+// outside home, which is left alone. The set is what this version writes
+// into the installation: its records, the state directories setup set aside,
+// and the configurations setup set aside as `jevlin.toml.old`, `.old.1`, ...
+// (asideName). Anything else in the directory is not this version's to
+// remove, and the closing summary names it (sayLeftInHome).
 func (r *uninstallRun) purgeSet() (inside, outside []string) {
 	join := func(name string) string { return filepath.Join(r.home, name) }
 	first := []string{
-		join("wallet"), join("sessions"), join("intake"), join("spool"),
-		join(credentialsFile), join(registrationJournalFile), join(payoutRecordFile), join(claimRecordFile), join(setupConfigFile), join(preferFile), join(tierFile),
+		join("sessions"),
+		join(credentialsFile), join(registrationJournalFile), join(claimRecordFile), join(setupConfigFile), join(preferFile), join(tierFile),
 		join(updateStampFile),
 	}
 	if entries, err := os.ReadDir(r.home); err == nil {
 		for _, e := range entries {
-			if strings.HasPrefix(e.Name(), "state.unenrolled-") || strings.HasPrefix(e.Name(), "wallet.incomplete-") {
+			if strings.HasPrefix(e.Name(), stateAsidePrefix+"-") || isConfigAside(e.Name()) {
 				first = append(first, join(e.Name()))
 			}
 		}
@@ -1079,7 +1065,7 @@ func (r *uninstallRun) purgeSet() (inside, outside []string) {
 	if !r.envKept {
 		first = append(first, join(setupEnvJournalFile))
 	}
-	last := []string{join("state"), join("flush.lock"), join(updateLockFile), join(setupLockFile)}
+	last := []string{join("state"), join(updateLockFile), join(setupLockFile)}
 
 	if r.cfg != nil {
 		journal := join(setupEnvJournalFile)
@@ -1107,18 +1093,8 @@ func (r *uninstallRun) purgeSet() (inside, outside []string) {
 			}
 		}
 	}
-	// The prediction is -purge-state's alone (dropin-miner#134). Only its exclusion
-	// takes the flush lock, so only there is an absent one about to exist
-	// and about to be removed; a default run holds the gate and setup.lock
-	// and nothing else, and prints this set as what REMAINS, where a file
-	// that is not there must not be named — the leftover-locks summary in
-	// the same output already applies that test.
-	flushLock := ""
-	if r.purge {
-		flushLock = r.predictedFlushLockPath()
-	}
 	for _, p := range append(first, last...) {
-		if lexists(p) || (p == flushLock && flushLock != "" && lockableDir(flushLock)) {
+		if lexists(p) {
 			inside = append(inside, p)
 		}
 	}
@@ -1126,33 +1102,14 @@ func (r *uninstallRun) purgeSet() (inside, outside []string) {
 	return inside, outside
 }
 
-// predictedFlushLockPath is the flush lock a real -purge-state run's own
-// lifecycle exclusion (excludeLifecycle, lifecycle.go) tries to hold before
-// this plan is ever computed, resolved the same way excludeLifecycle
-// itself resolves it: through operationLockPaths, not a hand-rolled
-// re-reading of r.cfg. That matters beyond staying in sync with a single
-// source of truth — a config that loads but names no miner.intake_dir (no
-// [miner] block at all, or a bare proxy config) makes operationLockPaths
-// return "" for the flush lock, meaning the exclusion takes no lock at
-// all; treating a nil r.cfg and an r.cfg with no intake dir the same way,
-// as an earlier version of this function did, wrongly predicted
-// home/flush.lock for the latter too. Holding the resolved lock opens the
-// file with O_CREATE (tryLockFile, minerlock_*.go), so an absent lock the
-// exclusion can still take is created as a side effect of a real run, not
-// left for purgeSet to find. The exclusion is skipped on a dry run (its
-// own O_CREATE would itself be an undisclosed write), so this predicts the
-// same outcome instead of reading a file that a dry run never gave the
-// chance to appear. "" means operationLockPaths could not resolve one at
-// all (a config that exists but fails to load) — a purge refuses before
-// ever reaching this on that ground (see the case r.purge branch in run()),
-// so there is no real run's outcome left to predict.
-func (r *uninstallRun) predictedFlushLockPath() string {
-	_, flushLock, err := operationLockPaths(r.home, r.d.getenv)
-	if err != nil {
-		return ""
-	}
-	return flushLock
-}
+// configAsideRe is the names setup's asideName gives an older configuration
+// it sets aside beside jevlin.toml: jevlin.toml.old, jevlin.toml.old.1, ...
+// and nothing looser, so a file a participant named after the config is not
+// taken for one of them.
+var configAsideRe = regexp.MustCompile(`^` + regexp.QuoteMeta(setupConfigFile+".old") + `(\.[1-9][0-9]*)?$`)
+
+// isConfigAside reports whether name is a configuration setup set aside.
+func isConfigAside(name string) bool { return configAsideRe.MatchString(name) }
 
 // configuredPath is one participant path the config names or derives.
 type configuredPath struct {
@@ -1160,25 +1117,20 @@ type configuredPath struct {
 	path string
 }
 
-// configuredStatePaths is every participant path a config names — state,
-// spool, intake, sessions — and the ones derived from them: the flush stamp
-// in the state directory, and beside the intake the stored credentials, the
-// registration journal (which can hold a platform key), the payout record,
-// the claim record and the flush lock.
+// configuredStatePaths is every participant path a config names — the
+// state and sessions directories — and the ones derived from them: beside
+// the state directory the stored credentials, the registration journal
+// (which can hold a platform key) and the claim record.
 func configuredStatePaths(cfg *config.Config) []configuredPath {
-	m, mn := cfg.Mining, cfg.Miner
+	mn := cfg.Search
 	out := []configuredPath{
-		{"mining.state_dir", m.StateDir}, {"mining.spool_dir", m.SpoolDir},
-		{"miner.intake_dir", mn.IntakeDir}, {"miner.sessions_dir", mn.SessionsDir},
-		{"the flush stamp in mining.state_dir", flushStampPath(m)},
+		{"search.state_dir", mn.StateDir}, {"search.sessions_dir", mn.SessionsDir},
 	}
-	if mn.IntakeDir != "" {
+	if mn.StateDir != "" {
 		out = append(out,
-			configuredPath{"the stored credentials beside miner.intake_dir", filepath.Join(minerRoot(mn), credentialsFile)},
-			configuredPath{"the registration journal beside miner.intake_dir", filepath.Join(minerRoot(mn), registrationJournalFile)},
-			configuredPath{"the payout record beside miner.intake_dir", filepath.Join(minerRoot(mn), payoutRecordFile)},
-			configuredPath{"the claim record beside miner.intake_dir", filepath.Join(minerRoot(mn), claimRecordFile)},
-			configuredPath{"the flush lock beside miner.intake_dir", flushLockPath(mn)})
+			configuredPath{"the stored credentials beside search.state_dir", filepath.Join(installRoot(mn), credentialsFile)},
+			configuredPath{"the registration journal beside search.state_dir", filepath.Join(installRoot(mn), registrationJournalFile)},
+			configuredPath{"the claim record beside search.state_dir", filepath.Join(installRoot(mn), claimRecordFile)})
 	}
 	var named []configuredPath
 	for _, c := range out {
@@ -1261,39 +1213,6 @@ func (r *uninstallRun) binarySet() []string {
 	return out
 }
 
-// revocationPlan says, before anything is asked, what a purge will do about
-// the AS authorization.
-func (r *uninstallRun) revocationPlan() string {
-	switch reason, try := r.revocationDecision(); {
-	case try:
-		return fmt.Sprintf("authorization: revoke this installation's AS token family first (best effort, at most %s)", purgeRevokeTimeout)
-	default:
-		return "authorization: " + reason
-	}
-}
-
-// revocationDecision is whether a purge attempts revocation, and why not.
-func (r *uninstallRun) revocationDecision() (reason string, try bool) {
-	if r.cfg == nil {
-		return "no config, so no authorization to revoke", false
-	}
-	m := r.cfg.Mining
-	if m.StateDir == "" || !pathWithin(m.StateDir, r.home) {
-		return fmt.Sprintf("the state directory %s is outside %s: left alone, and not revoked", m.StateDir, r.home), false
-	}
-	store, err := auth.OpenStoreExisting(m.StateDir)
-	if err != nil {
-		return "no stored authorization to revoke", false
-	}
-	if _, has, err := store.LoadRefreshToken(); err != nil || !has {
-		return "no stored authorization to revoke", false
-	}
-	if !miningASConfigured(m) {
-		return "no authorization server configured, so the stored authorization cannot be revoked", false
-	}
-	return "", true
-}
-
 // ── confirmation ────────────────────────────────────────────────────────
 
 // ask is uninstall's [Y/n], answered yes by -yes. Its error is
@@ -1318,16 +1237,9 @@ func (r *uninstallRun) ask(question string) (bool, error) {
 	return false, nil
 }
 
-// purgeConfirmation is what the participant must type: the wallet's address
-// when a valid one can be read from its public sidecar, else the
-// installation path.
+// purgeConfirmation is what the participant must type: the installation
+// path, the one token every installation has.
 func purgeConfirmation(home string) (token, what string) {
-	var sc sidecar
-	if err := readWalletFile(filepath.Join(home, "wallet"), walletSidecarFile, &sc); err == nil {
-		if hrp, _, err := auth.DecodeBech32Address(sc.Address); err == nil && hrp == auth.TwilightHRP {
-			return sc.Address, "the wallet address"
-		}
-	}
 	return home, "the installation path"
 }
 
@@ -1336,8 +1248,7 @@ func purgeConfirmation(home string) (token, what string) {
 func (r *uninstallRun) confirmPurge() (code int, ok bool) {
 	token, what := purgeConfirmation(r.home)
 	line, err := promptSetup(r.d.stdout, fmt.Sprintf(
-		"\nThis destroys the participant state listed above. If the wallet holds funds and you\n"+
-			"have not kept its 24 words, they are lost. This confirmation guards against accidents;\n"+
+		"\nThis destroys the participant state listed above. This confirmation guards against accidents;\n"+
 			"it cannot tell a person from a program typing at this terminal.\n"+
 			"Type %s to permanently remove this participant state:\n  %s\n> ", what, token), r.d.stdin)
 	if err != nil {
@@ -1390,7 +1301,7 @@ func (r *uninstallRun) applyEnvironment() {
 
 // otherInstallationHint completes the restore hint for a home that is not
 // this machine's default installation. setup -home leaves the shell profile
-// and the coding agents alone for such a home (dropin-miner#84) — they belong to the
+// and the coding agents alone for such a home — they belong to the
 // default one — so "run setup -home" on its own would promise a restore it
 // no longer performs. It says what does, both ways: the agents command for an
 // installation that really is a separate one, and JEVLIN_HOME for one that
@@ -1406,23 +1317,9 @@ func (r *uninstallRun) otherInstallationHint() string {
 		"instead of -home, which sets up the profile and the agents too.\n", r.home, def, r.cfgPath)
 }
 
-// revokeAuthorization attempts the one bounded revocation and returns the
-// sentence the closing message carries about it.
-func (r *uninstallRun) revokeAuthorization() string {
-	reason, try := r.revocationDecision()
-	if !try {
-		return "Authorization: " + reason + "."
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), purgeRevokeTimeout)
-	defer cancel()
-	if err := r.d.revoke(ctx, r.cfg.Mining); err != nil {
-		return fmt.Sprintf("Authorization: local state was removed, but this installation's MINIS/AS authorization could not be confirmed revoked (%v).", err)
-	}
-	return "Authorization: this installation's AS token family was revoked."
-}
-
 func (r *uninstallRun) applyPurge() {
 	inside, _ := r.purgeSet()
+	r.purged = inside
 	for _, p := range inside {
 		// Windows will not delete an open file: an operation lock inside p is
 		// released immediately before, with the gate still held.
@@ -1512,7 +1409,7 @@ func (r *uninstallRun) removeHomeIfEmpty() {
 	}
 }
 
-func (r *uninstallRun) closing(revocation string) {
+func (r *uninstallRun) closing() {
 	rule := strings.Repeat("─", 78)
 	r.printf("%s\n", rule)
 	if r.failures > 0 {
@@ -1541,7 +1438,7 @@ func (r *uninstallRun) closing(revocation string) {
 			r.printf("  (nothing is there)\n")
 		}
 		if !r.binary {
-			// dropin-miner#88: the old wording ended on `connect`, which read as the
+			// The old wording ended on `connect`, which read as the
 			// next step. It is the opposite — setup -home is what reuses
 			// this registration, and a bare connect is what replaces it,
 			// because uninstall has just removed the profile block (on
@@ -1551,7 +1448,7 @@ func (r *uninstallRun) closing(revocation string) {
 			// makes a new one.
 			r.printf("\nTo keep using this installation, run:\n"+
 				"  jevlin setup -home %s\n"+
-				"It finds this state and uses it: the same agent, the same wallet, no new registration.\n"+
+				"It finds this state and uses it: the same agent, no new registration.\n"+
 				r.otherInstallationHint()+
 				"Or, to use this binary without setting it up again, pass -config %s to each command.\n"+
 				"Do not run `jevlin connect` on its own to come back: with nothing naming this\n"+
@@ -1563,14 +1460,8 @@ func (r *uninstallRun) closing(revocation string) {
 		r.sayLeftoverLocks()
 		return
 	}
-	r.printf("\n%s\n", revocation)
-	r.printf("Platform authorization: revoked only at the console; removing local state does not revoke it.\n")
-	if entries, err := os.ReadDir(r.home); err == nil && len(entries) > 0 {
-		r.printf("\nLeft in %s:\n", r.home)
-		for _, e := range entries {
-			r.printf("  %s\n", e.Name())
-		}
-	}
+	r.printf("\nPlatform authorization: revoked only at the console; removing local state does not revoke it.\n")
+	r.sayLeftInHome(r.purged, false)
 	if _, outside := r.purgeSet(); len(outside) > 0 {
 		r.printf("\nLeft outside %s, as configured:\n", r.home)
 		for _, p := range outside {
@@ -1579,14 +1470,63 @@ func (r *uninstallRun) closing(revocation string) {
 	}
 	r.sayLeftoverLocks()
 	r.printf("Other commands were excluded while the locks were held; an agent session still open can\n" +
-		"recreate intake/ or sessions/ by searching, which is harmless.\n")
+		"recreate sessions/ by searching, which is harmless.\n")
+}
+
+// sayLeftInHome names, with its full path, every entry still in the
+// installation directory that a purge does not remove: not the purge set
+// (purged — in a dry run what purgeSet finds now, in a real run what
+// applyPurge went through, because an entry of it still there was named as
+// a problem, not left on purpose), not a lock file sayLeftoverLocks names
+// beneath this, and not the directory holding this installation's own
+// binary, which -purge-state leaves to -binary and says so. What remains is
+// what an earlier version or another program put there. This client holds no list
+// of the earlier version's file names — it reads none of them and names none
+// of them by name — so it cannot remove them on its own say-so, and one of
+// them can hold a key: a participant who has just destroyed their identity is
+// told exactly what still exists, rather than finding it later and being
+// unable to place it. A directory that is empty or gone prints nothing.
+func (r *uninstallRun) sayLeftInHome(purged []string, dry bool) {
+	entries, err := os.ReadDir(r.home)
+	if err != nil {
+		return
+	}
+	skip := map[string]bool{}
+	for _, p := range append(append([]string{}, purged...), r.leftoverLocks()...) {
+		skip[p] = true
+	}
+	ownBinary := lexists(r.ownedBinary())
+	if ownBinary || r.binary {
+		skip[filepath.Dir(r.ownedBinary())] = true
+	}
+	var left []string
+	for _, e := range entries {
+		if p := filepath.Join(r.home, e.Name()); !skip[p] {
+			left = append(left, p)
+		}
+	}
+	if len(left) > 0 {
+		verb := "Left in"
+		if dry {
+			verb = "Would leave in"
+		}
+		r.printf("\n%s %s, not this version's to remove: files an earlier version or another program put\n"+
+			"there. One may hold a key an earlier version used; look before deleting any of them.\n", verb, r.home)
+		for _, p := range left {
+			r.printf("  %s\n", p)
+		}
+	}
+	if ownBinary && !r.binary {
+		r.printf("\n%s holds this installation's binary, which -purge-state leaves; `jevlin uninstall -binary` removes it.\n",
+			filepath.Dir(r.ownedBinary()))
+	}
 }
 
 // sayLeftoverLocks names every lock file this installation still carries and
-// says it is safe to delete. The gate always said this of itself; dropin-miner#103 and
-// dropin-miner#115 are the same sentence owed by the rest of them -- the update lock an
-// upgrade leaves in bin/, and the setup.lock and connect.lock a setup or a
-// connect leaves in the installation.
+// says it is safe to delete. The gate always said this of itself; the rest of
+// them are owed the same sentence -- the update lock an upgrade leaves in
+// bin/, and the setup.lock and connect.lock a setup or a connect leaves in
+// the installation.
 //
 // Named rather than removed, and that is a conclusion rather than an
 // omission. Removing an operation lock is only safe while the GATE is held,
@@ -1596,7 +1536,7 @@ func (r *uninstallRun) closing(revocation string) {
 // has one. An ordinary operation has deliberately released the gate by the
 // time it holds its own lock -- connect gives it up before its poll loop --
 // and taking it back at the end would be the reverse of the one lock order
-// (gate, setup.lock, connect.lock, flush.lock). That reversal is not a
+// (gate, setup.lock, connect.lock). That reversal is not a
 // hypothetical: it is what TestSetupConnectsUnderItsOwnAdmission exists to
 // forbid, and a first attempt at removing these files in place tripped it on
 // the first run. The destructive exclusion is the one operation that holds
@@ -1617,38 +1557,22 @@ func (r *uninstallRun) sayLeftoverLocks() {
 	}
 }
 
-// refreshTokenLockFile is the refresh-token lock pkg/auth takes in the state
-// directory (refreshLockFile, pkg/auth/refreshlock.go), named here because
-// that package does not export it; TestTheRefreshLockNameIsPkgAuths holds
-// the two spellings together.
-const refreshTokenLockFile = "refresh.token.lock"
-
-// leftoverLocks is the lock files that still exist for this installation:
-// first in lock order the gate, setup.lock, connect.lock, flush.lock, the
-// binary's update lock and the release check's lock beside it in the
-// installation's own directory, then the two that belong to other subsystems
-// and to no lock order -- the refresh-token lock beside connect.lock in the
-// state directory, and the wallet's creation lock (dropin-miner#136). All
-// eight are the same kind of file: empty, held only while their command
-// runs, made again by the next one. A path that is gone -- uninstall -binary takes the update lock
-// with the binary -- is left out rather than named.
+// leftoverLocks is the lock files that still exist for this installation,
+// in lock order: the gate, setup.lock, connect.lock, the binary's update
+// lock and the release check's lock beside it in the installation's own
+// directory. All of them are the same kind of file: empty, held only while
+// their command ran, made again by the next one that needs it. A path that
+// is gone -- uninstall -binary takes the update lock with the binary -- is
+// left out rather than named.
 func (r *uninstallRun) leftoverLocks() []string {
 	candidates := []string{lifecycleGatePath(r.home), filepath.Join(r.home, setupLockFile)}
-	stateDir := ""
-	if connectLock, flushLock, err := operationLockPaths(r.home, r.d.getenv); err == nil {
-		candidates = append(candidates, connectLock, flushLock)
-		if connectLock != "" {
-			stateDir = filepath.Dir(connectLock)
-		}
+	if connectLock, err := operationLockPath(r.home, r.d.getenv); err == nil {
+		candidates = append(candidates, connectLock)
 	}
 	if owned := r.ownedBinary(); owned != "" {
 		candidates = append(candidates, owned+updateLockSuffix)
 	}
 	candidates = append(candidates, filepath.Join(r.home, updateLockFile))
-	if stateDir != "" {
-		candidates = append(candidates, filepath.Join(stateDir, refreshTokenLockFile))
-	}
-	candidates = append(candidates, filepath.Join(r.home, "wallet", walletLockFile))
 	var out []string
 	seen := map[string]bool{}
 	for _, p := range candidates {

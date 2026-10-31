@@ -1,60 +1,17 @@
 package main
 
-// The Codex sandbox fix: a search's mining observation is written under the
+// The Codex sandbox: a search's lineage and the claim resume write under the
 // jevlin home, which Codex's default workspace-write sandbox denies. The
-// installer now widens that sandbox, and a blocked write is reported loudly
-// instead of silently. All identifiers here are synthetic.
+// installer widens that sandbox to exactly those directories. All
+// identifiers here are synthetic.
 
 import (
-	"errors"
 	"fmt"
-	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
-
-func TestIntakeWriteBlockedClassifiesSandboxDenials(t *testing.T) {
-	cases := []struct {
-		name string
-		err  error
-		want bool
-	}{
-		{"permission (Linux/Landlock EACCES)", fs.ErrPermission, true},
-		{"wrapped permission", fmt.Errorf("mkdir: %w", fs.ErrPermission), true},
-		{"read-only fs (macOS/Seatbelt EROFS)", errors.New("open x.tmp: read-only file system"), true},
-		{"unrelated failure", io.ErrUnexpectedEOF, false},
-	}
-	for _, c := range cases {
-		if got := intakeWriteBlocked(c.err); got != c.want {
-			t.Errorf("%s: intakeWriteBlocked=%v want %v", c.name, got, c.want)
-		}
-	}
-}
-
-// A real filesystem denial (not a synthetic error) must classify as blocked,
-// so the loud, actionable message fires rather than the generic one.
-func TestWriteIntakeToUnwritableDirIsClassifiedBlocked(t *testing.T) {
-	if !posixModes || os.Geteuid() == 0 {
-		t.Skip("needs POSIX mode bits and a non-root uid to make a dir unwritable")
-	}
-	parent := t.TempDir()
-	if err := os.Chmod(parent, 0o500); err != nil { // #nosec G302 -- deliberately unwritable, to force a real permission denial
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(parent, 0o700) }) // #nosec G302 -- restore so t.TempDir cleanup can remove it
-
-	_, err := writeIntake(filepath.Join(parent, "intake"), intakeRecord{RequestID: "r1", FinishedAt: time.Now()})
-	if err == nil {
-		t.Fatal("expected the write into a read-only parent to fail")
-	}
-	if !intakeWriteBlocked(err) {
-		t.Errorf("a real permission denial was not classified as a sandbox block: %v", err)
-	}
-}
 
 // onCodexOS plans Codex's sandbox for goos for the rest of this test, so a
 // case about the permission profile holds on the Windows runners too, and a
@@ -67,32 +24,25 @@ func onCodexOS(t *testing.T, goos string) {
 }
 
 // sandboxTestConfig writes a real config (loadConfig reads the real fs) whose
-// mining/miner dirs all sit under one jevlin home, and returns that home.
+// directories all sit under one jevlin home, and returns that home.
 func sandboxTestConfig(t *testing.T) (cfgPath, home string) {
 	t.Helper()
 	onCodexOS(t, "linux")
 	home = t.TempDir()
-	for _, d := range []string{"state", "spool", "intake", "sessions"} {
+	for _, d := range []string{"state", "sessions"} {
 		if err := os.MkdirAll(filepath.Join(home, d), 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
-	doc := fmt.Sprintf(`
-[mining]
-enabled = true
-as_url = "https://as.example.invalid"
-chain_id = "twilight-1"
-slot_id = 7
-state_dir = %q
-spool_dir = %q
+	doc := fmt.Sprintf(`schema = 1
 
-[miner]
-enabled = true
-router_url = "https://router.example.invalid"
-intake_dir = %q
+[router]
+url = "https://router.example.invalid"
+
+[search]
+state_dir = %q
 sessions_dir = %q
-`, filepath.ToSlash(filepath.Join(home, "state")), filepath.ToSlash(filepath.Join(home, "spool")),
-		filepath.ToSlash(filepath.Join(home, "intake")), filepath.ToSlash(filepath.Join(home, "sessions")))
+`, filepath.ToSlash(filepath.Join(home, "state")), filepath.ToSlash(filepath.Join(home, "sessions")))
 	cfgPath = filepath.Join(home, "jevlin.toml")
 	if err := os.WriteFile(cfgPath, []byte(doc), 0o600); err != nil {
 		t.Fatal(err)
@@ -137,22 +87,22 @@ func TestCodexInstallWritesTheProfileAndUninstallRemovesIt(t *testing.T) {
 	if !proxy {
 		t.Errorf("the network proxy is not on, so the host list would not be enforced:\n%s", got)
 	}
-	// The four directories themselves, sorted — never the home.
-	want := []string{filepath.Join(home, "intake"), filepath.Join(home, "sessions"), filepath.Join(home, "spool"), filepath.Join(home, "state")}
+	// The two directories themselves, sorted — never the home.
+	want := []string{filepath.Join(home, "sessions"), filepath.Join(home, "state")}
 	if strings.Join(roots, "|") != strings.Join(want, "|") {
 		t.Errorf("roots = %q, want %q", roots, want)
 	}
 	// The hosts the config names, and no other.
-	if strings.Join(hosts, "|") != "agents-v1.jevlin.ai|as.example.invalid|router.example.invalid" {
-		t.Errorf("hosts = %q, want the platform, the AS and the router", hosts)
+	if strings.Join(hosts, "|") != "agents-v1.jevlin.ai|router.example.invalid" {
+		t.Errorf("hosts = %q, want the platform and the router", hosts)
 	}
 	// The old block's open network is gone for good.
 	if strings.Contains(got, "network_access") || strings.Contains(got, "["+codexSandboxTable+"]") {
 		t.Errorf("the old open-network table is still written:\n%s", got)
 	}
-	// The home itself must never be a writable root: it holds jevlin.toml,
-	// credentials.json and wallet/, and a sandboxed command that can rewrite
-	// the config can redirect the credentials to any https host on the next
+	// The home itself must never be a writable root: it holds jevlin.toml
+	// and credentials.json, and a sandboxed command that can rewrite the
+	// config can redirect the credentials to any https host on the next
 	// run. Asserted on its own so the guard has a test that goes red by
 	// itself.
 	if dirsInclude(roots, home) {
@@ -246,17 +196,17 @@ func TestCodexWindowsInstallWritesRootsWithoutNetwork(t *testing.T) {
 	}
 }
 
-// With [miner] off the miner records nothing — but the detached claim resume
-// still writes the state dir after every served search, so the profile must
-// exist with the state dir as its one writable root, and not the others.
-func TestCodexInstallWithMinerOffStillWritesStateDirRoot(t *testing.T) {
+// A config naming only state_dir: the detached claim resume writes the state
+// dir after every served search, so the profile must exist with the state
+// dir as a writable root, and the sessions directory the config does not
+// name defaults beside it.
+func TestCodexInstallWithOnlyAStateDirDefaultsTheSessionsDirBesideIt(t *testing.T) {
 	onCodexOS(t, "linux")
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, "state"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	doc := fmt.Sprintf("[mining]\nstate_dir = %q\n\n[miner]\nenabled = false\n",
-		filepath.ToSlash(filepath.Join(home, "state")))
+	doc := fmt.Sprintf("schema = 1\n\n[search]\nstate_dir = %q\n", filepath.ToSlash(filepath.Join(home, "state")))
 	cfgPath := filepath.Join(home, "jevlin.toml")
 	if err := os.WriteFile(cfgPath, []byte(doc), 0o600); err != nil {
 		t.Fatal(err)
@@ -273,9 +223,9 @@ func TestCodexInstallWithMinerOffStillWritesStateDirRoot(t *testing.T) {
 	if !proxy || len(hosts) == 0 {
 		t.Errorf("no enforced host list (proxy %v, hosts %q):\n%s", proxy, hosts, got)
 	}
-	// The state dir alone.
-	if len(roots) != 1 || !samePath(roots[0], filepath.Join(home, "state")) {
-		t.Errorf("the roots are not the state dir alone: %q\n%s", roots, got)
+	// The state dir and the sessions dir defaulted beside it, nothing else.
+	if len(roots) != 2 || !samePath(roots[0], filepath.Join(home, "sessions")) || !samePath(roots[1], filepath.Join(home, "state")) {
+		t.Errorf("the roots are not the state and sessions dirs: %q\n%s", roots, got)
 	}
 }
 
@@ -292,21 +242,21 @@ func TestCodexInstallWithNoReadableConfigWritesNoBlock(t *testing.T) {
 }
 
 // A layout that nests the installation's own directory (credentials.json,
-// flush.lock) or the config's directory inside a directory the block would
-// grant gets no block at all, and install says why: hard invariant 19 rests on
-// those two never being writable from the sandbox.
+// the registration journal) or the config's directory inside a directory the
+// block would grant gets no block at all, and install says why: hard
+// invariant 19 rests on those two never being writable from the sandbox.
 func TestCodexInstallRefusesALayoutThatNestsTheInstallationInARoot(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		layout func(home string) (cfgPath string, doc string)
 	}{
-		{"intake_dir inside state_dir", func(home string) (string, string) {
+		{"sessions_dir is the installation directory", func(home string) (string, string) {
 			st := filepath.Join(home, "state")
-			return filepath.Join(home, "jevlin.toml"), nestedDoc(st, filepath.Join(home, "spool"), filepath.Join(st, "intake"), filepath.Join(home, "sessions"))
+			return filepath.Join(home, "jevlin.toml"), nestedDoc(st, home)
 		}},
 		{"the config inside state_dir", func(home string) (string, string) {
 			st := filepath.Join(home, "state")
-			return filepath.Join(st, "jevlin.toml"), nestedDoc(st, filepath.Join(home, "spool"), filepath.Join(home, "intake"), filepath.Join(home, "sessions"))
+			return filepath.Join(st, "jevlin.toml"), nestedDoc(st, filepath.Join(home, "sessions"))
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -333,20 +283,14 @@ func TestCodexInstallRefusesALayoutThatNestsTheInstallationInARoot(t *testing.T)
 	}
 }
 
-func nestedDoc(state, spool, intake, sessions string) string {
-	return fmt.Sprintf(`
-[mining]
-enabled = true
-as_url = "https://as.example.invalid"
-chain_id = "twilight-1"
-slot_id = 7
-state_dir = %q
-spool_dir = %q
+func nestedDoc(state, sessions string) string {
+	return fmt.Sprintf(`schema = 1
 
-[miner]
-enabled = true
-router_url = "https://router.example.invalid"
-intake_dir = %q
+[router]
+url = "https://router.example.invalid"
+
+[search]
+state_dir = %q
 sessions_dir = %q
-`, filepath.ToSlash(state), filepath.ToSlash(spool), filepath.ToSlash(intake), filepath.ToSlash(sessions))
+`, filepath.ToSlash(state), filepath.ToSlash(sessions))
 }

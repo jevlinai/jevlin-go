@@ -64,7 +64,7 @@ func TestClaudeTurnDetail(t *testing.T) {
 	h := newTurnEndHarness(nil, true)
 	h.fs.files["/t/sess.jsonl"] = []byte(turnTranscript())
 	h.served(traceHash("sess|p1"))
-	runHook(t, h.ops, h.hc, "flush", claudeStop(map[string]any{
+	runHook(t, h.ops, h.hc, "stop", claudeStop(map[string]any{
 		"transcript_path": "/t/sess.jsonl", "last_assistant_message": "The MVP was Yang Eui-ji.",
 	}))
 	rec := h.record(t)
@@ -158,7 +158,7 @@ func TestClaudeTurnDetailIsAllOrNothing(t *testing.T) {
 		}
 		h.served(traceHash("sess|" + turn))
 		tc.over["last_assistant_message"] = "the answer"
-		runHook(t, h.ops, h.hc, "flush", claudeStop(tc.over))
+		runHook(t, h.ops, h.hc, "stop", claudeStop(tc.over))
 		rec := h.record(t)
 		if rec.FinalText != "the answer" || rec.UserText != "" || len(rec.Steps) != 0 || rec.Usage != nil || rec.Model != "" {
 			t.Errorf("%s: %+v", name, rec)

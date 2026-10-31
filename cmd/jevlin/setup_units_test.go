@@ -1,8 +1,8 @@
 package main
 
 // The pieces of setup that decide something on their own, tested directly:
-// TOML quoting, the profile block editor, the Windows delta journal, the
-// identity bundle's conflict rule, and -with's resolver.
+// TOML quoting, the config policy, the profile block editor, the Windows
+// delta journal, the identity bundle's conflict rule, and -with's resolver.
 
 import (
 	"bytes"
@@ -51,56 +51,128 @@ func TestTOMLStringRoundTripsEveryCharacterClass(t *testing.T) {
 // Every path in the fresh config is quoted: a home that holds a quote and a
 // backslash still produces a config pkg/config loads, with the path intact.
 func TestFreshConfigQuotesEveryPath(t *testing.T) {
-	dir := t.TempDir()
 	home := `/tmp/we ird"q\b$;&'x/.jevlin`
-	v, err := resolveSetupValues(home, func(string) string { return "" }, false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	v := resolveSetupValues(home, func(string) string { return "" })
 	data, err := renderFreshConfig(v)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := validateConfigFile(dir)(data); err != nil {
+	if err := validateConfigBytes(data, "fresh.toml"); err != nil {
 		t.Fatalf("fresh config for %q does not load: %v\n%s", home, err, data)
 	}
 	var doc struct {
-		Mining struct {
+		Search struct {
 			StateDir string `toml:"state_dir"`
-		} `toml:"mining"`
+		} `toml:"search"`
 	}
-	if _, err := toml.Decode(string(data), &doc); err != nil || doc.Mining.StateDir != filepath.Join(home, "state") {
-		t.Fatalf("state_dir = %q (%v), want %q", doc.Mining.StateDir, err, filepath.Join(home, "state"))
+	if _, err := toml.Decode(string(data), &doc); err != nil || doc.Search.StateDir != filepath.Join(home, "state") {
+		t.Fatalf("state_dir = %q (%v), want %q", doc.Search.StateDir, err, filepath.Join(home, "state"))
 	}
 }
 
-func TestMigrationPolicyUnits(t *testing.T) {
+// planSetupConfig's three outcomes and its one refusal. Nothing here is a
+// migration: a format-1 file that loads is left with nothing to write, a
+// file with no schema line is set aside under a name of its own and a fresh
+// format-1 file planned in its place, and every other file is refused with
+// errConfigInvalid and the path, leaving nothing planned.
+func TestConfigPolicyUnits(t *testing.T) {
 	dir := t.TempDir()
-	validate := validateConfigFile(dir)
-	v, _ := resolveSetupValues(filepath.Join(dir, "home"), func(string) string { return "" }, false)
+	v := resolveSetupValues(filepath.Join(dir, "home"), func(string) string { return "" })
 	path := filepath.Join(dir, "jevlin.toml")
-	mining := "[mining]\nas_url = \"https://as.example\"\nchain_id = \"c\"\nslot_id = 1\nstate_dir = \"/s\"\n"
+	none := func(string) bool { return false }
+	fresh, err := renderFreshConfig(v)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	// [miner] present, even as a dotted key at the root: left.
-	plan, err := planSetupConfig(path, []byte(mining+"\n[miner]\nenabled = false\n"), v, validate)
+	// No file: a fresh format-1 file, and nothing set aside.
+	plan, err := planSetupConfig(path, nil, v, validateConfigBytes, none)
+	if err != nil || plan.outcome != configFresh || !bytes.Equal(plan.data, fresh) || plan.aside != "" {
+		t.Fatalf("no file: %+v %v", plan, err)
+	}
+
+	// A format-1 file that loads is left byte for byte: nothing to write,
+	// nothing to set aside, whatever keys it holds and in whatever order.
+	formatOne := "schema = 1\n\n[search]\nturn_end = true\n\n[router]\ntier = \"max\"\nurl = \"https://router.example\"\n"
+	plan, err = planSetupConfig(path, []byte(formatOne), v, validateConfigBytes, none)
+	if err != nil || plan.outcome != configLeft || plan.data != nil || plan.aside != "" {
+		t.Fatalf("format 1: %+v %v", plan, err)
+	}
+	// A dotted key at the root is still format 1.
+	plan, err = planSetupConfig(path, []byte("schema = 1\nsearch.turn_end = true\n"), v, validateConfigBytes, none)
 	if err != nil || plan.outcome != configLeft || plan.data != nil {
-		t.Fatalf("[miner] table: %+v %v", plan, err)
+		t.Fatalf("dotted format 1: %+v %v", plan, err)
 	}
-	// The text "[miner]" inside a comment is not a table.
-	plan, err = planSetupConfig(path, []byte(mining+"# [miner] later\n"), v, validate)
-	if err != nil || plan.outcome != configMigrated || strings.Join(plan.added, ",") != "[platform],[miner]" {
-		t.Fatalf("commented [miner]: %+v %v", plan, err)
+
+	// A file with no schema line is an older format whatever else it
+	// holds: the [[provider]] array, the old [search] table, or a schema
+	// line inside a comment. It is set aside as path.old and the fresh
+	// file takes its place.
+	for name, legacy := range map[string]string{
+		"provider only":    "[[provider]]\nname = \"search-router\"\nupstream = \"https://router.example\"\n",
+		"old search table": "[search]\nrouter_url = \"https://router.example\"\nturn_end = true\n",
+		"old platform":     "[platform]\nbase_url = \"https://platform.example\"\nagents_api_url = \"https://agents.example\"\n",
+		"commented schema": "# schema = 1\n[search]\nturn_end = true\n",
+		"empty":            "",
+	} {
+		plan, err = planSetupConfig(path, []byte(legacy), v, validateConfigBytes, none)
+		// The fresh file, with what the older one named carried into it.
+		carried, rerr := renderFreshConfig(v.carrying(readEarlierConfig([]byte(legacy))))
+		if rerr != nil {
+			t.Fatal(rerr)
+		}
+		if err != nil || plan.outcome != configReplaced || !bytes.Equal(plan.data, carried) || plan.aside != path+".old" {
+			t.Fatalf("%s: %+v %v", name, plan, err)
+		}
 	}
-	// Invalid, whatever it says.
-	_, err = planSetupConfig(path, []byte("[miner]\nenabled = true\n[miner]\n"), v, validate)
-	if !errors.Is(err, errConfigInvalid) || !strings.Contains(err.Error(), path) {
-		t.Fatalf("invalid config: %v", err)
+	// When path.old is taken the older file goes to path.old.1, so a
+	// participant's own set-aside copy is never overwritten.
+	taken := func(name string) bool { return name == path+".old" }
+	plan, err = planSetupConfig(path, []byte("[search]\nturn_end = true\n"), v, validateConfigBytes, taken)
+	if err != nil || plan.outcome != configReplaced || plan.aside != path+".old.1" {
+		t.Fatalf("with path.old taken: %+v %v", plan, err)
 	}
-	// A migration whose result would not load is refused, not published: no
-	// [mining] AS, so [miner] enabled cannot be valid.
-	_, err = planSetupConfig(path, []byte("[log]\nlevel = \"info\"\n"), v, validate)
-	if err == nil || !strings.Contains(err.Error(), "left as it is") {
-		t.Fatalf("unloadable migration: %v", err)
+
+	// Refused, with the path and the reason, and nothing planned: a
+	// format-1 file with a key format 1 does not define, one with a value
+	// that does not load, one of another schema, and a file that is not
+	// TOML at all. None of them is set aside: a file that says it is
+	// format 1 is the participant's current configuration.
+	for name, tc := range map[string]struct{ body, reason string }{
+		"unknown table":   {"schema = 1\n[log]\nlevel = \"info\"\n", "format 1 does not define log"},
+		"old key":         {"schema = 1\n[search]\nrouter_url = \"https://router.example\"\n", "format 1 does not define search.router_url"},
+		"old array":       {"schema = 1\n[[provider]]\nname = \"search-router\"\n", "format 1 does not define provider"},
+		"bad url":         {"schema = 1\n[router]\nurl = \"ftp://router.example\"\n", "router.url"},
+		"wrong type":      {"schema = 1\n[search]\nturn_end = \"yes\"\n", "turn_end"},
+		"another schema":  {"schema = 2\n", "schema"},
+		"not toml":        {"[search]\nturn_end = true\nthis is not toml\n", ""},
+		"duplicate table": {"schema = 1\n[search]\nturn_end = true\n[search]\n", ""},
+	} {
+		plan, err = planSetupConfig(path, []byte(tc.body), v, validateConfigBytes, none)
+		if !errors.Is(err, errConfigInvalid) || !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), tc.reason) {
+			t.Fatalf("%s: err = %v, want errConfigInvalid naming %s and %q", name, err, path, tc.reason)
+		}
+		if plan.outcome != configFresh || plan.data != nil || plan.aside != "" {
+			t.Fatalf("%s: a refusal planned something: %+v", name, plan)
+		}
+	}
+}
+
+// asideName takes the first free name of path.old, path.old.1, path.old.2,
+// ... and gives up, naming the path, rather than picking one that exists.
+func TestAsideNameTakesTheFirstFreeName(t *testing.T) {
+	path := filepath.Join("x", "jevlin.toml")
+	exists := map[string]bool{}
+	isTaken := func(name string) bool { return exists[name] }
+	for i, want := range []string{path + ".old", path + ".old.1", path + ".old.2"} {
+		got, err := asideName(path, isTaken)
+		if err != nil || got != want {
+			t.Fatalf("free name #%d = %q, %v; want %q", i, got, err, want)
+		}
+		exists[got] = true
+	}
+	if got, err := asideName(path, func(string) bool { return true }); err == nil || got != "" || !strings.Contains(err.Error(), path) {
+		t.Fatalf("every name taken: %q, %v; want an error naming %s", got, err, path)
 	}
 }
 
@@ -237,8 +309,12 @@ func TestUserEnvironmentJournalRecordsDeltas(t *testing.T) {
 	}
 }
 
+// Every file that makes a destination an identity: the two state/ records
+// (identityStateFiles) and the three beside the credential. A state/ holding
+// anything else is an unfinished registration's and is set aside instead
+// (TestSetupSetsAsideAnUnregisteredDestinationState).
 func TestIdentityBundleConflictsWithADestinationAgentJSON(t *testing.T) {
-	for _, existing := range []string{"agent.json", "refresh.token", "registration_pending.json", "participation.secret", credentialsFile, "home/" + registrationJournalFile, "home/" + claimRecordFile} {
+	for _, existing := range []string{"agent.json", "registration_pending.json", credentialsFile, "home/" + registrationJournalFile, "home/" + claimRecordFile} {
 		t.Run(existing, func(t *testing.T) {
 			root := t.TempDir()
 			src, dst := filepath.Join(root, "src"), filepath.Join(root, "dst")
@@ -282,13 +358,7 @@ func TestIdentityBundleConflictsWithADestinationAgentJSON(t *testing.T) {
 func TestIdentityBundleMovesStateAndKeyTogether(t *testing.T) {
 	root := t.TempDir()
 	src, dst := filepath.Join(root, "src"), filepath.Join(root, "dst")
-	writeInstallation(t, src, "identity")
-	if err := os.WriteFile(filepath.Join(src, payoutRecordFile), []byte(`{"address":"twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(src, claimRecordFile), []byte(`{"agent_id":"old-agent","claim_url":"https://platform.example/claim/X"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeInstallation(t, src, "identity", "pending", "claim")
 	if err := os.MkdirAll(filepath.Join(dst, "state"), 0o700); err != nil { // setup's own empty state/
 		t.Fatal(err)
 	}
@@ -296,7 +366,7 @@ func TestIdentityBundleMovesStateAndKeyTogether(t *testing.T) {
 	if err := a.run(); err != nil {
 		t.Fatalf("unexpected adoption error: %v", err)
 	}
-	for _, rel := range []string{filepath.Join("state", "refresh.token"), filepath.Join("state", "dpop.key"), credentialsFile, payoutRecordFile, claimRecordFile} {
+	for _, rel := range []string{filepath.Join("state", "trace.key"), filepath.Join("state", "agent.json"), credentialsFile, registrationJournalFile, claimRecordFile} {
 		if !lexists(filepath.Join(dst, rel)) || lexists(filepath.Join(src, rel)) {
 			t.Errorf("%s did not move with the bundle", rel)
 		}

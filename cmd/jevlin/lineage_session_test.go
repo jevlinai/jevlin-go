@@ -1,8 +1,8 @@
 package main
 
-// Two sessions of one host are told apart (dropin-miner#104).
+// Two sessions of one host are told apart.
 //
-// dropin-miner#97 made the harness the test of ownership, which closed the cross-host
+// Making the harness the test of ownership closed the cross-host
 // case. Two sessions of the SAME host in nested workspaces — a monorepo open
 // at its root and again at a package — are one name, and the walk took the
 // nearest file whichever session was searching. The session-start hook now
@@ -92,10 +92,11 @@ func TestTheInnerSessionsOwnSearchStillFindsItsFile(t *testing.T) {
 }
 
 // THE FALLBACK, asserted so that it is a decision and not an accident: with
-// no session exported the rule is exactly dropin-miner#97's. The nearest file of the
-// same harness is adopted — which, in this layout, is the defect dropin-miner#104
-// describes, and is what every shell started before the variable existed
-// still gets. A test that encodes a deferral says so: this one does.
+// no session exported the rule is exactly the harness rule. The nearest file
+// of the same harness is adopted — which, in this layout, is the defect
+// described at the top of this file, and is what every shell started before
+// the variable existed still gets. A test that encodes a deferral says so:
+// this one does.
 func TestWithoutTheSessionVariableTheWalkIsExactlyTheHarnessRule(t *testing.T) {
 	p := newLineageProbe(t, nestedCwd, nil)
 	outer := p.write(t, adoptRoot, "cursor", "outer-session")
@@ -112,7 +113,7 @@ func TestWithoutTheSessionVariableTheWalkIsExactlyTheHarnessRule(t *testing.T) {
 }
 
 // A nearer file of ANOTHER host is climbed past when the session is known,
-// and stops the walk when it is not (dropin-miner#97's rule, held by
+// and stops the walk when it is not (the harness rule, held by
 // TestAForeignSidecarStopsTheWalkRatherThanBeingClimbedPast). The two do not
 // disagree: what made a more distant file a guess was that only a name
 // matched, and a file holding this session's own id is not a guess.
@@ -155,11 +156,12 @@ func TestAKnownSessionStillRequiresFreshnessAndTheHarness(t *testing.T) {
 // End to end, with nothing hand-written between the two halves: Cursor's
 // session-start hook is run for two conversations in nested workspaces, and
 // the outer one's search runs with exactly the environment that hook
-// exported — which since dropin-miner#118 is what its preToolUse hook puts on the
+// exported — which is now what its preToolUse hook puts on the
 // search's own command.
 //
-// Before dropin-miner#109 this test dropped the lineage variable and required the walk to
-// find the outer session's file. It cannot any more, and that is chosen: the
+// Before Cursor's file was keyed by conversation, this test dropped the
+// lineage variable and required the walk to find the outer session's file. It
+// cannot any more, and that is chosen: the
 // file is keyed by conversation, the walk by directory, and a Cursor search
 // carries its declared path on its own command, so no shell of its own
 // loses it. What a Cursor search that has no declared path gets is asserted

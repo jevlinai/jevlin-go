@@ -21,8 +21,6 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
-
-	"github.com/jevlinai/jevlin-go/pkg/auth"
 )
 
 const (
@@ -536,7 +534,6 @@ type searchEnvelope struct {
 	RequestID    string         `json:"request_id,omitempty"`
 	RetryAfterMS *int64         `json:"retry_after_ms,omitempty"`
 	Result       *machineResult `json:"result,omitempty"`
-	Mining       *machineMining `json:"mining,omitempty"`
 	Error        *machineError  `json:"error,omitempty"`
 }
 
@@ -638,8 +635,8 @@ type machineMergedPage struct {
 	FoundBy []string `json:"found_by"`
 	// FoundIn is where those providers cited the page in the result the
 	// router stores under request_id: one entry per FoundBy provider, in
-	// the same order. It is what keeps a merged-only envelope joinable
-	// (dropin-miner#126). With "view":"merged" the candidates list is omitted, so
+	// the same order. It is what keeps a merged-only envelope joinable.
+	// With "view":"merged" the candidates list is omitted, so
 	// without these positions nothing maps a page back into the stored
 	// result's candidates.
 	FoundIn []machineMergedPosition `json:"found_in"`
@@ -965,45 +962,6 @@ func positionsOf(candidates []routerCandidate, listings []routerFoundBy) []machi
 	return positions
 }
 
-// machineMining is the economic half of the answer, and it is separate
-// from ok on purpose: a successful search with mining disabled, undecided
-// or degraded is still a successful search. Nothing here is called
-// "earned" — the AS reconciles observations against the provider, and this
-// client never claims a reward on its own say-so.
-type machineMining struct {
-	// State is the persisted runtime decision, in its own canonical
-	// spelling: enabled, disabled, undecided or degraded.
-	State string `json:"state"`
-	// Configured is [miner] enabled — whether intake exists at all.
-	Configured bool `json:"configured"`
-	// Recorded says whether THIS search's observation was written. False
-	// with State "enabled" means capture failed; Health says why.
-	Recorded bool            `json:"recorded"`
-	Detail   string          `json:"detail,omitempty"`
-	Health   []machineHealth `json:"health,omitempty"`
-}
-
-type machineHealth struct {
-	Component string `json:"component"`
-	Reason    string `json:"reason"`
-	Detail    string `json:"detail,omitempty"`
-}
-
-func healthOf(records []auth.HealthRecord) []machineHealth {
-	if len(records) == 0 {
-		return nil
-	}
-	out := make([]machineHealth, 0, len(records))
-	for _, r := range records {
-		out = append(out, machineHealth{
-			Component: string(r.Component),
-			Reason:    string(r.Reason),
-			Detail:    boundMessage(r.Detail),
-		})
-	}
-	return out
-}
-
 // ── classification ──────────────────────────────────────────────────────
 
 // searchClassification is the recovery advice for one outcome. It is
@@ -1133,12 +1091,11 @@ func machineCodeLike(s string) (string, bool) {
 // It reads the normalized request id off the outcome rather than the raw
 // body, so the identity in the envelope is the identity the observation
 // was recorded against.
-func searchEnvelopeOf(out searchOutcome, mining *machineMining, view string) (searchEnvelope, int) {
+func searchEnvelopeOf(out searchOutcome, view string) (searchEnvelope, int) {
 	c := classifySearch(out)
 	env := searchEnvelope{
 		machineHeader: newMachineHeader("search", c.ExitCode, c.Code, c.Retryable, c.Action),
 		HTTPStatus:    out.HTTPStatus,
-		Mining:        mining,
 	}
 	if out.HasRetryAfter && (c.Retryable || out.HTTPStatus == 429) {
 		ms := out.RetryAfterMS
@@ -1160,7 +1117,7 @@ func searchEnvelopeOf(out searchOutcome, mining *machineMining, view string) (se
 }
 
 // failSearchInput answers a request this client refused to send. It never
-// reaches the router, so there is no HTTP status and no mining state to
+// reaches the router, so there is no HTTP status to
 // report.
 func failSearchInput(stdout io.Writer, err *inputError) int {
 	env := searchEnvelope{

@@ -62,9 +62,7 @@ jevlin setup -yes
 `-yes` answers the shell-profile and coding-agents questions: it adds
 `jevlin` to PATH and writes the skill (or, for opencode, the plugin) and
 hooks into every agent it finds (Claude Code, Cursor, Codex, opencode, Pi,
-Hermes). Mining stays off unless
-the user turns it on later with `jevlin mining enable`; search works either
-way.
+Hermes). Nothing is mined: the client is search only.
 
 One question `-yes` does not answer: replacing a Codex setting the user
 chose themselves (a default permission profile of their own, or

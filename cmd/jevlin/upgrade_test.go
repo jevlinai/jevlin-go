@@ -548,14 +548,14 @@ func TestPurgeThroughTheCommandWiringNeedsATerminal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.WriteString(walletFixtureAddress(t) + "\n"); err != nil {
+	if _, err := w.WriteString(s.home + "\n"); err != nil {
 		t.Fatal(err)
 	}
 	_ = w.Close()
 	defer r.Close()
 	var out, errOut bytes.Buffer
 	code := cmdUninstall([]string{"-purge-state", "-yes", "-home", s.home}, r, &out, &errOut, s.getenv)
-	if code != exitUsage || !lexists(filepath.Join(s.home, "wallet")) || !lexists(filepath.Join(s.home, "state")) {
+	if code != exitUsage || !lexists(filepath.Join(s.home, "state")) {
 		t.Errorf("a purge from a pipe must refuse and destroy nothing: exit %d\n%s\n%s", code, out.String(), errOut.String())
 	}
 }

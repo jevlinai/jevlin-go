@@ -17,13 +17,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/jevlinai/jevlin-go/pkg/auth"
 )
 
 // ── harness ─────────────────────────────────────────────────────────────
@@ -215,7 +212,8 @@ func TestANonPositiveTimeoutIsRefusedRatherThanUnbounded(t *testing.T) {
 	}
 }
 
-func TestASearchTimeoutRecordsNoMiningEvidenceAndNoHealthFailure(t *testing.T) {
+// A search that times out is a transport failure that prints no body.
+func TestASearchTimeoutExitsTransportAndPrintsNoBody(t *testing.T) {
 	rt := &recordingTransport{fn: func(_ int, req *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusOK, Header: http.Header{},
@@ -232,21 +230,6 @@ func TestASearchTimeoutRecordsNoMiningEvidenceAndNoHealthFailure(t *testing.T) {
 	}
 	if out != "" {
 		t.Errorf("a timed-out search printed a body: %q", out)
-	}
-	if recs, _, _ := readIntake(filepath.Join(root, "intake")); len(recs) != 0 {
-		t.Error("a timed-out search was recorded as mining evidence")
-	}
-	// A search that never completed is not a mining failure: nothing
-	// mining-side ran, so nothing mining-side may be marked degraded.
-	store, err := auth.OpenStoreExisting(filepath.Join(root, "state"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if recs, _ := store.HealthRecords(); len(recs) != 0 {
-		t.Errorf("a router timeout was written as mining health: %+v", recs)
-	}
-	if len(h.flushes) != 0 {
-		t.Error("a flush was started for a search that never completed")
 	}
 }
 
@@ -372,7 +355,9 @@ type readMarker struct{ read *bool }
 func (m readMarker) Read(p []byte) (int, error) { *m.read = true; return 0, io.EOF }
 func (m readMarker) Close() error               { return nil }
 
-func TestAnInvalidSuccessRecordsNoMiningEvidence(t *testing.T) {
+// A 200 whose body is not a valid answer is a server error, and the
+// malformed body never reaches stdout.
+func TestAnInvalidSuccessIsAServerErrorAndPrintsNoBody(t *testing.T) {
 	for _, tc := range []struct{ name, body string }{
 		{"malformed", `{"request_id":`},
 		{"no request identity", `{"candidates":[]}`},
@@ -390,13 +375,8 @@ func TestAnInvalidSuccessRecordsNoMiningEvidence(t *testing.T) {
 			if out != "" {
 				t.Errorf("the malformed body was echoed to stdout: %q", out)
 			}
-			if recs, _, _ := readIntake(filepath.Join(root, "intake")); len(recs) != 0 {
-				t.Error("an invalid 2xx was recorded as mining evidence")
-			}
-			if len(h.flushes) != 0 {
-				t.Error("an invalid 2xx started a flush")
-			}
 		})
+
 	}
 }
 

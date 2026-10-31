@@ -20,8 +20,7 @@ import (
 )
 
 type fakeHookFS struct {
-	files   map[string][]byte
-	flushes []string
+	files map[string][]byte
 	// mtimes holds a modification time for the files a test has aged; any
 	// other file reads as written at the fake's fixed "now", which is fresh.
 	mtimes map[string]time.Time
@@ -92,9 +91,8 @@ func newFakeHookOps(env map[string]string) (*fakeHookFS, hookOps) {
 			}
 			return b, nil
 		},
-		spawnFlush: func(cfg string) error { f.flushes = append(f.flushes, cfg); return nil },
-		now:        func() time.Time { return time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC) },
-		pid:        42,
+		now: func() time.Time { return time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC) },
+		pid: 42,
 	}
 }
 
@@ -129,15 +127,15 @@ func hookMainWith(ops hookOps, hc hookContext, args []string, stdin *bytes.Reade
 	case "cursor":
 		hookCursor(ops, hc, args[1], payload, stdout, stderr)
 	case "hermes":
-		hookHermes(args[1], payload, stdout)
+		hookHermes(ops.getenv, args[1], payload, stdout)
 	case "turn":
 		hookHostTurn(ops, hc, args[1], payload)
 	case "start":
 		if len(args) > 1 {
 			ops.startBackground(hc)
 		}
-	case "flush":
-		claudeTurnEnd(ops, hc, payload) // as hookMain does, before the flush
+	case "stop":
+		claudeTurnEnd(ops, hc, payload) // as hookMain does, before the release check
 		ops.startBackground(hc)
 	default:
 		return exitUsage
@@ -171,10 +169,10 @@ func TestIsSearchCommandRecognizesOursAndNothingElse(t *testing.T) {
 	}
 	no := []string{
 		`jevlin-search q`,
-		`jevlin flush`,
+		`jevlin stop`,
 		`myjevlin search q`,
 		`grep jevlin search.go`,
-		`tokendrop-proxy search q`,
+		`otherproxy search q`,
 		``,
 	}
 	for _, c := range yes {
@@ -406,7 +404,7 @@ func TestHookLineageParentPointerIsTheSubagentsAlone(t *testing.T) {
 
 // The four fixtures below are derived from a real Claude Code transcript
 // (record types and field layout byte-faithful, prose and ids scrubbed) of
-// exactly dropin-miner#65's shape: assistant text -> Skill tool_use -> tool_result ->
+// exactly the reported shape: assistant text -> Skill tool_use -> tool_result ->
 // isMeta user text (the skill body Claude Code injects) -> attachments ->
 // Bash tool_use. Before the fix, `isUserTurn` took the isMeta entry as the
 // floor and the assistant's sentence was never found.
@@ -438,7 +436,7 @@ func TestHookLineageSkipsTheSkillsIsMetaEntryAndFindsTheAssistantSentence(t *tes
 		t.Fatalf("output: %s", out)
 	}
 	env := decodeBridgeFromCommand(t, resp.Out.Input["command"].(string))
-	if len(env.History) != 1 || env.History[0].Text != "Now performing one web search through my own dropin-miner skill (the Skill tool), per the test spec." {
+	if len(env.History) != 1 || env.History[0].Text != "Now performing one web search through my own jevlin skill (the Skill tool), per the test spec." {
 		t.Errorf("the isMeta entry was taken as the floor, or the wrong turn's prose leaked: %+v", env.History)
 	}
 }
@@ -460,7 +458,7 @@ func TestHookLineageSkipsTheSkillsIsMetaEntryInASubagentTranscript(t *testing.T)
 	}
 	_ = json.Unmarshal([]byte(out), &resp)
 	env := decodeBridgeFromCommand(t, resp.Out.Input["command"].(string))
-	if len(env.History) != 1 || env.History[0].Text != "Searching the web via my own dropin-miner skill for this subtask." {
+	if len(env.History) != 1 || env.History[0].Text != "Searching the web via my own jevlin skill for this subtask." {
 		t.Errorf("subagent's own isMeta entry was taken as the floor: %+v", env.History)
 	}
 }
@@ -485,7 +483,7 @@ func TestHookLineageSkipsTheSkillsIsMetaEntryOnAWindowsTranscriptPath(t *testing
 	}
 	_ = json.Unmarshal([]byte(out), &resp)
 	env := decodeBridgeFromCommand(t, resp.Out.Input["command"].(string))
-	if len(env.History) != 1 || env.History[0].Text != "Now performing one web search through my own dropin-miner skill (the Skill tool), per the test spec." {
+	if len(env.History) != 1 || env.History[0].Text != "Now performing one web search through my own jevlin skill (the Skill tool), per the test spec." {
 		t.Errorf("Windows-style transcript path broke the isMeta exclusion: %+v", env.History)
 	}
 }
@@ -533,14 +531,11 @@ func TestHookLineageFloorsAtAnAutonomousLoopTickIsMetaEntryWithNoToolCall(t *tes
 	testHookLineageFloorsAtANoToolCallIsMetaEntry(t, "claude_code_ismeta_autonomous_loop.jsonl", "toolu_bash3")
 }
 
-func TestHookWindowCountsExactlyOnePerCompactionAndSessionStartFlushes(t *testing.T) {
+func TestHookWindowCountsExactlyOnePerCompaction(t *testing.T) {
 	fs, ops := newFakeHookOps(nil)
 	hc := hookContext{cfgPath: "/c.toml", sessionsDir: "/sessions"}
 	sess := map[string]any{"session_id": "s"}
 	runHook(t, ops, hc, "window session-start", sess)
-	if len(fs.flushes) != 1 || fs.flushes[0] != "/c.toml" {
-		t.Fatalf("session-start did not start a flush: %v", fs.flushes)
-	}
 	if got := hookWindowID(ops, hc, "s"); got != "none" {
 		t.Fatalf("fresh window: %q", got)
 	}
@@ -563,7 +558,7 @@ func TestHookWindowCountsExactlyOnePerCompactionAndSessionStartFlushes(t *testin
 }
 
 func TestHookCursorEventsBuildTheLineageFileAndAnswerTheHost(t *testing.T) {
-	fs, ops := newFakeHookOps(nil)
+	_, ops := newFakeHookOps(nil)
 	hc := hookContext{cfgPath: "/c.toml", sessionsDir: "/sessions"}
 	base := map[string]any{"conversation_id": "conv-1", "generation_id": "gen-1", "workspace_roots": []string{"/w/proj"}}
 	with := func(kv map[string]any) map[string]any {
@@ -584,9 +579,6 @@ func TestHookCursorEventsBuildTheLineageFileAndAnswerTheHost(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(out), &start); err != nil || start.Env["JEVLIN_HARNESS"] != "cursor" || start.Env[lineageEnv] != path {
 		t.Fatalf("sessionStart output: %s", out)
-	}
-	if len(fs.flushes) != 1 {
-		t.Errorf("sessionStart did not flush: %v", fs.flushes)
 	}
 
 	runHook(t, ops, hc, "cursor afterAgentThought", with(map[string]any{"text": "I should search for this"}))
@@ -618,9 +610,6 @@ func TestHookCursorEventsBuildTheLineageFileAndAnswerTheHost(t *testing.T) {
 		t.Errorf("window after two compactions: %q", l.Window)
 	}
 	runHook(t, ops, hc, "cursor stop", base)
-	if len(fs.flushes) != 2 {
-		t.Errorf("stop did not flush: %v", fs.flushes)
-	}
 }
 
 func TestHookCursorWithoutAConversationDoesNothingButAllow(t *testing.T) {
@@ -644,7 +633,7 @@ func TestHookCursorWithoutAConversationDoesNothingButAllow(t *testing.T) {
 func writeHookConfig(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "jevlin.toml")
-	if err := os.WriteFile(path, []byte("[miner]\nsessions_dir = \"/sessions\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("schema = 1\n\n[search]\nsessions_dir = \"/sessions\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return path
@@ -697,7 +686,7 @@ func TestHookMainLineageStillRewritesWhenTheSidecarWriteFails(t *testing.T) {
 // TestHookMainNeverExitsNonZeroForAKnownSubcommand covers the rest of the
 // fail-open surface hookMain's own comment claims: whatever a known
 // subcommand's handler does internally — persistence failing, a refused
-// flush spawn, a malformed payload — hookMain(...) still returns exitOK,
+// release-check spawn, a malformed payload — hookMain(...) still returns exitOK,
 // because a coding agent's hook step is a gate in front of every tool
 // call and a nonzero exit there is what actually blocks the agent.
 func TestHookMainNeverExitsNonZeroForAKnownSubcommand(t *testing.T) {
@@ -709,7 +698,7 @@ func TestHookMainNeverExitsNonZeroForAKnownSubcommand(t *testing.T) {
 	}{
 		{"window session-start, persist fails", []string{"-config", cfgPath, "window", "session-start"}, mustJSON(t, map[string]any{"session_id": "s"})},
 		{"cursor sessionStart, persist fails", []string{"-config", cfgPath, "cursor", "sessionStart"}, mustJSON(t, map[string]any{"conversation_id": "c"})},
-		{"flush, spawn refused", []string{"-config", cfgPath, "flush"}, nil},
+		{"stop, spawn refused", []string{"-config", cfgPath, "stop"}, nil},
 		{"lineage, malformed payload", []string{"-config", cfgPath, "lineage"}, []byte("not json")},
 		{"codex Stop, spawn refused", []string{"-config", cfgPath, "codex", "Stop"}, readHookFixture(t, "codex-0.158.0-linux-Stop.json")},
 		{"codex PreToolUse, malformed payload", []string{"-config", cfgPath, "codex", "PreToolUse"}, []byte("not json")},
@@ -718,7 +707,8 @@ func TestHookMainNeverExitsNonZeroForAKnownSubcommand(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			_, ops := newFakeHookOps(nil)
-			ops.spawnFlush = func(string) error { return errors.New("spawn refused") }
+			ops.spawnUpdateCheck = func(string) error { return errors.New("spawn refused") }
+
 			var stdout, stderr bytes.Buffer
 			code := hookMain(ops, c.args, bytes.NewReader(c.payload), &stdout, &stderr)
 			if code != exitOK {

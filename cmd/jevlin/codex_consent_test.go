@@ -160,7 +160,7 @@ func TestTheSwitchQuestionShowsEverythingItWrites(t *testing.T) {
 	}{
 		{"own-profile-network-absent", []string{
 			`Switch Codex to jevlin's profile, which extends your profile "work" and adds write access to `,
-			`network access to agents-v1.jevlin.ai, as.example.invalid and router.example.invalid only`,
+			`network access to agents-v1.jevlin.ai and router.example.invalid only`,
 			`the [features.network_proxy] table, which makes Codex enforce that host list`,
 			`default_permissions = "work" becomes "jevlin"`,
 			`extends = "work"`,
@@ -314,9 +314,9 @@ func TestAProxyTableWithoutEnabledIsNamed(t *testing.T) {
 // host.
 func TestTheSwitchNamesEveryHostTheMergedProfileAllows(t *testing.T) {
 	for _, tc := range []struct{ state, network, chain, proxy, status string }{
-		{"own-profile-chain-allows-a-host", "agents-v1.jevlin.ai, as.example.invalid, example.com and router.example.invalid only",
+		{"own-profile-chain-allows-a-host", "agents-v1.jevlin.ai, example.com and router.example.invalid only",
 			`That list includes what your profile "work" allows`, "which makes Codex enforce that host list",
-			"; hosts agents-v1.jevlin.ai, as.example.invalid, example.com, router.example.invalid; network_proxy on"},
+			"; hosts agents-v1.jevlin.ai, example.com, router.example.invalid; network_proxy on"},
 		// With "*" there is no host list: the question and status say the
 		// network is open and where that comes from, not "that host list".
 		{"own-profile-chain-allows-every-host", `every host, because your profile "work" allows "*"`,
@@ -491,10 +491,10 @@ func TestAWildcardDenyOfTheSearchHosts(t *testing.T) {
 		cfgPath, _ := sandboxTestConfig(t)
 		m, ops := newFakeMachine("codex")
 		m.terminal = true
-		m.files[codexConfigPath] = []byte(mine(`"**.as.example.invalid" = "deny"`))
+		m.files[codexConfigPath] = []byte(mine(`"**.agents-v1.jevlin.ai" = "deny"`))
 		code, out := runAgentsAt(t, ops, "y\n", "install", "-config", cfgPath, "-client", "codex", "-yes")
-		const named = `Codex blocks as.example.invalid, which your profile "mine" denies with "**.as.example.invalid"`
-		if code != exitOK || !strings.Contains(out, named) || strings.Contains(out, "network access to agents-v1.jevlin.ai, as.example.invalid") {
+		const named = `Codex blocks agents-v1.jevlin.ai, which your profile "mine" denies with "**.agents-v1.jevlin.ai"`
+		if code != exitOK || !strings.Contains(out, named) || strings.Contains(out, "network access to agents-v1.jevlin.ai") {
 			t.Errorf("the question does not take the blocked host out of the list and name it (exit %d):\n%s", code, out)
 		}
 		if _, status := runAgentsAt(t, ops, "", "status", "-config", cfgPath); !strings.Contains(status, named) || strings.Contains(status, "the router is among them") {
@@ -538,7 +538,7 @@ func TestEveryDenyPatternCodexAppliesIsSeen(t *testing.T) {
 	}
 }
 
-// The router's host is compared as Codex compares it: a router_url
+// The router's host is compared as Codex compares it: a [router] url
 // spelled with capitals and a trailing dot is still closed by a deny of
 // "*.example.invalid".
 func TestTheRouterHostIsComparedAsCodexComparesIt(t *testing.T) {
@@ -547,9 +547,9 @@ func TestTheRouterHostIsComparedAsCodexComparesIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	spelled := strings.Replace(string(b), `router_url = "https://router.example.invalid"`, `router_url = "https://Router.Example.Invalid.:8443/v1"`, 1)
+	spelled := strings.Replace(string(b), `url = "https://router.example.invalid"`, `url = "https://Router.Example.Invalid.:8443/v1"`, 1)
 	if spelled == string(b) {
-		t.Fatal("the test config has no router_url to respell")
+		t.Fatal("the test config has no [router] url to respell")
 	}
 	if err := os.WriteFile(cfgPath, []byte(spelled), 0o600); err != nil { // #nosec G703 -- the test's own config, in t.TempDir()
 		t.Fatal(err)

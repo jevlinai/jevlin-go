@@ -1,23 +1,18 @@
 package main
 
-// Integration tests for connect and mining enable (agent onboarding
-// design, search-platform-agent-onboarding-design.md §5.5, §8 WP2
-// acceptance): the four §2.2 cases, idempotency, search working before
-// the claim, status reporting, the detached resume doing exactly one
-// poll, the installer's mining question in all three answers (and its
-// scripted-config equivalent), the payout declaration running
-// unattended after enrollment, and no wallet on a non-terminal path.
+// Integration tests for connect (agent onboarding design,
+// search-platform-agent-onboarding-design.md §5.5, §8 WP2 acceptance):
+// the §2.2 cases a search-only client still has, idempotency, search
+// working before the claim, status reporting, the detached resume doing
+// exactly one poll, the rebuild of a lost registration from the platform,
+// the replacement of an expired one, and the registration journal.
 //
-// Two stubs stand in for the real services: stubPlatform (register,
-// status, enroll — the §5.1-§5.3 contract) and stubOnboardingAS (just enough of
-// the AS's OAuth surface and payout route for RedeemEnrollmentAssertion
-// and DeclarePayoutAddress to work — not a reimplementation of the AS,
-// which pkg/auth's own suite already covers; mirrors
-// pkg/auth/payout_test.go's newPayoutAS: one canned token response for
-// every grant, no grant-type-specific logic).
+// One stub stands in for the platform: stubPlatform (register, status,
+// me, claim-code — the §5.1-§5.2 contract plus the two routes the router
+// team added for the rebuild and the re-mint). Nothing here reaches a
+// real host; TestMain's network fence refuses it.
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -28,6 +23,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -43,22 +39,16 @@ import (
 type stubPlatform struct {
 	srv *httptest.Server
 
-	mu         sync.Mutex
-	status     string // "unclaimed" | "claimed" | "expired"
-	scopes     []string
-	slots      []string
-	consoleURL string // "" means the stub omits console_url, matching an older platform
+	mu     sync.Mutex
+	status string // "unclaimed" | "claimed" | "expired"
+	scopes []string
 
-	registerCalls           int
-	statusCalls             int
-	enrollCalls             int
-	meCalls                 int
-	lastRequestedScopes     []string
-	lastRequestedScopesSeen bool
-	failNextRegisters       int
-	dropNextRegisterBodies  int
-	statusNotFound          bool
-	statusError             bool
+	registerCalls          int
+	statusCalls            int
+	meCalls                int
+	dropNextRegisterBodies int
+	statusNotFound         bool
+	statusError            bool
 	// statusRequiresOwner makes GET /v1/agents/{id} answer 404 unless the
 	// bearer key is the one this stub minted for that id, as the real
 	// router does: it resolves the key to its own agent first.
@@ -89,29 +79,16 @@ func newStubPlatform(t *testing.T) *stubPlatform {
 	t.Helper()
 	f := &stubPlatform{
 		status:           "unclaimed",
-		slots:            []string{"twilight-slot-3"},
 		statusByAgent:    make(map[string]string),
 		scopesByAgent:    make(map[string][]string),
 		agentByKey:       make(map[string]string),
 		claimCodeByAgent: make(map[string]string),
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /v1/agents/register", func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			RequestedScopes []string `json:"requested_scopes"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
+	mux.HandleFunc("POST /v1/agents/register", func(w http.ResponseWriter, _ *http.Request) {
 		f.mu.Lock()
 		f.registerCalls++
-		f.lastRequestedScopes = body.RequestedScopes
-		f.lastRequestedScopesSeen = true
 		registerNumber := f.registerCalls
-		if f.failNextRegisters > 0 {
-			f.failNextRegisters--
-			f.mu.Unlock()
-			writeStubJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]any{"code": "internal"}})
-			return
-		}
 		agentID := fmt.Sprintf("agent-%d", registerNumber)
 		if f.registerAgentID != "" {
 			agentID = f.registerAgentID
@@ -125,9 +102,9 @@ func newStubPlatform(t *testing.T) *stubPlatform {
 		registrationStatus := f.status
 		registrationScopes := append([]string(nil), f.scopes...)
 		if registrationStatus == "expired" {
-			// An expired identity's replacement starts a fresh claim. Preserve
-			// the stub's older pre-claim behavior for installer tests, where
-			// claim is deliberately called before the first registration.
+			// An expired identity's replacement starts a fresh claim. A
+			// test that forced "expired" before the first registration still
+			// gets a registration that starts unclaimed.
 			registrationStatus = "unclaimed"
 			registrationScopes = nil
 		}
@@ -161,7 +138,7 @@ func newStubPlatform(t *testing.T) *stubPlatform {
 		f.mu.Lock()
 		f.statusCalls++
 		id := strings.TrimPrefix(r.URL.Path, "/v1/agents/")
-		st, scopes, slots, consoleURL := f.status, f.scopes, f.slots, f.consoleURL
+		st, scopes := f.status, f.scopes
 		notFound := f.statusNotFound
 		if f.statusRequiresOwner {
 			owner, known := f.agentByKey[strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")]
@@ -183,35 +160,8 @@ func newStubPlatform(t *testing.T) *stubPlatform {
 			writeStubJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]any{"code": "temporary"}})
 			return
 		}
-		body := map[string]any{
-			"status": st, "scopes": scopes,
-			"mining": map[string]any{"available": len(slots) > 0, "slots": slots},
-		}
-		if consoleURL != "" {
-			body["console_url"] = consoleURL
-		}
-		writeStubJSON(w, http.StatusOK, body)
+		writeStubJSON(w, http.StatusOK, map[string]any{"status": st, "scopes": scopes})
 	})
-	mux.HandleFunc("POST /v1/agents/enroll", func(w http.ResponseWriter, _ *http.Request) {
-		f.mu.Lock()
-		f.enrollCalls++
-		claimed := f.status == "claimed"
-		mining := hasScope(f.scopes, "mining")
-		f.mu.Unlock()
-		switch {
-		case !claimed:
-			writeStubJSON(w, http.StatusForbidden, map[string]any{"error": map[string]any{"code": "not_claimed"}})
-		case !mining:
-			writeStubJSON(w, http.StatusForbidden, map[string]any{"error": map[string]any{"code": "mining_not_granted"}})
-		default:
-			writeStubJSON(w, http.StatusOK, map[string]any{"token": "enroll-jwt-1"}) // #nosec G101 -- a canned stub response, not a credential
-		}
-	})
-	// GET /v1/agents/me (B.2): a by-key self-lookup, keyed on the bearer
-	// the register handler above minted for that agent. 404 for a key
-	// this stub never issued (or one it does not recognize as current —
-	// modeling a revoked key, which the design gives the same answer as
-	// an unknown one).
 	mux.HandleFunc("POST /v1/agents/{id}/claim-code", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		f.claimCodeCalls++
@@ -239,6 +189,11 @@ func newStubPlatform(t *testing.T) *stubPlatform {
 			"claim_expires_at": "2026-12-31T00:00:00Z",
 		})
 	})
+	// GET /v1/agents/me (B.2): a by-key self-lookup, keyed on the bearer
+	// the register handler above minted for that agent. 404 for a key
+	// this stub never issued (or one it does not recognize as current —
+	// modeling a revoked key, which the design gives the same answer as
+	// an unknown one).
 	mux.HandleFunc("GET /v1/agents/me", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		f.meCalls++
@@ -246,12 +201,11 @@ func newStubPlatform(t *testing.T) *stubPlatform {
 		key := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		id, known := f.agentByKey[key]
 		var st string
-		var scopes, slots []string
+		var scopes []string
 		var claimCode string
 		if known {
 			st = f.statusByAgent[id]
 			scopes = f.scopesByAgent[id]
-			slots = f.slots
 			claimCode = f.claimCodeByAgent[id]
 		}
 		omitClaim := f.meOmitClaimFields
@@ -268,7 +222,6 @@ func newStubPlatform(t *testing.T) *stubPlatform {
 		body := map[string]any{
 			"agent_id": id,
 			"status":   st, "scopes": scopes,
-			"mining": map[string]any{"available": len(slots) > 0, "slots": slots},
 		}
 		if st == "unclaimed" && !omitClaim {
 			body["claim_url"] = f.srv.URL + "/claim/" + claimCode
@@ -324,26 +277,13 @@ func (f *stubPlatform) setStatusError(statusError bool) {
 	f.statusError = statusError
 }
 
-// setSlots overrides the single-slot default (WP2-review judgment call 1:
-// chooseSlot's more-than-one-offered path).
-func (f *stubPlatform) setSlots(slots ...string) {
+// counts is how often each of the stub's routes a connect run may call
+// was called: register, the status poll, and the by-key self-lookup
+// /v1/agents/me (also meCallCount, for a test that asks only that).
+func (f *stubPlatform) counts() (register, status, me int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.slots = slots
-}
-
-// setConsoleURL makes the stub's poll response include console_url, as
-// the real platform now does (found live testing §2.2's re-approval UX).
-func (f *stubPlatform) setConsoleURL(url string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.consoleURL = url
-}
-
-func (f *stubPlatform) counts() (register, status, enroll int) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.registerCalls, f.statusCalls, f.enrollCalls
+	return f.registerCalls, f.statusCalls, f.meCalls
 }
 
 func (f *stubPlatform) meCallCount() int {
@@ -392,24 +332,6 @@ func (f *stubPlatform) setMeHook(hook func()) {
 	f.meHook = hook
 }
 
-// requestedScopes returns the requested_scopes the most recent register
-// call actually sent (nil if it sent none, or omitted the field
-// entirely), and whether a register call has happened at all.
-func (f *stubPlatform) requestedScopes() (scopes []string, seen bool) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.lastRequestedScopes, f.lastRequestedScopesSeen
-}
-
-// failNextRegister makes the next n register calls fail with a 500 —
-// used to exercise a register call that fails after the mining question
-// has already been answered and persisted.
-func (f *stubPlatform) failNextRegister(n int) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.failNextRegisters = n
-}
-
 func (f *stubPlatform) dropNextRegisterResponse() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -420,197 +342,6 @@ func writeStubJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
-}
-
-// stubOnboardingAS is an AS complete enough for RedeemEnrollmentAssertion and
-// DeclarePayoutAddress.
-type stubOnboardingAS struct {
-	srv *httptest.Server
-
-	mu                   sync.Mutex
-	declared             string
-	activeAddress        string // "" means no active binding yet (GET answers 404)
-	declareCalls         int
-	standingCalls        int // GET /v1/payout/declaration: the read-before-declare and the adoption's look
-	tokenCalls           int
-	assertionRedemptions int // /oauth/token calls that carried a non-empty assertion (the enrollment grant, as opposed to an ordinary refresh-token grant a second authenticated client needs)
-	// declareOutcome overrides the PUT response's shape for the hold-shape
-	// coverage tests (WP2-adversarial-review: declaration stubs answering
-	// every hold shape, not only plain ACTIVE) — nil means the default
-	// "always effective" behavior above.
-	declareOutcome func(address string) map[string]any
-	revokeCalls    int
-	revokeFails    bool // mining disable's "the AS could not be reached" coverage
-}
-
-func newStubAS(t *testing.T) *stubOnboardingAS {
-	t.Helper()
-	f := &stubOnboardingAS{}
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /.well-known/oauth-authorization-server", func(w http.ResponseWriter, _ *http.Request) {
-		base := f.srv.URL
-		writeStubJSON(w, http.StatusOK, map[string]any{
-			"issuer":                        base,
-			"authorization_endpoint":        base + "/oauth/authorize",
-			"token_endpoint":                base + "/oauth/token",
-			"device_authorization_endpoint": base + "/oauth/device_authorization",
-			"revocation_endpoint":           base + "/oauth/revoke",
-			"jwks_uri":                      base + "/oauth/jwks.json",
-			"grant_types_supported":         []string{"authorization_code", "refresh_token", auth.GrantTypeJWTBearer},
-		})
-	})
-	mux.HandleFunc("POST /oauth/token", func(w http.ResponseWriter, r *http.Request) {
-		_ = r.ParseForm()
-		f.mu.Lock()
-		n := f.tokenCalls
-		f.tokenCalls++
-		if r.Form.Get("assertion") != "" {
-			f.assertionRedemptions++
-		}
-		f.mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"access_token":"at-%d","token_type":"DPoP","expires_in":900,"refresh_token":"rt-%d"}`, n, n)
-	})
-	mux.HandleFunc("PUT /v1/payout/declaration", func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Address string `json:"address"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		f.mu.Lock()
-		f.declared = body.Address
-		f.declareCalls++
-		outcome := f.declareOutcome
-		f.mu.Unlock()
-		if outcome != nil {
-			writeStubJSON(w, http.StatusOK, outcome(body.Address))
-			return
-		}
-		writeStubJSON(w, http.StatusOK, map[string]any{
-			"status": "ACTIVE", "address": body.Address, "canonical_address": body.Address,
-			"effective": true, "declared_at": "2026-09-09T00:00:00Z",
-		})
-	})
-	mux.HandleFunc("POST /oauth/revoke", func(w http.ResponseWriter, r *http.Request) {
-		_ = r.ParseForm()
-		f.mu.Lock()
-		f.revokeCalls++
-		fails := f.revokeFails
-		f.mu.Unlock()
-		if fails {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	})
-	mux.HandleFunc("GET /v1/payout/declaration", func(w http.ResponseWriter, _ *http.Request) {
-		f.mu.Lock()
-		f.standingCalls++
-		active := f.activeAddress
-		f.mu.Unlock()
-		// "nothing declared yet" is 200 with active: null, not a 404 — the
-		// route always answers for a claimed participant (payout.go's
-		// PayoutStanding: "Active is the address in force, or nil").
-		if active == "" {
-			writeStubJSON(w, http.StatusOK, map[string]any{"active": nil, "pending": nil})
-			return
-		}
-		writeStubJSON(w, http.StatusOK, map[string]any{
-			"active": map[string]any{
-				"status": "ACTIVE", "address": active, "canonical_address": active,
-				"effective": true, "declared_at": "2026-09-09T00:00:00Z",
-			},
-		})
-	})
-	f.srv = httptest.NewServer(mux)
-	t.Cleanup(f.srv.Close)
-	return f
-}
-
-func (f *stubOnboardingAS) declaredAddress() string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.declared
-}
-
-func (f *stubOnboardingAS) declarationAttempts() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.declareCalls
-}
-
-func (f *stubOnboardingAS) setActiveAddress(addr string) {
-	f.mu.Lock()
-	f.activeAddress = addr
-	f.mu.Unlock()
-}
-
-// assertionRedemptionCount counts only /oauth/token calls that redeemed
-// an enrollment assertion — distinct from the raw token-call count, which
-// also includes ordinary refresh-token grants a freshly constructed
-// *auth.OAuthClient makes on its own first authenticated request (every
-// buildMiningClient call in connect.go — one for enrollment, a separate
-// one for the declare step — constructs its own client instance).
-func (f *stubOnboardingAS) assertionRedemptionCount() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.assertionRedemptions
-}
-
-func (f *stubOnboardingAS) revokeCallCount() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.revokeCalls
-}
-
-// setRevokeFails makes POST /oauth/revoke answer 500 — mining disable's
-// "the AS could not be reached" path, without simulating a real network
-// failure: any non-200 is what OAuthClient.Revoke treats as unconfirmed.
-func (f *stubOnboardingAS) setRevokeFails(fails bool) {
-	f.mu.Lock()
-	f.revokeFails = fails
-	f.mu.Unlock()
-}
-
-// standingReads is how many times anything asked where this participant is
-// paid.
-func (f *stubOnboardingAS) standingReads() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.standingCalls
-}
-
-// setDeclareOutcome overrides what PUT /v1/payout/declaration answers, for
-// the hold-shape coverage below (WP2-adversarial-review: declaration
-// stubs answering every hold shape, not only plain ACTIVE).
-func (f *stubOnboardingAS) setDeclareOutcome(fn func(address string) map[string]any) {
-	f.mu.Lock()
-	f.declareOutcome = fn
-	f.mu.Unlock()
-}
-
-// miningClient builds a *auth.MiningClient against this stub, the same
-// shape as pkg/auth/payout_test.go's payoutAS.client — enough for
-// PayoutStanding/DeclarePayoutAddress, which is all declarePayoutIfSafe's
-// tests below need.
-func (f *stubOnboardingAS) miningClient(t *testing.T) (*auth.MiningClient, string) {
-	t.Helper()
-	stateDir := filepath.Join(t.TempDir(), "state")
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SaveRefreshToken("rt-0"); err != nil {
-		t.Fatal(err)
-	}
-	d, err := auth.NewDiscoverer(auth.DiscoveryConfig{BaseURL: f.srv.URL, ChainID: "twilight-1", SlotID: 7})
-	if err != nil {
-		t.Fatal(err)
-	}
-	oc, err := auth.NewOAuthClient(context.Background(), d, store)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return auth.NewMiningClient(d, oc, store), stateDir
 }
 
 // ── config helper ─────────────────────────────────────────────────────
@@ -640,29 +371,24 @@ func writeTOML(t *testing.T, body string) string {
 	return path
 }
 
-// connectConfig builds a config with [platform] pointed at platformURL
-// and, when asURL != "", a valid [mining] block pointed at it
-// (enabled = true, as/chain/slot filled in) — enough for connect to
-// both register/poll AND, once claimed with the mining scope, enroll.
-// asURL == "" builds a search-only config: [platform] only, no [mining]
-// at all, matching a participant who never intends to mine.
-func connectConfig(t *testing.T, platformURL, asURL string) (cfgPath, stateDir string) {
+// connectConfig builds a format-1 config for connect: [platform] and
+// [agents] pointed at platformURL, and a [search] table whose state_dir and
+// sessions_dir sit under the test's own directory, because the default
+// (os.UserConfigDir()/jevlin/state) is not test-isolated and the
+// installation's own files — credentials.json, the registration journal,
+// the claim record — live in state_dir's parent. routerURL, when not
+// empty, is written as [router] url, for a test that also searches; ""
+// leaves the router at the compiled default, which nothing here dials.
+func connectConfig(t *testing.T, platformURL, routerURL string) (cfgPath, stateDir string) {
 	t.Helper()
 	dir := t.TempDir()
 	stateDir = filepath.Join(dir, "state")
 	var b strings.Builder
-	fmt.Fprintf(&b, "[platform]\nbase_url = %q\nagents_api_url = %q\n", platformURL, platformURL)
-	if asURL != "" {
-		fmt.Fprintf(&b, "\n[mining]\nenabled = true\nas_url = %q\nchain_id = \"twilight-1\"\nslot_id = 7\nstate_dir = %q\n",
-			asURL, stateDir)
-	} else {
-		// No [mining] at all: state_dir still needs somewhere to land
-		// (StateDir defaults regardless of whether [mining] is present),
-		// but the default (os.UserConfigDir()/jevlin/state) is not
-		// test-isolated, so this exercises the same field via the one
-		// TOML key that does not require enabled = true.
-		fmt.Fprintf(&b, "\n[mining]\nstate_dir = %q\n", stateDir)
+	fmt.Fprintf(&b, "schema = 1\n\n[platform]\nurl = %q\n\n[agents]\nurl = %q\n", platformURL, platformURL)
+	if routerURL != "" {
+		fmt.Fprintf(&b, "\n[router]\nurl = %q\n", routerURL)
 	}
+	fmt.Fprintf(&b, "\n[search]\nstate_dir = %q\nsessions_dir = %q\n", stateDir, filepath.Join(dir, "sessions"))
 	return writeTOML(t, b.String()), stateDir
 }
 
@@ -670,30 +396,18 @@ func connectConfig(t *testing.T, platformURL, asURL string) (cfgPath, stateDir s
 // credentials.json, not in the state directory.
 func testJournal(t *testing.T, cfgPath string) *auth.RegistrationJournal {
 	t.Helper()
-	j, err := registrationJournal(mustLoadConfig(t, cfgPath).Miner)
+	j, err := registrationJournal(mustLoadConfig(t, cfgPath).Search)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return j
 }
 
-// testPayoutRecord is payout.json beside credentials.json for a config
-// whose intake_dir is the default, the state dir's sibling: the record is
-// then in the state dir's parent, never in the state dir itself.
-func testPayoutRecord(t *testing.T, stateDir string) *auth.PayoutRecord {
-	t.Helper()
-	record, err := auth.OpenPayoutRecord(filepath.Dir(stateDir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return record
-}
-
 // seedClaim writes the claim record connect keeps beside credentials.json,
 // as a publication, a rebuild or a re-mint would have.
 func seedClaim(t *testing.T, cfgPath, agentID, claimURL, claimCode string) {
 	t.Helper()
-	if err := saveClaim(mustLoadConfig(t, cfgPath).Miner, auth.ClaimBootstrap{AgentID: agentID, ClaimURL: claimURL, ClaimCode: claimCode}); err != nil {
+	if err := saveClaim(mustLoadConfig(t, cfgPath).Search, auth.ClaimBootstrap{AgentID: agentID, ClaimURL: claimURL, ClaimCode: claimCode}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -701,13 +415,13 @@ func seedClaim(t *testing.T, cfgPath, agentID, claimURL, claimCode string) {
 // storedClaim is the claim record on file for agentID, zero when none is.
 func storedClaim(t *testing.T, cfgPath, agentID string) auth.ClaimBootstrap {
 	t.Helper()
-	claim, _ := claimFor(mustLoadConfig(t, cfgPath).Miner, agentID, nil)
+	claim, _ := claimFor(mustLoadConfig(t, cfgPath).Search, agentID, nil)
 	return claim
 }
 
 func testJournalPath(t *testing.T, cfgPath string) string {
 	t.Helper()
-	return filepath.Join(minerRoot(mustLoadConfig(t, cfgPath).Miner), registrationJournalFile)
+	return filepath.Join(installRoot(mustLoadConfig(t, cfgPath).Search), registrationJournalFile)
 }
 
 func mustLoadConfig(t *testing.T, cfgPath string) *config.Config {
@@ -717,23 +431,6 @@ func mustLoadConfig(t *testing.T, cfgPath string) *config.Config {
 		t.Fatal(err)
 	}
 	return cfg
-}
-
-// scriptedMiningConfig builds a config for testing askMiningQuestion's
-// non-interactive branch directly: a syntactically valid [mining] block
-// (as_url/chain_id/slot_id — never dialed by askMiningQuestion itself,
-// which only decides and persists an address) plus whatever
-// enabled/payout_address line(s) the case under test needs appended.
-// Separate from connectConfig because connectConfig's own enabled=true
-// shape can't be safely re-toggled by appending a second `enabled =`
-// line — TOML rejects the duplicate key.
-func scriptedMiningConfig(t *testing.T, platformURL, extra string) (cfgPath, stateDir string) {
-	t.Helper()
-	dir := t.TempDir()
-	stateDir = filepath.Join(dir, "state")
-	body := fmt.Sprintf("[platform]\nbase_url = %q\nagents_api_url = %q\n\n[mining]\nstate_dir = %q\nas_url = \"https://as.example.invalid\"\nchain_id = \"twilight-1\"\nslot_id = 7\n%s\n",
-		platformURL, platformURL, stateDir, extra)
-	return writeTOML(t, body), stateDir
 }
 
 func runConnect(t *testing.T, cfgPath string, stdin *bytes.Buffer, extra ...string) (code int, stdout, stderr string) {
@@ -788,7 +485,8 @@ func TestConnectCaseNoAccountRegistersFirst(t *testing.T) {
 	}
 }
 
-// Case: account exists, search only — claim without granting mining.
+// Case: account exists — the claim grants the scopes the claim page chose,
+// and the stored registration carries exactly those.
 func TestConnectCaseAccountExistsSearchOnly(t *testing.T) {
 	withShortConnectTimings(t)
 	platform := newStubPlatform(t)
@@ -809,244 +507,11 @@ func TestConnectCaseAccountExistsSearchOnly(t *testing.T) {
 		t.Fatalf("resumed connect exited %d: %s", code, out)
 	}
 	reg, ok := loadAgent(t, stateDir)
-	if !ok || reg.Status != "claimed" || hasScope(reg.Scopes, "mining") {
+	if !ok || reg.Status != "claimed" || !slices.Equal(reg.Scopes, []string{"credits"}) {
 		t.Fatalf("got %+v ok=%v", reg, ok)
 	}
 	if registerCalls, _, _ := platform.counts(); registerCalls != 1 {
 		t.Fatalf("register called %d times across two runs, want 1 (resumable)", registerCalls)
-	}
-}
-
-// Case: account exists, search + mining — same visit, mining ticked.
-// Enrollment and payout run unattended once claimed.
-func TestConnectCaseAccountExistsSearchAndMining(t *testing.T) {
-	withShortConnectTimings(t)
-	platform := newStubPlatform(t)
-	as := newStubAS(t)
-	cfgPath, stateDir := connectConfig(t, platform.srv.URL, as.srv.URL)
-
-	// First run: (non-interactive stdin, [mining] enabled explicit=true
-	// with no address) the mining question resolves via config, silently,
-	// with no address yet — then registers, hinting the scope it just
-	// decided.
-	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
-		t.Fatal("first connect failed")
-	}
-	// Give it a payout address the way a scripted install would: written
-	// beside credentials.json, as mining enable would have.
-	if err := testPayoutRecord(t, stateDir).Save("twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n"); err != nil {
-		t.Fatal(err)
-	}
-	platform.claim("credits", "mining")
-
-	code, out, _ := runConnect(t, cfgPath, nil)
-	if code != exitOK {
-		t.Fatalf("second connect exited %d: %s", code, out)
-	}
-	if !strings.Contains(out, "enrolled for mining") {
-		t.Fatalf("did not report enrollment: %q", out)
-	}
-	reg, ok := loadAgent(t, stateDir)
-	if !ok || reg.LastEnrollmentSlot != "twilight-slot-3" {
-		t.Fatalf("got %+v ok=%v", reg, ok)
-	}
-	if got := as.declaredAddress(); got != "twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n" {
-		t.Fatalf("payout declared address = %q, want twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n", got)
-	}
-}
-
-// Case: claimed with search only, mining added later — a registration hint
-// (a "no" at the terminal, here) is not binding on the platform; the
-// granted scope alone triggers enrollment on the next poll (design
-// decision 3).
-func TestConnectCaseMiningGrantedLater(t *testing.T) {
-	withShortConnectTimings(t)
-	platform := newStubPlatform(t)
-	as := newStubAS(t)
-	cfgPath, stateDir := connectConfig(t, platform.srv.URL, as.srv.URL)
-
-	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
-		t.Fatal("first connect failed")
-	}
-	platform.claim("credits") // claimed, search only, first
-	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
-		t.Fatal("second connect failed")
-	}
-	if reg, _ := loadAgent(t, stateDir); reg.LastEnrollmentSlot != "" {
-		t.Fatal("enrolled before mining was granted")
-	}
-
-	// Mining granted later, with a payout address already on file
-	// (as if `mining enable` had run in between).
-	if err := testPayoutRecord(t, stateDir).Save("twilight1gz3fu9w3jp08jp4qcjj6hsckzktsexd09vz039"); err != nil {
-		t.Fatal(err)
-	}
-	platform.claim("credits", "mining")
-
-	code, out, _ := runConnect(t, cfgPath, nil)
-	if code != exitOK || !strings.Contains(out, "enrolled for mining") {
-		t.Fatalf("did not enroll on the later grant: code=%d out=%q", code, out)
-	}
-	if got := as.declaredAddress(); got != "twilight1gz3fu9w3jp08jp4qcjj6hsckzktsexd09vz039" {
-		t.Fatalf("declared address = %q, want twilight1gz3fu9w3jp08jp4qcjj6hsckzktsexd09vz039", got)
-	}
-}
-
-// WP2-review ruling on judgment call 1: one slot offered, take it; more
-// than one, refuse and require mining.platform_slot rather than guessing.
-func TestChooseSlot(t *testing.T) {
-	cases := []struct {
-		name         string
-		slots        []string
-		platformSlot string
-		wantSlot     string
-		wantErr      bool
-	}{
-		{"none offered", nil, "", "", false},
-		{"exactly one: taken regardless of platform_slot", []string{"twilight-slot-3"}, "", "twilight-slot-3", false},
-		{"more than one, no platform_slot: refused", []string{"a", "b"}, "", "", true},
-		{"more than one, platform_slot matches: taken", []string{"a", "b"}, "b", "b", false},
-		{"more than one, platform_slot matches none: refused", []string{"a", "b"}, "c", "", true},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			slot, refusal := chooseSlot(c.slots, c.platformSlot)
-			if slot != c.wantSlot {
-				t.Errorf("slot = %q, want %q", slot, c.wantSlot)
-			}
-			if c.wantErr && slotRefusalText(refusal, c.slots, c.platformSlot) == "" {
-				t.Error("wanted a refusal with a message, got none")
-			}
-			if !c.wantErr && refusal != "" {
-				t.Errorf("unexpected refusal: %q", refusal)
-			}
-		})
-	}
-}
-
-// End to end: a platform offering more than one slot refuses to enroll
-// until mining.platform_slot names one of them.
-func TestConnectRefusesToGuessAmongMultipleSlots(t *testing.T) {
-	withShortConnectTimings(t)
-	platform := newStubPlatform(t)
-	platform.setSlots("twilight-slot-3", "twilight-slot-7")
-	as := newStubAS(t)
-	cfgPath, stateDir := connectConfig(t, platform.srv.URL, as.srv.URL)
-
-	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
-		t.Fatal("first connect failed")
-	}
-	platform.claim("credits", "mining")
-
-	code, _, errOut := runConnect(t, cfgPath, nil)
-	if code == exitOK {
-		t.Fatal("connect exited OK despite an ambiguous slot choice")
-	}
-	if !strings.Contains(errOut, "platform_slot") {
-		t.Fatalf("refusal did not mention mining.platform_slot: %q", errOut)
-	}
-	if reg, _ := loadAgent(t, stateDir); reg.LastEnrollmentSlot != "" {
-		t.Fatal("enrolled despite an unresolved slot ambiguity")
-	}
-
-	// Naming one of the offered slots resolves it.
-	cfg, err := os.ReadFile(cfgPath) // #nosec G304 -- the test's own writeTOML output, not an external path
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfgPath2 := writeTOML(t, string(cfg)+"platform_slot = \"twilight-slot-7\"\n")
-	code, out, _ := runConnect(t, cfgPath2, nil)
-	if code != exitOK || !strings.Contains(out, "enrolled for mining") {
-		t.Fatalf("did not enroll once platform_slot named one of the offered slots: code=%d out=%q", code, out)
-	}
-	if reg, _ := loadAgent(t, stateDir); reg.LastEnrollmentSlot != "twilight-slot-7" {
-		t.Fatalf("enrolled on %q, want twilight-slot-7", reg.LastEnrollmentSlot)
-	}
-}
-
-// WP2-review defect 2: "enrolled" and "declared" are separate facts. This
-// installation enrolls with NO address on file (a scripted install: mining
-// enabled, no payout_address configured yet), so the enrolling poll has
-// nothing to declare. Only afterward does a payout address arrive (`mining
-// enable`, run later). The old code's `reg.LastEnrollmentSlot != ""` check
-// short-circuited pollOnce entirely on every poll from then on, so the
-// address was never declared. This proves the next run picks it up.
-func TestAddressSetAfterEnrollmentIsDeclaredOnTheNextRun(t *testing.T) {
-	withShortConnectTimings(t)
-	platform := newStubPlatform(t)
-	as := newStubAS(t)
-	cfgPath, stateDir := connectConfig(t, platform.srv.URL, as.srv.URL)
-
-	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
-		t.Fatal("first connect failed")
-	}
-	platform.claim("credits", "mining")
-
-	// Enroll with no address on file yet.
-	code, out, _ := runConnect(t, cfgPath, nil)
-	if code != exitOK || !strings.Contains(out, "enrolled for mining") {
-		t.Fatalf("did not enroll: code=%d out=%q", code, out)
-	}
-	if got := as.declarationAttempts(); got != 0 {
-		t.Fatalf("declaration attempts = %d, want 0 (no address was on file to declare)", got)
-	}
-	reg, ok := loadAgent(t, stateDir)
-	if !ok || reg.LastEnrollmentSlot == "" {
-		t.Fatalf("expected enrollment to be recorded: %+v ok=%v", reg, ok)
-	}
-
-	// The address arrives afterward, as `mining enable` would leave it.
-	if err := testPayoutRecord(t, stateDir).Save("twilight19ltafk0vdyzwtnzjcfwgvlu3ldmvgemdqxsn79"); err != nil {
-		t.Fatal(err)
-	}
-
-	// A subsequent, ordinary poll — already enrolled, nothing about
-	// enrollment changed — must still declare the now-present address.
-	code, out, _ = runConnect(t, cfgPath, nil)
-	if code != exitOK {
-		t.Fatalf("third connect exited %d: %s", code, out)
-	}
-	if got := as.declaredAddress(); got != "twilight19ltafk0vdyzwtnzjcfwgvlu3ldmvgemdqxsn79" {
-		t.Fatalf("declared address = %q, want twilight19ltafk0vdyzwtnzjcfwgvlu3ldmvgemdqxsn79 (the old code swallowed this: "+
-			"already-enrolled short-circuited before the declare check)", got)
-	}
-}
-
-// Once an address is confirmed active, a later poll must not keep hitting
-// the AS to re-declare it — WP2-review defect 2's "avoid redundant declare
-// calls" concern. addressSettled (SavePayoutDeclared) is what stops it.
-func TestDeclareIsNotRepeatedOnceSettled(t *testing.T) {
-	withShortConnectTimings(t)
-	platform := newStubPlatform(t)
-	as := newStubAS(t)
-	cfgPath, stateDir := connectConfig(t, platform.srv.URL, as.srv.URL)
-	_, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
-		t.Fatal("first connect failed")
-	}
-	if err := testPayoutRecord(t, stateDir).Save("twilight1225q9dwktuz2vjj0q220m2jjy3x8cajwcfueq0"); err != nil {
-		t.Fatal(err)
-	}
-	platform.claim("credits", "mining")
-
-	// Enrolls and declares in this run.
-	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
-		t.Fatal("second connect failed")
-	}
-	if got := as.declarationAttempts(); got != 1 {
-		t.Fatalf("declaration attempts after first success = %d, want 1", got)
-	}
-
-	// A resume-style poll with nothing new must not call the AS again.
-	if code, _, _ := runConnect(t, cfgPath, nil, "-resume"); code != exitOK {
-		t.Fatal("resume poll failed")
-	}
-	if got := as.declarationAttempts(); got != 1 {
-		t.Fatalf("declaration attempts after a settled resume = %d, want still 1 (no redundant AS round trip)", got)
 	}
 }
 
@@ -1071,11 +536,6 @@ func TestConnectIsIdempotentOnSecondRun(t *testing.T) {
 func TestConnectStoresKeyAndSearchWorksBeforeClaim(t *testing.T) {
 	withShortConnectTimings(t)
 	platform := newStubPlatform(t)
-	cfgPath, _ := connectConfig(t, platform.srv.URL, "")
-	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
-		t.Fatal("connect failed")
-	}
-
 	router := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer sr-stubkey" {
 			t.Errorf("search sent Authorization %q, want the key connect stored", got)
@@ -1083,22 +543,20 @@ func TestConnectStoresKeyAndSearchWorksBeforeClaim(t *testing.T) {
 		writeStubJSON(w, http.StatusOK, map[string]any{"request_id": "req-1"})
 	}))
 	defer router.Close()
-
-	existing, err := os.ReadFile(cfgPath) // #nosec G304 -- the test's own writeTOML output, not an external path
-	if err != nil {
-		t.Fatal(err)
+	// One config for both: connect records the router it names as where
+	// the stored key may go, and search sends the key there.
+	cfgPath, _ := connectConfig(t, platform.srv.URL, router.URL)
+	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
+		t.Fatal("connect failed")
 	}
-	routerCfg := writeTOML(t, string(existing)+fmt.Sprintf("\n[miner]\nrouter_url = %q\n", router.URL))
-	// search.go's own state_dir/intake_dir resolution needs [mining] to
-	// have a state_dir even in the search-only case; connectConfig
-	// already wrote one, reused here via the same directory tree.
+
 	hook := realHookOps()
 	hook.getenv = noEnv
 	var out, errOut bytes.Buffer
 	code := searchMain(searchOps{
 		getppid: func() int { return 1 }, hostname: func() (string, error) { return "h", nil },
 		getwd: func() (string, error) { return t.TempDir(), nil }, now: time.Now, hook: hook,
-	}, []string{"-config", routerCfg, "-no-flush", "hello"}, strings.NewReader(""), &out, &errOut, installedAs(noEnv, []string{"-config", routerCfg}))
+	}, []string{"-config", cfgPath, "hello"}, strings.NewReader(""), &out, &errOut, installedAs(noEnv, []string{"-config", cfgPath}))
 	if code != exitOK {
 		t.Fatalf("search exited %d: %s", code, errOut.String())
 	}
@@ -1111,22 +569,16 @@ func TestStatusReportsAgentIdentity(t *testing.T) {
 	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
 		t.Fatal("connect failed")
 	}
-	out := captureStdout(t, func() {
-		printAgentIdentityStatus([]string{"-config", cfgPath}, os.Stdout, os.Stderr, noEnv)
-	})
-	if !strings.Contains(out, "unclaimed") {
+	if out := statusText(t, cfgPath); !strings.Contains(out, "unclaimed") {
 		t.Fatalf("status did not report unclaimed: %q", out)
 	}
 
-	platform.claim("credits", "mining")
+	platform.claim("credits")
 	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
 		t.Fatal("resumed connect failed")
 	}
-	out = captureStdout(t, func() {
-		printAgentIdentityStatus([]string{"-config", cfgPath}, os.Stdout, os.Stderr, noEnv)
-	})
-	if !strings.Contains(out, "claimed") || !strings.Contains(out, "mining") {
-		t.Fatalf("status did not report claimed+mining: %q", out)
+	if out := statusText(t, cfgPath); !strings.Contains(out, "claimed") || !strings.Contains(out, "credits") {
+		t.Fatalf("status did not report the claim and its scopes: %q", out)
 	}
 }
 
@@ -1155,7 +607,7 @@ func TestDetachedResumePollsOnceAndExits(t *testing.T) {
 }
 
 func TestShouldResumeIsALocalCheckWithNoStoredRegistration(t *testing.T) {
-	if shouldResume(&config.Config{Mining: config.Mining{StateDir: filepath.Join(t.TempDir(), "state")}}, noEnv) {
+	if shouldResume(&config.Config{Search: config.Search{StateDir: filepath.Join(t.TempDir(), "state")}}, noEnv) {
 		t.Fatal("shouldResume true with nothing on disk")
 	}
 	if shouldResume(&config.Config{}, noEnv) {
@@ -1163,1020 +615,53 @@ func TestShouldResumeIsALocalCheckWithNoStoredRegistration(t *testing.T) {
 	}
 }
 
-// WP2-review defect 3 / coverage gap A: the spawn must stop once there is
-// nothing a resume can do, and — the reviewer's specific finding — every
-// condition that decides that needs a test that fails if THAT condition
-// alone is deleted, not just a return value it happens to share with a
-// resumeConfig is the config pkg/config would build around m: intake_dir,
-// and with it the directory credentials.json and the payout record sit in,
-// derived from the state dir.
-func resumeConfig(m config.Mining) *config.Config {
-	return &config.Config{Mining: m, Miner: config.Miner{IntakeDir: filepath.Join(filepath.Dir(m.StateDir), "intake")}}
-}
-
-// WP2-review defect 3 / coverage gap A: the spawn must stop once there is
-// nothing a resume can do, and — the reviewer's specific finding — every
-// condition that decides that needs a test that fails if THAT condition
-// alone is deleted, not just a return value it happens to share with a
-// neighbor. shouldResumeFixture builds a registration and lets each
-// subtest vary exactly one thing.
-func shouldResumeFixture(t *testing.T, status string, scopes []string, enrolled bool, address string) (stateDir string) {
+// shouldResumeFixture stores a registration in a fresh state directory and
+// lets each subtest vary exactly one thing about it.
+func shouldResumeFixture(t *testing.T, status string, scopes []string) (stateDir string) {
 	t.Helper()
 	stateDir = filepath.Join(t.TempDir(), "state")
 	store, err := auth.OpenStore(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	reg := auth.AgentRegistration{AgentID: "agent-1", Status: status, Scopes: scopes}
-	if enrolled {
-		reg.LastEnrollmentSlot = "twilight-slot-3"
-	}
-	if err := store.SaveAgentRegistration(reg); err != nil {
+	if err := store.SaveAgentRegistration(auth.AgentRegistration{AgentID: "agent-1", Status: status, Scopes: scopes}); err != nil {
 		t.Fatal(err)
-	}
-	if address != "" {
-		if err := testPayoutRecord(t, stateDir).Save(address); err != nil {
-			t.Fatal(err)
-		}
 	}
 	return stateDir
 }
 
-func TestNoResumeSpawnForEnrolledOptedOutOrUnconfigured(t *testing.T) {
-	configured := config.Mining{Enabled: true, ASBaseURL: "https://as.example"}
-
+// WP2-review defect 3 / coverage gap A: the spawn must stop once there is
+// nothing a resume can do, and — the reviewer's specific finding — every
+// condition that decides that needs a test that fails if THAT condition
+// alone is deleted, not just a return value it happens to share with a
+// neighbor. The one state a resume can still act on is an unclaimed
+// registration, whose claim a person may have approved since; a claimed or
+// expired one is settled, and a resume for it would poll the platform and
+// exit, forever, on every single search.
+func TestShouldResumeOnlyForAnUnclaimedRegistration(t *testing.T) {
 	t.Run("unclaimed: still actionable", func(t *testing.T) {
-		stateDir := shouldResumeFixture(t, "unclaimed", nil, false, "")
-		if !shouldResume(&config.Config{Mining: config.Mining{StateDir: stateDir}}, noEnv) {
+		stateDir := shouldResumeFixture(t, "unclaimed", nil)
+		if !shouldResume(&config.Config{Search: config.Search{StateDir: stateDir}}, noEnv) {
 			t.Fatal("shouldResume false for an unclaimed registration still worth polling")
 		}
 	})
 
-	t.Run("claimed, no mining scope: settled (search-only)", func(t *testing.T) {
-		stateDir := shouldResumeFixture(t, "claimed", []string{"credits"}, false, "")
-		cfg := configured
-		cfg.StateDir = stateDir
-		if shouldResume(resumeConfig(cfg), noEnv) {
-			t.Fatal("shouldResume true for a search-only claim")
+	t.Run("claimed: settled", func(t *testing.T) {
+		stateDir := shouldResumeFixture(t, "claimed", []string{"credits"})
+		if shouldResume(&config.Config{Search: config.Search{StateDir: stateDir}}, noEnv) {
+			t.Fatal("shouldResume true for a claimed registration")
 		}
 	})
 
 	t.Run("expired: settled", func(t *testing.T) {
-		stateDir := shouldResumeFixture(t, "expired", nil, false, "")
-		if shouldResume(&config.Config{Mining: config.Mining{StateDir: stateDir}}, noEnv) {
+		stateDir := shouldResumeFixture(t, "expired", nil)
+		if shouldResume(&config.Config{Search: config.Search{StateDir: stateDir}}, noEnv) {
 			t.Fatal("shouldResume true for an expired registration")
 		}
 	})
-
-	t.Run("not enrolled, decision on file is off: settled", func(t *testing.T) {
-		stateDir := shouldResumeFixture(t, "claimed", []string{"mining"}, false, "")
-		// ASBaseURL IS set here — isolates "opted out" from "no AS
-		// configured" below, so deleting either check independently is
-		// each caught by a different subtest. The decision file, not
-		// config, is what miningActive reads now — this models what
-		// askMiningQuestion actually persists for a real opt-out
-		// (mining_decision.json), not a config-only Enabled value that
-		// nothing but the (now-removed) config fallback ever consulted.
-		store, err := auth.OpenStore(stateDir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := store.SaveMiningEnabled(false); err != nil {
-			t.Fatal(err)
-		}
-		cfg := config.Mining{StateDir: stateDir, ASBaseURL: "https://as.example"}
-		if shouldResume(resumeConfig(cfg), noEnv) {
-			t.Fatal("shouldResume true despite a stored decision of mining off")
-		}
-	})
-
-	t.Run("not enrolled, mining.enabled = true but no as_url: settled", func(t *testing.T) {
-		stateDir := shouldResumeFixture(t, "claimed", []string{"mining"}, false, "")
-		cfg := config.Mining{StateDir: stateDir, Enabled: true, ASBaseURL: ""}
-		if shouldResume(resumeConfig(cfg), noEnv) {
-			t.Fatal("shouldResume true with no mining.as_url configured")
-		}
-	})
-
-	t.Run("enrolled, no address to declare: settled", func(t *testing.T) {
-		stateDir := shouldResumeFixture(t, "claimed", []string{"mining"}, true, "")
-		cfg := configured
-		cfg.StateDir = stateDir
-		if shouldResume(resumeConfig(cfg), noEnv) {
-			t.Fatal("shouldResume true for a fully settled installation")
-		}
-	})
-
-	t.Run("enrolled, address already declared: settled", func(t *testing.T) {
-		stateDir := shouldResumeFixture(t, "claimed", []string{"mining"}, true, "twilight1225q9dwktuz2vjj0q220m2jjy3x8cajwcfueq0")
-		store, err := auth.OpenStore(stateDir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := store.SavePayoutDeclared("twilight1225q9dwktuz2vjj0q220m2jjy3x8cajwcfueq0"); err != nil {
-			t.Fatal(err)
-		}
-		cfg := configured
-		cfg.StateDir = stateDir
-		if shouldResume(resumeConfig(cfg), noEnv) {
-			t.Fatal("shouldResume true for an address already confirmed declared")
-		}
-	})
-
-	// The actionable cases must still spawn. Both need a decision of
-	// "on" explicitly on file now — an absent decision reads as stopped
-	// (miningActive's own default), matching a real install: connect
-	// always asks before either of these states is reachable.
-	t.Run("still actionable: not yet enrolled, configured", func(t *testing.T) {
-		stateDir := shouldResumeFixture(t, "claimed", []string{"mining"}, false, "")
-		store, err := auth.OpenStore(stateDir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := store.SaveMiningEnabled(true); err != nil {
-			t.Fatal(err)
-		}
-		cfg := configured
-		cfg.StateDir = stateDir
-		if !shouldResume(resumeConfig(cfg), noEnv) {
-			t.Fatal("shouldResume false for an installation that can still enroll")
-		}
-	})
-
-	t.Run("still actionable: enrolled with an undeclared address", func(t *testing.T) {
-		stateDir := shouldResumeFixture(t, "claimed", []string{"mining"}, true, "twilight16hmu7hucv64zeanfsa58cjdhku98k43j4cnrkr")
-		store, err := auth.OpenStore(stateDir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := store.SaveMiningEnabled(true); err != nil {
-			t.Fatal(err)
-		}
-		cfg := configured
-		cfg.StateDir = stateDir
-		if !shouldResume(resumeConfig(cfg), noEnv) {
-			t.Fatal("shouldResume false for an enrolled installation with an undeclared address")
-		}
-	})
-}
-
-// ── the installer's mining question ─────────────────────────────────
-
-func TestInstallerMiningQuestionAllThreeAnswers(t *testing.T) {
-	platform := newStubPlatform(t)
-
-	t.Run("no", func(t *testing.T) {
-		cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
-		cfg, _, err := loadConfig(cfgPath, noEnv)
-		if err != nil {
-			t.Fatal(err)
-		}
-		store, err := auth.OpenStore(stateDir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		stdin := bytes.NewBufferString("n\n")
-		br := bufio.NewReader(stdin)
-		outcome, code := askMiningQuestion(stdin, br, &bytes.Buffer{}, &bytes.Buffer{}, noEnv, cfg, store, true, false)
-		if code != exitOK || outcome.enabled {
-			t.Fatalf("got %+v code=%d, want disabled", outcome, code)
-		}
-		if _, ok, _ := testPayoutRecord(t, stateDir).Load(); ok {
-			t.Fatal("an address was persisted after answering no")
-		}
-	})
-
-	t.Run("yes with typed address", func(t *testing.T) {
-		cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
-		cfg, _, err := loadConfig(cfgPath, noEnv)
-		if err != nil {
-			t.Fatal(err)
-		}
-		store, err := auth.OpenStore(stateDir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		stdin := bytes.NewBufferString("y\ntwilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn\n")
-		br := bufio.NewReader(stdin)
-		outcome, code := askMiningQuestion(stdin, br, &bytes.Buffer{}, &bytes.Buffer{}, noEnv, cfg, store, true, false)
-		if code != exitOK || !outcome.enabled || outcome.payoutAddress != "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn" {
-			t.Fatalf("got %+v code=%d", outcome, code)
-		}
-		if addr, ok, _ := testPayoutRecord(t, stateDir).Load(); !ok || addr != "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn" {
-			t.Fatalf("address not persisted: %q ok=%v", addr, ok)
-		}
-	})
-
-	t.Run("yes with empty address creates a wallet", func(t *testing.T) {
-		cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
-		cfg, _, err := loadConfig(cfgPath, noEnv)
-		if err != nil {
-			t.Fatal(err)
-		}
-		store, err := auth.OpenStore(stateDir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Setenv(walletPassphraseEnv, "correct horse battery staple")
-		t.Setenv("JEVLIN_WALLET_DIR", filepath.Join(t.TempDir(), "wallet"))
-		stdin := bytes.NewBufferString("y\n\n")
-		br := bufio.NewReader(stdin)
-		var out bytes.Buffer
-		outcome, code := askMiningQuestion(stdin, br, &out, &bytes.Buffer{}, os.Getenv, cfg, store, true, false)
-		if code != exitOK || !outcome.enabled || outcome.payoutAddress == "" {
-			t.Fatalf("got %+v code=%d", outcome, code)
-		}
-		if !strings.Contains(out.String(), "recovery phrase") {
-			t.Fatalf("mnemonic was not printed: %q", out.String())
-		}
-		if addr, ok, _ := testPayoutRecord(t, stateDir).Load(); !ok || addr != outcome.payoutAddress {
-			t.Fatalf("address not persisted: %q ok=%v want %q", addr, ok, outcome.payoutAddress)
-		}
-	})
-}
-
-// WP4b (design f0ddb69 §5.5): the question was already visually defaulted
-// to "no" (a bare Enter answers N) — participantHasOtherAgent=true adds
-// only an explanatory line, never a mechanical block. A human who
-// understands the tradeoff can still type "y" and enable it anyway.
-func TestMiningQuestionDefaultsToNoWhenParticipantHasAnotherAgent(t *testing.T) {
-	platform := newStubPlatform(t)
-	cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
-	cfg, _, err := loadConfig(cfgPath, noEnv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Run("bare Enter: disabled, with the explanatory note", func(t *testing.T) {
-		stdin := bytes.NewBufferString("\n")
-		br := bufio.NewReader(stdin)
-		var stderr bytes.Buffer
-		outcome, code := askMiningQuestion(stdin, br, &bytes.Buffer{}, &stderr, noEnv, cfg, store, true, true)
-		if code != exitOK || outcome.enabled {
-			t.Fatalf("got %+v code=%d, want disabled", outcome, code)
-		}
-		if !strings.Contains(stderr.String(), "already have mining enabled on another agent") {
-			t.Fatalf("no explanatory note printed:\n%s", stderr.String())
-		}
-	})
-
-	t.Run("explicit y: still overridable", func(t *testing.T) {
-		stdin := bytes.NewBufferString("y\ntwilight1wx0rwcuexfwc36h0r2cg3fvfsds66f0qadt8cs\n")
-		br := bufio.NewReader(stdin)
-		var stderr bytes.Buffer
-		outcome, code := askMiningQuestion(stdin, br, &bytes.Buffer{}, &stderr, noEnv, cfg, store, true, true)
-		if code != exitOK || !outcome.enabled || outcome.payoutAddress != "twilight1wx0rwcuexfwc36h0r2cg3fvfsds66f0qadt8cs" {
-			t.Fatalf("got %+v code=%d, want enabled — the note is a default, not a refusal", outcome, code)
-		}
-		if !strings.Contains(stderr.String(), "already have mining enabled on another agent") {
-			t.Fatalf("no explanatory note printed even though it was overridden:\n%s", stderr.String())
-		}
-	})
-}
-
-// The scripted-install equivalent of the three answers above, driven by
-// [mining] enabled/payout_address instead of a terminal.
-func TestScriptedInstallMiningConfig(t *testing.T) {
-	platform := newStubPlatform(t)
-
-	t.Run("enabled=false", func(t *testing.T) {
-		cfgPath, stateDir := scriptedMiningConfig(t, platform.srv.URL, "enabled = false\n")
-		cfg, _, err := loadConfig(cfgPath, noEnv)
-		if err != nil {
-			t.Fatal(err)
-		}
-		store, err := auth.OpenStore(stateDir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		outcome, code := askMiningQuestion(&bytes.Buffer{}, bufio.NewReader(&bytes.Buffer{}), &bytes.Buffer{}, &bytes.Buffer{}, noEnv, cfg, store, false, false)
-		if code != exitOK || outcome.enabled {
-			t.Fatalf("got %+v code=%d", outcome, code)
-		}
-	})
-
-	t.Run("enabled=true with payout_address", func(t *testing.T) {
-		cfgPath, stateDir := scriptedMiningConfig(t, platform.srv.URL, "enabled = true\npayout_address = \"twilight1xnxmhqt2l55flef42ks4sn0er6tv6yhyqx7wy8\"\n")
-		cfg, _, err := loadConfig(cfgPath, noEnv)
-		if err != nil {
-			t.Fatal(err)
-		}
-		store, err := auth.OpenStore(stateDir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		outcome, code := askMiningQuestion(&bytes.Buffer{}, bufio.NewReader(&bytes.Buffer{}), &bytes.Buffer{}, &bytes.Buffer{}, noEnv, cfg, store, false, false)
-		if code != exitOK || !outcome.enabled || outcome.payoutAddress != "twilight1xnxmhqt2l55flef42ks4sn0er6tv6yhyqx7wy8" {
-			t.Fatalf("got %+v code=%d", outcome, code)
-		}
-		if addr, ok, _ := testPayoutRecord(t, stateDir).Load(); !ok || addr != "twilight1xnxmhqt2l55flef42ks4sn0er6tv6yhyqx7wy8" {
-			t.Fatalf("address not persisted: %q ok=%v", addr, ok)
-		}
-	})
-
-	t.Run("enabled=true, no address, no terminal: no wallet, no error", func(t *testing.T) {
-		cfgPath, stateDir := scriptedMiningConfig(t, platform.srv.URL, "enabled = true\n")
-		cfg, _, err := loadConfig(cfgPath, noEnv)
-		if err != nil {
-			t.Fatal(err)
-		}
-		store, err := auth.OpenStore(stateDir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var out bytes.Buffer
-		outcome, code := askMiningQuestion(&bytes.Buffer{}, bufio.NewReader(&bytes.Buffer{}), &out, &bytes.Buffer{}, noEnv, cfg, store, false, false)
-		if code != exitOK {
-			t.Fatalf("this is documented as NOT an error; got code=%d", code)
-		}
-		if !outcome.enabled || outcome.payoutAddress != "" {
-			t.Fatalf("got %+v, want enabled with no address", outcome)
-		}
-		if !strings.Contains(out.String(), "no wallet was created") {
-			t.Fatalf("no explanatory status line: %q", out.String())
-		}
-		if _, ok, _ := testPayoutRecord(t, stateDir).Load(); ok {
-			t.Fatal("an address was persisted with none configured")
-		}
-	})
-}
-
-// Design item 1: mining_decision.json is the only thing miningActive
-// ever reads, so a fresh install must never be in a "no decision"
-// state. askMiningQuestion writes it on every path that reaches it,
-// whether a terminal answered or a scripted config did — the exact
-// requirement design item 1 states as "the installer writes it for
-// both answers of the terminal question; a scripted install writes it
-// from [mining] enabled at install time."
-func TestAFreshInstallAlwaysHasADecisionOnFile(t *testing.T) {
-	platform := newStubPlatform(t)
-
-	for _, tc := range []struct {
-		name        string
-		interactive bool
-		stdin       string
-		scripted    string
-		wantEnabled bool
-	}{
-		{"interactive yes", true, "y\ntwilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn\n", "", true},
-		{"interactive no", true, "n\n", "", false},
-		{"scripted enabled=true", false, "", "enabled = true\npayout_address = \"twilight1xnxmhqt2l55flef42ks4sn0er6tv6yhyqx7wy8\"\n", true},
-		{"scripted enabled=false", false, "", "enabled = false\n", false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var cfgPath, stateDir string
-			if tc.interactive {
-				cfgPath, stateDir = connectConfig(t, platform.srv.URL, "")
-			} else {
-				cfgPath, stateDir = scriptedMiningConfig(t, platform.srv.URL, tc.scripted)
-			}
-			cfg, _, err := loadConfig(cfgPath, noEnv)
-			if err != nil {
-				t.Fatal(err)
-			}
-			store, err := auth.OpenStore(stateDir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			stdin := bytes.NewBufferString(tc.stdin)
-			br := bufio.NewReader(stdin)
-			if _, code := askMiningQuestion(stdin, br, &bytes.Buffer{}, &bytes.Buffer{}, noEnv, cfg, store, tc.interactive, false); code != exitOK {
-				t.Fatalf("code=%d", code)
-			}
-			enabled, ok, err := store.LoadMiningEnabled()
-			if err != nil || !ok {
-				t.Fatalf("no decision on file: enabled=%v ok=%v err=%v", enabled, ok, err)
-			}
-			if enabled != tc.wantEnabled {
-				t.Fatalf("decision on file = %v, want %v", enabled, tc.wantEnabled)
-			}
-		})
-	}
-}
-
-// The other half of "never in a no-decision state": a state directory
-// nothing has ever decided anything about — no connect, no mining
-// enable, no scripted config ever ran askMiningQuestion against it —
-// reads as stopped, not active. An absent file means only "never
-// decided," and that is not the same as "on."
-func TestAnInstallationWithNoDecisionFileAtAllIsStopped(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "state")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	store, err := auth.OpenStore(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok, err := store.LoadMiningEnabled(); err != nil || ok {
-		t.Fatalf("setup: expected no decision file, got ok=%v err=%v", ok, err)
-	}
-	if miningActive(store) {
-		t.Fatal("miningActive true with no decision file at all; want false")
-	}
-}
-
-// TestNoWalletOnNonTerminalPath is the structural half of the scripted
-// tests above: askMiningQuestion never reaches createWallet's passphrase
-// prompt/mnemonic print at all when interactive is false, regardless of
-// what [mining] says — proven by the "enabled=true, no address" case
-// completing without ever blocking on stdin (the buffers above are
-// empty; a read from them would return EOF, not hang, but a wallet
-// creation attempt would still show up as "recovery phrase" in stdout,
-// which the case above already asserts is absent).
-func TestNoWalletOnNonTerminalPath(t *testing.T) {
-	platform := newStubPlatform(t)
-	cfgPath, stateDir := scriptedMiningConfig(t, platform.srv.URL, "enabled = true\n")
-	cfg, _, err := loadConfig(cfgPath, noEnv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	walletDir := filepath.Join(stateDir, "..", "wallet")
-	t.Setenv("JEVLIN_WALLET_DIR", walletDir)
-	if _, code := askMiningQuestion(&bytes.Buffer{}, bufio.NewReader(&bytes.Buffer{}), &bytes.Buffer{}, &bytes.Buffer{}, noEnv, cfg, store, false, false); code != exitOK {
-		t.Fatalf("code=%d", code)
-	}
-	if _, err := os.Stat(filepath.Join(walletDir, walletKeyFile)); err == nil {
-		t.Fatal("a wallet keyfile was created on the non-interactive path")
-	}
-}
-
-// ── unattended declaration ──────────────────────────────────────────
-
-// The declaration itself running unattended once enrollment succeeds is
-// exercised end-to-end by TestConnectCaseAccountExistsSearchAndMining
-// and TestConnectCaseMiningGrantedLater above (both assert
-// as.declaredAddress()); this isolates the property that a payout
-// address stored BEFORE enrollment is what a detached resume declares
-// AFTER it, with no human present at either boundary.
-func TestDeclarationRunsUnattendedAfterEnrollment(t *testing.T) {
-	withShortConnectTimings(t)
-	platform := newStubPlatform(t)
-	as := newStubAS(t)
-	cfgPath, stateDir := connectConfig(t, platform.srv.URL, as.srv.URL)
-
-	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
-		t.Fatal("connect failed")
-	}
-	if err := testPayoutRecord(t, stateDir).Save("twilight1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc"); err != nil {
-		t.Fatal(err)
-	}
-	platform.claim("mining")
-
-	// The detached shape specifically: -resume, no stdin, exactly the
-	// invocation search.go's spawnConnectResume makes.
-	code, out, _ := runConnect(t, cfgPath, nil, "-resume")
-	if code != exitOK {
-		t.Fatalf("resume exited %d: %s", code, out)
-	}
-	if got := as.declaredAddress(); got != "twilight1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc" {
-		t.Fatalf("declared address = %q, want twilight1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc", got)
-	}
-}
-
-// WP4b (design f0ddb69 §5.5): "read before declaring". Three direct tests
-// of declarePayoutIfSafe against stubOnboardingAS, plus one integration
-// test (TestStatusReportsBothAddressesOnBindingConflict below) proving
-// status surfaces the held case end to end.
-
-func TestDeclareProceedsWhenNoActiveBinding(t *testing.T) {
-	as := newStubAS(t) // activeAddress unset: GET answers 404, ErrNoPayoutDeclaration
-	mining, stateDir := as.miningClient(t)
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var stdout, stderr bytes.Buffer
-	declarePayoutIfSafe(context.Background(), mining, store, "twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n", &stdout, &stderr)
-
-	if got := as.declaredAddress(); got != "twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n" {
-		t.Fatalf("declared address = %q, want twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n (no active binding, must proceed)", got)
-	}
-	if stderr.String() != "" {
-		t.Fatalf("stderr: %s", stderr.String())
-	}
-}
-
-// WP4b's "a declaration of the same address is not a change" makes a
-// redundant re-declare SAFE; it does not make it necessary. WP2-review
-// defect 2's efficiency question resolved to skipping the AS round trip
-// entirely when the active binding already matches — declarePayoutIfSafe
-// records the same outcome (SavePayoutDeclared, no held-binding note)
-// without spending a PUT on it.
-func TestDeclareProceedsWhenActiveMatchesLocal(t *testing.T) {
-	as := newStubAS(t)
-	as.setActiveAddress("twilight1xnxmhqt2l55flef42ks4sn0er6tv6yhyqx7wy8")
-	mining, stateDir := as.miningClient(t)
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var stdout, stderr bytes.Buffer
-	declarePayoutIfSafe(context.Background(), mining, store, "twilight1xnxmhqt2l55flef42ks4sn0er6tv6yhyqx7wy8", &stdout, &stderr)
-
-	if got := as.declarationAttempts(); got != 0 {
-		t.Fatalf("declaration attempts = %d, want 0 (already active and matching; no redundant AS round trip needed)", got)
-	}
-	if declared, ok, derr := store.LoadPayoutDeclared(); derr != nil || !ok || declared != "twilight1xnxmhqt2l55flef42ks4sn0er6tv6yhyqx7wy8" {
-		t.Fatalf("LoadPayoutDeclared() = %q ok=%v err=%v, want twilight1xnxmhqt2l55flef42ks4sn0er6tv6yhyqx7wy8 recorded as settled", declared, ok, derr)
-	}
-	if _, ok, _ := store.LoadPayoutBindingHeld(); ok {
-		t.Fatal("a matching declaration must not leave a held-binding note")
-	}
-}
-
-func TestDeclareReadsStandingFirstAndSkipsWhenActiveDiffers(t *testing.T) {
-	as := newStubAS(t)
-	as.setActiveAddress("twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn")
-	mining, stateDir := as.miningClient(t)
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var stdout, stderr bytes.Buffer
-	declarePayoutIfSafe(context.Background(), mining, store, "twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh", &stdout, &stderr)
-
-	if got := as.declarationAttempts(); got != 0 {
-		t.Fatalf("declaration attempts = %d, want 0 — a different active address must never be declared over blind", got)
-	}
-	held, ok, err := store.LoadPayoutBindingHeld()
-	if err != nil || !ok || held.Local != "twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh" || held.Active != "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn" {
-		t.Fatalf("LoadPayoutBindingHeld() = %+v, ok=%v, err=%v", held, ok, err)
-	}
-	if !strings.Contains(stdout.String(), "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn") || !strings.Contains(stdout.String(), "twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh") {
-		t.Fatalf("stdout does not name both addresses: %s", stdout.String())
-	}
-}
-
-// End to end: connect enrolls, declares against a stub AS that already
-// has a DIFFERENT address active, and `status` shows both — without a
-// second network round trip (printAgentIdentityStatus reads the store).
-func TestStatusReportsBothAddressesOnBindingConflict(t *testing.T) {
-	withShortConnectTimings(t)
-	platform := newStubPlatform(t)
-	as := newStubAS(t)
-	as.setActiveAddress(plantedAddress)
-	cfgPath, stateDir := connectConfig(t, platform.srv.URL, as.srv.URL)
-
-	if code, _, _ := runConnect(t, cfgPath, nil); code != exitOK {
-		t.Fatal("connect failed")
-	}
-	if err := testPayoutRecord(t, stateDir).Save("twilight1nv60etsw245g8z00h4h322m4vr764z3840swpa"); err != nil {
-		t.Fatal(err)
-	}
-	platform.claim("mining")
-	if code, out, _ := runConnect(t, cfgPath, nil, "-resume"); code != exitOK {
-		t.Fatalf("resume exited %d: %s", code, out)
-	}
-	if got := as.declarationAttempts(); got != 0 {
-		t.Fatalf("declaration attempts = %d, want 0 (active address differs)", got)
-	}
-
-	var stdout, stderr bytes.Buffer
-	printAgentIdentityStatus([]string{"-config", cfgPath}, &stdout, &stderr, os.Getenv)
-	if !strings.Contains(stdout.String(), plantedAddress) || !strings.Contains(stdout.String(), "twilight1nv60etsw245g8z00h4h322m4vr764z3840swpa") {
-		t.Fatalf("status does not name both addresses:\n%s", stdout.String())
-	}
-	if !strings.Contains(stdout.String(), "HELD") {
-		t.Fatalf("status does not say the binding is held:\n%s", stdout.String())
-	}
 }
 
 // ── WP2-adversarial-review coverage ─────────────────────────────────────
-
-// Finding 1: N concurrent connect -resume invocations against one
-// already-claimed, mining-scoped, undeclared registration must produce
-// exactly one platform enroll call, one AS token redemption, and one
-// declaration — connect.lock serializes them, and finding 6's re-read
-// means every invocation after the first sees the winner's result already
-// on disk and does nothing further. Goroutines contend on connect.lock
-// mining enable's re-approval message had never been driven at the
-// cmdMining level at all (only askMiningQuestion, a level below it) —
-// which is how a dead one-time claim_url shipped as that message
-// unnoticed until a live run against the real platform 404'd on it
-// (search-router's handleAgentClaim refuses any resubmission outright,
-// even by the original owner). The fix points at the platform's generic
-// claim address instead (reachable console grant, search-router commit
-// d20a6ac) — this pins BOTH that the dead per-code URL is gone AND that
-// the generic address present.
-func TestMiningEnableReApprovalPointsAtTheGenericClaimAddressNotTheDeadOneTimeURL(t *testing.T) {
-	platform := newStubPlatform(t)
-	cfgPath, stateDir := connectConfig(t, platform.srv.URL, "https://as.example.invalid")
-	cfg, _, err := loadConfig(cfgPath, noEnv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(credentialsPath(cfg.Miner)), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-key"}); err != nil {
-		t.Fatal(err)
-	}
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	deadClaimURL := platform.srv.URL + "/claim/AB12-CD34"
-	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-1", Status: "claimed", Scopes: []string{"credits"},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	seedClaim(t, cfgPath, "agent-1", deadClaimURL, "")
-	platform.claim("credits") // claimed, credits only — mining not granted
-
-	var stdout bytes.Buffer
-	code := cmdMining([]string{"enable", "-config", cfgPath}, &bytes.Buffer{}, &stdout, &bytes.Buffer{}, installedAs(noEnv, []string{"-config", cfgPath}))
-	if code != exitOK {
-		t.Fatalf("cmdMining enable: code=%d stdout=%s", code, stdout.String())
-	}
-	out := stdout.String()
-	wantAddr := cfg.Platform.BaseURL + "/claim"
-	if !strings.Contains(out, wantAddr) {
-		t.Errorf("stdout does not name the generic claim address %q:\n%s", wantAddr, out)
-	}
-	if strings.Contains(out, deadClaimURL) {
-		t.Errorf("stdout still names the dead, already-consumed one-time claim URL:\n%s", out)
-	}
-}
-
-// When the platform's poll response carries console_url (confirmed live:
-// search-router added this after the generic-claim-address fix above,
-// specifically to remove the "submit a doomed code first" step), mining
-// enable's re-approval message must prefer it over the generic address —
-// the whole point of shipping it.
-func TestMiningEnableReApprovalPrefersTheRealConsoleURLWhenThePlatformSendsOne(t *testing.T) {
-	platform := newStubPlatform(t)
-	cfgPath, stateDir := connectConfig(t, platform.srv.URL, "https://as.example.invalid")
-	cfg, _, err := loadConfig(cfgPath, noEnv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(credentialsPath(cfg.Miner)), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-key"}); err != nil {
-		t.Fatal(err)
-	}
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-1", Status: "claimed", Scopes: []string{"credits"},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	seedClaim(t, cfgPath, "agent-1", platform.srv.URL+"/claim/AB12-CD34", "")
-	platform.claim("credits") // claimed, credits only — mining not granted
-	realConsoleURL := platform.srv.URL + "/projects/8fe850f9-eb9a-4a80-b9c8-7341bd346a48"
-	platform.setConsoleURL(realConsoleURL)
-
-	var stdout bytes.Buffer
-	code := cmdMining([]string{"enable", "-config", cfgPath}, &bytes.Buffer{}, &stdout, &bytes.Buffer{}, installedAs(noEnv, []string{"-config", cfgPath}))
-	if code != exitOK {
-		t.Fatalf("cmdMining enable: code=%d stdout=%s", code, stdout.String())
-	}
-	out := stdout.String()
-	if !strings.Contains(out, realConsoleURL) {
-		t.Errorf("stdout does not name the real console_url %q:\n%s", realConsoleURL, out)
-	}
-	genericAddr := cfg.Platform.BaseURL + "/claim"
-	if strings.Contains(out, genericAddr) {
-		t.Errorf("stdout fell back to the generic claim address %q even though a real console_url was available:\n%s", genericAddr, out)
-	}
-}
-
-// An agent that was never claimed at all has a DIFFERENT, still-valid
-// claim link — reg.ClaimURL hasn't been consumed by anything yet, unlike
-// the already-claimed re-approval case above. Printing the console/generic
-// fallback here would be worse, not just different: it lands the human on
-// a bare claim form with no code to type, when they already have a working
-// link. Found tracing the code after the console_url fix, not live —
-// worth pinning before it becomes a live surprise the way the dead
-// re-approval URL was.
-func TestMiningEnableOnAnUnclaimedAgentPrintsTheOriginalStillValidClaimLink(t *testing.T) {
-	platform := newStubPlatform(t) // default status: "unclaimed"
-	platform.setConsoleURL(platform.srv.URL + "/projects/should-not-be-used")
-	cfgPath, stateDir := connectConfig(t, platform.srv.URL, "https://as.example.invalid")
-	cfg, _, err := loadConfig(cfgPath, noEnv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(credentialsPath(cfg.Miner)), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-key"}); err != nil {
-		t.Fatal(err)
-	}
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	originalClaimURL := platform.srv.URL + "/claim/AB12-CD34"
-	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-1", Status: "unclaimed",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	seedClaim(t, cfgPath, "agent-1", originalClaimURL, "")
-
-	var stdout bytes.Buffer
-	code := cmdMining([]string{"enable", "-config", cfgPath}, &bytes.Buffer{}, &stdout, &bytes.Buffer{}, installedAs(noEnv, []string{"-config", cfgPath}))
-	if code != exitOK {
-		t.Fatalf("cmdMining enable: code=%d stdout=%s", code, stdout.String())
-	}
-	out := stdout.String()
-	if !strings.Contains(out, originalClaimURL) {
-		t.Errorf("stdout does not name the original, still-valid claim URL %q:\n%s", originalClaimURL, out)
-	}
-	if strings.Contains(out, "should-not-be-used") {
-		t.Errorf("stdout used the console_url fallback for an unclaimed agent, which has no project yet:\n%s", out)
-	}
-	// The bare generic address (cfg.Platform.BaseURL+"/claim") is a
-	// substring of originalClaimURL too, sharing the same origin — so the
-	// wording, not a URL substring check, is what actually distinguishes
-	// "unclaimed" from the already-claimed re-approval branch.
-	if strings.Contains(out, "Sign in and grant it") {
-		t.Errorf("stdout used the already-claimed re-approval wording for a never-claimed agent:\n%s", out)
-	}
-}
-
-// mining enable reads the same sandbox-writable agent.json: an unclaimed
-// agent's stored claim URL off the platform origin is never printed.
-func TestMiningEnableNeverPrintsAStoredClaimURLOffThePlatformOrigin(t *testing.T) {
-	platform := newStubPlatform(t)
-	cfgPath, stateDir := connectConfig(t, platform.srv.URL, "https://as.example.invalid")
-	cfg := mustLoadConfig(t, cfgPath)
-	if err := os.MkdirAll(filepath.Dir(credentialsPath(cfg.Miner)), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-key"}); err != nil {
-		t.Fatal(err)
-	}
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-1", Status: "unclaimed",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	seedClaim(t, cfgPath, "agent-1", "https://evil.example/claim/AB12-CD34", "")
-
-	var stdout, stderr bytes.Buffer
-	code := cmdMining([]string{"enable", "-config", cfgPath}, &bytes.Buffer{}, &stdout, &stderr, installedAs(noEnv, []string{"-config", cfgPath}))
-	if code != exitOK {
-		t.Fatalf("cmdMining enable: code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
-	}
-	if strings.Contains(stdout.String()+stderr.String(), "evil.example") {
-		t.Fatalf("mining enable printed the off-origin stored claim URL:\n%s\n%s", stdout.String(), stderr.String())
-	}
-	if !strings.Contains(stdout.String(), "no usable claim link is on file") {
-		t.Errorf("mining enable did not explain the missing link:\n%s", stdout.String())
-	}
-}
-
-// An expired registration has no valid path forward at all — not the
-// original link (its window closed), not a console grant (nothing was
-// ever claimed to grant a scope on). Matches pollOnce's identical wording
-// for the same state elsewhere.
-func TestMiningEnableOnAnExpiredRegistrationSaysToRegisterAgain(t *testing.T) {
-	platform := newStubPlatform(t)
-	platform.setStatus("expired")
-	cfgPath, stateDir := connectConfig(t, platform.srv.URL, "https://as.example.invalid")
-	cfg, _, err := loadConfig(cfgPath, noEnv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(credentialsPath(cfg.Miner)), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-key"}); err != nil {
-		t.Fatal(err)
-	}
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	deadClaimURL := platform.srv.URL + "/claim/AB12-CD34"
-	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-1", Status: "expired",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	seedClaim(t, cfgPath, "agent-1", deadClaimURL, "")
-
-	var stdout bytes.Buffer
-	code := cmdMining([]string{"enable", "-config", cfgPath}, &bytes.Buffer{}, &stdout, &bytes.Buffer{}, installedAs(noEnv, []string{"-config", cfgPath}))
-	if code != exitOK {
-		t.Fatalf("cmdMining enable: code=%d stdout=%s", code, stdout.String())
-	}
-	out := stdout.String()
-	if !strings.Contains(out, "run `jevlin connect` again for a new one") {
-		t.Errorf("stdout does not say to register again:\n%s", out)
-	}
-	if strings.Contains(out, deadClaimURL) {
-		t.Errorf("stdout still names the expired claim URL:\n%s", out)
-	}
-}
-
-// exactly as separate processes would (minerlock_unix.go: a flock belongs
-// to the open file description, not the process), so this is a faithful
-// in-process model of what search's detached spawns actually do.
-func TestConcurrentResumesProduceExactlyOneEnrollmentAndDeclaration(t *testing.T) {
-	withShortConnectTimings(t)
-	platform := newStubPlatform(t)
-	as := newStubAS(t)
-	cfgPath, stateDir := connectConfig(t, platform.srv.URL, as.srv.URL)
-	cfg, _, err := loadConfig(cfgPath, noEnv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(credentialsPath(cfg.Miner)), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-key"}); err != nil {
-		t.Fatal(err)
-	}
-
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-1", Status: "claimed", Scopes: []string{"search", "mining"},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SaveMiningEnabled(true); err != nil {
-		t.Fatal(err)
-	}
-	const addr = "twilight1wx0rwcuexfwc36h0r2cg3fvfsds66f0qadt8cs"
-	if err := testPayoutRecord(t, stateDir).Save(addr); err != nil {
-		t.Fatal(err)
-	}
-	platform.claim("mining")
-
-	const n = 10
-	var wg sync.WaitGroup
-	codes := make([]int, n)
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			codes[i] = cmdConnect([]string{"-config", cfgPath, "-resume"}, &bytes.Buffer{}, &bytes.Buffer{}, &bytes.Buffer{}, installedAs(noEnv, []string{"-config", cfgPath}))
-		}(i)
-	}
-	wg.Wait()
-
-	_, _, enrollCalls := platform.counts()
-	if enrollCalls != 1 {
-		t.Fatalf("platform /v1/agents/enroll calls = %d, want exactly 1", enrollCalls)
-	}
-	if got := as.assertionRedemptionCount(); got != 1 {
-		t.Fatalf("AS enrollment-assertion redemptions = %d, want exactly 1", got)
-	}
-	if got := as.declarationAttempts(); got != 1 {
-		t.Fatalf("AS declaration attempts = %d, want exactly 1", got)
-	}
-	if got := as.declaredAddress(); got != addr {
-		t.Fatalf("declared address = %q, want %q", got, addr)
-	}
-	reg, ok, err := store.LoadAgentRegistration()
-	if err != nil || !ok || reg.LastEnrollmentSlot == "" {
-		t.Fatalf("registration not enrolled after the storm: %+v ok=%v err=%v", reg, ok, err)
-	}
-	for i, c := range codes {
-		if c != exitOK {
-			t.Errorf("resume %d exited %d, want %d", i, c, exitOK)
-		}
-	}
-}
-
-// Finding 7: declarePayoutIfSafe must honor the DECLARE call's own
-// returned document, not just the pre-read — a hold can surface only on
-// the declare response itself (ADDRESS_IN_USE: a different PARTICIPANT
-// already holds this exact address, which read-before-declare's own
-// PayoutStanding check has no way to see) or from a race between the
-// pre-read and the declare call (REPLACES_ACTIVE, mid-flight). Both must
-// be recorded as a hold with the AS's real reason, never as "declared."
-func TestDeclareHonorsEveryHoldShapeTheASReturns(t *testing.T) {
-	cases := []struct {
-		name   string
-		reason string
-	}{
-		{"address in use by another participant", auth.HeldAddressInUse},
-		{"replaces active, raced with the pre-read", auth.HeldReplacesActive},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			as := newStubAS(t)
-			as.setDeclareOutcome(func(address string) map[string]any {
-				return map[string]any{
-					"status": "PENDING", "address": address, "canonical_address": address,
-					"effective": false, "declared_at": "2026-09-09T00:00:00Z", "held_for": tc.reason,
-				}
-			})
-			mining, stateDir := as.miningClient(t)
-			store, err := auth.OpenStore(stateDir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			const addr = "twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n"
-			var stdout, stderr bytes.Buffer
-			declarePayoutIfSafe(context.Background(), mining, store, addr, &stdout, &stderr)
-
-			if _, ok, _ := store.LoadPayoutDeclared(); ok {
-				t.Fatal("a held declaration was recorded as settled")
-			}
-			held, ok, err := store.LoadPayoutBindingHeld()
-			if err != nil || !ok {
-				t.Fatalf("hold not recorded: ok=%v err=%v", ok, err)
-			}
-			if held.HeldFor != tc.reason {
-				t.Fatalf("held.HeldFor = %q, want %q", held.HeldFor, tc.reason)
-			}
-			if !addressSettled(store, addr) {
-				// finding 8: a hold is NOT terminal — but that's covered
-				// elsewhere; this test only needs the hold itself recorded
-				// with the right reason, not the settlement question.
-				t.Log("addressSettled correctly still false for a held address (finding 8)")
-			}
-		})
-	}
-}
-
-// Finding 4, end to end: a "y" answered at an interactive terminal must
-// actually drive an enrollment, not just produce the right in-memory
-// outcome struct. isInteractive cannot be faked with a plain
-// *bytes.Buffer (it requires a real *os.File character device — the same
-// constraint askMiningQuestion's own doc comment and every other test in
-// this file already work around by forcing the boolean), so this
-// continues past where the unit-level installer-question tests stop:
-// askMiningQuestion's outcome feeds directly into pollOnce, and the stub
-// AS is checked for an actual token redemption and declaration, not just
-// the returned struct.
-func TestTerminalYesIsFollowedThroughToAnActualEnrollment(t *testing.T) {
-	platform := newStubPlatform(t)
-	as := newStubAS(t)
-	cfgPath, stateDir := connectConfig(t, platform.srv.URL, as.srv.URL)
-	cfg, _, err := loadConfig(cfgPath, noEnv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(credentialsPath(cfg.Miner)), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-key"}); err != nil {
-		t.Fatal(err)
-	}
-	platform.claim("mining")
-
-	// connectConfig writes `enabled = true` explicitly (a scripted first
-	// answer) — finding 4's exact regression: with that already in the
-	// file, the "enable mining?" question must NOT run again (the file
-	// already answered it), but the ADDRESS question must still reach the
-	// terminal. One line of stdin, not two: an "n"/"y" here would be
-	// consumed as the address instead, since there is no enable question
-	// left to answer.
-	const addr = "twilight1k5stzqa2sgvfgx9u04cv93pek3gcmm9h5t9hkn"
-	stdin := bytes.NewBufferString(addr + "\n")
-	br := bufio.NewReader(stdin)
-	outcome, code := askMiningQuestion(stdin, br, &bytes.Buffer{}, &bytes.Buffer{}, noEnv, cfg, store, true, false)
-	if code != exitOK || !outcome.enabled || outcome.payoutAddress != addr {
-		t.Fatalf("askMiningQuestion: got %+v code=%d", outcome, code)
-	}
-
-	if err := store.SaveAgentRegistration(auth.AgentRegistration{
-		AgentID: "agent-1", Status: "claimed", Scopes: []string{"search", "mining"},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if code, out, errOut := runConnect(t, cfgPath, nil, "-resume"); code != exitOK {
-		t.Fatalf("resume exited %d: stdout=%s stderr=%s", code, out, errOut)
-	}
-
-	if got := as.assertionRedemptionCount(); got != 1 {
-		t.Fatalf("the terminal-driven address answer never reached an actual AS enrollment redemption: redemptions = %d", got)
-	}
-	if got := as.declaredAddress(); got != addr {
-		t.Fatalf("the terminal-typed address was never declared: declared = %q, want %q", got, addr)
-	}
-}
 
 // WP2-adversarial-review finding 14: an existing credentials.json that
 // already looks like a platform key must not be silently replaced by a
@@ -2189,7 +674,7 @@ func TestConnectRefusesToOverwriteAnExistingCredentialsFileUnlessForced(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	credPath := credentialsPath(cfg.Miner)
+	credPath := credentialsPath(cfg.Search)
 	if err := os.MkdirAll(filepath.Dir(credPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -2223,22 +708,20 @@ func TestConnectRefusesToOverwriteAnExistingCredentialsFileUnlessForced(t *testi
 func TestStatusExitsZeroForUnclaimedAndSearchOnly(t *testing.T) {
 	withShortConnectTimings(t)
 	platform := newStubPlatform(t)
-	cfgPath, _ := connectConfig(t, platform.srv.URL, "") // no [mining] block at all
+	cfgPath, _ := connectConfig(t, platform.srv.URL, "")
 	if code, _, errOut := runConnect(t, cfgPath, nil); code != exitOK {
 		t.Fatalf("connect failed: %s", errOut)
 	}
-	needsMining := printAgentIdentityStatus([]string{"-config", cfgPath}, &bytes.Buffer{}, &bytes.Buffer{}, noEnv)
-	if needsMining {
-		t.Fatal("an unclaimed registration with no [mining] block should not need the AS-facing report")
+	if code := statusMain([]string{"-config", cfgPath}, &bytes.Buffer{}, &bytes.Buffer{}, noEnv); code != exitOK {
+		t.Fatalf("status exited %d for an unclaimed registration, want %d", code, exitOK)
 	}
 
-	platform.claim("credits") // claimed, no mining scope: search-only
+	platform.claim("credits")
 	if code, _, errOut := runConnect(t, cfgPath, nil, "-resume"); code != exitOK {
 		t.Fatalf("resume failed: %s", errOut)
 	}
-	needsMining = printAgentIdentityStatus([]string{"-config", cfgPath}, &bytes.Buffer{}, &bytes.Buffer{}, noEnv)
-	if needsMining {
-		t.Fatal("a search-only claim should not need the AS-facing report either")
+	if code := statusMain([]string{"-config", cfgPath}, &bytes.Buffer{}, &bytes.Buffer{}, noEnv); code != exitOK {
+		t.Fatalf("status exited %d for a claimed registration, want %d", code, exitOK)
 	}
 }
 
@@ -2298,24 +781,11 @@ func TestConnectRefusesCorruptRegistrationWithExistingPlatformCredential(t *test
 	if err := os.WriteFile(filepath.Join(stateDir, "agent.json"), corrupt, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	credPath := credentialsPath(cfg.Miner)
+	credPath := credentialsPath(cfg.Search)
 	if err := os.MkdirAll(filepath.Dir(credPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := writeCredentials(credPath, credentials{APIKey: "sr-existing-key"}); err != nil { // #nosec G101 -- canned test credential
-		t.Fatal(err)
-	}
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SaveMiningEnabled(false); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.MarkHealth(auth.HealthCapture, auth.HealthIntakeUnwritable, "preserve capture health"); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.MarkHealth(auth.HealthFlush, auth.HealthSubmissionFailed, "preserve flush health"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -2358,15 +828,6 @@ func TestConnectRefusesCorruptRegistrationWithExistingPlatformCredential(t *test
 	if _, err := os.Stat(filepath.Join(stateDir, "agent.json.corrupt")); err != nil {
 		t.Fatalf("corrupt registration evidence was not preserved after -force: %v", err)
 	}
-	if decision := store.ReadMiningDecision(); decision.State != auth.MiningDisabled {
-		t.Fatalf("-force changed the persisted mining decision: %+v", decision)
-	}
-	if _, ok, err := store.LoadHealth(auth.HealthCapture); err != nil || !ok {
-		t.Fatalf("-force cleared capture health: ok=%v err=%v", ok, err)
-	}
-	if _, ok, err := store.LoadHealth(auth.HealthFlush); err != nil || !ok {
-		t.Fatalf("-force cleared flush health: ok=%v err=%v", ok, err)
-	}
 }
 
 // ── B.3: rebuilding a lost or unreadable registration from the platform ──
@@ -2392,11 +853,11 @@ func registerAgent(t *testing.T, platform *stubPlatform) (agentID, key string) {
 // stored, but the local registration is gone."
 func setupLostRegistration(t *testing.T, cfg *config.Config, key string, corrupt bool) []byte {
 	t.Helper()
-	stateDir := cfg.Mining.StateDir
+	stateDir := cfg.Search.StateDir
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	credPath := credentialsPath(cfg.Miner)
+	credPath := credentialsPath(cfg.Search)
 	if err := os.MkdirAll(filepath.Dir(credPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -2413,10 +874,10 @@ func setupLostRegistration(t *testing.T, cfg *config.Config, key string, corrupt
 	return corruptBytes
 }
 
-// A claimed-with-mining identity, rebuilt from /v1/agents/me, continues
-// straight into the ordinary enrollment flow — no Register, and (for the
-// corrupt case) the undecodable bytes are preserved only after /me
-// actually answered, never before.
+// A claimed identity, rebuilt from /v1/agents/me, continues straight into
+// the ordinary claimed flow — the platform's scopes are stored and reported,
+// no Register — and (for the corrupt case) the undecodable bytes are
+// preserved only after /me actually answered, never before.
 func TestConnectRebuildsClaimedRegistrationFromThePlatform(t *testing.T) {
 	for _, corrupt := range []bool{true, false} {
 		corrupt := corrupt
@@ -2427,40 +888,28 @@ func TestConnectRebuildsClaimedRegistrationFromThePlatform(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			withShortConnectTimings(t)
 			platform := newStubPlatform(t)
-			as := newStubAS(t)
-			cfgPath, stateDir := connectConfig(t, platform.srv.URL, as.srv.URL)
+			cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
 			cfg := mustLoadConfig(t, cfgPath)
 
 			agentID, key := registerAgent(t, platform)
-			platform.claim("mining")
+			platform.claim("credits")
 			setupLostRegistration(t, cfg, key, corrupt)
-			// This installation already decided to mine on a prior run
-			// (the same run that originally registered, before agent.json
-			// was lost) — the rebuild resumes an existing decision, it
-			// does not re-ask it.
-			store, err := auth.OpenStore(cfg.Mining.StateDir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := store.SaveMiningEnabled(true); err != nil {
-				t.Fatal(err)
-			}
-			corruptBytes, _ := os.ReadFile(filepath.Join(cfg.Mining.StateDir, "agent.json")) // #nosec G304 -- test controls its temporary state directory
+			corruptBytes, _ := os.ReadFile(filepath.Join(cfg.Search.StateDir, "agent.json")) // #nosec G304 -- test controls its temporary state directory
 			registerCallsBefore, _, _ := platform.counts()
 
 			code, out, errOut := runConnect(t, cfgPath, nil)
 			if code != exitOK {
 				t.Fatalf("connect did not rebuild: code=%d stderr=%s", code, errOut)
 			}
-			if !strings.Contains(out, "enrolled for mining on") {
-				t.Fatalf("did not continue into enrollment: stdout=%q", out)
+			if !strings.Contains(out, "claimed (scopes: credits)") {
+				t.Fatalf("did not continue into the claimed flow: stdout=%q", out)
 			}
 			reg, ok := loadAgent(t, stateDir)
-			if !ok || reg.AgentID != agentID || reg.Status != "claimed" || reg.LastEnrollmentSlot == "" {
+			if !ok || reg.AgentID != agentID || reg.Status != "claimed" || !slices.Equal(reg.Scopes, []string{"credits"}) {
 				t.Fatalf("rebuilt registration not as expected: %+v ok=%v", reg, ok)
 			}
-			if registerCalls, _, enrollCalls := platform.counts(); registerCalls != registerCallsBefore || enrollCalls != 1 {
-				t.Fatalf("register calls = %d (want unchanged from %d), enroll calls = %d (want 1)", registerCalls, registerCallsBefore, enrollCalls)
+			if registerCalls, _, _ := platform.counts(); registerCalls != registerCallsBefore {
+				t.Fatalf("register calls = %d, want unchanged from %d", registerCalls, registerCallsBefore)
 			}
 			if platform.meCallCount() == 0 {
 				t.Fatal("expected a /v1/agents/me call")
@@ -2571,9 +1020,7 @@ func TestConnectRebuildsUnclaimedRegistrationWithoutClaimLink(t *testing.T) {
 
 	// `status` reports the same durable state the same way — never a bare
 	// "claim at " followed by nothing.
-	statusOut := captureStdout(t, func() {
-		printAgentIdentityStatus([]string{"-config", cfgPath}, os.Stdout, os.Stderr, noEnv)
-	})
+	statusOut := statusText(t, cfgPath)
 	if !strings.Contains(statusOut, "no claim link is on file for it here") {
 		t.Fatalf("status did not report the recovered-without-link state: %q", statusOut)
 	}
@@ -2582,10 +1029,6 @@ func TestConnectRebuildsUnclaimedRegistrationWithoutClaimLink(t *testing.T) {
 	}
 }
 
-// An identity that comes back expired from the rebuild flows into the
-// existing expired-replacement path unchanged — the same client.Status
-// re-verification and Register-a-replacement flow a normally-loaded
-// expired registration already takes.
 // B.4: against a platform with the claim-code route, a foreground connect
 // whose rebuilt registration is unclaimed with no claim link mints a
 // fresh one — persisted before it is printed, never a second register —
@@ -2663,7 +1106,7 @@ func TestALaterForegroundConnectMintsWhenThePlatformGainsTheRoute(t *testing.T) 
 	}
 }
 
-// A stored claim URL off the configured platform origin (platform.base_url
+// A stored claim URL off the configured platform origin ([platform] url
 // changed since it was stored) is treated like a lost link (invariant 12) —
 // never printed, and replaced on disk by a freshly minted one.
 func TestForegroundConnectNeverPrintsAStoredClaimURLOffThePlatformOrigin(t *testing.T) {
@@ -2744,6 +1187,10 @@ func TestResumeNeverMintsAClaimLink(t *testing.T) {
 	}
 }
 
+// An identity that comes back expired from the rebuild flows into the
+// existing expired-replacement path unchanged — the same client.Status
+// re-verification and Register-a-replacement flow a normally-loaded
+// expired registration already takes.
 func TestConnectRebuildExpiredRegistrationFlowsIntoReplacementPath(t *testing.T) {
 	withShortConnectTimings(t)
 	platform := newStubPlatform(t)
@@ -2961,6 +1408,11 @@ func TestConnectRebuildRetriesAfterATransientPersistFailure(t *testing.T) {
 	}
 }
 
+// A foreground connect that finds its registration expired, and the
+// platform confirming it, registers a replacement: the new claim link and
+// key are published, the old link is gone from every report, and the
+// journal is cleared. The replacement is durable — a second run polls the
+// new agent and mints nothing.
 func TestForegroundConnectReplacesExpiredRegistrationAndPropagatesNewIdentity(t *testing.T) {
 	withShortConnectTimings(t)
 	platform := newStubPlatform(t)
@@ -2970,23 +1422,6 @@ func TestForegroundConnectReplacesExpiredRegistrationAndPropagatesNewIdentity(t 
 		t.Fatalf("initial connect failed: %s", errOut)
 	}
 	oldURL := platform.srv.URL + "/claim/AB12-CD34"
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SaveMiningEnabled(true); err != nil {
-		t.Fatal(err)
-	}
-	const payout = "twilight1uwew6p63453wm0znz723lrneuls4xy29swp89n"
-	if err := testPayoutRecord(t, stateDir).Save(payout); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.MarkHealth(auth.HealthCapture, auth.HealthIntakeUnwritable, "preserve capture health"); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.MarkHealth(auth.HealthFlush, auth.HealthSubmissionFailed, "preserve flush health"); err != nil {
-		t.Fatal(err)
-	}
 	platform.setStatus("expired")
 
 	code, out, errOut := runConnect(t, cfgPath, nil)
@@ -3007,31 +1442,15 @@ func TestForegroundConnectReplacesExpiredRegistrationAndPropagatesNewIdentity(t 
 	if !ok || reg.AgentID != "agent-2" || storedClaim(t, cfgPath, "agent-2").ClaimURL != newURL || storedClaim(t, cfgPath, "agent-2").ClaimCode != "EF56-GH02" || reg.Status != "unclaimed" {
 		t.Fatalf("durable replacement registration = %+v ok=%v", reg, ok)
 	}
-	if got, err := os.ReadFile(credentialsPath(mustLoadConfig(t, cfgPath).Miner)); err != nil || !strings.Contains(string(got), "sr-stubkey-2") {
+	if got, err := os.ReadFile(credentialsPath(mustLoadConfig(t, cfgPath).Search)); err != nil || !strings.Contains(string(got), "sr-stubkey-2") {
 		t.Fatalf("new platform key was not published: err=%v contents=%q", err, got)
-	}
-	if got, ok, err := testPayoutRecord(t, stateDir).Load(); err != nil || !ok || got != payout {
-		t.Fatalf("unrelated payout state changed: value=%q ok=%v err=%v", got, ok, err)
-	}
-	if decision := store.ReadMiningDecision(); decision.State != auth.MiningEnabled {
-		t.Fatalf("expired replacement changed the persisted mining decision: %+v", decision)
-	}
-	if _, ok, err := store.LoadHealth(auth.HealthCapture); err != nil || !ok {
-		t.Fatalf("expired replacement cleared capture health: ok=%v err=%v", ok, err)
-	}
-	if _, ok, err := store.LoadHealth(auth.HealthFlush); err != nil || !ok {
-		t.Fatalf("expired replacement cleared flush health: ok=%v err=%v", ok, err)
 	}
 	if _, ok, err := testJournal(t, cfgPath).Load(); err != nil || ok {
 		t.Fatalf("pending registration journal remains after replacement: ok=%v err=%v", ok, err)
 	}
 
-	var statusOut bytes.Buffer
-	if needsMining := printAgentIdentityStatus([]string{"-config", cfgPath}, &statusOut, &bytes.Buffer{}, noEnv); needsMining {
-		t.Fatal("search-only replacement unexpectedly requested the AS mining report")
-	}
-	if !strings.Contains(statusOut.String(), newURL) || strings.Contains(statusOut.String(), oldURL) {
-		t.Fatalf("status did not report only the replacement identity: %q", statusOut.String())
+	if statusOut := statusText(t, cfgPath); !strings.Contains(statusOut, newURL) || strings.Contains(statusOut, oldURL) {
+		t.Fatalf("status did not report only the replacement identity: %q", statusOut)
 	}
 
 	if code, _, errOut := runConnect(t, cfgPath, nil); code != exitOK {
@@ -3117,7 +1536,7 @@ func TestExpiredRegistrationWithMissingCredentialRefusesForceReplacement(t *test
 	}
 	seedClaim(t, cfgPath, "agent-expired", platform.srv.URL+"/claim/OLD", "OLD")
 	cfg := mustLoadConfig(t, cfgPath)
-	credPath := credentialsPath(cfg.Miner)
+	credPath := credentialsPath(cfg.Search)
 	if err := os.Remove(credPath); err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
@@ -3159,7 +1578,7 @@ func TestExpiredRegistrationStatusFailureRefusesForceReplacement(t *testing.T) {
 	}
 	seedClaim(t, cfgPath, "agent-expired", platform.srv.URL+"/claim/OLD", "OLD")
 	cfg := mustLoadConfig(t, cfgPath)
-	credPath := credentialsPath(cfg.Miner)
+	credPath := credentialsPath(cfg.Search)
 	if err := writeCredentials(credPath, credentials{APIKey: "sr-old-key"}); err != nil { // #nosec G101 -- canned test credential
 		t.Fatal(err)
 	}
@@ -3243,7 +1662,7 @@ func TestPendingRegistrationRecoveryPublishesWithoutRegister(t *testing.T) {
 	if !ok || reg.AgentID != pending.AgentID || storedClaim(t, cfgPath, pending.AgentID).ClaimURL != pending.ClaimURL {
 		t.Fatalf("journaled registration was not published: %+v ok=%v", reg, ok)
 	}
-	if got, err := os.ReadFile(credentialsPath(cfg.Miner)); err != nil || !strings.Contains(string(got), pending.Key) {
+	if got, err := os.ReadFile(credentialsPath(cfg.Search)); err != nil || !strings.Contains(string(got), pending.Key) {
 		t.Fatalf("journaled platform key was not published: err=%v contents=%q", err, got)
 	}
 	if _, ok, err := testJournal(t, cfgPath).Load(); err != nil || ok {
@@ -3286,7 +1705,7 @@ func TestPendingJournalRecoveryNeverCallsMeEvenWithACorruptRegistrationAndCreden
 	// A platform credential is on file and agent.json is corrupt — the
 	// exact combination that, absent a pending journal, would route into
 	// the B.3 rebuild instead of a plain refusal.
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: pending.Key}); err != nil {
+	if err := writeCredentials(credentialsPath(cfg.Search), credentials{APIKey: pending.Key}); err != nil {
 		t.Fatal(err)
 	}
 	corruptBytes := []byte("{not json")
@@ -3332,7 +1751,7 @@ func TestPendingExpiredReplacementRecoveryCompletesAcrossRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	seedClaim(t, cfgPath, "agent-old", oldURL, "OLD")
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-old-key"}); err != nil { // #nosec G101 -- canned test credential
+	if err := writeCredentials(credentialsPath(cfg.Search), credentials{APIKey: "sr-old-key"}); err != nil { // #nosec G101 -- canned test credential
 		t.Fatal(err)
 	}
 	if err := testJournal(t, cfgPath).Save(auth.PendingRegistration{
@@ -3359,7 +1778,7 @@ func TestPendingExpiredReplacementRecoveryCompletesAcrossRestart(t *testing.T) {
 	if !ok || reg.AgentID != "agent-new" || storedClaim(t, cfgPath, "agent-new").ClaimURL != platform.srv.URL+"/claim/NEW" || reg.Status != "unclaimed" {
 		t.Fatalf("replacement journal did not complete publication: %+v ok=%v", reg, ok)
 	}
-	if got, err := os.ReadFile(credentialsPath(cfg.Miner)); err != nil || !strings.Contains(string(got), "sr-new-key") {
+	if got, err := os.ReadFile(credentialsPath(cfg.Search)); err != nil || !strings.Contains(string(got), "sr-new-key") {
 		t.Fatalf("replacement key was not published after restart: err=%v contents=%q", err, got)
 	}
 	if _, ok, err := testJournal(t, cfgPath).Load(); err != nil || ok {
@@ -3379,7 +1798,7 @@ func TestForgedStateDirJournalCannotReplaceCredential(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-victim-key"}); err != nil { // #nosec G101 -- canned test credential
+	if err := writeCredentials(credentialsPath(cfg.Search), credentials{APIKey: "sr-victim-key"}); err != nil { // #nosec G101 -- canned test credential
 		t.Fatal(err)
 	}
 	forged := auth.PendingRegistration{
@@ -3410,7 +1829,7 @@ func TestForgedStateDirJournalCannotReplaceCredential(t *testing.T) {
 	if !strings.Contains(errOut, "discarded registration_pending.json") {
 		t.Errorf("no diagnostic for the discarded state-dir journal: %q", errOut)
 	}
-	if got, err := os.ReadFile(credentialsPath(cfg.Miner)); err != nil || !strings.Contains(string(got), "sr-victim-key") || strings.Contains(string(got), "sr-attacker-key") {
+	if got, err := os.ReadFile(credentialsPath(cfg.Search)); err != nil || !strings.Contains(string(got), "sr-victim-key") || strings.Contains(string(got), "sr-attacker-key") {
 		t.Fatalf("forged state-dir journal replaced the credential: err=%v contents=%q", err, got)
 	}
 	if lexists(legacy) {
@@ -3436,7 +1855,7 @@ func TestPendingRegistrationConflictDoesNotOverwriteOrRegister(t *testing.T) {
 	if err := testJournal(t, cfgPath).Save(pending); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeCredentials(credentialsPath(cfg.Miner), credentials{APIKey: "sr-other-key"}); err != nil { // #nosec G101 -- canned test credential
+	if err := writeCredentials(credentialsPath(cfg.Search), credentials{APIKey: "sr-other-key"}); err != nil { // #nosec G101 -- canned test credential
 		t.Fatal(err)
 	}
 
@@ -3496,7 +1915,7 @@ func TestAJournalWinsOverAnAgentRecordNamingAnotherAgent(t *testing.T) {
 	if _, ok, err := testJournal(t, cfgPath).Load(); err != nil || ok {
 		t.Fatalf("the journal was not finished: ok=%v err=%v", ok, err)
 	}
-	if got, err := readCredentials(credentialsPath(cfg.Miner)); err != nil || got.APIKey != "sr-journal-key" {
+	if got, err := readCredentials(credentialsPath(cfg.Search)); err != nil || got.APIKey != "sr-journal-key" {
 		t.Fatalf("credentials.json = %+v %v", got, err)
 	}
 }

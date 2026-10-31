@@ -6,15 +6,15 @@ package main
 // added: the envelope, in an environment variable the binary reads. v0.2.9
 // wrote one syntax for every host — `JEVLIN_TRACE_BRIDGE=<b> <cmd>`, which
 // is POSIX — so on Windows, where opencode runs PowerShell, the prefix was
-// looked up as a program name and the search did not run at all (dropin-miner#68). The
+// looked up as a program name and the search did not run at all. The
 // syntax now comes from the host's declared tool shell, and for Claude Code
 // from the tool the payload names, because that host runs two.
 //
 // H-R4, provenance. Only a bridge THIS adapter generated for THIS call may
 // carry this adapter's harness, so an adapter never stands down because a
-// bridge is already on the command: a model can write one itself, and dropin-miner#68 is
-// what that looks like at the router — a trace the model assembled, credited
-// to us. Every assignment the adapter RECOGNIZES is removed and its own is
+// bridge is already on the command: a model can write one itself, and what
+// that looks like at the router is a trace the model assembled, credited to
+// us. Every assignment the adapter RECOGNIZES is removed and its own is
 // prepended.
 //
 // "Recognized" is a syntactically standalone assignment statement in a
@@ -183,8 +183,8 @@ func bridgeSyntaxOverhead(sh shellKind) int {
 
 // bridgeShellForTool is Claude Code's per-call answer. Its PreToolUse payload
 // names the tool, and on Windows that is the difference between Git Bash and
-// PowerShell — the one host where the shell is not settled at install time
-// (dropin-miner#77). An unnamed or unknown tool is not guessed at: the Bash tool is the
+// PowerShell — the one host where the shell is not settled at install time.
+// An unnamed or unknown tool is not guessed at: the Bash tool is the
 // one whose name this client has always matched, and a tool it does not know
 // gets no rewrite.
 func bridgeShellForTool(toolName string) (shellKind, bool) {

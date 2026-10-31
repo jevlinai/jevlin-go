@@ -14,13 +14,11 @@
 
 ## Affected area
 
-- [ ] `pkg/auth` — AS wire client, OAuth/DPoP, the key store, custody (**security-sensitive**)
-- [ ] `pkg/platform` — search-platform agent onboarding (register / claim / enroll)
-- [ ] `pkg/mining/*` — spool, promote, collector, draw derivation
-- [ ] `pkg/wire` / `testdata/fixtures` — the frozen AS wire contract (**conform upward, see AGENTS.md — never edit a mirrored fixture**)
+- [ ] `pkg/auth` — the key and registration store, the claim record, the redirect policy (**security-sensitive**)
+- [ ] `pkg/platform` — search-platform agent onboarding (register / claim / `/me`)
 - [ ] `pkg/redact` — trace redaction
-- [ ] `pkg/fsx` — the durable writer (atomic rename, fsync, Windows write-through)
-- [ ] `cmd/jevlin` — CLI commands (search, hook, flush, connect, setup, uninstall, upgrade, mining enable/disable, wallet, agents, doctor, status)
+- [ ] `pkg/fsx` — the durable writer (atomic rename, fsync, Windows write-through) and the confined operations
+- [ ] `cmd/jevlin` — CLI commands (search, fetch, hook, connect, login, setup, uninstall, upgrade, agents, doctor, status, limits)
 - [ ] machine protocol (`search --stdin` / `-json` envelope) — a change to the mandatory header or to what `ok`, `status`, `code`, `retryable`, `action` or `exit_code` mean is a protocol version change (`machineVersion`); a command-specific payload addition that preserves the header is not
 - [ ] `pkg/config`
 - [ ] lifecycle: `setup` / `uninstall` / `upgrade`, `internal/selfupdate`, the lifecycle locks — a destructive or replacing operation; see invariant 17
@@ -35,7 +33,7 @@
       `README.md` · `npm/README.md` (byte-mirrors the top-level README — `TestNPMReadmeMirrorsRootREADME`) ·
       `docs/guide.md` · `docs/agents.md` · `docs/reference.md` · `cmd/jevlin/skill.md` · `usageText` (`main.go`) ·
       `AGENTS.md` · `CHANGELOG.md`
-- [ ] State-directory change, if any (a new or changed file under a participant's state dir): named below with its writer and its reader — N/A otherwise
+- [ ] State-directory change, if any (a new or changed file under a participant's state dir or installation directory): named below with its writer and its reader — N/A otherwise
 
 State-directory notes:
 
@@ -43,29 +41,27 @@ State-directory notes:
 
 ## Safety & invariants
 
-Required when the change touches the earning path, custody, or the wire contract — see AGENTS.md's hard invariants:
+Required when the change touches the search path, the hooks, credentials or the platform contract — see AGENTS.md's hard invariants:
 
-- [ ] Fail-open on the earning path: a mining-side write/spawn/network failure never fails or blocks a search
-- [ ] No prompt/completion content captured as mining evidence
+- [ ] Fail-open: a hook, trace or turn-end failure never fails or blocks a search
+- [ ] No prompt/completion content leaves the machine, except the redacted trace and the opted-in turn end
 - [ ] Every credential-bearing `http.Client` has an explicit redirect policy
 - [ ] Secrets never in argv (stdin or owner-only 0600 files only)
 - [ ] No unadvertised URL assembled or called; new hosts are configured, not discovered
-- [ ] AS-facing types still conform to the frozen wire fixtures; the provider response decode stays permissive
-- [ ] Durable before visible, remove only on ack (invariant 7): a spool write is fsync'd via temp-file + atomic rename before the result is shown, and a spool record leaves delivery only on a durable AS ack
-- [ ] A claim/console URL is printed, never opened (invariant 11): `connect.go`/`mining.go` import no `os/exec`
+- [ ] A claim/console URL is printed, never opened (invariant 11): `connect.go` imports no `os/exec`
 - [ ] `platform.base_url` is validated and compared against, never dialed; only `agents_api_url` is (invariant 12)
-- [ ] Tests never contact a real `*.jevlin.ai`, `*.twilight.org` or `*.nyks.dev` host — `httptest` stubs only
-- [ ] `pkg/` still does not import `cmd/`, and still carries no chain-SDK import
+- [ ] Tests never contact a real `*.jevlin.ai` or `*.nyks.dev` host — `httptest` stubs only
+- [ ] `pkg/` still does not import `cmd/`
 
 ## Security considerations
 
-- [ ] No secrets, API keys, refresh tokens, mnemonics, or wallet material included
+- [ ] No secrets or API keys included
 - [ ] This PR does not introduce a public security disclosure
-- [ ] Security-sensitive behavior (custody, redirect policy, credential handling) is called out for reviewer attention below
+- [ ] Security-sensitive behavior (redirect policy, credential handling, what a sandbox can write) is called out for reviewer attention below
 
 Notes:
 
-<!-- Mention any trust-boundary, credential-handling, or custody concerns. -->
+<!-- Mention any trust-boundary or credential-handling concerns. -->
 
 ## Review
 

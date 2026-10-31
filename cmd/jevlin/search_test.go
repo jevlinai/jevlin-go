@@ -1,20 +1,23 @@
 package main
 
 // The search command against a fake router: the query and key go out,
-// the router's bytes come back, the served request is recorded for
-// mining, and the trace comes from the right place. All identifiers are
-// synthetic.
+// the router's bytes come back, and the trace comes from the right place.
+// All identifiers are synthetic.
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -46,37 +49,25 @@ func newFakeRouter(t *testing.T, handler http.HandlerFunc) (*fakeRouter, string,
 	}))
 	t.Cleanup(f.srv.Close)
 	root := t.TempDir()
+	// The state directory exists, as setup leaves it: a search opens the
+	// existing store and never makes the directory.
+	if err := os.MkdirAll(filepath.Join(root, "state"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	cfg := filepath.Join(root, "jevlin.toml")
-	toml := `[[provider]]
-name = "search-router"
-upstream = "https://router.fictional.test"
+	// Configuration format 1, with [router] as the last table: the tier
+	// tests append a `tier = ...` line to this file, and TOML gives a bare
+	// key to the table above it.
+	toml := `schema = 1
 
-[mining]
-enabled = true
-as_url = "https://as.fictional.test"
-chain_id = "fictional-1"
-slot_id = 3
+[search]
 state_dir = "` + filepath.ToSlash(filepath.Join(root, "state")) + `"
-spool_dir = "` + filepath.ToSlash(filepath.Join(root, "spool")) + `"
+sessions_dir = "` + filepath.ToSlash(filepath.Join(root, "sessions")) + `"
 
-[miner]
-enabled = true
-router_url = "` + f.srv.URL + `"
+[router]
+url = "` + f.srv.URL + `"
 `
 	if err := os.WriteFile(cfg, []byte(toml), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	// miningActive's own default (an absent decision reads as stopped)
-	// is meant for a state dir nothing has ever decided anything about;
-	// this fixture models an installation mining is already configured
-	// for, so it needs an explicit decision the way a real one would
-	// have from connect. Tests exercising the disabled state overwrite
-	// this.
-	store, err := auth.OpenStore(filepath.Join(root, "state"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SaveMiningEnabled(true); err != nil {
 		t.Fatal(err)
 	}
 	return f, cfg, root
@@ -93,28 +84,23 @@ func (f *fakeRouter) last(t *testing.T) (*http.Request, []byte) {
 }
 
 type searchHarness struct {
-	ops     searchOps
-	fs      *fakeHookFS
-	flushes []string
+	ops searchOps
+	fs  *fakeHookFS
 }
 
 func fixedSearchOps(cwd string) *searchHarness {
 	h := &searchHarness{}
 	fs, hops := newFakeHookOps(nil)
-	// The lineage file store is in-memory, but intake goes to the real
-	// temp dir the config names — that is what flush reads.
+	// The lineage file store is in-memory; the state directory the config
+	// names is on the real temp disk.
 	h.fs = fs
 	h.ops = searchOps{
 		getppid:  func() int { return 4242 },
 		hostname: func() (string, error) { return "fictional-host", nil },
 		traceKey: func(string) ([]byte, error) { return []byte("fictional-trace-key-0123456789ab"), nil },
 		getwd:    func() (string, error) { return cwd, nil },
-		spawnFlush: func(cfg string) error {
-			h.flushes = append(h.flushes, cfg)
-			return nil
-		},
-		now:  func() time.Time { return time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC) },
-		hook: hops,
+		now:      func() time.Time { return time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC) },
+		hook:     hops,
 	}
 	return h
 }
@@ -190,12 +176,13 @@ func TestSearchViewFlagForwardsOnlyMerged(t *testing.T) {
 	})
 }
 
-func TestSearchPostsToTheRouterPrintsVerbatimAndRecordsIntake(t *testing.T) {
+func TestSearchPostsToTheRouterPrintsVerbatimAndKeepsNoRecord(t *testing.T) {
 	fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Request-Id", "01a03e86-fictional")
 		_, _ = w.Write([]byte(routerBody))
 	})
 	h := fixedSearchOps(root)
+	before := treeDigest(t, root)
 	code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "sr-fictional"},
 		"-config", cfg, "-tier", "fast", "how", "do", "ports", "work")
 	if code != exitOK || out != routerBody {
@@ -217,84 +204,50 @@ func TestSearchPostsToTheRouterPrintsVerbatimAndRecordsIntake(t *testing.T) {
 	if sid == "" || strings.Contains(sid, "4242") || strings.Contains(sid, "fictional-host") {
 		t.Errorf("session id leaks raw parts: %q", sid)
 	}
-
-	recs, _, err := readIntake(filepath.Join(root, "intake"))
-	if err != nil || len(recs) != 1 {
-		t.Fatalf("intake: %v %v", recs, err)
+	// Nothing about the search is kept: the installation holds exactly the
+	// files it held before, and none of them changed. The names an earlier
+	// version recorded under are asked for too, so a record coming back
+	// under one of them is named rather than counted.
+	for _, dir := range []string{"intake", "spool"} {
+		if _, err := os.Stat(filepath.Join(root, dir)); err == nil {
+			t.Errorf("a search left a %s directory behind", dir)
+		}
 	}
-	rec := recs[0].rec
-	if rec.RequestID != "01a03e86-fictional" || rec.StatusCode != 200 || rec.ChosenProvider != "fictional" || rec.StartedAt.IsZero() {
-		t.Errorf("intake record: %+v", rec)
-	}
-	if len(h.flushes) != 1 || h.flushes[0] != cfg {
-		t.Errorf("a flush was not started after the search: %v", h.flushes)
-	}
-}
-
-// TestSearchRecordsTheEpochItsOwnFlushStampHeld guards D.3's own evidence
-// write: after a successful search, search.go's own best-effort marker
-// (recordSearchEpoch) names the target epoch F's flush stamp already
-// held — read-only, F owns that stamp — at the moment the search
-// recorded, so doctor's recording check can later tell this epoch from
-// the one the AS reports as current.
-func TestSearchRecordsTheEpochItsOwnFlushStampHeld(t *testing.T) {
-	_, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Request-Id", "01a03e86-fictional")
-		_, _ = w.Write([]byte(routerBody))
-	})
-	stateDir := filepath.Join(root, "state")
-	if err := writeFlushStamp(flushStampPath(config.Mining{StateDir: stateDir}), flushStamp{TargetEpoch: 900}); err != nil {
-		t.Fatal(err)
-	}
-	h := fixedSearchOps(root)
-	code, _, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "sr-fictional"},
-		"-config", cfg, "how", "do", "ports", "work")
-	if code != exitOK {
-		t.Fatalf("exit %d err %q", code, errOut)
-	}
-	epoch, present, err := readSearchEpoch(filepath.Join(root, "intake"))
-	if err != nil || !present {
-		t.Fatalf("search epoch: present=%v err=%v", present, err)
-	}
-	if epoch != 900 {
-		t.Errorf("recorded epoch %d, want 900", epoch)
+	if after := treeDigest(t, root); after != before {
+		t.Errorf("a search changed the installation:\nbefore %s\nafter  %s", before, after)
 	}
 }
 
-// [miner] enabled says intake is configured; it must never override a
-// stored decision to stop mining. A served search with mining disabled
-// still gets answered (invariant 1) but records nothing and starts no
-// flush — design item 1's collapse of the three flags that used to gate
-// this into mining_decision.json alone.
-func TestSearchStopsIntakeAndFlushSpawnAfterMiningDisabled(t *testing.T) {
-	fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Request-Id", "01a03e86-fictional")
-		_, _ = w.Write([]byte(routerBody))
+// treeDigest is every regular file under root with its size and content
+// hash, one per line, so a before/after comparison names what changed.
+func treeDigest(t *testing.T, root string) string {
+	t.Helper()
+	var lines []string
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, _ := filepath.Rel(root, path)
+		if d.Type()&fs.ModeSymlink != 0 {
+			lines = append(lines, rel+" (link)")
+			return nil
+		}
+		data, err := os.ReadFile(path) // #nosec G304 G122 -- a path WalkDir handed back under this test's own temp dir
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(data)
+		lines = append(lines, fmt.Sprintf("%s %d %x", filepath.ToSlash(rel), len(data), sum[:8]))
+		return nil
 	})
-	_ = fr
-	store, err := auth.OpenStore(filepath.Join(root, "state"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveMiningEnabled(false); err != nil {
-		t.Fatal(err)
-	}
-	h := fixedSearchOps(root)
-	code, _, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "sr-fictional"},
-		"-config", cfg, "how", "do", "ports", "work")
-	if code != exitOK {
-		t.Fatalf("exit %d err %q", code, errOut)
-	}
-	recs, _, err := readIntake(filepath.Join(root, "intake"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(recs) != 0 {
-		t.Fatalf("intake was recorded despite mining being disabled: %v", recs)
-	}
-	if len(h.flushes) != 0 {
-		t.Fatalf("a flush was spawned despite mining being disabled: %v", h.flushes)
-	}
+	sort.Strings(lines)
+	return strings.Join(lines, "\n")
 }
 
 func TestSearchNeedsAKeyAndDoesNotCallTheRouterWithoutOne(t *testing.T) {
@@ -340,7 +293,7 @@ func TestSearchFallsBackToTheWorkspaceLineageFileAndBumpsSeq(t *testing.T) {
 	// The search says whose it is, the way Cursor's own sessionStart hook
 	// makes it say: JEVLIN_HARNESS beside the sidecar that hook wrote.
 	// Without it the walk adopts nothing, because a search naming no host
-	// cannot be shown to own anything it finds up the tree — dropin-miner#97, and
+	// cannot be shown to own anything it finds up the tree — see
 	// TestASearchDoesNotAdoptAnotherHostsLineage. Through 0.2.10 this case
 	// passed with no harness set at all, which is exactly the defect.
 	runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k", "JEVLIN_HARNESS": "cursor"}, "-config", cfg, "q")
@@ -366,7 +319,7 @@ func TestSearchFallsBackToTheWorkspaceLineageFileAndBumpsSeq(t *testing.T) {
 	}
 }
 
-func TestSearchKillSwitchSendsNoTraceAndStillMines(t *testing.T) {
+func TestSearchKillSwitchSendsNoTrace(t *testing.T) {
 	fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Request-Id", "01a03e86-quiet")
 		_, _ = w.Write([]byte(routerBody))
@@ -376,9 +329,6 @@ func TestSearchKillSwitchSendsNoTraceAndStillMines(t *testing.T) {
 	_, sent := fr.last(t)
 	if bytes.Contains(sent, []byte(`"trace"`)) {
 		t.Errorf("trace sent despite the kill switch: %s", sent)
-	}
-	if recs, _, _ := readIntake(filepath.Join(root, "intake")); len(recs) != 1 {
-		t.Error("the search was not recorded for mining")
 	}
 }
 
@@ -492,13 +442,6 @@ func TestSearchMapsRouterErrorsToExitCodesAndRecordsNothing(t *testing.T) {
 			t.Errorf("HTTP %d: -format json no longer passes the router's bytes through: exit %d out %q",
 				tc.status, codeJSON, outJSON)
 		}
-
-		if recs, _, _ := readIntake(filepath.Join(root, "intake")); len(recs) != 0 {
-			t.Errorf("HTTP %d: a failed search was recorded for mining", tc.status)
-		}
-		if len(h.flushes) != 0 {
-			t.Errorf("HTTP %d: a flush was started for nothing", tc.status)
-		}
 	}
 }
 
@@ -521,7 +464,7 @@ func TestFallbackSessionIDIsKeyed(t *testing.T) {
 	sid := func(key []byte, keyErr error) string {
 		h := fixedSearchOps(t.TempDir())
 		h.ops.traceKey = func(string) ([]byte, error) { return key, keyErr }
-		env, _ := searchTrace(h.ops, config.Miner{}, "", getenv)
+		env, _ := searchTrace(h.ops, config.Search{}, "", getenv)
 		if env == nil {
 			t.Fatal("no trace")
 		}
@@ -586,7 +529,7 @@ func TestASearchSendsTheSessionIDKeyedByTheStateDirsKey(t *testing.T) {
 			for i := range ids {
 				h := fixedSearchOps(root)
 				h.ops.traceKey = realSearchOps().traceKey
-				code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "-no-flush", "q")
+				code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "q")
 				if code != exitOK {
 					t.Fatalf("search %d exited %d\n%s\n%s", i, code, out, errOut)
 				}
@@ -668,7 +611,7 @@ func TestASearchThatRefusesTheKeyOnDiskSendsAOneOffIDAndLeavesTheKeyAlone(t *tes
 			for i := range ids {
 				h := fixedSearchOps(root)
 				h.ops.traceKey = realSearchOps().traceKey
-				code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "-no-flush", "q")
+				code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", cfg, "q")
 				if code != exitOK {
 					t.Fatalf("search %d exited %d: a key it refuses must not fail the search\n%s\n%s", i, code, out, errOut)
 				}
@@ -766,8 +709,8 @@ func TestSearchRefusesASecondConfig(t *testing.T) {
 
 // loadTraceKey answers a state directory it cannot open with an error, and
 // the search sends a one-off id. Deleting that check made a search whose
-// state_dir did not exist dereference a nil store (invariant 1: a
-// mining-side failure never fails the search).
+// state_dir did not exist dereference a nil store (invariant 1: a failure
+// beside the search never fails the search).
 func TestATraceKeyFromAStateDirThatIsNotThereIsAnErrorNotAPanic(t *testing.T) {
 	for _, dir := range []string{filepath.Join(t.TempDir(), "no-such-state-dir"), ""} {
 		key, err := loadTraceKey(dir)
@@ -777,7 +720,7 @@ func TestATraceKeyFromAStateDirThatIsNotThereIsAnErrorNotAPanic(t *testing.T) {
 	}
 }
 
-// [miner] tier is the participant's default band: sent when neither the
+// [router] tier is the participant's default band: sent when neither the
 // -tier flag nor the stdin request named one, and never over a tier the
 // caller did name. Unset, the request carries no tier at all — the router
 // applies the tenant default, and this client does not guess it.
@@ -842,7 +785,7 @@ func TestSearchSendsTheConfiguredTierWhenTheCallerNamesNone(t *testing.T) {
 	}
 }
 
-// The participant's `agents tier` file outranks [miner] tier, and the
+// The participant's `agents tier` file outranks [router] tier, and the
 // caller outranks both; a planted word in the file falls through.
 func TestSearchTierFileOutranksTheConfigAndYieldsToTheCaller(t *testing.T) {
 	fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {

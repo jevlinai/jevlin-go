@@ -47,7 +47,7 @@ func TestDoctorBinaryCheckNamesTheCopyThatShadowsThisOne(t *testing.T) {
 }
 
 // doctor -config naming another installation's jevlin.toml diagnoses that
-// installation, wallet and binary alike: the check names that one's
+// installation, state and binary alike: the check names that one's
 // bin/jevlin, not the binary of the home JEVLIN_HOME points at.
 func TestDoctorBinaryCheckFollowsTheConfigsInstallation(t *testing.T) {
 	name := "jevlin"
@@ -64,7 +64,7 @@ func TestDoctorBinaryCheckFollowsTheConfigsInstallation(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfgPath := filepath.Join(other, setupConfigFile)
-	if err := os.WriteFile(cfgPath, nil, 0o600); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("schema = 1\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("JEVLIN_HOME", t.TempDir()) // keeps no binary

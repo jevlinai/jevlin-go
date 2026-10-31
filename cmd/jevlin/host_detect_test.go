@@ -3,8 +3,8 @@ package main
 // H4's subject: which machines count as having a host on them, and what the
 // participant is told made them count.
 //
-// dropin-miner#61 is the whole argument for this file existing. v0.2.9 detected Cursor by
-// `lookPath("cursor")` alone, which is true in exactly one of the three ways
+// One soak report is the whole argument for this file existing. v0.2.9 detected
+// Cursor by `lookPath("cursor")` alone, which is true in exactly one of the three ways
 // Cursor is installed: the editor's shell shim, added only by running
 // "Install 'cursor' command in PATH" from the palette. The soak machine had
 // /Applications/Cursor.app, a populated ~/.cursor and the Agent CLI on PATH
@@ -69,7 +69,7 @@ func TestEveryHostIsDetectedByItsOwnCommand(t *testing.T) {
 	}
 }
 
-// TestCursorIsDetectedInEveryConfigurationItShipsIn is dropin-miner#61's unit case. Each
+// TestCursorIsDetectedInEveryConfigurationItShipsIn is that report's unit case. Each
 // row is a machine a participant actually has.
 func TestCursorIsDetectedInEveryConfigurationItShipsIn(t *testing.T) {
 	for _, tc := range []struct {
@@ -179,7 +179,7 @@ func TestCursorSurvivesAnUninstallSetupRoundTrip(t *testing.T) {
 				}
 			}
 
-			// -with cursor is the workaround dropin-miner#61 documents: it installs
+			// -with cursor is the documented workaround: it installs
 			// whether or not detection would have found the host.
 			if code, out, errOut := s.run(nil, false, "-yes", "-with", "cursor"); code != exitOK {
 				t.Fatalf("setup -with cursor exited %d\n%s\n%s", code, out, errOut)
@@ -189,7 +189,7 @@ func TestCursorSurvivesAnUninstallSetupRoundTrip(t *testing.T) {
 			}
 			installed := snapshotTree(t, cursorDir)
 
-			if code, out, errOut := s.uninstall(t, nil, false, nil, "-yes"); code != exitOK {
+			if code, out, errOut := s.uninstall(t, nil, false, "-yes"); code != exitOK {
 				t.Fatalf("uninstall exited %d\n%s\n%s", code, out, errOut)
 			}
 			if lexists(paths.cursorSkill) {

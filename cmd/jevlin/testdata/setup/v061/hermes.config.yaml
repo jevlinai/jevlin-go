@@ -1,0 +1,6 @@
+# >>> jevlin agents install >>>
+hooks:
+  pre_tool_call:
+    - command: '<BIN> hook -config <CFG> hermes pre_tool_call'
+      matcher: "terminal"
+# <<< jevlin agents install <<<

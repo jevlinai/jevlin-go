@@ -1,6 +1,6 @@
 package main
 
-// dropin-miner#112: a host has one skill directory, and the skill in it belongs to the
+// A host has one skill directory, and the skill in it belongs to the
 // installation that wrote it. A second installation's `agents install` leaves
 // it and says whose it is; its `agents uninstall` leaves it and says the same.
 //
@@ -225,7 +225,7 @@ func mustExe(t *testing.T, ops agentOps) string {
 
 // `agents status` calls a host installed from the file being there, so a
 // host another installation set up read as this one's. It now says whose it
-// is, in uninstall's own words (dropin-miner#112's reporting half, on the status side).
+// is, in uninstall's own words (the reporting half of that fix, on the status side).
 func TestStatusNamesTheInstallationAHostBelongsTo(t *testing.T) {
 	m := newTwoInstallations(t)
 	m.install(m.first)

@@ -44,3 +44,6 @@ jevlin.toml
 .idea/
 .vscode/
 *.swp
+
+# Python bytecode the Hermes oracle (cmd/jevlin/testdata/hermes/oracle.py) leaves when run.
+__pycache__/

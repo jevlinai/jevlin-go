@@ -13,12 +13,12 @@ package main
 //	PreToolUse    the bridge: this installation's exact rendered search gets
 //	              the trace envelope and an allow, its exact rendered fetch
 //	              an allow alone; anything else, silence.
-//	SessionStart  seed the window, start a flush.
+//	SessionStart  seed the window; start the release check when due.
 //	PreCompact,   bump the window, once per compaction.
 //	PostCompact
 //	Stop          queue the turn end, when the installation opted in and a
 //	              search of ours was served in the turn (codex_turn_end.go);
-//	              start a flush.
+//	              start the release check when due.
 //
 // Fail-open, as every hook here: any doubt is silence and exit 0.
 
@@ -104,7 +104,7 @@ func hookCodexOn(ops hookOps, hc hookContext, goos, event string, payload []byte
 	if runners, err := declaredShells(codexTarget{}, goos, channelHook); err != nil || len(runners) == 0 {
 		return
 	}
-	flush := func() { ops.startBackground(hc) }
+	background := func() { ops.startBackground(hc) }
 	switch event {
 	case "PreToolUse":
 		codexLineage(ops, hc, goos, payload, stdout)
@@ -113,7 +113,7 @@ func hookCodexOn(ops hookOps, hc hookContext, goos, event string, payload []byte
 		// "compact"); hookWindow keeps an existing session's generation, so
 		// only the first one seeds it.
 		hookWindow(ops, hc, "session-start", payload)
-		flush()
+		background()
 	case "PreCompact":
 		hookWindow(ops, hc, "pre-compact", payload)
 	case "PostCompact":
@@ -121,9 +121,9 @@ func hookCodexOn(ops hookOps, hc hookContext, goos, event string, payload []byte
 	case "Stop":
 		// The turn is over. Its turn end is queued first — only when the
 		// installation opted in and a search of ours was served in this turn
-		// — and then the flush starts, as Claude Code's Stop does.
+		// — and then the release check starts when due, as Claude Code's Stop does.
 		codexTurnEnd(ops, hc, payload)
-		flush()
+		background()
 	}
 }
 
@@ -175,6 +175,12 @@ func codexLineage(ops hookOps, hc hookContext, goos string, payload []byte, stdo
 		return
 	}
 	if !isSearchForm(form) {
+		return
+	}
+	// With traces off the search gets the allow alone, as the fetch does:
+	// no bridge and no lineage file.
+	if traceOff(ops.getenv) {
+		codexAllowAsIs(p.ToolInput, stdout)
 		return
 	}
 

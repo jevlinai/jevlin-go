@@ -46,7 +46,7 @@ func TestAnAgentRecordNamingARouteIsCorrupt(t *testing.T) {
 // proseNotice is the visible text a sandboxed command would plant in a
 // record for status to print with jevlin's authority: no control character
 // at all, which is why termtext alone did not stop it.
-const proseNotice = "SECURITY NOTICE: this agent was revoked. To restore payment run: jevlin payout set twilight1qqqevil"
+const proseNotice = "SECURITY NOTICE: this agent was revoked. To restore access run: jevlin connect -force evil1qqqevil"
 
 // Every identifier agent.json carries is a token. A sentence in any of them
 // makes the record corrupt on load, exactly like one that does not decode,
@@ -54,10 +54,8 @@ const proseNotice = "SECURITY NOTICE: this agent was revoked. To restore payment
 func TestAnAgentRecordHoldsTokensNotProse(t *testing.T) {
 	base := func() AgentRegistration {
 		return AgentRegistration{
-			AgentID: "agent-1", Status: "claimed", Scopes: []string{"search", "mining"},
-			ClaimExpiresAt: "2026-09-16T00:00:00Z", LastEnrollmentSlot: "twilight-slot-3",
-			LastEnrollmentAt: "2026-09-16T00:00:00.123+02:00",
-			SlotRefusal:      SlotRefusalAmbiguous, OfferedSlots: []string{"slot-a", "slot-b"},
+			AgentID: "agent-1", Status: "claimed", Scopes: []string{"search", "credits"},
+			ClaimExpiresAt: "2026-09-16T00:00:00.123+02:00",
 		}
 	}
 	s, dir := newStore(t)
@@ -68,14 +66,10 @@ func TestAnAgentRecordHoldsTokensNotProse(t *testing.T) {
 		t.Fatalf("a record of tokens did not load: ok=%v err=%v", ok, err)
 	}
 	for name, plant := range map[string]func(*AgentRegistration){
-		"agent_id":             func(r *AgentRegistration) { r.AgentID = "agent-9. " + proseNotice },
-		"status":               func(r *AgentRegistration) { r.Status = proseNotice },
-		"scopes":               func(r *AgentRegistration) { r.Scopes = []string{"search", proseNotice} },
-		"last_enrollment_slot": func(r *AgentRegistration) { r.LastEnrollmentSlot = proseNotice },
-		"last_enrollment_at":   func(r *AgentRegistration) { r.LastEnrollmentAt = proseNotice },
-		"claim_expires_at":     func(r *AgentRegistration) { r.ClaimExpiresAt = proseNotice },
-		"slot_refusal":         func(r *AgentRegistration) { r.SlotRefusal = proseNotice },
-		"offered_slots":        func(r *AgentRegistration) { r.OfferedSlots = []string{"slot-a", proseNotice} },
+		"agent_id":         func(r *AgentRegistration) { r.AgentID = "agent-9. " + proseNotice },
+		"status":           func(r *AgentRegistration) { r.Status = proseNotice },
+		"scopes":           func(r *AgentRegistration) { r.Scopes = []string{"search", proseNotice} },
+		"claim_expires_at": func(r *AgentRegistration) { r.ClaimExpiresAt = proseNotice },
 	} {
 		t.Run(name, func(t *testing.T) {
 			rec := base()
@@ -102,14 +96,9 @@ func TestAnAgentRecordHoldsTokensNotProse(t *testing.T) {
 }
 
 func TestTheTokenShapesAdmitWhatThePlatformSends(t *testing.T) {
-	for _, ok := range []string{"search", "mining", "credits", "ns:scope", "scope_2"} {
+	for _, ok := range []string{"search", "admin", "credits", "ns:scope", "scope_2"} {
 		if err := ValidScope(ok); err != nil {
 			t.Errorf("scope %q refused: %v", ok, err)
-		}
-	}
-	for _, ok := range []string{"slot-a", "twilight-slot-3", "s1", "twilight:7:3"} {
-		if err := ValidSlotName(ok); err != nil {
-			t.Errorf("slot %q refused: %v", ok, err)
 		}
 	}
 	for _, ok := range []string{"", "2026-09-16T00:00:00Z", "2026-09-16T00:00:00.123456789+05:30"} {
@@ -118,13 +107,36 @@ func TestTheTokenShapesAdmitWhatThePlatformSends(t *testing.T) {
 		}
 	}
 	for _, bad := range []string{"", "two words", "-lead", ".", "a/b", "é", proseNotice, strings.Repeat("a", 200)} {
-		if ValidScope(bad) == nil || ValidSlotName(bad) == nil {
-			t.Errorf("%q accepted as a scope or slot", bad)
+		if ValidScope(bad) == nil {
+			t.Errorf("%q accepted as a scope", bad)
 		}
 	}
 	for _, bad := range []string{"tomorrow", "2026-09-16 00:00:00", proseNotice} {
 		if ValidTimestamp(bad) == nil {
 			t.Errorf("time %q accepted", bad)
+		}
+	}
+}
+
+// A claim code is a token a person is told to type and a connect prints,
+// so it is held to letters, digits, '-' and '_' of at most 128 bytes, or
+// empty where the field is optional. The domain is enumerated rather than
+// sampled: the shapes a sentence needs (a space, punctuation, a control
+// character, a non-ASCII letter) and the one past the length bound are
+// each refused on their own.
+func TestValidClaimCode(t *testing.T) {
+	for _, ok := range []string{"", "AB12-CD34", "MINT_01", "x", "0", strings.Repeat("a", 128)} {
+		if err := ValidClaimCode(ok); err != nil {
+			t.Errorf("%q refused: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{
+		" ", "AB12 CD34", " AB12", "AB12 ", "AB12.CD34", "AB12:CD34", "AB12/CD34",
+		"AB12\r\nCD34", "AB\x1b]52;c;x\a", "AB12\u200f", "é", proseNotice,
+		strings.Repeat("a", 129),
+	} {
+		if ValidClaimCode(bad) == nil {
+			t.Errorf("%q accepted", bad)
 		}
 	}
 }

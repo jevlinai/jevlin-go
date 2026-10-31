@@ -1,6 +1,6 @@
 package main
 
-// A failed rename cleans up after itself, and old leftovers are swept (dropin-miner#100).
+// A failed rename cleans up after itself, and old leftovers are swept.
 //
 // Three writers go through replaceViaTemp — the lineage files, the window
 // state, the flush stamp — so each is driven through its own entry point:
@@ -84,23 +84,6 @@ func TestAFailedTempWriteIsRemovedAsWell(t *testing.T) {
 	}
 	if len(fs.files) != 0 {
 		t.Errorf("a half-written temporary file stayed: %v", keys(fs.files))
-	}
-}
-
-// The flush stamp writes through the operating system directly, so it is
-// driven on a real disk. A rename onto a non-empty directory fails on every
-// OS this client ships for, which is the forced error.
-func TestAFailedFlushStampRenameLeavesNoTemp(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "flush.json")
-	if err := os.MkdirAll(filepath.Join(path, "occupied"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := writeFlushStamp(path, flushStamp{TargetEpoch: 9}); err == nil {
-		t.Fatal("renaming onto a non-empty directory succeeded; the forced error did not happen and this test proves nothing")
-	}
-	if left, _ := filepath.Glob(filepath.Join(dir, "*.tmp")); len(left) != 0 {
-		t.Errorf("a failed rename left its temporary file behind: %v", left)
 	}
 }
 

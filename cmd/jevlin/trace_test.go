@@ -4,7 +4,12 @@ package main
 // All identifiers are synthetic.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -29,6 +34,38 @@ func TestTraceHashIsStableAndNeverTheRawID(t *testing.T) {
 	if traceHash("") != "" {
 		t.Error("empty input must stay empty")
 	}
+}
+
+// The JavaScript hosts hash a host id themselves, so their derivation must
+// be traceHash's: the same prefix, the same truncation. The shared source is
+// run under node, and both are held to the prefix written out here.
+func TestTheJSTraceHashIsTheGoTraceHash(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatal("node is required to run the shared trace source")
+	}
+	const raw = "canary-session-raw-id"
+	sum := sha256.Sum256([]byte("jevlin-trace-v1|" + raw))
+	want := hex.EncodeToString(sum[:16])
+	if got := traceHash(raw); got != want {
+		t.Fatalf("traceHash = %s, want %s", got, want)
+	}
+	script := filepath.Join(t.TempDir(), "trace.mjs")
+	if err := os.WriteFile(script, []byte(agentTraceCommonJS+"\nconsole.log(traceHash("+jsString(raw)+"))\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command(node, script).CombinedOutput() // #nosec G204 -- node from PATH, this test's own script
+	if err != nil {
+		t.Fatalf("node: %v\n%s", err, out)
+	}
+	if got := strings.TrimSpace(string(out)); got != want {
+		t.Errorf("the JS trace hash is %s, Go's is %s", got, want)
+	}
+}
+
+func jsString(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }
 
 func TestTraceBridgeRoundTripsAndRejectsGarbage(t *testing.T) {
@@ -101,7 +138,7 @@ func TestCapTraceRedactsHistoryText(t *testing.T) {
 }
 
 // TestCapTraceRedactsBeforeTruncatingSoABoundaryStraddleDoesNotSurvive is
-// PR dropin-miner#1 review: a secret positioned so a truncate-THEN-redact order would
+// a review finding: a secret positioned so a truncate-THEN-redact order would
 // cut off its identifying prefix (sk-/sr-) at the traceHistoryCap
 // boundary, leaving an unmatchable, unredacted bare tail. Constructed so
 // the cut point (the number of leading bytes truncation removes) falls

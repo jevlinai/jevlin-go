@@ -244,7 +244,7 @@ func TestASearchThatCannotWriteTheStateDirKeepsTheSessionIDSetupGave(t *testing.
 			for i := range ids {
 				h := fixedSearchOps(s.root)
 				h.ops.traceKey = realSearchOps().traceKey
-				code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", s.cfgPath(), "-no-flush", "q")
+				code, out, errOut := runSearch(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, "-config", s.cfgPath(), "q")
 				if code != exitOK {
 					t.Fatalf("search %d exited %d\n%s\n%s", i, code, out, errOut)
 				}

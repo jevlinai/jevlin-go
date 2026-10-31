@@ -1,6 +1,6 @@
 package main
 
-// Who is calling a Claude-format hook (dropin-miner#87). Cursor loads Claude Code's hooks
+// Who is calling a Claude-format hook. Cursor loads Claude Code's hooks
 // from ~/.claude/settings.json and runs them with its own payload; the three
 // payloads under testdata/hook/cursor-3.20.21-*.json are what it sent, taken
 // from Cursor's own hook log and scrubbed. They are inputs, never edited on
@@ -21,7 +21,7 @@ import (
 )
 
 // cursorOnlyKeys are the keys every Cursor payload carries and Claude Code's
-// never do (dropin-miner#87's measurement). The control removes exactly these.
+// never do (as measured on the captured payloads). The control removes exactly these.
 var cursorOnlyKeys = []string{"cursor_version", "conversation_id", "generation_id"}
 
 type claudeEntryCase struct {
@@ -34,7 +34,7 @@ type claudeEntryCase struct {
 var claudeEntryCases = []claudeEntryCase{
 	{"lineage", "cursor-3.20.21-preToolUse-runs-claude-lineage.json", []string{"lineage"}, "PreToolUse"},
 	{"window session-start", "cursor-3.20.21-sessionStart-runs-claude-window-session-start.json", []string{"window", "session-start"}, "SessionStart"},
-	{"flush", "cursor-3.20.21-stop-runs-claude-flush.json", []string{"flush"}, "Stop"},
+	{"stop", "cursor-3.20.21-stop-runs-claude-flush.json", []string{"stop"}, "Stop"},
 }
 
 func cursorPayloadFixture(t *testing.T, name string) map[string]any {
@@ -45,7 +45,7 @@ func cursorPayloadFixture(t *testing.T, name string) map[string]any {
 	}
 	for _, k := range append([]string{"hook_event_name"}, cursorOnlyKeys...) {
 		if _, ok := m[k]; !ok {
-			t.Fatalf("%s carries no %q: it is not the payload dropin-miner#87 measured, and a test run against it proves nothing", name, k)
+			t.Fatalf("%s carries no %q: it is not the payload that was measured, and a test run against it proves nothing", name, k)
 		}
 	}
 	return m
@@ -69,46 +69,53 @@ func asClaudeCode(m map[string]any, event string) map[string]any {
 	if event == "PreToolUse" {
 		out["tool_name"] = "Bash"
 		out["cwd"] = "/home/u/project"
-		// The capture predates the rename: the search it carries runs
-		// dropin-miner's binary, which this client's lineage hook does not
-		// take for its own. The control asks what the hook does with ITS
-		// search, so the derivation names this client's binary.
-		if in, ok := out["tool_input"].(map[string]any); ok {
-			if cmd, ok := in["command"].(string); ok {
-				renamed := map[string]any{}
-				for k, v := range in {
-					renamed[k] = v
-				}
-				renamed["command"] = strings.ReplaceAll(cmd, "/bin/dropin-miner", "/bin/jevlin")
-				out["tool_input"] = renamed
-			}
-		}
 	}
 	return out
 }
 
+// hookRun is what one hook invocation left: its stdout, the files in the
+// fake filesystem after it, and how many times it started the daily release
+// check — the one thing a served SessionStart or Stop starts (startBackground)
+// when the fake holds no stamp, so it is the observable that tells a served
+// entry from one that stood down and wrote nothing.
 type hookRun struct {
-	stdout  string
-	files   []string
-	flushes int
+	stdout string
+	files  []string
+	checks int
+}
+
+// countingChecks wraps ops.spawnUpdateCheck so a run counts the release
+// checks it started, and still calls the spawner a test installed.
+func countingChecks(ops hookOps, n *int) hookOps {
+	prev := ops.spawnUpdateCheck
+	ops.spawnUpdateCheck = func(cfg string) error {
+		*n++
+		if prev != nil {
+			return prev(cfg)
+		}
+		return nil
+	}
+	return ops
 }
 
 func runRealHookMain(t *testing.T, fs *fakeHookFS, ops hookOps, cfgPath string, args []string, payload map[string]any) hookRun {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
+	var checks int
+	ops = countingChecks(ops, &checks)
 	full := append([]string{"-config", cfgPath}, args...)
 	if code := hookMain(ops, full, bytes.NewReader(mustJSON(t, payload)), &stdout, &stderr); code != exitOK {
 		t.Fatalf("hook %v exited %d (stderr %q); a hook never fails its host", args, code, stderr.String())
 	}
 	files := keys(fs.files)
 	sort.Strings(files)
-	return hookRun{stdout: stdout.String(), files: files, flushes: len(fs.flushes)}
+	return hookRun{stdout: stdout.String(), files: files, checks: checks}
 }
 
-func (r hookRun) nothing() bool { return r.stdout == "" && len(r.files) == 0 && r.flushes == 0 }
+func (r hookRun) nothing() bool { return r.stdout == "" && len(r.files) == 0 && r.checks == 0 }
 
 // The three payloads Cursor really sent, each into the entry point Cursor
-// really ran it against: no output, no file, no flush.
+// really ran it against: no output, no file.
 func TestClaudeFormatHooksStandDownForTheRealCursorPayloads(t *testing.T) {
 	cfg := writeHookConfig(t)
 	for _, c := range claudeEntryCases {
@@ -116,7 +123,7 @@ func TestClaudeFormatHooksStandDownForTheRealCursorPayloads(t *testing.T) {
 			fs, ops := newFakeHookOps(nil)
 			got := runRealHookMain(t, fs, ops, cfg, c.args, cursorPayloadFixture(t, c.fixture))
 			if !got.nothing() {
-				t.Fatalf("a Claude Code hook run by Cursor did something: stdout=%q files=%v flushes=%d", got.stdout, got.files, got.flushes)
+				t.Fatalf("a Claude Code hook run by Cursor did something: stdout=%q files=%v checks=%d", got.stdout, got.files, got.checks)
 			}
 		})
 	}
@@ -125,8 +132,8 @@ func TestClaudeFormatHooksStandDownForTheRealCursorPayloads(t *testing.T) {
 // The control. Without it a hook that does nothing at all passes the test
 // above. The same payloads, made Claude Code's, do what they do today: the
 // lineage hook rewrites the command and writes the lineage file, the
-// session-start hook seeds the window and starts a flush, the stop hook
-// starts a flush.
+// session-start hook seeds the window and starts the day's release check,
+// the stop hook starts the release check.
 func TestTheSamePayloadsFromClaudeCodeBehaveAsTheyDoToday(t *testing.T) {
 	cfg := writeHookConfig(t)
 	for _, c := range claudeEntryCases {
@@ -150,48 +157,53 @@ func TestTheSamePayloadsFromClaudeCodeBehaveAsTheyDoToday(t *testing.T) {
 				if want := []string{lineagePath("/sessions", "/home/u/project")}; !slices.Equal(got.files, want) {
 					t.Errorf("files %v, want the lineage file %v", got.files, want)
 				}
-				if got.flushes != 0 {
-					t.Errorf("the lineage hook started %d flushes", got.flushes)
+				if got.checks != 0 {
+					t.Errorf("the lineage hook started %d release checks", got.checks)
 				}
 			case "SessionStart":
 				if want := []string{filepath.Join("/sessions", hookStateFile)}; !slices.Equal(got.files, want) {
 					t.Errorf("files %v, want the window state %v", got.files, want)
 				}
-				if got.flushes != 1 || got.stdout != "" {
-					t.Errorf("session-start: flushes=%d stdout=%q, want one flush and no output", got.flushes, got.stdout)
+				if got.checks != 1 || got.stdout != "" {
+					t.Errorf("session-start: checks=%d stdout=%q, want one release check and no output", got.checks, got.stdout)
 				}
 			case "Stop":
-				if got.flushes != 1 || got.stdout != "" || len(got.files) != 0 {
-					t.Errorf("stop: flushes=%d stdout=%q files=%v, want exactly one flush", got.flushes, got.stdout, got.files)
+				if got.checks != 1 || got.stdout != "" || len(got.files) != 0 {
+					t.Errorf("stop: checks=%d stdout=%q files=%v, want exactly one release check", got.checks, got.stdout, got.files)
 				}
 			}
 		})
 	}
 }
 
-// dropin-miner#87's cost, stated as the thing a participant pays: with both hosts
+// The double run's cost, stated as the thing a participant pays: with both hosts
 // installed Cursor runs OUR Cursor hook and OUR Claude Code hook at the same
-// event, with the same payload. One turn end is one flush, and one session
-// start is one flush.
-func TestOneCursorEventStartsOneFlushWithBothHostsInstalled(t *testing.T) {
+// event, with the same payload. One turn end is one release check, and one
+// session start is one release check.
+func TestOneCursorEventIsServedOnceWithBothHostsInstalled(t *testing.T) {
 	cfg := writeHookConfig(t)
 	for _, c := range []struct {
 		name, fixture  string
 		cursor, claude []string
 	}{
-		{"stop", "cursor-3.20.21-stop-runs-claude-flush.json", []string{"cursor", "stop"}, []string{"flush"}},
+		{"stop", "cursor-3.20.21-stop-runs-claude-flush.json", []string{"cursor", "stop"}, []string{"stop"}},
 		{"sessionStart", "cursor-3.20.21-sessionStart-runs-claude-window-session-start.json", []string{"cursor", "sessionStart"}, []string{"window", "session-start"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			fs, ops := newFakeHookOps(nil)
+			var checks int
+			ops.spawnUpdateCheck = func(string) error { checks++; return nil }
 			payload := cursorPayloadFixture(t, c.fixture)
-			runRealHookMain(t, fs, ops, cfg, c.cursor, payload)
-			if len(fs.flushes) != 1 {
-				t.Fatalf("Cursor's own hook started %d flushes, want 1: the control is broken", len(fs.flushes))
+			first := runRealHookMain(t, fs, ops, cfg, c.cursor, payload)
+			if checks != 1 {
+				t.Fatalf("Cursor's own hook started %d release checks, want 1: the control is broken", checks)
 			}
 			got := runRealHookMain(t, fs, ops, cfg, c.claude, payload)
-			if got.flushes != 1 {
-				t.Fatalf("one Cursor %s started %d flushes; the Claude Code hook flushed for a caller that is not Claude Code", c.name, got.flushes)
+			if checks != 1 {
+				t.Fatalf("one Cursor %s started %d release checks; the Claude Code hook ran for a caller that is not Claude Code", c.name, checks)
+			}
+			if !slices.Equal(got.files, first.files) {
+				t.Fatalf("the Claude Code hook wrote for Cursor: %v, after Cursor's own %v", got.files, first.files)
 			}
 			if got.stdout != "" {
 				t.Errorf("the Claude Code hook answered Cursor: %q", got.stdout)
@@ -203,7 +215,7 @@ func TestOneCursorEventStartsOneFlushWithBothHostsInstalled(t *testing.T) {
 // H2 made the lineage hook silent for `tool_name: "Shell"` — by accident of
 // the tool-name rule, not because it knew who was calling. Absent or "Bash",
 // the same Cursor payload was still rewritten with a claude-code bridge,
-// which is how dropin-miner#91's search reached the router under the wrong harness. The
+// which is how a search reached the router under the wrong harness. The
 // stand-down must not depend on the tool name, the working directory, or
 // anything else the lineage hook happens to look at.
 func TestLineageStandsDownForCursorWhateverTheToolName(t *testing.T) {
@@ -254,7 +266,7 @@ func TestWhatCountsAsEvidenceOfAnotherHost(t *testing.T) {
 		// The rule is "the event this entry point is installed under", so an
 		// entry somebody re-wired by hand under another Claude Code event
 		// stands down too. Nothing installs that, and what it costs is one
-		// flush that the next search starts anyway.
+		// release check that the next hook starts anyway.
 		{"a Claude Code event this entry point is not installed under", func(m map[string]any) { m["hook_event_name"] = "PreToolUse" }, true},
 		{"no event name at all", func(m map[string]any) { delete(m, "hook_event_name") }, false},
 		{"Claude Code's event name and its own transcript", func(m map[string]any) {
@@ -274,18 +286,20 @@ func TestWhatCountsAsEvidenceOfAnotherHost(t *testing.T) {
 			fs, ops := newFakeHookOps(nil)
 			payload := asClaudeCode(cursorPayloadFixture(t, "cursor-3.20.21-stop-runs-claude-flush.json"), "Stop")
 			c.edit(payload)
-			got := runRealHookMain(t, fs, ops, cfg, []string{"flush"}, payload)
-			if stoodDown := got.flushes == 0; stoodDown != c.standDown {
-				t.Fatalf("flushes=%d, stood down=%v, want %v", got.flushes, stoodDown, c.standDown)
+			got := runRealHookMain(t, fs, ops, cfg, []string{"stop"}, payload)
+			if stoodDown := got.checks == 0; stoodDown != c.standDown {
+				t.Fatalf("checks=%d, stood down=%v, want %v", got.checks, stoodDown, c.standDown)
 			}
 		})
 	}
-	// Not JSON at all: no evidence of anything, and the flush still runs.
+	// Not JSON at all: no evidence of anything, and the stop hook still runs.
 	fs, ops := newFakeHookOps(nil)
+	var checks int
+	ops = countingChecks(ops, &checks)
 	var stdout, stderr bytes.Buffer
-	hookMain(ops, []string{"-config", cfg, "flush"}, strings.NewReader("not json"), &stdout, &stderr)
-	if len(fs.flushes) != 1 {
-		t.Errorf("an unparseable payload stopped the flush: %d", len(fs.flushes))
+	hookMain(ops, []string{"-config", cfg, "stop"}, strings.NewReader("not json"), &stdout, &stderr)
+	if checks != 1 || len(fs.files) != 0 {
+		t.Errorf("an unparseable payload stopped the stop hook: checks %d, files %v", checks, keys(fs.files))
 	}
 }
 
@@ -307,7 +321,7 @@ func TestCompactionHooksStandDownForADerivedCursorPayload(t *testing.T) {
 			payload["hook_event_name"] = c.cursorEvent
 			fs, ops := newFakeHookOps(nil)
 			if got := runRealHookMain(t, fs, ops, cfg, []string{"window", c.phase}, payload); !got.nothing() {
-				t.Fatalf("stdout=%q files=%v flushes=%d", got.stdout, got.files, got.flushes)
+				t.Fatalf("stdout=%q files=%v checks=%d", got.stdout, got.files, got.checks)
 			}
 			fs, ops = newFakeHookOps(nil)
 			got := runRealHookMain(t, fs, ops, cfg, []string{"window", c.phase}, asClaudeCode(payload, c.claudeEvent))
@@ -324,8 +338,8 @@ func TestCursorsOwnHooksAreNotGated(t *testing.T) {
 	cfg := writeHookConfig(t)
 	fs, ops := newFakeHookOps(nil)
 	got := runRealHookMain(t, fs, ops, cfg, []string{"cursor", "sessionStart"}, cursorPayloadFixture(t, "cursor-3.20.21-sessionStart-runs-claude-window-session-start.json"))
-	if !strings.Contains(got.stdout, `"JEVLIN_HARNESS":"cursor"`) || got.flushes != 1 {
-		t.Fatalf("Cursor's sessionStart: stdout=%q flushes=%d", got.stdout, got.flushes)
+	if !strings.Contains(got.stdout, `"JEVLIN_HARNESS":"cursor"`) || got.checks != 1 {
+		t.Fatalf("Cursor's sessionStart: stdout=%q checks=%d", got.stdout, got.checks)
 	}
 	if _, gated := claudeEntryEvent([]string{"cursor", "stop"}); gated {
 		t.Error("a Cursor entry point is treated as Claude-format")
@@ -351,7 +365,7 @@ func TestTheCallerGateNamesExactlyTheEventsTheInstallWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entryPoints := [][]string{{"lineage"}, {"window", "session-start"}, {"window", "pre-compact"}, {"window", "post-compact"}, {"flush"}}
+	entryPoints := [][]string{{"lineage"}, {"window", "session-start"}, {"window", "pre-compact"}, {"window", "post-compact"}, {"stop"}}
 	seen := map[string]bool{}
 	for _, event := range spec.order {
 		group := spec.entries[event]
@@ -394,7 +408,7 @@ var codexIntoClaudeEntry = map[string][]string{
 	"SessionStart": {"window", "session-start"},
 	"PreCompact":   {"window", "pre-compact"},
 	"PostCompact":  {"window", "post-compact"},
-	"Stop":         {"flush"},
+	"Stop":         {"stop"},
 }
 
 // Every payload Codex sent, into the Claude Code entry for its event: nothing

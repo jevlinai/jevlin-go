@@ -1,0 +1,65 @@
+{
+  "hooks": {
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "command": "'<BIN>' hook -config '<CFG>' window post-compact",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "command": "'<BIN>' hook -config '<CFG>' window pre-compact",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "'<BIN>' hook -config '<CFG>' lineage",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash|PowerShell"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "'<BIN>' hook -config '<CFG>' window session-start",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "'<BIN>' hook -config '<CFG>' flush",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash('<BIN>' search -config '<CFG>':*)",
+      "Bash(\"<BIN>\" search -config \"<CFG>\":*)",
+      "Bash(<BIN> search -config \"<CFG>\":*)",
+      "Bash('<BIN>' fetch -config '<CFG>' --stdin:*)",
+      "Bash(\"<BIN>\" fetch -config \"<CFG>\" --stdin:*)",
+      "Bash(<BIN> fetch -config \"<CFG>\" --stdin:*)"
+    ]
+  }
+}

@@ -75,7 +75,7 @@ func TestPiAndHermesInstallWriteSkillsAndUninstallRemovesThem(t *testing.T) {
 	ext, ok := m.files[piExtensionPath]
 	if !ok {
 		t.Errorf("Pi lineage extension not written: %s", piExtensionPath)
-	} else if s := string(ext); !strings.Contains(s, `harness: "pi"`) || !strings.Contains(s, "tokendrop-trace-v1|") || !strings.Contains(s, "JEVLIN_TRACE_BRIDGE") {
+	} else if s := string(ext); !strings.Contains(s, `harness: "pi"`) || !strings.Contains(s, "jevlin-trace-v1|") || !strings.Contains(s, "JEVLIN_TRACE_BRIDGE") {
 		t.Errorf("Pi extension is not the lineage bridge:\n%s", s)
 	}
 

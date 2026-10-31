@@ -627,7 +627,7 @@ func TestOpencodePluginWritesTheShellOpencodeRuns(t *testing.T) {
 		"bash by path": {Shell: str(realBash)},
 		// A stale posix $SHELL opencode cannot resolve: select.ts falls back
 		// to PowerShell, and so must the mirror — a posix prefix here is the
-		// dropin-miner#68 breakage in the opposite direction.
+		// wrong-shell breakage in the opposite direction.
 		"stale shell":      {Shell: str("/no-such-prefix/bin/bash")},
 		"pwsh":             {Shell: str(`C:\Program Files\PowerShell\7\pwsh.exe`)},
 		"no shell":         {Shell: nil},

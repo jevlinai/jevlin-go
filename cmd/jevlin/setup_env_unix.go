@@ -18,13 +18,13 @@ import (
 )
 
 // restrictToOwner takes group and other access away. A directory is 0700,
-// which is what the auth store and the wallet require; a file keeps its own
+// which is what the auth store requires; a file keeps its own
 // owner bits (a read-only key stays read-only) and loses the rest.
 func restrictToOwner(path string, dir bool) error {
 	if dir {
-		return os.Chmod(path, 0o700) // #nosec G302 G703 -- a directory: owner rwx is the most restrictive mode it can be used with; path is inside the installation or wallet directory setup owns
+		return os.Chmod(path, 0o700) // #nosec G302 G703 -- a directory: owner rwx is the most restrictive mode it can be used with; path is inside the installation directory setup owns
 	}
-	info, err := os.Lstat(path) // #nosec G703 -- path is inside the installation or wallet directory setup owns
+	info, err := os.Lstat(path) // #nosec G703 -- path is inside the installation directory setup owns
 	if err != nil {
 		return err
 	}
@@ -66,11 +66,7 @@ func profileCandidate(userHome string, getenv func(string) string) string {
 
 func (r *setupRun) environmentStep() int {
 	binDir := filepath.Dir(r.exe)
-	walletDir := ""
-	if lexists(filepath.Join(r.home, "wallet", walletKeyFile)) {
-		walletDir = filepath.Join(r.home, "wallet")
-	}
-	lines := profileEnvLines(binDir, r.cfgPath, walletDir)
+	lines := profileEnvLines(binDir, r.cfgPath)
 
 	r.say("Shell environment")
 	if r.leftForOtherInstallation("shell profile", "Your shell profile belongs to that one", "pointing PATH and JEVLIN_CONFIG here would repoint your real environment at this installation") {
@@ -140,14 +136,10 @@ func (r *setupRun) environmentStep() int {
 // profileEnvLines are the lines setup puts in the profile, quoted. The
 // PATH test compares the quoted directory literally inside a case pattern,
 // so a directory holding a glob character is matched as itself.
-func profileEnvLines(binDir, cfgPath, walletDir string) []string {
+func profileEnvLines(binDir, cfgPath string) []string {
 	q := shellQuote(binDir)
-	lines := []string{
+	return []string{
 		`case ":$PATH:" in *:` + q + `:*) ;; *) export PATH="$PATH:"` + q + ` ;; esac`,
 		"export JEVLIN_CONFIG=" + shellQuote(cfgPath),
 	}
-	if walletDir != "" {
-		lines = append(lines, "export JEVLIN_WALLET_DIR="+shellQuote(walletDir))
-	}
-	return lines
 }

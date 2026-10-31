@@ -9,9 +9,7 @@ default_permissions = "jevlin"  # jevlin agents install ("CONFIG"); was: default
 extends = "work"
 
 [permissions.jevlin.filesystem]
-"HOME/intake" = "write"
 "HOME/sessions" = "write"
-"HOME/spool" = "write"
 "HOME/state" = "write"
 
 [permissions.jevlin.network]
@@ -19,7 +17,6 @@ enabled = true
 
 [permissions.jevlin.network.domains]
 "agents-v1.jevlin.ai" = "allow"
-"as.example.invalid" = "allow"
 "router.example.invalid" = "allow"
 
 [features.network_proxy]

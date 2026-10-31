@@ -17,12 +17,12 @@ func TestHasControlCharNamesEveryRangeItRefuses(t *testing.T) {
 		0x00ad, // soft hyphen
 	}
 	for _, r := range refused {
-		if !HasControlChar("twilight1" + string(r) + "abc") {
+		if !HasControlChar("token1" + string(r) + "abc") {
 			t.Errorf("U+%04X is not refused", r)
 		}
 	}
 	allowed := []string{
-		"", "twilight1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc", "https://platform.example/claim/AB12-CD34",
+		"", "token1lpdtlehaqn95mkcfgae8rut89s4pq9ayxdp4yc", "https://platform.example/claim/AB12-CD34",
 		"José", "日本", "a b", "\u00a0", "e\u0301", // a combining accent is a letter's, not a format character
 		"2026-09-16T00:00:00Z", "agent-01a11680-4c2e",
 	}

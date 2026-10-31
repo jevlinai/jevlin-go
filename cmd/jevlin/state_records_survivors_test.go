@@ -10,16 +10,16 @@ import (
 
 // Behaviors the re-review's delete-each-if sweep found stated and unheld.
 
-// With no miner.intake_dir, minerRoot is ".", the working directory: the
+// With no search.state_dir, installRoot is ".", the working directory: the
 // claim record must refuse rather than land wherever the command ran.
-func TestTheClaimRecordNeedsAnIntakeDir(t *testing.T) {
+func TestTheClaimRecordNeedsAStateDir(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if _, err := claimRecord(config.Miner{}); err == nil {
-		t.Fatal("claimRecord with no intake_dir succeeded")
+	if _, err := claimRecord(config.Search{}); err == nil {
+		t.Fatal("claimRecord with no state_dir succeeded")
 	}
-	err := saveClaim(config.Miner{}, auth.ClaimBootstrap{AgentID: "agent-1", ClaimURL: "https://platform.example/claim/X"})
+	err := saveClaim(config.Search{}, auth.ClaimBootstrap{AgentID: "agent-1", ClaimURL: "https://platform.example/claim/X"})
 	if err == nil {
-		t.Fatal("a claim record was saved with no intake_dir")
+		t.Fatal("a claim record was saved with no state_dir")
 	}
 	if lexists(filepath.Join(".", claimRecordFile)) {
 		t.Fatal("the claim record landed in the working directory")

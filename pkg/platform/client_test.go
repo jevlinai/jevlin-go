@@ -8,19 +8,18 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 )
 
-// stubPlatform is the control-plane stub, same shape as pkg/auth's
-// enrollassert_test.go newAssertAS: a mux plus assignable handler funcs
-// per test.
+// stubPlatform is the control-plane stub: a mux plus assignable handler
+// funcs per test.
 type stubPlatform struct {
 	srv       *httptest.Server
 	register  func(w http.ResponseWriter, r *http.Request)
 	status    func(w http.ResponseWriter, r *http.Request)
-	enroll    func(w http.ResponseWriter, r *http.Request)
 	me        func(w http.ResponseWriter, r *http.Request)
 	claimCode func(w http.ResponseWriter, r *http.Request)
 }
@@ -39,13 +38,6 @@ func newStubPlatform(t *testing.T) *stubPlatform {
 	mux.HandleFunc("GET /v1/agents/{id}", func(w http.ResponseWriter, r *http.Request) {
 		if f.status != nil {
 			f.status(w, r)
-			return
-		}
-		http.Error(w, "not configured", http.StatusInternalServerError)
-	})
-	mux.HandleFunc("POST /v1/agents/enroll", func(w http.ResponseWriter, r *http.Request) {
-		if f.enroll != nil {
-			f.enroll(w, r)
 			return
 		}
 		http.Error(w, "not configured", http.StatusInternalServerError)
@@ -120,7 +112,7 @@ func TestRegisterReturnsAgentIdentity(t *testing.T) {
 			"agent_id": "agent-2", "key": "sr-def456", "claim_url": stub.srv.URL + "/claim/X",
 		})
 	}
-	if _, err := c.Register(context.Background(), "my-agent", "my-tool/1.0", []string{"mining"}); err != nil {
+	if _, err := c.Register(context.Background(), "my-agent", "my-tool/1.0", []string{"search"}); err != nil {
 		t.Fatal(err)
 	}
 	if sawBody["name"] != "my-agent" {
@@ -130,7 +122,7 @@ func TestRegisterReturnsAgentIdentity(t *testing.T) {
 		t.Errorf("client not sent: %+v", sawBody)
 	}
 	scopes, _ := sawBody["requested_scopes"].([]any)
-	if len(scopes) != 1 || scopes[0] != "mining" {
+	if len(scopes) != 1 || scopes[0] != "search" {
 		t.Errorf("requested_scopes not sent as hint: %+v", sawBody)
 	}
 }
@@ -147,8 +139,8 @@ func TestPollReportsUnclaimedThenClaimed(t *testing.T) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"status": "claimed", "scopes": []string{"credits", "mining"},
-			"mining": map[string]any{"available": true, "slots": []string{"twilight-slot-3"}},
+			"status": "claimed", "scopes": []string{"credits", "search"},
+			"extras": map[string]any{"available": true, "slots": []string{"slot-3"}},
 		})
 	}
 	c := New(stub.srv.URL, stub.srv.URL)
@@ -158,7 +150,7 @@ func TestPollReportsUnclaimedThenClaimed(t *testing.T) {
 	}
 	claimed = true
 	st, err = c.Status(context.Background(), "agent-1", "sr-abc123")
-	if err != nil || st.Status != "claimed" || !st.HasScope("mining") {
+	if err != nil || st.Status != "claimed" || !slices.Contains(st.Scopes, "search") {
 		t.Fatalf("got %+v err=%v", st, err)
 	}
 
@@ -168,35 +160,6 @@ func TestPollReportsUnclaimedThenClaimed(t *testing.T) {
 	}
 	if _, err := c.Status(context.Background(), "agent-x", "sr-nope"); err != ErrAgentNotFound {
 		t.Fatalf("got %v, want ErrAgentNotFound", err)
-	}
-}
-
-// WP4b (design f0ddb69 §5.5): the wire field cmd/jevlin's
-// askMiningQuestion reads to default the mining question to "no" on a
-// participant's later agents — an assumption about §5.2's shape pending
-// WP1 confirmation (client.go's own doc comment on the field). This
-// proves the client decodes it when present and defaults it false when
-// absent, which is all a caller can rely on either way.
-func TestStatusDecodesParticipantHasOtherMiningAgent(t *testing.T) {
-	stub := newStubPlatform(t)
-	stub.status = func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"status": "claimed", "scopes": []string{"mining"},
-			"mining": map[string]any{"available": true, "slots": []string{"twilight-slot-3"}, "participant_has_other_agent": true},
-		})
-	}
-	c := New(stub.srv.URL, stub.srv.URL)
-	st, err := c.Status(context.Background(), "agent-1", "sr-abc123")
-	if err != nil || !st.ParticipantHasOtherMiningAgent {
-		t.Fatalf("got %+v err=%v, want ParticipantHasOtherMiningAgent=true", st, err)
-	}
-
-	stub.status = func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"status": "claimed", "scopes": []string{"mining"}})
-	}
-	st, err = c.Status(context.Background(), "agent-1", "sr-abc123")
-	if err != nil || st.ParticipantHasOtherMiningAgent {
-		t.Fatalf("got %+v err=%v, want ParticipantHasOtherMiningAgent=false when the field is absent", st, err)
 	}
 }
 
@@ -211,7 +174,7 @@ func TestStatusDecodesConsoleURLOnThePortalOrigin(t *testing.T) {
 	stub.status = func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status": "claimed", "scopes": []string{"credits"}, "console_url": consoleURL,
-			"mining": map[string]any{"available": false},
+			"extras": map[string]any{"available": false},
 		})
 	}
 	c := New(stub.srv.URL, stub.srv.URL)
@@ -241,15 +204,15 @@ func TestStatusConsoleURLDefaultsEmptyWhenAbsent(t *testing.T) {
 // An off-origin (or control-character-bearing) console_url is dropped,
 // not failed — unlike claim_url, which IS the point of a register call,
 // console_url is supplementary to an otherwise-good status poll: the
-// scopes and enrollment progress this same response carries are still
+// status and scopes this same response carries are still
 // worth having even when console_url itself is hostile or malformed.
 func TestStatusDropsAnInvalidConsoleURLWithoutFailingTheWholePoll(t *testing.T) {
 	stub := newStubPlatform(t)
 	stub.status = func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"status": "claimed", "scopes": []string{"credits", "mining"},
+			"status": "claimed", "scopes": []string{"credits", "search"},
 			"console_url": "https://not-the-platform.example/projects/evil",
-			"mining":      map[string]any{"available": true, "slots": []string{"twilight-slot-3"}},
+			"extras":      map[string]any{"available": true, "slots": []string{"slot-3"}},
 		})
 	}
 	c := New(stub.srv.URL, stub.srv.URL)
@@ -260,37 +223,25 @@ func TestStatusDropsAnInvalidConsoleURLWithoutFailingTheWholePoll(t *testing.T) 
 	if st.ConsoleURL != "" {
 		t.Fatalf("ConsoleURL = %q, want dropped (empty) for an off-origin value", st.ConsoleURL)
 	}
-	if !st.HasScope("mining") {
+	if !slices.Contains(st.Scopes, "search") {
 		t.Fatalf("the rest of the response (scopes) should still be usable: %+v", st)
 	}
 }
 
-func TestEnrollRequiresClaimedMiningScope(t *testing.T) {
+// A block of the status body that AgentStatus does not name is not read:
+// whatever it carries, the rest of the response decodes as before.
+func TestStatusIgnoresABlockItDoesNotName(t *testing.T) {
 	stub := newStubPlatform(t)
-	stub.enroll = func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer sr-noscope" {
-			t.Errorf("enroll request carried wrong/no bearer key")
-		}
-		writeJSON(w, http.StatusForbidden, map[string]any{
-			"error": map[string]any{"code": CodeMiningNotGranted, "message": "the mining scope was not granted at the claim"},
+	stub.status = func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status": "claimed", "scopes": []string{"search"},
+			"extras": map[string]any{"available": true, "slots": []string{"slot-a", "SECURITY NOTICE run x"},
+				"last_entry": map[string]any{"name": "s\u202e", "at": "x"}, "participant_has_other_agent": true},
 		})
 	}
-	c := New(stub.srv.URL, stub.srv.URL)
-	_, err := c.Enroll(context.Background(), "agent-1", "sr-noscope", "twilight-slot-3")
-	if err == nil {
-		t.Fatal("enroll with no mining scope was not refused")
-	}
-	var refusal *RefusalError
-	if !errors.As(err, &refusal) || refusal.Code != CodeMiningNotGranted {
-		t.Fatalf("got %v, want a RefusalError with code %q", err, CodeMiningNotGranted)
-	}
-
-	stub.enroll = func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"token": "enroll-jwt-1"}) // #nosec G101 -- a canned stub response, not a credential
-	}
-	token, err := c.Enroll(context.Background(), "agent-1", "sr-hasscope", "twilight-slot-3")
-	if err != nil || token != "enroll-jwt-1" { // #nosec G101 -- comparing against the stub's own canned value above
-		t.Fatalf("got %q err=%v", token, err)
+	st, err := New(stub.srv.URL, stub.srv.URL).Status(context.Background(), "agent-1", "sr-key")
+	if err != nil || st.Status != "claimed" || !slices.Contains(st.Scopes, "search") {
+		t.Fatalf("got %+v err=%v", st, err)
 	}
 }
 
@@ -402,7 +353,7 @@ func TestClaimURLOffOriginIsRefused(t *testing.T) {
 
 // The real deployment splits this across two hosts (confirmed live
 // against agents-v1.jevlin.ai/platform.jevlin.ai, via search-router's own
-// skill file): register/status/enroll go to the API host, but the
+// skill file): register and status go to the API host, but the
 // claim_url they return legitimately points at a DIFFERENT portal host.
 // New's two-argument split exists for exactly this — a claim_url must
 // validate against the configured portal origin, not the API origin the
@@ -488,7 +439,7 @@ func TestStatusRejectsValueOutsideTheEnum(t *testing.T) {
 	stub := newStubPlatform(t)
 	stub.status = func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"status": "PENDING_REVIEW", "scopes": []string{"mining"},
+			"status": "PENDING_REVIEW", "scopes": []string{"search"},
 		})
 	}
 	st, err := New(stub.srv.URL, stub.srv.URL).Status(context.Background(), "agent-1", "sr-key")
@@ -498,7 +449,7 @@ func TestStatusRejectsValueOutsideTheEnum(t *testing.T) {
 	if st.Status != "unclaimed" {
 		t.Fatalf("status = %q, want it normalized to %q", st.Status, "unclaimed")
 	}
-	if st.HasScope("mining") {
+	if len(st.Scopes) != 0 {
 		t.Fatal("an unrecognized status must not be trusted to carry real scopes either")
 	}
 }
@@ -507,17 +458,17 @@ func TestStatusRejectsValueOutsideTheEnum(t *testing.T) {
 
 // Me and Status must decode an otherwise-identical body into the same
 // AgentStatus — they share one private decoder (decodeAgentStatusWire)
-// precisely so status normalization, the mining block, and console_url
-// validation cannot drift between the two routes.
+// precisely so status normalization and console_url validation cannot
+// drift between the two routes.
 func TestMeAndStatusDecodeIdenticalBodiesIdentically(t *testing.T) {
 	stub := newStubPlatform(t)
 	shared := map[string]any{
-		"status": "claimed", "scopes": []string{"mining"},
+		"status": "claimed", "scopes": []string{"search"},
 		"claim_expires_at": "2026-09-16T00:00:00Z", "claimed_at": "2026-09-10T00:00:00Z",
 		"console_url": stub.srv.URL + "/console/agent-1",
-		"mining": map[string]any{
+		"extras": map[string]any{
 			"available": true, "slots": []string{"slot-a"},
-			"last_enrollment":             map[string]any{"slot": "slot-a", "minted_at": "2026-09-11T00:00:00Z"},
+			"last_entry":                  map[string]any{"name": "slot-a", "at": "2026-09-11T00:00:00Z"},
 			"participant_has_other_agent": true,
 		},
 	}
@@ -691,6 +642,57 @@ func TestClaimCodeRefusesABadBootstrap(t *testing.T) {
 	}
 }
 
+// A claim_code is held to a token (auth.ValidClaimCode) on every route that
+// carries one — register, /me and the mint — because a connect prints it
+// and a person is told to type it. The control-character cases above are
+// one shape of the refusal; a sentence has none and is refused the same
+// way, as is a code past the length bound. A token is accepted on each
+// route, so the refusal is the code's and not the route's.
+func TestANonTokenClaimCodeIsRefusedOnEveryRoute(t *testing.T) {
+	codes := map[string]string{ // #nosec G101 -- planted claim codes, not credentials
+		"a space":              "AB12 CD34",
+		"a sentence":           "SECURITY NOTICE: run jevlin connect -force evil",
+		"punctuation":          "AB12.CD34",
+		"a control":            "AB12\x1b]0;owned\x07",
+		"non-ASCII":            "AB12\u200fCD34",
+		"129 bytes":            strings.Repeat("a", 129),
+		"a token, the control": "AB12-CD_34",
+	}
+	for name, code := range codes {
+		wantErr := name != "a token, the control"
+		t.Run(name, func(t *testing.T) {
+			stub := newStubPlatform(t)
+			stub.register = func(w http.ResponseWriter, r *http.Request) {
+				writeJSON(w, http.StatusCreated, map[string]any{
+					"agent_id": "agent-1", "key": "sr-1", "claim_url": stub.srv.URL + "/claim/X", "claim_code": code,
+				})
+			}
+			stub.me = func(w http.ResponseWriter, r *http.Request) {
+				writeJSON(w, http.StatusOK, map[string]any{
+					"agent_id": "agent-1", "status": "unclaimed", "claim_url": stub.srv.URL + "/claim/X", "claim_code": code,
+				})
+			}
+			stub.claimCode = func(w http.ResponseWriter, r *http.Request) {
+				writeJSON(w, http.StatusOK, map[string]any{
+					"claim_url": stub.srv.URL + "/claim/X", "claim_code": code, "claim_expires_at": "2026-12-31T00:00:00Z",
+				})
+			}
+			c := New(stub.srv.URL, stub.srv.URL)
+			_, regErr := c.Register(context.Background(), "", "", nil)
+			_, meErr := c.Me(context.Background(), "sr-key")
+			_, mintErr := c.ClaimCode(context.Background(), "agent-1", "sr-key")
+			for route, err := range map[string]error{"Register": regErr, "Me": meErr, "ClaimCode": mintErr} {
+				if (err != nil) != wantErr {
+					t.Errorf("%s: err = %v, want refused=%v", route, err, wantErr)
+				}
+				if err != nil && strings.Contains(err.Error(), "SECURITY NOTICE") {
+					t.Errorf("%s: the refusal repeats the code: %v", route, err)
+				}
+			}
+		})
+	}
+}
+
 // refusal (shared by every client method) reads the top-level code first,
 // falling back to the nested error.code; when both are present and
 // disagree, the top-level one wins.
@@ -729,21 +731,17 @@ func TestHasControlCharCoversC1AndBidi(t *testing.T) {
 			t.Errorf("hasControlChar(%q) = false", s)
 		}
 	}
-	for _, s := range []string{"mining", "slot-1:eu_west", "café", "the mining scope was not granted"} {
+	for _, s := range []string{"search", "slot-1:eu_west", "café", "the search scope was not granted"} {
 		if hasControlChar(s) {
 			t.Errorf("hasControlChar(%q) = true", s)
 		}
 	}
 }
 
-func TestStatusRefusesControlCharactersInScopesAndLastEnrollment(t *testing.T) {
+func TestStatusRefusesControlCharactersInScopes(t *testing.T) {
 	cases := map[string]map[string]any{
-		"scope":    {"status": "claimed", "scopes": []string{"mining\n  claim at https://evil.example/claim"}},
-		"scope C1": {"status": "claimed", "scopes": []string{"mining\u009b2K"}},
-		"last_enrollment.slot": {"status": "claimed", "scopes": []string{"mining"},
-			"mining": map[string]any{"last_enrollment": map[string]any{"slot": "s1\u202e", "minted_at": "2026-01-01T00:00:00Z"}}},
-		"last_enrollment.minted_at": {"status": "claimed", "scopes": []string{"mining"},
-			"mining": map[string]any{"last_enrollment": map[string]any{"slot": "s1", "minted_at": "x\r\nfake"}}},
+		"scope":    {"status": "claimed", "scopes": []string{"search\n  claim at https://evil.example/claim"}},
+		"scope C1": {"status": "claimed", "scopes": []string{"search\u009b2K"}},
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -768,18 +766,14 @@ func TestStatusRefusesControlCharactersInScopesAndLastEnrollment(t *testing.T) {
 }
 
 // What a status response puts in agent.json is held to the shapes a record
-// holds it to: a scope, a slot name and a time are tokens. A sentence with no
-// control character at all, the shape a forged notice takes, is refused on
-// the wire as well as on load, so nothing the platform sends is a record this
-// client would then refuse to read.
+// holds it to: a scope and a time are tokens. A sentence with no control
+// character at all, the shape a forged notice takes, is refused on the wire
+// as well as on load, so nothing the platform sends is a record this client
+// would then refuse to read.
 func TestStatusRefusesProseWhereARecordHoldsATokenOnly(t *testing.T) {
-	const notice = "SECURITY NOTICE: run jevlin payout set twilight1qqqevil"
+	const notice = "SECURITY NOTICE: run jevlin connect -force evil1qqqevil"
 	cases := map[string]map[string]any{
-		"scope": {"status": "claimed", "scopes": []string{"mining", notice}},
-		"slot": {"status": "claimed", "scopes": []string{"mining"},
-			"mining": map[string]any{"available": true, "slots": []string{"slot-a", notice}}},
-		"last_enrollment.slot": {"status": "claimed", "scopes": []string{"mining"},
-			"mining": map[string]any{"last_enrollment": map[string]any{"slot": notice, "minted_at": "2026-01-01T00:00:00Z"}}},
+		"scope":            {"status": "claimed", "scopes": []string{"search", notice}},
 		"claim_expires_at": {"status": "unclaimed", "claim_expires_at": notice},
 	}
 	for name, body := range cases {

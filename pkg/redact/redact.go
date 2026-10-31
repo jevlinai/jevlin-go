@@ -206,7 +206,7 @@ func String(s string) string {
 }
 
 // TraceText scrubs assistant-authored trajectory text before it leaves the
-// machine (trace.go's capTrace, miner.go's saveLineage) — everything String
+// machine (trace.go's capTrace, lineage.go's saveLineage) — everything String
 // does EXCEPT bearerPattern. "bearer" measured as a false positive here in
 // a way it is not for logs: ordinary prose about tokens ("bearer tokens
 // expire soon") is common in a model's visible narration and is exactly

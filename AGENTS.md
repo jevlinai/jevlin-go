@@ -1,38 +1,34 @@
 # AGENTS.md — jevlin
 
-Agent instructions for jevlin: supersearch for coding agents, with mining rewards for a
-participant who opts in. Loaded every session.
+Agent instructions for jevlin: supersearch for coding agents. Loaded every session.
 
 ## What this is
 jevlin is **supersearch for coding agents**, one call to every search engine in the set with each result attributed: a **no-daemon** Go CLI a coding agent shells out
 to (`jevlin search …`) plus a lifecycle hook. Between calls nothing runs — no reverse proxy,
-no resident process. Mining is opt-in: for a participant who turns it on, it is the client for
-Twilight MINIS, and it earns by capturing each provider call's **event id**
-(`request_id` for search, `generation_id` for OpenRouter) and submitting it to the Authorization
-Server (AS), which **reconciles against the provider** — the client never self-reports volume. It
-holds participant secrets on the participant's own machine: OAuth refresh tokens + a DPoP key, a
-Twilight payout wallet (BIP39 + signing key), and — only when the Slot's profile is `OPENROUTER_V1`
-(the `provider` command; see `enroll.go`'s `AcceptsOpenRouterProfile`) — an OpenRouter zero-spend
-key. Under the default `SEARCH_ROUTER_V1` profile the participant holds no provider credential at
-all; the AS verifies with its own operator credential.
+no resident process. Nothing here records, spools or submits anything about a search. What the client holds on the participant's own machine is the platform-issued
+search key (`credentials.json`), the agent registration and its claim link, and a trace key
+that keys the session ids a search carries. Everything a search sends is the query and, when a
+host's hook supplied one, the redacted trace (invariant 2).
+
+A config an earlier version wrote has no `schema` line and is refused as an older format
+(`config.ErrLegacyConfig`); `jevlin setup` sets it aside as `jevlin.toml.old` before writing
+configuration format 1, keeping the registration: it carries the earlier config's directories
+and endpoints, and moves the key and the registration files beside it from where that config
+kept them. Any other file an earlier version left on a machine is neither read, moved nor named:
+this client carries no list of them, and a purge lists whatever it finds left by path
+(`sayLeftInHome`). Where a rule below says "an earlier version", that is what it means.
 
 ## Authority — the protocol is owned upstream, not here
-The AS↔client wire contract, source profiles, and fixture corpus are owned in
-`tokendrop-auth-server-design` (`tokendrop-auth-server-design/docs/spec/`,
-`tokendrop-auth-server-design/docs/wire-fixtures/`, checksum-mirrored here under
-`testdata/fixtures/`). **Conform upward.** A frozen requirement that looks wrong is a **spec
-escalation** to the design side — never a local reading chosen because it's easier to build, never
-an edit to a mirrored fixture. `pkg/` is the **shared protocol implementation, owned by this repo**
-and consumed elsewhere by import; `cmd/jevlin/` is this client's wrapper. Client-specific
-decisions (retry shapes, the trace envelope, install/agent behaviour) have no upstream home —
-record them in `docs/` here.
-
-The search platform's control plane (`platform.jevlin.ai` — `connect`, `mining enable`; `pkg/platform`)
-is a **second, separate contract**, same convention as the AS: owned upstream, this time by
-`search-router`'s own design doc (`tokendrop-auth-server-design/docs/implementation/
-search-platform-agent-onboarding-design.md`, authored for the `search-router` repository and
-mirrored there — not owned here either). `pkg/platform` conforms to it the same way `pkg/auth`
-conforms to the AS contract: implementer here, authority elsewhere.
+The search platform's control plane (`platform.jevlin.ai` — `connect`; `pkg/platform`) is a
+contract owned upstream, by the platform's agent-onboarding design, kept with the platform
+contract — not owned here.
+**Conform upward.** A frozen requirement that looks wrong is a **spec escalation** to the design
+side — never a local reading chosen because it's easier to build. `pkg/platform` conforms to it:
+implementer here, authority elsewhere. The router's search and fetch protocol is `search-router`'s
+too; `cmd/jevlin/testdata/search/router` mirrors its fixtures. `pkg/` is the **shared
+implementation, owned by this repo** and importable elsewhere; `cmd/jevlin/` is this client's
+wrapper. Client-specific decisions (retry shapes, the trace envelope, install/agent behaviour)
+have no upstream home — record them in `docs/` here.
 
 ## The verify loop
 `make verify` = `build vet lint lint-windows tidy race vuln cross`, the checks that take seconds
@@ -47,30 +43,31 @@ made, and before each commit, `make quick RUN=<pattern> PKG=<packages>` vets, li
 the named tests.
 
 ## Hard invariants — a change that violates one is wrong even if it compiles and every test passes
-1. **Fail-open on the earning path.** A mining-side write, spawn, or network failure MUST NOT turn
-   a successful search/inference into a client-visible failure, and MUST NOT add latency the user
-   notices. The hook emits nothing and exits 0 on any internal error, a panic included (`hookMain`);
-   `search` swallows intake/flush failures, and a panic while preparing the trace sends the search
-   with none (`searchTraceFailingOpen`). "A mining-side write must never block or fail the search." Under Codex's permission
-   profile a process a sandboxed search spawns contacts **only hosts the profile lists**
-   (`codexAllowedHosts`: the router, the AS when `as_url` is set, the platform agents API): on
-   macOS a detached child outlives the search, and a CONNECT the profile denies fails whichever
-   Codex tool call is running at that moment, the search's own or a later, unrelated one. A new
-   destination on that path is a new host there, or it breaks this invariant.
-2. **No prompt/completion content as mining evidence.** Prompt, message, completion, reasoning, and
-   tool payloads MUST NOT be logged, spooled, hashed, sampled, or sent to the AS as evidence
-   (contract PART II). `intakeRecord` is a closed field set — request id, host, status code,
-   timestamps, chosen provider name — that structurally excludes the query and the answer; there is
-   nothing to redact here because nothing is captured. The search-router **trace** is the one
+1. **Fail-open around the search.** A failure in anything a search does beside answering — the
+   trace, a lineage write, the detached claim resume, the daily release check a hook starts —
+   MUST NOT turn a successful search into a client-visible failure, and MUST NOT add latency the
+   user notices. The hook emits nothing and exits 0 on any internal error, a panic included
+   (`hookMain`); a panic while preparing the trace sends the search with none
+   (`searchTraceFailingOpen`). Under Codex's permission profile a process a sandboxed search
+   spawns contacts **only hosts the profile lists** (`codexAllowedHosts`: the router and the
+   platform agents API): on macOS a detached child outlives the search, and a CONNECT the
+   profile denies fails whichever Codex tool call is running at that moment, the search's own or
+   a later, unrelated one. A new destination on that path is a new host there, or it breaks this
+   invariant.
+2. **No prompt/completion content leaves the machine, except through two named channels.**
+   Prompt, message, completion, reasoning, and tool payloads MUST NOT be logged, hashed, sampled
+   or sent anywhere as a record of a search; nothing about a served search is kept on the
+   machine at all. The search-router **trace** is the one
    channel that carries model-influenceable text off the machine (the assistant text just before a
    search, capped and hashed per `trace.go`); it MUST be redacted before egress and is a conscious
    privacy surface, not a default. The **turn end** (`turn_end.go`, `turn_detail.go`, `turn_hosts.go`, `codex_turn_end.go`) is the only other one: for
    a turn that searched, the user's message, the assistant's visible text, and its final message,
    all under the same scrub and caps, with a skeleton of the turn's other tool calls. It is sent
-   only when the installation set `[miner] turn_end = true`. It MUST stay off by default; MUST
+   only when the installation set `[search] turn_end = true`. It MUST stay off by default; MUST
    send nothing for a turn in which no search was SERVED (a proposed, refused or failed search is
-   not one — `search` marks the turn after the router answers); MUST go only to a router the
-   config names (`Miner.RouterConfigured`, never the provider upstream standing in); and MUST
+   not one — `search` marks the turn after the router answers); MUST go only to the router this run
+   is configured with: `[router] url`, `JEVLIN_ROUTER_URL` or the compiled default; there is no
+   fallback (`Search.RouterURL` is never nil and never a stand-in); and MUST
    NEVER carry a tool's input or output. Of a tool call it sends the name, the duration and the
    outcome — `turnStep` has no field for more, and one must not be added. A command is read for
    one purpose, to recognize our own search, and is not kept. Thinking blocks and a subagent's own
@@ -81,62 +78,54 @@ the named tests.
    state is *not choosing*. Enforced module-wide by `cmd/jevlin/boundary_test.go`, which walks every
    `http.Client{}` construction rather than trusting a package-scoped review: `credentials.go`'s
    login probe sends the participant's sr- key as a bearer credential to the router, outside the
-   scope a review of "the clients that carry a credential to the AS" would enumerate.
+   scope a review of "the clients that carry a credential to the platform" would enumerate.
 4. **Secrets never in argv.** stdin or owner-only (0600) files, never a flag. The one documented
    exception is the search *query* (not a credential), called out where it happens.
-5. **Never assemble or call an unadvertised operational URL.** Endpoints come from the discovery document; the
-   AS origin is **configured, not discovered**; service-document endpoints are same-origin checked; an
-   off-origin provider-authorization template is refused unless on the compiled `providerhosts`
-   allowlist. `as_url`, `router_url`, `platform.base_url` and `platform.agents_api_url` are all
-   https-or-loopback, enforced at config load — every search sends the participant's sr- key
-   in `Authorization` to `router_url`, and `connect`/`mining enable` send the platform-issued key
-   to `agents_api_url`, the same cleartext-credential exposure `as_url`'s rule closes.
-   `platform.base_url` carries no credential — nothing is ever dialed there — it is the portal
-   origin a printed `claim_url` is checked against (invariant 12); the human portal and the machine
-   API are separate hosts. The sole exception is the self-updater: `internal/selfupdate`
+5. **Never assemble or call an unadvertised operational URL.** Every host this client dials is
+   **configured, not discovered**. The config is configuration format 1 (`pkg/config`): a file
+   beginning `schema = 1` with three endpoint sections, `[router] url`, `[platform] url` and
+   `[agents] url`, each defaulting to its compiled value in `pkg/config/defaults.go`
+   (`DefaultRouterURL`, `DefaultPlatformBaseURL`, `DefaultAgentsAPIURL`), and replaced at
+   runtime, after the file, by `JEVLIN_ROUTER_URL`, `JEVLIN_PLATFORM_URL` and
+   `JEVLIN_AGENTS_API_URL`. All three are https-or-loopback, with an ASCII host and no userinfo,
+   query or fragment, enforced at config load (`config.ParseEndpoint`) — every search sends the
+   participant's sr- key in `Authorization` to `[router] url`, and `connect` sends the
+   platform-issued key to `[agents] url`, a cleartext-credential exposure over anything else.
+   A file that is not format 1 — no `schema` line, another schema number, or a key format 1
+   does not define — is refused and never reinterpreted: an older file's endpoints were chosen
+   under rules this client no longer has, and guessing what they meant is how a key reaches a
+   host it was not issued for. `[platform] url` carries no credential — nothing is ever dialed
+   there — it is the portal origin a printed `claim_url` is checked against (invariant 12); the
+   human portal and the machine API are separate hosts. The sole exception is the self-updater: `internal/selfupdate`
    contacts only the compiled-in canonical `jevlinai/jevlin-go` GitHub release origin,
    carries no participant credential, follows only its bounded HTTPS GitHub redirect allowlist, and
    no environment variable, config or flag may redirect that origin.
-6. **Strict for the AS wire, permissive for the provider response.** AS-facing types conform to the
-   frozen, checksum-verified fixtures. The provider **response** shape is not frozen and is decoded
-   permissively (no `DisallowUnknownFields`) on purpose — we own the AS contract, not the provider's
-   product API. The asymmetry is deliberate; don't "fix" it either way.
-7. **Durable before visible; remove only on ack.** An observation is persisted (intake→spool, each
-   temp-file + atomic rename, fsync'd) before the user sees the result; a spool record leaves delivery
-   only on a durable AS ack (PART X). `client_record_id` is minted once per observation, never
-   regenerated on retry. Two drops are not acks, and they are the only ones: the records of an
-   epoch another installation of this participant holds (`dropConflictedObservationsPastTarget`)
-   and of an epoch the AS refused to enroll this installation in under its region policy
-   (`dropRegionRefusedObservationsPastTarget`), each only once the AS's current target has moved
-   past it, because no capability for that epoch can exist and no delivery of them can succeed.
+6. **Permissive for the router's response, strict for what this client emits.** The router's
+   response shape is not frozen and is decoded permissively (no `DisallowUnknownFields`) on
+   purpose — the router owns its product API, and a field it adds must not break a search.
+   What this client emits to an agent is the versioned, closed envelope of invariant 15.
+7. **Retired.** The number is kept so that references to later invariants stay right.
 8. **`pkg/` MUST NOT import `cmd/`.** Keeping `pkg/` wrapper-agnostic is what makes it importable and
-   is why this repo owns it and can hand it back to the proxy by import, not copy. Enforced by
+   is why this repo owns it and can hand it to another client by import, not copy. Enforced by
    `cmd/jevlin/boundary_test.go`.
-9. **The chain SDK module tree is banned.** The client hand-builds the protobuf messages a payout
-   needs rather than importing the Cosmos SDK — a lean binary shipped to users must not pull the
-   SDK's module tree. `go.mod` carries no cosmos-sdk/cometbft dependency. Enforced by
-   `TestNoChainImportsAnywhere`.
-10. **One mining authority.** `mining_decision.json` in the state directory is the only runtime
-    authority on whether mining is on: `enabled`, `disabled`, `undecided`, `degraded`. Search
-    intake, the flush, `connect`, its resume and `status` all read it through `auth.MiningDecision`
-    and `miningActive`. `[mining] enabled` in the config is a scripted first answer for onboarding,
-    never a switch; `[miner] enabled` says only that intake is configured; `as_url` being non-empty
-    is what says an AS exists (`miningASConfigured`). An unreadable or unsafe decision is DEGRADED
-    and stops mining.
-11. **A claim or console URL is printed, never opened.** `connect.go` and `mining.go` import no
-    `os/exec`. Structural, and tested.
-12. **`platform.base_url` is compared against, never dialed.** It is the origin a platform-supplied
+9. **The chain SDK module tree is banned.** A lean binary shipped to users must not pull the
+   Cosmos SDK's module tree; nothing here needs chain messages, and the rule keeps such an
+   import from arriving by accident. `go.mod` carries no cosmos-sdk/cometbft dependency.
+   Enforced by `TestNoChainImportsAnywhere`.
+10. **Retired.** The number is kept so that references to later invariants stay right.
+11. **A claim or console URL is printed, never opened.** `connect.go` imports no `os/exec`.
+    Structural, and tested.
+12. **`[platform] url` is compared against, never dialed.** It is the origin a platform-supplied
     URL must match (`validatePlatformURL`): every byte printable ASCII, no user before the host,
     and the URL must read back as exactly the text given, so what is checked is all of what is
-    printed. A retired portal origin also matches its one compiled successor
-    (`retiredPortalSuccessors`: `platform.nyks.dev` → `platform.jevlin.ai`), because setup never
-    rewrites an existing config and the platform issues links on the new host; nothing else
-    widens. Every request goes to `agents_api_url`. The claim link lives in `claim.json` beside
+    printed. The origin must be the portal's own exactly: there is no retired-portal successor
+    and no alias, so a link on any other host, a portal this installation once named included,
+    is refused, and nothing widens the match. Every request goes to `[agents] url`. The claim link lives in `claim.json` beside
     `credentials.json` (`auth.ClaimRecord`), bound to its agent and written only from the
     platform's answer or the registration journal beside it: by a foreground run, or by a resume
     finishing that journal (which, in a sandbox, cannot write there and leaves it to the next
     foreground run), never in the sandbox-writable `agent.json`; it is checked again before it is printed
-    (`platform.ValidateStoredClaimURL`), because `platform.base_url` may have changed since.
+    (`platform.ValidateStoredClaimURL`), because `[platform] url` may have changed since.
 13. **Registration is one journaled transaction.** A complete `register` response is journaled
     (`registration_pending.json`) before `agent.json` or the credential is written, and finished
     from the journal on the next run, never by a second `register`. The journal is consulted before
@@ -155,12 +144,7 @@ the named tests.
     fresh registration. Separately and without `-force`, an ordinary foreground `connect` may
     replace a registration the platform has positively verified as expired; that replacement
     changes the platform agent and its key. `-resume` never registers, rebuilds or replaces.
-14. **A wallet send is journaled before broadcast and resolved only by the chain.**
-    `wallet/pending_tx.json` is written before the first broadcast; only that first broadcast's
-    non-zero CheckTx clears it; a rebroadcast never resolves the journal on any result, because
-    CheckTx is not inclusion; resolution is a `/tx` confirmation (matching hash, positive height,
-    explicit code) or an explicit `-abandon-pending`. The same signed bytes are re-sent, never a
-    second signature. `wallet.lock` spans the pending check through first-broadcast classification.
+14. **Retired.** The number is kept so that references to later invariants stay right.
 15. **The machine protocol is versioned, closed and typed.** `search --stdin`, `fetch --stdin`,
     `status -json`, `doctor -json`, `connect -json` and `limits -json` emit one envelope with the mandatory header (`version`,
     `command`, `ok`, `exit_code`, `status`, `code`, `retryable`, `action`), a closed action set
@@ -168,8 +152,7 @@ the named tests.
     0 through 4. Classification is by typed errors and exact codes, never by message text
     (one retry, licensed by two exact codes: `trace_unsupported`, and `malformed_json` to a request
     carrying `objective` or `search_queries`; a router 401 is `login`, never `connect`).
-    Machine mode never invents a participant decision: where a terminal would ask, it answers
-    `human_decision_required`. The mandatory header and its semantics are what is versioned
+    Machine mode never invents a participant decision. The mandatory header and its semantics are what is versioned
     (`machineVersion` in `machine.go`): changing the required header's shape or the meaning of
     `ok`, `status`, `code`, `retryable`, `action` or `exit_code` requires a protocol version
     change; command-specific payload additions that preserve that contract do not.
@@ -230,8 +213,7 @@ the named tests.
     record lives beside `credentials.json`, where no sandbox writes, and it never undoes a person:
     a release `upgrade -rollback` left is held, a `manual_intervention` waits for a person's
     upgrade, and a binary another installation owns is that installation's to update. Participant state is removed only by
-    `uninstall -purge-state` after an interactive typed confirmation, the wallet address or the
-    installation path, that `-yes` cannot supply and a non-terminal cannot reach: protection against
+    `uninstall -purge-state` after an interactive typed confirmation, the installation path, that `-yes` cannot supply and a non-terminal cannot reach: protection against
     accidents and non-interactive automation, not against a program driving a terminal.
 18. **A prompt answers only to a line the participant typed.** A read that ends without one — an
     interrupt, a closed stdin, a console read the terminal aborted — is not the visual default and
@@ -240,12 +222,13 @@ the named tests.
     answers and never turns an interrupt into an answer. `prompt.go` owns the rule and the two
     readers that apply it (`promptBufio` over the shared `bufio.Reader` a command's prompts take
     turns on, `promptSetup` over `readSetupLine`); a bare `line, _ := br.ReadString('\n')` at a
-    question is the defect, not a shortcut: at `Enable mining rewards? [y/N]` a discarded read error
-    makes an interrupt an empty line, an empty line is not `y`, and invariant 10's runtime authority
-    would be written with a decision nobody made — and then `connect` would register.
+    question is the defect, not a shortcut: at a `[y/N]` question an earlier version asked, a
+    discarded read error made an interrupt an empty line, an empty line was not `y`, and a
+    decision nobody made was written — and then `connect` registered. That question is gone; the
+    rule is not.
     A typed refusal and an unanswered question are different outcomes and must stay
     distinguishable by exit code, which is why the ones that change nothing either way
-    (`agents install`'s `Proceed?`, `wallet send`'s confirmation) still differ there.
+    (`agents install`'s `Proceed?`) still differ there.
     **One exception, deliberate:** when `agents install` or `setup` writes nothing else — an
     unanswered question, no terminal without `-yes`, an unanswered or declined `Proceed?` or
     agents question, a declined Codex switch — it still commits the plan's safety writes
@@ -255,57 +238,50 @@ the named tests.
     so it changes no setting of the participant's and decides nothing for them; leaving it would
     keep every command Codex runs able to reach any host, which is the one outcome nobody could
     have chosen. The run says it closed that block, and still exits non-zero.
-19. **A sandboxed agent's files never redirect or stall this client's own.** The state dir, and
-    with mining the intake, sessions and spool dirs, are writable roots of Codex's sandbox
+19. **A sandboxed agent's files never redirect or stall this client's own.** The state dir and
+    the sessions dir are writable roots of Codex's sandbox
     (`codexSandboxRoots`: the permission profile's filesystem entries, on Windows the roots-only
-    block's `writable_roots`), while hooks, hook-spawned flushes and connect's resume work in them
+    block's `writable_roots`), while hooks and connect's resume work in them
     from outside it. Live on Codex 0.160.0's macOS sandbox, a command there could leave a symlink
     out of the root, a hard link to a participant's file outside it, and a FIFO; having emptied a
-    top-level root, it could not `rmdir` it. A root inside another root (the spool's default,
-    `<state_dir>/spool`) can be renamed away and replaced, though. So in those directories no
+    top-level root, it could not `rmdir` it. A root inside another root can be renamed away and
+    replaced, though. So in those directories no
     existing name is opened for writing (`fsx.CreateNew`; a replacement is an exclusively
     created, unpredictably named temporary file renamed into place), no read waits on what is
     there or reads past a bound (`fsx.ReadRegular`, `ReadRegularNoFollow` where a check on the
-    name came first), no lock follows a link (`fsx.OpenLock`), and the spool, which can be nested,
-    does every operation through `fsx.Root` held to the directory it opened on. The premise is
-    that the installation's own directory (credentials.json, the registration journal, the payout
-    record, flush.lock) and the config's directory are writable from no sandbox: `agents install`
+    name came first), and no lock follows a link (`fsx.OpenLock`). The premise is
+    that the installation's own directory (credentials.json, the registration journal, the claim
+    record, the update stamp) and the config's directory are writable from no sandbox: `agents install`
     grants Codex nothing when a layout would put either inside a root (`codexRootsProblem`), and nothing here can help if Codex's
     own workspace is the installation or above it. `pkg/fsx/confined.go` owns the operations.
     `cmd/jevlin/writable_roots_guard_test.go` resolves every file's imports and classifies each
     reference to a file operation in os, io/ioutil, syscall, x/sys/unix, x/sys/windows and
     pkg/fsx by (file, function, call) and count, with the reason it is safe, and fails on a new
     one until someone classifies it: the forbidden state is not choosing. `writable_roots_test.go`,
-    `codex_sandbox_test.go`, `pkg/fsx/confined_test.go`, `pkg/mining/spool/quarantine_link_test.go`
-    and `pkg/auth/refreshlock_link_test.go` plant the links and FIFOs at the exact names, and swap
-    a file between a check and its read through the test seams in `readSecret` and
+    `codex_sandbox_test.go` and `pkg/fsx/confined_test.go` plant the links and FIFOs at the exact
+    names, and swap a file between a check and its read through the test seams in `readSecret` and
     `readCredentials`. What the records say is answered in three parts. A record that could make
     this client act on, or show, its writer's say-so does not live there: the registration
-    journal, the payout record and the claim record sit beside `credentials.json`, and what an
-    older version left in the state dir is discarded unread or, for a payout address, recorded
-    only when it is the installation's own wallet address (`payoutAddressToDeclare`). Every record
+    journal and the claim record sit beside `credentials.json`, and a journal an
+    older version left in the state dir is discarded unread. Every record
     a command prints is held on load to what this client writes: a string holding a control,
     format or line-separator character (`internal/termtext`, Unicode Cc, Cf, Zl and Zp, found by
     reflection over every string `encoding/json` fills in `pkg/auth/record_text.go`) makes
     `agent.json` corrupt and any other record unreadable; an identifier a record carries (an
-    agent id, a scope, a slot name, a time) is a token, never a sentence (`pkg/auth/agent_id.go`,
-    held on the platform's wire as well, before anything is journaled), and a slot refusal is
-    stored as a code the client renders in its own words; an address must be twilight bech32; a
-    held-binding note is shown only for the address this installation would declare, with a
-    reason only when it is one the client knows; no message repeats the agent id `agent.json`
-    held; and a decode error repeats none of
-    the record (`auth.DecodeProblem`: the state dir's records, the flush stamp, and the journal
-    and claim record beside the credential alike). What a foreground `flush` prints, which names intake and spool files, goes
-    through `terminalSafeWriter`. And `agent.json` naming an agent the stored credential does not
-    belong to is rebuilt from the platform (invariant 13).
+    agent id, a scope, a time) is a token, never a sentence (`pkg/auth/agent_id.go`,
+    held on the platform's wire as well, before anything is journaled); no message repeats the
+    agent id `agent.json` held; and a decode error repeats none of
+    the record (`auth.decodeError`'s `Error`, and `decodeProblem` beneath it, choose the client's
+    own words and quote nothing, for the state dir's records and the journal and claim record
+    beside the credential alike; the update stamp's `errUpdateStampForeign` is one fixed
+    sentence). And `agent.json` naming an agent the stored
+    credential does not belong to is rebuilt from the platform (invariant 13).
     `cmd/jevlin/state_record_escape_guard_test.go` builds an installation through the real
     commands, plants each class of character, one at a time, in every string of every record it
-    leaves and in a spool record's id, runs every command that prints, `flush` included, and fails
+    leaves, runs every command that prints, and fails
     on a file nobody has classified; it then plants a visible sentence at every scalar of every
-    record, which no command may repeat, with the health detail, free text by design, named as
-    the one exception (`visibleFreeText`). Within those shapes a
-    record still says what its last writer chose: a forged `mining_decision.json` still turns
-    mining on, a forged `payout_declared.json` still makes a resume skip a declaration.
+    record, which no command may repeat. Within those shapes a
+    record still says what its last writer chose.
 
 ## Subsystems and where their rules live
 A subsystem's authority is one file, and a subsystem nobody has watched fail is a hypothesis — so
@@ -313,32 +289,6 @@ each line names the file that owns the rule and the test that proves it. Where a
 read about the behaviour, the line ends with a pointer to that section of `docs/guide.md`,
 `docs/agents.md` or `docs/reference.md`, and a change to the behaviour updates that section too.
 
-- **The mining decision and the health records** — `pkg/auth/mining_state.go` owns the four states
-  and what makes one degraded; `pkg/auth/health.go` owns the three components and the closed reason
-  vocabulary (`decision_unreadable`, `intake_unwritable`, `sandbox_restricted`, `flush_spawn_failed`,
-  `flush_state_unavailable`, `auth_state_unavailable`, `submission_failed`, `spool_backlog`).
-  `cmd/jevlin/mining_state_health_test.go` drives search and flush through every decision and
-  every reason.
-- **The flush lock and stamp** — `cmd/jevlin/flushlock.go` owns the rule: one `flush.lock`
-  beside the intake directory for every flush of every version, because a flush that overlapped
-  another would re-spool records the other had already read, so the lock cannot be split across
-  paths or versions. Where a sandbox denies writing it (Codex's
-  block never grants the miner root), `tryFlushLock` in `minerlock_unix.go`/`minerlock_windows.go`
-  opens the existing file read-only and takes the same exclusive lock; only a permission denial
-  falls back — `classifyFlushLockOpenError`, one per platform: `EACCES` or `EPERM` (what Codex's
-  macOS sandbox returns), `ERROR_ACCESS_DENIED` — and an absent lock it cannot create stops the flush
-  with `flush_state_unavailable`.
-  Setup, the upgrade transaction and every read-write flush create the file; nothing else uses the
-  fallback, because the gate, setup, connect and the destructive exclusion run outside any sandbox
-  and must refuse a lock they cannot open read-write. The stamp is a cache under `mining.state_dir`,
-  written only through `saveFlushStamp`; a failure never stops delivery. `flushlock_test.go`'s
-  `TestSandboxedFlushTakesTheLockReadOnlyAndDelivers` (with its fixture self-proof, `EACCES`),
-  `TestSandboxedFlushFallsBackOnEPERM` (macOS `chflags uchg`), the per-platform
-  `…FlushLockOpenErrorDecision` tables, `TestFlushLockExcludesAcrossProcessesInEveryOpenMode` and
-  `TestAFlushPausedAfterReadingIntakeMakesASandboxedFlushBusy` guard it. A permission test that
-  cannot establish its condition leaves through `skipPermissionTest`, which fails instead of
-  skipping under `CI=true`: CI runs `go test` without `-v`, so only that makes a green job mean the
-  test ran.
 - **The registration journal and the rebuild** — `cmd/jevlin/connect.go` owns the order
   (journal, publish, clear); `pkg/auth/store.go` owns the journal and the agent record;
   `pkg/platform/client.go` owns `Register`, `Status`, `Me` and `ClaimCode`. Its guards, in
@@ -361,7 +311,7 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `registration_unknown_agent_test.go`, against a stub that answers status only for the key's
   own agent, as the router does. The claim link is `claim.json` beside the credential
   (`pkg/auth/claim_record.go`): `claim_link_test.go` plants another agent's on-origin link in
-  `agent.json` and holds connect, status, both JSON reports and mining enable to never printing
+  `agent.json` and holds connect, status and both JSON reports to never printing
   it, a claimed agent to showing none, a `/me` failure to showing none (in `connect -json` too,
   `TestConnectJSONCarriesNoLinkTheRunWithheld`), and a record naming `me` to being rebuilt;
   `TestTheRebuildNamesOnlyThePlatformsAgent` holds every message to the id `/me` returned, and
@@ -371,29 +321,6 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   directory, a FIFO) and `registration_set_aside_test.go` hold a planted record or old evidence
   to never wedging recovery. For participants:
   [guide, The claim link](docs/guide.md#the-claim-link).
-- **The payout record** — `pkg/auth/store.go`'s `PayoutRecord` owns `payout.json`, the address a
-  resume declares unattended, and keeps it beside `credentials.json`, never in the state dir:
-  a first declaration takes effect on arrival (`pkg/auth/payout.go`), and a `payout.json` a
-  sandboxed command planted in the state dir was declared by the next resume. It does not
-  stop a sandboxed command that declares with the installation's AS authority itself, which it
-  can read in the state dir; that is the AS's question, and it is open. With nothing on file
-  beside the credential, the address recorded and declared comes only from where no sandbox
-  writes (`payoutAddressToDeclare`): the config's `[mining] payout_address`, or a `payout.json` an
-  older version left in the state dir when it is this installation's own wallet address, whose
-  state-dir copy is then removed. "The AS already has it in force" was the rule once, and a
-  sandboxed command can make that true by itself with `jevlin payout set`. Any other
-  state-dir `payout.json` is never recorded, declared or repeated, and status says to run
-  `jevlin mining enable`, which on an installation already enabled asks only for the address
-  (`miningEnableDecision`). `cmd/jevlin/payout_record_test.go`
-  (`TestTheResumeNeverDeclaresAnAddressOnlyTheStateDirNames`,
-  `TestAnAddressTheSandboxMadeActiveIsNotAdopted`,
-  `TestALegacyAddressThatIsTheInstallationsOwnWalletIsAdopted`,
-  `TestTheConfigsPayoutAddressIsRecordedAndDeclared`), `payout_record_unix_test.go` (a resume
-  that cannot write the home declares the wallet address and leaves the record to the next
-  foreground run), `payout_record_purge_test.go`, `setup_test.go`'s
-  `TestALonePayoutRecordDoesNotHideASetAsideInstallation` and the adoption cases in
-  `setup_units_test.go`. For participants:
-  [guide, Changing the payout address](docs/guide.md#changing-the-payout-address).
 - **The prompt rule** — `cmd/jevlin/prompt.go` owns what counts as an answer and the two
   readers that ask; every prompt in the binary goes through one of them.
   `prompt_abort_test.go` drives each real command to each real question, under both an interrupted
@@ -546,7 +473,7 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `cmd/jevlin/testdata/hermes/oracle.py` to ask PyYAML what each meant before and after — the only judge of
   a by-line YAML edit that is not the code that made it.
 - **What the client writes into a participant's files** — `cmd/jevlin/setup_config.go`
-  renders `jevlin.toml`, fresh and migrated; `agents.go`, `setup_env.go` and
+  renders `jevlin.toml`, fresh, in configuration format 1; `agents.go`, `setup_env.go` and
   `hermes_install.go` render the blocks that go into a host's own config. Every byte any of them
   contributes is ASCII: Windows PowerShell 5.1 reads a file with no byte-order mark in the ANSI
   code page, so an em dash reaches a participant as `â€”`, and in a PowerShell
@@ -584,32 +511,18 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `TestSetupConnectsUnderItsOwnAdmission` exists to forbid. So the destructive exclusion is the
   only place a lock file can be removed, and the locks an upgrade, a setup or a connect leaves are
   named instead: `uninstall`'s `sayLeftoverLocks` lists the gate, `setup.lock`, `connect.lock`,
-  `flush.lock`, the binary's update lock and the release check's `update_check.lock` that still
-  exist, as safe to delete, in both modes.
+  the binary's update lock and the release check's `update_check.lock` that still exist, as
+  safe to delete, in both modes.
   `lock_leftover_test.go` holds it to the invariant either way round — a lock still on disk is
   named, one the run removed is not — and scopes its search to that section, because a purge plan
   prints the full path of everything it removes. `lifecycle_created_locks_test.go` guards the
   created-lock rule.
-- **Wallet custody and the send journal** — `wallet_store.go` owns the creation lock and the
-  wallet directory's layout; `wallet_journal.go` owns `pending_tx.json` and its resolution;
-  `wallet_tx.go` hand-encodes the signed bytes. `wallet_lock_test.go` proves creation is exclusive
-  and `wallet_journal_test.go` proves a rebroadcast never resolves a journal. `wallet_acl.go` owns
-  who can read the wallet: on Windows the wallet directory and every file in it carry their own
-  protected owner-only DACL — set by `openWalletDir` on a directory it creates and by
-  `writeWalletFile` on every write, repaired recursively by setup and set-aside adoption (a link,
-  a reparse point or an object whose DACL cannot be set fails the run), reported by `doctor`'s
-  `wallet access` — because neither a search nor a flush reads the wallet, while
-  `credentials.json` and `state\`, which a sandboxed search and flush do read, are deliberately
-  left to inherit. POSIX is unchanged: a sandboxed agent runs as the participant, which modes
-  cannot express. `wallet_acl_test.go` proves the walk and the repair decision on every OS;
-  `wallet_acl_windows_test.go` proves, as a second principal holding an inherited read entry on
-  the installation, that `credentials.json` opens and the wallet does not.
 - **The state directory's access list, and the Windows ACL helpers** — a sandbox's entry on
   `state\` is intended, so no open of the store and no load of a secret reads an access list,
-  refuses one, or resolves an account name: that would turn mining DEGRADED after every search on
-  an installation that uses a sandbox, and put a DACL read on the search path (invariant 1). The
+  refuses one, or resolves an account name: that would put a DACL read on the search path of
+  every installation that uses a sandbox (invariant 1). The
   store and `doctor` leave such an entry as they find it; `jevlin setup` does not: it gives
-  `<home>` and `state`, `spool`, `intake` and `sessions` beneath it a protected owner-only list on
+  `<home>` and `state` and `sessions` beneath it a protected owner-only list on
   every run (`directories()`), which removes an entry a sandbox's setup added to any of them, until
   that setup adds it again. That is setup's long-standing behavior and not this change's to alter. `pkg/auth/perm.go` says so where `posixModes` is read;
   `perm_reads_test.go` parses every source file in the package, Windows-tagged ones included,
@@ -636,7 +549,7 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   per object does not close is a directory replaced after it was read and before its credentials
   were. Invariant 19 records that a top-level root could not be removed from inside Codex's macOS
   sandbox; nothing here establishes that for a Windows sandbox.
-  Only `doctor.go`, the state and wallet access files (`state_acl.go`, `wallet_acl.go` and their
+  Only `doctor.go`, the state access files (`state_acl.go` and its
   per-platform halves) and `setup_env_windows.go` (the owner's name in an adoption refusal) may
   reference `inspectStateAccess`, `stateACL`, `winacl.Read` or `winacl.PrincipalName`: naming a SID
   can reach a domain controller, so `acl_reach_test.go` fails on a call from anywhere a search or a
@@ -645,59 +558,12 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `judgeStateDescriptor` is pure, so `state_acl_test.go` runs on every OS, including through
   `cmdDoctor` with a fake backend; `state_acl_windows_test.go` runs the real reader. The reader,
   the namer and `RestrictToOwner` live in `internal/winacl` because `pkg/` cannot import `cmd/`
-  (invariant 8) and the wallet check needs the same ones; the package imports nothing of the
+  (invariant 8) and `pkg/auth` calls `RestrictToOwner`; the package imports nothing of the
   module and judges nothing, and its descriptor-string parser is tested on every OS.
-- **Durable evidence delivery** — `pkg/fsx` owns the atomic, fsync'd write (Windows included);
-  `pkg/mining/spool` owns the queue and its quarantine; `pkg/mining/collector` owns attempts and
-  the next-attempt time; `pkg/auth/submit.go` owns the AS exchange and what counts as an ack.
-  `cmd/jevlin/delivery_health_test.go` proves a quarantine cannot be cleared by an unrelated
-  success.
-- **The AS's region refusals** — `pkg/auth/region.go` owns the three 451 codes
-  (twilight-minis ADR-MINIS-0026, accepted with its contract question; the §26 text amendment is
-  still to be made upstream), their sentences and the note set, one note per slot and epoch,
-  bounded like the conflict set; `cmd/jevlin/driver.go`'s `regionRefused` owns retrying every
-  attempt, as the ADR asks, and explaining a verdict once by its note rather than by a process's
-  memory, because a flush is a process; `cmd/jevlin/flush.go` owns holding every noted epoch's
-  records back (`undeliverableRecords`, the collector's `Skip`, which holds back an epoch another
-  installation holds the same way, issue #88) and dropping them once the AS
-  itself names a target past them, never on a pinned `target_epoch`
-  (`dropRegionRefusedObservationsPastTarget`, invariant 7's second exception). Every
-  enrollment clears its own epoch's note, never another's (`ClearRegionRefusalFor`). A 451 on
-  submission is `auth.RegionDeferredError`, which the collector defers through `Deferrer`: the
-  next attempt honors Retry-After, no attempt is spent and no fault is recorded.
-  `cmd/jevlin/region_flush_test.go` runs real flushes, two where a claim spans them, and
-  `cmd/jevlin/conflict_flush_test.go` runs them for a conflicted epoch: its records held without
-  an attempt or a fault, in deliverOnly too, its entry kept while a removal fails, and a fault
-  about them cleared once they are all that is left or are dropped;
-  `pkg/mining/collector/defer_test.go` and `cmd/jevlin/region_status_test.go` hold the deferral
-  and the status line.
-  For participants: [guide, When your region is refused](docs/guide.md#when-your-region-is-refused).
-- **Codex on Linux: what delivers a search's evidence** — `cmd/jevlin/targets.go`'s
-  `codexDeliveryUnapproved` owns the rule. Codex's Linux sandbox is a PID namespace, so the
-  flush a sandboxed search starts dies with it (issue #80, seen live with jevlin's own binary on
-  0.158.0), and only a hook outside the sandbox delivers: `SessionStart` or `Stop`
-  (`codexDeliveringHooks`). With mining on, one of ours installed and neither approved on record,
-  `agents status` (Codex's `StatusNotes`), `status` (`printDeliveryLines`, and `delivery` in
-  `status -json`) and `agents install` say so; where the record cannot be told
-  (`readCodexApprovals`' problem), nothing is claimed. Delivering inline from the search was
-  rejected: it would put the AS's round trips on the search path (invariant 1).
-  `codex_delivery_test.go` holds the rule and every place it is said.
-  For participants: [agents, Codex](docs/agents.md#codex).
-- **The AS clients' proxy** — `pkg/auth/proxy.go` owns `loopbackProxy`, the Proxy function of
-  both AS-facing transports (discovery and the DPoP credential client): the environment's proxy,
-  used only when its address is a loopback literal (127.0.0.0/8, ::1); any other, a name
-  included, is ignored as every environment proxy used to be, and the request goes direct. The
-  rule "no environment proxy may silently interpose on AS identity" is about a proxy somebody else
-  configured; a proxy on this machine's loopback is the only route out of Codex's sandbox, and a
-  local process can already read `credentials.json`. Only the AS clients follow it: the wallet's
-  chain client keeps `Proxy: nil`, the search and platform clients keep
-  `http.ProxyFromEnvironment`. `pkg/auth/proxy_test.go` drives the package's own transports
-  through an `httptest` CONNECT proxy on loopback, counting tunnels, and the non-loopback cases
-  without a dial.
 - **Where the stored key may go** — `cmd/jevlin/credentials.go` owns it (`keyService`,
   `resolveAPIKey`, `platformKey`): the key in `credentials.json` is sent only to the router and
   the agents API origins it records, which connect publishes from the registration journal
-  (`keyBindingOf` when the journal is saved, never a provider upstream standing in, and a
+  (`keyBindingOf` when the journal is saved, never a stand-in for either, and a
   connect under another agents API than the journal's is refused) and fills in for an older
   file only on a foreground run under the installation's own config (`recordKeyBinding`: a
   recorded origin never changes); a file without them belongs to the installation's own config
@@ -710,7 +576,7 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   version rendered without one. `key_binding_test.go` holds each sender to zero connections
   for another origin. For participants:
   [reference, Credentials](docs/reference.md#credentials).
-- **The search protocol** — `search.go` owns the request and the fail-open intake;
+- **The search protocol** — `search.go` owns the request and the fail-open trace;
   `search_protocol.go` owns the deadline, the bounded read and the one retry with the two codes
   that license it; `search_machine.go` owns search's classification and `result.merged`, which is
   the router's merged view mapped field for field and never a merge of this client's
@@ -744,11 +610,11 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `runByAnotherHost` decides from the **payload**, never the environment. Cursor loads
   `~/.claude/settings.json` and runs those hooks with its own payload; a payload carrying
   `cursor_version`, or a `hook_event_name` that is not byte for byte the installed event, gets
-  nothing written, nothing spawned, nothing printed and exit 0 — one flush per Cursor turn
-  instead of two, and no Cursor command rewritten with a `claude-code` bridge. A payload that
+  nothing written, nothing spawned, nothing printed and exit 0 — one release check per Cursor
+  session start instead of two, and no Cursor command rewritten with a `claude-code` bridge. A payload that
   names no event is not evidence and is served as before. The three real Cursor payloads are in
   `cmd/jevlin/testdata/hook/`. `hook_caller_test.go`'s
-  `TestOneCursorEventStartsOneFlushWithBothHostsInstalled` is the double flush,
+  `TestOneCursorEventIsServedOnceWithBothHostsInstalled` is the double run,
   `TestLineageStandsDownForCursorWhateverTheToolName` holds the gate to the payload rather than
   the tool name, and `TestTheCallerGateNamesExactlyTheEventsTheInstallWrites` holds the event table to
   `claudeHooks`' own output so a wrong entry cannot silence a hook inside Claude Code itself.
@@ -770,10 +636,10 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   same way (`allowRenderedFetch`), and Cursor's recognizer knows it as a form
   (`renderedFormsForShell`); `fetch_allow_test.go` holds all three to the exact command.
 - **Whose lineage file a search may use** — `search.go`'s `searchTrace` owns the channel rule and
-  the declared file's session guard; `miner.go`'s `lineageForCwd` owns the walk, which with a
+  the declared file's session guard; `lineage.go`'s `lineageForCwd` owns the walk, which with a
   session exported climbs past a file of another session to the searching session's own, and
-  without one takes the nearest file of the searching harness. `miner.go`'s `replaceViaTemp` is the one writer
-  behind the lineage files, the window state and the flush stamp: a failed write or rename removes
+  without one takes the nearest file of the searching harness. `lineage.go`'s `replaceViaTemp` is the one writer
+  behind the lineage files and the window state: a failed write or rename removes
   its temporary file, which is `<file>.<pid>-<random>.tmp` and created exclusively (hard
   invariant 19), and the sweep takes only such a file (or the `<file>.<pid>.tmp` earlier versions
   wrote) of another pid older than `lineageMaxAge` — any lineage file's for a lineage write, only
@@ -782,16 +648,16 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `search_channel_test.go`, `lineage_session_test.go`, `lineage_declared_session_test.go` and
   `temp_cleanup_test.go`, all asserted on the bytes the router receives or the files left behind.
 - **Setup** — `setup.go` owns the order (binary, previous
-  installation, owner-only directories, adoption, config, connect, environment, agents) and
-  the rule that the mining question stays connect's: `-yes` never answers it, and
-  `[mining] enabled = true` is written only with no terminal and `JEVLIN_MINING=1`.
+  installation, owner-only directories, adoption, config, connect, environment, agents).
   `setup_adopt.go` owns what counts as an installation and adoption by bundle — the
-  identity (`state/`, `credentials.json`, and beside it the registration journal, the payout
-  record and the claim record) moves whole or not at all, and a destination
+  identity (`state/`, `credentials.json`, and beside it the registration journal and the claim
+  record) moves whole or not at all, and a destination
   identity is a typed conflict that stops setup non-zero before anything moves and before
   connect runs (`TestSetupStopsOnAnIdentityConflictBeforeConnect`). `setup_config.go` owns TOML quoting and
-  the migration policy (parse first; `[miner]` present → byte-identical; otherwise append
-  only the missing tables and parse again). `setup_env.go` owns the one-well-formed-block
+  the config policy (`planSetupConfig`: no file → a fresh format-1 file; a format-1 file that
+  loads → byte-identical; a file with no `schema` line → set aside as `jevlin.toml.old` (`.old.1`,
+  ... via `asideName`) and a fresh file written, never migrated; anything else → refused with
+  the error and its path, nothing written). `setup_env.go` owns the one-well-formed-block
   profile rule and the Windows `setup-env.json` delta journal, over backends in
   `setup_env_unix.go` and `setup_env_windows.go`; `setup_targets.go` owns `-with`, which
   reaches every target kind. `setup_test.go` drives setup in-process against a sandbox
@@ -800,14 +666,6 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `TestMain` (`testmain_test.go`) refuses to run any test unless `os.UserConfigDir()` and
   the home directory resolve under a temporary test root.
   For participants: [guide, Setup](docs/guide.md#setup).
-- **`doctor`'s probe** — `doctor.go` owns the one bounded local probe operation (it may create
-  the intake directory, publishes at most one inert non-`.json` file there, then attempts
-  cleanup — three filesystem operations, each reported separately, not "one write") and the
-  rule that a skipped probe establishes nothing. `doctor_readonly_test.go` proves `doctor`
-  creates no state it was only asked to diagnose; `doctor_recording_test.go` proves the probe's
-  every failure stage is reported and that `recording` never turns a heuristic into a verdict
-  of NO.
-  For participants: [reference, Doctor's checks](docs/reference.md#doctors-checks).
 - **The install registry** — `targets.go` owns the interface, the kinds, the views and the
   slice; `agents.go` owns plan execution; the goldens prove a target's plan cannot drift
   silently, and the structural test proves the public ID set. `Detect` answers with **the
@@ -839,17 +697,17 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   For participants: [agents, one section per host](docs/agents.md).
 - **Lifecycle coordination** — `cmd/jevlin/lifecycle.go` owns the gate `H.lifecycle.lock`
   (a sibling of the installation, never inside it and never deleted), the one lock order
-  (gate → `setup.lock` → `connect.lock` → `flush.lock`; for `uninstall -binary` the same sequence
+  (gate → `setup.lock` → `connect.lock`; for `uninstall -binary` the same sequence
   then `<resolved binary>.update.lock`, the same update-lock identity an upgrade holds after
   gate → `setup.lock`; the daily check takes its own `update_check.lock` first, in one attempt,
   and the upgrade's locks after it only to replace the binary, also in one attempt, so it can
-  neither wait nor deadlock), how setup, connect and flush pass the gate
-  (a person's command waits at most five seconds; a detached child, marked by `spawnDetached`,
-  makes one attempt and exits 0 recording nothing) and the exclusion a destructive operation holds:
+  neither wait nor deadlock), how setup and connect pass the gate
+  (a person's command waits at most five seconds; the detached child, `connect -resume`, which
+  names itself by that flag and not by anything `spawnDetached` sets in its environment, makes
+  one attempt and exits 0 recording nothing) and the exclusion a destructive operation holds:
   the gate, then every operation lock, located from the config only once the gate is held.
-  `lifecycle_test.go`'s `TestConnectCannotStartUnderAHeldExclusion` and
-  `TestFlushCannotStartUnderAHeldExclusion` prove an operation starting after the check meets the
-  gate before it reads or writes anything; `TestSetupHoldsSetupLockThroughItsWholeRun` proves setup
+  `lifecycle_test.go`'s `TestConnectCannotStartUnderAHeldExclusion` proves an operation starting
+  after the check meets the gate before it reads or writes anything; `TestSetupHoldsSetupLockThroughItsWholeRun` proves setup
   excludes a destructive operation until its closing message.
 
 - **Uninstall** — `cmd/jevlin/uninstall.go` owns the order (plan everything, confirm,
@@ -859,7 +717,11 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   compare-and-revert of the Windows user environment; `ownership.go` owns the one npm/native
   classifier setup, `uninstall -binary` and upgrade consult. `uninstall_test.go`'s
   `TestPurgeRefusesEveryConfirmationButTheExactOne`, `TestDefaultUninstallPreservesEveryParticipantByte`
-  and `TestWindowsUninstallRevertsOnlyWhatSetupStillOwns` guard them.
+  and `TestWindowsUninstallRevertsOnlyWhatSetupStillOwns` guard them. What a purge says it left
+  is `sayLeftInHome`'s: after removing its own set, which includes the configs setup set aside
+  (`jevlin.toml.old`, ...), it lists by full path every entry still in the installation
+  directory as not this version's to remove, so a file an earlier version left is named without
+  this client knowing its name; `uninstall_leftovers_test.go` guards it.
   **`ownership_match.go` owns which installation an integration belongs to**: one of this
   installation's binaries AND this installation's resolved config, because two installations
   share a binary whenever the second was made by running the first's copy, and matching on the
@@ -1006,24 +868,17 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   bytes — never by retyping what you think was there — and rerun green. Report the baseline SHA,
   the mutation, the test that went red, and the failing line.
 - **Scope the search wide before trusting a targeted fix.** `credentials.go`'s bare client (invariant
-  3) survived a redirect-guard review aimed at the AS-facing clients because that review's scope was
-  "the clients that carry a credential to the AS" — true, but too narrow; the login probe carries a
-  credential to the *router*. The module-wide `cmd/jevlin/boundary_test.go` sweep found it where the targeted
+  3) survived a redirect-guard review aimed at the clients of one service because that review's
+  scope was "the clients that carry a credential to that service" — true, but too narrow; the
+  login probe carries a credential to the *router*. The module-wide `cmd/jevlin/boundary_test.go` sweep found it where the targeted
   review could not, on the first run. Prefer a structural, scope-agnostic guard over a review's
   enumerated list whenever the two disagree about where the boundary is.
 
 ## Import boundaries (`cmd/jevlin/boundary_test.go`)
 - `pkg/` ⊄ `cmd/` (invariant 8): the `cmd/` root may reach a `pkg/` package's dependency graph, but no
   `pkg/` code imports the wrapper.
-- The mining path (`flush`, `driver`, `collector`) never dials the router and is never on the search
-  response path (invariant 1) — proven, not assumed, by
-  `cmd/jevlin/flush_test.go`'s `TestFlushNeverDialsTheRouterEvenOnFailure`
-  (connection-counted, not request-counted). Not import-expressible — `flush.go`/`driver.go`
-  legitimately import `net/http` to reach the AS, so there is no package to deny — which is why it
-  lives as a behavioral test rather than a second depguard rule.
 - No package in the module graph reaches the chain application or the Cosmos/CometBFT SDK
-  (invariant 9) — `TestNoChainImportsAnywhere`. `wallet_tx.go` hand-encodes the six protobuf
-  messages a bank send needs instead.
+  (invariant 9) — `TestNoChainImportsAnywhere`.
 - `internal/selfupdate` ⊄ `cmd/`, `pkg/auth`, `pkg/platform`: the self-updater fetches public release
   assets and holds no participant credential, so it reaches neither the wrapper nor the key and
   authorization store nor the platform client — `TestSelfupdateImportsNoWrapperAndNoCredential` and
@@ -1045,7 +900,7 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
 - **An issue body has a shape**, because a defect is read by
   whoever fixes it months later: provenance first (where it was seen — the soak and its condition,
   the platform, the version or the CI run and head), then `**What happened.**` with the evidence in
-  a fenced block and the code named (`flushStampPath`, `miner.go`) — the reproduction in it, or a
+  a fenced block and the code named (`lineagePath`, `lineage.go`) — the reproduction in it, or a
   `**Steps to reproduce.**` list when there is one — then `**Expected.**`, which is what the fixer
   implements against, `**Likely cause.**` where there is one, and `**Why it matters.**` in the
   participant's terms. It closes with `Severity:` — `cosmetic`, `minor` or `must-fix` — and the
@@ -1068,7 +923,7 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   Windows environment broadcast must hand `SendMessageTimeoutW` a string's address;
   `TestOnlyTheEnvironmentBroadcastImportsUnsafe` fails on any other import, so a second use is an
   exception argued in review, never a quiet import.
-- **Tests never contact a real host.** The router, the platform and the AS are `httptest`
+- **Tests never contact a real host.** The router and the platform are `httptest`
   stubs on loopback, in every test. A test that reaches a real service passes or fails with
   that service's state rather than the code's, and sends whatever it carries to a host that
   keeps it. The PR template asks about it; `internal/networkfence`'s `Guard`, called from the
@@ -1077,11 +932,12 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
 - **A reviewed commit is never amended or rebased.** A correction is a new commit that says
   what it corrects, so a review always has a fixed object: the head a reviewer examined is
   still in the history, and what changed since is exactly the commits after it.
-- **Human documents carry no issue or version numbers from the predecessor project.** A reader
-  of a README, a guide or a template cannot open an issue in the repository this one was
-  imported from, or place one of its release numbers, so the document states the rule on its
-  own. Code comments may keep such an issue reference where the history explains the code,
-  because the reader of a comment is the one who can follow it.
+- **Nothing here carries an issue or version number from the predecessor project.** A reader
+  of a README, a guide, a template or a code comment cannot open an issue in the repository
+  this one was imported from, or place one of its release numbers, so the text states the
+  rule, and the defect it answers, in its own words. Comments that once pointed at such an
+  issue now describe the defect instead; the captured host payloads under `testdata` name
+  this client's binary, with the rewrite said where a test loads them.
 - **`npm/package.json`'s version and `CHANGELOG.md`'s release headings move only in a release
   PR**, so the commit to tag is unambiguous: the one where the version, the heading and the
   tag agree. Between releases a change a participant should hear about may add a bullet under

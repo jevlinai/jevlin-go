@@ -7,7 +7,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -26,28 +25,13 @@ import (
 
 	"github.com/jevlinai/jevlin-go/internal/selfupdate"
 	"github.com/jevlinai/jevlin-go/pkg/auth"
-	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
 // ── harness ─────────────────────────────────────────────────────────────
 
-type revokeRecorder struct {
-	calls    int
-	deadline time.Duration
-	err      error
-}
-
-func (rr *revokeRecorder) revoke(ctx context.Context, _ config.Mining) error {
-	rr.calls++
-	if dl, ok := ctx.Deadline(); ok {
-		rr.deadline = time.Until(dl)
-	}
-	return rr.err
-}
-
 // uninstallDeps runs uninstall against the setup sandbox: the same agents,
 // profile, user environment and home a setup in it wrote.
-func (s *setupSandbox) uninstallDeps(stdin io.Reader, interactive bool, rr *revokeRecorder) (uninstallDeps, *bytes.Buffer, *bytes.Buffer) {
+func (s *setupSandbox) uninstallDeps(stdin io.Reader, interactive bool) (uninstallDeps, *bytes.Buffer, *bytes.Buffer) {
 	var out, errOut bytes.Buffer
 	if stdin == nil {
 		stdin = strings.NewReader("")
@@ -64,23 +48,23 @@ func (s *setupSandbox) uninstallDeps(stdin io.Reader, interactive bool, rr *revo
 		targets:     installTargets,
 		userEnv:     s.userEnv,
 		windows:     runtime.GOOS == "windows",
-		revoke:      rr.revoke,
 	}, &out, &errOut
 }
 
-func (s *setupSandbox) uninstall(t *testing.T, stdin io.Reader, interactive bool, rr *revokeRecorder, args ...string) (int, string, string) {
+func (s *setupSandbox) uninstall(t *testing.T, stdin io.Reader, interactive bool, args ...string) (int, string, string) {
 	t.Helper()
-	if rr == nil {
-		rr = &revokeRecorder{}
-	}
-	d, out, errOut := s.uninstallDeps(stdin, interactive, rr)
+	d, out, errOut := s.uninstallDeps(stdin, interactive)
 	code := uninstallMain(d, args)
 	return code, out.String(), errOut.String()
 }
 
 // installed is a sandbox after a real, complete setup that set up Claude
 // Code, Codex and Pi, wrote the profile block (Windows: the user environment)
-// and holds a wallet, a stored authorization, evidence and a preference.
+// and holds a registration, a stored key, a session, a preference, a
+// registration journal and the state directory an adoption set aside from
+// an unfinished registration. Every one of them is in the purge set, which
+// is why they are planted: a default run keeps each byte for byte and a
+// purge removes each.
 func installed(t *testing.T) *setupSandbox {
 	t.Helper()
 	s := newSetupSandbox(t)
@@ -90,25 +74,13 @@ func installed(t *testing.T) *setupSandbox {
 	if code, out, errOut := s.run(nil, false, "-yes", "-with", "claude", "-with", "codex", "-with", "pi"); code != exitOK {
 		t.Fatalf("setup exited %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
 	}
-	writeWalletFixture(t, filepath.Join(s.home, "wallet"))
-	store, err := auth.OpenStore(filepath.Join(s.home, "state"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SaveRefreshToken("rt-installed"); err != nil {
-		t.Fatal(err)
-	}
 	for rel, body := range map[string]string{
-		filepath.Join("spool", "unsent-1.json"):             `{"v":1}`,
-		filepath.Join("intake", "req-1.json"):               `{"v":1}`,
-		filepath.Join("sessions", "s-1.json"):               `{}`,
-		preferFile:                                          "builtin\n",
-		filepath.Join("state.unenrolled-20260101", "x.key"): "half",
-		filepath.Join("wallet.incomplete-20260101", "junk"): "partial",
-		// Beside credentials.json: each holds the participant's own
-		// decision or a platform key, so a default uninstall keeps them
-		// byte for byte and a purge removes them.
-		payoutRecordFile:        `{"address":"twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh"}`,
+		filepath.Join("sessions", "s-1.json"): `{}`,
+		preferFile:                            "builtin\n",
+		filepath.Join(stateAsidePrefix+"-20260101", "x.key"): "half",
+		// Beside credentials.json: a registration journal, which can hold a
+		// platform key, so a default uninstall keeps it byte for byte and a
+		// purge removes it.
 		registrationJournalFile: `{"v":1}`,
 	} {
 		writeFileT(t, filepath.Join(s.home, rel), body)
@@ -117,7 +89,7 @@ func installed(t *testing.T) *setupSandbox {
 	return s
 }
 
-// TestDryRunGroupsEveryHostsLinesUnderItsOwnHeading is dropin-miner#88, item 1, from the
+// TestDryRunGroupsEveryHostsLinesUnderItsOwnHeading guards a defect from the
 // Windows soak: the dry run printed opencode's, Pi's and Hermes' removals
 // under the "Cursor" heading. The cause was that a removal carried only a
 // path while a write carried its host, and the printer emitted a heading only
@@ -136,7 +108,7 @@ func TestDryRunGroupsEveryHostsLinesUnderItsOwnHeading(t *testing.T) {
 	}
 	s.onPath = map[string]bool{}
 
-	code, out, errOut := s.uninstall(t, nil, false, nil, "-dry-run")
+	code, out, errOut := s.uninstall(t, nil, false, "-dry-run")
 	if code != exitOK {
 		t.Fatalf("uninstall -dry-run exited %d\n%s\n%s", code, out, errOut)
 	}
@@ -174,29 +146,28 @@ func TestDryRunGroupsEveryHostsLinesUnderItsOwnHeading(t *testing.T) {
 	}
 }
 
-// walletFixtureAddress is a valid twilight bech32 address for a fixed key.
-func walletFixtureAddress(t *testing.T) string {
+// participantBytes is every participant byte under the installation, minus
+// the empty lock files coordination makes: what a run that is not a purge
+// must leave exactly as it found it.
+func participantBytes(t *testing.T, s *setupSandbox) map[string]fileSig {
 	t.Helper()
-	pub := append([]byte{0x02}, bytes.Repeat([]byte{0x11}, 32)...)
-	addr, err := auth.AddressFromPubKey(auth.TwilightHRP, pub)
-	if err != nil {
-		t.Fatal(err)
+	out := map[string]fileSig{}
+	for _, p := range participantState(s) {
+		if !lexists(p) {
+			continue
+		}
+		for path, sig := range snapshotTree(t, p) {
+			out[path] = sig
+		}
 	}
-	return addr
-}
-
-func writeWalletFixture(t *testing.T, dir string) {
-	t.Helper()
-	sc, _ := json.Marshal(sidecar{Address: walletFixtureAddress(t), PubKey: strings.Repeat("11", 33), Path: "m/44'/118'/0'/0/0"})
-	writeFileT(t, filepath.Join(dir, walletKeyFile), "sealed-key-bytes")
-	writeFileT(t, filepath.Join(dir, walletSidecarFile), string(sc))
+	return withoutLocks(out)
 }
 
 func participantState(s *setupSandbox) []string {
 	h := func(rel string) string { return filepath.Join(s.home, rel) }
-	return []string{h("wallet"), h("state"), h("spool"), h("intake"), h("sessions"), h(credentialsFile),
-		h(registrationJournalFile), h(payoutRecordFile), h(claimRecordFile),
-		h(setupConfigFile), h(preferFile), h("state.unenrolled-20260101"), h("wallet.incomplete-20260101")}
+	return []string{h("state"), h("sessions"), h(credentialsFile),
+		h(registrationJournalFile), h(claimRecordFile),
+		h(setupConfigFile), h(preferFile), h(stateAsidePrefix + "-20260101")}
 }
 
 func snapshotState(t *testing.T, s *setupSandbox) map[string]map[string]fileSig {
@@ -223,7 +194,7 @@ func setConfigKey(t *testing.T, s *setupSandbox, key, value string) {
 	}
 	writeFileT(t, s.cfgPath(), line.ReplaceAllLiteralString(string(cfg), fmt.Sprintf("%s = %q", key, value)))
 	if key == "sessions_dir" {
-		if c, _, err := loadConfig(s.cfgPath(), s.getenv); err != nil || c.Miner.SessionsDir != value {
+		if c, _, err := loadConfig(s.cfgPath(), s.getenv); err != nil || c.Search.SessionsDir != value {
 			t.Fatalf("the fixture config must name the outside sessions_dir: %v", err)
 		}
 	}
@@ -304,7 +275,7 @@ func TestUninstallRemovesEveryTargetEvenWhenNoLongerDetected(t *testing.T) {
 			t.Fatalf("setup did not install %s", p)
 		}
 	}
-	code, out, errOut := s.uninstall(t, nil, false, nil, "-yes")
+	code, out, errOut := s.uninstall(t, nil, false, "-yes")
 	if code != exitOK {
 		t.Fatalf("uninstall exited %d\n%s\n%s", code, out, errOut)
 	}
@@ -349,7 +320,7 @@ func TestUninstallReachesATargetOfEveryKind(t *testing.T) {
 	// artifact that names none cannot be attributed and is left alone, so a
 	// fixture that left it out would be testing the wrong branch.
 	writeFileT(t, file, "installed by an integration target\nINSTALL_CONFIG = "+strconv.Quote(s.cfgPath())+"\n")
-	d, out, errOut := s.uninstallDeps(nil, false, &revokeRecorder{})
+	d, out, errOut := s.uninstallDeps(nil, false)
 	d.targets = append(append([]installTarget{}, installTargets...), uninstallIntegrationTarget{file: file})
 	if code := uninstallMain(d, []string{"-yes"}); code != exitOK {
 		t.Fatalf("uninstall exited %d\n%s\n%s", code, out, errOut)
@@ -362,16 +333,12 @@ func TestUninstallReachesATargetOfEveryKind(t *testing.T) {
 func TestDefaultUninstallPreservesEveryParticipantByte(t *testing.T) {
 	s := installed(t)
 	before := snapshotState(t, s)
-	rr := &revokeRecorder{}
-	code, out, errOut := s.uninstall(t, nil, false, rr, "-yes")
+	code, out, errOut := s.uninstall(t, nil, false, "-yes")
 	if code != exitOK {
 		t.Fatalf("uninstall exited %d\n%s\n%s", code, out, errOut)
 	}
 	if after := snapshotState(t, s); !reflect.DeepEqual(before, after) {
-		t.Error("a default uninstall changed participant state (wallet, identity, key, evidence, config or preferences)")
-	}
-	if rr.calls != 0 {
-		t.Error("a default uninstall must not revoke anything")
+		t.Error("a default uninstall changed participant state (identity, key, config, preferences, or what an earlier version left)")
 	}
 	if !lexists(s.exe) {
 		t.Error("a default uninstall must not remove the binary")
@@ -381,7 +348,7 @@ func TestDefaultUninstallPreservesEveryParticipantByte(t *testing.T) {
 			t.Errorf("the closing message must say %q:\n%s", want, out)
 		}
 	}
-	// dropin-miner#88: the order of those two is the whole point. setup -home is the way
+	// The order of those two is the whole point. setup -home is the way
 	// back; connect on its own is the thing not to do. The old wording put
 	// the warning last, where it read as the next step.
 	if i, j := strings.Index(out, "To keep using this installation"), strings.Index(out, "Do not run `jevlin connect` on its own"); i < 0 || j < 0 || j < i {
@@ -399,21 +366,17 @@ func TestDefaultUninstallPreservesEveryParticipantByte(t *testing.T) {
 func TestUninstallWithoutATerminalNeedsYesAndDryRunChangesNothing(t *testing.T) {
 	s := installed(t)
 	before := snapshotTree(t, s.root)
-	if code, _, errOut := s.uninstall(t, nil, false, nil); code != exitUsage || !strings.Contains(errOut, "pass -yes") {
+	if code, _, errOut := s.uninstall(t, nil, false); code != exitUsage || !strings.Contains(errOut, "pass -yes") {
 		t.Errorf("uninstall without a terminal or -yes must refuse: exit %d, %q", code, errOut)
 	}
-	rr := &revokeRecorder{}
-	if code, out, errOut := s.uninstall(t, nil, false, rr, "-dry-run", "-binary", "-purge-state"); code != exitUsage && code != exitOK {
+	if code, out, errOut := s.uninstall(t, nil, false, "-dry-run", "-binary", "-purge-state"); code != exitUsage && code != exitOK {
 		t.Errorf("dry run: exit %d\n%s\n%s", code, out, errOut)
 	}
-	if code, out, _ := s.uninstall(t, nil, false, rr, "-dry-run"); code != exitOK || !strings.Contains(out, "nothing was changed") {
+	if code, out, _ := s.uninstall(t, nil, false, "-dry-run"); code != exitOK || !strings.Contains(out, "nothing was changed") {
 		t.Errorf("a dry run exits 0 and says it changed nothing: %d\n%s", code, out)
 	}
 	if !reflect.DeepEqual(before, snapshotTree(t, s.root)) {
 		t.Error("a refused or dry-run uninstall changed files")
-	}
-	if rr.calls != 0 {
-		t.Error("a dry run contacts nothing")
 	}
 }
 
@@ -421,7 +384,7 @@ func TestUninstallLeavesAnotherInstallationsIntegrations(t *testing.T) {
 	s := installed(t)
 	paths := s.paths()
 	other := s.root
-	d, out, errOut := s.uninstallDeps(nil, false, &revokeRecorder{})
+	d, out, errOut := s.uninstallDeps(nil, false)
 	d.executable = func() (string, error) { return filepath.Join(other, "elsewhere", "jevlin"), nil }
 	if code := uninstallMain(d, []string{"-yes", "-home", filepath.Join(other, "another-home")}); code != exitOK {
 		t.Fatalf("uninstall exited %d\n%s\n%s", code, out, errOut)
@@ -501,7 +464,7 @@ func TestUninstallProfileBlocks(t *testing.T) {
 				}
 			}
 		}
-		code, out, errOut := s.uninstall(t, nil, false, nil, "-yes")
+		code, out, errOut := s.uninstall(t, nil, false, "-yes")
 		if code != exitOK {
 			t.Fatalf("%s: exit %d\n%s\n%s", tc.name, code, out, errOut)
 		}
@@ -533,7 +496,7 @@ func TestUninstallEditsASymlinkedProfileThroughTheLink(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
 	}
-	if code, out, errOut := s.uninstall(t, nil, false, nil, "-yes"); code != exitOK {
+	if code, out, errOut := s.uninstall(t, nil, false, "-yes"); code != exitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
 	}
 	if info, err := os.Lstat(link); err != nil || info.Mode()&fs.ModeSymlink == 0 {
@@ -561,7 +524,7 @@ func writeEnvJournalT(t *testing.T, home string, j envJournal) string {
 // the fake user environment, on any OS.
 func windowsUninstall(t *testing.T, s *setupSandbox, env userEnvironment) (int, string, string) {
 	t.Helper()
-	d, out, errOut := s.uninstallDeps(nil, false, &revokeRecorder{})
+	d, out, errOut := s.uninstallDeps(nil, false)
 	d.windows = true
 	d.userEnv = env
 	d.executable = func() (string, error) { return filepath.Join(s.home, "bin", "jevlin.exe"), nil }
@@ -707,10 +670,9 @@ func TestUninstallBinaryRemovesOnlyTheInstallationsOwnCopy(t *testing.T) {
 	if code, out, errOut := s.run(nil, false, "-yes"); code != exitOK {
 		t.Fatalf("setup exited %d\n%s\n%s", code, out, errOut)
 	}
-	writeWalletFixture(t, filepath.Join(s.home, "wallet"))
-	walletBefore := snapshotTree(t, filepath.Join(s.home, "wallet"))
+	stateBefore := participantBytes(t, s)
 
-	code, out, errOut := s.uninstall(t, nil, false, nil, "-yes", "-binary")
+	code, out, errOut := s.uninstall(t, nil, false, "-yes", "-binary")
 	if code != exitOK {
 		t.Fatalf("uninstall -binary exited %d\n%s\n%s", code, out, errOut)
 	}
@@ -719,7 +681,7 @@ func TestUninstallBinaryRemovesOnlyTheInstallationsOwnCopy(t *testing.T) {
 			t.Errorf("uninstall -binary left %s", p)
 		}
 	}
-	if !reflect.DeepEqual(walletBefore, snapshotTree(t, filepath.Join(s.home, "wallet"))) || !lexists(s.cfgPath()) || !lexists(filepath.Join(s.home, "state")) {
+	if !reflect.DeepEqual(stateBefore, participantBytes(t, s)) || !lexists(s.cfgPath()) || !lexists(filepath.Join(s.home, "state")) {
 		t.Error("uninstall -binary must not remove or change participant state")
 	}
 }
@@ -750,13 +712,13 @@ func TestUninstallBinaryRefusesACopyItDoesNotOwn(t *testing.T) {
 	}
 	for _, tc := range cases {
 		s := newSetupSandbox(t)
-		writeInstallation(t, s.home, "wallet", "config")
+		writeInstallation(t, s.home, "identity", "config")
 		writeFileT(t, filepath.Join(s.home, "bin", "jevlin"), "owned")
 		exe := tc.layout(s)
 		writeFileT(t, exe, "running")
 		s.env["JEVLIN_LAUNCH"] = tc.marker
 		before := snapshotTree(t, s.root)
-		d, out, errOut := s.uninstallDeps(nil, false, &revokeRecorder{})
+		d, out, errOut := s.uninstallDeps(nil, false)
 		d.executable = func() (string, error) { return exe, nil }
 		code := uninstallMain(d, []string{"-yes", "-binary"})
 		if code != exitUsage || !strings.Contains(errOut.String(), tc.want) {
@@ -787,7 +749,6 @@ func withOwnBinaryAndLeftovers(t *testing.T, binaryName string) (s *setupSandbox
 	}
 	unrelated = filepath.Join(bin, "not-jevlins.txt")
 	writeFileT(t, unrelated, "someone else's file")
-	writeWalletFixture(t, filepath.Join(s.home, "wallet"))
 	return s, unrelated, leftovers
 }
 
@@ -805,13 +766,13 @@ func removedAfter(out, first, second string) bool {
 func TestUninstallBinaryRemovesPreviousAndStagingLeftoversButNothingElse(t *testing.T) {
 	posixOnly(t)
 	s, unrelated, leftovers := withOwnBinaryAndLeftovers(t, "jevlin")
-	walletBefore := snapshotTree(t, filepath.Join(s.home, "wallet"))
+	stateBefore := participantBytes(t, s)
 	resolved, err := selfupdate.ResolveExecutable(s.exe)
 	if err != nil {
 		t.Fatal(err)
 	}
 	lock := resolved + updateLockSuffix
-	code, out, errOut := s.uninstall(t, nil, false, nil, "-yes", "-binary")
+	code, out, errOut := s.uninstall(t, nil, false, "-yes", "-binary")
 	if code != exitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
 	}
@@ -826,15 +787,15 @@ func TestUninstallBinaryRemovesPreviousAndStagingLeftoversButNothingElse(t *test
 	if !lexists(unrelated) {
 		t.Error("-binary must not remove anything in the directory that is not Jevlin's")
 	}
-	if !reflect.DeepEqual(walletBefore, snapshotTree(t, filepath.Join(s.home, "wallet"))) {
+	if !reflect.DeepEqual(stateBefore, participantBytes(t, s)) {
 		t.Error("-binary must not touch participant state")
 	}
 }
 
 func TestUninstallBinaryOnWindowsMovesTheRunningBinaryAside(t *testing.T) {
 	s, unrelated, leftovers := withOwnBinaryAndLeftovers(t, "jevlin.exe")
-	walletBefore := snapshotTree(t, filepath.Join(s.home, "wallet"))
-	d, out, errOut := s.uninstallDeps(nil, false, &revokeRecorder{})
+	stateBefore := participantBytes(t, s)
+	d, out, errOut := s.uninstallDeps(nil, false)
 	d.windows = true
 	if code := uninstallMain(d, []string{"-yes", "-binary"}); code != exitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, out.String(), errOut.String())
@@ -864,7 +825,7 @@ func TestUninstallBinaryOnWindowsMovesTheRunningBinaryAside(t *testing.T) {
 			t.Errorf("-binary left %s", p)
 		}
 	}
-	if !lexists(unrelated) || !reflect.DeepEqual(walletBefore, snapshotTree(t, filepath.Join(s.home, "wallet"))) {
+	if !lexists(unrelated) || !reflect.DeepEqual(stateBefore, participantBytes(t, s)) {
 		t.Error("-binary on Windows touches nothing else: the unrelated file and participant state stay")
 	}
 	resolvedDir, _ := filepath.EvalSymlinks(filepath.Dir(s.exe))
@@ -892,7 +853,7 @@ func TestUninstallBinaryLeavesTheUpdateLockWhenTheBinaryStays(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = os.Chmod(bin, 0o700) }() // #nosec G302 -- restore for cleanup
-	code, out, _ := s.uninstall(t, nil, false, nil, "-yes", "-binary")
+	code, out, _ := s.uninstall(t, nil, false, "-yes", "-binary")
 	if code == exitOK {
 		t.Errorf("a binary that could not be removed is a failure:\n%s", out)
 	}
@@ -921,7 +882,6 @@ func TestUninstallBinaryRefusesAnUpgradeOfTheSameBinaryBeforeChangingAnything(t 
 	for _, leftover := range []string{".jevlin.candidate-1", ".jevlin.snapshot-2", ".jevlin.displaced-3"} {
 		writeFileT(t, filepath.Join(filepath.Dir(s.exe), leftover), "an upgrade's staging")
 	}
-	writeWalletFixture(t, filepath.Join(s.home, "wallet"))
 	resolved, err := selfupdate.ResolveExecutable(s.exe)
 	if err != nil {
 		t.Fatal(err)
@@ -931,7 +891,7 @@ func TestUninstallBinaryRefusesAnUpgradeOfTheSameBinaryBeforeChangingAnything(t 
 
 	before := snapshotHeld(t, s.root)
 	envBefore := fmt.Sprint(s.userEnv.values)
-	code, out, errOut := s.uninstall(t, nil, false, nil, "-yes", "-binary")
+	code, out, errOut := s.uninstall(t, nil, false, "-yes", "-binary")
 	if code != exitTransport || !strings.Contains(errOut, "an upgrade of "+s.exe+" is running") {
 		t.Errorf("a running upgrade of this binary must refuse -binary: exit %d\n%s\n%s", code, out, errOut)
 	}
@@ -951,29 +911,25 @@ func TestPurgeRemovesStateAfterTheExactTypedConfirmation(t *testing.T) {
 	writeFileT(t, filepath.Join(outside, "keep.json"), "{}")
 	setConfigKey(t, s, "sessions_dir", outside)
 
-	rr := &revokeRecorder{}
-	code, out, errOut := s.uninstall(t, tty(walletFixtureAddress(t)), true, rr, "-purge-state")
+	code, out, errOut := s.uninstall(t, tty(s.home), true, "-purge-state")
 	if code != exitOK {
 		t.Fatalf("purge exited %d\n%s\n%s", code, out, errOut)
 	}
-	if !strings.Contains(out, walletFixtureAddress(t)) {
-		t.Error("the wallet address must be shown in the confirmation prompt")
+	if !strings.Contains(out, "Type the installation path to permanently remove this participant state:\n  "+s.home+"\n") {
+		t.Errorf("the confirmation prompt must ask for the installation path and show it:\n%s", out)
 	}
 	for _, p := range participantState(s) {
 		if lexists(p) {
 			t.Errorf("purge left %s", p)
 		}
 	}
-	if rr.calls != 1 || rr.deadline <= 0 || rr.deadline > purgeRevokeTimeout {
-		t.Errorf("a confirmed purge attempts one bounded revocation: calls=%d deadline=%s", rr.calls, rr.deadline)
-	}
 	if !lexists(filepath.Join(outside, "keep.json")) || !strings.Contains(out, outside) {
 		t.Error("a configured directory outside the installation must survive and be reported")
 	}
-	// The gate survives a purge and the closing output names it. Since dropin-miner#103
-	// and dropin-miner#115 it is named in the same list as every other lock still there,
-	// so the search is scoped to that section rather than to the whole
-	// output, which also prints the full path of everything removed.
+	// The gate survives a purge and the closing output names it. It is now named
+	// in the same list as every other lock still there, so the search is scoped
+	// to that section rather than to the whole output, which also prints the
+	// full path of everything removed.
 	gateIdx := strings.Index(out, leftoverHeading)
 	if !lexists(lifecycleGatePath(s.home)) || gateIdx < 0 || !strings.Contains(out[gateIdx:], lifecycleGatePath(s.home)) {
 		t.Error("the lifecycle gate survives a purge, and the closing output names it as safe to delete")
@@ -993,7 +949,7 @@ func TestPurgeStateLeavesTheInstallationsOwnBinary(t *testing.T) {
 	if code, out, errOut := s.run(nil, false, "-yes"); code != exitOK {
 		t.Fatalf("setup exited %d\n%s\n%s", code, out, errOut)
 	}
-	code, out, errOut := s.uninstall(t, tty(s.home), true, nil, "-purge-state")
+	code, out, errOut := s.uninstall(t, tty(s.home), true, "-purge-state")
 	if code != exitOK || lexists(filepath.Join(s.home, "state")) {
 		t.Fatalf("purge: exit %d\n%s\n%s", code, out, errOut)
 	}
@@ -1002,8 +958,8 @@ func TestPurgeStateLeavesTheInstallationsOwnBinary(t *testing.T) {
 	}
 }
 
-// installedWithOwnBinary is installed() with the binary at the installation's
-// own H/bin/jevlin.
+// installedWithOwnBinary is a set-up installation whose binary is at its own
+// H/bin/jevlin, so a configured path can collide with the binary directory.
 func installedWithOwnBinary(t *testing.T) *setupSandbox {
 	t.Helper()
 	s := newSetupSandbox(t)
@@ -1012,8 +968,6 @@ func installedWithOwnBinary(t *testing.T) *setupSandbox {
 	if code, out, errOut := s.run(nil, false, "-yes"); code != exitOK {
 		t.Fatalf("setup exited %d\n%s\n%s", code, out, errOut)
 	}
-	writeWalletFixture(t, filepath.Join(s.home, "wallet"))
-	writeFileT(t, filepath.Join(s.home, "spool", "unsent-1.json"), `{"v":1}`)
 	return s
 }
 
@@ -1024,8 +978,7 @@ func purgeRefusedForConfig(t *testing.T, s *setupSandbox, key, value string) {
 	t.Helper()
 	setConfigKey(t, s, key, value)
 	before := snapshotHeld(t, s.root)
-	rr := &revokeRecorder{}
-	code, out, errOut := s.uninstall(t, tty(walletFixtureAddress(t)), true, rr, "-purge-state")
+	code, out, errOut := s.uninstall(t, tty(s.home), true, "-purge-state")
 	if !lexists(s.exe) {
 		t.Fatalf("%s = %s: the purge deleted the binary\n%s\n%s", key, value, out, errOut)
 	}
@@ -1036,8 +989,8 @@ func purgeRefusedForConfig(t *testing.T, s *setupSandbox, key, value string) {
 		!strings.Contains(errOut, noParticipantChange) {
 		t.Errorf("%s = %s: want the ownership refusal, got exit %d\n%s\n%s", key, value, code, out, errOut)
 	}
-	if rr.calls != 0 || strings.Contains(out, "Type ") {
-		t.Errorf("%s = %s: the refusal comes before the confirmation and before any revocation", key, value)
+	if strings.Contains(out, "Type ") {
+		t.Errorf("%s = %s: the refusal comes before the confirmation", key, value)
 	}
 }
 
@@ -1050,7 +1003,7 @@ func TestPurgeRefusesConfiguredStateInsideBinaryTree(t *testing.T) {
 	s := installedWithOwnBinary(t)
 	purgeRefusedForConfig(t, s, "state_dir", filepath.Join(s.home, "bin"))
 	s2 := installedWithOwnBinary(t)
-	purgeRefusedForConfig(t, s2, "spool_dir", filepath.Dir(s2.home))
+	purgeRefusedForConfig(t, s2, "sessions_dir", filepath.Dir(s2.home))
 }
 
 func TestPurgeCannotReintroduceAProtectedEnvironmentJournal(t *testing.T) {
@@ -1058,81 +1011,76 @@ func TestPurgeCannotReintroduceAProtectedEnvironmentJournal(t *testing.T) {
 	journal := writeEnvJournalT(t, s.home, envJournal{Version: 1,
 		Path:         envJournalPath{Entry: filepath.Join(s.home, "bin"), AddedBySetup: true},
 		JevlinConfig: envJournalConfig{ValueSet: s.cfgPath()}})
-	setConfigKey(t, s, "spool_dir", journal)
+	setConfigKey(t, s, "sessions_dir", journal)
 	env := failingUserEnv{newFakeUserEnv()}
 	env.values["Path"] = filepath.Join(s.home, "bin")
-	d, out, errOut := s.uninstallDeps(tty(walletFixtureAddress(t)), true, &revokeRecorder{})
+	d, out, errOut := s.uninstallDeps(tty(s.home), true)
 	d.windows = true
 	d.userEnv = env
 	code := uninstallMain(d, []string{"-purge-state"})
 	if !lexists(journal) {
 		t.Fatalf("a journal kept because its revert failed was deleted through a configured path (exit %d)\n%s\n%s", code, out, errOut)
 	}
-	if lexists(filepath.Join(s.home, "wallet")) {
+	if lexists(filepath.Join(s.home, "state")) {
 		t.Error("the rest of the purge still happens")
 	}
 }
 
+// The confirmation is the installation path, typed exactly. Every other
+// input refuses: another text, another spelling of the same directory, an
+// empty read, -yes at a terminal or without one, and no terminal at all.
 func TestPurgeRefusesEveryConfirmationButTheExactOne(t *testing.T) {
 	cases := []struct {
 		name        string
-		stdin       func(addr string) io.Reader
+		stdin       func(home string) io.Reader
 		interactive bool
 		args        []string
 		wantCode    int
 	}{
-		{"wrong text", func(string) io.Reader { return tty("twilight1wrong") }, true, nil, exitUsage},
+		{"wrong text", func(string) io.Reader { return tty("not the installation") }, true, nil, exitUsage},
+		{"another spelling of the path", func(h string) io.Reader { return tty(h + string(filepath.Separator)) }, true, nil, exitUsage},
 		{"EOF", func(string) io.Reader { return strings.NewReader("") }, true, nil, exitUsage},
 		{"-yes at a terminal with nothing typed", func(string) io.Reader { return strings.NewReader("") }, true, []string{"-yes"}, exitUsage},
-		{"-yes without a terminal", func(a string) io.Reader { return tty(a) }, false, []string{"-yes"}, exitUsage},
-		{"no terminal", func(a string) io.Reader { return tty(a) }, false, nil, exitUsage},
-		{"trailing space", func(a string) io.Reader { return tty(a + " ") }, true, nil, exitUsage},
+		{"-yes without a terminal", func(h string) io.Reader { return tty(h) }, false, []string{"-yes"}, exitUsage},
+		{"no terminal", func(h string) io.Reader { return tty(h) }, false, nil, exitUsage},
+		{"trailing space", func(h string) io.Reader { return tty(h + " ") }, true, nil, exitUsage},
 	}
 	for _, tc := range cases {
 		s := installed(t)
 		before := snapshotTree(t, s.root)
-		rr := &revokeRecorder{}
 		args := append([]string{"-purge-state"}, tc.args...)
-		code, out, errOut := s.uninstall(t, tc.stdin(walletFixtureAddress(t)), tc.interactive, rr, args...)
+		code, out, errOut := s.uninstall(t, tc.stdin(s.home), tc.interactive, args...)
 		if code != tc.wantCode {
 			t.Errorf("%s: exit %d, want %d\n%s\n%s", tc.name, code, tc.wantCode, out, errOut)
 		}
 		if !reflect.DeepEqual(withoutLocks(before), withoutLocks(snapshotTree(t, s.root))) {
 			t.Errorf("%s: an unconfirmed purge must leave every byte unchanged, integrations included", tc.name)
 		}
-		if rr.calls != 0 {
-			t.Errorf("%s: an unconfirmed purge must not contact the AS", tc.name)
-		}
 	}
 }
 
-func TestPurgeConfirmationFallsBackToTheInstallationPath(t *testing.T) {
+func TestPurgeConfirmationIsTheInstallationPath(t *testing.T) {
 	s := newSetupSandbox(t)
 	writeInstallation(t, s.home, "identity")
-	writeFileT(t, s.cfgPath(), fmt.Sprintf("[mining]\nstate_dir = %q\n", filepath.Join(s.home, "state")))
+	writeFileT(t, s.cfgPath(), fmt.Sprintf("schema = 1\n\n[search]\nstate_dir = %q\n", filepath.Join(s.home, "state")))
 	if token, what := purgeConfirmation(s.home); token != s.home || what != "the installation path" {
-		t.Errorf("with no readable wallet the token is the canonical installation path: %q (%s)", token, what)
+		t.Errorf("the token is the canonical installation path: %q (%s)", token, what)
 	}
-	writeFileT(t, filepath.Join(s.home, "wallet", walletSidecarFile), `{"address":"twilight1notbech32"}`)
-	if token, _ := purgeConfirmation(s.home); token != s.home {
-		t.Error("an invalid address must not become the token")
-	}
-	code, out, errOut := s.uninstall(t, tty(s.home), true, nil, "-purge-state")
+	code, out, errOut := s.uninstall(t, tty(s.home), true, "-purge-state")
 	if code != exitOK || lexists(filepath.Join(s.home, "state")) {
 		t.Errorf("typing the installation path confirms: exit %d\n%s\n%s", code, out, errOut)
 	}
 }
 
-func TestPurgeDryRunNeitherAsksNorContactsNorChanges(t *testing.T) {
+func TestPurgeDryRunNeitherAsksNorChanges(t *testing.T) {
 	s := installed(t)
 	before := snapshotTree(t, s.root)
-	rr := &revokeRecorder{}
-	code, out, errOut := s.uninstall(t, strings.NewReader(""), false, rr, "-purge-state", "-dry-run")
+	code, out, errOut := s.uninstall(t, strings.NewReader(""), false, "-purge-state", "-dry-run")
 	if code != exitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
 	}
-	if rr.calls != 0 || !reflect.DeepEqual(before, snapshotTree(t, s.root)) {
-		t.Error("a purge dry run contacts nothing and changes nothing")
+	if !reflect.DeepEqual(before, snapshotTree(t, s.root)) {
+		t.Error("a purge dry run changes nothing")
 	}
 	for _, p := range participantState(s) {
 		if !strings.Contains(out, "remove "+p) {
@@ -1141,113 +1089,6 @@ func TestPurgeDryRunNeitherAsksNorContactsNorChanges(t *testing.T) {
 	}
 	if strings.Contains(out, "Type ") {
 		t.Error("a dry run must not ask for the confirmation")
-	}
-}
-
-// TestPurgeDryRunListsTheFlushLockARealRunsOwnLockingWouldCreate guards
-// D.2's uninstall half (dropin-miner#59 comment, soak S20, macOS arm64): a real
-// -purge-state run always takes the flush lock as part of its lifecycle
-// exclusion (excludeLifecycle, lifecycle.go) before this plan is ever
-// computed, and that lock is opened with O_CREATE (tryLockFile), so an
-// installation where flush.lock does not yet exist gets it created as a
-// side effect of the real run alone. A dry run must not create the file
-// itself — that would be an undisclosed write — but its listing must still
-// predict it, so a dry run's "Participant state" section and the real
-// run's actual removal agree on this file exactly as they do on every
-// other one.
-func TestPurgeDryRunListsTheFlushLockARealRunsOwnLockingWouldCreate(t *testing.T) {
-	setupWithoutAFlushLock := func(t *testing.T) *setupSandbox {
-		t.Helper()
-		s := installed(t)
-		lock := filepath.Join(s.home, "flush.lock")
-		if !lexists(lock) {
-			t.Fatal("fixture assumption broken: setup no longer creates flush.lock; this test needs an installation where it is absent")
-		}
-		if err := os.Remove(lock); err != nil {
-			t.Fatal(err)
-		}
-		return s
-	}
-
-	dry := setupWithoutAFlushLock(t)
-	lockPath := filepath.Join(dry.home, "flush.lock")
-	code, out, errOut := dry.uninstall(t, strings.NewReader(""), false, nil, "-purge-state", "-dry-run")
-	if code != exitOK {
-		t.Fatalf("dry run: exit %d\n%s\n%s", code, out, errOut)
-	}
-	if !strings.Contains(out, "remove "+lockPath) {
-		t.Fatalf("dry run must list the flush lock a real run's own locking would create:\n%s", out)
-	}
-	if lexists(lockPath) {
-		t.Error("a dry run must not create the flush lock while predicting it")
-	}
-
-	real := setupWithoutAFlushLock(t)
-	realLockPath := filepath.Join(real.home, "flush.lock")
-	code, out, errOut = real.uninstall(t, tty(walletFixtureAddress(t)), true, nil, "-purge-state")
-	if code != exitOK {
-		t.Fatalf("real run: exit %d\n%s\n%s", code, out, errOut)
-	}
-	if !strings.Contains(out, "remove "+realLockPath) {
-		t.Fatalf("the real run must also list the flush lock its own locking created:\n%s", out)
-	}
-	if lexists(realLockPath) {
-		t.Error("the real run must remove the flush lock it created")
-	}
-}
-
-// TestPurgeDoesNotInventAFlushLockWhenTheConfigNamesNoStateDir guards a
-// narrower defect ruled on during D2's review: a config that loads but
-// resolves no mining.state_dir at all (no [mining] block, and no user
-// config directory to default one from — every source os.UserConfigDir()
-// would read is blanked here) makes finishMiner derive no
-// miner.intake_dir either, so operationLockPaths reports no flush lock to
-// take at all — the real exclusion takes none. An earlier version of
-// predictedFlushLockPath treated a loaded config with no intake dir the
-// same as no config at all, and wrongly predicted home/flush.lock anyway
-// (falling back to r.cfg == nil's own default rather than asking
-// operationLockPaths, the function that actually decides what the real
-// exclusion locks). Neither the dry run nor the real run may list or
-// create a flush lock the real exclusion never touches.
-func TestPurgeDoesNotInventAFlushLockWhenTheConfigNamesNoStateDir(t *testing.T) {
-	s := newSetupSandbox(t)
-	for _, k := range []string{"HOME", "USERPROFILE", "XDG_CONFIG_HOME", "AppData", "LOCALAPPDATA"} {
-		t.Setenv(k, "")
-	}
-	if err := os.MkdirAll(s.home, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	// A bare proxy config: no [mining], no [miner] — nothing for
-	// finishMining to default a state dir from (its own os.UserConfigDir
-	// fallback fails, since every source it reads was just blanked above)
-	// and nothing for finishMiner to derive an intake dir from either.
-	proxy := "[[provider]]\nname = \"search-router\"\nupstream = \"https://router.example.invalid\"\n"
-	if err := os.WriteFile(s.cfgPath(), []byte(proxy), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cfg, _, err := loadConfig(s.cfgPath(), s.getenv)
-	if err != nil {
-		t.Fatalf("fixture config does not load: %v", err)
-	}
-	if cfg.Mining.StateDir != "" || cfg.Miner.IntakeDir != "" {
-		t.Fatalf("fixture assumption broken: state_dir=%q intake_dir=%q, want both empty", cfg.Mining.StateDir, cfg.Miner.IntakeDir)
-	}
-	lockPath := filepath.Join(s.home, "flush.lock")
-
-	code, out, errOut := s.uninstall(t, strings.NewReader(""), false, nil, "-purge-state", "-dry-run")
-	if code != exitOK {
-		t.Fatalf("dry run: exit %d\n%s\n%s", code, out, errOut)
-	}
-	if strings.Contains(out, "remove "+lockPath) {
-		t.Errorf("dry run must not list a flush lock the real run's own locking would never take:\n%s", out)
-	}
-
-	code, out, errOut = s.uninstall(t, tty(s.home), true, nil, "-purge-state")
-	if code != exitOK {
-		t.Fatalf("real run: exit %d\n%s\n%s", code, out, errOut)
-	}
-	if lexists(lockPath) {
-		t.Error("the real run must not create a flush lock the config names no state for")
 	}
 }
 
@@ -1271,21 +1112,10 @@ func installedOwningItsBinary(t *testing.T) *setupSandbox {
 	if code, out, errOut := s.run(nil, false, "-yes", "-with", "claude", "-with", "codex", "-with", "pi"); code != exitOK {
 		t.Fatalf("setup exited %d\nstdout:\n%s\nstderr:\n%s", code, out, errOut)
 	}
-	writeWalletFixture(t, filepath.Join(s.home, "wallet"))
-	store, err := auth.OpenStore(filepath.Join(s.home, "state"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SaveRefreshToken("rt-installed"); err != nil {
-		t.Fatal(err)
-	}
 	for rel, body := range map[string]string{
-		filepath.Join("spool", "unsent-1.json"):             `{"v":1}`,
-		filepath.Join("intake", "req-1.json"):               `{"v":1}`,
-		filepath.Join("sessions", "s-1.json"):               `{}`,
-		preferFile:                                          "builtin\n",
-		filepath.Join("state.unenrolled-20260101", "x.key"): "half",
-		filepath.Join("wallet.incomplete-20260101", "junk"): "partial",
+		filepath.Join("sessions", "s-1.json"): `{}`,
+		preferFile:                            "builtin\n",
+		filepath.Join(stateAsidePrefix+"-20260101", "x.key"): "half",
 	} {
 		writeFileT(t, filepath.Join(s.home, rel), body)
 	}
@@ -1297,8 +1127,9 @@ func installedOwningItsBinary(t *testing.T) *setupSandbox {
 // literal test for uninstall: "dry-run removal list equals the real run's
 // removals for plain, -binary and -purge-state." Both a dry run and the
 // real run plan from the same purgeSet/uninstallTargets/binarySet code, so
-// this is what would have caught the flush-lock gap directly, without
-// knowing in advance which file it was. dry and real are separate sandboxes
+// this is what catches a file the real run's own locking creates and
+// removes while the dry run, which takes no locks, never lists it, without
+// knowing in advance which file it is. dry and real are separate sandboxes
 // (each with its own temp-directory root), so every "remove " line is
 // normalized to a path relative to that sandbox's own root before the two
 // listings are compared — the absolute paths themselves never match
@@ -1340,11 +1171,8 @@ func TestUninstallDryRunRemoveListingMatchesTheRealRunForEveryMode(t *testing.T)
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dry := installedOwningItsBinary(t)
-			if err := os.Remove(filepath.Join(dry.home, "flush.lock")); err != nil {
-				t.Fatal(err)
-			}
 			dryArgs := append(append([]string{}, tc.args...), "-dry-run")
-			code, dryOut, errOut := dry.uninstall(t, strings.NewReader(""), false, nil, dryArgs...)
+			code, dryOut, errOut := dry.uninstall(t, strings.NewReader(""), false, dryArgs...)
 			if code != exitOK {
 				t.Fatalf("dry run: exit %d\n%s\n%s", code, dryOut, errOut)
 			}
@@ -1354,14 +1182,11 @@ func TestUninstallDryRunRemoveListingMatchesTheRealRunForEveryMode(t *testing.T)
 			}
 
 			real := installedOwningItsBinary(t)
-			if err := os.Remove(filepath.Join(real.home, "flush.lock")); err != nil {
-				t.Fatal(err)
-			}
 			var stdin io.Reader = strings.NewReader("")
 			interactive := false
 			realArgs := tc.args
 			if tc.name == "purge-state" {
-				stdin, interactive = tty(walletFixtureAddress(t)), true
+				stdin, interactive = tty(real.home), true
 			} else {
 				// Neither -dry-run nor -purge-state: the plain/-binary ask
 				// needs an answer, which -yes gives without a terminal
@@ -1369,7 +1194,7 @@ func TestUninstallDryRunRemoveListingMatchesTheRealRunForEveryMode(t *testing.T)
 				// so it is never added there).
 				realArgs = append(append([]string{}, tc.args...), "-yes")
 			}
-			code, realOut, errOut := real.uninstall(t, stdin, interactive, nil, realArgs...)
+			code, realOut, errOut := real.uninstall(t, stdin, interactive, realArgs...)
 			if code != exitOK {
 				t.Fatalf("real run: exit %d\n%s\n%s", code, realOut, errOut)
 			}
@@ -1389,68 +1214,60 @@ func TestUninstallDryRunRemoveListingMatchesTheRealRunForEveryMode(t *testing.T)
 	}
 }
 
-func TestPurgeCompletesWhenRevocationFails(t *testing.T) {
-	s := installed(t)
-	rr := &revokeRecorder{err: errors.New("AS unreachable")}
-	code, out, errOut := s.uninstall(t, tty(walletFixtureAddress(t)), true, rr, "-purge-state")
-	if code != exitOK || lexists(filepath.Join(s.home, "state")) || lexists(filepath.Join(s.home, "wallet")) {
-		t.Fatalf("a failed revocation must not cancel the local purge: exit %d\n%s\n%s", code, out, errOut)
-	}
-	if !strings.Contains(out, "could not be confirmed revoked") {
-		t.Errorf("the closing output must say remote authorization could not be confirmed revoked:\n%s", out)
-	}
-}
-
-func TestPurgeDoesNotRevokeStateOutsideTheInstallation(t *testing.T) {
+// A state directory the config puts outside the installation is the
+// participant's to keep: a purge removes what is under the installation,
+// names the outside directory as left, and leaves what is in it.
+func TestPurgeLeavesAStateDirectoryOutsideTheInstallation(t *testing.T) {
 	s := installed(t)
 	outsideState := filepath.Join(s.root, "state-elsewhere")
 	store, err := auth.OpenStore(outsideState)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveRefreshToken("rt-elsewhere"); err != nil {
+	if _, err := store.EnsureTraceKey(); err != nil {
 		t.Fatal(err)
 	}
+	traceKey := auth.TraceKeyPath(outsideState)
 	setConfigKey(t, s, "state_dir", outsideState)
-	if c, _, err := loadConfig(s.cfgPath(), s.getenv); err != nil || c.Mining.StateDir != outsideState {
+	if c, _, err := loadConfig(s.cfgPath(), s.getenv); err != nil || c.Search.StateDir != outsideState {
 		t.Fatalf("the fixture config must name the outside state_dir: %v", err)
 	}
-	rr := &revokeRecorder{}
-	code, out, errOut := s.uninstall(t, tty(walletFixtureAddress(t)), true, rr, "-purge-state")
+	code, out, errOut := s.uninstall(t, tty(s.home), true, "-purge-state")
 	if code != exitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
 	}
-	if rr.calls != 0 || !lexists(filepath.Join(outsideState, "refresh.token")) {
-		t.Error("a state directory outside the installation is neither revoked nor removed")
+	if !lexists(traceKey) {
+		t.Error("a state directory outside the installation is not removed")
+	}
+	if !strings.Contains(out, "left:  "+outsideState+" (configured outside "+s.home) {
+		t.Errorf("the plan must name the outside state directory as left:\n%s", out)
 	}
 }
 
 func TestPurgeRefusesWhileAnOperationRuns(t *testing.T) {
-	for _, op := range []string{"setup", "connect", "flush"} {
+	for _, op := range []string{"setup", "connect"} {
 		s := installed(t)
 		lock := map[string]string{
 			"setup":   filepath.Join(s.home, setupLockFile),
 			"connect": filepath.Join(s.home, "state", "connect.lock"),
-			"flush":   filepath.Join(s.home, "flush.lock"),
 		}[op]
 		release := holdLockFile(t, lock)
 		setForegroundWait(t, 50*time.Millisecond)
 		before := snapshotHeld(t, s.root)
-		rr := &revokeRecorder{}
-		code, out, errOut := s.uninstall(t, tty(walletFixtureAddress(t)), true, rr, "-purge-state")
+		code, out, errOut := s.uninstall(t, tty(s.home), true, "-purge-state")
 		release()
 		if code != exitTransport || !strings.Contains(errOut, op+" is running") {
 			t.Errorf("%s running: purge must refuse naming it, got exit %d\n%s\n%s", op, code, out, errOut)
 		}
-		if rr.calls != 0 || !reflect.DeepEqual(withoutLocks(before), withoutLocks(snapshotHeld(t, s.root))) {
-			t.Errorf("%s running: a refused purge changes and contacts nothing", op)
+		if !reflect.DeepEqual(withoutLocks(before), withoutLocks(snapshotHeld(t, s.root))) {
+			t.Errorf("%s running: a refused purge changes nothing", op)
 		}
 	}
 }
 
 func TestPurgeTargetGuard(t *testing.T) {
 	s := newSetupSandbox(t)
-	writeInstallation(t, s.home, "wallet", "config")
+	writeInstallation(t, s.home, "identity", "config")
 	link := filepath.Join(s.root, "linked-home")
 	symlinkOK := os.Symlink(s.home, link) == nil
 	empty := filepath.Join(s.root, "not-an-installation")
@@ -1469,7 +1286,7 @@ func TestPurgeTargetGuard(t *testing.T) {
 			continue
 		}
 		before := snapshotTree(t, s.root)
-		code, out, errOut := s.uninstall(t, tty(home), true, nil, "-purge-state", "-home", home)
+		code, out, errOut := s.uninstall(t, tty(home), true, "-purge-state", "-home", home)
 		if code != exitUsage || !strings.Contains(errOut, strings.TrimSuffix(want, "; name the direct")) {
 			t.Errorf("-home %s: want a refusal containing %q, got exit %d\n%s\n%s", home, want, code, out, errOut)
 		}
@@ -1489,7 +1306,7 @@ func TestPurgeKeepsTheEnvironmentJournalWhenItsRevertFails(t *testing.T) {
 		JevlinConfig: envJournalConfig{ValueSet: s.cfgPath()}})
 	env := failingUserEnv{newFakeUserEnv()}
 	env.values["Path"] = filepath.Join(s.home, "bin")
-	d, out, errOut := s.uninstallDeps(tty(walletFixtureAddress(t)), true, &revokeRecorder{})
+	d, out, errOut := s.uninstallDeps(tty(s.home), true)
 	d.windows = true
 	d.userEnv = env
 	code := uninstallMain(d, []string{"-purge-state"})
@@ -1499,7 +1316,7 @@ func TestPurgeKeepsTheEnvironmentJournalWhenItsRevertFails(t *testing.T) {
 	if !lexists(journal) || !lexists(s.home) {
 		t.Error("the journal must survive the purge when its revert failed, leaving the installation directory non-empty")
 	}
-	if lexists(filepath.Join(s.home, "wallet")) {
+	if lexists(filepath.Join(s.home, "state")) {
 		t.Error("the rest of the purge still happens")
 	}
 }
@@ -1509,7 +1326,7 @@ func TestUninstallRefusesWhileTheGateIsHeld(t *testing.T) {
 	mustAcquireGate(t, lifecycleGatePath(s.home))
 	setForegroundWait(t, 50*time.Millisecond)
 	before := snapshotHeld(t, s.root)
-	code, _, errOut := s.uninstall(t, nil, false, nil, "-yes")
+	code, _, errOut := s.uninstall(t, nil, false, "-yes")
 	if code != exitTransport || !strings.Contains(errOut, errLifecycleBusy.Error()) {
 		t.Errorf("uninstall under a held gate refuses: exit %d, %q", code, errOut)
 	}
@@ -1526,7 +1343,7 @@ func TestUninstallCustomHome(t *testing.T) {
 	if code, out, errOut := s.run(nil, false, "-yes", "-home", custom); code != exitOK {
 		t.Fatalf("setup -home exited %d\n%s\n%s", code, out, errOut)
 	}
-	code, out, errOut := s.uninstall(t, tty(custom), true, nil, "-purge-state", "-home", custom)
+	code, out, errOut := s.uninstall(t, tty(custom), true, "-purge-state", "-home", custom)
 	if code != exitOK || lexists(filepath.Join(custom, "state")) {
 		t.Fatalf("purge of a custom home: exit %d\n%s\n%s", code, out, errOut)
 	}
@@ -1576,7 +1393,7 @@ func (uninstallRefusingTarget) PlanUninstall(_ agentOps, _ agentPaths, _ binEntr
 // refusal once per candidate ("finished with 2 problem(s)" for one).
 func TestATargetRefusalIsReportedOnce(t *testing.T) {
 	s := installed(t)
-	d, out, errOut := s.uninstallDeps(nil, false, &revokeRecorder{})
+	d, out, errOut := s.uninstallDeps(nil, false)
 	d.targets = append(append([]installTarget{}, installTargets...), uninstallRefusingTarget{})
 	code := uninstallMain(d, []string{"-yes"})
 	if code == exitOK || !strings.Contains(out.String(), "finished with 1 problem(s)") {

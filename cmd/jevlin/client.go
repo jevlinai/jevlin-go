@@ -134,7 +134,7 @@ func defaultJevlinHome(getenv func(string) string) string {
 
 // signalContext cancels on SIGINT/SIGTERM with no deadline — the agent
 // decides how long a request may run, not this process. Contrast
-// operatorContext, whose timeout exists because enrollment blocks on a
+// operatorContext, whose timeout exists because a claim poll blocks on a
 // person.
 func signalContext() (context.Context, context.CancelFunc) {
 	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

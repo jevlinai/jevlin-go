@@ -2,7 +2,7 @@ package main
 
 // H5's subject: which installation an agent integration belongs to.
 //
-// dropin-miner#73, soak row S20. Two installations on one machine share a binary whenever
+// Soak row S20. Two installations on one machine share a binary whenever
 // the second was made by running the first's copy — `~/.jevlin/bin/
 // jevlin setup -home ~/dm-disposable` is the documented way. Matching
 // an integration by its binary path alone makes the disposable installation's
@@ -44,7 +44,7 @@ func TestAnIntegrationIsOursOnlyWhenItNamesOurBinaryAndOurConfig(t *testing.T) {
 		{"bare", bin + " hook -config " + ours + " lineage", true},
 
 		// The same binary, the other installation's config. This is the whole
-		// of dropin-miner#73: every one of these was "ours" before H5.
+		// of S20's defect: every one of these was "ours" before H5.
 		{"POSIX, their config", posixQuoteArg(bin) + " hook -config " + posixQuoteArg(theirs) + " lineage", false},
 		{"PowerShell, their config", "& " + powerShellQuoteArg(bin) + " hook -config " + powerShellQuoteArg(theirs) + " lineage", false},
 		{"cmd, their config", `"` + bin + `" hook -config "` + theirs + `" lineage`, false},
@@ -120,7 +120,7 @@ func TestRenderedWordsKeepsAQuotedPathWhole(t *testing.T) {
 // agent integrations.
 //
 // For the machine's own installation setup does both. For any other home it
-// no longer does (dropin-miner#84): setup -home <elsewhere> leaves the agents alone, and
+// no longer does: setup -home <elsewhere> leaves the agents alone, and
 // its closing line names `agents install -config <home>/jevlin.toml` as
 // the way to configure them. So that is the path this takes, which keeps the
 // scenario below — two installations, one binary, both with integrations —
@@ -153,7 +153,7 @@ func installationWithAgents(t *testing.T, s *setupSandbox, home string, with ...
 //
 // Both installations run the SAME binary, which is what made every match
 // succeed before H5. The machine installation sets its hosts up first and the
-// disposable one second. Until dropin-miner#112 the second install overwrote every
+// disposable one second. The second install used to overwrite every
 // single-copy file, so this test uninstalled the FIRST and watched the
 // second's files survive; that premise was the defect. Now the second install
 // leaves them to their owner, so the files on disk name the first — and it is
@@ -178,8 +178,8 @@ func TestUninstallingOneInstallationLeavesAnothersIntegrations(t *testing.T) {
 			installationWithAgents(t, s, disposable, hosts...)
 
 			// The single-copy artifacts — a skill, the plugin, the extension —
-			// belong wholly to the installation that wrote them, which since
-			// dropin-miner#112 is the one that got there first: the machine installation.
+			// belong wholly to the installation that wrote them, which is now the
+			// one that got there first: the machine installation.
 			// They must come through the OTHER installation's uninstall
 			// untouched. The premise is checked rather than assumed, because
 			// it is exactly what changed: a file naming the disposable's
@@ -208,14 +208,14 @@ func TestUninstallingOneInstallationLeavesAnothersIntegrations(t *testing.T) {
 			if purge {
 				// -purge-state needs the typed confirmation at a terminal.
 				var code int
-				code, out, _ = s.uninstall(t, tty(uninstalled), true, nil, "-purge-state", "-home", uninstalled)
+				code, out, _ = s.uninstall(t, tty(uninstalled), true, "-purge-state", "-home", uninstalled)
 				if code != exitOK {
 					t.Fatalf("uninstall -purge-state exited %d\n%s", code, out)
 				}
 			} else {
 				var code int
 				var errOut string
-				code, out, errOut = s.uninstall(t, nil, false, nil, "-yes", "-home", uninstalled)
+				code, out, errOut = s.uninstall(t, nil, false, "-yes", "-home", uninstalled)
 				if code != exitOK {
 					t.Fatalf("uninstall exited %d\n%s\n%s", code, out, errOut)
 				}
@@ -372,9 +372,10 @@ func TestARenderedPathIsReadBackWhicheverShellQuotedIt(t *testing.T) {
 // path -- opencode's and Pi's INSTALL_CONFIG line -- the first reading is the
 // literal one, so on Windows the message named
 // C:\\Users\\...\\jevlin.toml with every separator doubled while the file
-// itself was correctly left alone. Both Windows runners found it on dropin-miner#123's
-// first CI run; every other runner was green, because on POSIX nothing in a
-// path needs escaping and a word's two readings are the same string.
+// itself was correctly left alone. Both Windows runners found it on the
+// ownership change's first CI run; every other runner was green, because on
+// POSIX nothing in a path needs escaping and a word's two readings are the
+// same string.
 //
 // A unit case over literal strings, so it needs no Windows runner: a Windows
 // path is only ever a string here and nothing executes it.
@@ -499,7 +500,7 @@ func containsPath(got []string, want string) bool {
 //
 // opencode's plugin is why this exists: it rewrites commands and runs none, so
 // it named no binary and no config at all, and a disposable installation's
-// purge removed the main installation's copy (dropin-miner#73's last comment).
+// purge removed the main installation's copy.
 func TestEveryArtifactNamesTheInstallationThatWroteIt(t *testing.T) {
 	entry := goldenEntry()
 	for _, id := range goldenHostIDs {
@@ -553,7 +554,7 @@ func TestEveryArtifactNamesTheInstallationThatWroteIt(t *testing.T) {
 // beginning with a NUL byte, which no rendered command starts with — so
 // `entryIsOurs` matches nothing, `planHooksRemove` never sets changed, and it
 // returns before reaching either the write or the removal it would otherwise
-// plan. Break either half and the failure is the dropin-miner#69 family again: a hook file
+// plan. Break either half and the failure is the old one again: a hook file
 // that IS ours, unreadable as bytes on Windows, judged unattributable and left
 // behind running a binary that has been deleted.
 //
@@ -688,7 +689,7 @@ func writeJSONFile(t *testing.T, m *fakeMachine, path string, v any) {
 
 // The block names no binary and no config; it names DIRECTORIES. So it is
 // attributed by them — against the directories THIS config names, which are
-// four config keys and not a layout.
+// two config keys and not a layout.
 //
 // The first version of this test asserted the layout ("all under that
 // installation's home") and passed, because the default layout does put them
@@ -699,17 +700,17 @@ func writeJSONFile(t *testing.T, m *fakeMachine, path string, v any) {
 func TestTheCodexSandboxBlockIsAttributedByTheDirectoriesItsConfigNames(t *testing.T) {
 	root := t.TempDir()
 	home := filepath.Join(root, "install")
-	cfg := writeMiningHomeConfig(t, home)
+	cfg := writeHomeConfig(t, home)
 	entry := binEntry{command: filepath.Join(home, "bin", "jevlin"), cfg: cfg}
 
 	blockOf := func(dirs ...string) []byte { return appendMarkedBlock(nil, codexSandboxBlock(dirs)) }
 
-	// A subset of the four is ours: with [miner] off only the state dir is
-	// written, and that rendering stays ours after `mining enable`.
+	// A subset of the roots is ours: a block an earlier render wrote with
+	// the state dir alone is still this installation's.
 	if r := removeOurSandboxBlock(blockOf(filepath.Join(home, "state")), entry, noEnv); !r.had || !r.ours {
 		t.Errorf("a state-dir-only block of ours was not recognized (had=%v ours=%v)", r.had, r.ours)
 	}
-	if r := removeOurSandboxBlock(blockOf(filepath.Join(home, "intake"), filepath.Join(home, "state")), entry, noEnv); !r.had || !r.ours {
+	if r := removeOurSandboxBlock(blockOf(filepath.Join(home, "sessions"), filepath.Join(home, "state")), entry, noEnv); !r.had || !r.ours {
 		t.Errorf("this installation's own sandbox block was not recognized (had=%v ours=%v)", r.had, r.ours)
 	}
 	// Another installation's, and a mixture: one root that is not one of

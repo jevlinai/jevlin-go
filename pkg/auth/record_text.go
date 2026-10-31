@@ -14,14 +14,14 @@ import (
 
 // The state directory is a writable root of Codex's sandbox (hard invariant
 // 19), so a record read back from it is only what the last writer left
-// there. status, doctor, connect and mining enable print these records'
+// there. status, doctor and connect print these records'
 // strings to the participant's terminal; a control, format or separator
 // character in one (termtext's rule, which takes in C1 and bidi) is a
 // terminal escape or a reordered line in jevlin's own output, with
 // jevlin's authority behind it. The platform client refuses those
 // characters in every field of what it receives that reaches a record
-// (pkg/platform: the agent id, the claim link, code and times, the scopes,
-// the slots and the last enrollment), and the save side refuses what the
+// (pkg/platform: the agent id, the claim link, code and times, and the
+// scopes), and the save side refuses what the
 // load side would, so a record this client wrote never holds one, and a
 // record that does was not written by it.
 
@@ -109,11 +109,10 @@ func (e *decodeError) Error() string { return "auth: decode " + e.what + ": " + 
 
 func (e *decodeError) Unwrap() error { return e.err }
 
-// DecodeProblem says why a record did not decode in the client's own words,
-// for a caller outside this package that decodes a record of its own in a
-// directory a sandboxed command can write (cmd/jevlin's flush stamp).
-func DecodeProblem(err error) string { return decodeProblem(err) }
-
+// decodeProblem is the client's own words for why a record did not decode.
+// It is this package's: cmd/jevlin's records never print a decode error at
+// all; the update stamp answers with one fixed sentence and the resume stamp
+// with an empty record.
 func decodeProblem(err error) string {
 	var syntax *json.SyntaxError
 	var typ *json.UnmarshalTypeError

@@ -1,6 +1,6 @@
 package main
 
-// dropin-miner#81, one case per prompt this binary asks.
+// The prompt rule, one case per prompt this binary asks.
 //
 // The defect the Windows tester met was not "an interrupt is mishandled at
 // one prompt": it was that a prompt which discards its read error cannot
@@ -12,19 +12,19 @@ package main
 //
 // The negative half matters as much: an answer that WAS typed still
 // decides, and -yes still answers exactly what it answered before, which
-// is why the last two cases are here.
+// is why the typed-answer cases and the last case are here.
+//
+// The question the defect was filed against is gone: connect asks nothing
+// now. The rule it taught outlives it, and every prompt the binary still
+// asks is driven here.
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/jevlinai/jevlin-go/pkg/auth"
 )
 
 // errConsoleInterrupt is the shape the Windows console read fails with
@@ -102,226 +102,6 @@ func assertUnchanged(t *testing.T, before, after map[string]fileSig) {
 		if _, ok := after[path]; !ok {
 			t.Errorf("removed %s", path)
 		}
-	}
-}
-
-// ── the mining question (dropin-miner#81 as filed) ──────────────────────────────────
-
-// The decision file is invariant 10's only runtime authority on whether
-// mining is on. An unanswered question must not write it.
-func TestAnInterruptAtTheMiningQuestionRecordsNoDecision(t *testing.T) {
-	endings(t, func(t *testing.T, stdin func(...string) *interruptReader) {
-		platform := newStubPlatform(t)
-		cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
-		cfg, _, err := loadConfig(cfgPath, noEnv)
-		if err != nil {
-			t.Fatal(err)
-		}
-		store, err := auth.OpenStore(stateDir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		in := stdin()
-		var errOut bytes.Buffer
-		outcome, code := askMiningQuestion(in, bufio.NewReader(in), &bytes.Buffer{}, &errOut, noEnv, cfg, store, true, false)
-		if code == exitOK {
-			t.Fatalf("an unanswered mining question exited %d; want non-zero (got %+v)", code, outcome)
-		}
-		if outcome.enabled {
-			t.Fatal("an unanswered mining question came back enabled")
-		}
-		if got := store.ReadMiningDecision().State; got != auth.MiningUndecided {
-			t.Fatalf("mining decision is %q after an unanswered question; want undecided", got)
-		}
-		if lexists(filepath.Join(stateDir, "mining_decision.json")) {
-			t.Fatal("mining_decision.json was written for a question nobody answered")
-		}
-		if !strings.Contains(errOut.String(), promptAbortedReason) {
-			t.Fatalf("no abort message on stderr:\n%s", errOut.String())
-		}
-	})
-}
-
-// The whole of dropin-miner#81: the decision, and the registration that followed it.
-// Counting the stub platform's register calls is the assertion — connect
-// reaching Register at all is the half that left an agent the tester never
-// claimed.
-func TestAnInterruptAtTheMiningQuestionRegistersNothing(t *testing.T) {
-	endings(t, func(t *testing.T, stdin func(...string) *interruptReader) {
-		s := newSetupSandbox(t)
-		s.platform.claim("credits")
-		code, out, errOut := s.run(stdin(), true)
-		if code == exitOK {
-			t.Fatalf("setup exited 0 with the mining question unanswered\n%s\n%s", out, errOut)
-		}
-		if reg, _, _ := s.platform.counts(); reg != 0 {
-			t.Fatalf("the platform saw %d register call(s) after an unanswered mining question", reg)
-		}
-		if lexists(filepath.Join(s.home, "state", "mining_decision.json")) {
-			t.Fatal("mining_decision.json was written for a question nobody answered")
-		}
-		if lexists(filepath.Join(s.home, "state", "agent.json")) {
-			t.Fatal("an agent registration was published after an unanswered mining question")
-		}
-	})
-}
-
-// ── the payout-address question ─────────────────────────────────────────
-
-// The enable half is already on disk here, from a "y" the participant did
-// type, so this cannot claim nothing was recorded. What it claims is that
-// the empty-answer branch — create a wallet — is not reached by an answer
-// that was never given.
-func TestAnInterruptAtThePayoutAddressCreatesNoWallet(t *testing.T) {
-	endings(t, func(t *testing.T, stdin func(...string) *interruptReader) {
-		platform := newStubPlatform(t)
-		cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
-		cfg, _, err := loadConfig(cfgPath, noEnv)
-		if err != nil {
-			t.Fatal(err)
-		}
-		store, err := auth.OpenStore(stateDir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		walletDir := filepath.Join(t.TempDir(), "wallet")
-		t.Setenv("JEVLIN_WALLET_DIR", walletDir)
-		t.Setenv(walletPassphraseEnv, "correct horse battery staple")
-
-		in := stdin("y")
-		var errOut bytes.Buffer
-		outcome, code := askMiningQuestion(in, bufio.NewReader(in), &bytes.Buffer{}, &errOut, os.Getenv, cfg, store, true, false)
-		if code == exitOK {
-			t.Fatalf("an unanswered address question exited %d; want non-zero (got %+v)", code, outcome)
-		}
-		if lexists(filepath.Join(walletDir, walletKeyFile)) {
-			t.Fatal("a wallet was created for an address question nobody answered")
-		}
-		if _, ok, _ := testPayoutRecord(t, stateDir).Load(); ok {
-			t.Fatal("a payout address was persisted for a question nobody answered")
-		}
-		// The typed "y" above still decided its own half, and the state it
-		// leaves is exactly the one decideRegistrationOutcome resumes from.
-		if got := store.ReadMiningDecision().State; got != auth.MiningEnabled {
-			t.Fatalf("the typed y was lost: mining decision is %q", got)
-		}
-	})
-}
-
-// `mining enable` on an installation already enabled skips the enable
-// question, which defaulted to No: a participant sent there to choose an
-// address pressed Enter and turned mining off. Only the address question is
-// asked, and an unanswered one leaves the decision enabled, records no
-// address and creates no wallet.
-func TestMiningEnableOnAnEnabledInstallationAsksOnlyTheAddress(t *testing.T) {
-	setup := func(t *testing.T) (store *auth.Store, stateDir, walletDir string, run func(in io.Reader) (miningEnableOutcome, int, string)) {
-		platform := newStubPlatform(t)
-		var cfgPath string
-		cfgPath, stateDir = connectConfig(t, platform.srv.URL, "")
-		cfg, _, err := loadConfig(cfgPath, noEnv)
-		if err != nil {
-			t.Fatal(err)
-		}
-		store, err = auth.OpenStore(stateDir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := store.SaveMiningEnabled(true); err != nil {
-			t.Fatal(err)
-		}
-		walletDir = filepath.Join(t.TempDir(), "wallet")
-		t.Setenv("JEVLIN_WALLET_DIR", walletDir)
-		t.Setenv(walletPassphraseEnv, "correct horse battery staple")
-		return store, stateDir, walletDir, func(in io.Reader) (miningEnableOutcome, int, string) {
-			var errOut bytes.Buffer
-			outcome, code := miningEnableDecision(in, bufio.NewReader(in), &bytes.Buffer{}, &errOut, os.Getenv, cfg, store, true, false)
-			return outcome, code, errOut.String()
-		}
-	}
-	t.Run("an answer", func(t *testing.T) {
-		store, stateDir, _, run := setup(t)
-		outcome, code, errOut := run(strings.NewReader(participantAddress + "\n"))
-		if strings.Contains(errOut, "Enable mining rewards") {
-			t.Fatalf("the enable question was asked of an enabled installation:\n%s", errOut)
-		}
-		if code != exitOK || !outcome.enabled {
-			t.Fatalf("exit %d, outcome %+v", code, outcome)
-		}
-		if got := store.ReadMiningDecision().State; got != auth.MiningEnabled {
-			t.Fatalf("mining decision is %q, want still enabled", got)
-		}
-		if got, ok, err := testPayoutRecord(t, stateDir).Load(); err != nil || !ok || got != participantAddress {
-			t.Fatalf("the typed address was not recorded: %q ok=%v err=%v", got, ok, err)
-		}
-	})
-	endings(t, func(t *testing.T, stdin func(...string) *interruptReader) {
-		store, stateDir, walletDir, run := setup(t)
-		outcome, code, errOut := run(stdin())
-		if code == exitOK {
-			t.Fatalf("an unanswered address question exited %d (got %+v)", code, outcome)
-		}
-		if strings.Contains(errOut, "Enable mining rewards") {
-			t.Fatalf("the enable question was asked of an enabled installation:\n%s", errOut)
-		}
-		if got := store.ReadMiningDecision().State; got != auth.MiningEnabled {
-			t.Fatalf("mining decision is %q after an unanswered address question, want still enabled", got)
-		}
-		if _, ok, _ := testPayoutRecord(t, stateDir).Load(); ok {
-			t.Fatal("a payout address was recorded for a question nobody answered")
-		}
-		if lexists(filepath.Join(walletDir, walletKeyFile)) {
-			t.Fatal("a wallet was created for a question nobody answered")
-		}
-	})
-}
-
-// Without a terminal, `mining enable` on an installation whose decision is
-// already enabled used to run the scripted path, which writes the config's
-// [mining] enabled: a config setup made at a terminal carries no such key,
-// so the run turned mining off with exit 0 and no output, the command the
-// status hint sends a participant to. Now an enabled decision is never
-// changed: the address is recorded from the config's payout_address, or
-// said to be missing.
-func TestMiningEnableWithoutATerminalNeverTurnsAnEnabledDecisionOff(t *testing.T) {
-	for _, tc := range []struct {
-		name, address string
-	}{
-		{"no address in the config", ""},
-		{"an address in the config", participantAddress},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			platform := newStubPlatform(t)
-			cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
-			cfg, _, err := loadConfig(cfgPath, noEnv)
-			if err != nil {
-				t.Fatal(err)
-			}
-			// What a config setup wrote at a terminal says about mining:
-			// nothing. The decision is the store's.
-			cfg.Mining.Enabled, cfg.MiningEnabledExplicit, cfg.Mining.PayoutAddress = false, false, tc.address
-			store, err := auth.OpenStore(stateDir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := store.SaveMiningEnabled(true); err != nil {
-				t.Fatal(err)
-			}
-			var out, errOut bytes.Buffer
-			outcome, code := miningEnableDecision(strings.NewReader(""), bufio.NewReader(strings.NewReader("")), &out, &errOut, os.Getenv, cfg, store, false, false)
-			if code != exitOK || !outcome.enabled {
-				t.Fatalf("exit %d, outcome %+v\n%s%s", code, outcome, out.String(), errOut.String())
-			}
-			if got := store.ReadMiningDecision().State; got != auth.MiningEnabled {
-				t.Fatalf("mining decision is %q after a non-interactive `mining enable`, want still enabled", got)
-			}
-			got, ok, err := testPayoutRecord(t, stateDir).Load()
-			switch {
-			case tc.address == "" && (ok || !strings.Contains(out.String(), "no payout_address was given")):
-				t.Fatalf("with no address anywhere: recorded=%v %q, said %q", ok, got, out.String())
-			case tc.address != "" && (err != nil || !ok || got != tc.address):
-				t.Fatalf("the config's address was not recorded: %q ok=%v err=%v", got, ok, err)
-			}
-		})
 	}
 }
 
@@ -416,7 +196,7 @@ func TestAnInterruptAtSetupsProfileQuestionLeavesTheProfileAndTheAgentsAlone(t *
 		profile := filepath.Join(s.userHome, ".zshrc")
 		writeFileT(t, profile, "# mine\n")
 
-		code, out, errOut := s.run(stdin("n"), true) // "n" answers mining; the profile question is next
+		code, out, errOut := s.run(stdin(), true) // connect asks nothing; the profile question is the first
 		if code == exitOK {
 			t.Fatalf("setup exited 0 with the profile question unanswered\n%s\n%s", out, errOut)
 		}
@@ -438,8 +218,8 @@ func TestAnInterruptAtSetupsAgentsQuestionSetsUpNoAgent(t *testing.T) {
 		s.platform.claim("credits")
 		s.onPath["claude"] = true
 
-		// mining, then the profile question, then the agents question.
-		code, out, errOut := s.run(stdin("n", "n"), true)
+		// the profile question, then the agents question.
+		code, out, errOut := s.run(stdin("n"), true)
 		if code == exitOK {
 			t.Fatalf("setup exited 0 with the agents question unanswered\n%s\n%s", out, errOut)
 		}
@@ -458,7 +238,7 @@ func TestAnInterruptAtUninstallsConfirmationRemovesNothing(t *testing.T) {
 	endings(t, func(t *testing.T, stdin func(...string) *interruptReader) {
 		s := installed(t)
 		before := snapshotTree(t, s.root)
-		code, out, errOut := s.uninstall(t, stdin(), true, nil)
+		code, out, errOut := s.uninstall(t, stdin(), true)
 		if code == exitOK {
 			t.Fatalf("uninstall exited 0 with its confirmation unanswered\n%s\n%s", out, errOut)
 		}
@@ -469,59 +249,25 @@ func TestAnInterruptAtUninstallsConfirmationRemovesNothing(t *testing.T) {
 	})
 }
 
-// The purge confirmation already had this guard before dropin-miner#81 — it is the one
+// The purge confirmation already had this guard before the shared rule — it is the one
 // prompt in the binary that did. It is pinned here so the shared rule
-// cannot quietly regress the prompt it was generalized from.
+// cannot quietly regress the prompt it was generalized from. The typed
+// token is the installation path; -yes has no part in it.
 func TestAnInterruptAtThePurgeConfirmationPurgesNothing(t *testing.T) {
 	endings(t, func(t *testing.T, stdin func(...string) *interruptReader) {
 		s := installed(t)
 		before := snapshotTree(t, s.root)
-		rr := &revokeRecorder{}
-		code, out, errOut := s.uninstall(t, stdin(), true, rr, "-purge-state", "-yes")
+		code, out, errOut := s.uninstall(t, stdin(), true, "-purge-state", "-yes")
 		if code == exitOK {
 			t.Fatalf("purge exited 0 with its confirmation unanswered\n%s\n%s", out, errOut)
 		}
-		if rr.calls != 0 {
-			t.Fatalf("a purge nobody confirmed revoked the authorization (%d call(s))", rr.calls)
+		if !lexists(filepath.Join(s.home, credentialsFile)) {
+			t.Fatal("a purge nobody confirmed removed the stored key")
 		}
 		if !strings.Contains(out, noParticipantChange) {
 			t.Fatalf("the refusal did not say nothing was changed:\n%s", out)
 		}
 		assertUnchanged(t, before, snapshotTree(t, s.root))
-	})
-}
-
-// ── wallet send's typed confirmation ────────────────────────────────────
-
-// Nothing is signed either way here; the exit code is the whole
-// difference, and a script driving a payout must be able to tell "the
-// operator said no" from "the operator was never asked".
-func TestAnInterruptAtTheWalletSendConfirmationSignsNothing(t *testing.T) {
-	endings(t, func(t *testing.T, stdin func(...string) *interruptReader) {
-		node := newFakeNode(t, nodeConfig{
-			chainID: "twilight-devnet-2", accountNumber: 5, sequence: 9,
-			balance: "1000000", appearAfter: 1,
-		})
-		dir := walletScratchDir(t)
-		var out, errOut bytes.Buffer
-		if code := cmdWallet([]string{"init", "-dir", dir, "-print-anyway"},
-			strings.NewReader(""), &out, &errOut, envOf(map[string]string{walletPassphraseEnv: "p-test-1"})); code != 0 {
-			t.Fatalf("init: %s", errOut.String())
-		}
-		out.Reset()
-		errOut.Reset()
-		code := cmdWallet([]string{"send", "-dir", dir, "-node", node.srv.URL, "-chain-id", "twilight-devnet-2",
-			"-to", "twilight1kl0dn0rtwk46h9zcmazyyrruta290crh93rnlh", "-amount", "1000"},
-			stdin(), &out, &errOut, envOf(map[string]string{walletPassphraseEnv: "p-test-1"}))
-		if code == exitOK {
-			t.Fatalf("wallet send exited 0 with its confirmation unanswered\n%s\n%s", out.String(), errOut.String())
-		}
-		if node.broadcastCount != 0 {
-			t.Fatalf("a send nobody confirmed broadcast %d transaction(s)", node.broadcastCount)
-		}
-		if lexists(filepath.Join(dir, pendingTxFile)) {
-			t.Fatal("a send nobody confirmed journaled a pending transaction")
-		}
 	})
 }
 
@@ -568,7 +314,7 @@ func TestAPipedAnswerWithoutATrailingNewlineIsStillAnAnswer(t *testing.T) {
 
 	t.Run("uninstall removes on a bare y", func(t *testing.T) {
 		s := installed(t)
-		code, out, errOut := s.uninstall(t, strings.NewReader("y"), true, nil)
+		code, out, errOut := s.uninstall(t, strings.NewReader("y"), true)
 		if code != exitOK {
 			t.Fatalf("a bare y exited %d\n%s\n%s", code, out, errOut)
 		}
@@ -580,7 +326,7 @@ func TestAPipedAnswerWithoutATrailingNewlineIsStillAnAnswer(t *testing.T) {
 	t.Run("uninstall declines on a bare n", func(t *testing.T) {
 		s := installed(t)
 		before := snapshotTree(t, s.root)
-		code, out, errOut := s.uninstall(t, strings.NewReader("n"), true, nil)
+		code, out, errOut := s.uninstall(t, strings.NewReader("n"), true)
 		if code != exitOK {
 			t.Fatalf("a bare n exited %d; a declined uninstall is not an aborted one\n%s\n%s", code, out, errOut)
 		}
@@ -594,15 +340,14 @@ func TestAPipedAnswerWithoutATrailingNewlineIsStillAnAnswer(t *testing.T) {
 // ── -yes answers what it always answered, and nothing more ──────────────
 
 // -yes answers setup's own questions without reading stdin at all, so a
-// stdin that fails does not stop them. The one line this feeds is the
-// mining question, which -yes deliberately does not answer (S6) — that
-// asymmetry is the point of the case.
+// stdin that fails does not stop them: nothing in the run reads a line,
+// and the failing reader is never reached.
 func TestYesStillAnswersSetupsOwnQuestionsOverAFailingStdin(t *testing.T) {
 	endings(t, func(t *testing.T, stdin func(...string) *interruptReader) {
 		s := newSetupSandbox(t)
 		s.platform.claim("credits")
 		s.onPath["claude"] = true
-		code, out, errOut := s.run(stdin("n"), true, "-yes")
+		code, out, errOut := s.run(stdin(), true, "-yes")
 		if code != exitOK {
 			t.Fatalf("-yes setup exited %d\n%s\n%s", code, out, errOut)
 		}
@@ -611,26 +356,6 @@ func TestYesStillAnswersSetupsOwnQuestionsOverAFailingStdin(t *testing.T) {
 		}
 		if !strings.Contains(out, "yes (-yes)") {
 			t.Fatalf("-yes did not answer setup's own questions:\n%s", out)
-		}
-	})
-}
-
-// ...and it does not answer the mining question. Without a typed line,
-// -yes leaves it unanswered, which now aborts rather than recording a
-// decision nobody made.
-func TestYesDoesNotAnswerTheMiningQuestion(t *testing.T) {
-	endings(t, func(t *testing.T, stdin func(...string) *interruptReader) {
-		s := newSetupSandbox(t)
-		s.platform.claim("credits")
-		code, out, errOut := s.run(stdin(), true, "-yes")
-		if code == exitOK {
-			t.Fatalf("-yes answered the mining question\n%s\n%s", out, errOut)
-		}
-		if reg, _, _ := s.platform.counts(); reg != 0 {
-			t.Fatalf("the platform saw %d register call(s)", reg)
-		}
-		if lexists(filepath.Join(s.home, "state", "mining_decision.json")) {
-			t.Fatal("-yes recorded a mining decision")
 		}
 	})
 }

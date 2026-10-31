@@ -7,10 +7,6 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// noWait has no Windows meaning: a named pipe lives in its own namespace,
-// never at a name in a directory, so a read there cannot block on one.
-const noWait = 0
-
 // openNoWait opens path for reading. A symlink or junction at the name is
 // followed, which a read may do: a sandboxed command can already read what it
 // could point the name at, and the regular-file check still holds.
@@ -55,11 +51,6 @@ func openNoFollow(path string) (*os.File, error) {
 // attribute check then refuses it.
 func openLock(path string) (*os.File, error) {
 	return openExclusive(path, windows.GENERIC_READ|windows.GENERIC_WRITE, windows.OPEN_ALWAYS)
-}
-
-// openLockExisting is openLock read-only, on an existing file.
-func openLockExisting(path string) (*os.File, error) {
-	return openExclusive(path, windows.GENERIC_READ, windows.OPEN_EXISTING)
 }
 
 func openExclusive(path string, access, disposition uint32) (*os.File, error) {

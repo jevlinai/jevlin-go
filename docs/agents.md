@@ -34,7 +34,7 @@ earlier version wrote differently, and `jevlin agents install` refreshes it.
 
 A skill in `~/.claude/skills/jevlin/`. In `~/.claude/settings.json`: five hooks (`PreToolUse` on
 the Bash and PowerShell tools threads each search into the turn, three track the context window,
-`Stop` flushes) and six `permissions.allow` rules, the single-quoted, quoted and bare spellings
+`Stop` reports the turn end and starts the daily release check) and six `permissions.allow` rules, the single-quoted, quoted and bare spellings
 of the search command and of `fetch --stdin`. Every rule ends with the installation's
 `-config <file>`, and before setup has written that file it names the path setup will write.
 Reinstalling replaces those rules rather than adding more, including rules an earlier version
@@ -95,8 +95,8 @@ and "If your terminal is Git Bash". Use the matching one; the PowerShell form ru
 loses its encoding line, and a non-ASCII query goes out mangled.
 
 Cursor also runs Claude Code's hooks from `~/.claude/settings.json`, with its own payload. They
-recognize the caller from the payload and exit at once, doing nothing, so a Cursor turn ends
-with one flush, not two, and no Cursor command is rewritten as Claude Code's.
+recognize the caller from the payload and exit at once, doing nothing, so a Cursor turn's end
+is handled once, not twice, and no Cursor command is rewritten as Claude Code's.
 
 ### Known limits
 
@@ -132,9 +132,8 @@ install creates if it is not there.
 
 On macOS and Linux the block is a Codex permission profile named `jevlin`, made the default with
 `default_permissions`. It extends Codex's `:workspace` profile, or a profile of your own that you
-agreed to switch from, with write access to the state directory, plus the intake, sessions and
-spool directories when `[miner] enabled` is set, and network access to the search hosts only:
-the router, the authorization server when `as_url` is set, and the platform's agents API. A host
+agreed to switch from, with write access to the state and sessions directories, and network
+access to the search hosts only: the router and the platform's agents API. A host
 on this machine's loopback is never listed, because no command in Codex's sandbox can reach it
 and listing it would open every local port; the plan says when a service is on loopback. The
 block also turns on Codex's `network_proxy` feature, which is what enforces the host list: with
@@ -149,13 +148,14 @@ approval to reach the router.
 ### What to know
 
 Bash on macOS and Linux, PowerShell on Windows. Without the block, a search returns results but
-cannot record, so it earns nothing and the claim is never picked up. The config, key and wallet
-are never writable, so a command gone wrong cannot change where your credentials go. Sandboxed
-commands can read `credentials.json` and the state directory; on Windows, not the wallet.
-They can also leave files in the directories the block makes writable. jevlin's hooks and
-flushes, which run outside the sandbox, never write through a link left there and never wait on
-a pipe left at a name they read, so a sandboxed command cannot turn them into a write to a file
-of yours elsewhere, or stall a search. If your config puts `jevlin.toml`, or the folder that
+cannot write its lineage file or its turn mark, so its searches carry no session and no turn
+end is sent, and the claim resume it starts cannot write, so the claim is never picked up. The
+config and key are never writable, so a command gone wrong cannot change where your credentials
+go. Sandboxed commands can read `credentials.json` and the state directory. They can also leave
+files in the directories the block makes writable. jevlin's hooks, which run outside the
+sandbox, never write through a link left there and never wait on a pipe left at a name they
+read, so a sandboxed command cannot turn them into a write to a file of yours elsewhere, or
+stall a search. If your config puts `jevlin.toml`, or the folder that
 holds `credentials.json`, inside one of those directories, the install widens nothing and says
 why: give each directory its own place, as setup does. On Windows a sandbox's setup may
 add its own group to the state directory's access list; `doctor`'s `state access` line names
@@ -165,12 +165,11 @@ adds it again.
 
 Supported Codex is 0.158.0 or newer. Older versions are not supported: below 0.131 Codex refuses
 the whole file with "invalid type: map, expected a boolean" and does not start (upgrade Codex, or
-remove the block between its two markers), and 0.131 to 0.157 has not been tried. Inside the sandbox Codex routes commands through a proxy on this machine, and jevlin's
-flush and claim resume use it to reach the authorization server; jevlin never uses a proxy that
-is not on this machine for that. A process a search starts contacts only the hosts the profile
-lists, because Codex fails whichever command is running when anything inside the sandbox is
-refused a host. If you change `router_url`, `as_url` or the platform in your config, run
-`jevlin agents install` again; `jevlin agents status` says when the profile names other hosts
+remove the block between its two markers), and 0.131 to 0.157 has not been tried. Inside the sandbox Codex routes commands through a proxy on this machine, and the claim
+resume a search starts reaches the agents API through it. A process a search starts contacts
+only the hosts the profile lists, because Codex fails whichever command is running when anything
+inside the sandbox is refused a host. If you change `[router] url` or `[agents] url` in your
+config, run `jevlin agents install` again; `jevlin agents status` says when the profile names other hosts
 than the config does.
 
 `codex features disable network_proxy` deletes the profile's `[features.network_proxy]` table,
@@ -221,23 +220,13 @@ nothing is written for Codex and the plan names it.
 
 Codex runs the hooks only after you approve them: start `codex`, or open the app, and approve
 them when it asks you to review hooks. Until then they do nothing, and under `codex exec` nothing
-says so; searches still run and record, without a session or a turn. jevlin never records an
+says so; searches still run, without a session or a turn. jevlin never records an
 approval for you. `jevlin agents status` says what Codex has on record, read from its
 `config.toml`: an approval for some or all of the hooks, none, or that it cannot tell. An
 approval on record may be for an earlier version of a command, and whether it still counts is
 Codex's to decide; a Codex too old to run hooks reads as "no approval on record" too, since no
 version is checked. A hook whose command changes, after you move the binary or the config, may
 need approving again; an upgrade in place does not change the commands.
-
-**On Linux, approving the hooks is what delivers your Codex searches.** Codex runs each command
-in its own process namespace there, so the flush a search starts to deliver its evidence ends
-with the search. The evidence is kept, and goes out with the next jevlin run outside Codex: the
-`SessionStart` or `Stop` hook once approved, another agent's hooks, or a `jevlin search` or
-`jevlin flush` from your own shell. With mining on and neither of those two hooks approved,
-`jevlin agents status` and `jevlin status` say so, `status` counts the searches waiting and when
-the oldest was made, and `agents install` says it when it writes the hooks. Until something
-delivers them, searches made only in Codex may miss their epoch and earn nothing. macOS is not
-affected.
 
 With the hooks approved, a search Codex runs carries its session, turn and call, and a
 subagent's search names the session that started it. Only the search command the skill shows is
@@ -246,7 +235,7 @@ loop or piped on, runs as written and carries the per-shell identity. The fetch 
 shows is allowed without a prompt as well, as written, and anything else that fetches is asked
 about. A Codex search carries no assistant text.
 
-With `[miner] turn_end = true`, Codex's `Stop` hook also reports a turn in which a jevlin search was
+With `[search] turn_end = true`, Codex's `Stop` hook also reports a turn in which a jevlin search was
 served (see [The turn end](reference.md#the-turn-end)). It reads the turn from Codex's own session
 file: what you asked, what the assistant wrote along the way, its final answer, and each tool call by
 name and outcome, never a tool's input or output. A subagent's turn sends nothing of its own. Without
@@ -277,8 +266,8 @@ profile, for the same reason. A Codex turn end gives a shell command no duration
 file Codex 0.160.0 writes holds none that is the command's. A client of Codex's app server that
 starts a thread with an explicit sandbox mode discards the profile, and the network is then off
 for that thread: the skill cannot help there. On Linux, Codex runs each command in its own
-process namespace, so a flush or claim resume a search starts ends with the search; the hooks,
-which run outside the sandbox, flush instead.
+process namespace, so a claim resume a search starts ends with the search; a search from
+another agent or your shell, or `jevlin connect`, picks the claim up instead.
 
 ## opencode
 
@@ -289,9 +278,9 @@ which run outside the sandbox, flush instead.
 ### What is written and where
 
 An in-process plugin, `~/.config/opencode/plugins/jevlin.js`, that threads each search into the
-trace and starts the flush and the daily release check: when the plugin loads, when a
-top-level session is created and at each of its idles (opencode reports an idle twice, and the
-second start finds the flush running and the check not due). There is no skill directory:
+trace and starts the daily release check: when the plugin loads, when a top-level session is
+created and at each of its idles (opencode reports an idle twice, and the second start finds
+the check not due). There is no skill directory:
 install prints a rules block to paste into `AGENTS.md`.
 
 ### What to know
@@ -332,8 +321,8 @@ the compaction count, read back from the session Pi saved, so a resumed session 
 A turn is named by the id Pi saved for the message you wrote: two searches under one prompt
 share it, the next prompt's differ, and a resumed session names its turns as it did before.
 A fork is a session of its own, with turn ids of its own. When a session starts the extension also
-starts the flush and the daily release check, as Claude Code's session-start hook does; it
-pipes nothing to that process and reads nothing back.
+starts the daily release check, as Claude Code's session-start hook does; it pipes nothing to
+that process and reads nothing back.
 
 With `turn_end` on, a turn that searched is reported when Pi's run has settled. Pi can run
 several loops for one prompt, retrying a failed request or continuing after it compacts, and
@@ -396,4 +385,4 @@ Its searches carry a per-shell identity rather than an agent session.
 
 ### Known limits
 
-No hooks: no trace text, and no flush at session end. Each search still starts one.
+No hooks: no trace text, no turn end, and no daily release check.

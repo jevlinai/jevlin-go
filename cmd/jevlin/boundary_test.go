@@ -5,8 +5,7 @@ package main
 // someone adds the wrong import. Ported from tokendrop-proxy's
 // cmd/jevlin/boundary_test.go (goList/moduleRoot, the machinery),
 // stating this repo's own boundaries rather than the proxy's — this
-// module has no internal/forward, internal/observe, or
-// internal/mining/sign to guard.
+// module has no internal/forward or internal/observe to guard.
 
 import (
 	"fmt"
@@ -80,12 +79,10 @@ func TestSelfupdateImportsNoWrapperAndNoCredential(t *testing.T) {
 
 // TestNoChainImportsAnywhere is AGENTS.md invariant 9. Ported from the
 // proxy's cmd/jevlin/boundary_test.go rule 1, adapted to this module:
-// twilight-core is the same forbidden chain application, and the
-// Cosmos/CometBFT graph is banned for the same reason it is there — a
-// lean binary shipped to users must not pull the SDK's module tree.
-// wallet_tx.go hand-encodes the six protobuf messages a bank send needs
-// instead of importing cosmos-sdk to build them; this is what proves
-// that decision holds, not just documents it.
+// the chain application's module and the Cosmos/CometBFT graph are banned
+// for the same reason they are there — a lean binary shipped to users must
+// not pull the SDK's module tree. Nothing here needs chain messages; this
+// is what keeps such an import from arriving by accident.
 func TestNoChainImportsAnywhere(t *testing.T) {
 	banned := []string{
 		"github.com/twilight-project/twilight-core",
@@ -201,9 +198,10 @@ func isHTTPClientLiteral(e ast.Expr) bool {
 // — one built with its own net.Dialer instead, or with DialContext left
 // unset, is invisible to it.
 //
-// A DialContext field is set two ways in this module: inline, inside an
-// &http.Transport{...} composite literal (pkg/auth's two, wallet_tx.go's),
-// or as a separate assignment after http.DefaultTransport.Clone() (the
+// A DialContext field can be set two ways: inline, inside an
+// &http.Transport{...} composite literal (none today, but the form is
+// still swept so a new one is seen), or as a separate assignment after
+// http.DefaultTransport.Clone() (the
 // login probe and the search client, via client.go's shared
 // cloneDefaultTransport; pkg/platform's client; internal/selfupdate's
 // source) — Clone() itself produces no composite literal to inspect, so
@@ -342,20 +340,19 @@ func isNetdialFor(e ast.Expr, netdialLocal string) bool {
 	return ok && pkg.Name == netdialLocal
 }
 
-// TestConnectAndMiningNeverImportOSExec is invariant 11 (agent
-// onboarding design §6): the client never launches a process from the
-// connect path — the claim URL is printed, never opened. Scoped to
-// connect.go and mining.go specifically, not the module: os/exec is
-// legitimately imported elsewhere (detach_unix.go's spawnDetached is
-// the one real process spawn in this codebase, which search.go's
-// startFlush/startConnectResume both call into — importing os, not
-// os/exec, themselves) and by this very file, to shell out to `go list`
+// TestConnectNeverImportsOSExec is invariant 11 (agent onboarding design
+// §6): the client never launches a process from the connect path — the
+// claim URL is printed, never opened. Scoped to connect.go specifically,
+// not the module: os/exec is legitimately imported elsewhere
+// (detach_unix.go's spawnDetached is the one real process spawn in this
+// codebase, which startConnectResume calls into — importing os, not
+// os/exec, itself) and by this very file, to shell out to `go list`
 // for the test above.
-func TestConnectAndMiningNeverImportOSExec(t *testing.T) {
+func TestConnectNeverImportsOSExec(t *testing.T) {
 	root := moduleRoot(t)
 	fset := token.NewFileSet()
 	checked := 0
-	for _, name := range []string{"connect.go", "mining.go"} {
+	for _, name := range []string{"connect.go"} {
 		path := filepath.Join(root, "cmd", "jevlin", name)
 		file, err := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
 		if err != nil {
@@ -369,8 +366,8 @@ func TestConnectAndMiningNeverImportOSExec(t *testing.T) {
 			}
 		}
 	}
-	if checked != 2 {
-		t.Fatalf("checked %d files, want 2 (connect.go, mining.go) — this test is no longer looking at anything", checked)
+	if checked != 1 {
+		t.Fatalf("checked %d files, want 1 (connect.go) — this test is no longer looking at anything", checked)
 	}
 }
 

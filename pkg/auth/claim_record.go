@@ -24,8 +24,8 @@ type ClaimBootstrap struct {
 // the one thing this client tells a person to open, and agent.json is in
 // the state directory a sandboxed command can rewrite: a planted record that
 // kept this installation's agent id but carried another agent's link, on
-// the platform's own origin, was printed by connect, status and mining
-// enable, and claiming it put the attacker's agent in the participant's
+// the platform's own origin, was printed by connect and status, and
+// claiming it put the attacker's agent in the participant's
 // account. So the link lives where only an unsandboxed run writes it: the
 // publication of a registration, the rebuild from /v1/agents/me and the
 // re-mint, each a foreground run outside the sandbox. It is bound to its
@@ -51,6 +51,9 @@ func checkClaimBootstrap(b ClaimBootstrap) error {
 	}
 	if b.ClaimURL == "" {
 		return errors.New("auth: claim record has no claim_url")
+	}
+	if err := ValidClaimCode(b.ClaimCode); err != nil {
+		return err
 	}
 	if field := recordTextProblem(b); field != "" {
 		return fmt.Errorf("auth: claim record's %s holds a control, format or separator character", field)

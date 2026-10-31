@@ -3,8 +3,8 @@ package main
 // What an upgrade or rollback holds for its whole transaction.
 //
 // The installation's lifecycle gate, from before anything is fetched or
-// inspected until the replacement has committed or been undone, so no setup,
-// connect or flush admission crosses it; setup.lock, so a setup already
+// inspected until the replacement has committed or been undone, so no setup
+// or connect admission crosses it; setup.lock, so a setup already
 // running refuses the upgrade rather than having its binary replaced under
 // it; and the executable's own update lock, <resolved binary>.update.lock,
 // taken after the gate. The gate is keyed on the installation, so two

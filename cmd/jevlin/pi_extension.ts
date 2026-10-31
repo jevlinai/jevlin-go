@@ -54,13 +54,13 @@ const HOST_COMMAND_CHAR_LIMIT = process.platform === "win32" ? 8000 : 0
 // this line. Pi's skill names the installation in the command it teaches, so
 // this extension is attributable through its sibling; it carries the line
 // anyway, because the two halves are removed independently and a machine can
-// have the extension with no skill (dropin-miner#73).
+// have the extension with no skill.
 const INSTALL_CONFIG = "{{INSTALL_CONFIG}}"
 
 // The binary of the installation above, for the two processes this extension
-// starts: `hook start pi` when a session begins, which starts the flush and,
-// once a day, the release check — what Claude Code's session-start hook does
-// — and `hook turn pi` when a run settles, which is handed a finished turn
+// starts: `hook start pi` when a session begins, which starts, once a day,
+// the release check — what Claude Code's session-start hook does — and
+// `hook turn pi` when a run settles, which is handed a finished turn
 // (see reportTurn). Empty when the file was rendered with none, and then
 // nothing is started. Nothing is read back from either.
 const JEVLIN_BIN = "{{JEVLIN_BIN}}"
@@ -181,7 +181,7 @@ const windowGeneration = (entries) => {
 
 // ── the turn end ────────────────────────────────────────────────────────
 //
-// With `[miner] turn_end = true`, a turn that searched is reported when it
+// With `[search] turn_end = true`, a turn that searched is reported when it
 // ends: what the user asked, what the assistant finally wrote, each tool by
 // name, time and outcome, and the model. This file assembles that from the
 // session branch, which already holds all of it, and hands it to the binary
@@ -378,6 +378,7 @@ export default function (pi) {
       const text = historyForToolCall(entries, where)
       if (text) env.history = [{ role: "assistant", text }]
 
+      if (traceOff()) return
       const bridge = traceBridge(env, bridgeBudgetFor(cmd, HOST_SHELL, HOST_COMMAND_CHAR_LIMIT))
       if (bridge === null) return // oversized even without history: no bridge
       // H-R4: remove every bridge assignment we recognize, prepend our own,

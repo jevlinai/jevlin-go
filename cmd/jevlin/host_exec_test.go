@@ -16,7 +16,7 @@ package main
 // the platform are loopback stubs, a closed loopback proxy catches anything
 // that would dial out, and the platform stub fails the test if it is called.
 //
-// A case named for a defect names the issue it guards (dropin-miner#66, dropin-miner#67, dropin-miner#68, dropin-miner#69).
+// A case named for a defect says what it guards against.
 
 import (
 	"bytes"
@@ -330,7 +330,7 @@ func newExecInstallationIn(t *testing.T, dirName string) *execInstallation {
 		sessions: filepath.Join(home, "sessions"),
 		router:   &execRouter{},
 	}
-	for _, d := range []string{filepath.Dir(in.bin), in.sessions, filepath.Join(home, "state"), filepath.Join(home, "intake"), filepath.Join(home, "spool")} {
+	for _, d := range []string{filepath.Dir(in.bin), in.sessions, filepath.Join(home, "state")} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -373,20 +373,21 @@ func newExecInstallationIn(t *testing.T, dirName string) *execInstallation {
 		})
 	})
 
-	doc := fmt.Sprintf(`[mining]
-state_dir = %q
-spool_dir = %q
+	doc := fmt.Sprintf(`schema = 1
 
-[miner]
-router_url = %q
-intake_dir = %q
-sessions_dir = %q
+[router]
+url = %q
 
 [platform]
-base_url = %q
-agents_api_url = %q
-`, filepath.Join(home, "state"), filepath.Join(home, "spool"), router.URL,
-		filepath.Join(home, "intake"), in.sessions, platform.URL, platform.URL)
+url = %q
+
+[agents]
+url = %q
+
+[search]
+state_dir = %q
+sessions_dir = %q
+`, router.URL, platform.URL, platform.URL, filepath.Join(home, "state"), in.sessions)
 	if err := os.WriteFile(in.cfg, []byte(doc), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -860,7 +861,7 @@ func requireOneRequest(t *testing.T, in *execInstallation, out execOutcome, quer
 // every host's skill renders — the search, the preference command and the
 // human form — in the shell each was rendered for, on this runner.
 //
-// This is dropin-miner#67's guard. v0.2.9 rendered one Bash form for every host and OS,
+// This guard exists because v0.2.9 rendered one Bash form for every host and OS,
 // so on Windows two of the three main hosts could not search at all; each of
 // these rows was a failure then and runs now. A host whose shell is not
 // established keeps the Bash form, and its row is
@@ -976,7 +977,7 @@ func TestUnknownToolCellKeepsTheBashForm(t *testing.T) {
 // TestRulesLineCommandRunsInOpencodesShell runs the command opencode's
 // AGENTS.md line renders, with the JSON request on stdin, in the shell
 // opencode runs its bash tool in on this OS. v0.2.9 rendered a POSIX string
-// for every OS, which PowerShell could not parse (dropin-miner#67).
+// for every OS, which PowerShell could not parse.
 func TestRulesLineCommandRunsInOpencodesShell(t *testing.T) {
 	for _, sh := range renderedShellsOnThisOS(t, "opencode") {
 		t.Run(sh.name, func(t *testing.T) {
@@ -1012,8 +1013,8 @@ func lineageFileExists(in *execInstallation) bool {
 	return err == nil
 }
 
-// cursorLineageFileExists: Cursor keys its file by conversation as well
-// (dropin-miner#109), and every Cursor case here speaks for "exec-conversation".
+// cursorLineageFileExists: Cursor keys its file by conversation as well,
+// and every Cursor case here speaks for "exec-conversation".
 func cursorLineageFileExists(in *execInstallation) bool {
 	_, err := os.Stat(conversationLineagePath(in.sessions, in.root, "exec-conversation"))
 	return err == nil
@@ -1045,10 +1046,11 @@ func execCodexPayload(in *execInstallation, name string) any {
 	return m
 }
 
-// The hook events that spawn a detached flush (Claude Code's SessionStart
-// and Stop, Cursor's sessionStart and stop, Codex's SessionStart and Stop) are
-// not run here: a flush that outlives its test holds files in the test's
-// temporary directory. H3's hook execution test runs every installed hook.
+// The hook events that start the detached daily release check (Claude Code's
+// SessionStart and Stop, Cursor's sessionStart and stop, Codex's SessionStart
+// and Stop) are not run here: a child that outlives its test holds files in
+// the test's temporary directory. H3's hook execution test runs every
+// installed hook.
 var hookCases = map[string][]hookCase{
 	"codex": {
 		{
@@ -1175,7 +1177,7 @@ var hookCases = map[string][]hookCase{
 // the file the install writes and runs it, with a real payload, through the
 // runner that host's hook cell names on this OS.
 //
-// This is dropin-miner#69's guard. v0.2.9 wrote every hook command with a %q-quoted path,
+// This guard exists because v0.2.9 wrote every hook command with a %q-quoted path,
 // which cmd and a POSIX shell accept and PowerShell reads as an expression
 // whose next word is a parse error — so on Windows no Cursor hook ever ran,
 // nothing recorded the failure, and the binary never started.
@@ -1229,13 +1231,13 @@ func TestInstalledHookCommandsRunInTheirRunner(t *testing.T) {
 // through Cursor's hook runner on this OS, and requires the answer Cursor
 // waits for: allow, with the turn and call stamped into the lineage file.
 //
-// This is dropin-miner#66's guard, end to end through the real binary: v0.2.9 answered
+// This guard runs end to end through the real binary: v0.2.9 answered
 // nothing here, so every Cursor search waited for a human and none carried
 // per-call lineage.
 //
 // EVERY declared tool shell is fed through, not the first: Cursor on Windows
-// now teaches a form for each terminal the participant may have configured
-// (dropin-miner#96), and a form we teach and the hook then refuses is dropin-miner#66 again for that
+// now teaches a form for each terminal the participant may have configured,
+// and a form we teach and the hook then refuses is the same defect again for that
 // terminal. Taking shells[0] alone would have left the Git Bash form
 // unexercised on the one runner that could catch it.
 func TestCursorShellHookRecognizesTheSkillsOwnSearch(t *testing.T) {
@@ -1315,7 +1317,6 @@ func codexBridgedCommand(t *testing.T, in *execInstallation, command string) str
 	ops := realHookOps()
 	ops.executable = func() (string, error) { return in.bin, nil }
 	ops.getenv = func(string) string { return "" }
-	ops.spawnFlush = nil
 	payload := codexPayloadFixture(t, "codex-0.158.0-linux-PreToolUse-bash.json")
 	payload["cwd"] = in.root
 	var out bytes.Buffer
@@ -1328,7 +1329,7 @@ func codexBridgedCommand(t *testing.T, in *execInstallation, command string) str
 // runs it in the shell that host runs tool calls in, and reads the trace the
 // router received.
 //
-// This is dropin-miner#68's guard. v0.2.9 wrote one POSIX assignment for every host, so
+// This guard exists because v0.2.9 wrote one POSIX assignment for every host, so
 // on Windows opencode's prefix was looked up as a program name: the first
 // searches failed outright, and the one that ran reached the router with the
 // binary's own `cli` fallback harness — a search with no lineage at all. The

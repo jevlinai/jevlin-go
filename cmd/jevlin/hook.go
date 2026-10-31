@@ -14,31 +14,33 @@ package main
 //	    silence.
 //	hook [-config file] window <session-start|pre-compact|post-compact>
 //	    Claude Code lifecycle. Maintains the context-window generation the
-//	    lineage hook reads. session-start also starts a flush.
+//	    lineage hook reads. session-start also starts the daily release
+//	    check when it is due.
 //	hook [-config file] cursor <event>
 //	    Cursor hooks. Every event updates the session's lineage file and
 //	    `search` reads it:
-//	    sessionStart (seed, flush, export the identity to the session's
-//	    later hooks), preToolUse (put that identity on our exact rendered
-//	    search, dropin-miner#118), beforeShellExecution (allow our command; stamp
-//	    turn/call),
+//	    sessionStart (seed, export the identity to the session's later
+//	    hooks, the release check), preToolUse (put that identity on our
+//	    exact rendered search), beforeShellExecution (allow our
+//	    command; stamp turn/call),
 //	    afterAgentThought / afterAgentResponse (the text before a search),
-//	    preCompact (bump the window), stop (flush).
-//	hook [-config file] flush
-//	    Claude Code Stop. Start a detached flush.
+//	    preCompact (bump the window), stop (the turn end).
+//	hook [-config file] stop
+//	    Claude Code Stop: the turn is over. Queue the turn end, when the
+//	    installation opted in, and start the release check when due.
 //	hook [-config file] start <host>
 //	    A JavaScript host's adapter (opencode's plugin, Pi's extension) at a
-//	    session's start. Reads nothing: starts the flush and, when due, the
-//	    daily release check, exactly as session-start does for Claude Code.
+//	    session's start. Reads nothing: starts the daily release check when
+//	    due, exactly as session-start does for Claude Code.
 //	hook [-config file] codex <Event>
 //	    Codex hooks, the event in Codex's own spelling (codex_hook.go):
 //	    PreToolUse (put the trace bridge on this installation's exact
-//	    rendered search, and allow it), SessionStart (seed the window,
-//	    flush), PreCompact / PostCompact (bump the window), Stop (flush).
+//	    rendered search, and allow it), SessionStart (seed the window),
+//	    PreCompact / PostCompact (bump the window), Stop (the turn end).
 //
-// The lineage, window and flush entry points are installed for Claude Code
+// The lineage, window and stop entry points are installed for Claude Code
 // and for nobody else. Another host that loads Claude Code's settings and
-// runs them with its own payload (Cursor does, dropin-miner#87) gets nothing from them,
+// runs them with its own payload (Cursor does) gets nothing from them,
 // and nor does Codex: see claudeEntryStandsDown. The codex entry points are installed for Codex, and
 // stand down for a payload Codex did not send: see codexEntryStandsDown.
 //
@@ -94,7 +96,7 @@ const (
 	// file, so it is nothing the file does not already hold and nothing the
 	// envelope does not already send. It exists for the walk: when the
 	// lineage variable is lost, this says WHICH session of a host the search
-	// belongs to, which the host's name alone cannot (dropin-miner#104).
+	// belongs to, which the host's name alone cannot.
 	sessionEnv = "JEVLIN_SESSION"
 )
 
@@ -113,8 +115,6 @@ type hookOps struct {
 	// readTail returns at most max bytes from the END of the file, or an
 	// error; a file larger than hookMaxTranscript is reported as an error.
 	readTail func(path string, max int64) ([]byte, error)
-	// spawnFlush starts a detached flush. Best effort.
-	spawnFlush func(cfgPath string) error
 	// spawnUpdateCheck starts the detached daily release check, when
 	// startBackground finds it due (update_check.go). Best effort.
 	spawnUpdateCheck func(cfgPath string) error
@@ -144,7 +144,6 @@ func realHookOps() hookOps {
 		remove:           os.Remove,
 		listTemps:        listTempFiles,
 		readTail:         readFileTail,
-		spawnFlush:       startFlush,
 		spawnUpdateCheck: startUpdateCheck,
 		spawnTurnEnd:     startTurnEnd,
 		tempSuffix:       traceRandomID,
@@ -183,11 +182,11 @@ func cmdHook(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv fu
 }
 
 // hookContext is what every subcommand needs from the config: where the
-// lineage files live, and which config a spawned flush should read.
+// lineage files live, and which config a spawned child should read.
 type hookContext struct {
 	cfgPath     string
 	sessionsDir string
-	// turnEnd is [miner] turn_end: this installation reports a turn's final
+	// turnEnd is [search] turn_end: this installation reports a turn's final
 	// message. See turn_end.go.
 	turnEnd bool
 	// updateRoot and updateMode are what the daily release check's decision
@@ -197,15 +196,11 @@ type hookContext struct {
 	updateMode string
 }
 
-// startBackground starts what a hook leaves running after it exits: the
-// flush, and, when the day's release check is due, that check. Both are
-// best effort and neither is waited on. The stamp is read only when there
-// is something to start, and through the hook's own read, which never
-// waits on what a sandboxed command left at the name.
+// startBackground starts what a hook leaves running after it exits: when
+// the day's release check is due, that check. Best effort and not waited
+// on. The stamp is read through the hook's own read, which never waits on
+// what a sandboxed command left at the name.
 func (ops hookOps) startBackground(hc hookContext) {
-	if ops.spawnFlush != nil {
-		_ = ops.spawnFlush(hc.cfgPath)
-	}
 	if ops.spawnUpdateCheck == nil || ops.readFile == nil || hookInsideASandbox(ops.getenv) {
 		return
 	}
@@ -257,17 +252,22 @@ func hookDispatch(ops hookOps, args []string, stdin io.Reader, stdout, stderr io
 		cfgPath, args = args[1], args[2:]
 	}
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: jevlin hook [-config file] lineage | window <phase> | cursor <event> | codex <event> | turn <host> | start <host> | flush")
+		fmt.Fprintln(stderr, "usage: jevlin hook [-config file] lineage | window <phase> | cursor <event> | codex <event> | turn <host> | start <host> | stop")
 		return exitUsage
 	}
 	hc := hookContext{cfgPath: cfgPath}
 	// The sessions directory comes from the config. A missing or broken
 	// config costs the lineage file, never the call: fail-open.
-	if cfg, _, err := loadConfig(cfgPath, ops.getenv); err == nil {
-		hc.sessionsDir = cfg.Miner.SessionsDir
-		hc.turnEnd = cfg.Miner.TurnEnd
-		hc.updateRoot = updateRoot(cfg.Miner)
+	if cfg, src, err := loadConfig(cfgPath, ops.getenv); err == nil {
+		hc.sessionsDir = cfg.Search.SessionsDir
+		hc.turnEnd = cfg.Search.TurnEnd
+		hc.updateRoot = updateRoot(cfg.Search)
 		hc.updateMode = cfg.Update.Mode
+	} else {
+		// A config every command refuses (an earlier version's, after an
+		// unattended update) still says where the installation is, so the
+		// daily release check keeps running until setup has.
+		hc.updateRoot, hc.updateMode = refusedConfigUpdate(src)
 	}
 	// One leading byte-order mark is tolerated here for the same reason as on
 	// `search --stdin`: the shell in front of a hook is the host's choice,
@@ -275,8 +275,8 @@ func hookDispatch(ops hookOps, args []string, stdin io.Reader, stdout, stderr io
 	// parses nothing emits nothing, and the search loses its lineage.
 	payload, _ := io.ReadAll(io.LimitReader(stdin, 4<<20))
 	payload = trimUTF8BOM(payload)
-	// A hook installed for Claude Code stands down when another host runs it
-	// (dropin-miner#87): nothing written, nothing spawned, nothing printed, exit 0.
+	// A hook installed for Claude Code stands down when another host runs it:
+	// nothing written, nothing spawned, nothing printed, exit 0.
 	if event, claudeFormat := claudeEntryEvent(args); claudeFormat && claudeEntryStandsDown(payload, event) {
 		return exitOK
 	}
@@ -302,7 +302,7 @@ func hookDispatch(ops hookOps, args []string, stdin io.Reader, stdout, stderr io
 		}
 	case "hermes":
 		if len(args) > 1 {
-			hookHermes(args[1], payload, stdout)
+			hookHermes(ops.getenv, args[1], payload, stdout)
 		}
 	case "codex":
 		if len(args) > 1 {
@@ -321,29 +321,32 @@ func hookDispatch(ops hookOps, args []string, stdin io.Reader, stdout, stderr io
 		if len(args) > 1 {
 			ops.startBackground(hc)
 		}
-	case "flush":
+	case "stop":
 		// Claude Code's Stop: the turn is over. Its final message is queued
-		// first — when the installation opted in and the turn searched — and
-		// then the flush starts, as before.
+		// — when the installation opted in and the turn searched — and the
+		// release check starts when it is due.
 		claudeTurnEnd(ops, hc, payload)
 		ops.startBackground(hc)
 	default:
+		// A hook entry is written by `agents install`, never typed, so a
+		// subcommand this binary does not know is a hook file and a binary
+		// of different versions, not a usage error. It is named on stderr
+		// and the tool call goes on (invariant 1).
 		fmt.Fprintf(stderr, "jevlin hook: unknown subcommand %q\n", args[0])
-		return exitUsage
 	}
 	// Fail-open contract: the hook itself never fails a tool call.
 	return exitOK
 }
 
-// ── who is calling (dropin-miner#87) ────────────────────────────────────────────────
+// ── who is calling ────────────────────────────────────────────────
 //
 // Cursor loads Claude Code's hooks from ~/.claude/settings.json ("Include
 // Third-Party Plugins, Skills, and Other Configs", on by default) and runs
 // them beside its own, with ITS payload. Measured from Cursor 3.20.21's hook
 // log on macOS and Windows: `window session-start` at sessionStart,
-// `lineage` at preToolUse, `flush` at stop — three extra processes and a
-// second flush every turn, and with v0.2.9 a `lineage` answer Cursor honored,
-// which sent a Cursor search to the router labeled claude-code (dropin-miner#91).
+// `lineage` at preToolUse, `stop` at stop — three extra processes every
+// turn, and with v0.2.9 a `lineage` answer Cursor honored,
+// which sent a Cursor search to the router labeled claude-code.
 //
 // The decision is taken from the payload, never from the environment: the
 // environment is whatever the calling host's process happened to inherit,
@@ -360,7 +363,7 @@ func claudeEntryEvent(args []string) (event string, ok bool) {
 	switch args[0] {
 	case "lineage":
 		return "PreToolUse", true
-	case "flush":
+	case "stop":
 		return "Stop", true
 	case "window":
 		if len(args) < 2 {
@@ -487,7 +490,7 @@ func hookLineage(ops hookOps, hc hookContext, payload []byte, stdout io.Writer) 
 	// Which shell will run this command is not a property of the host but of
 	// the TOOL: Claude Code runs the Bash tool through Git Bash and the
 	// PowerShell tool through PowerShell, and its payload names which one
-	// (dropin-miner#77, H-R5). A tool this client does not know gets no rewrite — the
+	// (H-R5). A tool this client does not know gets no rewrite — the
 	// syntax of its shell is exactly what is not known.
 	bridgeShell := shellPOSIX
 	// ours is true when the command is EXACTLY the search this installation's
@@ -515,6 +518,12 @@ func hookLineage(ops hookOps, hc hookContext, payload []byte, stdout io.Writer) 
 		}
 	} else if _, exists := p.ToolInput["trace_bridge"]; exists {
 		return // never overwrite a bridge that is somehow already there
+	}
+	// JEVLIN_TRACE=off turns traces off entirely: no bridge on the command
+	// and no lineage file, not a bridge that search then drops. The fetch
+	// allow above is not a trace and still answers.
+	if traceOff(ops.getenv) {
+		return
 	}
 
 	env := &traceEnvelope{
@@ -592,7 +601,7 @@ func hookLineage(ops hookOps, hc hookContext, payload []byte, stdout io.Writer) 
 		"hookEventName": "PreToolUse",
 		"updatedInput":  updated,
 	}
-	// The permission question this hook caused, answered by this hook (dropin-miner#98).
+	// The permission question this hook caused, answered by this hook.
 	//
 	// `agents install` writes permissions.allow PREFIX rules naming the binary
 	// first. The rewrite above puts the bridge in front of it, so the command
@@ -671,7 +680,7 @@ func orString(v, fallback string) string {
 //     is the case that reaches every search made through this skill, and it
 //     always carries this field; without the exclusion that entry floors
 //     the scan one step too late and the assistant's sentence right before
-//     the Skill call is never found (dropin-miner#65). `isMeta` alone is NOT the signal:
+//     the Skill call is never found. `isMeta` alone is NOT the signal:
 //     it also marks entries that START a turn or sit between turns with no
 //     tool call behind them at all — "Continue from where you left off.",
 //     an autonomous-loop tick, a scheduled wake-up — and those are exactly
@@ -728,7 +737,7 @@ func currentAssistantText(ops hookOps, p hookPayload) string {
 	// RESPONSE TO A TOOL CALL: the tool-result the host also writes
 	// (toolUseResult, or only tool_result blocks) or an entry carrying a
 	// non-empty sourceToolUseID, such as the Skill tool's injected skill
-	// body (dropin-miner#65). isMeta on its own is not the signal — it also marks
+	// body. isMeta on its own is not the signal — it also marks
 	// entries that start a turn with no tool call behind them at all
 	// ("Continue from where you left off.", an autonomous-loop tick), and
 	// those must still floor the scan.
@@ -895,7 +904,7 @@ func hookWindow(ops hookOps, hc hookContext, phase string, payload []byte) {
 	}
 	// The error is still discarded — a state-file problem never blocks a
 	// session start or a compaction — but a failed rename no longer leaves
-	// its temporary file behind (dropin-miner#100). Only this file's own leftovers are
+	// its temporary file behind. Only this file's own leftovers are
 	// swept: with no sessions directory configured the state file lives in
 	// the plugin root, which is not this client's to tidy.
 	_ = replaceViaTemp(ops, path, b, ops.now(), false)
@@ -954,7 +963,7 @@ func hookCursorOn(goos string, ops hookOps, hc hookContext, event string, payloa
 	if len(p.WorkspaceRoots) > 0 && p.WorkspaceRoots[0] != "" {
 		workspace = p.WorkspaceRoots[0]
 	}
-	// One file per conversation (dropin-miner#109). sessionStart names it and exports it;
+	// One file per conversation. sessionStart names it and exports it;
 	// every later event writes to the file the session DECLARED, when its
 	// environment holds one for this very conversation, and computes the same
 	// name otherwise. Declared first is what serves a conversation whose
@@ -971,8 +980,13 @@ func hookCursorOn(goos string, ops hookOps, hc hookContext, event string, payloa
 		}
 	}
 	now := ops.now()
+	// With traces off nothing of the conversation is kept: no lineage file
+	// is written, so the user's prompt, the reasoning and the answer never
+	// reach the sessions directory, and preToolUse labels no search. The
+	// permission answers and the background starts are unchanged.
+	off := traceOff(ops.getenv)
 	update := func(apply func(*lineageFile)) {
-		if path == "" || p.ConversationID == "" {
+		if off || path == "" || p.ConversationID == "" {
 			return
 		}
 		_ = updateLineage(ops, path, now, func(l *lineageFile) {
@@ -981,7 +995,7 @@ func hookCursorOn(goos string, ops hookOps, hc hookContext, event string, payloa
 			apply(l)
 		})
 	}
-	flush := func() { ops.startBackground(hc) }
+	background := func() { ops.startBackground(hc) }
 
 	switch event {
 	case "sessionStart":
@@ -990,7 +1004,7 @@ func hookCursorOn(goos string, ops hookOps, hc hookContext, event string, payloa
 				l.Window = "none"
 			}
 		})
-		flush()
+		background()
 		env := map[string]string{"JEVLIN_HARNESS": "cursor"}
 		if path != "" {
 			env[lineageEnv] = path
@@ -1039,6 +1053,9 @@ func hookCursorOn(goos string, ops hookOps, hc hookContext, event string, payloa
 		}
 		fmt.Fprintln(stdout, `{"permission":"allow"}`)
 	case "preToolUse":
+		if off {
+			return // beforeShellExecution answers the permission; there is no label to add
+		}
 		shells, err := declaredShells(cursorTarget{}, goos, channelTool)
 		if err != nil {
 			return
@@ -1101,13 +1118,13 @@ func hookCursorOn(goos string, ops hookOps, hc hookContext, event string, payloa
 				l.TurnSearches, l.SearchesTurnID = nil, ""
 			})
 		}
-		flush()
+		background()
 	case "sessionEnd":
-		flush()
+		background()
 	}
 }
 
-// ── a payload Cursor's wrapper double-encoded (dropin-miner#113) ────────────────────
+// ── a payload Cursor's wrapper double-encoded ────────────────────
 //
 // On Windows Cursor runs a hook as
 //
@@ -1131,7 +1148,7 @@ func hookCursorOn(goos string, ops hookOps, hc hookContext, event string, payloa
 // cp1252 leaves undefined, as the measurement showed for 0x9d) and cp1252's
 // 27 characters for 0x80–0x9F. The second half is what reaches this hook for
 // the text a model writes most: `—` (e2 80 94) arrives as `â€”`, `’` as `â€™`
-// — dropin-miner#88's shape — and a Latin-1-only reading would leave every one of them.
+// — the shape seen live — and a Latin-1-only reading would leave every one of them.
 
 // cp1252High is cp1252's mapping of 0x80–0x9F, reversed.
 var cp1252High = map[rune]byte{
@@ -1178,7 +1195,7 @@ func repairStoredText(s string, stderr io.Writer) string {
 	return fixed
 }
 
-// ── Cursor's identity, carried on the command (dropin-miner#118) ────────────────────
+// ── Cursor's identity, carried on the command ────────────────────
 //
 // A `sessionStart` hook's `env` does not reach the shell Cursor's agent runs,
 // and Cursor never said it would: its documentation promises that
@@ -1315,7 +1332,7 @@ func withoutCursorIdentity(sh shellKind, prefix, command string) (string, bool) 
 // the prefix rebuilt here from this hook's own environment, the same values
 // preToolUse wrote, and compared byte for byte. Any other prefix, one
 // carrying other values, or this prefix on anything but the search, is not a
-// command this client wrote (dropin-miner#91's discipline, for a prefix we write
+// command this client wrote (the byte-for-byte discipline, for a prefix we write
 // ourselves), and Cursor asks about it as about any other.
 func recognizeCursorCommand(ops hookOps, hc hookContext, command string, shells []shellKind) *recognizedForm {
 	if f := recognizeRenderedForm(command, ops.executable, hc.cfgPath, shells); f != nil {
@@ -1359,9 +1376,9 @@ func cursorShellRecognizes(ops hookOps, hc hookContext, command string, shells, 
 // the shell the form was rendered for, because inertUnderEveryShell is about
 // the shells the form was NOT rendered for.
 //
-// Where the runners hand the hook the payload re-encoded (Windows,
-// dropin-miner#113), the command this hook reads is not the command the shell
-// will run: every byte above ASCII arrives as other characters. A typographic
+// Where the runners hand the hook the payload re-encoded (Windows), the
+// command this hook reads is not the command the shell will run: every byte
+// above ASCII arrives as other characters. A typographic
 // quote, which PowerShell ends a single-quoted string at, arrives as three
 // characters readRenderedPath has no reason to refuse. So there, a binary or
 // config path that is not ASCII is not allowed. The query in the request
@@ -1411,7 +1428,7 @@ func isFetchForm(f *recognizedForm) bool {
 // hand this hook the payload's bytes unchanged. POSIX alone does. On Windows
 // Cursor wraps a hook in PowerShell that reads the payload file in the ANSI
 // code page and re-encodes it, so every non-ASCII character arrives changed
-// (dropin-miner#113) — in whatever code page that machine has, so the change cannot be
+// — in whatever code page that machine has, so the change cannot be
 // undone with certainty.
 func hookInputIntact(runners []shellKind) bool {
 	if len(runners) == 0 {

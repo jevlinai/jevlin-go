@@ -2,17 +2,14 @@ package main
 
 // Lifecycle coordination (lifecycle.go): the gate's place, how every command
 // finds it, and the one guarantee it exists for — an operation that destroys
-// or replaces an installation cannot be crossed by a setup, connect or flush
-// that starts after its check.
+// or replaces an installation cannot be crossed by a setup or connect that
+// starts after its check.
 
 import (
 	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"io"
 	"os"
 	"path/filepath"
@@ -126,10 +123,10 @@ func activeOperation(err error) string {
 	return ""
 }
 
-// minerConfigTemplate is a mining installation's config with its state,
-// intake and sessions directories filled in. The AS is never contacted: no
-// mining decision is on file.
-const minerConfigTemplate = "[mining]\nas_url = \"https://rewards.invalid.test\"\nchain_id = \"twilight-testnet-1\"\nslot_id = 3\nstate_dir = %q\n\n[miner]\nenabled = true\nintake_dir = %q\nsessions_dir = %q\n"
+// installationConfigTemplate is an installation's config with its state and
+// sessions directories filled in, which is all the exclusion needs: the
+// connect lock is located from the state directory.
+const installationConfigTemplate = "schema = 1\n\n[search]\nstate_dir = %q\nsessions_dir = %q\n"
 
 func writeFileT(t *testing.T, path, body string) {
 	t.Helper()
@@ -320,25 +317,21 @@ func TestAnUnopenableGateAdmitsOrdinaryOperationsButRefusesDestructiveOnes(t *te
 func TestDestructiveExclusionRefusesEachRunningOperation(t *testing.T) {
 	root := t.TempDir()
 	home := filepath.Join(root, "home")
-	// State and intake outside home: the operation locks are found through
-	// the config, not assumed beside it.
+	// State outside home: the connect lock is found through the config, not
+	// assumed beside it.
 	stateDir := filepath.Join(root, "elsewhere", "state")
-	intakeDir := filepath.Join(root, "evidence", "intake")
-	writeFileT(t, filepath.Join(home, setupConfigFile), fmt.Sprintf(minerConfigTemplate,
-		stateDir, intakeDir, filepath.Join(root, "evidence", "sessions")))
-	for _, dir := range []string{stateDir, intakeDir} {
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			t.Fatal(err)
-		}
+	writeFileT(t, filepath.Join(home, setupConfigFile), fmt.Sprintf(installationConfigTemplate,
+		stateDir, filepath.Join(root, "elsewhere", "sessions")))
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
 	}
 	locks := map[string]string{
 		"setup":   filepath.Join(home, setupLockFile),
 		"connect": filepath.Join(stateDir, "connect.lock"),
-		"flush":   filepath.Join(root, "evidence", "flush.lock"),
 	}
 	gatePath := lifecycleGatePath(home)
 
-	for _, op := range []string{"setup", "connect", "flush"} {
+	for _, op := range []string{"setup", "connect"} {
 		release := holdLockFile(t, locks[op])
 		ex, err := excludeLifecycle(home, noEnv, 0)
 		if got := activeOperation(err); got != op {
@@ -376,7 +369,7 @@ func TestDestructiveExclusionRefusesEachRunningOperation(t *testing.T) {
 		t.Error("releaseOperation must leave the gate held")
 	}
 	ex.release()
-	for name, path := range map[string]string{"gate": gatePath, "setup": locks["setup"], "flush": locks["flush"]} {
+	for name, path := range map[string]string{"gate": gatePath, "setup": locks["setup"]} {
 		if !lockIsFree(t, path) {
 			t.Errorf("release must let go of the %s lock", name)
 		}
@@ -390,7 +383,6 @@ func TestDestructiveExclusionWithoutAConfigProbesTheInstallerLayout(t *testing.T
 	}
 	for op, path := range map[string]string{
 		"connect": filepath.Join(home, "state", "connect.lock"),
-		"flush":   filepath.Join(home, "flush.lock"),
 	} {
 		release := holdLockFile(t, path)
 		ex, err := excludeLifecycle(home, noEnv, 0)
@@ -435,16 +427,11 @@ func connectInstallation(t *testing.T) (home, cfgPath, stateDir string) {
 	home = filepath.Join(t.TempDir(), "home")
 	stateDir = filepath.Join(home, "state")
 	cfgPath = filepath.Join(home, setupConfigFile)
-	// mining.enabled is explicit, so connect -json has a decision to act on
-	// and reaches admission instead of answering human_decision_required.
-	writeFileT(t, cfgPath, fmt.Sprintf("[platform]\nbase_url = %q\nagents_api_url = %q\n\n[mining]\nenabled = false\nstate_dir = %q\n",
+	writeFileT(t, cfgPath, fmt.Sprintf("schema = 1\n\n[platform]\nurl = %q\n\n[agents]\nurl = %q\n\n[search]\nstate_dir = %q\n",
 		platform.srv.URL, platform.srv.URL, stateDir))
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	orig := connectInteractive
-	connectInteractive = func(io.Reader, io.Writer) bool { return false }
-	t.Cleanup(func() { connectInteractive = orig })
 	return home, cfgPath, stateDir
 }
 
@@ -498,7 +485,7 @@ func TestDetachedAndMachineConnectUnderAHeldGate(t *testing.T) {
 		t.Errorf("connect -resume under a held gate exits 0, got %d", code)
 	}
 	if lexists(stateDir) {
-		t.Error("connect -resume under a held gate must record nothing: no resume stamp, no health")
+		t.Error("connect -resume under a held gate must record nothing: no resume stamp, no trace key")
 	}
 
 	var out bytes.Buffer
@@ -536,77 +523,6 @@ func TestDetachedAndMachineConnectUnderAHeldGate(t *testing.T) {
 	}
 }
 
-func flushInstallation(t *testing.T) (home, cfgPath string) {
-	t.Helper()
-	home = filepath.Join(t.TempDir(), "home")
-	cfgPath = filepath.Join(home, setupConfigFile)
-	writeFileT(t, cfgPath, fmt.Sprintf(minerConfigTemplate,
-		filepath.Join(home, "state"), filepath.Join(home, "intake"), filepath.Join(home, "sessions")))
-	return home, cfgPath
-}
-
-func TestFlushCannotStartUnderAHeldExclusion(t *testing.T) {
-	home, cfgPath := flushInstallation(t)
-	ex, err := excludeLifecycle(home, noEnv, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ex.release()
-	ex.releaseOperation(filepath.Join(home, "flush.lock"))
-	if err := os.Remove(filepath.Join(home, "flush.lock")); err != nil && !errors.Is(err, os.ErrNotExist) {
-		t.Fatal(err)
-	}
-
-	setForegroundWait(t, 30*time.Second)
-	ev := watchLifecycle(t, true)
-	done := make(chan int, 1)
-	go func() {
-		done <- cmdFlush([]string{"-config", cfgPath}, io.Discard, io.Discard, noEnv)
-	}()
-	awaitRefusedAtGate(t, ev, done, "flush")
-	if lexists(filepath.Join(home, "flush.lock")) {
-		t.Fatal("flush touched its lock before passing the gate")
-	}
-
-	ex.release()
-	select {
-	case <-ev.locked:
-	case code := <-done:
-		t.Fatalf("once the exclusion ended flush must pass the gate and take flush.lock; it exited %d", code)
-	}
-	<-done
-}
-
-func TestDetachedAndManualFlushUnderAHeldGate(t *testing.T) {
-	home, cfgPath := flushInstallation(t)
-	mustAcquireGate(t, lifecycleGatePath(home))
-	setForegroundWait(t, 100*time.Millisecond)
-	ev := watchLifecycle(t, false)
-
-	detached := envOf(map[string]string{detachedChildEnv: "1"})
-	start := time.Now()
-	if code := cmdFlush([]string{"-config", cfgPath}, io.Discard, io.Discard, detached); code != exitOK {
-		t.Errorf("a detached flush under a held gate exits 0, got %d", code)
-	}
-	if waited := time.Since(start); waited >= lifecycleForegroundWait {
-		t.Errorf("a detached flush must not wait for the gate; it took %s", waited)
-	}
-	if entries, _ := os.ReadDir(home); len(entries) != 1 {
-		t.Errorf("a detached flush under a held gate records nothing: home holds %v", entries)
-	}
-
-	var stderr bytes.Buffer
-	if code := cmdFlush([]string{"-config", cfgPath}, io.Discard, &stderr, noEnv); code != exitTransport ||
-		!strings.Contains(stderr.String(), errLifecycleBusy.Error()) {
-		t.Errorf("a manual flush under a held gate refuses non-zero and says why: exit %d, %q", code, stderr.String())
-	}
-	select {
-	case <-ev.locked:
-		t.Error("no flush may take flush.lock while the gate is held")
-	default:
-	}
-}
-
 // ── setup ───────────────────────────────────────────────────────────────
 
 // probeWriter runs fn the first time a write contains needle, before the
@@ -628,9 +544,6 @@ func (p *probeWriter) Write(b []byte) (int, error) {
 
 func TestSetupHoldsSetupLockThroughItsWholeRun(t *testing.T) {
 	s := newSetupSandbox(t)
-	orig := connectInteractive
-	connectInteractive = func(io.Reader, io.Writer) bool { return false }
-	defer func() { connectInteractive = orig }()
 
 	probed := 0
 	probe := func(when string) {
@@ -719,54 +632,5 @@ func TestTheSetAsideScanNeverOffersTheLifecycleGate(t *testing.T) {
 	writeFileT(t, filepath.Join(aside, credentialsFile), "{}")
 	if got := setAsideInstallation(home); got != aside {
 		t.Errorf("a real set-aside installation is still found: got %q, want %q", got, aside)
-	}
-}
-
-// ── the detached marker ─────────────────────────────────────────────────
-
-func TestDetachedChildrenCarryTheMarker(t *testing.T) {
-	parent := []string{"PATH=/bin", detachedChildEnv + "=0"}
-	child := detachedEnvironment(parent)
-	if child[len(child)-1] != detachedChildEnv+"=1" || len(parent) != 2 || parent[1] != detachedChildEnv+"=0" {
-		t.Errorf("the child gets the marker last, so it wins over an inherited value, and the parent's slice is untouched: %v / %v", child, parent)
-	}
-	for value, want := range map[string]bool{"1": true, "": false, "0": false, "true": false} {
-		if got := detachedChild(envOf(map[string]string{detachedChildEnv: value})); got != want {
-			t.Errorf("detachedChild(%q) = %v, want %v", value, got, want)
-		}
-	}
-
-	// spawnDetached is the single choke point for every detached child, on
-	// both platforms, whichever this test runs on.
-	for _, file := range []string{"detach_unix.go", "detach_windows.go"} {
-		f, err := parser.ParseFile(token.NewFileSet(), file, nil, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		marked := false
-		ast.Inspect(f, func(n ast.Node) bool {
-			fn, ok := n.(*ast.FuncDecl)
-			if !ok || fn.Name.Name != "spawnDetached" {
-				return true
-			}
-			ast.Inspect(fn.Body, func(n ast.Node) bool {
-				as, ok := n.(*ast.AssignStmt)
-				if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
-					return true
-				}
-				sel, ok := as.Lhs[0].(*ast.SelectorExpr)
-				call, isCall := as.Rhs[0].(*ast.CallExpr)
-				if ok && sel.Sel.Name == "Env" && isCall {
-					if id, ok := call.Fun.(*ast.Ident); ok && id.Name == "detachedEnvironment" {
-						marked = true
-					}
-				}
-				return true
-			})
-			return false
-		})
-		if !marked {
-			t.Errorf("%s: spawnDetached must set cmd.Env = detachedEnvironment(...) so every detached child is marked", file)
-		}
 	}
 }

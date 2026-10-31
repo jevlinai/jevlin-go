@@ -187,7 +187,7 @@ func TestAgentsInstallWritesClaudeSkillAndMergesHooksIntoSettings(t *testing.T) 
 		t.Fatalf("existing PreToolUse group not preserved first: %v", pre)
 	}
 	ours := pre[1].(map[string]any)
-	// The matcher covers both shell tools from H3 on (dropin-miner#77): a search the model
+	// The matcher covers both shell tools from H3 on: a search the model
 	// sends through Claude Code's PowerShell tool reaches this hook too. The
 	// value is written out rather than compared with the constant — a test
 	// that reads the constant agrees with whatever the constant becomes.
@@ -225,7 +225,7 @@ func TestAgentsInstallWritesClaudeSkillAndMergesHooksIntoSettings(t *testing.T) 
 		}
 	}
 	for _, r := range allow[1:] {
-		if strings.Contains(r, "hook") || strings.Contains(r, "flush") || strings.Contains(r, "wallet") {
+		if strings.Contains(r, "hook") || strings.Contains(r, "connect") || strings.Contains(r, "upgrade") {
 			t.Errorf("a rule allows more than search and fetch: %s", r)
 		}
 	}
@@ -454,7 +454,7 @@ func TestAgentsOpencodePluginRewritesOurCommandOnly(t *testing.T) {
 		t.Fatalf("exit %d\n%s", code, out)
 	}
 	js := string(m.files["/home/u/.config/opencode/plugins/jevlin.js"])
-	for _, want := range []string{`input.tool !== "bash"`, "JEVLIN_TRACE_BRIDGE=", "tokendrop-trace-v1|", "export const JevlinLineage"} {
+	for _, want := range []string{`input.tool !== "bash"`, "JEVLIN_TRACE_BRIDGE=", "jevlin-trace-v1|", "export const JevlinLineage"} {
 		if !strings.Contains(js, want) {
 			t.Errorf("plugin lacks %q", want)
 		}
@@ -508,7 +508,7 @@ func TestAgentsUninstallSparesAHookEntryForADifferentInstallationOfTheSameName(t
 }
 
 // TestAgentsHookAndAllowRuleMatchingSurvivesAWindowsStyleBinaryPath guards
-// entryIsOurs and ruleIsOurs against the defect found on PR dropin-miner#51's Windows
+// entryIsOurs and ruleIsOurs against the defect found on a PR's Windows
 // run: both used strings.Contains(command, bin), but binEntry's commands
 // and claudeAllowRules' quoted rule are written with %q, which doubles
 // every backslash. On a Windows path like the one used here, bin's own
@@ -598,7 +598,7 @@ func wantHookCommand(t *testing.T, tg installTarget, e binEntry, sub ...string) 
 // Every other test installs into a file this client wrote itself, so the
 // recognizer is only ever fed the current spelling. A %q entry is the one
 // that matters: it is ours by the recognizer, and it does not parse in
-// PowerShell (dropin-miner#69), so an install that saw its own binary in it and decided
+// PowerShell, so an install that saw its own binary in it and decided
 // there was nothing to do would leave a hook that never runs.
 //
 // The Windows-style path is deliberate: with a POSIX path, %q and the cmd
@@ -630,7 +630,7 @@ func TestEveryHookSpellingIsReplacedOnInstallAndRemovedOnUninstall(t *testing.T)
 	// Five spellings must be five distinct strings, or this test is weaker
 	// than it reads.
 	seen := map[string]bool{}
-	for _, s := range spellings("flush") {
+	for _, s := range spellings("stop") {
 		if seen[s] {
 			t.Fatalf("two spellings are the same string: %q", s)
 		}
@@ -641,7 +641,7 @@ func TestEveryHookSpellingIsReplacedOnInstallAndRemovedOnUninstall(t *testing.T)
 	ops.executable = func() (string, error) { return bin, nil }
 
 	claudeStop := []any{map[string]any{"hooks": []any{map[string]any{"type": "command", "command": "say done"}}}}
-	for _, c := range spellings("flush") {
+	for _, c := range spellings("stop") {
 		claudeStop = append(claudeStop, map[string]any{"hooks": []any{map[string]any{"type": "command", "command": c}}})
 	}
 	cursorStop := []any{map[string]any{"command": "./hooks/mine.sh"}}
@@ -673,7 +673,7 @@ func TestEveryHookSpellingIsReplacedOnInstallAndRemovedOnUninstall(t *testing.T)
 			want, user        string
 			command           func(any) string
 		}{
-			{"Claude", settings, "Stop", wantHookCommand(t, claude, entry, "flush"), "say done", claudeGroupCommand},
+			{"Claude", settings, "Stop", wantHookCommand(t, claude, entry, "stop"), "say done", claudeGroupCommand},
 			{"Cursor", cursorPath, "stop", wantHookCommand(t, cursor, entry, "cursor", "stop"), "./hooks/mine.sh", cursorEntryCommand},
 		} {
 			list, _ := hooksOf(t, m, c.path)[c.event].([]any)
@@ -733,7 +733,7 @@ func cursorEntryCommand(e any) string {
 // because it counted more than one entry of ours — never because it compared
 // the one it found against what it would write now. A sameJSONValue that
 // answered "the same" for any two entries leaves that test green and leaves
-// a stale entry that does not parse in PowerShell (dropin-miner#69). Here there is exactly one entry and it is stale, so the
+// a stale entry that does not parse in PowerShell. Here there is exactly one entry and it is stale, so the
 // replacement happens only if the comparison is real.
 //
 // The Windows-style binary path makes the stale spelling differ from the
@@ -758,7 +758,7 @@ func TestInstallReplacesOneStaleEntryPerEventInPlace(t *testing.T) {
 		{"SessionStart", []string{"window", "session-start"}},
 		{"PreCompact", []string{"window", "pre-compact"}},
 		{"PostCompact", []string{"window", "post-compact"}},
-		{"Stop", []string{"flush"}},
+		{"Stop", []string{"stop"}},
 	}
 	cursorEvents := []string{"sessionStart", "beforeShellExecution", "afterAgentThought", "afterAgentResponse", "preCompact", "stop"}
 
@@ -839,7 +839,7 @@ func TestInstallReplacesOneStaleEntryPerEventInPlace(t *testing.T) {
 		}
 	}
 	// The replaced PreToolUse group carries the matcher this version writes,
-	// not the stale Bash-only one (dropin-miner#77).
+	// not the stale Bash-only one.
 	for _, e := range claudeAfter["PreToolUse"].([]any) {
 		g, _ := e.(map[string]any)
 		if claudeGroupCommand(e) == wantHookCommand(t, claude, entry, "lineage") && g["matcher"] != claudeToolMatcher {
@@ -1052,19 +1052,19 @@ func TestTierPathFollowsTheInstallationHome(t *testing.T) {
 }
 
 // status says the band the next search will send, not merely the file:
-// with [miner] tier set and no file, that is the config's band, and the
+// with [router] tier set and no file, that is the config's band, and the
 // line says which of the two set it.
 func TestAgentsTierStatusShowsTheEffectiveBand(t *testing.T) {
 	dir := t.TempDir()
 	cfg := filepath.Join(dir, "jevlin.toml")
-	if err := os.WriteFile(cfg, []byte("[miner]\nrouter_url = \"http://127.0.0.1:8080\"\ntier = \"max\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(cfg, []byte("schema = 1\n\n[router]\nurl = \"http://127.0.0.1:8080\"\ntier = \"max\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	m, ops := newFakeMachine()
-	if code, out, _ := runAgents(t, ops, nil, "tier", "-config", cfg); code != exitOK || !strings.Contains(out, "search tier: max") || !strings.Contains(out, "([miner] tier)") {
+	if code, out, _ := runAgents(t, ops, nil, "tier", "-config", cfg); code != exitOK || !strings.Contains(out, "search tier: max") || !strings.Contains(out, "([router] tier)") {
 		t.Errorf("config band not shown: %d %q", code, out)
 	}
-	if code, out, _ := runAgents(t, ops, nil, "status", "-config", cfg); code != exitOK || !strings.Contains(out, "search tier:    max") || !strings.Contains(out, "([miner] tier)") {
+	if code, out, _ := runAgents(t, ops, nil, "status", "-config", cfg); code != exitOK || !strings.Contains(out, "search tier:    max") || !strings.Contains(out, "([router] tier)") {
 		t.Errorf("agents status: %d %q", code, out)
 	}
 	if code, out, _ := runAgents(t, ops, nil, "tier", "fast", "-config", cfg); code != exitOK || !strings.Contains(out, "search tier: fast") || !strings.Contains(out, "(agents tier)") {

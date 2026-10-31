@@ -1,7 +1,7 @@
 package selfupdate
 
-// The move-aside waits a moment for a passing holder, and for nothing else
-// (dropin-miner#78). This file is the POLICY, driven on every OS through the sequence's
+// The move-aside waits a moment for a passing holder, and for nothing else.
+// This file is the POLICY, driven on every OS through the sequence's
 // own injectable operations: how many attempts, how long, for which errors,
 // and what is left when they run out. Which real errors count as a passing
 // holder is Windows' own answer and is proven on Windows, in

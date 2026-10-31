@@ -4,7 +4,7 @@
   "model": "grok-4.6",
   "tool_name": "Shell",
   "tool_input": {
-    "command": "\"/Users/u/.tokendrop/bin/dropin-miner\" search -config \"/Users/u/.tokendrop/tokendrop.toml\" --stdin <<'JSON'\n{\"version\":1,\"query\":\"example query\"}\nJSON",
+    "command": "\"/Users/u/.jevlin/bin/jevlin\" search -config \"/Users/u/.jevlin/jevlin.toml\" --stdin <<'JSON'\n{\"version\":1,\"query\":\"example query\"}\nJSON",
     "cwd": "",
     "timeout": 30000
   },

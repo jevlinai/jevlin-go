@@ -6,25 +6,7 @@ jevlin in the order you meet it. Per-agent detail: [agents.md](agents.md); table
 
 | | |
 |---|---|
-| **A moment to claim your agent** | Setup prints a link. Sign in at `platform.jevlin.ai` (or create an account) and approve mining. Search works before you do; only the reward waits. |
-| **Somewhere to be paid** | Setup makes a wallet for you, or you paste a `twilight1…` address you already control, from Keplr for example. |
-
-### Where rewards land
-
-If setup makes the wallet, it prints a **24-word recovery phrase exactly once**: write it on
-paper before you continue. It is stored nowhere, and anyone who has it controls the money. The
-key on this machine only receives; spending needs the passphrase you chose.
-
-The wallet lives in `~/.jevlin/wallet`, and neither a search nor a flush reads it. On Windows
-the folder and every file in it carry an access list with only you on it, so access another
-program adds to `~/.jevlin`, such as an agent's sandbox, does not reach it. `jevlin setup`
-repairs a wrong list, and stops on something it cannot secure, such as a link; `doctor`'s
-`wallet access` line names anyone else who can read the wallet.
-
-On macOS and Linux an agent's sandbox runs as you, so a sandboxed command can read the wallet
-file. Only your passphrase protects the key inside: use one you use nowhere else, and keep the
-24 words off the machine. Anyone who copies the file can try passphrases against it on their
-own computer, without limit, and nothing tells you they are trying.
+| **A moment to claim your agent** | Setup prints a link; open it in a browser, sign in at `platform.jevlin.ai` (or create an account) and claim the agent. Search works before you do; the claim is what ties the agent to your account. |
 
 ## Setup
 
@@ -46,21 +28,27 @@ it from there.
 
 | it asks | what your answer does |
 |---|---|
-| **Use it? [Y/n]** | Only when a previous installation is set aside beside `~/.jevlin`. Setup first says where it is and what it holds. Yes brings back your wallet, registration, key, payout address and claim link, and skips the questions they answer. A payout address you already gave this time is kept. |
-| **Enable mining rewards? [y/N]** | A bare Enter is no, and search still works. Change your mind later with `jevlin mining enable` or `jevlin mining disable`. |
-| **Payout address (leave empty to create a wallet here):** | Asked only after yes. Paste an address, or leave it empty: it asks for a keyfile passphrase twice, then prints the 24 words once. Have paper ready. |
-| **Add them to ~/.zshrc? [Y/n]** | Or `~/.bashrc`, whichever your shell reads. One marked block puts the binary on PATH and sets `JEVLIN_CONFIG`, plus `JEVLIN_WALLET_DIR` when a wallet was made here. No just means longer commands. On Windows it asks **Set them for your user?** and sets PATH and `JEVLIN_CONFIG` only. |
+| **Use it? [Y/n]** | Only when a previous installation is set aside beside `~/.jevlin`. Setup first says where it is and what it holds. Yes brings back your registration, key and claim link, and skips the registration they answer. |
+| **Add them to ~/.zshrc? [Y/n]** | Or `~/.bashrc`, whichever your shell reads. One marked block puts the binary on PATH and sets `JEVLIN_CONFIG`. No just means longer commands. On Windows it asks **Set them for your user?** and sets PATH and `JEVLIN_CONFIG`. |
 | **Set up the coding agents found on this machine now? [Y/n]** | Writes a skill and, where the agent supports them, hooks into its config. You see the plan first, with what made each agent count as present. |
 | **Switch? [y/N]** | Asked only when Codex's config has a setting of your own that its permission profile would change, such as your own profile in `default_permissions`. It shows every line it would write. A bare Enter is no, which sets up the other agents and leaves Codex as it is. See [Codex](agents.md#codex). |
 
+Before any question, setup writes `~/.jevlin/jevlin.toml` in configuration format 1: a `schema = 1`
+line, `[router]`, `[platform]` and `[agents]` with their URLs, and `[search]` with the state and
+sessions directories ([reference, Config](reference.md#config) has every key). A config already
+there in that format is left byte for byte; one from an older jevlin, with no `schema` line, is set
+aside as `jevlin.toml.old` and a fresh file written, your registration and key kept (see
+[Moving from 0.6.x](#moving-from-06x)); one in format 1 with a mistake in it stops setup with the
+error, and nothing is written.
+
 Only an answer you typed counts. Interrupt a question, or close its input, and setup stops there
-with a non-zero exit, recording and writing nothing; an interrupted **Enable mining rewards?** is
-asked again next time. The same holds for `agents install`'s **Proceed?**, Codex's **Switch?**,
-uninstall's confirmations and `wallet send`'s: a typed no exits 0, no answer exits non-zero.
+with a non-zero exit, recording and writing nothing. The same holds for `agents install`'s
+**Proceed?**, Codex's **Switch?** and uninstall's confirmations: a typed no exits 0, no answer
+exits non-zero.
 
 | flag | effect |
 |---|---|
-| `-yes` | Answers yes to the profile and agents questions, terminal or not. Answers **Use it?** only at a terminal. Never answers the mining question or Codex's **Switch?**. Without `-yes` or a terminal, setup leaves the profile and agents alone and prints the command for each. An agent that could not be set up is reported, and setup still exits 0. |
+| `-yes` | Answers yes to the profile and agents questions, terminal or not. Answers **Use it?** only at a terminal. Never answers Codex's **Switch?**. Without `-yes` or a terminal, setup leaves the profile and agents alone and prints the command for each. An agent that could not be set up is reported, and setup still exits 0. |
 | `-dry-run` | Lists every file it would write or move, and changes nothing. |
 | `-no-profile` | Leaves the shell profile (Windows: user environment) alone, even with `-yes`. |
 | `-no-agents` | Skips agent detection, even with `-yes`. `-with` still sets up what it names. |
@@ -68,7 +56,7 @@ uninstall's confirmations and `wallet send`'s: a typed no exits 0, no answer exi
 
 ## The claim link
 
-Setup prints a claim link after the mining questions, before the shell profile, and waits up to
+Setup prints a claim link once the config is written, before the shell profile, and waits up to
 three minutes for you to visit it. You need not do it then: search already works, and using an
 agent later resumes the claim on its own. The link
 is kept in `~/.jevlin/claim.json`, beside your stored key, and only for the agent it was issued
@@ -90,14 +78,13 @@ moment a new one is minted, which is why only a connect you run does this, never
 resume. Where the platform cannot mint one, `connect` says so; run it again later, or wait for
 the registration to expire and connect again.
 
-`jevlin connect` also re-runs onboarding by hand. `jevlin mining disable` stops mining and
-revokes access at the rewards service; your approval on the platform is revoked only at its console.
+`jevlin connect` also re-runs onboarding by hand. Your claim on the platform is undone only at
+its console; nothing this client does revokes it.
 
 ## Then check
 
 ```bash
 jevlin status          # what this installation has and has not completed
-jevlin payout show     # ACTIVE, and the address as the chain renders it
 jevlin agents status   # which agents are set up, and how each was found
 jevlin doctor          # one line per check
 jevlin search -format model "what is proof of authority consensus"
@@ -117,13 +104,14 @@ Each skill carries this in its agent's shell, with your paths filled in. The
 ## Running setup again
 
 Nothing needs removing first: update the binary, then run `jevlin setup`. It keeps your
-wallet, identity, key and recorded searches, asks the mining question only if it has no answer,
-and lets `connect` finish or repair its own onboarding. It updates its profile block and agent
-files in place, reporting one already correct as "nothing to write: already set up". For an
-installation elsewhere, set `JEVLIN_HOME` to it; setup has no other way to find it. `setup
--home <dir>` alone makes a separate installation and leaves your profile and agents alone, even
-with `-yes`; it prints the `jevlin agents install -config` command for it, and an agent whose
-skill came from your main installation keeps it. For a clean start, move `~/.jevlin` aside.
+identity and key, and lets `connect` finish or repair its own onboarding. It leaves a format-1
+config as it is and sets an older one aside as `jevlin.toml.old`. It updates its
+profile block and agent files in place, reporting one already correct as "nothing to write:
+already set up". For an installation elsewhere, set `JEVLIN_HOME` to it; setup has no other way
+to find it. `setup -home <dir>` alone makes a separate installation and leaves your profile and
+agents alone, even with `-yes`; it prints the `jevlin agents install -config` command for it,
+and an agent whose skill came from your main installation keeps it. For a clean start, move
+`~/.jevlin` aside.
 
 ## Making it the default, or not
 
@@ -131,7 +119,7 @@ The skill tells your agent to prefer this search over its built-in one. In an ag
 skill, `/jevlin off` makes the agent's own search the default, `/jevlin on` restores this one,
 and `/jevlin status` says which is in force; from a shell, `jevlin agents prefer off|on|status`.
 The choice is saved beside your config and survives reinstalls. While it is off, asking to
-"search through jevlin" still routes that one search here; other searches earn nothing.
+"search through jevlin" still routes that one search here.
 
 ## Choosing a tier
 
@@ -140,8 +128,7 @@ index group, quicker than the others, about $0.015 at the arms' own prices; `bal
 core arms with 8 results each and a 12-page merged window, about $0.035; `max` is the same arms
 asked for 15 results each, a 24-page window and 2,000-character excerpts, about $0.045 plus the
 tokens your agent spends reading it. Nothing is marked up; `usage.cost_micros` is the number.
-With mining on, `fast` and `balanced` searches are paid for by the trajectory; `max` and a
-named `providers` set always draw credit. `/jevlin tier
+`/jevlin tier
 balanced` in an agent, or `jevlin agents tier balanced` from a shell, sets the tier every search
 carries unless the request names one; `/jevlin tier default` unsets it, and `/jevlin tier` says
 what is in force. The skill tells your agent to leave `tier` alone so your tier applies, and to
@@ -154,9 +141,8 @@ tier set, the request carries none and the router applies the default for your k
 Each search carries a small `trace` so the router can group one task's searches: hashed session
 and turn ids (your agent's real ids never leave the machine), a call counter, and the assistant
 text just before the search, capped at 32 KB. That text is conversation content leaving your
-machine, and it goes only to the search router, inside the search request. The rewards service
-receives metadata only, never the query or the text. `export JEVLIN_TRACE=off` sends no trace;
-searches are metered and earn the same.
+machine, and it goes only to the search router, inside the search request. `export
+JEVLIN_TRACE=off` sends no trace; searches work the same without it.
 
 The hooks keep lineage files in `~/.jevlin/sessions`, one per workspace (Cursor: per
 conversation). Only the agent that wrote a file reads it, so a second agent in a subdirectory
@@ -165,86 +151,6 @@ the outer session and label: its searches are work the outer session asked for.
 
 `jevlin search "<query>"` puts the query in the command line, visible in `ps` and your shell
 history; `search --stdin`, which every skill teaches, keeps it out. The key is in neither.
-
-## Earning
-
-- **Your first reward takes one to two hours.** You join an epoch two ahead, and it has to
-  close, reconcile and settle. Nothing is wrong during the wait.
-- **One verified search per epoch makes you eligible.** It is a threshold, not a weight.
-- **The pot splits equally among everyone eligible**, so your share falls as more people join.
-- **A long idle gap can miss an epoch.** A flush submits recorded searches, and the next search
-  or agent session starts one. Evidence that misses the epoch's deadline is late. `jevlin
-  flush` submits what is pending by hand.
-
-The rewards service checks each recorded request id with the search provider, never taking this
-client's word for volume. The envelope's `mining` object says whether a search was recorded;
-`jevlin earnings` lists what the chain has paid to your payout address.
-
-## When your region is refused
-
-The rewards service can refuse mining by the address you connect from. Search is never
-affected. A refusal is one of three:
-
-- **`REGION_RESTRICTED`**: the address is in a jurisdiction the rewards service cannot serve,
-  or one it could not determine.
-- **`REGION_INELIGIBLE`**: mining rewards are not available there.
-- **`REGION_UNVERIFIED`**: the address looks like a VPN, proxy or Tor exit, so its region
-  cannot be told. This one is a hold, not a refusal: connect directly and the next attempt is
-  decided afresh, and nothing is forfeited.
-
-`status` shows a `region:` line for the last refusal (`region_refusal` in `status -json`), and
-`doctor`'s `joined this epoch` says which one kept you out. A flush asks again each time it
-talks to the rewards service, and `jevlin join` asks at once. Searches recorded meanwhile wait
-rather than being submitted. If a later join in the same epoch is accepted, they are submitted
-as usual; once that epoch is over, they are dropped, with one line from the flush.
-
-## When doctor is unsure
-
-**`recording UNKNOWN`** with "recent miner activity, but nothing is queued locally or verified
-at the AS" means something ran, yet no search was recorded: usually an agent using a different
-config, or a sandbox that cannot write the intake directory. Check `jevlin agents status` and
-re-run `jevlin agents install`. `recording` never says `NO`; **`could not determine`** gives its
-reason, and is not a fault either.
-
-**`intake writable could not determine`** means neither the intake directory nor its parent
-exists, which happens only when `miner.intake_dir` names a custom path; `doctor` will not build
-a tree to test it. An `OK` speaks only for your terminal, not an agent's sandbox. With Codex,
-re-running `jevlin agents install` fixes a `NO`.
-
-## Changing the payout address
-
-Your first address takes effect when you set it. A different one waits for a Slot operator's
-approval, and you are paid at the old one until then. Ask at
-<https://platform.jevlin.ai/contact-us>, naming the new address. Nobody needs your key, your
-recovery phrase or the contents of `~/.jevlin` for this, and no operator will ask for them.
-
-The address you give `connect` or `mining enable` is kept in `~/.jevlin/payout.json`, beside your
-stored key, and declared for you as soon as mining is approved. It is not kept in the state
-directory, which an agent's sandbox may write, so nothing an agent leaves there is declared. An
-older version did keep it there: after upgrading, that address is used only when it is this
-installation's own wallet address, or when your config sets `[mining] payout_address`. Otherwise
-`status` says no address is on file and to run `jevlin mining enable` at a terminal; with mining
-already on, that asks only for the address, and never turns mining off. `jevlin payout set`
-records the address it declares here too. An agent in Codex's sandbox can still use this
-installation's access to the rewards service directly, though, and could declare an address of
-its own in the moments before yours is in force. After you approve mining, `jevlin payout show`
-should name your address.
-
-## Sending funds
-
-`jevlin wallet send -to <address> -amount <n>` moves funds out of the wallet. If the node's
-reply is lost after it accepts the transaction, `send` prints **"outcome unknown"** and exits
-non-zero. Do not start a new transfer: run `wallet send` or `wallet balance` again, and it asks
-the node about that transaction, then reports what happened or re-sends the same signed bytes.
-`-abandon-pending` discards the record without finding out, if you are sure it does not matter.
-The client trusts its RPC node; see the [node settings](reference.md#wallet).
-
-## The older manual path
-
-The portal's older commands, `enroll`, `login`, `join`, `wallet register` and `payout set`,
-still work beside `connect`. `provider` belongs to that path and applies only on a Slot whose
-profile is `OPENROUTER_V1`; on the default profile you supply no provider key. `jevlin help`
-describes each.
 
 ## Upgrading
 
@@ -292,7 +198,7 @@ before and after installing it. A release without that signature is refused. The
 first carries the check is installed by your current copy, which checks the checksum only; every
 upgrade after it checks the signature too. It keeps the old one as `jevlin.previous`;
 `-rollback` swaps back with no network. It refuses an npm copy and a development build, takes at
-most three minutes, and never touches your wallet, registration or config. The new binary then
+most three minutes, and never touches your registration or config. The new binary then
 rewrites the skills and hooks this installation set up, and for Codex the block in
 `~/.codex/config.toml`: an earlier version's block, which opened Codex's network to every host,
 becomes the permission profile without a question, and a setting of your own that the profile
@@ -315,13 +221,41 @@ When it fails, the first word after `upgrade:` says what to do:
 On Windows, `previous_in_use` means an older Jevlin or agent process still runs
 `jevlin.exe.previous`. Your binary was put back; close that process and run `upgrade` again.
 
+### Moving from 0.6.x
+
+This version reads only configuration format 1, and a 0.6.x installation's `jevlin.toml` is not
+that. On a native install the daily check replaces the binary with this version as it would any
+release; from then on every command that reads the config (`search`, `fetch`, `limits`, `status`,
+`doctor`, `connect`) stops with "this configuration is from an older jevlin; run `jevlin setup`",
+while the hooks, which fail open, run the agent's tool call without a lineage file. The daily
+check goes on running meanwhile, with the installation directory and `[update] mode` the old file
+names, so a later release still reaches the machine, and `jevlin upgrade -rollback` to 0.6.x holds
+this one where 0.6.x looks for the hold. On an npm install, run
+`npm install -g @jevlinsearch/jevlin@latest`, then `jevlin setup`.
+
+`jevlin setup` sets the old file aside as `jevlin.toml.old` (`.old.1`, `.old.2`, ... if the name
+is taken), writes `jevlin.toml` in format 1, keeps your registration and search key, and rewrites
+the hooks and skills of the agents it finds in place. The new file names the state and sessions
+directories, the router, the portal and the agents API the old file named, because your agent
+record is in that state directory and your key is bound to those hosts; where the old file named
+none, it names the defaults, and `JEVLIN_ROUTER_URL`, `JEVLIN_PLATFORM_URL` and
+`JEVLIN_AGENTS_API_URL`, when set, choose over both. The key and the files kept with it
+(`credentials.json`, the registration journal, `claim.json`, the release check's record) belong
+in the state directory's parent; 0.6.x kept them in its intake directory's parent instead, so
+where those two differ setup moves them, and stops before changing anything if a file of the same
+name is already there. Nothing else is migrated: a setting you
+changed by hand, such as `turn_end` or `tier`, you copy into the new file yourself, under its
+format-1 key ([reference, Config](reference.md#config)). Files only the earlier version used are left untouched where they
+are, never read and never named. This version has no use for them, but one of them may hold a key
+the earlier version used, so look before deleting any of them.
+
 ## Removing it and coming back
 
 ```bash
 jevlin uninstall -dry-run       # what would be removed; changes nothing
 jevlin uninstall                # skills, hooks, plugins, and the profile block
 jevlin uninstall -binary        # ...and this installation's binary
-jevlin uninstall -purge-state   # ...and the wallet, identity, key, evidence and config
+jevlin uninstall -purge-state   # ...and the identity, key and config
 npm uninstall -g @jevlinsearch/jevlin         # an npm install is npm's to remove
 ```
 
@@ -330,23 +264,27 @@ A plain `uninstall` removes what setup wrote for this installation (`-home`, def
 values. Another installation's files are left and reported, and so is a hook of yours: one you
 added to the group jevlin's hook sits in (Claude Code's `/hooks` puts a new hook there when the
 matcher is the same) stays, and only jevlin's handler is taken out, by `uninstall` and by every
-`agents install` or upgrade that rewrites it. Your wallet, registration, key,
-unsent searches and config stay, and nothing is revoked. `-binary` also removes the binary, its
+`agents install` or upgrade that rewrites it. Your registration, key and config stay, and
+nothing is revoked. `-binary` also removes the binary, its
 `.previous` and an interrupted upgrade's leftovers, never an npm copy; on Windows it moves the
 running binary aside and names the file to delete later. If a coding agent's file could not be
 changed, `-binary` keeps the binary, because the hooks still in that file run it: the run says
 so and exits non-zero, and running it again once the file can be written finishes both. `uninstall` lists leftover `.lock`
 files, which are safe to delete.
 
-`-purge-state` destroys the participant state. At a terminal, you type the wallet's address
-(with no wallet, the installation path); `-yes` cannot answer it. It first tries, for up to
-eight seconds, to revoke access at the rewards service. Folders your config names outside the
-installation are left and listed. Close agent sessions first, or a search may recreate folders. If you made the wallet here, keep the 24 words or move the funds
-before you purge. A run stopped at its confirmation leaves the installation exactly as it was.
+`-purge-state` destroys the participant state. At a terminal, you type the installation path;
+`-yes` cannot answer it. Nothing is revoked: your claim on the platform is undone only at its
+console. Folders your config names outside the installation are left and listed. Anything else
+still in the installation directory afterwards — files an earlier version or another program
+put there, which this version neither reads nor removes — is listed by full path, as it is in
+the dry run; one of them may hold a key an earlier version used, so look before deleting any of
+them. Close agent
+sessions first, or a search may recreate folders. A run stopped at its confirmation leaves the
+installation exactly as it was.
 
 To come back, run `jevlin setup`, with `-home <dir>` for a non-default installation: the same
-agent, the same wallet, no new registration. A bare `jevlin connect` would register anew,
-because the profile block that named this installation is gone.
+agent, no new registration. A bare `jevlin connect` would register anew, because the profile
+block that named this installation is gone.
 
 You can instead set `~/.jevlin` aside as `~/.jevlin.bak-<date>` (any `~/.jevlin.<name>` or
 `~/.jevlin-<name>`). Setup lists what a set-aside copy holds, newest first, and moves it back
@@ -354,9 +292,8 @@ only when you say yes at a terminal, in pieces that belong together:
 
 | piece | what setup does |
 |---|---|
-| **Registration and key** | Move as one. If `~/.jevlin` has its own, setup stops before anything moves and names both: keep one, move the other away. A half-made key there is renamed `state.unenrolled-<time>`. |
-| **Wallet** | Moves whole. A `~/.jevlin` with a wallet is simply used. An unfinished wallet folder there is renamed `wallet.incomplete-<time>`. |
-| **Unsent searches, session files** | Merge one file at a time, never overwriting. |
+| **Registration and key** | Move as one. If `~/.jevlin` has its own, setup stops before anything moves and names both: keep one, move the other away. A half-made state directory there is renamed `state.unregistered-<time>`. |
+| **Session files** | Merge one file at a time, never overwriting. |
 | **Config** | Moves only if `~/.jevlin` has none. |
 
 Symlinks and anything another account owns are not moved: a set-aside folder that is not yours

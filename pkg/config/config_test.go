@@ -1,14 +1,18 @@
 package config
 
+// Configuration format 1. The file begins `schema = 1` and names every
+// endpoint in its own section; anything else — no schema line, an older
+// file's sections, a key format 1 does not define — is refused with one
+// message and never reinterpreted (config.go). Every test here drives Load
+// or LoadBytes, never a decoder on its own, so what is held is what a
+// command sees.
+
 import (
-	"fmt"
-	"log/slog"
+	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
-	"time"
 )
 
 func noEnv(string) string { return "" }
@@ -17,17 +21,25 @@ func envOf(m map[string]string) func(string) string {
 	return func(k string) string { return m[k] }
 }
 
-// upstreamEnv builds the env lookup without a "TOKEN…" map-literal key, which
-// gosec's G101 heuristic would misread as a hardcoded credential.
-func upstreamEnv(u string) func(string) string {
-	key := strings.Join([]string{"TOKENDROP", "UPSTREAM"}, "_")
-	return func(k string) string {
-		if k == key {
-			return u
-		}
-		return ""
-	}
-}
+// legacyMessage is the one sentence every file from before format 1 gets.
+const legacyMessage = "this configuration is from an older jevlin; run `jevlin setup`"
+
+// earlierConfig is the shape every version before format 1 wrote: a
+// [[provider]] block naming the router, the [platform] pair, and tables this
+// client has no reading of.
+const earlierConfig = `[[provider]]
+name = "search-router"
+upstream = "https://api.jevlin.ai"
+
+[platform]
+base_url = "https://platform.jevlin.ai"
+agents_api_url = "https://agents-v1.jevlin.ai"
+
+[other]
+enabled = true
+state_dir = "/tmp/state"
+interval = "3m"
+`
 
 func writeTOML(t *testing.T, body string) string {
 	t.Helper()
@@ -50,757 +62,676 @@ func load(t *testing.T, args []string, getenv func(string) string) *Config {
 	return cfg
 }
 
-func loadErr(t *testing.T, args []string, getenv func(string) string) error {
+func loadFile(t *testing.T, body string, getenv func(string) string) (*Config, error) {
 	t.Helper()
-	_, _, err := Load(args, getenv)
-	if err == nil {
-		t.Fatal("expected error, got none")
-	}
-	return err
+	cfg, _, err := Load([]string{"-config", writeTOML(t, body)}, getenv)
+	return cfg, err
 }
 
-func TestDefaults(t *testing.T) {
-	cfg := load(t, nil, noEnv)
-	if cfg.Listen.String() != "127.0.0.1:8787" || cfg.Listen.IsUnix() {
-		t.Errorf("listen default: %+v", cfg.Listen)
+func mustLoadFile(t *testing.T, body string, getenv func(string) string) *Config {
+	t.Helper()
+	cfg, err := loadFile(t, body, getenv)
+	if err != nil {
+		t.Fatalf("Load(%q): %v", body, err)
 	}
-	if cfg.AdminListen.String() != "127.0.0.1:8788" {
-		t.Errorf("admin default: %+v", cfg.AdminListen)
-	}
-	if cfg.Upstream.String() != "https://openrouter.ai/api" {
-		t.Errorf("upstream default: %s", cfg.Upstream)
-	}
-	if cfg.ProviderName != "openrouter" || cfg.ProviderTier != "A" {
-		t.Errorf("provider default: %s/%s", cfg.ProviderName, cfg.ProviderTier)
-	}
-	if cfg.ShutdownGrace != 5*time.Second {
-		t.Errorf("grace default: %v", cfg.ShutdownGrace)
-	}
-	if cfg.MaxRequestBodyBytes != 32<<20 || cfg.MaxInboundConns != 256 {
-		t.Errorf("caps: %d %d", cfg.MaxRequestBodyBytes, cfg.MaxInboundConns)
-	}
-	if cfg.ResponseHeaderTimeout != 0 {
-		t.Errorf("ResponseHeaderTimeout must default to 0 (disabled), got %v", cfg.ResponseHeaderTimeout)
-	}
-	if cfg.LogLevel != slog.LevelInfo {
-		t.Errorf("level default: %v", cfg.LogLevel)
-	}
-	o := cfg.Observe
-	if o.MemoryBudgetBytes != 48<<20 || o.RingBytes != 256<<10 || o.RingCount() != 192 {
-		t.Errorf("observe defaults: %+v ringCount=%d", o, o.RingCount())
-	}
-	if o.MaxEventBytes != 1<<20 || o.MaxEvents != 100_000 || o.MaxObservedBodyBytes != 64<<20 ||
-		o.MaxDepth != 32 || o.MaxJSONKeyBytes != 256 {
-		t.Errorf("observe defaults: %+v", o)
-	}
+	return cfg
 }
 
-func TestPrecedenceFileEnvFlag(t *testing.T) {
-	path := writeTOML(t, `
-[proxy]
-listen = "127.0.0.1:1111"
-admin_listen = "127.0.0.1:2222"
-
-[log]
-level = "warn"
-`)
-	env := envOf(map[string]string{
-		"TOKENDROP_LISTEN":    "127.0.0.1:3333",
-		"TOKENDROP_LOG_LEVEL": "error",
-	})
-
-	// File over defaults; env over file; flag over env.
-	cfg := load(t, []string{"-config", path, "-listen", "127.0.0.1:4444"}, env)
-	if cfg.Listen.Address != "127.0.0.1:4444" {
-		t.Errorf("flag should win: %v", cfg.Listen)
+// defaultDirs is where [search] state_dir and sessions_dir land when the
+// file names neither: under the user's config directory, side by side.
+func defaultDirs(t *testing.T) (state, sessions string) {
+	t.Helper()
+	base, err := os.UserConfigDir()
+	if err != nil {
+		t.Skipf("no user config dir here: %v", err)
 	}
-	if cfg.AdminListen.Address != "127.0.0.1:2222" {
-		t.Errorf("file should apply: %v", cfg.AdminListen)
+	return filepath.Join(base, "jevlin", "state"), filepath.Join(base, "jevlin", "sessions")
+}
+
+// assertDefaults holds cfg to the compiled defaults in every field.
+func assertDefaults(t *testing.T, name string, cfg *Config) {
+	t.Helper()
+	if cfg.Search.RouterURL == nil || cfg.Search.RouterURL.String() != DefaultRouterURL {
+		t.Errorf("%s: router %v, want %q", name, cfg.Search.RouterURL, DefaultRouterURL)
 	}
-	if cfg.LogLevel != slog.LevelError {
-		t.Errorf("env should beat file: %v", cfg.LogLevel)
+	if cfg.Platform.BaseURL != DefaultPlatformBaseURL || cfg.Platform.AgentsAPIURL != DefaultAgentsAPIURL {
+		t.Errorf("%s: platform %q agents %q", name, cfg.Platform.BaseURL, cfg.Platform.AgentsAPIURL)
+	}
+	if cfg.Search.TurnEnd || cfg.Search.Tier != "" || cfg.Search.UnknownTier != "" {
+		t.Errorf("%s: search %+v, want turn_end off and no tier", name, cfg.Search)
+	}
+	if cfg.Update.Mode != UpdateApply || cfg.Update.UnknownMode != "" {
+		t.Errorf("%s: update %+v, want apply", name, cfg.Update)
+	}
+	state, sessions := defaultDirs(t)
+	if cfg.Search.StateDir != state || cfg.Search.SessionsDir != sessions {
+		t.Errorf("%s: dirs %q %q, want %q %q", name, cfg.Search.StateDir, cfg.Search.SessionsDir, state, sessions)
 	}
 }
 
-func TestUnknownTOMLKeyRejected(t *testing.T) {
-	path := writeTOML(t, "[proxy]\nlisten = \"127.0.0.1:8787\"\nbogus_key = \"typo\"\n")
-	err := loadErr(t, []string{"-config", path}, noEnv)
-	if !strings.Contains(err.Error(), "unknown key") {
-		t.Errorf("want unknown-key error, got: %v", err)
+// sameConfig reports whether two loaded configurations resolve to the same
+// values. RouterURL is a pointer, so it is compared by its text.
+func sameConfig(a, b *Config) bool {
+	if (a.Search.RouterURL == nil) != (b.Search.RouterURL == nil) {
+		return false
 	}
+	if a.Search.RouterURL != nil && a.Search.RouterURL.String() != b.Search.RouterURL.String() {
+		return false
+	}
+	as, bs := a.Search, b.Search
+	as.RouterURL, bs.RouterURL = nil, nil
+	return as == bs && a.Platform == b.Platform && a.Update == b.Update
 }
 
-func TestExplicitConfigMustExist(t *testing.T) {
-	_ = loadErr(t, []string{"-config", filepath.Join(t.TempDir(), "absent.toml")}, noEnv)
-}
-
-func TestNonLoopbackRejected(t *testing.T) {
-	for _, addr := range []string{"0.0.0.0:8787", "192.168.1.5:8787", "[2001:db8::1]:8787", "example.com:8787"} {
-		err := loadErr(t, []string{"-listen", addr}, noEnv)
-		if !strings.Contains(err.Error(), "loopback") {
-			t.Errorf("%s: want loopback error, got: %v", addr, err)
-		}
-	}
-	// Empty host binds all interfaces — also rejected.
-	_ = loadErr(t, []string{"-listen", ":8787"}, noEnv)
-	// Admin listener gets the same rule.
-	_ = loadErr(t, []string{"-admin-listen", "0.0.0.0:9999"}, noEnv)
-}
-
-func TestLoopbackAccepted(t *testing.T) {
-	for _, addr := range []string{"127.0.0.1:8787", "[::1]:8787", "localhost:8787", "127.0.0.2:8787"} {
-		cfg := load(t, []string{"-listen", addr}, noEnv)
-		if cfg.Listen.Network != "tcp" {
-			t.Errorf("%s: %+v", addr, cfg.Listen)
-		}
-	}
-}
-
-func TestUnixSocketListen(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unix sockets are a POSIX listener; the miner never listens")
-	}
-	cfg := load(t, []string{"-listen", "unix:///tmp/td/proxy.sock"}, noEnv)
-	if !cfg.Listen.IsUnix() || cfg.Listen.Address != "/tmp/td/proxy.sock" {
-		t.Errorf("socket: %+v", cfg.Listen)
-	}
-	_ = loadErr(t, []string{"-listen", "unix://relative/path.sock"}, noEnv)
-}
-
-func TestLogContentRejected(t *testing.T) {
-	path := writeTOML(t, "[privacy]\nlog_content = true\n")
-	err := loadErr(t, []string{"-config", path}, noEnv)
-	if !strings.Contains(err.Error(), "log_content") {
-		t.Errorf("want log_content rejection, got: %v", err)
-	}
-	// false is accepted (the key exists to be rejected when true).
-	path = writeTOML(t, "[privacy]\nlog_content = false\n")
-	load(t, []string{"-config", path}, noEnv)
-}
-
-func TestUpstreamValidation(t *testing.T) {
-	bad := map[string]string{
-		"http://openrouter.ai/api":        "https",
-		"https://user:pw@openrouter.ai/x": "userinfo",
-		"https://openrouter.ai/api?x=1":   "query",
-		"https://openrouter.ai/api#frag":  "fragment",
-		"https://openrouter.ai/api/":      "slash",
-		"https://openrouter.ai/a%2Fpi":    "percent-encoded",
-		"https://":                        "host",
-	}
-	for upstream, wantSubstr := range bad {
-		err := loadErr(t, nil, upstreamEnv(upstream))
-		if !strings.Contains(err.Error(), wantSubstr) {
-			t.Errorf("%s: want %q in error, got: %v", upstream, wantSubstr, err)
-		}
-	}
-	cfg := load(t, nil, upstreamEnv("https://127.0.0.1:4443/api"))
-	if cfg.Upstream.Host != "127.0.0.1:4443" {
-		t.Errorf("upstream: %s", cfg.Upstream)
-	}
-}
-
-func TestProviderRules(t *testing.T) {
-	// Two providers: rejected at launch.
-	path := writeTOML(t, `
-[[provider]]
-name = "openrouter"
-tier = "A"
-upstream = "https://openrouter.ai/api"
-
-[[provider]]
-name = "ollama"
-tier = "C"
-upstream = "https://127.0.0.1:11434/v1"
-`)
-	_ = loadErr(t, []string{"-config", path}, noEnv)
-
-	// Non-A tier: rejected at launch.
-	path = writeTOML(t, "[[provider]]\nname = \"together\"\ntier = \"B\"\nupstream = \"https://api.together.xyz/v1\"\n")
-	err := loadErr(t, []string{"-config", path}, noEnv)
-	if !strings.Contains(err.Error(), "Tier A") {
-		t.Errorf("want tier error, got: %v", err)
-	}
-}
-
-func TestObserveValidation(t *testing.T) {
-	path := writeTOML(t, "[observe]\nobservation_memory_budget = 1024\nring_bytes = 4096\n")
-	_ = loadErr(t, []string{"-config", path}, noEnv) // budget < one ring
-
-	path = writeTOML(t, "[observe]\nobservation_memory_budget = 1048576\nring_bytes = 65536\n")
-	cfg := load(t, []string{"-config", path}, noEnv)
-	if cfg.Observe.RingCount() != 16 {
-		t.Errorf("ring count: %d", cfg.Observe.RingCount())
-	}
-}
-
-func TestUpstreamCAFile(t *testing.T) {
-	// Missing file: rejected at startup.
-	path := writeTOML(t, "[transport]\nupstream_ca_file = \"/does/not/exist.pem\"\n")
-	_ = loadErr(t, []string{"-config", path}, noEnv)
-
-	// Present but not a certificate: rejected at startup.
-	junk := filepath.Join(t.TempDir(), "junk.pem")
-	if err := os.WriteFile(junk, []byte("not a pem"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	path = writeTOML(t, "[transport]\nupstream_ca_file = \""+filepath.ToSlash(junk)+"\"\n")
-	err := loadErr(t, []string{"-config", path}, noEnv)
-	if !strings.Contains(err.Error(), "PEM") {
-		t.Errorf("want PEM error, got: %v", err)
-	}
-
-	// Unset: nil pool (system roots).
-	cfg := load(t, nil, noEnv)
-	if cfg.UpstreamCAPool != nil {
-		t.Error("default must use system roots (nil pool)")
-	}
-}
-
-func TestDurationParsing(t *testing.T) {
-	path := writeTOML(t, "[proxy]\nshutdown_grace = \"11s\"\n\n[transport]\nresponse_header_timeout = \"2m\"\n")
-	cfg := load(t, []string{"-config", path}, noEnv)
-	if cfg.ShutdownGrace != 11*time.Second || cfg.ResponseHeaderTimeout != 2*time.Minute {
-		t.Errorf("durations: %v %v", cfg.ShutdownGrace, cfg.ResponseHeaderTimeout)
-	}
-}
-
-func TestVersionFlag(t *testing.T) {
-	_, showVersion, err := Load([]string{"-version"}, noEnv)
-	if err != nil || !showVersion {
-		t.Fatalf("version flag: %v %v", showVersion, err)
-	}
-}
-
-func TestUnexpectedArgRejected(t *testing.T) {
-	_ = loadErr(t, []string{"serve"}, noEnv)
-}
-
-func TestLevelParsing(t *testing.T) {
-	cfg := load(t, []string{"-log-level", "debug"}, noEnv)
-	if cfg.LogLevel != slog.LevelDebug {
-		t.Errorf("level: %v", cfg.LogLevel)
-	}
-	_ = loadErr(t, []string{"-log-level", "verbose"}, noEnv)
-}
-
-func TestMiningDisabledByDefault(t *testing.T) {
-	cfg := load(t, nil, noEnv)
-	if cfg.Mining.Enabled {
-		t.Fatal("mining must be disabled with no [mining] block")
-	}
-	// A present-but-disabled block never blocks startup, even when
-	// incomplete: inference must not depend on mining config being right.
-	path := writeTOML(t, "[mining]\nenabled = false\nchain_id = \"twilight-1\"\n")
-	cfg = load(t, []string{"-config", path}, noEnv)
-	if cfg.Mining.Enabled || cfg.Mining.ChainID != "twilight-1" {
-		t.Fatalf("disabled block mishandled: %+v", cfg.Mining)
-	}
-}
-
-func TestMiningASConfigurationValidationIsIndependentOfDecision(t *testing.T) {
-	valid := func(enabled string, slot string) string {
-		return fmt.Sprintf("[mining]\n%sas_url = \"https://as.example.com\"\nchain_id = \"twilight-1\"\n%smetadata_ttl = \"2m\"\ncollector_interval = \"3s\"\ncollector_base_backoff = \"1s\"\ncollector_max_backoff = \"10s\"\ncollector_max_attempts = 4\n", enabled, slot)
-	}
-
-	for _, tc := range []struct {
-		name         string
-		body         string
-		wantEnabled  bool
-		wantSlot     uint64
-		wantExplicit bool
-	}{
-		{name: "enabled false still validates AS", body: valid("enabled = false\n", "slot_id = 7\n"), wantSlot: 7, wantExplicit: true},
-		{name: "absent enabled still validates AS", body: valid("", "slot_id = 7\n"), wantSlot: 7},
-		{name: "explicit slot zero succeeds", body: valid("enabled = false\n", "slot_id = 0\n"), wantSlot: 0, wantExplicit: true},
+// The compiled defaults are the whole configuration when no file is named,
+// and a file holding only the schema line, or the schema line and empty
+// sections, means the same thing.
+func TestNoFileAndAMinimalFileAreTheCompiledDefaults(t *testing.T) {
+	for name, cfg := range map[string]*Config{
+		"no file":        load(t, nil, noEnv),
+		"schema only":    mustLoadFile(t, "schema = 1\n", noEnv),
+		"empty sections": mustLoadFile(t, "schema = 1\n[router]\n[platform]\n[agents]\n[search]\n[update]\n", noEnv),
+		"comments too":   mustLoadFile(t, "# written by hand\nschema = 1 # format 1\n", noEnv),
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := load(t, []string{"-config", writeTOML(t, tc.body)}, noEnv)
-			if cfg.Mining.Enabled != tc.wantEnabled || cfg.Mining.SlotID != tc.wantSlot || cfg.MiningEnabledExplicit != tc.wantExplicit {
-				t.Fatalf("resolved config = %+v explicit=%v", cfg.Mining, cfg.MiningEnabledExplicit)
+		assertDefaults(t, name, cfg)
+	}
+}
+
+// A file with no schema line is refused as ErrLegacyConfig with the one
+// message when nothing in it says it was written as format 1: a 0.6.1 file,
+// a lone [[provider]] block, an empty file, a comment. It is never called an
+// unknown key: the sections an older file holds are not this format's to
+// name, and this is the one refusal setup may answer by setting the file
+// aside. A file that does say so is TestAFormatOneFileWithoutItsSchemaLineIsNotCalledOlder's.
+func TestAFileWithNoSchemaLineIsLegacyWhateverElseItHolds(t *testing.T) {
+	for name, body := range map[string]string{
+		"empty":                         "",
+		"comments only":                 "# nothing here\n",
+		"an earlier version's file":     earlierConfig,
+		"a lone provider block":         "[[provider]]\nname = \"search-router\"\nupstream = \"https://api.jevlin.ai\"\n",
+		"a table this client never had": "[other]\nenabled = true\nrouter_url = \"https://api.jevlin.ai\"\n",
+		"the old [search] router_url":   "[search]\nrouter_url = \"https://api.jevlin.ai\"\n",
+		"the old [platform] pair":       "[platform]\nbase_url = \"https://platform.jevlin.ai\"\nagents_api_url = \"https://agents-v1.jevlin.ai\"\n",
+		"a [search] table, no line":     "[search]\nturn_end = \"yes\"\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := loadFile(t, body, noEnv)
+			if !errors.Is(err, ErrLegacyConfig) {
+				t.Fatalf("err = %v, want ErrLegacyConfig", err)
 			}
-			if cfg.Mining.ASBaseURL == "" || cfg.Mining.ChainID != "twilight-1" || cfg.Mining.MetadataTTL != 2*time.Minute ||
-				cfg.Mining.CollectorInterval != 3*time.Second || cfg.Mining.CollectorBaseBackoff != time.Second ||
-				cfg.Mining.CollectorMaxBackoff != 10*time.Second || cfg.Mining.CollectorMaxAttempts != 4 {
-				t.Fatalf("AS configuration was not fully resolved: %+v", cfg.Mining)
+			if !strings.Contains(err.Error(), legacyMessage) {
+				t.Errorf("the message does not say what to do: %v", err)
+			}
+			if strings.Contains(err.Error(), "does not define") {
+				t.Errorf("an older file was called a format-1 file with a typo: %v", err)
 			}
 		})
 	}
+}
 
+// A file written as format 1 whose schema line is mistyped, misplaced or
+// missing is the participant's own file with a mistake in it: refused, not
+// ErrLegacyConfig, so setup leaves it instead of setting it aside and
+// writing another. What says format 1 is a key spelled like schema anywhere,
+// or a section no released version wrote.
+func TestAFormatOneFileWithoutItsSchemaLineIsNotCalledOlder(t *testing.T) {
 	for name, body := range map[string]string{
-		"omitted slot_id":  valid("enabled = false\n", ""),
-		"missing chain_id": "[mining]\nenabled = false\nas_url = \"https://as.example.com\"\nslot_id = 7\n",
-		"relative as_url":  "[mining]\nenabled = false\nas_url = \"as.example.com\"\nchain_id = \"twilight-1\"\nslot_id = 7\n",
+		"schema misspelled":          "schem = 1\n\n[router]\nurl = \"https://router.example\"\n",
+		"schema capitalized":         "Schema = 1\n",
+		"schema inside a table":      "[router]\nschema = 1\nurl = \"https://router.example\"\n",
+		"schema two letters off":     "shcema = 1\n",
+		"format 1 sections, no line": "[router]\nurl = \"https://api.jevlin.ai\"\n\n[search]\nturn_end = true\n",
+		"an [agents] table":          "[agents]\nurl = \"https://agents.example\"\n",
+		"a [platform] url":           "[platform]\nurl = \"https://platform.example\"\n",
 	} {
-		if err := loadErr(t, []string{"-config", writeTOML(t, body)}, noEnv); err == nil {
-			t.Fatalf("%s accepted", name)
+		t.Run(name, func(t *testing.T) {
+			_, err := loadFile(t, body, noEnv)
+			if err == nil || errors.Is(err, ErrLegacyConfig) {
+				t.Fatalf("err = %v, want a refusal that is not ErrLegacyConfig", err)
+			}
+			if !strings.Contains(err.Error(), "schema = 1") {
+				t.Errorf("the refusal does not say what is missing: %v", err)
+			}
+		})
+	}
+}
+
+// A file that is not TOML is neither older nor format 1: it is refused as
+// what it is, so setup does not set aside a file it could not read.
+func TestAFileThatIsNotTOMLIsNotCalledOlder(t *testing.T) {
+	for _, body := range []string{"schema = \n", "[router\nurl = 1\n", "schema = 1\n[router]\nurl = \"unterminated\n"} {
+		_, err := loadFile(t, body, noEnv)
+		if err == nil || errors.Is(err, ErrLegacyConfig) {
+			t.Errorf("%q: %v", body, err)
 		}
 	}
+}
 
-	// Mining.Enabled is only a first-decision answer. It is representable
-	// without an AS and must not fail merely because AS work is absent.
-	local := load(t, []string{"-config", writeTOML(t, "[mining]\nenabled = true\n")}, noEnv)
-	if !local.Mining.Enabled || local.Mining.ASBaseURL != "" {
-		t.Fatalf("enabled local mining config was rejected or changed: %+v", local.Mining)
+// A file that says it is format 1 is the participant's current
+// configuration: a key the format does not define is refused by name, with
+// what to do, and is not called older — so setup never sets a file aside
+// over a typo or a setting carried over by hand from an older file.
+func TestAnUnknownKeyInAFormatOneFileIsNamedNotCalledOlder(t *testing.T) {
+	for name, tc := range map[string]struct {
+		body string
+		keys []string
+	}{
+		"a typo in a section":           {"schema = 1\n[router]\nurl = \"https://api.jevlin.ai\"\nshade = \"blue\"\n", []string{"router.shade"}},
+		"a typo at the top":             {"schema = 1\nschemas = 2\n", []string{"schemas"}},
+		"the old router key":            {"schema = 1\n[search]\nrouter_url = \"https://api.jevlin.ai\"\n", []string{"search.router_url"}},
+		"the old tier key":              {"schema = 1\n[search]\ntier = \"max\"\n", []string{"search.tier"}},
+		"the old portal key":            {"schema = 1\n[platform]\nbase_url = \"https://platform.jevlin.ai\"\n", []string{"platform.base_url"}},
+		"the old agents key":            {"schema = 1\n[platform]\nagents_api_url = \"https://agents-v1.jevlin.ai\"\n", []string{"platform.agents_api_url"}},
+		"a proxy-era section":           {"schema = 1\n[proxy]\nlisten = \"127.0.0.1:8787\"\n", []string{"proxy"}},
+		"a provider block":              {"schema = 1\n[[provider]]\nname = \"search-router\"\nupstream = \"https://api.jevlin.ai\"\n", []string{"provider"}},
+		"a table this format never had": {"schema = 1\n[other]\nenabled = true\n", []string{"other"}},
+		"every unknown key, named":      {"schema = 1\n[search]\nshade = \"blue\"\nenabled = true\ndepth = 3\n", []string{"search.depth", "search.enabled", "search.shade"}},
+		"an unknown key beside format 1 keys": {
+			"schema = 1\n[router]\nurl = \"https://api.jevlin.ai\"\n[search]\nstate_dir = \"/tmp/state\"\nextra = \"https://x.example\"\n",
+			[]string{"search.extra"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := loadFile(t, tc.body, noEnv)
+			if err == nil {
+				t.Fatal("loaded")
+			}
+			if errors.Is(err, ErrLegacyConfig) {
+				t.Fatalf("called older: %v", err)
+			}
+			if !strings.Contains(err.Error(), "format 1 does not define ") || !strings.Contains(err.Error(), "; correct or remove it") {
+				t.Errorf("the refusal does not say what to do: %v", err)
+			}
+			for _, key := range tc.keys {
+				if !strings.Contains(err.Error(), key) {
+					t.Errorf("the refusal does not name %s: %v", key, err)
+				}
+			}
+			// What it names is the unknown key, not a section format 1 has.
+			if strings.Contains(err.Error(), "does not define router,") || strings.Contains(err.Error(), "does not define search,") {
+				t.Errorf("a format-1 section was named as unknown: %v", err)
+			}
+		})
 	}
 }
 
-// target_epoch is an override, not a requirement: absent means the
-// daemon asks the AS which target is open. Absent and zero are
-// different answers — epoch 0 is as legal as slot 0 — so the resolved
-// value has to keep them apart.
-func TestMiningTargetEpochIsAnOptionalOverride(t *testing.T) {
-	unset := "[mining]\nenabled = true\nas_url = \"https://as.example.com\"\nchain_id = \"twilight-1\"\nslot_id = 7\n"
-	cfg := load(t, []string{"-config", writeTOML(t, unset)}, noEnv)
-	if !cfg.Mining.Enabled {
-		t.Fatal("mining without target_epoch must still enable: the AS is the epoch source")
-	}
-	if cfg.Mining.TargetEpoch != nil {
-		t.Fatalf("absent target_epoch must resolve to nil, got %d", *cfg.Mining.TargetEpoch)
-	}
-
-	pinnedZero := "[mining]\nenabled = true\nas_url = \"https://as.example.com\"\nchain_id = \"twilight-1\"\nslot_id = 7\ntarget_epoch = 0\n"
-	cfg = load(t, []string{"-config", writeTOML(t, pinnedZero)}, noEnv)
-	if cfg.Mining.TargetEpoch == nil || *cfg.Mining.TargetEpoch != 0 {
-		t.Fatalf("target_epoch = 0 must pin epoch 0, not read as unset: %+v", cfg.Mining.TargetEpoch)
-	}
-}
-
-// §18: plain http reaches the AS only on loopback, and the refusal happens at
-// LOAD.
-//
-// The discoverer applies the same rule, so this is defense in depth rather
-// than the only guard — but a config that loads and then fails on the first
-// AS call contradicts this package's stated contract, and it hands an
-// operator a working-looking setup that mines nothing. Every token, DPoP
-// proof and observation would cross a routable plain-http hop in the clear.
-func TestMiningRejectsRoutablePlainHTTPASURL(t *testing.T) {
-	for _, host := range []string{"as.example.com", "203.0.113.10", "as.internal:8080"} {
-		body := "[mining]\nenabled = true\nas_url = \"http://" + host + "\"\nchain_id = \"twilight-1\"\nslot_id = 7\ntarget_epoch = 42\n"
-		err := loadErr(t, []string{"-config", writeTOML(t, body)}, noEnv)
+// A value of the wrong type in a key format 1 defines is this file's
+// mistake: refused, not called older and not called an unknown key.
+func TestAWrongValueTypeIsNotCalledAnOlderFile(t *testing.T) {
+	for _, body := range []string{
+		"schema = 1\n[search]\nturn_end = \"yes\"\n",
+		"schema = 1\n[router]\nurl = 3\n",
+		"schema = 1\n[search]\nstate_dir = 1\n",
+		"schema = 1\n[update]\nmode = true\n",
+		"schema = 1\n[router]\ntier = [\"max\"]\n",
+	} {
+		_, err := loadFile(t, body, noEnv)
 		if err == nil {
-			t.Errorf("plain http as_url %q was accepted at load", host)
+			t.Errorf("%q loaded", body)
 			continue
 		}
-		if !strings.Contains(err.Error(), "loopback") {
-			t.Errorf("as_url %q: the refusal does not name the rule: %v", host, err)
+		if errors.Is(err, ErrLegacyConfig) || strings.Contains(err.Error(), "does not define") {
+			t.Errorf("%q: %v", body, err)
 		}
 	}
 }
 
-// The carve-out that makes local development work without TLS. Losing it
-// would be as much a defect as losing the rule — it is what a developer runs
-// against a local AS all day.
-func TestMiningAllowsPlainHTTPOnLoopback(t *testing.T) {
-	for _, host := range []string{"127.0.0.1:8080", "localhost:8080", "[::1]:8080"} {
-		body := "[mining]\nenabled = true\nas_url = \"http://" + host + "\"\nchain_id = \"twilight-1\"\nslot_id = 7\ntarget_epoch = 42\n"
-		if _, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv); err != nil {
-			t.Errorf("loopback as_url %q was refused: %v", host, err)
-		}
-	}
-}
-
-// https is unaffected on any host.
-func TestMiningAllowsHTTPSAnywhere(t *testing.T) {
-	body := "[mining]\nenabled = true\nas_url = \"https://as.example.com\"\nchain_id = \"twilight-1\"\nslot_id = 7\ntarget_epoch = 42\n"
-	if _, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv); err != nil {
-		t.Fatalf("https as_url was refused: %v", err)
-	}
-}
-
-// The router_url sibling of the as_url rule above: every search sends the
-// participant's sr- key in Authorization to router_url, so a routable
-// plain-http router is the same cleartext-credential exposure a routable
-// plain-http AS would be. This was the "known gap" AGENTS.md invariant 5
-// stated honestly (as_url fixed, router_url not yet); closing it here is
-// what makes that invariant true rather than aspirational.
-//
-// Inverted from the review's TestA7_RouterURLAcceptsCleartextHTTP, which
-// demonstrated the leak (asserted http:// was accepted) and the asymmetry
-// against parseUpstream, which already refused the identical host. Both
-// checks are kept: the refusal, and that the asymmetry the repro found is
-// now closed.
-func TestMinerRejectsRoutablePlainHTTPRouterURL(t *testing.T) {
-	for _, host := range []string{"router.example.com", "203.0.113.10", "router.internal:8080"} {
-		body := "[miner]\nrouter_url = \"http://" + host + "\"\n"
-		err := loadErr(t, []string{"-config", writeTOML(t, body)}, noEnv)
+// A schema this client does not read is refused with its own message, and
+// is not called older: it may be newer, and its keys are not this format's
+// to call unknown. The schema is judged before anything else in the file.
+func TestAnotherSchemaNumberIsRefusedAsNotThisFormat(t *testing.T) {
+	for _, body := range []string{
+		"schema = 2\n",
+		"schema = 2\n[newer]\nkey = 1\n",
+		"schema = 2\n[router]\nurl = \"https://api.jevlin.ai\"\n",
+		"schema = 0\n",
+		"schema = -1\n",
+		"schema = \"1\"\n",
+		"schema = 1.0\n",
+		"schema = true\n",
+	} {
+		_, err := loadFile(t, body, noEnv)
 		if err == nil {
-			t.Errorf("plain http router_url %q was accepted at load", host)
+			t.Errorf("%q loaded", body)
 			continue
 		}
-		if !strings.Contains(err.Error(), "loopback") {
-			t.Errorf("router_url %q: the refusal does not name the rule: %v", host, err)
+		if errors.Is(err, ErrLegacyConfig) || strings.Contains(err.Error(), "does not define") {
+			t.Errorf("%q: %v", body, err)
 		}
-	}
-	if _, err := parseUpstream("http://router.attacker.example"); err == nil {
-		t.Fatal("parseUpstream unexpectedly accepted http:// — the asymmetry the repro found is gone")
-	}
-}
-
-// The carve-out that makes local development work without TLS — losing it
-// would be as much a defect as losing the rule. Testing against a ROUTABLE
-// devnet router still needs TLS on the devnet, or the client co-located
-// over loopback: the intended consequence, not a gap.
-func TestMinerAllowsPlainHTTPRouterURLOnLoopback(t *testing.T) {
-	for _, host := range []string{"127.0.0.1:8080", "localhost:8080", "[::1]:8080"} {
-		body := "[miner]\nrouter_url = \"http://" + host + "\"\n"
-		if _, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv); err != nil {
-			t.Errorf("loopback router_url %q was refused: %v", host, err)
+		if !strings.Contains(err.Error(), "reads schema = 1") || !strings.Contains(err.Error(), "write schema = 1") {
+			t.Errorf("%q: the refusal does not name the schema this client reads: %v", body, err)
 		}
 	}
 }
 
-// [miner] turn_end is off unless the config says otherwise: it sends
+func TestAnExplicitConfigMustExist(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing.toml")
+	if _, _, err := Load([]string{"-config", missing}, noEnv); err == nil {
+		t.Fatal("a missing -config file loaded")
+	}
+	if _, _, err := Load(nil, envOf(map[string]string{"JEVLIN_CONFIG": missing})); err == nil {
+		t.Fatal("a missing JEVLIN_CONFIG file loaded")
+	}
+}
+
+// JEVLIN_CONFIG names the file when -config does not, and -config wins.
+func TestJEVLINCONFIGSelectsTheFile(t *testing.T) {
+	a := writeTOML(t, "schema = 1\n[router]\nurl = \"https://a.example\"\n")
+	b := writeTOML(t, "schema = 1\n[router]\nurl = \"https://b.example\"\n")
+	env := envOf(map[string]string{"JEVLIN_CONFIG": a})
+	if got := load(t, nil, env).Search.RouterURL.Host; got != "a.example" {
+		t.Errorf("JEVLIN_CONFIG: router %q", got)
+	}
+	if got := load(t, []string{"-config", b}, env).Search.RouterURL.Host; got != "b.example" {
+		t.Errorf("-config over JEVLIN_CONFIG: router %q", got)
+	}
+}
+
+// The three endpoint variables apply at runtime, after the file, each
+// replacing only its own URL, under the file's own URL rules — with a file
+// and with none.
+func TestTheEndpointVariablesApplyAtRuntimeUnderTheSameRules(t *testing.T) {
+	body := `schema = 1
+[router]
+url = "https://router.file.example"
+[platform]
+url = "https://portal.file.example"
+[agents]
+url = "https://agents.file.example"
+`
+	cfg := mustLoadFile(t, body, envOf(map[string]string{
+		EnvRouterURL:    "https://router.env.example",
+		EnvPlatformURL:  "https://portal.env.example",
+		EnvAgentsAPIURL: "https://agents.env.example",
+	}))
+	if cfg.Search.RouterURL.String() != "https://router.env.example" || cfg.Platform.BaseURL != "https://portal.env.example" ||
+		cfg.Platform.AgentsAPIURL != "https://agents.env.example" {
+		t.Fatalf("the variables did not win over the file: %v %+v", cfg.Search.RouterURL, cfg.Platform)
+	}
+	// One variable replaces one URL; the file keeps the other two.
+	cfg = mustLoadFile(t, body, envOf(map[string]string{EnvRouterURL: "http://127.0.0.1:9"}))
+	if cfg.Search.RouterURL.String() != "http://127.0.0.1:9" || cfg.Platform.BaseURL != "https://portal.file.example" ||
+		cfg.Platform.AgentsAPIURL != "https://agents.file.example" {
+		t.Fatalf("JEVLIN_ROUTER_URL alone: %v %+v", cfg.Search.RouterURL, cfg.Platform)
+	}
+	// With no file at all.
+	cfg = load(t, nil, envOf(map[string]string{
+		EnvRouterURL:    "http://127.0.0.1:9",
+		EnvPlatformURL:  "http://localhost:10",
+		EnvAgentsAPIURL: "http://[::1]:11",
+	}))
+	if cfg.Search.RouterURL.String() != "http://127.0.0.1:9" || cfg.Platform.BaseURL != "http://localhost:10" ||
+		cfg.Platform.AgentsAPIURL != "http://[::1]:11" {
+		t.Fatalf("the variables with no file: %v %+v", cfg.Search.RouterURL, cfg.Platform)
+	}
+	// An empty variable is not set: the file's value stays.
+	cfg = mustLoadFile(t, body, envOf(map[string]string{EnvRouterURL: ""}))
+	if cfg.Search.RouterURL.String() != "https://router.file.example" {
+		t.Errorf("an empty JEVLIN_ROUTER_URL replaced the file's router: %v", cfg.Search.RouterURL)
+	}
+	// Each is held to ParseEndpoint's rules, and the refusal names the
+	// key the variable stands for.
+	for name, field := range map[string]string{EnvRouterURL: "router.url", EnvPlatformURL: "platform.url", EnvAgentsAPIURL: "agents.url"} {
+		for _, bad := range []string{"http://router.example", "https://user:pw@router.example", "ftp://router.example", "https://router.example/?q=1", "https://router.example/#x", "https://apİ.example"} {
+			env := map[string]string{name: bad}
+			if name == EnvPlatformURL {
+				env[EnvAgentsAPIURL] = "https://agents.example"
+			}
+			for _, args := range [][]string{nil, {"-config", writeTOML(t, body)}} {
+				_, _, err := Load(args, envOf(env))
+				if err == nil {
+					t.Errorf("%s=%q loaded (args %q)", name, bad, args)
+					continue
+				}
+				if !strings.Contains(err.Error(), field) {
+					t.Errorf("%s=%q: the refusal does not name %s: %v", name, bad, field, err)
+				}
+			}
+		}
+	}
+}
+
+// Every endpoint — [router] url, [platform] url, [agents] url — is held to
+// ParseEndpoint's rules (invariant 5): an absolute http(s) URL with a plain
+// ASCII host, https unless the host is loopback, and no userinfo, query or
+// fragment. The refusal names the key and the rule it broke.
+func TestEveryEndpointIsHeldToParseEndpointsRules(t *testing.T) {
+	bad := map[string]string{
+		"http://host.example":         "loopback",
+		"http://203.0.113.10":         "loopback",
+		"http://router.internal:8080": "loopback",
+		"https://u:p@host.example":    "userinfo",
+		"https://host.example/?q=1":   "query or fragment",
+		"https://host.example/?":      "query or fragment",
+		"https://host.example/#x":     "query or fragment",
+		"https://host.example/#":      "query or fragment",
+		"https://apİ.example":         "plain ASCII",
+		"https://ap%C4%B0.example":    "plain ASCII",
+		"https://host example":        "absolute http(s) URL",
+		"not a url":                   "absolute http(s) URL",
+		"ftp://host.example":          "absolute http(s) URL",
+		"https:///path":               "absolute http(s) URL",
+		"//host.example":              "absolute http(s) URL",
+	}
+	good := []string{"https://host.example", "https://host.example/base/", "http://127.0.0.1:8080", "http://localhost:1", "http://[::1]:2", "https://xn--jevlin-tyd.example"}
+	for _, section := range []string{"router", "platform", "agents"} {
+		field := section + ".url"
+		for raw, rule := range bad {
+			body := "schema = 1\n[" + section + "]\nurl = \"" + raw + "\"\n"
+			if section == "platform" {
+				body += "[agents]\nurl = \"https://agents.example\"\n"
+			}
+			_, err := loadFile(t, body, noEnv)
+			if err == nil {
+				t.Errorf("%s = %q loaded", field, raw)
+				continue
+			}
+			if !strings.Contains(err.Error(), field) || !strings.Contains(err.Error(), rule) {
+				t.Errorf("%s = %q: the refusal names neither the key nor the rule (%q): %v", field, raw, rule, err)
+			}
+			if _, err := ParseEndpoint(raw, field); err == nil || !strings.Contains(err.Error(), field) {
+				t.Errorf("ParseEndpoint(%q, %s): %v", raw, field, err)
+			}
+		}
+		for _, raw := range good {
+			body := "schema = 1\n[" + section + "]\nurl = \"" + raw + "\"\n"
+			if section == "platform" {
+				body += "[agents]\nurl = \"https://agents.example\"\n"
+			}
+			if _, err := loadFile(t, body, noEnv); err != nil {
+				t.Errorf("%s = %q refused: %v", field, raw, err)
+			}
+			if u, err := ParseEndpoint(raw, field); err != nil || u.String() != raw {
+				t.Errorf("ParseEndpoint(%q): %v %v", raw, u, err)
+			}
+		}
+	}
+}
+
+// [agents] url pairs with [platform] url: the default portal implies the
+// default agents API; a loopback portal implies itself, since one local
+// stub serves both; and a custom routable portal with no agents API named
+// is refused — pairing it with production would send a devnet's
+// registrations, and the key they mint, to production, which happened once
+// live before this rule. The retired portal is such a custom portal now:
+// this client carries no successor for it.
+func TestTheAgentsAPIPairsWithThePortal(t *testing.T) {
+	for name, body := range map[string]string{
+		"nothing named":            "schema = 1\n",
+		"the default, by name":     "schema = 1\n[platform]\nurl = \"" + DefaultPlatformBaseURL + "\"\n",
+		"the default, via the env": "",
+	} {
+		var cfg *Config
+		if body == "" {
+			cfg = load(t, nil, envOf(map[string]string{EnvPlatformURL: DefaultPlatformBaseURL}))
+		} else {
+			cfg = mustLoadFile(t, body, noEnv)
+		}
+		if cfg.Platform.BaseURL != DefaultPlatformBaseURL || cfg.Platform.AgentsAPIURL != DefaultAgentsAPIURL {
+			t.Errorf("%s: %+v", name, cfg.Platform)
+		}
+	}
+	if DefaultPlatformBaseURL == DefaultAgentsAPIURL {
+		t.Fatal("the portal and the agents API defaulted to one host; they are two")
+	}
+
+	cfg := mustLoadFile(t, "schema = 1\n[platform]\nurl = \"http://127.0.0.1:9000\"\n", noEnv)
+	if cfg.Platform.AgentsAPIURL != "http://127.0.0.1:9000" {
+		t.Errorf("a loopback portal implies itself as the agents API, not production: %q", cfg.Platform.AgentsAPIURL)
+	}
+	cfg = load(t, nil, envOf(map[string]string{EnvPlatformURL: "http://localhost:9000"}))
+	if cfg.Platform.AgentsAPIURL != "http://localhost:9000" {
+		t.Errorf("a loopback portal from the environment implies itself: %q", cfg.Platform.AgentsAPIURL)
+	}
+	cfg = mustLoadFile(t, "schema = 1\n[platform]\nurl = \"http://127.0.0.1:9000\"\n[agents]\nurl = \"http://127.0.0.1:9001\"\n", noEnv)
+	if cfg.Platform.AgentsAPIURL != "http://127.0.0.1:9001" {
+		t.Errorf("a named agents API wins over the loopback pairing: %q", cfg.Platform.AgentsAPIURL)
+	}
+	cfg = mustLoadFile(t, "schema = 1\n[platform]\nurl = \"https://portal.staging.example\"\n[agents]\nurl = \"https://agents.staging.example\"\n", noEnv)
+	if cfg.Platform.BaseURL != "https://portal.staging.example" || cfg.Platform.AgentsAPIURL != "https://agents.staging.example" {
+		t.Errorf("both named: %+v", cfg.Platform)
+	}
+	cfg = mustLoadFile(t, "schema = 1\n[agents]\nurl = \"https://agents.staging.example\"\n", noEnv)
+	if cfg.Platform.BaseURL != DefaultPlatformBaseURL || cfg.Platform.AgentsAPIURL != "https://agents.staging.example" {
+		t.Errorf("the agents API alone leaves the portal default: %+v", cfg.Platform)
+	}
+
+	for name, run := range map[string]func() error{
+		"a custom portal in the file": func() error {
+			_, err := loadFile(t, "schema = 1\n[platform]\nurl = \"https://portal.staging.example\"\n", noEnv)
+			return err
+		},
+		"the retired portal in the file": func() error {
+			_, err := loadFile(t, "schema = 1\n[platform]\nurl = \"https://platform.nyks.dev\"\n", noEnv)
+			return err
+		},
+		"a custom portal from the environment": func() error {
+			_, _, err := Load(nil, envOf(map[string]string{EnvPlatformURL: "https://portal.staging.example"}))
+			return err
+		},
+		"a custom portal over a file naming neither": func() error {
+			_, err := loadFile(t, "schema = 1\n[router]\nurl = \"https://api.jevlin.ai\"\n", envOf(map[string]string{EnvPlatformURL: "https://portal.staging.example"}))
+			return err
+		},
+	} {
+		err := run()
+		if err == nil {
+			t.Errorf("%s: loaded with no agents API named, silently paired with production", name)
+			continue
+		}
+		if !strings.Contains(err.Error(), "agents.url") {
+			t.Errorf("%s: the refusal does not name the missing key: %v", name, err)
+		}
+	}
+}
+
+// [search] state_dir defaults under the user's config directory and
+// sessions_dir beside it; a named state_dir moves the sessions beside it;
+// a named sessions_dir wins outright.
+func TestSearchDirectoriesDefaultUnderTheUserConfigDirAndANamedOneWins(t *testing.T) {
+	state, sessions := defaultDirs(t)
+	for name, cfg := range map[string]*Config{
+		"no file":           load(t, nil, noEnv),
+		"schema only":       mustLoadFile(t, "schema = 1\n", noEnv),
+		"an empty [search]": mustLoadFile(t, "schema = 1\n[search]\n", noEnv),
+	} {
+		if cfg.Search.StateDir != state || cfg.Search.SessionsDir != sessions {
+			t.Errorf("%s: state %q sessions %q, want %q %q", name, cfg.Search.StateDir, cfg.Search.SessionsDir, state, sessions)
+		}
+	}
+	home := filepath.ToSlash(t.TempDir())
+	cfg := mustLoadFile(t, "schema = 1\n[search]\nstate_dir = \""+home+"/state\"\n", noEnv)
+	if cfg.Search.StateDir != filepath.FromSlash(home+"/state") {
+		t.Errorf("state dir: %q", cfg.Search.StateDir)
+	}
+	if cfg.Search.SessionsDir != filepath.Join(filepath.FromSlash(home), "sessions") {
+		t.Errorf("sessions dir: %q, want beside the state dir", cfg.Search.SessionsDir)
+	}
+	cfg = mustLoadFile(t, "schema = 1\n[search]\nstate_dir = \""+home+"/state\"\nsessions_dir = \""+home+"/elsewhere\"\n", noEnv)
+	if cfg.Search.StateDir != filepath.FromSlash(home+"/state") || cfg.Search.SessionsDir != filepath.FromSlash(home+"/elsewhere") {
+		t.Errorf("both named: state %q sessions %q", cfg.Search.StateDir, cfg.Search.SessionsDir)
+	}
+	cfg = mustLoadFile(t, "schema = 1\n[search]\nsessions_dir = \""+home+"/elsewhere\"\n", noEnv)
+	if cfg.Search.StateDir != state || cfg.Search.SessionsDir != filepath.FromSlash(home+"/elsewhere") {
+		t.Errorf("sessions alone: state %q sessions %q", cfg.Search.StateDir, cfg.Search.SessionsDir)
+	}
+}
+
+// [search] turn_end is off unless the file says otherwise: it sends
 // model-written text off the machine, and a default must not.
-func TestMinerTurnEndIsOffByDefault(t *testing.T) {
+func TestSearchTurnEndIsOffByDefault(t *testing.T) {
+	if load(t, nil, noEnv).Search.TurnEnd {
+		t.Error("no file: turn_end on")
+	}
 	for body, want := range map[string]bool{
-		"[miner]\nrouter_url = \"http://127.0.0.1:8080\"\n":                   false,
-		"[miner]\nrouter_url = \"http://127.0.0.1:8080\"\nturn_end = false\n": false,
-		"[miner]\nrouter_url = \"http://127.0.0.1:8080\"\nturn_end = true\n":  true,
+		"schema = 1\n":                             false,
+		"schema = 1\n[search]\n":                   false,
+		"schema = 1\n[search]\nturn_end = false\n": false,
+		"schema = 1\n[search]\nturn_end = true\n":  true,
+		"schema = 1\n[router]\nurl = \"http://127.0.0.1:8080\"\n[search]\nturn_end = true\n": true,
 	} {
-		cfg, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv)
+		if got := mustLoadFile(t, body, noEnv).Search.TurnEnd; got != want {
+			t.Errorf("%q: turn_end = %v, want %v", body, got, want)
+		}
+	}
+}
+
+// [router] tier is the participant's own setting, written by hand, and a
+// word the client cannot use must not take the config down with it: a
+// failed load stops search over a value that only chooses a band. Case
+// and surrounding space are forgiven, and a word that is still not a band
+// loads as no tier, kept aside for status to name, and is never sent.
+func TestRouterTierIsNormalizedAndAnUnknownWordIsKeptAside(t *testing.T) {
+	for raw, want := range map[string]string{"": "", "fast": "fast", "balanced": "balanced", "max": "max", "Fast": "fast", "BALANCED": "balanced", " max ": "max"} {
+		body := "schema = 1\n[router]\nurl = \"http://127.0.0.1:8080\"\n"
+		if raw != "" {
+			body += "tier = \"" + raw + "\"\n"
+		}
+		cfg := mustLoadFile(t, body, noEnv)
+		if cfg.Search.Tier != want || cfg.Search.UnknownTier != "" {
+			t.Errorf("tier %q: Tier %q UnknownTier %q, want %q and none", raw, cfg.Search.Tier, cfg.Search.UnknownTier, want)
+		}
+		if want != "" && !KnownSearchTier(want) {
+			t.Errorf("tier %q resolved to %q, which KnownSearchTier does not know", raw, want)
+		}
+	}
+	for _, unknown := range []string{"turbo", "auto", "max; echo x", " "} {
+		cfg, err := loadFile(t, "schema = 1\n[router]\ntier = \""+unknown+"\"\n", noEnv)
 		if err != nil {
-			t.Fatalf("%q: %v", body, err)
-		}
-		if cfg.Miner.TurnEnd != want {
-			t.Errorf("%q: turn_end = %v, want %v", body, cfg.Miner.TurnEnd, want)
-		}
-	}
-}
-
-// RouterConfigured tells a router the config names from the provider
-// upstream standing in for one.
-func TestMinerRouterConfigured(t *testing.T) {
-	named, _, err := Load([]string{"-config", writeTOML(t, "[miner]\nrouter_url = \"http://127.0.0.1:8080\"\n")}, noEnv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !named.Miner.RouterConfigured || named.Miner.RouterURL == nil {
-		t.Errorf("a named router: configured=%v url=%v", named.Miner.RouterConfigured, named.Miner.RouterURL)
-	}
-	fallback, _, err := Load([]string{"-config", writeTOML(t, "[miner]\nturn_end = true\n")}, noEnv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fallback.Miner.RouterConfigured {
-		t.Errorf("no miner.router_url, yet RouterConfigured; RouterURL = %v", fallback.Miner.RouterURL)
-	}
-}
-
-// [miner] enabled = true does not require [mining] enabled = true: setup
-// always writes [miner] enabled = true (router intake is configured
-// unconditionally) but not [mining] enabled = true — that is the mining
-// decision, made by connect, not by setup. What [miner] actually needs is
-// an AS to eventually talk to, not that mining is currently on.
-func TestMinerEnabledDoesNotRequireMiningEnabled(t *testing.T) {
-	// filepath.ToSlash: a raw t.TempDir() on Windows is C:\Users\..., and
-	// TOML's basic-string escaping reads an un-slashed backslash as the
-	// start of an escape sequence (\U needs eight hex digits) — the same
-	// rule TestUpstreamCAFile above already works around.
-	body := "[mining]\nas_url = \"https://as.example.com\"\nchain_id = \"twilight-1\"\nslot_id = 7\nstate_dir = \"" + filepath.ToSlash(t.TempDir()) + "\"\n\n" +
-		"[miner]\nenabled = true\nintake_dir = \"" + filepath.ToSlash(t.TempDir()) + "\"\nsessions_dir = \"" + filepath.ToSlash(t.TempDir()) + "\"\n"
-	if _, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv); err != nil {
-		t.Fatalf("[miner] enabled = true with [mining] enabled unset (only as_url given) was refused: %v", err)
-	}
-}
-
-// The genuine gap [miner] enabled = true still refuses: no [mining] block
-// worth anything at all (no AS named) — a hand-edited config could reach
-// this; setup, which always names an AS, cannot.
-func TestMinerEnabledStillRequiresAnASNamed(t *testing.T) {
-	body := "[miner]\nenabled = true\nintake_dir = \"" + filepath.ToSlash(t.TempDir()) + "\"\nsessions_dir = \"" + filepath.ToSlash(t.TempDir()) + "\"\n"
-	err := loadErr(t, []string{"-config", writeTOML(t, body)}, noEnv)
-	if err == nil {
-		t.Fatal("[miner] enabled = true with no [mining] as_url at all was accepted")
-	}
-	if !strings.Contains(err.Error(), "needs a [mining] block") {
-		t.Errorf("the refusal does not name the rule: %v", err)
-	}
-}
-
-func TestMiningRejectsUserinfoURL(t *testing.T) {
-	body := "[mining]\nenabled = true\nas_url = \"https://token@as.example.com\"\nchain_id = \"twilight-1\"\nslot_id = 7\ntarget_epoch = 42\n"
-	if err := loadErr(t, []string{"-config", writeTOML(t, body)}, noEnv); !strings.Contains(err.Error(), "userinfo") {
-		t.Fatalf("userinfo as_url not rejected: %v", err)
-	}
-}
-
-// platform.base_url defaults to the real platform, with no file at all.
-func TestPlatformBaseURLDefaults(t *testing.T) {
-	cfg := load(t, nil, noEnv)
-	if cfg.Platform.BaseURL != "https://platform.jevlin.ai" {
-		t.Fatalf("got %q, want the default", cfg.Platform.BaseURL)
-	}
-}
-
-// platform.base_url is the as_url/router_url rule again: connect and
-// mining enable send the platform-issued sr- key in Authorization to it.
-func TestPlatformBaseURLRejectsRoutablePlainHTTP(t *testing.T) {
-	for _, host := range []string{"platform.example.com", "203.0.113.10", "platform.internal:8080"} {
-		body := "[platform]\nbase_url = \"http://" + host + "\"\n"
-		err := loadErr(t, []string{"-config", writeTOML(t, body)}, noEnv)
-		if err == nil {
-			t.Errorf("plain http platform.base_url %q was accepted at load", host)
+			t.Errorf("tier %q stopped the config from loading: %v", unknown, err)
 			continue
 		}
-		if !strings.Contains(err.Error(), "loopback") {
-			t.Errorf("platform.base_url %q: the refusal does not name the rule: %v", host, err)
+		wantAside := unknown
+		if strings.TrimSpace(unknown) == "" {
+			wantAside = "" // blank is no tier, not a word to keep
 		}
-	}
-}
-
-func TestPlatformBaseURLAllowsPlainHTTPOnLoopback(t *testing.T) {
-	body := "[platform]\nbase_url = \"http://127.0.0.1:9090\"\n"
-	if _, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv); err != nil {
-		t.Errorf("loopback platform.base_url was refused: %v", err)
-	}
-}
-
-// platform.agents_api_url defaults to the real agents API, separate from
-// platform.base_url (the human portal) — live testing found the two are
-// different hosts in the real deployment, not one shared origin.
-func TestAgentsAPIURLDefaults(t *testing.T) {
-	cfg := load(t, nil, noEnv)
-	if cfg.Platform.AgentsAPIURL != "https://agents-v1.jevlin.ai" {
-		t.Fatalf("got %q, want the default", cfg.Platform.AgentsAPIURL)
-	}
-	if cfg.Platform.AgentsAPIURL == cfg.Platform.BaseURL {
-		t.Fatalf("agents_api_url and base_url defaulted to the same value; they are different hosts")
-	}
-}
-
-// Same https-or-loopback rule as base_url (invariant 5): connect/mining
-// enable send the platform-issued sr- key in Authorization to this one.
-func TestAgentsAPIURLRejectsRoutablePlainHTTP(t *testing.T) {
-	body := "[platform]\nagents_api_url = \"http://agents.example.com\"\n"
-	err := loadErr(t, []string{"-config", writeTOML(t, body)}, noEnv)
-	if err == nil {
-		t.Fatal("plain http platform.agents_api_url was accepted at load")
-	}
-	if !strings.Contains(err.Error(), "loopback") {
-		t.Errorf("the refusal does not name the rule: %v", err)
-	}
-}
-
-func TestAgentsAPIURLAllowsPlainHTTPOnLoopback(t *testing.T) {
-	body := "[platform]\nagents_api_url = \"http://127.0.0.1:9091\"\n"
-	if _, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv); err != nil {
-		t.Errorf("loopback platform.agents_api_url was refused: %v", err)
-	}
-}
-
-// WP2-review must-fix: a dev/test config naming only a loopback
-// base_url (every existing stub-backed test does exactly this) must not
-// silently default agents_api_url to the real platform — connect/mining
-// enable would then register against production while believing it was
-// talking to a local stub, which is exactly what happened once, live,
-// before this fix.
-func TestAgentsAPIURLDefaultsToBaseURLWhenBaseURLIsLoopback(t *testing.T) {
-	body := "[platform]\nbase_url = \"http://127.0.0.1:9999\"\n"
-	cfg := load(t, []string{"-config", writeTOML(t, body)}, noEnv)
-	if cfg.Platform.AgentsAPIURL != "http://127.0.0.1:9999" {
-		t.Fatalf("agents_api_url defaulted to %q, want the loopback base_url reused, not the real platform",
-			cfg.Platform.AgentsAPIURL)
-	}
-}
-
-// The loopback default is a convenience, not a lock-in: an explicit
-// agents_api_url still wins, including pointing a loopback base_url at
-// a real (or a second, differently-loopback) agents API.
-func TestAgentsAPIURLExplicitValueOverridesTheLoopbackDefault(t *testing.T) {
-	body := "[platform]\nbase_url = \"http://127.0.0.1:9999\"\nagents_api_url = \"https://agents-v1.jevlin.ai\"\n"
-	cfg := load(t, []string{"-config", writeTOML(t, body)}, noEnv)
-	if cfg.Platform.AgentsAPIURL != "https://agents-v1.jevlin.ai" {
-		t.Fatalf("got %q, want the explicit value", cfg.Platform.AgentsAPIURL)
-	}
-}
-
-// The two [platform] URLs are independently configurable — setting one
-// must not disturb the other's default.
-func TestPlatformURLsAreIndependentlyConfigurable(t *testing.T) {
-	body := "[platform]\nbase_url = \"https://portal.example.com\"\nagents_api_url = \"https://agents.example.com\"\n"
-	cfg := load(t, []string{"-config", writeTOML(t, body)}, noEnv)
-	if cfg.Platform.BaseURL != "https://portal.example.com" {
-		t.Fatalf("base_url: got %q", cfg.Platform.BaseURL)
-	}
-	if cfg.Platform.AgentsAPIURL != "https://agents.example.com" {
-		t.Fatalf("agents_api_url: got %q", cfg.Platform.AgentsAPIURL)
-	}
-}
-
-// WP2-review edge case: a custom non-loopback base_url (a devnet, a
-// staging portal) gives no safe signal about which API host pairs with
-// it — defaulting to production here would be the same footgun the
-// loopback fix above exists to close, just for a devnet instead of a
-// laptop. Refused, not defaulted.
-func TestNonDefaultNonLoopbackBaseURLRequiresExplicitAgentsAPIURL(t *testing.T) {
-	body := "[platform]\nbase_url = \"https://portal.devnet.example.com\"\n"
-	err := loadErr(t, []string{"-config", writeTOML(t, body)}, noEnv)
-	if err == nil {
-		t.Fatal("a devnet base_url with no agents_api_url was accepted, silently defaulting to production")
-	}
-	if !strings.Contains(err.Error(), "agents_api_url") {
-		t.Errorf("the refusal does not name the missing key: %v", err)
-	}
-}
-
-// MiningEnabledExplicit is the signal connect/mining enable use to decide
-// whether to ask their terminal question at all. It must tell "the file
-// wrote enabled = false" apart from "the file said nothing about
-// [mining]" — both decode Mining.Enabled to false identically.
-func TestMiningEnabledExplicitDistinguishesAbsentFromFalse(t *testing.T) {
-	cfg := load(t, nil, noEnv)
-	if cfg.MiningEnabledExplicit {
-		t.Fatal("no config file at all: MiningEnabledExplicit should be false")
-	}
-
-	body := "[mining]\nenabled = false\n"
-	cfg = load(t, []string{"-config", writeTOML(t, body)}, noEnv)
-	if !cfg.MiningEnabledExplicit {
-		t.Fatal("[mining] enabled = false was written explicitly; MiningEnabledExplicit should be true")
-	}
-	if cfg.Mining.Enabled {
-		t.Fatal("enabled = false must still resolve to Mining.Enabled = false")
-	}
-
-	body = "[mining]\nenabled = true\nas_url = \"https://as.example.com\"\nchain_id = \"twilight-1\"\nslot_id = 7\ntarget_epoch = 42\n"
-	cfg = load(t, []string{"-config", writeTOML(t, body)}, noEnv)
-	if !cfg.MiningEnabledExplicit || !cfg.Mining.Enabled {
-		t.Fatalf("explicit enabled = true: MiningEnabledExplicit=%v Enabled=%v, want true/true",
-			cfg.MiningEnabledExplicit, cfg.Mining.Enabled)
-	}
-
-	body = "[proxy]\nlisten = \"127.0.0.1:9\"\n" // touches the file, never [mining]
-	cfg = load(t, []string{"-config", writeTOML(t, body)}, noEnv)
-	if cfg.MiningEnabledExplicit {
-		t.Fatal("a file that never mentions [mining] should leave MiningEnabledExplicit false")
-	}
-}
-
-// mining.payout_address is the scripted-install answer to the terminal
-// question, read straight through regardless of Enabled — it names an
-// address, connect/mining enable decide what it means.
-func TestMiningPayoutAddressReadThrough(t *testing.T) {
-	body := "[mining]\nenabled = true\nas_url = \"https://as.example.com\"\nchain_id = \"twilight-1\"\nslot_id = 7\ntarget_epoch = 42\npayout_address = \"twilight1abc\"\n"
-	cfg := load(t, []string{"-config", writeTOML(t, body)}, noEnv)
-	if cfg.Mining.PayoutAddress != "twilight1abc" {
-		t.Fatalf("got %q, want twilight1abc", cfg.Mining.PayoutAddress)
-	}
-}
-
-// A jevlin.toml in the working directory is never loaded on its own: a
-// cloned repo must not choose where the participant's keys are sent.
-func TestLoadIgnoresJevlinTOMLInWorkingDirectory(t *testing.T) {
-	dir := t.TempDir()
-	body := "[miner]\nrouter_url = \"https://evil.example\"\n\n[platform]\nagents_api_url = \"https://evil.example\"\n"
-	if err := os.WriteFile(filepath.Join(dir, "jevlin.toml"), []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(dir)
-
-	cfg := load(t, nil, noEnv)
-	if cfg.Miner.RouterConfigured {
-		t.Fatalf("cwd jevlin.toml was loaded: router %v", cfg.Miner.RouterURL)
-	}
-	if u := cfg.Miner.RouterURL; u != nil && u.Host == "evil.example" {
-		t.Fatalf("router taken from cwd jevlin.toml: %v", u)
+		if cfg.Search.Tier != "" || cfg.Search.UnknownTier != wantAside {
+			t.Errorf("tier %q: Tier %q UnknownTier %q, want none and %q kept aside", unknown, cfg.Search.Tier, cfg.Search.UnknownTier, wantAside)
+		}
 	}
 }
 
 // [update] mode: absent is apply, the three words are normalized, and a
 // word this version cannot name falls to notify — never off, which would
-// silence the check by a typo, and never apply, the default, which would
-// replace a binary on a word nobody chose — with the word kept aside.
+// silence the check by a typo, and never apply, which would replace a
+// binary on a word nobody chose — with the word kept aside for doctor.
 func TestUpdateModeDefaultsToApplyAndAnUnknownWordFallsToNotify(t *testing.T) {
-	for raw, want := range map[string]string{
-		"":        UpdateApply,
-		"apply":   UpdateApply,
-		"notify":  UpdateNotify,
-		"off":     UpdateOff,
-		"Off":     UpdateOff,
-		" apply ": UpdateApply,
-	} {
-		body := "[miner]\nrouter_url = \"http://127.0.0.1:8080\"\n"
+	if got := load(t, nil, noEnv).Update; got.Mode != UpdateApply || got.UnknownMode != "" {
+		t.Errorf("no file: %+v", got)
+	}
+	for raw, want := range map[string]string{"": UpdateApply, "apply": UpdateApply, "notify": UpdateNotify, "off": UpdateOff, "Off": UpdateOff, "NOTIFY": UpdateNotify, " apply ": UpdateApply} {
+		body := "schema = 1\n"
 		if raw != "" {
 			body += "[update]\nmode = \"" + raw + "\"\n"
 		}
-		cfg, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv)
-		if err != nil {
-			t.Fatalf("mode %q: %v", raw, err)
-		}
+		cfg := mustLoadFile(t, body, noEnv)
 		if cfg.Update.Mode != want || cfg.Update.UnknownMode != "" {
-			t.Errorf("mode %q: Mode = %q UnknownMode = %q, want %q and none", raw, cfg.Update.Mode, cfg.Update.UnknownMode, want)
+			t.Errorf("mode %q: %+v, want %q and none kept aside", raw, cfg.Update, want)
 		}
 	}
 	for _, unknown := range []string{"auto", "of", "apply; echo x"} {
-		body := "[update]\nmode = \"" + unknown + "\"\n"
-		cfg, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv)
+		cfg, err := loadFile(t, "schema = 1\n[update]\nmode = \""+unknown+"\"\n", noEnv)
 		if err != nil {
 			t.Errorf("mode %q stopped the config from loading: %v", unknown, err)
 			continue
 		}
 		if cfg.Update.Mode != UpdateNotify || cfg.Update.UnknownMode != unknown {
-			t.Errorf("mode %q: Mode = %q UnknownMode = %q, want notify and the word kept aside", unknown, cfg.Update.Mode, cfg.Update.UnknownMode)
+			t.Errorf("mode %q: %+v, want notify and the word kept aside", unknown, cfg.Update)
 		}
 	}
 }
 
-// [miner] tier is the participant's own setting, written by hand, and a
-// word the client cannot use must not take the config down with it: a
-// failed load stops search, the flush and mining together (invariant 1),
-// for a value that changes nothing but which band a request asks for. So
-// case and surrounding space are forgiven, and a word that is still not a
-// band loads as no tier, kept aside for status to name, and is never sent,
-// so the router does not answer every search with a 400 either.
-func TestMinerTierIsNormalizedAndAnUnknownWordIsIgnoredAtLoad(t *testing.T) {
-	for raw, want := range map[string]string{
-		"":         "",
-		"fast":     "fast",
-		"balanced": "balanced",
-		"max":      "max",
-		"Fast":     "fast",
-		" max ":    "max",
-	} {
-		body := "[miner]\nrouter_url = \"http://127.0.0.1:8080\"\n"
-		if raw != "" {
-			body += "tier = \"" + raw + "\"\n"
-		}
-		cfg, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv)
-		if err != nil {
-			t.Fatalf("tier %q: %v", raw, err)
-		}
-		if cfg.Miner.Tier != want || cfg.Miner.UnknownTier != "" {
-			t.Errorf("tier %q: Tier = %q UnknownTier = %q, want %q and none", raw, cfg.Miner.Tier, cfg.Miner.UnknownTier, want)
+func TestVersionFlagAndUnexpectedArguments(t *testing.T) {
+	cfg, show, err := Load([]string{"-version"}, noEnv)
+	if err != nil || !show || cfg != nil {
+		t.Errorf("-version: show %v cfg %v err %v", show, cfg, err)
+	}
+	for _, args := range [][]string{{"stray"}, {"-config", writeTOML(t, "schema = 1\n"), "stray"}, {"-no-such-flag"}} {
+		cfg, show, err := Load(args, noEnv)
+		if err == nil || show || cfg != nil {
+			t.Errorf("%q: show %v cfg %v err %v, want a refusal", args, show, cfg, err)
 		}
 	}
-	for _, unknown := range []string{"turbo", "auto", "max; echo x"} {
-		body := "[miner]\nrouter_url = \"http://127.0.0.1:8080\"\ntier = \"" + unknown + "\"\n"
-		cfg, _, err := Load([]string{"-config", writeTOML(t, body)}, noEnv)
+	if _, _, err := Load([]string{"-config", writeTOML(t, "schema = 1\n"), "-version"}, noEnv); err != nil {
+		t.Errorf("-version after -config: %v", err)
+	}
+}
+
+// A jevlin.toml in the working directory is never loaded on its own:
+// whoever wrote that directory (a cloned repo, an archive) would choose
+// where the participant's keys are sent. Neither a format-1 file naming
+// another router nor an older file that would fail to load is read.
+func TestLoadIgnoresJevlinTOMLInWorkingDirectory(t *testing.T) {
+	for name, body := range map[string]string{
+		"a format-1 file": "schema = 1\n[router]\nurl = \"https://evil.example\"\n[agents]\nurl = \"https://evil.example\"\n",
+		"an older file":   earlierConfig,
+		"not TOML":        "schema = \n",
+	} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "jevlin.toml"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Chdir(dir)
+		cfg, _, err := Load(nil, noEnv)
 		if err != nil {
-			t.Errorf("tier %q stopped the config from loading: %v", unknown, err)
+			t.Fatalf("%s: a cwd jevlin.toml was read: %v", name, err)
+		}
+		assertDefaults(t, name, cfg)
+	}
+}
+
+// LoadBytes is Load applied to bytes already in hand: the same bytes
+// resolve to the same configuration, the same environment applies after
+// them, and what Load refuses LoadBytes refuses for the same reason.
+func TestLoadBytesIsLoadOverBytes(t *testing.T) {
+	full := `schema = 1
+[router]
+url = "http://127.0.0.1:8080"
+tier = "Max"
+[platform]
+url = "http://127.0.0.1:9000"
+[search]
+state_dir = "/tmp/jevlin/state"
+turn_end = true
+[update]
+mode = "notify"
+`
+	for name, body := range map[string]string{"schema only": "schema = 1\n", "every section": full} {
+		for envName, env := range map[string]func(string) string{"no env": noEnv, "the router from the env": envOf(map[string]string{EnvRouterURL: "https://r.example"})} {
+			fromFile := mustLoadFile(t, body, env)
+			fromBytes, err := LoadBytes([]byte(body), env)
+			if err != nil {
+				t.Fatalf("%s, %s: LoadBytes: %v", name, envName, err)
+			}
+			if !sameConfig(fromFile, fromBytes) {
+				t.Errorf("%s, %s: Load %+v %v, LoadBytes %+v %v", name, envName, *fromFile, fromFile.Search.RouterURL, *fromBytes, fromBytes.Search.RouterURL)
+			}
+		}
+	}
+	cfg, err := LoadBytes([]byte(full), envOf(map[string]string{EnvRouterURL: "https://r.example"}))
+	if err != nil || cfg.Search.RouterURL.String() != "https://r.example" || cfg.Search.Tier != "max" || !cfg.Search.TurnEnd || cfg.Update.Mode != UpdateNotify {
+		t.Errorf("LoadBytes with the environment: %+v %v %v", cfg, cfg.Search.RouterURL, err)
+	}
+	for name, body := range map[string]string{
+		"an older file":   earlierConfig,
+		"an unknown key":  "schema = 1\n[search]\nrouter_url = \"https://r.example\"\n",
+		"another schema":  "schema = 2\n",
+		"a routable http": "schema = 1\n[router]\nurl = \"http://routable.example\"\n",
+		"not TOML":        "schema = \n",
+	} {
+		_, fileErr := loadFile(t, body, noEnv)
+		_, bytesErr := LoadBytes([]byte(body), noEnv)
+		if fileErr == nil || bytesErr == nil {
+			t.Errorf("%s: Load %v, LoadBytes %v", name, fileErr, bytesErr)
 			continue
 		}
-		if cfg.Miner.Tier != "" || cfg.Miner.UnknownTier != unknown {
-			t.Errorf("tier %q: Tier = %q UnknownTier = %q, want none and the word kept aside", unknown, cfg.Miner.Tier, cfg.Miner.UnknownTier)
+		if errors.Is(fileErr, ErrLegacyConfig) != errors.Is(bytesErr, ErrLegacyConfig) {
+			t.Errorf("%s: Load and LoadBytes disagree on legacy: %v / %v", name, fileErr, bytesErr)
 		}
-	}
-}
-
-// A config written before the move to jevlin.ai may name only the old
-// portal and rely on the agents API being implied from it. It still is,
-// as the old pair: an upgrade must not turn a loading config into one
-// refused as "a custom portal with no API named" (PR #87 review).
-func TestLegacyPortalOnlyConfigStillImpliesItsAgentsAPI(t *testing.T) {
-	cfg, _, err := Load([]string{"-config", writeTOML(t, "[platform]\nbase_url = \"https://platform.nyks.dev\"\n")}, noEnv)
-	if err != nil {
-		t.Fatalf("a portal-only config from before the move was refused: %v", err)
-	}
-	if cfg.Platform.BaseURL != "https://platform.nyks.dev" || cfg.Platform.AgentsAPIURL != "https://agents-v1.nyks.dev" {
-		t.Fatalf("legacy pair: base_url %q, agents_api_url %q", cfg.Platform.BaseURL, cfg.Platform.AgentsAPIURL)
-	}
-	// Named explicitly, the old pair is simply two URLs; and a portal that
-	// is neither default still needs its API named.
-	if _, _, err := Load([]string{"-config", writeTOML(t, "[platform]\nbase_url = \"https://platform.staging.example\"\n")}, noEnv); err == nil {
-		t.Fatal("a custom portal with no agents_api_url was accepted")
+		for _, marker := range []string{"does not define", "reads schema = 1", "loopback"} {
+			if strings.Contains(fileErr.Error(), marker) != strings.Contains(bytesErr.Error(), marker) {
+				t.Errorf("%s: Load and LoadBytes disagree on %q: %v / %v", name, marker, fileErr, bytesErr)
+			}
+		}
 	}
 }

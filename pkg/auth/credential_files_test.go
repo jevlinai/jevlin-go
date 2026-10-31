@@ -17,14 +17,6 @@ import (
 // adding a state file is a decision about which it is, taken where doctor's
 // list is: the forbidden state is not choosing.
 var storeRecords = map[string]string{
-	"mining_decision.json":      "the mining decision (invariant 10)",
-	"payout.json":               "the payout address in force, which is public",
-	"payout_binding_held.json":  "connect's read-before-declare note",
-	"payout_declared.json":      "the payout address connect declared",
-	"epoch_conflicts.json":      "epochs the AS reported as conflicting",
-	"region_refusals.json":      "the AS's region refusals, one note per (slot, epoch) (ADR-MINIS-0026)",
-	"revoke_pending.json":       "a marker that a revocation is owed",
-	"receipt-%d-%d.jws":         "an enrollment receipt, signed by the AS and kept as evidence",
 	"registration_pending.json": "the registration journal, which lives in the installation directory beside credentials.json and not in the state dir (invariant 13)",
 	"claim.json":                "the claim link and code, which live in the installation directory beside credentials.json and not in the state dir (invariant 12)",
 }
@@ -32,12 +24,7 @@ var storeRecords = map[string]string{
 // storeNamesFromVariables are the call sites that pass a name held in a
 // variable, so the walk cannot read it off the call. Each is classified by
 // hand, here, and a new one fails the test.
-var storeNamesFromVariables = map[string]string{
-	"health.go:MarkHealth":       "health records, one file per component: records",
-	"health.go:LoadHealth":       "health records, one file per component: records",
-	"store.go:SaveReceipt":       "receipt-%d-%d.jws: a record",
-	"store.go:loadAddressRecord": "payout.json, payout_declared.json: a payout address, which is public: records",
-}
+var storeNamesFromVariables = map[string]string{}
 
 // Every file name the store reads or writes through readSecret,
 // createExclusive or saveStateFile is read off the source and must be a

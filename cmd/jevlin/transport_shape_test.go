@@ -7,11 +7,7 @@ package main
 // commit for this whole PR): the two that leaned on http.DefaultTransport
 // implicitly (leaving Transport nil) still carry every field
 // DefaultTransport tunes — ForceAttemptHTTP2, TLSHandshakeTimeout,
-// IdleConnTimeout, MaxIdleConns, ExpectContinueTimeout, its own Proxy —
-// and the one that built its own bare Transport (wallet_tx.go's RPC
-// client) still dials with the same zero-value net.Dialer it always did
-// (no explicit connect timeout, net/http's 15s default keep-alive), not
-// the 30s/30s this module's other clients use.
+// IdleConnTimeout, MaxIdleConns, ExpectContinueTimeout, its own Proxy.
 
 import (
 	"net"
@@ -31,15 +27,7 @@ func TestProductionTransportsMatchTheirPreD1cShapeExactly(t *testing.T) {
 		networkfence.AssertTransportFieldsMatch(t, searchDefaultTransport, freshDefaultTransportClone(t))
 		assertDialer(t, searchDialer, 30*time.Second, 30*time.Second)
 	})
-	t.Run("wallet RPC transport (was a bare Transport)", func(t *testing.T) {
-		client := newRPCClient("https://example.invalid")
-		transport, ok := client.http.Transport.(*http.Transport)
-		if !ok {
-			t.Fatalf("newRPCClient's Transport is a %T, not *http.Transport", client.http.Transport)
-		}
-		networkfence.AssertTransportFieldsMatch(t, transport, &http.Transport{})
-		assertDialer(t, walletRPCDialer, 0, 0)
-	})
+
 }
 
 // freshDefaultTransportClone is the reference shape every clone-based

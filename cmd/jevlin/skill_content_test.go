@@ -76,7 +76,7 @@ func TestSkillTeachesTiersOptionsAndMergedList(t *testing.T) {
 					}
 				}
 
-				// Options: what the router actually promises (dropin-miner#131). An
+				// Options: what the router actually promises. An
 				// agent that reads domain_filter as a restriction presents
 				// off-host results as the named site's, or reports a
 				// failure that is not one — which is what the 0.2.12
@@ -120,7 +120,7 @@ func TestSkillTeachesTiersOptionsAndMergedList(t *testing.T) {
 				// signals a degraded search sends are read as degraded, not
 				// as an empty web: an index's status, deadline_hit, a page's
 				// date, corroboration and the identifiers it contains.
-				reading, ok := skillSection(skill, "## Reading the answer", "## Mining is not search")
+				reading, ok := skillSection(skill, "## Reading the answer", "")
 				if !ok {
 					t.Fatal("no ## Reading the answer section found")
 				}
@@ -158,7 +158,7 @@ func TestSkillTeachesTiersOptionsAndMergedList(t *testing.T) {
 	}
 }
 
-// TestSkillSaysASearchThatDidNotRunIsReported: dropin-miner#135. Cursor 3.21 sandboxed
+// TestSkillSaysASearchThatDidNotRunIsReported: Cursor 3.21 sandboxed
 // the first search and refused the second, and the agent then answered the
 // user's question with no search having reached the router. The skill's error
 // discipline said to decide from ok, retryable and action; it did not say
@@ -200,7 +200,7 @@ func TestSkillTeachesReadingAPageInFull(t *testing.T) {
 				if strings.Contains(skill, "{{") || strings.Contains(skill, "}}") {
 					t.Errorf("a placeholder is left in the rendered skill:\n%s", skill)
 				}
-				fetch, ok := skillSection(skill, "## Reading a page in full", "## Mining is not search")
+				fetch, ok := skillSection(skill, "## Reading a page in full", "")
 				if !ok {
 					t.Fatal("no ## Reading a page in full section found")
 				}

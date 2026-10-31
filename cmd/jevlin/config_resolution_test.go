@@ -1,6 +1,6 @@
 package main
 
-// Ruling D-R1 (issue dropin-miner#58): the config a command reads is resolved
+// Ruling D-R1: the config a command reads is resolved
 // -config, then JEVLIN_CONFIG, then the installation's own config
 // ($JEVLIN_HOME/jevlin.toml, else ~/.jevlin/jevlin.toml, when that file
 // exists), then built-in defaults. A jevlin.toml in the working directory
@@ -8,8 +8,8 @@ package main
 // loadConfig, configGatePath and every command naming its source all call,
 // so the gate always keys on exactly the file that gets loaded.
 //
-// The soak that found dropin-miner#58 read a stale, unclaimed installation under the
-// compiled-in default state directory while a claimed, mining installation
+// The soak that found the defect read a stale, unclaimed installation under the
+// compiled-in default state directory while a claimed installation
 // sat at ~/.jevlin, because no step of the old order ever looked there.
 // The tests below drive that exact shape, not just the function in
 // isolation.
@@ -22,7 +22,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jevlinai/jevlin-go/pkg/auth"
+	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
 // writeInstallationConfig writes home/jevlin.toml naming stateDir (under
@@ -34,7 +34,7 @@ func writeInstallationConfig(t *testing.T, home string) (cfgPath, stateDir strin
 	}
 	stateDir = filepath.Join(home, "state")
 	cfgPath = filepath.Join(home, setupConfigFile)
-	body := fmt.Sprintf("[mining]\nstate_dir = %q\n", stateDir)
+	body := fmt.Sprintf("schema = 1\n\n[search]\nstate_dir = %q\n", stateDir)
 	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestConfigResolutionOrderEachStepWinsOverTheNext(t *testing.T) {
 
 	// A jevlin.toml in the working directory is not a step: whoever wrote
 	// the directory would choose where the participant's keys are sent.
-	if err := os.WriteFile(filepath.Join(dir, "jevlin.toml"), []byte("[mining]\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "jevlin.toml"), []byte("schema = 1\n\n[search]\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if src := describeConfigSource("", homeEnv); src != installPath {
@@ -147,21 +147,13 @@ func TestStatusReadsTheInstallationConfigWhenNothingElseResolves(t *testing.T) {
 	installHome := filepath.Join(home, ".jevlin")
 	_, stateDir := writeInstallationConfig(t, installHome)
 
-	store, err := auth.OpenStore(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.SaveMiningEnabled(true); err != nil {
-		t.Fatal(err)
-	}
-
 	cwd := t.TempDir() // deliberately no jevlin.toml here
 	t.Chdir(cwd)
 
 	var out, errOut bytes.Buffer
 	// No -config flag and an env with no JEVLIN_CONFIG/JEVLIN_HOME:
-	// exactly the "shell opened before the profile block loads" case dropin-miner#58
-	// named. Resolution falls all the way to step 4.
+	// exactly the "shell opened before the profile block loads" case the
+	// report named. Resolution falls all the way to step 4.
 	if code := statusMain(nil, &out, &errOut, noEnv); code != exitOK {
 		t.Fatalf("status exited %d: %s", code, errOut.String())
 	}
@@ -171,9 +163,6 @@ func TestStatusReadsTheInstallationConfigWhenNothingElseResolves(t *testing.T) {
 	}
 	if !strings.Contains(text, stateDir) {
 		t.Fatalf("status did not name the state directory it read:\n%s", text)
-	}
-	if !strings.Contains(text, "mining:  ON") {
-		t.Fatalf("status read the wrong installation (mining should be ON here):\n%s", text)
 	}
 
 	// -json carries the same two facts as data, not prose.
@@ -204,13 +193,17 @@ func TestDoctorNamesDefaultsWhenNoConfigFileExistsAnywhere(t *testing.T) {
 	// cmdDoctor (unlike statusMain/connectRun) has no injectable getenv —
 	// it reads os.Getenv directly — so, unlike every other test in this
 	// file, it is exposed to whatever JEVLIN_* the developer's own
-	// shell profile happens to export. Blank the three explicitly rather
+	// shell profile happens to export. Blank the two explicitly rather
 	// than relying on HOME alone: a real JEVLIN_CONFIG in this
 	// process's environment would otherwise make this "nothing resolves"
-	// test dial that developer's live installation.
+	// test dial that developer's live installation. The three endpoint
+	// variables apply at runtime too, so they are blanked for the same
+	// reason: "defaults" must mean the compiled ones.
 	t.Setenv("JEVLIN_CONFIG", "")
 	t.Setenv("JEVLIN_HOME", "")
-	t.Setenv("JEVLIN_WALLET_DIR", "")
+	t.Setenv(config.EnvRouterURL, "")
+	t.Setenv(config.EnvPlatformURL, "")
+	t.Setenv(config.EnvAgentsAPIURL, "")
 	cwd := t.TempDir()
 	t.Chdir(cwd)
 
@@ -311,10 +304,13 @@ func TestConnectStopsWithTheFileNamedWhenTheInstallationConfigCannotBeParsed(t *
 // TestLoadConfigIgnoresAPlantedWorkingDirectoryConfig is the attack the
 // cwd step allowed: a repo ships jevlin.toml naming its own router, and a
 // participant runs login/search/limits in that checkout. The installation
-// config, not the planted one, must decide where the sr- key goes.
+// config, not the planted one, must decide where the sr- key goes. The
+// planted file is a valid format-1 file on purpose: a file this client
+// would refuse proves only that it was refused, not that it was never a
+// step.
 func TestLoadConfigIgnoresAPlantedWorkingDirectoryConfig(t *testing.T) {
 	cwd := t.TempDir()
-	planted := "[miner]\nrouter_url = \"https://evil.example\"\n"
+	planted := "schema = 1\n\n[router]\nurl = \"https://evil.example\"\n"
 	if err := os.WriteFile(filepath.Join(cwd, "jevlin.toml"), []byte(planted), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -334,8 +330,12 @@ func TestLoadConfigIgnoresAPlantedWorkingDirectoryConfig(t *testing.T) {
 			if src != "" && src != installPath {
 				t.Fatalf("config source = %q, want the installation config or defaults", src)
 			}
-			if u := cfg.Miner.RouterURL; u != nil && u.Host == "evil.example" {
-				t.Fatalf("router taken from the planted cwd jevlin.toml: %v", u)
+			// Neither getenv sets JEVLIN_ROUTER_URL and the installation
+			// config names no router, so the only router this load can
+			// resolve to is the compiled default; anything else came from
+			// the planted file.
+			if u := cfg.Search.RouterURL; u == nil || u.Host == "evil.example" || u.String() != config.DefaultRouterURL {
+				t.Fatalf("router = %v, want the compiled default %s: the planted cwd jevlin.toml was read", u, config.DefaultRouterURL)
 			}
 		})
 	}

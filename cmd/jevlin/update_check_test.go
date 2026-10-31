@@ -103,19 +103,19 @@ func TestHooksStartTheReleaseCheckOnceADay(t *testing.T) {
 	sess := map[string]any{"session_id": "s"}
 
 	runHook(t, ops, hc, "window session-start", sess)
-	if len(checks) != 1 || checks[0] != "/c.toml" || len(fs.flushes) != 1 {
-		t.Fatalf("no stamp: checks %v flushes %v; want one of each", checks, fs.flushes)
+	if len(checks) != 1 || checks[0] != "/c.toml" {
+		t.Fatalf("no stamp: checks %v; want one", checks)
 	}
 
 	fs.files[stamp] = stampBytes(t, updateStamp{CheckedAt: checkNow.Add(-time.Hour), Running: "0.3.1", Outcome: updateCurrent})
 	runHook(t, ops, hc, "window session-start", sess)
-	runHook(t, ops, hc, "flush", sess)
-	if len(checks) != 1 || len(fs.flushes) != 3 {
-		t.Fatalf("fresh stamp: checks %v flushes %v; want no new check and two more flushes", checks, fs.flushes)
+	runHook(t, ops, hc, "stop", sess)
+	if len(checks) != 1 {
+		t.Fatalf("fresh stamp: checks %v; want no new check", checks)
 	}
 
 	fs.files[stamp] = stampBytes(t, updateStamp{CheckedAt: checkNow.Add(-25 * time.Hour), Running: "0.3.1", Outcome: updateCurrent})
-	runHook(t, ops, hc, "flush", sess)
+	runHook(t, ops, hc, "stop", sess)
 	if len(checks) != 2 {
 		t.Fatalf("stale stamp: checks %v; want a second", checks)
 	}
@@ -200,8 +200,8 @@ func TestHooksStartTheReleaseCheckOnceADay(t *testing.T) {
 }
 
 // opencode's plugin and Pi's extension have no session-start hook of the
-// host's: each starts `hook start <host>` itself, which starts the flush
-// and, when due, the check — the same path as Claude Code's session-start.
+// host's: each starts `hook start <host>` itself, which starts the check
+// when it is due — the same path as Claude Code's session-start.
 func TestHookStartIsTheJavaScriptHostsSessionStart(t *testing.T) {
 	fs, ops := newFakeHookOps(nil)
 	var checks []string
@@ -217,8 +217,8 @@ func TestHookStartIsTheJavaScriptHostsSessionStart(t *testing.T) {
 	for _, host := range []string{"opencode", "pi"} {
 		runHook(t, ops, hc, "start "+host, nil)
 	}
-	if len(fs.flushes) != 2 || len(checks) != 1 {
-		t.Fatalf("flushes %v checks %v; want a flush per start and one check", fs.flushes, checks)
+	if len(checks) != 1 {
+		t.Fatalf("checks %v; want one check for two starts", checks)
 	}
 	// Rendered for an installation, both adapters name the binary and the
 	// start they hand it; rendered with none, neither starts anything.
@@ -246,12 +246,12 @@ func TestHookStartIsTheJavaScriptHostsSessionStart(t *testing.T) {
 // A test that gives the hook no spawner, as every existing hook test does,
 // must not have the hook read the stamp or fail: the fake's files are the
 // test's own.
-func TestAHookWithoutACheckSpawnerStartsOnlyTheFlush(t *testing.T) {
+func TestAHookWithoutACheckSpawnerStartsNothing(t *testing.T) {
 	fs, ops := newFakeHookOps(nil)
 	hc := hookContext{cfgPath: "/c.toml", sessionsDir: "/sessions", updateRoot: "/home", updateMode: config.UpdateApply}
 	runHook(t, ops, hc, "window session-start", map[string]any{"session_id": "s"})
-	if len(fs.flushes) != 1 {
-		t.Fatalf("flushes %v", fs.flushes)
+	if _, ok := fs.files[filepath.Join("/sessions", hookStateFile)]; !ok {
+		t.Fatalf("the session start did not run: %v", keys(fs.files))
 	}
 }
 
@@ -304,7 +304,7 @@ func autoFixture(t *testing.T, lr *localRelease, extra string) (*upgradeFixture,
 		// holds.
 		extra += "[update]\nmode = \"apply\"\n"
 	}
-	writeFileT(t, cfgPath, "[mining]\nstate_dir = \""+filepath.ToSlash(stateDir)+"\"\n"+extra)
+	writeFileT(t, cfgPath, "schema = 1\n\n[search]\nstate_dir = \""+filepath.ToSlash(stateDir)+"\"\n"+extra)
 	return f, cfgPath, updateStampPath(f.home)
 }
 
@@ -351,7 +351,7 @@ func TestTheCheckKeepsItsStampAndLockBesideTheCredential(t *testing.T) {
 	if code, out, errOut := f.runAuto(cfgPath); code != exitOK {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
 	}
-	root := updateRoot(mustLoadConfig(t, cfgPath).Miner)
+	root := updateRoot(mustLoadConfig(t, cfgPath).Search)
 	if root != f.home {
 		t.Fatalf("the check's directory is %s, want the installation's own, %s", root, f.home)
 	}
@@ -591,7 +591,7 @@ func TestAutoCheckHoldsTheSameGateAsAManualUpgrade(t *testing.T) {
 		t.Fatal(err)
 	}
 	otherCfg := filepath.Join(other, setupConfigFile)
-	writeFileT(t, otherCfg, "[mining]\nstate_dir = \""+filepath.ToSlash(filepath.Join(f.home, "state"))+"\"\n[update]\nmode = \"apply\"\n")
+	writeFileT(t, otherCfg, "schema = 1\n\n[search]\nstate_dir = \""+filepath.ToSlash(filepath.Join(f.home, "state"))+"\"\n[update]\nmode = \"apply\"\n")
 	gate, err := acquireLifecycleGate(lifecycleGatePath(f.home), 0)
 	if err != nil {
 		t.Fatal(err)
@@ -739,7 +739,7 @@ func TestDoctorUpToDateVerdicts(t *testing.T) {
 		{"rolled back past the last upgrade", built("0.3.0", updateStamp{CheckedAt: at(time.Hour), Running: "0.3.0", Latest: "0.3.1", Outcome: updateUpgraded}),
 			verdictOK, "no release check has run yet for this copy; the last, 1h ago, was by another copy of jevlin", ""},
 		{"rolled back", base(updateStamp{CheckedAt: at(time.Hour), Running: "0.3.1", Held: "0.3.2", Outcome: updateRolledBack}),
-			verdictOK, "rolled back from 0.3.2 to 0.3.1 1h ago; 0.3.2 is not installed again automatically, a newer release is", ""},
+			verdictOK, "rolled back from 0.3.2 to 0.3.1 1h ago; 0.3.2 is not installed again automatically, a newer release of this minor is", ""},
 		{"available but held", base(updateStamp{CheckedAt: at(2 * time.Hour), Running: "0.3.1", Latest: "0.3.2", Held: "0.3.2", Outcome: updateAvailable}),
 			verdictOK, "0.3.2 is the latest release, and this copy was rolled back from 0.3.2, so it is not installed automatically (checked 2h ago); jevlin upgrade installs it", ""},
 		{"upgraded, integrations not refreshed", base(updateStamp{CheckedAt: at(time.Hour), Running: "0.3.0", Latest: "0.3.1", Outcome: updateUpgraded, Refresh: refreshFailed}),

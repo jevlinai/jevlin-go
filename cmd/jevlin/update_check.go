@@ -2,10 +2,10 @@ package main
 
 // The daily release check (docs/guide.md "Upgrading").
 //
-// Every hook that starts a flush — a session's start and end, on every host
-// — also reads one stamp, update_check.json beside credentials.json, and when
-// no check has run in the last day starts `jevlin upgrade -auto` as a
-// detached child, the exact shape of the flush. The hook reads one bounded
+// Every hook at a session's start and end, on every host, reads one stamp,
+// update_check.json beside credentials.json, and when no check has run in
+// the last day starts `jevlin upgrade -auto` as a detached child. The hook
+// reads one bounded
 // file and starts at most one process; it contacts nothing. The child is the
 // one process a day that reaches the compiled-in GitHub release origin, with
 // no credential: the self-updater's own path, invariant 5's one exception,
@@ -23,7 +23,7 @@ package main
 // its only route out, and a check started from it would ask that proxy for
 // GitHub, a host the profile does not list, failing whatever Codex command
 // is running. A hook whose environment says so starts no check
-// (hookInsideASandbox); its flush still starts, as it always did.
+// (hookInsideASandbox).
 //
 // The stamp and its lock live in the installation's own directory, beside
 // credentials.json, and never in the state directory. A sandboxed command
@@ -54,6 +54,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/BurntSushi/toml"
 
 	"github.com/jevlinai/jevlin-go/internal/selfupdate"
 	"github.com/jevlinai/jevlin-go/internal/termtext"
@@ -131,14 +133,14 @@ func updateStampPath(root string) string { return filepath.Join(root, updateStam
 func updateLockPath(root string) string  { return filepath.Join(root, updateLockFile) }
 
 // updateRoot is the installation's own directory, where the stamp and its
-// lock live: beside credentials.json (minerRoot), which no sandbox may write.
-// A config naming no intake directory has none, and then no check runs:
-// minerRoot would be ".", wherever the command happened to run.
-func updateRoot(m config.Miner) string {
-	if m.IntakeDir == "" {
+// lock live: beside credentials.json (installRoot), which no sandbox may
+// write. A config naming no state directory has none, and then no check
+// runs: installRoot would be ".", wherever the command happened to run.
+func updateRoot(m config.Search) string {
+	if m.StateDir == "" {
 		return ""
 	}
-	return minerRoot(m)
+	return installRoot(m)
 }
 
 // installationUpdateRoot is updateRoot for a command that knows the
@@ -152,9 +154,68 @@ func installationUpdateRoot(home string, getenv func(string) string) string {
 	}
 	cfg, _, err := loadConfig(cfgPath, getenv)
 	if err != nil {
-		return ""
+		root, _ := refusedConfigUpdate(cfgPath)
+		return root
 	}
-	return updateRoot(cfg.Miner)
+	return updateRoot(cfg.Search)
+}
+
+// refusedConfigUpdate is the update root and mode for a config that exists
+// and does not load: above all an earlier version's, which every command
+// refuses until setup has run. That is the state an unattended update
+// leaves a machine in, and a root of "" there meant no hook started the
+// daily check again, and a rollback to the earlier version wrote no hold,
+// so the next day's check installed this one again. The root is the
+// installation directory as the file's own version placed it: for an
+// earlier version's file the parent of its intake directory, where 0.6.x
+// kept the stamp beside credentials.json, else of its state directory
+// (the intake directory's default parent); for a format-1 file the parent
+// of [search] state_dir; else the directory the file is in, which is the
+// installation directory in every layout setup writes. The mode is the
+// file's [update] mode, which both formats spell alike, else the default.
+func refusedConfigUpdate(cfgPath string) (root, mode string) {
+	if cfgPath == "" {
+		return "", ""
+	}
+	root, mode = filepath.Dir(cfgPath), config.UpdateApply
+	data, err := readExistingConfig(cfgPath)
+	if err != nil || data == nil {
+		return root, mode
+	}
+	var f struct {
+		Search struct {
+			StateDir string `toml:"state_dir"`
+		} `toml:"search"`
+		// An earlier config's tables, under the names it wrote.
+		EarlierState struct {
+			StateDir string `toml:"state_dir"`
+		} `toml:"mining"`
+		EarlierClient struct {
+			IntakeDir string `toml:"intake_dir"`
+		} `toml:"miner"`
+		Update struct {
+			Mode string `toml:"mode"`
+		} `toml:"update"`
+	}
+	if _, err := toml.Decode(string(data), &f); err != nil {
+		return root, mode
+	}
+	for _, dir := range []string{f.EarlierClient.IntakeDir, f.EarlierState.StateDir, f.Search.StateDir} {
+		if dir != "" && filepath.IsAbs(dir) {
+			root = filepath.Dir(filepath.Clean(dir))
+			break
+		}
+	}
+	// As both formats read it: no mode is apply, and a word neither knows is
+	// notify, never apply.
+	switch m := strings.ToLower(strings.TrimSpace(f.Update.Mode)); m {
+	case "", config.UpdateApply:
+	case config.UpdateOff:
+		mode = m
+	default:
+		mode = config.UpdateNotify
+	}
+	return root, mode
 }
 
 // stampBinary is the path a stamp names for the running binary: resolved,
@@ -363,9 +424,9 @@ func updateCheckArgs(cfgPath string) []string {
 	return args
 }
 
-// startUpdateCheck launches `upgrade -auto` as a detached child, the exact
-// shape of startFlush: best effort, output goes nowhere, the next hook tries
-// again if this one could not even start.
+// startUpdateCheck launches `upgrade -auto` as a detached child: best
+// effort, output goes nowhere, the next hook tries again if this one could
+// not even start.
 func startUpdateCheck(cfgPath string) error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -418,7 +479,7 @@ func updateFactsFor(cfg *config.Config, exe string, exeErr error, getenv func(st
 			f.Fix = npmRemovalGuidance(kind, "upgrade")
 		}
 	}
-	if root := updateRoot(cfg.Miner); root != "" {
+	if root := updateRoot(cfg.Search); root != "" {
 		f.Stamp, f.Present, f.Err = readUpdateStamp(readUpdateStampFile, updateStampPath(root))
 	}
 	if err == nil && f.thisCopy() && stampNeedsAPerson(f.Stamp) {
@@ -488,10 +549,13 @@ func updateLineText(f updateFacts, now time.Time) string {
 		}
 		return fmt.Sprintf("upgraded to %s %s; restart open agents", st.Latest, age)
 	case updateRolledBack:
-		return fmt.Sprintf("rolled back from %s to %s %s; %s is not installed again automatically, a newer release is", st.Held, st.Running, age, st.Held)
+		return fmt.Sprintf("rolled back from %s to %s %s; %s is not installed again automatically, a newer release of this minor is", st.Held, st.Running, age, st.Held)
 	case updateAvailable:
 		if st.Held != "" {
 			return fmt.Sprintf("%s is the latest release, and this copy was rolled back from %s, so it is not installed automatically (checked %s) — %s installs it", st.Latest, st.Held, age, f.Fix)
+		}
+		if newMinor(st.Running, st.Latest) {
+			return fmt.Sprintf("%s is available, a new minor release, which is not installed automatically and may need `jevlin setup` after it is; this copy is %s (checked %s) — %s", st.Latest, st.Running, age, f.Fix)
 		}
 		return fmt.Sprintf("%s is available and this copy is %s (checked %s) — %s", st.Latest, st.Running, age, f.Fix)
 	case updateFailed:
@@ -504,6 +568,15 @@ func updateLineText(f updateFacts, now time.Time) string {
 	default: // started
 		return fmt.Sprintf("a check started %s", age)
 	}
+}
+
+// newMinor reports whether latest is a release of another major or minor
+// version than running, both in their canonical spelling: the releases the
+// daily check leaves to a person (autoAppliesAcross).
+func newMinor(running, latest string) bool {
+	r, err1 := selfupdate.ParseVersion(running)
+	l, err2 := selfupdate.ParseVersion(latest)
+	return err1 == nil && err2 == nil && !autoAppliesAcross(r, l)
 }
 
 // manualInterventionDetail and manualInterventionFix are what status and

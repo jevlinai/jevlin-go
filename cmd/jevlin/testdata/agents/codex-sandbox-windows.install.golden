@@ -11,8 +11,8 @@
       "surface": "Codex",
       "path": "/home/u/.codex/config.toml",
       "mode": 384,
-      "why": "sandbox: writable_roots so searches can record; no network: Codex asks before a search reaches the router",
-      "content": "# \u003e\u003e\u003e jevlin agents install \u003e\u003e\u003e\n# Lets jevlin's search record its mining observation under your\n# jevlin home. Without this, Codex's default sandbox blocks the\n# write and searches earn nothing. No network: Codex asks first.\n[sandbox_workspace_write]\nwritable_roots = [\"TESTHOME/intake\", \"TESTHOME/sessions\", \"TESTHOME/spool\", \"TESTHOME/state\"]\n# \u003c\u003c\u003c jevlin agents install \u003c\u003c\u003c\n"
+      "why": "sandbox: writable_roots so searches can write their session files; no network: Codex asks before a search reaches the router",
+      "content": "# \u003e\u003e\u003e jevlin agents install \u003e\u003e\u003e\n# Lets jevlin's search write its lineage and turn marks under your\n# jevlin home. Without this, Codex's default sandbox blocks the\n# write. No network: Codex asks first.\n[sandbox_workspace_write]\nwritable_roots = [\"TESTHOME/sessions\", \"TESTHOME/state\"]\n# \u003c\u003c\u003c jevlin agents install \u003c\u003c\u003c\n"
     }
   ],
   "notes": [

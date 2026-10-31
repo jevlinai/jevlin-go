@@ -16,14 +16,6 @@ import (
 
 func TestTheGeneratedShellProfileBlockIsASCII(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "jevlin")
-	lines := profileEnvLines(
-		filepath.Join(home, "bin"),
-		filepath.Join(home, setupConfigFile),
-		filepath.Join(home, "wallet"),
-	)
+	lines := profileEnvLines(filepath.Join(home, "bin"), filepath.Join(home, setupConfigFile))
 	asciiOrFail(t, "profileBlock", []byte(profileBlock(lines)))
-	// Without a wallet directory the block is one line shorter; both shapes
-	// are what setup writes, so both are held to the rule.
-	asciiOrFail(t, "profileBlock (no wallet)", []byte(profileBlock(
-		profileEnvLines(filepath.Join(home, "bin"), filepath.Join(home, setupConfigFile), ""))))
 }

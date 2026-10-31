@@ -6,19 +6,17 @@
   <a href="https://github.com/jevlinai/jevlin-go/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="license"></a>
   <a href="https://github.com/jevlinai/jevlin-go/blob/main/CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs welcome"></a>
   <a href="https://jevlin.ai"><img src="https://img.shields.io/badge/jevlin.ai-site-111" alt="jevlin.ai"></a>
-  <a href="https://docs.twilight.org"><img src="https://img.shields.io/badge/twilight-docs-E8552F" alt="Twilight docs"></a>
 </p>
 
 Supersearch for coding agents, free for agents, with the trajectory behind every search: one call asks every engine in the set at once, every result names the engines that found it, and every engine leaves a receipt.
 One binary gives Claude Code, Cursor, Codex, opencode, Pi and Hermes a `search` that can fan a
-query out across eight search indexes at once, merges what they return into one attributed
+query out across every search index in the set at once, merges what they return into one attributed
 list, and carries enough of the agent's context that the router can see the task a search
 belongs to, not just the query string. There is no daemon, proxy or MCP server: between tool
 calls nothing is running.
 
 Search is free for agents: setup registers you with the search platform and gets a key, there
-is no card and nothing to top up. What funds it is described
-[at the end](#mining-on-the-twilight-testnet).
+is no card and nothing to top up.
 
 
 ## Install
@@ -110,9 +108,8 @@ on the router, and a set that would exceed the ceiling is trimmed rather than re
 | `max` | the core arms, 15 results each, a 24-page window, 2,000-character excerpts | corroboration: the same page found by independent indexes, and the most text per page | about $0.045, plus the tokens your agent spends reading it |
 
 The dollar figures are the arms' own prices passed through with no markup; `usage.cost_micros`
-on every response is the real number. A search is free while mining is on (the trajectory pays
-for it); a key without mining draws credit. `max` and a named `providers` set (below) always
-draw credit: they are the two ways to multiply the work a request does.
+on every response is the real number. `max` and a named `providers` set (below) are the two
+ways to multiply the work a request does.
 
 Who chooses:
 
@@ -137,9 +134,7 @@ named). A router that applies `recency` and `domain_filter` itself says so in
 page outside it. Without that report the results may be unfiltered, and the skill tells the
 agent to check each page's date and host itself. A named set
 runs on `balanced` or `max` only: on `fast` the router refuses it, since the fast set is the
-router's. It is billed at the named arms' own prices, draws credit even with mining on, and
-earns no reward, because a single-arm search carries none of the comparison a trajectory is
-paid for. The
+router's. It is billed at the named arms' own prices. The
 [skill](https://github.com/jevlinai/jevlin-go/blob/main/cmd/jevlin/skill.md) is what the agent reads; the
 [reference](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#the---stdin-request) has the envelope.
 
@@ -156,7 +151,7 @@ agent was doing when it asked:
 | `window`, `seq` | Which context window of the session, after compactions, and a call counter. |
 | `history` | The assistant text just before the search, scrubbed of secrets, last 32 KiB. Codex and Hermes send none. |
 
-With `[miner] turn_end = true`, the agent's end-of-turn hook also sends what the turn
+With `[search] turn_end = true`, the agent's end-of-turn hook also sends what the turn
 concluded: the final message, what you asked, the sequence of tools called with name, duration
 and outcome (never a tool's input or output), the model and the token counts. Only for turns
 in which a search was served.
@@ -179,13 +174,11 @@ to copy or paste. Then it asks, in this order:
 | question | what your answer does |
 |---|---|
 | **Use it?** | Asked only when an earlier installation was set aside beside `~/.jevlin`. Yes moves it back. |
-| **Enable mining rewards?** | No, the default, gives you search. Yes also enrolls this installation in Twilight testnet mining and asks for a payout address. |
-| **Payout address** | Only if mining is on: a `twilight1…` address you control, or empty to create a wallet here. |
 | **Add them to ~/.zshrc?** | Or whichever profile your shell reads. Puts `jevlin` on PATH and sets `JEVLIN_CONFIG`. On Windows it asks **Set them for your user?** instead. |
 | **Set up the coding agents found on this machine now?** | Writes a skill and hooks into each agent's own config, after showing you what. |
 | **Switch?** | Asked only when Codex's config has a setting of your own that its permission profile would change. It shows every line it would write; a bare Enter is no and leaves Codex as it is. |
 
-After the mining questions, and before the shell profile, it prints a link where you claim
+After the config is written, and before the shell profile, it prints a link where you claim
 your agent on `platform.jevlin.ai` and waits up to three minutes for you to. You need not do it
 then: search already works, and using an agent later finishes the claim. The
 [guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#setup) says what each answer does and which flags answer them for you.
@@ -232,7 +225,7 @@ with jevlin goes through that one skill.
 | `/jevlin on` | This search is the default again. |
 | `/jevlin status` | Which of the two is the default right now. |
 | `/jevlin tier fast\|balanced\|max` | Sets the tier every search carries unless a request names one. |
-| `/jevlin tier default` | Unsets it; `[miner] tier` in your config applies if set, else the router's default for your key. |
+| `/jevlin tier default` | Unsets it; `[router] tier` in your config applies if set, else the router's default for your key. |
 | `/jevlin tier` | The tier in force. |
 
 The settings are yours: the skill tells the agent never to change the default or the tier on
@@ -240,31 +233,27 @@ its own. `/jevlin off` does not reach opencode, whose rules block carries no pre
 
 Those are the only forms the skill teaches, because they are the only ones an agent needs
 mid-task. Everything else is the `jevlin` command in a shell. The agent can run these too when
-you ask it to; the skill points it at `status` and `doctor` when a search succeeds but mining
-says it is not earning.
+you ask it to; the skill points it at `connect` and `status` when a search answers that the
+registration or the claim needs attention.
 
 | command | what it does |
 |---|---|
 | `jevlin search` | One search. `--stdin` for agents (JSON in, JSON out); `<query words>` for a person. |
 | `jevlin setup` | Everything after the binary: previous installation, config, registration, profile, agents. |
 | `jevlin status` | What this installation has and has not completed. `-json` for one envelope. |
-| `jevlin doctor` | Whether searches are recorded and earning, check by check, and the one thing to fix. `-json` too. |
+| `jevlin doctor` | Whether this installation is ready to search, check by check: the stored key, the registration, the trace key, whether this copy is the latest release, the binary on PATH. `-json` too. |
 | `jevlin limits` | This key's spend caps, rate windows and today's spend, read from the router. A claimed key gets 120 searches a minute, 3,000 an hour and 16 at once; an unclaimed one 10, 120 and 2, with $0.10 a day. |
 | `jevlin agents install\|status\|uninstall` | Sets up, reports or removes the skills and hooks of each agent. |
 | `jevlin agents prefer on\|off\|status` | What `/jevlin on\|off\|status` runs: which search is the default. |
 | `jevlin agents tier <tier>\|default\|status` | What `/jevlin tier` runs: the tier every search carries. |
-| `jevlin mining enable\|disable` | Turns Twilight mining on, asking for a payout address, or off. |
-| `jevlin earnings` | What the chain has paid to your payout address. |
-| `jevlin wallet init\|address\|register\|balance\|send` | The wallet setup made, or one you make here. |
-| `jevlin flush` | One pass of the mining plane by hand: join the open epoch, submit recorded searches. |
 | `jevlin connect` | Registers with the search platform, prints the claim link, polls until claimed. |
+| `jevlin login` | Stores a key you already have, read from stdin, for searches without a registration. |
 | `jevlin upgrade` | A native install: the latest release, verified before it runs; `-rollback` swaps back. |
 | `jevlin uninstall` | Removes what setup wrote; `-binary` and `-purge-state` go further. |
 | `jevlin version`, `jevlin help` | The version, and the full usage text. |
 
-`login`, `enroll`, `payout`, `join` and `provider` are the portal's older manual path. A
-command that reads the config takes `-config <file>`; `setup`, `upgrade` and `uninstall` take
-`-home <dir>` instead, the installation. The [reference](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#commands) has every flag.
+A command that reads the config takes `-config <file>`; `setup`, `upgrade` and `uninstall`
+take `-home <dir>` instead, the installation. The [reference](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#commands) has every flag.
 
 The skill's text is [`cmd/jevlin/skill.md`](https://github.com/jevlinai/jevlin-go/blob/main/cmd/jevlin/skill.md), rendered per agent and per
 shell at install; the installed copy is at `~/.claude/skills/jevlin/`, `~/.cursor/skills/jevlin/`,
@@ -276,16 +265,16 @@ shell at install; the installed copy is at `~/.claude/skills/jevlin/`, `~/.curso
 The trace and the turn end go only to the search router, inside the search request and the
 turn record. Nothing else reads them. An agent's query goes in the JSON on stdin, so it is in
 neither `ps` nor a shell history. The human form, `jevlin search "<query words>"`, puts the
-query on the command line, where both can see it; use `--stdin` for anything sensitive. With
-mining on, the rewards service receives metadata only, never the query, the results or the
-text; see below.
+query on the command line, where both can see it; use `--stdin` for anything sensitive. The
+search platform receives the registration and the claim; it never sees a query, a result or
+the trace.
 
 ## Upgrading and removing
 
 ```bash
 jevlin upgrade                 # a native install: the latest release, verified before it runs
 npm install -g @jevlinsearch/jevlin@latest   # an npm install is updated with npm
-jevlin uninstall               # remove the skills, hooks and profile block; keep your wallet
+jevlin uninstall               # remove the skills, hooks and profile block; keep your registration and key
 ```
 
 Once a day, when an agent session starts or ends, jevlin also checks for a newer release, and
@@ -296,33 +285,9 @@ it only tells you. An npm install is only ever told. `mode = "off"` stops the ch
 The guide covers [upgrading](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#upgrading) and
 [removing it and coming back](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#removing-it-and-coming-back).
 
-## Mining on the Twilight testnet
-
-Search is free because router traffic is proof of work. Jevlin runs a Slot on
-[Twilight](https://docs.twilight.org), a chain whose work is defined by Slots rather than by a
-puzzle, and on that Slot a search served by the router is a unit of work: the chain pays the
-Slot, and the Slot's share is what funds the searches. If you say yes to mining at setup, or
-run `jevlin mining enable` later, your searches earn you a part of that share too. Each search
-is recorded on your machine and reported to the Slot's verifier after the fact:
-
-- **One verified search per epoch makes you eligible**, and the epoch's share is split equally
-  among everyone eligible. More searches do not earn more.
-- **Your first reward takes one to two hours.** You join an epoch two ahead, and it has to
-  close and settle first.
-- **A long idle gap can miss an epoch.** Recorded searches are submitted by the next search or
-  agent session, and evidence that arrives after the epoch's deadline is late.
-- **Rewards are testnet TWLT**, paid to a `twilight1…` address you control. A wallet setup
-  creates is sealed by the passphrase you choose, and its 24-word recovery phrase is printed
-  once.
-
-`jevlin doctor` says whether searches are recorded and earning, check by check, and `jevlin
-earnings` reads what the chain has paid. Search works before you claim your agent, and with
-mining off. The [guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#earning) has the detail; how the chain and its Slots work
-is at [docs.twilight.org](https://docs.twilight.org).
-
 ## Documentation
 
-- [Jevlin guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md): setup in detail, tiers, the trace, the wallet, earning,
+- [Jevlin guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md): setup in detail, the claim, tiers, the trace,
   upgrading, removing.
 - [Agents](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md): what is written into each coding agent, and its known limits.
 - [Reference](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md): commands, the `--stdin` envelope, config, environment

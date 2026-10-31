@@ -32,6 +32,43 @@ var fullViewAdditions = map[string]bool{
 	"result.decision.build":      true,
 }
 
+// captureRetired is the one key the capture carries that today's envelope
+// does not. It is removed from the CAPTURE side only, and today's envelope
+// is compared whole, so the key reappearing in the envelope fails here as
+// any other unnamed addition would.
+var captureRetired = map[string]bool{"mining": true}
+
+// v043Capture is a capture with the retired keys removed, the form today's
+// envelope is compared against.
+func v043Capture(t *testing.T, name string) []byte {
+	t.Helper()
+	raw := readSearchTestdata(t, name)
+	same, err := jsonWithout(bytes.TrimSuffix(raw, []byte("\n")), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The helper must be the identity on what it does not drop, or a match
+	// against its output would prove nothing about the bytes.
+	if !bytes.Equal(append(same, '\n'), raw) {
+		t.Fatalf("jsonWithout changed the capture with nothing to drop:\n%s\n%s", same, raw)
+	}
+	want, err := jsonWithout(bytes.TrimSuffix(raw, []byte("\n")), captureRetired)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return append(want, '\n')
+}
+
+// fullViewDropped is what today's envelope loses before the comparison:
+// the additions, and nothing else.
+func fullViewDropped() map[string]bool {
+	out := map[string]bool{}
+	for k := range fullViewAdditions {
+		out[k] = true
+	}
+	return out
+}
+
 // fullCaptures pairs each capture with the router answer it was made from.
 var fullCaptures = map[string]string{
 	"merged-view-success.main.envelope.json":         "router/merged-view-success.main.json",
@@ -143,19 +180,9 @@ func TestTheFullViewOnlyAddsToWhatV043Sent(t *testing.T) {
 	}
 	for capture, fixture := range fullCaptures {
 		t.Run(capture, func(t *testing.T) {
-			want := readSearchTestdata(t, filepath.Join("full-a0ff6ca", capture))
-			// The helper must be the identity on what it does not drop, or a
-			// match below would prove nothing about the bytes.
-			same, err := jsonWithout(bytes.TrimSuffix(want, []byte("\n")), nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !bytes.Equal(append(same, '\n'), want) {
-				t.Fatalf("jsonWithout changed the capture with nothing to drop:\n%s\n%s", same, want)
-			}
-
+			want := v043Capture(t, filepath.Join("full-a0ff6ca", capture))
 			out := searchStdoutServing(t, readSearchTestdata(t, fixture), `{"version":1,"query":"q","view":"full"}`)
-			got, err := jsonWithout([]byte(strings.TrimSuffix(out, "\n")), fullViewAdditions)
+			got, err := jsonWithout([]byte(strings.TrimSuffix(out, "\n")), fullViewDropped())
 			if err != nil {
 				t.Fatal(err)
 			}
