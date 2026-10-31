@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // servingWith runs one --stdin search against a fake router that answers
@@ -287,5 +288,52 @@ func TestNoFastSetGoesToARouterThatDoesNotListPresets(t *testing.T) {
 	_, body := fr.last(t)
 	if strings.Contains(string(body), "fast_set") {
 		t.Errorf("the router was sent %s", body)
+	}
+}
+
+// A preset the search cannot send never blocks it: whatever the preset list
+// answers, or if it never answers, the search runs on the router's default
+// preset. Machine mode says nothing on stderr (everything is in the
+// envelope), and `agents tier status` is where a stored preset the router
+// does not list is reported.
+func TestAPresetThatCannotBeSentNeverBlocksTheSearch(t *testing.T) {
+	raw := readSearchTestdata(t, filepath.Join("router", "merged-view-success.merge-v2.json"))
+	for _, tc := range []struct {
+		name string
+		sets func(w http.ResponseWriter)
+		sent any
+	}{
+		{"listed", func(w http.ResponseWriter) { _, _ = w.Write([]byte(realFastSets)) }, "economy"},
+		{"429", func(w http.ResponseWriter) { w.Header().Set("Retry-After", "5"); w.WriteHeader(429) }, nil},
+		{"500", func(w http.ResponseWriter) { w.WriteHeader(500) }, nil},
+		{"malformed", func(w http.ResponseWriter) { _, _ = w.Write([]byte(`{"sets":[{"name":`)) }, nil},
+		{"no presets", func(w http.ResponseWriter) { w.WriteHeader(404) }, nil},
+		{"empty list", func(w http.ResponseWriter) { _, _ = w.Write([]byte(`{"default":"economy","sets":[]}`)) }, nil},
+		{"hangs past the probe's deadline", func(w http.ResponseWriter) { time.Sleep(fastSetsProbeTimeout + time.Second) }, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/v1/fast-sets" {
+					tc.sets(w)
+					return
+				}
+				_, _ = w.Write(raw)
+			})
+			for name, body := range map[string]string{"search-tier": "fast\n", "search-fast-set": "economy\n"} {
+				if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			code, out, errOut := runSearchStdin(t, fixedSearchOps(root), map[string]string{"JEVLIN_API_KEY": "k"}, `{"version":1,"query":"q"}`, "-config", cfg)
+			if env := decodeEnvelope(t, out); code != exitOK || env["ok"] != true {
+				t.Fatalf("the search did not run: exit %d\n%s\n%s", code, out, errOut)
+			}
+			_, body := fr.last(t)
+			var sent map[string]any
+			_ = json.Unmarshal(body, &sent)
+			if sent["fast_set"] != tc.sent {
+				t.Errorf("fast_set %v, want %v", sent["fast_set"], tc.sent)
+			}
+		})
 	}
 }
