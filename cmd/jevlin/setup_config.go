@@ -526,6 +526,14 @@ const identityFileMaxBytes = 1 << 20
 // file is copied owner-only and synced, published by rename in the
 // destination's directory, and only then removed from the source.
 func moveIdentityFile(src, dst string) error {
+	// The release check's record is the one file a move replaces
+	// (identityMoves); a move does not replace a file on Windows, so the
+	// one there goes first.
+	if filepath.Base(dst) == updateStampFile && lexists(dst) && lexists(src) {
+		if err := fsx.RemoveFileDurable(dst); err != nil {
+			return err
+		}
+	}
 	err := renameIdentityFile(src, dst)
 	var stage *fsx.StageError
 	switch {

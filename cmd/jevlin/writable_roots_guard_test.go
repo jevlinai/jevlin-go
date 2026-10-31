@@ -130,7 +130,7 @@ var classifiedFileCalls = map[fileCallSite]fileCallClass{
 	{"cmd/jevlin/setup_config.go", "<package level>", "fsx.MoveFileDurable"}:            {1, "outside: an earlier installation's credentials.json and the files kept with it, moved from beside its intake directory to beside its state directory, both the installation's own directories and never a sandbox root"},
 	{"cmd/jevlin/setup_config.go", "moveIdentityFile", "fsx.ReadRegularNoFollow"}:       {1, "outside: the same file, read whole and bounded to copy it to another filesystem, no link followed"},
 	{"cmd/jevlin/setup_config.go", "moveIdentityFile", "fsx.WriteFileAtomic"}:           {1, "outside: the copy published beside the state directory, owner-only and synced"},
-	{"cmd/jevlin/setup_config.go", "moveIdentityFile", "fsx.RemoveFileDurable"}:         {1, "outside: the source removed once its copy is published"},
+	{"cmd/jevlin/setup_config.go", "moveIdentityFile", "fsx.RemoveFileDurable"}:         {2, "outside: the source removed once its copy is published, and the release check's record a move replaces"},
 	{"cmd/jevlin/setup_config.go", "readExistingConfig", "os.ReadFile"}:                 {1, "outside: jevlin.toml"},
 	{"cmd/jevlin/setup_env.go", "applyUserEnvironment", "fsx.WriteFileAtomic"}:          {1, "outside: the shell profile or the environment journal"},
 	{"cmd/jevlin/setup_env.go", "applyUserEnvironmentRevert", "os.Remove"}:              {1, "outside: the environment journal"},

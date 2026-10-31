@@ -152,6 +152,16 @@ func TestAnEarlierStampReplacesOneAlreadyBesideTheStateDirectory(t *testing.T) {
 	if err != nil || len(moves) != 1 {
 		t.Fatalf("plan %v %v", moves, err)
 	}
+	// A move does not replace a file on Windows; refuse one here too, so
+	// every runner holds the removal that comes first.
+	real := renameIdentityFile
+	t.Cleanup(func() { renameIdentityFile = real })
+	renameIdentityFile = func(a, b string) error {
+		if lexists(b) {
+			return &os.LinkError{Op: "rename", Old: a, New: b, Err: os.ErrExist}
+		}
+		return real(a, b)
+	}
 	if err := moveIdentity(moves); err != nil || string(s2b(t, filepath.Join(to, updateStampFile))) != "earlier" {
 		t.Errorf("the earlier stamp did not take the place: %v", err)
 	}
