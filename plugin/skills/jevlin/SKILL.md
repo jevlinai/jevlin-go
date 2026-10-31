@@ -59,6 +59,23 @@ archive verified against its `checksums.txt`, put on PATH.
 jevlin setup -yes
 ```
 
+If `jevlin` is not found after the install, npm's global `bin` directory is not
+on PATH. Do not stop: run npm's command by its full path, which is the same
+program. On macOS and Linux:
+
+```bash
+"$(npm prefix -g)/bin/jevlin" setup -yes
+```
+
+On Windows PowerShell:
+
+```powershell
+& "$(npm prefix -g)\jevlin.cmd" setup -yes
+```
+
+Use the same full-path form for `doctor` and `status` until the user has a new
+terminal.
+
 `-yes` answers the shell-profile and coding-agents questions: it adds
 `jevlin` to PATH and writes the skill (or, for opencode, the plugin) and
 hooks into every agent it finds (Claude Code, Cursor, Codex, opencode, Pi,
