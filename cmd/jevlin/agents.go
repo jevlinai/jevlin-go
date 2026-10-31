@@ -511,7 +511,7 @@ func effectiveTier(ops agentOps, entry binEntry, getenv func(string) string) (ti
 func tierLabel(t string) string {
 	switch t {
 	case "fast":
-		return "fast — three fast indexes, one per index group; the quickest tier"
+		return "fast — the fast indexes the preset names; the quickest tier"
 	case "balanced":
 		return "balanced — several providers, attributed"
 	case "max":
@@ -629,11 +629,12 @@ var agentsUsage = `usage: jevlin agents install|status|uninstall [-config file] 
               skills so it takes effect in every agent (/jevlin off|on in
               the agent does the same)
   tier        the tier every search carries unless the request names
-              one: fast (three fast indexes), balanced (several, attributed) or
-              max (the same arms, more results and longer excerpts; draws
-              credit); default unsets it so the router's default
-              applies. Saved beside the config; no skill is rewritten
-              (/jevlin tier <tier> in the agent does the same)
+              one: fast (the fast indexes a preset names), balanced
+              (several, attributed) or max (the same arms, more results
+              and longer excerpts; draws credit); default unsets it so
+              the router's default applies. Saved beside the config; no
+              skill is rewritten (/jevlin tier <tier> in the agent does
+              the same)
   -client     act on this agent only (` + targetIDs(targetHost) + `); repeatable
   -dry-run    print the plan, change nothing
   -yes        answer Proceed? with yes; a question about a Codex setting of
@@ -967,7 +968,7 @@ func agentsTier(ops agentOps, args []string, stdout, stderr io.Writer, getenv fu
 			fmt.Fprintf(stderr, "jevlin agents tier: want %s, default, status, or a preset the router lists\n%s", strings.Join(config.SearchTiers, ", "), agentsUsage)
 			return exitUsage
 		case err == nil && !doc.lists(preset):
-			fmt.Fprintf(stderr, "jevlin agents tier: this router does not list %q; it lists %s\n", preset, strings.Join(doc.names(), ", "))
+			fmt.Fprintf(stderr, "jevlin agents tier: this router does not list %q; %s\n", preset, doc.listing())
 			return exitUsage
 		case errors.Is(err, errFastSetsAbsent):
 			fmt.Fprintln(stdout, "warning: this router does not list presets, so the name is kept but none is sent")

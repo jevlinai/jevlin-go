@@ -4,6 +4,7 @@ package main
 // tier preference; `tier status` lists what the router offers.
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -183,5 +184,43 @@ func TestAPresetNamedAloneIsTheFastTierWithThatPreset(t *testing.T) {
 	listed = false
 	if code, _, _ := runAgents(t, ops, env, "tier", "-config", cfg, "economy"); code != exitUsage || stored() != "standard" {
 		t.Errorf("a lone word with the list unreadable: exit %d, preset %q", code, stored())
+	}
+}
+
+// Every name the router sends goes through the name check before a terminal
+// sees it, the list's default included: a default carrying a hyperlink or a
+// line-clearing sequence is "the router's default", not the bytes.
+func TestTierStatusPrintsTheRoutersDefaultOnlyAsAName(t *testing.T) {
+	for _, def := range []string{
+		"economy\u001b]8;;https://example.invalid\u0007click\u001b]8;;\u0007\u001b[2K",
+		"\u001b[31mRED\u001b[0m",
+	} {
+		body, _ := json.Marshal(map[string]any{"default": def, "sets": []any{map[string]any{"name": "economy", "providers": []string{"serper"}, "estimated_cost_micros": 1300}}})
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(body) }))
+		cfg := writeTOML(t, "schema = 1\n\n[router]\nurl = \""+srv.URL+"\"\n")
+		_, ops := newFakeMachine("claude")
+		code, out, _ := runAgents(t, ops, map[string]string{"JEVLIN_API_KEY": "k", "JEVLIN_CONFIG": cfg}, "tier", "-config", cfg, "status")
+		srv.Close()
+		if code != exitOK || strings.ContainsAny(out, "\u001b\u0007") || !strings.Contains(out, "fast preset: the router's default\n") {
+			t.Errorf("exit %d, printed %q", code, out)
+		}
+	}
+}
+
+// A list with no presets says so, in the status and in a refusal, rather
+// than "could not be read" or "it lists" followed by nothing.
+func TestAnEmptyPresetListIsSaidToBeEmpty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"default":"economy","sets":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	cfg := writeTOML(t, "schema = 1\n\n[router]\nurl = \""+srv.URL+"\"\n")
+	_, ops := newFakeMachine("claude")
+	env := map[string]string{"JEVLIN_API_KEY": "k", "JEVLIN_CONFIG": cfg}
+	if code, out, _ := runAgents(t, ops, env, "tier", "-config", cfg, "status"); code != exitOK || !strings.Contains(out, "the router lists no presets") || strings.Contains(out, "could not be read") {
+		t.Errorf("status: exit %d\n%s", code, out)
+	}
+	if code, _, errOut := runAgents(t, ops, env, "tier", "-config", cfg, "fast", "economy"); code != exitUsage || !strings.Contains(errOut, "it lists no presets") {
+		t.Errorf("fast economy: exit %d\n%s", code, errOut)
 	}
 }

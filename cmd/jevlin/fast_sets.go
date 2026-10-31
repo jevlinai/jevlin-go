@@ -3,8 +3,10 @@ package main
 // The fast tier's presets: which indexes a fast search asks, chosen by the
 // user (`jevlin agents tier fast <preset>`) and listed by the router
 // (GET /v1/fast-sets). The client holds only the name; the router owns the
-// list and its prices, so a client that cannot reach the list still sends
-// the stored name and says that prices are unavailable. The request carries
+// list and its prices. A search sends the stored name only when the list it
+// reads names it, so a list it cannot read sends none and the router's
+// default preset applies; `tier status` then says prices are unavailable.
+// The request carries
 // the participant's sr- key to [router] url, shaped like limits': configured
 // origin, same-origin redirects, bounded body.
 
@@ -121,29 +123,42 @@ func (d fastSetsDoc) names() []string {
 	return out
 }
 
+// listing says what the router lists, for a sentence that names the
+// presets: "it lists economy, standard", or that it lists none.
+func (d fastSetsDoc) listing() string {
+	if names := d.names(); len(names) > 0 {
+		return "it lists " + strings.Join(names, ", ")
+	}
+	return "it lists no presets"
+}
+
 // printFastSets says which preset is stored and lists what the router
-// offers, with its estimated price per search. The stored name is repeated
-// through the name check, never raw.
+// offers, with its estimated price per search. Every name the router sent,
+// its default included, goes through the name check before it is printed;
+// the stored name was checked when it was written.
 func printFastSets(stdout io.Writer, stored string, doc fastSetsDoc, err error) {
 	if errors.Is(err, errFastSetsAbsent) {
 		fmt.Fprintln(stdout, "fast presets: not available on this router, so none is sent and its default fast tier applies")
 		return
 	}
-	if err != nil || len(doc.Sets) == 0 {
-		name := "the router's default"
-		if stored != "" {
-			name = stored
-		}
+	name := "the router's default"
+	if stored != "" {
+		name = stored
+	}
+	if err != nil {
 		fmt.Fprintf(stdout, "fast preset: %s (prices are unavailable: the router's preset list could not be read)\n", name)
 		return
 	}
-	name := stored
-	if name == "" {
+	if len(doc.names()) == 0 {
+		fmt.Fprintf(stdout, "fast preset: %s (the router lists no presets, so none is sent)\n", name)
+		return
+	}
+	if stored == "" && fastSetNameRE.MatchString(doc.Default) {
 		name = doc.Default + " (the router's default)"
 	}
 	fmt.Fprintf(stdout, "fast preset: %s\n", name)
 	if stored != "" && !doc.lists(stored) {
-		fmt.Fprintf(stdout, "  warning: this router does not list %q (it lists %s), so no preset is sent; set one with `jevlin agents tier fast <preset>`\n", stored, strings.Join(doc.names(), ", "))
+		fmt.Fprintf(stdout, "  warning: this router does not list %q (%s), so no preset is sent; set one with `jevlin agents tier fast <preset>`\n", stored, doc.listing())
 	}
 	for _, s := range doc.Sets {
 		if !fastSetNameRE.MatchString(s.Name) {
