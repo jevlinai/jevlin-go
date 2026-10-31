@@ -61,3 +61,17 @@ func TestANewMinorReleaseIsLeftToAPersonAndSaidSo(t *testing.T) {
 		t.Fatalf("the person's upgrade: exit %d, binary %s\n%s\n%s", code, f.content(f.exe), out, errOut)
 	}
 }
+
+// doctor says what status says about a new minor release, and the rolled
+// back line promises only a newer release of this minor.
+func TestDoctorSaysANewMinorIsLeftToAPerson(t *testing.T) {
+	f, cfgPath, _ := autoFixture(t, newLocalRelease(t, "0.4.0", map[string]string{"0.4.0": "0.4.0\n"}), "")
+	if code, _, _ := f.runAuto(cfgPath); code != exitOK || f.content(f.exe) != "0.3.0" {
+		t.Fatal("the check crossed a minor release")
+	}
+	withBuild(t, "0.3.0")
+	c := doctorUpdateCheck(doctorFacts{Update: factsFor(t, f, cfgPath), Now: time.Now()})
+	if !strings.Contains(c.Detail, "a new minor release, which is not installed automatically") {
+		t.Errorf("doctor on a new minor release: %s %q", c.Verdict, c.Detail)
+	}
+}

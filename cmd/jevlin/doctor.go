@@ -376,13 +376,17 @@ func doctorUpdateCheck(f doctorFacts) doctorCheck {
 		}
 		c.Verdict, c.Detail = verdictOK, fmt.Sprintf("upgraded to %s %s; restart open agents%s", st.Latest, ageText(age), modeNote)
 	case updateRolledBack:
-		c.Verdict, c.Detail = verdictOK, fmt.Sprintf("rolled back from %s to %s %s; %s is not installed again automatically, a newer release is%s", st.Held, st.Running, ageText(age), st.Held, modeNote)
+		c.Verdict, c.Detail = verdictOK, fmt.Sprintf("rolled back from %s to %s %s; %s is not installed again automatically, a newer release of this minor is%s", st.Held, st.Running, ageText(age), st.Held, modeNote)
 	case updateAvailable:
 		if st.Held != "" {
 			c.Verdict, c.Detail = verdictOK, fmt.Sprintf("%s is the latest release, and this copy was rolled back from %s, so it is not installed automatically (checked %s); %s installs it%s", st.Latest, st.Held, ageText(age), u.Fix, modeNote)
 			return c
 		}
-		c.Verdict, c.Detail = verdictNo, fmt.Sprintf("%s is available and this copy is %s (checked %s)%s", st.Latest, st.Running, ageText(age), modeNote)
+		if newMinor(st.Running, st.Latest) {
+			c.Verdict, c.Detail = verdictNo, fmt.Sprintf("%s is available, a new minor release, which is not installed automatically and may need `jevlin setup` after it is; this copy is %s (checked %s)%s", st.Latest, st.Running, ageText(age), modeNote)
+		} else {
+			c.Verdict, c.Detail = verdictNo, fmt.Sprintf("%s is available and this copy is %s (checked %s)%s", st.Latest, st.Running, ageText(age), modeNote)
+		}
 		c.Fix = u.Fix
 	case updateFailed:
 		return undetermined(fmt.Sprintf("the last check failed (%s) %s; the next runs in a day", st.Failure, ageText(age)))

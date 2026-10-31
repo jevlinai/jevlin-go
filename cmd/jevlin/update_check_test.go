@@ -739,7 +739,7 @@ func TestDoctorUpToDateVerdicts(t *testing.T) {
 		{"rolled back past the last upgrade", built("0.3.0", updateStamp{CheckedAt: at(time.Hour), Running: "0.3.0", Latest: "0.3.1", Outcome: updateUpgraded}),
 			verdictOK, "no release check has run yet for this copy; the last, 1h ago, was by another copy of jevlin", ""},
 		{"rolled back", base(updateStamp{CheckedAt: at(time.Hour), Running: "0.3.1", Held: "0.3.2", Outcome: updateRolledBack}),
-			verdictOK, "rolled back from 0.3.2 to 0.3.1 1h ago; 0.3.2 is not installed again automatically, a newer release is", ""},
+			verdictOK, "rolled back from 0.3.2 to 0.3.1 1h ago; 0.3.2 is not installed again automatically, a newer release of this minor is", ""},
 		{"available but held", base(updateStamp{CheckedAt: at(2 * time.Hour), Running: "0.3.1", Latest: "0.3.2", Held: "0.3.2", Outcome: updateAvailable}),
 			verdictOK, "0.3.2 is the latest release, and this copy was rolled back from 0.3.2, so it is not installed automatically (checked 2h ago); jevlin upgrade installs it", ""},
 		{"upgraded, integrations not refreshed", base(updateStamp{CheckedAt: at(time.Hour), Running: "0.3.0", Latest: "0.3.1", Outcome: updateUpgraded, Refresh: refreshFailed}),

@@ -548,7 +548,7 @@ func updateLineText(f updateFacts, now time.Time) string {
 		}
 		return fmt.Sprintf("upgraded to %s %s; restart open agents", st.Latest, age)
 	case updateRolledBack:
-		return fmt.Sprintf("rolled back from %s to %s %s; %s is not installed again automatically, a newer release is", st.Held, st.Running, age, st.Held)
+		return fmt.Sprintf("rolled back from %s to %s %s; %s is not installed again automatically, a newer release of this minor is", st.Held, st.Running, age, st.Held)
 	case updateAvailable:
 		if st.Held != "" {
 			return fmt.Sprintf("%s is the latest release, and this copy was rolled back from %s, so it is not installed automatically (checked %s) — %s installs it", st.Latest, st.Held, age, f.Fix)
