@@ -1101,11 +1101,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 		if claimURL == "" {
 			fmt.Fprintln(stdout, unclaimedNoLinkMessage)
 		} else {
-			fmt.Fprintln(stdout, "claim this agent: open this link in a browser and sign in")
-			fmt.Fprintln(stdout, "  "+claimURL)
-			if claimCode != "" {
-				fmt.Fprintln(stdout, "code:", claimCode)
-			}
+			fmt.Fprintln(stdout, claimBlock(claimURL, claimCode, cfg.Platform.BaseURL))
 		}
 	}
 
@@ -1134,9 +1130,8 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 			if claim, _ := claimFor(cfg.Search, reg.AgentID, nil); reg.Status == "unclaimed" && printableClaimURL(claim.ClaimURL, cfg.Platform.BaseURL, nil) == "" {
 				fmt.Fprintln(stdout, "\n"+unclaimedNoLinkMessage)
 			} else {
-				fmt.Fprintln(stdout, "\nnot claimed yet. Approve it at the URL above, then run `jevlin connect` again")
+				fmt.Fprintln(stdout, "\n"+claimTimeoutMessage)
 			}
-			fmt.Fprintln(stdout, "(or just keep using `search` — it resumes this automatically once network is available).")
 			return exitOK
 		}
 		// WP2-adversarial-review finding 11: the platform's advertised
