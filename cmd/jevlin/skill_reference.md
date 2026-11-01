@@ -3,7 +3,7 @@
 ## Contents
 
 - Settings: on, off, status and tier
-- Tiers, presets and named indexes
+- Tiers and named indexes
 - Failure actions in detail
 - Fetch failure codes
 - More fields in a search result
@@ -25,15 +25,11 @@ with those words (`status` when none were given) and show its output.
 
 Both settings are the user's. Never change either on your own.
 
-## Tiers, presets and named indexes
+## Tiers and named indexes
 
-A request without `tier` uses the user's tier, or the router's default when the user set none. The fast tier runs a
-preset the user picks, for example `economy` (the cheapest) or `standard` (more coverage); `jevlin agents tier status`
-lists them with their estimated price. `balanced` asks the core set of indexes; `max` asks for more results each and is
-the user's choice only. Never pick a tier or preset yourself.
-
-`providers` restricts a search to named indexes. It needs `"tier":"balanced"` or `"max"`, is billed at those indexes'
-own prices and draws the user's credit. Send it only when the user asks for a specific index.
+The user picks the tier, and the fast tier's preset, with the tier command above; you never do. A request without
+`tier` uses the user's setting. `providers` restricts a search to named indexes: send it only when the user asks for a
+specific index, with `tier` set to `balanced` or `max`, billed at those indexes' own prices.
 
 ## Failure actions in detail
 
@@ -68,8 +64,11 @@ the text it can return is exhausted. Links in `content` come back as their text 
 
 ## More fields in a search result
 
-Per page:
+`result.merged` is ordered by agreement first, then by each page's best position. Per page:
 
+- `found_by`: the indexes that listed it, and at which position. `votes` counts index groups and wordings that listed
+  it, so one index finding a page for two wordings counts twice. Several groups agreeing is evidence; a page one index
+  found can still be the find: check it rather than drop it.
 - `best_rank`: the best position any index gave the page.
 - `matched_terms`: which of the query's identifiers the page's text, title or URL contains, when present; they may not
   be in the trimmed snippet.
@@ -77,6 +76,11 @@ Per page:
 
 Per search:
 
+- `result.merged_total` above `result.merged_limit` means more pages exist; raise `merged_limit` if a list question
+  needs them.
+- `result.indexes`: each index's `status`. `ok`: answered. `pending`: still running when the list was sent; its pages
+  are missing, not absent from the web. `skipped`: did not run. `quota` or `auth`: the index is limited or
+  misconfigured; rewording will not help. `error`: failed this time; retrying may work.
 - `result.coverage`: distinct pages, how many only one group found, how many several groups found, and pages per
   wording. It is not a sum of votes.
 - `result.decision`: the indexes selected for this search and any trimmed for budget. Selected is not the same as
@@ -85,3 +89,6 @@ Per search:
   of pages it removed.
 - `usage.deadline_hit`: some index ran out of time.
 - `usage.cost_micros`: what the search cost, in millionths of a dollar. Mention it only if the user asks.
+
+If a result is too large to show and is saved to a file, open the file with the Read tool, not a shell command, and
+send later requests with fewer wordings.
