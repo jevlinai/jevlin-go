@@ -69,6 +69,9 @@ type searchOps struct {
 	now                func() time.Time
 	// hook is the filesystem the lineage file is read and bumped through.
 	hook hookOps
+	// cancelOn is what cancels a search besides its deadline: nil is the
+	// signal context, a person's Ctrl-C; `jevlin mcp` sets plainContext.
+	cancelOn func() (context.Context, context.CancelFunc)
 }
 
 func realSearchOps() searchOps {
@@ -369,7 +372,11 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		return exitClientErr
 	}
 
-	ctx, cancel := searchDeadline(*timeout)
+	cancelOn := ops.cancelOn
+	if cancelOn == nil {
+		cancelOn = signalContext
+	}
+	ctx, cancel := searchDeadline(cancelOn, *timeout)
 	defer cancel()
 
 	trace, foreignBridge := searchTraceFailingOpen(ops, cfg.Search, cfg.Search.StateDir, getenv, stderr)

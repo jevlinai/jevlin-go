@@ -295,10 +295,9 @@ func exeName(name string) string {
 	return name
 }
 
-// newExecInstallationIn puts the installation under a directory of the given
-// name, so a rendered command can be run against a path a participant might
-// actually have rather than only against a tame one.
-func newExecInstallationIn(t *testing.T, dirName string) *execInstallation {
+// testBuildOfJevlin is this package built once per test run, for a test
+// that has to run the binary as its own process.
+func testBuildOfJevlin(t *testing.T) string {
 	t.Helper()
 	execBinary.once.Do(func() {
 		dir, err := os.MkdirTemp("", "jevlin-exec-bin")
@@ -314,6 +313,15 @@ func newExecInstallationIn(t *testing.T, dirName string) *execInstallation {
 	if execBinary.err != nil {
 		t.Fatal(execBinary.err)
 	}
+	return execBinary.path
+}
+
+// newExecInstallationIn puts the installation under a directory of the given
+// name, so a rendered command can be run against a path a participant might
+// actually have rather than only against a tame one.
+func newExecInstallationIn(t *testing.T, dirName string) *execInstallation {
+	t.Helper()
+	testBuildOfJevlin(t)
 
 	root := t.TempDir()
 	if dirName != "" {

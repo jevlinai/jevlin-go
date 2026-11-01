@@ -112,6 +112,9 @@ func mcpMain(ops searchOps, now func() time.Time, args []string, stdin io.Reader
 		s.cfgArgs = []string{"-config", *cfgPath}
 	}
 	s.search.hook.getenv = s.env
+	// No signal handler for the calls: a host that stops the server with a
+	// signal mid-search stops the server, not only that search.
+	s.search.cancelOn = plainContext
 	return s.serve(stdin)
 }
 
@@ -382,7 +385,7 @@ func (s *mcpServer) callTool(params json.RawMessage) (any, *rpcError) {
 		}
 	case "fetch":
 		run = func(stdin io.Reader, stdout io.Writer) int {
-			return fetchMain(s.now, append([]string{"--stdin"}, s.cfgArgs...), stdin, stdout, io.Discard, s.env)
+			return fetchMainIn(s.search.cancelOn, s.now, append([]string{"--stdin"}, s.cfgArgs...), stdin, stdout, io.Discard, s.env)
 		}
 	default:
 		return nil, &rpcError{Code: rpcInvalidParams, Message: "this server has no tool " + strconv.Quote(*p.Name)}

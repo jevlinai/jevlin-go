@@ -521,6 +521,12 @@ func cmdFetch(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv f
 }
 
 func fetchMain(now func() time.Time, args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
+	return fetchMainIn(signalContext, now, args, stdin, stdout, stderr, getenv)
+}
+
+// fetchMainIn is fetchMain under the cancellation the caller chooses, as
+// searchDeadline describes.
+func fetchMainIn(cancelOn func() (context.Context, context.CancelFunc), now func() time.Time, args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
 	if !hasBoolFlag(args, "stdin") {
 		fmt.Fprintln(stderr, "jevlin fetch: --stdin is required: send one version-1 JSON request on stdin")
 		return exitUsage
@@ -573,7 +579,7 @@ func fetchMain(now func() time.Time, args []string, stdin io.Reader, stdout, std
 			errors.New("this installation holds no search credential; run jevlin connect"))
 	}
 
-	ctx, cancel := searchDeadline(*timeout)
+	ctx, cancel := searchDeadline(cancelOn, *timeout)
 	defer cancel()
 	out := performFetch(ctx, now, strings.TrimRight(cfg.Search.RouterURL.String(), "/")+"/v1/fetch", key, req.body())
 	env, code := fetchEnvelopeOf(out)
