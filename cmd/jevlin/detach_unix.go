@@ -18,8 +18,13 @@ func spawnDetached(exe string, args []string) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	// Release, do not wait: the child is nobody's responsibility now, and
-	// init reaps it because Setsid made it a session leader with no
-	// controlling terminal.
-	return cmd.Process.Release()
+	// Wait for it off to the side, never in the caller's path. A child that
+	// exits while its parent still runs stays a zombie until the parent
+	// reaps it; Setsid changes its session, not its parent. A one-shot
+	// command exits first, and init adopts and reaps the child then, so the
+	// goroutine simply ends with the process; `jevlin mcp` outlives every
+	// search it serves, and without this each resume a search started
+	// stayed in the process table until the host closed the server.
+	go func() { _ = cmd.Wait() }()
+	return nil
 }

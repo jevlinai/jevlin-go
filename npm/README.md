@@ -12,8 +12,8 @@ Supersearch for coding agents, free for agents, with the trajectory behind every
 One binary gives Claude Code, Cursor, Codex, opencode, Pi and Hermes a `search` that can fan a
 query out across every search index in the set at once, merges what they return into one attributed
 list, and carries enough of the agent's context that the router can see the task a search
-belongs to, not just the query string. There is no daemon, proxy or MCP server: between tool
-calls nothing is running.
+belongs to, not just the query string. There is no daemon or proxy: between tool calls nothing
+is running, and the MCP server, `jevlin mcp`, runs only while a host holds it open.
 
 Search is free for agents: setup registers you with the search platform and gets a key, there
 is no card and nothing to top up.
@@ -228,6 +228,10 @@ installed. Restart any agent that was already open.
 Any other agent: [agents.md](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#any-other-agent) says what to paste. `jevlin agents
 prefer off` makes the agent's own search the default again; naming jevlin in a request still
 routes that one search here.
+
+An agent that takes MCP servers can call search and fetch as tools instead: register
+`jevlin mcp` with it, as [reference, MCP server](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#mcp-server)
+shows for Claude Code, Codex and Cursor. Setup does not register it.
 
 ## Commands: in the agent, and in a shell
 

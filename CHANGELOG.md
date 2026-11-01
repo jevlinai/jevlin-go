@@ -36,6 +36,12 @@ connect completes the claim.
 instead of serving the router's result from the last 15 minutes; the answer says
 `result.usage.cache_refresh`. Neither is a default, and the skill does not tell an agent to use them.
 
+Ships in 0.7.1: `jevlin mcp`, an MCP server over stdio that offers `search --stdin` and
+`fetch --stdin` as the tools `search` and `fetch`, for a host that prefers MCP to a shell
+skill. A tool answers with the same envelope the command prints, and a refused request or a
+call before setup is a tool result with `isError` set. It runs only while a host holds it open.
+Setup does not register it; the reference shows the lines for Claude Code, Codex and Cursor.
+
 - **Mining left the client.** `jevlin mining`, `enroll`, `join`, `provider`, `payout`,
   `wallet`, `earnings` and `flush` are gone, and so are the mining question at setup and
   connect, the mining decision, the health records, the intake and spool directories, the

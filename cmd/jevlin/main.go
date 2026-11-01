@@ -1,10 +1,11 @@
 // Command jevlin is the supersearch client for coding agents.
 //
-// It is not a daemon, not a proxy, and not a tool server. It is one
-// binary that a coding agent runs to search the web through the Jevlin
-// search router, plus the hooks that thread each search into the agent's
-// trajectory. Between tool calls nothing runs, and nothing here records,
-// spools or submits anything about a search.
+// It is not a daemon and not a proxy. It is one binary that a coding agent
+// runs to search the web through the Jevlin search router, plus the hooks
+// that thread each search into the agent's trajectory. `jevlin mcp` serves
+// the same searches as MCP tools, and runs only while a host holds it open.
+// Between tool calls nothing else runs, and nothing here records, spools or
+// submits anything about a search.
 package main
 
 import (
@@ -86,6 +87,12 @@ the tool (what an agent runs):
              only pages from this account's recent searches, and only to an
              account that can fetch. -timeout as for search. Exit codes as
              for search.
+  mcp        the search and fetch machine paths as MCP tools, over stdio
+             (newline-delimited JSON-RPC on stdin and stdout) for a host
+             that registers it, which starts it and holds it open; a tool
+             answers with the same envelope as --stdin. -config as for
+             search; -log writes one line per message to stderr, never a
+             request's content
   agents     agents install|status|uninstall — find {{HOST_LABELS}} on this machine and give each
              the supersearch skill and the hooks it supports. -dry-run previews,
              -client <name> picks one ({{HOST_IDS}}). -yes skips the Proceed?
@@ -198,6 +205,8 @@ func dispatch(name string, args []string) int {
 		return cmdSearch(args, os.Stdin, os.Stdout, os.Stderr, os.Getenv)
 	case "fetch":
 		return cmdFetch(args, os.Stdin, os.Stdout, os.Stderr, os.Getenv)
+	case "mcp":
+		return cmdMCP(args, os.Stdin, os.Stdout, os.Stderr, os.Getenv)
 	case "agents":
 		return cmdAgents(args, os.Stdin, os.Stdout, os.Stderr, os.Getenv)
 	case "hook":
