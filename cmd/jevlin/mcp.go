@@ -180,10 +180,14 @@ func (s *mcpServer) logf(format string, a ...any) {
 	fmt.Fprintf(s.logw, "jevlin mcp: "+format+"\n", a...)
 }
 
+// rpcMessage is a message's members, each kept raw, so that a member of
+// the wrong type is told apart from bytes that are not JSON at all: the
+// first is an invalid request, answered with its id when it has a usable
+// one; only the second is a parse error.
 type rpcMessage struct {
-	JSONRPC string          `json:"jsonrpc"`
+	JSONRPC json.RawMessage `json:"jsonrpc"`
 	ID      json.RawMessage `json:"id"`
-	Method  *string         `json:"method"`
+	Method  json.RawMessage `json:"method"`
 	Params  json.RawMessage `json:"params"`
 	Result  json.RawMessage `json:"result"`
 	Error   json.RawMessage `json:"error"`
@@ -237,36 +241,46 @@ func validRequestID(id json.RawMessage) bool {
 }
 
 func (s *mcpServer) handle(line []byte) {
-	if t := bytes.TrimSpace(line); t[0] == '[' {
+	if !json.Valid(line) {
+		s.logf("unparsable message refused")
+		s.reply(rpcErrorResponse(nil, rpcParseError, "the message is not valid JSON"))
+		return
+	}
+	if bytes.TrimSpace(line)[0] == '[' {
 		s.reply(rpcErrorResponse(nil, rpcInvalidRequest, "batches are not supported"))
 		return
 	}
 	var m rpcMessage
 	if err := json.Unmarshal(line, &m); err != nil {
-		s.logf("unparsable message refused")
-		s.reply(rpcErrorResponse(nil, rpcParseError, "the message is not valid JSON"))
+		s.reply(rpcErrorResponse(nil, rpcInvalidRequest, "a message must be a JSON object"))
 		return
 	}
-	if m.Method == nil {
+	var id json.RawMessage
+	if validRequestID(m.ID) {
+		id = m.ID
+	}
+	if len(m.Method) == 0 {
 		if len(m.Result) > 0 || len(m.Error) > 0 {
 			return // an answer to a request this server never sends
 		}
-		s.reply(rpcErrorResponse(nil, rpcInvalidRequest, "the message names no method"))
+		s.reply(rpcErrorResponse(id, rpcInvalidRequest, "the message names no method"))
+		return
+	}
+	var method string
+	if isJSONNull(m.Method) || json.Unmarshal(m.Method, &method) != nil {
+		s.reply(rpcErrorResponse(id, rpcInvalidRequest, `"method" must be a string`))
 		return
 	}
 	if len(m.ID) == 0 {
-		s.notification(*m.Method)
+		s.notification(method)
 		return
 	}
-	if m.JSONRPC != "2.0" || !validRequestID(m.ID) {
-		id := m.ID
-		if !validRequestID(id) {
-			id = nil
-		}
+	var version string
+	if json.Unmarshal(m.JSONRPC, &version) != nil || version != "2.0" || id == nil {
 		s.reply(rpcErrorResponse(id, rpcInvalidRequest, `a request needs "jsonrpc": "2.0" and a string or number id`))
 		return
 	}
-	s.reply(s.request(m.ID, *m.Method, m.Params))
+	s.reply(s.request(id, method, m.Params))
 }
 
 // notification handles the notifications a client sends. None is answered,
