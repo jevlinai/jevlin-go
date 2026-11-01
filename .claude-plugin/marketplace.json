@@ -10,7 +10,7 @@
       "name": "jevlin",
       "source": "./plugin",
       "description": "Installs the jevlin client and runs its setup; the supersearch skill and hooks come from setup.",
-      "version": "0.6.1"
+      "version": "0.7.0"
     }
   ]
 }
