@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"slices"
@@ -491,5 +492,51 @@ func okHandler(body string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(body))
+	}
+}
+
+// The server's -config is the config every tool call reads, and without
+// one the environment's config is. Driven with the environment exactly as
+// given (no installedAs, which would name -config's file in JEVLIN_CONFIG
+// and hide a call that dropped the flag): the installation's own config and
+// the one named elsewhere share the fake router and differ in their tier,
+// which the router receives.
+func TestEveryToolCallReadsTheConfigTheServerWasGiven(t *testing.T) {
+	fr, own, root := newFakeRouter(t, okHandler(routerBody))
+	raw, err := os.ReadFile(own) // #nosec G304 -- the config this test's fake router wrote
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(root, "other.toml")
+	if err := os.WriteFile(other, append(raw, []byte("tier = \"balanced\"\n")...), 0o600); err != nil { // #nosec G703 -- a path in this test's own temp dir
+		t.Fatal(err)
+	}
+	base := map[string]string{"JEVLIN_HOME": root, "HOME": root, "JEVLIN_API_KEY": "sr-fictional-key"}
+	for _, tc := range []struct {
+		name string
+		env  map[string]string
+		args []string
+	}{
+		{"named by -config", base, []string{"-config", other}},
+		{"named by JEVLIN_CONFIG", map[string]string{"JEVLIN_HOME": root, "HOME": root, "JEVLIN_API_KEY": "sr-fictional-key", "JEVLIN_CONFIG": other}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := fixedSearchOps(t.TempDir())
+			var out, errOut strings.Builder
+			in := mcpInitialize + "\n" + toolCall(2, "search", `{"query":"which config"}`) + "\n"
+			mcpMain(h.ops, time.Now, tc.args, strings.NewReader(in), &out, &errOut, envOf(tc.env))
+			msgs := decodeRPCLines(t, out.String())
+			if env, isError := toolEnvelope(t, msgs[1]); isError {
+				t.Fatalf("the search failed: %v", env)
+			}
+			_, body := fr.last(t)
+			var sent map[string]any
+			if err := json.Unmarshal(body, &sent); err != nil {
+				t.Fatal(err)
+			}
+			if sent["tier"] != "balanced" {
+				t.Errorf("the router received tier %v: the call read another config than %s", sent["tier"], other)
+			}
+		})
 	}
 }
