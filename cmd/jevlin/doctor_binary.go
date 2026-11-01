@@ -10,15 +10,15 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 )
 
 // binaryFacts is the raw answer, gathered once and judged pure, the way
 // every other doctor fact is.
 type binaryFacts struct {
-	Checked bool   // the installation keeps a binary at <home>/bin
+	Checked bool   // the installation keeps a binary at <home>/bin, or the running one stands in
 	Own     string // that binary
+	Running bool   // Own is the running executable: the installation keeps none at <home>/bin
 	OnPath  string // what the bare name resolves to on PATH, "" for none
 	Same    bool   // OnPath is Own: one file, or one cleaned path
 }
@@ -27,21 +27,33 @@ type binaryFacts struct {
 // at home keeps: the one doctor is diagnosing (doctorInstallationHome), so
 // `doctor -config <another installation's jevlin.toml>` asks about that
 // installation's binary, as its state access check does.
-func gatherBinaryFacts(home string) binaryFacts {
-	own := ownBinaryAt(home, os.Stat)
+//
+// An installation whose binary is not at <home>/bin (one that was put at
+// ~/.local/bin, say) is checked through the running executable instead, so
+// the check does not go silent there. Only a native process takes that
+// fallback: the running binary of an npm install is the one inside the
+// package, never what a person types, and the `npm command on PATH` check
+// already answers for it. exe is the running executable with links resolved,
+// "" when it cannot be told, and launch is JEVLIN_LAUNCH.
+func gatherBinaryFacts(home, exe, launch string, lookPath func(string) (string, error), stat func(string) (os.FileInfo, error)) binaryFacts {
+	own := ownBinaryAt(home, stat)
+	running := false
 	if own == "" {
-		return binaryFacts{} // a pure npm install keeps none; nothing to compare
+		if exe == "" || classifyLaunch(exe, launch) != launchNative {
+			return binaryFacts{} // a pure npm install keeps none; nothing to compare
+		}
+		own, running = exe, true
 	}
-	f := binaryFacts{Checked: true, Own: own}
-	onPath, err := exec.LookPath("jevlin")
+	f := binaryFacts{Checked: true, Own: own, Running: running}
+	onPath, err := lookPath("jevlin")
 	if err != nil {
 		return f
 	}
 	f.OnPath = onPath
 	f.Same = samePath(onPath, own)
 	if !f.Same {
-		if a, errA := os.Stat(onPath); errA == nil {
-			if b, errB := os.Stat(own); errB == nil {
+		if a, errA := stat(onPath); errA == nil {
+			if b, errB := stat(own); errB == nil {
 				f.Same = os.SameFile(a, b)
 			}
 		}
@@ -55,6 +67,9 @@ func gatherBinaryFacts(home string) binaryFacts {
 // it is the participant's own typed `jevlin` that goes elsewhere.
 func doctorBinaryCheck(f binaryFacts) doctorCheck {
 	c := doctorCheck{Name: "binary on PATH"}
+	if f.Running {
+		return doctorRunningBinaryCheck(f)
+	}
 	switch {
 	case f.OnPath == "":
 		c.Verdict = verdictNo
@@ -69,6 +84,29 @@ func doctorBinaryCheck(f binaryFacts) doctorCheck {
 		c.Verdict = verdictNo
 		c.Detail = fmt.Sprintf("`jevlin` runs %s, not this installation's %s — another copy stands earlier on PATH", f.OnPath, f.Own)
 		c.Fix = "move " + filepath.Dir(f.Own) + " ahead of it in PATH, or remove the other copy; the agents' files name this installation's binary by path and are unaffected"
+	}
+	return c
+}
+
+// doctorRunningBinaryCheck judges the same facts when the installation keeps
+// no binary at <home>/bin and the running one stands in for it. Setup puts
+// <home>/bin on PATH, not the directory this binary is in, so the fixes name
+// that directory instead of running setup.
+func doctorRunningBinaryCheck(f binaryFacts) doctorCheck {
+	c := doctorCheck{Name: "binary on PATH"}
+	dir := filepath.Dir(f.Own)
+	switch {
+	case f.OnPath == "":
+		c.Verdict = verdictNo
+		c.Detail = "nothing on PATH answers `jevlin`; the running binary is " + f.Own
+		c.Fix = "put " + dir + " on PATH and open a new terminal"
+	case f.Same:
+		c.Verdict = verdictOK
+		c.Detail = "`jevlin` runs the running binary, " + f.Own
+	default:
+		c.Verdict = verdictNo
+		c.Detail = fmt.Sprintf("`jevlin` runs %s, not the running binary %s — another copy stands earlier on PATH", f.OnPath, f.Own)
+		c.Fix = "move " + dir + " ahead of it in PATH, or remove the other copy; the agents' files name the binary they were installed with by path and are unaffected"
 	}
 	return c
 }

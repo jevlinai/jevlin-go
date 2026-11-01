@@ -29,6 +29,9 @@ check the agent's name and confirm) and the code to type at the claim page if th
 open, shown as `AB12-CD34`. The timeout line says search keeps working and the next search or
 connect completes the claim.
 
+`jevlin doctor` now checks "binary on PATH" for an installation whose binary is not at
+`<home>/bin` too, by the running binary, instead of leaving the row out.
+
 `jevlin search --fresh`, and `"cache": "refresh"` in a `--stdin` request, run a search live
 instead of serving the router's result from the last 15 minutes; the answer says
 `result.usage.cache_refresh`. Neither is a default, and the skill does not tell an agent to use them.
