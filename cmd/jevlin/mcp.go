@@ -141,14 +141,17 @@ func (s *mcpServer) serve(stdin io.Reader) int {
 	}
 }
 
-// readBoundedLine reads one line without holding more than max bytes of it.
-// A longer line is read to its end and dropped, so the next line is read
-// from its own start.
-func readBoundedLine(br *bufio.Reader, max int) (line []byte, tooLarge bool, err error) {
+// readBoundedLine reads one line and returns its payload: the bytes before
+// its "\n" or "\r\n", or before the end of input. The bound is the
+// payload's, whichever way the line ends, and no more than max plus a
+// two-byte terminator is ever held. A longer line is read to its end and
+// dropped, so the next line is read from its own start.
+func readBoundedLine(br *bufio.Reader, max int) (payload []byte, tooLarge bool, err error) {
+	var line []byte
 	for {
 		chunk, rerr := br.ReadSlice('\n')
 		if !tooLarge {
-			if len(line)+len(chunk) > max+1 { // +1: the newline itself
+			if len(line)+len(chunk) > max+2 {
 				tooLarge, line = true, nil
 			} else {
 				line = append(line, chunk...)
@@ -160,7 +163,13 @@ func readBoundedLine(br *bufio.Reader, max int) (line []byte, tooLarge bool, err
 		if tooLarge {
 			return nil, true, rerr
 		}
-		return bytes.TrimRight(line, "\r\n"), false, rerr
+		if trimmed, ended := bytes.CutSuffix(line, []byte("\n")); ended {
+			line = bytes.TrimSuffix(trimmed, []byte("\r"))
+		}
+		if len(line) > max {
+			return nil, true, rerr
+		}
+		return line, false, rerr
 	}
 }
 

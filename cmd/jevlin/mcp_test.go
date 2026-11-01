@@ -6,6 +6,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -548,5 +549,35 @@ func TestEveryToolCallReadsTheConfigTheServerWasGiven(t *testing.T) {
 				t.Errorf("the router received tier %v: the call read another config than %s", sent["tier"], other)
 			}
 		})
+	}
+}
+
+// The 1 MiB bound is the payload's, whatever ends the line: a message of
+// exactly machineStdinMax bytes is served after LF, after CRLF and at the
+// end of input, and one byte more is refused in each case.
+func TestTheLineBoundIsThePayloadsWhateverEndsTheLine(t *testing.T) {
+	sized := func(n int) string {
+		const head, tail = `{"jsonrpc":"2.0","id":9,"method":"ping","params":{"pad":"`, `"}}`
+		return head + strings.Repeat("a", n-len(head)-len(tail)) + tail
+	}
+	for _, end := range []struct{ name, bytes string }{{"LF", "\n"}, {"CRLF", "\r\n"}, {"end of input", ""}} {
+		for _, n := range []int{machineStdinMax, machineStdinMax + 1} {
+			t.Run(fmt.Sprintf("%s/%d", end.name, n), func(t *testing.T) {
+				h := fixedSearchOps(t.TempDir())
+				var out strings.Builder
+				code := mcpMain(h.ops, time.Now, nil, strings.NewReader(sized(n)+end.bytes), &out, io.Discard, envOf(nil))
+				msgs := decodeRPCLines(t, out.String())
+				if code != exitOK || len(msgs) != 1 {
+					t.Fatalf("exit %d with %d responses, want 0 and 1", code, len(msgs))
+				}
+				if n <= machineStdinMax {
+					if msgs[0]["id"] != 9.0 || msgs[0]["result"] == nil {
+						t.Errorf("a %d-byte message was not served: %v", n, msgs[0])
+					}
+				} else if rpcErrorCode(t, msgs[0]) != rpcInvalidRequest {
+					t.Errorf("a %d-byte message was not refused: %v", n, msgs[0])
+				}
+			})
+		}
 	}
 }
