@@ -417,7 +417,10 @@ func (s *mcpServer) callTool(params json.RawMessage) (any, *rpcError) {
 // machine path reads: the same object, with "version": 1 added when the
 // caller left it out, so an MCP client need not repeat what the tool
 // already fixes. Every value is passed on as the caller's bytes; a
-// "version" the caller did write is left for the machine path to judge.
+// "version" the caller did write is left for the machine path to judge,
+// in any case of its letters, because encoding/json matches the machine
+// path's keys without regard to case: {"Version": 2} is a version 2
+// request there, and must not become a version 1 one here.
 func machineRequestOf(args json.RawMessage) ([]byte, bool) {
 	t := bytes.TrimSpace(args)
 	if len(t) == 0 {
@@ -430,7 +433,11 @@ func machineRequestOf(args json.RawMessage) ([]byte, bool) {
 	if json.Unmarshal(t, &fields) != nil {
 		return nil, false
 	}
-	if _, has := fields["version"]; !has {
+	named := false
+	for k := range fields {
+		named = named || strings.EqualFold(k, "version")
+	}
+	if !named {
 		fields["version"] = json.RawMessage("1")
 	}
 	b, err := json.Marshal(fields)

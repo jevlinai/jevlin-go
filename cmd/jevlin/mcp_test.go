@@ -259,6 +259,8 @@ func TestAToolCallOutsideTheContractNeverReachesTheRouter(t *testing.T) {
 		{"search", `{"query":"  "}`, codeEmptyQuery},
 		{"search", `{"query":"x","page_chars":1}`, codeInvalidPageChars},
 		{"search", `{"version":2,"query":"x"}`, codeUnsupportedVersion},
+		{"search", `{"Version":2,"query":"x"}`, codeUnsupportedVersion},
+		{"search", `{"VERSION":"1","query":"x"}`, codeUnsupportedVersion},
 		{"fetch", `{"pages":[{"source_id":"s_0123"}]}`, codeInvalidSourceID},
 		{"fetch", `{}`, codeMissingPages},
 	} {
