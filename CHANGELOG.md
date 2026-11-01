@@ -10,10 +10,46 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
-## Unreleased
+## v0.7.0 — 2026-11-02
 
 Run `jevlin setup` after installing this version. It reads only configuration format 1, and
 sets a config from any earlier version aside before writing one.
+
+**Upgrading from 0.6.1.** `jevlin upgrade`, or a fresh install, puts the new binary in place.
+Nothing else changes until `jevlin setup` runs, and it is the only command that moves the
+configuration: every other command, `search` included, stops with "this configuration is from
+an older jevlin; run `jevlin setup`", and the agents' hooks keep failing open, never
+failing the agent's own tool call. A native 0.6.1 install that updates itself at its daily
+check can take this release the same way, so expect that message after it and run
+`jevlin setup`. Setup sets
+the old `jevlin.toml` aside as `jevlin.toml.old` (`jevlin.toml.old.1` and so on if the name is
+taken), writes a format-1 `jevlin.toml` that keeps the router, portal and agents API addresses
+and the state and sessions directories the old file named, and keeps the registration and the
+stored key without registering again. It then rewrites the skills and hooks of the agents it
+finds, so none of the old text is left: Claude Code's Stop hook is now `hook stop`
+rather than `hook flush`, and Codex's permission profile no longer grants the `intake` and
+`spool` directories. A setting you changed by hand in the old file is not carried over; copy
+it under its format-1 key.
+
+**Rolling back.** `jevlin upgrade -rollback` swaps the binary and does not touch the
+configuration. 0.6.1 then refuses the format-1 file, saying
+`unknown key(s): schema, router, router.url, platform.url, agents, agents.url, search, search.state_dir, search.sessions_dir`
+(after `config file <path>:`). To go back, put `jevlin.toml.old` over `jevlin.toml`, then run
+0.6.1's `jevlin setup` to write its agent files again.
+
+**Left behind from 0.6.x.** This release never reads these and does not remove them; they are
+safe to delete by hand: `state/mining_decision.json`, the `intake` and `spool` directories and
+`flush.lock` in the jevlin home (where 0.6.1's setup put them; the old config's `intake_dir`
+and `spool_dir` say where yours are). `intake` and `spool` hold records 0.6.x had not yet sent,
+and nothing sends them now. A `wallet` directory and a `payout.json` are also left alone: the
+wallet holds a key that is recoverable only with its 24 words, so keep it until you have moved
+anything it holds.
+
+**Which agents were live-smoked.** Claude Code, Codex and Cursor were set up and searched by
+hand on macOS and Linux for this release (setup, status, doctor and a search from a shell).
+Not live-smoked through the agent itself: opencode, Pi and Hermes, and Windows end to end;
+their behaviour is held by tests and, on Windows, by CI's runners alone. This release's updater
+has not run on a Windows machine with real-time antivirus on.
 
 The client is supersearch only, and nothing in it is called a miner. Mining moved off the
 client to the platform, which reconciles what the router served, so this client records,

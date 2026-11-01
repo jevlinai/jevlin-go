@@ -63,17 +63,20 @@ warn about one a shared group can write. On Windows only the temp-directory rule
 ## The providers
 
 One request goes to the router at `api.jevlin.ai`, which holds the provider keys. In the
-`balanced` and `max` [tiers](#three-tiers), the core arms run on every fan-out, under a
-per-query cost ceiling; `fast` asks only the fast indexes its preset names. The core arms:
+[tiers](#three-tiers), `balanced` runs four of the core arms (Exa, Brave, Parallel search and
+Perplexity search) and `max` runs all seven, on every fan-out, under a per-query cost ceiling;
+`fast` asks only the fast indexes its preset names. The core arms:
 
 | kind | arms |
 |---|---|
 | web indexes | Exa, Brave, Serper, Telem, Parallel search, TinyFish, Perplexity search |
 
-More fire only when a request names them in `providers` (on `balanced` or `max`): SerpAPI (a
-Google read in the slow lane: it keeps working after the response and lands on the trace), the
-research agents (Parallel, Tavily research, the Perplexity agent, Octen), Tavily, Linkup and
-Linkup answer, Valyu, Kagi, Mojeek, Gemini, Grok, Exa answer and Brave answer. The set is the
+The router supports more providers than it runs: SerpAPI, the research agents (Parallel,
+Tavily research, the Perplexity agent, Octen), Tavily, Linkup and Linkup answer, Valyu, Kagi,
+Mojeek, Gemini, Grok, Exa answer and Brave answer. A provider resolves only when the
+deployment's config lists it, and the hosted service currently enables nine: the seven core
+arms plus the two fast indexes, `exa-lite` and `parallel-fast`. `providers` can name only arms
+the deployment enables, and naming any other is refused as an unknown provider. The set is the
 router's and changes without a client release; `decision` in every response says which arms
 ran.
 
@@ -112,15 +115,15 @@ told to set it.
 
 Every search runs in one of three tiers. `fast` asks the fast indexes of a named preset,
 `economy` (two, the default) or `standard` (three), and answers in about a second; `balanced`
-and `max` fan out to the core arms. A tier is also a per-query cost ceiling
+fans out to four of the core arms and `max` to all seven. A tier is also a per-query cost ceiling
 on the router, and a set that would exceed the ceiling is trimmed rather than refused, with
 `decision.trimmed` naming what went.
 
 | tier | what runs | for | what it costs |
 |---|---|---|---|
-| `fast` | the fast indexes of a preset: `economy` asks two, `standard` three; the quickest | a routine lookup, the default for a new key | about $0.0013 a search on `economy`, $0.0053 on `standard` |
-| `balanced` | the core arms, 8 results each, a 12-page merged window, every arm's text | when the agent needs more than one source, or the first answer came back thin | about $0.022 |
-| `max` | the core arms, 15 results each, a 24-page window, 2,000-character excerpts | corroboration: the same page found by independent indexes, and the most text per page | about $0.027, plus the tokens your agent spends reading it |
+| `fast` | the fast indexes of a preset: `economy` asks two, `standard` three; the quickest | a routine lookup, the only tier an unclaimed key may use | about $0.0013 a search on `economy`, $0.0053 on `standard` |
+| `balanced` | four core arms (Exa, Brave, Parallel search, Perplexity search), 8 results each, a 12-page merged window, every arm's text | when you want more than one source, or the first answer came back thin | about $0.022 |
+| `max` | all seven core arms, 15 results each, a 24-page window, 2,000-character excerpts | corroboration: the same page found by independent indexes, and the most text per page | about $0.027, plus the tokens your agent spends reading it |
 
 The dollar figures are the arms' own prices passed through with no markup; `usage.cost_micros`
 on every response is the real number. `max` and a named `providers` set (below) are the two
@@ -131,10 +134,9 @@ Who chooses:
 - **You**, ahead of time: `/jevlin tier balanced` in an agent, or `jevlin agents tier balanced`
   from a shell, sets the tier every search carries unless a request names one. `/jevlin tier
   default` unsets it and `/jevlin tier` says what is in force.
-- **The agent**, one step at a time: the skill tells it to leave `tier` alone so your tier
-  applies, to ask for `balanced` only when it needs several sources beyond the fast tier's
-  indexes (a thin result, indexes that disagree, the full set attributed), and never to send
-  `max` on its own. `max` is yours to choose.
+- **The agent** never sets a tier or a preset: the skill tells it to leave `tier` and
+  `providers` unset, so your setting applies, and the router's default for your key when you
+  have set none. `balanced` and `max` are yours to choose.
 - **The router**, when nobody did: a request that names no tier, with none set, carries none, and
   the router applies the default for your key.
 
@@ -143,11 +145,10 @@ Who chooses:
 These fields pass straight through to the router: `recency` (`day`, `week`, `month`,
 `year`), `domain_filter` (up to 16 hostnames), `max_results` (1 to 25), `merged_limit` (1 to
 50 pages in the merged list), `max_chars` (the merged list's total characters of page text) and
-`providers` (up to 16 names, to restrict the fan-out or reach an arm that fires only when
-named). A router that applies `recency` and `domain_filter` itself says so in
+`providers` (up to 16 names, to restrict the fan-out to arms the deployment enables). A router that applies `recency` and `domain_filter` itself says so in
 `result.filters_applied`: it sent each filter to every provider that takes it and dropped any
 page outside it. Without that report the results may be unfiltered, and the skill tells the
-agent to check each page's date and host itself. A named set
+agent to check each page's `published` date itself. A named set
 runs on `balanced` or `max` only: on `fast` the router refuses it, since the fast set is the
 router's. It is billed at the named arms' own prices. The
 [skill](https://github.com/jevlinai/jevlin-go/blob/main/cmd/jevlin/skill.md) is what the agent reads; the

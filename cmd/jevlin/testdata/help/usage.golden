@@ -15,7 +15,9 @@ the tool (what an agent runs):
              the router for its merged view, which is result.merged; view
              "merged" leaves the candidates out of the envelope. The
              human form's -view merged adds the router's merged and
-             indexes to the raw response.
+             indexes to the raw response. --fresh (human form) runs the
+             search live instead of serving a result the router cached in
+             the last 15 minutes; a --stdin request says "cache": "refresh".
              -timeout bounds the whole search in either form, default
              1m0s. Exit: 0=valid search response, 1=transport/timeout/
              cancel, 2=usage, 3=HTTP 4xx, 4=HTTP 5xx or invalid server response.
