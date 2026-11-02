@@ -21,8 +21,9 @@ not among jevlin's arguments. It is in the shell command the agent runs, as a `<
 (`jevlin search … --stdin <<< '{"version":1,"query":"…"}'`), which the agent's shell and its
 transcript hold. In Claude Code a request holding a `'` or a `$` is written to a file in the
 installation's `requests/` folder instead and read with `--stdin < <file>`; those files stay until
-`jevlin uninstall -purge-state` removes the folder. A search you type, `jevlin search "<query words>"`, puts the query among jevlin's arguments,
-where `ps` and your shell history can see it.
+`jevlin uninstall -purge-state` removes the folder. A search you type,
+`jevlin search "<query words>"`, puts the query among jevlin's arguments, where `ps` and your shell
+history can see it.
 
 ## By agent
 
