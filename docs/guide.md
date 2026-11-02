@@ -88,13 +88,9 @@ with a non-zero exit, recording and writing nothing. The same holds for `agents 
 **Proceed?**, Codex's **Switch?** and uninstall's confirmations: a typed no exits 0, no answer
 exits non-zero.
 
-| flag | effect |
-|---|---|
-| `-yes` | Answers yes to the profile and agents questions, terminal or not. Answers **Use it?** only at a terminal. Never answers Codex's **Switch?**. Without `-yes` or a terminal, setup leaves the profile and agents alone and prints the command for each. An agent that could not be set up is reported, and setup still exits 0. |
-| `-dry-run` | Lists every file it would write or move, and changes nothing. |
-| `-no-profile` | Leaves the shell profile (Windows: user environment) alone, even with `-yes`. |
-| `-no-agents` | Skips agent detection, even with `-yes`. `-with` still sets up what it names. |
-| `-with <id>` | Sets up `claude`, `codex`, `cursor`, `opencode`, `pi` or `hermes`, found or not. Repeatable. |
+Setup's flags (`-yes`, `-dry-run`, `-no-profile`, `-no-agents`, `-with`, `-home`) are in the
+[reference](reference.md#commands). `-yes` answers the profile and agents questions, never
+Codex's **Switch?**.
 
 ### Running setup again
 
@@ -205,7 +201,7 @@ The skill tells your agent to leave `tier` and `providers` unset, so your settin
 none, the request carries none and the router applies the default for your key. A search costs
 what its response's `usage.cost_micros` says; plans and prices are at
 [jevlin.ai](https://jevlin.ai/#tiers). A request can also name the engines it wants on `balanced`
-or `max` ([reference, the `--stdin` request](reference.md#the---stdin-request)).
+or `max` ([reference, Tiers and providers](reference.md#tiers-and-providers)).
 
 ## What leaves your machine
 
