@@ -1,16 +1,16 @@
 ---
 name: jevlin
-description: "Sets up Jevlin, supersearch for coding agents: one call asks several search engines at once, every result names the engines that found it. Use when the user asks for Jevlin, jevlin search or supersearch and the jevlin client is missing or not set up: it installs the client and runs `jevlin setup`, which writes this agent's own supersearch skill and hooks. After setup, search through that installed `jevlin` skill, not this one."
+description: "Sets up Jevlin, supersearch for coding agents: one call asks several search engines at once, every result names the engines that found it, free for agents. Use when the user asks for Jevlin, jevlin search or supersearch and the jevlin client is missing or not set up: it installs the client and runs `jevlin setup`, which writes this agent's own supersearch skill and hooks. After setup, search through that installed `jevlin` skill, not this one."
 ---
 
 # Set up Jevlin
 
 Jevlin is supersearch for coding agents: one call asks several search engines
 at once and returns one merged, de-duplicated list where every result names
-the engines that found it, with a receipt per engine. It only works through
-its client: `jevlin setup` registers this installation, gets it a key with no
-browser step, and writes the supersearch skill and hooks into every agent on
-this machine. This skill does that setup. It does not search.
+the engines that found it, with a receipt per engine, free for agents. It only
+works through its client: `jevlin setup` registers this installation, gets it
+a key with no browser step, and writes the supersearch skill and hooks into
+every agent on this machine. This skill does that setup. It does not search.
 
 What setup writes, and what it leaves alone: a `jevlin` skill in the agent's
 own skills directory (Claude Code, Cursor, Codex, Pi, Hermes; opencode has

@@ -2,12 +2,12 @@
   "name": "jevlin",
   "version": "0.7.0",
   "displayName": "Jevlin supersearch",
-  "description": "Sets up Jevlin, supersearch for coding agents: one call asks several search engines at once, every result names the engines that found it, with a receipt per engine. Installs the jevlin client and runs its setup, which writes this agent's own supersearch skill and hooks.",
+  "description": "Sets up Jevlin, supersearch for coding agents: one call asks several search engines at once, every result names the engines that found it, with a receipt per engine, free for agents. Installs the jevlin client and runs its setup, which writes this agent's own supersearch skill and hooks.",
   "author": {
     "name": "Jevlin",
     "url": "https://jevlin.ai"
   },
-  "homepage": "https://jevlin.ai",
+  "homepage": "https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md",
   "repository": "https://github.com/jevlinai/jevlin-go",
   "license": "Apache-2.0",
   "keywords": [
