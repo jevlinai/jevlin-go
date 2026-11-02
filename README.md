@@ -33,7 +33,7 @@ and hooks, and npm throws an `npx` cache away.
 - **From source:** `go install github.com/jevlinai/jevlin-go/cmd/jevlin@latest`, or `make build`
   in a clone. See [building from source](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#building-from-source).
 
-If your shell then cannot find `jevlin`, the [guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#setup) shows how to run setup by its full path.
+If your shell then cannot find `jevlin`, [the guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#jevlin-command-not-found) shows how to run setup by its full path.
 
 ## What does setup do, and what is the claim?
 
