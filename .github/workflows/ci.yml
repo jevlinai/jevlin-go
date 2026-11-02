@@ -26,6 +26,13 @@ jobs:
         if: runner.os != 'Windows'
       - run: go build -trimpath -o NUL ./cmd/jevlin
         if: runner.os == 'Windows'
+      # The website installers (install/, docs/RELEASING.md "The website installers"), as steps
+      # of this job so the required check names do not change. The test needs node and python3,
+      # both on the runners; shellcheck is preinstalled on the Linux runner only.
+      - run: bash install/install_test.sh
+        if: runner.os != 'Windows'
+      - run: shellcheck -s sh install/install.sh
+        if: runner.os == 'Linux'
   # The race run was the slowest job by minutes, and one package is nearly all
   # of it. tools/testshard deals that run's tests by name into three parts that
   # run at the same time; together they are every test, each once.
