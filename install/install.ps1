@@ -42,9 +42,23 @@
     $latestUrl = "https://github.com/$repo/releases/latest"
     $version = $env:JEVLIN_VERSION
     if (-not $version) {
-      $resp = Invoke-WebRequest -Uri $latestUrl -MaximumRedirection 0 -ErrorAction SilentlyContinue -UseBasicParsing
-      $location = $resp.Headers.Location
-      if (-not $location) { throw "jevlin install: could not find the latest release" }
+      $request = [Net.WebRequest]::Create($latestUrl)
+      $request.AllowAutoRedirect = $false
+      $request.UserAgent = "jevlin-install"
+      try {
+        $response = $request.GetResponse()
+      } catch {
+        $cause = $_.Exception
+        while ($cause.InnerException) { $cause = $cause.InnerException }
+        throw "jevlin install: could not find the latest release at ${latestUrl}: $($cause.Message)"
+      }
+      try {
+        $status = [int]$response.StatusCode
+        $location = $response.GetResponseHeader("Location")
+      } finally {
+        $response.Close()
+      }
+      if (-not $location) { throw "jevlin install: could not find the latest release: $latestUrl answered $status, not a redirect to a tag" }
       $version = ($location -split "/tag/v")[-1]
     }
     if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "jevlin install: not a release version: $version" }
