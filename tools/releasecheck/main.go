@@ -246,6 +246,18 @@ func runPreflight(args []string, out io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(out, "ok  npm/install.js at the tag trusts the same release key(s)\n")
+	installSh, err := g.FileAtRev(*tag, shellInstallerFile)
+	if err != nil {
+		return err
+	}
+	installPs1, err := g.FileAtRev(*tag, powershellInstallerFile)
+	if err != nil {
+		return err
+	}
+	if _, err := CheckWebInstallersTrustTheReleaseKeys(installSh, installPs1, keysSource); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "ok  %s and %s at the tag trust the same release key(s)\n", shellInstallerFile, powershellInstallerFile)
 
 	if err := setOutput("version", v.String()); err != nil {
 		return err
