@@ -40,17 +40,24 @@ The tiers, as the hosted service runs them (search-router `deploy/live/searchrou
 are the router's, and change without a client release. What a search cost is in its response's
 `usage.cost_micros`; `jevlin agents tier status` lists the presets with the router's estimate.
 
-| tier | what runs | results per arm | merged window | page text | who may use it |
-|---|---|---|---|---|---|
-| `fast` | The indexes of a preset: `economy` (the default: `serper`, `parallel-fast`) or `standard` (`exa-lite`, `serper`, `parallel-fast`). | the router's default | 12 pages | 1,200 characters | every key |
-| `balanced` | Four core arms: `exa`, `brave`, `parallel-search`, `perplexity-search`. | the router's default | 12 pages | 1,200 characters | claimed agents |
-| `max` | All seven core arms: those four and `serper`, `telem`, `tinyfish`. | 15 | 24 pages | 2,000 characters | claimed agents |
+| tier | what runs | results per arm | who may use it |
+|---|---|---|---|
+| `fast` | The indexes of a preset: `economy` (the default: `serper`, `parallel-fast`) or `standard` (`exa-lite`, `serper`, `parallel-fast`). | the router's default | every key |
+| `balanced` | Four core arms: `exa`, `brave`, `parallel-search`, `perplexity-search`. | the router's default | claimed agents |
+| `max` | All seven core arms: those four and `serper`, `telem`, `tinyfish`. | 15 | claimed agents |
 
-`parallel-search` and `parallel-fast` return at most 10 results on every tier. A request's own
-`max_results`, `merged_limit`, `page_chars` and `max_chars` replace these defaults, and a
-`--stdin` search is sent its own when the caller sets none ([the request](#the---stdin-request)).
-A tier is also a per-query cost ceiling on the router: a set that would exceed it is trimmed rather
-than refused, and `decision.trimmed` names what went.
+`parallel-search` and `parallel-fast` return at most 10 results on every tier. A tier is also a
+per-query cost ceiling on the router: a set that would exceed it is trimmed rather than refused,
+and `decision.trimmed` names what went.
+
+What a search returns depends on who sized it. An agent's `--stdin` search that sizes nothing gets
+500 characters of text per page on every tier (`page_chars`), and a merged list of at most 16 pages
+where the router's own window would be larger: on `max`, and with `search_queries`. That keeps an
+agent's answer under about 20,000 characters; to read more of a page, the agent fetches it
+([Reading a page in full](#reading-a-page-in-full)). A request's own `max_results`,
+`merged_limit`, `page_chars` and `max_chars` replace these. Without them, the router's defaults
+apply (a person's search from the command line, for one): a 12-page merged list, 24 on `max`, and
+1,200 characters per page, 2,000 on `max`.
 
 The hosted service enables nine providers: the seven core arms and two extended ones, `exa-lite`
 and `parallel-fast`. A request's `providers` may name any of the nine on `balanced` or `max`; an
@@ -72,9 +79,9 @@ and the query's length are not checked here, and the router answers for them.
 | `recency` | `"day"`, `"week"`, `"month"` or `"year"`. A router that applies it says so in `result.filters_applied`; without that report the results may be unfiltered, so check each page's `published` date if it must hold. |
 | `domain_filter` | Up to 16 bare hostnames. Reported in `result.filters_applied` like `recency`; without the report, check each page's `url` host if it must hold. |
 | `max_results` | 1 to 25: a cap per arm. |
-| `merged_limit` | 1 to 50: how many pages `result.merged` holds. Absent, the router's window applies, except that a `--stdin` search is sent 16 wherever that window would be larger: with `search_queries`, or on `max`. |
+| `merged_limit` | 1 to 50: how many pages `result.merged` holds. Absent, see [what a search returns](#tiers-and-providers). |
 | `max_chars` | A positive integer: the characters of page text across the whole merged list, spent in list order, so later pages get less. With `page_chars` too, the router cuts each page at `page_chars` first. |
-| `page_chars` | 200 to 4000: the characters of text each page keeps. Absent, and with no `max_chars`, a `--stdin` search is sent 500, which keeps an answer under about 20,000 characters on every tier. |
+| `page_chars` | 200 to 4000: the characters of text each page keeps. Absent, see [what a search returns](#tiers-and-providers). |
 | `cache` | `"default"` (the same as absent) or `"refresh"`. The router serves a repeat of a search from its cache for up to 15 minutes; `"refresh"` runs it live instead and is billed as live, keeps the fresh result for the next caller where the account retains content, and says so in `result.usage.cache_refresh`. The command line's `--fresh` is the same. |
 | `providers` | Up to 16 provider names, on `balanced` or `max` only ([Tiers and providers](#tiers-and-providers)). |
 | `view` | `"merged"` (default) or `"full"`. The default carries the merged list without the per-provider `candidates`, and each page without `excerpts` and `canonical_url`, which repeat its `snippet` and `url`; `"full"` adds all three. Either way the router is asked for its merged view. |
@@ -326,6 +333,24 @@ the network and asks the project's GitHub releases for the latest version, with 
 | `rolled_back` | `upgrade -rollback` held the release it left: no check installs it, or an older one, again; `jevlin upgrade` by hand lifts the hold. |
 | `failed` | The check failed, with the word `upgrade` would print; `manual_intervention` is never overwritten by a check, and lists the copies left beside the binary. |
 | `not_release` | A development build, which no check replaces. |
+
+### What jevlin writes into an agent's files
+
+A host's file (a settings file, a hooks file, a skill) is replaced whole: the new contents go to a
+temporary file beside it, which is then renamed over it, so a run stopped part way, by you, by a
+full disk or by an upgrade's deadline, leaves the file as it was. A file that is a link, such as a
+settings file kept in a dotfiles repository, is written through to what it names, and the link
+stays. A file keeps its permissions, and one you made read-only is left alone and reported. If one
+of an agent's files cannot be written, that agent's removals wait for the next run, so it is never
+left half set up.
+
+A skill, hook entry or allow rule that runs a command belongs to this installation only when it
+runs one of this installation's binaries **and** names this installation's config; uninstall
+removes only those, and leaves and reports what names another installation or none (one
+`jevlin agents install` stamps the latter). An agent's one skill directory stays with the
+installation that wrote it, and a hook file left empty is removed. A handler of yours in the same
+hook group as jevlin's stays; only jevlin's is taken out. `jevlin agents status` names any file an
+earlier version wrote differently, and `jevlin agents install` refreshes it.
 
 ## Doctor's checks
 
