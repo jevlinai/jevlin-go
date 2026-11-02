@@ -15,13 +15,15 @@
 # one script block: its variables, its function and $ErrorActionPreference stay
 # inside it. The TLS setting belongs to the process, so it is put back on the
 # way out, whether the install worked or not.
-. {
+& {
   $ErrorActionPreference = "Stop"
   # Windows PowerShell 5.1 on an older .NET offers GitHub's TLS 1.2 only when
   # asked. A process that leaves the choice to Windows (SystemDefault, 0) is
   # left alone.
   $tlsBefore = [Net.ServicePointManager]::SecurityProtocol
-  [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+  if ([int]$tlsBefore -ne 0) {
+    [Net.ServicePointManager]::SecurityProtocol = $tlsBefore -bor [Net.SecurityProtocolType]::Tls12
+  }
   try {
     $repo = "jevlinai/jevlin-go"
     $arch = switch ($env:PROCESSOR_ARCHITECTURE) {
@@ -147,26 +149,80 @@
       Expand-Archive -LiteralPath (Join-Path $tmp $name) -DestinationPath $tmp -Force
       New-Item -ItemType Directory -Path $bindir -Force | Out-Null
       $exe = Join-Path $bindir "jevlin.exe"
-      # A running jevlin.exe cannot be overwritten; move it aside first.
-      if (Test-Path $exe) { Move-Item -Path $exe -Destination (Join-Path $bindir "jevlin.exe.displaced") -Force }
-      Move-Item -Path (Join-Path $tmp "jevlin.exe") -Destination $exe -Force
-      Remove-Item -Path (Join-Path $bindir "jevlin.exe.displaced") -Force -ErrorAction SilentlyContinue
+      $hadOne = Test-Path -LiteralPath $exe
+      # This run's names beside jevlin.exe are its own, so a displaced copy an
+      # earlier run could not remove, because the jevlin it held was still running,
+      # never stands in the way.
+      $run = [Guid]::NewGuid().ToString("n").Substring(0, 12)
+      $staged = Join-Path $bindir "jevlin.new-$run.exe"
+      $displaced = Join-Path $bindir "jevlin.exe.displaced-$run"
 
-      $reported = & $exe version
-      if ($LASTEXITCODE -ne 0) { throw "jevlin install: the installed binary does not run: $exe" }
+      # The new binary runs before the installed one is touched, beside it under
+      # this run's name: not in the temporary directory, which a policy can forbid
+      # running programs from where the bin directory is allowed.
+      Move-Item -LiteralPath (Join-Path $tmp "jevlin.exe") -Destination $staged
+      try {
+        $null = Get-JevlinVersion $staged
+      } catch {
+        $why = $_.Exception.Message
+        $kept = if ($hadOne) { "$exe was left as it was" } else { "nothing was installed" }
+        throw "jevlin install: the downloaded jevlin.exe does not run here ($why); $kept$(Remove-Staged $staged)"
+      }
+
+      # A running jevlin.exe cannot be overwritten or deleted, but it can be
+      # renamed. So the installed one is moved aside, the new one takes its place,
+      # and the old one is kept until the new one has run from there, to be put
+      # back if it does not.
+      if ($hadOne) {
+        try {
+          Move-Item -LiteralPath $exe -Destination $displaced
+        } catch {
+          $why = $_.Exception.Message
+          throw "jevlin install: could not move the installed $exe aside ($why); it was left as it was$(Remove-Staged $staged)"
+        }
+      }
+      $failed = $null
+      try {
+        Move-Item -LiteralPath $staged -Destination $exe
+        $reported = Get-JevlinVersion $exe
+      } catch {
+        $failed = $_.Exception.Message
+      }
+      if ($failed) {
+        # The staged copy is still there only if the move into place failed.
+        $leftover = Remove-Staged $staged
+        try {
+          if (Test-Path -LiteralPath $exe) { Remove-Item -LiteralPath $exe -Force }
+          if ($hadOne) { Move-Item -LiteralPath $displaced -Destination $exe }
+        } catch {
+          if ($hadOne) {
+            throw "jevlin install: the new jevlin.exe does not run from $exe ($failed), and putting the previous one back failed ($($_.Exception.Message)): the previous jevlin.exe is at $displaced$leftover"
+          }
+          throw "jevlin install: the new jevlin.exe does not run from $exe ($failed), and removing it failed ($($_.Exception.Message)); delete $exe$leftover"
+        }
+        $back = if ($hadOne) { "the previous jevlin.exe was put back" } else { "nothing was installed" }
+        throw "jevlin install: the new jevlin.exe does not run from $exe ($failed); $back$leftover"
+      }
       Write-Host "installed $exe ($reported)"
+      if ($hadOne) {
+        Remove-Item -LiteralPath $displaced -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $displaced) {
+          Write-Host "the previous jevlin.exe could not be removed, most likely because it is still running: delete $displaced once it exits"
+        }
+      }
     } finally {
       Remove-Item -Path $tmp -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     if ($env:JEVLIN_NO_SETUP) {
       Write-Host "next: $exe setup"
-    } elseif ([Environment]::UserInteractive) {
+    } elseif ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
       Write-Host ""
       & $exe setup
     } else {
       Write-Host "no terminal attached; run: $exe setup"
     }
   } finally {
+    [Net.ServicePointManager]::SecurityProtocol = $tlsBefore
   }
 }
