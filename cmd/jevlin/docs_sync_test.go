@@ -62,15 +62,18 @@ const npmInstallSection = "## How do I install it?\n" +
 	"```\n" +
 	"This installs the latest release at `~/.jevlin/bin/jevlin`, checked against the release's checksums and, where a tool on the machine can, its signature, and runs setup when you ran it at a terminal.\n" +
 	"\n" +
-	"Follow here if [Installing without npm](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#installing-without-npm).\n" +
+	"### Can I install it another way?\n" +
 	"\n" +
-	"- **From your agent:** the marketplaces carry a setup skill that installs and sets up jevlin;\n" +
-	"  [the guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#let-your-agent-install-it) lists them.\n" +
+	"- **From GitHub Releases:** download the archive for your platform and check it against its\n" +
+	"  `checksums.txt` ([steps](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#installing-without-npm))\n" +
+	"\n" +
+	"- **From an agent marketplace:** Claude Code's and Codex's plugin marketplaces, and skills.sh,\n" +
+	"  carry a setup skill that installs and sets up jevlin ([how](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#let-your-agent-install-it))\n" +
 	"\n" +
 	"- **From source:** `go install github.com/jevlinai/jevlin-go/cmd/jevlin@latest`, or `make build`\n" +
-	"  in a clone. See [building from source](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#building-from-source).\n" +
+	"  in a clone ([details](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#building-from-source))\n" +
 	"\n" +
-	"If your shell then cannot find `jevlin`, [the guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#jevlin-command-not-found) shows how to run setup by its full path.\n" +
+	"**`jevlin: command not found`?** Run setup by its full path. [The guide shows how](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#jevlin-command-not-found).\n" +
 	"\n"
 
 // installSectionBounds is where the install section runs in a README: from
