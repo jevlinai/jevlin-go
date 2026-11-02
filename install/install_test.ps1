@@ -487,20 +487,30 @@ Write-Host ("after: ErrorActionPreference={0} TLS unchanged={1} left=[{2}]" -f $
   # it can be moved aside but not deleted, so the displaced copy stays and the
   # installer says where. A second install while that copy is still held takes
   # a name of its own, where a fixed name would be in the way.
-  $holder = Start-Process -FilePath $exe1 -ArgumentList "hold" -PassThru -NoNewWindow
-  Start-Sleep -Milliseconds 500
-  if ($holder.HasExited) { throw "the stub started with hold exited at once (exit $($holder.ExitCode))" }
-  Invoke-Installer $h1
-  Test-Install "(w2b) reinstall while jevlin.exe runs: installed, the held copy is named and left" $h1 `
-    -Says @("installed $exe1 (jevlin $ver)", "the previous jevlin.exe could not be removed, most likely because it is still running: delete $exe1.displaced-") `
-    -Installed $ver -Displaced 1
-  Invoke-Installer $h1
-  Test-Install "(w2c) again while that copy is still held: a fresh name, installed" $h1 `
-    -Says @("installed $exe1 (jevlin $ver)") -DoesNotSay @("could not be removed") -Installed $ver -Displaced 1
-  Stop-Process -Id $holder.Id -Force
-  $holder.WaitForExit()
-  $holder = $null
-  Get-ChildItem -LiteralPath (Join-Path $h1 "bin") -Filter 'jevlin.exe.displaced*' | Remove-Item -Force
+  # When w1 and w2 installed nothing there is no jevlin.exe to keep running:
+  # both cases fail, and the run goes on to the cases that do not need one.
+  if (Test-Path -LiteralPath $exe1) {
+    $holder = Start-Process -FilePath $exe1 -ArgumentList "hold" -PassThru -NoNewWindow
+    Start-Sleep -Milliseconds 500
+    if ($holder.HasExited) { throw "the stub started with hold exited at once (exit $($holder.ExitCode))" }
+    Invoke-Installer $h1
+    Test-Install "(w2b) reinstall while jevlin.exe runs: installed, the held copy is named and left" $h1 `
+      -Says @("installed $exe1 (jevlin $ver)", "the previous jevlin.exe could not be removed, most likely because it is still running: delete $exe1.displaced-") `
+      -Installed $ver -Displaced 1
+    Invoke-Installer $h1
+    Test-Install "(w2c) again while that copy is still held: a fresh name, installed" $h1 `
+      -Says @("installed $exe1 (jevlin $ver)") -DoesNotSay @("could not be removed") -Installed $ver -Displaced 1
+    Stop-Process -Id $holder.Id -Force
+    $holder.WaitForExit()
+    $holder = $null
+    Get-ChildItem -LiteralPath (Join-Path $h1 "bin") -Filter 'jevlin.exe.displaced*' | Remove-Item -Force
+  } else {
+    foreach ($c in @("(w2b) reinstall while jevlin.exe runs", "(w2c) again while that copy is still held")) {
+      Write-Host "FAIL ${c}: not run, as w1 installed no jevlin.exe to keep running"
+      $cases++
+      $fail = 1
+    }
+  }
 
   # The replace step (change 2): a new binary that does not run never replaces
   # one that does.
