@@ -143,6 +143,34 @@ if grep -q '^setup' "$work/calls"; then
   echo "FAIL (j): the installer ran setup with no terminal"; fail=1
 fi
 
+# A new binary that does not run never replaces one that does: install the good
+# stub, then serve a release whose stub fails its `version`. The installer must
+# exit 1 and say why, and the stub installed before must still be there and run.
+# No verifier is on the PATH, so the checksum decides and the second archive
+# needs no signature.
+run n "$work/good.sig" "$work/p_node"
+[ "$rc" = 0 ] || { echo "FAIL (n): the first install, of the stub that runs, exited $rc"; fail=1; }
+cp "$rel/$name" "$work/archive.good"
+mkdir -p "$work/stage_broken"
+printf '#!/bin/sh\necho "broken $*" >> "%s"\necho "stub: this jevlin does not run here" >&2\nexit 3\n' "$work/calls" > "$work/stage_broken/jevlin"
+chmod 755 "$work/stage_broken/jevlin"
+tar -czf "$rel/$name" -C "$work/stage_broken" jevlin
+sum=$(shasum -a 256 "$rel/$name" 2>/dev/null || sha256sum "$rel/$name"); sum=${sum%% *}
+printf '%s  %s\n' "$sum" "$name" > "$rel/checksums.txt"
+: > "$work/calls"
+env -i HOME="$work/home" JEVLIN_HOME="$work/home/j" JEVLIN_VERSION=$ver JEVLIN_NO_SETUP=1 PATH="$work/p_bare" \
+  /bin/sh "$work/install.sh" > "$work/out" 2>&1
+rc=$?
+check "(n) the new binary does not run: exit 1, the installed one is kept" 1 \
+  "the downloaded jevlin does not run here ($work/home/j/bin/jevlin.new version failed); $work/home/j/bin/jevlin was left as it was" yes
+grep -qF "stub: this jevlin does not run here" "$work/out" || { echo "FAIL (n): the binary's own reason was not shown"; fail=1; }
+grep -q '^broken version' "$work/calls" || { echo "FAIL (n): the new binary was never run"; fail=1; }
+kept=$("$work/home/j/bin/jevlin" version 2>&1)
+[ "$kept" = "jevlin $ver" ] || { echo "FAIL (n): the installed binary now says '$kept', want 'jevlin $ver'"; fail=1; }
+[ ! -e "$work/home/j/bin/jevlin.new" ] || { echo "FAIL (n): jevlin.new was left behind"; fail=1; }
+cp "$work/archive.good" "$rel/$name"
+cp "$work/checksums.good" "$rel/checksums.txt"
+
 # Each verifier on its own, both ways, so a verifier that always said yes would
 # turn a refusal red. Under CI every case must run, and a missing prerequisite
 # fails the step; a local run skips the case and says what it skipped.
