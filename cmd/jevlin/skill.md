@@ -39,9 +39,9 @@ One JSON object comes back. Check `ok` first, then read `result.merged`, in orde
 each page's best position; it is a heuristic, not a verdict. For each page:
 
 - `url`, `title`, `published` when known, and `snippet`: the indexes' excerpts of the page, joined and trimmed.
-- `found_by`: the indexes that listed it, and at which position. `votes` counts index groups and wordings that listed
-  it, so one index finding a page for two wordings counts twice. Several groups agreeing is evidence; a page one index
-  found can still be the find: check it rather than drop it.
+- `found_by`: the indexes that listed it; `found_in` gives each one's position and `best_rank` the best of them. `votes`
+  counts index groups and wordings that listed it, so one index finding a page for two wordings counts twice. Several
+  groups agreeing is evidence; a page one index found can still be the find: check it rather than drop it.
 - `source_id`: the page's id across searches, used to read it in full.
 
 `result.merged_total` above `result.merged_limit` means more pages exist; raise `merged_limit` if a list question

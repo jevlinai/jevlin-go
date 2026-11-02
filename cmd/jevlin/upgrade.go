@@ -53,9 +53,10 @@ replaces is kept as <binary>.previous. A copy npm installed is updated with npm.
                   uninstall resolves it)
   -auto           the daily check the agent hooks start, not a command a
                   person runs: under [update] mode = "apply", the
-                  default, a native copy is replaced by a newer release;
-                  under "notify", or for a copy npm installed, it only
-                  records that one exists.
+                  default, a native copy is replaced by a newer patch
+                  release of its own minor version (0.7.0 to 0.7.1); a new
+                  minor release, and any release under "notify" or for a
+                  copy npm installed, is only recorded as available.
                   Exits quietly; jevlin status and doctor report the result
   -config file    with -auto: the config the hook runs with
 `

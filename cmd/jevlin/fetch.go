@@ -520,7 +520,24 @@ func cmdFetch(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv f
 	return fetchMain(time.Now, args, stdin, stdout, stderr, getenv)
 }
 
+// fetchUsage is what fetch -h prints. The flag set below is built only in
+// machine mode, where its output is discarded, so it cannot say this itself.
+const fetchUsage = `usage: jevlin fetch --stdin [-config file] [-timeout duration]
+
+Reads one version-1 JSON fetch request on stdin and answers with one JSON
+envelope on stdout: the full text of up to five pages a search returned.
+
+  --stdin            required: read the request from stdin
+  -config file       the config to read, given at most once
+  -timeout duration  the whole fetch's deadline, covering connect, headers
+                     and body (default 1m0s)
+`
+
 func fetchMain(now func() time.Time, args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
+	if len(args) == 1 && (args[0] == "-h" || args[0] == "-help" || args[0] == "--help") {
+		fmt.Fprint(stdout, fetchUsage)
+		return exitOK
+	}
 	if !hasBoolFlag(args, "stdin") {
 		fmt.Fprintln(stderr, "jevlin fetch: --stdin is required: send one version-1 JSON request on stdin")
 		return exitUsage

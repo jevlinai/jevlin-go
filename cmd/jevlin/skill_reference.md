@@ -28,12 +28,14 @@ Both settings are the user's. Never change either on your own.
 ## Tiers, presets and named indexes
 
 A request without `tier` uses the user's tier, or the router's default when the user set none. The fast tier runs a
-preset the user picks, for example `economy` (the cheapest) or `standard` (more coverage); `jevlin agents tier status`
-lists them with their estimated price. `balanced` asks the core set of indexes; `max` asks for more results each and is
-the user's choice only. Never pick a tier or preset yourself.
+preset the user picks, for example `economy` (two fast indexes) or `standard` (three, for more coverage);
+`jevlin agents tier status` lists them with the router's estimate. `balanced` asks several core engines; `max` asks
+every core engine, for more results and longer excerpts. Both are for claimed agents. Never pick a tier or preset
+yourself.
 
-`providers` restricts a search to named indexes. It needs `"tier":"balanced"` or `"max"`, is billed at those indexes'
-own prices and draws the user's credit. Send it only when the user asks for a specific index.
+`providers` restricts a search to named indexes. Send it only when the user asks for a specific index. It works only
+when the user's tier is `balanced` or `max`; with any other tier the router refuses it, and you tell the user so rather
+than setting `tier`.
 
 ## Failure actions in detail
 
@@ -83,5 +85,5 @@ Per search:
   answered: read each index's `status`.
 - `result.filters_applied`: the `recency` and `domain_filter` the router held every page to, with `dropped`, the number
   of pages it removed.
-- `usage.deadline_hit`: some index ran out of time.
-- `usage.cost_micros`: what the search cost, in millionths of a dollar. Mention it only if the user asks.
+- `result.usage.deadline_hit`: some index ran out of time.
+- `result.usage.cost_micros`: what the search cost, in millionths of a dollar. Mention it only if the user asks.
