@@ -17,6 +17,21 @@ disappear, and from a place someone else could replace the binary in
 ([A binary setup refuses](#a-binary-setup-refuses)). If your shell then says
 `jevlin: command not found`, see [jevlin: command not found](#jevlin-command-not-found).
 
+### Let your agent install it
+
+An agent can run this install itself. The marketplaces carry a setup skill, not the search: it
+installs the client and runs `jevlin setup`, which writes the agent's own skill and hooks.
+
+```bash
+npx skills add jevlinai/jevlin-go                          # any agent with skills (skills.sh)
+/plugin install jevlin --marketplace jevlinai/jevlin-go    # Claude Code, 2.1.275 or later
+claude plugin marketplace add jevlinai/jevlin-go           # Claude Code, older: then /plugin install jevlin@jevlin
+codex plugin marketplace add jevlinai/jevlin-go            # Codex CLI: then /plugins
+```
+
+Cursor loads the same package from its Marketplace once it is listed there, and from the
+repository until then.
+
 ### Installing without npm
 
 `curl -fsSL https://jevlin.ai/install.sh | sh` (macOS, Linux and WSL) or

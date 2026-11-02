@@ -32,6 +32,8 @@ and hooks, and npm throws an `npx` cache away.
   at `~/.jevlin/bin/jevlin`, checked against the release's checksums and, where a tool on the
   machine can, its signature, and runs setup when you ran it at a terminal.
   [Installing without npm](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#installing-without-npm) has its options.
+- **From your agent:** the marketplaces carry a setup skill that installs and sets up jevlin;
+  [the guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#let-your-agent-install-it) lists them.
 - **From source:** `go install github.com/jevlinai/jevlin-go/cmd/jevlin@latest`, or `make build`
   in a clone. See [building from source](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#building-from-source).
 
