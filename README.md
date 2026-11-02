@@ -107,7 +107,7 @@ response reports what its search cost. [Choosing a tier](https://github.com/jevl
 |---|---|
 | [Claude Code](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#claude-code) | Ready. jevlin's hook approves exactly the search the skill renders. |
 | [Cursor](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#cursor) | Ready. |
-| [Codex](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#codex) | Approve jevlin's hooks in Codex once. Setup makes jevlin's permission profile Codex's default. Needs Codex 0.158.0 or newer. |
+| [Codex](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#codex) | Approve jevlin's hooks in Codex once. Setup makes jevlin's permission profile Codex's default. On Windows there are neither, and Codex asks before a search reaches the network. Needs Codex 0.158.0 or newer. |
 | [opencode](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#opencode) | Paste the rules block setup prints into your `AGENTS.md`. |
 | [Pi](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#pi) | Ready. |
 | [Hermes](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#hermes) | Approve the hook once; it loads next session. |
@@ -140,9 +140,9 @@ jevlin uninstall -purge-state          # also delete the registration, key and c
 npm uninstall -g @jevlinsearch/jevlin  # then remove an npm install
 ```
 
-An npm install is updated with `npm install -g @jevlinsearch/jevlin@latest`. Once a day, when a
-Claude Code, Cursor, Codex, opencode or Pi session starts or ends, jevlin checks for a newer
-release. An install from a release archive installs a patch release (0.7.0 to 0.7.1) itself and
+An npm install is updated with `npm install -g @jevlinsearch/jevlin@latest`. Once a day, when
+Claude Code, Cursor, Codex, opencode or Pi starts a session or, in all but Pi, finishes a turn,
+jevlin checks for a newer release. An install from a release archive installs a patch release (0.7.0 to 0.7.1) itself and
 leaves a new minor release for `jevlin upgrade`; for an npm install the release is recorded, for
 `jevlin status` and `jevlin doctor` to report. [Upgrading](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#upgrading) and
 [removing it and coming back](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#removing-it-and-coming-back) have the details.

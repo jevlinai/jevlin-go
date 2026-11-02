@@ -51,7 +51,8 @@ What the script does:
 - **Checks it against `checksums.txt`.** Always; a mismatch stops the install.
 - **Checks the signature** on `checksums.txt` against the project's release key, when a tool on
   the machine can (`install.sh`: openssl 1.1.1 or newer, node or python3; `install.ps1`: node).
-  A bad signature stops the install; with no such tool, it says so and relies on the checksum.
+  A bad signature stops the install; with no such tool, or with `JEVLIN_SKIP_SIGNATURE=1`, it says
+  so and relies on the checksum.
 - **Installs** to `~/.jevlin/bin/jevlin` (or `$JEVLIN_HOME/bin`). A new binary that doesn't run
   never replaces the one you have.
 - **Runs `jevlin setup`** if you started it at a terminal; otherwise it prints the command to run.
@@ -63,6 +64,7 @@ Options (in PowerShell, set them as `$env:JEVLIN_VERSION = "0.7.0"` and so on):
 | `JEVLIN_VERSION=0.7.0` | install exactly that release, not the latest |
 | `JEVLIN_HOME=/path` | install there instead of `~/.jevlin` |
 | `JEVLIN_NO_SETUP=1` | install the binary and stop |
+| `JEVLIN_SKIP_SIGNATURE=1` | skip the signature check and rely on the checksum alone; it says so |
 
 **By hand:**
 
@@ -242,8 +244,9 @@ config. The new binary then rewrites the skills and hooks this installation set 
 agents. If it fails, the first word after `upgrade:` says what to do
 ([reference, Upgrade failures](reference.md#upgrade-failures)).
 
-Once a day, when a Claude Code, Cursor, Codex, opencode or Pi session starts or ends, jevlin checks
-for a newer release. A native install then installs a patch release of the version you have (0.7.0
+Once a day, when Claude Code, Cursor, Codex, opencode or Pi starts a session or, in all but Pi,
+finishes a turn, jevlin checks for a newer release ([agents.md](agents.md) lists each agent's
+triggers). A native install then installs a patch release of the version you have (0.7.0
 to 0.7.1) the same way `upgrade` does; a new minor release (0.8.0) is only recorded, and
 `jevlin status` and `jevlin doctor` say so, because before 1.0 a minor release may change what the
 installation must hold. An npm install is never replaced; the release is recorded for `status` and

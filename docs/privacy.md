@@ -45,7 +45,7 @@ Each search carries a small `trace` so the router can group one task's searches:
 |---|---|
 | `v` | `1`. |
 | `harness` | Which agent: `claude-code`, `codex`, `cursor`, and so on. |
-| `session_id`, `turn_id`, `call_id` | The agent's ids, hashed with SHA-256 before they leave the machine. A subagent has a `session_id` of its own. |
+| `session_id`, `turn_id`, `call_id` | From a hook: the agent's ids, hashed with SHA-256 before they leave the machine; a subagent has a `session_id` of its own. With no hook (`harness` is then `cli`): the per-shell `session_id` below, a random `call_id`, and no `turn_id`. |
 | `parent_session_id` | On a subagent's search only: the hashed `session_id` of the agent that started it. Claude Code, Codex and opencode. |
 | `window` | Which context window of the session the search was made in, counting compactions. |
 | `seq` | A counter of the searches recorded in the lineage file (one per workspace; in Cursor, per conversation). |
@@ -59,7 +59,7 @@ command's first simple command is the search, so a loop, a list or a pipeline wi
 anywhere else is left exactly as written. Cursor's hooks write a lineage file instead
 (`JEVLIN_LINEAGE`).
 
-A search with no trace carries a per-shell identity: the hostname and the parent shell's pid, keyed
+A search with no hook carries a per-shell identity: the hostname and the parent shell's pid, keyed
 with the random `trace.key` in the state directory, which is never sent; with no usable key and none
 it can make, a one-off id. The hashed `session_id` is also sent as the request's top-level
 `session_id` and its `X-Session-Id` header while an envelope rides. The trace is unauthenticated

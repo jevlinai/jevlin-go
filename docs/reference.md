@@ -40,14 +40,13 @@ When `upgrade` fails, the first word after `upgrade:` says what to do:
 
 | word | meaning |
 |---|---|
-| `retry` | Try again later; nothing changed. A slow first run, such as a virus scan, ends here. |
+| `retry` | Try again later; nothing changed. A slow first run, such as a virus scan, ends here. On Windows it is also the answer when an older jevlin or agent process still runs `jevlin.exe.previous`, and the message says so: your binary was put back; close that process and run `upgrade` again. |
 | `release_invalid` | The release itself is wrong. Do not retry blindly. |
 | `ownership` | This copy is not one `upgrade` may replace, such as an npm install. |
 | `filesystem` | Fix the permissions or the file it names. |
 | `lifecycle_busy` | Another setup or upgrade is running. |
 | `refused` | An older version was asked for. |
 | `manual_intervention` | Putting the old binary back failed too. Every surviving copy is listed; none is deleted, and no automatic check runs until `jevlin upgrade` succeeds. |
-| `previous_in_use` | Windows: an older jevlin or agent process still runs `jevlin.exe.previous`. Your binary was put back; close that process and run `upgrade` again. |
 
 ## Tiers and providers
 
