@@ -315,7 +315,7 @@ needs it.
 `install/install_test.sh` runs `install.sh` offline against a fake release on loopback, signed
 with a throwaway key: verified, unverifiable, a bad signature, a wrong or missing checksum,
 `JEVLIN_SKIP_SIGNATURE`, and a new binary that does not run, which must leave the installed one
-in place. CI runs it on Linux and macOS as steps of the `test` job, and shellchecks `install.sh`
+in place and be removed, or named when it cannot be. CI runs it on Linux and macOS as steps of the `test` job, and shellchecks `install.sh`
 as POSIX `sh` on Linux, so the required check names do not change.
 
 `install/install_test.ps1` does the same for `install.ps1` and `install.cmd`: a stub
@@ -324,7 +324,8 @@ loopback that answers the latest-release URL with a 302 as github.com does, and 
 the documented way, `irm <url> | iex`, in a fresh process. Its cases: the latest release through
 the 302, which also checks that nothing the script set is left in the caller's session; a
 reinstall, with and without the old `jevlin.exe` still running; no node; a bad signature; a new
-binary that does not run, before and after the swap; no terminal; and `install.cmd`. CI runs it
+binary that does not run, before and after the swap, and one that cannot then be removed; no
+terminal; and `install.cmd`, which in the PowerShell 7 step is started from PowerShell 7. CI runs it
 on both Windows runners, once under `powershell` (Windows PowerShell 5.1) and once under `pwsh`
 (PowerShell 7), as steps of the same `test` job: the two editions differ exactly where the
 latest-release lookup once failed. Nothing in either test contacts GitHub or jevlin.ai; a real

@@ -265,11 +265,14 @@ chmod 700 "$home" "$bindir" 2>/dev/null || true
 mv -f "$tmp/jevlin" "$bindir/jevlin.new"
 chmod 755 "$bindir/jevlin.new"
 if ! reported=$("$bindir/jevlin.new" version); then
-  rm -f "$bindir/jevlin.new"
+  # Removed, or named: a failed install leaves no unexplained file in bin.
+  rm -f "$bindir/jevlin.new" 2>/dev/null || :
+  left=
+  [ ! -e "$bindir/jevlin.new" ] || left="; $bindir/jevlin.new could not be removed: delete it"
   if [ -e "$bindir/jevlin" ]; then
-    die "the downloaded jevlin does not run here ($bindir/jevlin.new version failed); $bindir/jevlin was left as it was"
+    die "the downloaded jevlin does not run here ($bindir/jevlin.new version failed); $bindir/jevlin was left as it was$left"
   fi
-  die "the downloaded jevlin does not run here ($bindir/jevlin.new version failed); nothing was installed"
+  die "the downloaded jevlin does not run here ($bindir/jevlin.new version failed); nothing was installed$left"
 fi
 mv -f "$bindir/jevlin.new" "$bindir/jevlin"
 say "installed $bindir/jevlin ($reported)"

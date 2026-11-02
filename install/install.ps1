@@ -71,6 +71,15 @@
       "$out"
     }
 
+    # Removes this run's staged copy of the new binary. When it cannot (a
+    # process it started still runs from it), the clause it returns names the
+    # file, so a failed install never leaves an unexplained file in bin.
+    function Remove-Staged([string]$path) {
+      Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+      if (Test-Path -LiteralPath $path) { return "; $path could not be removed, most likely because a process still runs it: delete it once that exits" }
+      ""
+    }
+
     $home_ = if ($env:JEVLIN_HOME) { $env:JEVLIN_HOME } else { Join-Path $HOME ".jevlin" }
     $bindir = Join-Path $home_ "bin"
     $name = "jevlin_${version}_windows_${arch}.zip"
@@ -155,9 +164,9 @@
       try {
         $null = Get-JevlinVersion $staged
       } catch {
-        Remove-Item -LiteralPath $staged -Force -ErrorAction SilentlyContinue
+        $why = $_.Exception.Message
         $kept = if ($hadOne) { "$exe was left as it was" } else { "nothing was installed" }
-        throw "jevlin install: the downloaded jevlin.exe does not run here ($($_.Exception.Message)); $kept"
+        throw "jevlin install: the downloaded jevlin.exe does not run here ($why); $kept$(Remove-Staged $staged)"
       }
 
       # A running jevlin.exe cannot be overwritten or deleted, but it can be
@@ -168,8 +177,8 @@
         try {
           Move-Item -LiteralPath $exe -Destination $displaced
         } catch {
-          Remove-Item -LiteralPath $staged -Force -ErrorAction SilentlyContinue
-          throw "jevlin install: could not move the installed $exe aside ($($_.Exception.Message)); it was left as it was"
+          $why = $_.Exception.Message
+          throw "jevlin install: could not move the installed $exe aside ($why); it was left as it was$(Remove-Staged $staged)"
         }
       }
       $failed = $null
@@ -180,18 +189,19 @@
         $failed = $_.Exception.Message
       }
       if ($failed) {
-        Remove-Item -LiteralPath $staged -Force -ErrorAction SilentlyContinue
+        # The staged copy is still there only if the move into place failed.
+        $leftover = Remove-Staged $staged
         try {
           if (Test-Path -LiteralPath $exe) { Remove-Item -LiteralPath $exe -Force }
           if ($hadOne) { Move-Item -LiteralPath $displaced -Destination $exe }
         } catch {
           if ($hadOne) {
-            throw "jevlin install: the new jevlin.exe does not run from $exe ($failed), and putting the previous one back failed ($($_.Exception.Message)): the previous jevlin.exe is at $displaced"
+            throw "jevlin install: the new jevlin.exe does not run from $exe ($failed), and putting the previous one back failed ($($_.Exception.Message)): the previous jevlin.exe is at $displaced$leftover"
           }
-          throw "jevlin install: the new jevlin.exe does not run from $exe ($failed), and removing it failed ($($_.Exception.Message)); delete $exe"
+          throw "jevlin install: the new jevlin.exe does not run from $exe ($failed), and removing it failed ($($_.Exception.Message)); delete $exe$leftover"
         }
         $back = if ($hadOne) { "the previous jevlin.exe was put back" } else { "nothing was installed" }
-        throw "jevlin install: the new jevlin.exe does not run from $exe ($failed); $back"
+        throw "jevlin install: the new jevlin.exe does not run from $exe ($failed); $back$leftover"
       }
       Write-Host "installed $exe ($reported)"
       if ($hadOne) {

@@ -77,8 +77,9 @@ function Use-Env([hashtable]$vars, [scriptblock]$body) {
 # The stub: `version` prints "jevlin <version>", every call is logged with the
 # name it ran under, and its mode makes it fail. "fail" fails every call;
 # "failinstalled" runs under any name but jevlin.exe, so it passes the check
-# before the swap and fails the one after; `hold` keeps it running, so the file
-# it runs from cannot be deleted.
+# before the swap and fails the one after; "failheld" fails after starting a
+# copy of itself from the same file, which then cannot be deleted. `hold` keeps
+# it running, so the file it runs from cannot be deleted.
 $goMod = @'
 module jevlininstalltest
 
@@ -90,8 +91,10 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -109,13 +112,20 @@ func main() {
 			f.Close()
 		}
 	}
-	if mode == "fail" || (mode == "failinstalled" && strings.EqualFold(self, "jevlin.exe")) {
-		fmt.Fprintln(os.Stderr, "stub: this jevlin does not run here")
-		os.Exit(3)
-	}
 	if len(os.Args) > 1 && os.Args[1] == "hold" {
 		time.Sleep(2 * time.Minute)
 		return
+	}
+	if mode == "failheld" {
+		// Detached, with no handle of this process's, so the installer waits
+		// only for this one.
+		holder := exec.Command(exe, "hold")
+		holder.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x00000008}
+		_ = holder.Start()
+	}
+	if mode == "fail" || mode == "failheld" || (mode == "failinstalled" && strings.EqualFold(self, "jevlin.exe")) {
+		fmt.Fprintln(os.Stderr, "stub: this jevlin does not run here")
+		os.Exit(3)
 	}
 	fmt.Println("jevlin " + version)
 }
@@ -229,6 +239,7 @@ try {
   # Pinned with JEVLIN_VERSION by the cases about the replace step.
   $failing = New-Release "9.9.10" "fail"
   $failingInstalled = New-Release "9.9.11" "failinstalled"
+  $failingHeld = New-Release "9.9.12" "failheld"
   $tag = Join-Path $srv "jevlinai\jevlin-go\releases\tag"
   New-Item -ItemType Directory -Path $tag | Out-Null
   Write-Text (Join-Path $tag "v$ver") "<!doctype html><title>v$ver</title>`n"
@@ -237,7 +248,7 @@ try {
   Write-Text $signJs $signSource
   $pubFile = Join-Path $work "pub.b64"
   $signArgs = @()
-  foreach ($d in @($good, $failing, $failingInstalled)) {
+  foreach ($d in @($good, $failing, $failingInstalled, $failingHeld)) {
     $signArgs += (Join-Path $d "checksums.txt")
     $signArgs += (Join-Path $d "checksums.txt.sig")
   }
@@ -320,8 +331,8 @@ try {
   [Console]::Error.WriteLine("error: " + $_.Exception.Message)
   throw
 }
-$left = @(@('repo', 'arch', 'latestUrl', 'version', 'base', 'tmp', 'releaseKeys', 'exe', 'staged', 'displaced', 'tlsBefore') | Where-Object { Test-Path -LiteralPath "variable:$_" })
-if (Get-Command Get-JevlinVersion -ErrorAction SilentlyContinue) { $left += 'Get-JevlinVersion' }
+$left = @(@('repo', 'arch', 'latestUrl', 'version', 'base', 'tmp', 'releaseKeys', 'exe', 'staged', 'displaced', 'leftover', 'tlsBefore') | Where-Object { Test-Path -LiteralPath "variable:$_" })
+foreach ($f in @('Get-JevlinVersion', 'Remove-Staged')) { if (Get-Command $f -ErrorAction SilentlyContinue) { $left += $f } }
 Write-Host ("after: ErrorActionPreference={0} TLS unchanged={1} left=[{2}]" -f $ErrorActionPreference, ([Net.ServicePointManager]::SecurityProtocol -eq $callerTls), ($left -join ','))
 '@
   $childScript = $childScript.Replace('ORIGIN', $origin)
@@ -349,15 +360,23 @@ Write-Host ("after: ErrorActionPreference={0} TLS unchanged={1} left=[{2}]" -f $
       $argList = @('/d', '/c', ('"' + $cmdCopy + '"'))
     } else {
       $file = $psExe
-      $argList = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded)
+      $argList = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-OutputFormat', 'Text', '-EncodedCommand', $encoded)
     }
     $so = Join-Path $work "case.out"
     $se = Join-Path $work "case.err"
     $sw = [Diagnostics.Stopwatch]::StartNew()
+    # Start-Process -Wait would wait for every process the run started, and a
+    # case's stub may leave one running on purpose, so only this one is awaited.
     Use-Env $vars {
-      $p = Start-Process -FilePath $file -ArgumentList $argList -NoNewWindow -Wait -PassThru `
+      $p = Start-Process -FilePath $file -ArgumentList $argList -NoNewWindow -PassThru `
         -RedirectStandardInput $emptyIn -RedirectStandardOutput $so -RedirectStandardError $se
-      $script:rc = $p.ExitCode
+      $null = $p.Handle
+      if ($p.WaitForExit(300000)) {
+        $script:rc = $p.ExitCode
+      } else {
+        Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+        $script:rc = "timeout"
+      }
     }
     $script:secs = $sw.Elapsed.TotalSeconds
     $script:out = (Read-Text $so) + (Read-Text $se)
@@ -377,6 +396,17 @@ Write-Host ("after: ErrorActionPreference={0} TLS unchanged={1} left=[{2}]" -f $
 
   function Get-Calls { @((Read-Text $calls) -split "`r?`n" | Where-Object { $_ }) }
 
+  # Stops every process running from a file under $dir; returns how many.
+  function Stop-RunningFrom([string]$dir) {
+    $prefix = $dir.TrimEnd('\') + '\'
+    $procs = @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) })
+    foreach ($pr in $procs) {
+      Stop-Process -Id $pr.ProcessId -Force -ErrorAction SilentlyContinue
+      Wait-Process -Id $pr.ProcessId -Timeout 10 -ErrorAction SilentlyContinue
+    }
+    $procs.Count
+  }
+
   # Holds the last run to what a case expects and prints ok or FAIL with the
   # run's output, as install_test.sh does.
   function Test-Install {
@@ -388,10 +418,13 @@ Write-Host ("after: ErrorActionPreference={0} TLS unchanged={1} left=[{2}]" -f $
       [string[]]$DoesNotSay = @(),
       [string]$Installed = "",
       [int]$Displaced = 0,
+      [int]$Staged = 0,
       [string[]]$More = @()
     )
     $problems = New-Object Collections.Generic.List[string]
-    if ($WantFailure) {
+    if ("$($script:rc)" -eq "timeout") {
+      $problems.Add("the installer did not finish in 5 minutes and was stopped")
+    } elseif ($WantFailure) {
       if ($script:rc -eq 0) { $problems.Add("exit 0, want non-zero") }
     } elseif ($script:rc -ne 0) {
       $problems.Add("exit $($script:rc), want 0")
@@ -408,7 +441,7 @@ Write-Host ("after: ErrorActionPreference={0} TLS unchanged={1} left=[{2}]" -f $
     }
     if (Test-Path -LiteralPath $bin) {
       $new = @(Get-ChildItem -LiteralPath $bin -Filter 'jevlin.new-*')
-      if ($new.Count -ne 0) { $problems.Add("left in bin: $(($new | ForEach-Object { $_.Name }) -join ', ')") }
+      if ($new.Count -ne $Staged) { $problems.Add("$($new.Count) staged copies in bin, want ${Staged}: $(($new | ForEach-Object { $_.Name }) -join ', ')") }
       $aside = @(Get-ChildItem -LiteralPath $bin -Filter 'jevlin.exe.displaced*')
       if ($aside.Count -ne $Displaced) { $problems.Add("$($aside.Count) displaced copies in bin, want $Displaced") }
     }
@@ -481,6 +514,24 @@ Write-Host ("after: ErrorActionPreference={0} TLS unchanged={1} left=[{2}]" -f $
   Test-Install "(w5b) it runs staged but not as jevlin.exe: the previous jevlin.exe is put back" $h1 -WantFailure `
     -Says @("jevlin install: the new jevlin.exe does not run from $exe1 (", "the previous jevlin.exe was put back") -Installed $ver -More $more
 
+  # The failed binary started a process of its own from its staged file before
+  # it exited, so the installer cannot remove that file: it must name it.
+  [IO.File]::WriteAllText($calls, "")
+  Invoke-Installer $h1 @{ JEVLIN_VERSION = "9.9.12" }
+  $bin1 = Join-Path $h1 "bin"
+  $stagedLeft = @(Get-ChildItem -LiteralPath $bin1 -Filter 'jevlin.new-*')
+  $named = if ($stagedLeft.Count -eq 1) { $stagedLeft[0].FullName } else { "(not one staged file but $($stagedLeft.Count))" }
+  $more = @()
+  $deadline = (Get-Date).AddSeconds(10)
+  while (-not (@(Get-Calls) -match '^9\.9\.12 jevlin\.new-[0-9a-f]+\.exe hold$') -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 200 }
+  if (-not (@(Get-Calls) -match '^9\.9\.12 jevlin\.new-[0-9a-f]+\.exe hold$')) { $more += "the stub's own process never started from the staged file; the case proves nothing" }
+  Test-Install "(w5c) the failed new jevlin.exe is still running and cannot be removed: it is named" $h1 -WantFailure `
+    -Says @("jevlin install: the downloaded jevlin.exe does not run here (", "$exe1 was left as it was; $named could not be removed, most likely because a process still runs it: delete it once that exits") `
+    -Installed $ver -Staged 1 -More $more
+  $stopped = Stop-RunningFrom $bin1
+  if ($stopped -ne 1) { Write-Host "FAIL (w5c): $stopped processes were running from bin, want the one the stub started"; $fail = 1 }
+  $stagedLeft | Remove-Item -Force
+
   # No node: every directory on PATH that holds one is dropped, and the drop is
   # checked with the same lookup the installer makes.
   $noNodePath = (($env:PATH -split ';') | Where-Object {
@@ -528,6 +579,7 @@ Write-Host ("after: ErrorActionPreference={0} TLS unchanged={1} left=[{2}]" -f $
     -Says @("release signature verified (node)", "installed $exe7 (jevlin $ver)") -Installed $ver
 } finally {
   if ($holder -and -not $holder.HasExited) { Stop-Process -Id $holder.Id -Force -ErrorAction SilentlyContinue }
+  if (Get-Command Stop-RunningFrom -ErrorAction SilentlyContinue) { $null = Stop-RunningFrom $work }
   if ($server -and -not $server.HasExited) { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue }
 }
 

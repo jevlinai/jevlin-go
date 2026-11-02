@@ -168,6 +168,34 @@ grep -q '^broken version' "$work/calls" || { echo "FAIL (n): the new binary was 
 kept=$("$work/home/j/bin/jevlin" version 2>&1)
 [ "$kept" = "jevlin $ver" ] || { echo "FAIL (n): the installed binary now says '$kept', want 'jevlin $ver'"; fail=1; }
 [ ! -e "$work/home/j/bin/jevlin.new" ] || { echo "FAIL (n): jevlin.new was left behind"; fail=1; }
+
+# The same, but the new binary cannot be removed afterwards: this stub makes its
+# own directory read-only before it fails. The installer must say where it is,
+# so a failed install never leaves an unexplained file in bin.
+if [ "$(id -u)" = 0 ]; then
+  if [ -n "${CI:-}" ]; then
+    echo "FAIL (n2): running as root, a read-only directory does not stop rm; CI must run this case"; fail=1
+  else
+    echo "skip (n2): running as root, a read-only directory does not stop rm"
+  fi
+else
+  mkdir -p "$work/stage_held"
+  printf '#!/bin/sh\nchmod 555 "$(dirname "$0")"\necho "stub: this jevlin does not run here" >&2\nexit 3\n' > "$work/stage_held/jevlin"
+  chmod 755 "$work/stage_held/jevlin"
+  tar -czf "$rel/$name" -C "$work/stage_held" jevlin
+  sum=$(shasum -a 256 "$rel/$name" 2>/dev/null || sha256sum "$rel/$name"); sum=${sum%% *}
+  printf '%s  %s\n' "$sum" "$name" > "$rel/checksums.txt"
+  env -i HOME="$work/home" JEVLIN_HOME="$work/home/j" JEVLIN_VERSION=$ver JEVLIN_NO_SETUP=1 PATH="$work/p_bare" \
+    /bin/sh "$work/install.sh" > "$work/out" 2>&1
+  rc=$?
+  check "(n2) the new binary does not run and cannot be removed: exit 1, it is named" 1 \
+    "$work/home/j/bin/jevlin was left as it was; $work/home/j/bin/jevlin.new could not be removed: delete it" yes
+  [ -e "$work/home/j/bin/jevlin.new" ] || { echo "FAIL (n2): the stub did not keep jevlin.new; the case proves nothing"; fail=1; }
+  kept=$("$work/home/j/bin/jevlin" version 2>&1)
+  [ "$kept" = "jevlin $ver" ] || { echo "FAIL (n2): the installed binary now says '$kept', want 'jevlin $ver'"; fail=1; }
+  chmod 755 "$work/home/j/bin"
+  rm -f "$work/home/j/bin/jevlin.new"
+fi
 cp "$work/archive.good" "$rel/$name"
 cp "$work/checksums.good" "$rel/checksums.txt"
 
