@@ -207,36 +207,8 @@ or `max` ([reference, Tiers and providers](reference.md#tiers-and-providers)).
 
 ## What leaves your machine
 
-Each search sends your query and a small `trace` to the search router at `api.jevlin.ai`, inside
-the search request. The trace lets the router group one task's searches: the agent's name, its
-session, turn and call ids hashed with SHA-256 (the real ids never leave the machine), a call
-counter, which context window of the session it is in, and the assistant text that led to the
-search, scrubbed of secrets and capped at 32 KiB. With `[search] turn_end = true` in the config,
-the agent also reports a turn in which a search was served. What each agent sends:
-
-| agent | the trace's text | the turn end adds |
-|---|---|---|
-| Claude Code | An earlier message of the turn: Claude Code records a message after the hook runs, so the sentence beside the search is not in it. | What you asked, the final answer, each tool by name, duration and outcome, the model and its token counts (Claude Code 2.1.196 or later). |
-| Cursor | Its latest thought or reply. | What you asked, the turn's searches, the reply and the model. |
-| Codex | None. | What you asked, what the assistant wrote and its final answer, each tool by name and outcome. |
-| opencode | The assistant text before the search. | What you asked, what the assistant wrote, each tool by name, time and outcome, and the model. |
-| Pi | The assistant text before the search. | What you asked, the final answer, each tool by name, duration and outcome, the model and its token counts (Pi 0.80.4 or later). |
-| Hermes | None: its hook payload carries no assistant text. | Nothing. |
-
-A turn end never carries a tool's input or output, is sent only for a turn in which a search was
-served, and goes only to the router your config names. `export JEVLIN_TRACE=off` sends no trace
-and no turn end; searches work the same without them.
-
-The hooks keep lineage files in `~/.jevlin/sessions`, one per workspace (Cursor: per
-conversation). Only the agent that wrote a file reads it, so a second agent in a subdirectory
-never sends the first one's text. An agent started by another as a shell command carries the
-outer session and label: its searches are work the outer session asked for.
-
-`jevlin search "<query>"` puts the query on the command line, visible in `ps` and your shell
-history; `search --stdin`, which every skill teaches, keeps it out. The key is in neither. What
-the service keeps of a search, and for how long, is the platform's to say: see its
-[privacy policy](https://platform.jevlin.ai/privacy). [The trace](reference.md#the-trace) and
-[the turn end](reference.md#the-turn-end) list every field and every scrub rule.
+Moved to [privacy.md](privacy.md): what each search and turn end sends, per agent, and how to
+switch it off.
 
 ## Upgrading
 
