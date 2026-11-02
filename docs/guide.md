@@ -10,7 +10,7 @@ jevlin in the order you meet it. Per-agent detail: [agents.md](agents.md); table
 
 ## Setup
 
-Install globally, as the [README](../README.md#install) shows, then run `jevlin setup`. Setup
+Install globally, as the [README](../README.md#how-do-i-install-it) shows, then run `jevlin setup`. Setup
 refuses to run from an `npx` cache or a project's `node_modules`, whose paths would disappear.
 
 If `jevlin: command not found` follows the install, npm's global `bin` directory is not on your
