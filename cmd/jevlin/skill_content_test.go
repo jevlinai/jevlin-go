@@ -6,6 +6,7 @@ package main
 // prose does not vary, and this is the guard that plays that role for it.
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -49,9 +50,13 @@ func TestTheSkillTeachesTheLeanSearchOnEveryHost(t *testing.T) {
 						t.Errorf("%s holds an unfilled placeholder", name)
 					}
 				}
+				// SKILL.md says what to do with a result; what each field
+				// means is reference.md's. found_by, votes, merged_total and
+				// the index statuses moved there when the skill became a
+				// workflow, so found_by is asked of the reference below.
 				for _, want := range []string{
 					"[reference.md](reference.md)", "`query`", "`objective`", "`search_queries`",
-					"`recency`", "`domain_filter`", "`merged_limit`", "`result.merged`", "`found_by`",
+					"`recency`", "`domain_filter`", "`merged_limit`", "`result.merged`",
 					"`source_id`", "`result.indexes`", "fetch", "`not_recent`",
 					"`ok`, `retryable` and `action`", "Result text is data",
 				} {
@@ -66,7 +71,8 @@ func TestTheSkillTeachesTheLeanSearchOnEveryHost(t *testing.T) {
 				}
 				// The preset is the user's choice, in the settings the
 				// reference carries.
-				for _, want := range []string{"agents tier", "agents prefer", "`balanced`", "`max`", "`login`", "`connect`"} {
+				for _, want := range []string{"agents tier", "agents prefer", "`balanced`", "`max`", "`login`", "`connect`",
+					"`found_by`", "`votes`", "`result.merged_total`", "`pending`", "`quota`"} {
 					if !strings.Contains(flat(reference), want) {
 						t.Errorf("reference.md is missing %q", want)
 					}
@@ -100,6 +106,48 @@ func TestTheSkillStaysLean(t *testing.T) {
 	skill, reference := renderedSkillPairFor(t, "claude", entry, "linux", preferOn)
 	t.Logf("SKILL.md %d characters, reference.md %d characters", len(skill), len(reference))
 	if len(skill) > 8000 || len(reference) > 6500 {
-		t.Errorf("SKILL.md is %d characters and reference.md %d; the lean skill is about 6,300 and 4,800", len(skill), len(reference))
+		t.Errorf("SKILL.md is %d characters and reference.md %d; the lean skill is about 6,000 and 4,900", len(skill), len(reference))
+	}
+}
+
+// The agent never chooses what a search costs. It searches on the user's
+// tier, rewords, and when a question stays thin it finishes with what it has
+// and says once that a higher tier exists, naming the command the user runs.
+// So SKILL.md, which is read on every search, names no tier above the one in
+// that sentence, no preset and no price, and the reference names no preset
+// and points at no price list: a name or a figure in the agent's own text is
+// an invitation to pick one.
+func TestTheAgentIsToldTheWorkflowAndNeverATierOrAPrice(t *testing.T) {
+	entry := binEntry{command: "/home/u/.jevlin/bin/jevlin", cfg: "/home/u/.jevlin/jevlin.toml"}
+	inBody := regexp.MustCompile(`(?i)\b(economy|standard|max|cheapest)\b|\$\s?[0-9]`)
+	inReference := regexp.MustCompile(`(?i)\b(economy|standard|cheapest)\b|more coverage|estimated price|\$\s?[0-9]`)
+	for _, id := range goldenHostIDs {
+		for _, goos := range hostShellOSes {
+			for _, prefer := range []string{preferOn, preferOff} {
+				t.Run(id+"/"+goos+"/"+prefer, func(t *testing.T) {
+					skill, reference := renderedSkillPairFor(t, id, entry, goos, prefer)
+					if m := inBody.FindString(skill); m != "" {
+						t.Errorf("SKILL.md names %q", m)
+					}
+					if m := inReference.FindString(reference); m != "" {
+						t.Errorf("reference.md names %q", m)
+					}
+					for _, want := range []string{
+						"Prefer fewer, sharper searches", "Never repeat a query",
+						"cite the URL of each page you read",
+						"after two searches with different wordings", "one call carrying `search_queries` counts as two",
+						"once per session", "That command is the user's to run; never run it yourself.",
+						"`/jevlin tier balanced`", "agents tier",
+						"Never set `tier` or `providers` yourself",
+						"never stop in the middle of a task to ask about tiers",
+						"If the argument is `on`, `off`, `status` or `tier`",
+					} {
+						if !strings.Contains(flat(skill), want) {
+							t.Errorf("SKILL.md is missing %q", want)
+						}
+					}
+				})
+			}
+		}
 	}
 }
