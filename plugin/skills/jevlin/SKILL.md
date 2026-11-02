@@ -50,22 +50,25 @@ npm install -g @jevlinsearch/jevlin
 Globally, never with `npx` and never into a project's `node_modules`: setup
 writes the binary's path into the agents' skills and hooks.
 
-Without Node, use the installer instead. On macOS and Linux:
+Without Node, use the installer instead, and tell it not to start setup
+itself with `JEVLIN_NO_SETUP=1`: step 3 runs setup. Without that, the
+installer tries to start setup on a terminal an agent's shell does not have,
+and fails after the binary is in place. On macOS and Linux:
 
 ```bash
-curl -fsSL https://jevlin.ai/install.sh | sh
+curl -fsSL https://jevlin.ai/install.sh | JEVLIN_NO_SETUP=1 sh
 ```
 
 On Windows PowerShell:
 
 ```powershell
+$env:JEVLIN_NO_SETUP = "1"
 irm https://jevlin.ai/install.ps1 | iex
 ```
 
-It downloads the latest release, verifies it and installs it at
-`~/.jevlin/bin/jevlin` (`$JEVLIN_HOME/bin` when that is set). An agent's
-shell has no terminal attached, so it does not run setup: it ends with "no
-terminal attached; run:" and the path to run, which step 3 uses.
+It downloads the latest release, verifies it, installs it at
+`~/.jevlin/bin/jevlin` (`$JEVLIN_HOME/bin` when that is set), and ends with
+"next:" and the path to run setup with, which step 3 uses.
 
 ## 3. Run setup
 

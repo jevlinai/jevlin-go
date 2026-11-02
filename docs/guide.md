@@ -26,8 +26,10 @@ downloads the latest release for your machine and checks it against the release'
 release key when a tool on the machine can: `install.sh` uses openssl, node or python3, and
 `install.ps1` uses node. A signature that fails stops the install; with no such tool it says so
 and relies on the checksum. It puts the binary at `~/.jevlin/bin/jevlin` (`$JEVLIN_HOME/bin`
-when that is set) and runs `jevlin setup` when a terminal is attached; otherwise it prints the
-path to run setup with.
+when that is set) and then starts `jevlin setup` on the terminal you ran it from. In a shell with
+no terminal, such as an agent's, set `JEVLIN_NO_SETUP=1`: the installer then prints the path to
+run setup with and stops. Without it there, `install.sh` installs the binary and then fails to
+open the terminal for setup.
 
 | variable | effect |
 |---|---|
