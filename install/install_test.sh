@@ -64,7 +64,7 @@ mkpath() { # dir tool...
   local d=$1; shift; mkdir -p "$d"
   for t in "$@"; do ln -sf "$(command -v "$t")" "$d/$t"; done
 }
-base_tools="sh curl tar uname mktemp rm mv mkdir chmod cat tr wc cut grep sed base64 printf dirname shasum sha256sum head ln"
+base_tools="sh curl tar gzip uname mktemp rm mv mkdir chmod cat tr wc cut grep sed base64 printf dirname shasum sha256sum head ln"
 mkpath "$work/p_node" $base_tools node
 mkpath "$work/p_bare" $base_tools
 # A stand-in openssl that is LibreSSL-like: no rawin.
