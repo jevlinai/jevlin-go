@@ -51,6 +51,14 @@ if (-not $version) {
 }
 if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "jevlin install: not a release version: $version" }
 
+# What `jevlin version` printed. It throws with the reason when the binary does
+# not start or exits non-zero.
+function Get-JevlinVersion([string]$path) {
+  $out = & $path version
+  if ($LASTEXITCODE -ne 0) { throw "version exited $LASTEXITCODE" }
+  "$out"
+}
+
 $home_ = if ($env:JEVLIN_HOME) { $env:JEVLIN_HOME } else { Join-Path $HOME ".jevlin" }
 $bindir = Join-Path $home_ "bin"
 $name = "jevlin_${version}_windows_${arch}.zip"
@@ -117,17 +125,69 @@ try {
   $actual = (Get-FileHash -Algorithm SHA256 (Join-Path $tmp $name)).Hash.ToLower()
   if ($actual -ne $expected) { throw "jevlin install: checksum mismatch for ${name}: the download is not the release's; nothing was installed" }
 
-  Expand-Archive -Path (Join-Path $tmp $name) -DestinationPath $tmp -Force
+  Expand-Archive -LiteralPath (Join-Path $tmp $name) -DestinationPath $tmp -Force
   New-Item -ItemType Directory -Path $bindir -Force | Out-Null
   $exe = Join-Path $bindir "jevlin.exe"
-  # A running jevlin.exe cannot be overwritten; move it aside first.
-  if (Test-Path $exe) { Move-Item -Path $exe -Destination (Join-Path $bindir "jevlin.exe.displaced") -Force }
-  Move-Item -Path (Join-Path $tmp "jevlin.exe") -Destination $exe -Force
-  Remove-Item -Path (Join-Path $bindir "jevlin.exe.displaced") -Force -ErrorAction SilentlyContinue
+  $hadOne = Test-Path -LiteralPath $exe
+  # This run's names beside jevlin.exe are its own, so a displaced copy an
+  # earlier run could not remove, because the jevlin it held was still running,
+  # never stands in the way.
+  $run = [Guid]::NewGuid().ToString("n").Substring(0, 12)
+  $staged = Join-Path $bindir "jevlin.new-$run.exe"
+  $displaced = Join-Path $bindir "jevlin.exe.displaced-$run"
 
-  $reported = & $exe version
-  if ($LASTEXITCODE -ne 0) { throw "jevlin install: the installed binary does not run: $exe" }
+  # The new binary runs before the installed one is touched, beside it under
+  # this run's name: not in the temporary directory, which a policy can forbid
+  # running programs from where the bin directory is allowed.
+  Move-Item -LiteralPath (Join-Path $tmp "jevlin.exe") -Destination $staged
+  try {
+    $null = Get-JevlinVersion $staged
+  } catch {
+    Remove-Item -LiteralPath $staged -Force -ErrorAction SilentlyContinue
+    $kept = if ($hadOne) { "$exe was left as it was" } else { "nothing was installed" }
+    throw "jevlin install: the downloaded jevlin.exe does not run here ($($_.Exception.Message)); $kept"
+  }
+
+  # A running jevlin.exe cannot be overwritten or deleted, but it can be
+  # renamed. So the installed one is moved aside, the new one takes its place,
+  # and the old one is kept until the new one has run from there, to be put
+  # back if it does not.
+  if ($hadOne) {
+    try {
+      Move-Item -LiteralPath $exe -Destination $displaced
+    } catch {
+      Remove-Item -LiteralPath $staged -Force -ErrorAction SilentlyContinue
+      throw "jevlin install: could not move the installed $exe aside ($($_.Exception.Message)); it was left as it was"
+    }
+  }
+  $failed = $null
+  try {
+    Move-Item -LiteralPath $staged -Destination $exe
+    $reported = Get-JevlinVersion $exe
+  } catch {
+    $failed = $_.Exception.Message
+  }
+  if ($failed) {
+    Remove-Item -LiteralPath $staged -Force -ErrorAction SilentlyContinue
+    try {
+      if (Test-Path -LiteralPath $exe) { Remove-Item -LiteralPath $exe -Force }
+      if ($hadOne) { Move-Item -LiteralPath $displaced -Destination $exe }
+    } catch {
+      if ($hadOne) {
+        throw "jevlin install: the new jevlin.exe does not run from $exe ($failed), and putting the previous one back failed ($($_.Exception.Message)): the previous jevlin.exe is at $displaced"
+      }
+      throw "jevlin install: the new jevlin.exe does not run from $exe ($failed), and removing it failed ($($_.Exception.Message)); delete $exe"
+    }
+    $back = if ($hadOne) { "the previous jevlin.exe was put back" } else { "nothing was installed" }
+    throw "jevlin install: the new jevlin.exe does not run from $exe ($failed); $back"
+  }
   Write-Host "installed $exe ($reported)"
+  if ($hadOne) {
+    Remove-Item -LiteralPath $displaced -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $displaced) {
+      Write-Host "the previous jevlin.exe could not be removed, most likely because it is still running: delete $displaced once it exits"
+    }
+  }
 } finally {
   Remove-Item -Path $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }
