@@ -18,22 +18,25 @@ between searches; a hook or a search may start one short background job, such as
 release check. Plans and prices are at [jevlin.ai](https://jevlin.ai).
 
 ## How do I install it?
+```bash
+curl -fsSL https://jevlin.ai/install.sh | sh     # on macOS and Linux
+
+irm https://jevlin.ai/install.ps1 | iex      # Windows PowerShell
+```
+This installs the latest release at `~/.jevlin/bin/jevlin`, checked against the release's checksums and, where a tool on the machine can, its signature, and runs setup when you ran it at a terminal.
+
 
 ```bash
 npm install -g @jevlinsearch/jevlin
 jevlin setup
 ```
+Install it globally, not with `npx`: setup writes the binary's path into your agents' skills and hooks, and npm throws an `npx` cache away.
 
-Install it globally, not with `npx`: setup writes the binary's path into your agents' skills
-and hooks, and npm throws an `npx` cache away.
+Follow here if [Installing without npm](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#installing-without-npm).
 
-- **Without Node:** `curl -fsSL https://jevlin.ai/install.sh | sh` on macOS and Linux, or
-  `irm https://jevlin.ai/install.ps1 | iex` in Windows PowerShell. It installs the latest release
-  at `~/.jevlin/bin/jevlin`, checked against the release's checksums and, where a tool on the
-  machine can, its signature, and runs setup when you ran it at a terminal.
-  [Installing without npm](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#installing-without-npm) has its options.
 - **From your agent:** the marketplaces carry a setup skill that installs and sets up jevlin;
   [the guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#let-your-agent-install-it) lists them.
+
 - **From source:** `go install github.com/jevlinai/jevlin-go/cmd/jevlin@latest`, or `make build`
   in a clone. See [building from source](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#building-from-source).
 
@@ -41,15 +44,24 @@ If your shell then cannot find `jevlin`, [the guide](https://github.com/jevlinai
 
 ## What does setup do, and what is the claim?
 
-Setup registers this machine's agent with the search platform and stores the key it gets back,
-writes its config under `~/.jevlin`, and asks before it adds `jevlin` to your shell's PATH and
-before it sets up the coding agents it finds. Restart any agent that was already open.
+**Setup** sets up the coding agents it finds and adds `jevlin` to your PATH, asking before
+each. It also registers Jevlin on this machine with the search platform, stores its key (nothing
+to copy or paste) and writes its config to `~/.jevlin`. Restart any agent that was already open.
 
-It then prints a link to claim the agent: open it, sign in at `platform.jevlin.ai` (or create an
-account) and confirm the agent's name, or type the printed code at `/claim` there. Until you do,
-search runs on the fast tier within a daily cap; claiming opens `balanced` and `max`. The link and
-the unclaimed registration last a week; after that, `jevlin connect` registers again and prints a
-new link. [Setup](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#setup) and [the claim link](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#the-claim-link) have the details.
+**Claiming** links jevlin on this machine to your Jevlin account. Setup prints a link: open it, sign in at
+`platform.jevlin.ai` (or create an account), and confirm the name. You can also type the
+code setup printed at `platform.jevlin.ai/claim`. You claim once per machine,
+not once per coding agent: Claude Code, Codex and the rest all search through the same
+registration. (The platform calls it an "agent".)
+
+Until you claim it, you can search on the `fast` tier, up to a daily limit. Claiming unlocks
+`balanced` and `max`.
+
+The link is good for a week. If it expires before you claim, run `jevlin connect` to register
+again and get a new link.
+
+Details: [Setup](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#setup) ·
+[The claim link](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#the-claim-link).
 
 ## How do I check it works?
 
@@ -82,7 +94,7 @@ type these (in Codex, `$jevlin`):
 | tier | what it asks | choose it |
 |---|---|---|
 | `fast` | The fast indexes of a preset: `economy` asks two, `standard` three. The quickest. | For routine lookups. It is the only tier before you claim. |
-| `balanced` | Four of the hosted service's core engines: Exa, Brave, Parallel search and Perplexity search. | When you want several independent sources, or a fast search came back thin. |
+| `balanced` | Four of the hosted service's core engines. | When you want several independent sources, or a fast search came back thin. |
 | `max` | All seven core engines, with more results from each. | When agreement between independent engines matters. |
 
 You choose the tier; the skill tells your agent never to set one. With none set, the router
