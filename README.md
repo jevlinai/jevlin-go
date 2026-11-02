@@ -19,14 +19,10 @@ release check. Plans and prices are at [jevlin.ai](https://jevlin.ai).
 
 ## How do I install it?
 ```bash
-`curl -fsSL https://jevlin.ai/install.sh | sh
-``` 
-on macOS and Linux
-```bash
-irm https://jevlin.ai/install.ps1 | iex
-```
-in Windows PowerShell.
+curl -fsSL https://jevlin.ai/install.sh | sh     # on macOS and Linux
 
+irm https://jevlin.ai/install.ps1 | iex      # Windows PowerShell
+```
 This installs the latest release at `~/.jevlin/bin/jevlin`, checked against the release's checksums and, where a tool on the machine can, its signature, and runs setup when you ran it at a terminal.
 
 
