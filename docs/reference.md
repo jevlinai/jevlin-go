@@ -18,7 +18,7 @@ Values to look up. Every flag is in `jevlin help` and `jevlin <command> -h`.
 | `login` | Stores a key you already have for searches, read from stdin or `-key-env VAR` and checked against the router first; `-show` says where a search would get its key, `-forget` removes the file. |
 | `status` | What this installation has and has not completed. `-json` for one envelope. |
 | `doctor` | Whether this installation is ready to search, check by check. `-json` for one envelope. |
-| `limits` | This key's spend caps and today's spend against the effective ceiling, read from the router. Reading spends nothing; setting caps is not built yet. `-json` for one envelope. |
+| `limits` | This key's spend caps, rate windows and today's spend against the effective ceiling, read from the router. A claimed key gets 120 searches a minute, 3,000 an hour and 16 at once; an unclaimed one 10, 120 and 2, with $0.10 a day. Reading spends nothing; setting caps is not built yet. `-json` for one envelope. |
 | `version`, `help` | The version, and the full usage text. |
 
 A command that reads the config takes `-config <file>`; `setup`, `upgrade` and `uninstall` take
@@ -619,3 +619,10 @@ make quick RUN=TestName   # vet, lint and only the named tests, while you work
 ```
 
 Go 1.27 or newer; the tests also need Node.js (CI uses 22) to run the embedded opencode plugin.
+Without a clone, `go install github.com/jevlinai/jevlin-go/cmd/jevlin@latest` builds the latest
+release's source into `$(go env GOPATH)/bin`, or `GOBIN` when it is set.
+
+A source build reports its version as `dev` (`make build` adds the commit), so it is never
+replaced: the daily check reports "not a release build", and `jevlin upgrade` refuses it. For
+updates, install a release archive or the npm package instead. Run `jevlin setup` from where the
+binary will stay, because your agents' skills and hooks name its path.

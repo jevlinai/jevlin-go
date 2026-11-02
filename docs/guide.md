@@ -13,6 +13,15 @@ jevlin in the order you meet it. Per-agent detail: [agents.md](agents.md); table
 Install globally, as the [README](../README.md#install) shows, then run `jevlin setup`. Setup
 refuses to run from an `npx` cache or a project's `node_modules`, whose paths would disappear.
 
+If `jevlin: command not found` follows the install, npm's global `bin` directory is not on your
+PATH (`npm prefix -g` names the prefix; the command is in its `bin` directory, and in the prefix
+itself on Windows). Run setup through npm's command by its full path:
+`"$(npm prefix -g)/bin/jevlin" setup -yes` (in Windows PowerShell,
+`& "$(npm prefix -g)\jevlin.cmd" setup -yes`). Setup puts the same directory in your shell
+profile and prints the one command that makes the terminal you are in see it now;
+`"$(npm prefix -g)/bin/jevlin" doctor` names it too. Your agents' skills and hooks name the
+binary by its full path and do not depend on this.
+
 Setup also refuses a binary someone else could replace, because your agents' hooks and skills
 and your PATH will name it: one under the temporary directory, or one where the file or a
 directory above it, on the path you ran or the file it links to, is owned by another user or
@@ -126,18 +135,27 @@ The choice is saved beside your config and survives reinstalls. While it is off,
 
 ## Choosing a tier
 
-Every search carries a tier, which decides which engines run and what one query may cost: `fast` is the fast indexes of
-a named preset, quicker than the others: `economy`, the default, asks two, about $0.0013 at the
-arms' own prices, and `standard` three, about $0.0053; `balanced` is the core arms with 8
-results each and a 12-page merged window, about $0.022; `max` is the same arms asked for 15
-results each, a 24-page window and 2,000-character excerpts, about $0.027 plus the tokens your agent spends reading it. Nothing is marked up; `usage.cost_micros` is the number.
-`/jevlin tier
-balanced` in an agent, or `jevlin agents tier balanced` from a shell, sets the tier every search
-carries unless the request names one; `/jevlin tier default` unsets it, and `/jevlin tier` says
-what is in force. The skill tells your agent to leave `tier` alone so your tier applies, and to
-ask for `balanced` only when you need several sources beyond the fast tier's indexes, a thin
-result or indexes that disagree; it never sends `max` on its own. With no
-tier set, the request carries none and the router applies the default for your key.
+Every search carries a tier, which decides which engines run and what one query may cost. `fast`
+asks the fast indexes of a named preset and answers in about a second: `economy`, the default,
+asks two, about $0.0013 at the arms' own prices, and `standard` three, about $0.0053.
+`balanced` asks four of the seven core arms (Exa, Brave, Parallel search and Perplexity search)
+for 8 results each, with a 12-page merged window, about $0.022. `max` asks all seven (adding
+Serper, Telem and TinyFish) for 15 results each, with a 24-page window and 2,000-character
+excerpts, about $0.027 plus the tokens your agent spends reading it. Nothing is marked up;
+`usage.cost_micros` is the number. A tier is also a per-query cost ceiling on the router: a set
+that would exceed it is trimmed rather than refused, and `decision.trimmed` names what went.
+
+`/jevlin tier balanced` in an agent, or `jevlin agents tier balanced` from a shell, sets the tier
+every search carries unless the request names one; `/jevlin tier default` unsets it, and
+`/jevlin tier` says what is in force. The skill tells your agent to leave `tier` and `providers`
+unset, so your tier applies: `balanced` and `max` are yours to choose. With no tier set, the
+request carries none and the router applies the default for your key.
+
+The hosted service enables nine providers: the seven core arms and the two fast indexes,
+`exa-lite` and `parallel-fast`. A request's `providers` can name only those, and only on
+`balanced` or `max`; the router refuses any other name as an unknown provider. The set is the
+router's and changes without a client release, and `decision` in every response says which arms
+ran ([reference](reference.md#the---stdin-request)).
 
 ## What travels with a search
 
@@ -160,8 +178,11 @@ history; `search --stdin`, which every skill teaches, keeps it out. The key is i
 Once a day, when an agent session starts or ends, jevlin checks the project's GitHub releases
 for a newer one, and a native install replaces its own binary with it, the same careful way
 `jevlin upgrade` does: signature and checksum verified, the new binary run before and after,
-the old one kept as `jevlin.previous`, nothing else touched. To be told instead, add to your
-config:
+the old one kept as `jevlin.previous`, nothing else touched. It does so only for a patch
+release of the version you have (0.7.0 to 0.7.1). A new minor release (0.8.0) is recorded as
+available, `jevlin status` and `jevlin doctor` say so, and `jevlin upgrade` installs it, because
+before 1.0 a minor release may change what the installation must hold. To be told instead, add
+to your config:
 
 ```toml
 [update]
