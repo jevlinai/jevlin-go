@@ -11,7 +11,7 @@ platform's to say: see its [privacy policy](https://platform.jevlin.ai/privacy).
 | A page's full text request: the pages and options of a `fetch` | the same router | every fetch |
 | The turn end: a record of a turn that searched | the same router | only with `[search] turn_end = true` |
 | Registration and the claim's status | the platform's agents API (`[agents] url`) | `jevlin connect`, and setup, which runs it |
-| A request for the latest release, with no credential | the project's GitHub releases | the daily release check, and `jevlin upgrade` |
+| A request for the latest release's version and, when a release is installed, its files, all with no credential | the project's GitHub releases | the daily release check (which installs a patch release by default), and `jevlin upgrade` |
 
 Your search key goes in each request's `Authorization` header, and only to the router and agents API
 recorded for it ([reference, Credentials](reference.md#credentials)). Nothing else is sent anywhere.
@@ -20,8 +20,8 @@ recorded for it ([reference, Credentials](reference.md#credentials)). Nothing el
 not among jevlin's arguments. It is in the shell command the agent runs, as a `<<<` here-string
 (`jevlin search … --stdin <<< '{"version":1,"query":"…"}'`), which the agent's shell and its
 transcript hold. In Claude Code a request holding a `'` or a `$` is written to a file in the
-installation's `requests/` folder instead and read with `--stdin < <file>`; nothing deletes those
-files. A search you type, `jevlin search "<query words>"`, puts the query among jevlin's arguments,
+installation's `requests/` folder instead and read with `--stdin < <file>`; those files stay until
+`jevlin uninstall -purge-state` removes the folder. A search you type, `jevlin search "<query words>"`, puts the query among jevlin's arguments,
 where `ps` and your shell history can see it.
 
 ## By agent
@@ -29,7 +29,7 @@ where `ps` and your shell history can see it.
 | agent | the trace's text | the turn end |
 |---|---|---|
 | Claude Code | An earlier message of the turn: Claude Code records a message after the hook runs, so the sentence beside the search is not in it. | What you asked, the assistant's text along the way, each tool's name, duration and outcome, the final answer, the model and its token counts (Claude Code 2.1.196 or later). |
-| Cursor | Its latest thought or reply (its `afterAgentThought` and `afterAgentResponse` hooks). | What you asked, the turn's searches, the final answer and the model. |
+| Cursor | Its latest thought (the model's reasoning, as Cursor's `afterAgentThought` gives it) or reply (`afterAgentResponse`). | What you asked, the turn's searches, the final answer and the model. |
 | Codex | None. | What you asked, the assistant's text along the way, each tool's name and outcome (a shell command has no duration), the final answer, the model and its token counts. |
 | opencode | The assistant text before the search. | What you asked, the assistant's text along the way, each tool's name, duration and outcome, the final answer, the model and its token counts. |
 | Pi | The assistant text before the search. | The same as opencode (Pi 0.80.4 or later). |
@@ -126,7 +126,7 @@ answers, so a refused or failed search does not count, and a turn is reported on
 Code, a subagent searches under the turn that launched it, and a background one can do so after
 that turn ended; that turn is then reported late, as completed, by the next turn end in the session.
 Under Codex and opencode a subagent runs a turn of its own, joined to no turn end. The model's
-private reasoning and a subagent's own steps are never sent. The record goes only to the router this
+private reasoning and a subagent's own steps are never sent in a turn end. The record goes only to the router this
 run is configured with. The hook writes it to an owner-only file in `sessions/`, and a detached
 `jevlin turn-end` sends it once and deletes the file, sent or not. opencode's plugin and Pi's
 extension hand jevlin every turn that searched; jevlin drops it unless `turn_end` is on.

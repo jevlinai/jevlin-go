@@ -373,11 +373,11 @@ existing state only and creates nothing.
 
 ## The trace
 
-Moved to [privacy.md, The trace](privacy.md#the-trace), with the scrub rules.
+See [privacy.md, The trace](privacy.md#the-trace), with the scrub rules.
 
 ## The turn end
 
-Moved to [privacy.md, The turn end](privacy.md#the-turn-end).
+See [privacy.md, The turn end](privacy.md#the-turn-end).
 
 ## Security notes
 

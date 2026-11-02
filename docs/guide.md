@@ -207,8 +207,8 @@ or `max` ([reference, Tiers and providers](reference.md#tiers-and-providers)).
 
 ## What leaves your machine
 
-Moved to [privacy.md](privacy.md): what each search and turn end sends, per agent, and how to
-switch it off.
+See [privacy.md](privacy.md): what each search and turn end sends, per agent, and how to switch it
+off.
 
 ## Upgrading
 
