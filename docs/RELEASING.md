@@ -287,7 +287,7 @@ published; preflight refuses a tag where the lists differ.
 
 Every change below is made to all four lists in one commit. To rotate, add the new public key
 alongside the old one and release; once installations have had time to upgrade, swap the
-secret and drop the old key. A copy that never took a release carrying the new key cannot
+secret, release with the new key, and only then drop the old key from all four lists. A copy that never took a release carrying the new key cannot
 verify releases signed only by it, and has to be reinstalled. If the key leaks, remove its
 public half from the lists and release under a new key at once: installations still trusting
 the leaked key are exposed until they upgrade.
@@ -297,15 +297,16 @@ the leaked key are exposed until they upgrade.
 `install/install.sh` (macOS, Linux and WSL), `install/install.ps1` (Windows PowerShell) and
 `install/install.cmd` (CMD, which runs the PowerShell one) are the installers behind
 `curl -fsSL https://jevlin.ai/install.sh | sh` and `irm https://jevlin.ai/install.ps1 | iex`.
-They live here, beside the release they install, and this repository is their source of truth:
-jevlin.ai serves each path by redirect to the raw file on `main` (`_redirects` in the website
-repository). Each downloads a release, checks the archive against `checksums.txt`, which is
+They live here, beside the release they install, and this repository is their source of truth.
+jevlin.ai serves these copies only once the website's `_redirects` sends `/install.sh`,
+`/install.ps1` and `/install.cmd` to the raw files on `main`; until then it serves its own, from
+the website repository, which can differ from these. Each downloads a release, checks the archive against `checksums.txt`, which is
 mandatory, and checks `checksums.txt.sig` against its own copy of the release keys when a tool
 on the machine can: a signature that fails stops the install, and a machine with no such tool
 continues on the checksum and says so.
 
-Because the site serves `main`, a change to these files reaches every installation made from
-the website when it merges, not at the next release. That matters most for the keys: preflight
+Once the site serves `main`, a change to these files reaches every installation made from the
+website when it merges, not at the next release. That matters most for the keys: preflight
 holds both lists to `signature.go` at every tag, but a key dropped from them on `main` before
 the latest release is signed by another key makes the website refuse that release on every
 machine with a verifier. Drop a key from the installers only once the latest release no longer
