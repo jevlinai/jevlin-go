@@ -28,6 +28,12 @@ the tool (what an agent runs):
              only pages from this account's recent searches, and only to an
              account that can fetch. -timeout as for search. Exit codes as
              for search.
+  mcp        the search and fetch machine paths as MCP tools, over stdio
+             (newline-delimited JSON-RPC on stdin and stdout) for a host
+             that registers it, which starts it and holds it open; a tool
+             answers with the same envelope as --stdin. -config as for
+             search; -log writes one line per message to stderr, never a
+             request's content
   agents     agents install|status|uninstall — find Claude Code, Codex,
              Cursor, opencode, Pi and Hermes on this machine and give each
              the supersearch skill and the hooks it supports. -dry-run previews,
