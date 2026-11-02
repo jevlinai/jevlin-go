@@ -20,13 +20,11 @@ setup registers you and gets a key, with no card and nothing to top up.
 - **Several engines in one call.** A search fans out to independent indexes, among them Exa,
   Brave, Parallel and Perplexity, and comes back as one list.
 - **Results you can weigh.** Each page names the engines that found it. Pages that several
-  independent engines agree on come first.
+  independent engines agree on rank higher.
 - **Inside the agent you already use.** Setup installs a skill (for opencode, a plugin) and hooks
   where the agent has them, so the agent reaches for this search instead of its built-in one.
 - **Nothing running in the background.** It is one binary your agent calls. Between searches
   there is no daemon and no proxy.
-- **The task behind each search.** A small, scrubbed trace lets the router see which searches
-  belong to one task, not just the query string. You can turn it off.
 
 ## Install
 
@@ -60,10 +58,10 @@ daily cap; claiming lifts the limits and opens the other tiers. The link is vali
   codex plugin marketplace add jevlinai/jevlin-go            # Codex CLI: then /plugins
   ```
 
-- **Without Node.** Download the archive for your system from the
-  [releases page](https://github.com/jevlinai/jevlin-go/releases), check it against that
-  release's `checksums.txt`, put `jevlin` in a directory only you can write, such as
-  `~/.local/bin`, and run `jevlin setup` from there.
+- **Without Node.** Run `curl -fsSL https://jevlin.ai/install.sh | sh` on macOS and Linux, or
+  `irm https://jevlin.ai/install.ps1 | iex` in Windows PowerShell. It downloads the latest
+  release, verifies it, installs it at `~/.jevlin/bin/jevlin` and runs `jevlin setup`. The
+  [guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#installing-without-npm) has its options and the download by hand.
 - **From source.** With Go 1.27 or newer, run `go install github.com/jevlinai/jevlin-go/cmd/jevlin@latest`,
   or clone this repository and run `make build` for `bin/jevlin`. A source build reports its
   version as `dev`, so it never updates itself and `jevlin upgrade` refuses it. See
@@ -97,7 +95,7 @@ Every search runs in one of three tiers:
 |---|---|---|
 | `fast` | Two or three fast indexes, in about a second. The only tier an unclaimed agent may use. | $0.0013 to $0.0053 a search |
 | `balanced` | Four core engines: Exa, Brave, Parallel search and Perplexity search. | $0.022 |
-| `max` | All seven core engines, with more results and more text per page. | $0.027 |
+| `max` | All seven core engines, with more results and more text per page. | $0.025 |
 
 The prices are the engines' own, with no markup, and every response reports what its search
 cost. Your agent never chooses a tier: you do, and with none set the router applies your key's

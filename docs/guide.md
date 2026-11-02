@@ -63,6 +63,23 @@ exits non-zero.
 | `-no-agents` | Skips agent detection, even with `-yes`. `-with` still sets up what it names. |
 | `-with <id>` | Sets up `claude`, `codex`, `cursor`, `opencode`, `pi` or `hermes`, found or not. Repeatable. |
 
+### Installing without npm
+
+`curl -fsSL https://jevlin.ai/install.sh | sh` (macOS, Linux and WSL) or
+`irm https://jevlin.ai/install.ps1 | iex` (Windows PowerShell) downloads the latest release for
+your machine, checks it against the release's `checksums.txt`, and checks that file's signature
+against the project's release key when a tool on the machine can (openssl, node or python3;
+without one it says so and relies on the checksum). It puts the binary at
+`~/.jevlin/bin/jevlin` (`$JEVLIN_HOME/bin` when that is set) and runs `jevlin setup` when a
+terminal is attached. `JEVLIN_VERSION=0.7.0` installs exactly that release, and
+`JEVLIN_NO_SETUP=1` installs the binary and stops; in PowerShell, set them as
+`$env:JEVLIN_VERSION` and `$env:JEVLIN_NO_SETUP` first.
+
+By hand: download the archive for your OS and architecture from the
+[releases page](https://github.com/jevlinai/jevlin-go/releases), check it against that
+release's `checksums.txt`, put `jevlin` in a directory only you can write, such as
+`~/.local/bin`, and run `jevlin setup` from there.
+
 ## The claim link
 
 Setup prints the claim steps once the config is written, before the shell profile, and waits up to
@@ -141,7 +158,7 @@ asks two, about $0.0013 at the arms' own prices, and `standard` three, about $0.
 `balanced` asks four of the seven core arms (Exa, Brave, Parallel search and Perplexity search)
 for 8 results each, with a 12-page merged window, about $0.022. `max` asks all seven (adding
 Serper, Telem and TinyFish) for 15 results each, with a 24-page window and 2,000-character
-excerpts, about $0.027 plus the tokens your agent spends reading it. Nothing is marked up;
+excerpts, about $0.025 plus the tokens your agent spends reading it. Nothing is marked up;
 `usage.cost_micros` is the number. A tier is also a per-query cost ceiling on the router: a set
 that would exceed it is trimmed rather than refused, and `decision.trimmed` names what went.
 
