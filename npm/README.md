@@ -19,18 +19,18 @@ release check. Plans and prices are at [jevlin.ai](https://jevlin.ai).
 
 ## How do I install it?
 ```bash
+npm install -g @jevlinsearch/jevlin
+jevlin setup
+```
+Install it globally, not with `npx`: setup writes the binary's path into your agents' skills and hooks, and npm throws an `npx` cache away.
+
+
+```bash
 curl -fsSL https://jevlin.ai/install.sh | sh     # on macOS and Linux
 
 irm https://jevlin.ai/install.ps1 | iex      # Windows PowerShell
 ```
 This installs the latest release at `~/.jevlin/bin/jevlin`, checked against the release's checksums and, where a tool on the machine can, its signature, and runs setup when you ran it at a terminal.
-
-
-```bash
-npm install -g @jevlinsearch/jevlin
-jevlin setup
-```
-Install it globally, not with `npx`: setup writes the binary's path into your agents' skills and hooks, and npm throws an `npx` cache away.
 
 Follow here if [Installing without npm](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#installing-without-npm).
 
