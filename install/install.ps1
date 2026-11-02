@@ -20,11 +20,33 @@ $arch = switch ($env:PROCESSOR_ARCHITECTURE) {
   default { throw "jevlin install: unsupported architecture $($env:PROCESSOR_ARCHITECTURE)" }
 }
 
+# The latest release is the tag github.com/<repo>/releases/latest redirects to,
+# the source install.sh reads too: no API, so no rate limit. The redirect is
+# read, not followed. Invoke-WebRequest -MaximumRedirection 0 cannot read it in
+# both editions: Windows PowerShell 5.1 returns the 302, but PowerShell 7 throws
+# on it, and -ErrorAction does not stop the throw. An HttpWebRequest told not to
+# follow redirects returns the 302 as its response on .NET Framework and .NET
+# alike; install_test.ps1 runs it in both editions against a loopback 302.
+$latestUrl = "https://github.com/$repo/releases/latest"
 $version = $env:JEVLIN_VERSION
 if (-not $version) {
-  $resp = Invoke-WebRequest -Uri "https://github.com/$repo/releases/latest" -MaximumRedirection 0 -ErrorAction SilentlyContinue -UseBasicParsing
-  $location = $resp.Headers.Location
-  if (-not $location) { throw "jevlin install: could not find the latest release" }
+  $request = [Net.WebRequest]::Create($latestUrl)
+  $request.AllowAutoRedirect = $false
+  $request.UserAgent = "jevlin-install"
+  try {
+    $response = $request.GetResponse()
+  } catch {
+    $cause = $_.Exception
+    while ($cause.InnerException) { $cause = $cause.InnerException }
+    throw "jevlin install: could not find the latest release at ${latestUrl}: $($cause.Message)"
+  }
+  try {
+    $status = [int]$response.StatusCode
+    $location = $response.GetResponseHeader("Location")
+  } finally {
+    $response.Close()
+  }
+  if (-not $location) { throw "jevlin install: could not find the latest release: $latestUrl answered $status, not a redirect to a tag" }
   $version = ($location -split "/tag/v")[-1]
 }
 if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "jevlin install: not a release version: $version" }
