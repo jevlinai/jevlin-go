@@ -460,7 +460,12 @@ Write-Host ("after: ErrorActionPreference={0} TLS unchanged={1} left=[{2}]" -f $
       foreach ($p in $problems) { Write-Host "       - $p" }
       $script:fail = 1
     }
-    foreach ($l in ($script:out -split "`r?`n")) { if ($l) { Write-Host "       | $l" } }
+    # Windows PowerShell writes its progress records to a redirected stderr as
+    # CLIXML even with -OutputFormat Text; they are left out of what is shown,
+    # never out of what a case reads.
+    foreach ($l in ($script:out -split "`r?`n")) {
+      if ($l -and $l -notmatch '^#< CLIXML$|<Objs |<Obj S=|</Obj>|RefId=|</Objs>') { Write-Host "       | $l" }
+    }
   }
 
   $h1 = Join-Path $work "h1"
