@@ -239,7 +239,9 @@ func TestDocumentLinksResolve(t *testing.T) {
 // carries, and TestDocumentLinksResolve, which reads the README on disk,
 // cannot see it. The list only grows: a section that moves keeps its old
 // heading with one line pointing to its new home. It starts from the 0.7.0
-// README.
+// README. A document the README links with no anchor is listed with none:
+// it must still exist, since renaming the file breaks the published link
+// just as renaming a heading does.
 var publishedAnchors = map[string][]string{
 	"docs/guide.md": {
 		"setup", "the-claim-link", "upgrading", "removing-it-and-coming-back",
@@ -252,6 +254,7 @@ var publishedAnchors = map[string][]string{
 	"docs/reference.md": {
 		"the-trace", "the-turn-end", "building-from-source",
 	},
+	"docs/privacy.md": {},
 }
 
 func TestPublishedAnchorsStillResolve(t *testing.T) {
@@ -259,7 +262,9 @@ func TestPublishedAnchorsStillResolve(t *testing.T) {
 	for doc, want := range publishedAnchors {
 		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(doc))) // #nosec G304 -- a fixed document under this module's own root
 		if err != nil {
-			t.Fatalf("read %s: %v", doc, err)
+			t.Errorf("%s, which a published README links to, cannot be read: %v; "+
+				"keep the file at that path, pointing to where its content went", doc, err)
+			continue
 		}
 		have := headingAnchors(body)
 		for _, a := range want {
