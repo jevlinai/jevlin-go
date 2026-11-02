@@ -2,12 +2,12 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "jevlin",
   "version": "0.7.0",
-  "description": "Sets up Jevlin, supersearch for coding agents: one call asks several search engines at once, every result names the engines that found it, with a receipt per engine, free for agents. Installs the jevlin client and runs its setup, which writes this agent's own supersearch skill and hooks.",
+  "description": "Sets up Jevlin, supersearch for coding agents: one call asks several search engines at once, every result names the engines that found it, with a receipt per engine. Installs the jevlin client and runs its setup, which writes this agent's own supersearch skill and hooks.",
   "author": {
     "name": "Jevlin",
     "url": "https://jevlin.ai"
   },
-  "homepage": "https://docs.jevlin.ai/",
+  "homepage": "https://jevlin.ai",
   "repository": "https://github.com/jevlinai/jevlin-go",
   "license": "Apache-2.0",
   "keywords": [
