@@ -1,26 +1,27 @@
 # Jevlin guide
 
-jevlin in the order you meet it. What each agent gets is in [agents.md](agents.md), what jevlin
-sends in [privacy.md](privacy.md), and every command, flag and file in [reference.md](reference.md).
+Everything you do with jevlin, in the order you do it.
+
+- **What setup writes into each agent:** [agents.md](agents.md)
+- **What jevlin sends, and where:** [privacy.md](privacy.md)
+- **Every command, flag and file:** [reference.md](reference.md)
 
 ## Install
-
-Install globally, as the [README](../README.md#how-do-i-install-it) shows, then run `jevlin setup`:
 
 ```bash
 npm install -g @jevlinsearch/jevlin
 jevlin setup
 ```
 
-Setup refuses to run from an `npx` cache or a project's `node_modules`, whose paths would
-disappear, and from a place someone else could replace the binary in
-([A binary setup refuses](#a-binary-setup-refuses)). If your shell then says
-`jevlin: command not found`, see [jevlin: command not found](#jevlin-command-not-found).
+- **Install globally.** Setup refuses to run from an `npx` cache or a project's `node_modules`
+  (those paths disappear), or from anywhere someone else could replace the binary. See
+  [A binary setup refuses](#a-binary-setup-refuses).
+- **`jevlin: command not found`?** See [jevlin: command not found](#jevlin-command-not-found).
 
 ### Let your agent install it
 
-An agent can run this install itself. The marketplaces carry a setup skill, not the search: it
-installs the client and runs `jevlin setup`, which writes the agent's own skill and hooks.
+The marketplaces carry a **setup skill**, not the search. It installs jevlin and runs
+`jevlin setup`, which writes the agent's own skill and hooks.
 
 ```bash
 npx skills add jevlinai/jevlin-go                          # any agent with skills (skills.sh)
@@ -29,37 +30,61 @@ claude plugin marketplace add jevlinai/jevlin-go           # Claude Code, older:
 codex plugin marketplace add jevlinai/jevlin-go            # Codex CLI: then /plugins
 ```
 
-Cursor loads the same package from its Marketplace once it is listed there, and from the
-repository until then.
+Cursor: from its Marketplace once jevlin is listed there; from this repository until then.
 
 ### Installing without npm
 
-`curl -fsSL https://jevlin.ai/install.sh | sh` (macOS, Linux and WSL) or
-`irm https://jevlin.ai/install.ps1 | iex` (Windows PowerShell; `install.cmd` runs it from CMD)
-installs the latest release. The scripts are this repository's [`install/`](../install/). Each
-checks the download against the release's `checksums.txt`, which is mandatory, and checks that
-file's signature against the project's release key when a tool on the machine can (`install.sh`:
-openssl 1.1.1 or newer, node or python3; `install.ps1`: node); a signature that fails stops the
-install. It puts
-the binary at `~/.jevlin/bin/jevlin` (`$JEVLIN_HOME/bin` when that is set) and starts
-`jevlin setup` when you ran it at a terminal; otherwise it prints the setup command to run.
+```bash
+curl -fsSL https://jevlin.ai/install.sh | sh     # macOS, Linux, WSL
+```
+
+```powershell
+irm https://jevlin.ai/install.ps1 | iex          # Windows PowerShell 5.1 or PowerShell 7
+```
+
+From CMD, `install.cmd` runs the PowerShell script. Both scripts live in this repository's
+[`install/`](../install/).
+
+What the script does:
+
+- **Downloads** the latest release for your OS and architecture.
+- **Checks it against `checksums.txt`.** Always; a mismatch stops the install.
+- **Checks the signature** on `checksums.txt` against the project's release key, when a tool on
+  the machine can (`install.sh`: openssl 1.1.1 or newer, node or python3; `install.ps1`: node).
+  A bad signature stops the install; with no such tool, it says so and relies on the checksum.
+- **Installs** to `~/.jevlin/bin/jevlin` (or `$JEVLIN_HOME/bin`). A new binary that doesn't run
+  never replaces the one you have.
+- **Runs `jevlin setup`** if you started it at a terminal; otherwise it prints the command to run.
+
+Options (in PowerShell, set them as `$env:JEVLIN_VERSION = "0.7.0"` and so on):
 
 | variable | effect |
 |---|---|
-| `JEVLIN_VERSION=0.7.0` | Installs exactly that release instead of the latest. |
-| `JEVLIN_HOME=/path` | The installation directory, instead of `~/.jevlin`. |
-| `JEVLIN_NO_SETUP=1` | Installs the binary and stops. |
+| `JEVLIN_VERSION=0.7.0` | install exactly that release, not the latest |
+| `JEVLIN_HOME=/path` | install there instead of `~/.jevlin` |
+| `JEVLIN_NO_SETUP=1` | install the binary and stop |
 
-In PowerShell, set them first as `$env:JEVLIN_VERSION` and so on. By hand: download the archive for
-your OS and architecture from the [releases page](https://github.com/jevlinai/jevlin-go/releases),
-check it against that release's `checksums.txt`, put `jevlin` in a directory only you can write,
-such as `~/.local/bin`, and run `jevlin setup` from there.
+**By hand:**
+
+1. Download the archive for your OS and architecture from the
+   [releases page](https://github.com/jevlinai/jevlin-go/releases).
+2. Check it against that release's `checksums.txt`.
+3. Put `jevlin` in a directory only you can write, such as `~/.local/bin`.
+4. Run `jevlin setup`.
 
 ### From source
 
-`go install github.com/jevlinai/jevlin-go/cmd/jevlin@latest`, or `make build` in a clone, with Go
-1.27 or newer. A source build reports its version as `dev`, so nothing updates it; install a
-release for updates ([reference, Building from source](reference.md#building-from-source)).
+Needs Go 1.27 or newer.
+
+```bash
+go install github.com/jevlinai/jevlin-go/cmd/jevlin@latest   # into Go's bin directory (~/go/bin by default)
+make build                                                    # in a clone: writes bin/jevlin
+```
+Then run jevlin setup from there.
+
+- A source build reports its version as dev. The daily update check skips it, and
+  jevlin upgrade refuses it. Install a release if you want updates.
+- Details: reference, Building from source (reference.md#building-from-source).
 
 ## Setup
 
