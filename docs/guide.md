@@ -82,11 +82,11 @@ Needs Go 1.27 or newer.
 go install github.com/jevlinai/jevlin-go/cmd/jevlin@latest   # into Go's bin directory (~/go/bin by default)
 make build                                                    # in a clone: writes bin/jevlin
 ```
-Then run jevlin setup from there.
+Then run `jevlin setup` from there.
 
-- A source build reports its version as dev. The daily update check skips it, and
-  jevlin upgrade refuses it. Install a release if you want updates.
-- Details: reference, Building from source (reference.md#building-from-source).
+- **A source build reports its version as `dev`.** The daily update check skips it, and
+  `jevlin upgrade` refuses it. Install a release if you want updates.
+- Details: [reference, Building from source](reference.md#building-from-source).
 
 ## Setup
 
