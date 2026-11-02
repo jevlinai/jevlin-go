@@ -128,7 +128,9 @@ carries; a later fix on `main` does not make a wrong tag right.
    the version spent. The list is parsed from the tag's source, like every file here, not taken
    from the release tool's own build. `npm/install.js`'s `RELEASE_PUBLIC_KEYS` at the tag must
    name the same keys: each npm version installs only its own release, so a list that differs
-   is a package that refuses the release the workflow signs, at every install.
+   is a package that refuses the release the workflow signs, at every install. So must
+   `install/install.sh`'s `RELEASE_PUBLIC_KEYS` and `install/install.ps1`'s `$releaseKeys`, the
+   installers jevlin.ai serves (see [The website installers](#the-website-installers)).
 8. **`npm pack ./npm --dry-run` succeeds.** Not `npm --prefix npm pack`: `--prefix` sets the
    install prefix, not the pack target, and that form fails on the root's missing
    `package.json`.
@@ -278,16 +280,43 @@ go run ./tools/releasecheck keygen -out release-signing.key
 It prints the public key and writes the private seed to the new file, mode 0600, and nowhere
 else. Store the file's contents as the `JEVLIN_RELEASE_SIGNING_KEY` secret of the
 `release-signing` environment, keep an offline backup if you want one, delete the file, and
-add the public key to `releasePublicKeys` and to `npm/install.js`'s `RELEASE_PUBLIC_KEYS` in a
-reviewed pull request. Until that pull request is on `main` and in the tag, `releasecheck sign`
-refuses and nothing is published; preflight refuses a tag where the two lists differ.
+add the public key to `releasePublicKeys`, to `npm/install.js`'s `RELEASE_PUBLIC_KEYS`, and to
+the key lists of `install/install.sh` and `install/install.ps1` in a reviewed pull request.
+Until that pull request is on `main` and in the tag, `releasecheck sign` refuses and nothing is
+published; preflight refuses a tag where the lists differ.
 
-Every change below is made to both lists in one commit. To rotate, add the new public key
+Every change below is made to all four lists in one commit. To rotate, add the new public key
 alongside the old one and release; once installations have had time to upgrade, swap the
-secret and drop the old key. A copy that never took a release carrying the new key cannot
+secret, release with the new key, and only then drop the old key from all four lists. A copy that never took a release carrying the new key cannot
 verify releases signed only by it, and has to be reinstalled. If the key leaks, remove its
 public half from the lists and release under a new key at once: installations still trusting
 the leaked key are exposed until they upgrade.
+
+## The website installers
+
+`install/install.sh` (macOS, Linux and WSL), `install/install.ps1` (Windows PowerShell) and
+`install/install.cmd` (CMD, which runs the PowerShell one) are the installers behind
+`curl -fsSL https://jevlin.ai/install.sh | sh` and `irm https://jevlin.ai/install.ps1 | iex`.
+They live here, beside the release they install, and this repository is their source of truth.
+jevlin.ai serves these copies only once the website's `_redirects` sends `/install.sh`,
+`/install.ps1` and `/install.cmd` to the raw files on `main`; until then it serves its own, from
+the website repository, which can differ from these. Each downloads a release, checks the archive against `checksums.txt`, which is
+mandatory, and checks `checksums.txt.sig` against its own copy of the release keys when a tool
+on the machine can: a signature that fails stops the install, and a machine with no such tool
+continues on the checksum and says so.
+
+Once the site serves `main`, a change to these files reaches every installation made from the
+website when it merges, not at the next release. That matters most for the keys: preflight
+holds both lists to `signature.go` at every tag, but a key dropped from them on `main` before
+the latest release is signed by another key makes the website refuse that release on every
+machine with a verifier. Drop a key from the installers only once the latest release no longer
+needs it.
+
+`install/install_test.sh` runs `install.sh` offline against a fake release on loopback, signed
+with a throwaway key: verified, unverifiable, a bad signature, a wrong or missing checksum, and
+`JEVLIN_SKIP_SIGNATURE`. CI runs it on Linux and macOS as steps of the `test` job, and
+shellchecks `install.sh` as POSIX `sh` on Linux, so the required check names do not change.
+Nothing tests `install.ps1` or `install.cmd` automatically yet.
 
 ## Repository settings this relies on
 
