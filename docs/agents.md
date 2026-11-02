@@ -7,7 +7,7 @@ one sends with a search is in [privacy.md](privacy.md#by-agent).
 |---|---|---|---|---|---|---|
 | [Claude Code](#claude-code) | a skill | five, in `~/.claude/settings.json` | nine allow rules, and the hook's `allow` | session start and stop | 2.1.196 for the turn end | Git Bash and PowerShell |
 | [Cursor](#cursor) | a skill | eight, in `~/.cursor/hooks.json` | the hooks allow it | session start, stop and end | | the terminal profile's shell |
-| [Codex](#codex) | a skill and a permission profile | five, in `~/.codex/hooks.json`, run once you approve them | the hook allows it | session start and stop | 0.158.0 | the skill and writable directories; no hooks, no network |
+| [Codex](#codex) | a skill and a permission profile | five, in `~/.codex/hooks.json`, run once you approve them | the hook allows it (not on Windows, where no hooks are written: Codex asks) | session start and stop | 0.158.0 | the skill and writable directories; no hooks, no network |
 | [opencode](#opencode) | a plugin, and a rules block to paste | the plugin | opencode's own permissions | plugin load, session start and idle | | the shell opencode resolves |
 | [Pi](#pi) | a skill and an extension | the extension | Pi's own permissions | session start | 0.80.4 for the turn end | Git Bash |
 | [Hermes](#hermes) | a skill | one, in `config.yaml`, approved once | Hermes' own permissions | no | | Git Bash |

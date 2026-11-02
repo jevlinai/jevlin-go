@@ -1,7 +1,7 @@
 # Jevlin guide
 
-jevlin in the order you meet it, the README's questions answered in full. Per-agent detail is in
-[agents.md](agents.md); commands, fields and files are in [reference.md](reference.md).
+jevlin in the order you meet it. What each agent gets is in [agents.md](agents.md), what jevlin
+sends in [privacy.md](privacy.md), and every command, flag and file in [reference.md](reference.md).
 
 ## Install
 
@@ -13,7 +13,7 @@ jevlin setup
 ```
 
 Setup refuses to run from an `npx` cache or a project's `node_modules`, whose paths would
-disappear, and from a location someone else could replace the binary in
+disappear, and from a place someone else could replace the binary in
 ([A binary setup refuses](#a-binary-setup-refuses)). If your shell then says
 `jevlin: command not found`, see [jevlin: command not found](#jevlin-command-not-found).
 
@@ -21,15 +21,13 @@ disappear, and from a location someone else could replace the binary in
 
 `curl -fsSL https://jevlin.ai/install.sh | sh` (macOS, Linux and WSL) or
 `irm https://jevlin.ai/install.ps1 | iex` (Windows PowerShell; `install.cmd` runs it from CMD)
-downloads the latest release for your machine and checks it against the release's
-`checksums.txt`, which is mandatory. It also checks that file's signature against the project's
-release key when a tool on the machine can: `install.sh` uses openssl, node or python3, and
-`install.ps1` uses node. A signature that fails stops the install; with no such tool it says so
-and relies on the checksum. It puts the binary at `~/.jevlin/bin/jevlin` (`$JEVLIN_HOME/bin`
-when that is set) and then starts `jevlin setup` on the terminal you ran it from. In a shell with
-no terminal, such as an agent's, set `JEVLIN_NO_SETUP=1`: the installer then prints the path to
-run setup with and stops. Without it there, `install.sh` installs the binary and then fails to
-open the terminal for setup.
+installs the latest release. The scripts are this repository's [`install/`](../install/). Each
+checks the download against the release's `checksums.txt`, which is mandatory, and checks that
+file's signature against the project's release key when a tool on the machine can (`install.sh`:
+openssl 1.1.1 or newer, node or python3; `install.ps1`: node); a signature that fails stops the
+install. It puts
+the binary at `~/.jevlin/bin/jevlin` (`$JEVLIN_HOME/bin` when that is set) and starts
+`jevlin setup` when you ran it at a terminal; otherwise it prints the setup command to run.
 
 | variable | effect |
 |---|---|
@@ -37,81 +35,67 @@ open the terminal for setup.
 | `JEVLIN_HOME=/path` | The installation directory, instead of `~/.jevlin`. |
 | `JEVLIN_NO_SETUP=1` | Installs the binary and stops. |
 
-In PowerShell, set them first as `$env:JEVLIN_VERSION` and so on.
-
-By hand: download the archive for your OS and architecture from the
-[releases page](https://github.com/jevlinai/jevlin-go/releases), check it against that release's
-`checksums.txt`, put `jevlin` in a directory only you can write, such as `~/.local/bin`, and run
-`jevlin setup` from there.
+In PowerShell, set them first as `$env:JEVLIN_VERSION` and so on. By hand: download the archive for
+your OS and architecture from the [releases page](https://github.com/jevlinai/jevlin-go/releases),
+check it against that release's `checksums.txt`, put `jevlin` in a directory only you can write,
+such as `~/.local/bin`, and run `jevlin setup` from there.
 
 ### From source
 
-`go install github.com/jevlinai/jevlin-go/cmd/jevlin@latest`, or `make build` in a clone, with
-Go 1.27 or newer. A source build reports its version as `dev`, so the daily check never replaces
-it and `jevlin upgrade` refuses it; install a release for updates.
-[Building from source](reference.md#building-from-source) has the rest.
+`go install github.com/jevlinai/jevlin-go/cmd/jevlin@latest`, or `make build` in a clone, with Go
+1.27 or newer. A source build reports its version as `dev`, so nothing updates it; install a
+release for updates ([reference, Building from source](reference.md#building-from-source)).
 
 ## Setup
 
 Setup registers this installation with the search platform and stores the key it gets back, so
 there is nothing to copy or paste. In order, it offers to bring back a set-aside installation,
-writes `~/.jevlin/jevlin.toml` ([The config it writes](#the-config-it-writes)), registers and
-prints the claim steps ([The claim link](#the-claim-link)), and then asks about your shell profile
-and your coding agents:
+writes `~/.jevlin/jevlin.toml` ([The config it writes](#the-config-it-writes)), registers and prints
+the claim steps ([The claim link](#the-claim-link)), and then asks about your shell profile and
+your coding agents:
 
 | it asks | what your answer does |
 |---|---|
-| **Use it? [Y/n]** | Only when a previous installation is set aside beside `~/.jevlin`. Setup first says where it is and what it holds. Yes brings back your registration, key and claim link, and skips the registration they answer ([Set-aside installations](#set-aside-installations)). |
-| **Add them to ~/.zshrc? [Y/n]** | Writes one marked block to the file your shell reads (below) that puts the binary's directory on PATH and sets `JEVLIN_CONFIG`. No just means longer commands. On Windows it asks **Set them for your user?** and sets the user PATH and `JEVLIN_CONFIG` instead. |
-| **Set up the coding agents found on this machine now? [Y/n]** | Writes a skill and, where the agent supports them, hooks into its config. You see the plan first, with what made each agent count as present. |
-| **Switch? [y/N]** | Asked only when Codex's config has a setting of your own that its permission profile would change, such as your own profile in `default_permissions`. It shows every line it would write. A bare Enter is no, which sets up the other agents and leaves Codex as it is. See [Codex](agents.md#codex). |
+| **Use it? [Y/n]** | Only when a previous installation is set aside beside `~/.jevlin`. Yes brings back your registration, key and claim link ([Set-aside installations](#set-aside-installations)). |
+| **Add them to ~/.zshrc? [Y/n]** | Writes one marked block to the file your shell reads (below), putting the binary's directory on PATH and setting `JEVLIN_CONFIG`. No just means longer commands. On Windows it asks **Set them for your user?** and sets the user PATH and `JEVLIN_CONFIG` instead. |
+| **Set up the coding agents found on this machine now? [Y/n]** | Writes a skill and, where the agent supports them, hooks into its config. You see the plan first. |
+| **Switch? [y/N]** | Only when Codex's config has a setting of your own that its permission profile would change. A bare Enter is no, which sets up the other agents and leaves Codex as it is ([agents, Codex](agents.md#codex)). |
 
-The profile block goes to:
-
-| shell | file |
+| shell | the profile block goes to |
 |---|---|
 | zsh | `~/.zshrc` |
-| bash on macOS | the first of `~/.bash_profile`, `~/.bash_login` and `~/.profile` that exists (a macOS terminal starts bash as a login shell), or `~/.bashrc` when that file already sources it |
+| bash on macOS | the first of `~/.bash_profile`, `~/.bash_login` and `~/.profile` that exists, or `~/.bashrc` when that file already sources it |
 | bash on Linux | `~/.bashrc` |
 | fish | `~/.config/fish/config.fish`, in fish syntax |
 | any other | nothing: setup prints the lines |
 
-For an npm install the directory is npm's global `bin` directory, where the `jevlin` command is,
-used only when only you can write it. The block is written even when the directory is already on
-setup's own PATH, and one an earlier setup left in a file your shell no longer reads is removed.
-Setup then prints one command that makes the terminal you are in find `jevlin` now
-(`export PATH="$PATH:<dir>"`, `set -gx PATH $PATH <dir>` in fish, `$env:Path += ";<dir>"` on
-Windows). To undo the block, delete it from `# >>> jevlin >>>` to `# <<< jevlin <<<`; if it no
-longer has exactly one start and one end line, setup leaves the file alone and prints the lines to
-add by hand.
+For an npm install the directory is npm's global `bin` directory, where the `jevlin` command is.
+Setup then prints one command that makes the terminal you are in find `jevlin` now; a terminal
+opened afterwards needs nothing. To undo the block, delete it from `# >>> jevlin >>>` to
+`# <<< jevlin <<<`.
 
-Only an answer you typed counts. Interrupt a question, or close its input, and setup stops there
-with a non-zero exit, recording and writing nothing. The same holds for `agents install`'s
-**Proceed?**, Codex's **Switch?** and uninstall's confirmations: a typed no exits 0, no answer
-exits non-zero.
-
-Setup's flags (`-yes`, `-dry-run`, `-no-profile`, `-no-agents`, `-with`, `-home`) are in the
-[reference](reference.md#commands). `-yes` answers the profile and agents questions, never
-Codex's **Switch?**.
+Only an answer you typed counts. Interrupt a question, or close its input, and setup stops with a
+non-zero exit, recording and writing nothing; a typed no exits 0. `-yes` answers the profile and
+agents questions, never Codex's **Switch?**, and the other flags are in the
+[reference](reference.md#commands).
 
 ### Running setup again
 
 Nothing needs removing first: update the binary, then run `jevlin setup`. It keeps your identity
-and key, lets `connect` finish or repair its own onboarding, and updates its profile block and
-agent files in place, reporting one already correct as "nothing to write: already set up". For an
-installation elsewhere, set `JEVLIN_HOME` to it; setup has no other way to find it.
-`setup -home <dir>` alone makes a separate installation and leaves your profile and agents alone,
-even with `-yes`; it prints the `jevlin agents install -config` command for it, and an agent whose
-skill came from your main installation keeps it. For a clean start, move `~/.jevlin` aside.
+and key, finishes or repairs its own onboarding, and updates its profile block and agent files in
+place, reporting one already correct as "nothing to write: already set up". For an installation
+elsewhere, set `JEVLIN_HOME` to it. `setup -home <dir>` alone makes a separate installation and
+leaves your profile and agents alone; it prints the `jevlin agents install -config` command for
+it.
 
 ### The config it writes
 
 `~/.jevlin/jevlin.toml` is in configuration format 1: a `schema = 1` line, `[router]`,
-`[platform]` and `[agents]` with their URLs, and `[search]` with the state and sessions
-directories ([reference, Config](reference.md#config) has every key). A config already in that
-format is left byte for byte; one with a mistake in it stops setup with the error, and nothing is
-written. One from an older jevlin, with no `schema` line, is set aside as `jevlin.toml.old` and a
-fresh file written, your registration and key kept ([Moving from 0.6.x](#moving-from-06x)).
+`[platform]` and `[agents]` with their URLs, and `[search]` with the state and sessions directories
+([reference, Config](reference.md#config) has every key). A config already in that format is left
+byte for byte; one with a mistake in it stops setup with the error. One from an older jevlin, with
+no `schema` line, is set aside as `jevlin.toml.old` and a fresh file written, your registration and
+key kept ([Moving from 0.6.x](#moving-from-06x)).
 
 ## The claim link
 
@@ -124,12 +108,10 @@ minutes for you:
 
 If the link does not open, type the printed code (shown as `AB12-CD34`; case and the hyphen do not
 matter) at `/claim` on the same site. You need not do it then. Until you do, search works on the
-fast tier within a daily cap, which `jevlin limits` shows; claiming lifts the cap and opens
-`balanced` and `max`. The next search, or the next `jevlin connect`, finishes the claim once you
-have confirmed. The link is valid for a week, and `jevlin connect` prints a fresh one after that.
-Your claim on the platform is undone only at its console; nothing this client does revokes it.
-[Claim records](#claim-records-and-connect--force) covers what connect does when a record is lost
-or a registration expires.
+fast tier within a daily cap, which `jevlin limits` shows; claiming opens `balanced` and `max`. The
+next search, or `jevlin connect`, finishes the claim once you have confirmed. The link and the
+unclaimed registration last a week; after that, `jevlin connect` registers again and prints a new
+link. Your claim on the platform is undone only at its console.
 
 ## Check it works
 
@@ -148,20 +130,20 @@ jevlin search --stdin <<'JSON'
 JSON
 ```
 
-Each skill carries this in its agent's shell, with your paths filled in. The
-[reference](reference.md#the---stdin-request) describes the request, the envelope and the
+The [reference](reference.md#the---stdin-request) describes the request, the envelope and the
 PowerShell form.
 
 ## Using it
 
 Setup installs one skill, `jevlin`, into each agent that has skills (Claude Code, Cursor, Codex,
-Pi, Hermes); opencode gets a plugin and a rules block instead. The skill is what the agent reads:
-it tells the agent to prefer this search over its built-in one, how to build the request, how to
-read the envelope, and what `/jevlin` does. In the agent:
+Pi, Hermes); opencode gets a rules block to paste into `AGENTS.md` instead. The skill tells the
+agent to prefer this search over its built-in one, how to build the request and how to read the
+answer. Naming jevlin in a request sends that search here. In Claude Code and Cursor you can also
+type (in Codex, `$jevlin` instead of `/jevlin`):
 
 | in the agent | what it does |
 |---|---|
-| `/jevlin <question>` | One search, as the skill specifies; the agent answers from the merged list. Naming jevlin or supersearch in a request does the same. |
+| `/jevlin <question>` | One search; the agent answers from the merged list. |
 | `/jevlin off` | The agent's built-in web search becomes the default again; this one runs only when you name it. |
 | `/jevlin on` | This search is the default again. |
 | `/jevlin status` | Which of the two is the default right now. |
@@ -169,16 +151,14 @@ read the envelope, and what `/jevlin` does. In the agent:
 | `/jevlin tier default` | Unsets it. |
 | `/jevlin tier` | The tier in force. |
 
-The skill tells the agent never to change the default or the tier on its own. Everything else is
-the `jevlin` command in a shell ([reference, Commands](reference.md#commands)).
+The skill tells the agent never to change the default or the tier on its own.
 
 ### Making it the default, or not
 
 `/jevlin off` and `/jevlin on`, or `jevlin agents prefer off|on|status` from a shell, rewrite the
 installed skills, so the choice takes effect in every agent with a skill from its next start;
-opencode's rules block carries no preference and is not reached. The choice is saved beside your
-config and survives reinstalls. While it is off, asking to "search through jevlin" still routes
-that one search here.
+opencode's rules block carries no preference. The choice is saved beside your config and survives
+reinstalls.
 
 ### Choosing a tier
 
@@ -186,24 +166,20 @@ Every search carries a tier, which decides which engines the router asks. On the
 
 - **`fast`** asks the fast indexes of a named preset and is the quickest. `economy`, the default
   preset, asks two; `standard` asks three, for more coverage. `jevlin agents tier fast standard`
-  (or `/jevlin tier standard` in the agent) picks one, and `jevlin agents tier status` lists the
-  presets the router offers, with its estimate for each. It suits routine lookups, and it is the
-  only tier an unclaimed agent may use.
-- **`balanced`** asks four of the seven core engines: Exa, Brave, Parallel search and Perplexity
-  search. Choose it when you want several independent sources, or when a fast search came back
-  thin.
-- **`max`** asks all seven core engines (adding Serper, Telem and TinyFish), with more results per
-  engine, a wider merged list and longer excerpts. Choose it when agreement between independent
-  engines matters, or when you want the most text per page; your agent then reads more.
+  (or `/jevlin tier standard`) picks one, and `jevlin agents tier status` lists the presets the
+  router offers. It suits routine lookups, and it is the only tier an unclaimed agent may use.
+- **`balanced`** asks four of the seven core engines. Choose it when you want several independent
+  sources, or when a fast search came back thin.
+- **`max`** asks all seven core engines, with more results from each. Choose it when agreement
+  between independent engines matters.
 
-`jevlin agents tier balanced` from a shell, or `/jevlin tier balanced` in the agent, sets the tier
-every search carries unless the request names one; `default` unsets it, and `status` says what is
-in force. `[router] tier` in the config does the same for an installation when no tier is saved.
-The skill tells your agent to leave `tier` and `providers` unset, so your setting applies; with
-none, the request carries none and the router applies the default for your key. A search costs
-what its response's `usage.cost_micros` says; plans and prices are at
-[jevlin.ai](https://jevlin.ai/#tiers). A request can also name the engines it wants on `balanced`
-or `max` ([reference, Tiers and providers](reference.md#tiers-and-providers)).
+On every tier an agent's search gets the same short excerpt of each page; when it needs more of a
+page, it reads the page in full with `fetch`. `jevlin agents tier balanced`, or
+`/jevlin tier balanced`, sets the tier every search carries unless the request names one;
+`[router] tier` in the config does the same for an installation when no tier is saved. The skill
+tells your agent to leave the tier alone, so your setting applies; with none, the router applies
+your key's default. Plans and prices are at [jevlin.ai](https://jevlin.ai). The engines, presets
+and sizes are in [reference, Tiers and providers](reference.md#tiers-and-providers).
 
 ## What leaves your machine
 
@@ -219,77 +195,41 @@ jevlin upgrade -rollback        # put back the binary the last upgrade replaced,
 npm install -g @jevlinsearch/jevlin@latest    # an npm install is updated with npm
 ```
 
-`upgrade` downloads only from the project's GitHub releases, requires `checksums.txt` to be
-signed by the project's release key and the download to match it, and runs the new binary before
-and after installing it, keeping the old one as `jevlin.previous`. It refuses an npm copy and a
-development build, takes at most three minutes, and never touches your registration or config.
-The new binary then rewrites the skills and hooks this installation set up, and for Codex the
-block in `~/.codex/config.toml`: an earlier version's block, which opened Codex's network to every
-host, becomes the permission profile, and a setting of yours the profile would change is left
-and printed for you to change by hand. If that step fails, the upgrade still succeeded and the
-message gives the command that finishes it. Restart open agents.
+`upgrade` downloads only from the project's GitHub releases, requires `checksums.txt` to be signed
+by the project's release key and the download to match it, and runs the new binary before and after
+installing it, keeping the old one as `jevlin.previous`. It never touches your registration or
+config. The new binary then rewrites the skills and hooks this installation set up. Restart open
+agents. If it fails, the first word after `upgrade:` says what to do
+([reference, Upgrade failures](reference.md#upgrade-failures)).
 
-Once a day, when a Claude Code, Cursor, Codex, opencode or Pi session starts or ends, jevlin
-checks for a newer release; Hermes and an agent set up by hand start no check. A native install
-then installs a patch release of the version you have (0.7.0 to 0.7.1) the same way `upgrade`
-does. A new minor release (0.8.0) is only recorded, and `jevlin status` and `jevlin doctor` say
-so: before 1.0 a minor release may change what the installation must hold, so `jevlin upgrade`
-installs it when you choose. An npm install is never replaced; the check notes the release and
-`status` tells you npm's command. To be told rather than updated, add to your config:
+Once a day, when a Claude Code, Cursor, Codex, opencode or Pi session starts or ends, jevlin checks
+for a newer release. A native install then installs a patch release of the version you have (0.7.0
+to 0.7.1) the same way `upgrade` does; a new minor release (0.8.0) is only recorded, and
+`jevlin status` and `jevlin doctor` say so, because before 1.0 a minor release may change what the
+installation must hold. An npm install is never replaced; the release is recorded for `status` and
+`doctor` to report. To be told rather than updated, add to your config:
 
 ```toml
 [update]
 mode = "notify"   # or "off" to stop the check; the default is "apply"
 ```
 
-`status` says when the check last ran and what it found, and `doctor`'s `up to date` line says so
-when it has not run for three days: usually no agent with the hooks has been opened, or the hooks
-reach the network through a proxy on this machine, where no check is started (Codex's sandbox
-does that). After `upgrade -rollback` the daily check leaves the release you rolled back from
-alone and installs the next newer one. If an upgrade ever fails so badly that the old binary could
-not be put back, `status` and `doctor` list the copies left beside the binary, none deleted, and
-no automatic check runs until `jevlin upgrade` succeeds.
-
-When it fails, the first word after `upgrade:` says what to do:
-
-| word | meaning |
-|---|---|
-| `retry` | Try again later; nothing changed. A slow first run, such as a virus scan, ends here. |
-| `release_invalid` | The release itself is wrong. Do not retry blindly. |
-| `ownership` | This copy is not one `upgrade` may replace, such as an npm install. |
-| `filesystem` | Fix the permissions or the file it names. |
-| `lifecycle_busy` | Another setup or upgrade is running. |
-| `refused` | An older version was asked for. |
-| `manual_intervention` | Putting the old binary back failed too. Every surviving copy is listed; none is deleted. |
-| `previous_in_use` | Windows: an older jevlin or agent process still runs `jevlin.exe.previous`. Your binary was put back; close that process and run `upgrade` again. |
+`doctor`'s `up to date` line says when the check has not run for three days: usually no agent with
+the hooks has been opened. After `upgrade -rollback` the daily check leaves the release you rolled
+back from alone.
 
 ### Moving from 0.6.x
 
-This version reads only configuration format 1, and a 0.6.x installation's `jevlin.toml` is not
-that. On a native install the daily check of 0.6.x replaces the binary with this version as it
-would any release; from then on every command that reads the config (`search`, `fetch`,
-`limits`, `status`, `doctor`, `connect`) stops with "this configuration is from an older jevlin;
-run `jevlin setup`", while the hooks, which fail open, run the agent's tool call without a
-lineage file. The daily check goes on running meanwhile, with the installation directory and
-`[update] mode` the old file names, so a later release still reaches the machine, and
-`jevlin upgrade -rollback` to 0.6.x holds this one where 0.6.x looks for the hold. On an npm
-install, run `npm install -g @jevlinsearch/jevlin@latest`, then `jevlin setup`.
+This version reads only configuration format 1. After a 0.6.x install takes this version, every
+command that reads the config, `search` included, stops with "this configuration is from an older
+jevlin; run `jevlin setup`" until you do; the hooks fail open, so your agents' other tool calls are
+unaffected. On an npm install, run `npm install -g @jevlinsearch/jevlin@latest` first.
 
-`jevlin setup` sets the old file aside as `jevlin.toml.old` (`.old.1`, `.old.2`, ... if the name is
-taken), writes `jevlin.toml` in format 1, keeps your registration and search key, and rewrites the
-hooks and skills of the agents it finds in place. The new file names the state and sessions
-directories, the router, the portal and the agents API the old file named, because your agent
-record is in that state directory and your key is bound to those hosts; where the old file named
-none, it names the defaults, and `JEVLIN_ROUTER_URL`, `JEVLIN_PLATFORM_URL` and
-`JEVLIN_AGENTS_API_URL`, when set, choose over both. The key and the files kept with it
-(`credentials.json`, the registration journal, `claim.json`, the release check's record) belong in
-the state directory's parent; 0.6.x kept them in its intake directory's parent instead, so where
-those two differ setup moves them, and stops before changing anything if a file of the same name
-is already there. Nothing else is migrated: a setting you changed by hand, such as `turn_end` or
-`tier`, you copy into the new file yourself, under its format-1 key
-([reference, Config](reference.md#config)). Files only the earlier version used are left where
-they are, never read and never named; one of them may hold a key the earlier version used, so
-look before deleting any of them.
+`jevlin setup` sets the old file aside as `jevlin.toml.old`, writes `jevlin.toml` in format 1 naming
+the directories and hosts the old one named, keeps your registration and key, and rewrites your
+agents' hooks and skills. A setting you changed by hand, such as `turn_end` or `tier`, you copy
+into the new file yourself ([reference, Config](reference.md#config)). Files only the earlier
+version used are left where they are; one of them may hold a key, so look before deleting any.
 
 ## Removing it and coming back
 
@@ -301,29 +241,19 @@ jevlin uninstall -purge-state   # ...and the registration, key and config
 npm uninstall -g @jevlinsearch/jevlin         # an npm install is npm's to remove
 ```
 
-A plain `uninstall` removes what setup wrote for this installation (`-home`, default `~/.jevlin`)
-and keeps your registration, key and config; nothing is revoked. On Windows it reverts PATH and
-`JEVLIN_CONFIG` only where they still hold setup's values. Another installation's files are left
-and reported, and so is a hook of yours that sits in the same group as jevlin's (Claude Code's
-`/hooks` adds one there when the matcher is the same): only jevlin's handler is taken out. It
-lists leftover `.lock` files, which are safe to delete.
+A plain `uninstall` removes what setup wrote for this installation and keeps your registration, key
+and config; nothing is revoked. Another installation's files, and a hook of yours, are left and
+reported. `-binary` also removes the binary and its `.previous`, never an npm copy; if an agent's
+file could not be changed it keeps the binary, because the hooks still in that file run it, and
+exits non-zero. `-purge-state` also destroys the registration, key and config, after you type the
+installation path at a terminal (`-yes` cannot answer it); anything else left in the installation
+directory is listed, since one of those files may hold a key an earlier version used. Your claim on
+the platform is undone only at its console. Close agent sessions first, or a search may recreate
+folders.
 
-`-binary` also removes the binary, its `.previous` and an interrupted upgrade's leftovers, never
-an npm copy; on Windows it moves the running binary aside and names the file to delete later. If
-an agent's file could not be changed, it keeps the binary, because the hooks still in that file run
-it, and exits non-zero; run it again once the file can be written.
-
-`-purge-state` also destroys the registration, key and config. At a terminal you type the
-installation path; `-yes` cannot answer it, and a run stopped there changes nothing. Your claim on
-the platform is undone only at its console. Folders your config names outside the installation
-are left and listed, and so is anything else left in the installation directory, by full path:
-one of those files may hold a key an earlier version used, so look before deleting it. Close agent
-sessions first, or a search may recreate folders.
-
-To come back, run `jevlin setup`, with `-home <dir>` for a non-default installation: the same
-agent, no new registration. A bare `jevlin connect` would register anew, because the profile
-block that named this installation is gone. You can also set `~/.jevlin` aside instead of
-removing it ([Set-aside installations](#set-aside-installations)).
+To come back, run `jevlin setup`, with `-home <dir>` for a non-default installation: the same agent,
+no new registration. You can also set `~/.jevlin` aside instead
+([Set-aside installations](#set-aside-installations)).
 
 ## Troubleshooting
 
@@ -332,25 +262,20 @@ removing it ([Set-aside installations](#set-aside-installations)).
 After an npm install, npm's global `bin` directory is not on your PATH (`npm prefix -g` names the
 prefix; the command is in its `bin` directory, and in the prefix itself on Windows). Run setup
 through npm's command by its full path, `"$(npm prefix -g)/bin/jevlin" setup -yes` (in Windows
-PowerShell, `& "$(npm prefix -g)\jevlin.cmd" setup -yes`). Setup puts the same directory in your
-shell profile and prints the one command that makes the terminal you are in see it now;
-`"$(npm prefix -g)/bin/jevlin" doctor` names it too. After the installer, run
-`~/.jevlin/bin/jevlin setup` the same way. Your agents' skills and hooks name the binary by its
-full path and do not depend on PATH.
+PowerShell, `& "$(npm prefix -g)\jevlin.cmd" setup -yes`); setup puts the directory in your shell
+profile and prints the command that makes this terminal see it. After the installer, run
+`~/.jevlin/bin/jevlin setup` the same way. Your agents' skills and hooks name the binary by its full
+path and do not depend on PATH.
 
 ### A binary setup refuses
 
 Setup refuses a binary someone else could replace, because your agents' hooks and skills and your
-PATH will name it: one under the temporary directory, or one where the file or a directory above
-it, on the path you ran or the file it links to, is owned by another user or writable by every
-user (the sticky bit is no exception). `agents install` and `agents prefer` refuse the same, since
-they write the same path. A directory its group can write is accepted when that group is your own
-or one whose members can already become root (`admin`, `wheel`, `sudo`, `root`), which is how
-Homebrew's prefix is set up. For any other group, such as Debian's `staff` on `/usr/local`, setup
-prints a warning naming the directory and goes on: whether anyone else is in that group is
-something only you can say. On Windows only the temporary-directory rule applies. To fix a
-refusal, move the binary somewhere only you can write, such as `~/.local/bin`, and run it from
-there.
+PATH will name it: one under the temporary directory, or one where the file or a directory above it
+is owned by another user or writable by every user. A directory its group can write is accepted
+when that group is your own or one whose members can already become root (`admin`, `wheel`, `sudo`,
+`root`), as Homebrew's prefix is; for any other group setup warns and goes on. On Windows only the
+temporary-directory rule applies. To fix a refusal, move the binary somewhere only you can write,
+such as `~/.local/bin`, and run it from there.
 
 ### Set-aside installations
 
@@ -360,30 +285,20 @@ when you say yes at a terminal, in pieces that belong together:
 
 | piece | what setup does |
 |---|---|
-| **Registration and key** | Move as one. If `~/.jevlin` has its own, setup stops before anything moves and names both: keep one, move the other away. A half-made state directory there is renamed `state.unregistered-<time>`. |
+| **Registration and key** | Move as one. If `~/.jevlin` has its own, setup stops before anything moves and names both: keep one, move the other away. |
 | **Session files** | Merge one file at a time, never overwriting. |
 | **Config** | Moves only if `~/.jevlin` has none. |
 
-Symlinks and anything another account owns are not moved: a set-aside folder that is not yours is
-never offered. The set-aside folder is removed only once it is empty.
+Symlinks and anything another account owns are not moved, and the set-aside folder is removed only
+once it is empty.
 
 ### Claim records and connect -force
 
-The claim link is kept in `~/.jevlin/claim.json`, beside your stored key, and only for the agent it
-was issued to; it is never read from the state directory, which an agent's sandbox may write.
-Before `jevlin connect` prints it, it asks the platform which agent your key belongs to: a claimed
-agent shows no link, and if the platform cannot answer, none is shown. An interrupted registration
-is finished on the next run, never registered twice.
-
-A lost or damaged local record is rebuilt from the platform (one holding characters that would act
-on your terminal counts as damaged, and `status` says it cannot be read and to run
-`jevlin connect`), and so is one that names an agent your key does not belong to, which is what an
-agent's sandbox can leave in the state directory. If the platform no longer recognizes the key,
-`connect` stops, and `jevlin connect -force` replaces the credential: run it only on purpose; it
-never rebuilds a record. An unclaimed registration that expires is replaced by the next
-`jevlin connect` you run, changing only the platform agent and its key; a background resume never
-replaces one. A lost claim link is replaced too: for a registration that is still unclaimed, a
-foreground `jevlin connect` asks the platform for a fresh link and prints it. The old code is dead
-the moment a new one is minted, which is why only a connect you run does this. Where the platform
-cannot mint one, `connect` says so; run it again later, or wait for the registration to expire
-and connect again.
+The claim link is kept beside your key in `~/.jevlin/claim.json`, never in the state directory,
+which an agent's sandbox may write. Before `jevlin connect` prints it, it asks the platform which
+agent your key belongs to: a claimed agent shows no link, and if the platform cannot answer, none is
+shown. An interrupted registration is finished on the next run, never registered twice, and a lost
+or damaged local record is rebuilt from the platform. A lost claim link for a registration that is
+still unclaimed is replaced by a foreground `jevlin connect`, which asks the platform for a fresh
+one; the old code stops working when it does. If the platform no longer recognizes the key,
+`connect` stops, and `jevlin connect -force` replaces the credential: run it only on purpose.
