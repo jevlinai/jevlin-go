@@ -34,7 +34,8 @@ Install it globally, not with `npx`: setup writes the binary's path into your ag
 
 ### Can I install it another way?
 
-- **From GitHub Releases::** [installer options, and downloading by hand](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#installing-without-npm)
+- **From GitHub Releases:** download the archive for your platform and check it against its
+  `checksums.txt` ([steps](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#installing-without-npm))
 
 - **From an agent marketplace:** Claude Code's and Codex's plugin marketplaces, and skills.sh,
   carry a setup skill that installs and sets up jevlin ([how](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#let-your-agent-install-it))
