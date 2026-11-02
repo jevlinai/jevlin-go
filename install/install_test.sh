@@ -143,15 +143,78 @@ if grep -q '^setup' "$work/calls"; then
   echo "FAIL (j): the installer ran setup with no terminal"; fail=1
 fi
 
-# Python without the cryptography package: the built-in check, both ways.
-if ! "$py_bin" -c 'import cryptography' 2>/dev/null; then
-  mkpath "$work/p_py" $base_tools python3
-  run h "$work/good.sig" "$work/p_py"
-  check "(h) python3 without cryptography: verified by the built-in check" 0 "release signature verified (python3)" yes
-  run i "$work/bad.sig" "$work/p_py"
-  check "(i) python3 without cryptography, bad signature: dies" 1 "does not verify" no
+# Each verifier on its own, both ways, so a verifier that always said yes would
+# turn a refusal red. Under CI every case must run, and a missing prerequisite
+# fails the step; a local run skips the case and says what it skipped.
+missing() { # label what
+  if [ -n "${CI:-}" ]; then
+    echo "FAIL ($1): $2; CI must run this case"; fail=1
+  else
+    echo "skip ($1): $2"
+  fi
+}
+
+# OpenSSL 1.1.1 or newer verifies raw Ed25519 (pkeyutl -rawin), and runs here as
+# the only verifier: no node and no python3 on the PATH. Ubuntu's openssl has it;
+# a Mac's may be Homebrew's, which is not on PATH.
+ossl=
+for cand in "$(command -v openssl 2>/dev/null)" /opt/homebrew/opt/openssl@3/bin/openssl /usr/local/opt/openssl@3/bin/openssl; do
+  if [ -n "$cand" ] && [ -x "$cand" ] && "$cand" pkeyutl -help 2>&1 | grep -q rawin; then ossl=$cand; break; fi
+done
+if [ -n "$ossl" ]; then
+  mkdir -p "$work/p_ossl"; cp -P "$work"/p_bare/* "$work/p_ossl/"; ln -sf "$ossl" "$work/p_ossl/openssl"
+  run k "$work/good.sig" "$work/p_ossl"
+  check "(k) OpenSSL as the only verifier: verified" 0 "release signature verified (openssl)" yes
+  run k2 "$work/bad.sig" "$work/p_ossl"
+  check "(k2) OpenSSL, bad signature: dies, nothing installed" 1 "does not verify against the project's release key" no
+elif [ "$os" = linux ]; then
+  missing "k, k2" "no OpenSSL 1.1.1 or newer here"
 else
-  echo "skip (h)(i): this python3 has the cryptography package, so the built-in check is not reached"
+  echo "note (k, k2): no OpenSSL 1.1.1 or newer on this Mac; the Linux runner runs them"
+fi
+
+# macOS's own openssl is LibreSSL, which has no raw Ed25519 verify: it must be
+# passed over for the next verifier, here node, rather than taken as one.
+if [ "$os" = darwin ]; then
+  if [ -x /usr/bin/openssl ] && ! /usr/bin/openssl pkeyutl -help 2>&1 | grep -q rawin; then
+    mkdir -p "$work/p_libre_node"; cp -P "$work"/p_node/* "$work/p_libre_node/"; ln -sf /usr/bin/openssl "$work/p_libre_node/openssl"
+    run m "$work/good.sig" "$work/p_libre_node"
+    check "(m) LibreSSL is passed over for node: verified by node" 0 "release signature verified (node)" yes
+  else
+    missing m "no /usr/bin/openssl without raw Ed25519 verify"
+  fi
+fi
+
+# python3 without the cryptography package: the built-in RFC 8032 check. A venv
+# made without pip has no third-party packages; its bin directory goes first on
+# the PATH, since a link to its python3 elsewhere would not find the venv.
+if "$py_bin" -m venv --without-pip "$work/venv" >/dev/null 2>&1 && [ -x "$work/venv/bin/python3" ]; then
+  if env -i HOME="$work/home" PATH="$work/venv/bin" "$work/venv/bin/python3" -c 'import cryptography' 2>/dev/null; then
+    missing "h, i" "the venv can import cryptography"
+  else
+    run h "$work/good.sig" "$work/venv/bin:$work/p_bare"
+    check "(h) python3 without cryptography: verified by the built-in check" 0 "release signature verified (python3-builtin)" yes
+    run i "$work/bad.sig" "$work/venv/bin:$work/p_bare"
+    check "(i) python3 without cryptography, bad signature: dies" 1 "does not verify against the project's release key" no
+  fi
+else
+  missing "h, i" "python3 -m venv --without-pip failed"
+fi
+
+# python3 with the cryptography package, as the runners' python3 has it. A wrapper
+# rather than a link runs it by its own path, so a venv or prefix it belongs to
+# still applies; its user site, where pip --user puts packages, stays visible
+# under the test's HOME.
+userbase=$("$py_bin" -m site --user-base 2>/dev/null)
+if "$py_bin" -c 'import cryptography' 2>/dev/null; then
+  mkdir -p "$work/p_crypto"; cp -P "$work"/p_bare/* "$work/p_crypto/"
+  printf '#!/bin/sh\nexec "%s" "$@"\n' "$py_bin" > "$work/p_crypto/python3"; chmod 755 "$work/p_crypto/python3"
+  run l "$work/good.sig" "$work/p_crypto" PYTHONUSERBASE="$userbase"
+  check "(l) python3 with cryptography: verified by cryptography" 0 "release signature verified (python3-cryptography)" yes
+  run l2 "$work/bad.sig" "$work/p_crypto" PYTHONUSERBASE="$userbase"
+  check "(l2) python3 with cryptography, bad signature: dies" 1 "does not verify against the project's release key" no
+else
+  missing "l, l2" "this python3 has no cryptography package"
 fi
 
 exit $fail

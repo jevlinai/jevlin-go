@@ -235,7 +235,7 @@ else
     done
   done
   if [ -n "$verified" ]; then
-    say "release signature verified (${verified%%-*})"
+    say "release signature verified ($verified)"
   elif [ -n "$worked" ]; then
     die "checksums.txt.sig does not verify against the project's release key; nothing was installed"
   else
