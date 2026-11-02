@@ -8,133 +8,309 @@
   <a href="https://jevlin.ai"><img src="https://img.shields.io/badge/jevlin.ai-site-111" alt="jevlin.ai"></a>
 </p>
 
-**Supersearch for coding agents.** jevlin gives your coding agent one web search that asks
-several search engines at once and returns a single merged list, with every result naming the
-engines that found it.
+Supersearch for coding agents, free for agents, with the trajectory behind every search: one call asks every engine in the set at once, every result names the engines that found it, and every engine leaves a receipt.
+One binary gives Claude Code, Cursor, Codex, opencode, Pi and Hermes a `search` that can fan a
+query out across every search index in the set at once, merges what they return into one attributed
+list, and carries enough of the agent's context that the router can see the task a search
+belongs to, not just the query string. There is no daemon, proxy or MCP server: between tool
+calls nothing is running.
 
-It works in Claude Code, Cursor, Codex, opencode, Pi and Hermes. It is one binary your agent
-calls, a skill that teaches the agent the call, and hooks where the agent has them; between
-searches nothing is running. Plans and prices are at [jevlin.ai](https://jevlin.ai/#tiers).
+Search is free for agents: setup registers you with the search platform and gets a key, there
+is no card and nothing to top up.
 
-## How do I install it?
+
+## Install
 
 ```bash
 npm install -g @jevlinsearch/jevlin
 jevlin setup
 ```
 
-Install it globally, not with `npx`: setup writes the binary's path into your agents' skills
-and hooks, and npm throws an `npx` cache away.
+Install it globally, never with `npx`: setup writes the binary's path into your agents' skills
+and hooks, and npm throws away an `npx` cache or a project's `node_modules`.
 
-- **Without Node:** `curl -fsSL https://jevlin.ai/install.sh | sh` on macOS and Linux, or
-  `irm https://jevlin.ai/install.ps1 | iex` in Windows PowerShell. It downloads the latest
-  release, verifies it, installs it at `~/.jevlin/bin/jevlin` and runs setup.
-  [Installing without npm](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#installing-without-npm) has its options and the download by hand.
-- **From source:** `go install github.com/jevlinai/jevlin-go/cmd/jevlin@latest`, or `make build`
-  in a clone. See [building from source](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#building-from-source).
+If `jevlin: command not found` follows the install, npm's global `bin` directory is not on your
+PATH (`npm prefix -g` names the prefix; the command is in its `bin` directory, and in the prefix
+itself on Windows). Run setup through npm's command instead, by its full path:
+`"$(npm prefix -g)/bin/jevlin" setup -yes` (on Windows PowerShell,
+`& "$(npm prefix -g)\jevlin.cmd" setup -yes`). Setup puts the same
+directory in your shell profile, and prints the one command that makes the terminal you are in
+see it now; `"$(npm prefix -g)/bin/jevlin" doctor` names it too. Your agents' skills and hooks name the binary by its
+full path and do not depend on this.
 
-If your shell then cannot find `jevlin`, [the guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#jevlin-command-not-found) shows how to run setup by its full path.
+An agent can run this install itself. The marketplaces carry a setup skill, not the search:
+it installs the client and runs `jevlin setup`, which writes the agent's own skill and hooks.
+Without setup there is no search.
 
-## What does setup do, and what is the claim?
+```bash
+npx skills add jevlinai/jevlin-go                          # any agent with skills (skills.sh)
+/plugin install jevlin --marketplace jevlinai/jevlin-go    # Claude Code, 2.1.275 or later
+claude plugin marketplace add jevlinai/jevlin-go           # Claude Code, older: then /plugin install jevlin@jevlin
+codex plugin marketplace add jevlinai/jevlin-go            # Codex CLI: then /plugins
+```
 
-Setup registers this machine's agent with the search platform and stores the key it gets back,
-writes its config under `~/.jevlin`, and asks before it adds `jevlin` to your shell's PATH and
-before it sets up the coding agents it finds. Restart any agent that was already open.
+Cursor loads the same package from its Marketplace once it is listed there, and from the
+repository until then. The same instructions, for an agent handed a link, are at
+[jevlin.ai/agents.md](https://jevlin.ai/agents.md).
 
-It then prints a link to claim the agent: open it, sign in at `platform.jevlin.ai` (or create an
-account) and confirm the agent's name, or type the printed code at `/claim` there. Until you do,
-search runs on the fast tier within a daily cap; claiming opens `balanced` and `max`. The link
-is valid for a week, and `jevlin connect` prints a fresh one.
-[Setup](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#setup) and [the claim link](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#the-claim-link) have the details.
+Without Node, download the archive for your OS and architecture from the
+[releases page](https://github.com/jevlinai/jevlin-go/releases) and verify it against that
+release's `checksums.txt`. Put `jevlin` in a directory only you can write, such as
+`~/.local/bin`, and run `jevlin setup` from there. Setup and `agents install` refuse a binary
+under the temp directory, or in a directory another user owns or every user can write, and
+warn about one a shared group can write. On Windows only the temp-directory rule is checked.
 
-## How do I check it works?
+## The providers
+
+One request goes to the router at `api.jevlin.ai`, which holds the provider keys. In the
+`balanced` and `max` [tiers](#three-tiers), the core arms run on every fan-out, under a
+per-query cost ceiling; `fast` asks only the fast indexes its preset names. The core arms:
+
+| kind | arms |
+|---|---|
+| web indexes | Exa, Brave, Serper, Telem, Parallel search, TinyFish, Perplexity search |
+
+More fire only when a request names them in `providers` (on `balanced` or `max`): SerpAPI (a
+Google read in the slow lane: it keeps working after the response and lands on the trace), the
+research agents (Parallel, Tavily research, the Perplexity agent, Octen), Tavily, Linkup and
+Linkup answer, Valyu, Kagi, Mojeek, Gemini, Grok, Exa answer and Brave answer. The set is the
+router's and changes without a client release; `decision` in every response says which arms
+ran.
+
+## What a search returns
+
+The router runs the request against the arms and answers once, with everything they returned:
+
+- **`result.merged`**: the router's own list of the pages every provider that answered
+  returned, one entry per page, best first. Each entry carries `found_by`, the providers that found that page, and `best_rank`, the best
+  position any of them gave it. Agreement between independent indexes is the fan-out's
+  own evidence, and the skill tells the agent to read this list first.
+- **`result.indexes`**: each index the router asked and how it answered, so a search where an
+  index failed or the deadline cut it short reads as degraded rather than as an empty web.
+- **`result.candidates`**: each provider's answer as it came back, so a disagreement can be
+  inspected rather than averaged away. Only `"view":"full"` carries it: the default view says
+  each page's text once, in the merged list.
+- **`decision`**, which providers ran; **`usage.cost_micros`**, what the search cost, in
+  millionths of a dollar; **`latency_ms`**, for the search and for each provider;
+  **`request_id`**, so a search can be found again.
+
+Agents call `jevlin search --stdin` with one JSON request and read one JSON object back, so
+the query never touches the command line. A person can type `jevlin search "<query words>"`,
+which does put it there.
 
 ```bash
 jevlin search -format model "what is proof of authority consensus"
-jevlin status          # what this installation has and has not completed
-jevlin agents status   # which agents are set up
-jevlin doctor          # whether it is ready to search, check by check
 ```
 
-It works when the search prints results and `agents status` lists your agents.
+The router keeps a search's answer for up to 15 minutes and serves a repeat of it from there.
+For live news, or anything a result that old would get wrong, a person adds `--fresh` to run
+the search live instead; it costs the same as any live search, and the fresh answer is kept for
+the next caller. A `--stdin` request says the same with `"cache": "refresh"`. An agent is never
+told to set it.
 
-## How does my agent use it?
+## Three tiers
 
-Setup installs a `jevlin` skill (for opencode, a plugin) that tells the agent to use this search
-for anything that needs the web, instead of its built-in one. You can also ask for it:
+Every search runs in one of three tiers. `fast` asks the fast indexes of a named preset,
+`economy` (two, the default) or `standard` (three), and answers in about a second; `balanced`
+and `max` fan out to the core arms. A tier is also a per-query cost ceiling
+on the router, and a set that would exceed the ceiling is trimmed rather than refused, with
+`decision.trimmed` naming what went.
+
+| tier | what runs | for | what it costs |
+|---|---|---|---|
+| `fast` | the fast indexes of a preset: `economy` asks two, `standard` three; the quickest | a routine lookup, the default for a new key | about $0.0013 a search on `economy`, $0.0053 on `standard` |
+| `balanced` | the core arms, 8 results each, a 12-page merged window, every arm's text | when the agent needs more than one source, or the first answer came back thin | about $0.022 |
+| `max` | the core arms, 15 results each, a 24-page window, 2,000-character excerpts | corroboration: the same page found by independent indexes, and the most text per page | about $0.027, plus the tokens your agent spends reading it |
+
+The dollar figures are the arms' own prices passed through with no markup; `usage.cost_micros`
+on every response is the real number. `max` and a named `providers` set (below) are the two
+ways to multiply the work a request does.
+
+Who chooses:
+
+- **You**, ahead of time: `/jevlin tier balanced` in an agent, or `jevlin agents tier balanced`
+  from a shell, sets the tier every search carries unless a request names one. `/jevlin tier
+  default` unsets it and `/jevlin tier` says what is in force.
+- **The agent**, one step at a time: the skill tells it to leave `tier` alone so your tier
+  applies, to ask for `balanced` only when it needs several sources beyond the fast tier's
+  indexes (a thin result, indexes that disagree, the full set attributed), and never to send
+  `max` on its own. `max` is yours to choose.
+- **The router**, when nobody did: a request that names no tier, with none set, carries none, and
+  the router applies the default for your key.
+
+## Request options
+
+These fields pass straight through to the router: `recency` (`day`, `week`, `month`,
+`year`), `domain_filter` (up to 16 hostnames), `max_results` (1 to 25), `merged_limit` (1 to
+50 pages in the merged list), `max_chars` (the merged list's total characters of page text) and
+`providers` (up to 16 names, to restrict the fan-out or reach an arm that fires only when
+named). A router that applies `recency` and `domain_filter` itself says so in
+`result.filters_applied`: it sent each filter to every provider that takes it and dropped any
+page outside it. Without that report the results may be unfiltered, and the skill tells the
+agent to check each page's date and host itself. A named set
+runs on `balanced` or `max` only: on `fast` the router refuses it, since the fast set is the
+router's. It is billed at the named arms' own prices. The
+[skill](https://github.com/jevlinai/jevlin-go/blob/main/cmd/jevlin/skill.md) is what the agent reads; the
+[reference](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#the---stdin-request) has the envelope.
+
+## Trajectory observability
+
+A query on its own says little about whether a search was any good. Each search therefore
+carries a small `trace` that lets the router group the searches of one task and see what the
+agent was doing when it asked:
+
+| field | carries |
+|---|---|
+| `harness` | Which agent: `claude-code`, `codex`, `cursor`, and so on. |
+| `session_id`, `turn_id`, `call_id` | The agent's ids, hashed with SHA-256 before they leave the machine. A subagent has a session id of its own, and from Claude Code, Codex and opencode it also carries its parent's. |
+| `window`, `seq` | Which context window of the session, after compactions, and a call counter. |
+| `history` | The assistant text just before the search, scrubbed of secrets, last 32 KiB. Codex and Hermes send none. |
+
+With `[search] turn_end = true`, the agent's end-of-turn hook also sends what the turn
+concluded: the final message, what you asked, the sequence of tools called with name, duration
+and outcome (never a tool's input or output), the model and the token counts. Only for turns
+in which a search was served.
+
+The hooks keep a lineage file per workspace (in Cursor, per conversation) under
+`~/.jevlin/sessions`, so the searches of one task line up even across context compactions and
+subagents, and only the agent that wrote a file reads it. The scrub removes anything shaped
+like a credential, PEM blocks, email addresses, the account name in a home path, an
+`Authorization` header's credential, and any value under a name like `password`, `token` or
+`api_key`. [The trace](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#the-trace) and
+[the turn end](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#the-turn-end) list every field and every scrub rule.
+
+`export JEVLIN_TRACE=off` sends no trace and no turn end; searches work the same without them.
+
+## What setup asks
+
+Setup registers with the search platform and stores the key it gets back, so there is no key
+to copy or paste. Then it asks, in this order:
+
+| question | what your answer does |
+|---|---|
+| **Use it?** | Asked only when an earlier installation was set aside beside `~/.jevlin`. Yes moves it back. |
+| **Add them to ~/.zshrc?** | Or the file your shell reads: `~/.zshrc` for zsh, `~/.bash_profile` for bash on macOS (`~/.bashrc` on Linux, or when `~/.bash_profile` already sources it), `~/.config/fish/config.fish` for fish, in fish syntax. For any other shell it prints the lines and writes nothing. Puts `jevlin` on PATH (for an npm install, npm's global `bin` directory, where the `jevlin` command is) and sets `JEVLIN_CONFIG`. It then prints the one command that makes the terminal you are in see them now; a terminal opened later does not need it. On Windows it asks **Set them for your user?** instead, and the new Path reaches terminals opened afterwards. |
+| **Set up the coding agents found on this machine now?** | Writes a skill and hooks into each agent's own config, after showing you what. |
+| **Switch?** | Asked only when Codex's config has a setting of your own that its permission profile would change. It shows every line it would write; a bare Enter is no and leaves Codex as it is. |
+
+After the config is written, and before the shell profile, it prints the steps to claim your
+agent: a link to open (sign in on `platform.jevlin.ai`, or create an account, and you come back
+to the page), the agent's name to check and confirm, and a code to type at `/claim` if the link
+does not open. It then waits up to three minutes for you. You need not do it then: search
+already works, within an unclaimed agent's limits (the fast tier, with a daily cap), and the
+next search finishes the claim once you have confirmed. Claiming lifts the limits and opens the
+other tiers. The link is valid for a week; `jevlin connect` prints a fresh one. The
+[guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#setup) says what each answer does and which flags answer them for you.
+
+## Then check
+
+```bash
+jevlin status          # what this installation has and has not completed
+jevlin agents status   # which agents are set up
+jevlin limits          # this key's spend caps and today's spend
+jevlin search -format model "what is proof of authority consensus"
+```
+
+It is working when the search prints results and `agents status` lists your agents as
+installed. Restart any agent that was already open.
+
+## The agents it sets up
+
+| agent | what is written | one thing to know |
+|---|---|---|
+| [Claude Code](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#claude-code) | a skill; hooks and allow rules in `~/.claude/settings.json` | On Windows, a search through its PowerShell tool asks for approval. |
+| [Cursor](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#cursor) | a skill; hooks in `~/.cursor/hooks.json` | Cursor also runs Claude Code's hooks, which stand aside for it. |
+| [Codex](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#codex) | a skill; on macOS and Linux, hooks in `~/.codex/hooks.json` and a permission profile in `~/.codex/config.toml` that opens only the search hosts; on Windows, writable directories in that file and no network | Its hooks run only once you approve them in Codex. Supported with Codex 0.158.0 or newer; older versions are not supported. |
+| [opencode](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#opencode) | a plugin, and a block for you to paste into `AGENTS.md` | `/jevlin off` does not reach it. |
+| [Pi](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#pi) | a skill and an extension under `~/.pi/agent/` | A resumed session keeps its place in the trace. |
+| [Hermes](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#hermes) | a skill; a hook in `config.yaml` | Approve the hook once; it loads next session. |
+
+Any other agent: [agents.md](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#any-other-agent) says what to paste. `jevlin agents
+prefer off` makes the agent's own search the default again; naming jevlin in a request still
+routes that one search here.
+
+## Commands: in the agent, and in a shell
+
+Setup installs one skill, `jevlin`, the supersearch skill, into each agent that has skills (Claude Code, Cursor,
+Codex, Pi, Hermes; opencode gets a plugin and a rules block instead). The skill is what the
+agent reads: it tells the agent to prefer this search over its built-in one, how to build the
+request, how to read the envelope, and what the commands below do. Everything the agent can do
+with jevlin goes through that one skill.
 
 | in the agent | what it does |
 |---|---|
-| `/jevlin <question>` | One search; the agent answers from the merged list. Naming jevlin in a request does the same. |
-| `/jevlin tier fast\|balanced\|max` | Sets the tier every search uses. `/jevlin tier default` unsets it. |
-| `/jevlin off`, `/jevlin on` | Makes the agent's own web search the default again, or this one. |
+| `/jevlin <question>` | One search, as the skill specifies: the query goes as JSON on stdin, the merged list comes back, the agent answers from it. Naming jevlin or supersearch in an ordinary request does the same. |
+| `/jevlin off` | The agent's built-in web search becomes the default again; this one runs only when you name it. The skill is rewritten to say so, in every agent, from its next start. |
+| `/jevlin on` | This search is the default again. |
+| `/jevlin status` | Which of the two is the default right now. |
+| `/jevlin tier fast\|balanced\|max` | Sets the tier every search carries unless a request names one. |
+| `/jevlin tier default` | Unsets it; `[router] tier` in your config applies if set, else the router's default for your key. |
+| `/jevlin tier` | The tier in force. |
 
-[Making it the default, or not](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#making-it-the-default-or-not) covers the rest.
+The settings are yours: the skill tells the agent never to change the default or the tier on
+its own. `/jevlin off` does not reach opencode, whose rules block carries no preference.
 
-## Which tier should I use?
+Those are the only forms the skill teaches, because they are the only ones an agent needs
+mid-task. Everything else is the `jevlin` command in a shell. The agent can run these too when
+you ask it to; the skill points it at `connect` and `status` when a search answers that the
+registration or the claim needs attention.
 
-| tier | what it asks | choose it |
-|---|---|---|
-| `fast` | The fast indexes of a preset: `economy` asks two, `standard` three. The quickest. | For routine lookups. It is the only tier before you claim. |
-| `balanced` | Four of the hosted service's core engines: Exa, Brave, Parallel search and Perplexity search. | When you want several independent sources, or a fast search came back thin. |
-| `max` | All seven core engines, with more results per engine and longer excerpts. | When agreement between engines matters, or you want the most text per page. |
-
-You choose the tier; your agent never sets one. With none set, the router applies your key's
-default. `jevlin limits` shows your key's caps and today's spend, and every response reports
-what its search cost. [Choosing a tier](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#choosing-a-tier) has the presets and
-when `balanced` and `max` are worth it.
-
-## Which agents are supported?
-
-| agent | after setup |
+| command | what it does |
 |---|---|
-| [Claude Code](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#claude-code) | Ready. jevlin's hook approves exactly the search the skill renders. |
-| [Cursor](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#cursor) | Ready. |
-| [Codex](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#codex) | Approve jevlin's hooks in Codex once. Needs Codex 0.158.0 or newer. |
-| [opencode](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#opencode) | Paste the rules block setup prints into your `AGENTS.md`. |
-| [Pi](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#pi) | Ready. |
-| [Hermes](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#hermes) | Approve the hook once; it loads next session. |
+| `jevlin search` | One search. `--stdin` for agents (JSON in, JSON out); `<query words>` for a person. |
+| `jevlin setup` | Everything after the binary: previous installation, config, registration, profile, agents. |
+| `jevlin status` | What this installation has and has not completed. `-json` for one envelope. |
+| `jevlin doctor` | Whether this installation is ready to search, check by check: the stored key, the registration, the trace key, whether this copy is the latest release, the binary on PATH. `-json` too. |
+| `jevlin limits` | This key's spend caps, rate windows and today's spend, read from the router. A claimed key gets 120 searches a minute, 3,000 an hour and 16 at once; an unclaimed one 10, 120 and 2, with $0.10 a day. |
+| `jevlin agents install\|status\|uninstall` | Sets up, reports or removes the skills and hooks of each agent. |
+| `jevlin agents prefer on\|off\|status` | What `/jevlin on\|off\|status` runs: which search is the default. |
+| `jevlin agents tier <tier> [preset]\|default\|status` | What `/jevlin tier` runs: the tier every search carries, and for `fast` the preset (`economy`, `standard`). |
+| `jevlin connect` | Registers with the search platform, prints the claim link, polls until claimed. |
+| `jevlin login` | Stores a key you already have, read from stdin, for searches without a registration. |
+| `jevlin upgrade` | A native install: the latest release, verified before it runs; `-rollback` swaps back. |
+| `jevlin uninstall` | Removes what setup wrote; `-binary` and `-purge-state` go further. |
+| `jevlin version`, `jevlin help` | The version, and the full usage text. |
 
-For any other agent, [Agents](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#any-other-agent) says what to paste.
+A command that reads the config takes `-config <file>`; `setup`, `upgrade` and `uninstall`
+take `-home <dir>` instead, the installation. The [reference](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#commands) has every flag.
 
-## What leaves my machine?
+The skill's text is [`cmd/jevlin/skill.md`](https://github.com/jevlinai/jevlin-go/blob/main/cmd/jevlin/skill.md), rendered per agent and per
+shell at install; the installed copy is at `~/.claude/skills/jevlin/`, `~/.cursor/skills/jevlin/`,
+`~/.codex/skills/jevlin/`, `~/.pi/agent/skills/jevlin/` or `~/.hermes/skills/jevlin/`.
+[Agents](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md) says what else is written into each one.
 
-Each search sends your query and a small trace to the search router at `api.jevlin.ai`. The
-trace carries hashed session ids and the assistant's text that led to the search, scrubbed of
-anything shaped like a secret and capped at 32 KiB: from Claude Code an earlier message of the
-turn, from Cursor its latest thought or reply, and from Codex and Hermes no text at all. With
-`[search] turn_end = true` in the config, a turn that searched also sends what you asked, the
-agent's answer and the names, durations and outcomes of its tool calls, never a tool's input or
-output. `export JEVLIN_TRACE=off` sends neither, and searches work the same.
+## What leaves the machine
 
-Your agent passes the query on standard input, so it is never on a command line; a search you
-type, `jevlin search "<query words>"`, does put it there. What the service keeps, and for how
-long, is in its [privacy policy](https://platform.jevlin.ai/privacy).
-[The trace](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#the-trace) and [the turn end](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#the-turn-end) list every field.
+The trace and the turn end go only to the search router, inside the search request and the
+turn record. Nothing else reads them. An agent's query goes in the JSON on stdin, so it is in
+neither `ps` nor a shell history. The human form, `jevlin search "<query words>"`, puts the
+query on the command line, where both can see it; use `--stdin` for anything sensitive. The
+search platform receives the registration and the claim; it never sees a query, a result or
+the trace.
 
-## How do I update or remove it?
+## Upgrading and removing
 
 ```bash
-jevlin upgrade                         # an install from a release archive: the latest, verified before it runs
-jevlin uninstall                       # remove the skills, hooks and profile lines; keep your registration and key
-jevlin uninstall -purge-state          # also delete the registration, key and config, confirmed at a terminal
-npm uninstall -g @jevlinsearch/jevlin  # then remove an npm install
+jevlin upgrade                 # a native install: the latest release, verified before it runs
+npm install -g @jevlinsearch/jevlin@latest   # an npm install is updated with npm
+jevlin uninstall               # remove the skills, hooks and profile block; keep your registration and key
 ```
 
-An npm install is updated with `npm install -g @jevlinsearch/jevlin@latest`. Once a day, when a
-Claude Code, Cursor, Codex, opencode or Pi session starts or ends, jevlin checks for a newer
-release: an install from a release archive installs a patch release (0.7.0 to 0.7.1) itself and
-leaves a new minor release for `jevlin upgrade`; an npm install is only told.
-[Upgrading](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#upgrading) and
-[removing it and coming back](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#removing-it-and-coming-back) have the details.
+Once a day, when an agent session starts or ends, jevlin also checks for a newer release, and
+`jevlin status` says what it found. A native install replaces its own binary with it, with the
+same verification as `jevlin upgrade`, unless the config says `[update] mode = "notify"`: then
+it only tells you. An npm install is only ever told. `mode = "off"` stops the check.
 
-## Where is the rest?
+The guide covers [upgrading](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#upgrading) and
+[removing it and coming back](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#removing-it-and-coming-back).
 
-- [Guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md): setup in detail, the claim, tiers, what leaves the machine,
-  upgrading, removing, troubleshooting.
-- [Agents](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md): what setup writes into each coding agent, and its known limits.
-- [Reference](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md): every command and flag, tiers and providers, the
-  `--stdin` request and its envelope, config, files, the trace, the turn end.
+## Documentation
+
+- [Jevlin guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md): setup in detail, the claim, tiers, the trace,
+  upgrading, removing.
+- [Agents](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md): what is written into each coding agent, and its known limits.
+- [Reference](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md): commands, the `--stdin` envelope, config, environment
+  variables, files, the trace, the turn end, `doctor`'s checks.
 - [CHANGELOG.md](https://github.com/jevlinai/jevlin-go/blob/main/CHANGELOG.md): what changed in each release.
 - [SECURITY.md](https://github.com/jevlinai/jevlin-go/blob/main/SECURITY.md): how to report a vulnerability.
 - [CONTRIBUTING.md](https://github.com/jevlinai/jevlin-go/blob/main/CONTRIBUTING.md): how to propose a change.
