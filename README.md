@@ -32,15 +32,17 @@ jevlin setup
 ```
 Install it globally, not with `npx`: setup writes the binary's path into your agents' skills and hooks, and npm throws an `npx` cache away.
 
-Follow here if [Installing without npm](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#installing-without-npm).
+### Can I install it another way?
 
-- **From your agent:** the marketplaces carry a setup skill that installs and sets up jevlin;
-  [the guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#let-your-agent-install-it) lists them.
+- **From GitHub Releases::** [installer options, and downloading by hand](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#installing-without-npm)
+
+- **From an agent marketplace:** Claude Code's and Codex's plugin marketplaces, and skills.sh,
+  carry a setup skill that installs and sets up jevlin ([how](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#let-your-agent-install-it))
 
 - **From source:** `go install github.com/jevlinai/jevlin-go/cmd/jevlin@latest`, or `make build`
-  in a clone. See [building from source](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#building-from-source).
+  in a clone ([details](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#building-from-source))
 
-If your shell then cannot find `jevlin`, [the guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#jevlin-command-not-found) shows how to run setup by its full path.
+**`jevlin: command not found`?** Run setup by its full path. [The guide shows how](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#jevlin-command-not-found).
 
 ## What does setup do, and what is the claim?
 
