@@ -32,15 +32,18 @@ irm https://jevlin.ai/install.ps1 | iex      # Windows PowerShell
 ```
 This installs the latest release at `~/.jevlin/bin/jevlin`, checked against the release's checksums and, where a tool on the machine can, its signature, and runs setup when you ran it at a terminal.
 
-Follow here if [Installing without npm](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#installing-without-npm).
+### Can I install it another way?
 
-- **From your agent:** the marketplaces carry a setup skill that installs and sets up jevlin;
-  [the guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#let-your-agent-install-it) lists them.
+- **From GitHub Releases:** download the archive for your platform and check it against its
+  `checksums.txt` ([steps](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#installing-without-npm))
+
+- **From an agent marketplace:** Claude Code's and Codex's plugin marketplaces, and skills.sh,
+  carry a setup skill that installs and sets up jevlin ([how](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#let-your-agent-install-it))
 
 - **From source:** `go install github.com/jevlinai/jevlin-go/cmd/jevlin@latest`, or `make build`
-  in a clone. See [building from source](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#building-from-source).
+  in a clone ([details](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#building-from-source))
 
-If your shell then cannot find `jevlin`, [the guide](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#jevlin-command-not-found) shows how to run setup by its full path.
+**`jevlin: command not found`?** Run setup by its full path. [The guide shows how](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#jevlin-command-not-found).
 
 ## What does setup do, and what is the claim?
 
