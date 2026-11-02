@@ -269,7 +269,10 @@ if [ -n "${JEVLIN_NO_SETUP:-}" ]; then
   say "next: $bindir/jevlin setup"
   exit 0
 fi
-if [ -r /dev/tty ] && [ -w /dev/tty ]; then
+# Open the terminal rather than test its mode: /dev/tty reads as readable and
+# writable even in a process with no controlling terminal, such as an agent's
+# shell, where opening it fails.
+if (exec </dev/tty) 2>/dev/null; then
   say ""
   exec "$bindir/jevlin" setup </dev/tty
 fi

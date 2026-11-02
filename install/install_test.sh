@@ -26,7 +26,8 @@ py_bin=$(command -v python3) || { echo "the test needs python3 to serve"; exit 1
 
 # A throwaway key, and its signature over the domain string and checksums.txt.
 rel="$work/release/v$ver"; mkdir -p "$rel" "$work/stage"
-printf '#!/bin/sh\necho "jevlin %s"\n' "$ver" > "$work/stage/jevlin"; chmod 755 "$work/stage/jevlin"
+# The stub records every call, so a case can tell whether the installer ran setup.
+printf '#!/bin/sh\necho "$*" >> "%s"\necho "jevlin %s"\n' "$work/calls" "$ver" > "$work/stage/jevlin"; chmod 755 "$work/stage/jevlin"
 name="jevlin_${ver}_${os}_${arch}.tar.gz"
 tar -czf "$rel/$name" -C "$work/stage" jevlin
 sum=$(shasum -a 256 "$rel/$name" 2>/dev/null || sha256sum "$rel/$name"); sum=${sum%% *}
@@ -117,6 +118,30 @@ check "(f) wrong checksum, no verifier: dies, nothing installed" 1 "checksum mis
 run g "$work/good.sig" "$work/p_bare"
 check "(g) no checksum entry, no verifier: dies, nothing installed" 1 "checksums.txt has no entry" no
 cp "$work/checksums.good" "$rel/checksums.txt"
+
+# No JEVLIN_NO_SETUP and no controlling terminal, as in an agent's shell: /dev/tty
+# still reads as readable and writable there, so the installer must open it to
+# tell, print the command to run, exit 0, and never start setup. The run goes
+# through python3's setsid in a forked child, which leaves it with no terminal on
+# Linux and macOS alike.
+: > "$work/calls"
+rm -rf "$work/home"; mkdir "$work/home"
+env -i HOME="$work/home" JEVLIN_HOME="$work/home/j" JEVLIN_VERSION=$ver PATH="$work/p_node" \
+  "$py_bin" -c '
+import os, sys
+pid = os.fork()
+if pid == 0:
+    os.setsid()
+    os.execv(sys.argv[1], sys.argv[1:])
+_, status = os.waitpid(pid, 0)
+sys.exit(os.waitstatus_to_exitcode(status))
+' /bin/sh "$work/install.sh" < /dev/null > "$work/out" 2>&1
+rc=$?
+check "(j) no terminal, no JEVLIN_NO_SETUP: prints the setup command, exit 0" 0 \
+  "no terminal attached; run: $work/home/j/bin/jevlin setup" yes
+if grep -q '^setup' "$work/calls"; then
+  echo "FAIL (j): the installer ran setup with no terminal"; fail=1
+fi
 
 # Python without the cryptography package: the built-in check, both ways.
 if ! "$py_bin" -c 'import cryptography' 2>/dev/null; then
