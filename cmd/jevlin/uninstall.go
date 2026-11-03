@@ -56,8 +56,8 @@ nothing is revoked.
                  binary runs from, else ~/.jevlin)
   -binary        also remove this installation's own copy of the binary; a copy npm
                  installed is npm's to remove
-  -purge-state   also destroy this installation's participant state: the
-                 registration, stored key and config. Needs a terminal: you
+  -purge-state   also destroy this installation's registration, stored key
+                 and config. Needs a terminal: you
                  type the installation path to confirm, and -yes never
                  answers it
   -dry-run       print what would be removed; change, ask and contact nothing
@@ -160,7 +160,7 @@ func uninstallMain(d uninstallDeps, args []string) int {
 	homeFlag := fs.String("home", "", "the installation directory")
 	r := &uninstallRun{d: d}
 	fs.BoolVar(&r.binary, "binary", false, "also remove this installation's own binary")
-	fs.BoolVar(&r.purge, "purge-state", false, "also destroy the participant state")
+	fs.BoolVar(&r.purge, "purge-state", false, "also destroy the registration, stored key and config")
 	fs.BoolVar(&r.dry, "dry-run", false, "print what would be removed, change nothing")
 	fs.BoolVar(&r.yes, "yes", false, "answer the yes/no question")
 	if err := fs.Parse(args); err != nil {
