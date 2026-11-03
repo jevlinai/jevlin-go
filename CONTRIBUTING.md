@@ -13,7 +13,8 @@ privately; never in a public issue or pull request.
 ## Proposing a change
 
 For a change in behavior, open an issue first, so the change is agreed before anyone writes
-it. For documentation and small fixes, a pull request on its own is fine.
+it. For documentation and small fixes, a pull request on its own is fine. In `docs/` a fact has
+one home: the other documents link to it, and the README only summarizes.
 
 ## The flow
 
