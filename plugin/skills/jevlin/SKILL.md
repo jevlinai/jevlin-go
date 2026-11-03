@@ -16,14 +16,16 @@ What setup writes, and what it leaves alone: a `jevlin` skill in the agent's
 own skills directory (Claude Code, Cursor, Codex, Pi, Hermes; opencode has
 no skills directory and gets an in-process plugin plus a rules block, printed
 for the user to paste into `AGENTS.md`), a few hooks, and, where the agent
-keeps an allow list, an entry for the one search command the skill renders,
-spelled with the binary's full path, so that command runs without a prompt
-and no other command does. It changes no
-permission mode and no sandbox setting of the agent's. The one exception is
-Codex on macOS and Linux, where it adds a marked block to `~/.codex/config.toml`:
-a permission profile named `jevlin` that extends Codex's workspace profile
-with write access to jevlin's own state directory and network access to
-Jevlin's hosts only, made the default. Everything it writes is marked as its
+keeps an allow list, entries for the search and fetch commands the skill
+renders, spelled with the binary's full path, so those commands run without a
+prompt and no other command does; in Claude Code also read and edit rules for
+jevlin's requests folder and a read rule for its skill folder, nine rules in
+all. It changes no permission mode and no sandbox setting of the agent's. The
+one exception is Codex, which gets a marked block in `~/.codex/config.toml`.
+On macOS and Linux it is a permission profile named `jevlin` that extends
+Codex's workspace profile with write access to jevlin's own state directory
+and network access to Jevlin's hosts only, made the default; on Windows it
+only makes jevlin's directories writable, with no network. Everything it writes is marked as its
 own, and `jevlin uninstall` removes exactly that. Every file and rule is
 listed per agent at https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md.
 
