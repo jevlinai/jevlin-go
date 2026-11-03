@@ -51,9 +51,7 @@ Globally, never with `npx` and never into a project's `node_modules`: setup
 writes the binary's path into the agents' skills and hooks.
 
 Without Node, use the installer instead, and tell it not to start setup
-itself with `JEVLIN_NO_SETUP=1`: step 3 runs setup. Without that, the
-installer tries to start setup on a terminal an agent's shell does not have,
-and fails after the binary is in place. On macOS and Linux:
+itself with `JEVLIN_NO_SETUP=1`: step 3 runs setup. On macOS and Linux:
 
 ```bash
 curl -fsSL https://jevlin.ai/install.sh | JEVLIN_NO_SETUP=1 sh
