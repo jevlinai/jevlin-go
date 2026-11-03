@@ -257,13 +257,25 @@ fi
 tar -xzf "$tmp/$name" -C "$tmp" jevlin
 mkdir -p "$bindir"
 chmod 700 "$home" "$bindir" 2>/dev/null || true
-# A fresh name, then one rename: a jevlin that is running keeps its old file.
+# A fresh name beside the installed binary, run there before the installed one
+# is touched, then one rename: a jevlin that does not run here never replaces
+# one that does, and a jevlin that is running keeps its old file. It runs beside
+# the installed one, not in $tmp, because a temporary directory mounted noexec
+# would refuse a binary that runs from the bin directory.
 mv -f "$tmp/jevlin" "$bindir/jevlin.new"
 chmod 755 "$bindir/jevlin.new"
+if ! reported=$("$bindir/jevlin.new" version); then
+  # Removed, or named: a failed install leaves no unexplained file in bin.
+  rm -f "$bindir/jevlin.new" 2>/dev/null || :
+  left=
+  [ ! -e "$bindir/jevlin.new" ] || left="; $bindir/jevlin.new could not be removed: delete it"
+  if [ -e "$bindir/jevlin" ]; then
+    die "the downloaded jevlin does not run here ($bindir/jevlin.new version failed); $bindir/jevlin was left as it was$left"
+  fi
+  die "the downloaded jevlin does not run here ($bindir/jevlin.new version failed); nothing was installed$left"
+fi
 mv -f "$bindir/jevlin.new" "$bindir/jevlin"
-
-"$bindir/jevlin" version >/dev/null 2>&1 || die "the installed binary does not run: $bindir/jevlin"
-say "installed $bindir/jevlin ($("$bindir/jevlin" version))"
+say "installed $bindir/jevlin ($reported)"
 
 if [ -n "${JEVLIN_NO_SETUP:-}" ]; then
   say "next: $bindir/jevlin setup"

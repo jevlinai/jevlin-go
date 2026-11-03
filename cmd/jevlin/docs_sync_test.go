@@ -5,7 +5,7 @@ package main
 //
 // npm/README.md is not a summary of README.md, or a copy someone remembers
 // to refresh — it IS README.md, plus the one section that only makes sense
-// on npm. It had drifted by five releases before anyone noticed, because
+// on npm, with one section of its own: how to install it. It had drifted by five releases before anyone noticed, because
 // nothing was watching: the page npm serves described a binary that no
 // longer existed, while the repository's own front page was current. A
 // prose rule ("keep them in sync") is the thing that failed. Byte equality
@@ -36,6 +36,61 @@ const npmWrapperSuffix = "\n## The npm wrapper\n\n" +
 	"- `JEVLIN_BINARY=/path` use a binary already on the machine\n" +
 	"- `JEVLIN_SKIP_DOWNLOAD=1` install the wrapper without fetching\n"
 
+// installHeading starts the one section npm/README.md words for itself, up
+// to the next "## " heading.
+const installHeading = "## How do I install it?"
+
+// npmInstallSection is npm/README.md's own install section, held here byte
+// for byte. npm's page is read by someone who already has npm, so it leads
+// with the npm install; GitHub's front page leads with the one-line
+// installers. Every other byte of npm/README.md is README.md's. Held as a
+// constant, as npmWrapperSuffix is, so a change to npm's install section
+// is a change to this test, and so a review, while the root README's own
+// install section may change freely.
+const npmInstallSection = "## How do I install it?\n" +
+	"```bash\n" +
+	"npm install -g @jevlinsearch/jevlin\n" +
+	"jevlin setup\n" +
+	"```\n" +
+	"Install it globally, not with `npx`: setup writes the binary's path into your agents' skills and hooks, and npm throws an `npx` cache away.\n" +
+	"\n" +
+	"\n" +
+	"```bash\n" +
+	"curl -fsSL https://jevlin.ai/install.sh | sh     # on macOS and Linux\n" +
+	"\n" +
+	"irm https://jevlin.ai/install.ps1 | iex      # Windows PowerShell\n" +
+	"```\n" +
+	"This installs the latest release at `~/.jevlin/bin/jevlin`, checked against the release's checksums and, where a tool on the machine can, its signature, and runs setup when you ran it at a terminal.\n" +
+	"\n" +
+	"### Can I install it another way?\n" +
+	"\n" +
+	"- **From GitHub Releases:** download the archive for your platform and check it against its\n" +
+	"  `checksums.txt` ([steps](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#installing-without-npm))\n" +
+	"\n" +
+	"- **From an agent marketplace:** Claude Code's and Codex's plugin marketplaces, and skills.sh,\n" +
+	"  carry a setup skill that installs and sets up jevlin ([how](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#let-your-agent-install-it))\n" +
+	"\n" +
+	"- **From source:** `go install github.com/jevlinai/jevlin-go/cmd/jevlin@latest`, or `make build`\n" +
+	"  in a clone ([details](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#building-from-source))\n" +
+	"\n" +
+	"**`jevlin: command not found`?** Run setup by its full path. [The guide shows how](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#jevlin-command-not-found).\n" +
+	"\n"
+
+// installSectionBounds is where the install section runs in a README: from
+// its heading up to the next "## " heading. ok is false when there is no
+// such section.
+func installSectionBounds(b []byte) (start, end int, ok bool) {
+	start = bytes.Index(b, []byte(installHeading))
+	if start < 0 {
+		return 0, 0, false
+	}
+	next := bytes.Index(b[start+len(installHeading):], []byte("\n## "))
+	if next < 0 {
+		return 0, 0, false
+	}
+	return start, start + len(installHeading) + next + 1, true
+}
+
 func TestNPMReadmeMirrorsRootREADME(t *testing.T) {
 	root := moduleRoot(t)
 
@@ -48,8 +103,14 @@ func TestNPMReadmeMirrorsRootREADME(t *testing.T) {
 		t.Fatalf("read npm/README.md: %v", err)
 	}
 
-	want := make([]byte, 0, len(top)+len(npmWrapperSuffix))
-	want = append(want, top...)
+	start, end, ok := installSectionBounds(top)
+	if !ok {
+		t.Fatalf("README.md has no %q section ending at a following \"## \" heading", installHeading)
+	}
+	want := make([]byte, 0, len(top)+len(npmInstallSection)+len(npmWrapperSuffix))
+	want = append(want, top[:start]...)
+	want = append(want, npmInstallSection...)
+	want = append(want, top[end:]...)
 	want = append(want, npmWrapperSuffix...)
 
 	if bytes.Equal(npm, want) {
@@ -60,12 +121,12 @@ func TestNPMReadmeMirrorsRootREADME(t *testing.T) {
 	// unreadable; the first differing byte, with its line number and both
 	// sides' context, is what a person actually needs.
 	line, col, gotCtx, wantCtx := firstDifference(npm, want)
-	t.Fatalf("npm/README.md is not README.md + the wrapper suffix.\n"+
+	t.Fatalf("npm/README.md is not README.md, with npmInstallSection for its install section, + the wrapper suffix.\n"+
 		"first difference at line %d, column %d:\n"+
 		"  npm/README.md:  %q\n"+
 		"  expected:       %q\n"+
 		"(npm/README.md is %d bytes, expected %d)\n"+
-		"Fix by regenerating it: the top-level README verbatim, then npmWrapperSuffix.",
+		"Fix by regenerating it: the top-level README with npmInstallSection in place of its install section, then npmWrapperSuffix; a change to npm's install section changes npmInstallSection too.",
 		line, col, gotCtx, wantCtx, len(npm), len(want))
 }
 

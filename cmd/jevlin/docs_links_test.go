@@ -233,6 +233,49 @@ func TestDocumentLinksResolve(t *testing.T) {
 // it is pinned against headings of these documents and the anchors
 // GitHub's rendering of the pages gives them, rather than against values
 // derived from this function.
+// publishedAnchors is every anchor in the docs that a released README links
+// to. npm freezes a version's README, and its links point at blob/main, so
+// a heading renamed on main later breaks a link the published page still
+// carries, and TestDocumentLinksResolve, which reads the README on disk,
+// cannot see it. The list only grows: a section that moves keeps its old
+// heading with one line pointing to its new home. It starts from the 0.7.0
+// README. A document the README links with no anchor is listed with none:
+// it must still exist, since renaming the file breaks the published link
+// just as renaming a heading does.
+var publishedAnchors = map[string][]string{
+	"docs/guide.md": {
+		"setup", "the-claim-link", "upgrading", "removing-it-and-coming-back",
+		"making-it-the-default-or-not", "jevlin-command-not-found", "installing-without-npm",
+		"choosing-a-tier", "let-your-agent-install-it",
+	},
+	"docs/agents.md": {
+		"claude-code", "cursor", "codex", "opencode", "pi", "hermes", "any-other-agent",
+	},
+	"docs/reference.md": {
+		"the-trace", "the-turn-end", "building-from-source",
+	},
+	"docs/privacy.md": {},
+}
+
+func TestPublishedAnchorsStillResolve(t *testing.T) {
+	root := moduleRoot(t)
+	for doc, want := range publishedAnchors {
+		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(doc))) // #nosec G304 -- a fixed document under this module's own root
+		if err != nil {
+			t.Errorf("%s, which a published README links to, cannot be read: %v; "+
+				"keep the file at that path, pointing to where its content went", doc, err)
+			continue
+		}
+		have := headingAnchors(body)
+		for _, a := range want {
+			if !have[a] {
+				t.Errorf("%s has no heading with anchor #%s, which a published README links to; "+
+					"keep the heading, with one line pointing to where its section went", doc, a)
+			}
+		}
+	}
+}
+
 func TestGithubSlugMatchesGitHubsAnchors(t *testing.T) {
 	for heading, want := range map[string]string{
 		"The `--stdin` request":         "the---stdin-request",
