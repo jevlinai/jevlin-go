@@ -10,7 +10,7 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
-## v0.7.0 — 2026-11-02
+## v0.7.0 — 2026-11-03
 
 Run `jevlin setup` after installing this version. It reads only configuration format 1, and
 sets a config from any earlier version aside before writing one.
@@ -45,10 +45,12 @@ and nothing sends them now. A `wallet` directory and a `payout.json` are also le
 wallet holds a key that is recoverable only with its 24 words, so keep it until you have moved
 anything it holds.
 
-**Which agents were live-smoked.** Claude Code, Codex and Cursor were set up and searched by
-hand on macOS and Linux for this release (setup, status, doctor and a search from a shell).
-Not live-smoked through the agent itself: opencode, Pi and Hermes, and Windows end to end;
-their behaviour is held by tests and, on Windows, by CI's runners alone. This release's updater
+**Which agents were live-smoked.** Claude Code, Codex and Cursor on macOS, and Claude Code,
+Codex, opencode, Pi and Hermes on Linux, were set up and searched by hand for this release
+(setup, status, doctor and a search from a shell). Not live-smoked through the agent itself:
+opencode, Pi and Hermes, and Windows end to end; their behaviour is held by tests and, on
+Windows, by CI's runners alone. The installers were run live against a real GitHub release on
+Windows 11, in Windows PowerShell 5.1 and PowerShell 7, and on macOS. This release's updater
 has not run on a Windows machine with real-time antivirus on.
 
 The client is supersearch only, and nothing in it is called a miner. Mining moved off the
@@ -71,6 +73,13 @@ connect completes the claim.
 `jevlin search --fresh`, and `"cache": "refresh"` in a `--stdin` request, run a search live
 instead of serving the router's result from the last 15 minutes; the answer says
 `result.usage.cache_refresh`. Neither is a default, and the skill does not tell an agent to use them.
+
+The installers, `install.sh`, `install.ps1` and `install.cmd`, now live in this repository's
+`install/`, and jevlin.ai serves them from here. They always check the download against the
+release's checksums, and its signature where a tool on the machine can, saying so when none
+can; they start `jevlin setup` only at a terminal and otherwise print the command; they work in
+Windows PowerShell 5.1 and PowerShell 7; and when a new binary does not run they leave the
+installed one as it was.
 
 - **Mining left the client.** `jevlin mining`, `enroll`, `join`, `provider`, `payout`,
   `wallet`, `earnings` and `flush` are gone, and so are the mining question at setup and
