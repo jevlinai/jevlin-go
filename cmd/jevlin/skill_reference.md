@@ -30,7 +30,7 @@ Both settings are the user's. Never change either on your own.
 A request without `tier` uses the user's tier, or the router's default when the user set none. The fast tier runs a
 preset the user picks, for example `economy` (two fast indexes) or `standard` (three, for more coverage);
 `jevlin agents tier status` lists them with the router's estimate. `balanced` asks several core engines; `max` asks
-every core engine, for more results and longer excerpts. Both are for claimed agents. Never pick a tier or preset
+every core engine, for more results from each. Both are for claimed agents. Never pick a tier or preset
 yourself.
 
 `providers` restricts a search to named indexes. Send it only when the user asks for a specific index. It works only
@@ -44,8 +44,8 @@ than setting `tier`.
 | `none` | nothing to do |
 | `retry` | the same call may work later; wait `retry_after_ms` first when it is set |
 | `fix_input` | the request was wrong; fix it before sending anything again |
-| `connect` | the registration, setup or claim needs attention: run `jevlin connect`, or `jevlin status -json` to see which |
-| `login` | a search credential exists and was not accepted: run `jevlin login` |
+| `connect` | the registration, setup or claim needs attention: tell the user to run `jevlin connect` at a terminal; `jevlin status` there shows which part |
+| `login` | a search credential exists and was not accepted: tell the user to run `jevlin login` at a terminal; never run it yourself |
 | `check_access` | the credential does not cover this request; the user has to sort it out |
 | `report` | neither retrying nor changing the request will help; show the user what happened |
 
@@ -72,7 +72,7 @@ the text it can return is exhausted. Links in `content` come back as their text 
 
 Per page:
 
-- `best_rank`: the best position any index gave the page.
+- `best_rank`: the best position any index gave the page, counting from 0.
 - `matched_terms`: which of the query's identifiers the page's text, title or URL contains, when present; they may not
   be in the trimmed snippet.
 - `result_id`: the page's id within this search only.

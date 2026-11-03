@@ -1212,7 +1212,7 @@ func rulesSnippetFor(entry binEntry, shells skillShells) string {
 		// falls back the way an unestablished cell already does.
 		call, _ = callSection(entry, skillShells{kinds: []shellKind{shellPOSIX}, goos: shells.goos})
 	}
-	return hintIndent + "For public-web search (supersearch through jevlin: every engine in one call, each result attributed), send one JSON request on stdin:\n" +
+	return hintIndent + "For public-web search (supersearch through jevlin: several indexes in one call, each result attributed), send one JSON request on stdin:\n" +
 		indentHintProse(call) + "\n" +
 		"  The query goes in the JSON, never in the command line. One JSON object comes\n" +
 		"  back: decide what to do next from ok, retryable and action, never from the\n" +
