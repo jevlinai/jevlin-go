@@ -79,6 +79,38 @@ func TestTheSkillTeachesTheLeanSearchOnEveryHost(t *testing.T) {
 	}
 }
 
+// The router's ranker, its goal gate and every index that takes a goal act
+// only on a request that carries an objective, so the skill asks for one on
+// every search, in the request's field list right under the example. The
+// sentence it replaced said the opposite (that the objective does not reorder
+// the list), so that wording must not come back beside it.
+func TestTheSkillAsksForAnObjectiveOnEverySearch(t *testing.T) {
+	const want = "- `objective`: one sentence on what you are trying to find out. It is passed to the indexes " +
+		"that accept a goal and decides how the router orders the pool; send it on every search."
+	entry := binEntry{command: "/home/u/.jevlin/bin/jevlin", cfg: "/home/u/.jevlin/jevlin.toml"}
+	for _, id := range goldenHostIDs {
+		for _, goos := range hostShellOSes {
+			t.Run(id+"/"+goos, func(t *testing.T) {
+				skill, _ := renderedSkillPairFor(t, id, entry, goos, preferOn)
+				_, after, ok := strings.Cut(skill, "\n## The request\n")
+				if !ok {
+					t.Fatal("SKILL.md has no request section")
+				}
+				fields := flat(strings.SplitN(after, "\n## ", 2)[0])
+				if strings.Count(fields, want) != 1 {
+					t.Errorf("the request section does not carry the objective bullet once:\n%s", fields)
+				}
+				if strings.Count(flat(skill), "`objective`:") != 1 {
+					t.Error("SKILL.md describes the objective field more than once")
+				}
+				if strings.Contains(flat(skill), "not reorder") {
+					t.Error("SKILL.md still says the objective does not reorder the list")
+				}
+			})
+		}
+	}
+}
+
 // Off keeps the search for a user who names it, and says so once, in the
 // opening paragraph and the description.
 func TestTheSkillWhenSwitchedOffIsNotTheDefault(t *testing.T) {
