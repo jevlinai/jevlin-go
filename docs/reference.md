@@ -99,7 +99,7 @@ and the query's length are not checked here, and the router answers for them.
 | `cache` | `"default"` (the same as absent) or `"refresh"`. The router serves a repeat of a search from its cache for up to 15 minutes; `"refresh"` runs it live instead and is billed as live, keeps the fresh result for the next caller where the account retains content, and says so in `result.usage.cache_refresh`. The command line's `--fresh` is the same. |
 | `providers` | Up to 16 provider names, on `balanced` or `max` only ([Tiers and providers](#tiers-and-providers)). |
 | `view` | `"merged"` (default) or `"full"`. The default carries the merged list without the per-provider `candidates`, and each page without `excerpts` and `canonical_url`, which repeat its `snippet` and `url`; `"full"` adds all three. Either way the router is asked for its merged view. |
-| `objective` | What you are trying to find out, in your own words: a non-blank string of at most 4096 bytes. The router passes it to the providers that take a goal and does not rank by it. |
+| `objective` | What you are trying to find out, in your own words: a non-blank string of at most 4096 bytes. The router passes it to the providers that accept a goal, and it decides how the router orders the pool; send it on every search. |
 | `search_queries` | 1 to 4 more wordings of `query`, each a non-blank string of at most 4096 bytes, searched beside it; a repeat is dropped. Each extra wording costs about as much as another search. |
 
 ### The envelope
