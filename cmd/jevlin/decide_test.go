@@ -64,7 +64,7 @@ func decideServingHeaders(t *testing.T, status int, raw, stdin string, headers m
 
 func decideFixture(t *testing.T, name string) string {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("testdata", "decide", "router", name))
+	raw, err := os.ReadFile(filepath.Join("testdata", "decide", "router", name)) // #nosec G304 -- the test's own fixture directory, with names the tests write
 	if err != nil {
 		t.Fatal(err)
 	}
