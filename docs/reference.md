@@ -9,6 +9,7 @@ says what is written into each agent.
 |---|---|---|
 | `search` | `--stdin`, `-tier fast\|balanced\|max`, `-format json\|model`, `-view merged`, `--fresh`, `-timeout d` (default 1m0s), `-config file` | One web search. `--stdin` for agents ([the request](#the---stdin-request)); `<query words>` for a person ([the human form](#the-human-form-and-powershell)). `--fresh` skips the router's cache, as `"cache": "refresh"` does in a request. |
 | `fetch` | `--stdin` (required), `-timeout d` (default 1m0s), `-config file` | The full text of pages a search returned, for agents ([Reading a page in full](#reading-a-page-in-full)). |
+| `decide` | `--stdin` or `--models` (exactly one, required), `-timeout d` (default 1m0s), `-config file` | Typed questions about a state, answered by a decision model, for agents; `--models` lists the models ([Asking a decision model](#asking-a-decision-model)). |
 | `agents install\|status\|uninstall` | `-client name` (repeatable), `-config file`; `install` and `uninstall` also `-dry-run` and `-yes` | Sets up, reports or removes the skills and hooks of each agent. `-yes` answers **Proceed?**, never a question about a Codex setting of yours. |
 | `agents prefer on\|off\|status` | `-config file` | Whether this search or the agent's own is the default, in every agent with a skill. |
 | `agents tier fast [preset]\|balanced\|max\|default\|status` | `-config file` | The tier every search carries unless the request names one; `default` unsets it. After `fast`, a preset name picks which fast indexes run, and a preset named alone is taken as `fast <preset>` when the router lists it; `status` lists the router's presets with its estimate for each. |
@@ -29,7 +30,7 @@ installation's own (`$JEVLIN_HOME/jevlin.toml`, else `~/.jevlin/jevlin.toml`) wh
 exists, and built-in defaults. A `jevlin.toml` in the working directory is never read unless you
 name it, so a cloned repository cannot choose where your key is sent. `status` and `doctor` name
 the file they used; `connect` refuses to run with no config file and says to run `jevlin setup`.
-`search` and `fetch` refuse a second `-config`, even one naming the same file: Claude Code's
+`search`, `fetch` and `decide` refuse a second `-config`, even one naming the same file: Claude Code's
 allow rule ends after the installed `-config <file>`, so a second one could otherwise send the key
 to another config's router without a prompt. Before setup has written the installation's own
 config, a `-config` naming that path reads as built-in defaults, as no `-config` would.
@@ -109,7 +110,7 @@ Eight header fields are always present:
 | field | meaning |
 |---|---|
 | `version` | The envelope's version, `1`. |
-| `command` | `search`, `fetch`, `status`, `doctor`, `connect` or `limits`. |
+| `command` | `search`, `fetch`, `decide`, `status`, `doctor`, `connect` or `limits`. |
 | `ok` | `true` exactly when `exit_code` is 0. |
 | `exit_code` | The process's exit status ([below](#exit-codes-and-actions)). |
 | `status` | The exit class by name. |
@@ -220,6 +221,69 @@ is not a failed call: `ok` stays `true`.
 
 A fetch is one request and is never retried by the client.
 
+### Asking a decision model
+
+`jevlin decide --stdin` takes one JSON object and answers with one envelope carrying the same
+header, with `command` set to `decide`. It sends `POST /v1/decisions` to the configured router with
+the same key, deadline, redirect policy and user agent as a search, and nothing about it is kept
+on this machine. A decision is billed: `result.usage.cost_micros` says what it cost, and it is one
+request the client never repeats.
+
+| field | value |
+|---|---|
+| `version` | `1`, required. |
+| `model` | Required: `vendor/model`, as `jevlin decide --models` lists it. |
+| `state` | Required and not null: what the questions are about, a string, object or array. |
+| `questions` | Required: a non-empty object of question name to question, each an object, such as `{"type": "noul", "instructions": "…"}`. |
+| `options` | An object of the vendor's options. |
+| `sources` | 1 to 5 entries, each exactly `{"source_id": "s_…"}`, a page's `source_id` from a search's `result.merged`. |
+| `max_chars` | 1000 to 50000. |
+
+A malformed value, and any other field, answers `fix_input` before the router is called, with a
+code naming the field: `unsupported_version`, `unknown_field`, `missing_model`, `invalid_model`,
+`missing_state`, `missing_questions`, `invalid_questions`, `invalid_options`, `invalid_sources` or
+`invalid_max_chars`. A request over 1 MiB on stdin is `input_too_large`. Nothing else is checked
+here: the router judges the state, each question and the options, and this client sends them byte
+for byte, spacing and key order included. A router that does not take `sources` and `max_chars`
+yet refuses a request carrying them as `malformed_json`.
+
+On success, `result` has:
+
+| field | meaning |
+|---|---|
+| `request_id` | The router's id for this decision, also at the envelope's top level. |
+| `model`, `model_resolved` | The model as asked for, and what the vendor echoed, when it did. |
+| `answers` | One entry per question name, the router's object for it: `type` is `noul` (with `noul`), `choice` (`choice`, `probabilities`), `score` (`score`, `probabilities`, `legend`) or `refusal`, and `confidence` when the vendor reports one. Only the whitespace between tokens is removed. |
+| `citations` | The sources the vendor reports for the whole request: `url`, `title`, `excerpts`. Empty when none. |
+| `sources` | The pages the router read for a request carrying `sources`: `source_id`, `url`, `title`, `chars`, `cached`, `cost_micros`. |
+| `usage` | `input_tokens`, `output_tokens`, `grounded_calls`, `cost_micros`, `pages_cost_micros`, `cost_source` (`modeled`, `reported` or `free`), `byok` and `latency_ms`. |
+
+A `refusal` is an answer, not a failure: `ok` stays `true` and the other answers stand. A 2xx with
+no `answers` is `invalid_router_response`, exit 4.
+
+`jevlin decide --models` sends `GET /v1/decisions/models` with the same key and reads nothing from
+stdin. `result.models` is the router's list, each with `id` (the value `model` takes), `vendor`,
+`vendor_model`, `cost` in millionths of a dollar (`per_request_micros`, `per_prompt_ktok_micros`,
+`per_search_call_micros`, a zero left out), `free` (`requests_per_day`, absent with no free tier),
+`grounded` and `available` (whether this account can call it). Listing spends nothing. `--stdin`
+and `--models` together are a usage error.
+
+| router answer | exit | `code` | `retryable` | `action` |
+|---|---|---|---|---|
+| 400 `unknown_model` | 3 | `unknown_model` | `false` | `fix_input`: `jevlin decide --models` lists them |
+| 400 `invalid_request`, `malformed_json` | 3 | the router's | `false` | `fix_input` |
+| 400 `upstream_rejected` | 3 | `upstream_rejected` | `false` | `fix_input`: `error.message` is the vendor's |
+| 413 `payload_too_large` | 3 | `payload_too_large` | `false` | `fix_input` |
+| 403 `decisions_unavailable` | 3 | `decisions_unavailable` | `false` | `connect`: this account cannot call this model, and `error.message` says why |
+| 404 or 405 | 3 | `decisions_not_supported` | `false` | `report`: this router has no decisions |
+| 503 `decisions_disabled` | 4 | `decisions_disabled` | `false` | `report`: this router has decisions switched off |
+| 503 `model_unavailable` | 4 | `model_unavailable` | `false` | `report`: the platform holds no working key for this model |
+| 503 `upstream_failed` | 4 | `upstream_failed` | the body's `retryable` | `retry` when `true`, with `retry_after_ms` if the router sent one; `report` otherwise |
+| any other status | as for a search | | | |
+
+Exit codes are as for a search: 0 for a valid answer, 1 for transport, timeout or cancellation, 2
+for usage, 3 for a 4xx or no usable key, 4 for a 5xx or an answer the client could not use.
+
 ### Bounds
 
 `-timeout`, default 1m0s, bounds the whole search: connect, TLS, headers, body and any second
@@ -244,7 +308,7 @@ directories, nothing else.
 schema = 1
 
 [router]
-url  = "https://api.jevlin.ai"       # where searches, fetches, limits reads and turn ends go
+url  = "https://api.jevlin.ai"       # where searches, fetches, decisions, limits reads and turn ends go
 tier = ""                            # fast | balanced | max; unset = the router's default. `agents tier` outranks it; another word is not sent and is named by `agents tier status`
 
 [platform]
@@ -286,7 +350,7 @@ schema number is refused with a message saying which schema this jevlin reads.
 |---|---|---|
 | `JEVLIN_CONFIG` | every command | The config file, after `-config`. Setup's profile block sets it. |
 | `JEVLIN_HOME` | every command, setup | This machine's installation directory, instead of `~/.jevlin`. |
-| `JEVLIN_API_KEY` | search, limits, the turn end, fetch | The search key, overriding `credentials.json`. With a `-config` that is not the installation's own file, it is sent only when that config names the installation's router; to use another router, set `JEVLIN_CONFIG` to its config. |
+| `JEVLIN_API_KEY` | search, limits, the turn end, fetch, decide | The search key, overriding `credentials.json`. With a `-config` that is not the installation's own file, it is sent only when that config names the installation's router; to use another router, set `JEVLIN_CONFIG` to its config. |
 | `JEVLIN_TRACE` | search, hooks | `off` turns the trace and the turn end off entirely: the hooks write no bridge and no lineage file, and search sends none. |
 | `JEVLIN_ROUTER_URL`, `JEVLIN_PLATFORM_URL`, `JEVLIN_AGENTS_API_URL` | every command, setup | Each replaces its URL for the run ([Config](#config)). |
 | `JEVLIN_BINARY`, `JEVLIN_SKIP_DOWNLOAD` | npm wrapper | Use a binary already on the machine; install without fetching. |
