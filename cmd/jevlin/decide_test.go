@@ -506,8 +506,14 @@ func TestDecideTransportFailures(t *testing.T) {
 	if code != exitTransport || env["code"] != string(faultTimeout) || env["retryable"] != true || errOut != "" {
 		t.Errorf("exit %d, %v, retryable %v, stderr %q", code, env["code"], env["retryable"], errOut)
 	}
-	if len(fr.reqs) != 1 {
-		t.Errorf("%d requests; a timed-out decision is not sent again", len(fr.reqs))
+	// Under the fake's lock: nothing came back from this handler, so no
+	// response orders its write before this read. At most one, because a
+	// slow machine can time out before the request arrives.
+	fr.mu.Lock()
+	sent := len(fr.reqs)
+	fr.mu.Unlock()
+	if sent > 1 {
+		t.Errorf("%d requests; a timed-out decision is not sent again", sent)
 	}
 }
 
