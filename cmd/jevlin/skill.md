@@ -20,8 +20,8 @@ Start from the example above and add only what the step needs.
 
 - `query`: what you are looking for, phrased the way a page that answers it would phrase it, with the distinctive
   names, numbers and dates in it.
-- `objective`: one sentence on what you are trying to find out. It is passed to the indexes that accept a goal and
-  decides how the router orders the pool; send it on every search.
+- `objective`: one sentence on what you are trying to find out. Send it on every search: the indexes that
+  accept a goal use it, and so does the router when it orders the pool.
 - `search_queries`: up to 4 other wordings, searched in the same call and merged into the same list. Send one or two
   when the first search came back thin or the thing has several names. Not every index uses them, and each one that
   does runs every wording, so they cost more and lengthen the list: also send `"merged_limit":16`.

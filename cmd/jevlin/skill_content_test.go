@@ -79,14 +79,14 @@ func TestTheSkillTeachesTheLeanSearchOnEveryHost(t *testing.T) {
 	}
 }
 
-// The router's ranker, its goal gate and every index that takes a goal act
+// The router's ranker, where it is on, and every index that takes a goal act
 // only on a request that carries an objective, so the skill asks for one on
 // every search, in the request's field list right under the example. The
 // sentence it replaced said the opposite (that the objective does not reorder
 // the list), so that wording must not come back beside it.
 func TestTheSkillAsksForAnObjectiveOnEverySearch(t *testing.T) {
-	const want = "- `objective`: one sentence on what you are trying to find out. It is passed to the indexes " +
-		"that accept a goal and decides how the router orders the pool; send it on every search."
+	const want = "- `objective`: one sentence on what you are trying to find out. Send it on every search: the " +
+		"indexes that accept a goal use it, and so does the router when it orders the pool."
 	entry := binEntry{command: "/home/u/.jevlin/bin/jevlin", cfg: "/home/u/.jevlin/jevlin.toml"}
 	for _, id := range goldenHostIDs {
 		for _, goos := range hostShellOSes {
