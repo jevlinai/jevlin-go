@@ -87,7 +87,7 @@ func TestDoctorBinaryCheckFollowsTheConfigsInstallation(t *testing.T) {
 
 func TestGatherBinaryFactsChecksNothingWithoutAnOwnBinary(t *testing.T) {
 	home := t.TempDir() // keeps no bin/jevlin
-	f := gatherBinaryFacts(home)
+	f := gatherBinaryFacts(home, "", "", exec.LookPath, os.Stat)
 	if f.Checked {
 		t.Fatalf("an installation with no binary of its own was checked: %+v", f)
 	}
@@ -117,7 +117,7 @@ func TestGatherBinaryFactsSeesThroughPATH(t *testing.T) {
 	}
 	t.Setenv("PATHEXT", ".EXE") // what Windows LookPath consults; unread elsewhere
 	t.Setenv("PATH", bin)
-	f := gatherBinaryFacts(home)
+	f := gatherBinaryFacts(home, "", "", exec.LookPath, os.Stat)
 	if !f.Checked || !f.Same || f.OnPath == "" {
 		t.Fatalf("the installation's own binary on PATH was not recognized: %+v", f)
 	}
@@ -128,13 +128,13 @@ func TestGatherBinaryFactsSeesThroughPATH(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", shadow+string(os.PathListSeparator)+bin)
-	f = gatherBinaryFacts(home)
+	f = gatherBinaryFacts(home, "", "", exec.LookPath, os.Stat)
 	if !f.Checked || f.Same || !samePath(f.OnPath, other) {
 		t.Fatalf("a shadowing copy was not seen: %+v", f)
 	}
 
 	t.Setenv("PATH", "")
-	f = gatherBinaryFacts(home)
+	f = gatherBinaryFacts(home, "", "", exec.LookPath, os.Stat)
 	if !f.Checked || f.OnPath != "" {
 		t.Fatalf("an empty PATH still resolved something: %+v", f)
 	}
@@ -222,5 +222,102 @@ func TestGatherNpmShimFactsLooksOnlyAtAGlobalNpmInstall(t *testing.T) {
 	f = gatherNpmShimFacts(`C:\u\npm\node_modules\@jevlinsearch\jevlin\bin\jevlin.exe`, "windows", g, lookup("", exec.ErrNotFound))
 	if f.Dialect != dialectPowerShell || f.Dir != `C:\u\npm` {
 		t.Errorf("windows: %+v", f)
+	}
+}
+
+// An installation whose binary is not at <home>/bin (the 0.6.x layout put it
+// in ~/.local/bin) is checked through the running executable, so the row does
+// not vanish. The table drives the real gatherer with a fake PATH lookup and a
+// stat that finds nothing, and the real judge on its facts.
+func TestBinaryOnPathWhenTheInstallationKeepsNoBinaryAtHome(t *testing.T) {
+	exe := "/home/u/.local/bin/jevlin"
+	shadow := "/opt/other/bin/jevlin"
+	found := func(p string) func(string) (string, error) {
+		return func(string) (string, error) { return p, nil }
+	}
+	none := func(string) (string, error) { return "", exec.ErrNotFound }
+	noFile := func(string) (os.FileInfo, error) { return nil, os.ErrNotExist }
+
+	for _, tc := range []struct {
+		name     string
+		launch   string
+		exe      string
+		lookPath func(string) (string, error)
+		wantRow  bool
+		verdict  doctorVerdict
+		detail   []string // each must appear in the detail
+	}{
+		{"on PATH", "", exe, found(exe), true, verdictOK,
+			[]string{"the running binary", exe}},
+		{"PATH resolves to another file", "", exe, found(shadow), true, verdictNo,
+			[]string{shadow, exe, "the running binary"}},
+		{"nothing on PATH", "", exe, none, true, verdictNo,
+			[]string{"nothing on PATH", "the running binary is " + exe}},
+		{"a global npm launch is left to the npm row", "npm:global", exe, found(shadow), false, doctorVerdict(""), nil},
+		{"a package binary run by its path is left to the npm row", "",
+			"/opt/p/lib/node_modules/@jevlinsearch/jevlin/bin/jevlin", found(shadow), false, doctorVerdict(""), nil},
+		{"no executable to go on", "", "", found(shadow), false, doctorVerdict(""), nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := gatherBinaryFacts(t.TempDir(), tc.exe, tc.launch, tc.lookPath, noFile)
+			if f.Checked != tc.wantRow {
+				t.Fatalf("Checked = %v, want %v: %+v", f.Checked, tc.wantRow, f)
+			}
+			var row *doctorCheck
+			for _, c := range assembleDoctor(doctorFacts{Binary: f}) {
+				if c.Name == "binary on PATH" {
+					c := c
+					row = &c
+				}
+			}
+			if !tc.wantRow {
+				if row != nil {
+					t.Fatalf("a row appeared where the npm row answers: %s — %s", row.Verdict, row.Detail)
+				}
+				return
+			}
+			if row == nil {
+				t.Fatal("no row: the check went silent")
+			}
+			if row.Verdict != tc.verdict {
+				t.Fatalf("verdict %s, want %s: %s", row.Verdict, tc.verdict, row.Detail)
+			}
+			for _, want := range tc.detail {
+				if !strings.Contains(row.Detail, want) {
+					t.Errorf("detail %q lacks %q", row.Detail, want)
+				}
+			}
+			if strings.Contains(row.Detail, "this installation's") {
+				t.Errorf("the <home>/bin wording leaked into the fallback: %q", row.Detail)
+			}
+			if row.Verdict == verdictNo && row.Fix == "" {
+				t.Error("a NO with no fix")
+			}
+		})
+	}
+}
+
+// With the binary at <home>/bin the lines are the ones they always were,
+// whatever the running executable is.
+func TestTheHomeBinWordingIsUnchangedBesideAFallbackBinary(t *testing.T) {
+	home := t.TempDir()
+	bin := filepath.Join(home, "bin")
+	if err := os.MkdirAll(bin, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	name := "jevlin"
+	if runtime.GOOS == "windows" {
+		name = "jevlin.exe"
+	}
+	own := filepath.Join(bin, name)
+	if err := os.WriteFile(own, []byte("#!/bin/sh\n"), 0o755); err != nil { // #nosec G306 -- a stat target
+		t.Fatal(err)
+	}
+	f := gatherBinaryFacts(home, "/home/u/.local/bin/jevlin", "", func(string) (string, error) { return own, nil }, os.Stat)
+	if !f.Checked || f.Running || f.Own != own || !f.Same {
+		t.Fatalf("the installation's own binary was not preferred: %+v", f)
+	}
+	if c := doctorBinaryCheck(f); c.Detail != "`jevlin` runs this installation's own binary, "+own {
+		t.Errorf("the <home>/bin line changed: %q", c.Detail)
 	}
 }

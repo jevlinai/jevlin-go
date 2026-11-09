@@ -408,7 +408,7 @@ func (s *mcpServer) callTool(params json.RawMessage) (any, *rpcError) {
 		}
 	case "fetch":
 		run = func(stdin io.Reader, stdout io.Writer) int {
-			return fetchMainIn(s.search.cancelOn, s.now, append([]string{"--stdin"}, s.cfgArgs...), stdin, stdout, io.Discard, s.env)
+			return fetchMainIn(s.search.cancelOn, s.now, append([]string{"--stdin"}, s.cfgArgs...), stdin, stdout, s.env)
 		}
 	default:
 		return nil, &rpcError{Code: rpcInvalidParams, Message: "this server has no tool " + strconv.Quote(*p.Name)}

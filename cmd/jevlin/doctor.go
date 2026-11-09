@@ -226,8 +226,12 @@ func cmdDoctor(args []string, stdout, stderr io.Writer) int {
 func gatherDoctorFacts(cfg *config.Config, src string, getenv func(string) string) doctorFacts {
 	f := doctorFacts{ConfigSource: src, StateDir: cfg.Search.StateDir, Now: time.Now()}
 	f.Update = gatherUpdateFacts(cfg, getenv)
-	f.Binary = gatherBinaryFacts(doctorInstallationHome(src, getenv))
 	exe, _ := os.Executable()
+	runExe := exe
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		runExe = resolved
+	}
+	f.Binary = gatherBinaryFacts(doctorInstallationHome(src, getenv), runExe, getenv("JEVLIN_LAUNCH"), exec.LookPath, os.Stat)
 	f.NpmShim = gatherNpmShimFacts(exe, runtime.GOOS, getenv, exec.LookPath)
 	if stateACL.managed {
 		f.State = inspectStateAccess(cfg.Search.StateDir, auth.CredentialFiles())

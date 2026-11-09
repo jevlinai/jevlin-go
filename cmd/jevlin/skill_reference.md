@@ -28,12 +28,14 @@ Both settings are the user's. Never change either on your own.
 ## Tiers, presets and named indexes
 
 A request without `tier` uses the user's tier, or the router's default when the user set none. The fast tier runs a
-preset the user picks, for example `economy` (the cheapest) or `standard` (more coverage); `jevlin agents tier status`
-lists them with their estimated price. `balanced` asks the core set of indexes; `max` asks for more results each and is
-the user's choice only. Never pick a tier or preset yourself.
+preset the user picks, for example `economy` (two fast indexes) or `standard` (three, for more coverage);
+`jevlin agents tier status` lists them with the router's estimate. `balanced` asks several core engines; `max` asks
+every core engine, for more results from each. Both are for claimed agents. Never pick a tier or preset
+yourself.
 
-`providers` restricts a search to named indexes. It needs `"tier":"balanced"` or `"max"`, is billed at those indexes'
-own prices and draws the user's credit. Send it only when the user asks for a specific index.
+`providers` restricts a search to named indexes. Send it only when the user asks for a specific index. It works only
+when the user's tier is `balanced` or `max`; with any other tier the router refuses it, and you tell the user so rather
+than setting `tier`.
 
 ## Failure actions in detail
 
@@ -42,8 +44,8 @@ own prices and draws the user's credit. Send it only when the user asks for a sp
 | `none` | nothing to do |
 | `retry` | the same call may work later; wait `retry_after_ms` first when it is set |
 | `fix_input` | the request was wrong; fix it before sending anything again |
-| `connect` | the registration, setup or claim needs attention: run `jevlin connect`, or `jevlin status -json` to see which |
-| `login` | a search credential exists and was not accepted: run `jevlin login` |
+| `connect` | the registration, setup or claim needs attention: tell the user to run `jevlin connect` at a terminal; `jevlin status` there shows which part |
+| `login` | a search credential exists and was not accepted: tell the user to run `jevlin login` at a terminal; never run it yourself |
 | `check_access` | the credential does not cover this request; the user has to sort it out |
 | `report` | neither retrying nor changing the request will help; show the user what happened |
 
@@ -70,7 +72,7 @@ the text it can return is exhausted. Links in `content` come back as their text 
 
 Per page:
 
-- `best_rank`: the best position any index gave the page.
+- `best_rank`: the best position any index gave the page, counting from 0.
 - `matched_terms`: which of the query's identifiers the page's text, title or URL contains, when present; they may not
   be in the trimmed snippet.
 - `result_id`: the page's id within this search only.
@@ -83,5 +85,5 @@ Per search:
   answered: read each index's `status`.
 - `result.filters_applied`: the `recency` and `domain_filter` the router held every page to, with `dropped`, the number
   of pages it removed.
-- `usage.deadline_hit`: some index ran out of time.
-- `usage.cost_micros`: what the search cost, in millionths of a dollar. Mention it only if the user asks.
+- `result.usage.deadline_hit`: some index ran out of time.
+- `result.usage.cost_micros`: what the search cost, in millionths of a dollar. Mention it only if the user asks.

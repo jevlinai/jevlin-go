@@ -520,21 +520,37 @@ func cmdFetch(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv f
 	return fetchMain(time.Now, args, stdin, stdout, stderr, getenv)
 }
 
-func fetchMain(now func() time.Time, args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
-	return fetchMainIn(signalContext, now, args, stdin, stdout, stderr, getenv)
-}
+// fetchUsage is what fetch -h prints. The flag set below is built only in
+// machine mode, where its output is discarded, so it cannot say this itself.
+const fetchUsage = `usage: jevlin fetch --stdin [-config file] [-timeout duration]
 
-// fetchMainIn is fetchMain under the cancellation the caller chooses, as
-// searchDeadline describes.
-func fetchMainIn(cancelOn func() (context.Context, context.CancelFunc), now func() time.Time, args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
+Reads one version-1 JSON fetch request on stdin and answers with one JSON
+envelope on stdout: the full text of up to five pages a search returned.
+
+  --stdin            required: read the request from stdin
+  -config file       the config to read, given at most once
+  -timeout duration  the whole fetch's deadline, covering connect, headers
+                     and body (default 1m0s)
+`
+
+func fetchMain(now func() time.Time, args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
+	if len(args) == 1 && (args[0] == "-h" || args[0] == "-help" || args[0] == "--help") {
+		fmt.Fprint(stdout, fetchUsage)
+		return exitOK
+	}
 	if !hasBoolFlag(args, "stdin") {
 		fmt.Fprintln(stderr, "jevlin fetch: --stdin is required: send one version-1 JSON request on stdin")
 		return exitUsage
 	}
+	return fetchMainIn(signalContext, now, args, stdin, stdout, getenv)
+}
+
+// fetchMainIn is fetchMain under the cancellation the caller chooses, as
+// searchDeadline describes.
+func fetchMainIn(cancelOn func() (context.Context, context.CancelFunc), now func() time.Time, args []string, stdin io.Reader, stdout io.Writer, getenv func(string) string) int {
 	// Machine mode only, so everything is in the envelope, as for search
 	// --stdin: nothing on stderr for a caller to parse instead.
-	stderr = io.Discard
-	fs := newFlagSet("fetch", stderr)
+	fs := newFlagSet("fetch", io.Discard)
 	cfgPath := onceStringFlag(fs, "config", "path to TOML config file; given at most once")
 	timeout := fs.Duration("timeout", defaultSearchTimeout, "whole-fetch deadline, covering connect, headers and body")
 	fs.Bool("stdin", false, "read one version-1 JSON fetch request from stdin and answer with the machine envelope")

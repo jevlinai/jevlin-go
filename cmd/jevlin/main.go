@@ -69,15 +69,19 @@ the tool (what an agent runs):
              envelope is always JSON and the request's own view field
              decides). The --stdin request may also carry tier, recency,
              domain_filter, max_results, providers, view ("full" or
-             "merged"), objective and search_queries; a malformed value
-             answers fix_input before any router call. --stdin always asks
+             "merged"), objective, search_queries, merged_limit, max_chars,
+             page_chars and cache; a malformed value answers fix_input
+             before any router call. --stdin always asks
              the router for its merged view, which is result.merged; view
              "merged" leaves the candidates out of the envelope. The
              human form's -view merged adds the router's merged and
-             indexes to the raw response.
+             indexes to the raw response. --fresh (human form) runs the
+             search live instead of serving a result the router cached in
+             the last 15 minutes; a --stdin request says "cache": "refresh".
              -timeout bounds the whole search in either form, default
              1m0s. Exit: 0=valid search response, 1=transport/timeout/
-             cancel, 2=usage, 3=HTTP 4xx, 4=HTTP 5xx or invalid server response.
+             cancel, 2=usage, 3=HTTP 4xx or no usable key, 4=HTTP 5xx or
+             invalid server response.
   fetch      jevlin fetch --stdin: the full text of pages a search
              returned, for an agent. One version-1 JSON request on stdin:
              pages (1 to 5, each a source_id from a search's result or a
@@ -94,15 +98,17 @@ the tool (what an agent runs):
              search; -log writes one line per message to stderr, never a
              request's content
   agents     agents install|status|uninstall — find {{HOST_LABELS}} on this machine and give each
-             the supersearch skill and the hooks it supports. -dry-run previews,
+             the supersearch skill (opencode: a plugin) and the hooks it
+             supports. -dry-run previews,
              -client <name> picks one ({{HOST_IDS}}). -yes skips the Proceed?
              prompt, never a question about a Codex setting of yours.
              agents prefer on|off — whether this search or the agent's own
-             is the default (off keeps this one for when you name it);
-             in the agent, /jevlin off and /jevlin on do the same
+             is the default (off keeps this one for when you name it), in
+             every agent with a skill; in the agent, /jevlin off and
+             /jevlin on do the same
              agents tier fast|balanced|max|default — the tier every search
-             carries unless the request names one; in the agent,
-             /jevlin tier <tier> does the same
+             carries unless the request names one, before [router] tier in
+             the config; in the agent, /jevlin tier <tier> does the same
   hook       internal: the hook runner the agents call around a search;
              JEVLIN_TRACE=off turns traces off entirely
 
@@ -133,8 +139,9 @@ before the claim.
              -binary also removes the installation's own binary and its
              .previous (an npm copy is npm's to remove; on Windows the
              running binary is moved aside, not deleted). -purge-state
-             also destroys the participant state after you type the
-             installation path at a terminal; -yes never answers it.
+             also destroys the registration, stored key and config once
+             you type the installation path at a terminal;
+             -yes never answers it.
              -dry-run changes nothing
   upgrade    replace this native binary with the latest canonical release
              (-version X.Y.Z: exactly that one, never older), verified by
@@ -143,20 +150,23 @@ before the claim.
              puts that one back, with no network. An npm copy is updated
              with npm install -g @jevlinsearch/jevlin@latest
              -auto [-config file] is internal: the daily release check the
-             hooks start; jevlin upgrade -h says what it does
+             hooks start, which installs only a patch release of this
+             copy's own minor version; jevlin upgrade -h says more
   connect    register [-name …]; prints the claim URL and code and polls
              (bounded) until claimed. A second run resumes; so does the
              next search, automatically. -json emits one JSON envelope
-             instead of narration
+             instead of narration. -force overwrites a stored key that
+             belongs to another registration
   login      store your sr- key for searches: reads it from stdin (or
              -key-env VAR), checks it against the router without spending,
-             writes ~/.jevlin/credentials.json owner-only. -show says
-             where a search would get its key; -forget removes the file
+             writes ~/.jevlin/credentials.json owner-only; -no-verify
+             skips the check. -show says where a search would get its key;
+             -forget removes the file
   status     report what this installation has and has not completed.
              -json reports as one JSON object instead of text
 
 is it working:
-  doctor     checks in a participant's terms — the stored search key, the
+  doctor     plain-language checks — the stored search key, the
              registration, the trace key, whether this copy is the latest
              release, the binary on PATH and, on Windows, state access —
              each saying what to do. Exits non-zero only when every check
@@ -169,6 +179,8 @@ is it working:
              effective ceiling, read from the router; reading spends
              nothing and works even at the ceiling. Setting caps is not
              built yet. -json emits one machine envelope
+  version    this binary's version: a release prints its number, a build
+             from source prints dev
 
 A command that reads the config takes -config <file> (setup, upgrade and
 uninstall take -home instead), falling back to JEVLIN_CONFIG, then the
@@ -179,7 +191,8 @@ status and doctor name the file they resolved, or say plainly that none was
 found and built-in defaults are in use; connect refuses outright when
 resolution finds no config file at all, and says to run jevlin setup.
 The config is configuration format 1: schema = 1, then [router] url, the
-router every search goes to (api.jevlin.ai); [platform] url, the portal a
+router every search goes to (api.jevlin.ai), and tier, the tier a search
+carries when agents tier saved none; [platform] url, the portal a
 printed claim URL is checked against and nothing dials (platform.jevlin.ai);
 [agents] url, where connect actually sends register/status
 (agents-v1.jevlin.ai); [search] state_dir, sessions_dir and turn_end; and

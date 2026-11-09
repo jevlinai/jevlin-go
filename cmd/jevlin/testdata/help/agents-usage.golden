@@ -2,17 +2,18 @@ usage: jevlin agents install|status|uninstall [-config file] [-client name]... [
        jevlin agents prefer on|off|status [-config file]
        jevlin agents tier fast [preset]|balanced|max|default|status [-config file]
   install     detect coding agents (by command or config directory) and give each
-              the supersearch skill and hooks
+              the supersearch skill (opencode: a plugin) and hooks
   status      what is installed where, and which search is the default
   uninstall   remove exactly what install wrote
   prefer      off: the agent's own web search is the default and this one is used
               when named; on: this one is the default. Rewrites the installed
-              skills so it takes effect in every agent (/jevlin off|on in
-              the agent does the same)
+              skills so it takes effect in every agent with a skill, which
+              opencode has not (/jevlin off|on in the agent does the same)
   tier        the tier every search carries unless the request names
               one: fast (the fast indexes a preset names), balanced
-              (several, attributed) or max (the same arms, more results
-              and longer excerpts; draws credit); default unsets it so
+              (several core engines, attributed) or max (every core engine,
+              more results and longer excerpts); balanced and max are for
+              claimed agents only. default unsets it so
               the router's default applies. Saved beside the config; no
               skill is rewritten (/jevlin tier <tier> in the agent does
               the same)

@@ -3,6 +3,7 @@ package main
 // Each test here fails while the defect it names is present.
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -82,7 +83,7 @@ func TestDoctorRunByThePackageBinarysPathSaysNothingAboutPath(t *testing.T) {
 	notFound := func(string) (string, error) { return "", exec.ErrNotFound }
 	f := doctorFacts{
 		NpmShim: gatherNpmShimFacts(pkgExe, "darwin", func(string) string { return "" }, notFound),
-		Binary:  gatherBinaryFacts(t.TempDir()), // an npm install's home: no bin/jevlin
+		Binary:  gatherBinaryFacts(t.TempDir(), pkgExe, "", notFound, os.Stat), // an npm install's home: no bin/jevlin
 	}
 	for _, c := range assembleDoctor(f) {
 		if c.Name == "npm command on PATH" || c.Name == doctorBinaryCheck(binaryFacts{Checked: true}).Name {

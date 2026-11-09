@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"strings"
 	"testing"
+	"time"
 )
 
 // section extracts the text between two markers in usageText, in order,
@@ -102,6 +104,46 @@ func TestUsageTextDoctorSection(t *testing.T) {
 	for _, gone := range []string{"enrolled", "earning", "intake", "probe", "payout access"} {
 		if strings.Contains(flat, gone) {
 			t.Errorf("doctor section: still names %q, a check this client no longer runs\n%s", gone, s)
+		}
+	}
+}
+
+// fetch -h and agents -h answer with their own usage on stdout and exit 0,
+// and agents status -h offers only the flags status acts on: it reads and
+// prints, so -dry-run and -yes would promise a plan and a question that
+// never come.
+func TestSubcommandHelpListsTheFlagsThatApply(t *testing.T) {
+	noEnv := func(string) string { return "" }
+
+	var out, errOut bytes.Buffer
+	if code := fetchMain(time.Now, []string{"-h"}, strings.NewReader(""), &out, &errOut, noEnv); code != exitOK {
+		t.Fatalf("fetch -h: exit %d, stderr %q", code, errOut.String())
+	}
+	for _, want := range []string{"--stdin", "-config", "-timeout", "(default " + defaultSearchTimeout.String() + ")"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("fetch -h: missing %q\n%s", want, out.String())
+		}
+	}
+
+	out.Reset()
+	errOut.Reset()
+	if code := agentsMain(realAgentOps(), []string{"-h"}, strings.NewReader(""), &out, &errOut, noEnv); code != exitOK {
+		t.Fatalf("agents -h: exit %d, stderr %q", code, errOut.String())
+	}
+	if out.String() != agentsUsage {
+		t.Errorf("agents -h printed %q, want agentsUsage", out.String())
+	}
+
+	out.Reset()
+	errOut.Reset()
+	agentsMain(realAgentOps(), []string{"status", "-h"}, strings.NewReader(""), &out, &errOut, noEnv)
+	listing := errOut.String()
+	if !strings.Contains(listing, "-client") || !strings.Contains(listing, "-config") {
+		t.Fatalf("agents status -h: not the flag listing\n%s", listing)
+	}
+	for _, gone := range []string{"-dry-run", "-yes"} {
+		if strings.Contains(listing, gone) {
+			t.Errorf("agents status -h offers %s, which status ignores\n%s", gone, listing)
 		}
 	}
 }

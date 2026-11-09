@@ -26,6 +26,25 @@ jobs:
         if: runner.os != 'Windows'
       - run: go build -trimpath -o NUL ./cmd/jevlin
         if: runner.os == 'Windows'
+      # The website installers (install/, docs/RELEASING.md "The website installers"), as steps
+      # of this job so the required check names do not change. The test needs node and python3,
+      # both on the runners; shellcheck is preinstalled on the Linux runner only.
+      - run: bash install/install_test.sh
+        if: runner.os != 'Windows'
+      - run: shellcheck -s sh install/install.sh
+        if: runner.os == 'Linux'
+      # install.ps1 the same way, offline against a fake release on loopback, once in each
+      # PowerShell: Windows PowerShell 5.1 and PowerShell 7 handle a redirect they were told not
+      # to follow differently. Each runs whatever the steps before it did, so one edition's result
+      # never hides the other's. The test needs go and node, which the steps above set up.
+      - name: install.ps1 in Windows PowerShell 5.1
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        shell: powershell
+        run: ./install/install_test.ps1
+      - name: install.ps1 in PowerShell 7
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
+        shell: pwsh
+        run: ./install/install_test.ps1
   # The race run was the slowest job by minutes, and one package is nearly all
   # of it. tools/testshard deals that run's tests by name into three parts that
   # run at the same time; together they are every test, each once.

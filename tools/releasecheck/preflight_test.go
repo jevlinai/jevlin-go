@@ -38,6 +38,8 @@ func newReleaseRepo(t *testing.T, version string) *releaseRepo {
 	copyFromRepo(t, dir, ".goreleaser.yaml")
 	copyFromRepo(t, dir, "npm/install.js")
 	copyFromRepo(t, dir, releaseKeysFile)
+	copyFromRepo(t, dir, shellInstallerFile)
+	copyFromRepo(t, dir, powershellInstallerFile)
 	write(t, dir, "npm/package.json", `{"name":"jevlin","version":"`+version+`"}`+"\n")
 	write(t, dir, "plugin/.claude-plugin/plugin.json", `{"name":"jevlin","version":"`+version+`"}`+"\n")
 	write(t, dir, ".claude-plugin/marketplace.json", `{"name":"jevlin","plugins":[{"name":"jevlin","source":"./plugin","version":"`+version+`"}]}`+"\n")

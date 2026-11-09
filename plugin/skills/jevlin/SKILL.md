@@ -1,30 +1,31 @@
 ---
 name: jevlin
-description: "Sets up Jevlin, supersearch for coding agents: one call asks eight search engines at once, every result names the engines that found it, free for agents. Use when the user asks for Jevlin, jevlin search or supersearch and the jevlin client is missing or not set up: it installs the client and runs `jevlin setup`, which writes this agent's own supersearch skill and hooks. After setup, search through that installed `jevlin` skill, not this one."
+description: "Sets up Jevlin, supersearch for coding agents: one call asks several search engines at once, every result names the engines that found it, free for agents. Use when the user asks for Jevlin, jevlin search or supersearch and the jevlin client is missing or not set up: it installs the client and runs `jevlin setup`, which writes this agent's own supersearch skill and hooks. After setup, search through that installed `jevlin` skill, not this one."
 ---
 
 # Set up Jevlin
 
-Jevlin is supersearch for coding agents: one call asks eight search engines
+Jevlin is supersearch for coding agents: one call asks several search engines
 at once and returns one merged, de-duplicated list where every result names
-the engines that found it, with a receipt per engine, free for agents. It only works
-through its client: `jevlin setup` registers this installation, gets it a key
-with no browser step, and writes the supersearch skill and hooks into every agent
-on this machine, which is what makes a search traced and counted. This skill
-does that setup. It does not search.
+the engines that found it, with a receipt per engine, free for agents. It only
+works through its client: `jevlin setup` registers this installation, gets it
+a key with no browser step, and writes the supersearch skill and hooks into
+every agent on this machine. This skill does that setup. It does not search.
 
 What setup writes, and what it leaves alone: a `jevlin` skill in the agent's
 own skills directory (Claude Code, Cursor, Codex, Pi, Hermes; opencode has
 no skills directory and gets an in-process plugin plus a rules block, printed
 for the user to paste into `AGENTS.md`), a few hooks, and, where the agent
-keeps an allow list, an entry for the one search command the skill renders,
-spelled with the binary's full path, so that command runs without a prompt
-and no other command does. It changes no
-permission mode and no sandbox setting of the agent's. The one exception is
-Codex on macOS and Linux, where it adds a marked block to `~/.codex/config.toml`:
-a permission profile named `jevlin` that extends Codex's workspace profile
-with write access to jevlin's own state directory and network access to
-Jevlin's hosts only, made the default. Everything it writes is marked as its
+keeps an allow list, entries for the search and fetch commands the skill
+renders, spelled with the binary's full path, so those commands run without a
+prompt and no other command does; in Claude Code also read and edit rules for
+jevlin's requests folder and a read rule for its skill folder, nine rules in
+all. It changes no permission mode and no sandbox setting of the agent's. The
+one exception is Codex, which gets a marked block in `~/.codex/config.toml`.
+On macOS and Linux it is a permission profile named `jevlin` that extends
+Codex's workspace profile with write access to jevlin's own state directory
+and network access to Jevlin's hosts only, made the default; on Windows it
+only makes jevlin's directories writable, with no network. Everything it writes is marked as its
 own, and `jevlin uninstall` removes exactly that. Every file and rule is
 listed per agent at https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md.
 
@@ -49,9 +50,25 @@ npm install -g @jevlinsearch/jevlin
 ```
 
 Globally, never with `npx` and never into a project's `node_modules`: setup
-writes the binary's path into the agents' skills and hooks. Without Node,
-follow the native install on https://docs.jevlin.ai/quickstart: a release
-archive verified against its `checksums.txt`, put on PATH.
+writes the binary's path into the agents' skills and hooks.
+
+Without Node, use the installer instead, and tell it not to start setup
+itself with `JEVLIN_NO_SETUP=1`: step 3 runs setup. On macOS and Linux:
+
+```bash
+curl -fsSL https://jevlin.ai/install.sh | JEVLIN_NO_SETUP=1 sh
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:JEVLIN_NO_SETUP = "1"
+irm https://jevlin.ai/install.ps1 | iex
+```
+
+It downloads the latest release, verifies it, installs it at
+`~/.jevlin/bin/jevlin` (`$JEVLIN_HOME/bin` when that is set), and ends with
+"next:" and the path to run setup with, which step 3 uses.
 
 ## 3. Run setup
 
@@ -59,8 +76,12 @@ archive verified against its `checksums.txt`, put on PATH.
 jevlin setup -yes
 ```
 
-If `jevlin` is not found after the install, npm's global `bin` directory is not
-on PATH. Do not stop: run npm's command by its full path, which is the same
+After the installer, run setup by the path the installer printed instead, which
+is not on PATH yet: `~/.jevlin/bin/jevlin setup -yes` on macOS and Linux, and
+`& "$HOME\.jevlin\bin\jevlin.exe" setup -yes` on Windows PowerShell.
+
+If `jevlin` is not found after the npm install, npm's global `bin` directory is
+not on PATH. Do not stop: run npm's command by its full path, which is the same
 program. On macOS and Linux:
 
 ```bash
@@ -79,7 +100,7 @@ terminal.
 `-yes` answers the shell-profile and coding-agents questions: it adds
 `jevlin` to PATH and writes the skill (or, for opencode, the plugin) and
 hooks into every agent it finds (Claude Code, Cursor, Codex, opencode, Pi,
-Hermes). Nothing is mined: the client is search only.
+Hermes).
 
 Setup ends its shell step with a line beginning "To use jevlin in this
 terminal now, run:" and one command under it. Show that command to the user
