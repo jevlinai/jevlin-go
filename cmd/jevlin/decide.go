@@ -59,16 +59,11 @@ const (
 // decideModelPattern is the router's model id: "vendor/model".
 var decideModelPattern = regexp.MustCompile(`^[a-z0-9-]+/[A-Za-z0-9._-]+$`)
 
-// wireDecideRequest is the v1 request as read. Every field stays raw so that
-// what is forwarded is what the caller wrote.
-type wireDecideRequest struct {
-	Version   *int            `json:"version"`
-	Model     json.RawMessage `json:"model"`
-	State     json.RawMessage `json:"state"`
-	Questions json.RawMessage `json:"questions"`
-	Options   json.RawMessage `json:"options"`
-	Sources   json.RawMessage `json:"sources"`
-	MaxChars  json.RawMessage `json:"max_chars"`
+// decideRequestFields is every top-level key a v1 request may carry, spelled
+// exactly.
+var decideRequestFields = map[string]bool{
+	"version": true, "model": true, "state": true, "questions": true,
+	"options": true, "sources": true, "max_chars": true,
 }
 
 // decideBody is what goes to POST /v1/decisions: the request without its
@@ -122,41 +117,50 @@ func decodeMachineDecideRequest(r io.Reader) (decideBody, *inputError) {
 	if ierr != nil {
 		return decideBody{}, ierr
 	}
-	var wire wireDecideRequest
-	if err := strictDecode(raw, &wire); err != nil {
-		return decideBody{}, inputErrorf(codeUnknownField,
-			"the request carries a field this version does not accept")
+	// Through a map rather than strictDecode: encoding/json matches a struct's
+	// fields without regard to case, so a "STATE" beside "state" would pass
+	// and replace it, and a billed decision would answer the wrong state.
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return decideBody{}, inputErrorf(codeInvalidJSON, "the request must be exactly one JSON object")
 	}
-	if ierr := validateDecideModel(wire.Model); ierr != nil {
+	for name := range fields {
+		if !decideRequestFields[name] {
+			return decideBody{}, inputErrorf(codeUnknownField,
+				"the request carries a field this version does not accept")
+		}
+	}
+	body := decideBody{
+		Model:     fields["model"],
+		State:     fields["state"],
+		Questions: fields["questions"],
+		Options:   fields["options"],
+		Sources:   fields["sources"],
+		MaxChars:  fields["max_chars"],
+	}
+	if ierr := validateDecideModel(body.Model); ierr != nil {
 		return decideBody{}, ierr
 	}
-	if len(wire.State) == 0 || isJSONNull(wire.State) {
+	if len(body.State) == 0 || isJSONNull(body.State) {
 		return decideBody{}, inputErrorf(codeMissingState, `the request needs "state", and it must not be null`)
 	}
-	if ierr := validateDecideQuestions(wire.Questions); ierr != nil {
+	if ierr := validateDecideQuestions(body.Questions); ierr != nil {
 		return decideBody{}, ierr
 	}
-	if len(wire.Options) > 0 && !isJSONObject(wire.Options) {
+	if len(body.Options) > 0 && !isJSONObject(body.Options) {
 		return decideBody{}, inputErrorf(codeInvalidOptions, `"options" must be an object`)
 	}
-	if len(wire.Sources) > 0 {
-		if ierr := validateDecideSources(wire.Sources); ierr != nil {
+	if len(body.Sources) > 0 {
+		if ierr := validateDecideSources(body.Sources); ierr != nil {
 			return decideBody{}, ierr
 		}
 	}
-	if len(wire.MaxChars) > 0 {
-		if _, ierr := validateFetchMaxChars(wire.MaxChars); ierr != nil {
+	if len(body.MaxChars) > 0 {
+		if _, ierr := validateFetchMaxChars(body.MaxChars); ierr != nil {
 			return decideBody{}, ierr
 		}
 	}
-	return decideBody{
-		Model:     wire.Model,
-		State:     wire.State,
-		Questions: wire.Questions,
-		Options:   wire.Options,
-		Sources:   wire.Sources,
-		MaxChars:  wire.MaxChars,
-	}, nil
+	return body, nil
 }
 
 func isJSONObject(raw json.RawMessage) bool {
