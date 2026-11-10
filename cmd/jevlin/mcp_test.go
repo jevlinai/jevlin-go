@@ -399,6 +399,12 @@ func TestTheToolSchemasAreTheMachineContract(t *testing.T) {
 	if got, want := props(page), tags(wireFetchPage{}); !reflect.DeepEqual(got, want) {
 		t.Errorf("fetch's page schema has %v, the request %v", got, want)
 	}
+	// validateFetchPages refuses an entry with neither key and one with
+	// both, so the schema admits exactly one property.
+	if page["minProperties"] != 1 || page["maxProperties"] != 1 || page["additionalProperties"] != false {
+		t.Errorf("fetch's page schema admits {} or both keys: minProperties %v, maxProperties %v, additionalProperties %v",
+			page["minProperties"], page["maxProperties"], page["additionalProperties"])
+	}
 	// And every schema is JSON a client can read.
 	if _, err := json.Marshal(mcpTools()); err != nil {
 		t.Fatal(err)

@@ -92,7 +92,12 @@ func fetchInputSchema() map[string]any {
 	page := map[string]any{
 		"type":                 "object",
 		"additionalProperties": false,
-		"description":          "Exactly one of source_id or url.",
+		// With additionalProperties false, one property at least and at most
+		// is "exactly one of source_id or url", as validateFetchPages holds
+		// it, said in terms every JSON Schema validator reads.
+		"minProperties": 1,
+		"maxProperties": 1,
+		"description":   "Exactly one of source_id or url.",
 		"properties": map[string]any{
 			"source_id": stringProp("A page's source_id from a search result."),
 			"url":       stringProp("An http or https URL from a search result."),
