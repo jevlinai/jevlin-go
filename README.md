@@ -14,23 +14,29 @@ engines that found it.
 
 It works in Claude Code, Cursor, Codex, opencode, Pi and Hermes. It is one binary your agent
 calls, a skill that teaches the agent the call, and hooks where the agent has them. No daemon runs
-between searches; a hook or a search may start one short background job, such as the daily
-release check. Plans and prices are at [jevlin.ai](https://jevlin.ai).
+between searches: a hook may start the daily release check, and a search may start a short check
+that finishes your claim. Plans and prices are at [jevlin.ai](https://jevlin.ai).
 
 ## How do I install it?
 ```bash
-curl -fsSL https://jevlin.ai/install.sh | sh     # on macOS and Linux
+curl -fsSL https://jevlin.ai/install.sh | sh     # macOS, Linux and WSL
 
-irm https://jevlin.ai/install.ps1 | iex      # Windows PowerShell
+irm https://jevlin.ai/install.ps1 | iex          # Windows PowerShell
 ```
-This installs the latest release at `~/.jevlin/bin/jevlin`, checked against the release's checksums and, where a tool on the machine can, its signature, and runs setup when you ran it at a terminal.
-
+This installs the latest release at `~/.jevlin/bin/jevlin` (on Windows,
+`%USERPROFILE%\.jevlin\bin\jevlin.exe`), checked against the release's checksums and, where a tool
+on the machine can, its signature, and runs setup when you ran it at a terminal. From CMD,
+`install.cmd` runs the PowerShell installer. `JEVLIN_HOME` installs it elsewhere and
+`JEVLIN_NO_SETUP=1` stops before setup ([options](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#installing-without-npm)).
 
 ```bash
 npm install -g @jevlinsearch/jevlin
 jevlin setup
 ```
-Install it globally, not with `npx`: setup writes the binary's path into your agents' skills and hooks, and npm throws an `npx` cache away.
+Install it globally, not with `npx`: setup writes the binary's path into your agents' skills and
+hooks, and npm throws an `npx` cache away.
+
+It runs on macOS 13 or later, Linux and Windows, each on amd64 and arm64.
 
 ### Can I install it another way?
 
@@ -41,14 +47,15 @@ Install it globally, not with `npx`: setup writes the binary's path into your ag
   carry a setup skill that installs and sets up jevlin ([how](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#let-your-agent-install-it))
 
 - **From source:** `go install github.com/jevlinai/jevlin-go/cmd/jevlin@latest`, or `make build`
-  in a clone ([details](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#building-from-source))
+  in a clone. It reports its version as `dev`, so `jevlin upgrade` and the daily check leave it
+  alone ([details](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#building-from-source))
 
 **`jevlin: command not found`?** Run setup by its full path. [The guide shows how](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#jevlin-command-not-found).
 
 ## What does setup do, and what is the claim?
 
 **Setup** sets up the coding agents it finds and adds `jevlin` to your PATH, asking before
-each. It also registers Jevlin on this machine with the search platform, stores its key (nothing
+each. It also registers jevlin on this machine with the Jevlin platform, stores its key (nothing
 to copy or paste) and writes its config to `~/.jevlin`. Restart any agent that was already open.
 
 **Claiming** links jevlin on this machine to your Jevlin account. Setup prints a link: open it, sign in at
@@ -92,7 +99,14 @@ type these (in Codex, `$jevlin`):
 
 [Making it the default, or not](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#making-it-the-default-or-not) covers the rest.
 
-An agent that takes MCP servers can call search, fetch and decide as tools instead: register
+The skill also teaches the agent to read a page from its results in full with `jevlin fetch --stdin`
+([reference, Reading a page in full](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#reading-a-page-in-full)).
+`jevlin decide --stdin` asks a decision model typed questions about a state you give it, where the
+router offers it ([reference, Asking a decision model](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#asking-a-decision-model));
+the skill does not teach it yet.
+
+An agent that takes MCP servers can call search, fetch and decide (where the router offers it) as
+tools instead: register
 `jevlin mcp` with it, as [reference, MCP server](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#mcp-server)
 shows for Claude Code, Codex and Cursor. Setup does not register it, and it runs only while the
 host holds it open.
@@ -113,7 +127,7 @@ response reports what its search cost. [Choosing a tier](https://github.com/jevl
 
 | agent | after setup |
 |---|---|
-| [Claude Code](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#claude-code) | Ready. jevlin's hook approves exactly the search the skill renders. |
+| [Claude Code](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#claude-code) | Ready. jevlin's hook approves exactly the search and fetch commands the skill renders. |
 | [Cursor](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#cursor) | Ready. |
 | [Codex](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#codex) | Approve jevlin's hooks in Codex once. Setup makes jevlin's permission profile Codex's default. On Windows there are neither, and Codex asks before a search reaches the network. Needs Codex 0.158.0 or newer. |
 | [opencode](https://github.com/jevlinai/jevlin-go/blob/main/docs/agents.md#opencode) | Paste the rules block setup prints into your `AGENTS.md`. |
@@ -130,10 +144,12 @@ shaped like a secret: from Claude Code an earlier message of the turn, from Curs
 thought or reply, from opencode and Pi the text before the search, and from Codex and Hermes none.
 With `[search] turn_end = true`, a turn that searched also sends what you asked, the assistant's
 text along the way and its final answer, its tool calls by name, duration and outcome (never their
-input or output), the model and the token counts. `export JEVLIN_TRACE=off` sends neither.
+input or output), the model and the token counts (less from Cursor and Codex, nothing from Hermes;
+[Privacy](https://github.com/jevlinai/jevlin-go/blob/main/docs/privacy.md) has the table per agent).
+`export JEVLIN_TRACE=off` sends neither.
 
 The query is not among jevlin's arguments: your agent hands it over on standard input, from a
-here-string in the shell command it runs (`jevlin search --stdin <<< '…'`), or in Claude Code from
+here-string in the shell command it runs (`<<<` in bash, `@'…'@` in PowerShell), or in Claude Code from
 a file when the request holds a `'` or a `$`. A search you type, `jevlin search "<query words>"`,
 puts it on jevlin's command line. [Privacy](https://github.com/jevlinai/jevlin-go/blob/main/docs/privacy.md) has every field and scrub rule;
 what the service keeps is in its [privacy policy](https://platform.jevlin.ai/privacy).
@@ -141,7 +157,7 @@ what the service keeps is in its [privacy policy](https://platform.jevlin.ai/pri
 ## How do I update or remove it?
 
 ```bash
-jevlin upgrade                         # an install from a release archive: the latest, verified before it runs
+jevlin upgrade                         # a native install: the latest, verified before it runs
 jevlin uninstall                       # remove the skills, hooks and profile lines; keep your registration and key
 jevlin uninstall -binary               # also remove this installation's binary
 jevlin uninstall -purge-state          # also delete the registration, key and config, confirmed at a terminal
@@ -150,9 +166,11 @@ npm uninstall -g @jevlinsearch/jevlin  # then remove an npm install
 
 An npm install is updated with `npm install -g @jevlinsearch/jevlin@latest`. Once a day, when
 Claude Code, Cursor, Codex, opencode or Pi starts a session or, in all but Pi, finishes a turn,
-jevlin checks for a newer release. An install from a release archive installs a patch release (0.7.0 to 0.7.1) itself and
-leaves a new minor release for `jevlin upgrade`; for an npm install the release is recorded, for
-`jevlin status` and `jevlin doctor` to report. [Upgrading](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#upgrading) and
+jevlin checks for a newer release. A native install (the install script or a release archive)
+installs a patch release (0.8.0 to 0.8.1) itself and leaves a new minor release for
+`jevlin upgrade`; for an npm install the release is recorded, for `jevlin status` and
+`jevlin doctor` to report. `[update] mode = "notify"` or `"off"` in the config changes that.
+[Upgrading](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#upgrading) and
 [removing it and coming back](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#removing-it-and-coming-back) have the details.
 
 ## Where is the rest?
@@ -162,7 +180,7 @@ leaves a new minor release for `jevlin upgrade`; for an npm install the release 
 - [Privacy](https://github.com/jevlinai/jevlin-go/blob/main/docs/privacy.md): what jevlin sends, per agent, and how to switch it off.
 - [Reference](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md): every command and flag, tiers and providers, the `--stdin`
   request and its envelope, config, files.
-- [Web search router vs SuperSearch](https://jevlin.ai/web-search-router/): what asking every engine finds that a web search
+- [Web search router vs Supersearch](https://jevlin.ai/web-search-router/): what asking every engine finds that a web search
   router sending each query to one engine does not, measured on 485 questions.
 - [CHANGELOG.md](https://github.com/jevlinai/jevlin-go/blob/main/CHANGELOG.md): what changed in each release.
 - [SECURITY.md](https://github.com/jevlinai/jevlin-go/blob/main/SECURITY.md): how to report a vulnerability.
