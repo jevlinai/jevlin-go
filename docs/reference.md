@@ -220,6 +220,7 @@ is not a failed call: `ok` stays `true`.
 | 503 `fetch_disabled` | `fetch_disabled` | `false` | `report`: this router has fetch switched off |
 | 502, or any other 5xx (another 503 too) | the router's code, else `router_error` | `true` | `retry` |
 | 401 | the router's code, else `unauthorized` | `false` | `login` |
+| 402 `search_credit_only` | `search_credit_only` | `false` | `report`: the credit left this week is reserved for search; fetch resumes at the weekly reset or after a top-up |
 | any other status | as for a search | | |
 
 A fetch is one request and is never retried by the client.
@@ -282,6 +283,7 @@ and `--models` together are a usage error.
 | 503 `decisions_disabled` | 3 | `decisions_disabled` | `false` | `report`: this router has decisions switched off |
 | 503 `model_unavailable` | 4 | `model_unavailable` | `false` | `report`: the platform holds no working key for this model |
 | 503 `upstream_failed` | 4 | `upstream_failed` | the body's `retryable` | `retry` when `true`, with `retry_after_ms` if the router sent one; `report` otherwise |
+| 402 `search_credit_only` | 3 | `search_credit_only` | `false` | `report`: the credit left this week is reserved for search; decisions resume at the weekly reset or after a top-up |
 | any other status | as for a search | | | |
 
 Exit codes are as for a search: 0 for a valid answer, 1 for transport, timeout or cancellation, 2

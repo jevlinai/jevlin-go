@@ -261,6 +261,7 @@ func TestEachFetchFailureMapsToItsAction(t *testing.T) {
 		{"upstream failed", 502, `{"code":"upstream_failed","error":"every fetch failed"}`, exitServerErr, "upstream_failed", true, actionRetry},
 		{"bare 502", 502, ``, exitServerErr, "router_error", true, actionRetry},
 		{"key refused", 401, `{"code":"unauthorized","error":"bad key"}`, exitClientErr, "unauthorized", false, actionLogin},
+		{"credit kept for search", 402, `{"code":"search_credit_only","error":"the rest is for search"}`, exitClientErr, "search_credit_only", false, actionReport},
 		{"rate limited", 429, `{"code":"rate_limited","error":"slow down"}`, exitClientErr, "rate_limited", true, actionRetry},
 		{"bad request", 400, `{"code":"invalid_request","error":"pages"}`, exitClientErr, "invalid_request", false, actionFixInput},
 		{"2xx without pages", 200, `{"request_id":"r"}`, exitServerErr, string(faultInvalidResponse), false, actionReport},

@@ -46,6 +46,11 @@ rewritten to match newer behaviour; the newer entry says what changed.
   request defines it, as `decide --stdin` already required; anything else is `unknown_field`
   naming the key, exit 2, `fix_input`, and the router is never called. A `VERSION` key is
   `unknown_field` whatever its value. Through `jevlin mcp` the tools answer the same way.
+- **The reference names the router's `402 search_credit_only`.** A router may answer a fetch or
+  a decision with it when the credit left is the part of the weekly allowance kept for search:
+  search still works, and fetch and decisions resume at the weekly reset or when credit is
+  added. The client already carried the router's code with `report`, exit 3, not retryable;
+  the fetch and decide failure tables in `docs/reference.md` now list it.
 
 ## v0.7.0 — 2026-11-03
 
