@@ -10,6 +10,15 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## Unreleased
+
+- **The skill asks for an `objective` on every search.** Its request list described the field
+  but said it does not reorder the list, and never asked for one. It now says to send, with
+  every search, one sentence on what you are trying to find out: the indexes that accept a goal
+  use it, and so does the router when it orders the pool. `docs/reference.md` says the same.
+  An installed skill takes the new text the next time it is rendered, by `jevlin setup`,
+  `jevlin agents install` or an upgrade.
+
 ## v0.7.0 — 2026-11-03
 
 Run `jevlin setup` after installing this version. It reads only configuration format 1, and
