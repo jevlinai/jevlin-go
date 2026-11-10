@@ -140,8 +140,17 @@ func signalContext() (context.Context, context.CancelFunc) {
 	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 }
 
-// searchDeadline is the whole-search budget, derived from the signal
-// context so Ctrl-C still cancels promptly.
+// plainContext is a cancellation with no signal attached.
+func plainContext() (context.Context, context.CancelFunc) {
+	return context.WithCancel(context.Background())
+}
+
+// searchDeadline is the whole-search budget, derived from cancelOn: the
+// signal context for a command, so Ctrl-C still cancels promptly. `jevlin
+// mcp` passes plainContext instead: a server that installed the signal
+// handler for each call would take a host's SIGTERM as the end of one
+// search and go on serving, where without the handler the signal ends the
+// process, as it does when the server is idle.
 //
 // One absolute instant, created once and shared by everything the search
 // does: connect, TLS, headers, body read, and the single trace
@@ -153,8 +162,8 @@ func signalContext() (context.Context, context.CancelFunc) {
 // context.DeadlineExceeded; a signal leaves context.Canceled through the
 // parent — an agent may retry the first and must not silently retry the
 // second.
-func searchDeadline(timeout time.Duration) (context.Context, context.CancelFunc) {
-	parent, stop := signalContext()
+func searchDeadline(cancelOn func() (context.Context, context.CancelFunc), timeout time.Duration) (context.Context, context.CancelFunc) {
+	parent, stop := cancelOn()
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	return ctx, func() {
 		cancel()

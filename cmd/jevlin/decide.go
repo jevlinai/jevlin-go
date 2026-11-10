@@ -669,10 +669,16 @@ func decideMain(now func() time.Time, args []string, stdin io.Reader, stdout, st
 		fmt.Fprintln(stderr, "jevlin decide: --stdin or --models is required: send one version-1 JSON request on stdin, or list the models")
 		return exitUsage
 	}
+	return decideMainIn(signalContext, now, args, stdin, stdout, getenv)
+}
+
+// decideMainIn is decideMain under the cancellation the caller chooses, as
+// searchDeadline describes: `jevlin mcp` hands it plainContext, so a signal
+// stops the server rather than only its call.
+func decideMainIn(cancelOn func() (context.Context, context.CancelFunc), now func() time.Time, args []string, stdin io.Reader, stdout io.Writer, getenv func(string) string) int {
 	// Machine mode only, so everything is in the envelope, as for search
 	// --stdin: nothing on stderr for a caller to parse instead.
-	stderr = io.Discard
-	fs := newFlagSet("decide", stderr)
+	fs := newFlagSet("decide", io.Discard)
 	cfgPath := onceStringFlag(fs, "config", "path to TOML config file; given at most once")
 	timeout := fs.Duration("timeout", defaultSearchTimeout, "whole-call deadline, covering connect, headers and body")
 	readStdin := fs.Bool("stdin", false, "read one version-1 JSON decide request from stdin and answer with the machine envelope")
@@ -725,7 +731,7 @@ func decideMain(now func() time.Time, args []string, stdin io.Reader, stdout, st
 			errors.New("this installation holds no search credential; run jevlin connect"))
 	}
 
-	ctx, cancel := searchDeadline(*timeout)
+	ctx, cancel := searchDeadline(cancelOn, *timeout)
 	defer cancel()
 	endpoint := strings.TrimRight(cfg.Search.RouterURL.String(), "/") + "/v1/decisions"
 	var out decideOutcome

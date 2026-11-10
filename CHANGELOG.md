@@ -25,6 +25,13 @@ rewritten to match newer behaviour; the newer entry says what changed.
   price and whether this account can call it. The state and questions reach the router byte for
   byte. A decision is billed, and the client never sends one twice. The agents' skill does not
   teach it yet. `docs/reference.md` has the request, the result and every failure's action.
+- **`jevlin mcp` serves search, fetch and decide as MCP tools.** It is an MCP server over stdio
+  that offers `search --stdin`, `fetch --stdin`, `decide --stdin` and `decide --models` as the
+  tools `search`, `fetch`, `decide` and `decide_models`, for a host that prefers MCP to a shell
+  skill. A tool answers with the same envelope the command prints, and a
+  refused request or a call before setup is a tool result with `isError` set. It runs only while
+  a host holds it open. Setup does not register it; the reference shows the lines for Claude
+  Code, Codex and Cursor.
 
 ## v0.7.0 — 2026-11-03
 

@@ -542,10 +542,15 @@ func fetchMain(now func() time.Time, args []string, stdin io.Reader, stdout, std
 		fmt.Fprintln(stderr, "jevlin fetch: --stdin is required: send one version-1 JSON request on stdin")
 		return exitUsage
 	}
+	return fetchMainIn(signalContext, now, args, stdin, stdout, getenv)
+}
+
+// fetchMainIn is fetchMain under the cancellation the caller chooses, as
+// searchDeadline describes.
+func fetchMainIn(cancelOn func() (context.Context, context.CancelFunc), now func() time.Time, args []string, stdin io.Reader, stdout io.Writer, getenv func(string) string) int {
 	// Machine mode only, so everything is in the envelope, as for search
 	// --stdin: nothing on stderr for a caller to parse instead.
-	stderr = io.Discard
-	fs := newFlagSet("fetch", stderr)
+	fs := newFlagSet("fetch", io.Discard)
 	cfgPath := onceStringFlag(fs, "config", "path to TOML config file; given at most once")
 	timeout := fs.Duration("timeout", defaultSearchTimeout, "whole-fetch deadline, covering connect, headers and body")
 	fs.Bool("stdin", false, "read one version-1 JSON fetch request from stdin and answer with the machine envelope")
@@ -590,7 +595,7 @@ func fetchMain(now func() time.Time, args []string, stdin io.Reader, stdout, std
 			errors.New("this installation holds no search credential; run jevlin connect"))
 	}
 
-	ctx, cancel := searchDeadline(*timeout)
+	ctx, cancel := searchDeadline(cancelOn, *timeout)
 	defer cancel()
 	out := performFetch(ctx, now, strings.TrimRight(cfg.Search.RouterURL.String(), "/")+"/v1/fetch", key, req.body())
 	env, code := fetchEnvelopeOf(out)
