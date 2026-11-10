@@ -439,11 +439,15 @@ func (s *mcpServer) callTool(params json.RawMessage) (any, *rpcError) {
 // machineRequestOf is a tool's arguments as the version-1 request its
 // machine path reads: the same object, with "version": 1 added when the
 // caller left it out, so an MCP client need not repeat what the tool
-// already fixes. Every value is passed on as the caller's bytes; a
-// "version" the caller did write is left for the machine path to judge,
-// in any case of its letters, because encoding/json matches the machine
-// path's keys without regard to case: {"Version": 2} is a version 2
-// request there, and must not become a version 1 one here.
+// already fixes. The caller's bytes are passed on as they came, in their
+// order and spacing, and "version" is only written in front of them: a
+// re-encoded object would sort its keys, so of two keys that differ only
+// in case the machine path, which matches keys without regard to case and
+// takes the last, could read the other one; and it would escape a "<" in a
+// value the machine path forwards. A "version" the caller did write is
+// left for the machine path to judge, in any case of its letters:
+// {"Version": 2} is a version 2 request there, and must not become a
+// version 1 one here.
 func machineRequestOf(args json.RawMessage) ([]byte, bool) {
 	t := bytes.TrimSpace(args)
 	if len(t) == 0 {
@@ -456,13 +460,15 @@ func machineRequestOf(args json.RawMessage) ([]byte, bool) {
 	if json.Unmarshal(t, &fields) != nil {
 		return nil, false
 	}
-	named := false
 	for k := range fields {
-		named = named || strings.EqualFold(k, "version")
+		if strings.EqualFold(k, "version") {
+			return t, true
+		}
 	}
-	if !named {
-		fields["version"] = json.RawMessage("1")
+	if len(fields) == 0 {
+		return []byte(`{"version":1}`), true
 	}
-	b, err := json.Marshal(fields)
-	return b, err == nil
+	out := make([]byte, 0, len(t)+len(`"version":1,`))
+	out = append(out, `{"version":1,`...)
+	return append(out, t[1:]...), true
 }

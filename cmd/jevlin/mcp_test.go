@@ -581,3 +581,62 @@ func TestTheLineBoundIsThePayloadsWhateverEndsTheLine(t *testing.T) {
 		}
 	}
 }
+
+// Two keys that differ only in case reach the router as the CLI would send
+// them: the machine path matches keys without regard to case and takes the
+// last, so the tool must pass the arguments on in the caller's order. A
+// re-encoded object sorts "Query" before "query", and here that would
+// search the first wording instead of the second.
+func TestCaseVariantKeysReachTheRouterAsTheCLISendsThem(t *testing.T) {
+	const args = `{"query":"first wording","Query":"second wording"}`
+	sentQuery := func(fr *fakeRouter) any {
+		t.Helper()
+		_, body := fr.last(t)
+		var sent map[string]any
+		if err := json.Unmarshal(body, &sent); err != nil {
+			t.Fatal(err)
+		}
+		return sent["query"]
+	}
+
+	fr, cfg, _ := newFakeRouter(t, okHandler(routerBody))
+	_, msgs, _ := runMCP(t, map[string]string{"JEVLIN_API_KEY": "sr-fictional-key"},
+		[]string{mcpInitialize, toolCall(2, "search", args)}, "-config", cfg)
+	if env, isError := toolEnvelope(t, msgs[1]); isError {
+		t.Fatalf("the search came back isError, envelope %v", env)
+	}
+	viaMCP := sentQuery(fr)
+
+	h := fixedSearchOps(t.TempDir())
+	var out, errOut strings.Builder
+	getenv := installedAs(envOf(map[string]string{"JEVLIN_API_KEY": "sr-fictional-key"}), []string{"-config", cfg})
+	if code := searchMain(h.ops, []string{"--stdin", "-config", cfg}, strings.NewReader(`{"version":1,`+args[1:]), &out, &errOut, getenv); code != exitOK {
+		t.Fatalf("the CLI search exited %d: %s", code, errOut.String())
+	}
+	viaCLI := sentQuery(fr)
+
+	if viaMCP != viaCLI {
+		t.Errorf("through MCP the router was asked %q, through the CLI %q", viaMCP, viaCLI)
+	}
+}
+
+// The arguments are passed on as the caller's bytes, spacing and "<"
+// included, with "version" written in front only when no key spells it.
+func TestToolArgumentsArePassedOnByteForByte(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{`{ "state" : { "a" :  1 ,"b":"<x>" } }`, `{"version":1, "state" : { "a" :  1 ,"b":"<x>" } }`},
+		{`{"Version":2, "state":"<y>"}`, `{"Version":2, "state":"<y>"}`},
+		{`{ }`, `{"version":1}`},
+		{``, `{"version":1}`},
+	} {
+		got, ok := machineRequestOf(json.RawMessage(c.in))
+		if !ok || string(got) != c.want {
+			t.Errorf("machineRequestOf(%s) = %s, %v; want %s", c.in, got, ok, c.want)
+		}
+	}
+	for _, in := range []string{`[]`, `"x"`, `{"a":`} {
+		if _, ok := machineRequestOf(json.RawMessage(in)); ok {
+			t.Errorf("machineRequestOf(%s) accepted arguments that are not an object", in)
+		}
+	}
+}
