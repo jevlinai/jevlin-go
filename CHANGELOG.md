@@ -12,11 +12,18 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
-`jevlin mcp` is an MCP server over stdio that offers `search --stdin` and
-`fetch --stdin` as the tools `search` and `fetch`, for a host that prefers MCP to a shell
-skill. A tool answers with the same envelope the command prints, and a refused request or a
-call before setup is a tool result with `isError` set. It runs only while a host holds it open.
-Setup does not register it; the reference shows the lines for Claude Code, Codex and Cursor.
+- **The skill asks for an `objective` on every search.** Its request list described the field
+  but said it does not reorder the list, and never asked for one. It now says to send, with
+  every search, one sentence on what you are trying to find out: the indexes that accept a goal
+  use it, and so does the router when it orders the pool. `docs/reference.md` says the same.
+  An installed skill takes the new text the next time it is rendered, by `jevlin setup`,
+  `jevlin agents install` or an upgrade.
+- **`jevlin mcp` serves search and fetch as MCP tools.** It is an MCP server over stdio that
+  offers `search --stdin` and `fetch --stdin` as the tools `search` and `fetch`, for a host that
+  prefers MCP to a shell skill. A tool answers with the same envelope the command prints, and a
+  refused request or a call before setup is a tool result with `isError` set. It runs only while
+  a host holds it open. Setup does not register it; the reference shows the lines for Claude
+  Code, Codex and Cursor.
 
 ## v0.7.0 — 2026-11-03
 

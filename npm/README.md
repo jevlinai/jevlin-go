@@ -162,6 +162,8 @@ leaves a new minor release for `jevlin upgrade`; for an npm install the release 
 - [Privacy](https://github.com/jevlinai/jevlin-go/blob/main/docs/privacy.md): what jevlin sends, per agent, and how to switch it off.
 - [Reference](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md): every command and flag, tiers and providers, the `--stdin`
   request and its envelope, config, files.
+- [Web search router vs SuperSearch](https://jevlin.ai/web-search-router/): what asking every engine finds that a web search
+  router sending each query to one engine does not, measured on 485 questions.
 - [CHANGELOG.md](https://github.com/jevlinai/jevlin-go/blob/main/CHANGELOG.md): what changed in each release.
 - [SECURITY.md](https://github.com/jevlinai/jevlin-go/blob/main/SECURITY.md): how to report a vulnerability.
 - [CONTRIBUTING.md](https://github.com/jevlinai/jevlin-go/blob/main/CONTRIBUTING.md): how to propose a change.
