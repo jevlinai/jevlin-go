@@ -10,7 +10,11 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
-## Unreleased
+## v0.8.0 — 2026-11-11
+
+This release reads the same configuration as 0.7.0, so nothing needs to run after installing it:
+a native upgrade rewrites the skills and hooks of the agents this installation set up, and after
+an npm update `jevlin agents install` does.
 
 - **The skill asks for an `objective` on every search.** Its request list described the field
   but said it does not reorder the list, and never asked for one. It now says to send, with
@@ -18,13 +22,14 @@ rewritten to match newer behaviour; the newer entry says what changed.
   use it, and so does the router when it orders the pool. `docs/reference.md` says the same.
   An installed skill takes the new text the next time it is rendered, by `jevlin setup`,
   `jevlin agents install` or an upgrade.
-- **`jevlin decide` asks a decision model typed questions about a state.** `jevlin decide
-  --stdin` takes one version-1 request (a `model`, a `state` and named `questions`) and answers
+- **`jevlin decide` asks a decision model typed questions about a state, where the router offers
+  it.** `jevlin decide --stdin` takes one version-1 request (a `model`, a `state` and named `questions`) and answers
   with one envelope whose `result.answers` holds the model's answer to each question, a refusal
   included, as the router sent it; `jevlin decide --models` lists the models with each one's
   price and whether this account can call it. The state and questions reach the router byte for
-  byte. A decision is billed, and the client never sends one twice. The agents' skill does not
-  teach it yet. `docs/reference.md` has the request, the result and every failure's action.
+  byte. A decision is billed, and the client never sends one twice. A router without decisions
+  answers `decisions_not_supported`. The agents' skill does not teach it yet.
+  `docs/reference.md` has the request, the result and every failure's action.
 - **`jevlin mcp` serves search, fetch and decide as MCP tools.** It is an MCP server over stdio
   that offers `search --stdin`, `fetch --stdin`, `decide --stdin` and `decide --models` as the
   tools `search`, `fetch`, `decide` and `decide_models`, for a host that prefers MCP to a shell
@@ -36,7 +41,8 @@ rewritten to match newer behaviour; the newer entry says what changed.
   has moved an installation to configuration format 1, a rollback to a release older than 0.7.0
   succeeded and then every command of that release failed with "unknown key(s)". A rollback in
   that state now says so: the config is format 1, which the release rolled back to does not
-  read, the older configuration is at `jevlin.toml.old`, and setup moved the key and
+  read, the older configuration is where setup set it aside (`jevlin.toml.old`, or the
+  highest-numbered `jevlin.toml.old.N` when that name was taken), and setup moved the key and
   registration beside the state directory. It names the two ways out, rolling back again or
   moving the older configuration and the key back by hand, and moves nothing itself. A rollback
   to 0.7.0 or later says nothing, since that release reads the file.
@@ -51,6 +57,10 @@ rewritten to match newer behaviour; the newer entry says what changed.
   search still works, and fetch and decisions resume at the weekly reset or when credit is
   added. The client already carried the router's code with `report`, exit 3, not retryable;
   the fetch and decide failure tables in `docs/reference.md` now list it.
+
+**Which parts were live-smoked.** Not yet live-smoked: `jevlin mcp` through a real agent host,
+and `jevlin decide` against a live router, which does not serve decisions yet. Both are held by
+tests against a loopback router on every CI system.
 
 ## v0.7.0 — 2026-11-03
 
