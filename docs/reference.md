@@ -84,7 +84,8 @@ extended arm then runs only because it was named. On `fast` the router refuses `
 ## The `--stdin` request
 
 One JSON object on stdin, one JSON envelope on stdout. The query never reaches the process list
-and needs no shell escaping. A malformed field answers `fix_input` before any router call; `tier`
+and needs no shell escaping. A malformed field answers `fix_input` before any router call, and a
+field is spelled exactly as below: `QUERY` or `VERSION` is `unknown_field`, naming the key. `tier`
 and the query's length are not checked here, and the router answers for them.
 
 | field | value |
@@ -201,7 +202,8 @@ this account's own recent search results, and only to an account that can fetch.
 | `offset` | 0 or more: where in each page's text to start. Pass a page's `next_offset` to read on. |
 | `query` | Up to 500 characters, not blank: the router starts a long page's text near the part that matches. |
 
-Every malformed value, and any other field, answers `fix_input` before the router is called. On
+Every malformed value, and any other field, answers `fix_input` before the router is called. A
+field is spelled exactly as above: `Pages` or `VERSION` is `unknown_field`. On
 success, `result.pages` is the router's pages in its order: `source_id`, `url`, `title`, `status`,
 `content`, `offset`, `next_offset` (absent at the end of the text), `content_length`, `truncated`
 and `full_length` (present when the upstream cut the page), `reason` (on a failed page:

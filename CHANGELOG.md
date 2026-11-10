@@ -40,6 +40,12 @@ rewritten to match newer behaviour; the newer entry says what changed.
   registration beside the state directory. It names the two ways out, rolling back again or
   moving the older configuration and the key back by hand, and moves nothing itself. A rollback
   to 0.7.0 or later says nothing, since that release reads the file.
+- **`search --stdin` and `fetch --stdin` refuse a field in another case.** Go's JSON decoder
+  matches a field name without regard to case, so a key spelled `QUERY` was read as `query`,
+  and beside `query` it replaced it. Every top-level key must now be spelled exactly as the
+  request defines it, as `decide --stdin` already required; anything else is `unknown_field`
+  naming the key, exit 2, `fix_input`, and the router is never called. A `VERSION` key is
+  `unknown_field` whatever its value. Through `jevlin mcp` the tools answer the same way.
 
 ## v0.7.0 — 2026-11-03
 
