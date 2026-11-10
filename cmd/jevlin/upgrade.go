@@ -34,6 +34,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/BurntSushi/toml"
+
 	"github.com/jevlinai/jevlin-go/internal/selfupdate"
 	"github.com/jevlinai/jevlin-go/pkg/config"
 )
@@ -279,6 +281,7 @@ func upgradeRun(d upgradeDeps, homeFlag string, requested *selfupdate.Version, r
 		}
 		fmt.Fprintf(d.stdout, "rolled back %s from %s to %s\nthe binary it replaced is now %s; run `jevlin upgrade -rollback` again to swap back\n",
 			rolled.Executable, rolled.From, rolled.To, selfupdate.PreviousPath(rolled.Executable))
+		fmt.Fprint(d.stdout, rollbackConfigNote(home, rolled))
 		record = &updateStamp{Binary: resolved, Running: rolled.To.String(), Held: rolled.From.String(), Outcome: updateRolledBack}
 		d.rerenderOwned(ctx, exe, resolved, home)
 		return exitOK
@@ -306,6 +309,51 @@ func upgradeRun(d upgradeDeps, homeFlag string, requested *selfupdate.Version, r
 	record = &updateStamp{Binary: resolved, Running: prepared.From.String(), Latest: prepared.To.String(), Outcome: updateUpgraded}
 	d.rerenderOwned(ctx, exe, resolved, home)
 	return exitOK
+}
+
+// formatOneFirstRelease is the first release that reads configuration format
+// 1, and it reads nothing else: 0.7.0. A binary older than it refuses a
+// format-1 file as holding unknown keys.
+var formatOneFirstRelease = selfupdate.Version{Major: 0, Minor: 7, Patch: 0}
+
+// rollbackConfigNote is what a rollback says when the binary it put back
+// cannot read the installation's config: the config is format 1, setup has
+// set the older one aside as <config>.old, and the release rolled back to is
+// older than formatOneFirstRelease. A rollback to 0.7.0 or later says
+// nothing, because that binary reads the file, and the .old a migration left
+// stays on disk for good. Nothing is moved: putting the older file back would
+// also mean moving the identity setup moved, and would surprise the daily
+// check's hold, so the note says what a person can do and leaves it to them.
+// Empty when there is nothing to say.
+func rollbackConfigNote(home string, rolled selfupdate.Rolled) string {
+	if rolled.To.Compare(formatOneFirstRelease) >= 0 {
+		return ""
+	}
+	cfgPath := filepath.Join(home, setupConfigFile)
+	old := cfgPath + ".old"
+	if !lexists(old) || !isFormatOneConfig(cfgPath) {
+		return ""
+	}
+	return fmt.Sprintf("\nthe configuration at %s is format 1, which %s does not read; the\n"+
+		"older configuration is at %s, and setup moved the key and registration\n"+
+		"beside the state directory. Run `jevlin upgrade -rollback` again to return to\n"+
+		"%s, or move the older configuration and the key back by hand before\n"+
+		"using %s.\n", cfgPath, rolled.To, old, rolled.From, rolled.To)
+}
+
+// isFormatOneConfig reports whether the file at path is a regular file whose
+// schema line says format 1. Anything it cannot read says no.
+func isFormatOneConfig(path string) bool {
+	data, err := readExistingConfig(path)
+	if err != nil || data == nil {
+		return false
+	}
+	var doc map[string]any
+	if _, err := toml.Decode(string(data), &doc); err != nil {
+		return false
+	}
+	schema, ok := doc["schema"].(int64)
+	return ok && schema == config.Schema
 }
 
 // recordManual writes what a person's upgrade or rollback did into the

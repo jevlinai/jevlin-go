@@ -32,6 +32,14 @@ rewritten to match newer behaviour; the newer entry says what changed.
   refused request or a call before setup is a tool result with `isError` set. It runs only while
   a host holds it open. Setup does not register it; the reference shows the lines for Claude
   Code, Codex and Cursor.
+- **`jevlin upgrade -rollback` says when the older binary cannot read the config.** After setup
+  has moved an installation to configuration format 1, a rollback to a release older than 0.7.0
+  succeeded and then every command of that release failed with "unknown key(s)". A rollback in
+  that state now says so: the config is format 1, which the release rolled back to does not
+  read, the older configuration is at `jevlin.toml.old`, and setup moved the key and
+  registration beside the state directory. It names the two ways out, rolling back again or
+  moving the older configuration and the key back by hand, and moves nothing itself. A rollback
+  to 0.7.0 or later says nothing, since that release reads the file.
 
 ## v0.7.0 — 2026-11-03
 
