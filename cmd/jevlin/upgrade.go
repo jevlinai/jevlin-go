@@ -318,8 +318,9 @@ var formatOneFirstRelease = selfupdate.Version{Major: 0, Minor: 7, Patch: 0}
 
 // rollbackConfigNote is what a rollback says when the binary it put back
 // cannot read the installation's config: the config is format 1, setup has
-// set the older one aside as <config>.old, and the release rolled back to is
-// older than formatOneFirstRelease. A rollback to 0.7.0 or later says
+// set the older one aside as <config>.old (or .old.1, ... when that name was
+// taken; the note names the latest, latestAside), and the release rolled back
+// to is older than formatOneFirstRelease. A rollback to 0.7.0 or later says
 // nothing, because that binary reads the file, and the .old a migration left
 // stays on disk for good. Nothing is moved: putting the older file back would
 // also mean moving the identity setup moved, and would surprise the daily
@@ -330,8 +331,8 @@ func rollbackConfigNote(home string, rolled selfupdate.Rolled) string {
 		return ""
 	}
 	cfgPath := filepath.Join(home, setupConfigFile)
-	old := cfgPath + ".old"
-	if !lexists(old) || !isFormatOneConfig(cfgPath) {
+	old := latestAside(cfgPath, lexists)
+	if old == "" || !isFormatOneConfig(cfgPath) {
 		return ""
 	}
 	return fmt.Sprintf("\nthe configuration at %s is format 1, which %s does not read; the\n"+

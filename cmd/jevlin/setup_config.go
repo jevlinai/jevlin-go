@@ -396,18 +396,39 @@ func planSetupConfig(path string, existing []byte, v setupValues, validate func(
 	}
 }
 
+// asideNames is how many names asideName tries: path.old, then path.old.1
+// up to path.old.99.
+const asideNames = 100
+
+// asideCandidate is the i-th name in asideName's sequence: path.old for 0,
+// path.old.i after it.
+func asideCandidate(path string, i int) string {
+	if i == 0 {
+		return path + ".old"
+	}
+	return path + ".old." + strconv.Itoa(i)
+}
+
 // asideName is the first of path.old, path.old.1, ... that does not exist.
 func asideName(path string, exists func(string) bool) (string, error) {
-	for i := 0; i < 100; i++ {
-		name := path + ".old"
-		if i > 0 {
-			name += "." + strconv.Itoa(i)
-		}
-		if !exists(name) {
+	for i := 0; i < asideNames; i++ {
+		if name := asideCandidate(path, i); !exists(name) {
 			return name, nil
 		}
 	}
 	return "", fmt.Errorf("%s: no free name to set the older configuration aside under; move %s.old* away", path, path)
+}
+
+// latestAside is the highest-numbered name in asideName's sequence that
+// exists: setup takes the first free name, so that is the file it set aside
+// most recently. Empty when none exists.
+func latestAside(path string, exists func(string) bool) string {
+	for i := asideNames - 1; i >= 0; i-- {
+		if name := asideCandidate(path, i); exists(name) {
+			return name
+		}
+	}
+	return ""
 }
 
 // validateConfigBytes loads data through pkg/config exactly as every command
