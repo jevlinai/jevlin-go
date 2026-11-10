@@ -90,6 +90,15 @@ the tool (what an agent runs):
              only pages from this account's recent searches, and only to an
              account that can fetch. -timeout as for search. Exit codes as
              for search.
+  decide     jevlin decide --stdin: a decision model's answers to typed
+             questions about a state, for an agent. One version-1 JSON
+             request on stdin: model (vendor/model), state and questions,
+             and optionally options, sources and max_chars; one JSON
+             envelope on stdout with result.answers, one per question. A
+             decision is billed and never retried. jevlin decide --models
+             lists the models with each one's price and whether this
+             account can call it. -timeout as for search. Exit codes as
+             for search.
   agents     agents install|status|uninstall — find {{HOST_LABELS}} on this machine and give each
              the supersearch skill (opencode: a plugin) and the hooks it
              supports. -dry-run previews,
@@ -211,6 +220,8 @@ func dispatch(name string, args []string) int {
 		return cmdSearch(args, os.Stdin, os.Stdout, os.Stderr, os.Getenv)
 	case "fetch":
 		return cmdFetch(args, os.Stdin, os.Stdout, os.Stderr, os.Getenv)
+	case "decide":
+		return cmdDecide(args, os.Stdin, os.Stdout, os.Stderr, os.Getenv)
 	case "agents":
 		return cmdAgents(args, os.Stdin, os.Stdout, os.Stderr, os.Getenv)
 	case "hook":
