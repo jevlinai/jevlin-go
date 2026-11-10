@@ -276,7 +276,7 @@ and `--models` together are a usage error.
 | 413 `payload_too_large` | 3 | `payload_too_large` | `false` | `fix_input` |
 | 403 `decisions_unavailable` | 3 | `decisions_unavailable` | `false` | `connect`: this account cannot call this model, and `error.message` says why |
 | 404 or 405 | 3 | `decisions_not_supported` | `false` | `report`: this router has no decisions |
-| 503 `decisions_disabled` | 4 | `decisions_disabled` | `false` | `report`: this router has decisions switched off |
+| 503 `decisions_disabled` | 3 | `decisions_disabled` | `false` | `report`: this router has decisions switched off |
 | 503 `model_unavailable` | 4 | `model_unavailable` | `false` | `report`: the platform holds no working key for this model |
 | 503 `upstream_failed` | 4 | `upstream_failed` | the body's `retryable` | `retry` when `true`, with `retry_after_ms` if the router sent one; `report` otherwise |
 | any other status | as for a search | | | |

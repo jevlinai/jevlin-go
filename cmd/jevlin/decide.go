@@ -529,9 +529,15 @@ func classifyDecide(out decideOutcome) searchClassification {
 		return searchClassification{exitClientErr, decisionsUnavailableCode, false, actionConnect}
 	case out.HTTPStatus == http.StatusNotFound, out.HTTPStatus == http.StatusMethodNotAllowed:
 		return searchClassification{exitClientErr, decisionsNotSupportedCode, false, actionReport}
-	case out.HTTPStatus == http.StatusServiceUnavailable && (code == decisionsDisabledCode || code == modelUnavailableCode):
-		// This deployment cannot serve the model, and no retry changes that.
-		return searchClassification{exitServerErr, code, false, actionReport}
+	case out.HTTPStatus == http.StatusServiceUnavailable && code == decisionsDisabledCode:
+		// This router has decisions switched off, which no retry changes. Exit 3
+		// as for decisions_not_supported and as fetch_disabled is, so the two
+		// agent-facing commands agree.
+		return searchClassification{exitClientErr, decisionsDisabledCode, false, actionReport}
+	case out.HTTPStatus == http.StatusServiceUnavailable && code == modelUnavailableCode:
+		// The platform holds no working key for this model, and no retry
+		// changes that.
+		return searchClassification{exitServerErr, modelUnavailableCode, false, actionReport}
 	case out.HTTPStatus == http.StatusServiceUnavailable && code == upstreamFailedCode:
 		// A decision is billed, so only the router's own word makes it safe
 		// to send again; absent, it is not retryable.
