@@ -1,12 +1,12 @@
 package main
 
-// The two tools `jevlin mcp` lists, and their input schemas.
+// The tools `jevlin mcp` lists, and their input schemas.
 //
 // Each schema describes the version-1 request its machine path accepts,
 // field for field: the property names are held to wireSearchRequest's and
-// wireFetchRequest's json tags by TestTheToolSchemasAreTheMachineContract,
-// so a field added to the request and not here, or here and not to the
-// request, fails a test. The bounds repeat the validators' so a client that
+// wireFetchRequest's json tags, and to decideRequestFields' keys, by
+// TestTheToolSchemasAreTheMachineContract, so a field added to the request
+// and not here, or here and not to the request, fails a test. The bounds repeat the validators' so a client that
 // checks a schema refuses what the machine path would refuse anyway; the
 // machine path stays the judge, and its answer is what a call returns.
 //
@@ -36,6 +36,51 @@ func mcpTools() []mcpTool {
 				"search returned or by its url. Set query to the fact you need and each page's text starts at the " +
 				"part that matches it.",
 			InputSchema: fetchInputSchema(),
+		},
+		{
+			Name: "decide",
+			Description: "Ask a decision model a set of typed questions about a state you give it; the answer carries " +
+				"one answer per question with its confidence. Use decide_models first to see which models this " +
+				"router offers.",
+			InputSchema: decideInputSchema(),
+		},
+		{
+			Name: "decide_models",
+			Description: "List the decision models this router offers: each one's id, which the decide tool takes " +
+				"as model, and whether this account can call it.",
+			InputSchema: map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{}},
+		},
+	}
+}
+
+// decideInputSchema is jevlin decide --stdin's request. state is any JSON
+// value but null, so it has no type; the router judges it and the
+// questions, and the client forwards both byte for byte.
+func decideInputSchema() map[string]any {
+	source := map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"source_id"},
+		"properties": map[string]any{
+			"source_id": stringProp("A page's source_id from a search result."),
+		},
+	}
+	return map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"model", "state", "questions"},
+		"properties": map[string]any{
+			"version": versionProp(),
+			"model": map[string]any{"type": "string", "pattern": decideModelPattern.String(),
+				"description": "The model, as vendor/model, from decide_models."},
+			"state": map[string]any{"description": "What the questions are about: a string, an object or an array, not null."},
+			"questions": map[string]any{"type": "object", "minProperties": 1,
+				"additionalProperties": map[string]any{"type": "object"},
+				"description":          "Each question by name: an object such as {\"type\": \"noul\", \"instructions\": \"...\"}."},
+			"options": map[string]any{"type": "object", "description": "The model's own options."},
+			"sources": map[string]any{"type": "array", "items": source, "minItems": 1, "maxItems": fetchPagesMax,
+				"description": "Pages from your searches for the model to read, each by its source_id."},
+			"max_chars": intProp("Characters of each source page to read.", fetchMaxCharsMin, fetchMaxCharsMax),
 		},
 	}
 }

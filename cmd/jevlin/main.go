@@ -100,7 +100,8 @@ the tool (what an agent runs):
              lists the models with each one's price and whether this
              account can call it. -timeout as for search. Exit codes as
              for search.
-  mcp        the search and fetch machine paths as MCP tools, over stdio
+  mcp        the search, fetch and decide machine paths as MCP tools
+             (decide --models as decide_models), over stdio
              (newline-delimited JSON-RPC on stdin and stdout) for a host
              that registers it, which starts it and holds it open; a tool
              answers with the same envelope as --stdin. -config as for

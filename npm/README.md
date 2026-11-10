@@ -92,7 +92,7 @@ type these (in Codex, `$jevlin`):
 
 [Making it the default, or not](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#making-it-the-default-or-not) covers the rest.
 
-An agent that takes MCP servers can call search and fetch as tools instead: register
+An agent that takes MCP servers can call search, fetch and decide as tools instead: register
 `jevlin mcp` with it, as [reference, MCP server](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#mcp-server)
 shows for Claude Code, Codex and Cursor. Setup does not register it, and it runs only while the
 host holds it open.

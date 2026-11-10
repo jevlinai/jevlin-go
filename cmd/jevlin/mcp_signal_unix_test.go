@@ -22,6 +22,20 @@ import (
 // sends after it is never answered. Run as the real binary, because the
 // claim is about what the signal does to the process.
 func TestASignalMidSearchEndsTheServer(t *testing.T) {
+	signalMidToolCallEndsTheServer(t, "search", `{"query":"a search a host stops"}`)
+}
+
+// The same for a decision: decide runs under the server's cancellation,
+// not its own signal handler, so SIGTERM mid-decide ends the server too.
+func TestASignalMidDecideEndsTheServer(t *testing.T) {
+	signalMidToolCallEndsTheServer(t, "decide", `{"model":"typesafe/jev-1.14","state":"a decision a host stops","questions":{"q":{"type":"noul"}}}`)
+}
+
+// signalMidToolCallEndsTheServer sends SIGTERM to a real `jevlin mcp` the
+// moment its tool call reaches the router, and holds that the process ends
+// by the signal without answering.
+func signalMidToolCallEndsTheServer(t *testing.T, tool, args string) {
+	t.Helper()
 	bin := testBuildOfJevlin(t)
 	var pid atomic.Int64
 	hit := make(chan struct{}, 1)
@@ -57,14 +71,14 @@ func TestASignalMidSearchEndsTheServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	pid.Store(int64(cmd.Process.Pid))
-	if _, err := io.WriteString(stdin, mcpInitialize+"\n"+toolCall(2, "search", `{"query":"a search a host stops"}`)+"\n"); err != nil {
+	if _, err := io.WriteString(stdin, mcpInitialize+"\n"+toolCall(2, tool, args)+"\n"); err != nil {
 		t.Fatal(err)
 	}
 	select {
 	case <-hit:
 	case <-time.After(30 * time.Second):
 		_ = cmd.Process.Kill()
-		t.Fatal("the search never reached the router")
+		t.Fatalf("the %s never reached the router", tool)
 	}
 	// The process may be gone already, so a failed write is expected.
 	_, _ = io.WriteString(stdin, `{"jsonrpc":"2.0","id":3,"method":"ping"}`+"\n")

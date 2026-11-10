@@ -14,6 +14,7 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -136,8 +137,8 @@ func TestAnMCPHostSearchesThroughTheWholeHandshake(t *testing.T) {
 	for _, tool := range msgs[1]["result"].(map[string]any)["tools"].([]any) {
 		names = append(names, tool.(map[string]any)["name"].(string))
 	}
-	if !reflect.DeepEqual(names, []string{"search", "fetch"}) {
-		t.Errorf("tools %v, want search and fetch", names)
+	if !reflect.DeepEqual(names, []string{"search", "fetch", "decide", "decide_models"}) {
+		t.Errorf("tools %v, want search, fetch, decide and decide_models", names)
 	}
 
 	env, isError := toolEnvelope(t, msgs[2])
@@ -405,6 +406,20 @@ func TestTheToolSchemasAreTheMachineContract(t *testing.T) {
 		t.Errorf("fetch's page schema admits {} or both keys: minProperties %v, maxProperties %v, additionalProperties %v",
 			page["minProperties"], page["maxProperties"], page["additionalProperties"])
 	}
+	// decide's request is decoded through decideRequestFields, not a
+	// struct, so its schema is held to that set's keys.
+	var decideKeys []string
+	for k := range decideRequestFields {
+		decideKeys = append(decideKeys, k)
+	}
+	slices.Sort(decideKeys)
+	if got := props(tools["decide"]); !reflect.DeepEqual(got, decideKeys) {
+		t.Errorf("decide's schema has %v, the request %v", got, decideKeys)
+	}
+	// decide_models takes no arguments, and its schema admits none.
+	if got := props(tools["decide_models"]); len(got) != 0 {
+		t.Errorf("decide_models' schema has properties %v; it takes none", got)
+	}
 	// And every schema is JSON a client can read.
 	if _, err := json.Marshal(mcpTools()); err != nil {
 		t.Fatal(err)
@@ -440,7 +455,7 @@ func TestTheToolTextNamesNoTierAndNoPrice(t *testing.T) {
 		t.Fatal(err)
 	}
 	walk(decoded)
-	forbidden := regexp.MustCompile(`(?i)\b(fast|economy|standard|balanced|max|cheapest|cheaper|costs?)\b|\$\s?[0-9]`)
+	forbidden := regexp.MustCompile(`(?i)\b(fast|economy|standard|balanced|max|cheapest|cheaper|costs?|prices?|perplexity|parallel|typesafe|openai|anthropic|gemini)\b|\$\s?[0-9]`)
 	for _, s := range texts {
 		if m := forbidden.FindString(s); m != "" {
 			t.Errorf("a description names %q: %s", m, s)
@@ -644,5 +659,122 @@ func TestToolArgumentsArePassedOnByteForByte(t *testing.T) {
 		if _, ok := machineRequestOf(json.RawMessage(in)); ok {
 			t.Errorf("machineRequestOf(%s) accepted arguments that are not an object", in)
 		}
+	}
+}
+
+// decideArgs is a decide tool call's arguments: state with odd spacing and a
+// "<", which the router must receive as written.
+const decideArgs = `{"model":"typesafe/jev-1.14","state":{"b": 1,   "a": "<x>"},"questions":{"q":{"type":"noul"}}}`
+
+// runDecideTool calls one tool and returns the router, the envelope, isError
+// and stderr. Empty args sends the call with no "arguments" at all.
+func runDecideTool(t *testing.T, handler http.HandlerFunc, name, args string, flags ...string) (*fakeRouter, map[string]any, bool, string) {
+	t.Helper()
+	fr, cfg, _ := newFakeRouter(t, handler)
+	call := toolCall(2, name, args)
+	if args == "" {
+		call = `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":` + strconv.Quote(name) + `}}`
+	}
+	_, msgs, stderr := runMCP(t, map[string]string{"JEVLIN_API_KEY": "sr-fictional-key"},
+		[]string{mcpInitialize, call}, append(flags, "-config", cfg)...)
+	if len(msgs) != 2 {
+		t.Fatalf("%d responses, want 2: %v", len(msgs), msgs)
+	}
+	env, isError := toolEnvelope(t, msgs[1])
+	env["_text"] = msgs[1]["result"].(map[string]any)["content"].([]any)[0].(map[string]any)["text"]
+	return fr, env, isError, stderr
+}
+
+// A decide call goes through the handshake and comes back with the
+// router's answers, and the router receives the arguments' fields as the
+// caller wrote them, state included.
+func TestAnMCPHostDecidesThroughTheHandshake(t *testing.T) {
+	raw := decideFixture(t, "decisions-success.json")
+	fr, env, isError, _ := runDecideTool(t, okHandler(raw), "decide", decideArgs)
+	if isError || env["ok"] != true || env["command"] != "decide" {
+		t.Fatalf("the decide came back isError=%v, envelope %v", isError, env)
+	}
+	// The tool's text is the envelope as decide printed it, so each answer
+	// is the router's bytes with only the whitespace between tokens gone,
+	// as the decide tests hold them.
+	got := rawAnswers(t, env["_text"].(string))
+	for k, want := range compactAnswers(t, raw) {
+		if string(got[k]) != want {
+			t.Errorf("answer %s is %s, the router's %s", k, got[k], want)
+		}
+	}
+	req, body := fr.last(t)
+	if req.Method != http.MethodPost || req.URL.Path != "/v1/decisions" {
+		t.Errorf("%s %s, want POST /v1/decisions", req.Method, req.URL.Path)
+	}
+	// The tool hands decide {"version":1, …the arguments…}; decide sends
+	// the router the request without its version, each value as written.
+	const want = `{"model":"typesafe/jev-1.14","state":{"b": 1,   "a": "<x>"},"questions":{"q":{"type":"noul"}}}`
+	if string(body) != want {
+		t.Errorf("the router received\n%s\nwant\n%s", body, want)
+	}
+}
+
+// A decide call the request contract refuses never reaches the router, and
+// comes back as a tool result with isError set.
+func TestADecideCallOutsideTheContractNeverReachesTheRouter(t *testing.T) {
+	fr, env, isError, _ := runDecideTool(t, okHandler(decideFixture(t, "decisions-success.json")),
+		"decide", `{"model":"typesafe/jev-1.14","state":"s","questions":{"q":{"type":"noul"}},"extra":1}`)
+	if !isError || env["code"] != codeUnknownField || env["action"] != actionFixInput {
+		t.Errorf("isError=%v, envelope %v; want the unknown_field refusal", isError, env)
+	}
+	if n := fr.requests(); n != 0 {
+		t.Errorf("the router was called %d times for a request the contract refuses", n)
+	}
+}
+
+// decide_models answers with the router's list, and takes no arguments: one
+// it is given is refused before the router.
+func TestDecideModelsIsAToolWithNoArguments(t *testing.T) {
+	for _, args := range []string{`{}`, ``} {
+		fr, env, isError, _ := runDecideTool(t, okHandler(decideModelsAnswer), "decide_models", args)
+		if isError || env["ok"] != true || env["command"] != "decide" {
+			t.Fatalf("decide_models(%q) came back isError=%v, envelope %v", args, isError, env)
+		}
+		var router map[string]any
+		if err := json.Unmarshal([]byte(decideModelsAnswer), &router); err != nil {
+			t.Fatal(err)
+		}
+		if got := resultOf(t, env)["models"]; !reflect.DeepEqual(got, router["models"]) {
+			t.Errorf("models %v, the router's %v", got, router["models"])
+		}
+		if req, _ := fr.last(t); req.Method != http.MethodGet || req.URL.Path != "/v1/decisions/models" {
+			t.Errorf("%s %s, want GET /v1/decisions/models", req.Method, req.URL.Path)
+		}
+	}
+	fr, env, isError, _ := runDecideTool(t, okHandler(decideModelsAnswer), "decide_models", `{"x":1}`)
+	if !isError || env["code"] != codeUnknownField || env["action"] != actionFixInput {
+		t.Errorf("decide_models with arguments: isError=%v, envelope %v; want the unknown_field refusal", isError, env)
+	}
+	if n := fr.requests(); n != 0 {
+		t.Errorf("the router was called %d times for decide_models with arguments", n)
+	}
+}
+
+// A router with no decisions answers 404, which is decisions_not_supported
+// and a tool result with isError set.
+func TestADecideToARouterWithoutDecisionsIsAnError(t *testing.T) {
+	_, env, isError, _ := runDecideTool(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}, "decide", decideArgs)
+	if !isError || env["code"] != decisionsNotSupportedCode {
+		t.Errorf("isError=%v, envelope %v; want decisions_not_supported", isError, env)
+	}
+}
+
+// With -log on, a decide call too leaves stdout to JSON-RPC alone (runMCP
+// fails on any other line) and logs its outcome on stderr.
+func TestADecideCallKeepsStdoutToJSONRPCWithTheLogOn(t *testing.T) {
+	_, env, isError, stderr := runDecideTool(t, okHandler(decideFixture(t, "decisions-success.json")), "decide", decideArgs, "-log")
+	if isError || env["ok"] != true {
+		t.Fatalf("isError=%v, envelope %v", isError, env)
+	}
+	if !strings.Contains(stderr, "tools/call decide: ok") {
+		t.Errorf("stderr %q does not log the decide call", stderr)
 	}
 }

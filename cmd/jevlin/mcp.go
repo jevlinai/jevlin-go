@@ -10,7 +10,7 @@ package main
 // with -log.
 //
 // The tools are the machine paths themselves, not a second implementation
-// of them. tools/call hands its arguments to searchMain or fetchMain as the
+// of them. tools/call hands its arguments to searchMain, fetchMainIn or decideMainIn as the
 // --stdin request, so the validation, the unknown-field refusal, the error
 // codes, the setup answers, the trace and the envelope are the same code a
 // skill's call runs. A refused or failed call is a tool result with isError
@@ -410,6 +410,24 @@ func (s *mcpServer) callTool(params json.RawMessage) (any, *rpcError) {
 		run = func(stdin io.Reader, stdout io.Writer) int {
 			return fetchMainIn(s.search.cancelOn, s.now, append([]string{"--stdin"}, s.cfgArgs...), stdin, stdout, s.env)
 		}
+	case "decide":
+		run = func(stdin io.Reader, stdout io.Writer) int {
+			return decideMainIn(s.search.cancelOn, s.now, append([]string{"--stdin"}, s.cfgArgs...), stdin, stdout, s.env)
+		}
+	case "decide_models":
+		// jevlin decide --models reads no request, so the tool takes no
+		// arguments: {} or none. Anything else is refused here, before the
+		// router, in the envelope a refused request carries.
+		if !noArguments(p.Arguments) {
+			run = func(_ io.Reader, stdout io.Writer) int {
+				return failDecide(stdout, exitUsage, codeUnknownField, actionFixInput,
+					errors.New("decide_models takes no arguments"))
+			}
+			break
+		}
+		run = func(stdin io.Reader, stdout io.Writer) int {
+			return decideMainIn(s.search.cancelOn, s.now, append([]string{"--models"}, s.cfgArgs...), stdin, stdout, s.env)
+		}
 	default:
 		return nil, &rpcError{Code: rpcInvalidParams, Message: "this server has no tool " + strconv.Quote(*p.Name)}
 	}
@@ -434,6 +452,17 @@ func (s *mcpServer) callTool(params json.RawMessage) (any, *rpcError) {
 		r.StructuredContent = json.RawMessage(text)
 	}
 	return r, nil
+}
+
+// noArguments reports whether a tool's arguments are absent or an empty
+// object.
+func noArguments(args json.RawMessage) bool {
+	t := bytes.TrimSpace(args)
+	if len(t) == 0 {
+		return true
+	}
+	var fields map[string]json.RawMessage
+	return t[0] == '{' && json.Unmarshal(t, &fields) == nil && len(fields) == 0
 }
 
 // machineRequestOf is a tool's arguments as the version-1 request its

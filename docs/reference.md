@@ -10,7 +10,7 @@ says what is written into each agent.
 | `search` | `--stdin`, `-tier fast\|balanced\|max`, `-format json\|model`, `-view merged`, `--fresh`, `-timeout d` (default 1m0s), `-config file` | One web search. `--stdin` for agents ([the request](#the---stdin-request)); `<query words>` for a person ([the human form](#the-human-form-and-powershell)). `--fresh` skips the router's cache, as `"cache": "refresh"` does in a request. |
 | `fetch` | `--stdin` (required), `-timeout d` (default 1m0s), `-config file` | The full text of pages a search returned, for agents ([Reading a page in full](#reading-a-page-in-full)). |
 | `decide` | `--stdin` or `--models` (exactly one, required), `-timeout d` (default 1m0s), `-config file` | Typed questions about a state, answered by a decision model, for agents; `--models` lists the models ([Asking a decision model](#asking-a-decision-model)). |
-| `mcp` | `-log`, `-config file` | `search --stdin` and `fetch --stdin` as MCP tools, over stdio, for a host that registers it ([MCP server](#mcp-server)). |
+| `mcp` | `-log`, `-config file` | `search --stdin`, `fetch --stdin`, `decide --stdin` and `decide --models` as MCP tools, over stdio, for a host that registers it ([MCP server](#mcp-server)). |
 | `agents install\|status\|uninstall` | `-client name` (repeatable), `-config file`; `install` and `uninstall` also `-dry-run` and `-yes` | Sets up, reports or removes the skills and hooks of each agent. `-yes` answers **Proceed?**, never a question about a Codex setting of yours. |
 | `agents prefer on\|off\|status` | `-config file` | Whether this search or the agent's own is the default, in every agent with a skill. |
 | `agents tier fast [preset]\|balanced\|max\|default\|status` | `-config file` | The tier every search carries unless the request names one; `default` unsets it. After `fast`, a preset name picks which fast indexes run, and a preset named alone is taken as `fast <preset>` when the router lists it; `status` lists the router's presets with its estimate for each. |
@@ -288,9 +288,16 @@ any other 5xx or an answer the client could not use.
 
 ### MCP server
 
-`jevlin mcp` serves the two machine paths as Model Context Protocol tools, `search` and `fetch`,
-over stdio: newline-delimited JSON-RPC 2.0 on stdin and stdout. A host starts it and holds it open,
-and it ends when the host closes its stdin. stdout carries nothing but protocol messages.
+`jevlin mcp` serves the machine paths as Model Context Protocol tools over stdio: newline-delimited
+JSON-RPC 2.0 on stdin and stdout. A host starts it and holds it open, and it ends when the host
+closes its stdin. stdout carries nothing but protocol messages.
+
+| tool | runs | arguments |
+|---|---|---|
+| `search` | `jevlin search --stdin` | [The `--stdin` request](#the---stdin-request) |
+| `fetch` | `jevlin fetch --stdin` | [Reading a page in full](#reading-a-page-in-full) |
+| `decide` | `jevlin decide --stdin` | [Asking a decision model](#asking-a-decision-model) |
+| `decide_models` | `jevlin decide --models` | None: `{}` or absent |
 
 | what | value |
 |---|---|
@@ -302,6 +309,23 @@ and it ends when the host closes its stdin. stdout carries nothing but protocol 
 | The trace | `harness` is `mcp:<name>`, the client's own name (`mcp` when the name is not a plain token), with one session per host process. `JEVLIN_HARNESS`, when the host's environment sets it, takes precedence. |
 | `-log` | One line per message on stderr, naming the method, the tool and the outcome code, never what a request carried. |
 | `-config file` | As for every command; add it after `mcp` for an installation other than the machine's own. |
+
+A `decide` call, and the start of its result (the text item carries the same envelope, on one
+line):
+
+```json
+{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"decide","arguments":{
+  "model":"vendor/model","state":{"page":"…"},"questions":{"kind":{"type":"choice","instructions":"…"}}}}}
+```
+
+```json
+{"jsonrpc":"2.0","id":7,"result":{"content":[{"type":"text","text":"{\"version\":1,\"command\":\"decide\",…}"}],
+  "structuredContent":{"version":1,"command":"decide","ok":true,…,"result":{"answers":{
+    "kind":{"type":"choice","choice":"docs","probabilities":{"blog":0.09,"docs":0.91},"confidence":0.88}},…}}}}
+```
+
+The tool hands `jevlin decide` the arguments as the caller wrote them, with `"version": 1` in
+front when they carry none, so `state` and `questions` reach the router byte for byte.
 
 Setup does not register the server. To add it by hand, with `jevlin` on the host's `PATH` (or its
 full path in its place):
