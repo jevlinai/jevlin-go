@@ -416,6 +416,18 @@ func TestTheToolSchemasAreTheMachineContract(t *testing.T) {
 	if got := props(tools["decide"]); !reflect.DeepEqual(got, decideKeys) {
 		t.Errorf("decide's schema has %v, the request %v", got, decideKeys)
 	}
+	// state is any JSON value but null: the decide path refuses a null state
+	// as missing_state, so the schema refuses it too. Judged on the schema as
+	// a client reads it, after encoding, by the two keywords it may carry.
+	stateSchema := decodedSchema(t, tools["decide"]["properties"].(map[string]any)["state"])
+	for _, c := range []struct {
+		value string
+		admit bool
+	}{{`null`, false}, {`"a string"`, true}, {`{"a":1}`, true}, {`[1]`, true}} {
+		if got := schemaAdmitsType(t, stateSchema, c.value); got != c.admit {
+			t.Errorf("decide's state schema admits %s: %v, want %v", c.value, got, c.admit)
+		}
+	}
 	// decide_models takes no arguments, and its schema admits none.
 	if got := props(tools["decide_models"]); len(got) != 0 {
 		t.Errorf("decide_models' schema has properties %v; it takes none", got)
@@ -424,6 +436,57 @@ func TestTheToolSchemasAreTheMachineContract(t *testing.T) {
 	if _, err := json.Marshal(mcpTools()); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// decodedSchema is a schema as a client receives it: encoded, then decoded.
+func decodedSchema(t *testing.T, schema any) map[string]any {
+	t.Helper()
+	b, err := json.Marshal(schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// schemaAdmitsType judges a JSON value against a schema made only of
+// "type", "not" and "description", the keywords state's schema may carry; any
+// other keyword fails the test rather than being passed over unjudged.
+func schemaAdmitsType(t *testing.T, schema map[string]any, value string) bool {
+	t.Helper()
+	var v any
+	if err := json.Unmarshal([]byte(value), &v); err != nil {
+		t.Fatal(err)
+	}
+	kind := "null"
+	switch v.(type) {
+	case string:
+		kind = "string"
+	case map[string]any:
+		kind = "object"
+	case []any:
+		kind = "array"
+	case float64:
+		kind = "number"
+	case bool:
+		kind = "boolean"
+	}
+	admit := true
+	for k, e := range schema {
+		switch k {
+		case "description":
+		case "type":
+			admit = admit && e == kind
+		case "not":
+			admit = admit && !schemaAdmitsType(t, e.(map[string]any), value)
+		default:
+			t.Fatalf("schemaAdmitsType does not judge %q", k)
+		}
+	}
+	return admit
 }
 
 // The tools' text is the workflow: it names no tier and no price, and tells
