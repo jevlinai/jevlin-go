@@ -232,6 +232,12 @@ trace and starts the daily release check when the plugin loads, when a top-level
 and at each of its idles. There is no skill directory: install prints a rules block to paste into
 `AGENTS.md`, which is what teaches the agent the search.
 
+The one file works on opencode 1 and opencode 2, which have different plugin interfaces. On
+opencode 2 the trace reaches the search through the environment of the shell the call starts, so the
+command you are shown and asked to approve is the one the agent wrote. On opencode 1 it is put in
+front of the command. A plugin file written by jevlin 0.7.0 or earlier does not load on opencode 2:
+run `jevlin agents install` again after upgrading jevlin.
+
 ### What to know
 
 It runs Bash on macOS and Linux. On Windows it resolves its shell when it starts: `$SHELL` wins

@@ -233,7 +233,7 @@ func TestOpencodeSubagentNamesItsParent(t *testing.T) {
    return {data:sessions[path.id]};
   },
  }};
- const hooks = await plugin.JevlinLineage({client});
+ const hooks = await plugin.default.server({client});
  const search = async (sid) => {
   const output={args:{command:'jevlin search query'}};
   await hooks['tool.execute.before']({tool:'bash',sessionID:sid,callID:'call'},output);
@@ -324,7 +324,7 @@ func TestOpencodeRedactionBoundaries(t *testing.T) {
  const plugin = await import('data:text/javascript;base64,'+Buffer.from(input.plugin).toString('base64'));
  const result={};
  for (const [name,text] of Object.entries(input.cases)) {
-  const hooks=await plugin.JevlinLineage({client:{session:{messages:async()=>({data:[{info:{role:'assistant'},parts:[{type:'text',text}]}]})}}});
+  const hooks=await plugin.default.server({client:{session:{messages:async()=>({data:[{info:{role:'assistant'},parts:[{type:'text',text}]}]})}}});
   const output={args:{command:'jevlin search query'}};
   await hooks['tool.execute.before']({tool:'bash',sessionID:'synthetic',callID:'call'},output);
   const bridge=output.args.command.split(' ')[0].split('=')[1];
@@ -596,7 +596,7 @@ func TestOpencodePluginWritesTheShellOpencodeRuns(t *testing.T) {
  for (const [name, c] of Object.entries(input.cases)) {
   if (c.shell === null) delete process.env.SHELL; else process.env.SHELL = c.shell;
   process.env.PATH = c.path;
-  const hooks = await plugin.JevlinLineage({client:{session:{messages:async()=>({data:[]})}}});
+  const hooks = await plugin.default.server({client:{session:{messages:async()=>({data:[]})}}});
   const output = {args:{command:'jevlin search query'}};
   await hooks['tool.execute.before']({tool:'bash',sessionID:'synthetic',callID:'call'},output);
   result[name] = output.args.command;
