@@ -103,7 +103,7 @@ type wireFetchPage struct {
 // is as strict as search's: an unknown field, at the top or in a page, is
 // refused, and so is every value outside the router's bounds.
 func decodeMachineFetchRequest(r io.Reader) (machineFetchRequest, *inputError) {
-	raw, ierr := readMachineRequest(r, "fetch")
+	raw, ierr := readExactMachineRequest(r, "fetch", fetchRequestFields)
 	if ierr != nil {
 		return machineFetchRequest{}, ierr
 	}

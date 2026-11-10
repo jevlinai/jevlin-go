@@ -16,7 +16,7 @@ says what is written into each agent.
 | `agents tier fast [preset]\|balanced\|max\|default\|status` | `-config file` | The tier every search carries unless the request names one; `default` unsets it. After `fast`, a preset name picks which fast indexes run, and a preset named alone is taken as `fast <preset>` when the router lists it; `status` lists the router's presets with its estimate for each. |
 | `setup` | `-home dir`, `-yes`, `-dry-run`, `-no-profile`, `-no-agents`, `-with id` (repeatable) | Everything after the binary ([guide, Setup](guide.md#setup)). `-yes` answers the profile and agents questions, terminal or not, and **Use it?** only at a terminal; never Codex's **Switch?**. Without `-yes` or a terminal it leaves the profile and agents alone and prints the command for each. `-dry-run` lists every file it would write or move. `-no-profile` leaves the shell profile (Windows: user environment) alone; `-no-agents` skips detection; `-with` sets up `claude`, `codex`, `cursor`, `opencode`, `pi` or `hermes`, found or not. |
 | `uninstall` | `-home dir`, `-binary`, `-purge-state`, `-dry-run`, `-yes` | Removes what setup wrote for one installation; `-binary` also its binary, `-purge-state` also its registration, key and config, confirmed by typing the installation path at a terminal, which `-yes` never answers ([guide](guide.md#removing-it-and-coming-back)). |
-| `upgrade` | `-version X.Y.Z`, `-rollback`, `-home dir`; `-auto` and `-config file` are the daily check's | Replaces a native binary with a verified release, never an older one; `-rollback` puts back `jevlin.previous` with no network. `-auto` is the daily check the hooks start: a patch release of this copy's own minor is installed, a new minor only recorded ([guide, Upgrading](guide.md#upgrading)). |
+| `upgrade` | `-version X.Y.Z`, `-rollback`, `-home dir`; `-auto` and `-config file` are the daily check's | Replaces a native binary with a verified release, never an older one; `-rollback` puts back `jevlin.previous` with no network. Rolled back to a release older than 0.7.0 on a format-1 config with `jevlin.toml.old` beside it, it says that release cannot read the config and where setup put the older one, and moves nothing. `-auto` is the daily check the hooks start: a patch release of this copy's own minor is installed, a new minor only recorded ([guide, Upgrading](guide.md#upgrading)). |
 | `connect` | `-name name`, `-json`, `-force`, `-config file`; `-resume` is internal | Registers with the search platform, prints the claim link and code, polls until claimed. `-force` overwrites a stored key that belongs to another registration. `-resume` is the one poll a search starts in the background. |
 | `login` | `-key-env VAR`, `-no-verify`, `-show`, `-forget`, `-config file` | Stores a key you already have, read from stdin (or `-key-env`) and checked against the router without spending unless `-no-verify`; `-show` says where a search would get its key, `-forget` removes the file. |
 | `status` | `-json`, `-config file` | What this installation has and has not completed. |
@@ -84,7 +84,8 @@ extended arm then runs only because it was named. On `fast` the router refuses `
 ## The `--stdin` request
 
 One JSON object on stdin, one JSON envelope on stdout. The query never reaches the process list
-and needs no shell escaping. A malformed field answers `fix_input` before any router call; `tier`
+and needs no shell escaping. A malformed field answers `fix_input` before any router call, and a
+field is spelled exactly as below: `QUERY` or `VERSION` is `unknown_field`, naming the key. `tier`
 and the query's length are not checked here, and the router answers for them.
 
 | field | value |
@@ -201,7 +202,8 @@ this account's own recent search results, and only to an account that can fetch.
 | `offset` | 0 or more: where in each page's text to start. Pass a page's `next_offset` to read on. |
 | `query` | Up to 500 characters, not blank: the router starts a long page's text near the part that matches. |
 
-Every malformed value, and any other field, answers `fix_input` before the router is called. On
+Every malformed value, and any other field, answers `fix_input` before the router is called. A
+field is spelled exactly as above: `Pages` or `VERSION` is `unknown_field`. On
 success, `result.pages` is the router's pages in its order: `source_id`, `url`, `title`, `status`,
 `content`, `offset`, `next_offset` (absent at the end of the text), `content_length`, `truncated`
 and `full_length` (present when the upstream cut the page), `reason` (on a failed page:
@@ -218,6 +220,7 @@ is not a failed call: `ok` stays `true`.
 | 503 `fetch_disabled` | `fetch_disabled` | `false` | `report`: this router has fetch switched off |
 | 502, or any other 5xx (another 503 too) | the router's code, else `router_error` | `true` | `retry` |
 | 401 | the router's code, else `unauthorized` | `false` | `login` |
+| 402 `search_credit_only` | `search_credit_only` | `false` | `report`: the credit left this week is reserved for search; fetch resumes at the weekly reset or after a top-up |
 | any other status | as for a search | | |
 
 A fetch is one request and is never retried by the client.
@@ -280,6 +283,7 @@ and `--models` together are a usage error.
 | 503 `decisions_disabled` | 3 | `decisions_disabled` | `false` | `report`: this router has decisions switched off |
 | 503 `model_unavailable` | 4 | `model_unavailable` | `false` | `report`: the platform holds no working key for this model |
 | 503 `upstream_failed` | 4 | `upstream_failed` | the body's `retryable` | `retry` when `true`, with `retry_after_ms` if the router sent one; `report` otherwise |
+| 402 `search_credit_only` | 3 | `search_credit_only` | `false` | `report`: the credit left this week is reserved for search; decisions resume at the weekly reset or after a top-up |
 | any other status | as for a search | | | |
 
 Exit codes are as for a search: 0 for a valid answer, 1 for transport, timeout or cancellation, 2

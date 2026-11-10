@@ -440,6 +440,7 @@ func TestEachDecideFailureMapsToItsAction(t *testing.T) {
 		{"key refused", 401, `{"code":"unauthorized","error":"bad key"}`, exitClientErr, "unauthorized", false, actionLogin, "bad key"},
 		{"credits exhausted", 402, `{"code":"credits_exhausted","error":"out"}`, exitClientErr, "credits_exhausted", false, actionReport, "out"},
 		{"spend ceiling", 402, `{"code":"spend_ceiling","error":"daily"}`, exitClientErr, "spend_ceiling", false, actionReport, "daily"},
+		{"credit kept for search", 402, `{"code":"search_credit_only","error":"the rest is for search"}`, exitClientErr, "search_credit_only", false, actionReport, "the rest is for search"},
 		{"rate limited", 429, `{"code":"rate_limited","error":"slow down"}`, exitClientErr, "rate_limited", true, actionRetry, "slow down"},
 		{"2xx without answers", 200, `{"request_id":"r"}`, exitServerErr, string(faultInvalidResponse), false, actionReport, "no answers"},
 		{"2xx with null answers", 200, `{"request_id":"r","answers":null}`, exitServerErr, string(faultInvalidResponse), false, actionReport, "no answers"},

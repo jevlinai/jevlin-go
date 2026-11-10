@@ -146,7 +146,7 @@ the named tests.
     changes the platform agent and its key. `-resume` never registers, rebuilds or replaces.
 14. **Retired.** The number is kept so that references to later invariants stay right.
 15. **The machine protocol is versioned, closed and typed.** `search --stdin`, `fetch --stdin`,
-    `status -json`, `doctor -json`, `connect -json` and `limits -json` emit one envelope with the mandatory header (`version`,
+    `decide --stdin`, `status -json`, `doctor -json`, `connect -json` and `limits -json` emit one envelope with the mandatory header (`version`,
     `command`, `ok`, `exit_code`, `status`, `code`, `retryable`, `action`), a closed action set
     (`none`, `retry`, `fix_input`, `connect`, `login`, `check_access`, `report`) and exit classes
     0 through 4. Classification is by typed errors and exact codes, never by message text

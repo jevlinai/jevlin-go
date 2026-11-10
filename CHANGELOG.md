@@ -32,6 +32,25 @@ rewritten to match newer behaviour; the newer entry says what changed.
   refused request or a call before setup is a tool result with `isError` set. It runs only while
   a host holds it open. Setup does not register it; the reference shows the lines for Claude
   Code, Codex and Cursor.
+- **`jevlin upgrade -rollback` says when the older binary cannot read the config.** After setup
+  has moved an installation to configuration format 1, a rollback to a release older than 0.7.0
+  succeeded and then every command of that release failed with "unknown key(s)". A rollback in
+  that state now says so: the config is format 1, which the release rolled back to does not
+  read, the older configuration is at `jevlin.toml.old`, and setup moved the key and
+  registration beside the state directory. It names the two ways out, rolling back again or
+  moving the older configuration and the key back by hand, and moves nothing itself. A rollback
+  to 0.7.0 or later says nothing, since that release reads the file.
+- **`search --stdin` and `fetch --stdin` refuse a field in another case.** Go's JSON decoder
+  matches a field name without regard to case, so a key spelled `QUERY` was read as `query`,
+  and beside `query` it replaced it. Every top-level key must now be spelled exactly as the
+  request defines it, as `decide --stdin` already required; anything else is `unknown_field`
+  naming the key, exit 2, `fix_input`, and the router is never called. A `VERSION` key is
+  `unknown_field` whatever its value. Through `jevlin mcp` the tools answer the same way.
+- **The reference names the router's `402 search_credit_only`.** A router may answer a fetch or
+  a decision with it when the credit left is the part of the weekly allowance kept for search:
+  search still works, and fetch and decisions resume at the weekly reset or when credit is
+  added. The client already carried the router's code with `report`, exit 3, not retryable;
+  the fetch and decide failure tables in `docs/reference.md` now list it.
 
 ## v0.7.0 — 2026-11-03
 

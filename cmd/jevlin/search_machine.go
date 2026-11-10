@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"reflect"
 	"slices"
 	"strings"
 	"unicode"
@@ -135,7 +136,7 @@ type wireSearchRequest struct {
 // and a request that could set them would let the caller forge the
 // trajectory a search is attributed to.
 func decodeMachineSearchRequest(r io.Reader) (machineSearchRequest, error) {
-	raw, ierr := readMachineRequest(r, "search")
+	raw, ierr := readExactMachineRequest(r, "search", searchRequestFields)
 	if ierr != nil {
 		return machineSearchRequest{}, ierr
 	}
@@ -238,6 +239,93 @@ func decodeMachineSearchRequest(r io.Reader) (machineSearchRequest, error) {
 		req.cache = cache
 	}
 	return req, nil
+}
+
+// searchRequestFields and fetchRequestFields are every top-level key a v1
+// search or fetch request may carry, spelled exactly: the json tags of the
+// wire struct each decodes into, so the set and the struct cannot disagree.
+var (
+	searchRequestFields = wireFieldNames(wireSearchRequest{})
+	fetchRequestFields  = wireFieldNames(wireFetchRequest{})
+)
+
+// wireFieldNames is the set of json tag names of a wire struct's fields.
+func wireFieldNames(v any) map[string]bool {
+	rt := reflect.TypeOf(v)
+	names := make(map[string]bool, rt.NumField())
+	for i := range rt.NumField() {
+		names[strings.Split(rt.Field(i).Tag.Get("json"), ",")[0]] = true
+	}
+	return names
+}
+
+// readExactMachineRequest is readMachineRequest for a request whose
+// top-level keys must be spelled exactly as allowed has them. encoding/json
+// matches a struct's fields without regard to case, and DisallowUnknownFields
+// does not change that, so a "QUERY" beside "query" would pass and replace
+// it; a request is held to the exact names before it is decoded. decide holds
+// its own request to the same rule through decideRequestFields.
+func readExactMachineRequest(r io.Reader, command string, allowed map[string]bool) ([]byte, *inputError) {
+	// The shared reader reads "version" without regard to case, so a request
+	// whose only version key is misspelled would be told its version is
+	// unsupported; the copy lets that answer be corrected. It holds no more
+	// than the reader's own bound.
+	var seen bytes.Buffer
+	raw, ierr := readMachineRequest(io.TeeReader(r, &seen), command)
+	if ierr != nil {
+		if ierr.Code == codeUnsupportedVersion {
+			if key, ok := inexactKey(trimUTF8BOM(seen.Bytes()), map[string]bool{"version": true}, true); ok {
+				return nil, unknownFieldNamed(key)
+			}
+		}
+		return nil, ierr
+	}
+	if key, ok := inexactKey(raw, allowed, false); ok {
+		return nil, unknownFieldNamed(key)
+	}
+	return raw, nil
+}
+
+// inexactKey returns the first top-level key of raw, in sorted order, that
+// allowed does not have spelled exactly. With onlyFolded, only a key that
+// differs from an allowed one by case counts: the version answer is
+// corrected for a misspelled "version" alone, and a future version is told
+// its version is unsupported, not lectured about its new fields.
+func inexactKey(raw []byte, allowed map[string]bool, onlyFolded bool) (string, bool) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return "", false
+	}
+	keys := make([]string, 0, len(fields))
+	for k := range fields {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	for _, k := range keys {
+		if allowed[k] {
+			continue
+		}
+		if !onlyFolded {
+			return k, true
+		}
+		for name := range allowed {
+			if strings.EqualFold(k, name) {
+				return k, true
+			}
+		}
+	}
+	return "", false
+}
+
+// unknownFieldNamed is unknown_field naming the key, quoted and cut to a
+// bound: the key is the caller's text, and the envelope is what a model reads.
+func unknownFieldNamed(key string) *inputError {
+	const max = 64
+	if utf8.RuneCountInString(key) > max {
+		key = string([]rune(key)[:max]) + "…"
+	}
+	return inputErrorf(codeUnknownField, fmt.Sprintf(
+		"the request carries %q, a field this version does not accept; field names are spelled exactly", key))
 }
 
 // readMachineRequest reads one version-1 request object from r, for the

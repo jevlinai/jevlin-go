@@ -269,8 +269,8 @@ func TestAToolCallOutsideTheContractNeverReachesTheRouter(t *testing.T) {
 		{"search", `{"query":"  "}`, codeEmptyQuery},
 		{"search", `{"query":"x","page_chars":1}`, codeInvalidPageChars},
 		{"search", `{"version":2,"query":"x"}`, codeUnsupportedVersion},
-		{"search", `{"Version":2,"query":"x"}`, codeUnsupportedVersion},
-		{"search", `{"VERSION":"1","query":"x"}`, codeUnsupportedVersion},
+		{"search", `{"Version":2,"query":"x"}`, codeUnknownField},
+		{"search", `{"VERSION":"1","query":"x"}`, codeUnknownField},
 		{"fetch", `{"pages":[{"source_id":"s_0123"}]}`, codeInvalidSourceID},
 		{"fetch", `{}`, codeMissingPages},
 	} {
@@ -666,41 +666,39 @@ func TestTheLineBoundIsThePayloadsWhateverEndsTheLine(t *testing.T) {
 	}
 }
 
-// Two keys that differ only in case reach the router as the CLI would send
-// them: the machine path matches keys without regard to case and takes the
-// last, so the tool must pass the arguments on in the caller's order. A
-// re-encoded object sorts "Query" before "query", and here that would
-// search the first wording instead of the second.
-func TestCaseVariantKeysReachTheRouterAsTheCLISendsThem(t *testing.T) {
+// A case-variant key is refused before the router, as the CLI refuses it:
+// the machine path holds every key to its exact spelling, and the tool hands
+// it the arguments, so the same request gets the same answer either way.
+// That the arguments reach the machine path as the caller's bytes is
+// TestToolArgumentsArePassedOnByteForByte's.
+func TestACaseVariantKeyIsRefusedBeforeTheRouterAsTheCLIRefusesIt(t *testing.T) {
 	const args = `{"query":"first wording","Query":"second wording"}`
-	sentQuery := func(fr *fakeRouter) any {
-		t.Helper()
-		_, body := fr.last(t)
-		var sent map[string]any
-		if err := json.Unmarshal(body, &sent); err != nil {
-			t.Fatal(err)
-		}
-		return sent["query"]
-	}
-
 	fr, cfg, _ := newFakeRouter(t, okHandler(routerBody))
 	_, msgs, _ := runMCP(t, map[string]string{"JEVLIN_API_KEY": "sr-fictional-key"},
 		[]string{mcpInitialize, toolCall(2, "search", args)}, "-config", cfg)
-	if env, isError := toolEnvelope(t, msgs[1]); isError {
-		t.Fatalf("the search came back isError, envelope %v", env)
+	viaMCP, isError := toolEnvelope(t, msgs[1])
+	if !isError {
+		t.Fatalf("the search came back without isError, envelope %v", viaMCP)
 	}
-	viaMCP := sentQuery(fr)
 
 	h := fixedSearchOps(t.TempDir())
 	var out, errOut strings.Builder
 	getenv := installedAs(envOf(map[string]string{"JEVLIN_API_KEY": "sr-fictional-key"}), []string{"-config", cfg})
-	if code := searchMain(h.ops, []string{"--stdin", "-config", cfg}, strings.NewReader(`{"version":1,`+args[1:]), &out, &errOut, getenv); code != exitOK {
-		t.Fatalf("the CLI search exited %d: %s", code, errOut.String())
-	}
-	viaCLI := sentQuery(fr)
+	code := searchMain(h.ops, []string{"--stdin", "-config", cfg}, strings.NewReader(`{"version":1,`+args[1:]), &out, &errOut, getenv)
+	viaCLI := decodeEnvelope(t, out.String())
 
-	if viaMCP != viaCLI {
-		t.Errorf("through MCP the router was asked %q, through the CLI %q", viaMCP, viaCLI)
+	if code != exitUsage || viaCLI["code"] != codeUnknownField || viaCLI["action"] != actionFixInput {
+		t.Errorf("the CLI answered exit %d, envelope %v; want %d, unknown_field / fix_input", code, viaCLI, exitUsage)
+	}
+	for _, k := range []string{"code", "action", "exit_code", "retryable"} {
+		if fmt.Sprint(viaMCP[k]) != fmt.Sprint(viaCLI[k]) {
+			t.Errorf("%s: through MCP %v, through the CLI %v", k, viaMCP[k], viaCLI[k])
+		}
+	}
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+	if len(fr.reqs) != 0 {
+		t.Errorf("the router received %d requests for a refused key", len(fr.reqs))
 	}
 }
 

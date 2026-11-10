@@ -337,6 +337,67 @@ func TestUpgradeCommandRollbackNeedsNoNetwork(t *testing.T) {
 	f.noStagingLeftovers()
 }
 
+// A rollback says when the binary it put back cannot read the config: the
+// config is format 1, setup set the older one aside (as <config>.old, or
+// .old.1, ... when that name was taken), and the release rolled back to is
+// older than 0.7.0. It names the file setup set aside most recently, and
+// moves nothing either way.
+func TestARollbackSaysWhenTheOlderBinaryCannotReadTheConfig(t *testing.T) {
+	formatOne := func(string) string { return "schema = 1\n" }
+	older := func(home string) string { return earlierConfigBody(filepath.Join(home, "state"), "") }
+	for _, c := range []struct {
+		name     string
+		from, to string
+		config   func(home string) string
+		asides   []string // the files beside the config, by suffix
+		named    string   // the suffix the note names; "" for no note
+	}{
+		{"format 1 with an older file aside, back to 0.6.1", "0.7.0", "0.6.1", formatOne, []string{".old"}, ".old"},
+		{"format 1 with no older file aside", "0.7.0", "0.6.1", formatOne, nil, ""},
+		{"an older config with an older file aside", "0.7.0", "0.6.1", older, []string{".old"}, ""},
+		{"format 1 with an older file aside, back to 0.7.1, which reads it", "0.8.0", "0.7.1", formatOne, []string{".old"}, ""},
+		{"format 1 with .old taken before the migration", "0.7.0", "0.6.1", formatOne, []string{".old", ".old.1"}, ".old.1"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newUpgradeFixture(t, newLocalRelease(t, c.from, nil))
+			f.build = c.from
+			f.write(f.exe, c.from)
+			f.write(selfupdate.PreviousPath(f.exe), c.to)
+			cfg := filepath.Join(f.home, setupConfigFile)
+			writeFileT(t, cfg, c.config(f.home))
+			before := map[string]string{cfg: f.content(cfg)}
+			for _, s := range c.asides {
+				writeFileT(t, cfg+s, "the configuration set aside as "+s+"\n")
+				before[cfg+s] = f.content(cfg + s)
+			}
+
+			code, out, errOut := f.run("-rollback")
+			if code != exitOK || f.content(f.exe) != c.to {
+				t.Fatalf("rollback exit %d, binary %s\n%s\n%s", code, f.content(f.exe), out, errOut)
+			}
+			if c.named == "" {
+				if strings.Contains(out, "is format 1, which") {
+					t.Errorf("a rollback that needs no note printed one:\n%s", out)
+				}
+			} else {
+				note := "\nthe configuration at " + cfg + " is format 1, which " + c.to + " does not read; the\n" +
+					"older configuration is at " + cfg + c.named + ", and setup moved the key and registration\n" +
+					"beside the state directory. Run `jevlin upgrade -rollback` again to return to\n" +
+					c.from + ", or move the older configuration and the key back by hand before\n" +
+					"using " + c.to + ".\n"
+				if !strings.Contains(out, note) {
+					t.Errorf("the note naming %s is missing; stdout:\n%s", cfg+c.named, out)
+				}
+			}
+			for p, b := range before {
+				if f.content(p) != b {
+					t.Errorf("the rollback changed %s: %q, was %q", p, f.content(p), b)
+				}
+			}
+		})
+	}
+}
+
 func TestUpgradeCommandExactVersionAndNoOp(t *testing.T) {
 	lr := newLocalRelease(t, "0.3.0", map[string]string{"0.3.0": "0.3.0\n", "0.3.2": "0.3.2\n"})
 	f := newUpgradeFixture(t, lr)
