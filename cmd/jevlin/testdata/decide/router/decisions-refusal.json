@@ -1,0 +1,40 @@
+{
+  "request_id": "01936f2a-7c00-7000-8000-0000000000a2",
+  "model": "parallel/decisions-fast",
+  "answers": {
+    "current": {
+      "type": "refusal"
+    },
+    "relevance": {
+      "type": "score",
+      "score": 2.0,
+      "probabilities": {
+        "0": 0.05,
+        "1": 0.15,
+        "2": 0.8
+      },
+      "legend": {
+        "0": "Unrelated.",
+        "1": "Related, no answer.",
+        "2": "Answers it."
+      }
+    }
+  },
+  "citations": [
+    {
+      "url": "https://docs.example.test/storage/pricing",
+      "excerpts": [
+        "Archive storage is billed per gigabyte per month."
+      ]
+    }
+  ],
+  "usage": {
+    "input_tokens": 900,
+    "output_tokens": 9,
+    "grounded_calls": 1,
+    "cost_micros": 1000,
+    "cost_source": "modeled",
+    "byok": false,
+    "latency_ms": 1210
+  }
+}

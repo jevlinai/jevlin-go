@@ -18,6 +18,13 @@ rewritten to match newer behaviour; the newer entry says what changed.
   use it, and so does the router when it orders the pool. `docs/reference.md` says the same.
   An installed skill takes the new text the next time it is rendered, by `jevlin setup`,
   `jevlin agents install` or an upgrade.
+- **`jevlin decide` asks a decision model typed questions about a state.** `jevlin decide
+  --stdin` takes one version-1 request (a `model`, a `state` and named `questions`) and answers
+  with one envelope whose `result.answers` holds the model's answer to each question, a refusal
+  included, as the router sent it; `jevlin decide --models` lists the models with each one's
+  price and whether this account can call it. The state and questions reach the router byte for
+  byte. A decision is billed, and the client never sends one twice. The agents' skill does not
+  teach it yet. `docs/reference.md` has the request, the result and every failure's action.
 - **`jevlin mcp` serves search and fetch as MCP tools.** It is an MCP server over stdio that
   offers `search --stdin` and `fetch --stdin` as the tools `search` and `fetch`, for a host that
   prefers MCP to a shell skill. A tool answers with the same envelope the command prints, and a

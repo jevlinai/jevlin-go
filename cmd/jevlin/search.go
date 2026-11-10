@@ -772,17 +772,39 @@ func postRouter(ctx context.Context, client *http.Client, endpoint, key string, 
 	if err != nil {
 		return routerAttempt{}, err
 	}
+	return postRouterBytes(ctx, client, endpoint, key, payload, header)
+}
+
+// postRouterBytes is postRouter for a body already encoded, which goes on
+// the wire exactly as given. json.Marshal cannot do this for a caller's
+// bytes: it compacts a json.RawMessage and escapes its < > and &.
+func postRouterBytes(ctx context.Context, client *http.Client, endpoint, key string, payload []byte, header func(*http.Request)) (routerAttempt, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return routerAttempt{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", clientIdentifier())
-	req.Header.Set("Authorization", "Bearer "+key)
 	if header != nil {
 		header(req)
 	}
+	return sendRouter(client, req, key)
+}
+
+// getRouter GETs one of the router's endpoints, on postRouter's terms.
+func getRouter(ctx context.Context, client *http.Client, endpoint, key string) (routerAttempt, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return routerAttempt{}, err
+	}
+	return sendRouter(client, req, key)
+}
+
+// sendRouter sends req with the participant's key and reads the answer
+// against searchMaxBody.
+func sendRouter(client *http.Client, req *http.Request, key string) (routerAttempt, error) {
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", clientIdentifier())
+	req.Header.Set("Authorization", "Bearer "+key)
 	resp, err := client.Do(req)
 	if err != nil {
 		return routerAttempt{}, err
