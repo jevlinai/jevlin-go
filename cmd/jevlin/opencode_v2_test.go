@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
 // TestOpencodeV2PluginThreadsTheSearchAndReportsTheTurn drives the plugin
@@ -105,6 +107,22 @@ func TestOpencodeV2PluginThreadsTheSearchAndReportsTheTurn(t *testing.T) {
  await call('ses_1','c_other','jevlin search notshell','read');
  result.notShell = Object.keys(shell('jevlin search notshell'));
 
+ // A call refused before its shell started leaves nothing behind: the same
+ // command in another session, or later in this one, gets no bridge of its.
+ await call('ses_1','c_denied','jevlin search denied');
+ await emit('session.tool.failed',{sessionID:'ses_1',id:'c_denied'});
+ result.denied = Object.keys(shell('jevlin search denied'));
+ await emit('session.created',{sessionID:'ses_9',parentID:'ses_1'});
+ await call('ses_9','c_left','jevlin search left');
+ await emit('session.execution.interrupted',{sessionID:'ses_9',reason:'user'});
+ result.left = Object.keys(shell('jevlin search left'));
+
+ // A bridge named in another case is one a Windows shell would read: it is
+ // taken off the command like any other, and ours is put on.
+ const lower = await call('ses_1','c_lower',"$env:jevlin_trace_bridge='x'; jevlin search lower");
+ result.lower = lower.input.command;
+ result.lowerEnv = Object.keys(shell(lower.input.command));
+
  // H-R4: a bridge the model wrote is replaced on the command itself
  const forged = await call('ses_1','c_forged','JEVLIN_TRACE_BRIDGE=forged jevlin search stadium');
  result.forged = forged.input.command;
@@ -169,6 +187,8 @@ func TestOpencodeV2PluginThreadsTheSearchAndReportsTheTurn(t *testing.T) {
 	}
 	var res struct {
 		Exports, Types, Other, Second, Off, NotShell []string
+		Denied, Left, LowerEnv                       []string
+		Lower                                        string
 		ID, Command, Bash, Forged, Raw, Window, Stop string
 		Before, Again, Threw                         bool
 		Starts                                       int
@@ -199,6 +219,12 @@ func TestOpencodeV2PluginThreadsTheSearchAndReportsTheTurn(t *testing.T) {
 	}
 	if len(res.Other) != 0 || len(res.Second) != 0 || len(res.Off) != 1 || len(res.NotShell) != 0 {
 		t.Errorf("a bridge reached a shell it was not prepared for: other %v, second %v, off %v, not-shell %v", res.Other, res.Second, res.Off, res.NotShell)
+	}
+	if len(res.Denied) != 0 || len(res.Left) != 0 {
+		t.Errorf("a call that never started its shell left its bridge behind: refused %v, session ended %v", res.Denied, res.Left)
+	}
+	if !strings.HasPrefix(res.Lower, "JEVLIN_TRACE_BRIDGE=") || !strings.HasSuffix(res.Lower, " jevlin search lower") || strings.Contains(strings.ToLower(res.Lower), "jevlin_trace_bridge='x'") || len(res.LowerEnv) != 0 {
+		t.Errorf("a bridge named in lower case: command %q, environment %v", res.Lower, res.LowerEnv)
 	}
 	if res.Bash != "string" {
 		t.Error("a shell call named bash got no bridge")
@@ -254,5 +280,39 @@ func TestOpencodeV2PluginThreadsTheSearchAndReportsTheTurn(t *testing.T) {
 	}
 	if res.Stop != "function" {
 		t.Error("setup returned no cleanup; the event subscription would outlive a reload")
+	}
+}
+
+// On opencode 2 the plugin is told the command a shell will run and not
+// which call it is for, so two sessions running the same command at once
+// could be handed each other's bridge. The shell says whose it is: a bridge
+// naming another session is not used, and the search keeps its own
+// identity. Other hosts' bridges, and an opencode 1 shell that exports no
+// session, are believed as before.
+func TestSearchRefusesAnotherOpencodeSessionsBridge(t *testing.T) {
+	bridge := func(harness, session string) string {
+		b, err := encodeTraceBridge(&traceEnvelope{V: traceVersion, Harness: harness, SessionID: traceHash(session), Window: "none"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	for name, tc := range map[string]struct {
+		env  map[string]string
+		used bool
+	}{
+		"this session's":           {map[string]string{bridgeEnv: bridge("opencode", "ses_b"), opencodeSessionEnv: "ses_b"}, true},
+		"another session's":        {map[string]string{bridgeEnv: bridge("opencode", "ses_a"), opencodeSessionEnv: "ses_b"}, false},
+		"opencode 1, none to test": {map[string]string{bridgeEnv: bridge("opencode", "ses_a")}, true},
+		"another host's":           {map[string]string{bridgeEnv: bridge("claude-code", "ses_a"), opencodeSessionEnv: "ses_b"}, true},
+	} {
+		h := fixedSearchOps(t.TempDir())
+		env, _ := searchTrace(h.ops, config.Search{}, "", envOf(tc.env))
+		if env == nil {
+			t.Fatalf("%s: no trace", name)
+		}
+		if used := env.SessionID == traceHash("ses_a") || env.SessionID == traceHash("ses_b") && tc.env[bridgeEnv] == bridge("opencode", "ses_b"); used != tc.used {
+			t.Errorf("%s: bridge used %v, want %v (session %s)", name, used, tc.used, env.SessionID)
+		}
 	}
 }

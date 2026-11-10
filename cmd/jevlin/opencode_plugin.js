@@ -515,8 +515,21 @@ const jevlinV2 = async (ctx) => {
   const reporting = new Set()
   const parents = new Map()
   // command text -> the bridges prepared for calls of it that have not
-  // started their shell yet, oldest first.
+  // started their shell yet, oldest first. Each remembers its session and
+  // call, so one whose call ended without a shell (refused at the approval
+  // prompt, say) is dropped then, and none outlives its session's
+  // execution: a bridge left behind would ride the next identical command.
+  // The binary closes what remains — two sessions with the same command in
+  // flight at once — by refusing an opencode bridge that names a session
+  // other than the one in OPENCODE_SESSION_ID (searchTrace).
   const pending = new Map()
+  const forget = (keep) => {
+    for (const [cmd, queue] of pending) {
+      const left = queue.filter(keep)
+      if (left.length) pending.set(cmd, left)
+      else pending.delete(cmd)
+    }
+  }
   const prune = (now) => {
     for (const [cmd, queue] of pending) {
       while (queue.length && now - queue[0].at > V2_PENDING_MILLIS) queue.shift()
@@ -581,7 +594,8 @@ const jevlinV2 = async (ctx) => {
       // command, so that one case is rewritten as opencode 1's is: every
       // assignment that can be proved standalone is removed and this call's
       // own is prepended, or the command is left exactly as it is.
-      if (cmd.includes("JEVLIN_TRACE_BRIDGE")) {
+      // Any ASCII case: PowerShell and cmd read the name without regard to it.
+      if (carriesUnremovableBridge(cmd)) {
         const shell = hostShell()
         const bridge = traceBridge(env, bridgeBudgetFor(cmd, shell, HOST_COMMAND_CHAR_LIMIT))
         if (bridge === null) return
@@ -594,7 +608,7 @@ const jevlinV2 = async (ctx) => {
       const now = Date.now()
       prune(now)
       const queue = pending.get(cmd) ?? []
-      queue.push({ bridge, at: now })
+      queue.push({ bridge, at: now, sid, call: event.id })
       pending.set(cmd, queue)
     } catch {
       // fail-open: the search runs untraced rather than not at all
@@ -621,6 +635,7 @@ const jevlinV2 = async (ctx) => {
 
   const ended = async (sid, status) => {
     if (typeof sid !== "string" || sid === "") return
+    forget((p) => p.sid !== sid)
     const turnId = searched.get(sid)
     const key = sid + "|" + turnId
     if (turnId && reported.get(sid) !== turnId && !reporting.has(key)) {
@@ -645,7 +660,7 @@ const jevlinV2 = async (ctx) => {
   }
 
   const abort = new AbortController()
-  const types = ["session.created", "session.deleted", "session.compaction.ended", "session.execution.succeeded", "session.execution.failed", "session.execution.interrupted"]
+  const types = ["session.created", "session.deleted", "session.compaction.ended", "session.execution.succeeded", "session.execution.failed", "session.execution.interrupted", "session.tool.success", "session.tool.failed"]
   ;(async () => {
     try {
       for await (const event of ctx.event.subscribe({ types, signal: abort.signal })) {
@@ -658,8 +673,12 @@ const jevlinV2 = async (ctx) => {
             if (!parent) await startSession()
           } else if (event.type === "session.compaction.ended") {
             compactions.set(sid, (compactions.get(sid) ?? 0) + 1)
+          } else if (event.type === "session.tool.success" || event.type === "session.tool.failed") {
+            const call = event.data.id
+            forget((p) => !(p.sid === sid && p.call === call))
           } else if (event.type === "session.deleted") {
             for (const m of [compactions, searched, reported, parents]) m.delete(sid)
+            forget((p) => p.sid !== sid)
           } else if (event.type === "session.execution.succeeded") {
             await ended(sid, "completed")
           } else if (event.type === "session.execution.interrupted") {
