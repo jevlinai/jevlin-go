@@ -282,7 +282,8 @@ and `--models` together are a usage error.
 | any other status | as for a search | | | |
 
 Exit codes are as for a search: 0 for a valid answer, 1 for transport, timeout or cancellation, 2
-for usage, 3 for a 4xx or no usable key, 4 for a 5xx or an answer the client could not use.
+for usage, 3 for a 4xx, for no usable key, or for a router that has decisions switched off; 4 for
+any other 5xx or an answer the client could not use.
 
 ### Bounds
 
