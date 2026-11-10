@@ -113,8 +113,17 @@ func (b decideBody) encode() []byte {
 // checks the request's shape and nothing inside the state, a question or the
 // options, whose rules are the router's.
 func decodeMachineDecideRequest(r io.Reader) (decideBody, *inputError) {
-	raw, ierr := readMachineRequest(r, "decide")
+	// The shared reader reads "version" without regard to case, so a request
+	// whose only version key is misspelled would be told its version is
+	// unsupported. The copy lets that one answer be corrected; it holds no more
+	// than the reader's own bound.
+	var seen bytes.Buffer
+	raw, ierr := readMachineRequest(io.TeeReader(r, &seen), "decide")
 	if ierr != nil {
+		if ierr.Code == codeUnsupportedVersion && misspelledVersion(seen.Bytes()) {
+			return decideBody{}, inputErrorf(codeUnknownField,
+				"the request carries a field this version does not accept")
+		}
 		return decideBody{}, ierr
 	}
 	// Through a map rather than strictDecode: encoding/json matches a struct's
@@ -161,6 +170,22 @@ func decodeMachineDecideRequest(r io.Reader) (decideBody, *inputError) {
 		}
 	}
 	return body, nil
+}
+
+// misspelledVersion reports whether raw holds a key encoding/json would read
+// as "version" that is not spelled exactly so. Only that key: a future version
+// is told its version is unsupported, not lectured about its new fields.
+func misspelledVersion(raw []byte) bool {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(trimUTF8BOM(raw), &fields) != nil {
+		return false
+	}
+	for name := range fields {
+		if name != "version" && strings.EqualFold(name, "version") {
+			return true
+		}
+	}
+	return false
 }
 
 func isJSONObject(raw json.RawMessage) bool {

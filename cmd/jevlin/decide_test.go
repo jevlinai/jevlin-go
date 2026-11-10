@@ -123,6 +123,10 @@ func TestADecideRequestOutsideTheContractNeverReachesTheRouter(t *testing.T) {
 		{"a field in another case beside its own", `{"version":1,` + m + s + `"STATE":"other",` + q + `}`, codeUnknownField, `field`},
 		{"a required field in another case", `{"version":1,"Model":"typesafe/jev-1.14",` + s + q + `}`, codeUnknownField, `field`},
 		{"version in another case", `{"VERSION":1,` + m + s + q + `}`, codeUnknownField, `field`},
+		{"version in another case, of another value", `{"VERSION":2,` + m + s + q + `}`, codeUnknownField, `field`},
+		{"version in another case beside its own", `{"version":1,"Version":2,` + m + s + q + `}`, codeUnknownField, `field`},
+		{"version spelled with a long s", `{"verſion":1,` + m + s + q + `}`, codeUnknownField, `field`},
+		{"a future version with a new field", `{"version":2,` + m + s + q + `,"tier":"fast"}`, codeUnsupportedVersion, `decide request version 1`},
 
 		{"no model", `{"version":1,` + s + q + `}`, codeMissingModel, `"model"`},
 		{"model null", `{"version":1,"model":null,` + s + q + `}`, codeMissingModel, `"model"`},
