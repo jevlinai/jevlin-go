@@ -4,7 +4,7 @@
 version: "2"
 run:
   # The module's language version (go.mod's `go` directive). It is
-  # 1.27, the same minor as the build toolchain (`toolchain go1.27.3`):
+  # 1.27, the same minor as the build toolchain (`toolchain go1.27.4`):
   # nothing imports pkg/ from outside, so a lower minimum bought nothing,
   # and the go directive also sets the binary's GODEBUG defaults, which a
   # 1.25 directive held at Go 1.25's. The toolchain line still moves on
