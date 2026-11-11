@@ -22,14 +22,15 @@ an npm update `jevlin agents install` does.
   use it, and so does the router when it orders the pool. `docs/reference.md` says the same.
   An installed skill takes the new text the next time it is rendered, by `jevlin setup`,
   `jevlin agents install` or an upgrade.
-- **`jevlin decide` asks a decision model typed questions about a state, where the router offers
-  it.** `jevlin decide --stdin` takes one version-1 request (a `model`, a `state` and named `questions`) and answers
-  with one envelope whose `result.answers` holds the model's answer to each question, a refusal
-  included, as the router sent it; `jevlin decide --models` lists the models with each one's
-  price and whether this account can call it. The state and questions reach the router byte for
-  byte. A decision is billed, and the client never sends one twice. A router without decisions
-  answers `decisions_not_supported`. The agents' skill does not teach it yet.
-  `docs/reference.md` has the request, the result and every failure's action.
+- **`jevlin decide` asks a decision model typed questions about a state, where the router
+  offers it.** `jevlin decide --stdin` takes one version-1 request (a `model`, a `state` and
+  named `questions`) and answers with one envelope whose `result.answers` holds the model's
+  answer to each question, a refusal included, as the router sent it; `jevlin decide --models`
+  lists the models with each one's price and whether this account can call it. The state and
+  questions reach the router byte for byte. A decision is billed, and the client never sends
+  one twice. A router without decisions answers `decisions_not_supported`. The agents' skill
+  does not teach it yet. `docs/reference.md` has the request, the result and every failure's
+  action.
 - **`jevlin mcp` serves search, fetch and decide as MCP tools.** It is an MCP server over stdio
   that offers `search --stdin`, `fetch --stdin`, `decide --stdin` and `decide --models` as the
   tools `search`, `fetch`, `decide` and `decide_models`, for a host that prefers MCP to a shell
@@ -58,9 +59,11 @@ an npm update `jevlin agents install` does.
   added. The client already carried the router's code with `report`, exit 3, not retryable;
   the fetch and decide failure tables in `docs/reference.md` now list it.
 
-**Which parts were live-smoked.** Not yet live-smoked: `jevlin mcp` through a real agent host,
-and `jevlin decide` against a live router, which does not serve decisions yet. Both are held by
-tests against a loopback router on every CI system.
+**Which parts were live-smoked.** On 2026-11-11, from this release's head: `jevlin mcp` through
+Claude Code, Codex and Cursor's agent, each driving all four tools and one refused call; and
+`jevlin decide` against the beta router, the models list, decisions on all three vendors, a
+decision over fetched pages, and every client-side refusal. The live router does not serve
+decisions yet.
 
 ## v0.7.0 — 2026-11-03
 
