@@ -253,6 +253,8 @@ var publishedAnchors = map[string][]string{
 	},
 	"docs/reference.md": {
 		"the-trace", "the-turn-end", "building-from-source",
+		// From the 0.8.0 README.
+		"reading-a-page-in-full", "asking-a-decision-model", "mcp-server",
 	},
 	"docs/privacy.md": {},
 }

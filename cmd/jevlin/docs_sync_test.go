@@ -31,7 +31,8 @@ import (
 // owed.
 const npmWrapperSuffix = "\n## The npm wrapper\n\n" +
 	"This package downloads the release binary for your platform on install, " +
-	"verifies it against the release checksums, and forwards every argument to it. " +
+	"checks the release's signature and verifies the binary against its checksums, " +
+	"and forwards every argument to it. " +
 	"The package version is the release tag it fetches.\n\n" +
 	"- `JEVLIN_BINARY=/path` use a binary already on the machine\n" +
 	"- `JEVLIN_SKIP_DOWNLOAD=1` install the wrapper without fetching\n"
@@ -52,15 +53,21 @@ const npmInstallSection = "## How do I install it?\n" +
 	"npm install -g @jevlinsearch/jevlin\n" +
 	"jevlin setup\n" +
 	"```\n" +
-	"Install it globally, not with `npx`: setup writes the binary's path into your agents' skills and hooks, and npm throws an `npx` cache away.\n" +
-	"\n" +
+	"Install it globally, not with `npx`: setup writes the binary's path into your agents' skills and\n" +
+	"hooks, and npm throws an `npx` cache away.\n" +
 	"\n" +
 	"```bash\n" +
-	"curl -fsSL https://jevlin.ai/install.sh | sh     # on macOS and Linux\n" +
+	"curl -fsSL https://jevlin.ai/install.sh | sh     # macOS, Linux and WSL\n" +
 	"\n" +
-	"irm https://jevlin.ai/install.ps1 | iex      # Windows PowerShell\n" +
+	"irm https://jevlin.ai/install.ps1 | iex          # Windows PowerShell\n" +
 	"```\n" +
-	"This installs the latest release at `~/.jevlin/bin/jevlin`, checked against the release's checksums and, where a tool on the machine can, its signature, and runs setup when you ran it at a terminal.\n" +
+	"This installs the latest release at `~/.jevlin/bin/jevlin` (on Windows,\n" +
+	"`%USERPROFILE%\\.jevlin\\bin\\jevlin.exe`), checked against the release's checksums and, where a tool\n" +
+	"on the machine can, its signature, and runs setup when you ran it at a terminal. From CMD,\n" +
+	"`install.cmd` runs the PowerShell installer. `JEVLIN_HOME` installs it elsewhere and\n" +
+	"`JEVLIN_NO_SETUP=1` stops before setup ([options](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#installing-without-npm)).\n" +
+	"\n" +
+	"It runs on macOS 13 or later, Linux and Windows, each on amd64 and arm64.\n" +
 	"\n" +
 	"### Can I install it another way?\n" +
 	"\n" +
@@ -71,7 +78,8 @@ const npmInstallSection = "## How do I install it?\n" +
 	"  carry a setup skill that installs and sets up jevlin ([how](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#let-your-agent-install-it))\n" +
 	"\n" +
 	"- **From source:** `go install github.com/jevlinai/jevlin-go/cmd/jevlin@latest`, or `make build`\n" +
-	"  in a clone ([details](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#building-from-source))\n" +
+	"  in a clone. It reports its version as `dev`, so `jevlin upgrade` and the daily check leave it\n" +
+	"  alone ([details](https://github.com/jevlinai/jevlin-go/blob/main/docs/reference.md#building-from-source))\n" +
 	"\n" +
 	"**`jevlin: command not found`?** Run setup by its full path. [The guide shows how](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#jevlin-command-not-found).\n" +
 	"\n"
