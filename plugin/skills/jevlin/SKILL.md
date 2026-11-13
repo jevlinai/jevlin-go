@@ -118,11 +118,9 @@ would change and "Some agent could not be set up", and still exits 0. That is
 the user's call, at a terminal: show them what setup printed and go on to
 step 4.
 
-Setup prints a block headed "Sharing with the Jevlin router": what each search
-and each finished turn sends to the router, and the two settings that stop it.
-Show the user that block exactly as printed: it is how they learn what leaves
-their machine, and with `-yes` nobody else shows it to them. Never shorten or
-summarize it.
+Setup prints a block headed "Sharing with the Jevlin router". Show it to the
+user exactly as printed, never shortened or summarized: with `-yes`, nobody
+else shows it to them.
 
 If setup prints the claim steps (they begin "This agent is registered" and
 hold a link such as `https://platform.jevlin.ai/claim/<code>` and a code),

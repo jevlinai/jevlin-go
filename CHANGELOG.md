@@ -12,7 +12,7 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## v0.8.1 — 2026-11-14
 
-This release reads the same configuration as 0.8.0, and an existing installation's config is not
+This release reads every configuration 0.8.0 reads, and an existing installation's config is not
 changed: its turn end stays off unless the config says `turn_end = true`. It is a patch release,
 so under the default `[update] mode = "apply"` a native installation's daily check installs it on
 its own and re-renders the skills and hooks of the agents it set up; after an npm update,
