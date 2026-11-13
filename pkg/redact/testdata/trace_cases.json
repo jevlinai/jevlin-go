@@ -2728,5 +2728,152 @@
   "account": "",
   "in": "API_TOKEN=\"first line\nsecond line\" and more",
   "want": "API_TOKEN=[REDACTED] and more"
+ },
+ {
+  "name": "google/an api key",
+  "host": "",
+  "account": "",
+  "in": "the browser key \u0041IzaSyFAKE0SyntheticCanary-0000_0000000 is restricted",
+  "want": "the browser key [REDACTED] is restricted"
+ },
+ {
+  "name": "google/in a query string",
+  "host": "",
+  "account": "",
+  "in": "maps.googleapis.com/maps/api/js?key=\u0041IzaSyFAKE0SyntheticCanary-0000_0000000&v=3",
+  "want": "maps.googleapis.com/maps/api/js?key=[REDACTED]&v=3"
+ },
+ {
+  "name": "google/a longer run goes whole",
+  "host": "",
+  "account": "",
+  "in": "\u0041IzaSyFAKE0SyntheticCanary-0000_0000000-more_of_it end",
+  "want": "[REDACTED] end"
+ },
+ {
+  "name": "survives/google: too short, or joined to a word",
+  "host": "",
+  "account": "",
+  "in": "AIzaShortRun and x\u0041IzaSyFAKE0SyntheticCanary-0000_0000000",
+  "want": "AIzaShortRun and x\u0041IzaSyFAKE0SyntheticCanary-0000_0000000"
+ },
+ {
+  "name": "slack/a bot token",
+  "host": "",
+  "account": "",
+  "in": "SLACK token is \u0078oxb-1234-5678-SyntheticCanaryValue, rotate it",
+  "want": "SLACK token is [REDACTED], rotate it"
+ },
+ {
+  "name": "slack/user, app-level and workflow tokens",
+  "host": "",
+  "account": "",
+  "in": "\u0078oxp-1111-2222-3333-SyntheticCanary0 \u0078app-1-A0SYNTH-4444-SyntheticCanary0 \u0078wfp-5555-SyntheticCanary0",
+  "want": "[REDACTED] [REDACTED] [REDACTED]"
+ },
+ {
+  "name": "slack/a rotating token and its refresh token",
+  "host": "",
+  "account": "",
+  "in": "access \u0078oxe.\u0078oxb-1-SyntheticCanaryValue0 refresh \u0078oxe-1-SyntheticCanaryValue0",
+  "want": "access [REDACTED] refresh [REDACTED]"
+ },
+ {
+  "name": "slack/legacy prefixes",
+  "host": "",
+  "account": "",
+  "in": "\u0078oxa-2-SyntheticCanary0 \u0078oxo-1234-SyntheticCanary \u0078oxs-1234-SyntheticCanary \u0078oxr-1234-SyntheticCanary",
+  "want": "[REDACTED] [REDACTED] [REDACTED] [REDACTED]"
+ },
+ {
+  "name": "survives/slack: a placeholder, a short one, an unknown letter",
+  "host": "",
+  "account": "",
+  "in": "set xoxb-your-bot-token, \u0078oxb-1234 or xoxz-1234-5678-SyntheticCanary",
+  "want": "set xoxb-your-bot-token, \u0078oxb-1234 or xoxz-1234-5678-SyntheticCanary"
+ },
+ {
+  "name": "slack/an incoming webhook keeps its host",
+  "host": "",
+  "account": "",
+  "in": "curl -X POST https://\u0068ooks.slack.com/services/T0SYNTH/B0CANARY/NotARealSecretValue0 -d @m.json",
+  "want": "curl -X POST https://hooks.slack.com/services/[REDACTED] -d @m.json"
+ },
+ {
+  "name": "survives/slack: the webhook host alone",
+  "host": "",
+  "account": "",
+  "in": "post to https://hooks.slack.com/services/ with the URL Slack gave you",
+  "want": "post to https://hooks.slack.com/services/ with the URL Slack gave you"
+ },
+ {
+  "name": "gitlab/a personal access token",
+  "host": "",
+  "account": "",
+  "in": "GITLAB token \u0067lpat-SyntheticCanary0000000",
+  "want": "GITLAB token [REDACTED]"
+ },
+ {
+  "name": "gitlab/a routable token takes its dotted parts, not the full stop",
+  "host": "",
+  "account": "",
+  "in": "use \u0067lpat-SyntheticCanary0000000000000000.01.0synthetc.",
+  "want": "use [REDACTED]."
+ },
+ {
+  "name": "gitlab/the other documented prefixes",
+  "host": "",
+  "account": "",
+  "in": "\u0067ldt-SyntheticCanary0000000 \u0067lrt-SyntheticCanary0000000 \u0067lrtr-SyntheticCanary0000000 \u0067lcbt-SyntheticCanary0000000 \u0067lptt-SyntheticCanary0000000 \u0067lft-SyntheticCanary0000000 \u0067limt-SyntheticCanary0000000 \u0067lagent-SyntheticCanary0000000 \u0067lwt-SyntheticCanary0000000 \u0067lsoat-SyntheticCanary0000000 \u0067lffct-SyntheticCanary0000000 \u0067loas-SyntheticCanary0000000",
+  "want": "[REDACTED] [REDACTED] [REDACTED] [REDACTED] [REDACTED] [REDACTED] [REDACTED] [REDACTED] [REDACTED] [REDACTED] [REDACTED] [REDACTED]"
+ },
+ {
+  "name": "survives/gitlab: short, or underscored",
+  "host": "",
+  "account": "",
+  "in": "a glpat- token, glpat-xxxx, glpat_SyntheticCanary0000000",
+  "want": "a glpat- token, glpat-xxxx, glpat_SyntheticCanary0000000"
+ },
+ {
+  "name": "npm/an access token",
+  "host": "",
+  "account": "",
+  "in": "registry token npm_SyntheticCanary000000000000000000000 in CI",
+  "want": "registry token [REDACTED] in CI"
+ },
+ {
+  "name": "survives/npm: config and package variables",
+  "host": "",
+  "account": "",
+  "in": "npm_config_cache npm_package_version npm_lifecycle_event npm_ShortRun",
+  "want": "npm_config_cache npm_package_version npm_lifecycle_event npm_ShortRun"
+ },
+ {
+  "name": "hf/a user access token",
+  "host": "",
+  "account": "",
+  "in": "hf token \u0068f_SyntheticCanaryValueAbcdefghijklmn for the gated model",
+  "want": "hf token [REDACTED] for the gated model"
+ },
+ {
+  "name": "survives/hf: library names",
+  "host": "",
+  "account": "",
+  "in": "hf_hub_download, hf_token and hf_transfer",
+  "want": "hf_hub_download, hf_token and hf_transfer"
+ },
+ {
+  "name": "pypi/an api token",
+  "host": "",
+  "account": "",
+  "in": "upload with pypi-SyntheticCanary00000000000000000000000000000000000000000000000000000000000000000000000000000000 as the password",
+  "want": "upload with [REDACTED] as the password"
+ },
+ {
+  "name": "survives/pypi: a package name",
+  "host": "",
+  "account": "",
+  "in": "pip install pypi-server pypi-simple-index",
+  "want": "pip install pypi-server pypi-simple-index"
  }
 ]

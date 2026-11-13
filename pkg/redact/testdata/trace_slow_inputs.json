@@ -149,5 +149,11 @@
   "prefix": "",
   "unit": "Authorization: x ",
   "suffix": ""
+ },
+ {
+  "name": "a token prefix whose run falls one short, over and over",
+  "prefix": "",
+  "unit": "glpat-aaaaaaaaaaaaaaaaaaa.",
+  "suffix": ""
  }
 ]

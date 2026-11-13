@@ -155,7 +155,19 @@ const scrubTraceCommon = (text) => redactTraceJwts(text
   .replace(/\b(?:sk|sr)-[A-Za-z0-9_-]{16,}/g, TRACE_REDACTED)
   .replace(/\bgh[opsur]_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, TRACE_REDACTED)
   .replace(/\bAKIA[0-9A-Z]{16}\b/g, TRACE_REDACTED)
-  .replace(/\b[rs]k_(?:live|test)_[A-Za-z0-9]{16,}/g, TRACE_REDACTED))
+  .replace(/\b[rs]k_(?:live|test)_[A-Za-z0-9]{16,}/g, TRACE_REDACTED)
+  // The vendor tokens of pkg/redact/redact.go, where each one's source is
+  // cited: Google API keys, Slack tokens and incoming webhook URLs, GitLab,
+  // npm, Hugging Face and PyPI tokens. Each is a literal prefix and one
+  // greedy run with nothing after it, so a start costs a backtracking engine
+  // no more than its own run.
+  .replace(/\bAIza[0-9A-Za-z_-]{35,}/g, TRACE_REDACTED)
+  .replace(/\b(?:xoxe\.)?(?:xox[abeoprs]|xapp|xwfp)-[0-9][A-Za-z0-9-]{9,}/g, TRACE_REDACTED)
+  .replace(/\b(hooks\.slack\.com\/services\/)[A-Za-z0-9_\/-]{8,}/g, '$1' + TRACE_REDACTED)
+  .replace(/\b(?:glpat|gloas|gldt|glrtr?|glcbt|glptt|glft|glimt|glagent|glwt|glsoat|glffct)-[A-Za-z0-9_-]{20,}(?:\.[A-Za-z0-9_-]+)*/g, TRACE_REDACTED)
+  .replace(/\bnpm_[A-Za-z0-9]{36,}/g, TRACE_REDACTED)
+  .replace(/\bhf_[A-Za-z0-9]{30,}/g, TRACE_REDACTED)
+  .replace(/\bpypi-[A-Za-z0-9_-]{85,}/g, TRACE_REDACTED))
 
 // redactAuthorizationCredentials: the credential an Authorization or
 // Proxy-Authorization header carries after its scheme (Bearer, Basic or
