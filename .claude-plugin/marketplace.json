@@ -10,7 +10,7 @@
       "name": "jevlin",
       "source": "./plugin",
       "description": "Sets up Jevlin, supersearch for coding agents: one web search that asks several search engines at once and returns a single merged list, with every result naming the engines that found it. Plans and prices are at jevlin.ai. Installs the jevlin client and runs its setup, which writes this agent's own jevlin skill and hooks.",
-      "version": "0.8.0"
+      "version": "0.8.1"
     }
   ]
 }
