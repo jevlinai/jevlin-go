@@ -1113,6 +1113,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 	}
 
 	deadline := time.Now().Add(connectPollBudget)
+	waitAnnounced := false
 	for {
 		callCtx, callCancel := context.WithTimeout(ctx, roundTrip)
 		done, code := pollOnce(callCtx, stdout, stderr, client, store, &reg, key)
@@ -1133,6 +1134,13 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 				fmt.Fprintln(stdout, "\n"+claimTimeoutMessage)
 			}
 			return exitOK
+		}
+		// The first poll did not settle it, so this run now waits: said
+		// once, in the text form only (machine mode's stdout is discarded
+		// anyway, and a resume never reaches this loop).
+		if !machine && !waitAnnounced {
+			waitAnnounced = true
+			fmt.Fprintln(stdout, "\n"+claimWaitMessage(connectPollBudget, admitted))
 		}
 		// WP2-adversarial-review finding 11: the platform's advertised
 		// interval is already floor-and-ceiling clamped (pkg/platform),

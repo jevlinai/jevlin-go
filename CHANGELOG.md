@@ -10,6 +10,14 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## Unreleased
+
+- **Setup and `jevlin connect` say when they are waiting for the claim.** After the claim link
+  they printed nothing for up to three minutes, which read as a hang. One line now says how long
+  the wait lasts and what Ctrl-C does: in setup it ends setup before the environment and coding
+  agents steps, which running setup again finishes; in a bare `connect` it stops the wait, and
+  the next search or connect completes the claim.
+
 ## v0.8.0 — 2026-11-11
 
 This release reads the same configuration as 0.7.0, so nothing needs to run after installing it:

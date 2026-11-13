@@ -151,7 +151,12 @@ minutes for you:
 If the link does not open, type the printed code (shown as `AB12-CD34`; case and the hyphen do not
 matter) at `/claim` on the same site. You need not do it then. Until you do, search works on the
 fast tier within a daily cap, which `jevlin limits` shows; claiming opens `balanced` and `max`. The
-next search, or `jevlin connect`, finishes the claim once you have confirmed. The link and the
+next search, or `jevlin connect`, finishes the claim once you have confirmed.
+
+While it waits, setup says so, with how long it will wait. When the wait runs out, setup goes on
+without the claim. Ctrl-C during the wait ends setup there, before its environment and coding
+agents steps; run setup again to finish them, with the same agent and key. A `jevlin connect` run
+on its own waits the same way, and Ctrl-C there only stops the wait. The link and the
 unclaimed registration last a week; after that, `jevlin connect` registers again and prints a new
 link. Your claim on the platform is undone only at its console.
 
