@@ -178,6 +178,7 @@ func (r *setupRun) agentsStep() int {
 	if len(plan.writes) > failures || len(plan.removes) > 0 {
 		r.changed = true
 	}
+	r.agentsSetUp = plan.hosts()
 	if failures > 0 || len(plan.refused) > 0 {
 		r.printf("Some agent could not be set up; see above.\n")
 	}

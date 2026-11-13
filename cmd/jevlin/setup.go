@@ -161,6 +161,10 @@ type setupRun struct {
 	changed       bool   // setup wrote or moved something it owns
 	shortCommands bool   // the profile or user environment carries PATH and JEVLIN_CONFIG
 
+	// agentsSetUp names the hosts this run wrote or removed a file for, in
+	// plan order: the ones a session already open may need restarting for.
+	agentsSetUp []string
+
 	// otherHome: -home names a directory that is not this machine's
 	// installation, defaultHome. The profile and the agents belong to that
 	// one, so both steps are skipped whatever else was passed.
@@ -848,6 +852,38 @@ func (r *setupRun) sharingNotice() {
 	r.printf("To stop sending both: set trace = false under [search] in %s, or JEVLIN_TRACE=off.\n", r.cfgPath)
 }
 
+// restartNote says, at the top of the closing box where it is read, which
+// coding agents this run set up need restarting if already open. Claude Code
+// was seen to pick up a new skill and hooks from settings.json in a session
+// already open (the same session before and after); no other host has been
+// observed doing so, so each of them is still told to restart, and nothing is
+// said about a host this run did not set up.
+func (r *setupRun) restartNote() {
+	var restart []string
+	claude := false
+	for _, h := range r.agentsSetUp {
+		if h == (claudeTarget{}).Label() {
+			claude = true
+		} else {
+			restart = append(restart, h)
+		}
+	}
+	if !claude && len(restart) == 0 {
+		return
+	}
+	r.printf("\n")
+	if claude {
+		r.printf("Claude Code picks up the new skill and hooks without a restart.\n")
+	}
+	switch len(restart) {
+	case 0:
+	case 1:
+		r.printf("Restart %s if it is already open, so it loads what setup installed.\n", restart[0])
+	default:
+		r.printf("Restart %s if they are already open, so they load what setup installed.\n", joinLabels(restart))
+	}
+}
+
 func (r *setupRun) closing() {
 	cmd, hint := r.invocation()+" ", " -config "+r.displayPath(r.cfgPath)
 	if r.shortCommands {
@@ -876,13 +912,13 @@ func (r *setupRun) closing() {
 	default:
 		r.printf("Setup complete.\n")
 	}
+	r.restartNote()
 	r.printf(`
 1. If a claim URL was printed above and nobody has visited it yet, do that
    whenever you're ready — nothing else here depends on timing it. Search
    works before the claim; the claim is what ties the agent to your account.
 
-2. Restart any coding agent that is already open, then search as usual. To
-   try it by hand:
+2. Search as usual from your coding agent. To try it by hand:
      %ssearch%s -format model "what is proof of authority consensus"
 
 3. Check in any time:
