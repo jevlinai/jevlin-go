@@ -181,7 +181,13 @@ func TestPurgeLeavesTheBinaryDirectoryToBinaryAndSaysSo(t *testing.T) {
 	s := installedWithOwnBinary(t)
 	if runtime.GOOS == "windows" {
 		// The installation's own binary is bin\jevlin.exe there
-		// (uninstallRun.binaryName); the fixture's has no extension.
+		// (uninstallRun.binaryName); the fixture's has no extension. Its
+		// extensionless placeholder goes, because a purge now names what
+		// else is in bin\, and on Windows bin\jevlin is not this
+		// installation's binary.
+		if err := os.Remove(s.exe); err != nil {
+			t.Fatal(err)
+		}
 		s.exe += ".exe"
 		writeFileT(t, s.exe, "the binary")
 	}
@@ -259,6 +265,10 @@ func TestPurgeNamesWhatItLeavesInTheBinaryDirectory(t *testing.T) {
 			}
 			s := installedWithOwnBinary(t)
 			if runtime.GOOS == "windows" {
+				// As in TestPurgeLeavesTheBinaryDirectoryToBinaryAndSaysSo.
+				if err := os.Remove(s.exe); err != nil {
+					t.Fatal(err)
+				}
 				s.exe += ".exe"
 				writeFileT(t, s.exe, "the binary")
 			}
