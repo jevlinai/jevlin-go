@@ -21,6 +21,11 @@ rewritten to match newer behaviour; the newer entry says what changed.
   the fast tier after a claim, and nothing said that `balanced` and `max` were now open. The line
   after `claimed` names them and the two ways to choose one, `jevlin agents tier <tier>` and
   `/jevlin tier <tier>` in the agent.
+- **A purge names what it leaves in `bin/`.** `uninstall -purge-state` listed what it left in the
+  installation directory but skipped `bin/` as a whole, so a `jevlin-0.6.1` an earlier installer
+  kept there, or a `jevlin.new` the install script could not remove, was never named. It now
+  lists `bin/`'s entries too, in the dry run and the real run, with and without `-binary`, all
+  but the binary, its `.previous`, the self-updater's staging files and the update lock.
 
 ## v0.8.0 — 2026-11-11
 

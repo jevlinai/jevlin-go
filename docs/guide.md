@@ -300,7 +300,9 @@ reported. `-binary` also removes the binary and its `.previous`, never an npm co
 file could not be changed it keeps the binary, because the hooks still in that file run it, and
 exits non-zero. `-purge-state` also destroys the registration, key and config, after you type the
 installation path at a terminal (`-yes` cannot answer it); anything else left in the installation
-directory is listed, since one of those files may hold a key an earlier version used. Your claim on
+directory is listed, since one of those files may hold a key an earlier version used. That includes
+what is in `bin/` beside the binary, such as a release an earlier installer kept there; the binary,
+its `.previous` and the update lock are this installation's, and `-binary` removes them. Your claim on
 the platform is undone only at its console. Close agent sessions first, or a search may recreate
 folders.
 
