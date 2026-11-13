@@ -186,7 +186,7 @@ func answersHelpFirst(fn *ast.FuncDecl) bool {
 // one is not help asked for: it goes on to agentsMain, which names it as
 // unknown and exits 2, so a script that typed it learns that it did.
 func TestAMisspelledAgentsSubcommandIsAnErrorNotHelp(t *testing.T) {
-	for _, sub := range []string{"instal", "stauts", "nonesuch", "Install"} {
+	for _, sub := range []string{"instal", "stauts", "nonesuch", "Install"} { //nolint:misspell // the misspellings are the input under test
 		var out, errOut bytes.Buffer
 		if code, ok := helpRequested("agents", []string{sub, "-h"}, &out, &errOut); ok {
 			t.Errorf("jevlin agents %s -h was answered as help: exit %d, stdout %q", sub, code, out.String())
