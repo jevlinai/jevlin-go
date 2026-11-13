@@ -21,6 +21,8 @@ rewritten to match newer behaviour; the newer entry says what changed.
   that shape with nothing joined to it, such as a decimal id, goes with them. `docs/privacy.md`
   lists them.
 
+- A successful `setup` or `agents install` now acknowledges the installation to the configured agents API. This best-effort request never changes the command result; the platform counts an installation only after account claim and Analytics consent.
+
 - **The npm install unpacks on Windows when started from PowerShell 7.** The postinstall runs
   Windows PowerShell to unpack the release, and under PowerShell 7 it inherited a module path
   that put PowerShell 7's `Expand-Archive` first, which fails there with "Cannot find an overload
