@@ -12,6 +12,12 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
+- **The npm install unpacks on Windows when started from PowerShell 7.** The postinstall runs
+  Windows PowerShell to unpack the release, and under PowerShell 7 it inherited a module path
+  that put PowerShell 7's `Expand-Archive` first, which fails there with "Cannot find an overload
+  for ExtractToDirectory". The postinstall now leaves that path out, so Windows PowerShell uses
+  its own.
+
 - **The help is an index, and each command has its own.** `jevlin help` lists the commands, one
   line each, with examples, where it was a 157-line page of paragraphs. `jevlin help <command>`
   and `jevlin <command> -h` show that command's usage, flags as a table, examples and, for the
