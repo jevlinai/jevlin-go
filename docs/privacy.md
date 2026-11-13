@@ -11,6 +11,7 @@ platform's to say: see its [privacy policy](https://platform.jevlin.ai/privacy).
 | A page's full text request: the pages and options of a `fetch` | the same router | every fetch |
 | The turn end: a record of a turn that searched | the same router | with `[search] turn_end = true`, which setup writes into a config it creates ([Switching it off](#switching-it-off)) |
 | Registration and the claim's status | the platform's agents API (`[agents] url`) | `jevlin connect`, and setup, which runs it |
+| An installation acknowledgment: an empty request with your key, nothing else ([guide](guide.md#installation-acknowledgment)) | the same agents API | once, after `setup` or `agents install` sets up an agent successfully |
 | A request for the latest release's version and, when a release is installed, its files, all with no credential | the project's GitHub releases | the daily release check (which installs a patch release by default), and `jevlin upgrade` |
 
 Your search key goes in each request's `Authorization` header, and only to the router and agents API
