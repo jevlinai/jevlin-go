@@ -101,6 +101,9 @@ func printConfigSource(w io.Writer, cfgSource, stateDir string) {
 func newFlagSet(name string, stderr io.Writer) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	// "agents install" and the other subcommands answer with their
+	// command's help.
+	fs.Usage = flagSetUsage(strings.Fields(name)[0], stderr)
 	return fs
 }
 

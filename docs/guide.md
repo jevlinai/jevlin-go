@@ -357,3 +357,7 @@ or damaged local record is rebuilt from the platform. A lost claim link for a re
 still unclaimed is replaced by a foreground `jevlin connect`, which asks the platform for a fresh
 one; the old code stops working when it does. If the platform no longer recognizes the key,
 `connect` stops, and `jevlin connect -force` replaces the credential: run it only on purpose.
+
+## Installation acknowledgment
+
+After `setup` or `agents install` commits a successful integration write, the CLI sends one best-effort, empty POST to the configured agents API at `/v1/agents/installed`, authenticated with the installation's existing key. Dry runs, refusals, partial writes and safety-only changes send nothing. The request has a 1.5-second deadline and never changes the command result. No Google endpoint is contacted and no search text, machine path or browser identifier is sent. The platform records the first acknowledgment. After a human claims that agent, it may export one `agent_installed` conversion only for an account that has opted into Analytics in the web console; ad measurement requires its separate choice.

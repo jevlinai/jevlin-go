@@ -45,23 +45,30 @@ import (
 
 const uninstallUsage = `usage: jevlin uninstall [-home dir] [-binary] [-purge-state] [-dry-run] [-yes]
 
-Takes out what setup put on this machine for one installation: the coding
+Removes what setup put on this machine for one installation: the coding
 agents' skills, hooks and plugins that run its binary, and the shell-profile
 block that names its config (on Windows, the user PATH entry and
-JEVLIN_CONFIG setup set). The registration, stored key and config stay, and
-nothing is revoked.
+JEVLIN_CONFIG setup set). The registration, stored key and config stay,
+and nothing is revoked.
 
-  -home dir      the installation (default $JEVLIN_HOME, else the directory of a
-                 JEVLIN_CONFIG named jevlin.toml, else the installation this
-                 binary runs from, else ~/.jevlin)
-  -binary        also remove this installation's own copy of the binary; a copy npm
-                 installed is npm's to remove
-  -purge-state   also destroy this installation's registration, stored key
-                 and config. Needs a terminal: you
-                 type the installation path to confirm, and -yes never
-                 answers it
-  -dry-run       print what would be removed; change, ask and contact nothing
-  -yes           answer the yes/no question, terminal or not; never -purge-state
+flags:
+  -home dir     the installation (default $JEVLIN_HOME, else the directory
+                of a JEVLIN_CONFIG named jevlin.toml, else the installation
+                this binary runs from, else ~/.jevlin)
+  -binary       also remove this installation's own binary and its
+                .previous; a copy npm installed is npm's to remove. On
+                Windows the running binary is moved aside, not deleted
+  -purge-state  also destroy this installation's registration, stored key
+                and config. Needs a terminal: you type the installation
+                path to confirm, and -yes never answers it
+  -dry-run      print what would be removed; change, ask and contact nothing
+  -yes          answer the yes/no question, terminal or not; never
+                -purge-state
+
+examples:
+  jevlin uninstall -dry-run
+  jevlin uninstall
+  jevlin uninstall -binary -purge-state
 `
 
 // noParticipantChange is how a refusal reads once the lifecycle exclusion

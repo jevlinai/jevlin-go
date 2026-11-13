@@ -617,29 +617,48 @@ func cmdAgents(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv 
 	return agentsMain(realAgentOps(), args, stdin, stdout, stderr, getenv)
 }
 
-var agentsUsage = `usage: jevlin agents install|status|uninstall [-config file] [-client name]... [-dry-run] [-yes]
+var agentsUsage = `usage: jevlin agents install|uninstall [-client name]... [-dry-run] [-yes]
+                     [-config file]
+       jevlin agents status [-client name]... [-config file]
        jevlin agents prefer on|off|status [-config file]
-       jevlin agents tier fast [preset]|balanced|max|default|status [-config file]
-  install     detect coding agents (by command or config directory) and give each
-              the supersearch skill (opencode: a plugin) and hooks
-  status      what is installed where, and which search is the default
-  uninstall   remove exactly what install wrote
-  prefer      off: the agent's own web search is the default and this one is used
-              when named; on: this one is the default. Rewrites the installed
-              skills so it takes effect in every agent with a skill, which
-              opencode has not (/jevlin off|on in the agent does the same)
-  tier        the tier every search carries unless the request names
-              one: fast (the fast indexes a preset names), balanced
-              (several core engines, attributed) or max (every core engine,
-              more results and longer excerpts); balanced and max are for
-              claimed agents only. default unsets it so
-              the router's default applies. Saved beside the config; no
-              skill is rewritten (/jevlin tier <tier> in the agent does
-              the same)
-  -client     act on this agent only (` + targetIDs(targetHost) + `); repeatable
-  -dry-run    print the plan, change nothing
-  -yes        answer Proceed? with yes; a question about a Codex setting of
-              your own is still asked, and with no terminal is not answered
+       jevlin agents tier fast [preset]|balanced|max|default|status
+                     [-config file]
+
+Gives each coding agent on this machine the jevlin skill and the hooks it
+supports, and sets which search is the default and at which tier.
+
+commands:
+  install    find the coding agents (by command or config directory) and
+             give each the supersearch skill (opencode: a plugin) and hooks
+  status     what is installed where, and which search is the default
+  uninstall  remove exactly what install wrote
+  prefer     off: the agent's own web search is the default, and this one
+             is used when named; on: this one is the default. Rewrites the
+             installed skills, so it takes effect in every agent with a
+             skill, which opencode has not (/jevlin off|on in the agent does
+             the same)
+  tier       the tier every search carries unless the request names one:
+             fast (the fast indexes a preset names), balanced (several core
+             engines, attributed) or max (every core engine, more results
+             and longer excerpts); balanced and max are for claimed agents
+             only. default unsets it, so the router's default applies;
+             status lists the router's presets. Saved beside the config; no
+             skill is rewritten (/jevlin tier <tier> in the agent does the
+             same)
+
+flags:
+  -client name  act on this agent only; repeatable
+                (` + targetIDs(targetHost) + `)
+  -dry-run      print the plan, change nothing
+  -yes          answer Proceed? with yes; a question about a Codex setting
+                of your own is still asked, and with no terminal is not
+                answered
+  -config file  the config to read (jevlin help config)
+
+examples:
+  jevlin agents status
+  jevlin agents install -client claude
+  jevlin agents tier balanced
 `
 
 func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
@@ -791,6 +810,9 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 	failures := commitPlan(ops, &plan, stdout, stderr)
 	if failures > 0 {
 		return exitTransport
+	}
+	if sub == "install" && installedPlan(&plan, failures) {
+		acknowledgeInstalled(entry.cfg, getenv)
 	}
 	// A run that refused something exits 1 (refusedExit), and its last
 	// line says so rather than "done" alone.

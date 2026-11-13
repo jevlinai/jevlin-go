@@ -75,7 +75,8 @@ const npmInstallSection = "## How do I install it?\n" +
 	"  `checksums.txt` ([steps](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#installing-without-npm))\n" +
 	"\n" +
 	"- **From an agent marketplace:** Claude Code's and Codex's plugin marketplaces, and skills.sh,\n" +
-	"  carry a setup skill that installs and sets up jevlin ([how](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#let-your-agent-install-it))\n" +
+	"  carry a setup skill that installs and sets up jevlin. With skills.sh that is\n" +
+	"  `npx skills add jevlinai/jevlin-go` ([the others](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#let-your-agent-install-it))\n" +
 	"\n" +
 	"- **From source:** `go install github.com/jevlinai/jevlin-go/cmd/jevlin@latest`, or `make build`\n" +
 	"  in a clone. It reports its version as `dev`, so `jevlin upgrade` and the daily check leave it\n" +

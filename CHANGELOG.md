@@ -28,6 +28,32 @@ rewritten to match newer behaviour; the newer entry says what changed.
   lists `bin/`'s entries too, in the dry run and the real run, with and without `-binary`, all
   but the binary, its `.previous`, the self-updater's staging files and the update lock.
 
+- **The scrub removes more credential shapes, and payment card numbers.** Before a trace or a
+  turn end leaves the machine, Google API keys, Slack tokens and the secret path of a Slack
+  webhook URL, GitLab, npm, Hugging Face and PyPI tokens are now removed, as Stripe, GitHub and
+  AWS keys already were; this client's own log lines lose them too. A payment card number goes
+  from the trace and the turn end: 13 to 19 digits that pass the Luhn check and start as a card
+  network's do, in one run or grouped by spaces or dashes as cards are printed. A long number of
+  that shape with nothing joined to it, such as a decimal id, goes with them. `docs/privacy.md`
+  lists them.
+
+- A successful `setup` or `agents install` now acknowledges the installation to the configured agents API. This best-effort request never changes the command result; the platform counts an installation only after account claim and Analytics consent.
+
+- **The npm install unpacks on Windows when started from PowerShell 7.** The postinstall runs
+  Windows PowerShell to unpack the release, and under PowerShell 7 it inherited a module path
+  that put PowerShell 7's `Expand-Archive` first, which fails there with "Cannot find an overload
+  for ExtractToDirectory". The postinstall now leaves that path out, so Windows PowerShell uses
+  its own.
+
+- **The help is an index, and each command has its own.** `jevlin help` lists the commands, one
+  line each, with examples, where it was a 157-line page of paragraphs. `jevlin help <command>`
+  and `jevlin <command> -h` show that command's usage, flags as a table, examples and, for the
+  commands an agent calls, the request and the exit status; `jevlin help config` holds what the
+  index used to say about the config. `jevlin help search` used to print the index, `search -h`
+  and the other commands that had no help of their own printed Go's list of flag defaults and
+  exited 2, and `version -h` printed the version; each now prints its help and exits 0, and a
+  flag that does not parse shows the command's help.
+
 ## v0.8.0 — 2026-11-11
 
 This release reads the same configuration as 0.7.0, so nothing needs to run after installing it:
