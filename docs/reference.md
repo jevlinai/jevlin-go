@@ -358,7 +358,8 @@ request. A search sends a second request in three cases, each once and under the
 The file is configuration format 1. It begins `schema = 1`, and every section and key after that
 line is optional: the value after `#` is what you get by leaving the key out. A fresh
 `jevlin setup` writes the schema line, the three endpoint sections and `[search]`'s two
-directories, nothing else.
+directories and `turn_end = true`, nothing else; a config it did not create gains no `turn_end`
+line, and one without the line reads as off.
 
 ```toml
 schema = 1
@@ -376,7 +377,8 @@ url = "https://agents-v1.jevlin.ai"  # where connect sends register and status, 
 [search]
 state_dir    = "/home/you/.jevlin/state"      # default: <user config dir>/jevlin/state
 sessions_dir = "/home/you/.jevlin/sessions"   # per-workspace lineage files; default: beside state_dir
-turn_end     = false                          # report a searched turn (see The turn end)
+turn_end     = false                          # report a searched turn (see The turn end); a fresh setup writes true
+trace        = true                           # false: no trace, no session id and no turn end, as JEVLIN_TRACE=off
 
 [update]
 mode = "apply"                                # apply | notify | off; the daily release check. Another word checks and notifies only, and doctor names it
@@ -407,7 +409,7 @@ schema number is refused with a message saying which schema this jevlin reads.
 | `JEVLIN_CONFIG` | every command | The config file, after `-config`. Setup's profile block sets it. |
 | `JEVLIN_HOME` | every command, setup | This machine's installation directory, instead of `~/.jevlin`. |
 | `JEVLIN_API_KEY` | search, limits, the turn end, fetch, decide | The search key, overriding `credentials.json`. With a `-config` that is not the installation's own file, it is sent only when that config names the installation's router; to use another router, set `JEVLIN_CONFIG` to its config. |
-| `JEVLIN_TRACE` | search, hooks | `off` turns the trace and the turn end off entirely: the hooks write no bridge and no lineage file, and search sends none. |
+| `JEVLIN_TRACE` | search, hooks, the turn end | `off` turns the trace and the turn end off entirely: the hooks write no bridge and no lineage file, and search sends none. `[search] trace = false` does the same; either one off is off. |
 | `JEVLIN_ROUTER_URL`, `JEVLIN_PLATFORM_URL`, `JEVLIN_AGENTS_API_URL` | every command, setup | Each replaces its URL for the run ([Config](#config)). |
 | `JEVLIN_BINARY`, `JEVLIN_SKIP_DOWNLOAD` | npm wrapper | Use a binary already on the machine; install without fetching. |
 | `JEVLIN_LAUNCH` | setup, upgrade, uninstall, doctor | Set by the npm wrapper, so the binary knows npm owns it. You do not set it. |

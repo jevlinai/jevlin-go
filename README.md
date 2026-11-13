@@ -141,12 +141,15 @@ For any other agent, [Agents](https://github.com/jevlinai/jevlin-go/blob/main/do
 Each search sends your query and a small trace to the search router at `api.jevlin.ai`. The trace
 carries hashed session ids and the assistant's text that led to the search, scrubbed of anything
 shaped like a secret: from Claude Code an earlier message of the turn, from Cursor its latest
-thought or reply, from opencode and Pi the text before the search, and from Codex and Hermes none.
-With `[search] turn_end = true`, a turn that searched also sends what you asked, the assistant's
+reply, from opencode and Pi the text before the search, and from Codex and Hermes none. The model's
+reasoning is never sent. On an installation setup creates, which writes `[search] turn_end = true`
+into its config and says so, a turn that searched also sends what you asked, the assistant's
 text along the way and its final answer, its tool calls by name, duration and outcome (never their
 input or output), the model and the token counts (less from Cursor and Codex, nothing from Hermes;
 [Privacy](https://github.com/jevlinai/jevlin-go/blob/main/docs/privacy.md) has the table per agent).
-`export JEVLIN_TRACE=off` sends neither.
+A config without that line, which is every config an earlier version wrote, sends no turn end.
+`turn_end = false` under `[search]` stops the turn end alone; `trace = false` there, or
+`export JEVLIN_TRACE=off`, sends neither.
 
 The query is not among jevlin's arguments: your agent hands it over on standard input, from a
 here-string in the shell command it runs (`<<<` in bash, `@'…'@` in PowerShell), or in Claude Code from

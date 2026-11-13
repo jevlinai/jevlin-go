@@ -63,15 +63,20 @@ the named tests.
    privacy surface, not a default. The **turn end** (`turn_end.go`, `turn_detail.go`, `turn_hosts.go`, `codex_turn_end.go`) is the only other one: for
    a turn that searched, the user's message, the assistant's visible text, and its final message,
    all under the same scrub and caps, with a skeleton of the turn's other tool calls. It is sent
-   only when the installation set `[search] turn_end = true`. It MUST stay off by default; MUST
-   send nothing for a turn in which no search was SERVED (a proposed, refused or failed search is
+   only when the installation's config says `[search] turn_end = true`. It MUST be on only for a
+   config that setup creates where there was none, and off for any config without the line, so an
+   upgrade never turns it on (the compiled default stays off); setup MUST disclose it when it
+   writes the line, with both off switches: `turn_end = false`, and `[search] trace = false` or
+   `JEVLIN_TRACE=off`, which `traceOff` reads in one place and which stop the trace and the turn
+   end alike. It MUST send nothing for a turn in which no search was SERVED (a proposed, refused or failed search is
    not one — `search` marks the turn after the router answers); MUST go only to the router this run
    is configured with: `[router] url`, `JEVLIN_ROUTER_URL` or the compiled default; there is no
    fallback (`Search.RouterURL` is never nil and never a stand-in); and MUST
    NEVER carry a tool's input or output. Of a tool call it sends the name, the duration and the
    outcome — `turnStep` has no field for more, and one must not be added. A command is read for
    one purpose, to recognize our own search, and is not kept. Thinking blocks and a subagent's own
-   records are not sent.
+   records are not sent. The model's reasoning is never sent by any harness, in the trace or the
+   turn end: Cursor's `afterAgentThought` records nothing (`hook.go`).
 3. **Every credential- or key-bearing `http.Client` has an explicit redirect policy.** No bare
    client on `net/http`'s default (follow-10, body replayed on 307/308). Same-origin bounded
    (`auth.SameOriginRedirects`) or refuse (`http.ErrUseLastResponse`) — per client; the forbidden
