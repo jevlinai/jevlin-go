@@ -2980,5 +2980,12 @@
   "account": "",
   "in": "4111111111111111@example.com",
   "want": "[REDACTED]"
+ },
+ {
+  "name": "survives/card: digits grouped as no card is",
+  "host": "",
+  "account": "",
+  "in": "4 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 and 41 11 11 11 11 11 11 11 and 411-111-111-111-1111",
+  "want": "4 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 and 41 11 11 11 11 11 11 11 and 411-111-111-111-1111"
  }
 ]
