@@ -178,6 +178,9 @@ func (r *setupRun) agentsStep() int {
 	if len(plan.writes) > failures || len(plan.removes) > 0 {
 		r.changed = true
 	}
+	if installedPlan(&plan, failures) {
+		acknowledgeInstalled(r.cfgPath, r.d.getenv)
+	}
 	if failures > 0 || len(plan.refused) > 0 {
 		r.printf("Some agent could not be set up; see above.\n")
 	}

@@ -811,6 +811,9 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 	if failures > 0 {
 		return exitTransport
 	}
+	if sub == "install" && installedPlan(&plan, failures) {
+		acknowledgeInstalled(entry.cfg, getenv)
+	}
 	// A run that refused something exits 1 (refusedExit), and its last
 	// line says so rather than "done" alone.
 	done := "done"
