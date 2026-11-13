@@ -254,9 +254,10 @@ examples:
 const statusHelp = `usage: jevlin status [-json] [-config file]
 
 Says what this installation has set up: the config and state directory it
-uses, whether a newer release is out, and whether the agent is registered
-and claimed. It reads only what is stored here: after you claim the agent
-on the website, it shows the claim once a search or jevlin connect has run.
+uses, whether a newer release is out, whether the agent is registered and
+claimed, and whether the trace and the turn end are on, and if not, why.
+It reads only what is stored here: after you claim the agent on the
+website, it shows the claim once a search or jevlin connect has run.
 
 flags:
   -json         print one JSON object instead of text
@@ -346,7 +347,13 @@ What it holds, as configuration format 1 (every key is optional):
                      never contacted (platform.jevlin.ai)
   [agents]    url    where connect registers and checks the claim
                      (agents-v1.jevlin.ai)
-  [search]    state_dir, sessions_dir and turn_end
+  [search]    trace     false sends no trace and no turn end, as
+                        JEVLIN_TRACE=off does (default true)
+              turn_end  true sends, when a turn that searched ends, what
+                        you asked, the answer and each tool's name and
+                        outcome; setup writes it into a config it
+                        creates, and a config without it sends none
+              state_dir and sessions_dir
   [update]    mode   "apply" (the default), "notify" or "off"
 A config with no schema line is from an older jevlin, and every command
 says to run jevlin setup, which sets it aside and writes a new one.
@@ -359,7 +366,8 @@ environment:
   JEVLIN_AGENTS_API_URL  replaces [agents] url for one run
   JEVLIN_API_KEY         the sr- key a search sends, instead of the stored
                          one; only to this installation's router
-  JEVLIN_TRACE=off       send no trace with any search
+  JEVLIN_TRACE=off       send no trace and no turn end, whatever the
+                         config says
 
 Searches use JEVLIN_API_KEY when it is set, else the key connect or login
 stored; jevlin login -show says which. docs/reference.md#config has more.
