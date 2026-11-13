@@ -31,7 +31,7 @@ history can see it.
 | agent | the trace's text | the turn end |
 |---|---|---|
 | Claude Code | An earlier message of the turn: Claude Code records a message after the hook runs, so the sentence beside the search is not in it. | What you asked, the assistant's text along the way, each tool's name, duration and outcome, the final answer, the model and its token counts (Claude Code 2.1.196 or later). |
-| Cursor | Its latest reply (`afterAgentResponse`). The model's reasoning, which Cursor's `afterAgentThought` gives, is neither sent nor kept. | What you asked, the turn's searches, the final answer and the model. |
+| Cursor | Its reply (`afterAgentResponse`) when it came earlier in the same turn as the search; otherwise none, so a turn's first search before any reply carries no text, never the previous turn's reply. The model's reasoning, which Cursor's `afterAgentThought` gives, is neither sent nor kept. | What you asked, the turn's searches, the final answer and the model. |
 | Codex | None. | What you asked, the assistant's text along the way, each tool's name and outcome (a shell command has no duration), the final answer, the model and its token counts. |
 | opencode | The assistant text before the search. | What you asked, the assistant's text along the way, each tool's name, duration and outcome, the final answer, the model and its token counts. |
 | Pi | The assistant text before the search. | The same as opencode (Pi 0.80.4 or later). |

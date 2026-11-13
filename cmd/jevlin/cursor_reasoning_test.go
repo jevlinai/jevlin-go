@@ -103,7 +103,7 @@ func TestReasoningInALineageFileAnEarlierVersionWroteIsNotSent(t *testing.T) {
 		t.Run(role, func(t *testing.T) {
 			p := newLineageProbe(t, adoptRoot, nil)
 			path := conversationLineagePath(adoptSessions, adoptRoot, "conv")
-			if err := saveLineage(p.ops.hook, path, &lineageFile{Harness: "cursor", SessionID: traceHash("conv"), Window: "none",
+			if err := saveLineage(p.ops.hook, path, &lineageFile{Harness: "cursor", SessionID: traceHash("conv"), Window: "none", TurnID: "turn", AnswerTurnID: "turn",
 				History: []traceHistory{{Role: role, Text: cursorThought}}}, p.now); err != nil {
 				t.Fatal(err)
 			}
