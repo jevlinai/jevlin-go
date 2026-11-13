@@ -48,7 +48,8 @@ It runs on macOS 13 or later, Linux and Windows, each on amd64 and arm64.
   `checksums.txt` ([steps](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#installing-without-npm))
 
 - **From an agent marketplace:** Claude Code's and Codex's plugin marketplaces, and skills.sh,
-  carry a setup skill that installs and sets up jevlin ([how](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#let-your-agent-install-it))
+  carry a setup skill that installs and sets up jevlin. With skills.sh that is
+  `npx skills add jevlinai/jevlin-go` ([the others](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#let-your-agent-install-it))
 
 - **From source:** `go install github.com/jevlinai/jevlin-go/cmd/jevlin@latest`, or `make build`
   in a clone. It reports its version as `dev`, so `jevlin upgrade` and the daily check leave it
