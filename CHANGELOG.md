@@ -14,8 +14,10 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 This release reads the same configuration as 0.8.0, and an existing installation's config is not
 changed: its turn end stays off unless the config says `turn_end = true`. It is a patch release,
-so a native installation's daily check installs it on its own and re-renders the skills and hooks
-of the agents it set up; after an npm update, `jevlin agents install` does.
+so under the default `[update] mode = "apply"` a native installation's daily check installs it on
+its own and re-renders the skills and hooks of the agents it set up; after an npm update,
+`jevlin agents install` does. 0.8.0 refuses a key it does not know, so a config that sets the
+new `trace` key must lose that line before `jevlin upgrade -rollback` puts 0.8.0 back.
 
 - **New installations send the turn end; existing ones are unchanged.** A config `jevlin setup`
   creates now has `[search] turn_end = true`, so a turn that searched also sends what you asked,
@@ -60,8 +62,9 @@ of the agents it set up; after an npm update, `jevlin agents install` does.
   network's do, in one run or grouped by spaces or dashes as cards are printed. A long number of
   that shape with nothing joined to it, such as a decimal id, goes with them. `docs/privacy.md`
   lists them.
-- **A successful `setup` or `agents install` acknowledges the installation.** It sends one empty
-  request, with the installation's key, to the configured agents API. This best-effort request
+- **A successful `setup` or `agents install` acknowledges the installation.** A run that writes
+  an agent's skill or hooks sends one empty request, with the installation's key, to the
+  configured agents API. This best-effort request
   never changes the command result; the platform counts an installation only after account claim
   and Analytics consent. `docs/privacy.md` lists it.
 - **The npm install unpacks on Windows when started from PowerShell 7.** The postinstall runs
@@ -80,8 +83,7 @@ of the agents it set up; after an npm update, `jevlin agents install` does.
 
 **Which parts were live-smoked.** None, before the tag: the turn end on a fresh setup, the `trace`
 switch, Cursor's thought hook recording nothing, the claim-wait and tiers lines, the new scrub
-shapes and the installation acknowledgment (which needs the platform's `/v1/agents/installed`)
-are tested against loopback stubs only.
+shapes and the installation acknowledgment are tested against loopback stubs only.
 
 ## v0.8.0 — 2026-11-11
 

@@ -120,9 +120,9 @@ step 4.
 
 Setup prints a block headed "Sharing with the Jevlin router": what each search
 and each finished turn sends to the router, and the two settings that stop it.
-Show the user that block exactly as printed, before anything else setup said:
-it is how they learn what leaves their machine, and with `-yes` nobody else
-shows it to them. Never shorten or summarize it.
+Show the user that block exactly as printed: it is how they learn what leaves
+their machine, and with `-yes` nobody else shows it to them. Never shorten or
+summarize it.
 
 If setup prints the claim steps (they begin "This agent is registered" and
 hold a link such as `https://platform.jevlin.ai/claim/<code>` and a code),
