@@ -174,11 +174,17 @@ func (r *setupRun) agentsStep() int {
 			return exitOK
 		}
 	}
-	failures := commitPlan(ops, &plan, r.d.stdout, r.d.stderr)
+	failures, failedHosts := commitPlanByHost(ops, &plan, r.d.stdout, r.d.stderr)
 	if len(plan.writes) > failures || len(plan.removes) > 0 {
 		r.changed = true
 	}
-	r.agentsSetUp = plan.hosts()
+	// Only a host whose every change was made is one a person is told to
+	// restart for what setup installed; a failed one was named above.
+	for _, h := range plan.hosts() {
+		if !failedHosts[h] {
+			r.agentsSetUp = append(r.agentsSetUp, h)
+		}
+	}
 	if installedPlan(&plan, failures) {
 		acknowledgeInstalled(r.cfgPath, r.d.getenv)
 	}
