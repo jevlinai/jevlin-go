@@ -17,6 +17,10 @@ rewritten to match newer behaviour; the newer entry says what changed.
   the wait lasts and what Ctrl-C does: in setup it ends setup before the environment and coding
   agents steps, which running setup again finishes; in a bare `connect` it stops the wait, and
   the next search or connect completes the claim.
+- **A claim seen by setup or `jevlin connect` points to the tiers it opened.** Searches stay on
+  the fast tier after a claim, and nothing said that `balanced` and `max` were now open. The line
+  after `claimed` names them and the two ways to choose one, `jevlin agents tier <tier>` and
+  `/jevlin tier <tier>` in the agent.
 
 ## v0.8.0 — 2026-11-11
 

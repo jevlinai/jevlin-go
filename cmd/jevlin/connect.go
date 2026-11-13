@@ -757,6 +757,10 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 
 	interval := resumePollInterval
 	var reg auth.AgentRegistration
+	// sawClaim: this run knew the agent as unclaimed and then learned it is
+	// claimed, from /me below or from the poll. That is the moment to say
+	// which tiers the claim opened (claimedTiersMessage).
+	var sawClaim bool
 	var existed bool
 	var key string
 
@@ -898,6 +902,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 				switch {
 				case meErr == nil && identity.AgentID == reg.AgentID:
 					if identity.Status != reg.Status || !slices.Equal(identity.Scopes, reg.Scopes) || identity.ClaimExpiresAt != reg.ClaimExpiresAt {
+						sawClaim = reg.Status == "unclaimed" && identity.Status == "claimed"
 						reg.Status, reg.Scopes, reg.ClaimExpiresAt = identity.Status, identity.Scopes, identity.ClaimExpiresAt
 						if err := store.SaveAgentRegistration(reg); err != nil {
 							fmt.Fprintln(stderr, "jevlin:", err)
@@ -1115,10 +1120,17 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 	deadline := time.Now().Add(connectPollBudget)
 	waitAnnounced := false
 	for {
+		wasUnclaimed := reg.Status == "unclaimed"
 		callCtx, callCancel := context.WithTimeout(ctx, roundTrip)
 		done, code := pollOnce(callCtx, stdout, stderr, client, store, &reg, key)
 		callCancel()
 		if done {
+			// This run saw the claim happen: the moment the other tiers
+			// open is the one to say how to choose one. Text form only.
+			sawClaim = sawClaim || wasUnclaimed
+			if !machine && sawClaim && reg.Status == "claimed" {
+				fmt.Fprintln(stdout, claimedTiersMessage)
+			}
 			return code
 		}
 		if time.Now().After(deadline) {

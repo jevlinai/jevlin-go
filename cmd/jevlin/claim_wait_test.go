@@ -11,12 +11,42 @@ package main
 // sentences to what an interrupt really does.
 
 import (
+	"bytes"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
 const claimWaitPrefix = "Waiting up to "
+
+// lockedBuffer is a writer a run can print to while the test reads it.
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+// awaitClaimWait reports whether out shows the wait line within limit.
+func awaitClaimWait(out *lockedBuffer, limit time.Duration) bool {
+	for deadline := time.Now().Add(limit); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		if strings.Contains(out.String(), claimWaitPrefix) {
+			return true
+		}
+	}
+	return false
+}
 
 func TestTheBudgetIsSpelledTheWayAPersonReadsIt(t *testing.T) {
 	for d, want := range map[time.Duration]string{

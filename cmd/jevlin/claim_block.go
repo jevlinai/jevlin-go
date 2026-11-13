@@ -95,3 +95,13 @@ func waitBudgetText(d time.Duration) string {
 	}
 	return d.String()
 }
+
+// claimedTiersMessage follows "claimed" when a foreground connect saw the
+// agent become claimed. Searches stay on the key's default, the fast tier,
+// until a tier is chosen, and nothing else at that moment says that claiming
+// opened the others. It names only the two a claim opens (balanced and max:
+// tierLabel, and the tiers table in docs/reference.md), and calls them
+// wider, not faster: fast is the quickest tier there is. Codex spells the
+// skill's command with $ rather than /.
+const claimedTiersMessage = "The balanced and max tiers are open to this agent now; they ask more engines than fast. " +
+	"Pick one with `jevlin agents tier <tier>`, or `/jevlin tier <tier>` in your agent (`$jevlin` in Codex)."

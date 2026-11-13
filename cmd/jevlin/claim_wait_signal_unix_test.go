@@ -14,28 +14,10 @@ import (
 	"io"
 	"os"
 	"strings"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
 )
-
-type lockedBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (l *lockedBuffer) Write(p []byte) (int, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.b.Write(p)
-}
-
-func (l *lockedBuffer) String() string {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.b.String()
-}
 
 // interruptAtClaimWait runs run with a budget long enough to be interrupted
 // in, sends SIGINT once the wait line is printed, and returns what run
@@ -48,14 +30,7 @@ func interruptAtClaimWait(t *testing.T, run func(stdout, stderr io.Writer) int) 
 	var out, errOut lockedBuffer
 	done := make(chan int, 1)
 	go func() { done <- run(&out, &errOut) }()
-	seen := false
-	for deadline := time.Now().Add(4 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
-		if strings.Contains(out.String(), claimWaitPrefix) {
-			seen = true
-			break
-		}
-	}
-	if !seen {
+	if !awaitClaimWait(&out, 4*time.Second) {
 		code = <-done
 		t.Fatalf("the run never announced its wait, so it was not interrupted (exit %d):\n%s\n%s", code, out.String(), errOut.String())
 	}
