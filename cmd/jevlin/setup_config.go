@@ -272,8 +272,12 @@ func writeTOMLLines(b *strings.Builder, lines []tomlLine) {
 // renderFreshConfig is a fresh installation's config in configuration
 // format 1, with every value quoted: the schema line, one section per
 // endpoint, and [search] with the state and sessions directories under the
-// installation.
-func renderFreshConfig(v setupValues) ([]byte, error) {
+// installation. turnEnd adds `turn_end = true` to [search]: planSetupConfig
+// asks for it only when no file was there before, because the compiled
+// default is off and a config without the line reads as off, so an
+// installation that already has a config (an upgrade, a rerun, an older file
+// set aside) never has the turn end turned on by setup.
+func renderFreshConfig(v setupValues, turnEnd bool) ([]byte, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "schema = %d\n", config.Schema)
 	for _, section := range []struct{ name, url string }{
@@ -306,6 +310,9 @@ func renderFreshConfig(v setupValues) ([]byte, error) {
 	)
 	if err != nil {
 		return nil, err
+	}
+	if turnEnd {
+		dirs = append(dirs, tomlLine{"turn_end", "true"})
 	}
 	b.WriteString("\n[search]\n")
 	writeTOMLLines(&b, dirs)
@@ -345,8 +352,8 @@ var errConfigInvalid = errors.New("config is not valid")
 // load is refused, because it is the participant's current configuration and
 // setup does not guess what it should have said.
 func planSetupConfig(path string, existing []byte, v setupValues, validate func(data []byte, source string) error, exists func(string) bool) (configPlan, error) {
-	fresh := func() ([]byte, error) {
-		data, err := renderFreshConfig(v)
+	fresh := func(turnEnd bool) ([]byte, error) {
+		data, err := renderFreshConfig(v, turnEnd)
 		if err != nil {
 			return nil, err
 		}
@@ -355,8 +362,10 @@ func planSetupConfig(path string, existing []byte, v setupValues, validate func(
 		}
 		return data, nil
 	}
+	// Only a config setup creates where there was none turns the turn end
+	// on; the file that replaces an older one does not.
 	if existing == nil {
-		data, err := fresh()
+		data, err := fresh(true)
 		if err != nil {
 			return configPlan{}, err
 		}
@@ -369,7 +378,7 @@ func planSetupConfig(path string, existing []byte, v setupValues, validate func(
 	case errors.Is(err, config.ErrLegacyConfig):
 		earlier := readEarlierConfig(existing)
 		v = v.carrying(earlier)
-		data, ferr := fresh()
+		data, ferr := fresh(false)
 		if ferr != nil {
 			return configPlan{}, ferr
 		}

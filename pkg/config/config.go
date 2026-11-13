@@ -124,10 +124,13 @@ type Search struct {
 	// write and `search` reads. [search] sessions_dir; defaults beside
 	// StateDir.
 	SessionsDir string
-	// TurnEnd opts this installation in to reporting, when a turn that
-	// searched ends, the assistant's final message to the router. [search]
-	// turn_end; off by default: it is model-written text leaving the
-	// machine.
+	// TurnEnd reports to the router, when a turn that searched ends, what
+	// the turn said: [search] turn_end. The compiled default stays off, and
+	// a config without the line reads as off; `jevlin setup` writes
+	// `turn_end = true` only into a config it creates where there was none,
+	// and says so. That is what keeps every existing installation as it was
+	// through an upgrade, with no migration: no file it already has gains
+	// the line.
 	TurnEnd bool
 	// Tier is the search tier a request carries when neither the caller
 	// (the -tier flag, the stdin request's "tier") nor the participant's
