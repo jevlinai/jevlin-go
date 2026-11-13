@@ -41,26 +41,33 @@ import (
 )
 
 const upgradeUsage = `usage: jevlin upgrade [-version X.Y.Z | -rollback] [-home dir]
-       jevlin upgrade -auto [-config file] [-home dir]
 
-Replaces this native binary with the latest canonical Jevlin release, or
-with -version exactly that release, after verifying its checksum, inspecting
-its archive and running the new binary's version command. The binary it
-replaces is kept as <binary>.previous. A copy npm installed is updated with npm.
+Replaces this native binary with the latest Jevlin release, or with
+-version exactly that release, after verifying its signed checksum,
+inspecting its archive and running the new binary's version command. The
+binary it replaces is kept as <binary>.previous. A copy npm installed is
+updated with npm install -g @jevlinsearch/jevlin@latest instead.
 
+flags:
   -version X.Y.Z  upgrade to exactly this release; never an older one
-  -rollback       put back <binary>.previous, the one binary the last upgrade or
-                  rollback replaced; no network
+  -rollback       put back <binary>.previous, the one binary the last
+                  upgrade or rollback replaced; no network
   -home dir       the installation whose lifecycle lock is held (default as
                   uninstall resolves it)
-  -auto           the daily check the agent hooks start, not a command a
-                  person runs: under [update] mode = "apply", the
-                  default, a native copy is replaced by a newer patch
-                  release of its own minor version (0.7.0 to 0.7.1); a new
-                  minor release, and any release under "notify" or for a
-                  copy npm installed, is only recorded as available.
-                  Exits quietly; jevlin status and doctor report the result
-  -config file    with -auto: the config the hook runs with
+
+internal:
+  -auto [-config file] [-home dir]
+                  the daily check the agent hooks start, not a command a
+                  person runs. Under [update] mode = "apply", the default,
+                  a native copy is replaced by a newer patch release of its
+                  own minor version (0.7.0 to 0.7.1); a new minor release,
+                  and any release under "notify" or for a copy npm
+                  installed, is only recorded as available. It exits
+                  quietly; jevlin status and doctor report the result
+
+examples:
+  jevlin upgrade
+  jevlin upgrade -rollback
 `
 
 // upgradeClass is what a participant can do about a failed upgrade.

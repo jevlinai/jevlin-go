@@ -8,7 +8,6 @@ package main
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -23,8 +22,7 @@ import (
 func cmdStatus(args []string) int { return statusMain(args, os.Stdout, os.Stderr, os.Getenv) }
 
 func statusMain(args []string, stdout, stderr io.Writer, getenv func(string) string) int {
-	fs := flag.NewFlagSet("status", flag.ContinueOnError)
-	fs.SetOutput(stderr)
+	fs := newFlagSet("status", stderr)
 	cfgPath := fs.String("config", "", "path to TOML config file")
 	asJSON := fs.Bool("json", false, "report as one JSON object instead of text")
 	if err := fs.Parse(args); err != nil {

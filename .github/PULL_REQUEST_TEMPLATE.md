@@ -31,7 +31,7 @@
 - [ ] Commit messages carry the reasoning (what was rejected and why), no `Co-Authored-By`/`Claude-Session` trailers (AGENTS.md convention)
 - [ ] Docs updated where the behavior is described, each ticked or marked N/A:
       `README.md` · `npm/README.md` (byte-mirrors the top-level README — `TestNPMReadmeMirrorsRootREADME`) ·
-      `docs/guide.md` · `docs/agents.md` · `docs/reference.md` · `cmd/jevlin/skill.md` · `usageText` (`main.go`) ·
+      `docs/guide.md` · `docs/agents.md` · `docs/reference.md` · `cmd/jevlin/skill.md` · the help (`help.go` and each command's usage) ·
       `AGENTS.md` · `CHANGELOG.md`
 - [ ] State-directory change, if any (a new or changed file under a participant's state dir or installation directory): named below with its writer and its reader — N/A otherwise
 
