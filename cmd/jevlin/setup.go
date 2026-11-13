@@ -837,8 +837,8 @@ func (r *setupRun) sharingNotice() {
 		"led to the search, from agents that provide it.\n")
 	if search.TurnEnd {
 		r.printf("When a turn that searched ends, jevlin also sends what you asked, the\n" +
-			"assistant's text and its final answer, and the name, duration and outcome of\n" +
-			"each tool it ran, never a tool's input or output.\n")
+			"assistant's text and its final answer, the name, duration and outcome of each\n" +
+			"tool it ran (never a tool's input or output), and the model and token counts.\n")
 	}
 	r.printf("Anything shaped like a key or token, e-mail addresses, and your account name\n" +
 		"in paths are removed before anything leaves this machine.\n" +
