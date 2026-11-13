@@ -275,7 +275,8 @@ func String(s string) string {
 // shape (redactAuthorizationCredentials); only the generic "bearer <word>"
 // catch-all is skipped.
 //
-// It also covers a PEM private key block, whatever stands around it, and
+// It also covers a PEM private key block, whatever stands around it, a
+// payment card number (card.go), and
 // what an assistant writes around a search that has no credential shape
 // at all: an environment dump, a secret assigned by name
 // (NAME=value, a key and a colon, a long flag and its value),
@@ -286,6 +287,7 @@ func String(s string) string {
 func TraceText(s string) string {
 	s = redactPrivateKeyBlocks(s)
 	s = scrubCommon(s)
+	s = redactCardNumbers(s)
 	s = redactAuthorizationCredentials(s)
 	s = redactSecretFlags(s)
 	s = redactSecretKeys(s)

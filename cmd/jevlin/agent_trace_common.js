@@ -169,6 +169,95 @@ const scrubTraceCommon = (text) => redactTraceJwts(text
   .replace(/\bhf_[A-Za-z0-9]{30,}/g, TRACE_REDACTED)
   .replace(/\bpypi-[A-Za-z0-9_-]{85,}/g, TRACE_REDACTED))
 
+// redactCardNumbers (pkg/redact/card.go, where the rule and its costs are
+// argued): a payment card number, 13 to 19 digits in one run or grouped as
+// cards are printed (4-4-4-4 with an optional last group of 1 to 3, 4-6-5,
+// 4-6-4) by single spaces or dashes, starting 3 to 6 or 2200 to 2720,
+// passing the Luhn check, and joined to no word, decimal, identifier or
+// address. A scan, as Go's is, reading at most five groups at each.
+const TRACE_CARD_MIN = 13
+const TRACE_CARD_MAX = 19
+const traceIsDigit = (c) => c >= 48 && c <= 57
+const traceCardStartsFree = (s, p) => {
+  if (p === 0) return true
+  const c = s.charCodeAt(p - 1)
+  if (traceIsWord(c) || c === 46 || c === 43 || c === 93) return false
+  if (c === 45) return p === 1 || traceIsSpace(s.charCodeAt(p - 2))
+  return true
+}
+const traceCardEndsFree = (s, p) => {
+  if (p === s.length) return true
+  const c = s.charCodeAt(p)
+  if (traceIsWord(c) || c === 64) return false
+  if (c === 46 || c === 45) return p + 1 === s.length || traceIsSpace(s.charCodeAt(p + 1))
+  return true
+}
+const traceCardDigitsValid = (s, groups, from, to) => {
+  const d = []
+  for (let k = from; k <= to; k++) {
+    for (let i = groups[k][0]; i < groups[k][1]; i++) {
+      if (d.length === TRACE_CARD_MAX) return false
+      d.push(s.charCodeAt(i) - 48)
+    }
+  }
+  if (d.length < TRACE_CARD_MIN) return false
+  if (d[0] === 2) {
+    const p = d[0] * 1000 + d[1] * 100 + d[2] * 10 + d[3]
+    if (p < 2200 || p > 2720) return false
+  } else if (d[0] < 3 || d[0] > 6) return false
+  let sum = 0
+  for (let i = 0; i < d.length; i++) {
+    let v = d[d.length - 1 - i]
+    if (i % 2 === 1) { v *= 2; if (v > 9) v -= 9 }
+    sum += v
+  }
+  return sum % 10 === 0
+}
+const traceCardAt = (s, groups, g) => {
+  if (g === 0 && !traceCardStartsFree(s, groups[0][0])) return 0
+  const length = (k) => k < groups.length ? groups[k][1] - groups[k][0] : 0
+  const tryCard = (n) => {
+    const end = g + n - 1
+    if (end >= groups.length || (end === groups.length - 1 && !traceCardEndsFree(s, groups[end][1]))) return false
+    return traceCardDigitsValid(s, groups, g, end)
+  }
+  const first = length(g)
+  if (first >= TRACE_CARD_MIN && first <= TRACE_CARD_MAX) return tryCard(1) ? 1 : 0
+  if (first === 4 && length(g + 1) === 4 && length(g + 2) === 4 && length(g + 3) === 4) {
+    const tail = length(g + 4)
+    if (tail >= 1 && tail <= 3 && tryCard(5)) return 5
+    return tryCard(4) ? 4 : 0
+  }
+  if (first === 4 && length(g + 1) === 6 && (length(g + 2) === 5 || length(g + 2) === 4)) return tryCard(3) ? 3 : 0
+  return 0
+}
+const redactTraceCardNumbers = (text) => {
+  let out = ''
+  let last = 0
+  for (let i = 0; i < text.length;) {
+    if (!traceIsDigit(text.charCodeAt(i))) { i++; continue }
+    const groups = []
+    let j = i
+    for (;;) {
+      let k = j
+      while (k < text.length && traceIsDigit(text.charCodeAt(k))) k++
+      groups.push([j, k])
+      const c = text.charCodeAt(k)
+      if (k + 1 < text.length && (c === 32 || c === 45) && traceIsDigit(text.charCodeAt(k + 1))) { j = k + 1; continue }
+      break
+    }
+    for (let g = 0; g < groups.length;) {
+      const n = traceCardAt(text, groups, g)
+      if (n === 0) { g++; continue }
+      out += text.slice(last, groups[g][0]) + TRACE_REDACTED
+      last = groups[g + n - 1][1]
+      g += n
+    }
+    i = groups[groups.length - 1][1]
+  }
+  return last === 0 ? text : out + text.slice(last)
+}
+
 // redactAuthorizationCredentials: the credential an Authorization or
 // Proxy-Authorization header carries after its scheme (Bearer, Basic or
 // Token, the name and the scheme in any letter case as Go's (?i:) folds
@@ -1096,7 +1185,7 @@ const redactTraceLocalIdentity = (text, identity) => {
 }
 
 const scrubTraceText = (text, identity = TRACE_LOCAL_IDENTITY) =>
-  redactTraceLocalIdentity(redactTraceHomePaths(redactTraceAccountDashed(redactTraceAccountHomes(redactTraceEmails(redactTraceEnvTables(redactTraceEnvDumps(redactTraceSecretAssignments(redactTraceSecretKeys(redactTraceSecretFlags(redactTraceAuthorizationCredentials(scrubTraceCommon(redactTracePrivateKeyBlocks(text))))))))), identity), identity)), identity)
+  redactTraceLocalIdentity(redactTraceHomePaths(redactTraceAccountDashed(redactTraceAccountHomes(redactTraceEmails(redactTraceEnvTables(redactTraceEnvDumps(redactTraceSecretAssignments(redactTraceSecretKeys(redactTraceSecretFlags(redactTraceAuthorizationCredentials(redactTraceCardNumbers(scrubTraceCommon(redactTracePrivateKeyBlocks(text)))))))))), identity), identity)), identity)
 
 // prepareTraceHistory takes the COMPLETE text parts of one assistant
 // message — `{type: 'text', text}` entries, the shape opencode's message

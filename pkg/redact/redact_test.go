@@ -324,10 +324,10 @@ func TestNonASCIILocalNamesAreNotSearchedFor(t *testing.T) {
 }
 
 // The log path is this client's own words and keeps its own rules: none of
-// the trajectory-only steps run there.
+// the trajectory-only steps run there, the card number rule among them.
 func TestTheLogPathIsUnchangedByTheTraceRules(t *testing.T) {
 	defer SetLocalIdentity("Build-Box7", "mwhitlock")()
-	text := "DATABASE_PASSWORD=hunter2 as mwhitlock on Build-Box7"
+	text := "DATABASE_PASSWORD=hunter2 as mwhitlock on Build-Box7, request 4111 1111 1111 1111"
 	if got := String(text); got != text {
 		t.Errorf("String applied a trace-only rule: %q", got)
 	}
