@@ -648,16 +648,27 @@ func cmdDecide(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv 
 const decideUsage = `usage: jevlin decide --stdin [-config file] [-timeout duration]
        jevlin decide --models [-config file] [-timeout duration]
 
---stdin reads one version-1 JSON decide request on stdin and answers with one
-JSON envelope on stdout: a decision model's answer to each named question
-about a state. --models lists the models this router offers, and reads nothing
-from stdin. Give exactly one of them.
+Asks a decision model typed questions about a state, for an agent: one
+version-1 JSON request on stdin, one JSON envelope on stdout with
+result.answers, one per question. A decision is billed and never retried.
+--models lists the models, with each one's price and whether this account
+can call it, and reads nothing from stdin. Give exactly one of the two.
 
+flags:
   --stdin            read the request from stdin
   --models           list the models
-  -config file       the config to read, given at most once
-  -timeout duration  the whole call's deadline, covering connect, headers
-                     and body (default 1m0s)
+  -timeout duration  the deadline for the whole call (default 1m0s)
+  -config file       the config to read, given at most once (jevlin help
+                     config)
+
+the request:
+  model (vendor/model), state and questions, and optionally options, sources
+  and max_chars.
+
+exit status: as for jevlin search.
+
+example:
+  jevlin decide --models
 `
 
 func decideMain(now func() time.Time, args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
