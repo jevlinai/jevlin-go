@@ -172,6 +172,9 @@ func switchLineText(offBy []string, words map[string]string) string {
 	return "off (" + strings.Join(reasons, "; ") + ")"
 }
 
+// unclaimedHint follows every unclaimed agent line.
+const unclaimedHint = "        Claimed it on the website? `jevlin connect` updates this."
+
 func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) {
 	printConfigSource(stdout, f.ConfigSource, f.StateDir)
 	fmt.Fprintf(stdout, "update:  %s\n", updateLineText(f.Update, f.Now))
@@ -221,6 +224,10 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) {
 			fmt.Fprintln(stdout, "agent:  unclaimed — the stored claim link failed validation and is not shown. "+
 				"Run `jevlin connect` for a fresh one.")
 		}
+		// status reads only the record on this machine, and a claim made on
+		// the website reaches it with the next connect (or search), not
+		// before: say so where the participant is looking.
+		fmt.Fprintln(stdout, unclaimedHint)
 	case "expired":
 		fmt.Fprintln(stdout, "agent:  expired — run `jevlin connect` again for a new registration")
 	case "claimed":
