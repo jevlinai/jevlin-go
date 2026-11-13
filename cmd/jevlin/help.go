@@ -110,7 +110,8 @@ func isHelpFlag(arg string) bool {
 // `jevlin help hook` describes it.
 func helpRequested(name string, args []string, stdout, stderr io.Writer) (int, bool) {
 	if name == "help" || isHelpFlag(name) {
-		if len(args) == 0 {
+		if len(args) == 0 || (len(args) == 1 && isHelpFlag(args[0])) {
+			// jevlin help -h is a request for the same index.
 			fmt.Fprint(stdout, usageText)
 			return exitOK, true
 		}

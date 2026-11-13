@@ -108,6 +108,9 @@ func TestHelpIsAnsweredOnStdoutWithExitZero(t *testing.T) {
 		if code, ok, out, _ := ask(spelling); !ok || code != exitOK || out != usageText {
 			t.Errorf("jevlin %s: exit %d, answered %v, want the index on stdout", spelling, code, ok)
 		}
+		if code, ok, out, _ := ask("help", spelling); spelling != "help" && (!ok || code != exitOK || out != usageText) {
+			t.Errorf("jevlin help %s: exit %d, answered %v, want the index on stdout", spelling, code, ok)
+		}
 	}
 	for _, name := range append(append([]string{}, helpCommands...), "config") {
 		want := helpOf(t, name)
