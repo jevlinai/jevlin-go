@@ -65,6 +65,65 @@ var (
 	// Stripe's secret and restricted keys, live and test: sk_live_...,
 	// rk_test_.... The publishable pk_ key is public by design.
 	stripeKeyPattern = regexp.MustCompile(`\b[rs]k_(?:live|test)_[A-Za-z0-9]{16,}`)
+	// The vendor tokens below each start with a prefix the vendor publishes
+	// so that a scanner can find them, and each rule asks for more than the
+	// prefix: a run of the token's own characters long enough that a word,
+	// an identifier or a placeholder does not reach it. Each run is taken
+	// greedily to its end, as skPattern's is, so what a rule leaves after
+	// its placeholder can never start another match on a second pass.
+	//
+	// A Google API key: AIza and 35 of [A-Za-z0-9_-], 39 in all, as the
+	// example in Google Cloud's "Manage API keys" page is written
+	// (docs.cloud.google.com/docs/authentication/api-keys). A longer run
+	// goes whole: it is not a shorter key followed by text.
+	googleAPIKeyPattern = regexp.MustCompile(`\bAIza[0-9A-Za-z_-]{35,}`)
+	// Slack tokens, by the prefixes Slack documents: xoxb- (bot), xoxp-
+	// (user), xapp- (app-level) and xwfp- (workflow) in "Token types"
+	// (docs.slack.dev/authentication/tokens); the xoxe. prefix of a rotating
+	// token and xoxe- of its refresh token in "Using token rotation"
+	// (docs.slack.dev/authentication/using-token-rotation); xoxa- (workspace
+	// apps, Slack's 2018 changelog) and xoxo- and xoxs- (older tokens,
+	// Slack's 2016-05-19 changelog). xoxr- is in common scanners' lists and
+	// not in a Slack page found; it is kept, because nothing else is written
+	// that way. A token is sections joined by `-`, the first numeric, so a
+	// digit must follow the prefix: xoxb-your-bot-token, as documentation
+	// writes a placeholder, stays.
+	slackTokenPattern = regexp.MustCompile(`\b(?:xoxe\.)?(?:xox[abeoprs]|xapp|xwfp)-[0-9][A-Za-z0-9-]{9,}`)
+	// A Slack incoming webhook URL carries its secret in its path ("Your
+	// webhook URL contains a secret": docs.slack.dev/messaging/
+	// sending-messages-using-incoming-webhooks, whose example is
+	// hooks.slack.com/services/T00000000/B00000000/XXXX...). The host and
+	// /services/ stay; the path after them goes.
+	slackWebhookPattern = regexp.MustCompile(`\b(hooks\.slack\.com/services/)[A-Za-z0-9_/-]{8,}`)
+	// GitLab tokens, by the prefixes in GitLab's "GitLab token overview"
+	// table (docs.gitlab.com/security/tokens): glpat- (personal, project,
+	// group and impersonation tokens), gloas- (OAuth application secret),
+	// gldt- (deploy), glrt- and glrtr- (runner), glcbt- (CI/CD job), glptt-
+	// (trigger), glft- (feed), glimt- (incoming mail), glagent- (agent for
+	// Kubernetes), glwt- (workspace), glsoat- (SCIM) and glffct- (feature
+	// flags client). An older token has 20 characters after the prefix; a
+	// newer, routable one is longer and carries dot-separated parts after
+	// them (glpat-<payload>.01.<checksum>), which go with it. A dot ending a
+	// sentence stays, as it is not followed by a token's character.
+	gitlabTokenPattern = regexp.MustCompile(`\b(?:glpat|gloas|gldt|glrtr?|glcbt|glptt|glft|glimt|glagent|glwt|glsoat|glffct)-[A-Za-z0-9_-]{20,}(?:\.[A-Za-z0-9_-]+)*`)
+	// An npm access token: the npm_ prefix, an underscore after it rather
+	// than a dash, and base62 characters whose last six are a CRC32
+	// checksum (GitHub's changelog, 2021-09-23, "npm has a new access token
+	// format"). The post gives no length; issued tokens have 36 characters
+	// after the prefix, and the rule asks for that many, so npm_config_cache
+	// and npm_package_version, whose words stop at an underscore, stay.
+	npmTokenPattern = regexp.MustCompile(`\bnpm_[A-Za-z0-9]{36,}`)
+	// A Hugging Face user access token, hf_ and letters, as "User access
+	// tokens" writes one (access_token = "hf_...":
+	// huggingface.co/docs/hub/security-tokens). The page gives no length;
+	// issued tokens have 34 letters after the prefix, and the rule asks for
+	// 30 of [A-Za-z0-9], so hf_hub_download and hf_token stay.
+	huggingFaceTokenPattern = regexp.MustCompile(`\bhf_[A-Za-z0-9]{30,}`)
+	// A PyPI API token: "a prefix (pypi), a separator (-) and a string
+	// representing a Macaroon base64 serialized", matched by
+	// pypi-[A-Za-z0-9-_]{85,} on PyPI's own secret-reporting page
+	// (docs.pypi.org/api/secrets).
+	pypiTokenPattern = regexp.MustCompile(`\bpypi-[A-Za-z0-9_-]{85,}`)
 	// A bare JWT (three base64url segments): a token pasted into free
 	// text or logged directly, not only one riding after "Bearer ".
 	jwtPattern = regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\b`)
@@ -216,7 +275,8 @@ func String(s string) string {
 // shape (redactAuthorizationCredentials); only the generic "bearer <word>"
 // catch-all is skipped.
 //
-// It also covers a PEM private key block, whatever stands around it, and
+// It also covers a PEM private key block, whatever stands around it, a
+// payment card number (card.go), and
 // what an assistant writes around a search that has no credential shape
 // at all: an environment dump, a secret assigned by name
 // (NAME=value, a key and a colon, a long flag and its value),
@@ -227,6 +287,7 @@ func String(s string) string {
 func TraceText(s string) string {
 	s = redactPrivateKeyBlocks(s)
 	s = scrubCommon(s)
+	s = redactCardNumbers(s)
 	s = redactAuthorizationCredentials(s)
 	s = redactSecretFlags(s)
 	s = redactSecretKeys(s)
@@ -355,6 +416,13 @@ func scrubCommon(s string) string {
 	s = githubTokenPattern.ReplaceAllString(s, placeholder)
 	s = awsKeyPattern.ReplaceAllString(s, placeholder)
 	s = stripeKeyPattern.ReplaceAllString(s, placeholder)
+	s = googleAPIKeyPattern.ReplaceAllString(s, placeholder)
+	s = slackTokenPattern.ReplaceAllString(s, placeholder)
+	s = slackWebhookPattern.ReplaceAllString(s, "${1}"+placeholder)
+	s = gitlabTokenPattern.ReplaceAllString(s, placeholder)
+	s = npmTokenPattern.ReplaceAllString(s, placeholder)
+	s = huggingFaceTokenPattern.ReplaceAllString(s, placeholder)
+	s = pypiTokenPattern.ReplaceAllString(s, placeholder)
 	s = jwtPattern.ReplaceAllString(s, placeholder)
 	return s
 }

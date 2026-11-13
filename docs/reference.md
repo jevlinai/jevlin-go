@@ -22,7 +22,7 @@ says what is written into each agent.
 | `status` | `-json`, `-config file` | What this installation has and has not completed. |
 | `doctor` | `-json`, `-config file` | Whether this installation is ready to search, check by check ([Doctor's checks](#doctors-checks)). |
 | `limits` | `-json`, `-config file` | This key's daily, weekly and monthly spend caps and today's spend, ceiling and remainder, read from the router. Reading spends nothing; setting caps is not built yet. |
-| `version`, `help` | | The version (`dev` for a source build), and the usage text. |
+| `version`, `help` | `help <command>`, `help config` | The version (`dev` for a source build), and the help: `jevlin help` lists the commands, `jevlin help <command>` (or `jevlin <command> -h`) shows one command's usage, flags and examples, and `jevlin help config` says which config a command reads and what it holds. |
 | `hook`, `turn-end` | | Internal: what the agents' hooks run. |
 
 A command that reads the config takes `-config <file>`; `setup`, `upgrade` and `uninstall` take

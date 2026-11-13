@@ -14,10 +14,10 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 - **New installations send the turn end; existing ones are unchanged.** A config `jevlin setup`
   creates now has `[search] turn_end = true`, so a turn that searched also sends what you asked,
-  the assistant's text and its final answer, and each tool's name, duration and outcome (never its
-  input or output); `turn_end = false` under `[search]` stops that, the new `trace = false` there
-  or `JEVLIN_TRACE=off` stops it and the trace, and a config without the line, which is every
-  config an earlier version wrote, still sends none. Setup says this, with the config's path,
+  the assistant's text and its final answer, each tool's name, duration and outcome (never its
+  input or output), and the model and token counts; `turn_end = false` under `[search]` stops
+  that, the new `trace = false` there or `JEVLIN_TRACE=off` stops it and the trace, and a config
+  without the line, which is every config an earlier version wrote, still sends none. Setup says this, with the config's path,
   where it used to print two lines about "search context".
 - **Cursor no longer sends the model's reasoning.** The trace's text under Cursor is its latest
   reply; `afterAgentThought` still runs, from hooks files already installed, and records nothing.
@@ -27,6 +27,48 @@ rewritten to match newer behaviour; the newer entry says what changed.
 - **Setup's closing message says which agents to restart, first.** Claude Code picks up the new
   skill and hooks in a session already open; every other agent it set up is still told to
   restart.
+
+- **Setup and `jevlin connect` say when they are waiting for the claim.** After the claim link
+  they printed nothing for up to three minutes, which read as a hang. One line now says how long
+  the wait lasts and what Ctrl-C does: in setup it ends setup before the environment and coding
+  agents steps, which running setup again finishes; in a bare `connect` it stops the wait, and
+  the next search or connect completes the claim. Setup then says the wait was interrupted and the
+  key is stored, where it used to report "connect failed ... when that is fixed".
+- **A claim seen by setup or `jevlin connect` points to the tiers it opened.** Searches stay on
+  the fast tier after a claim, and nothing said that `balanced` and `max` were now open. The line
+  after `claimed` names them and the two ways to choose one, `jevlin agents tier <tier>` and
+  `/jevlin tier <tier>` in the agent.
+- **A purge names what it leaves in `bin/`.** `uninstall -purge-state` listed what it left in the
+  installation directory but skipped `bin/` as a whole, so a `jevlin-0.6.1` an earlier installer
+  kept there, or a `jevlin.new` the install script could not remove, was never named. It now
+  lists `bin/`'s entries too, in the dry run and the real run, with and without `-binary`, all
+  but the binary, its `.previous`, the self-updater's staging files and the update lock.
+
+- **The scrub removes more credential shapes, and payment card numbers.** Before a trace or a
+  turn end leaves the machine, Google API keys, Slack tokens and the secret path of a Slack
+  webhook URL, GitLab, npm, Hugging Face and PyPI tokens are now removed, as Stripe, GitHub and
+  AWS keys already were; this client's own log lines lose them too. A payment card number goes
+  from the trace and the turn end: 13 to 19 digits that pass the Luhn check and start as a card
+  network's do, in one run or grouped by spaces or dashes as cards are printed. A long number of
+  that shape with nothing joined to it, such as a decimal id, goes with them. `docs/privacy.md`
+  lists them.
+
+- A successful `setup` or `agents install` now acknowledges the installation to the configured agents API. This best-effort request never changes the command result; the platform counts an installation only after account claim and Analytics consent.
+
+- **The npm install unpacks on Windows when started from PowerShell 7.** The postinstall runs
+  Windows PowerShell to unpack the release, and under PowerShell 7 it inherited a module path
+  that put PowerShell 7's `Expand-Archive` first, which fails there with "Cannot find an overload
+  for ExtractToDirectory". The postinstall now leaves that path out, so Windows PowerShell uses
+  its own.
+
+- **The help is an index, and each command has its own.** `jevlin help` lists the commands, one
+  line each, with examples, where it was a 157-line page of paragraphs. `jevlin help <command>`
+  and `jevlin <command> -h` show that command's usage, flags as a table, examples and, for the
+  commands an agent calls, the request and the exit status; `jevlin help config` holds what the
+  index used to say about the config. `jevlin help search` used to print the index, `search -h`
+  and the other commands that had no help of their own printed Go's list of flag defaults and
+  exited 2, and `version -h` printed the version; each now prints its help and exits 0, and a
+  flag that does not parse shows the command's help.
 
 ## v0.8.0 — 2026-11-11
 

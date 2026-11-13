@@ -12,6 +12,10 @@
 several search engines at once and returns a single merged list, with every result naming the
 engines that found it.
 
+On the hosted service one call can ask multiple engines such as Exa, Brave, Parallel, Perplexity,
+Serper and TinyFish among them, depending on the tier you choose. One account and one key cover
+all of them: the router holds the engine keys, so you need none of your own.
+
 It works in Claude Code, Cursor, Codex, opencode, Pi and Hermes. It is one binary your agent
 calls, a skill that teaches the agent the call, and hooks where the agent has them. No daemon runs
 between searches: a hook may start the daily release check, and a search may start a short check
@@ -44,7 +48,8 @@ It runs on macOS 13 or later, Linux and Windows, each on amd64 and arm64.
   `checksums.txt` ([steps](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#installing-without-npm))
 
 - **From an agent marketplace:** Claude Code's and Codex's plugin marketplaces, and skills.sh,
-  carry a setup skill that installs and sets up jevlin ([how](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#let-your-agent-install-it))
+  carry a setup skill that installs and sets up jevlin. With skills.sh that is
+  `npx skills add jevlinai/jevlin-go` ([the others](https://github.com/jevlinai/jevlin-go/blob/main/docs/guide.md#let-your-agent-install-it))
 
 - **From source:** `go install github.com/jevlinai/jevlin-go/cmd/jevlin@latest`, or `make build`
   in a clone. It reports its version as `dev`, so `jevlin upgrade` and the daily check leave it

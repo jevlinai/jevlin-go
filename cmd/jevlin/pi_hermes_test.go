@@ -214,9 +214,6 @@ func TestClientGuidanceNamesEverySurface(t *testing.T) {
 		if !strings.Contains(agentsUsage, s.ID()) {
 			t.Errorf("agents usage omits -client %q", s.ID())
 		}
-		if !strings.Contains(usageText, s.Label()) && !strings.Contains(usageText, s.ID()) {
-			t.Errorf("jevlin help omits %q", s.Label())
-		}
 	}
 }
 

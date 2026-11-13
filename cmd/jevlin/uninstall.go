@@ -45,23 +45,30 @@ import (
 
 const uninstallUsage = `usage: jevlin uninstall [-home dir] [-binary] [-purge-state] [-dry-run] [-yes]
 
-Takes out what setup put on this machine for one installation: the coding
+Removes what setup put on this machine for one installation: the coding
 agents' skills, hooks and plugins that run its binary, and the shell-profile
 block that names its config (on Windows, the user PATH entry and
-JEVLIN_CONFIG setup set). The registration, stored key and config stay, and
-nothing is revoked.
+JEVLIN_CONFIG setup set). The registration, stored key and config stay,
+and nothing is revoked.
 
-  -home dir      the installation (default $JEVLIN_HOME, else the directory of a
-                 JEVLIN_CONFIG named jevlin.toml, else the installation this
-                 binary runs from, else ~/.jevlin)
-  -binary        also remove this installation's own copy of the binary; a copy npm
-                 installed is npm's to remove
-  -purge-state   also destroy this installation's registration, stored key
-                 and config. Needs a terminal: you
-                 type the installation path to confirm, and -yes never
-                 answers it
-  -dry-run       print what would be removed; change, ask and contact nothing
-  -yes           answer the yes/no question, terminal or not; never -purge-state
+flags:
+  -home dir     the installation (default $JEVLIN_HOME, else the directory
+                of a JEVLIN_CONFIG named jevlin.toml, else the installation
+                this binary runs from, else ~/.jevlin)
+  -binary       also remove this installation's own binary and its
+                .previous; a copy npm installed is npm's to remove. On
+                Windows the running binary is moved aside, not deleted
+  -purge-state  also destroy this installation's registration, stored key
+                and config. Needs a terminal: you type the installation
+                path to confirm, and -yes never answers it
+  -dry-run      print what would be removed; change, ask and contact nothing
+  -yes          answer the yes/no question, terminal or not; never
+                -purge-state
+
+examples:
+  jevlin uninstall -dry-run
+  jevlin uninstall
+  jevlin uninstall -binary -purge-state
 `
 
 // noParticipantChange is how a refusal reads once the lifecycle exclusion
@@ -1486,7 +1493,10 @@ func (r *uninstallRun) closing() {
 // applyPurge went through, because an entry of it still there was named as
 // a problem, not left on purpose), not a lock file sayLeftoverLocks names
 // beneath this, and not the directory holding this installation's own
-// binary, which -purge-state leaves to -binary and says so. What remains is
+// binary, which -purge-state leaves to -binary and says so. That directory's
+// own entries are named in its place, but for the ones this client accounts
+// for there (leftInBinaryDir), so a binary an earlier installer left beside
+// ours is named like any other file. What remains is
 // what an earlier version or another program put there. This client holds no list
 // of the earlier version's file names — it reads none of them and names none
 // of them by name — so it cannot remove them on its own say-so, and one of
@@ -1503,12 +1513,17 @@ func (r *uninstallRun) sayLeftInHome(purged []string, dry bool) {
 		skip[p] = true
 	}
 	ownBinary := lexists(r.ownedBinary())
+	binDir := ""
 	if ownBinary || r.binary {
-		skip[filepath.Dir(r.ownedBinary())] = true
+		binDir = filepath.Dir(r.ownedBinary())
 	}
 	var left []string
 	for _, e := range entries {
-		if p := filepath.Join(r.home, e.Name()); !skip[p] {
+		p := filepath.Join(r.home, e.Name())
+		switch {
+		case p == binDir:
+			left = append(left, r.leftInBinaryDir(skip)...)
+		case !skip[p]:
 			left = append(left, p)
 		}
 	}
@@ -1527,6 +1542,43 @@ func (r *uninstallRun) sayLeftInHome(purged []string, dry bool) {
 		r.printf("\n%s holds this installation's binary, which -purge-state leaves; `jevlin uninstall -binary` removes it.\n",
 			filepath.Dir(r.ownedBinary()))
 	}
+}
+
+// leftInBinaryDir is every entry of the installation's own binary directory
+// but those this client accounts for there: the binary, its .previous, the
+// self-updater's staging leftovers, and what skip already holds (the update
+// lock sayLeftoverLocks names, a purged path). A file left behind by a step
+// that failed is named by the run's own residual list instead. Anything else
+// there an earlier installer or another program put: a release an earlier
+// install script kept beside the binary, or the jevlin.new install.sh could
+// not remove. Only a real directory inside the installation is listed, never
+// a link out of it: an installation whose bin/ led to a shared directory
+// would otherwise name every program in it.
+func (r *uninstallRun) leftInBinaryDir(skip map[string]bool) []string {
+	owned := r.ownedBinary()
+	dir := filepath.Dir(owned)
+	if !pathWithin(dir, r.home) || samePath(dir, r.home) {
+		return nil
+	}
+	if info, err := os.Lstat(dir); err != nil || !info.IsDir() {
+		return nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	ours := map[string]bool{owned: true, selfupdate.PreviousPath(owned): true}
+	leftovers, _ := selfupdate.StagingLeftovers(dir)
+	for _, p := range append(leftovers, r.residual...) {
+		ours[p] = true
+	}
+	var left []string
+	for _, e := range entries {
+		if p := filepath.Join(dir, e.Name()); !ours[p] && !skip[p] {
+			left = append(left, p)
+		}
+	}
+	return left
 }
 
 // sayLeftoverLocks names every lock file this installation still carries and

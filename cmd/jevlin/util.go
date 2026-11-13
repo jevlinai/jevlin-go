@@ -57,6 +57,16 @@ const exitForceDoesNotRebuild = -4
 // key_origin_mismatch like that pre-check.
 const exitKeyOffOrigin = -5
 
+// exitClaimWaitInterrupted is connectRun's internal signal, to setup's
+// in-process connect only (admitted, text mode), that the poll for the claim
+// was interrupted: the registration and key were stored before the wait
+// began, so this is not the failure setup's "connect failed" message
+// describes, and setup says so in its own words (setupMain) and exits
+// exitTransport as it always has. A bare `jevlin connect` never sees it: it
+// gets exitTransport and "connect: interrupted", as before. Exit 1 alone
+// cannot tell the two apart, since a transport failure is exit 1 as well.
+const exitClaimWaitInterrupted = -6
+
 // configProblem is a config that did not load, said with its source once:
 // pkg/config names the file in a parse or schema error already, and a
 // value's rule names only its key.
@@ -91,6 +101,9 @@ func printConfigSource(w io.Writer, cfgSource, stateDir string) {
 func newFlagSet(name string, stderr io.Writer) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	// "agents install" and the other subcommands answer with their
+	// command's help.
+	fs.Usage = flagSetUsage(strings.Fields(name)[0], stderr)
 	return fs
 }
 

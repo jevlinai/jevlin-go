@@ -38,29 +38,37 @@ import (
 	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
-const setupUsage = `usage: jevlin setup [-home dir] [-yes] [-no-profile] [-no-agents] [-with id]... [-dry-run]
+const setupUsage = `usage: jevlin setup [-home dir] [-yes] [-no-profile] [-no-agents]
+                    [-with id]... [-dry-run]
 
-Everything after the binary, asked as it goes: a previous installation to
-reuse, the config, connect (registration and the claim link), the shell
-profile (PATH and JEVLIN_CONFIG; on Windows, the user PATH and
-JEVLIN_CONFIG) and the coding agents found on this machine.
+Sets up everything after the binary, asking as it goes: reuse a previous
+installation, write the config, connect (the registration and the claim
+link), put PATH and JEVLIN_CONFIG in the shell profile (on Windows, the
+user environment), and set up the coding agents found on this machine.
 
-  -home dir     the installation directory (default $JEVLIN_HOME, else ~/.jevlin).
-                A directory other than that default is a separate installation:
-                setup leaves the shell profile (Windows: user environment) and the
-                coding agents alone, -yes or not, because they belong to the
-                default one, and names the agents command for this one instead
-  -yes          answer yes to setup's shell-profile (Windows: user environment) and
-                coding-agents questions, with or without a terminal; automated
-                callers may pass it. Also yes to reusing a set-aside
-                installation, at a terminal only. Never answers a question
-                about a Codex setting of your own
-  -no-profile   leave the shell profile (on Windows, the user environment) alone
-  -no-agents    do not look for coding agents; -with still sets up what it names
-  -with id      set up this target whether or not it was found; repeatable
-                (` + "{{TARGET_IDS}}" + `)
-  -dry-run      print every file that would be written or moved; change nothing,
-                and run neither connect nor the agents step
+flags:
+  -home dir    the installation directory (default $JEVLIN_HOME, else
+               ~/.jevlin). Any other directory is a separate installation:
+               setup leaves the shell profile and the coding agents alone,
+               -yes or not, because they belong to the default one, and
+               names the agents command for this one instead
+  -yes         answer yes to the shell-profile and coding-agents questions,
+               with or without a terminal; automated callers may pass it.
+               At a terminal only, also yes to reusing a set-aside
+               installation. Never answers a question about a Codex
+               setting of your own
+  -no-profile  leave the shell profile (Windows: user environment) alone
+  -no-agents   do not look for coding agents; -with still sets up what it
+               names
+  -with id     set up this target whether or not it was found; repeatable
+               (` + "{{TARGET_IDS}}" + `)
+  -dry-run     print every file that would be written or moved; change
+               nothing, and run neither connect nor the agents step
+
+examples:
+  jevlin setup
+  jevlin setup -dry-run
+  jevlin setup -with claude
 `
 
 func renderSetupUsage() string {
@@ -398,7 +406,10 @@ func (r *setupRun) run(homeFlag string, with []string) int {
 	if r.dry {
 		r.printf("(dry run) would run: %s connect -config %s\n", r.displayPath(exe), r.displayPath(r.cfgPath))
 	} else {
-		if code := d.connect([]string{"-config", r.cfgPath}, d.stdin, d.stdout, d.stderr, d.getenv); code != exitOK {
+		if code := d.connect([]string{"-config", r.cfgPath}, d.stdin, d.stdout, d.stderr, d.getenv); code == exitClaimWaitInterrupted {
+			fmt.Fprint(d.stderr, setupClaimWaitInterrupted)
+			return exitTransport
+		} else if code != exitOK {
 			fmt.Fprintf(d.stderr, "\njevlin setup: connect failed (exit %d); run setup again when that is fixed — it picks up where this left off\n", code)
 			return exitTransport
 		}
@@ -418,6 +429,13 @@ func (r *setupRun) run(homeFlag string, with []string) int {
 	r.closing()
 	return exitOK
 }
+
+// setupClaimWaitInterrupted is what setup says when Ctrl-C stopped connect's
+// wait for the claim (exitClaimWaitInterrupted). Nothing failed: the key was
+// stored before the wait, and setup stops before its environment and coding
+// agents steps, as the wait line said it would.
+const setupClaimWaitInterrupted = "\njevlin setup: the claim wait was interrupted; your key is stored. Running setup again picks up where\n" +
+	"this left off and finishes the environment and coding agents steps; the claim completes on the next search or connect.\n"
 
 // otherInstallation: does -home name a directory other than this machine's
 // installation — $JEVLIN_HOME, else ~/.jevlin — and if so, which is
