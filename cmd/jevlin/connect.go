@@ -1126,9 +1126,12 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 		callCancel()
 		if done {
 			// This run saw the claim happen: the moment the other tiers
-			// open is the one to say how to choose one. Text form only.
+			// open is the one to say how to choose one. Text form only, and
+			// only once the claim is recorded: pollOnce sets reg.Status
+			// before it saves, so a failed save leaves "claimed" in memory
+			// and exitTransport in code, with the record still unclaimed.
 			sawClaim = sawClaim || wasUnclaimed
-			if !machine && sawClaim && reg.Status == "claimed" {
+			if !machine && code == exitOK && sawClaim && reg.Status == "claimed" {
 				fmt.Fprintln(stdout, claimedTiersMessage)
 			}
 			return code

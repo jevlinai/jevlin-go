@@ -70,6 +70,10 @@ type stubPlatform struct {
 	// under a root test runner. Runs on the httptest handler's own
 	// goroutine: must not call testing.T methods directly.
 	meHook func()
+	// statusHook is meHook's counterpart for GET /v1/agents/{id}: it runs
+	// synchronously, with the status about to be answered, right before a
+	// successful status answer is written. Same constraints as meHook.
+	statusHook func(status string)
 	// registerAgentID, when set, is the agent_id every register answers
 	// with, so a test can send one the client must refuse.
 	registerAgentID string
@@ -151,6 +155,7 @@ func newStubPlatform(t *testing.T) *stubPlatform {
 		if agentScopes, ok := f.scopesByAgent[id]; ok {
 			scopes = agentScopes
 		}
+		statusHook := f.statusHook
 		f.mu.Unlock()
 		if notFound {
 			writeStubJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"code": "not_found"}})
@@ -159,6 +164,9 @@ func newStubPlatform(t *testing.T) *stubPlatform {
 		if statusError {
 			writeStubJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]any{"code": "temporary"}})
 			return
+		}
+		if statusHook != nil {
+			statusHook(st)
 		}
 		writeStubJSON(w, http.StatusOK, map[string]any{"status": st, "scopes": scopes})
 	})
