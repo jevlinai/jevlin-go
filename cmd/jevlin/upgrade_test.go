@@ -594,9 +594,17 @@ func TestTopLevelHelpNamesTheLifecycleCommands(t *testing.T) {
 			t.Errorf("top-level help must describe%s", command)
 		}
 	}
-	for _, want := range []string{"-purge-state", "-yes never answers it", "-rollback", "npm install -g @jevlinsearch/jevlin@latest"} {
-		if !strings.Contains(usageText, want) {
-			t.Errorf("top-level help must say %q", want)
+	// The detail is each command's own help, matched with its whitespace
+	// collapsed, because a phrase can straddle a line break.
+	for _, c := range []struct{ command, want string }{
+		{"uninstall", "-purge-state"},
+		{"uninstall", "-yes never answers it"},
+		{"upgrade", "-rollback"},
+		{"upgrade", "npm install -g @jevlinsearch/jevlin@latest"},
+	} {
+		h, _ := commandHelp(c.command)
+		if !strings.Contains(strings.Join(strings.Fields(h), " "), c.want) {
+			t.Errorf("jevlin %s -h must say %q", c.command, c.want)
 		}
 	}
 }

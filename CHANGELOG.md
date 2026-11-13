@@ -10,6 +10,17 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## Unreleased
+
+- **The help is an index, and each command has its own.** `jevlin help` lists the commands, one
+  line each, with examples, where it was a 157-line page of paragraphs. `jevlin help <command>`
+  and `jevlin <command> -h` show that command's usage, flags as a table, examples and, for the
+  commands an agent calls, the request and the exit status; `jevlin help config` holds what the
+  index used to say about the config. `jevlin help search` used to print the index, `search -h`
+  and the other commands that had no help of their own printed Go's list of flag defaults and
+  exited 2, and `version -h` printed the version; each now prints its help and exits 0, and a
+  flag that does not parse shows the command's help.
+
 ## v0.8.0 — 2026-11-11
 
 This release reads the same configuration as 0.7.0, so nothing needs to run after installing it:
