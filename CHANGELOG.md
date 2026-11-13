@@ -10,6 +10,17 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## Unreleased
+
+- **The scrub removes more credential shapes, and payment card numbers.** Before a trace or a
+  turn end leaves the machine, Google API keys, Slack tokens and the secret path of a Slack
+  webhook URL, GitLab, npm, Hugging Face and PyPI tokens are now removed, as Stripe, GitHub and
+  AWS keys already were; this client's own log lines lose them too. A payment card number goes
+  from the trace and the turn end: 13 to 19 digits that pass the Luhn check and start as a card
+  network's do, in one run or grouped by spaces or dashes as cards are printed. A long number of
+  that shape with nothing joined to it, such as a decimal id, goes with them. `docs/privacy.md`
+  lists them.
+
 ## v0.8.0 — 2026-11-11
 
 This release reads the same configuration as 0.7.0, so nothing needs to run after installing it:
