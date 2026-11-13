@@ -189,6 +189,9 @@ type hookContext struct {
 	// turnEnd is [search] turn_end: this installation reports a turn's final
 	// message. See turn_end.go.
 	turnEnd bool
+	// traceOffInConfig is [search] trace = false. It is read only through
+	// traceOff, beside JEVLIN_TRACE.
+	traceOffInConfig bool
 	// updateRoot and updateMode are what the daily release check's decision
 	// reads: the installation's own directory, where its stamp is
 	// (updateRoot), and whether [update] mode turned it off.
@@ -261,6 +264,7 @@ func hookDispatch(ops hookOps, args []string, stdin io.Reader, stdout, stderr io
 	if cfg, src, err := loadConfig(cfgPath, ops.getenv); err == nil {
 		hc.sessionsDir = cfg.Search.SessionsDir
 		hc.turnEnd = cfg.Search.TurnEnd
+		hc.traceOffInConfig = cfg.Search.TraceOff
 		hc.updateRoot = updateRoot(cfg.Search)
 		hc.updateMode = cfg.Update.Mode
 	} else {
@@ -302,7 +306,7 @@ func hookDispatch(ops hookOps, args []string, stdin io.Reader, stdout, stderr io
 		}
 	case "hermes":
 		if len(args) > 1 {
-			hookHermes(ops.getenv, args[1], payload, stdout)
+			hookHermes(ops.getenv, hc.traceOffInConfig, args[1], payload, stdout)
 		}
 	case "codex":
 		if len(args) > 1 {
@@ -519,10 +523,11 @@ func hookLineage(ops hookOps, hc hookContext, payload []byte, stdout io.Writer) 
 	} else if _, exists := p.ToolInput["trace_bridge"]; exists {
 		return // never overwrite a bridge that is somehow already there
 	}
-	// JEVLIN_TRACE=off turns traces off entirely: no bridge on the command
-	// and no lineage file, not a bridge that search then drops. The fetch
-	// allow above is not a trace and still answers.
-	if traceOff(ops.getenv) {
+	// With the trace off ([search] trace = false or JEVLIN_TRACE=off) there
+	// is no bridge on the command and no lineage file, not a bridge that
+	// search then drops. The fetch allow above is not a trace and still
+	// answers.
+	if traceOff(hc.traceOffInConfig, ops.getenv) {
 		return
 	}
 
@@ -984,7 +989,7 @@ func hookCursorOn(goos string, ops hookOps, hc hookContext, event string, payloa
 	// is written, so the user's prompt, the reasoning and the answer never
 	// reach the sessions directory, and preToolUse labels no search. The
 	// permission answers and the background starts are unchanged.
-	off := traceOff(ops.getenv)
+	off := traceOff(hc.traceOffInConfig, ops.getenv)
 	update := func(apply func(*lineageFile)) {
 		if off || path == "" || p.ConversationID == "" {
 			return

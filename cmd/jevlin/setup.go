@@ -389,9 +389,7 @@ func (r *setupRun) run(homeFlag string, with []string) int {
 	}
 
 	// ── 5. connect ──
-	r.say("Search context")
-	r.printf("Recent agent context may accompany search to the Jevlin search router as part of the trajectory/search product.\n")
-	r.printf("JEVLIN_TRACE=off disables trace transmission.\n")
+	r.sharingNotice()
 	r.say("Connecting")
 	if r.dry {
 		r.printf("(dry run) would run: %s connect -config %s\n", r.displayPath(exe), r.displayPath(r.cfgPath))
@@ -803,6 +801,51 @@ func (r *setupRun) traceKey() int {
 	fmt.Fprintf(r.d.stderr, "jevlin setup: could not make the trace key %s: %v\n"+
 		"Searches will make one themselves where they can write there; until then each search from a shell with no hook sends a one-off session id.\n", path, err)
 	return exitOK
+}
+
+// sharingNotice says what this installation sends to the router beside the
+// query, and both ways to stop it, from the config setup has just left in
+// place (on a dry run, the bytes it would write), so a sentence is printed
+// only when it is true of that config: the turn end is described as sent
+// only where turn_end is on, and nothing is described as sent where the
+// trace is off. It asks nothing: -yes and a run with no terminal print the
+// same.
+func (r *setupRun) sharingNotice() {
+	r.say("Sharing with the Jevlin router")
+	data := r.configPlanData
+	if data == nil {
+		data, _ = readExistingConfig(r.cfgPath)
+	}
+	var search config.Search
+	if cfg, err := config.LoadBytes(data, r.d.getenv); err == nil {
+		search = cfg.Search
+	}
+	if offBy := traceOffBy(search.TraceOff, r.d.getenv); len(offBy) > 0 {
+		words := make([]string, 0, len(offBy))
+		for _, by := range offBy {
+			words = append(words, traceOffWords[by])
+		}
+		r.printf("The trace is off (%s), so searches send no trace and no session id,\n"+
+			"and no turn is sent when it ends.\n", strings.Join(words, " and "))
+		return
+	}
+	r.printf("Each search sends a trace: hashed session ids and the assistant's text that\n" +
+		"led to the search, from agents that provide it.\n")
+	if search.TurnEnd {
+		r.printf("When a turn that searched ends, jevlin also sends what you asked, the\n" +
+			"assistant's text and its final answer, and the name, duration and outcome of\n" +
+			"each tool it ran, never a tool's input or output.\n")
+	}
+	r.printf("Anything shaped like a key or token, e-mail addresses, and your account name\n" +
+		"in paths are removed before anything leaves this machine.\n" +
+		"The router keeps it for 30 days.\n")
+	if !search.TurnEnd {
+		r.printf("Whole turns are not sent: turn_end is not on under [search] in %s.\n", r.cfgPath)
+		r.printf("To stop sending the trace: set trace = false under [search] in %s, or JEVLIN_TRACE=off.\n", r.cfgPath)
+		return
+	}
+	r.printf("To stop sending whole turns: set turn_end = false under [search] in %s.\n", r.cfgPath)
+	r.printf("To stop sending both: set trace = false under [search] in %s, or JEVLIN_TRACE=off.\n", r.cfgPath)
 }
 
 func (r *setupRun) closing() {
