@@ -149,5 +149,35 @@
   "prefix": "",
   "unit": "Authorization: x ",
   "suffix": ""
+ },
+ {
+  "name": "a token prefix whose run falls one short, over and over",
+  "prefix": "",
+  "unit": "glpat-aaaaaaaaaaaaaaaaaaa.",
+  "suffix": ""
+ },
+ {
+  "name": "card-shaped groups of four, one after another",
+  "prefix": "",
+  "unit": "4111 ",
+  "suffix": ""
+ },
+ {
+  "name": "groups of four that fail the check, one after another",
+  "prefix": "",
+  "unit": "4111 1111 1111 1112 ",
+  "suffix": ""
+ },
+ {
+  "name": "one-digit groups joined by dashes",
+  "prefix": "",
+  "unit": "1-",
+  "suffix": "1"
+ },
+ {
+  "name": "one run of digits",
+  "prefix": "",
+  "unit": "4",
+  "suffix": ""
  }
 ]
