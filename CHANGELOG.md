@@ -12,6 +12,22 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
+- **Setup and `jevlin connect` say when they are waiting for the claim.** After the claim link
+  they printed nothing for up to three minutes, which read as a hang. One line now says how long
+  the wait lasts and what Ctrl-C does: in setup it ends setup before the environment and coding
+  agents steps, which running setup again finishes; in a bare `connect` it stops the wait, and
+  the next search or connect completes the claim. Setup then says the wait was interrupted and the
+  key is stored, where it used to report "connect failed ... when that is fixed".
+- **A claim seen by setup or `jevlin connect` points to the tiers it opened.** Searches stay on
+  the fast tier after a claim, and nothing said that `balanced` and `max` were now open. The line
+  after `claimed` names them and the two ways to choose one, `jevlin agents tier <tier>` and
+  `/jevlin tier <tier>` in the agent.
+- **A purge names what it leaves in `bin/`.** `uninstall -purge-state` listed what it left in the
+  installation directory but skipped `bin/` as a whole, so a `jevlin-0.6.1` an earlier installer
+  kept there, or a `jevlin.new` the install script could not remove, was never named. It now
+  lists `bin/`'s entries too, in the dry run and the real run, with and without `-binary`, all
+  but the binary, its `.previous`, the self-updater's staging files and the update lock.
+
 - **The scrub removes more credential shapes, and payment card numbers.** Before a trace or a
   turn end leaves the machine, Google API keys, Slack tokens and the secret path of a Slack
   webhook URL, GitLab, npm, Hugging Face and PyPI tokens are now removed, as Stripe, GitHub and

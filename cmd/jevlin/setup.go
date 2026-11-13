@@ -404,7 +404,10 @@ func (r *setupRun) run(homeFlag string, with []string) int {
 	if r.dry {
 		r.printf("(dry run) would run: %s connect -config %s\n", r.displayPath(exe), r.displayPath(r.cfgPath))
 	} else {
-		if code := d.connect([]string{"-config", r.cfgPath}, d.stdin, d.stdout, d.stderr, d.getenv); code != exitOK {
+		if code := d.connect([]string{"-config", r.cfgPath}, d.stdin, d.stdout, d.stderr, d.getenv); code == exitClaimWaitInterrupted {
+			fmt.Fprint(d.stderr, setupClaimWaitInterrupted)
+			return exitTransport
+		} else if code != exitOK {
 			fmt.Fprintf(d.stderr, "\njevlin setup: connect failed (exit %d); run setup again when that is fixed — it picks up where this left off\n", code)
 			return exitTransport
 		}
@@ -424,6 +427,13 @@ func (r *setupRun) run(homeFlag string, with []string) int {
 	r.closing()
 	return exitOK
 }
+
+// setupClaimWaitInterrupted is what setup says when Ctrl-C stopped connect's
+// wait for the claim (exitClaimWaitInterrupted). Nothing failed: the key was
+// stored before the wait, and setup stops before its environment and coding
+// agents steps, as the wait line said it would.
+const setupClaimWaitInterrupted = "\njevlin setup: the claim wait was interrupted; your key is stored. Running setup again picks up where\n" +
+	"this left off and finishes the environment and coding agents steps; the claim completes on the next search or connect.\n"
 
 // otherInstallation: does -home name a directory other than this machine's
 // installation — $JEVLIN_HOME, else ~/.jevlin — and if so, which is

@@ -151,7 +151,17 @@ minutes for you:
 If the link does not open, type the printed code (shown as `AB12-CD34`; case and the hyphen do not
 matter) at `/claim` on the same site. You need not do it then. Until you do, search works on the
 fast tier within a daily cap, which `jevlin limits` shows; claiming opens `balanced` and `max`. The
-next search, or `jevlin connect`, finishes the claim once you have confirmed. The link and the
+next search, or `jevlin connect`, finishes the claim once you have confirmed.
+
+While it waits, setup says so, with how long it will wait. When the wait runs out, setup goes on
+without the claim. Ctrl-C during the wait ends setup there, before its environment and coding
+agents steps; run setup again to finish them, with the same agent and key. A `jevlin connect` run
+on its own waits the same way, and Ctrl-C there only stops the wait.
+
+Searches stay on the fast tier after the claim until you choose another. When setup or
+`jevlin connect` sees the claim, it says so and names the two tiers the claim opened, with the
+commands that choose one: `jevlin agents tier <tier>`, or `/jevlin tier <tier>` in your agent
+([Choosing a tier](#choosing-a-tier)). The link and the
 unclaimed registration last a week; after that, `jevlin connect` registers again and prints a new
 link. Your claim on the platform is undone only at its console.
 
@@ -290,7 +300,9 @@ reported. `-binary` also removes the binary and its `.previous`, never an npm co
 file could not be changed it keeps the binary, because the hooks still in that file run it, and
 exits non-zero. `-purge-state` also destroys the registration, key and config, after you type the
 installation path at a terminal (`-yes` cannot answer it); anything else left in the installation
-directory is listed, since one of those files may hold a key an earlier version used. Your claim on
+directory is listed, since one of those files may hold a key an earlier version used. That includes
+what is in `bin/` beside the binary, such as a release an earlier installer kept there; the binary,
+its `.previous` and the update lock are this installation's, and `-binary` removes them. Your claim on
 the platform is undone only at its console. Close agent sessions first, or a search may recreate
 folders.
 
