@@ -626,7 +626,7 @@ func TestSetupSetsALegacyConfigAsideAndWritesFormatOne(t *testing.T) {
 	if got := s.readFile(aside); string(got) != legacy {
 		t.Fatalf("the older file was not set aside byte for byte:\n--- want ---\n%s\n--- got ---\n%s", legacy, got)
 	}
-	fresh, err := renderFreshConfig(resolveSetupValues(s.home, s.getenv))
+	fresh, err := renderFreshConfig(resolveSetupValues(s.home, s.getenv), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1350,7 +1350,7 @@ func TestSetupReplacesAnAdoptedLegacyConfig(t *testing.T) {
 	if lexists(filepath.Join(sibling, setupConfigFile)) {
 		t.Error("the adopted config is still in the source installation")
 	}
-	fresh, err := renderFreshConfig(resolveSetupValues(s.home, s.getenv))
+	fresh, err := renderFreshConfig(resolveSetupValues(s.home, s.getenv), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1464,7 +1464,7 @@ func seedConfigFixture(t *testing.T, s *setupSandbox, outcome configFixtureOutco
 	switch outcome {
 	case fixtureConfigLeft:
 		var err error
-		data, err = renderFreshConfig(resolveSetupValues(s.home, s.getenv))
+		data, err = renderFreshConfig(resolveSetupValues(s.home, s.getenv), false)
 		if err != nil {
 			t.Fatal(err)
 		}

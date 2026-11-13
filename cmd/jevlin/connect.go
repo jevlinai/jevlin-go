@@ -757,6 +757,10 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 
 	interval := resumePollInterval
 	var reg auth.AgentRegistration
+	// sawClaim: this run knew the agent as unclaimed and then learned it is
+	// claimed, from /me below or from the poll. That is the moment to say
+	// which tiers the claim opened (claimedTiersMessage).
+	var sawClaim bool
 	var existed bool
 	var key string
 
@@ -898,6 +902,7 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 				switch {
 				case meErr == nil && identity.AgentID == reg.AgentID:
 					if identity.Status != reg.Status || !slices.Equal(identity.Scopes, reg.Scopes) || identity.ClaimExpiresAt != reg.ClaimExpiresAt {
+						sawClaim = reg.Status == "unclaimed" && identity.Status == "claimed"
 						reg.Status, reg.Scopes, reg.ClaimExpiresAt = identity.Status, identity.Scopes, identity.ClaimExpiresAt
 						if err := store.SaveAgentRegistration(reg); err != nil {
 							fmt.Fprintln(stderr, "jevlin:", err)
@@ -1113,11 +1118,19 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 	}
 
 	deadline := time.Now().Add(connectPollBudget)
+	waitAnnounced := false
 	for {
+		wasUnclaimed := reg.Status == "unclaimed"
 		callCtx, callCancel := context.WithTimeout(ctx, roundTrip)
 		done, code := pollOnce(callCtx, stdout, stderr, client, store, &reg, key)
 		callCancel()
 		if done {
+			// This run saw the claim happen: the moment the other tiers
+			// open is the one to say how to choose one. Text form only.
+			sawClaim = sawClaim || wasUnclaimed
+			if !machine && sawClaim && reg.Status == "claimed" {
+				fmt.Fprintln(stdout, claimedTiersMessage)
+			}
 			return code
 		}
 		if time.Now().After(deadline) {
@@ -1133,6 +1146,13 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 				fmt.Fprintln(stdout, "\n"+claimTimeoutMessage)
 			}
 			return exitOK
+		}
+		// The first poll did not settle it, so this run now waits: said
+		// once, in the text form only (machine mode's stdout is discarded
+		// anyway, and a resume never reaches this loop).
+		if !machine && !waitAnnounced {
+			waitAnnounced = true
+			fmt.Fprintln(stdout, "\n"+claimWaitMessage(connectPollBudget, admitted))
 		}
 		// WP2-adversarial-review finding 11: the platform's advertised
 		// interval is already floor-and-ceiling clamped (pkg/platform),
@@ -1150,6 +1170,10 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 		}
 		select {
 		case <-ctx.Done():
+			if admitted && !machine {
+				// Setup's run: setup names the interrupt itself.
+				return exitClaimWaitInterrupted
+			}
 			fmt.Fprintln(stderr, "jevlin: connect: interrupted")
 			return exitTransport
 		case <-time.After(sleep):

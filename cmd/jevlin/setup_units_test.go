@@ -53,7 +53,7 @@ func TestTOMLStringRoundTripsEveryCharacterClass(t *testing.T) {
 func TestFreshConfigQuotesEveryPath(t *testing.T) {
 	home := `/tmp/we ird"q\b$;&'x/.jevlin`
 	v := resolveSetupValues(home, func(string) string { return "" })
-	data, err := renderFreshConfig(v)
+	data, err := renderFreshConfig(v, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestConfigPolicyUnits(t *testing.T) {
 	v := resolveSetupValues(filepath.Join(dir, "home"), func(string) string { return "" })
 	path := filepath.Join(dir, "jevlin.toml")
 	none := func(string) bool { return false }
-	fresh, err := renderFreshConfig(v)
+	fresh, err := renderFreshConfig(v, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestConfigPolicyUnits(t *testing.T) {
 	} {
 		plan, err = planSetupConfig(path, []byte(legacy), v, validateConfigBytes, none)
 		// The fresh file, with what the older one named carried into it.
-		carried, rerr := renderFreshConfig(v.carrying(readEarlierConfig([]byte(legacy))))
+		carried, rerr := renderFreshConfig(v.carrying(readEarlierConfig([]byte(legacy))), false)
 		if rerr != nil {
 			t.Fatal(rerr)
 		}

@@ -73,8 +73,9 @@ and the Agent CLI both load.
 The hooks keep one lineage file per conversation, so two chats on one project do not relabel each
 other's searches. `preToolUse` puts the conversation's identity in front of exactly the search the
 skill renders and rewrites nothing else; the shell hook allows exactly that command, and exactly the
-fetch the skill renders. The hook that runs when you submit a prompt keeps nothing unless you
-turned `turn_end` on.
+fetch the skill renders. The hook that runs when you submit a prompt keeps nothing unless `turn_end`
+is on. The trace's text is the latest reply (`afterAgentResponse`); the model's reasoning, which
+`afterAgentThought` hands over, is neither kept nor sent, and that hook only answers.
 
 On Windows, commands run in the terminal `terminal.integrated.defaultProfile.windows` names, which
 this client cannot read, so the skill carries both forms: "If your terminal is PowerShell" and "If

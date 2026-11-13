@@ -134,7 +134,9 @@ it.
 
 `~/.jevlin/jevlin.toml` is in configuration format 1: a `schema = 1` line, `[router]`,
 `[platform]` and `[agents]` with their URLs, and `[search]` with the state and sessions directories
-([reference, Config](reference.md#config) has every key). A config already in that format is left
+and, in a config it creates where there was none, `turn_end = true`
+([reference, Config](reference.md#config) has every key). Setup then says what each search and
+turn end sends and both ways to stop it ([privacy, Switching it off](privacy.md#switching-it-off)). A config already in that format is left
 byte for byte; one with a mistake in it stops setup with the error. One from an older jevlin, with
 no `schema` line, is set aside as `jevlin.toml.old` and a fresh file written, your registration and
 key kept ([Moving from 0.6.x](#moving-from-06x)).
@@ -151,9 +153,21 @@ minutes for you:
 If the link does not open, type the printed code (shown as `AB12-CD34`; case and the hyphen do not
 matter) at `/claim` on the same site. You need not do it then. Until you do, search works on the
 fast tier within a daily cap, which `jevlin limits` shows; claiming opens `balanced` and `max`. The
-next search, or `jevlin connect`, finishes the claim once you have confirmed. The link and the
+next search, or `jevlin connect`, finishes the claim once you have confirmed.
+
+While it waits, setup says so, with how long it will wait. When the wait runs out, setup goes on
+without the claim. Ctrl-C during the wait ends setup there, before its environment and coding
+agents steps; run setup again to finish them, with the same agent and key. A `jevlin connect` run
+on its own waits the same way, and Ctrl-C there only stops the wait.
+
+Searches stay on the fast tier after the claim until you choose another. When setup or
+`jevlin connect` sees the claim, it says so and names the two tiers the claim opened, with the
+commands that choose one: `jevlin agents tier <tier>`, or `/jevlin tier <tier>` in your agent
+([Choosing a tier](#choosing-a-tier)). The link and the
 unclaimed registration last a week; after that, `jevlin connect` registers again and prints a new
-link. Your claim on the platform is undone only at its console.
+link. Your claim on the platform is undone only at its console. `jevlin status` reads only the
+record on this machine, so it says unclaimed until a search or `jevlin connect` has recorded the
+claim.
 
 ## Check it works
 
@@ -164,7 +178,8 @@ jevlin doctor          # one line per check
 jevlin search -format model "what is proof of authority consensus"
 ```
 
-Restart any agent that was already open. Your agent sends JSON on stdin instead:
+A Claude Code session already open picks up the skill and hooks; restart any other agent that was
+already open, as setup's closing message says. Your agent sends JSON on stdin instead:
 
 ```bash
 jevlin search --stdin <<'JSON'
@@ -290,7 +305,9 @@ reported. `-binary` also removes the binary and its `.previous`, never an npm co
 file could not be changed it keeps the binary, because the hooks still in that file run it, and
 exits non-zero. `-purge-state` also destroys the registration, key and config, after you type the
 installation path at a terminal (`-yes` cannot answer it); anything else left in the installation
-directory is listed, since one of those files may hold a key an earlier version used. Your claim on
+directory is listed, since one of those files may hold a key an earlier version used. That includes
+what is in `bin/` beside the binary, such as a release an earlier installer kept there; the binary,
+its `.previous` and the update lock are this installation's, and `-binary` removes them. Your claim on
 the platform is undone only at its console. Close agent sessions first, or a search may recreate
 folders.
 

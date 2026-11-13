@@ -12,11 +12,43 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
+- **New installations send the turn end; existing ones are unchanged.** A config `jevlin setup`
+  creates now has `[search] turn_end = true`, so a turn that searched also sends what you asked,
+  the assistant's text and its final answer, each tool's name, duration and outcome (never its
+  input or output), and the model and token counts; `turn_end = false` under `[search]` stops
+  that, the new `trace = false` there or `JEVLIN_TRACE=off` stops it and the trace, and a config
+  without the line, which is every config an earlier version wrote, still sends none. Setup says this, with the config's path,
+  where it used to print two lines about "search context".
+- **Cursor no longer sends the model's reasoning.** The trace's text under Cursor is its latest
+  reply; `afterAgentThought` still runs, from hooks files already installed, and records nothing.
+- **`jevlin status` shows the trace and the turn end**, each on or off and why (`status -json`
+  carries them as `trace` and `turn_end`), and under an unclaimed agent it says that `jevlin
+  connect` records a claim made on the website.
+- **Setup's closing message says which agents to restart, first.** Claude Code picks up the new
+  skill and hooks in a session already open; every other agent it set up is still told to
+  restart.
+
 - **The skill no longer asks for an `objective` on every search.** The field is experimental:
   the router is still testing how it uses one. The skill now lists it as optional and its example
   request leaves it out, where 0.8.0 asked for one with every search; `search --stdin`, `fetch`
   and the MCP tools still accept it as before. An installed skill takes the new text the next time
   it is rendered, by `jevlin setup`, `jevlin agents install` or an upgrade.
+
+- **Setup and `jevlin connect` say when they are waiting for the claim.** After the claim link
+  they printed nothing for up to three minutes, which read as a hang. One line now says how long
+  the wait lasts and what Ctrl-C does: in setup it ends setup before the environment and coding
+  agents steps, which running setup again finishes; in a bare `connect` it stops the wait, and
+  the next search or connect completes the claim. Setup then says the wait was interrupted and the
+  key is stored, where it used to report "connect failed ... when that is fixed".
+- **A claim seen by setup or `jevlin connect` points to the tiers it opened.** Searches stay on
+  the fast tier after a claim, and nothing said that `balanced` and `max` were now open. The line
+  after `claimed` names them and the two ways to choose one, `jevlin agents tier <tier>` and
+  `/jevlin tier <tier>` in the agent.
+- **A purge names what it leaves in `bin/`.** `uninstall -purge-state` listed what it left in the
+  installation directory but skipped `bin/` as a whole, so a `jevlin-0.6.1` an earlier installer
+  kept there, or a `jevlin.new` the install script could not remove, was never named. It now
+  lists `bin/`'s entries too, in the dry run and the real run, with and without `-binary`, all
+  but the binary, its `.previous`, the self-updater's staging files and the update lock.
 
 - **The scrub removes more credential shapes, and payment card numbers.** Before a trace or a
   turn end leaves the machine, Google API keys, Slack tokens and the secret path of a Slack

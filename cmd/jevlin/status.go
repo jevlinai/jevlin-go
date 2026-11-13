@@ -92,11 +92,20 @@ type agentIdentityFacts struct {
 	// Now is sampled once by the gatherer, so the age the renderers print
 	// for the stamp is one instant.
 	Now time.Time
+
+	// TraceOffBy names the switches that turn the trace off (traceOffBy):
+	// the config's [search] trace = false, JEVLIN_TRACE in this
+	// environment, both, or neither. TurnEnd is [search] turn_end as the
+	// config reads; the turn end is sent only when it is on and the trace
+	// is too.
+	TraceOffBy []string
+	TurnEnd    bool
 }
 
 func gatherAgentIdentity(cfg *config.Config, src string, getenv func(string) string) agentIdentityFacts {
 	f := agentIdentityFacts{ConfigSource: src, StateDir: cfg.Search.StateDir, PlatformBaseURL: cfg.Platform.BaseURL}
 	f.Update, f.Now = gatherUpdateFacts(cfg, getenv), time.Now()
+	f.TraceOffBy, f.TurnEnd = traceOffBy(cfg.Search.TraceOff, getenv), cfg.Search.TurnEnd
 	store, err := auth.OpenStoreExisting(cfg.Search.StateDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -116,9 +125,59 @@ func gatherAgentIdentity(cfg *config.Config, src string, getenv func(string) str
 	return f
 }
 
+// turnEndOffBy names why the turn end is off: the config, when [search]
+// turn_end is not on; the trace, when either switch turned it off. Empty
+// means a turn that searched is sent when it ends.
+func turnEndOffBy(f agentIdentityFacts) []string {
+	var by []string
+	if !f.TurnEnd {
+		by = append(by, turnEndOffByConfig)
+	}
+	if len(f.TraceOffBy) > 0 {
+		by = append(by, turnEndOffByTrace)
+	}
+	return by
+}
+
+// What turns the turn end off, besides the trace's own switches.
+const (
+	turnEndOffByConfig = "config"
+	turnEndOffByTrace  = "trace"
+)
+
+// The words each reason is shown in, per line.
+var (
+	traceOffWords = map[string]string{
+		traceOffByConfig:      "trace = false in the config",
+		traceOffByEnvironment: "JEVLIN_TRACE in this environment",
+	}
+	turnEndOffWords = map[string]string{
+		turnEndOffByConfig: "turn_end is not on in the config",
+		turnEndOffByTrace:  "the trace is off",
+	}
+)
+
+// switchLineText is a status line for the trace or the turn end: on, or off
+// with every reason, in the words a participant would look for.
+func switchLineText(offBy []string, words map[string]string) string {
+	if len(offBy) == 0 {
+		return "on"
+	}
+	reasons := make([]string, 0, len(offBy))
+	for _, by := range offBy {
+		reasons = append(reasons, words[by])
+	}
+	return "off (" + strings.Join(reasons, "; ") + ")"
+}
+
+// unclaimedHint follows every unclaimed agent line.
+const unclaimedHint = "        Claimed it on the website? `jevlin connect` updates this."
+
 func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) {
 	printConfigSource(stdout, f.ConfigSource, f.StateDir)
 	fmt.Fprintf(stdout, "update:  %s\n", updateLineText(f.Update, f.Now))
+	fmt.Fprintf(stdout, "%-8s %s\n", "trace:", switchLineText(f.TraceOffBy, traceOffWords))
+	fmt.Fprintf(stdout, "%-8s %s\n", "turn end:", switchLineText(turnEndOffBy(f), turnEndOffWords))
 	if f.StoreMissing {
 		fmt.Fprintln(stdout, "agent:   not registered — run `jevlin connect`")
 		return
@@ -163,6 +222,10 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) {
 			fmt.Fprintln(stdout, "agent:  unclaimed — the stored claim link failed validation and is not shown. "+
 				"Run `jevlin connect` for a fresh one.")
 		}
+		// status reads only the record on this machine, and a claim made on
+		// the website reaches it with the next connect (or search), not
+		// before: say so where the participant is looking.
+		fmt.Fprintln(stdout, unclaimedHint)
 	case "expired":
 		fmt.Fprintln(stdout, "agent:  expired — run `jevlin connect` again for a new registration")
 	case "claimed":
