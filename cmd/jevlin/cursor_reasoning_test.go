@@ -65,8 +65,11 @@ func cursorTurn(t *testing.T, events ...[2]string) (trace []byte, turnEnd []byte
 // place, reaches both, so the fixture is one that carries text.
 func TestACursorThoughtReachesNoTraceAndNoTurnEnd(t *testing.T) {
 	trace, turnEnd, _ := cursorTurn(t, [2]string{"afterAgentResponse", cursorReply})
-	if !strings.Contains(string(trace), cursorReply) || !strings.Contains(string(turnEnd), cursorReply) {
-		t.Fatalf("the control's reply did not reach the trace and the turn end:\ntrace %s\nturn end %s", trace, turnEnd)
+	if !strings.Contains(string(trace), cursorReply) {
+		t.Fatalf("the control's reply did not reach the trace: %s", trace)
+	}
+	if !strings.Contains(string(turnEnd), cursorReply) {
+		t.Errorf("the control's reply did not reach the turn end: %s", turnEnd)
 	}
 	for name, events := range map[string][][2]string{
 		"a thought alone":               {{"afterAgentThought", cursorThought}},
