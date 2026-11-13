@@ -12,9 +12,9 @@
 several search engines at once and returns a single merged list, with every result naming the
 engines that found it.
 
-On the hosted service one call can ask Exa, Brave, Parallel, Perplexity, Serper and TinyFish, among
-others. One account and one key cover all of them: the router holds the engine keys, so you need
-none of your own.
+On the hosted service one call can ask multiple engines such as Exa, Brave, Parallel, Perplexity,
+Serper and TinyFish among them, depending on the tier you choose. One account and one key cover
+all of them: the router holds the engine keys, so you need none of your own.
 
 It works in Claude Code, Cursor, Codex, opencode, Pi and Hermes. It is one binary your agent
 calls, a skill that teaches the agent the call, and hooks where the agent has them. No daemon runs
