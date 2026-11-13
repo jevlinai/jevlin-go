@@ -332,7 +332,7 @@ func jsBridgedCommand(t *testing.T, host, command string, sh shellKind, goos str
  const mod = await import('data:text/javascript;base64,'+Buffer.from(input.source).toString('base64'));
  let command = input.command;
  if (input.host === 'opencode') {
-  const hooks = await mod.JevlinLineage({client:{session:{messages:async()=>({data:[]})}}});
+  const hooks = await mod.default.server({client:{session:{messages:async()=>({data:[]})}}});
   const output = {args:{command}};
   await hooks['tool.execute.before']({tool:'bash',sessionID:'synthetic-session',callID:'synthetic-call'}, output);
   command = output.args.command;

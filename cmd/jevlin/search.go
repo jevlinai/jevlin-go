@@ -873,6 +873,27 @@ func traceOff(getenv func(string) string) bool {
 	return false
 }
 
+// opencodeSessionEnv is the session opencode 2 exports to every shell its
+// shell tool starts: the raw id, set by opencode itself after a plugin's
+// hooks have run.
+const opencodeSessionEnv = "OPENCODE_SESSION_ID"
+
+// anotherOpencodeSessions reports a bridge from the opencode plugin that
+// names a session other than the one this shell belongs to. On opencode 2
+// the plugin hands the bridge over through the shell's environment, and is
+// told the command the shell will run but not which call it is for, so two
+// sessions running the same command at the same moment can cross. The shell
+// itself says whose it is; a bridge that disagrees is not this search's and
+// is not used. With no session exported (opencode 1) the bridge is believed
+// as before.
+func anotherOpencodeSessions(env *traceEnvelope, getenv func(string) string) bool {
+	if env.Harness != "opencode" {
+		return false
+	}
+	sid := getenv(opencodeSessionEnv)
+	return sid != "" && env.SessionID != traceHash(sid)
+}
+
 func searchTrace(ops searchOps, m config.Search, stateDir string, getenv func(string) string) (env *traceEnvelope, foreignBridge bool) {
 	if traceOff(getenv) {
 		return nil, false
@@ -883,7 +904,7 @@ func searchTrace(ops searchOps, m config.Search, stateDir string, getenv func(st
 	if bridge := getenv(bridgeEnv); bridge != "" {
 		if lineageDeclared {
 			foreignBridge = true
-		} else if decoded := decodeTraceBridge(bridge); decoded != nil {
+		} else if decoded := decodeTraceBridge(bridge); decoded != nil && !anotherOpencodeSessions(decoded, getenv) {
 			if harness != "" {
 				decoded.Harness = harness
 			}
