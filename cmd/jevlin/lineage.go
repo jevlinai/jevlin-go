@@ -98,8 +98,9 @@ type lineageFile struct {
 	Seq             int            `json:"seq,omitempty"`
 	History         []traceHistory `json:"history,omitempty"`
 	// AnswerTurnID is the turn the assistant text in History was written in,
-	// when a host's hook knows it (Cursor's afterAgentResponse). The turn end
-	// sends that text only under this turn, never under a later one.
+	// when a host's hook knows it (Cursor's afterAgentResponse). The search's
+	// trace and the turn end send that text only under this turn, never under
+	// a later one.
 	AnswerTurnID string `json:"answer_turn_id,omitempty"`
 	// The rest of a turn, for a host whose hooks each carry a piece of it
 	// (Cursor). Written only when the installation opted in to the turn end,
@@ -420,6 +421,18 @@ func (sc *lineageFile) envelope() *traceEnvelope {
 		CallID:          sc.CallID,
 		Window:          sc.Window,
 		Seq:             sc.Seq,
+	}
+	// Cursor's reply is written by afterAgentResponse, stamped with the turn
+	// it was written in (AnswerTurnID), and nothing clears it when the next
+	// turn starts: sent as it lay, a new turn's first search carried the
+	// previous turn's reply as the text that led to it. So a Cursor file's
+	// text goes only under the turn that wrote it (the search's own hook
+	// stamps TurnID with the same hash just before it runs), and a reply no
+	// turn can be named for goes under none. Every other host writes its
+	// text with the call that sends it (Claude Code) or writes none (Codex),
+	// so the rule is Cursor's alone.
+	if sc.Harness == "cursor" && (sc.AnswerTurnID == "" || sc.AnswerTurnID != sc.TurnID) {
+		return env
 	}
 	// A lineage file an earlier version's Cursor hook wrote can hold the
 	// model's reasoning; it is never sent.

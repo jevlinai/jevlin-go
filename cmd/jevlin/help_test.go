@@ -126,8 +126,12 @@ func TestHelpIsAnsweredOnStdoutWithExitZero(t *testing.T) {
 			}
 		}
 	}
-	if code, ok, out, _ := ask("agents", "status", "-h"); !ok || code != exitOK || out != agentsUsage {
-		t.Errorf("jevlin agents status -h: exit %d, answered %v, stdout %q", code, ok, out)
+	for _, sub := range agentsSubcommands {
+		for _, flag := range []string{"-h", "-help", "--help"} {
+			if code, ok, out, _ := ask("agents", sub, flag); !ok || code != exitOK || out != agentsUsage {
+				t.Errorf("jevlin agents %s %s: exit %d, answered %v, stdout %q", sub, flag, code, ok, out)
+			}
+		}
 	}
 	if code, ok, out, errOut := ask("help", "nonesuch"); !ok || code != exitUsage || out != "" || !strings.Contains(errOut, "nonesuch") {
 		t.Errorf("jevlin help nonesuch: exit %d, stdout %q, stderr %q", code, out, errOut)
@@ -176,4 +180,30 @@ func answersHelpFirst(fn *ast.FuncDecl) bool {
 	}
 	id, ok := call.Fun.(*ast.Ident)
 	return ok && id.Name == "helpRequested"
+}
+
+// Only a subcommand agents has is answered with the agents help. A misspelled
+// one is not help asked for: it goes on to agentsMain, which names it as
+// unknown and exits 2, so a script that typed it learns that it did.
+func TestAMisspelledAgentsSubcommandIsAnErrorNotHelp(t *testing.T) {
+	for _, sub := range []string{"instal", "stauts", "nonesuch", "Install"} { //nolint:misspell // the misspellings are the input under test
+		var out, errOut bytes.Buffer
+		if code, ok := helpRequested("agents", []string{sub, "-h"}, &out, &errOut); ok {
+			t.Errorf("jevlin agents %s -h was answered as help: exit %d, stdout %q", sub, code, out.String())
+			continue
+		}
+		code := agentsMain(agentOps{}, []string{sub, "-h"}, strings.NewReader(""), &out, &errOut, func(string) string { return "" })
+		if code != exitUsage || !strings.Contains(errOut.String(), "unknown subcommand") || out.Len() != 0 {
+			t.Errorf("jevlin agents %s -h: exit %d, stdout %q, stderr %q; want exit %d naming the unknown subcommand", sub, code, out.String(), errOut.String(), exitUsage)
+		}
+	}
+	// The list helpRequested reads is agentsMain's: every name on it is one
+	// agentsMain runs, never one it calls unknown.
+	for _, sub := range agentsSubcommands {
+		var out, errOut bytes.Buffer
+		agentsMain(agentOps{}, []string{sub, "-h"}, strings.NewReader(""), &out, &errOut, func(string) string { return "" })
+		if strings.Contains(errOut.String(), "unknown subcommand") {
+			t.Errorf("agentsSubcommands names %q, which agentsMain does not run: %s", sub, errOut.String())
+		}
+	}
 }

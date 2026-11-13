@@ -3316,8 +3316,20 @@ func safetyOutcome(wrote int) string {
 // fully installed, for the next run to finish, rather than half of it. A
 // held removal is not counted again: the failed write already was.
 func commitPlan(ops agentOps, p *agentPlan, stdout, stderr io.Writer) int {
+	failures, _ := commitPlanByHost(ops, p, stdout, stderr)
+	return failures
+}
+
+// commitPlanByHost is commitPlan, also answering which hosts had a write or
+// a removal fail: setup tells a person to restart only a host whose every
+// change was made. It writes and removes exactly what commitPlan does.
+func commitPlanByHost(ops agentOps, p *agentPlan, stdout, stderr io.Writer) (int, map[string]bool) {
 	failures := 0
 	failedHosts := map[string]bool{}
+	// incomplete is failedHosts plus the hosts a removal failed for. It is
+	// kept apart because failedHosts holds a host's later removals, and a
+	// failed removal must not hold the next one.
+	incomplete := map[string]bool{}
 	for _, wr := range p.writes {
 		if err := ops.mkdirAll(filepath.Dir(wr.path), 0o700); err != nil {
 			fmt.Fprintf(stderr, "jevlin agents: %s: %v\n", filepath.Dir(wr.path), err)
@@ -3342,11 +3354,15 @@ func commitPlan(ops agentOps, p *agentPlan, stdout, stderr io.Writer) int {
 		if err := ops.removeAll(r.path); err != nil {
 			fmt.Fprintf(stderr, "jevlin agents: remove %s: %v\n", r.path, err)
 			failures++
+			incomplete[r.surface] = true
 			continue
 		}
 		fmt.Fprintf(stdout, "removed %s\n", tilde(ops.home, r.path))
 	}
-	return failures
+	for h := range failedHosts {
+		incomplete[h] = true
+	}
+	return failures, incomplete
 }
 
 func tilde(home, path string) string {

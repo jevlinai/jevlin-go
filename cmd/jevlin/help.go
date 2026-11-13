@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 )
 
@@ -98,6 +99,10 @@ func commandHelp(name string) (string, bool) {
 	return "", false
 }
 
+// agentsSubcommands are the subcommands agentsMain runs, the ones whose -h
+// is the agents help.
+var agentsSubcommands = []string{"install", "status", "uninstall", "prefer", "tier"}
+
 // isHelpFlag is the spelling of a request for help that every command takes.
 func isHelpFlag(arg string) bool {
 	return arg == "-h" || arg == "-help" || arg == "--help"
@@ -124,6 +129,12 @@ func helpRequested(name string, args []string, stdout, stderr io.Writer) (int, b
 	}
 	if name == "agents" && len(args) == 2 && isHelpFlag(args[1]) {
 		// agents install -h and the rest: the subcommands share one help.
+		// Only a subcommand agents has: a misspelled one goes on to
+		// agentsMain, which names it as unknown and exits 2, rather than
+		// answering help with exit 0 as if it existed.
+		if !slices.Contains(agentsSubcommands, args[0]) {
+			return 0, false
+		}
 		args = args[1:]
 	}
 	if name == "hook" || len(args) != 1 || !isHelpFlag(args[0]) {

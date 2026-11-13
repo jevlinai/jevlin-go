@@ -53,7 +53,12 @@ const (
 // sequences of digit groups, each group a maximal run of digits and each
 // joined to the next by one space or one dash, and tries a card at each
 // group of a sequence in turn, taking the first that holds and going on
-// after it. Every try reads at most five groups, so the scan is linear.
+// after it. The boundary rules hold at the card's own two ends wherever in
+// its sequence it starts or ends: the space or dash joining it to a
+// neighboring group is what is beside it, so a card joined by a dash to
+// more digits (build-12-4111-1111-1111-1111) is part of another number, and
+// one joined by a space is not. Every try reads at most five groups, so the
+// scan is linear.
 func redactCardNumbers(s string) string {
 	var b strings.Builder
 	var groups [][2]int
@@ -99,7 +104,7 @@ func redactCardNumbers(s string) string {
 
 // cardAt is how many groups, from groups[g], make a card number, or 0.
 func cardAt(s string, groups [][2]int, g int) int {
-	if g == 0 && !cardStartsFree(s, groups[0][0]) {
+	if !cardStartsFree(s, groups[g][0]) {
 		return 0
 	}
 	length := func(k int) int {
@@ -110,7 +115,7 @@ func cardAt(s string, groups [][2]int, g int) int {
 	}
 	try := func(n int) bool {
 		end := g + n - 1
-		if end >= len(groups) || (end == len(groups)-1 && !cardEndsFree(s, groups[end][1])) {
+		if end >= len(groups) || !cardEndsFree(s, groups[end][1]) {
 			return false
 		}
 		return cardDigitsValid(s, groups[g:end+1])
@@ -137,7 +142,8 @@ func cardAt(s string, groups [][2]int, g int) int {
 
 // cardStartsFree reports whether a number starting at p is not the end of a
 // word, a decimal, a phone number or a hyphenated identifier. s[p-1] is not
-// a digit: p starts a sequence.
+// a digit: p starts a group, and inside a sequence s[p-1] is the space or
+// dash that joins it to the group before.
 func cardStartsFree(s string, p int) bool {
 	if p == 0 {
 		return true
@@ -151,9 +157,10 @@ func cardStartsFree(s string, p int) bool {
 	return true
 }
 
-// cardEndsFree reports whether a number ending at p, the end of its
-// sequence, is not the start of a word, a decimal, a file name, a
-// hyphenated identifier or an address.
+// cardEndsFree reports whether a number ending at p, the end of a group, is
+// not the start of a word, a decimal, a file name, a hyphenated identifier or
+// an address. Inside a sequence s[p] is the space or dash that joins it to
+// the group after.
 func cardEndsFree(s string, p int) bool {
 	if p == len(s) {
 		return true

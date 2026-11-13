@@ -40,7 +40,7 @@ func newChannelProbe(t *testing.T) *channelProbe {
 	fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(routerBody)) })
 	h := fixedSearchOps(filepath.Join(root, "src"))
 	path := lineagePath(filepath.Join(root, "sessions"), root)
-	if err := saveLineage(h.ops.hook, path, &lineageFile{Harness: "cursor", SessionID: "cursor-conv", TurnID: "cursor-gen", CallID: "cursor-call", Window: "none", Seq: 3,
+	if err := saveLineage(h.ops.hook, path, &lineageFile{Harness: "cursor", SessionID: "cursor-conv", TurnID: "cursor-gen", AnswerTurnID: "cursor-gen", CallID: "cursor-call", Window: "none", Seq: 3,
 		History: []traceHistory{{Role: "assistant", Text: "Let me check."}}}, h.ops.now()); err != nil {
 		t.Fatal(err)
 	}

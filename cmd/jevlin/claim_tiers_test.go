@@ -7,6 +7,8 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -83,6 +85,65 @@ func TestAClaimDuringTheWaitPointsToTheTiers(t *testing.T) {
 	wait := strings.Index(got, claimWaitPrefix)
 	if n := strings.Count(got, claimedTiersMessage); n != 1 || !strings.Contains(got[wait:], "claimed (scopes: credits)\n"+claimedTiersMessage+"\n") {
 		t.Errorf("the claim found by the poll is followed by the tiers pointer once (%d):\n%s", n, got)
+	}
+}
+
+// A claim the poll finds but cannot record is not announced: the record
+// still says unclaimed, connect exits non-zero naming the failed save, and
+// the tiers pointer, which says the claim opened them, is not printed. The
+// save fails because agent.json's name is taken by a non-empty directory,
+// put there by the stub between answering "claimed" and the client saving
+// it, on every OS (no permission bits, which a root runner ignores).
+func TestAClaimThatCouldNotBeSavedDoesNotPointToTheTiers(t *testing.T) {
+	withShortConnectTimings(t)
+	connectPollBudget = 5 * time.Second
+	platform := newStubPlatform(t)
+	cfgPath, stateDir := connectConfig(t, platform.srv.URL, "")
+	var swapErr error
+	swapped := false
+	platform.mu.Lock()
+	platform.statusHook = func(status string) {
+		// Called with the stub's lock released; taken here so the test reads
+		// what it wrote.
+		platform.mu.Lock()
+		defer platform.mu.Unlock()
+		if status != "claimed" || swapped {
+			return
+		}
+		swapped = true
+		record := filepath.Join(stateDir, "agent.json")
+		if swapErr = os.Remove(record); swapErr == nil {
+			if swapErr = os.Mkdir(record, 0o700); swapErr == nil {
+				swapErr = os.WriteFile(filepath.Join(record, "keep"), []byte("x"), 0o600)
+			}
+		}
+	}
+	platform.mu.Unlock()
+	var out, errOut lockedBuffer
+	done := make(chan int, 1)
+	go func() {
+		args := []string{"-config", cfgPath}
+		done <- cmdConnect(args, &bytes.Buffer{}, &out, &errOut, installedAs(noEnv, args))
+	}()
+	if !awaitClaimWait(&out, 4*time.Second) {
+		t.Fatalf("connect never waited (exit %d):\n%s\n%s", <-done, out.String(), errOut.String())
+	}
+	platform.claim("credits")
+	code := <-done
+	platform.mu.Lock()
+	gotSwap, err := swapped, swapErr
+	platform.mu.Unlock()
+	if !gotSwap || err != nil {
+		t.Fatalf("the save was never made to fail (swapped %v: %v), so nothing was tested", gotSwap, err)
+	}
+	if code != exitTransport {
+		t.Errorf("connect exited %d after failing to record the claim, want %d\n%s\n%s", code, exitTransport, out.String(), errOut.String())
+	}
+	if strings.Contains(out.String(), claimedTiersMessage) {
+		t.Errorf("a claim that was not recorded pointed to the tiers it opened:\n%s", out.String())
+	}
+	if !strings.Contains(errOut.String(), "jevlin:") {
+		t.Errorf("the failed save was not named on stderr:\n%s", errOut.String())
 	}
 }
 
