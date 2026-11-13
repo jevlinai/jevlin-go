@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "jevlin",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Sets up Jevlin, supersearch for coding agents: one web search that asks several search engines at once and returns a single merged list, with every result naming the engines that found it. Plans and prices are at jevlin.ai. Installs the jevlin client and runs its setup, which writes this agent's own jevlin skill and hooks.",
   "author": {
     "name": "Jevlin",
