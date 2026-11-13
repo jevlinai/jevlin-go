@@ -21,6 +21,21 @@ rewritten to match newer behaviour; the newer entry says what changed.
   that shape with nothing joined to it, such as a decimal id, goes with them. `docs/privacy.md`
   lists them.
 
+- **The npm install unpacks on Windows when started from PowerShell 7.** The postinstall runs
+  Windows PowerShell to unpack the release, and under PowerShell 7 it inherited a module path
+  that put PowerShell 7's `Expand-Archive` first, which fails there with "Cannot find an overload
+  for ExtractToDirectory". The postinstall now leaves that path out, so Windows PowerShell uses
+  its own.
+
+- **The help is an index, and each command has its own.** `jevlin help` lists the commands, one
+  line each, with examples, where it was a 157-line page of paragraphs. `jevlin help <command>`
+  and `jevlin <command> -h` show that command's usage, flags as a table, examples and, for the
+  commands an agent calls, the request and the exit status; `jevlin help config` holds what the
+  index used to say about the config. `jevlin help search` used to print the index, `search -h`
+  and the other commands that had no help of their own printed Go's list of flag defaults and
+  exited 2, and `version -h` printed the version; each now prints its help and exits 0, and a
+  flag that does not parse shows the command's help.
+
 ## v0.8.0 — 2026-11-11
 
 This release reads the same configuration as 0.7.0, so nothing needs to run after installing it:
