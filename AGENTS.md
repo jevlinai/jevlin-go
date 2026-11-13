@@ -76,7 +76,7 @@ the named tests.
    outcome — `turnStep` has no field for more, and one must not be added. A command is read for
    one purpose, to recognize our own search, and is not kept. Thinking blocks and a subagent's own
    records are not sent. The model's reasoning is never sent by any harness, in the trace or the
-   turn end: Cursor's `afterAgentThought` records nothing (`hook.go`).
+   turn end: Cursor's thought hook, afterAgentThought, records nothing (`hookCursorOn`).
 3. **Every credential- or key-bearing `http.Client` has an explicit redirect policy.** No bare
    client on `net/http`'s default (follow-10, body replayed on 307/308). Same-origin bounded
    (`auth.SameOriginRedirects`) or refuse (`http.ErrUseLastResponse`) — per client; the forbidden
