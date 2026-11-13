@@ -10,15 +10,20 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
-## Unreleased
+## v0.8.1 — 2026-11-14
+
+This release reads the same configuration as 0.8.0, and an existing installation's config is not
+changed: its turn end stays off unless the config says `turn_end = true`. It is a patch release,
+so a native installation's daily check installs it on its own and re-renders the skills and hooks
+of the agents it set up; after an npm update, `jevlin agents install` does.
 
 - **New installations send the turn end; existing ones are unchanged.** A config `jevlin setup`
   creates now has `[search] turn_end = true`, so a turn that searched also sends what you asked,
   the assistant's text and its final answer, each tool's name, duration and outcome (never its
   input or output), and the model and token counts; `turn_end = false` under `[search]` stops
   that, the new `trace = false` there or `JEVLIN_TRACE=off` stops it and the trace, and a config
-  without the line, which is every config an earlier version wrote, still sends none. Setup says this, with the config's path,
-  where it used to print two lines about "search context".
+  without the line, which is every config an earlier version wrote, still sends none. Setup says
+  this, with the config's path, where it used to print two lines about "search context".
 - **Cursor no longer sends the model's reasoning.** The trace's text under Cursor is its latest
   reply; `afterAgentThought` still runs, from hooks files already installed, and records nothing.
 - **`jevlin status` shows the trace and the turn end**, each on or off and why (`status -json`
@@ -27,13 +32,11 @@ rewritten to match newer behaviour; the newer entry says what changed.
 - **Setup's closing message says which agents to restart, first.** Claude Code picks up the new
   skill and hooks in a session already open; every other agent it set up is still told to
   restart.
-
 - **The skill no longer asks for an `objective` on every search.** The field is experimental:
   the router is still testing how it uses one. The skill now lists it as optional and its example
-  request leaves it out, where 0.8.0 asked for one with every search; `search --stdin`, `fetch`
-  and the MCP tools still accept it as before. An installed skill takes the new text the next time
+  request leaves it out, where 0.8.0 asked for one with every search; `search --stdin` and the
+  MCP `search` tool still accept it as before. An installed skill takes the new text the next time
   it is rendered, by `jevlin setup`, `jevlin agents install` or an upgrade.
-
 - **Setup and `jevlin connect` say when they are waiting for the claim.** After the claim link
   they printed nothing for up to three minutes, which read as a hang. One line now says how long
   the wait lasts and what Ctrl-C does: in setup it ends setup before the environment and coding
@@ -49,7 +52,6 @@ rewritten to match newer behaviour; the newer entry says what changed.
   kept there, or a `jevlin.new` the install script could not remove, was never named. It now
   lists `bin/`'s entries too, in the dry run and the real run, with and without `-binary`, all
   but the binary, its `.previous`, the self-updater's staging files and the update lock.
-
 - **The scrub removes more credential shapes, and payment card numbers.** Before a trace or a
   turn end leaves the machine, Google API keys, Slack tokens and the secret path of a Slack
   webhook URL, GitLab, npm, Hugging Face and PyPI tokens are now removed, as Stripe, GitHub and
@@ -58,15 +60,15 @@ rewritten to match newer behaviour; the newer entry says what changed.
   network's do, in one run or grouped by spaces or dashes as cards are printed. A long number of
   that shape with nothing joined to it, such as a decimal id, goes with them. `docs/privacy.md`
   lists them.
-
-- A successful `setup` or `agents install` now acknowledges the installation to the configured agents API. This best-effort request never changes the command result; the platform counts an installation only after account claim and Analytics consent.
-
+- **A successful `setup` or `agents install` acknowledges the installation.** It sends one empty
+  request, with the installation's key, to the configured agents API. This best-effort request
+  never changes the command result; the platform counts an installation only after account claim
+  and Analytics consent. `docs/privacy.md` lists it.
 - **The npm install unpacks on Windows when started from PowerShell 7.** The postinstall runs
   Windows PowerShell to unpack the release, and under PowerShell 7 it inherited a module path
   that put PowerShell 7's `Expand-Archive` first, which fails there with "Cannot find an overload
   for ExtractToDirectory". The postinstall now leaves that path out, so Windows PowerShell uses
   its own.
-
 - **The help is an index, and each command has its own.** `jevlin help` lists the commands, one
   line each, with examples, where it was a 157-line page of paragraphs. `jevlin help <command>`
   and `jevlin <command> -h` show that command's usage, flags as a table, examples and, for the
@@ -75,6 +77,11 @@ rewritten to match newer behaviour; the newer entry says what changed.
   and the other commands that had no help of their own printed Go's list of flag defaults and
   exited 2, and `version -h` printed the version; each now prints its help and exits 0, and a
   flag that does not parse shows the command's help.
+
+**Which parts were live-smoked.** None, before the tag: the turn end on a fresh setup, the `trace`
+switch, Cursor's thought hook recording nothing, the claim-wait and tiers lines, the new scrub
+shapes and the installation acknowledgment (which needs the platform's `/v1/agents/installed`)
+are tested against loopback stubs only.
 
 ## v0.8.0 — 2026-11-11
 
