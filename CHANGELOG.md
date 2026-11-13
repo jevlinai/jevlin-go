@@ -92,8 +92,8 @@ new `trace` key must lose that line before `jevlin upgrade -rollback` puts 0.8.0
 
 **Which parts were live-smoked.** None, before the tag: the turn end on a fresh setup, the `trace`
 switch, Cursor's thought hook recording nothing and its reply going only with a search of its own
-turn, the claim-wait and tiers lines, the new scrub
-shapes and the installation acknowledgment are tested against loopback stubs only.
+turn, the claim-wait and tiers lines, the new scrub shapes and the installation acknowledgment
+are tested against loopback stubs only.
 
 ## v0.8.0 — 2026-11-11
 
