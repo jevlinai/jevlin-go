@@ -23,7 +23,8 @@ package main
 //	    hooks, the release check), preToolUse (put that identity on our
 //	    exact rendered search), beforeShellExecution (allow our
 //	    command; stamp turn/call),
-//	    afterAgentThought / afterAgentResponse (the text before a search),
+//	    afterAgentResponse (the text before a search; afterAgentThought,
+//	    the model's reasoning, records nothing),
 //	    preCompact (bump the window), stop (the turn end).
 //	hook [-config file] stop
 //	    Claude Code Stop: the turn is over. Queue the turn end, when the
@@ -986,8 +987,8 @@ func hookCursorOn(goos string, ops hookOps, hc hookContext, event string, payloa
 	}
 	now := ops.now()
 	// With traces off nothing of the conversation is kept: no lineage file
-	// is written, so the user's prompt, the reasoning and the answer never
-	// reach the sessions directory, and preToolUse labels no search. The
+	// is written, so the user's prompt and the answer never reach the
+	// sessions directory, and preToolUse labels no search. The
 	// permission answers and the background starts are unchanged.
 	off := traceOff(hc.traceOffInConfig, ops.getenv)
 	update := func(apply func(*lineageFile)) {
@@ -1087,14 +1088,10 @@ func hookCursorOn(goos string, ops hookOps, hc hookContext, event string, payloa
 			l.UserTurnID = traceHash(p.ConversationID + "|" + p.GenerationID)
 		})
 	case "afterAgentThought":
-		if p.Text == "" {
-			return
-		}
-		p.Text = repairStoredText(p.Text, stderr)
-		update(func(l *lineageFile) {
-			l.History = []traceHistory{{Role: "reasoning", Text: p.Text}}
-			l.AnswerTurnID = ""
-		})
+		// The model's reasoning is never sent, by any host. The event stays
+		// handled because a hooks file installed by an earlier version
+		// still calls it: it succeeds and records nothing, so the trace's
+		// text comes from afterAgentResponse alone.
 	case "afterAgentResponse":
 		if p.Text == "" {
 			return

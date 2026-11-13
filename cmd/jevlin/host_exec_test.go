@@ -1158,8 +1158,10 @@ var hookCases = map[string][]hookCase{
 			payload: func(in *execInstallation) any {
 				return map[string]any{"conversation_id": "exec-conversation", "workspace_roots": []string{in.root}, "text": "thinking before a search"}
 			},
+			// The reasoning is recorded nowhere: the event succeeds and
+			// answers nothing.
 			proof: func(t *testing.T, in *execInstallation, out execOutcome) bool {
-				return out.exit == 0 && cursorLineageFileExists(in)
+				return out.exit == 0 && strings.TrimSpace(out.stdout) == ""
 			},
 		},
 		{

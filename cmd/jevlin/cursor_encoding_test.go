@@ -50,12 +50,13 @@ func issue113Fixtures(t *testing.T) (intact, doubled string) {
 	return intact, doubled
 }
 
-// TestTheDoubleEncodedReasoningLineStoresIntact: the reasoning and the
-// response, as Cursor's wrapper hands them over, are stored as the sentence
-// Cursor logged, and the repair is counted on stderr.
-func TestTheDoubleEncodedReasoningLineStoresIntact(t *testing.T) {
+// TestTheDoubleEncodedLineStoresIntact: the response, as Cursor's wrapper
+// hands it over, is stored as the sentence Cursor logged, and the repair is
+// counted on stderr. (The reasoning, afterAgentThought, is not stored at
+// all: cursor_reasoning_test.go.)
+func TestTheDoubleEncodedLineStoresIntact(t *testing.T) {
 	intact, doubled := issue113Fixtures(t)
-	for _, event := range []string{"afterAgentThought", "afterAgentResponse"} {
+	for _, event := range []string{"afterAgentResponse"} {
 		t.Run(event, func(t *testing.T) {
 			_, ops := newFakeHookOps(nil)
 			hc := hookContext{sessionsDir: "/sessions"}
@@ -98,7 +99,7 @@ func TestTextThatIsNotDoubleEncodedIsStoredAsItCame(t *testing.T) {
 			}
 			_, ops := newFakeHookOps(nil)
 			var errOut bytes.Buffer
-			hookCursor(ops, hookContext{sessionsDir: "/sessions"}, "afterAgentThought",
+			hookCursor(ops, hookContext{sessionsDir: "/sessions"}, "afterAgentResponse",
 				mustJSON(t, map[string]any{"conversation_id": "conv-1", "workspace_roots": []string{"/w/proj"}, "text": text}), io.Discard, &errOut)
 			l, _ := loadLineage(ops, conversationLineagePath("/sessions", "/w/proj", "conv-1"))
 			if l == nil || len(l.History) != 1 || l.History[0].Text != prepareTraceText(text) {
