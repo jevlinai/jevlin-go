@@ -170,7 +170,8 @@ type setupRun struct {
 	shortCommands bool   // the profile or user environment carries PATH and JEVLIN_CONFIG
 
 	// agentsSetUp names the hosts this run wrote or removed a file for, in
-	// plan order: the ones a session already open may need restarting for.
+	// plan order, with none of their changes failed: the ones a session
+	// already open may need restarting for.
 	agentsSetUp []string
 
 	// otherHome: -home names a directory that is not this machine's

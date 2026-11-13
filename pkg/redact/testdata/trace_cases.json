@@ -2987,5 +2987,26 @@
   "account": "",
   "in": "4 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 and 41 11 11 11 11 11 11 11 and 411-111-111-111-1111",
   "want": "4 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 and 41 11 11 11 11 11 11 11 and 411-111-111-111-1111"
+ },
+ {
+  "name": "survives/card: joined by a dash to the number before it",
+  "host": "",
+  "account": "",
+  "in": "build-12-4111-1111-1111-1111 and 12-4111 1111 1111 1111",
+  "want": "build-12-4111-1111-1111-1111 and 12-4111 1111 1111 1111"
+ },
+ {
+  "name": "survives/card: joined by a dash to the number after it",
+  "host": "",
+  "account": "",
+  "in": "4111 1111 1111 1111-12abc and 4111 1111 1111 1111-9876",
+  "want": "4111 1111 1111 1111-12abc and 4111 1111 1111 1111-9876"
+ },
+ {
+  "name": "card/joined by a space to a number on each side",
+  "host": "",
+  "account": "",
+  "in": "row 12 4111 1111 1111 1111 9876",
+  "want": "row 12 [REDACTED] 9876"
  }
 ]

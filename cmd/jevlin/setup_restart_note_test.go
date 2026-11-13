@@ -1,6 +1,10 @@
 package main
 
 import (
+	"bytes"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -84,5 +88,68 @@ func TestSetupSaysWhichAgentsToRestartAtTheTopOfTheClosingBox(t *testing.T) {
 	}
 	if box := closingBox(t, out); restartAdvice(box) {
 		t.Errorf("a run that wrote nothing tells an agent to restart:\n%s", box)
+	}
+}
+
+// A host whose writes failed is not told it can load what setup installed:
+// the failure is named above the box, and the note names only the hosts
+// whose every change was made. Codex's files fail here, through the agent
+// operations setup writes with; Claude Code and Cursor are written.
+func TestSetupDoesNotTellAHostWhoseWritesFailedToRestart(t *testing.T) {
+	for name, tc := range map[string]struct {
+		args []string
+		want []string
+	}{
+		"Codex alone": {[]string{"-with", "codex"}, nil},
+		"Codex among others": {[]string{"-with", "claude", "-with", "cursor", "-with", "codex"}, []string{
+			"Claude Code picks up the new skill and hooks without a restart.\n",
+			"Restart Cursor if it is already open, so it loads what setup installed.\n",
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := newSetupSandbox(t)
+			s.platform.claim("credits")
+			var out, errOut bytes.Buffer
+			d := s.deps(&ttyReader{}, &out, &errOut, false)
+			codexDir := filepath.Join(s.userHome, ".codex") + string(filepath.Separator)
+			write := d.agents.writeFile
+			failed := 0
+			d.agents.writeFile = func(path string, data []byte, mode os.FileMode) error {
+				if strings.HasPrefix(path, codexDir) {
+					failed++
+					return errors.New("disk full")
+				}
+				return write(path, data, mode)
+			}
+			if code := setupMain(d, tc.args); code != exitOK {
+				t.Fatalf("setup exited %d\nstdout:\n%s\nstderr:\n%s", code, out.String(), errOut.String())
+			}
+			if failed == 0 {
+				t.Fatalf("no write for Codex was attempted, so nothing was tested:\n%s", out.String())
+			}
+			if !strings.Contains(out.String(), "Some agent could not be set up") {
+				t.Errorf("the failure was not reported:\n%s", out.String())
+			}
+			box := closingBox(t, out.String())
+			first := box[:strings.Index(box, "\n1. ")]
+			// The sentences only: the sandbox's paths carry this test's
+			// name, and with it the word Codex.
+			for _, line := range strings.Split(first, "\n") {
+				if restartAdvice(line) && strings.Contains(line, "Codex") {
+					t.Errorf("the closing box tells Codex, whose writes failed, to restart: %q", line)
+				}
+			}
+			if len(tc.want) == 0 && restartAdvice(first) {
+				t.Errorf("a run that set up no agent talks about restarting:\n%s", first)
+			}
+			at := 0
+			for _, w := range tc.want {
+				i := strings.Index(first[at:], w)
+				if i < 0 {
+					t.Fatalf("the top of the closing box does not say %q in order:\n%s", w, first)
+				}
+				at += i + len(w)
+			}
+		})
 	}
 }

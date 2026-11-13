@@ -174,7 +174,8 @@ const scrubTraceCommon = (text) => redactTraceJwts(text
 // cards are printed (4-4-4-4 with an optional last group of 1 to 3, 4-6-5,
 // 4-6-4) by single spaces or dashes, starting 3 to 6 or 2200 to 2720,
 // passing the Luhn check, and joined to no word, decimal, identifier or
-// address. A scan, as Go's is, reading at most five groups at each.
+// address at the card's own two ends, wherever in its sequence it starts.
+// A scan, as Go's is, reading at most five groups at each.
 const TRACE_CARD_MIN = 13
 const TRACE_CARD_MAX = 19
 const traceIsDigit = (c) => c >= 48 && c <= 57
@@ -214,11 +215,11 @@ const traceCardDigitsValid = (s, groups, from, to) => {
   return sum % 10 === 0
 }
 const traceCardAt = (s, groups, g) => {
-  if (g === 0 && !traceCardStartsFree(s, groups[0][0])) return 0
+  if (!traceCardStartsFree(s, groups[g][0])) return 0
   const length = (k) => k < groups.length ? groups[k][1] - groups[k][0] : 0
   const tryCard = (n) => {
     const end = g + n - 1
-    if (end >= groups.length || (end === groups.length - 1 && !traceCardEndsFree(s, groups[end][1]))) return false
+    if (end >= groups.length || !traceCardEndsFree(s, groups[end][1])) return false
     return traceCardDigitsValid(s, groups, g, end)
   }
   const first = length(g)
