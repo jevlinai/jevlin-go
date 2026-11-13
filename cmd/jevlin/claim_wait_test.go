@@ -12,6 +12,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -142,5 +143,23 @@ func TestTheClaimWaitIsAnnouncedOnlyWhenATextRunWaits(t *testing.T) {
 	}
 	if strings.Contains(out+errOut, claimWaitPrefix) {
 		t.Errorf("a connect whose first poll found the claim announces a wait:\n%s", out)
+	}
+}
+
+// Every other connect failure under setup is reported as it always was:
+// "connect failed" with connect's exit code, and nothing of the interrupt's
+// sentence. Here the platform no longer knows the agent when setup polls.
+func TestSetupStillCallsAFailedConnectAFailure(t *testing.T) {
+	s := newSetupSandbox(t)
+	s.platform.statusNotFound = true
+	code, out, errOut := s.run(nil, false, "-yes")
+	if code != exitTransport {
+		t.Fatalf("a failed connect ends setup with exit %d, want %d:\n%s\n%s", code, exitTransport, out, errOut)
+	}
+	if !strings.Contains(errOut, fmt.Sprintf("jevlin setup: connect failed (exit %d); run setup again when that is fixed", exitTransport)) {
+		t.Errorf("setup does not report the failed connect:\n%s", errOut)
+	}
+	if strings.Contains(errOut, setupClaimWaitInterrupted) || strings.Contains(errOut, "claim wait was interrupted") {
+		t.Errorf("a failed connect is reported as an interrupted wait:\n%s", errOut)
 	}
 }

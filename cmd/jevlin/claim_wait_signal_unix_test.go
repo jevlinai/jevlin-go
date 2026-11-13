@@ -51,11 +51,19 @@ func TestCtrlCAtSetupsClaimWaitEndsSetupBeforeItsLastStepsAndARerunFinishes(t *t
 	code, out, errOut := interruptAtClaimWait(t, func(stdout, stderr io.Writer) int {
 		return setupMain(s.deps(&ttyReader{}, stdout, stderr, false), []string{"-yes"})
 	})
-	if code == exitOK {
-		t.Fatalf("an interrupted claim wait let setup succeed:\n%s\n%s", out, errOut)
+	if code != exitTransport {
+		t.Fatalf("an interrupted claim wait ends setup with exit %d, want %d:\n%s\n%s", code, exitTransport, out, errOut)
 	}
-	if !strings.Contains(out, claimWaitMessage(5*time.Second, true)) || !strings.Contains(errOut, "connect: interrupted") {
+	if !strings.Contains(out, claimWaitMessage(5*time.Second, true)) {
 		t.Fatalf("not the interrupt this test is about:\n%s\n%s", out, errOut)
+	}
+	// Setup names the interrupt in its own words, and not as a failure to
+	// fix: the key was stored before the wait.
+	if !strings.Contains(errOut, setupClaimWaitInterrupted) {
+		t.Errorf("setup does not say the claim wait was interrupted:\n%s", errOut)
+	}
+	if strings.Contains(errOut, "connect failed") || strings.Contains(errOut, "connect: interrupted") {
+		t.Errorf("setup calls an interrupted claim wait a failure:\n%s", errOut)
 	}
 	if strings.Contains(out, "Shell environment") || strings.Contains(out, "Coding agents") {
 		t.Errorf("setup went on past the interrupted wait:\n%s", out)
@@ -89,7 +97,9 @@ func TestCtrlCAtConnectsClaimWaitLeavesTheClaimToTheNextRun(t *testing.T) {
 		args := []string{"-config", cfgPath}
 		return cmdConnect(args, &bytes.Buffer{}, stdout, stderr, installedAs(noEnv, args))
 	})
-	if code == exitOK || !strings.Contains(out, claimWaitMessage(5*time.Second, false)) || !strings.Contains(errOut, "connect: interrupted") {
+	// The bare command is as it was: exit 1 and "connect: interrupted".
+	if code != exitTransport || !strings.Contains(out, claimWaitMessage(5*time.Second, false)) || !strings.Contains(errOut, "jevlin: connect: interrupted\n") ||
+		strings.Contains(out+errOut, "jevlin setup") {
 		t.Fatalf("not the interrupt this test is about (exit %d):\n%s\n%s", code, out, errOut)
 	}
 	if reg, ok := loadAgent(t, stateDir); !ok || reg.Status != "unclaimed" {

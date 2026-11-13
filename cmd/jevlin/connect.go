@@ -1170,6 +1170,10 @@ func connectRun(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 		}
 		select {
 		case <-ctx.Done():
+			if admitted && !machine {
+				// Setup's run: setup names the interrupt itself.
+				return exitClaimWaitInterrupted
+			}
 			fmt.Fprintln(stderr, "jevlin: connect: interrupted")
 			return exitTransport
 		case <-time.After(sleep):
