@@ -79,14 +79,14 @@ func TestTheSkillTeachesTheLeanSearchOnEveryHost(t *testing.T) {
 	}
 }
 
-// The router's ranker, where it is on, and every index that takes a goal act
-// only on a request that carries an objective, so the skill asks for one on
-// every search, in the request's field list right under the example. The
-// sentence it replaced said the opposite (that the objective does not reorder
-// the list), so that wording must not come back beside it.
-func TestTheSkillAsksForAnObjectiveOnEverySearch(t *testing.T) {
-	const want = "- `objective`: one sentence on what you are trying to find out. Send it on every search: the " +
-		"indexes that accept a goal use it, and so does the router when it orders the pool."
+// The objective is experimental: the router is still testing how it uses
+// one, so the skill describes it as optional and does not ask for it on
+// every search, and the example an agent copies leaves it out. The sentence
+// this replaced asked for one on every search; it must not come back, nor
+// the older one that said the objective does not reorder the list.
+func TestTheSkillMarksTheObjectiveExperimental(t *testing.T) {
+	const want = "- `objective` (experimental): one sentence on what you are trying to find out. Optional; the " +
+		"router is still testing how it uses it."
 	entry := binEntry{command: "/home/u/.jevlin/bin/jevlin", cfg: "/home/u/.jevlin/jevlin.toml"}
 	for _, id := range goldenHostIDs {
 		for _, goos := range hostShellOSes {
@@ -98,13 +98,15 @@ func TestTheSkillAsksForAnObjectiveOnEverySearch(t *testing.T) {
 				}
 				fields := flat(strings.SplitN(after, "\n## ", 2)[0])
 				if strings.Count(fields, want) != 1 {
-					t.Errorf("the request section does not carry the objective bullet once:\n%s", fields)
+					t.Errorf("the request section does not carry the experimental objective bullet once:\n%s", fields)
 				}
-				if strings.Count(flat(skill), "`objective`:") != 1 {
-					t.Error("SKILL.md describes the objective field more than once")
+				if strings.Count(flat(skill), "`objective`") != 1 {
+					t.Error("SKILL.md names the objective field more than once")
 				}
-				if strings.Contains(flat(skill), "not reorder") {
-					t.Error("SKILL.md still says the objective does not reorder the list")
+				for _, gone := range []string{"Send it on every search", "not reorder", `"objective":`} {
+					if strings.Contains(flat(skill), gone) {
+						t.Errorf("SKILL.md still says %q", gone)
+					}
 				}
 			})
 		}

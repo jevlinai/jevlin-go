@@ -115,7 +115,7 @@ func searchInputSchema() map[string]any {
 			"version": versionProp(),
 			"query": stringProp("What you are looking for, phrased the way a page that answers it would phrase it, " +
 				"with the distinctive names, numbers and dates in it."),
-			"objective":      stringProp("One sentence on what you are trying to find out."),
+			"objective":      stringProp("Experimental and optional: one sentence on what you are trying to find out."),
 			"search_queries": stringListProp("Other wordings, searched in the same call and merged into the same list.", searchQueriesMax),
 			"tier":           stringProp("Leave it out: the user's own tier applies."),
 			"recency": map[string]any{"type": "string", "enum": []string{"day", "week", "month", "year"},

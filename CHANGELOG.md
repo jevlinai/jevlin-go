@@ -12,6 +12,12 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
+- **The skill no longer asks for an `objective` on every search.** The field is experimental:
+  the router is still testing how it uses one. The skill now lists it as optional and its example
+  request leaves it out, where 0.8.0 asked for one with every search; `search --stdin`, `fetch`
+  and the MCP tools still accept it as before. An installed skill takes the new text the next time
+  it is rendered, by `jevlin setup`, `jevlin agents install` or an upgrade.
+
 - **The scrub removes more credential shapes, and payment card numbers.** Before a trace or a
   turn end leaves the machine, Google API keys, Slack tokens and the secret path of a Slack
   webhook URL, GitLab, npm, Hugging Face and PyPI tokens are now removed, as Stripe, GitHub and
