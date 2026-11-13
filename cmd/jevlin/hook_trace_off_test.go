@@ -5,15 +5,15 @@ import (
 	"testing"
 )
 
-// JEVLIN_TRACE=off turns traces off entirely: the lineage hook writes no
-// bridge onto the command and no lineage file, instead of writing both for
-// search to drop.
+// JEVLIN_TRACE=off and [search] trace = false each turn traces off entirely:
+// the lineage hook writes no bridge onto the command and no lineage file,
+// instead of writing both for search to drop.
 func TestTheLineageHookWritesNothingWhenTraceIsOff(t *testing.T) {
-	for _, value := range []string{"off", "OFF", " off ", "0", "false"} {
-		t.Run(strings.TrimSpace(value), func(t *testing.T) {
-			fs, ops := newFakeHookOps(map[string]string{"JEVLIN_TRACE": value})
+	for _, sw := range append(envTraceSpellings("off", "OFF", " off ", "0", "false"), traceOffInConfig) {
+		t.Run(sw.name, func(t *testing.T) {
+			fs, ops := newFakeHookOps(sw.env)
 			fs.files["/t/s.jsonl"] = readHookFixture(t, "claude_code_skill_ismeta.jsonl")
-			hc := hookContext{sessionsDir: "/sess"}
+			hc := hookContext{sessionsDir: "/sess", traceOffInConfig: sw.configOff}
 			before := len(fs.files)
 			out, errOut := runHook(t, ops, hc, "lineage", map[string]any{
 				"session_id": "s", "prompt_id": "p", "tool_use_id": "toolu_bash1", "cwd": "/w/proj",
@@ -42,7 +42,7 @@ func TestTheLineageHookWritesNothingWhenTraceIsOff(t *testing.T) {
 }
 
 // Hermes' hook only adds a bridge; with traces off it adds none, in every
-// spelling, after a control run that does.
+// spelling of the variable and by the config, after a control run that does.
 func TestTheHermesHookWritesNoBridgeWhenTraceIsOff(t *testing.T) {
 	payload := map[string]any{
 		"hook_event_name": "pre_tool_call", "tool_name": "terminal",
@@ -53,10 +53,10 @@ func TestTheHermesHookWritesNoBridgeWhenTraceIsOff(t *testing.T) {
 	if out, _ := runHook(t, on, hookContext{}, "hermes pre_tool_call", payload); !strings.Contains(out, bridgeEnv) {
 		t.Fatalf("control: no bridge with traces on: %q", out)
 	}
-	for _, v := range []string{"off", "0", "false", " OFF "} {
-		_, ops := newFakeHookOps(map[string]string{"JEVLIN_TRACE": v})
-		if out, _ := runHook(t, ops, hookContext{}, "hermes pre_tool_call", payload); out != "" {
-			t.Errorf("JEVLIN_TRACE=%q: the hook answered %q", v, out)
+	for _, sw := range append(envTraceSpellings("off", "0", "false", " OFF "), traceOffInConfig) {
+		_, ops := newFakeHookOps(sw.env)
+		if out, _ := runHook(t, ops, hookContext{traceOffInConfig: sw.configOff}, "hermes pre_tool_call", payload); out != "" {
+			t.Errorf("%s: the hook answered %q", sw.name, out)
 		}
 	}
 }

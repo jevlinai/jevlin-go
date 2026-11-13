@@ -1,6 +1,7 @@
 package main
 
-// JEVLIN_TRACE=off switches traces off entirely (traceOff, search.go), for
+// JEVLIN_TRACE=off and [search] trace = false each switch traces off entirely
+// (traceOff, search.go), for
 // Cursor's and Codex's hooks as for Claude Code's (hook_trace_off_test.go):
 // they keep nothing of the session for a trace that will not be sent. Each
 // case runs the same calls with tracing on first, so a fixture that never
@@ -52,8 +53,10 @@ func TestWithTracesOffTheCursorHooksKeepNothing(t *testing.T) {
 		return mustJSON(t, p)
 	}
 
-	session := func(t *testing.T, trace string) (fs *fakeHookFS, answers map[string]string) {
+	session := func(t *testing.T, trace string, configOff bool) (fs *fakeHookFS, answers map[string]string) {
 		t.Helper()
+		hc := hc
+		hc.traceOffInConfig = configOff
 		fs, ops := newFakeHookOps(map[string]string{"JEVLIN_TRACE": trace})
 		answers = map[string]string{}
 		call := func(event string, payload []byte) {
@@ -82,20 +85,22 @@ func TestWithTracesOffTheCursorHooksKeepNothing(t *testing.T) {
 		return fs, answers
 	}
 
-	onFS, on := session(t, "")
+	onFS, on := session(t, "", false)
 	if len(sessionsFiles(onFS)) == 0 || !strings.Contains(on["preToolUse"], "updated_input") {
 		t.Fatalf("with tracing on nothing was kept or labeled, so the fixture proves nothing: files %v, preToolUse %q",
 			keys(onFS.files), on["preToolUse"])
 	}
-	offFS, off := session(t, "off")
-	if files := sessionsFiles(offFS); len(files) != 0 {
-		t.Errorf("with traces off the hooks wrote %v", files)
-	}
-	if off["preToolUse"] != "" {
-		t.Errorf("with traces off preToolUse answered %q", off["preToolUse"])
-	}
-	if off["beforeShellExecution"] != `{"permission":"allow"}` || off["beforeSubmitPrompt"] != `{"continue":true}` {
-		t.Errorf("with traces off a permission answer changed: %q", off)
+	for _, sw := range traceSwitches {
+		offFS, off := session(t, sw.env["JEVLIN_TRACE"], sw.configOff)
+		if files := sessionsFiles(offFS); len(files) != 0 {
+			t.Errorf("%s: the hooks wrote %v", sw.name, files)
+		}
+		if off["preToolUse"] != "" {
+			t.Errorf("%s: preToolUse answered %q", sw.name, off["preToolUse"])
+		}
+		if off["beforeShellExecution"] != `{"permission":"allow"}` || off["beforeSubmitPrompt"] != `{"continue":true}` {
+			t.Errorf("%s: a permission answer changed: %q", sw.name, off)
+		}
 	}
 }
 
@@ -110,18 +115,22 @@ func TestWithTracesOffCodexAllowsTheSearchAsIs(t *testing.T) {
 	if out := runCodexOn(t, onOps, hcFor(in), "linux", "PreToolUse", payload); !strings.Contains(out, bridgeEnv) || len(onFS.files) == 0 {
 		t.Fatalf("with tracing on the search was not bridged or nothing was kept, so the fixture proves nothing: %q, files %v", out, keys(onFS.files))
 	}
-	offFS, offOps := in.ops(map[string]string{"JEVLIN_TRACE": "off"})
-	out := runCodexOn(t, offOps, hcFor(in), "linux", "PreToolUse", payload)
-	var a codexAnswer
-	if err := json.Unmarshal([]byte(out), &a); err != nil {
-		t.Fatalf("with traces off the search got no answer: %q", out)
-	}
-	var input map[string]any
-	_ = json.Unmarshal(a.Out["updatedInput"], &input)
-	if input["command"] != search || strings.Contains(out, bridgeEnv) || !strings.Contains(out, `"allow"`) {
-		t.Errorf("with traces off the answer is not an allow with the command as it came: %s", out)
-	}
-	if len(offFS.files) != 0 {
-		t.Errorf("with traces off the hook wrote %v", keys(offFS.files))
+	for _, sw := range traceSwitches {
+		offFS, offOps := in.ops(sw.env)
+		hc := hcFor(in)
+		hc.traceOffInConfig = sw.configOff
+		out := runCodexOn(t, offOps, hc, "linux", "PreToolUse", payload)
+		var a codexAnswer
+		if err := json.Unmarshal([]byte(out), &a); err != nil {
+			t.Fatalf("%s: the search got no answer: %q", sw.name, out)
+		}
+		var input map[string]any
+		_ = json.Unmarshal(a.Out["updatedInput"], &input)
+		if input["command"] != search || strings.Contains(out, bridgeEnv) || !strings.Contains(out, `"allow"`) {
+			t.Errorf("%s: the answer is not an allow with the command as it came: %s", sw.name, out)
+		}
+		if len(offFS.files) != 0 {
+			t.Errorf("%s: the hook wrote %v", sw.name, keys(offFS.files))
+		}
 	}
 }

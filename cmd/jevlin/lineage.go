@@ -421,11 +421,19 @@ func (sc *lineageFile) envelope() *traceEnvelope {
 		Window:          sc.Window,
 		Seq:             sc.Seq,
 	}
-	if len(sc.History) > 0 {
-		env.History = append([]traceHistory(nil), sc.History...)
+	// A lineage file an earlier version's Cursor hook wrote can hold the
+	// model's reasoning; it is never sent.
+	for _, h := range sc.History {
+		if h.Role != traceRoleReasoning {
+			env.History = append(env.History, h)
+		}
 	}
 	return env
 }
+
+// traceRoleReasoning is the history role an earlier version's Cursor hook
+// gave the model's reasoning (afterAgentThought). Nothing writes it now.
+const traceRoleReasoning = "reasoning"
 
 // ── the installation's own directory ───────────────────────────────────
 

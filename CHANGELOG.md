@@ -12,6 +12,22 @@ rewritten to match newer behaviour; the newer entry says what changed.
 
 ## Unreleased
 
+- **New installations send the turn end; existing ones are unchanged.** A config `jevlin setup`
+  creates now has `[search] turn_end = true`, so a turn that searched also sends what you asked,
+  the assistant's text and its final answer, each tool's name, duration and outcome (never its
+  input or output), and the model and token counts; `turn_end = false` under `[search]` stops
+  that, the new `trace = false` there or `JEVLIN_TRACE=off` stops it and the trace, and a config
+  without the line, which is every config an earlier version wrote, still sends none. Setup says this, with the config's path,
+  where it used to print two lines about "search context".
+- **Cursor no longer sends the model's reasoning.** The trace's text under Cursor is its latest
+  reply; `afterAgentThought` still runs, from hooks files already installed, and records nothing.
+- **`jevlin status` shows the trace and the turn end**, each on or off and why (`status -json`
+  carries them as `trace` and `turn_end`), and under an unclaimed agent it says that `jevlin
+  connect` records a claim made on the website.
+- **Setup's closing message says which agents to restart, first.** Claude Code picks up the new
+  skill and hooks in a session already open; every other agent it set up is still told to
+  restart.
+
 - **Setup and `jevlin connect` say when they are waiting for the claim.** After the claim link
   they printed nothing for up to three minutes, which read as a hang. One line now says how long
   the wait lasts and what Ctrl-C does: in setup it ends setup before the environment and coding

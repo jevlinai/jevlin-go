@@ -178,6 +178,7 @@ func (r *setupRun) agentsStep() int {
 	if len(plan.writes) > failures || len(plan.removes) > 0 {
 		r.changed = true
 	}
+	r.agentsSetUp = plan.hosts()
 	if installedPlan(&plan, failures) {
 		acknowledgeInstalled(r.cfgPath, r.d.getenv)
 	}

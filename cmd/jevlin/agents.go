@@ -608,6 +608,26 @@ func (p *agentPlan) removedPaths() []string {
 
 func (p *agentPlan) empty() bool { return len(p.writes) == 0 && len(p.removes) == 0 }
 
+// hosts names every host the plan writes or removes a file for, once each,
+// in the order the plan first names them.
+func (p *agentPlan) hosts() []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(h string) {
+		if h != "" && !seen[h] {
+			seen[h] = true
+			out = append(out, h)
+		}
+	}
+	for _, w := range p.writes {
+		add(w.surface)
+	}
+	for _, r := range p.removes {
+		add(r.surface)
+	}
+	return out
+}
+
 type multiFlag []string
 
 func (m *multiFlag) String() string     { return strings.Join(*m, ",") }

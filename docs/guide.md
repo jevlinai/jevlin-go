@@ -134,7 +134,9 @@ it.
 
 `~/.jevlin/jevlin.toml` is in configuration format 1: a `schema = 1` line, `[router]`,
 `[platform]` and `[agents]` with their URLs, and `[search]` with the state and sessions directories
-([reference, Config](reference.md#config) has every key). A config already in that format is left
+and, in a config it creates where there was none, `turn_end = true`
+([reference, Config](reference.md#config) has every key). Setup then says what each search and
+turn end sends and both ways to stop it ([privacy, Switching it off](privacy.md#switching-it-off)). A config already in that format is left
 byte for byte; one with a mistake in it stops setup with the error. One from an older jevlin, with
 no `schema` line, is set aside as `jevlin.toml.old` and a fresh file written, your registration and
 key kept ([Moving from 0.6.x](#moving-from-06x)).
@@ -163,7 +165,9 @@ Searches stay on the fast tier after the claim until you choose another. When se
 commands that choose one: `jevlin agents tier <tier>`, or `/jevlin tier <tier>` in your agent
 ([Choosing a tier](#choosing-a-tier)). The link and the
 unclaimed registration last a week; after that, `jevlin connect` registers again and prints a new
-link. Your claim on the platform is undone only at its console.
+link. Your claim on the platform is undone only at its console. `jevlin status` reads only the
+record on this machine, so it says unclaimed until a search or `jevlin connect` has recorded the
+claim.
 
 ## Check it works
 
@@ -174,7 +178,8 @@ jevlin doctor          # one line per check
 jevlin search -format model "what is proof of authority consensus"
 ```
 
-Restart any agent that was already open. Your agent sends JSON on stdin instead:
+A Claude Code session already open picks up the skill and hooks; restart any other agent that was
+already open, as setup's closing message says. Your agent sends JSON on stdin instead:
 
 ```bash
 jevlin search --stdin <<'JSON'

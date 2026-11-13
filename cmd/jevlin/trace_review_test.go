@@ -6,8 +6,8 @@ package main
 // every path that builds a traceEnvelope before it is encoded into the
 // bridge or marshaled into the search body; and saveLineage (lineage.go),
 // which every lineage-sidecar write passes through, including
-// hookCursor's afterAgentThought/afterAgentResponse handlers that write
-// straight into a lineageFile and never touch a traceEnvelope at all.
+// hookCursor's afterAgentResponse handler, which writes straight into a
+// lineageFile and never touches a traceEnvelope at all.
 
 import (
 	"encoding/json"
@@ -130,7 +130,7 @@ func TestCompletionSecretsAreRedactedBeforeTheWire(t *testing.T) {
 
 // TestCursorDiskWriteIsRedactedWithoutEverTouchingCapTrace guards the one
 // path wire-only redaction (capTrace) cannot reach: hookCursor's
-// afterAgentThought/afterAgentResponse write p.Text straight into a
+// afterAgentResponse writes p.Text straight into a
 // lineageFile and call updateLineage/saveLineage directly — no
 // traceEnvelope is ever built, so capTrace never runs. The sidecar file
 // itself is read back off "disk" (the fake filesystem) and checked, not

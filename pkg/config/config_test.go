@@ -557,8 +557,32 @@ func TestSearchDirectoriesDefaultUnderTheUserConfigDirAndANamedOneWins(t *testin
 	}
 }
 
-// [search] turn_end is off unless the file says otherwise: it sends
-// model-written text off the machine, and a default must not.
+// [search] trace is on unless the file says false: TraceOff is set only by
+// an explicit false, so a config written before the key existed traces as
+// it did, and a value of the wrong type is refused like any format-1 key.
+func TestSearchTraceIsOnUnlessTheFileSaysFalse(t *testing.T) {
+	if load(t, nil, noEnv).Search.TraceOff {
+		t.Error("no file: trace off")
+	}
+	for body, want := range map[string]bool{
+		"schema = 1\n":                          false,
+		"schema = 1\n[search]\n":                false,
+		"schema = 1\n[search]\ntrace = true\n":  false,
+		"schema = 1\n[search]\ntrace = false\n": true,
+	} {
+		if got := mustLoadFile(t, body, noEnv).Search.TraceOff; got != want {
+			t.Errorf("%q: TraceOff = %v, want %v", body, got, want)
+		}
+	}
+	if _, err := loadFile(t, "schema = 1\n[search]\ntrace = \"off\"\n", noEnv); err == nil || !strings.Contains(err.Error(), "trace") {
+		t.Errorf("trace = \"off\" loaded: %v", err)
+	}
+}
+
+// [search] turn_end is off unless the file says otherwise: a config without
+// the line, which is every config an earlier version wrote, must read as off
+// so that an upgrade never turns it on. setup writes the line into a config
+// it creates, and says so.
 func TestSearchTurnEndIsOffByDefault(t *testing.T) {
 	if load(t, nil, noEnv).Search.TurnEnd {
 		t.Error("no file: turn_end on")
