@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -73,9 +74,10 @@ func TestOpencodeV2PluginThreadsTheSearchAndReportsTheTurn(t *testing.T) {
   },
   event: { subscribe: ({types, signal}) => ({ async *[Symbol.asyncIterator]() {
    result.types = types;
+   signal.addEventListener('abort', () => wake?.(), {once:true});
    while (!signal.aborted) {
     while (queue.length) { const e = queue.shift(); if (types.includes(e.type)) yield e }
-    await new Promise(r => { wake = r; signal.addEventListener('abort', r, {once:true}) });
+    await new Promise(r => { wake = r });
    }
   }})},
  };
@@ -181,9 +183,11 @@ func TestOpencodeV2PluginThreadsTheSearchAndReportsTheTurn(t *testing.T) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, node, "--input-type=module", "-e", script) // #nosec G204 -- fixed test script and local Node runtime; synthetic input on stdin
 	cmd.Stdin = strings.NewReader(string(in))
-	out, err := cmd.CombinedOutput()
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("plugin: %v %s", err, out)
+		t.Fatalf("plugin: %v %s %s", err, out, stderr.Bytes())
 	}
 	var res struct {
 		Exports, Types, Other, Second, Off, NotShell []string
@@ -199,7 +203,7 @@ func TestOpencodeV2PluginThreadsTheSearchAndReportsTheTurn(t *testing.T) {
 		Turn, Interrupted                            hostTurn
 	}
 	if err := json.Unmarshal(out, &res); err != nil {
-		t.Fatalf("%v: %s", err, out)
+		t.Fatalf("%v: %s (stderr: %s)", err, out, stderr.Bytes())
 	}
 	// opencode 1 loads every export of a plugin file: a second one would run
 	// the plugin twice there.
