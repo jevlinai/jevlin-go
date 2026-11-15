@@ -962,7 +962,7 @@ func TestAgentsPreferAcrossAllSixHosts(t *testing.T) {
 // ── the rendered help, byte for byte ─────────────────────────────────────
 
 // TestHelpTextGolden holds usageText — exactly what the `help` command
-// prints, rendered from the registry — byte for byte.
+// prints — byte for byte.
 func TestHelpTextGolden(t *testing.T) {
 	path := filepath.Join("testdata", "help", "usage.golden")
 	want, err := os.ReadFile(path) // #nosec G304 -- a fixed testdata path this file builds, not an external one

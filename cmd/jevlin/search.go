@@ -15,7 +15,8 @@ package main
 //     variable a hook put in front of this command; the workspace lineage
 //     file a hook wrote (named by JEVLIN_LINEAGE, or found by walking
 //     up from the working directory); or, with no hook at all, a hashed
-//     per-shell session identity. JEVLIN_TRACE=off sends none.
+//     per-shell session identity. [search] trace = false or
+//     JEVLIN_TRACE=off sends none (traceOff).
 //
 // Nothing about the search is recorded on this machine.
 //
@@ -69,6 +70,9 @@ type searchOps struct {
 	now                func() time.Time
 	// hook is the filesystem the lineage file is read and bumped through.
 	hook hookOps
+	// cancelOn is what cancels a search besides its deadline: nil is the
+	// signal context, a person's Ctrl-C; `jevlin mcp` sets plainContext.
+	cancelOn func() (context.Context, context.CancelFunc)
 }
 
 func realSearchOps() searchOps {
@@ -369,7 +373,11 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		return exitClientErr
 	}
 
-	ctx, cancel := searchDeadline(*timeout)
+	cancelOn := ops.cancelOn
+	if cancelOn == nil {
+		cancelOn = signalContext
+	}
+	ctx, cancel := searchDeadline(cancelOn, *timeout)
 	defer cancel()
 
 	trace, foreignBridge := searchTraceFailingOpen(ops, cfg.Search, cfg.Search.StateDir, getenv, stderr)
@@ -765,17 +773,39 @@ func postRouter(ctx context.Context, client *http.Client, endpoint, key string, 
 	if err != nil {
 		return routerAttempt{}, err
 	}
+	return postRouterBytes(ctx, client, endpoint, key, payload, header)
+}
+
+// postRouterBytes is postRouter for a body already encoded, which goes on
+// the wire exactly as given. json.Marshal cannot do this for a caller's
+// bytes: it compacts a json.RawMessage and escapes its < > and &.
+func postRouterBytes(ctx context.Context, client *http.Client, endpoint, key string, payload []byte, header func(*http.Request)) (routerAttempt, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return routerAttempt{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", clientIdentifier())
-	req.Header.Set("Authorization", "Bearer "+key)
 	if header != nil {
 		header(req)
 	}
+	return sendRouter(client, req, key)
+}
+
+// getRouter GETs one of the router's endpoints, on postRouter's terms.
+func getRouter(ctx context.Context, client *http.Client, endpoint, key string) (routerAttempt, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return routerAttempt{}, err
+	}
+	return sendRouter(client, req, key)
+}
+
+// sendRouter sends req with the participant's key and reads the answer
+// against searchMaxBody.
+func sendRouter(client *http.Client, req *http.Request, key string) (routerAttempt, error) {
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", clientIdentifier())
+	req.Header.Set("Authorization", "Bearer "+key)
 	resp, err := client.Do(req)
 	if err != nil {
 		return routerAttempt{}, err
@@ -833,15 +863,40 @@ func searchTraceFailingOpen(ops searchOps, m config.Search, stateDir string, get
 	return searchTrace(ops, m, stateDir, getenv)
 }
 
-// traceOff: JEVLIN_TRACE switches traces off entirely, read the same way
-// by the search, the turn end and every hook that builds a trace, so no
-// spelling the search accepts leaves a hook still keeping the session.
-func traceOff(getenv func(string) string) bool {
+// traceOff is the one place that decides whether the trace is off, read
+// the same way by the search, the turn end, its sender and every hook that
+// builds a trace, so the two switches can never disagree and no spelling
+// the search accepts leaves a hook still keeping the session. configOff is
+// the installation's [search] trace = false (config.Search.TraceOff); the
+// environment's is JEVLIN_TRACE=off, 0 or false. Either one off means off:
+// no trace, no session id, no turn end and no lineage file.
+//
+// The binary decides it for every host, the JavaScript ones included: their
+// adapters read only JEVLIN_TRACE, and whatever they build under [search]
+// trace = false is dropped here before anything leaves the machine — the
+// bridge by searchTrace, the turn by turnEndEnabled.
+func traceOff(configOff bool, getenv func(string) string) bool {
+	return len(traceOffBy(configOff, getenv)) > 0
+}
+
+// Which switch turned the trace off, as status names it.
+const (
+	traceOffByConfig      = "config"
+	traceOffByEnvironment = "environment"
+)
+
+// traceOffBy is traceOff with the switches that are off named, config
+// first; empty means the trace is on.
+func traceOffBy(configOff bool, getenv func(string) string) []string {
+	var by []string
+	if configOff {
+		by = append(by, traceOffByConfig)
+	}
 	switch strings.ToLower(strings.TrimSpace(getenv("JEVLIN_TRACE"))) {
 	case "off", "0", "false":
-		return true
+		by = append(by, traceOffByEnvironment)
 	}
-	return false
+	return by
 }
 
 // opencodeSessionEnv is the session opencode 2 exports to every shell its
@@ -866,7 +921,7 @@ func anotherOpencodeSessions(env *traceEnvelope, getenv func(string) string) boo
 }
 
 func searchTrace(ops searchOps, m config.Search, stateDir string, getenv func(string) string) (env *traceEnvelope, foreignBridge bool) {
-	if traceOff(getenv) {
+	if traceOff(m.TraceOff, getenv) {
 		return nil, false
 	}
 	harness := getenv("JEVLIN_HARNESS")

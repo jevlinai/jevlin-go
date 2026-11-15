@@ -608,6 +608,26 @@ func (p *agentPlan) removedPaths() []string {
 
 func (p *agentPlan) empty() bool { return len(p.writes) == 0 && len(p.removes) == 0 }
 
+// hosts names every host the plan writes or removes a file for, once each,
+// in the order the plan first names them.
+func (p *agentPlan) hosts() []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(h string) {
+		if h != "" && !seen[h] {
+			seen[h] = true
+			out = append(out, h)
+		}
+	}
+	for _, w := range p.writes {
+		add(w.surface)
+	}
+	for _, r := range p.removes {
+		add(r.surface)
+	}
+	return out
+}
+
 type multiFlag []string
 
 func (m *multiFlag) String() string     { return strings.Join(*m, ",") }
@@ -617,29 +637,48 @@ func cmdAgents(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv 
 	return agentsMain(realAgentOps(), args, stdin, stdout, stderr, getenv)
 }
 
-var agentsUsage = `usage: jevlin agents install|status|uninstall [-config file] [-client name]... [-dry-run] [-yes]
+var agentsUsage = `usage: jevlin agents install|uninstall [-client name]... [-dry-run] [-yes]
+                     [-config file]
+       jevlin agents status [-client name]... [-config file]
        jevlin agents prefer on|off|status [-config file]
-       jevlin agents tier fast [preset]|balanced|max|default|status [-config file]
-  install     detect coding agents (by command or config directory) and give each
-              the supersearch skill (opencode: a plugin) and hooks
-  status      what is installed where, and which search is the default
-  uninstall   remove exactly what install wrote
-  prefer      off: the agent's own web search is the default and this one is used
-              when named; on: this one is the default. Rewrites the installed
-              skills so it takes effect in every agent with a skill, which
-              opencode has not (/jevlin off|on in the agent does the same)
-  tier        the tier every search carries unless the request names
-              one: fast (the fast indexes a preset names), balanced
-              (several core engines, attributed) or max (every core engine,
-              more results and longer excerpts); balanced and max are for
-              claimed agents only. default unsets it so
-              the router's default applies. Saved beside the config; no
-              skill is rewritten (/jevlin tier <tier> in the agent does
-              the same)
-  -client     act on this agent only (` + targetIDs(targetHost) + `); repeatable
-  -dry-run    print the plan, change nothing
-  -yes        answer Proceed? with yes; a question about a Codex setting of
-              your own is still asked, and with no terminal is not answered
+       jevlin agents tier fast [preset]|balanced|max|default|status
+                     [-config file]
+
+Gives each coding agent on this machine the jevlin skill and the hooks it
+supports, and sets which search is the default and at which tier.
+
+commands:
+  install    find the coding agents (by command or config directory) and
+             give each the supersearch skill (opencode: a plugin) and hooks
+  status     what is installed where, and which search is the default
+  uninstall  remove exactly what install wrote
+  prefer     off: the agent's own web search is the default, and this one
+             is used when named; on: this one is the default. Rewrites the
+             installed skills, so it takes effect in every agent with a
+             skill, which opencode has not (/jevlin off|on in the agent does
+             the same)
+  tier       the tier every search carries unless the request names one:
+             fast (the fast indexes a preset names), balanced (several core
+             engines, attributed) or max (every core engine, more results
+             and longer excerpts); balanced and max are for claimed agents
+             only. default unsets it, so the router's default applies;
+             status lists the router's presets. Saved beside the config; no
+             skill is rewritten (/jevlin tier <tier> in the agent does the
+             same)
+
+flags:
+  -client name  act on this agent only; repeatable
+                (` + targetIDs(targetHost) + `)
+  -dry-run      print the plan, change nothing
+  -yes          answer Proceed? with yes; a question about a Codex setting
+                of your own is still asked, and with no terminal is not
+                answered
+  -config file  the config to read (jevlin help config)
+
+examples:
+  jevlin agents status
+  jevlin agents install -client claude
+  jevlin agents tier balanced
 `
 
 func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
@@ -791,6 +830,9 @@ func agentsMain(ops agentOps, args []string, stdin io.Reader, stdout, stderr io.
 	failures := commitPlan(ops, &plan, stdout, stderr)
 	if failures > 0 {
 		return exitTransport
+	}
+	if sub == "install" && installedPlan(&plan, failures) {
+		acknowledgeInstalled(entry.cfg, getenv)
 	}
 	// A run that refused something exits 1 (refusedExit), and its last
 	// line says so rather than "done" alone.
@@ -3274,8 +3316,20 @@ func safetyOutcome(wrote int) string {
 // fully installed, for the next run to finish, rather than half of it. A
 // held removal is not counted again: the failed write already was.
 func commitPlan(ops agentOps, p *agentPlan, stdout, stderr io.Writer) int {
+	failures, _ := commitPlanByHost(ops, p, stdout, stderr)
+	return failures
+}
+
+// commitPlanByHost is commitPlan, also answering which hosts had a write or
+// a removal fail: setup tells a person to restart only a host whose every
+// change was made. It writes and removes exactly what commitPlan does.
+func commitPlanByHost(ops agentOps, p *agentPlan, stdout, stderr io.Writer) (int, map[string]bool) {
 	failures := 0
 	failedHosts := map[string]bool{}
+	// incomplete is failedHosts plus the hosts a removal failed for. It is
+	// kept apart because failedHosts holds a host's later removals, and a
+	// failed removal must not hold the next one.
+	incomplete := map[string]bool{}
 	for _, wr := range p.writes {
 		if err := ops.mkdirAll(filepath.Dir(wr.path), 0o700); err != nil {
 			fmt.Fprintf(stderr, "jevlin agents: %s: %v\n", filepath.Dir(wr.path), err)
@@ -3300,11 +3354,15 @@ func commitPlan(ops agentOps, p *agentPlan, stdout, stderr io.Writer) int {
 		if err := ops.removeAll(r.path); err != nil {
 			fmt.Fprintf(stderr, "jevlin agents: remove %s: %v\n", r.path, err)
 			failures++
+			incomplete[r.surface] = true
 			continue
 		}
 		fmt.Fprintf(stdout, "removed %s\n", tilde(ops.home, r.path))
 	}
-	return failures
+	for h := range failedHosts {
+		incomplete[h] = true
+	}
+	return failures, incomplete
 }
 
 func tilde(home, path string) string {

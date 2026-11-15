@@ -60,9 +60,10 @@ predecessor project shipped without it.
   who installed it from the marketplace. Preflight checks all three with `npm/package.json`.
 - **`plugin/skills/jevlin/SKILL.md` still says what setup does.** It is the setup skill the marketplaces
   carry, not the search skill; a flag or question it names must be one setup accepts.
-- **The help text and the skill match the flags shipped.** A flag `usageText` or
-  `cmd/jevlin/skill.md` names that the binary does not accept, or one it accepts that
-  neither mentions, breaks the contract an agent reads.
+- **The help text and the skill match the flags shipped.** A flag a command's help
+  (`cmd/jevlin/help.go` and the usage beside each command) or `cmd/jevlin/skill.md` names that
+  the binary does not accept, or one it accepts that neither mentions, breaks the contract an
+  agent reads.
 - **Any adapter that has never had a live smoke is named in the changelog entry.** "Not
   live-smoked" is an acceptable answer; silence is not.
 - **`make verify` is green on that exact commit.**

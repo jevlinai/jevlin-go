@@ -103,7 +103,7 @@ type wireFetchPage struct {
 // is as strict as search's: an unknown field, at the top or in a page, is
 // refused, and so is every value outside the router's bounds.
 func decodeMachineFetchRequest(r io.Reader) (machineFetchRequest, *inputError) {
-	raw, ierr := readMachineRequest(r, "fetch")
+	raw, ierr := readExactMachineRequest(r, "fetch", fetchRequestFields)
 	if ierr != nil {
 		return machineFetchRequest{}, ierr
 	}
@@ -524,13 +524,25 @@ func cmdFetch(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv f
 // machine mode, where its output is discarded, so it cannot say this itself.
 const fetchUsage = `usage: jevlin fetch --stdin [-config file] [-timeout duration]
 
-Reads one version-1 JSON fetch request on stdin and answers with one JSON
-envelope on stdout: the full text of up to five pages a search returned.
+Reads in full the pages a search returned, for an agent: one version-1 JSON
+request on stdin, one JSON envelope on stdout with result.pages, each with
+its status, content and next_offset. The router serves only pages from this
+account's recent searches, and only to an account that can fetch.
 
+flags:
   --stdin            required: read the request from stdin
-  -config file       the config to read, given at most once
-  -timeout duration  the whole fetch's deadline, covering connect, headers
-                     and body (default 1m0s)
+  -timeout duration  the deadline for the whole fetch (default 1m0s)
+  -config file       the config to read, given at most once (jevlin help
+                     config)
+
+the request:
+  pages (1 to 5, each a source_id from a search's result, or a url), and
+  optionally max_chars (1000 to 50000), offset and query.
+
+exit status: as for jevlin search.
+
+example:
+  echo '{"version":1,"pages":[{"source_id":"s_..."}]}' | jevlin fetch --stdin
 `
 
 func fetchMain(now func() time.Time, args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
@@ -542,10 +554,15 @@ func fetchMain(now func() time.Time, args []string, stdin io.Reader, stdout, std
 		fmt.Fprintln(stderr, "jevlin fetch: --stdin is required: send one version-1 JSON request on stdin")
 		return exitUsage
 	}
+	return fetchMainIn(signalContext, now, args, stdin, stdout, getenv)
+}
+
+// fetchMainIn is fetchMain under the cancellation the caller chooses, as
+// searchDeadline describes.
+func fetchMainIn(cancelOn func() (context.Context, context.CancelFunc), now func() time.Time, args []string, stdin io.Reader, stdout io.Writer, getenv func(string) string) int {
 	// Machine mode only, so everything is in the envelope, as for search
 	// --stdin: nothing on stderr for a caller to parse instead.
-	stderr = io.Discard
-	fs := newFlagSet("fetch", stderr)
+	fs := newFlagSet("fetch", io.Discard)
 	cfgPath := onceStringFlag(fs, "config", "path to TOML config file; given at most once")
 	timeout := fs.Duration("timeout", defaultSearchTimeout, "whole-fetch deadline, covering connect, headers and body")
 	fs.Bool("stdin", false, "read one version-1 JSON fetch request from stdin and answer with the machine envelope")
@@ -590,7 +607,7 @@ func fetchMain(now func() time.Time, args []string, stdin io.Reader, stdout, std
 			errors.New("this installation holds no search credential; run jevlin connect"))
 	}
 
-	ctx, cancel := searchDeadline(*timeout)
+	ctx, cancel := searchDeadline(cancelOn, *timeout)
 	defer cancel()
 	out := performFetch(ctx, now, strings.TrimRight(cfg.Search.RouterURL.String(), "/")+"/v1/fetch", key, req.body())
 	env, code := fetchEnvelopeOf(out)

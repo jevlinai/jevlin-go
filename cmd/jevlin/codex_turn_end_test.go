@@ -189,6 +189,7 @@ func TestCodexTurnEndSendsNothingItShouldNot(t *testing.T) {
 		"tracing switched off": func(r *codexTurnRun) {
 			r.ops.getenv = func(k string) string { return map[string]string{"JEVLIN_TRACE": "off"}[k] }
 		},
+		"trace = false in the config": func(r *codexTurnRun) { r.hc.traceOffInConfig = true },
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := newCodexTurnRun(t)

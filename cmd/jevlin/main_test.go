@@ -7,74 +7,68 @@ import (
 	"time"
 )
 
-// section extracts the text between two markers in usageText, in order,
-// so a reshuffle of the help text cannot pass a check by matching a
-// stray occurrence of the marker string somewhere else in the constant.
-func section(t *testing.T, from, to string) string {
+// helpOf is one command's help, failing the test when it has none.
+func helpOf(t *testing.T, name string) string {
 	t.Helper()
-	start := strings.Index(usageText, from)
-	if start == -1 {
-		t.Fatalf("usageText: start marker %q not found", from)
+	h, ok := commandHelp(name)
+	if !ok {
+		t.Fatalf("no help for %q", name)
 	}
-	end := strings.Index(usageText[start:], to)
-	if end == -1 {
-		t.Fatalf("usageText: end marker %q not found after %q", to, from)
-	}
-	return usageText[start : start+end]
+	return h
 }
 
-func TestUsageTextSearchSection(t *testing.T) {
-	s := section(t, "\n  search ", "\n  agents ")
+func TestSearchHelp(t *testing.T) {
+	s := helpOf(t, "search")
 
 	for _, want := range []string{"--stdin", "-tier", "-format", "valid search response", "invalid server response"} {
 		if !strings.Contains(s, want) {
-			t.Errorf("search section: missing %q\n%s", want, s)
+			t.Errorf("search help: missing %q\n%s", want, s)
 		}
 	}
 
 	if !strings.Contains(s, "-timeout") {
-		t.Errorf("search section: missing -timeout\n%s", s)
+		t.Errorf("search help: missing -timeout\n%s", s)
 	}
 	if !strings.Contains(s, defaultSearchTimeout.String()) {
-		t.Errorf("search section: does not advertise the real default timeout %q\n%s",
+		t.Errorf("search help: does not advertise the real default timeout %q\n%s",
 			defaultSearchTimeout.String(), s)
 	}
 }
 
-func TestUsageTextAgentsSection(t *testing.T) {
-	s := section(t, "\n  agents ", "\n  hook ")
+func TestAgentsHelpNamesEveryHost(t *testing.T) {
+	s := helpOf(t, "agents")
 
 	for _, host := range []string{"claude", "codex", "cursor", "opencode", "pi", "hermes"} {
 		if !strings.Contains(s, host) {
-			t.Errorf("agents section: missing host %q\n%s", host, s)
+			t.Errorf("agents help: missing host %q\n%s", host, s)
 		}
 	}
 }
 
-func TestUsageTextConnectSection(t *testing.T) {
-	s := section(t, "\n  connect ", "\n  login ")
+func TestConnectHelp(t *testing.T) {
+	s := helpOf(t, "connect")
 
 	if !strings.Contains(s, "-json") {
-		t.Errorf("connect section: missing -json\n%s", s)
+		t.Errorf("connect help: missing -json\n%s", s)
 	}
 	if !strings.Contains(s, "instead of narration") {
-		t.Errorf("connect section: does not say -json replaces the narration\n%s", s)
+		t.Errorf("connect help: does not say -json replaces the narration\n%s", s)
 	}
 }
 
-func TestUsageTextStatusSection(t *testing.T) {
-	s := section(t, "\n  status ", "\nis it working")
+func TestStatusHelp(t *testing.T) {
+	s := helpOf(t, "status")
 
 	if !strings.Contains(s, "-json") {
-		t.Errorf("status section: missing -json\n%s", s)
+		t.Errorf("status help: missing -json\n%s", s)
 	}
 }
 
-func TestUsageTextDoctorSection(t *testing.T) {
-	s := section(t, "\n  doctor ", "\n  limits ")
+func TestDoctorHelp(t *testing.T) {
+	s := helpOf(t, "doctor")
 
 	if !strings.Contains(s, "-json") {
-		t.Errorf("doctor section: missing -json\n%s", s)
+		t.Errorf("doctor help: missing -json\n%s", s)
 	}
 
 	// Matched against the section with its whitespace collapsed: the help is
@@ -94,7 +88,7 @@ func TestUsageTextDoctorSection(t *testing.T) {
 		{"a NO is a successful diagnosis", "the exit rule"},
 	} {
 		if !strings.Contains(flat, want.phrase) {
-			t.Errorf("doctor section: missing %q — %s\n%s", want.phrase, want.why, s)
+			t.Errorf("doctor help: missing %q — %s\n%s", want.phrase, want.why, s)
 		}
 	}
 
@@ -103,15 +97,13 @@ func TestUsageTextDoctorSection(t *testing.T) {
 	// print.
 	for _, gone := range []string{"enrolled", "earning", "intake", "probe", "payout access"} {
 		if strings.Contains(flat, gone) {
-			t.Errorf("doctor section: still names %q, a check this client no longer runs\n%s", gone, s)
+			t.Errorf("doctor help: still names %q, a check this client no longer runs\n%s", gone, s)
 		}
 	}
 }
 
 // fetch -h and agents -h answer with their own usage on stdout and exit 0,
-// and agents status -h offers only the flags status acts on: it reads and
-// prints, so -dry-run and -yes would promise a plan and a question that
-// never come.
+// and the agents status usage line offers only the flags status acts on.
 func TestSubcommandHelpListsTheFlagsThatApply(t *testing.T) {
 	noEnv := func(string) string { return "" }
 
@@ -134,16 +126,22 @@ func TestSubcommandHelpListsTheFlagsThatApply(t *testing.T) {
 		t.Errorf("agents -h printed %q, want agentsUsage", out.String())
 	}
 
-	out.Reset()
-	errOut.Reset()
-	agentsMain(realAgentOps(), []string{"status", "-h"}, strings.NewReader(""), &out, &errOut, noEnv)
-	listing := errOut.String()
-	if !strings.Contains(listing, "-client") || !strings.Contains(listing, "-config") {
-		t.Fatalf("agents status -h: not the flag listing\n%s", listing)
+	// agents status reads and prints, so its usage line offers neither
+	// -dry-run nor -yes: they would promise a plan and a question that never
+	// come. Its line is the one that begins with "jevlin agents status".
+	var statusLine string
+	for _, line := range strings.Split(agentsUsage, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "jevlin agents status ") {
+			statusLine = line // the usage line, which comes before the examples
+			break
+		}
+	}
+	if !strings.Contains(statusLine, "-client") || !strings.Contains(statusLine, "-config") {
+		t.Fatalf("agents help: no status usage line naming -client and -config\n%s", agentsUsage)
 	}
 	for _, gone := range []string{"-dry-run", "-yes"} {
-		if strings.Contains(listing, gone) {
-			t.Errorf("agents status -h offers %s, which status ignores\n%s", gone, listing)
+		if strings.Contains(statusLine, gone) {
+			t.Errorf("agents status usage offers %s, which status ignores: %s", gone, statusLine)
 		}
 	}
 }

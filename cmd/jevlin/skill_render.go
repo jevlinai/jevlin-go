@@ -19,7 +19,7 @@ import (
 )
 
 // exampleRequest is the request body the skill shows.
-const exampleRequest = `{"version":1,"query":"exact query text","objective":"what you need to find out"}`
+const exampleRequest = `{"version":1,"query":"exact query text"}`
 
 // exampleFetchRequest is the fetch body the skill shows: one page by the
 // source_id a search returned, which the agent replaces with its own.

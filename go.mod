@@ -2,7 +2,7 @@ module github.com/jevlinai/jevlin-go
 
 go 1.27.0
 
-toolchain go1.27.3
+toolchain go1.27.4
 
 // Go 1.27 makes SSL_CERT_FILE and SSL_CERT_DIR replace the platform
 // certificate store on macOS and Windows. Keep the platform store, as

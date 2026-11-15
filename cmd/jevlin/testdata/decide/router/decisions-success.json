@@ -1,0 +1,52 @@
+{
+  "request_id": "01936f2a-7c00-7000-8000-0000000000a1",
+  "model": "perplexity/pplx-decider-v1.2",
+  "model_resolved": "pplx-decider-v1.2",
+  "answers": {
+    "kind": {
+      "type": "choice",
+      "choice": "docs",
+      "probabilities": {
+        "blog": 0.09,
+        "docs": 0.91
+      },
+      "confidence": 0.88
+    },
+    "relevance": {
+      "type": "score",
+      "score": 1.7,
+      "probabilities": {
+        "0": 0.03,
+        "1": 0.24,
+        "2": 0.73
+      },
+      "legend": {
+        "0": "Unrelated.",
+        "1": "Related, no answer.",
+        "2": "Answers it."
+      },
+      "confidence": 0.82
+    }
+  },
+  "citations": [
+    {
+      "url": "https://docs.example.test/storage/pricing",
+      "title": "Storage pricing",
+      "excerpts": [
+        "Archive storage is billed per gigabyte per month."
+      ]
+    },
+    {
+      "url": "https://example.test/blog/log-retention"
+    }
+  ],
+  "usage": {
+    "input_tokens": 11000,
+    "output_tokens": 14,
+    "grounded_calls": 2,
+    "cost_micros": 2220,
+    "cost_source": "modeled",
+    "byok": false,
+    "latency_ms": 640
+  }
+}

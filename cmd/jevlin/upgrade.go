@@ -34,31 +34,40 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/BurntSushi/toml"
+
 	"github.com/jevlinai/jevlin-go/internal/selfupdate"
 	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
 const upgradeUsage = `usage: jevlin upgrade [-version X.Y.Z | -rollback] [-home dir]
-       jevlin upgrade -auto [-config file] [-home dir]
 
-Replaces this native binary with the latest canonical Jevlin release, or
-with -version exactly that release, after verifying its checksum, inspecting
-its archive and running the new binary's version command. The binary it
-replaces is kept as <binary>.previous. A copy npm installed is updated with npm.
+Replaces this native binary with the latest Jevlin release, or with
+-version exactly that release, after verifying its signed checksum,
+inspecting its archive and running the new binary's version command. The
+binary it replaces is kept as <binary>.previous. A copy npm installed is
+updated with npm install -g @jevlinsearch/jevlin@latest instead.
 
+flags:
   -version X.Y.Z  upgrade to exactly this release; never an older one
-  -rollback       put back <binary>.previous, the one binary the last upgrade or
-                  rollback replaced; no network
+  -rollback       put back <binary>.previous, the one binary the last
+                  upgrade or rollback replaced; no network
   -home dir       the installation whose lifecycle lock is held (default as
                   uninstall resolves it)
-  -auto           the daily check the agent hooks start, not a command a
-                  person runs: under [update] mode = "apply", the
-                  default, a native copy is replaced by a newer patch
-                  release of its own minor version (0.7.0 to 0.7.1); a new
-                  minor release, and any release under "notify" or for a
-                  copy npm installed, is only recorded as available.
-                  Exits quietly; jevlin status and doctor report the result
-  -config file    with -auto: the config the hook runs with
+
+internal:
+  -auto [-config file] [-home dir]
+                  the daily check the agent hooks start, not a command a
+                  person runs. Under [update] mode = "apply", the default,
+                  a native copy is replaced by a newer patch release of its
+                  own minor version (0.7.0 to 0.7.1); a new minor release,
+                  and any release under "notify" or for a copy npm
+                  installed, is only recorded as available. It exits
+                  quietly; jevlin status and doctor report the result
+
+examples:
+  jevlin upgrade
+  jevlin upgrade -rollback
 `
 
 // upgradeClass is what a participant can do about a failed upgrade.
@@ -279,6 +288,7 @@ func upgradeRun(d upgradeDeps, homeFlag string, requested *selfupdate.Version, r
 		}
 		fmt.Fprintf(d.stdout, "rolled back %s from %s to %s\nthe binary it replaced is now %s; run `jevlin upgrade -rollback` again to swap back\n",
 			rolled.Executable, rolled.From, rolled.To, selfupdate.PreviousPath(rolled.Executable))
+		fmt.Fprint(d.stdout, rollbackConfigNote(home, rolled))
 		record = &updateStamp{Binary: resolved, Running: rolled.To.String(), Held: rolled.From.String(), Outcome: updateRolledBack}
 		d.rerenderOwned(ctx, exe, resolved, home)
 		return exitOK
@@ -306,6 +316,52 @@ func upgradeRun(d upgradeDeps, homeFlag string, requested *selfupdate.Version, r
 	record = &updateStamp{Binary: resolved, Running: prepared.From.String(), Latest: prepared.To.String(), Outcome: updateUpgraded}
 	d.rerenderOwned(ctx, exe, resolved, home)
 	return exitOK
+}
+
+// formatOneFirstRelease is the first release that reads configuration format
+// 1, and it reads nothing else: 0.7.0. A binary older than it refuses a
+// format-1 file as holding unknown keys.
+var formatOneFirstRelease = selfupdate.Version{Major: 0, Minor: 7, Patch: 0}
+
+// rollbackConfigNote is what a rollback says when the binary it put back
+// cannot read the installation's config: the config is format 1, setup has
+// set the older one aside as <config>.old (or .old.1, ... when that name was
+// taken; the note names the latest, latestAside), and the release rolled back
+// to is older than formatOneFirstRelease. A rollback to 0.7.0 or later says
+// nothing, because that binary reads the file, and the .old a migration left
+// stays on disk for good. Nothing is moved: putting the older file back would
+// also mean moving the identity setup moved, and would surprise the daily
+// check's hold, so the note says what a person can do and leaves it to them.
+// Empty when there is nothing to say.
+func rollbackConfigNote(home string, rolled selfupdate.Rolled) string {
+	if rolled.To.Compare(formatOneFirstRelease) >= 0 {
+		return ""
+	}
+	cfgPath := filepath.Join(home, setupConfigFile)
+	old := latestAside(cfgPath, lexists)
+	if old == "" || !isFormatOneConfig(cfgPath) {
+		return ""
+	}
+	return fmt.Sprintf("\nthe configuration at %s is format 1, which %s does not read; the\n"+
+		"older configuration is at %s, and setup moved the key and registration\n"+
+		"beside the state directory. Run `jevlin upgrade -rollback` again to return to\n"+
+		"%s, or move the older configuration and the key back by hand before\n"+
+		"using %s.\n", cfgPath, rolled.To, old, rolled.From, rolled.To)
+}
+
+// isFormatOneConfig reports whether the file at path is a regular file whose
+// schema line says format 1. Anything it cannot read says no.
+func isFormatOneConfig(path string) bool {
+	data, err := readExistingConfig(path)
+	if err != nil || data == nil {
+		return false
+	}
+	var doc map[string]any
+	if _, err := toml.Decode(string(data), &doc); err != nil {
+		return false
+	}
+	schema, ok := doc["schema"].(int64)
+	return ok && schema == config.Schema
 }
 
 // recordManual writes what a person's upgrade or rollback did into the

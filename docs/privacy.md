@@ -9,8 +9,9 @@ platform's to say: see its [privacy policy](https://platform.jevlin.ai/privacy).
 |---|---|---|
 | The search request: your query and its options, and a small trace | the router your config names (`[router] url`, `api.jevlin.ai` by default) | every search |
 | A page's full text request: the pages and options of a `fetch` | the same router | every fetch |
-| The turn end: a record of a turn that searched | the same router | only with `[search] turn_end = true` |
+| The turn end: a record of a turn that searched | the same router | with `[search] turn_end = true`, which setup writes into a config it creates ([Switching it off](#switching-it-off)) |
 | Registration and the claim's status | the platform's agents API (`[agents] url`) | `jevlin connect`, and setup, which runs it |
+| An installation acknowledgment: an empty request with your key, nothing else ([guide](guide.md#installation-acknowledgment)) | the same agents API | after each `setup` or `agents install` that writes an agent's skill or hooks; the platform keeps the first |
 | A request for the latest release's version and, when a release is installed, its files, all with no credential | the project's GitHub releases | the daily release check (which installs a patch release by default), and `jevlin upgrade` |
 
 Your search key goes in each request's `Authorization` header, and only to the router and agents API
@@ -30,7 +31,7 @@ history can see it.
 | agent | the trace's text | the turn end |
 |---|---|---|
 | Claude Code | An earlier message of the turn: Claude Code records a message after the hook runs, so the sentence beside the search is not in it. | What you asked, the assistant's text along the way, each tool's name, duration and outcome, the final answer, the model and its token counts (Claude Code 2.1.196 or later). |
-| Cursor | Its latest thought (the model's reasoning, as Cursor's `afterAgentThought` gives it) or reply (`afterAgentResponse`). | What you asked, the turn's searches, the final answer and the model. |
+| Cursor | Its reply (`afterAgentResponse`) when it came earlier in the same turn as the search; otherwise none, so a turn's first search before any reply carries no text, never the previous turn's reply. The model's reasoning, which Cursor's `afterAgentThought` gives, is neither sent nor kept. | What you asked, the turn's searches, the final answer and the model. |
 | Codex | None. | What you asked, the assistant's text along the way, each tool's name and outcome (a shell command has no duration), the final answer, the model and its token counts. |
 | opencode | The assistant text before the search. | What you asked, the assistant's text along the way, each tool's name, duration and outcome, the final answer, the model and its token counts. |
 | Pi | The assistant text before the search. | The same as opencode (Pi 0.80.4 or later). |
@@ -76,7 +77,7 @@ The trace's text and the turn end's text are scrubbed on this machine before the
 
 | kind | removed |
 |---|---|
-| A credential's shape | API keys, Stripe secret keys, GitHub and AWS tokens, JWTs, a password inside a URL; a PEM private key block whole, markers included (one cut short from its BEGIN marker through the lines that still look like a key's body); email addresses. |
+| A credential's shape | API keys (Google's `AIza…` among them), Stripe secret keys, GitHub, GitLab, AWS, Slack, npm, Hugging Face and PyPI tokens, the secret path of a Slack webhook URL, JWTs, a password inside a URL; a PEM private key block whole, markers included (one cut short from its BEGIN marker through the lines that still look like a key's body); email addresses; a payment card number: 13 to 19 digits, in one run or grouped by single spaces or dashes as cards are printed, starting as a card network's do and passing the Luhn check, with no word, decimal or identifier joined to it. A long number of that shape, such as a decimal id, goes too. |
 | An `Authorization` or `Proxy-Authorization` header | The credential after `Bearer`, `Basic` or `Token`, whatever its shape, in a header line, `curl -H '…'`, or a JSON or JavaScript key. A variable (`$TOKEN`, `${TOKEN}`) or a placeholder (`<token>`) stays. |
 | A secret known by its name | The value of a name with a part `PASSWORD`, `PASSWD`, `PASSPHRASE`, `SECRET`, `SECRETS`, `TOKEN`, `CREDENTIAL`, `CREDENTIALS` or `APIKEY` in any case, the parts split by `_`, `-` and `.` and, in camelCase, the last word (`DATABASE_PASSWORD`, `client-secret`, `accessToken`; `tokenCount` stays). `KEY` and `PASS` count in a name in capitals or of two or more parts (`API_KEY`, `--api-key`, `db_pass`). Also `PGPASSWORD`, `MYSQL_PWD`, and `sig` as a URL query parameter. A bare `key=…` or `pass=…` is left. |
 | An environment listing | Every value in a run of lines naming five or more variables (`NAME=value`, `export`, `declare -x`, `typeset -x`), and every value in a PowerShell `Name`/`Value` table (`Get-ChildItem Env:`, and any hashtable PowerShell prints the same way). |
@@ -109,7 +110,10 @@ input, held to a bound by test.
 
 ## The turn end
 
-Off unless `[search] turn_end = true`. When a turn in which a jevlin search was served ends, the
+On with `[search] turn_end = true`: setup writes that line into a config it creates where there was
+none, and says so. A config without the line, which is every config an earlier version wrote, reads
+as off, so an upgrade leaves an existing installation as it was. When a turn in which a jevlin
+search was served ends, the
 agent's end-of-turn hook sends the router's `POST /v1/turns` one record:
 
 | field | carries |
@@ -127,14 +131,24 @@ answers, so a refused or failed search does not count, and a turn is reported on
 Code, a subagent searches under the turn that launched it, and a background one can do so after
 that turn ended; that turn is then reported late, as completed, by the next turn end in the session.
 Under Codex and opencode a subagent runs a turn of its own, joined to no turn end. The model's
-private reasoning and a subagent's own steps are never sent in a turn end. The record goes only to the router this
+private reasoning is never sent by any agent, in the trace or the turn end, and a subagent's own
+steps are never sent in a turn end. The record goes only to the router this
 run is configured with. The hook writes it to an owner-only file in `sessions/`, and a detached
 `jevlin turn-end` sends it once and deletes the file, sent or not. opencode's plugin and Pi's
-extension hand jevlin every turn that searched; jevlin drops it unless `turn_end` is on.
+extension hand jevlin every turn that searched; jevlin drops it unless `turn_end` is on and the trace
+is not switched off.
 
 ## Switching it off
 
-`export JEVLIN_TRACE=off` sends no trace and no turn end: the hooks write no bridge and no lineage
-file, and searches work the same without them. `[search] turn_end` is `false` unless you set it.
+Two switches stop the trace, and either one is enough: `trace = false` under `[search]` in your
+config, and `export JEVLIN_TRACE=off`. Either sends no trace, no session id and no turn end: the
+hooks write no bridge and no lineage file, and searches work the same without them. jevlin decides
+this in one place for every agent. opencode's plugin and Pi's extension read only `JEVLIN_TRACE`,
+so under `trace = false` they still assemble the trace and the turn in the agent, on this machine;
+jevlin drops both, and nothing of either leaves the machine.
+
+`turn_end = false` under `[search]` stops the turn end alone. setup writes `turn_end = true` only
+into a config it creates where there was none; a config without the line reads as off.
+`jevlin status` shows both, as `trace:` and `turn end:`, each on or off and why.
 What jevlin keeps on this machine (the lineage files, the turn marks, the registration and the key)
 is listed in [reference, Files and locks](reference.md#files-and-locks).

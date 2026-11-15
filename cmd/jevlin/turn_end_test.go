@@ -306,7 +306,8 @@ func TestCursorTurnEnd(t *testing.T) {
 }
 
 // afterAgentResponse stamps the reply with the turn it was written in, and a
-// later thought clears the stamp with the reply.
+// later thought records nothing: the reply and its stamp stay as they were,
+// so a later turn's stop, whose turn the stamp does not name, sends no text.
 func TestCursorReplyIsStampedWithItsTurn(t *testing.T) {
 	_, ops := newFakeHookOps(nil)
 	hc := hookContext{sessionsDir: "/home/sessions"}
@@ -323,8 +324,9 @@ func TestCursorReplyIsStampedWithItsTurn(t *testing.T) {
 	if l := event("afterAgentResponse", "gen1", "the answer"); l.AnswerTurnID != traceHash("conv|gen1") {
 		t.Errorf("reply stamp = %q", l.AnswerTurnID)
 	}
-	if l := event("afterAgentThought", "gen2", "thinking"); l.AnswerTurnID != "" {
-		t.Errorf("a thought kept the reply's stamp: %q", l.AnswerTurnID)
+	if l := event("afterAgentThought", "gen2", "thinking"); l.AnswerTurnID != traceHash("conv|gen1") ||
+		len(l.History) != 1 || l.History[0].Text != "the answer" {
+		t.Errorf("a thought changed the reply or its stamp: %q %+v", l.AnswerTurnID, l.History)
 	}
 	if l := event("afterAgentResponse", "", "an answer with no generation"); l.AnswerTurnID != "" {
 		t.Errorf("a reply with no generation was stamped: %q", l.AnswerTurnID)

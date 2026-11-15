@@ -153,6 +153,15 @@ func TestMachineInputContractRefusals(t *testing.T) {
 		{"trace field", `{"version":1,"query":"q","trace":{"v":1}}`, codeUnknownField},
 		{"lineage field", `{"version":1,"query":"q","lineage":"/tmp/x"}`, codeUnknownField},
 		{"unknown field", `{"version":1,"query":"q","surprise":true}`, codeUnknownField},
+		// encoding/json matches a field without regard to case, so these
+		// are refused by name before the struct decode sees them.
+		{"a field in another case beside its own", `{"version":1,"query":"q","QUERY":"other"}`, codeUnknownField},
+		{"a required field in another case", `{"version":1,"QUERY":"q"}`, codeUnknownField},
+		{"version in another case", `{"VERSION":1,"query":"q"}`, codeUnknownField},
+		{"version in another case, of another value", `{"VERSION":2,"query":"q"}`, codeUnknownField},
+		{"version in another case beside its own", `{"version":1,"Version":2,"query":"q"}`, codeUnknownField},
+		{"version spelled with a long s", `{"verſion":1,"query":"q"}`, codeUnknownField},
+		{"a future version with a new field", `{"version":2,"query":"q","surprise":true}`, codeUnsupportedVersion},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -179,6 +188,28 @@ func TestMachineInputContractRefusals(t *testing.T) {
 				t.Error("a refused request was sent to the router anyway")
 			}
 		})
+	}
+}
+
+// A mis-cased key is named in the refusal, and the request spelled exactly
+// still goes through.
+func TestAMisCasedSearchFieldIsNamedAndTheExactOneIsServed(t *testing.T) {
+	fr, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(routerBody))
+	})
+	h := fixedSearchOps(root)
+	_, out, _ := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, `{"version":1,"QUERY":"q"}`, "-config", cfg)
+	env := decodeEnvelope(t, out)
+	if msg, _ := objOf(env["error"])["message"].(string); !strings.Contains(msg, `"QUERY"`) {
+		t.Errorf("error.message %q does not name the key", msg)
+	}
+	if code, out, errOut := runSearchStdin(t, h, map[string]string{"JEVLIN_API_KEY": "k"}, `{"version":1,"query":"q"}`, "-config", cfg); code != exitOK {
+		t.Fatalf("the exact-case request exited %d\n%s\n%s", code, out, errOut)
+	}
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+	if len(fr.reqs) != 1 {
+		t.Errorf("the router received %d requests, want only the exact-case one", len(fr.reqs))
 	}
 }
 

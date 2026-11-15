@@ -11,11 +11,14 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/jevlinai/jevlin-go/internal/selfupdate"
 )
 
 const leftInHomeHeading = "not this version's to remove: files an earlier version or another program put"
@@ -178,7 +181,13 @@ func TestPurgeLeavesTheBinaryDirectoryToBinaryAndSaysSo(t *testing.T) {
 	s := installedWithOwnBinary(t)
 	if runtime.GOOS == "windows" {
 		// The installation's own binary is bin\jevlin.exe there
-		// (uninstallRun.binaryName); the fixture's has no extension.
+		// (uninstallRun.binaryName); the fixture's has no extension. Its
+		// extensionless placeholder goes, because a purge now names what
+		// else is in bin\, and on Windows bin\jevlin is not this
+		// installation's binary.
+		if err := os.Remove(s.exe); err != nil {
+			t.Fatal(err)
+		}
 		s.exe += ".exe"
 		writeFileT(t, s.exe, "the binary")
 	}
@@ -215,5 +224,114 @@ func TestAnEntryTheRunMeantToRemoveIsNotCalledSomebodyElses(t *testing.T) {
 	}
 	if listed(section, kept) {
 		t.Errorf("%s was in the purge set, so a run that left it named a problem, not a file of somebody else's:\n%s", kept, out.String())
+	}
+}
+
+// binDirLeftovers plants, beside an installation's own binary, what this
+// client accounts for there (the .previous an upgrade keeps, a staging file
+// an interrupted upgrade left, the update lock) and what it does not: a
+// release an earlier installer kept beside the binary, and the jevlin.new
+// install.sh could not remove.
+func binDirLeftovers(t *testing.T, s *setupSandbox) (ours, strays []string) {
+	t.Helper()
+	bin := filepath.Join(s.home, "bin")
+	owned := filepath.Join(bin, binaryNameFor())
+	ours = []string{owned, selfupdate.PreviousPath(owned), filepath.Join(bin, ".jevlin.candidate-123"), updateLockFor(s)}
+	strays = []string{filepath.Join(bin, "jevlin-0.6.1"), filepath.Join(bin, "jevlin.new")}
+	for _, p := range append(append([]string{}, ours[1:]...), strays...) {
+		writeFileT(t, p, "planted")
+	}
+	return ours, strays
+}
+
+// A purge names, with its full path, every entry of the installation's own
+// bin/ that this client does not account for, in the dry run and the real
+// run, with and without -binary; bin/ itself is still not listed, and what
+// this client accounts for there is not called somebody else's.
+func TestPurgeNamesWhatItLeavesInTheBinaryDirectory(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"purge", []string{"-purge-state"}},
+		{"purge dry run", []string{"-purge-state", "-dry-run"}},
+		{"purge and binary", []string{"-purge-state", "-binary"}},
+		{"purge and binary dry run", []string{"-purge-state", "-binary", "-dry-run"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			binary, dry := containsString(tc.args, "-binary"), containsString(tc.args, "-dry-run")
+			if binary && runtime.GOOS == "windows" {
+				t.Skip("-binary moves a running binary aside on Windows; the listing is the same code on every OS")
+			}
+			s := installedWithOwnBinary(t)
+			if runtime.GOOS == "windows" {
+				// As in TestPurgeLeavesTheBinaryDirectoryToBinaryAndSaysSo.
+				if err := os.Remove(s.exe); err != nil {
+					t.Fatal(err)
+				}
+				s.exe += ".exe"
+				writeFileT(t, s.exe, "the binary")
+			}
+			ours, strays := binDirLeftovers(t, s)
+			var stdin *ttyReader
+			if !dry {
+				stdin = tty(s.home)
+			}
+			code, out, errOut := s.uninstall(t, stdin, !dry, tc.args...)
+			if code != exitOK {
+				t.Fatalf("uninstall %v exited %d\n%s\n%s", tc.args, code, out, errOut)
+			}
+			section := leftSection(t, out)
+			for _, p := range strays {
+				if !listed(section, p) {
+					t.Errorf("%s is left in bin/ and not named with its full path:\n%s", p, out)
+				}
+				if !lexists(p) {
+					t.Errorf("the run removed %s, which nothing of this version wrote", p)
+				}
+			}
+			for _, p := range ours {
+				if listed(section, p) {
+					t.Errorf("%s is this installation's and is named as somebody else's:\n%s", p, section)
+				}
+			}
+			if listed(section, filepath.Join(s.home, "bin")) {
+				t.Errorf("bin/ is this installation's and must not be listed as somebody else's:\n%s", section)
+			}
+			if binary && !dry {
+				for _, p := range ours[:3] {
+					if lexists(p) {
+						t.Errorf("-binary left %s", p)
+					}
+				}
+			}
+		})
+	}
+}
+
+// Only a real directory inside the installation is listed. A bin/ that is a
+// link to a directory other programs share is not: its programs are not
+// files an earlier version put in the installation.
+func TestPurgeDoesNotListADirectoryTheBinaryDirectoryLinksTo(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a directory link needs privileges a Windows runner may not have")
+	}
+	root := t.TempDir()
+	home := filepath.Join(root, ".jevlin")
+	shared := filepath.Join(root, "opt", "bin")
+	writeFileT(t, filepath.Join(shared, "jevlin"), "a binary")
+	writeFileT(t, filepath.Join(shared, "another-program"), "not ours")
+	writeFileT(t, filepath.Join(home, "earlier.key"), "not this version's")
+	if err := os.Symlink(shared, filepath.Join(home, "bin")); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	r := &uninstallRun{d: uninstallDeps{stdout: &out, stderr: &out}, home: home, purge: true}
+	r.sayLeftInHome(nil, false)
+	if !listed(leftSection(t, out.String()), filepath.Join(home, "earlier.key")) {
+		t.Fatalf("the case is meant to print the section:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "another-program") {
+		t.Errorf("a purge listed the programs of a directory bin/ links to:\n%s", out.String())
 	}
 }

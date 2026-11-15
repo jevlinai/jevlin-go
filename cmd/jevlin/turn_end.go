@@ -4,7 +4,8 @@ package main
 //
 // A search's trace carries what the assistant wrote BEFORE it searched. The
 // answer is written after the last search, when no request is being made, so
-// the router never saw it. With `[search] turn_end = true` — off by default —
+// the router never saw it. With `[search] turn_end = true` — which setup
+// writes into a config it creates; a config without the line reads as off —
 // the host's end-of-turn hook reports the turn's final message to the
 // router's POST /v1/turns, under the same hashed session and turn ids the
 // turn's searches carried.
@@ -13,7 +14,9 @@ package main
 // off the machine (hard invariant 2 names the first, the trace), and it is
 // narrower than it sounds:
 //
-//   - opt-in, per installation; JEVLIN_TRACE=off also turns it off;
+//   - per installation, [search] turn_end: on in a config setup creates,
+//     off in any config without the line; [search] trace = false and
+//     JEVLIN_TRACE=off also turn it off;
 //   - only for a turn in which a search was SERVED: `jevlin search` marks the
 //     turn after the router answers. A search the model proposed and the
 //     user refused, or one that failed, marks nothing, and a turn with no
@@ -111,9 +114,10 @@ func prepareFinalText(text string) (prepared string, chars int, truncated bool) 
 	return prepared, chars, false
 }
 
-// turnEndEnabled: the installation opted in, and tracing is not switched off.
+// turnEndEnabled: the installation opted in, and tracing is not switched off
+// by either switch.
 func turnEndEnabled(ops hookOps, hc hookContext) bool {
-	return hc.turnEnd && hc.sessionsDir != "" && !traceOff(ops.getenv)
+	return hc.turnEnd && hc.sessionsDir != "" && !traceOff(hc.traceOffInConfig, ops.getenv)
 }
 
 func turnSearchedPath(dir, turnID string) string {
@@ -496,8 +500,9 @@ func cmdTurnEnd(args []string, getenv func(string) string) int {
 	_ = os.Remove(path)
 	// Only to the router this run is configured with: [router] url,
 	// JEVLIN_ROUTER_URL or the compiled default, and nothing else standing
-	// in for it (invariant 2).
-	if err != nil || !cfg.Search.TurnEnd || cfg.Search.RouterURL == nil {
+	// in for it (invariant 2). A trace switched off since the turn was queued
+	// stops it here too.
+	if err != nil || !cfg.Search.TurnEnd || traceOff(cfg.Search.TraceOff, getenv) || cfg.Search.RouterURL == nil {
 		return exitOK
 	}
 	var rec turnEndRecord

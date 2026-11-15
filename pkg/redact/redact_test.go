@@ -65,7 +65,9 @@ func TestCredentialPatternsInValues(t *testing.T) {
 // it in — sr- (this system's own router key), a dashless sk- key (no
 // second word segment between the prefix and the random run), a GitHub
 // token, an AWS access key id, a bare JWT, an email address, and a home
-// directory path. Each assembled at runtime so no credential-shaped
+// directory path — and the vendor tokens added since, which an error
+// string can carry as readily as a trace (a Google API key, a Slack token
+// and webhook URL, GitLab, npm, Hugging Face and PyPI tokens). Each assembled at runtime so no credential-shaped
 // literal exists in source (gosec G101).
 func TestNewCredentialShapesAreScrubbed(t *testing.T) {
 	srKey := "sr-" + strings.Repeat("c", 24) + "canary"
@@ -76,9 +78,20 @@ func TestNewCredentialShapesAreScrubbed(t *testing.T) {
 	email := "someone" + "@" + "example.com"
 	homePath := "/Users/" + "realname" + "/.aws/credentials"
 
+	googleKey := "AIza" + strings.Repeat("g", 35)
+	slackToken := "xox" + "b-" + strings.Repeat("1", 10) + "-" + strings.Repeat("s", 24)
+	slackHook := "hooks.slack.com/services/" + "T0" + strings.Repeat("0", 7) + "/B0" + strings.Repeat("0", 7) + "/" + strings.Repeat("w", 24)
+	gitlabToken := "gl" + "pat-" + strings.Repeat("l", 20)
+	npmToken := "npm" + "_" + strings.Repeat("n", 36)
+	hfToken := "hf" + "_" + strings.Repeat("h", 34)
+	pypiToken := "pypi" + "-" + strings.Repeat("p", 85)
+
 	for name, secret := range map[string]string{
 		"sr- key": srKey, "dashless sk- key": dashlessSK, "github token": ghToken,
 		"aws key": awsKey, "jwt": jwt, "email": email,
+		"google api key": googleKey, "slack token": slackToken, "slack webhook": slackHook,
+		"gitlab token": gitlabToken, "npm token": npmToken, "hugging face token": hfToken,
+		"pypi token": pypiToken,
 	} {
 		if out := String("value: " + secret + " end"); strings.Contains(out, secret) {
 			t.Errorf("%s not scrubbed: %q", name, out)
@@ -311,10 +324,10 @@ func TestNonASCIILocalNamesAreNotSearchedFor(t *testing.T) {
 }
 
 // The log path is this client's own words and keeps its own rules: none of
-// the trajectory-only steps run there.
+// the trajectory-only steps run there, the card number rule among them.
 func TestTheLogPathIsUnchangedByTheTraceRules(t *testing.T) {
 	defer SetLocalIdentity("Build-Box7", "mwhitlock")()
-	text := "DATABASE_PASSWORD=hunter2 as mwhitlock on Build-Box7"
+	text := "DATABASE_PASSWORD=hunter2 as mwhitlock on Build-Box7, request 4111 1111 1111 1111"
 	if got := String(text); got != text {
 		t.Errorf("String applied a trace-only rule: %q", got)
 	}

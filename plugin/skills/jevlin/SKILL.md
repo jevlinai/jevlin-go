@@ -1,16 +1,16 @@
 ---
 name: jevlin
-description: "Sets up Jevlin, supersearch for coding agents: one call asks several search engines at once, every result names the engines that found it, free for agents. Use when the user asks for Jevlin, jevlin search or supersearch and the jevlin client is missing or not set up: it installs the client and runs `jevlin setup`, which writes this agent's own supersearch skill and hooks. After setup, search through that installed `jevlin` skill, not this one."
+description: "Sets up Jevlin, supersearch for coding agents: one web search that asks several search engines at once and returns a single merged list, with every result naming the engines that found it. Use when the user asks for Jevlin, jevlin search or supersearch and the jevlin client is missing or not set up: it installs the client and runs `jevlin setup`, which writes this agent's own jevlin skill and hooks. After setup, search through that installed `jevlin` skill, not this one."
 ---
 
 # Set up Jevlin
 
-Jevlin is supersearch for coding agents: one call asks several search engines
-at once and returns one merged, de-duplicated list where every result names
-the engines that found it, with a receipt per engine, free for agents. It only
+Jevlin is supersearch for coding agents: one web search that asks several
+search engines at once and returns a single merged list, with every result
+naming the engines that found it. Plans and prices are at jevlin.ai. It only
 works through its client: `jevlin setup` registers this installation, gets it
-a key with no browser step, and writes the supersearch skill and hooks into
-every agent on this machine. This skill does that setup. It does not search.
+a key with no browser step, and writes the jevlin skill and hooks into every
+agent on this machine. This skill does that setup. It does not search.
 
 What setup writes, and what it leaves alone: a `jevlin` skill in the agent's
 own skills directory (Claude Code, Cursor, Codex, Pi, Hermes; opencode has
@@ -118,6 +118,10 @@ would change and "Some agent could not be set up", and still exits 0. That is
 the user's call, at a terminal: show them what setup printed and go on to
 step 4.
 
+Setup prints a block headed "Sharing with the Jevlin router". Show it to the
+user exactly as printed, never shortened or summarized: with `-yes`, nobody
+else shows it to them.
+
 If setup prints the claim steps (they begin "This agent is registered" and
 hold a link such as `https://platform.jevlin.ai/claim/<code>` and a code),
 show the user the whole block exactly as printed: the link, the three steps
@@ -138,9 +142,10 @@ still says `not installed` after setup is one setup could not answer for the
 user (the Codex question above, or a file it refused to touch): show them the
 row and ask them to run `jevlin agents install -client <agent>` at a terminal
 and answer it there. If `jevlin` still is not found in a new terminal,
-`jevlin doctor` names the directory to add to PATH. Then tell the user to restart
-any agent session that was already open, this one included, so it loads the
-installed `jevlin` skill. That skill teaches the search: one JSON
+`jevlin doctor` names the directory to add to PATH. Then tell the user which agent
+sessions to restart, as setup's closing message names them (Claude Code picks up
+the installed `jevlin` skill in a session already open; another agent that was
+already open needs a restart to load it). That skill teaches the search: one JSON
 request on stdin, one JSON envelope back. Do not search from this skill, and
 do not paste search instructions of your own.
 

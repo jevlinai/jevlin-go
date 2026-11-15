@@ -80,7 +80,7 @@ func TestEveryGeneratedConfigIsASCII(t *testing.T) {
 	v := asciiSetupValues(home)
 
 	t.Run("jevlin.toml, fresh", func(t *testing.T) {
-		b, err := renderFreshConfig(v)
+		b, err := renderFreshConfig(v, true)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -79,6 +79,40 @@ func TestTheSkillTeachesTheLeanSearchOnEveryHost(t *testing.T) {
 	}
 }
 
+// The objective is experimental: the router is still testing how it uses
+// one, so the skill describes it as optional and does not ask for it on
+// every search, and the example an agent copies leaves it out. The sentence
+// this replaced asked for one on every search; it must not come back, nor
+// the older one that said the objective does not reorder the list.
+func TestTheSkillMarksTheObjectiveExperimental(t *testing.T) {
+	const want = "- `objective` (experimental): one sentence on what you are trying to find out. Optional; the " +
+		"router is still testing how it uses it."
+	entry := binEntry{command: "/home/u/.jevlin/bin/jevlin", cfg: "/home/u/.jevlin/jevlin.toml"}
+	for _, id := range goldenHostIDs {
+		for _, goos := range hostShellOSes {
+			t.Run(id+"/"+goos, func(t *testing.T) {
+				skill, _ := renderedSkillPairFor(t, id, entry, goos, preferOn)
+				_, after, ok := strings.Cut(skill, "\n## The request\n")
+				if !ok {
+					t.Fatal("SKILL.md has no request section")
+				}
+				fields := flat(strings.SplitN(after, "\n## ", 2)[0])
+				if strings.Count(fields, want) != 1 {
+					t.Errorf("the request section does not carry the experimental objective bullet once:\n%s", fields)
+				}
+				if strings.Count(flat(skill), "`objective`") != 1 {
+					t.Error("SKILL.md names the objective field more than once")
+				}
+				for _, gone := range []string{"Send it on every search", "not reorder", `"objective":`} {
+					if strings.Contains(flat(skill), gone) {
+						t.Errorf("SKILL.md still says %q", gone)
+					}
+				}
+			})
+		}
+	}
+}
+
 // Off keeps the search for a user who names it, and says so once, in the
 // opening paragraph and the description.
 func TestTheSkillWhenSwitchedOffIsNotTheDefault(t *testing.T) {

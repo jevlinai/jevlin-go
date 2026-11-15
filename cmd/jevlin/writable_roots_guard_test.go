@@ -153,6 +153,7 @@ var classifiedFileCalls = map[fileCallSite]fileCallClass{
 	{"cmd/jevlin/uninstall.go", "uninstallRun.applyEnvironment", "fsx.WriteFileAtomic"}: {1, "outside: the shell profile"},
 	{"cmd/jevlin/uninstall.go", "uninstallRun.applyPurge", "os.RemoveAll"}:              {1, "root: purge removes the directories; RemoveAll removes a link, never what it points at"},
 	{"cmd/jevlin/uninstall.go", "uninstallRun.sayLeftInHome", "os.ReadDir"}:             {1, "outside: the installation home, listed after a purge to name what it left"},
+	{"cmd/jevlin/uninstall.go", "uninstallRun.leftInBinaryDir", "os.ReadDir"}:           {1, "outside: the installation's own bin/, a real directory inside it, listed after a purge to name what it left"},
 	{"cmd/jevlin/uninstall.go", "uninstallRun.purgeSet", "os.ReadDir"}:                  {1, "outside: the installation home"},
 	{"cmd/jevlin/uninstall.go", "uninstallRun.removeHomeIfEmpty", "os.ReadDir"}:         {1, "outside: the installation home"},
 	{"cmd/jevlin/uninstall.go", "uninstallRun.removeHomeIfEmpty", "os.Remove"}:          {1, "outside: the installation directory"},

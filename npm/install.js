@@ -122,7 +122,14 @@ async function main() {
   const archivePath = path.join(tmp, name)
   fs.writeFileSync(archivePath, archive)
   if (ext === "zip") {
-    execFileSync("powershell", ["-NoProfile", "-Command", `Expand-Archive -Path '${archivePath}' -DestinationPath '${tmp}' -Force`], { stdio: "inherit" })
+    // Windows PowerShell must find its own modules. Started under PowerShell 7
+    // it inherits a PSModulePath that lists PowerShell 7's modules first, and
+    // that Expand-Archive does not run on Windows PowerShell's .NET.
+    const env = { ...process.env }
+    for (const key of Object.keys(env)) {
+      if (key.toLowerCase() === "psmodulepath") delete env[key]
+    }
+    execFileSync("powershell", ["-NoProfile", "-Command", `Expand-Archive -Path '${archivePath}' -DestinationPath '${tmp}' -Force`], { stdio: "inherit", env })
   } else {
     execFileSync("tar", ["-xzf", archivePath, "-C", tmp], { stdio: "inherit" })
   }

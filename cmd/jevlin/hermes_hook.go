@@ -82,9 +82,10 @@ type hermesModifyDirective struct {
 
 // hookHermes handles one pre_tool_call event. Any other event, any other
 // command, any doubt at all: print nothing. It only ever adds a bridge, so
-// with traces off (traceOff, as every other hook reads it) it does nothing.
-func hookHermes(getenv func(string) string, event string, payload []byte, stdout io.Writer) {
-	if event != "pre_tool_call" || traceOff(getenv) {
+// with traces off (traceOff, as every other hook reads it: configOff is the
+// installation's [search] trace = false) it does nothing.
+func hookHermes(getenv func(string) string, configOff bool, event string, payload []byte, stdout io.Writer) {
+	if event != "pre_tool_call" || traceOff(configOff, getenv) {
 		return
 	}
 	var p hermesHookPayload

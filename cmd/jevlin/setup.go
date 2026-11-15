@@ -38,29 +38,37 @@ import (
 	"github.com/jevlinai/jevlin-go/pkg/config"
 )
 
-const setupUsage = `usage: jevlin setup [-home dir] [-yes] [-no-profile] [-no-agents] [-with id]... [-dry-run]
+const setupUsage = `usage: jevlin setup [-home dir] [-yes] [-no-profile] [-no-agents]
+                    [-with id]... [-dry-run]
 
-Everything after the binary, asked as it goes: a previous installation to
-reuse, the config, connect (registration and the claim link), the shell
-profile (PATH and JEVLIN_CONFIG; on Windows, the user PATH and
-JEVLIN_CONFIG) and the coding agents found on this machine.
+Sets up everything after the binary, asking as it goes: reuse a previous
+installation, write the config, connect (the registration and the claim
+link), put PATH and JEVLIN_CONFIG in the shell profile (on Windows, the
+user environment), and set up the coding agents found on this machine.
 
-  -home dir     the installation directory (default $JEVLIN_HOME, else ~/.jevlin).
-                A directory other than that default is a separate installation:
-                setup leaves the shell profile (Windows: user environment) and the
-                coding agents alone, -yes or not, because they belong to the
-                default one, and names the agents command for this one instead
-  -yes          answer yes to setup's shell-profile (Windows: user environment) and
-                coding-agents questions, with or without a terminal; automated
-                callers may pass it. Also yes to reusing a set-aside
-                installation, at a terminal only. Never answers a question
-                about a Codex setting of your own
-  -no-profile   leave the shell profile (on Windows, the user environment) alone
-  -no-agents    do not look for coding agents; -with still sets up what it names
-  -with id      set up this target whether or not it was found; repeatable
-                (` + "{{TARGET_IDS}}" + `)
-  -dry-run      print every file that would be written or moved; change nothing,
-                and run neither connect nor the agents step
+flags:
+  -home dir    the installation directory (default $JEVLIN_HOME, else
+               ~/.jevlin). Any other directory is a separate installation:
+               setup leaves the shell profile and the coding agents alone,
+               -yes or not, because they belong to the default one, and
+               names the agents command for this one instead
+  -yes         answer yes to the shell-profile and coding-agents questions,
+               with or without a terminal; automated callers may pass it.
+               At a terminal only, also yes to reusing a set-aside
+               installation. Never answers a question about a Codex
+               setting of your own
+  -no-profile  leave the shell profile (Windows: user environment) alone
+  -no-agents   do not look for coding agents; -with still sets up what it
+               names
+  -with id     set up this target whether or not it was found; repeatable
+               (` + "{{TARGET_IDS}}" + `)
+  -dry-run     print every file that would be written or moved; change
+               nothing, and run neither connect nor the agents step
+
+examples:
+  jevlin setup
+  jevlin setup -dry-run
+  jevlin setup -with claude
 `
 
 func renderSetupUsage() string {
@@ -160,6 +168,11 @@ type setupRun struct {
 	foundInPlace  bool   // an installation was already in home when setup started
 	changed       bool   // setup wrote or moved something it owns
 	shortCommands bool   // the profile or user environment carries PATH and JEVLIN_CONFIG
+
+	// agentsSetUp names the hosts this run wrote or removed a file for, in
+	// plan order, with none of their changes failed: the ones a session
+	// already open may need restarting for.
+	agentsSetUp []string
 
 	// otherHome: -home names a directory that is not this machine's
 	// installation, defaultHome. The profile and the agents belong to that
@@ -389,14 +402,15 @@ func (r *setupRun) run(homeFlag string, with []string) int {
 	}
 
 	// ── 5. connect ──
-	r.say("Search context")
-	r.printf("Recent agent context may accompany search to the Jevlin search router as part of the trajectory/search product.\n")
-	r.printf("JEVLIN_TRACE=off disables trace transmission.\n")
+	r.sharingNotice()
 	r.say("Connecting")
 	if r.dry {
 		r.printf("(dry run) would run: %s connect -config %s\n", r.displayPath(exe), r.displayPath(r.cfgPath))
 	} else {
-		if code := d.connect([]string{"-config", r.cfgPath}, d.stdin, d.stdout, d.stderr, d.getenv); code != exitOK {
+		if code := d.connect([]string{"-config", r.cfgPath}, d.stdin, d.stdout, d.stderr, d.getenv); code == exitClaimWaitInterrupted {
+			fmt.Fprint(d.stderr, setupClaimWaitInterrupted)
+			return exitTransport
+		} else if code != exitOK {
 			fmt.Fprintf(d.stderr, "\njevlin setup: connect failed (exit %d); run setup again when that is fixed — it picks up where this left off\n", code)
 			return exitTransport
 		}
@@ -416,6 +430,13 @@ func (r *setupRun) run(homeFlag string, with []string) int {
 	r.closing()
 	return exitOK
 }
+
+// setupClaimWaitInterrupted is what setup says when Ctrl-C stopped connect's
+// wait for the claim (exitClaimWaitInterrupted). Nothing failed: the key was
+// stored before the wait, and setup stops before its environment and coding
+// agents steps, as the wait line said it would.
+const setupClaimWaitInterrupted = "\njevlin setup: the claim wait was interrupted; your key is stored. Running setup again picks up where\n" +
+	"this left off and finishes the environment and coding agents steps; the claim completes on the next search or connect.\n"
 
 // otherInstallation: does -home name a directory other than this machine's
 // installation — $JEVLIN_HOME, else ~/.jevlin — and if so, which is
@@ -805,6 +826,83 @@ func (r *setupRun) traceKey() int {
 	return exitOK
 }
 
+// sharingNotice says what this installation sends to the router beside the
+// query, and both ways to stop it, from the config setup has just left in
+// place (on a dry run, the bytes it would write), so a sentence is printed
+// only when it is true of that config: the turn end is described as sent
+// only where turn_end is on, and nothing is described as sent where the
+// trace is off. It asks nothing: -yes and a run with no terminal print the
+// same.
+func (r *setupRun) sharingNotice() {
+	r.say("Sharing with the Jevlin router")
+	data := r.configPlanData
+	if data == nil {
+		data, _ = readExistingConfig(r.cfgPath)
+	}
+	var search config.Search
+	if cfg, err := config.LoadBytes(data, r.d.getenv); err == nil {
+		search = cfg.Search
+	}
+	if offBy := traceOffBy(search.TraceOff, r.d.getenv); len(offBy) > 0 {
+		words := make([]string, 0, len(offBy))
+		for _, by := range offBy {
+			words = append(words, traceOffWords[by])
+		}
+		r.printf("The trace is off (%s), so searches send no trace and no session id,\n"+
+			"and no turn is sent when it ends.\n", strings.Join(words, " and "))
+		return
+	}
+	r.printf("Each search sends a trace: hashed session ids and the assistant's text that\n" +
+		"led to the search, from agents that provide it.\n")
+	if search.TurnEnd {
+		r.printf("When a turn that searched ends, jevlin also sends what you asked, the\n" +
+			"assistant's text and its final answer, the name, duration and outcome of each\n" +
+			"tool it ran (never a tool's input or output), and the model and token counts.\n")
+	}
+	r.printf("Anything shaped like a key or token, e-mail addresses, and your account name\n" +
+		"in paths are removed before anything leaves this machine.\n" +
+		"The router keeps it for 30 days.\n")
+	if !search.TurnEnd {
+		r.printf("Whole turns are not sent: turn_end is not on under [search] in %s.\n", r.cfgPath)
+		r.printf("To stop sending the trace: set trace = false under [search] in %s, or JEVLIN_TRACE=off.\n", r.cfgPath)
+		return
+	}
+	r.printf("To stop sending whole turns: set turn_end = false under [search] in %s.\n", r.cfgPath)
+	r.printf("To stop sending both: set trace = false under [search] in %s, or JEVLIN_TRACE=off.\n", r.cfgPath)
+}
+
+// restartNote says, at the top of the closing box where it is read, which
+// coding agents this run set up need restarting if already open. Claude Code
+// was seen to pick up a new skill and hooks from settings.json in a session
+// already open (the same session before and after); no other host has been
+// observed doing so, so each of them is still told to restart, and nothing is
+// said about a host this run did not set up.
+func (r *setupRun) restartNote() {
+	var restart []string
+	claude := false
+	for _, h := range r.agentsSetUp {
+		if h == (claudeTarget{}).Label() {
+			claude = true
+		} else {
+			restart = append(restart, h)
+		}
+	}
+	if !claude && len(restart) == 0 {
+		return
+	}
+	r.printf("\n")
+	if claude {
+		r.printf("Claude Code picks up the new skill and hooks without a restart.\n")
+	}
+	switch len(restart) {
+	case 0:
+	case 1:
+		r.printf("Restart %s if it is already open, so it loads what setup installed.\n", restart[0])
+	default:
+		r.printf("Restart %s if they are already open, so they load what setup installed.\n", joinLabels(restart))
+	}
+}
+
 func (r *setupRun) closing() {
 	cmd, hint := r.invocation()+" ", " -config "+r.displayPath(r.cfgPath)
 	if r.shortCommands {
@@ -833,13 +931,13 @@ func (r *setupRun) closing() {
 	default:
 		r.printf("Setup complete.\n")
 	}
+	r.restartNote()
 	r.printf(`
 1. If a claim URL was printed above and nobody has visited it yet, do that
    whenever you're ready — nothing else here depends on timing it. Search
    works before the claim; the claim is what ties the agent to your account.
 
-2. Restart any coding agent that is already open, then search as usual. To
-   try it by hand:
+2. Search as usual from your coding agent. To try it by hand:
      %ssearch%s -format model "what is proof of authority consensus"
 
 3. Check in any time:

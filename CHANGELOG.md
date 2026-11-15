@@ -10,6 +10,146 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## v0.8.1 — 2026-11-14
+
+This release reads every configuration 0.8.0 reads, and an existing installation's config is not
+changed: its turn end stays off unless the config says `turn_end = true`. It is a patch release,
+so under the default `[update] mode = "apply"` a native installation's daily check installs it on
+its own and re-renders the skills and hooks of the agents it set up; after an npm update,
+`jevlin agents install` does. 0.8.0 refuses a key it does not know, so a config that sets the
+new `trace` key must lose that line before `jevlin upgrade -rollback` puts 0.8.0 back.
+
+- **New installations send the turn end; existing ones are unchanged.** A config `jevlin setup`
+  creates now has `[search] turn_end = true`, so a turn that searched also sends what you asked,
+  the assistant's text and its final answer, each tool's name, duration and outcome (never its
+  input or output), and the model and token counts; `turn_end = false` under `[search]` stops
+  that, the new `trace = false` there or `JEVLIN_TRACE=off` stops it and the trace, and a config
+  without the line, which is every config an earlier version wrote, still sends none. Setup says
+  this, with the config's path, where it used to print two lines about "search context".
+- **Cursor no longer sends the model's reasoning.** The trace's text under Cursor is its reply;
+  `afterAgentThought` still runs, from hooks files already installed, and records nothing.
+- **Cursor's trace no longer carries the previous turn's reply.** Cursor's reply was kept until
+  the next one replaced it, so the first search of a new turn, before Cursor had replied in that
+  turn, sent the previous turn's reply as the text that led to the search. A reply now goes only
+  with a search of the turn it was written in; a search before any reply of its turn carries no
+  text.
+- **`jevlin status` shows the trace and the turn end**, each on or off and why (`status -json`
+  carries them as `trace` and `turn_end`), and under an unclaimed agent it says that `jevlin
+  connect` records a claim made on the website.
+- **Setup's closing message says which agents to restart, first.** Claude Code picks up the new
+  skill and hooks in a session already open; every other agent it set up is still told to
+  restart. An agent whose files could not be written is named among the failures, not told to
+  restart.
+- **The skill no longer asks for an `objective` on every search.** The field is experimental:
+  the router is still testing how it uses one. The skill now lists it as optional and its example
+  request leaves it out, where 0.8.0 asked for one with every search; `search --stdin` and the
+  MCP `search` tool still accept it as before. An installed skill takes the new text the next time
+  it is rendered, by `jevlin setup`, `jevlin agents install` or an upgrade.
+- **Setup and `jevlin connect` say when they are waiting for the claim.** After the claim link
+  they printed nothing for up to three minutes, which read as a hang. One line now says how long
+  the wait lasts and what Ctrl-C does: in setup it ends setup before the environment and coding
+  agents steps, which running setup again finishes; in a bare `connect` it stops the wait, and
+  the next search or connect completes the claim. Setup then says the wait was interrupted and the
+  key is stored, where it used to report "connect failed ... when that is fixed".
+- **A claim seen by setup or `jevlin connect` points to the tiers it opened.** Searches stay on
+  the fast tier after a claim, and nothing said that `balanced` and `max` were now open. The line
+  after `claimed` names them and the two ways to choose one, `jevlin agents tier <tier>` and
+  `/jevlin tier <tier>` in the agent. A claim connect could not record locally is not followed by
+  that line.
+- **A purge names what it leaves in `bin/`.** `uninstall -purge-state` listed what it left in the
+  installation directory but skipped `bin/` as a whole, so a `jevlin-0.6.1` an earlier installer
+  kept there, or a `jevlin.new` the install script could not remove, was never named. It now
+  lists `bin/`'s entries too, in the dry run and the real run, with and without `-binary`, all
+  but the binary, its `.previous`, the self-updater's staging files and the update lock.
+- **The scrub removes more credential shapes, and payment card numbers.** Before a trace or a
+  turn end leaves the machine, Google API keys, Slack tokens and the secret path of a Slack
+  webhook URL, GitLab, npm, Hugging Face and PyPI tokens are now removed, as Stripe, GitHub and
+  AWS keys already were; this client's own log lines lose them too. A payment card number goes
+  from the trace and the turn end: 13 to 19 digits that pass the Luhn check and start as a card
+  network's do, in one run or grouped by spaces or dashes as cards are printed. A long number of
+  that shape with nothing joined to it, such as a decimal id, goes with them; one joined by a
+  dash to more digits or letters, as in `build-12-4111-1111-1111-1111` or a version suffix, is
+  part of another identifier and stays. `docs/privacy.md` lists them.
+- **A successful `setup` or `agents install` acknowledges the installation.** A run that writes
+  an agent's skill or hooks sends one empty request, with the installation's key, to the
+  configured agents API. This best-effort request never changes the command result; the platform
+  counts an installation only after account claim and Analytics consent. `docs/privacy.md` lists
+  it.
+- **The npm install unpacks on Windows when started from PowerShell 7.** The postinstall runs
+  Windows PowerShell to unpack the release, and under PowerShell 7 it inherited a module path
+  that put PowerShell 7's `Expand-Archive` first, which fails there with "Cannot find an overload
+  for ExtractToDirectory". The postinstall now leaves that path out, so Windows PowerShell uses
+  its own.
+- **The help is an index, and each command has its own.** `jevlin help` lists the commands, one
+  line each, with examples, where it was a 157-line page of paragraphs. `jevlin help <command>`
+  and `jevlin <command> -h` show that command's usage, flags as a table, examples and, for the
+  commands an agent calls, the request and the exit status; `jevlin help config` holds what the
+  index used to say about the config. `jevlin help search` used to print the index, `search -h`
+  and the other commands that had no help of their own printed Go's list of flag defaults and
+  exited 2, and `version -h` printed the version; each now prints its help and exits 0, and a
+  flag that does not parse shows the command's help. `jevlin agents <subcommand> -h` shows the
+  agents help only for a subcommand that exists; a misspelled one is reported and exits 2.
+
+**Which parts were live-smoked.** None, before the tag: the turn end on a fresh setup, the `trace`
+switch, Cursor's thought hook recording nothing and its reply going only with a search of its own
+turn, the claim-wait and tiers lines, the new scrub shapes and the installation acknowledgment
+are tested against loopback stubs only.
+
+## v0.8.0 — 2026-11-11
+
+This release reads the same configuration as 0.7.0, so nothing needs to run after installing it:
+a native upgrade rewrites the skills and hooks of the agents this installation set up, and after
+an npm update `jevlin agents install` does.
+
+- **The skill asks for an `objective` on every search.** Its request list described the field
+  but said it does not reorder the list, and never asked for one. It now says to send, with
+  every search, one sentence on what you are trying to find out: the indexes that accept a goal
+  use it, and so does the router when it orders the pool. `docs/reference.md` says the same.
+  An installed skill takes the new text the next time it is rendered, by `jevlin setup`,
+  `jevlin agents install` or an upgrade.
+- **`jevlin decide` asks a decision model typed questions about a state, where the router
+  offers it.** `jevlin decide --stdin` takes one version-1 request (a `model`, a `state` and
+  named `questions`) and answers with one envelope whose `result.answers` holds the model's
+  answer to each question, a refusal included, as the router sent it; `jevlin decide --models`
+  lists the models with each one's price and whether this account can call it. The state and
+  questions reach the router byte for byte. A decision is billed, and the client never sends
+  one twice. A router without decisions answers `decisions_not_supported`. The agents' skill
+  does not teach it yet. `docs/reference.md` has the request, the result and every failure's
+  action.
+- **`jevlin mcp` serves search, fetch and decide as MCP tools.** It is an MCP server over stdio
+  that offers `search --stdin`, `fetch --stdin`, `decide --stdin` and `decide --models` as the
+  tools `search`, `fetch`, `decide` and `decide_models`, for a host that prefers MCP to a shell
+  skill. A tool answers with the same envelope the command prints, and a
+  refused request or a call before setup is a tool result with `isError` set. It runs only while
+  a host holds it open. Setup does not register it; the reference shows the lines for Claude
+  Code, Codex and Cursor.
+- **`jevlin upgrade -rollback` says when the older binary cannot read the config.** After setup
+  has moved an installation to configuration format 1, a rollback to a release older than 0.7.0
+  succeeded and then every command of that release failed with "unknown key(s)". A rollback in
+  that state now says so: the config is format 1, which the release rolled back to does not
+  read, the older configuration is where setup set it aside (`jevlin.toml.old`, or the
+  highest-numbered `jevlin.toml.old.N` when that name was taken), and setup moved the key and
+  registration beside the state directory. It names the two ways out, rolling back again or
+  moving the older configuration and the key back by hand, and moves nothing itself. A rollback
+  to 0.7.0 or later says nothing, since that release reads the file.
+- **`search --stdin` and `fetch --stdin` refuse a field in another case.** Go's JSON decoder
+  matches a field name without regard to case, so a key spelled `QUERY` was read as `query`,
+  and beside `query` it replaced it. Every top-level key must now be spelled exactly as the
+  request defines it, as `decide --stdin` already required; anything else is `unknown_field`
+  naming the key, exit 2, `fix_input`, and the router is never called. A `VERSION` key is
+  `unknown_field` whatever its value. Through `jevlin mcp` the tools answer the same way.
+- **The reference names the router's `402 search_credit_only`.** A router may answer a fetch or
+  a decision with it when the credit left is the part of the weekly allowance kept for search:
+  search still works, and fetch and decisions resume at the weekly reset or when credit is
+  added. The client already carried the router's code with `report`, exit 3, not retryable;
+  the fetch and decide failure tables in `docs/reference.md` now list it.
+
+**Which parts were live-smoked.** On 2026-11-11, from this release's head: `jevlin mcp` through
+Claude Code, Codex and Cursor's agent, each driving all four tools and one refused call; and
+`jevlin decide` against the beta router, the models list, decisions on all three vendors, a
+decision over fetched pages, and every client-side refusal. The live router does not serve
+decisions yet.
+
 ## v0.7.0 — 2026-11-03
 
 Run `jevlin setup` after installing this version. It reads only configuration format 1, and

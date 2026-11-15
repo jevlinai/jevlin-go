@@ -130,7 +130,7 @@ func TestACursorConversationStartedOn0212KeepsItsWorkspaceFile(t *testing.T) {
 	env := map[string]string{"JEVLIN_HARNESS": "cursor", lineageEnv: declared, sessionEnv: traceHash("conversation-old")}
 	ops := cursorSession(p, env)
 
-	cursorEvent(t, ops, hc, "afterAgentThought", "conversation-old", adoptRoot, map[string]any{"text": "thinking before the search"})
+	cursorEvent(t, ops, hc, "afterAgentResponse", "conversation-old", adoptRoot, map[string]any{"text": "a reply before the search"})
 	search := cursorTestSearch(t, "")
 	out := cursorEvent(t, ops, hc, "preToolUse", "conversation-old", adoptRoot, map[string]any{"tool_name": "Shell", "tool_input": map[string]any{"command": search}})
 	if !strings.Contains(out, filepath.Base(declared)) {
@@ -144,7 +144,7 @@ func TestACursorConversationStartedOn0212KeepsItsWorkspaceFile(t *testing.T) {
 	}
 	tr := p.trace(env)
 	if tr == nil || tr.SessionID != traceHash("conversation-old") || tr.Seq != 2 || tr.CallID == "" ||
-		len(tr.History) != 1 || tr.History[0].Text != "thinking before the search" {
+		len(tr.History) != 1 || tr.History[0].Text != "a reply before the search" {
 		t.Fatalf("the upgraded conversation's search went out as %+v", tr)
 	}
 }

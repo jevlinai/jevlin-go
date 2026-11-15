@@ -86,6 +86,23 @@ type statusReport struct {
 	Agent           *statusAgentJSON `json:"agent,omitempty"`
 	AgentErr        string           `json:"agent_error,omitempty"`
 	Update          statusUpdateJSON `json:"update"`
+	// Trace and TurnEnd are the two switches the text report shows as
+	// "trace:" and "turn end:", with the same reasons as tokens.
+	Trace   statusSwitchJSON `json:"trace"`
+	TurnEnd statusSwitchJSON `json:"turn_end"`
+}
+
+// statusSwitchJSON is one of status's two switches. OffBy names why it is
+// off: for the trace "config" ([search] trace = false) and "environment"
+// (JEVLIN_TRACE); for the turn end "config" ([search] turn_end is not on)
+// and "trace" (the trace is off). Absent when on.
+type statusSwitchJSON struct {
+	On    bool     `json:"on"`
+	OffBy []string `json:"off_by,omitempty"`
+}
+
+func statusSwitchJSONOf(offBy []string) statusSwitchJSON {
+	return statusSwitchJSON{On: len(offBy) == 0, OffBy: offBy}
 }
 
 // statusUpdateJSON is the daily release check (update_check.go): the mode
@@ -152,6 +169,8 @@ func statusEnvelope(f agentIdentityFacts) commandEnvelope {
 		ConfigDefaulted: f.ConfigSource == "",
 		StateDir:        f.StateDir,
 		Update:          statusUpdateJSONOf(f.Update),
+		Trace:           statusSwitchJSONOf(f.TraceOffBy),
+		TurnEnd:         statusSwitchJSONOf(turnEndOffBy(f)),
 	}
 	switch {
 	case f.StoreErr != nil:

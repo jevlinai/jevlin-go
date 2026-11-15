@@ -31,7 +31,7 @@
 - [ ] Commit messages carry the reasoning (what was rejected and why), no `Co-Authored-By`/`Claude-Session` trailers (AGENTS.md convention)
 - [ ] Docs updated where the behavior is described, each ticked or marked N/A:
       `README.md` · `npm/README.md` (byte-mirrors the top-level README — `TestNPMReadmeMirrorsRootREADME`) ·
-      `docs/guide.md` · `docs/agents.md` · `docs/reference.md` · `cmd/jevlin/skill.md` · `usageText` (`main.go`) ·
+      `docs/guide.md` · `docs/agents.md` · `docs/reference.md` · `cmd/jevlin/skill.md` · the help (`help.go` and each command's usage) ·
       `AGENTS.md` · `CHANGELOG.md`
 - [ ] State-directory change, if any (a new or changed file under a participant's state dir or installation directory): named below with its writer and its reader — N/A otherwise
 
@@ -44,7 +44,7 @@ State-directory notes:
 Required when the change touches the search path, the hooks, credentials or the platform contract — see AGENTS.md's hard invariants:
 
 - [ ] Fail-open: a hook, trace or turn-end failure never fails or blocks a search
-- [ ] No prompt/completion content leaves the machine, except the redacted trace and the opted-in turn end
+- [ ] No prompt/completion content leaves the machine, except the redacted trace and the turn end (on for a config setup creates, off for any config without the line)
 - [ ] Every credential-bearing `http.Client` has an explicit redirect policy
 - [ ] Secrets never in argv (stdin or owner-only 0600 files only)
 - [ ] No unadvertised URL assembled or called; new hosts are configured, not discovered

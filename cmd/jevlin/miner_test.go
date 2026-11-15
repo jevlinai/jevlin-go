@@ -15,6 +15,9 @@ func TestLineageFileRoundTripAndWalkUp(t *testing.T) {
 
 	if err := updateLineage(ops, lineagePath(dir, root), now, func(l *lineageFile) {
 		l.Harness, l.SessionID, l.Window = "cursor", "abc", "none"
+		// A reply written in the turn the file is now in: Cursor's text is
+		// sent only under its own turn.
+		l.TurnID, l.AnswerTurnID = "turn", "turn"
 		l.History = []traceHistory{{Role: "assistant", Text: "looking it up"}}
 	}); err != nil {
 		t.Fatal(err)

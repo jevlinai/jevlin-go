@@ -124,11 +124,20 @@ type Search struct {
 	// write and `search` reads. [search] sessions_dir; defaults beside
 	// StateDir.
 	SessionsDir string
-	// TurnEnd opts this installation in to reporting, when a turn that
-	// searched ends, the assistant's final message to the router. [search]
-	// turn_end; off by default: it is model-written text leaving the
-	// machine.
+	// TurnEnd reports to the router, when a turn that searched ends, what
+	// the turn said: [search] turn_end. The compiled default stays off, and
+	// a config without the line reads as off; `jevlin setup` writes
+	// `turn_end = true` only into a config it creates where there was none,
+	// and says so. That is what keeps every existing installation as it was
+	// through an upgrade, with no migration: no file it already has gains
+	// the line.
 	TurnEnd bool
+	// TraceOff is [search] trace = false: no trace, no session id, no turn
+	// end and no lineage files, exactly as JEVLIN_TRACE=off. The key
+	// defaults to true, so only a file that says false sets this; the
+	// client reads it and the variable in one place, and either one off
+	// means off.
+	TraceOff bool
 	// Tier is the search tier a request carries when neither the caller
 	// (the -tier flag, the stdin request's "tier") nor the participant's
 	// `jevlin agents tier` file named one: [router] tier, written by hand.
@@ -184,6 +193,7 @@ type fileConfig struct {
 		StateDir    string `toml:"state_dir"`
 		SessionsDir string `toml:"sessions_dir"`
 		TurnEnd     bool   `toml:"turn_end"`
+		Trace       *bool  `toml:"trace"`
 	} `toml:"search"`
 	Update struct {
 		Mode string `toml:"mode"`
@@ -284,6 +294,7 @@ type rawConfig struct {
 	stateDir    string
 	sessionsDir string
 	turnEnd     bool
+	traceOff    bool
 
 	updateMode string
 }
@@ -433,6 +444,7 @@ func (r *rawConfig) applyBytes(source string, data []byte) error {
 	r.stateDir = f.Search.StateDir
 	r.sessionsDir = f.Search.SessionsDir
 	r.turnEnd = f.Search.TurnEnd
+	r.traceOff = f.Search.Trace != nil && !*f.Search.Trace
 	r.updateMode = f.Update.Mode
 	return nil
 }
@@ -560,6 +572,7 @@ func (r *rawConfig) finishSearch() (Search, error) {
 		StateDir:    cleanDir(r.stateDir),
 		SessionsDir: cleanDir(r.sessionsDir),
 		TurnEnd:     r.turnEnd,
+		TraceOff:    r.traceOff,
 	}
 	if tier := strings.ToLower(strings.TrimSpace(r.tier)); KnownSearchTier(tier) {
 		m.Tier = tier
