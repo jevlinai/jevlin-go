@@ -55,15 +55,15 @@ func TestStatusSaysConnectRecordsAClaimMadeOnTheWebsite(t *testing.T) {
 			if got := strings.Contains(text, "\n"+unclaimedHint+"\n"); got != tc.want {
 				t.Errorf("hint shown = %v, want %v:\n%s", got, tc.want, text)
 			}
-			if tc.want && !strings.Contains(text, "agent:  unclaimed") {
+			if tc.want && !strings.Contains(text, "agent:    unclaimed") {
 				t.Errorf("the fixture is not unclaimed:\n%s", text)
 			}
-			if tc.want && strings.Index(text, unclaimedHint) < strings.Index(text, "agent:  unclaimed") {
+			if tc.want && strings.Index(text, unclaimedHint) < strings.Index(text, "agent:    unclaimed") {
 				t.Errorf("the hint comes before the line it follows:\n%s", text)
 			}
 		})
 	}
-	if unclaimedHint != "        Claimed it on the website? `jevlin connect` updates this." {
+	if unclaimedHint != "          Claimed it on the website? `jevlin connect` updates this." {
 		t.Errorf("the hint reads %q", unclaimedHint)
 	}
 }

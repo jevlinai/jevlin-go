@@ -321,7 +321,7 @@ func TestStatusShowsTheTraceAndTheTurnEnd(t *testing.T) {
 			}
 			var stdout, stderr bytes.Buffer
 			statusMain([]string{"-config", cfg}, &stdout, &stderr, envOf(tc.env))
-			for _, want := range []string{"trace:   " + tc.trace + "\n", "turn end: " + tc.turnEnd + "\n"} {
+			for _, want := range []string{"trace:    " + tc.trace + "\n", "turn end: " + tc.turnEnd + "\n"} {
 				if !strings.Contains(stdout.String(), want) {
 					t.Errorf("status does not say %q:\n%s", want, stdout.String())
 				}
