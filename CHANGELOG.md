@@ -10,7 +10,12 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
-## Unreleased
+## v0.8.2 — 2026-11-15
+
+This release reads every configuration 0.8.1 reads and changes none. Under the default `[update]
+mode = "apply"` a native installation's daily check installs it on its own and re-renders the
+opencode plugin of an installation that set opencode up, which is what makes it load on opencode 2;
+after an npm update, `jevlin agents install` does.
 
 - **The opencode plugin runs on opencode 2 as well as opencode 1.** One file serves both. On
   opencode 2 the trace reaches the search through the environment of the shell the call starts,
@@ -18,6 +23,12 @@ rewritten to match newer behaviour; the newer entry says what changed.
   session is refused in another session's shell. A plugin file written by jevlin 0.7.0 or earlier
   does not load on opencode 2; run `jevlin agents install` again. A one-shot `opencode run` on
   opencode 2 can exit before its turn is reported (`docs/agents.md`, opencode).
+
+**Which parts were live-smoked.** On 14 November, from #167 merged with 0.8.1's `main`: the
+plugin in real opencode sessions on opencode 2.3.0 and 2.2.7 and on opencode 1.18.20 (macOS), and
+on opencode 1.18.31 under PowerShell and Git Bash (Windows 11), each search traced with its
+session, turn and call and each turn report matching them, with vendor tokens redacted in both;
+against a loopback router and model. opencode 2 was not run on Windows.
 
 ## v0.8.1 — 2026-11-14
 
