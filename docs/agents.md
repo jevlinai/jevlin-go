@@ -259,7 +259,9 @@ end; an opencode that keeps running (the TUI, or a background service already st
 every turn. A turn that spans a compaction is reported from the compaction onward, because opencode
 2 gives the plugin only the messages since it. Its shell hook is told the command and not the call,
 so two identical searches in flight in one session take their traces in the order they were
-prepared.
+prepared. An opencode 1 started from an opencode 2 shell inherits that shell's session, so its
+plugin's trace names a session the shell does not carry and is not used: its searches run on the
+per-shell identity instead.
 
 ## Pi
 
