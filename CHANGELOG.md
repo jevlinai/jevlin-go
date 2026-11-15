@@ -10,6 +10,15 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## Unreleased
+
+- **The opencode plugin runs on opencode 2 as well as opencode 1.** One file serves both. On
+  opencode 2 the trace reaches the search through the environment of the shell the call starts,
+  so the command shown and approved is the one the agent wrote, and a trace prepared for one
+  session is refused in another session's shell. A plugin file written by jevlin 0.7.0 or earlier
+  does not load on opencode 2; run `jevlin agents install` again. A one-shot `opencode run` on
+  opencode 2 can exit before its turn is reported (`docs/agents.md`, opencode).
+
 ## v0.8.1 — 2026-11-14
 
 This release reads every configuration 0.8.0 reads, and an existing installation's config is not

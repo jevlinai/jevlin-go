@@ -612,6 +612,14 @@ read about the behaviour, the line ends with a pointer to that section of `docs/
   `hermes_hook.go` is Hermes' own, and sends less because its host payload carries less.
   `trace_boundaries_test.go`'s `TestEveryJSHostRendersTheSharedTraceSource` keeps the splice
   honest; `pi_extension_test.go` and `hermes_hook_test.go` guard the two adapters.
+  On opencode 2 the plugin writes no bridge into the command: it sets `JEVLIN_TRACE_BRIDGE` in
+  the environment of the shell the call starts (the shell hook `create.before`), matched to its
+  shell by the command's exact text because that hook is not told the call. A command that
+  already names the bridge is rewritten as opencode 1's is, since an environment cannot override
+  an assignment in the command. So that two sessions running the same command cannot trade
+  bridges, `searchTrace` refuses an opencode bridge whose session is not the one opencode exports
+  to the shell (`anotherOpencodeSessions`, `opencodeSessionEnv`); `opencode_v2_test.go` holds
+  both halves.
   For participants: [reference, The trace](docs/reference.md#the-trace).
 - **Who is calling a Claude-format hook** — `hook.go` owns it: `claudeEntryEvent` names the five
   entry points `agents install` writes for Claude Code and the event each is installed under, and

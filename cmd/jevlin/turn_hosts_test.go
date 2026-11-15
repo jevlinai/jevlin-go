@@ -256,7 +256,7 @@ func TestOpencodePluginReportsTheTurn(t *testing.T) {
   if (path.id==='ses_unknown') throw new Error('unreachable');
   return {data:{id:path.id, ...(path.id==='ses_child2'?{parentID:'ses_1'}:{})}};
  } }};
- const hooks = await plugin.JevlinLineage({client});
+ const hooks = await plugin.default.server({client});
  const result = {};
  // idle before any search: nothing is reported
  await hooks.event({event:{type:'session.idle',properties:{sessionID:'ses_1'}}});

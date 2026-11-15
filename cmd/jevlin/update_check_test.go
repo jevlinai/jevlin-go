@@ -238,7 +238,8 @@ func TestHookStartIsTheJavaScriptHostsSessionStart(t *testing.T) {
 	}
 	// opencode: at the plugin's load, at a top-level session's creation and
 	// at its idle — a resumed session is never created again.
-	if strings.Count(opencodePluginJS, "await startSession()") != 2 || !strings.Contains(opencodePluginJS, "startSession().catch(() => {})") {
+	// Twice over: once for opencode 1's hooks, once for opencode 2's.
+	if strings.Count(opencodePluginJS, "await startSession()") != 4 || strings.Count(opencodePluginJS, "startSession().catch(() => {})") != 2 {
 		t.Error("opencode's plugin no longer starts the session start at load, creation and idle")
 	}
 }

@@ -235,6 +235,12 @@ trace and starts the daily release check when the plugin loads, when a top-level
 and at each of its idles. There is no skill directory: install prints a rules block to paste into
 `AGENTS.md`, which is what teaches the agent the search.
 
+The one file works on opencode 1 and opencode 2, which have different plugin interfaces. On
+opencode 2 the trace reaches the search through the environment of the shell the call starts, so the
+command you are shown and asked to approve is the one the agent wrote. On opencode 1 it is put in
+front of the command. A plugin file written by jevlin 0.7.0 or earlier does not load on opencode 2:
+run `jevlin agents install` again after upgrading jevlin.
+
 ### What to know
 
 It runs Bash on macOS and Linux. On Windows it resolves its shell when it starts: `$SHELL` wins
@@ -246,6 +252,16 @@ session, and its searches name the session that started it.
 ### Known limits
 
 `/jevlin off` and `agents prefer` do not reach it: its `AGENTS.md` block carries no preference.
+
+On opencode 2, a turn is reported when opencode says its execution ended, and a one-shot
+`opencode run` can exit before the plugin has handed the turn over, so such a run may send no turn
+end; an opencode that keeps running (the TUI, or a background service already started) reports
+every turn. A turn that spans a compaction is reported from the compaction onward, because opencode
+2 gives the plugin only the messages since it. Its shell hook is told the command and not the call,
+so two identical searches in flight in one session take their traces in the order they were
+prepared. An opencode 1 started from an opencode 2 shell inherits that shell's session, so its
+plugin's trace names a session the shell does not carry and is not used: its searches run on the
+per-shell identity instead.
 
 ## Pi
 

@@ -15,6 +15,11 @@
 // file owns only what is opencode-specific: which events carry the session,
 // where its messages come from, and how a tool call is rewritten.
 //
+// One file serves opencode 1 and opencode 2, which have different plugin
+// APIs: see the default export at the end. On opencode 2 the bridge is set
+// in the environment of the shell the call starts, and the command is left
+// as the model wrote it.
+//
 // FAIL-OPEN: any error leaves the tool call untouched and the search runs
 // with its per-shell trace instead. Delete this file (or `jevlin agents
 // uninstall`) to remove it; JEVLIN_TRACE=off disables tracing entirely.
@@ -250,7 +255,9 @@ const reportTurn = async (turn) => {
   child.unref()
 }
 
-export const JevlinLineage = async ({ client }) => {
+// opencode 1: the hooks it calls as `server`, and what its client and
+// events look like there. Unchanged since before opencode 2 existed.
+const jevlinV1 = async ({ client }) => {
   // sessionID -> how many times this session's context window has compacted.
   const compactions = new Map()
   // sessionID -> the session that started it, or "" for one nothing started.
@@ -402,3 +409,296 @@ export const JevlinLineage = async ({ client }) => {
     },
   }
 }
+
+// ── opencode 2 ──────────────────────────────────────────────────────────
+//
+// opencode 2 has a different plugin API and does not run an opencode 1
+// plugin; it still loads this same file from the same directory, and takes
+// the default export's `setup`. Everything below was written against a real
+// opencode 2.2.6 session, not its documentation alone. What differs:
+//
+//   - the shell tool is named `shell` (a model that calls `bash` is repaired
+//     to it), and its call arrives as one event: tool, sessionID, messageID,
+//     id (the call id) and a mutable `input`;
+//   - a session's messages are a flat list by `type`. A user message has
+//     `text`; an assistant message has `content`, whose tool entries carry
+//     `name`, `id`, `state` and `time`;
+//   - a turn's end is `session.execution.succeeded`, `.failed` or
+//     `.interrupted`. `session.idle` is declared and never sent;
+//   - a client call rejects on error where opencode 1 answered `{error}`.
+//
+// The bridge travels differently too. opencode 2 lets a plugin set the
+// environment of the shell a tool call starts (`create.before`), which is
+// what the bridge is: an environment variable. So the command the user is
+// shown, and the one their permission rules match, is the one the model
+// wrote, with no prefix and no shell syntax to get right. That hook is told
+// the command and not which call it belongs to, so the call's hook leaves
+// the bridge under the command's exact text for it to collect.
+
+// How long a prepared bridge waits for its shell to start. A call the user
+// is asked to approve sits at the prompt for as long as they take; past this
+// it runs untraced rather than under a bridge prepared for something else.
+const V2_PENDING_MILLIS = 10 * 60 * 1000
+const V2_PENDING_MAX = 64
+
+// The longest bridge an environment variable may carry. Windows caps one
+// variable at 32,767 characters; nothing a POSIX host imposes is within the
+// envelope cap's reach, and null is traceBridge's "no limit".
+const V2_BRIDGE_CHAR_LIMIT = process.platform === "win32" ? 30000 : null
+
+const v2IsShellTool = (name) => name === "shell" || name === "bash"
+
+// turnOfV2 is turnOf for opencode 2's message list: the same fields, built
+// the same way, from the turn that began at the LAST user message. `status`
+// is how the execution ended, which opencode 2 says in the event's name.
+const turnOfV2 = (messages, status) => {
+  let start = -1
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.type === "user") {
+      start = i
+      break
+    }
+  }
+  if (start < 0 || typeof messages[start].id !== "string") return null
+  const turn = { turn: messages[start].id, status: "completed", user_text: typeof messages[start].text === "string" ? messages[start].text : "", steps: [] }
+  let input = 0
+  let output = 0
+  let seen = false
+  for (const m of messages.slice(start + 1)) {
+    if (m?.type !== "assistant") continue
+    seen = true
+    if (typeof m.model?.id === "string") turn.model = m.model.id
+    const t = m.tokens
+    if (t) {
+      input += (t.input ?? 0) + (t.cache?.read ?? 0) + (t.cache?.write ?? 0)
+      output += t.output ?? 0
+    }
+    for (const p of m.content ?? []) {
+      if (p?.type === "text" && typeof p.text === "string" && p.text !== "") {
+        turn.steps.push({ kind: "assistant", text: p.text })
+      } else if (p?.type === "tool") {
+        const a = p.time?.ran ?? p.time?.created
+        const b = p.time?.completed
+        const ms = typeof a === "number" && typeof b === "number" && b >= a ? Math.round(b - a) : 0
+        const ok = p.state?.status === "completed" ? true : p.state?.status === "error" ? false : undefined
+        // The command is looked at for one thing: whether it is our search.
+        if (v2IsShellTool(p.name) && needsTraceBridge(p.state?.input?.command)) {
+          turn.steps.push({ kind: "search", call: p.id, ms, ok })
+        } else {
+          turn.steps.push({ kind: "tool", name: p.name, ms, ok })
+        }
+      }
+    }
+  }
+  if (!seen) return null
+  let n = turn.steps.length
+  while (n > 0 && turn.steps[n - 1].kind === "assistant") n--
+  if (n > 0) {
+    turn.final_text = turn.steps
+      .slice(n)
+      .map((s) => s.text)
+      .join("\n")
+    turn.steps = turn.steps.slice(0, n)
+  }
+  if (status !== "completed") {
+    turn.status = status
+    delete turn.final_text
+  }
+  if (input > 0 || output > 0) turn.usage = { input_tokens: input, output_tokens: output }
+  return turn
+}
+
+const jevlinV2 = async (ctx) => {
+  const compactions = new Map()
+  const searched = new Map()
+  const reported = new Map()
+  const reporting = new Set()
+  const parents = new Map()
+  // command text -> the bridges prepared for calls of it that have not
+  // started their shell yet, oldest first. Each remembers its session and
+  // call, so one whose call ended without a shell (refused at the approval
+  // prompt, say) is dropped then, and none outlives its session's
+  // execution: a bridge left behind would ride the next identical command.
+  // The binary closes what remains — two sessions with the same command in
+  // flight at once — by refusing an opencode bridge that names a session
+  // other than the one in OPENCODE_SESSION_ID (searchTrace).
+  const pending = new Map()
+  const forget = (keep) => {
+    for (const [cmd, queue] of pending) {
+      const left = queue.filter(keep)
+      if (left.length) pending.set(cmd, left)
+      else pending.delete(cmd)
+    }
+  }
+  const prune = (now) => {
+    for (const [cmd, queue] of pending) {
+      while (queue.length && now - queue[0].at > V2_PENDING_MILLIS) queue.shift()
+      if (!queue.length) pending.delete(cmd)
+    }
+    while (pending.size > V2_PENDING_MAX) pending.delete(pending.keys().next().value)
+  }
+  const parentOf = async (sid) => {
+    if (parents.has(sid)) return parents.get(sid)
+    let parent = ""
+    try {
+      const info = await ctx.session.get({ sessionID: sid })
+      if (info?.id === sid) {
+        if (typeof info.parentID === "string") parent = info.parentID
+        parents.set(sid, parent)
+      }
+    } catch {
+      // Not cached: asked again at the next search.
+    }
+    return parent
+  }
+
+  await ctx.tool.hook("execute.before", async (event) => {
+    // A throw here fails the user's tool call, which opencode 1 never did.
+    try {
+      if (!event || !v2IsShellTool(event.tool)) return
+      const cmd = event.input?.command
+      if (!needsTraceBridge(cmd)) return
+      const sid = event.sessionID
+      if (typeof sid !== "string" || sid === "") return
+      const gen = compactions.get(sid) ?? 0
+      const env = { v: 1, harness: "opencode", session_id: traceHash(sid), window: gen > 0 ? String(gen) : "none" }
+      if (typeof event.id === "string" && event.id !== "") env.call_id = traceHash(sid + "|" + event.id)
+      const parent = await parentOf(sid)
+      if (parent && parent !== sid) env.parent_session_id = traceHash(parent)
+      try {
+        const messages = (await ctx.session.context({ sessionID: sid })) ?? []
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const m = messages[i]
+          if (m?.type === "user" && typeof m.id === "string" && m.id !== "") {
+            env.turn_id = traceHash(sid + "|" + m.id)
+            searched.set(sid, m.id)
+            break
+          }
+        }
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const m = messages[i]
+          if (m?.type !== "assistant") continue
+          const text = prepareTraceHistory(m.content ?? [])
+          if (text === null) break
+          if (text) {
+            env.history = [{ role: "assistant", text }]
+            break
+          }
+        }
+      } catch {
+        // no history is fine; the ids still thread the search
+      }
+      if (traceOff()) return
+      // H-R4: a command that already names the bridge is not carrying ours.
+      // The environment cannot override an assignment written into the
+      // command, so that one case is rewritten as opencode 1's is: every
+      // assignment that can be proved standalone is removed and this call's
+      // own is prepended, or the command is left exactly as it is.
+      // Any ASCII case: PowerShell and cmd read the name without regard to it.
+      if (carriesUnremovableBridge(cmd)) {
+        const shell = hostShell()
+        const bridge = traceBridge(env, bridgeBudgetFor(cmd, shell, HOST_COMMAND_CHAR_LIMIT))
+        if (bridge === null) return
+        const rewritten = withTraceBridge(cmd, bridge, shell)
+        if (rewritten !== null) event.input.command = rewritten
+        return
+      }
+      const bridge = traceBridge(env, V2_BRIDGE_CHAR_LIMIT)
+      if (bridge === null) return
+      const now = Date.now()
+      prune(now)
+      const queue = pending.get(cmd) ?? []
+      queue.push({ bridge, at: now, sid, call: event.id })
+      pending.set(cmd, queue)
+    } catch {
+      // fail-open: the search runs untraced rather than not at all
+    }
+  })
+
+  await ctx.shell.hook("create.before", (shell) => {
+    try {
+      const queue = pending.get(shell?.command)
+      if (!queue) return
+      const now = Date.now()
+      let next = queue.shift()
+      while (next && now - next.at > V2_PENDING_MILLIS) next = queue.shift()
+      if (!queue.length) pending.delete(shell.command)
+      if (!next || !shell.env) return
+      // The shell's own environment may turn tracing off where this
+      // process's does not: opencode 2 runs plugins in a long-lived service.
+      if (["off", "0", "false"].includes(String(shell.env.JEVLIN_TRACE ?? "").trim().toLowerCase())) return
+      shell.env.JEVLIN_TRACE_BRIDGE = next.bridge
+    } catch {
+      // fail-open
+    }
+  })
+
+  const ended = async (sid, status) => {
+    if (typeof sid !== "string" || sid === "") return
+    forget((p) => p.sid !== sid)
+    const turnId = searched.get(sid)
+    const key = sid + "|" + turnId
+    if (turnId && reported.get(sid) !== turnId && !reporting.has(key)) {
+      reporting.add(key)
+      try {
+        await parentOf(sid)
+        if (parents.get(sid) === "") {
+          const messages = (await ctx.session.context({ sessionID: sid })) ?? []
+          const turn = turnOfV2(messages, status)
+          if (turn && turn.turn === turnId) {
+            reported.set(sid, turnId)
+            await reportTurn({ session: sid, ...turn })
+          }
+        }
+      } catch {
+        // left unreported, to be tried again at the session's next end
+      } finally {
+        reporting.delete(key)
+      }
+    }
+    if (parents.get(sid) === "") await startSession()
+  }
+
+  const abort = new AbortController()
+  const types = ["session.created", "session.deleted", "session.compaction.ended", "session.execution.succeeded", "session.execution.failed", "session.execution.interrupted", "session.tool.success", "session.tool.failed"]
+  ;(async () => {
+    try {
+      for await (const event of ctx.event.subscribe({ types, signal: abort.signal })) {
+        try {
+          const sid = event?.data?.sessionID
+          if (typeof sid !== "string" || sid === "") continue
+          if (event.type === "session.created") {
+            const parent = typeof event.data.parentID === "string" ? event.data.parentID : ""
+            parents.set(sid, parent)
+            if (!parent) await startSession()
+          } else if (event.type === "session.compaction.ended") {
+            compactions.set(sid, (compactions.get(sid) ?? 0) + 1)
+          } else if (event.type === "session.tool.success" || event.type === "session.tool.failed") {
+            const call = event.data.id
+            forget((p) => !(p.sid === sid && p.call === call))
+          } else if (event.type === "session.deleted") {
+            for (const m of [compactions, searched, reported, parents]) m.delete(sid)
+            forget((p) => p.sid !== sid)
+          } else if (event.type === "session.execution.succeeded") {
+            await ended(sid, "completed")
+          } else if (event.type === "session.execution.interrupted") {
+            await ended(sid, "interrupted")
+          } else if (event.type === "session.execution.failed") {
+            await ended(sid, "failed")
+          }
+        } catch {
+          // fail-open, one event at a time
+        }
+      }
+    } catch {
+      // the subscription ended; searches still carry their ids
+    }
+  })()
+  startSession().catch(() => {})
+  return () => abort.abort()
+}
+
+// One file for both opencodes. opencode 1 calls `server`; opencode 2 calls
+// `setup` and ignores `server`. A default export is what both load: a named
+// export beside it would be loaded a second time by opencode 1.
+export default { id: "jevlin", setup: jevlinV2, server: jevlinV1 }
