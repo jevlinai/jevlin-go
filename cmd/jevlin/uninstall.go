@@ -1220,9 +1220,10 @@ func pathWithin(path, dir string) bool {
 }
 
 // binarySet is what -binary removes, in order: the self-updater's own staging
-// leftovers beside the binary, the one-level .previous, the executable's
-// update lock, and last the binary itself. Nothing else in the directory is
-// touched.
+// leftovers beside the binary, the one-level .previous, and last the binary
+// itself. The executable's update lock is held through all of it and removed
+// after, once the binary has left its path (applyBinary). Nothing else in
+// the directory is touched.
 func (r *uninstallRun) binarySet() []string {
 	owned := r.ownedBinary()
 	leftovers, _ := selfupdate.StagingLeftovers(filepath.Dir(owned))
