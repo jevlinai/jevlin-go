@@ -253,6 +253,14 @@ session, and its searches name the session that started it.
 
 `/jevlin off` and `agents prefer` do not reach it: its `AGENTS.md` block carries no preference.
 
+On opencode 2, a turn is reported when opencode says its execution ended, and a one-shot
+`opencode run` can exit before the plugin has handed the turn over, so such a run may send no turn
+end; an opencode that keeps running (the TUI, or a background service already started) reports
+every turn. A turn that spans a compaction is reported from the compaction onward, because opencode
+2 gives the plugin only the messages since it. Its shell hook is told the command and not the call,
+so two identical searches in flight in one session take their traces in the order they were
+prepared.
+
 ## Pi
 
 ### How it is found
