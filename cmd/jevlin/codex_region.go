@@ -622,8 +622,16 @@ func removeCodexRegion(existing []byte) codexRegionRemoval {
 	candidates := [][]byte{[]byte(r.pre + r.foreignRoot + r.post)}
 	if len(r.foreign) > 0 {
 		eol := fileLineEnding(string(existing))
-		// Without the blank lines that separated them from our tables.
+		// Without the blank lines that separated them from our tables;
+		// then, when the participant's next table's header follows
+		// directly (the region ended right above it), one blank line, as
+		// Codex lays out its own tables. A comment that follows gets none:
+		// Codex alone leaves a trailing comment right under the table
+		// (testdata/codex/, chronicle enabled, then mcp remove).
 		inPlace := strings.Trim(r.foreignText(), "\r\n") + eol
+		if first, _, _ := strings.Cut(r.post, "\n"); strings.HasPrefix(strings.TrimLeft(first, " \t"), "[") {
+			inPlace += eol
+		}
 		candidates = [][]byte{
 			[]byte(r.pre + r.foreignRoot + inPlace + r.post),
 			appendTables([]byte(r.pre+r.foreignRoot+r.post), r.foreignText()),
