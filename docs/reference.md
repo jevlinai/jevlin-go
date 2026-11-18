@@ -433,7 +433,7 @@ Under `~/.jevlin` (or `JEVLIN_HOME`) on the default layout:
 | `update_check.json` | The daily release check's record (below). | upgrade | Yes; the next agent session checks again, though a rollback's hold is forgotten. |
 | `bin/jevlin` | A native binary from the installer, and `jevlin.previous` after an upgrade. Setup never writes it. | the installer, upgrade | Through `uninstall -binary`. |
 | `state/` | The agent registration (`agent.json`), the trace key (`trace.key`), and connect's lock and resume stamp. | setup, connect, search | No: it is your registration. |
-| `sessions/` | Lineage files, one per workspace or Cursor conversation, and the hooks' window state; with `turn_end` on, an empty mark per searched turn and a turn's record until it is sent. | hooks, search | Yes, with no agent running; the hooks write them again. |
+| `sessions/` | Lineage files, one per workspace or Cursor conversation, and the hooks' window state; with `turn_end` on, an empty mark per searched turn and a turn's record until it is sent (a record whose sender never ran is swept after an hour). | hooks, search | Yes, with no agent running; the hooks write them again. |
 | `setup-env.json` | Windows only: what setup changed in your user environment. | setup | No; uninstall reverts from it. |
 
 `credentials.json`, `registration_pending.json`, `claim.json` and `update_check.json` sit in the
