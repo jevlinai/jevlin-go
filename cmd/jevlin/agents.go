@@ -73,6 +73,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"golang.org/x/term"
 
 	"github.com/jevlinai/jevlin-go/internal/selfupdate"
 	"github.com/jevlinai/jevlin-go/pkg/config"
@@ -274,11 +275,18 @@ func realAgentOps() agentOps {
 		replaceFile: func(path string, data []byte, perm fs.FileMode) error {
 			return fsx.WriteFileAtomic(filepath.Dir(path), filepath.Base(path), data, perm)
 		},
-		isTerminal: func() bool {
-			fi, err := os.Stdin.Stat()
-			return err == nil && fi.Mode()&os.ModeCharDevice != 0
-		},
+		isTerminal: stdinIsTerminal,
 	}
+}
+
+// stdinIsTerminal is the terminal test setup and uninstall use: the
+// descriptor, not the mode. /dev/null, and NUL on Windows, report
+// themselves as character devices, so a mode check took a run with stdin
+// redirected from one for a person at a console, printed a question
+// nobody could answer, and then blamed the missing answer. Such a run
+// takes the no-terminal path, with its refusal and its by-hand lines.
+func stdinIsTerminal() bool {
+	return term.IsTerminal(int(os.Stdin.Fd()))
 }
 
 type agentPaths struct {
