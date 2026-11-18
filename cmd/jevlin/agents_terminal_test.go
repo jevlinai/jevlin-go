@@ -42,7 +42,7 @@ func TestStdinFromTheNullDeviceOrAPipeIsNotATerminal(t *testing.T) {
 		}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			cmd := exec.Command(os.Args[0], "-test.run=^TestStdinFromTheNullDeviceOrAPipeIsNotATerminal$")
+			cmd := exec.Command(os.Args[0], "-test.run=^TestStdinFromTheNullDeviceOrAPipeIsNotATerminal$") // #nosec G204 G702 -- this test binary, run again with a fixed -test.run
 			cmd.Env = append(os.Environ(), "JEVLIN_TEST_PRINT_STDIN_IS_TERMINAL=1")
 			cmd.Stdin = c.stdin(t)
 			out, err := cmd.Output()
