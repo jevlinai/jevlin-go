@@ -159,9 +159,9 @@ func decodeAny(t *testing.T, v any) any {
 }
 
 // Uninstall removes ours and nothing else, leaves Codex's record of the
-// approvals alone and says so, and — when a hook of someone else's followed
-// ours — says that it moves up a place, which is where Codex keys its
-// approval.
+// approvals alone and says so when there is one, and — when a hook of
+// someone else's followed ours — says that it moves up a place, which is
+// where Codex keys its approval.
 func TestCodexUninstallLeavesTheApprovalsAndSaysWhatMoves(t *testing.T) {
 	m, ops := newFakeMachine()
 	entry := goldenEntry()
@@ -170,6 +170,7 @@ func TestCodexUninstallLeavesTheApprovalsAndSaysWhatMoves(t *testing.T) {
 	lists := codexEventLists(t, m.files[slash(path)])
 	lists["Stop"] = append(lists["Stop"], map[string]any{"hooks": []any{map[string]any{"type": "command", "command": "say done"}}})
 	m.files[slash(path)] = mustJSON(t, map[string]any{"hooks": lists})
+	m.files[slash(ops.paths(noEnv).codexConfig)] = []byte("model = \"gpt-5\"\n" + allFive(ops.paths(noEnv)))
 
 	var p agentPlan
 	(codexTarget{}).PlanUninstall(ops, ops.paths(noEnv), entry, noEnv, &p)

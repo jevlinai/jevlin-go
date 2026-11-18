@@ -718,7 +718,16 @@ func (t codexTarget) PlanUninstall(ops agentOps, paths agentPaths, entry binEntr
 	shifted := codexHooksAfterOurs(ops, paths.codexHooks, entry)
 	if planHooksRemove(ops, t.Label(), paths.codexHooks, p, entry, "hooks", false) {
 		removed = true
-		p.notes = append(p.notes, t.Label()+": Codex's record of your approval of these hooks stays in "+paths.codexConfig+"; jevlin never writes it, and leaves it")
+		// The record is Codex's, and jevlin leaves it; but say so only
+		// when there is one, read the way status reads it, or when it
+		// cannot be told. A participant told of a record that does not
+		// exist goes looking for it.
+		switch on, known := codexApprovalsOnRecord(ops, paths, entry); {
+		case !known:
+			p.notes = append(p.notes, t.Label()+": whether Codex holds a record of your approval of these hooks in "+paths.codexConfig+" could not be told; any it holds stays: jevlin never writes it")
+		case on > 0:
+			p.notes = append(p.notes, t.Label()+": Codex's record of your approval of these hooks stays in "+paths.codexConfig+"; jevlin never writes it, and leaves it")
+		}
 		if shifted {
 			p.notes = append(p.notes, t.Label()+": hooks listed after jevlin's in "+paths.codexHooks+" move up one place, and Codex keys an approval by place; it may ask you to review them again")
 		}
@@ -979,12 +988,7 @@ func codexApprovalLines(ops agentOps, paths agentPaths, entry binEntry) []string
 	if problem != "" {
 		return []string{problem}
 	}
-	onRecord := 0
-	for ev := range ours {
-		if codexApprovalOnRecord(state, paths.codexHooks, codexApprovalEvent[ev]) {
-			onRecord++
-		}
-	}
+	onRecord := countCodexApprovals(ours, state, paths.codexHooks)
 	switch {
 	case onRecord == 0:
 		return []string{"hooks: no approval on record; Codex runs them only after you approve them in Codex"}
@@ -992,6 +996,31 @@ func codexApprovalLines(ops agentOps, paths agentPaths, entry binEntry) []string
 		return []string{fmt.Sprintf("hooks: an approval is on record for %d of %d; Codex runs the others only after you approve them in Codex, and whether a recorded one is for the command as it reads now is Codex's to decide", onRecord, len(ours))}
 	}
 	return []string{fmt.Sprintf("hooks: an approval is on record for %d of %d; whether it is for the commands as they read now is Codex's to decide", onRecord, len(ours))}
+}
+
+// codexApprovalsOnRecord counts the approvals config.toml holds for this
+// installation's hooks, read as the status line reads them. known is false
+// when the record cannot be told for these hooks: a hook not first in its
+// event's list, a shared group, a config that cannot be read.
+func codexApprovalsOnRecord(ops agentOps, paths agentPaths, entry binEntry) (on int, known bool) {
+	ours, state, problem := readCodexApprovals(ops, paths, entry)
+	if len(ours) == 0 {
+		return 0, true
+	}
+	if problem != "" {
+		return 0, false
+	}
+	return countCodexApprovals(ours, state, paths.codexHooks), true
+}
+
+func countCodexApprovals(ours map[string]int, state map[string]any, hooksPath string) int {
+	on := 0
+	for ev := range ours {
+		if codexApprovalOnRecord(state, hooksPath, codexApprovalEvent[ev]) {
+			on++
+		}
+	}
+	return on
 }
 
 // readCodexApprovals finds this installation's hook under each Codex event,
