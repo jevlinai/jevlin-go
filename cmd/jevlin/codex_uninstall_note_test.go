@@ -27,13 +27,13 @@ func TestCodexUninstallMentionsTheApprovalRecordOnlyWhenThereIsOne(t *testing.T)
 			m, ops, paths, entry := codexStatusMachine(t)
 			switch c.name {
 			case "no config at all":
-				delete(m.files, paths.codexConfig)
+				delete(m.files, slash(paths.codexConfig))
 			case "a record for every hook":
-				m.files[paths.codexConfig] = []byte(c.config + allFive(paths))
+				m.files[slash(paths.codexConfig)] = []byte(c.config + allFive(paths))
 			case "a record for one hook":
-				m.files[paths.codexConfig] = []byte(c.config + approvalTables(paths.codexHooks, "0", "stop"))
+				m.files[slash(paths.codexConfig)] = []byte(c.config + approvalTables(paths.codexHooks, "0", "stop"))
 			default:
-				m.files[paths.codexConfig] = []byte(c.config)
+				m.files[slash(paths.codexConfig)] = []byte(c.config)
 			}
 			if c.shared {
 				putInOurStopGroup(t, m, paths.codexHooks, false)
