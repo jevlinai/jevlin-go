@@ -145,7 +145,7 @@ var classifiedFileCalls = map[fileCallSite]fileCallClass{
 	{"cmd/jevlin/update_check.go", "writeUpdateStamp", "fsx.WriteFileAtomic"}:           {1, "outside: the update stamp beside credentials.json, in the installation's own root; fsx stages under an exclusive random name"},
 	{"cmd/jevlin/turn_end.go", "cmdTurnEnd", "os.Remove"}:                               {1, "root: removes the queued turn end's name"},
 	{"cmd/jevlin/turn_end.go", "sweepTurnMarks", "os.ReadDir"}:                          {1, "root: lists the sessions dir's top level; O_DIRECTORY refuses a FIFO"},
-	{"cmd/jevlin/turn_end.go", "sweepTurnMarks", "os.Remove"}:                           {1, "root: removes stale turn marks by name"},
+	{"cmd/jevlin/turn_end.go", "sweepTurnMarks", "os.Remove"}:                           {1, "root: removes stale turn marks and unsent turn records by name"},
 	{"cmd/jevlin/uninstall.go", "readRemoved", "os.ReadDir"}:                            {1, "outside: a host's skill directory"},
 	{"cmd/jevlin/uninstall.go", "uninstallRun.applyBinary", "os.ReadDir"}:               {1, "outside: the binary's directory"},
 	{"cmd/jevlin/uninstall.go", "uninstallRun.applyBinary", "os.Remove"}:                {2, "outside: the binary"},
