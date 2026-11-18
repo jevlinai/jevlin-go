@@ -67,6 +67,11 @@ const (
 	// A turn that is interrupted never ends, and its mark is never taken.
 	// Marks older than this are swept when the next one is written.
 	turnSearchedMaxAge = 24 * time.Hour
+	// A queued record is the sender's to remove, and a sender that never
+	// runs (the machine slept, the process was killed, the binary was
+	// replaced mid-upgrade) leaves it. A send takes seconds; a record
+	// older than this has no sender coming, and is swept with the marks.
+	turnEndMaxAge = time.Hour
 	// The router's own vocabulary (POST /v1/turns).
 	turnCompleted   = "completed"
 	turnInterrupted = "interrupted"
@@ -197,17 +202,27 @@ func markTurnSearched(ops hookOps, m config.Search, trace *traceEnvelope) {
 	sweepTurnMarks(m.SessionsDir, ops.now())
 }
 
-// sweepTurnMarks removes marks no turn end came for.
+// sweepTurnMarks removes marks no turn end came for, and queued records
+// no sender came for.
 func sweepTurnMarks(dir string, now time.Time) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
 	}
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), turnSearchedSuffix) {
+		if e.IsDir() {
 			continue
 		}
-		if info, err := e.Info(); err == nil && now.Sub(info.ModTime()) > turnSearchedMaxAge {
+		var maxAge time.Duration
+		switch {
+		case strings.HasSuffix(e.Name(), turnSearchedSuffix):
+			maxAge = turnSearchedMaxAge
+		case strings.HasSuffix(e.Name(), turnEndSuffix):
+			maxAge = turnEndMaxAge
+		default:
+			continue
+		}
+		if info, err := e.Info(); err == nil && now.Sub(info.ModTime()) > maxAge {
 			_ = os.Remove(filepath.Join(dir, e.Name()))
 		}
 	}
