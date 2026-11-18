@@ -10,6 +10,14 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## Unreleased
+
+- `jevlin status` prints every value in one column. The `turn end:` line, added in 0.8.1,
+  sat one column to the right of the others, and the `agent:` line one to the left.
+- `jevlin uninstall -dry-run` names as left only the lock files the real run leaves. With
+  `-purge-state` it also listed `setup.lock` and `state/connect.lock`, which the purge
+  removes, and with `-binary` the binary's update lock, which goes with the binary.
+
 ## v0.8.2 — 2026-11-15
 
 This release reads every configuration 0.8.1 reads and changes none. Under the default `[update]

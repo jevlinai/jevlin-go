@@ -262,13 +262,23 @@ func (r *uninstallRun) run(homeFlag string) int {
 		// "these files will still be here, and here is why" is exactly what
 		// a decision is made on; it was only ever printed from closing(),
 		// which a dry run does not reach. Computed from the files present
-		// now, which is what it says: a dry run takes no exclusion, so it
-		// creates none of them and none of them is about to go.
+		// now, less those the plan above removes: -purge-state takes
+		// setup.lock and the state directory with connect.lock in it, and
+		// -binary takes the binary's update lock with the binary, so the
+		// real run, which lists what is still there at its close, never
+		// names them.
+		var goes []string
 		if r.purge {
 			inside, _ := r.purgeSet()
 			r.sayLeftInHome(inside, true)
+			goes = inside
 		}
-		r.sayLeftoverLocks()
+		if r.binary {
+			// The real run removes the update lock once the binary has
+			// left its path, which is what this plan does.
+			goes = append(goes, r.ownedBinary()+updateLockSuffix)
+		}
+		r.sayLeftoverLocks(goes...)
 		r.printf("\nDry run: nothing was changed, asked or contacted.\n")
 		return exitOK
 	case r.purge:
@@ -1210,9 +1220,10 @@ func pathWithin(path, dir string) bool {
 }
 
 // binarySet is what -binary removes, in order: the self-updater's own staging
-// leftovers beside the binary, the one-level .previous, the executable's
-// update lock, and last the binary itself. Nothing else in the directory is
-// touched.
+// leftovers beside the binary, the one-level .previous, and last the binary
+// itself. The executable's update lock is held through all of it and removed
+// after, once the binary has left its path (applyBinary). Nothing else in
+// the directory is touched.
 func (r *uninstallRun) binarySet() []string {
 	owned := r.ownedBinary()
 	leftovers, _ := selfupdate.StagingLeftovers(filepath.Dir(owned))
@@ -1603,8 +1614,19 @@ func (r *uninstallRun) leftInBinaryDir(skip map[string]bool) []string {
 //
 // The reason recorded at excludeForUpgrade therefore still holds, and this
 // is the half of it that was missing: a reader of the installation is told.
-func (r *uninstallRun) sayLeftoverLocks() {
-	locks := r.leftoverLocks()
+// goes is what the run is about to remove: a dry run passes its plan, so it
+// does not call a lock left that the real run takes.
+func (r *uninstallRun) sayLeftoverLocks(goes ...string) {
+	var locks []string
+	for _, l := range r.leftoverLocks() {
+		removed := false
+		for _, g := range goes {
+			removed = removed || pathWithin(l, g)
+		}
+		if !removed {
+			locks = append(locks, l)
+		}
+	}
 	if len(locks) == 0 {
 		return
 	}

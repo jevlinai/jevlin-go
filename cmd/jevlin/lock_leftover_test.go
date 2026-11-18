@@ -95,40 +95,39 @@ func TestUninstallNamesEveryLockItLeavesAsSafeToDelete(t *testing.T) {
 }
 
 // The dry run is the form a participant reads before deciding, so it
-// says what the real run says about what will still be there. It listed
-// nothing, in both modes, because sayLeftoverLocks was reached only from
-// closing(), which a dry run does not reach.
+// names exactly the locks the real run names at its close. It once listed
+// nothing, because sayLeftoverLocks was reached only from closing(); then
+// it listed every lock on disk, setup.lock and connect.lock included under
+// -purge-state, which removes them, and the binary's update lock under
+// -binary, which takes it with the binary. Each mode runs the dry run and
+// then the real run on the same installation and compares the two lists.
 func TestTheDryRunNamesTheSameLocksTheRealRunWould(t *testing.T) {
-	for _, purge := range []bool{false, true} {
-		name := "plain"
-		if purge {
-			name = "purge-state"
-		}
-		t.Run(name, func(t *testing.T) {
-			s := installed(t)
+	for _, mode := range []string{"plain", "purge-state", "binary"} {
+		t.Run(mode, func(t *testing.T) {
+			var s *setupSandbox
+			var args []string
+			switch mode {
+			case "plain":
+				s = installed(t)
+				args = []string{"-yes", "-home", s.home}
+			case "purge-state":
+				s = installed(t)
+				args = []string{"-purge-state", "-home", s.home}
+			case "binary":
+				posixOnly(t)
+				s = newSetupSandbox(t)
+				s.exe = filepath.Join(s.home, "bin", binaryNameFor())
+				writeFileT(t, s.exe, "the binary")
+				if code, out, errOut := s.run(nil, false, "-yes"); code != exitOK {
+					t.Fatalf("setup exited %d\n%s\n%s", code, out, errOut)
+				}
+				args = []string{"-yes", "-binary", "-home", s.home}
+			}
 			want := allLocks(t, s)
 
-			args := []string{"-dry-run", "-home", s.home}
-			if purge {
-				args = append([]string{"-purge-state"}, args...)
-			}
-			code, out, errOut := s.uninstall(t, nil, false, args...)
+			code, dryOut, errOut := s.uninstall(t, nil, false, append([]string{"-dry-run"}, args...)...)
 			if code != exitOK {
-				t.Fatalf("dry run: exit %d\n%s\n%s", code, out, errOut)
-			}
-			// Scoped to the section, as the real run's case is and for the
-			// same reason: -purge-state's plan prints the full path of
-			// everything it would remove, so a search over the whole output
-			// would match a removal line and call that "named as left".
-			idx := strings.Index(out, leftoverHeading)
-			if idx < 0 {
-				t.Fatalf("the dry run does not say what it would leave:\n%s", out)
-			}
-			section := out[idx:]
-			for _, p := range want {
-				if !strings.Contains(section, p) {
-					t.Errorf("the dry run does not name %s, which is there now:\n%s", p, out)
-				}
+				t.Fatalf("dry run: exit %d\n%s\n%s", code, dryOut, errOut)
 			}
 			// A dry run changes nothing, the locks included.
 			for _, p := range want {
@@ -136,7 +135,51 @@ func TestTheDryRunNamesTheSameLocksTheRealRunWould(t *testing.T) {
 					t.Errorf("the dry run removed %s", p)
 				}
 			}
+			dry := namedLocks(dryOut, want)
+
+			if mode == "purge-state" {
+				code, realOut, errOut := s.uninstall(t, tty(s.home), true, args...)
+				if code != exitOK {
+					t.Fatalf("uninstall: exit %d\n%s\n%s", code, realOut, errOut)
+				}
+				checkSameLocks(t, dry, namedLocks(realOut, want), dryOut, realOut)
+				return
+			}
+			code, realOut, errOut := s.uninstall(t, nil, false, args...)
+			if code != exitOK {
+				t.Fatalf("uninstall: exit %d\n%s\n%s", code, realOut, errOut)
+			}
+			checkSameLocks(t, dry, namedLocks(realOut, want), dryOut, realOut)
 		})
+	}
+}
+
+// namedLocks is which of the locks the output names as left. Scoped to the
+// section: -purge-state's plan prints the full path of everything it
+// removes, so a search over the whole output would match a removal line and
+// call that "named as left".
+func namedLocks(out string, locks []string) []string {
+	idx := strings.Index(out, leftoverHeading)
+	if idx < 0 {
+		return nil
+	}
+	section := out[idx:]
+	var named []string
+	for _, p := range locks {
+		if strings.Contains(section, "  "+p+"\n") {
+			named = append(named, p)
+		}
+	}
+	return named
+}
+
+func checkSameLocks(t *testing.T, dry, real []string, dryOut, realOut string) {
+	t.Helper()
+	if strings.Join(dry, "\n") != strings.Join(real, "\n") {
+		t.Errorf("the dry run names %q as left, the real run %q\ndry run:\n%s\nreal run:\n%s", dry, real, dryOut, realOut)
+	}
+	if len(real) == 0 {
+		t.Errorf("the real run names no lock, so the comparison proves nothing:\n%s", realOut)
 	}
 }
 

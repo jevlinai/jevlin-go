@@ -92,8 +92,19 @@ func orDefaults(cfgSource string) string {
 // installation than they expected sees why at the top of the report rather
 // than having to infer it from what follows.
 func printConfigSource(w io.Writer, cfgSource, stateDir string) {
-	fmt.Fprintf(w, "%-8s %s\n", "config:", orDefaults(cfgSource))
-	fmt.Fprintf(w, "%-8s %s\n", "state:", stateDir)
+	fmt.Fprintf(w, "%s%s\n", statusLabel("config:"), orDefaults(cfgSource))
+	fmt.Fprintf(w, "%s%s\n", statusLabel("state:"), stateDir)
+}
+
+// statusLabelWidth is the width every label of status, and of doctor's
+// header, is padded to: the longest label's. One width for every line, so
+// a label added later cannot push its own value out of the column, as
+// "turn end:" did when the labels were padded by hand.
+const statusLabelWidth = len("turn end:")
+
+// statusLabel is a label padded to the column its value starts in.
+func statusLabel(label string) string {
+	return fmt.Sprintf("%-*s ", statusLabelWidth, label)
 }
 
 // newFlagSet builds a FlagSet whose usage output goes to the command's own

@@ -171,19 +171,19 @@ func switchLineText(offBy []string, words map[string]string) string {
 }
 
 // unclaimedHint follows every unclaimed agent line.
-const unclaimedHint = "        Claimed it on the website? `jevlin connect` updates this."
+var unclaimedHint = strings.Repeat(" ", statusLabelWidth+1) + "Claimed it on the website? `jevlin connect` updates this."
 
 func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) {
 	printConfigSource(stdout, f.ConfigSource, f.StateDir)
-	fmt.Fprintf(stdout, "update:  %s\n", updateLineText(f.Update, f.Now))
-	fmt.Fprintf(stdout, "%-8s %s\n", "trace:", switchLineText(f.TraceOffBy, traceOffWords))
-	fmt.Fprintf(stdout, "%-8s %s\n", "turn end:", switchLineText(turnEndOffBy(f), turnEndOffWords))
+	fmt.Fprintf(stdout, "%s%s\n", statusLabel("update:"), updateLineText(f.Update, f.Now))
+	fmt.Fprintf(stdout, "%s%s\n", statusLabel("trace:"), switchLineText(f.TraceOffBy, traceOffWords))
+	fmt.Fprintf(stdout, "%s%s\n", statusLabel("turn end:"), switchLineText(turnEndOffBy(f), turnEndOffWords))
 	if f.StoreMissing {
-		fmt.Fprintln(stdout, "agent:   not registered — run `jevlin connect`")
+		fmt.Fprintln(stdout, statusLabel("agent:")+"not registered — run `jevlin connect`")
 		return
 	}
 	if f.StoreErr != nil {
-		fmt.Fprintf(stderr, "agent:  the state directory could not be read: %v\n", f.StoreErr)
+		fmt.Fprintf(stderr, "%sthe state directory could not be read: %v\n", statusLabel("agent:"), f.StoreErr)
 		return
 	}
 	if f.RegistrationErr != nil {
@@ -194,14 +194,14 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) {
 		// regular file or readable by others is refused by connect as well,
 		// and the advice would send the participant round in a circle.
 		if errors.Is(f.RegistrationErr, auth.ErrAgentRegistrationCorrupt) {
-			fmt.Fprintf(stderr, "agent:  registration on file could not be read: %v; run `jevlin connect` to rebuild it from the platform\n", f.RegistrationErr)
+			fmt.Fprintf(stderr, "%sregistration on file could not be read: %v; run `jevlin connect` to rebuild it from the platform\n", statusLabel("agent:"), f.RegistrationErr)
 		} else {
-			fmt.Fprintf(stderr, "agent:  registration on file could not be read: %v\n", f.RegistrationErr)
+			fmt.Fprintf(stderr, "%sregistration on file could not be read: %v\n", statusLabel("agent:"), f.RegistrationErr)
 		}
 		return
 	}
 	if !f.HasRegistration {
-		fmt.Fprintln(stdout, "agent:   not registered — run `jevlin connect`")
+		fmt.Fprintln(stdout, statusLabel("agent:")+"not registered — run `jevlin connect`")
 		return
 	}
 
@@ -215,11 +215,11 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) {
 			// older version kept the link for in agent.json, which is not
 			// read. Status never falls back to printing a bare URL; a
 			// foreground connect mints a fresh one.
-			fmt.Fprintln(stdout, "agent:  unclaimed — no claim link is on file for it here. Run `jevlin connect` for a fresh one.")
+			fmt.Fprintln(stdout, statusLabel("agent:")+"unclaimed — no claim link is on file for it here. Run `jevlin connect` for a fresh one.")
 		} else if claimURL := printableClaimURL(f.Claim.ClaimURL, f.PlatformBaseURL, stderr); claimURL != "" {
-			fmt.Fprintf(stdout, "agent:  unclaimed — claim at %s (open it, sign in or create an account, then confirm; `jevlin connect` shows the steps)\n", claimURL)
+			fmt.Fprintf(stdout, "%sunclaimed — claim at %s (open it, sign in or create an account, then confirm; `jevlin connect` shows the steps)\n", statusLabel("agent:"), claimURL)
 		} else {
-			fmt.Fprintln(stdout, "agent:  unclaimed — the stored claim link failed validation and is not shown. "+
+			fmt.Fprintln(stdout, statusLabel("agent:")+"unclaimed — the stored claim link failed validation and is not shown. "+
 				"Run `jevlin connect` for a fresh one.")
 		}
 		// status reads only the record on this machine, and a claim made on
@@ -227,10 +227,10 @@ func renderAgentIdentity(f agentIdentityFacts, stdout, stderr io.Writer) {
 		// before: say so where the participant is looking.
 		fmt.Fprintln(stdout, unclaimedHint)
 	case "expired":
-		fmt.Fprintln(stdout, "agent:  expired — run `jevlin connect` again for a new registration")
+		fmt.Fprintln(stdout, statusLabel("agent:")+"expired — run `jevlin connect` again for a new registration")
 	case "claimed":
-		fmt.Fprintf(stdout, "agent:  claimed (scopes: %s)\n", strings.Join(reg.Scopes, ", "))
+		fmt.Fprintf(stdout, "%sclaimed (scopes: %s)\n", statusLabel("agent:"), strings.Join(reg.Scopes, ", "))
 	default:
-		fmt.Fprintf(stderr, "agent:  unrecognized status %q from a previous poll\n", reg.Status)
+		fmt.Fprintf(stderr, "%sunrecognized status %q from a previous poll\n", statusLabel("agent:"), reg.Status)
 	}
 }

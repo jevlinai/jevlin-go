@@ -655,7 +655,7 @@ func TestStatusReportsTheReleaseCheckInTextAndJSON(t *testing.T) {
 	if code := statusMain([]string{"-config", cfgPath}, &text, &errOut, noEnv); code != exitOK {
 		t.Fatalf("status exit %d: %s", code, errOut.String())
 	}
-	if !strings.Contains(text.String(), "update:  no release check has run yet") {
+	if !strings.Contains(text.String(), "update:   no release check has run yet") {
 		t.Errorf("no stamp:\n%s", text.String())
 	}
 
@@ -666,7 +666,7 @@ func TestStatusReportsTheReleaseCheckInTextAndJSON(t *testing.T) {
 	if code := statusMain([]string{"-config", cfgPath}, &text, &errOut, noEnv); code != exitOK {
 		t.Fatalf("status exit %d: %s", code, errOut.String())
 	}
-	if !strings.Contains(text.String(), "update:  0.3.2 is available and this copy is 0.3.1 (checked 3h ago) — ") {
+	if !strings.Contains(text.String(), "update:   0.3.2 is available and this copy is 0.3.1 (checked 3h ago) — ") {
 		t.Errorf("available:\n%s", text.String())
 	}
 	var jsonOut bytes.Buffer
@@ -686,7 +686,7 @@ func TestStatusReportsTheReleaseCheckInTextAndJSON(t *testing.T) {
 	}
 	text.Reset()
 	_ = statusMain([]string{"-config", cfgPath}, &text, &errOut, noEnv)
-	if !strings.Contains(text.String(), "update:  no release check has run yet for this copy; the last, 3h ago, was by another copy of jevlin") {
+	if !strings.Contains(text.String(), "update:   no release check has run yet for this copy; the last, 3h ago, was by another copy of jevlin") {
 		t.Errorf("another copy's stamp:\n%s", text.String())
 	}
 
@@ -694,7 +694,7 @@ func TestStatusReportsTheReleaseCheckInTextAndJSON(t *testing.T) {
 	writeFileT(t, stamp, `{"v":1,"checked_at":"2026-10-17T12:00:00Z","outcome":"SECURITY NOTICE"}`)
 	text.Reset()
 	_ = statusMain([]string{"-config", cfgPath}, &text, &errOut, noEnv)
-	if !strings.Contains(text.String(), "update:  the last check could not be read: "+updateStampFile+" is not a record this version wrote") || strings.Contains(text.String(), "SECURITY") {
+	if !strings.Contains(text.String(), "update:   the last check could not be read: "+updateStampFile+" is not a record this version wrote") || strings.Contains(text.String(), "SECURITY") {
 		t.Errorf("foreign stamp:\n%s", text.String())
 	}
 }

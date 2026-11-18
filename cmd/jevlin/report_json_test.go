@@ -176,7 +176,7 @@ state_dir = "` + filepath.ToSlash(filepath.Join(root, "state")) + `"
 	}
 	// Ruling D-R1: doctor names the config it resolved before anything
 	// else, so the report starts with that line, then the checks.
-	if !strings.HasPrefix(text.String(), "config:  "+cfgPath+"\n") {
+	if !strings.HasPrefix(text.String(), "config:   "+cfgPath+"\n") {
 		t.Errorf("the text report changed shape: %q", text.String())
 	}
 	if !strings.Contains(text.String(), "\n  search key") {
@@ -278,7 +278,7 @@ func TestStatusJSONAndTextComeFromTheSameFacts(t *testing.T) {
 		data["state_dir"] != filepath.Join(root, "state") {
 		t.Errorf("config fields: %v", data)
 	}
-	if !strings.HasPrefix(text.String(), "config:  "+cfgPath+"\n") {
+	if !strings.HasPrefix(text.String(), "config:   "+cfgPath+"\n") {
 		t.Errorf("the text report no longer opens with the config: %q", text.String())
 	}
 
@@ -289,7 +289,7 @@ func TestStatusJSONAndTextComeFromTheSameFacts(t *testing.T) {
 		t.Errorf("agent: %v", agent)
 	}
 	// The same registration the text renderer printed, scopes included.
-	if !strings.Contains(text.String(), "agent:  claimed (scopes: search, fetch)") {
+	if !strings.Contains(text.String(), "agent:    claimed (scopes: search, fetch)") {
 		t.Errorf("the text report no longer says claimed with the scopes: %q", text.String())
 	}
 	// The update object is always present: no stamp is "checked: false",
@@ -298,7 +298,7 @@ func TestStatusJSONAndTextComeFromTheSameFacts(t *testing.T) {
 	if update == nil || update["checked"] != false || update["mode"] != config.UpdateApply {
 		t.Errorf("update: %v", data["update"])
 	}
-	if !strings.Contains(text.String(), "update:  ") {
+	if !strings.Contains(text.String(), "update:   ") {
 		t.Errorf("the text report dropped the update line the JSON report carries: %q", text.String())
 	}
 	if jsonErr.String() != "" {
@@ -315,16 +315,16 @@ func TestStatusRenderersAgreeAcrossEveryRegistrationStatus(t *testing.T) {
 		status string // the JSON agent.status; "" means no agent object
 		text   string
 	}{
-		{"unregistered", func(*auth.Store) error { return nil }, "", "agent:   not registered"},
+		{"unregistered", func(*auth.Store) error { return nil }, "", "agent:    not registered"},
 		{"unclaimed", func(s *auth.Store) error {
 			return s.SaveAgentRegistration(auth.AgentRegistration{AgentID: "agent-fictional-2", Status: "unclaimed"})
-		}, "unclaimed", "agent:  unclaimed"},
+		}, "unclaimed", "agent:    unclaimed"},
 		{"expired", func(s *auth.Store) error {
 			return s.SaveAgentRegistration(auth.AgentRegistration{AgentID: "agent-fictional-3", Status: "expired"})
-		}, "expired", "agent:  expired"},
+		}, "expired", "agent:    expired"},
 		{"claimed", func(s *auth.Store) error {
 			return s.SaveAgentRegistration(auth.AgentRegistration{AgentID: "agent-fictional-4", Status: "claimed", Scopes: []string{"search"}})
-		}, "claimed", "agent:  claimed (scopes: search)"},
+		}, "claimed", "agent:    claimed (scopes: search)"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfgPath, _, store := statusFixture(t)
@@ -431,7 +431,7 @@ func TestAStoredClaimURLOffThePlatformOriginIsNeverReported(t *testing.T) {
 		var connectJSON bytes.Buffer
 		emitMachine(&connectJSON, connectEnvelope(cfgPath, noEnv, exitOK, ""))
 
-		if !strings.Contains(text.String(), "agent:  unclaimed") {
+		if !strings.Contains(text.String(), "agent:    unclaimed") {
 			t.Errorf("status no longer reports the unclaimed agent:\n%s", text.String())
 		}
 		requireNoPlantedEscape(t, "status", text.String()+textErr.String()+statusJSON.String()+statusJSONErr.String()+connectJSON.String())
