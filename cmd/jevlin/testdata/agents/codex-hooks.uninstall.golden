@@ -5,8 +5,5 @@
       "surface": "Codex",
       "path": "/home/u/.codex/hooks.json"
     }
-  ],
-  "notes": [
-    "Codex: Codex's record of your approval of these hooks stays in /home/u/.codex/config.toml; jevlin never writes it, and leaves it"
   ]
 }
