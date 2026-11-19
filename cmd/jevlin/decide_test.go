@@ -6,7 +6,8 @@ package main
 //
 // testdata/decide/router holds the router's own fixtures,
 // docs/router-contracts/fixtures/decisions-success.json and
-// decisions-refusal.json from Jevlin-core main at 8936916, byte for byte.
+// decisions-refusal.json from Jevlin-core main at 8936916, byte for byte;
+// decisions-grounded.json beside them is not one (decide_grounded_test.go).
 
 import (
 	"bytes"

@@ -8,8 +8,8 @@
   },
   "citations": [],
   "consulted_pages": [
-    {"id": "s_4be1…", "url": "https://stripe.com/billing", "title": "Billing"},
-    {"id": "s_77a0…", "url": "https://stripe.com/tax", "title": "Tax", "questions": ["tax"]}
+    {"id": "s_4be1…", "url": "https://payments.example.test/billing", "title": "Billing"},
+    {"id": "s_77a0…", "url": "https://payments.example.test/tax", "title": "Tax", "questions": ["tax"]}
   ],
   "grounding": {"rules": "q1", "searches": 2, "second_stage": "ran", "degraded": false, "reconsidered": ["tax"]},
   "usage": {"input_tokens": 9120, "output_tokens": 4, "grounded_calls": 2, "cost_micros": 2500, "cost_source": "modeled", "byok": false, "latency_ms": 3900}

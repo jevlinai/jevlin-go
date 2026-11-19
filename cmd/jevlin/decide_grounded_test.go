@@ -4,9 +4,11 @@ package main
 // through decide's envelope field for field, through the CLI and through the
 // MCP tool's text and structuredContent alike.
 //
-// testdata/decide/router/decisions-grounded.json is the response example in
-// search-router's API.md, section "The grounded models", at 3628810, byte for
-// byte: the router publishes no fixture for these models yet.
+// testdata/decide/router/decisions-grounded.json follows the shape of the
+// response example in search-router's API.md, section "The grounded models"
+// (3628810), field for field and in its order; the router publishes no
+// fixture for these models yet. The shape follows the reference, not the
+// bytes: the addresses are fictional (example.test), as every fixture here.
 
 import (
 	"encoding/json"
@@ -69,8 +71,8 @@ func TestTheGroundedFieldsSitWhereTheRouterPutsThem(t *testing.T) {
 		_, _ = w.Write([]byte(decideFixture(t, "decisions-grounded.json")))
 	})
 	_, out, _ := runDecide(t, map[string]string{"JEVLIN_API_KEY": "sr-fictional-key"}, decideMinimal, "--stdin", "-config", cfg)
-	const want = `"citations":[],"consulted_pages":[{"id":"s_4be1…","url":"https://stripe.com/billing","title":"Billing"},` +
-		`{"id":"s_77a0…","url":"https://stripe.com/tax","title":"Tax","questions":["tax"]}],` +
+	const want = `"citations":[],"consulted_pages":[{"id":"s_4be1…","url":"https://payments.example.test/billing","title":"Billing"},` +
+		`{"id":"s_77a0…","url":"https://payments.example.test/tax","title":"Tax","questions":["tax"]}],` +
 		`"grounding":{"rules":"q1","searches":2,"second_stage":"ran","degraded":false,"reconsidered":["tax"]},"usage":{`
 	if !strings.Contains(out, want) {
 		t.Errorf("the envelope\n%s\ndoes not carry\n%s", out, want)
