@@ -370,7 +370,13 @@ func TestTheRouterDecideFieldsAreDecided(t *testing.T) {
 	}{
 		{reflect.TypeFor[routerDecideResponse](), []string{
 			"RequestID request_id", "Model model", "ModelResolved model_resolved,omitempty", "Answers answers",
-			"Citations citations", "Sources sources,omitempty", "Usage usage,omitempty",
+			"Citations citations", "Sources sources,omitempty", "ConsultedPages consulted_pages,omitempty",
+			"Grounding grounding,omitempty", "Usage usage,omitempty",
+		}},
+		{reflect.TypeFor[routerDecidePage](), []string{"ID id,omitempty", "URL url", "Title title,omitempty", "Questions questions,omitempty"}},
+		{reflect.TypeFor[routerDecideGrounding](), []string{
+			"Rules rules,omitempty", "Searches searches,omitempty", "SecondStage second_stage,omitempty",
+			"Degraded degraded,omitempty", "Reconsidered reconsidered,omitempty",
 		}},
 		{reflect.TypeFor[routerDecideCitation](), []string{"URL url", "Title title,omitempty", "Excerpts excerpts,omitempty"}},
 		{reflect.TypeFor[routerDecideSource](), []string{

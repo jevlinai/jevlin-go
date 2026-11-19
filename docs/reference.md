@@ -260,6 +260,8 @@ On success, `result` has:
 | `answers` | One entry per question name, the router's object for it: `type` is `noul` (with `noul`), `choice` (`choice`, `probabilities`), `score` (`score`, `probabilities`, `legend`) or `refusal`, and `confidence` when the vendor reports one. Only the whitespace between tokens is removed. |
 | `citations` | The sources the vendor reports for the whole request: `url`, `title`, `excerpts`. Empty when none. |
 | `sources` | The pages the router read for a request carrying `sources`: `source_id`, `url`, `title`, `chars`, `cached`, `cost_micros`. |
+| `consulted_pages` | A grounded model only (`grounded` in `--models`): the pages its decision call was shown, each with `id`, `url`, `title` and, for a page retrieved for some questions rather than the whole request, `questions`. A consulted page is not a citation. Absent for every other model. |
+| `grounding` | A grounded model only: `rules` (the version of its search and evidence rules) and `searches` (searches attempted); a model that reconsiders unsure questions adds `second_stage` (`ran`, `not_needed` or `failed`), `degraded` (true when that stage failed and the answers are the first call's) and `reconsidered` (the questions asked again). Absent for every other model. |
 | `usage` | `input_tokens`, `output_tokens`, `grounded_calls`, `cost_micros`, `pages_cost_micros`, `cost_source` (`modeled`, `reported` or `free`), `byok` and `latency_ms`. |
 
 A `refusal` is an answer, not a failure: `ok` stays `true` and the other answers stand. A 2xx with

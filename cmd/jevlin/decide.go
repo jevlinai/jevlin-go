@@ -269,7 +269,32 @@ type routerDecideResponse struct {
 	Answers       map[string]json.RawMessage `json:"answers"`
 	Citations     []routerDecideCitation     `json:"citations"`
 	Sources       []routerDecideSource       `json:"sources,omitempty"`
-	Usage         *routerDecideUsage         `json:"usage,omitempty"`
+	// ConsultedPages and Grounding come only from a grounded model, and are
+	// absent from every other model's answer.
+	ConsultedPages []routerDecidePage     `json:"consulted_pages,omitempty"`
+	Grounding      *routerDecideGrounding `json:"grounding,omitempty"`
+	Usage          *routerDecideUsage     `json:"usage,omitempty"`
+}
+
+// routerDecidePage is one page a grounded model's decision call was shown.
+// It is not a citation: the router says nothing about which answer it
+// supports. Questions absent means it was retrieved for the whole request.
+type routerDecidePage struct {
+	ID        string   `json:"id,omitempty"`
+	URL       string   `json:"url"`
+	Title     string   `json:"title,omitempty"`
+	Questions []string `json:"questions,omitempty"`
+}
+
+// routerDecideGrounding is what a grounded request took. Searches and
+// Degraded are pointers because 0 and false are answers and absence is
+// another; a fast model sends no second_stage, degraded or reconsidered.
+type routerDecideGrounding struct {
+	Rules        string   `json:"rules,omitempty"`
+	Searches     *int64   `json:"searches,omitempty"`
+	SecondStage  string   `json:"second_stage,omitempty"`
+	Degraded     *bool    `json:"degraded,omitempty"`
+	Reconsidered []string `json:"reconsidered,omitempty"`
 }
 
 type routerDecideCitation struct {
@@ -357,14 +382,35 @@ type machineDecideUsage struct {
 	LatencyMS       *int64 `json:"latency_ms,omitempty"`
 }
 
+type machineDecidePage struct {
+	ID        string   `json:"id,omitempty"`
+	URL       string   `json:"url"`
+	Title     string   `json:"title,omitempty"`
+	Questions []string `json:"questions,omitempty"`
+}
+
+type machineDecideGrounding struct {
+	Rules        string   `json:"rules,omitempty"`
+	Searches     *int64   `json:"searches,omitempty"`
+	SecondStage  string   `json:"second_stage,omitempty"`
+	Degraded     *bool    `json:"degraded,omitempty"`
+	Reconsidered []string `json:"reconsidered,omitempty"`
+}
+
+// machineDecideResult carries consulted_pages and grounding after sources,
+// where the router puts them, and leaves both out when the router sent
+// neither, so another model's envelope is the bytes it was before they
+// existed (testdata/decide/golden).
 type machineDecideResult struct {
-	RequestID     string                     `json:"request_id,omitempty"`
-	Model         string                     `json:"model,omitempty"`
-	ModelResolved string                     `json:"model_resolved,omitempty"`
-	Answers       map[string]json.RawMessage `json:"answers"`
-	Citations     []machineDecideCitation    `json:"citations"`
-	Sources       []machineDecideSource      `json:"sources,omitempty"`
-	Usage         *machineDecideUsage        `json:"usage,omitempty"`
+	RequestID      string                     `json:"request_id,omitempty"`
+	Model          string                     `json:"model,omitempty"`
+	ModelResolved  string                     `json:"model_resolved,omitempty"`
+	Answers        map[string]json.RawMessage `json:"answers"`
+	Citations      []machineDecideCitation    `json:"citations"`
+	Sources        []machineDecideSource      `json:"sources,omitempty"`
+	ConsultedPages []machineDecidePage        `json:"consulted_pages,omitempty"`
+	Grounding      *machineDecideGrounding    `json:"grounding,omitempty"`
+	Usage          *machineDecideUsage        `json:"usage,omitempty"`
 }
 
 type machineDecideModel struct {
@@ -604,6 +650,16 @@ func machineDecisionOf(r *routerDecideResponse, requestID string) *machineDecide
 	}
 	for _, s := range r.Sources {
 		result.Sources = append(result.Sources, machineDecideSource(s))
+	}
+	// Titles and addresses are carried as the router wrote them, as a
+	// search's are (machineResultOf): JSON already makes a control byte
+	// inert, and this command has no human form to clean them for.
+	for _, p := range r.ConsultedPages {
+		result.ConsultedPages = append(result.ConsultedPages, machineDecidePage(p))
+	}
+	if r.Grounding != nil {
+		g := machineDecideGrounding(*r.Grounding)
+		result.Grounding = &g
 	}
 	if r.Usage != nil {
 		u := machineDecideUsage(*r.Usage)
