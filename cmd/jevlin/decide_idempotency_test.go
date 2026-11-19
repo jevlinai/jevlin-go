@@ -6,6 +6,8 @@ package main
 // an agent should do.
 
 import (
+	"net/http"
+	"os"
 	"strings"
 	"testing"
 )
@@ -122,5 +124,46 @@ func TestDecideHelpNamesTheIdempotencyKey(t *testing.T) {
 	if !strings.Contains(decideUsage, "-idempotency-key key") || !strings.Contains(decideUsage, "search_fields") ||
 		!strings.Contains(decideUsage, "consulted_pages") {
 		t.Errorf("decide's help does not name -idempotency-key, search_fields and consulted_pages:\n%s", decideUsage)
+	}
+}
+
+// A replayed answer says so at the envelope's top level, beside request_id,
+// so a caller adding up usage.cost_micros across retries counts it once.
+// Any other value of the header, or none, prints the success golden's bytes.
+func TestAReplayedDecisionSaysSo(t *testing.T) {
+	golden, err := os.ReadFile(decideGoldenPath("success")) // #nosec G304 -- the test's own golden
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		value    string
+		replayed bool
+	}{{"true", true}, {"TRUE", true}, {" true ", true}, {"false", false}, {"1", false}, {"", false}} {
+		headers := map[string]string{}
+		if tc.value != "" {
+			headers["Idempotent-Replayed"] = tc.value
+		}
+		out := decideGoldenOutput(t, decideGoldenCase{name: "replay", status: http.StatusOK,
+			body: decideFixture(t, "decisions-success.json"), headers: headers})
+		if !tc.replayed {
+			if out != string(golden) {
+				t.Errorf("Idempotent-Replayed %q changed the envelope:\n%s", tc.value, out)
+			}
+			continue
+		}
+		want := strings.Replace(string(golden), `"request_id":"01936f2a-7c00-7000-8000-0000000000a1","result"`,
+			`"request_id":"01936f2a-7c00-7000-8000-0000000000a1","idempotent_replayed":true,"result"`, 1)
+		if want == string(golden) {
+			t.Fatal("the golden no longer has the shape this test edits")
+		}
+		if out != want {
+			t.Errorf("Idempotent-Replayed %q: decide printed\n%s\nwant\n%s", tc.value, out, want)
+		}
+	}
+	// A failure is never a replay: the router keeps only a 200.
+	env, _, _ := decideServingHeaders(t, http.StatusServiceUnavailable, `{"code":"upstream_failed","error":"x"}`,
+		decideMinimal, map[string]string{"Idempotent-Replayed": "true"}, "--stdin")
+	if _, has := env["idempotent_replayed"]; has {
+		t.Errorf("a failed decide carries idempotent_replayed: %v", env)
 	}
 }

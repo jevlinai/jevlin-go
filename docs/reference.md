@@ -235,7 +235,9 @@ on this machine. A decision is billed: `result.usage.cost_micros` says what it c
 
 `-idempotency-key key` sends the caller's key as the `Idempotency-Key` header, which makes the
 caller's own retry safe: the router answers a repeat with the same key and a request identical
-byte for byte within ten minutes with the first answer, and does not run or bill it again. The router keeps only a successful
+byte for byte within ten minutes with the first answer, and does not run or bill it again; the
+envelope then carries `"idempotent_replayed": true` at its top level (absent otherwise), so a
+caller adding up `usage.cost_micros` across retries counts that decision once. The router keeps only a successful
 answer, and only in one process's memory: after a restart, or once the copy is evicted, a repeat
 runs again and is billed again. With a key, a reused connection that drops before any answer may
 be sent once more by the client's HTTP transport, with the same key and the same bytes, which the

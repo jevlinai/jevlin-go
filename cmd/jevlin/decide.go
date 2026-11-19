@@ -468,11 +468,15 @@ type machineDecideModels struct {
 // decideEnvelope's Result is a *machineDecideResult or a *machineDecideModels.
 type decideEnvelope struct {
 	machineHeader
-	HTTPStatus   int           `json:"http_status,omitempty"`
-	RequestID    string        `json:"request_id,omitempty"`
-	RetryAfterMS *int64        `json:"retry_after_ms,omitempty"`
-	Result       any           `json:"result,omitempty"`
-	Error        *machineError `json:"error,omitempty"`
+	HTTPStatus int    `json:"http_status,omitempty"`
+	RequestID  string `json:"request_id,omitempty"`
+	// IdempotentReplayed is present, and true, only when the router said it
+	// answered from the first send under the caller's Idempotency-Key: the
+	// usage is that send's, and was not billed again.
+	IdempotentReplayed bool          `json:"idempotent_replayed,omitempty"`
+	RetryAfterMS       *int64        `json:"retry_after_ms,omitempty"`
+	Result             any           `json:"result,omitempty"`
+	Error              *machineError `json:"error,omitempty"`
 }
 
 // decideOutcome is one call's result, as a value the envelope is built from.
@@ -488,6 +492,7 @@ type decideOutcome struct {
 	RetryAfterMS  int64
 	HasRetryAfter bool
 	RequestID     string
+	Replayed      bool
 	Decision      *routerDecideResponse
 	Models        *routerDecideModels
 }
@@ -605,6 +610,9 @@ func readDecideAnswer(ctx context.Context, now func() time.Time, attempt routerA
 	if out.RequestID == "" {
 		out.RequestID = strings.TrimSpace(attempt.Header.Get("X-Request-Id"))
 	}
+	// The router's word that nothing ran: "Idempotent-Replayed: true" on a
+	// response it answered from the first send under the same key.
+	out.Replayed = strings.EqualFold(strings.TrimSpace(attempt.Header.Get("Idempotent-Replayed")), "true")
 	return out
 }
 
@@ -664,6 +672,7 @@ func decideEnvelopeOf(out decideOutcome) (decideEnvelope, int) {
 	}
 	if out.Fault == faultNone {
 		env.RequestID = out.RequestID
+		env.IdempotentReplayed = out.Replayed
 		if out.Models != nil {
 			env.Result = machineModelsOf(out.Models)
 		} else {
@@ -773,13 +782,13 @@ flags:
   -idempotency-key key
                      with --stdin, sent as the Idempotency-Key header: a
                      repeat with the same key and request within ten minutes
-                     is answered with the first answer, not run or billed
-                     again, while the router still holds that answer in
-                     memory; after a restart or an eviction the repeat runs
-                     and is billed. A connection that drops may be retried
-                     once by the client with the same key. 1 to 255
-                     printable ASCII characters, no space. The client never
-                     makes one up.
+                     is answered with the first answer, marked
+                     idempotent_replayed, not run or billed again, while the
+                     router still holds that answer in memory; after a
+                     restart or an eviction the repeat runs and is billed. A
+                     connection that drops may be retried once by the client
+                     with the same key. 1 to 255 printable ASCII characters,
+                     no space. The client never makes one up.
   -timeout duration  the deadline for the whole call (default 1m0s)
   -config file       the config to read, given at most once (jevlin help
                      config)
