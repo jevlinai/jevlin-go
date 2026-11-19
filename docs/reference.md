@@ -9,7 +9,7 @@ says what is written into each agent.
 |---|---|---|
 | `search` | `--stdin`, `-tier fast\|balanced\|max`, `-format json\|model`, `-view merged`, `--fresh`, `-timeout d` (default 1m0s), `-config file` | One web search. `--stdin` for agents ([the request](#the---stdin-request)); `<query words>` for a person ([the human form](#the-human-form-and-powershell)). `--fresh` skips the router's cache, as `"cache": "refresh"` does in a request. |
 | `fetch` | `--stdin` (required), `-timeout d` (default 1m0s), `-config file` | The full text of pages a search returned, for agents ([Reading a page in full](#reading-a-page-in-full)). |
-| `decide` | `--stdin` or `--models` (exactly one, required), `-timeout d` (default 1m0s), `-config file` | Typed questions about a state, answered by a decision model, for agents; `--models` lists the models ([Asking a decision model](#asking-a-decision-model)). |
+| `decide` | `--stdin` or `--models` (exactly one, required), `-idempotency-key key` (with `--stdin`), `-timeout d` (default 1m0s), `-config file` | Typed questions about a state, answered by a decision model, for agents; `--models` lists the models ([Asking a decision model](#asking-a-decision-model)). |
 | `mcp` | `-log`, `-config file` | `search --stdin`, `fetch --stdin`, `decide --stdin` and `decide --models` as MCP tools, over stdio, for a host that registers it ([MCP server](#mcp-server)). |
 | `agents install\|status\|uninstall` | `-client name` (repeatable), `-config file`; `install` and `uninstall` also `-dry-run` and `-yes` | Sets up, reports or removes the skills and hooks of each agent. `-yes` answers **Proceed?**, never a question about a Codex setting of yours. |
 | `agents prefer on\|off\|status` | `-config file` | Whether this search or the agent's own is the default, in every agent with a skill. |
@@ -230,8 +230,22 @@ A fetch is one request and is never retried by the client.
 `jevlin decide --stdin` takes one JSON object and answers with one envelope carrying the same
 header, with `command` set to `decide`. It sends `POST /v1/decisions` to the configured router with
 the same key, deadline, redirect policy and user agent as a search, and nothing about it is kept
-on this machine. A decision is billed: `result.usage.cost_micros` says what it cost, and it is one
-request the client never repeats.
+on this machine. A decision is billed: `result.usage.cost_micros` says what it cost. Each run sends it once; a
+retry is the caller's.
+
+`-idempotency-key key` sends the caller's key as the `Idempotency-Key` header, which makes the
+caller's own retry safe: the router answers a repeat with the same key and a request identical
+byte for byte within ten minutes with the first answer, and does not run or bill it again; the
+envelope then carries `"idempotent_replayed": true` at its top level (absent otherwise), so a
+caller adding up `usage.cost_micros` across retries counts that decision once. The router keeps
+only a successful answer, and only in one process's memory: after a restart, or once the copy is
+evicted, a repeat runs again and is billed again. A run sends on a fresh connection, so it sends
+once with or without a key; only on a reused connection, such as after a same-origin redirect,
+can the HTTP transport resend a keyed request that dropped before any answer, with the same key
+and bytes. The client never makes a key up, so a retry without one is a new, billed decision. A
+key is 1 to 255 printable ASCII characters with no space, the router's own rule; any other is `invalid_idempotency_key`, exit 2, before stdin
+is read. The flag goes with `--stdin` only, once. It is a command-line flag, so it is not a
+`decide` tool argument through `jevlin mcp`.
 
 | field | value |
 |---|---|
@@ -239,7 +253,7 @@ request the client never repeats.
 | `model` | Required: `vendor/model`, as `jevlin decide --models` lists it. |
 | `state` | Required and not null: what the questions are about, a string, object or array. |
 | `questions` | Required: a non-empty object of question name to question, each an object, such as `{"type": "noul", "instructions": "…"}`. |
-| `options` | An object of the vendor's options. |
+| `options` | An object of the model's options, sent as written: a grounded model's `search_fields` (absent, a list of top-level state field names, or `[]`) needs nothing more. |
 | `sources` | 1 to 5 entries, each exactly `{"source_id": "s_…"}`, a page's `source_id` from a search's `result.merged`. |
 | `max_chars` | 1000 to 50000. |
 
@@ -260,6 +274,8 @@ On success, `result` has:
 | `answers` | One entry per question name, the router's object for it: `type` is `noul` (with `noul`), `choice` (`choice`, `probabilities`), `score` (`score`, `probabilities`, `legend`) or `refusal`, and `confidence` when the vendor reports one. Only the whitespace between tokens is removed. |
 | `citations` | The sources the vendor reports for the whole request: `url`, `title`, `excerpts`. Empty when none. |
 | `sources` | The pages the router read for a request carrying `sources`: `source_id`, `url`, `title`, `chars`, `cached`, `cost_micros`. |
+| `consulted_pages` | A grounded model only (`grounded` in `--models`): the pages its decision call was shown, each with `id`, `url`, `title` and, for a page retrieved for some questions rather than the whole request, `questions`. A consulted page is not a citation. Absent for every other model. |
+| `grounding` | A grounded model only: `rules` (the version of its search and evidence rules) and `searches` (searches attempted); a model that reconsiders unsure questions adds `second_stage` (`ran`, `not_needed` or `failed`), `degraded` (true when that stage failed and the answers are the first call's) and `reconsidered` (the questions asked again). Absent for every other model. |
 | `usage` | `input_tokens`, `output_tokens`, `grounded_calls`, `cost_micros`, `pages_cost_micros`, `cost_source` (`modeled`, `reported` or `free`), `byok` and `latency_ms`. |
 
 A `refusal` is an answer, not a failure: `ok` stays `true` and the other answers stand. A 2xx with
@@ -268,7 +284,10 @@ no `answers` is `invalid_router_response`, exit 4.
 `jevlin decide --models` sends `GET /v1/decisions/models` with the same key and reads nothing from
 stdin. `result.models` is the router's list, each with `id` (the value `model` takes), `vendor`,
 `vendor_model`, `cost` in millionths of a dollar (`per_request_micros`, `per_prompt_ktok_micros`,
-`per_search_call_micros`, a zero left out), `free` (`requests_per_day`, absent with no free tier),
+`per_search_call_micros`, a zero left out; a model priced by how many questions a request asks,
+such as a grounded one, lists `bands` instead, each `{"up_to": n, "micros": m}` the price of a
+request of at most `n` questions and more than the band before, and the extended grounded model
+`second_stage_failed_micros`, what a request whose answers come back `degraded` costs), `free` (`requests_per_day`, absent with no free tier),
 `grounded` and `available` (whether this account can call it). Listing spends nothing. `--stdin`
 and `--models` together are a usage error.
 
@@ -283,8 +302,15 @@ and `--models` together are a usage error.
 | 503 `decisions_disabled` | 3 | `decisions_disabled` | `false` | `report`: this router has decisions switched off |
 | 503 `model_unavailable` | 4 | `model_unavailable` | `false` | `report`: the platform holds no working key for this model |
 | 503 `upstream_failed` | 4 | `upstream_failed` | the body's `retryable` | `retry` when `true`, with `retry_after_ms` if the router sent one; `report` otherwise |
+| 409 `idempotency_in_progress` | 3 | `idempotency_in_progress` | `true` | `retry`: the first send under this key is still running; the same key and request again, after `retry_after_ms` |
+| 422 `idempotency_key_reused` | 3 | `idempotency_key_reused` | `false` | `fix_input`: the key was used with another request |
 | 402 `search_credit_only` | 3 | `search_credit_only` | `false` | `report`: the credit left this week is reserved for search; decisions resume at the weekly reset or after a top-up |
 | any other status | as for a search | | | |
+
+A failure the router answered carries the router's `request_id` at the envelope's top level, as a
+success does, whenever its answer had an `X-Request-Id` header; without one there is none. That is
+the id a failed request's trace is read by, a grounded model's included, with the router's
+`GET /v1/traces/{request_id}`.
 
 Exit codes are as for a search: 0 for a valid answer, 1 for transport, timeout or cancellation, 2
 for usage, 3 for a 4xx, for no usable key, or for a router that has decisions switched off; 4 for

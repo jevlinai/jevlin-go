@@ -6,7 +6,8 @@ package main
 //
 // testdata/decide/router holds the router's own fixtures,
 // docs/router-contracts/fixtures/decisions-success.json and
-// decisions-refusal.json from Jevlin-core main at 8936916, byte for byte.
+// decisions-refusal.json from Jevlin-core main at 8936916, byte for byte;
+// decisions-grounded.json beside them is not one (decide_grounded_test.go).
 
 import (
 	"bytes"
@@ -18,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -370,7 +372,13 @@ func TestTheRouterDecideFieldsAreDecided(t *testing.T) {
 	}{
 		{reflect.TypeFor[routerDecideResponse](), []string{
 			"RequestID request_id", "Model model", "ModelResolved model_resolved,omitempty", "Answers answers",
-			"Citations citations", "Sources sources,omitempty", "Usage usage,omitempty",
+			"Citations citations", "Sources sources,omitempty", "ConsultedPages consulted_pages,omitempty",
+			"Grounding grounding,omitempty", "Usage usage,omitempty",
+		}},
+		{reflect.TypeFor[routerDecidePage](), []string{"ID id,omitempty", "URL url", "Title title,omitempty", "Questions questions,omitempty"}},
+		{reflect.TypeFor[routerDecideGrounding](), []string{
+			"Rules rules,omitempty", "Searches searches,omitempty", "SecondStage second_stage,omitempty",
+			"Degraded degraded,omitempty", "Reconsidered reconsidered,omitempty",
 		}},
 		{reflect.TypeFor[routerDecideCitation](), []string{"URL url", "Title title,omitempty", "Excerpts excerpts,omitempty"}},
 		{reflect.TypeFor[routerDecideSource](), []string{
@@ -388,8 +396,10 @@ func TestTheRouterDecideFieldsAreDecided(t *testing.T) {
 		}},
 		{reflect.TypeFor[decideModelCost](), []string{
 			"PerRequestMicros per_request_micros,omitempty", "PerPromptKtokMicros per_prompt_ktok_micros,omitempty",
-			"PerSearchCallMicros per_search_call_micros,omitempty",
+			"PerSearchCallMicros per_search_call_micros,omitempty", "Bands bands,omitempty",
+			"SecondStageFailedMicros second_stage_failed_micros,omitempty",
 		}},
+		{reflect.TypeFor[decideModelBand](), []string{"UpTo up_to,omitempty", "Micros micros,omitempty"}},
 		{reflect.TypeFor[decideModelFree](), []string{"RequestsPerDay requests_per_day,omitempty"}},
 	} {
 		var got []string
@@ -801,5 +811,42 @@ func TestDecideRefusesASecondConfig(t *testing.T) {
 		if code != exitUsage || env["code"] != codeInvalidFlags || len(fr.reqs) != 0 {
 			t.Errorf("%s: exit %d, %v, %d requests; want %d, %s, none", mode, code, env["code"], len(fr.reqs), exitUsage, codeInvalidFlags)
 		}
+	}
+}
+
+// A failed answer names the router's X-Request-Id where a success names its
+// id, right after http_status, so the failed request's trace can be read;
+// without the header it prints its golden. Every kind of answer the router
+// can give a status to carries it.
+func TestAFailedDecideNamesTheRoutersRequestID(t *testing.T) {
+	for _, tc := range []decideGoldenCase{
+		{name: "upstream-failed-retryable", status: http.StatusServiceUnavailable,
+			body: `{"code":"upstream_failed","error":"vendor timeout","retryable":true}`, headers: map[string]string{"Retry-After": "7"}},
+		{name: "invalid-request", status: http.StatusBadRequest, body: `{"code":"invalid_request","error":"question q needs a type"}`},
+		{name: "conflict", status: http.StatusConflict, body: `{"code":"some_409","error":"no"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			golden, err := os.ReadFile(decideGoldenPath(tc.name)) // #nosec G304 -- the test's own golden
+			if err != nil {
+				t.Fatal(err)
+			}
+			tc.headers = map[string]string{"X-Request-Id": " trace-me "}
+			if tc.name == "upstream-failed-retryable" {
+				tc.headers["Retry-After"] = "7"
+			}
+			status := `"http_status":` + strconv.Itoa(tc.status) + `,`
+			want := strings.Replace(string(golden), status, status+`"request_id":"trace-me",`, 1)
+			if want == string(golden) {
+				t.Fatal("the golden no longer has the shape this test edits")
+			}
+			if got := decideGoldenOutput(t, tc); got != want {
+				t.Errorf("decide printed\n%s\nwant\n%s", got, want)
+			}
+		})
+	}
+	// A 2xx the client could not read has a trace too.
+	env, code, _ := decideServingHeaders(t, http.StatusOK, `{"request_id":"r"}`, decideMinimal, map[string]string{"X-Request-Id": "trace-me"}, "--stdin")
+	if code != exitServerErr || env["request_id"] != "trace-me" {
+		t.Errorf("exit %d, request_id %v; want %d, trace-me", code, env["request_id"], exitServerErr)
 	}
 }

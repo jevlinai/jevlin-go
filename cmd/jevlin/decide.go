@@ -11,13 +11,15 @@ package main
 // the vendor's options belong to the caller and the router, so they go on the
 // wire byte for byte. The answer is one envelope with the machine header. A
 // decision records nothing on this machine, and is one billed request that
-// this client never repeats.
+// this client sends once; performDecide says the one exception, for a
+// request carrying the caller's Idempotency-Key.
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -40,6 +42,9 @@ const (
 	codeInvalidQuestions = "invalid_questions"
 	codeInvalidOptions   = "invalid_options"
 	codeInvalidSources   = "invalid_sources"
+	// codeInvalidIdempotencyKey is a -idempotency-key the router would
+	// refuse (validIdempotencyKey).
+	codeInvalidIdempotencyKey = "invalid_idempotency_key"
 )
 
 // The router's codes decide answers with its own advice.
@@ -54,7 +59,28 @@ const (
 	modelUnavailableCode      = "model_unavailable"
 	upstreamFailedCode        = "upstream_failed"
 	unknownModelCode          = "unknown_model"
+	// idempotencyInProgressCode is the router's 409 for a request whose
+	// Idempotency-Key is still being answered for an earlier send.
+	idempotencyInProgressCode = "idempotency_in_progress"
 )
+
+// idempotencyKeyMax is the router's bound on the Idempotency-Key header.
+const idempotencyKeyMax = 255
+
+// validIdempotencyKey is the router's rule for the header: 1 to 255 bytes,
+// each printable ASCII other than the space (0x21 to 0x7e). A key it would
+// refuse is refused here, before the request is read or sent.
+func validIdempotencyKey(k string) bool {
+	if len(k) == 0 || len(k) > idempotencyKeyMax {
+		return false
+	}
+	for i := 0; i < len(k); i++ {
+		if k[i] < 0x21 || k[i] > 0x7e {
+			return false
+		}
+	}
+	return true
+}
 
 // decideModelPattern is the router's model id: "vendor/model".
 var decideModelPattern = regexp.MustCompile(`^[a-z0-9-]+/[A-Za-z0-9._-]+$`)
@@ -269,7 +295,32 @@ type routerDecideResponse struct {
 	Answers       map[string]json.RawMessage `json:"answers"`
 	Citations     []routerDecideCitation     `json:"citations"`
 	Sources       []routerDecideSource       `json:"sources,omitempty"`
-	Usage         *routerDecideUsage         `json:"usage,omitempty"`
+	// ConsultedPages and Grounding come only from a grounded model, and are
+	// absent from every other model's answer.
+	ConsultedPages []routerDecidePage     `json:"consulted_pages,omitempty"`
+	Grounding      *routerDecideGrounding `json:"grounding,omitempty"`
+	Usage          *routerDecideUsage     `json:"usage,omitempty"`
+}
+
+// routerDecidePage is one page a grounded model's decision call was shown.
+// It is not a citation: the router says nothing about which answer it
+// supports. Questions absent means it was retrieved for the whole request.
+type routerDecidePage struct {
+	ID        string   `json:"id,omitempty"`
+	URL       string   `json:"url"`
+	Title     string   `json:"title,omitempty"`
+	Questions []string `json:"questions,omitempty"`
+}
+
+// routerDecideGrounding is what a grounded request took. Searches and
+// Degraded are pointers because 0 and false are answers and absence is
+// another; a fast model sends no second_stage, degraded or reconsidered.
+type routerDecideGrounding struct {
+	Rules        string   `json:"rules,omitempty"`
+	Searches     *int64   `json:"searches,omitempty"`
+	SecondStage  string   `json:"second_stage,omitempty"`
+	Degraded     *bool    `json:"degraded,omitempty"`
+	Reconsidered []string `json:"reconsidered,omitempty"`
 }
 
 type routerDecideCitation struct {
@@ -319,10 +370,22 @@ type routerDecideModel struct {
 }
 
 // decideModelCost is in micro-dollars; the router omits a field that is zero.
+// A model priced by how many questions a request asks (the grounded models)
+// lists Bands in place of a rate card, and the extended one the price of a
+// request whose second stage failed.
 type decideModelCost struct {
-	PerRequestMicros    *int64 `json:"per_request_micros,omitempty"`
-	PerPromptKtokMicros *int64 `json:"per_prompt_ktok_micros,omitempty"`
-	PerSearchCallMicros *int64 `json:"per_search_call_micros,omitempty"`
+	PerRequestMicros        *int64            `json:"per_request_micros,omitempty"`
+	PerPromptKtokMicros     *int64            `json:"per_prompt_ktok_micros,omitempty"`
+	PerSearchCallMicros     *int64            `json:"per_search_call_micros,omitempty"`
+	Bands                   []decideModelBand `json:"bands,omitempty"`
+	SecondStageFailedMicros *int64            `json:"second_stage_failed_micros,omitempty"`
+}
+
+// decideModelBand is the price of a request of at most UpTo questions, and
+// more than the band before it.
+type decideModelBand struct {
+	UpTo   *int64 `json:"up_to,omitempty"`
+	Micros *int64 `json:"micros,omitempty"`
 }
 
 type decideModelFree struct {
@@ -357,14 +420,35 @@ type machineDecideUsage struct {
 	LatencyMS       *int64 `json:"latency_ms,omitempty"`
 }
 
+type machineDecidePage struct {
+	ID        string   `json:"id,omitempty"`
+	URL       string   `json:"url"`
+	Title     string   `json:"title,omitempty"`
+	Questions []string `json:"questions,omitempty"`
+}
+
+type machineDecideGrounding struct {
+	Rules        string   `json:"rules,omitempty"`
+	Searches     *int64   `json:"searches,omitempty"`
+	SecondStage  string   `json:"second_stage,omitempty"`
+	Degraded     *bool    `json:"degraded,omitempty"`
+	Reconsidered []string `json:"reconsidered,omitempty"`
+}
+
+// machineDecideResult carries consulted_pages and grounding after sources,
+// where the router puts them, and leaves both out when the router sent
+// neither, so another model's envelope is the bytes it was before they
+// existed (testdata/decide/golden).
 type machineDecideResult struct {
-	RequestID     string                     `json:"request_id,omitempty"`
-	Model         string                     `json:"model,omitempty"`
-	ModelResolved string                     `json:"model_resolved,omitempty"`
-	Answers       map[string]json.RawMessage `json:"answers"`
-	Citations     []machineDecideCitation    `json:"citations"`
-	Sources       []machineDecideSource      `json:"sources,omitempty"`
-	Usage         *machineDecideUsage        `json:"usage,omitempty"`
+	RequestID      string                     `json:"request_id,omitempty"`
+	Model          string                     `json:"model,omitempty"`
+	ModelResolved  string                     `json:"model_resolved,omitempty"`
+	Answers        map[string]json.RawMessage `json:"answers"`
+	Citations      []machineDecideCitation    `json:"citations"`
+	Sources        []machineDecideSource      `json:"sources,omitempty"`
+	ConsultedPages []machineDecidePage        `json:"consulted_pages,omitempty"`
+	Grounding      *machineDecideGrounding    `json:"grounding,omitempty"`
+	Usage          *machineDecideUsage        `json:"usage,omitempty"`
 }
 
 type machineDecideModel struct {
@@ -384,11 +468,15 @@ type machineDecideModels struct {
 // decideEnvelope's Result is a *machineDecideResult or a *machineDecideModels.
 type decideEnvelope struct {
 	machineHeader
-	HTTPStatus   int           `json:"http_status,omitempty"`
-	RequestID    string        `json:"request_id,omitempty"`
-	RetryAfterMS *int64        `json:"retry_after_ms,omitempty"`
-	Result       any           `json:"result,omitempty"`
-	Error        *machineError `json:"error,omitempty"`
+	HTTPStatus int    `json:"http_status,omitempty"`
+	RequestID  string `json:"request_id,omitempty"`
+	// IdempotentReplayed is present, and true, only when the router said it
+	// answered from the first send under the caller's Idempotency-Key: the
+	// usage is that send's, and was not billed again.
+	IdempotentReplayed bool          `json:"idempotent_replayed,omitempty"`
+	RetryAfterMS       *int64        `json:"retry_after_ms,omitempty"`
+	Result             any           `json:"result,omitempty"`
+	Error              *machineError `json:"error,omitempty"`
 }
 
 // decideOutcome is one call's result, as a value the envelope is built from.
@@ -404,14 +492,32 @@ type decideOutcome struct {
 	RetryAfterMS  int64
 	HasRetryAfter bool
 	RequestID     string
-	Decision      *routerDecideResponse
-	Models        *routerDecideModels
+	// HeaderRequestID is the router's X-Request-Id on any answer, a failure
+	// included, for a failure's envelope: a failed request has a trace too.
+	HeaderRequestID string
+	Replayed        bool
+	Decision        *routerDecideResponse
+	Models          *routerDecideModels
 }
 
-// performDecide sends one POST under ctx's deadline. Never retried: a
-// decision is billed, and nothing the router says licenses a second one.
-func performDecide(ctx context.Context, now func() time.Time, endpoint, key string, body []byte) decideOutcome {
-	attempt, err := postRouterBytes(ctx, routerClient(), endpoint, key, body, nil)
+// performDecide sends one POST under ctx's deadline. This client never sends
+// it again: a decision is billed, and nothing the router says licenses a
+// second one. A non-empty idempotencyKey goes as the Idempotency-Key header,
+// which is what makes the caller's own retry safe: the router answers a
+// repeat of the same key and body from the first answer, without running or
+// billing it again, while it still holds that answer. Each run makes one
+// request on a fresh connection, so in ordinary use it is sent once either
+// way. The header does make net/http's transport treat the POST as
+// replayable: only on a connection it reuses, such as after a same-origin
+// redirect, and only if that connection drops before any answer, it may send
+// the same key and bytes once more. That is left on: it is exactly the repeat
+// the key exists to make safe.
+func performDecide(ctx context.Context, now func() time.Time, endpoint, key, idempotencyKey string, body []byte) decideOutcome {
+	var header func(*http.Request)
+	if idempotencyKey != "" {
+		header = func(r *http.Request) { r.Header.Set("Idempotency-Key", idempotencyKey) }
+	}
+	attempt, err := postRouterBytes(ctx, routerClient(), endpoint, key, body, header)
 	return readDecideAnswer(ctx, now, attempt, err, decodeDecision)
 }
 
@@ -456,6 +562,7 @@ func readDecideAnswer(ctx context.Context, now func() time.Time, attempt routerA
 		return out
 	}
 	out.HTTPStatus = attempt.Status
+	out.HeaderRequestID = strings.TrimSpace(attempt.Header.Get("X-Request-Id"))
 	if ms, ok := retryAfterMS(attempt.Header, now()); ok {
 		out.RetryAfterMS, out.HasRetryAfter = ms, true
 	}
@@ -507,8 +614,13 @@ func readDecideAnswer(ctx context.Context, now func() time.Time, attempt routerA
 	// the body has none. Nothing here depends on the id, so an answer with
 	// neither is still an answer, and simply carries no id.
 	if out.RequestID == "" {
-		out.RequestID = strings.TrimSpace(attempt.Header.Get("X-Request-Id"))
+		out.RequestID = out.HeaderRequestID
 	}
+	// The router's word that nothing ran: "Idempotent-Replayed: true" on a
+	// decision it answered from the first send under the same key. Only a
+	// decision: a models listing is never billed, so never replayed. net/http
+	// has already trimmed the value.
+	out.Replayed = out.Decision != nil && strings.EqualFold(attempt.Header.Get("Idempotent-Replayed"), "true")
 	return out
 }
 
@@ -545,6 +657,11 @@ func classifyDecide(out decideOutcome) searchClassification {
 			return searchClassification{exitServerErr, upstreamFailedCode, true, actionRetry}
 		}
 		return searchClassification{exitServerErr, upstreamFailedCode, false, actionReport}
+	case out.HTTPStatus == http.StatusConflict && code == idempotencyInProgressCode:
+		// The first send under this key is still running. Sending again with
+		// the same key and body is safe by the key's own rule: it is answered
+		// from the first, never run twice.
+		return searchClassification{exitClientErr, idempotencyInProgressCode, true, actionRetry}
 	}
 	return classifyRouterStatus(searchOutcome{
 		HTTPStatus: out.HTTPStatus, RouterErr: out.RouterErr, HasRouterErr: out.HasRouterErr,
@@ -563,6 +680,7 @@ func decideEnvelopeOf(out decideOutcome) (decideEnvelope, int) {
 	}
 	if out.Fault == faultNone {
 		env.RequestID = out.RequestID
+		env.IdempotentReplayed = out.Replayed
 		if out.Models != nil {
 			env.Result = machineModelsOf(out.Models)
 		} else {
@@ -570,6 +688,10 @@ func decideEnvelopeOf(out decideOutcome) (decideEnvelope, int) {
 		}
 		return env, c.ExitCode
 	}
+	// A failure names the router's request id when its answer carried one,
+	// where a success does, so the failed request's trace can be read; with
+	// no header the envelope is what it always was.
+	env.RequestID = out.HeaderRequestID
 	if c.Code == unknownModelCode {
 		// The router's message points at its own route; an agent runs this.
 		env.Error = clientMessage(errors.New("this router does not offer that model; jevlin decide --models lists the ones it does"))
@@ -604,6 +726,16 @@ func machineDecisionOf(r *routerDecideResponse, requestID string) *machineDecide
 	}
 	for _, s := range r.Sources {
 		result.Sources = append(result.Sources, machineDecideSource(s))
+	}
+	// Titles and addresses are carried as the router wrote them, as a
+	// search's are (machineResultOf): JSON already makes a control byte
+	// inert, and this command has no human form to clean them for.
+	for _, p := range r.ConsultedPages {
+		result.ConsultedPages = append(result.ConsultedPages, machineDecidePage(p))
+	}
+	if r.Grounding != nil {
+		g := machineDecideGrounding(*r.Grounding)
+		result.Grounding = &g
 	}
 	if r.Usage != nil {
 		u := machineDecideUsage(*r.Usage)
@@ -645,25 +777,41 @@ func cmdDecide(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv 
 
 // decideUsage is what decide -h prints. The flag set below is built only in
 // machine mode, where its output is discarded, so it cannot say this itself.
-const decideUsage = `usage: jevlin decide --stdin [-config file] [-timeout duration]
+const decideUsage = `usage: jevlin decide --stdin [-idempotency-key key] [-config file]
+         [-timeout duration]
        jevlin decide --models [-config file] [-timeout duration]
 
 Asks a decision model typed questions about a state, for an agent: one
 version-1 JSON request on stdin, one JSON envelope on stdout with
-result.answers, one per question. A decision is billed and never retried.
---models lists the models, with each one's price and whether this account
-can call it, and reads nothing from stdin. Give exactly one of the two.
+result.answers, one per question. A decision is billed, and the client
+sends it once; a retry is the caller's. --models lists the
+models, with each one's price and whether this account can call it, and
+reads nothing from stdin. Give exactly one of the two.
 
 flags:
   --stdin            read the request from stdin
   --models           list the models
+  -idempotency-key key
+                     with --stdin, sent as the Idempotency-Key header: a
+                     repeat with the same key and request within ten minutes
+                     is answered with the first answer, marked
+                     idempotent_replayed, not run or billed again, while the
+                     router still holds that answer in memory; after a
+                     restart or an eviction the repeat runs and is billed.
+                     1 to 255 printable ASCII characters, no space. The
+                     client never makes one up.
   -timeout duration  the deadline for the whole call (default 1m0s)
   -config file       the config to read, given at most once (jevlin help
                      config)
 
 the request:
   model (vendor/model), state and questions, and optionally options, sources
-  and max_chars.
+  and max_chars. options goes to the router as written, so a grounded
+  model's options.search_fields needs nothing more.
+
+the result:
+  answers, citations and usage; sources for a request that named them; and
+  from a grounded model consulted_pages and grounding.
 
 exit status: as for jevlin search.
 
@@ -694,6 +842,7 @@ func decideMainIn(cancelOn func() (context.Context, context.CancelFunc), now fun
 	timeout := fs.Duration("timeout", defaultSearchTimeout, "whole-call deadline, covering connect, headers and body")
 	readStdin := fs.Bool("stdin", false, "read one version-1 JSON decide request from stdin and answer with the machine envelope")
 	listModels := fs.Bool("models", false, "list the decision models this router offers")
+	idempotencyKey := onceStringFlag(fs, "idempotency-key", "sent as the Idempotency-Key header; given at most once")
 	if err := fs.Parse(args); err != nil {
 		return failDecide(stdout, exitUsage, codeInvalidFlags, actionFixInput, errors.New("the flags could not be parsed"))
 	}
@@ -706,6 +855,16 @@ func decideMainIn(cancelOn func() (context.Context, context.CancelFunc), now fun
 	}
 	if *readStdin == *listModels {
 		return failDecide(stdout, exitUsage, codeInvalidFlags, actionFixInput, errors.New("give exactly one of --stdin and --models"))
+	}
+	keyGiven := false
+	fs.Visit(func(f *flag.Flag) { keyGiven = keyGiven || f.Name == "idempotency-key" })
+	if keyGiven && *listModels {
+		return failDecide(stdout, exitUsage, codeInvalidFlags, actionFixInput,
+			errors.New("-idempotency-key goes with --stdin: listing the models is not billed"))
+	}
+	if keyGiven && !validIdempotencyKey(*idempotencyKey) {
+		return failDecide(stdout, exitUsage, codeInvalidIdempotencyKey, actionFixInput,
+			errors.New("-idempotency-key must be 1 to 255 printable ASCII characters, with no space"))
 	}
 	var payload []byte
 	if *readStdin {
@@ -749,7 +908,7 @@ func decideMainIn(cancelOn func() (context.Context, context.CancelFunc), now fun
 	if *listModels {
 		out = performDecideModels(ctx, now, endpoint+"/models", key)
 	} else {
-		out = performDecide(ctx, now, endpoint, key, payload)
+		out = performDecide(ctx, now, endpoint, key, *idempotencyKey, payload)
 	}
 	env, code := decideEnvelopeOf(out)
 	emitDecide(stdout, env)
