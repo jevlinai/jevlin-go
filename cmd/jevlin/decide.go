@@ -11,8 +11,8 @@ package main
 // the vendor's options belong to the caller and the router, so they go on the
 // wire byte for byte. The answer is one envelope with the machine header. A
 // decision records nothing on this machine, and is one billed request that
-// this client never repeats, except as performDecide says for a request
-// carrying the caller's Idempotency-Key.
+// this client sends once; performDecide says the one exception, for a
+// request carrying the caller's Idempotency-Key.
 
 import (
 	"bytes"
@@ -502,10 +502,12 @@ type decideOutcome struct {
 // second one. A non-empty idempotencyKey goes as the Idempotency-Key header,
 // which is what makes the caller's own retry safe: the router answers a
 // repeat of the same key and body from the first answer, without running or
-// billing it again, while it still holds that answer. The header also makes
-// net/http's transport treat the POST as replayable, so a reused connection
-// that drops before any answer may be sent once more by the transport, with
-// the same key and the same bytes. That is left on: it is exactly the repeat
+// billing it again, while it still holds that answer. Each run makes one
+// request on a fresh connection, so in ordinary use it is sent once either
+// way. The header does make net/http's transport treat the POST as
+// replayable: only on a connection it reuses, such as after a same-origin
+// redirect, and only if that connection drops before any answer, it may send
+// the same key and bytes once more. That is left on: it is exactly the repeat
 // the key exists to make safe.
 func performDecide(ctx context.Context, now func() time.Time, endpoint, key, idempotencyKey string, body []byte) decideOutcome {
 	var header func(*http.Request)
@@ -771,8 +773,8 @@ const decideUsage = `usage: jevlin decide --stdin [-idempotency-key key] [-confi
 
 Asks a decision model typed questions about a state, for an agent: one
 version-1 JSON request on stdin, one JSON envelope on stdout with
-result.answers, one per question. A decision is billed; without
--idempotency-key the client never sends it twice. --models lists the
+result.answers, one per question. A decision is billed, and the client
+sends it once; a retry is the caller's. --models lists the
 models, with each one's price and whether this account can call it, and
 reads nothing from stdin. Give exactly one of the two.
 
@@ -785,10 +787,9 @@ flags:
                      is answered with the first answer, marked
                      idempotent_replayed, not run or billed again, while the
                      router still holds that answer in memory; after a
-                     restart or an eviction the repeat runs and is billed. A
-                     connection that drops may be retried once by the client
-                     with the same key. 1 to 255 printable ASCII characters,
-                     no space. The client never makes one up.
+                     restart or an eviction the repeat runs and is billed.
+                     1 to 255 printable ASCII characters, no space. The
+                     client never makes one up.
   -timeout duration  the deadline for the whole call (default 1m0s)
   -config file       the config to read, given at most once (jevlin help
                      config)
