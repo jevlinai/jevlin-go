@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -40,6 +41,9 @@ const (
 	codeInvalidQuestions = "invalid_questions"
 	codeInvalidOptions   = "invalid_options"
 	codeInvalidSources   = "invalid_sources"
+	// codeInvalidIdempotencyKey is a -idempotency-key the router would
+	// refuse (validIdempotencyKey).
+	codeInvalidIdempotencyKey = "invalid_idempotency_key"
 )
 
 // The router's codes decide answers with its own advice.
@@ -54,7 +58,28 @@ const (
 	modelUnavailableCode      = "model_unavailable"
 	upstreamFailedCode        = "upstream_failed"
 	unknownModelCode          = "unknown_model"
+	// idempotencyInProgressCode is the router's 409 for a request whose
+	// Idempotency-Key is still being answered for an earlier send.
+	idempotencyInProgressCode = "idempotency_in_progress"
 )
+
+// idempotencyKeyMax is the router's bound on the Idempotency-Key header.
+const idempotencyKeyMax = 255
+
+// validIdempotencyKey is the router's rule for the header: 1 to 255 bytes,
+// each printable ASCII other than the space (0x21 to 0x7e). A key it would
+// refuse is refused here, before the request is read or sent.
+func validIdempotencyKey(k string) bool {
+	if len(k) == 0 || len(k) > idempotencyKeyMax {
+		return false
+	}
+	for i := 0; i < len(k); i++ {
+		if k[i] < 0x21 || k[i] > 0x7e {
+			return false
+		}
+	}
+	return true
+}
 
 // decideModelPattern is the router's model id: "vendor/model".
 var decideModelPattern = regexp.MustCompile(`^[a-z0-9-]+/[A-Za-z0-9._-]+$`)
@@ -467,9 +492,16 @@ type decideOutcome struct {
 }
 
 // performDecide sends one POST under ctx's deadline. Never retried: a
-// decision is billed, and nothing the router says licenses a second one.
-func performDecide(ctx context.Context, now func() time.Time, endpoint, key string, body []byte) decideOutcome {
-	attempt, err := postRouterBytes(ctx, routerClient(), endpoint, key, body, nil)
+// decision is billed, and nothing the router says licenses a second one. A
+// non-empty idempotencyKey goes as the Idempotency-Key header, which is what
+// makes the caller's own retry safe: the router answers a repeat of the same
+// key and body from the first answer, without running or billing it again.
+func performDecide(ctx context.Context, now func() time.Time, endpoint, key, idempotencyKey string, body []byte) decideOutcome {
+	var header func(*http.Request)
+	if idempotencyKey != "" {
+		header = func(r *http.Request) { r.Header.Set("Idempotency-Key", idempotencyKey) }
+	}
+	attempt, err := postRouterBytes(ctx, routerClient(), endpoint, key, body, header)
 	return readDecideAnswer(ctx, now, attempt, err, decodeDecision)
 }
 
@@ -603,6 +635,11 @@ func classifyDecide(out decideOutcome) searchClassification {
 			return searchClassification{exitServerErr, upstreamFailedCode, true, actionRetry}
 		}
 		return searchClassification{exitServerErr, upstreamFailedCode, false, actionReport}
+	case out.HTTPStatus == http.StatusConflict && code == idempotencyInProgressCode:
+		// The first send under this key is still running. Sending again with
+		// the same key and body is safe by the key's own rule: it is answered
+		// from the first, never run twice.
+		return searchClassification{exitClientErr, idempotencyInProgressCode, true, actionRetry}
 	}
 	return classifyRouterStatus(searchOutcome{
 		HTTPStatus: out.HTTPStatus, RouterErr: out.RouterErr, HasRouterErr: out.HasRouterErr,
@@ -713,7 +750,8 @@ func cmdDecide(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv 
 
 // decideUsage is what decide -h prints. The flag set below is built only in
 // machine mode, where its output is discarded, so it cannot say this itself.
-const decideUsage = `usage: jevlin decide --stdin [-config file] [-timeout duration]
+const decideUsage = `usage: jevlin decide --stdin [-idempotency-key key] [-config file]
+         [-timeout duration]
        jevlin decide --models [-config file] [-timeout duration]
 
 Asks a decision model typed questions about a state, for an agent: one
@@ -725,13 +763,24 @@ can call it, and reads nothing from stdin. Give exactly one of the two.
 flags:
   --stdin            read the request from stdin
   --models           list the models
+  -idempotency-key key
+                     with --stdin, sent as the Idempotency-Key header: a
+                     repeat with the same key and request within ten minutes
+                     is answered with the first answer, not run or billed
+                     again. 1 to 255 printable ASCII characters, no space.
+                     The client never makes one up.
   -timeout duration  the deadline for the whole call (default 1m0s)
   -config file       the config to read, given at most once (jevlin help
                      config)
 
 the request:
   model (vendor/model), state and questions, and optionally options, sources
-  and max_chars.
+  and max_chars. options goes to the router as written, so a grounded
+  model's options.search_fields needs nothing more.
+
+the result:
+  answers, citations and usage; sources for a request that named them; and
+  from a grounded model consulted_pages and grounding.
 
 exit status: as for jevlin search.
 
@@ -762,6 +811,7 @@ func decideMainIn(cancelOn func() (context.Context, context.CancelFunc), now fun
 	timeout := fs.Duration("timeout", defaultSearchTimeout, "whole-call deadline, covering connect, headers and body")
 	readStdin := fs.Bool("stdin", false, "read one version-1 JSON decide request from stdin and answer with the machine envelope")
 	listModels := fs.Bool("models", false, "list the decision models this router offers")
+	idempotencyKey := onceStringFlag(fs, "idempotency-key", "sent as the Idempotency-Key header; given at most once")
 	if err := fs.Parse(args); err != nil {
 		return failDecide(stdout, exitUsage, codeInvalidFlags, actionFixInput, errors.New("the flags could not be parsed"))
 	}
@@ -774,6 +824,16 @@ func decideMainIn(cancelOn func() (context.Context, context.CancelFunc), now fun
 	}
 	if *readStdin == *listModels {
 		return failDecide(stdout, exitUsage, codeInvalidFlags, actionFixInput, errors.New("give exactly one of --stdin and --models"))
+	}
+	keyGiven := false
+	fs.Visit(func(f *flag.Flag) { keyGiven = keyGiven || f.Name == "idempotency-key" })
+	if keyGiven && *listModels {
+		return failDecide(stdout, exitUsage, codeInvalidFlags, actionFixInput,
+			errors.New("-idempotency-key goes with --stdin: listing the models is not billed"))
+	}
+	if keyGiven && !validIdempotencyKey(*idempotencyKey) {
+		return failDecide(stdout, exitUsage, codeInvalidIdempotencyKey, actionFixInput,
+			errors.New("-idempotency-key must be 1 to 255 printable ASCII characters, with no space"))
 	}
 	var payload []byte
 	if *readStdin {
@@ -817,7 +877,7 @@ func decideMainIn(cancelOn func() (context.Context, context.CancelFunc), now fun
 	if *listModels {
 		out = performDecideModels(ctx, now, endpoint+"/models", key)
 	} else {
-		out = performDecide(ctx, now, endpoint, key, payload)
+		out = performDecide(ctx, now, endpoint, key, *idempotencyKey, payload)
 	}
 	env, code := decideEnvelopeOf(out)
 	emitDecide(stdout, env)

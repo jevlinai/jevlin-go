@@ -9,7 +9,7 @@ says what is written into each agent.
 |---|---|---|
 | `search` | `--stdin`, `-tier fast\|balanced\|max`, `-format json\|model`, `-view merged`, `--fresh`, `-timeout d` (default 1m0s), `-config file` | One web search. `--stdin` for agents ([the request](#the---stdin-request)); `<query words>` for a person ([the human form](#the-human-form-and-powershell)). `--fresh` skips the router's cache, as `"cache": "refresh"` does in a request. |
 | `fetch` | `--stdin` (required), `-timeout d` (default 1m0s), `-config file` | The full text of pages a search returned, for agents ([Reading a page in full](#reading-a-page-in-full)). |
-| `decide` | `--stdin` or `--models` (exactly one, required), `-timeout d` (default 1m0s), `-config file` | Typed questions about a state, answered by a decision model, for agents; `--models` lists the models ([Asking a decision model](#asking-a-decision-model)). |
+| `decide` | `--stdin` or `--models` (exactly one, required), `-idempotency-key key` (with `--stdin`), `-timeout d` (default 1m0s), `-config file` | Typed questions about a state, answered by a decision model, for agents; `--models` lists the models ([Asking a decision model](#asking-a-decision-model)). |
 | `mcp` | `-log`, `-config file` | `search --stdin`, `fetch --stdin`, `decide --stdin` and `decide --models` as MCP tools, over stdio, for a host that registers it ([MCP server](#mcp-server)). |
 | `agents install\|status\|uninstall` | `-client name` (repeatable), `-config file`; `install` and `uninstall` also `-dry-run` and `-yes` | Sets up, reports or removes the skills and hooks of each agent. `-yes` answers **Proceed?**, never a question about a Codex setting of yours. |
 | `agents prefer on\|off\|status` | `-config file` | Whether this search or the agent's own is the default, in every agent with a skill. |
@@ -233,13 +233,21 @@ the same key, deadline, redirect policy and user agent as a search, and nothing 
 on this machine. A decision is billed: `result.usage.cost_micros` says what it cost, and it is one
 request the client never repeats.
 
+`-idempotency-key key` sends the caller's key as the `Idempotency-Key` header, which makes the
+caller's own retry safe: the router answers a repeat with the same key and the same request within
+ten minutes with the first answer, and does not run or bill it again. The client never makes a key
+up, so a retry without one is a new, billed decision. A key is 1 to 255 printable ASCII characters
+with no space, the router's own rule; any other is `invalid_idempotency_key`, exit 2, before stdin
+is read. The flag goes with `--stdin` only, once. It is a command-line flag, so it is not a
+`decide` tool argument through `jevlin mcp`.
+
 | field | value |
 |---|---|
 | `version` | `1`, required. |
 | `model` | Required: `vendor/model`, as `jevlin decide --models` lists it. |
 | `state` | Required and not null: what the questions are about, a string, object or array. |
 | `questions` | Required: a non-empty object of question name to question, each an object, such as `{"type": "noul", "instructions": "…"}`. |
-| `options` | An object of the vendor's options. |
+| `options` | An object of the model's options, sent as written: a grounded model's `search_fields` (absent, a list of top-level state field names, or `[]`) needs nothing more. |
 | `sources` | 1 to 5 entries, each exactly `{"source_id": "s_…"}`, a page's `source_id` from a search's `result.merged`. |
 | `max_chars` | 1000 to 50000. |
 
@@ -288,6 +296,8 @@ and `--models` together are a usage error.
 | 503 `decisions_disabled` | 3 | `decisions_disabled` | `false` | `report`: this router has decisions switched off |
 | 503 `model_unavailable` | 4 | `model_unavailable` | `false` | `report`: the platform holds no working key for this model |
 | 503 `upstream_failed` | 4 | `upstream_failed` | the body's `retryable` | `retry` when `true`, with `retry_after_ms` if the router sent one; `report` otherwise |
+| 409 `idempotency_in_progress` | 3 | `idempotency_in_progress` | `true` | `retry`: the first send under this key is still running; the same key and request again, after `retry_after_ms` |
+| 422 `idempotency_key_reused` | 3 | `idempotency_key_reused` | `false` | `fix_input`: the key was used with another request |
 | 402 `search_credit_only` | 3 | `search_credit_only` | `false` | `report`: the credit left this week is reserved for search; decisions resume at the weekly reset or after a top-up |
 | any other status | as for a search | | | |
 

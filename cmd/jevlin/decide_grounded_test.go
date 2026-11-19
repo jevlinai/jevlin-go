@@ -111,3 +111,19 @@ func TestDecideModelsCarriesThePriceBands(t *testing.T) {
 		t.Errorf("models %v\nthe router's %v", got, router["models"])
 	}
 }
+
+// options.search_fields needs no flag of its own: options goes to the router
+// as the caller wrote it, absent, a list of fields or an empty list.
+func TestSearchFieldsGoOutInTheCallersOptions(t *testing.T) {
+	for _, options := range []string{``, `,"options":{"search_fields": ["company"]}`, `,"options":{"search_fields":[]}`} {
+		stdin := `{"version":1,"model":"jevlin/grounded-fast","state":{"company":"x"},"questions":{"q":{"type":"noul"}}` + options + `}`
+		want := `{"model":"jevlin/grounded-fast","state":{"company":"x"},"questions":{"q":{"type":"noul"}}` + options + `}`
+		_, code, fr := decideServing(t, http.StatusOK, decideGroundedFast, stdin)
+		if code != exitOK {
+			t.Fatalf("exit %d for %s", code, stdin)
+		}
+		if _, body := fr.last(t); string(body) != want {
+			t.Errorf("the router received\n%s\nwant\n%s", body, want)
+		}
+	}
+}
