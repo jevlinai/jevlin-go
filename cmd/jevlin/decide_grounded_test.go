@@ -127,3 +127,67 @@ func TestSearchFieldsGoOutInTheCallersOptions(t *testing.T) {
 		}
 	}
 }
+
+// The machine side's grounded and band types, with each field's type: a
+// pointer is what keeps a 0 the router sent, and url has no omitempty, so
+// an empty address is carried as sent. decideModelBand is shared by both
+// sides.
+func TestTheMachineGroundedFieldsAreDecided(t *testing.T) {
+	for _, tc := range []struct {
+		rt      reflect.Type
+		decided []string
+	}{
+		{reflect.TypeFor[machineDecidePage](), []string{
+			"ID string id,omitempty", "URL string url", "Title string title,omitempty", "Questions []string questions,omitempty"}},
+		{reflect.TypeFor[machineDecideGrounding](), []string{
+			"Rules string rules,omitempty", "Searches *int64 searches,omitempty", "SecondStage string second_stage,omitempty",
+			"Degraded *bool degraded,omitempty", "Reconsidered []string reconsidered,omitempty"}},
+		{reflect.TypeFor[decideModelBand](), []string{"UpTo *int64 up_to,omitempty", "Micros *int64 micros,omitempty"}},
+	} {
+		var got []string
+		for i := range tc.rt.NumField() {
+			f := tc.rt.Field(i)
+			got = append(got, f.Name+" "+f.Type.String()+" "+f.Tag.Get("json"))
+		}
+		if !reflect.DeepEqual(got, tc.decided) {
+			t.Errorf("%s's fields are %q; this test lists %q", tc.rt.Name(), got, tc.decided)
+		}
+	}
+}
+
+// A zero the router sends comes back: a band priced 0 (a free band), a band
+// up to 0, and a page with an empty address.
+func TestZerosTheRouterSendsAreCarried(t *testing.T) {
+	const models = `{"models":[{"id":"a/b","vendor":"a","vendor_model":"b","cost":{"bands":[{"up_to":0,"micros":0},{"up_to":5,"micros":0}],"second_stage_failed_micros":0}}]}`
+	env, code, _ := decideServingHeaders(t, http.StatusOK, models, "", nil, "--models")
+	if got, want := resultOf(t, env)["models"], routerFieldsOf(t, models)["models"]; code != exitOK || !reflect.DeepEqual(got, want) {
+		t.Errorf("exit %d, models %v\nthe router's %v", code, got, want)
+	}
+	const decision = `{"answers":{},"consulted_pages":[{"url":""},{"id":"s_1","url":"","title":""}]}`
+	env, code, _ = decideServing(t, http.StatusOK, decision, decideMinimal)
+	if got := resultOf(t, env)["consulted_pages"]; code != exitOK ||
+		!reflect.DeepEqual(got, []any{map[string]any{"url": ""}, map[string]any{"id": "s_1", "url": ""}}) {
+		t.Errorf("exit %d, consulted_pages %v", code, got)
+	}
+}
+
+// A grounded field of the wrong type fails the decision as invalid_router_response,
+// exit 4, exactly as a wrong-typed usage field always has: the client does not
+// hand on half an answer it could not read.
+func TestAWrongTypedGroundedFieldFailsTheDecisionAsUsageDoes(t *testing.T) {
+	for _, body := range []string{
+		`{"answers":{},"usage":{"cost_micros":"12"}}`,
+		`{"answers":{},"grounding":"q1"}`,
+		`{"answers":{},"grounding":{"searches":"2"}}`,
+		`{"answers":{},"grounding":{"degraded":"no"}}`,
+		`{"answers":{},"consulted_pages":{"url":"https://docs.example.test/"}}`,
+	} {
+		env, code, _ := decideServing(t, http.StatusOK, body, decideMinimal)
+		if code != exitServerErr || env["code"] != string(faultInvalidResponse) || env["action"] != actionReport {
+			t.Errorf("%s: exit %d, %v / %v; want %d, %s / report", body, code, env["code"], env["action"], exitServerErr, faultInvalidResponse)
+		}
+		if _, has := env["result"]; has {
+			t.Errorf("%s: a decision it could not read carries a result", body)
+		}
+	}
+}
