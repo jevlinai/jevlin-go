@@ -62,7 +62,8 @@ are the router's, and change without a client release. What a search cost is in 
 | `balanced` | Four core arms: `exa`, `brave`, `parallel-search`, `perplexity-search`. | the router's default | claimed agents |
 | `max` | All seven core arms: those four and `serper`, `telem`, `tinyfish`. | 15 | claimed agents |
 
-`parallel-search` and `parallel-fast` return at most 10 results on every tier. A tier is also a
+`parallel-search` and `parallel-fast` return at most 10 results on every tier, and `tavily` and
+`tavily-advanced` at most 20. A tier is also a
 per-query cost ceiling on the router: a set that would exceed it is trimmed rather than refused,
 and `decision.trimmed` names what went.
 
@@ -75,10 +76,13 @@ agent's answer under about 20,000 characters; to read more of a page, the agent 
 apply (a person's search from the command line, for one): a 12-page merged list, 24 on `max`, and
 1,200 characters per page, 2,000 on `max`.
 
-The hosted service enables nine providers: the seven core arms and two extended ones, `exa-lite`
-and `parallel-fast`. A request's `providers` may name any of the nine on `balanced` or `max`; an
-extended arm then runs only because it was named. On `fast` the router refuses `providers` with
-400 `invalid_request`, and it refuses a name it does not enable as an unknown provider.
+The hosted service enables eleven providers: the seven core arms and four extended ones,
+`exa-lite`, `parallel-fast`, `tavily` (Tavily, basic search depth) and `tavily-advanced` (Tavily,
+advanced search depth). A request's `providers` may name any of the eleven on `balanced` or `max`;
+an extended arm then runs only because it was named. No tier or preset runs `tavily` or
+`tavily-advanced`, so they run only when named. Their pages carry no `published` date, and the two
+are one index: a page both list counts once in `votes`. On `fast` the router refuses `providers`
+with 400 `invalid_request`, and it refuses a name it does not enable as an unknown provider.
 `decision` in every response says which arms ran.
 
 ## The `--stdin` request
