@@ -92,3 +92,22 @@ func TestAnMCPHostSeesTheGroundedFields(t *testing.T) {
 		}
 	}
 }
+
+// decideBandedModels lists the two grounded models as the hosted gateway
+// prices them (API.md, "Keys and price"): fast one band, extended two and a
+// price for a request whose second stage failed.
+const decideBandedModels = `{"models":[
+ {"id":"jevlin/grounded-fast","vendor":"jevlin","vendor_model":"grounded-fast","cost":{"bands":[{"up_to":10,"micros":1200}]},"grounded":true,"available":true},
+ {"id":"jevlin/grounded-extended","vendor":"jevlin","vendor_model":"grounded-extended","cost":{"bands":[{"up_to":5,"micros":2500},{"up_to":10,"micros":4000}],"second_stage_failed_micros":1200},"grounded":true,"available":false}]}`
+
+// A banded model's price comes through --models field for field.
+func TestDecideModelsCarriesThePriceBands(t *testing.T) {
+	env, code, _ := decideServingHeaders(t, http.StatusOK, decideBandedModels, "", nil, "--models")
+	if code != exitOK || env["ok"] != true {
+		t.Fatalf("exit %d: %v", code, env)
+	}
+	router := routerFieldsOf(t, decideBandedModels)
+	if got := resultOf(t, env)["models"]; !reflect.DeepEqual(got, router["models"]) {
+		t.Errorf("models %v\nthe router's %v", got, router["models"])
+	}
+}

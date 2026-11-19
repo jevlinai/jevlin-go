@@ -270,7 +270,10 @@ no `answers` is `invalid_router_response`, exit 4.
 `jevlin decide --models` sends `GET /v1/decisions/models` with the same key and reads nothing from
 stdin. `result.models` is the router's list, each with `id` (the value `model` takes), `vendor`,
 `vendor_model`, `cost` in millionths of a dollar (`per_request_micros`, `per_prompt_ktok_micros`,
-`per_search_call_micros`, a zero left out), `free` (`requests_per_day`, absent with no free tier),
+`per_search_call_micros`, a zero left out; a model priced by how many questions a request asks,
+such as a grounded one, lists `bands` instead, each `{"up_to": n, "micros": m}` the price of a
+request of at most `n` questions and more than the band before, and the extended grounded model
+`second_stage_failed_micros`, what a request whose answers come back `degraded` costs), `free` (`requests_per_day`, absent with no free tier),
 `grounded` and `available` (whether this account can call it). Listing spends nothing. `--stdin`
 and `--models` together are a usage error.
 

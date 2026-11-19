@@ -344,10 +344,22 @@ type routerDecideModel struct {
 }
 
 // decideModelCost is in micro-dollars; the router omits a field that is zero.
+// A model priced by how many questions a request asks (the grounded models)
+// lists Bands in place of a rate card, and the extended one the price of a
+// request whose second stage failed.
 type decideModelCost struct {
-	PerRequestMicros    *int64 `json:"per_request_micros,omitempty"`
-	PerPromptKtokMicros *int64 `json:"per_prompt_ktok_micros,omitempty"`
-	PerSearchCallMicros *int64 `json:"per_search_call_micros,omitempty"`
+	PerRequestMicros        *int64            `json:"per_request_micros,omitempty"`
+	PerPromptKtokMicros     *int64            `json:"per_prompt_ktok_micros,omitempty"`
+	PerSearchCallMicros     *int64            `json:"per_search_call_micros,omitempty"`
+	Bands                   []decideModelBand `json:"bands,omitempty"`
+	SecondStageFailedMicros *int64            `json:"second_stage_failed_micros,omitempty"`
+}
+
+// decideModelBand is the price of a request of at most UpTo questions, and
+// more than the band before it.
+type decideModelBand struct {
+	UpTo   *int64 `json:"up_to,omitempty"`
+	Micros *int64 `json:"micros,omitempty"`
 }
 
 type decideModelFree struct {

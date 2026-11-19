@@ -394,8 +394,10 @@ func TestTheRouterDecideFieldsAreDecided(t *testing.T) {
 		}},
 		{reflect.TypeFor[decideModelCost](), []string{
 			"PerRequestMicros per_request_micros,omitempty", "PerPromptKtokMicros per_prompt_ktok_micros,omitempty",
-			"PerSearchCallMicros per_search_call_micros,omitempty",
+			"PerSearchCallMicros per_search_call_micros,omitempty", "Bands bands,omitempty",
+			"SecondStageFailedMicros second_stage_failed_micros,omitempty",
 		}},
+		{reflect.TypeFor[decideModelBand](), []string{"UpTo up_to,omitempty", "Micros micros,omitempty"}},
 		{reflect.TypeFor[decideModelFree](), []string{"RequestsPerDay requests_per_day,omitempty"}},
 	} {
 		var got []string
