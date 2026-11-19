@@ -17,6 +17,14 @@ rewritten to match newer behaviour; the newer entry says what changed.
 - `jevlin uninstall -dry-run` names as left only the lock files the real run leaves. With
   `-purge-state` it also listed `setup.lock` and `state/connect.lock`, which the purge
   removes, and with `-binary` the binary's update lock, which goes with the binary.
+- `jevlin decide` carries what the grounded models answer with: `result.consulted_pages`, the
+  pages the decision was made over, and `result.grounding`, what the request took, both of which
+  it dropped; and `decide --models` lists their price by question count (`cost.bands`, and
+  `cost.second_stage_failed_micros`), which it showed as an empty cost. Every other model's
+  envelope is unchanged, byte for byte. `-idempotency-key key` sends the caller's
+  `Idempotency-Key`, so a retry of a billed decision is answered from the first instead of run
+  and billed again; the client never makes one up. A grounded model's `options.search_fields`
+  always went through as written.
 
 ## v0.8.2 — 2026-11-15
 
