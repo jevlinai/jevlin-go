@@ -492,9 +492,12 @@ type decideOutcome struct {
 	RetryAfterMS  int64
 	HasRetryAfter bool
 	RequestID     string
-	Replayed      bool
-	Decision      *routerDecideResponse
-	Models        *routerDecideModels
+	// HeaderRequestID is the router's X-Request-Id on any answer, a failure
+	// included, for a failure's envelope: a failed request has a trace too.
+	HeaderRequestID string
+	Replayed        bool
+	Decision        *routerDecideResponse
+	Models          *routerDecideModels
 }
 
 // performDecide sends one POST under ctx's deadline. This client never sends
@@ -559,6 +562,7 @@ func readDecideAnswer(ctx context.Context, now func() time.Time, attempt routerA
 		return out
 	}
 	out.HTTPStatus = attempt.Status
+	out.HeaderRequestID = strings.TrimSpace(attempt.Header.Get("X-Request-Id"))
 	if ms, ok := retryAfterMS(attempt.Header, now()); ok {
 		out.RetryAfterMS, out.HasRetryAfter = ms, true
 	}
@@ -610,11 +614,13 @@ func readDecideAnswer(ctx context.Context, now func() time.Time, attempt routerA
 	// the body has none. Nothing here depends on the id, so an answer with
 	// neither is still an answer, and simply carries no id.
 	if out.RequestID == "" {
-		out.RequestID = strings.TrimSpace(attempt.Header.Get("X-Request-Id"))
+		out.RequestID = out.HeaderRequestID
 	}
 	// The router's word that nothing ran: "Idempotent-Replayed: true" on a
-	// response it answered from the first send under the same key.
-	out.Replayed = strings.EqualFold(strings.TrimSpace(attempt.Header.Get("Idempotent-Replayed")), "true")
+	// decision it answered from the first send under the same key. Only a
+	// decision: a models listing is never billed, so never replayed. net/http
+	// has already trimmed the value.
+	out.Replayed = out.Decision != nil && strings.EqualFold(attempt.Header.Get("Idempotent-Replayed"), "true")
 	return out
 }
 
@@ -682,6 +688,10 @@ func decideEnvelopeOf(out decideOutcome) (decideEnvelope, int) {
 		}
 		return env, c.ExitCode
 	}
+	// A failure names the router's request id when its answer carried one,
+	// where a success does, so the failed request's trace can be read; with
+	// no header the envelope is what it always was.
+	env.RequestID = out.HeaderRequestID
 	if c.Code == unknownModelCode {
 		// The router's message points at its own route; an agent runs this.
 		env.Error = clientMessage(errors.New("this router does not offer that model; jevlin decide --models lists the ones it does"))

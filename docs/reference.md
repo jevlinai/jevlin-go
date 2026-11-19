@@ -307,6 +307,11 @@ and `--models` together are a usage error.
 | 402 `search_credit_only` | 3 | `search_credit_only` | `false` | `report`: the credit left this week is reserved for search; decisions resume at the weekly reset or after a top-up |
 | any other status | as for a search | | | |
 
+A failure the router answered carries the router's `request_id` at the envelope's top level, as a
+success does, whenever its answer had an `X-Request-Id` header; without one there is none. That is
+the id a failed request's trace is read by, a grounded model's included, with the router's
+`GET /v1/traces/{request_id}`.
+
 Exit codes are as for a search: 0 for a valid answer, 1 for transport, timeout or cancellation, 2
 for usage, 3 for a 4xx, for no usable key, or for a router that has decisions switched off; 4 for
 any other 5xx or an answer the client could not use.

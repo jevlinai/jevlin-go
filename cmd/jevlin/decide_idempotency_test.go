@@ -138,7 +138,7 @@ func TestAReplayedDecisionSaysSo(t *testing.T) {
 	for _, tc := range []struct {
 		value    string
 		replayed bool
-	}{{"true", true}, {"TRUE", true}, {" true ", true}, {"false", false}, {"1", false}, {"", false}} {
+	}{{"true", true}, {"TRUE", true}, {"false", false}, {"1", false}, {"", false}} {
 		headers := map[string]string{}
 		if tc.value != "" {
 			headers["Idempotent-Replayed"] = tc.value
@@ -165,5 +165,10 @@ func TestAReplayedDecisionSaysSo(t *testing.T) {
 		decideMinimal, map[string]string{"Idempotent-Replayed": "true"}, "--stdin")
 	if _, has := env["idempotent_replayed"]; has {
 		t.Errorf("a failed decide carries idempotent_replayed: %v", env)
+	}
+	// Nor is a models listing, which is never billed.
+	env, _, _ = decideServingHeaders(t, http.StatusOK, decideModelsAnswer, "", map[string]string{"Idempotent-Replayed": "true"}, "--models")
+	if _, has := env["idempotent_replayed"]; has || env["ok"] != true {
+		t.Errorf("a models listing carries idempotent_replayed: %v", env)
 	}
 }
