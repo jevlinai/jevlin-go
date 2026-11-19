@@ -230,13 +230,17 @@ A fetch is one request and is never retried by the client.
 `jevlin decide --stdin` takes one JSON object and answers with one envelope carrying the same
 header, with `command` set to `decide`. It sends `POST /v1/decisions` to the configured router with
 the same key, deadline, redirect policy and user agent as a search, and nothing about it is kept
-on this machine. A decision is billed: `result.usage.cost_micros` says what it cost, and it is one
-request the client never repeats.
+on this machine. A decision is billed: `result.usage.cost_micros` says what it cost. Without
+`-idempotency-key` it is one request the client never repeats.
 
 `-idempotency-key key` sends the caller's key as the `Idempotency-Key` header, which makes the
-caller's own retry safe: the router answers a repeat with the same key and the same request within
-ten minutes with the first answer, and does not run or bill it again. The client never makes a key
-up, so a retry without one is a new, billed decision. A key is 1 to 255 printable ASCII characters
+caller's own retry safe: the router answers a repeat with the same key and a request identical
+byte for byte within ten minutes with the first answer, and does not run or bill it again. The router keeps only a successful
+answer, and only in one process's memory: after a restart, or once the copy is evicted, a repeat
+runs again and is billed again. With a key, a reused connection that drops before any answer may
+be sent once more by the client's HTTP transport, with the same key and the same bytes, which the
+router answers the same way. The client never makes a key up, so a retry without one is a new,
+billed decision. A key is 1 to 255 printable ASCII characters
 with no space, the router's own rule; any other is `invalid_idempotency_key`, exit 2, before stdin
 is read. The flag goes with `--stdin` only, once. It is a command-line flag, so it is not a
 `decide` tool argument through `jevlin mcp`.

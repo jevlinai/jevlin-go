@@ -111,7 +111,7 @@ func TestTheRoutersIdempotencyAnswersMapToTheirActions(t *testing.T) {
 				t.Errorf("retry_after_ms %v (present %v), want present %v", got, has, tc.retryAfter)
 			}
 			if len(fr.reqs) != 1 {
-				t.Errorf("%d requests; a decision is never sent twice by the client", len(fr.reqs))
+				t.Errorf("%d requests; one send per decide; the router answered each", len(fr.reqs))
 			}
 		})
 	}
