@@ -1,0 +1,1 @@
+{"version":1,"command":"decide","ok":false,"exit_code":4,"status":"server_error","code":"upstream_failed","retryable":true,"action":"retry","http_status":503,"retry_after_ms":7000,"error":{"message":"vendor timeout","source":"router"}}
