@@ -45,6 +45,8 @@ func decideGoldenCases(t *testing.T) []decideGoldenCase {
 		{name: "request-id-from-header", status: http.StatusOK, body: `{"answers":{}}`,
 			headers: map[string]string{"X-Request-Id": "header-id"}},
 		{name: "models", mode: "--models", status: http.StatusOK, body: decideModelsAnswer},
+		{name: "models-empty", mode: "--models", status: http.StatusOK, body: `{"models":[]}`},
+		{name: "models-no-cost", mode: "--models", status: http.StatusOK, body: `{"models":[{"id":"a/b","vendor":"a","vendor_model":"b"}]}`},
 		{name: "upstream-failed-retryable", status: http.StatusServiceUnavailable,
 			body:    `{"code":"upstream_failed","error":"vendor timeout","retryable":true}`,
 			headers: map[string]string{"Retry-After": "7"}},
