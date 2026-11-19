@@ -23,8 +23,11 @@ rewritten to match newer behaviour; the newer entry says what changed.
   `cost.second_stage_failed_micros`), which it showed as an empty cost. Every other model's
   envelope is unchanged, byte for byte. `-idempotency-key key` sends the caller's
   `Idempotency-Key`, so a retry of a billed decision is answered from the first instead of run
-  and billed again; the client never makes one up. A grounded model's `options.search_fields`
-  always went through as written.
+  and billed again, and marked `idempotent_replayed`. The router keeps that first answer about ten
+  minutes, in memory, and only for a 200; after that a repeat runs and is billed. The client never
+  makes a key up. A failed decision now names the router's `request_id` when the router sent one,
+  so its trace can be found. A grounded model's `options.search_fields` always went through as
+  written.
 
 ## v0.8.2 — 2026-11-15
 
