@@ -80,8 +80,9 @@ The hosted service enables eleven providers: the seven core arms and four extend
 `exa-lite`, `parallel-fast`, `tavily` (Tavily, basic search depth) and `tavily-advanced` (Tavily,
 advanced search depth). A request's `providers` may name any of the eleven on `balanced` or `max`;
 an extended arm then runs only because it was named. No tier or preset runs `tavily` or
-`tavily-advanced`, so they run only when named. Their pages carry no `published` date, and the two
-are one index: a page both list counts once in `votes`. On `fast` the router refuses `providers`
+`tavily-advanced`, so they run only when named. Tavily gives no publication date, so a page only
+they found has no `published`. The two are one index group: a page both find counts as one group
+in `groups` and `votes`, not two. On `fast` the router refuses `providers`
 with 400 `invalid_request`, and it refuses a name it does not enable as an unknown provider.
 `decision` in every response says which arms ran.
 
