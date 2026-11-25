@@ -6,7 +6,11 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -18,12 +22,31 @@ func runLimits(t *testing.T, env map[string]string, args ...string) (int, string
 	return code, out.String(), errOut.String()
 }
 
+// routerLimitsAnswer is GET /v1/limits as search-router's own handler
+// wrote it (testdata/limits/README.md): the caps nested under "limits",
+// beside today's ledger and the week and month windows. It is checked
+// against its SHA-256 so it cannot be edited into a router that does not
+// exist, which is how the caps went unread: every stub was typed in the
+// shape the client expected (issue #192).
+func routerLimitsAnswer(t *testing.T) []byte {
+	t.Helper()
+	const sum = "8610eca122a0cecf887ceed5646f32e6adcac2361e5ba1fe05c6d50515451f83"
+	raw, err := os.ReadFile(filepath.Join("testdata", "limits", "router-get.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sha256.Sum256(raw); hex.EncodeToString(got[:]) != sum {
+		t.Fatal("testdata/limits/router-get.json is not the answer recorded from the router; see its README")
+	}
+	return raw
+}
+
 func TestLimitsReadsCapsAndLedgerWithOneBearerGet(t *testing.T) {
 	var sawMethod, sawPath, sawAuth string
+	answer := routerLimitsAnswer(t)
 	fr, cfg, _ := newFakeRouter(t, func(w http.ResponseWriter, r *http.Request) {
 		sawMethod, sawPath, sawAuth = r.Method, r.URL.Path, r.Header.Get("Authorization")
-		_, _ = w.Write([]byte(`{"daily_micros":5000000,"weekly_micros":0,` +
-			`"today":{"spent_micros":123456,"ceiling_micros":5000000,"remaining_micros":4876544}}`))
+		_, _ = w.Write(answer)
 	})
 	code, out, errOut := runLimits(t, map[string]string{"JEVLIN_API_KEY": "sr-fictional"}, "-config", cfg)
 	if code != exitOK {
@@ -32,12 +55,11 @@ func TestLimitsReadsCapsAndLedgerWithOneBearerGet(t *testing.T) {
 	if sawMethod != http.MethodGet || sawPath != "/v1/limits" || sawAuth != "Bearer sr-fictional" {
 		t.Fatalf("request shape: %s %s auth=%q", sawMethod, sawPath, sawAuth)
 	}
-	// An explicit 0 is "none" (the wire's spelling of no cap); a field the
-	// router omitted is "not reported", never an invented number.
+	// An explicit 0 is "none", the wire's spelling of no cap.
 	for _, want := range []string{
 		"daily    $5.00",
 		"weekly   none",
-		"monthly  not reported",
+		"monthly  $20.00",
 		"spent $0.123456",
 		"effective ceiling $5.00",
 		"remaining $4.876544",
@@ -53,9 +75,13 @@ func TestLimitsReadsCapsAndLedgerWithOneBearerGet(t *testing.T) {
 	}
 }
 
+// The envelope carries the three caps flat in data, beside today, as it
+// always has; only where they are read from in the router's answer is the
+// router's to say.
 func TestLimitsJSONCarriesTheRawMicros(t *testing.T) {
+	answer := routerLimitsAnswer(t)
 	_, cfg, _ := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"daily_micros":5000000,"today":{"spent_micros":0}}`))
+		_, _ = w.Write(answer)
 	})
 	code, out, _ := runLimits(t, map[string]string{"JEVLIN_API_KEY": "sr-fictional"}, "-config", cfg, "-json")
 	if code != exitOK {
@@ -66,15 +92,73 @@ func TestLimitsJSONCarriesTheRawMicros(t *testing.T) {
 		t.Fatalf("header: %v", env)
 	}
 	data, _ := env["data"].(map[string]any)
-	if data == nil || data["daily_micros"] != float64(5_000_000) {
+	if data == nil {
 		t.Fatalf("data: %v", env["data"])
 	}
-	if _, present := data["weekly_micros"]; present {
-		t.Errorf("an unreported cap was invented in the envelope: %v", data)
+	for key, want := range map[string]float64{"daily_micros": 5_000_000, "weekly_micros": 0, "monthly_micros": 20_000_000} {
+		if got, present := data[key]; !present || got != want {
+			t.Errorf("data[%q] = %v (present %v), want %v: %v", key, got, present, want, data)
+		}
 	}
 	today, _ := data["today"].(map[string]any)
-	if today == nil || today["spent_micros"] != float64(0) {
+	if today == nil || today["spent_micros"] != float64(123_456) {
 		t.Fatalf("today: %v", data["today"])
+	}
+}
+
+// A cap the router did not send is "not reported" in the table and absent
+// from the envelope, never an invented 0: whether the whole "limits" object
+// is missing or only one window in it.
+func TestLimitsNeverInventsACapTheRouterDidNotSend(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		absent     []string
+		sent       map[string]float64
+	}{
+		{"no limits object", `{"today":{"spent_micros":0}}`, []string{"daily_micros", "weekly_micros", "monthly_micros"}, nil},
+		{"one window missing", `{"limits":{"daily_micros":5000000,"weekly_micros":0},"today":{"spent_micros":0}}`,
+			[]string{"monthly_micros"}, map[string]float64{"daily_micros": 5_000_000, "weekly_micros": 0}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, cfg, _ := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(tc.body))
+			})
+			code, out, errOut := runLimits(t, map[string]string{"JEVLIN_API_KEY": "sr-fictional"}, "-config", cfg)
+			if code != exitOK {
+				t.Fatalf("exit %d, stderr=%q", code, errOut)
+			}
+			label := map[string]string{"daily_micros": "daily    ", "weekly_micros": "weekly   ", "monthly_micros": "monthly  "}
+			for _, key := range tc.absent {
+				if !strings.Contains(out, label[key]+"not reported") {
+					t.Errorf("%s: want %q:\n%s", key, label[key]+"not reported", out)
+				}
+			}
+			// The caps that were sent are still shown, however many were not.
+			for key, want := range tc.sent {
+				shown := "none"
+				if want != 0 {
+					shown = dollars(int64(want))
+				}
+				if !strings.Contains(out, label[key]+shown) {
+					t.Errorf("%s: want %q:\n%s", key, label[key]+shown, out)
+				}
+			}
+			code, out, _ = runLimits(t, map[string]string{"JEVLIN_API_KEY": "sr-fictional"}, "-config", cfg, "-json")
+			if code != exitOK {
+				t.Fatalf("exit %d: %s", code, out)
+			}
+			data, _ := decodeEnvelope(t, out)["data"].(map[string]any)
+			for _, key := range tc.absent {
+				if _, present := data[key]; present {
+					t.Errorf("an unreported cap was invented in the envelope: %s in %v", key, data)
+				}
+			}
+			for key, want := range tc.sent {
+				if got, present := data[key]; !present || got != want {
+					t.Errorf("data[%q] = %v (present %v), want %v: %v", key, got, present, want, data)
+				}
+			}
+		})
 	}
 }
 

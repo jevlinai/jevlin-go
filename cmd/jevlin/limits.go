@@ -1,7 +1,9 @@
 package main
 
 // jevlin limits — the spend caps and today's spend, read from the search
-// router (GET /v1/limits; the router's skill file, "Spend limits").
+// router (GET /v1/limits; the router's skill file, "Spend limits"). The
+// skill file names what the answer holds; its shape, the caps nested under
+// "limits", is the router's contract, docs/router-contracts/limits.md.
 //
 // Read-only on purpose. The POST half (setting caps) waits on a wire
 // question the skill file leaves open — it says both that an omitted
@@ -33,14 +35,42 @@ import (
 
 const limitsTimeout = 30 * time.Second
 
-// limitsReport is as much of GET /v1/limits as this client reads. The
-// three caps and the three today fields are integer micro-dollars
-// (1_000_000 = $1).
+// limitsWire is as much of GET /v1/limits as this client reads, in the
+// router's shape (search-router docs/router-contracts/limits.md): the three
+// caps under "limits", today's ledger beside them. The week and month
+// windows it also sends are not read. An earlier version read the caps at
+// the top level, where the router has never put them, and so reported
+// every cap as not reported (issue #192).
+type limitsWire struct {
+	Limits *limitsCaps  `json:"limits"`
+	Today  *limitsToday `json:"today"`
+}
+
+// limitsCaps is the three caps, one list for both sides: nested under
+// "limits" in the router's answer, embedded (and so flat) in limitsReport.
+// A cap is nil when the router did not send it.
+type limitsCaps struct {
+	DailyMicros   *int64 `json:"daily_micros,omitempty"`
+	WeeklyMicros  *int64 `json:"weekly_micros,omitempty"`
+	MonthlyMicros *int64 `json:"monthly_micros,omitempty"`
+}
+
+// report is the wire answer as this client shows it and as limits -json
+// carries it: the caps flat beside today.
+func (w limitsWire) report() limitsReport {
+	r := limitsReport{Today: w.Today}
+	if w.Limits != nil {
+		r.limitsCaps = *w.Limits
+	}
+	return r
+}
+
+// limitsReport is what limits -json carries in data and what the table
+// shows. The three caps and the three today fields are integer
+// micro-dollars (1_000_000 = $1).
 type limitsReport struct {
-	DailyMicros   *int64       `json:"daily_micros,omitempty"`
-	WeeklyMicros  *int64       `json:"weekly_micros,omitempty"`
-	MonthlyMicros *int64       `json:"monthly_micros,omitempty"`
-	Today         *limitsToday `json:"today,omitempty"`
+	limitsCaps
+	Today *limitsToday `json:"today,omitempty"`
 }
 
 type limitsToday struct {
@@ -175,14 +205,15 @@ func cmdLimits(args []string, stdout, stderr io.Writer, getenv func(string) stri
 		}
 	}
 
-	var report limitsReport
-	if err := json.Unmarshal(raw, &report); err != nil {
+	var wire limitsWire
+	if err := json.Unmarshal(raw, &wire); err != nil {
 		if machine {
 			return failLimits(stdout, exitServerErr, "invalid_router_response", actionReport, errors.New("the limits response is not JSON"))
 		}
 		fmt.Fprintln(stderr, "jevlin: the limits response is not JSON:", err)
 		return exitServerErr
 	}
+	report := wire.report()
 
 	if machine {
 		emitMachine(stdout, commandEnvelope{
@@ -204,9 +235,9 @@ func failLimits(stdout io.Writer, exitCode int, code, action string, err error) 
 }
 
 // printLimits renders the caps and the day's ledger for a person. A cap
-// of 0 and an unset cap are both "none" — 0 is the wire's spelling of
-// "no cap on this window" — while a field the router omitted entirely is
-// "not reported", because inventing a number the router did not send is
+// of 0 is "none" — 0 is the wire's spelling of "no cap on this window",
+// a window the participant left uncapped — while a field the router
+// omitted entirely is "not reported", because inventing a number the router did not send is
 // how a participant budgets against a fiction.
 func printLimits(stdout io.Writer, r limitsReport) {
 	capOf := func(v *int64) string {

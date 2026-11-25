@@ -1,0 +1,1 @@
+{"limits":{"daily_micros":5000000,"monthly_micros":20000000,"weekly_micros":0},"month":{"cap_micros":20000000,"remaining_micros":19876544,"spent_micros":123456},"tenant_id":"t-fictional","today":{"ceiling_micros":5000000,"remaining_micros":4876544,"spent_micros":123456},"week":{"cap_micros":0,"spent_micros":123456}}

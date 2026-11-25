@@ -84,12 +84,13 @@ func installationFixture(t *testing.T) (cfgPath, home string) {
 	t.Helper()
 	withShortConnectTimings(t)
 	platform := newStubPlatform(t)
+	limitsAnswer := routerLimitsAnswer(t)
 	router := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/search":
 			_, _ = w.Write([]byte(routerBody))
 		case "/v1/limits":
-			_, _ = w.Write([]byte(`{"daily_micros":1000000,"today":{"spent_micros":0}}`))
+			_, _ = w.Write(limitsAnswer)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
