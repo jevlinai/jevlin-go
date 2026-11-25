@@ -10,16 +10,36 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
-## Unreleased
+## v0.8.3 — 2026-11-25
 
+This release reads every configuration 0.8.2 reads and changes none, and it changes nothing a
+search sends. Under the default `[update] mode = "apply"` a native installation's daily check
+installs it on its own; after an npm update there is nothing to run.
+
+- **`jevlin limits` shows the spend caps you set.** It read them from the wrong place in the
+  router's answer, so every cap read "not reported" and `limits -json` carried none of them;
+  today's spend and ceiling were right.
 - `jevlin status` prints every value in one column. The `turn end:` line, added in 0.8.1,
   sat one column to the right of the others, and the `agent:` line one to the left.
 - `jevlin uninstall -dry-run` names as left only the lock files the real run leaves. With
   `-purge-state` it also listed `setup.lock` and `state/connect.lock`, which the purge
   removes, and with `-binary` the binary's update lock, which goes with the binary.
-- `jevlin limits` shows the spend caps you set. It read them from the wrong place in the
-  router's answer, so every cap read "not reported" and `limits -json` carried none of them;
-  today's spend and ceiling were right.
+- A turn report whose sender never ran, after a sleep, a shutdown or an upgrade mid-turn, no
+  longer stays in `sessions/` for good: the next search removes one more than an hour old.
+- `jevlin agents install` with stdin from `/dev/null`, or `NUL` on Windows, no longer asks
+  `Proceed?` of nobody and then reports the question unanswered. It takes the path a run with
+  no terminal takes, as `setup` and `uninstall` already did, so for Codex it prints the lines a
+  yes would write.
+- Removing jevlin's Codex hooks says that Codex's record of your approval stays in
+  `config.toml` only when there is one, as `jevlin agents status` reports it; when it cannot
+  tell, it says that instead.
+- When Codex had written a table of its own inside jevlin's region of `~/.codex/config.toml`,
+  uninstall keeps the table where the region was and now leaves a blank line between it and
+  the next table, as Codex lays its tables out.
+
+**What was checked.** No host adapter changed. The `status` and `uninstall -dry-run` fixes
+answer what a run of 0.8.2 on Linux (Ubuntu 26.04) found before it was released; the limits
+fix is tested against the answer the router's own handler writes.
 
 ## v0.8.2 — 2026-11-15
 
