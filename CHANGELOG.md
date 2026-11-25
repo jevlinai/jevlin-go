@@ -25,7 +25,8 @@ installs it on its own; after an npm update there is nothing to run.
   `-purge-state` it also listed `setup.lock` and `state/connect.lock`, which the purge
   removes, and with `-binary` the binary's update lock, which goes with the binary.
 - A turn report whose sender never ran, after a sleep, a shutdown or an upgrade mid-turn, no
-  longer stays in `sessions/` for good: the next search removes one more than an hour old.
+  longer stays in `sessions/` for good: the next search an agent makes with turn reports on
+  removes one more than an hour old.
 - `jevlin agents install` with stdin from `/dev/null`, or `NUL` on Windows, no longer asks
   `Proceed?` of nobody and then reports the question unanswered. It takes the path a run with
   no terminal takes, as `setup` and `uninstall` already did, so for Codex it prints the lines a
