@@ -6,7 +6,11 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -18,24 +22,31 @@ func runLimits(t *testing.T, env map[string]string, args ...string) (int, string
 	return code, out.String(), errOut.String()
 }
 
-// routerLimitsBody is GET /v1/limits exactly as search-router writes it:
-// its encoder (internal/fanout/limits.go, writeState, at e8220f8) and its
-// contract (docs/router-contracts/limits.md) put the three caps under
-// "limits", beside today's ledger and the week and month windows. Keys are
-// in encoding/json's order for a map, as the router's encoder emits them.
-// A stub serving any other shape tests the client against a router that
-// does not exist, which is how the caps went unread (issue #192).
-const routerLimitsBody = `{"limits":{"daily_micros":5000000,"monthly_micros":20000000,"weekly_micros":0},` +
-	`"month":{"cap_micros":20000000,"remaining_micros":19876544,"spent_micros":123456},` +
-	`"tenant_id":"t-fictional",` +
-	`"today":{"ceiling_micros":5000000,"remaining_micros":4876544,"spent_micros":123456},` +
-	`"week":{"cap_micros":0,"spent_micros":123456}}` + "\n"
+// routerLimitsAnswer is GET /v1/limits as search-router's own handler
+// wrote it (testdata/limits/README.md): the caps nested under "limits",
+// beside today's ledger and the week and month windows. It is checked
+// against its SHA-256 so it cannot be edited into a router that does not
+// exist, which is how the caps went unread: every stub was typed in the
+// shape the client expected (issue #192).
+func routerLimitsAnswer(t *testing.T) []byte {
+	t.Helper()
+	const sum = "8610eca122a0cecf887ceed5646f32e6adcac2361e5ba1fe05c6d50515451f83"
+	raw, err := os.ReadFile(filepath.Join("testdata", "limits", "router-get.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sha256.Sum256(raw); hex.EncodeToString(got[:]) != sum {
+		t.Fatal("testdata/limits/router-get.json is not the answer recorded from the router; see its README")
+	}
+	return raw
+}
 
 func TestLimitsReadsCapsAndLedgerWithOneBearerGet(t *testing.T) {
 	var sawMethod, sawPath, sawAuth string
+	answer := routerLimitsAnswer(t)
 	fr, cfg, _ := newFakeRouter(t, func(w http.ResponseWriter, r *http.Request) {
 		sawMethod, sawPath, sawAuth = r.Method, r.URL.Path, r.Header.Get("Authorization")
-		_, _ = w.Write([]byte(routerLimitsBody))
+		_, _ = w.Write(answer)
 	})
 	code, out, errOut := runLimits(t, map[string]string{"JEVLIN_API_KEY": "sr-fictional"}, "-config", cfg)
 	if code != exitOK {
@@ -68,8 +79,9 @@ func TestLimitsReadsCapsAndLedgerWithOneBearerGet(t *testing.T) {
 // always has; only where they are read from in the router's answer is the
 // router's to say.
 func TestLimitsJSONCarriesTheRawMicros(t *testing.T) {
+	answer := routerLimitsAnswer(t)
 	_, cfg, _ := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(routerLimitsBody))
+		_, _ = w.Write(answer)
 	})
 	code, out, _ := runLimits(t, map[string]string{"JEVLIN_API_KEY": "sr-fictional"}, "-config", cfg, "-json")
 	if code != exitOK {
@@ -101,9 +113,11 @@ func TestLimitsNeverInventsACapTheRouterDidNotSend(t *testing.T) {
 	for _, tc := range []struct {
 		name, body string
 		absent     []string
+		sent       map[string]float64
 	}{
-		{"no limits object", `{"today":{"spent_micros":0}}`, []string{"daily_micros", "weekly_micros", "monthly_micros"}},
-		{"one window missing", `{"limits":{"daily_micros":5000000,"weekly_micros":0},"today":{"spent_micros":0}}`, []string{"monthly_micros"}},
+		{"no limits object", `{"today":{"spent_micros":0}}`, []string{"daily_micros", "weekly_micros", "monthly_micros"}, nil},
+		{"one window missing", `{"limits":{"daily_micros":5000000,"weekly_micros":0},"today":{"spent_micros":0}}`,
+			[]string{"monthly_micros"}, map[string]float64{"daily_micros": 5_000_000, "weekly_micros": 0}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, cfg, _ := newFakeRouter(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -113,10 +127,20 @@ func TestLimitsNeverInventsACapTheRouterDidNotSend(t *testing.T) {
 			if code != exitOK {
 				t.Fatalf("exit %d, stderr=%q", code, errOut)
 			}
+			label := map[string]string{"daily_micros": "daily    ", "weekly_micros": "weekly   ", "monthly_micros": "monthly  "}
 			for _, key := range tc.absent {
-				line := map[string]string{"daily_micros": "daily    ", "weekly_micros": "weekly   ", "monthly_micros": "monthly  "}[key]
-				if !strings.Contains(out, line+"not reported") {
-					t.Errorf("%s: want %q:\n%s", key, line+"not reported", out)
+				if !strings.Contains(out, label[key]+"not reported") {
+					t.Errorf("%s: want %q:\n%s", key, label[key]+"not reported", out)
+				}
+			}
+			// The caps that were sent are still shown, however many were not.
+			for key, want := range tc.sent {
+				shown := "none"
+				if want != 0 {
+					shown = dollars(int64(want))
+				}
+				if !strings.Contains(out, label[key]+shown) {
+					t.Errorf("%s: want %q:\n%s", key, label[key]+shown, out)
 				}
 			}
 			code, out, _ = runLimits(t, map[string]string{"JEVLIN_API_KEY": "sr-fictional"}, "-config", cfg, "-json")
@@ -127,6 +151,11 @@ func TestLimitsNeverInventsACapTheRouterDidNotSend(t *testing.T) {
 			for _, key := range tc.absent {
 				if _, present := data[key]; present {
 					t.Errorf("an unreported cap was invented in the envelope: %s in %v", key, data)
+				}
+			}
+			for key, want := range tc.sent {
+				if got, present := data[key]; !present || got != want {
+					t.Errorf("data[%q] = %v (present %v), want %v: %v", key, got, present, want, data)
 				}
 			}
 		})

@@ -48,10 +48,10 @@ func TestTheEnvironmentKeyInMachineModeGoesToTheInstallationsRouter(t *testing.T
 // The terminal form and limits hold the environment's key to the same
 // router; the message says how to choose another one.
 func TestTheEnvironmentKeyGoesToTheInstallationsRouterInEveryForm(t *testing.T) {
-	limitsBody := routerLimitsBody
+	limitsAnswer := routerLimitsAnswer(t)
 	own, cfg, root := newFakeRouter(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/limits" {
-			_, _ = w.Write([]byte(limitsBody))
+			_, _ = w.Write(limitsAnswer)
 			return
 		}
 		_, _ = w.Write([]byte(routerBody))
