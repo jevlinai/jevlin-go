@@ -17,6 +17,9 @@ rewritten to match newer behaviour; the newer entry says what changed.
 - `jevlin uninstall -dry-run` names as left only the lock files the real run leaves. With
   `-purge-state` it also listed `setup.lock` and `state/connect.lock`, which the purge
   removes, and with `-binary` the binary's update lock, which goes with the binary.
+- `jevlin limits` shows the spend caps you set. It read them from the wrong place in the
+  router's answer, so every cap read "not reported" and `limits -json` carried none of them;
+  today's spend and ceiling were right.
 
 ## v0.8.2 — 2026-11-15
 

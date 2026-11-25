@@ -33,9 +33,35 @@ import (
 
 const limitsTimeout = 30 * time.Second
 
-// limitsReport is as much of GET /v1/limits as this client reads. The
-// three caps and the three today fields are integer micro-dollars
-// (1_000_000 = $1).
+// limitsWire is as much of GET /v1/limits as this client reads, in the
+// router's shape (search-router docs/router-contracts/limits.md): the three
+// caps under "limits", today's ledger beside them. The week and month
+// windows it also sends are not read. An earlier version read the caps at
+// the top level, where the router has never put them, and so reported
+// every cap as not reported (issue #192).
+type limitsWire struct {
+	Limits *struct {
+		DailyMicros   *int64 `json:"daily_micros"`
+		WeeklyMicros  *int64 `json:"weekly_micros"`
+		MonthlyMicros *int64 `json:"monthly_micros"`
+	} `json:"limits"`
+	Today *limitsToday `json:"today"`
+}
+
+// report is the wire answer as this client shows it and as limits -json
+// carries it: the caps flat beside today, each still nil when the router
+// did not send it.
+func (w limitsWire) report() limitsReport {
+	r := limitsReport{Today: w.Today}
+	if c := w.Limits; c != nil {
+		r.DailyMicros, r.WeeklyMicros, r.MonthlyMicros = c.DailyMicros, c.WeeklyMicros, c.MonthlyMicros
+	}
+	return r
+}
+
+// limitsReport is what limits -json carries in data and what the table
+// shows. The three caps and the three today fields are integer
+// micro-dollars (1_000_000 = $1).
 type limitsReport struct {
 	DailyMicros   *int64       `json:"daily_micros,omitempty"`
 	WeeklyMicros  *int64       `json:"weekly_micros,omitempty"`
@@ -175,14 +201,15 @@ func cmdLimits(args []string, stdout, stderr io.Writer, getenv func(string) stri
 		}
 	}
 
-	var report limitsReport
-	if err := json.Unmarshal(raw, &report); err != nil {
+	var wire limitsWire
+	if err := json.Unmarshal(raw, &wire); err != nil {
 		if machine {
 			return failLimits(stdout, exitServerErr, "invalid_router_response", actionReport, errors.New("the limits response is not JSON"))
 		}
 		fmt.Fprintln(stderr, "jevlin: the limits response is not JSON:", err)
 		return exitServerErr
 	}
+	report := wire.report()
 
 	if machine {
 		emitMachine(stdout, commandEnvelope{

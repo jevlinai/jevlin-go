@@ -89,7 +89,7 @@ func installationFixture(t *testing.T) (cfgPath, home string) {
 		case "/v1/search":
 			_, _ = w.Write([]byte(routerBody))
 		case "/v1/limits":
-			_, _ = w.Write([]byte(`{"daily_micros":1000000,"today":{"spent_micros":0}}`))
+			_, _ = w.Write([]byte(routerLimitsBody))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
