@@ -266,7 +266,7 @@ are passed on under the class of its HTTP status:
 | 400 `as_of_conflict`: with `search_queries` | 3 | `fix_input` | `false` |
 | 422 `as_of_unsupported_for_selection`: no index the tier or `providers` selected serves it; the message names one that does | 3 | `fix_input` | `false` |
 | 403 `as_of_requires_platform_key`: the account's own provider key would carry the call | 3 | `check_access` | `false` |
-| 429 `as_of_rate_limited`: dated calls are spaced for the whole account; wait `retry_after_ms` | 3 | `retry` | `true` |
+| 429 `as_of_rate_limited`: dated calls are spaced at one a second across the whole service, shared by every account; wait `retry_after_ms` | 3 | `retry` | `true` |
 
 Nothing here sends a refused request again; on a 429 the caller waits and asks again.
 
