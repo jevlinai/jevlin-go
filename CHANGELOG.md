@@ -36,7 +36,15 @@ nothing to run.
 
 **What was checked.** No host adapter changed. `as_of` is tested against the answers the router's
 own search and fetch handlers write for a dated search and a dated read, and every refusal against
-the router's codes.
+the router's codes. On 27 November a build of this release ran against the live router from a
+throwaway installation, directly and through `jevlin mcp` over stdio: dated searches in both human
+forms and through `--stdin`, the cutoff echoed and normalized to UTC; dated reads with `ok`,
+`blocked` and `not_saved_at_as_of` pages; the refusals `as_of_invalid`, `as_of_out_of_range`,
+`as_of_conflict` and `as_of_unsupported_for_selection`, and this client's own; `as_of_rate_limited`
+with `retry_after_ms` under a burst of calls; and a repeated dated search served from the cache.
+`as_of_not_enabled` and `as_of_requires_platform_key` were not run live, since the live router
+serves dated searches and the account has no key of its own for them. The refusal of a repeated
+`as_of`, added after that run, is this client's and is held by its tests.
 
 ## v0.8.3 — 2026-11-25
 
