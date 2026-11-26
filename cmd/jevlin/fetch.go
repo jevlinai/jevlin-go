@@ -84,6 +84,9 @@ type machineFetchRequest struct {
 	maxChars *int
 	offset   *int
 	query    *string
+	// asOf is a dated read's cutoff, as the caller wrote it: each page as it
+	// was saved at or before then. nil for a live read.
+	asOf *string
 }
 
 type wireFetchRequest struct {
@@ -92,6 +95,7 @@ type wireFetchRequest struct {
 	MaxChars json.RawMessage `json:"max_chars"`
 	Offset   json.RawMessage `json:"offset"`
 	Query    json.RawMessage `json:"query"`
+	AsOf     json.RawMessage `json:"as_of"`
 }
 
 type wireFetchPage struct {
@@ -105,6 +109,9 @@ type wireFetchPage struct {
 func decodeMachineFetchRequest(r io.Reader) (machineFetchRequest, *inputError) {
 	raw, ierr := readExactMachineRequest(r, "fetch", fetchRequestFields)
 	if ierr != nil {
+		return machineFetchRequest{}, ierr
+	}
+	if ierr := refuseRepeatedAsOf(raw); ierr != nil {
 		return machineFetchRequest{}, ierr
 	}
 	var wire wireFetchRequest
@@ -140,6 +147,13 @@ func decodeMachineFetchRequest(r io.Reader) (machineFetchRequest, *inputError) {
 			return machineFetchRequest{}, ierr
 		}
 		req.query = &q
+	}
+	if len(wire.AsOf) > 0 {
+		asOf, ierr := validateAsOf(wire.AsOf)
+		if ierr != nil {
+			return machineFetchRequest{}, ierr
+		}
+		req.asOf = &asOf
 	}
 	return req, nil
 }
@@ -278,6 +292,9 @@ func (r machineFetchRequest) body() map[string]any {
 	if r.query != nil {
 		body["query"] = *r.query
 	}
+	if r.asOf != nil {
+		body["as_of"] = *r.asOf
+	}
 	return body
 }
 
@@ -291,6 +308,9 @@ type routerFetchResponse struct {
 	RequestID string             `json:"request_id"`
 	Pages     *[]routerFetchPage `json:"pages"`
 	Usage     *routerFetchUsage  `json:"usage,omitempty"`
+	// AsOf is the cutoff a dated read was served at, echoed by the router in
+	// UTC to the second; absent on a live read.
+	AsOf string `json:"as_of,omitempty"`
 }
 
 // routerFetchPage is one page as the router returns it. Status is "ok",
@@ -300,8 +320,10 @@ type routerFetchResponse struct {
 // of the text that can be paged through; when the upstream cut the page,
 // Truncated is true and FullLength is the page's whole length. Reason says
 // why a failed page failed: "upstream_failed" (a later try may work) or
-// "unrendered" (the page needs a browser; asking again will not help).
-// Absent on an ok page.
+// "unrendered" (the page needs a browser; asking again will not help), and
+// on a dated read "blocked" (the site does not allow its saved copies to be
+// read) or "not_saved_at_as_of" (no copy was saved by the cutoff). Neither of
+// those two is an error, and neither changes on a retry. Absent on an ok page.
 type routerFetchPage struct {
 	SourceID      string  `json:"source_id,omitempty"`
 	URL           string  `json:"url,omitempty"`
@@ -355,6 +377,9 @@ type machineFetchResult struct {
 	RequestID string             `json:"request_id,omitempty"`
 	Pages     []machineFetchPage `json:"pages"`
 	Usage     *machineFetchUsage `json:"usage,omitempty"`
+	// AsOf is the cutoff a dated read was served at, as the router echoed it,
+	// and absent on a live read.
+	AsOf string `json:"as_of,omitempty"`
 }
 
 type fetchEnvelope struct {
@@ -479,7 +504,7 @@ func fetchEnvelopeOf(out fetchOutcome) (fetchEnvelope, int) {
 	}
 	if out.Fault == faultNone {
 		env.RequestID = out.RequestID
-		result := &machineFetchResult{RequestID: out.RequestID, Pages: []machineFetchPage{}}
+		result := &machineFetchResult{RequestID: out.RequestID, Pages: []machineFetchPage{}, AsOf: out.Response.AsOf}
 		for _, p := range *out.Response.Pages {
 			result.Pages = append(result.Pages, machineFetchPage(p))
 		}
@@ -537,12 +562,22 @@ flags:
 
 the request:
   pages (1 to 5, each a source_id from a search's result, or a url), and
-  optionally max_chars (1000 to 50000), offset and query.
+  optionally max_chars (1000 to 50000), offset, query and as_of. as_of, an
+  RFC 3339 time with a zone, reads each page as it was saved at or before
+  then; result.as_of echoes the cutoff. On such a read a page can come back
+  failed with reason "blocked" (the site does not allow its saved copies to
+  be read) or "not_saved_at_as_of" (no copy was saved by then); neither is
+  an error, and the call still answers ok. An empty or non-string as_of is
+  refused here; the router refuses one it cannot serve (as_of_not_enabled,
+  as_of_invalid, as_of_out_of_range, 429 as_of_rate_limited with
+  retry_after_ms), with its own code and message.
 
 exit status: as for jevlin search.
 
-example:
+examples:
   echo '{"version":1,"pages":[{"source_id":"s_..."}]}' | jevlin fetch --stdin
+  echo '{"version":1,"pages":[{"source_id":"s_..."}],
+        "as_of":"2026-03-01T12:00:00Z"}' | jevlin fetch --stdin
 `
 
 func fetchMain(now func() time.Time, args []string, stdin io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {

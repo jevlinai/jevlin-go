@@ -180,18 +180,32 @@ flags:
   -fresh              search live instead of serving a result the router
                       cached in the last 15 minutes; costs the same as any
                       live search
+  -as-of time         a dated search: the web as it was saved at or before
+                      this RFC 3339 time with a zone, up to 365 days back
+                      (for example 2026-03-01T12:00:00Z)
   -timeout duration   the deadline for the whole search (default 1m0s)
   -config file        the config to read (jevlin help config)
-  --stdin             read one JSON request on stdin; -format, -view and
-                      -fresh do not apply
+  --stdin             read one JSON request on stdin; -format, -view,
+                      -fresh and -as-of do not apply
 
 the --stdin request:
   query (required), and optionally objective, search_queries, tier, recency,
   domain_filter, max_results, providers, view ("merged" or "full"),
-  merged_limit, max_chars, page_chars and cache ("refresh"). A value that is
-  not valid answers fix_input before the router is called. The envelope's
-  result.merged is the router's merged view, and view "merged" leaves the
-  candidates out. docs/reference.md describes every field.
+  merged_limit, max_chars, page_chars, cache ("refresh") and as_of. A value
+  that is not valid answers fix_input before the router is called. The
+  envelope's result.merged is the router's merged view, and view "merged"
+  leaves the candidates out. docs/reference.md describes every field.
+
+dated search (as_of, or -as-of):
+  Results are the web as it was saved at or before the cutoff, so fewer than
+  asked for, or none, is a valid answer. result.as_of echoes the cutoff and
+  result.filters_applied.as_of says how many results the router dropped for a
+  later publication date. as_of does not combine with recency (refused here,
+  as_of_with_recency), and an empty or repeated one is refused here
+  (as_of_invalid). The router refuses with its own code: as_of_not_enabled,
+  as_of_invalid, as_of_out_of_range, as_of_conflict (with search_queries) and
+  as_of_unsupported_for_selection (fix_input); as_of_requires_platform_key
+  (check_access); as_of_rate_limited (429, retry after retry_after_ms).
 
 exit status:
   0  the router answered with a valid search response
@@ -203,6 +217,7 @@ exit status:
 examples:
   jevlin search rust async http client
   jevlin search -format model -tier balanced postgres 17 release notes
+  jevlin search -as-of 2026-03-01T12:00:00Z -tier balanced go release notes
   echo '{"version":1,"query":"go 1.27 release notes"}' | jevlin search --stdin
 `
 

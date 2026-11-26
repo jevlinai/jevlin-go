@@ -243,6 +243,9 @@ func renderForModel(r routerResponse) string {
 		b.printf("  session %s", oneLine(r.Session.ID, renderIDCap))
 	}
 	b.printf("  %d candidates\n", len(r.Candidates))
+	if line := asOfLine(r); line != "" {
+		b.printf("%s\n", line)
+	}
 
 	order := make([]int, 0, len(r.Candidates))
 	if r.Chosen >= 0 && r.Chosen < len(r.Candidates) {
@@ -296,6 +299,27 @@ func renderForModel(r routerResponse) string {
 		b.printf("\n%s\n", line)
 	}
 	return b.String()
+}
+
+// asOfLine says which cutoff a dated search's results are as of, and how
+// many results the router's own check dropped for a publication day after
+// it, when it dropped any. Empty on a live search, so a live search renders
+// exactly as before. The cutoff is the router's text, so it is cut to one
+// bounded line like every other value printed here.
+func asOfLine(r routerResponse) string {
+	if r.AsOf == "" {
+		return ""
+	}
+	line := "as of " + oneLine(r.AsOf, renderIDCap) + ": the web as it was saved then"
+	if f := r.FiltersApplied; f != nil && f.AsOf != nil && f.AsOf.Dropped != nil && *f.AsOf.Dropped > 0 {
+		n := *f.AsOf.Dropped
+		noun := "results"
+		if n == 1 {
+			noun = "result"
+		}
+		line += fmt.Sprintf("; %d %s dropped for a publication date after it", n, noun)
+	}
+	return line
 }
 
 // renderDecisionLine is the one line -format model adds after the answer:

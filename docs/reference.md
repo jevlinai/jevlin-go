@@ -7,7 +7,7 @@ says what is written into each agent.
 
 | command | flags | what it does |
 |---|---|---|
-| `search` | `--stdin`, `-tier fast\|balanced\|max`, `-format json\|model`, `-view merged`, `--fresh`, `-timeout d` (default 1m0s), `-config file` | One web search. `--stdin` for agents ([the request](#the---stdin-request)); `<query words>` for a person ([the human form](#the-human-form-and-powershell)). `--fresh` skips the router's cache, as `"cache": "refresh"` does in a request. |
+| `search` | `--stdin`, `-tier fast\|balanced\|max`, `-format json\|model`, `-view merged`, `--fresh`, `--as-of time`, `-timeout d` (default 1m0s), `-config file` | One web search. `--stdin` for agents ([the request](#the---stdin-request)); `<query words>` for a person ([the human form](#the-human-form-and-powershell)). `--fresh` skips the router's cache, as `"cache": "refresh"` does in a request; `--as-of` makes it a [dated search](#dated-search-and-dated-reads), as `"as_of"` does. |
 | `fetch` | `--stdin` (required), `-timeout d` (default 1m0s), `-config file` | The full text of pages a search returned, for agents ([Reading a page in full](#reading-a-page-in-full)). |
 | `decide` | `--stdin` or `--models` (exactly one, required), `-timeout d` (default 1m0s), `-config file` | Typed questions about a state, answered by a decision model, for agents; `--models` lists the models ([Asking a decision model](#asking-a-decision-model)). |
 | `mcp` | `-log`, `-config file` | `search --stdin`, `fetch --stdin`, `decide --stdin` and `decide --models` as MCP tools, over stdio, for a host that registers it ([MCP server](#mcp-server)). |
@@ -109,6 +109,7 @@ and the query's length are not checked here, and the router answers for them.
 | `view` | `"merged"` (default) or `"full"`. The default carries the merged list without the per-provider `candidates`, and each page without `excerpts` and `canonical_url`, which repeat its `snippet` and `url`; `"full"` adds all three. Either way the router is asked for its merged view. |
 | `objective` | Experimental and optional. What you are trying to find out, in your own words: a non-blank string of at most 4096 bytes. The router may pass it to the providers that accept a goal and use it when it ranks the pool; how it uses it is still being tested, so the skill no longer asks for it. |
 | `search_queries` | 1 to 4 more wordings of `query`, each a non-blank string of at most 4096 bytes, searched beside it; a repeat is dropped. Each extra wording costs about as much as another search. |
+| `as_of` | An RFC 3339 time with a zone, such as `"2026-03-01T12:00:00Z"`: a [dated search](#dated-search-and-dated-reads), the web as it was saved at or before then. Absent, the search is live. |
 
 ### The envelope
 
@@ -147,6 +148,7 @@ answer does not let them be found) and `best_rank`, counted from 0. A router tha
 | `result.decision` | The indexes selected and any `trimmed` for the tier's ceiling; `build` names the router build that answered (`version`, `config_hash`) when the router sends it. |
 | `result.filters_applied` | One entry per filter the request carried. `recency` has `requested`, `published_after` (the cut-off used), `sent_to` and `not_sent` (the providers the filter did and did not go to) and `dropped` (pages the router removed); `domain_filter` the same without `published_after`. Present, every page was held to the filter; absent on a request that carried one, the router predates the report. |
 | `result.forms_dropped` | `true` when the search ran without `objective` and `search_queries` ([Bounds](#bounds)). |
+| `result.as_of` | On a [dated search](#dated-search-and-dated-reads) only: the cutoff it was served at, in UTC to the second. `result.filters_applied.as_of` then has `cutoff` and `dropped`, the results the router removed for a publication date after the cutoff's day. |
 
 An answer with no merged view gets `result.merged: []`, with the candidates as the router sent them
 in the full view; the search is still `ok`. `status`, `doctor`, `connect` and `limits` take `-json`
@@ -178,6 +180,10 @@ and answer with the same header.
 the query on the command line. `-format model` prints a bounded summary and never echoes the
 router's error body; `-format json` prints the router's bytes verbatim; `-view merged` with
 `-format json` adds the router's merged view to them. Neither is the versioned envelope.
+`--as-of time` makes it a [dated search](#dated-search-and-dated-reads); either form then says
+which cutoff the results are as of and how many results the cutoff check dropped, `-format model`
+in its output and `-format json` on stderr, beside the router's bytes. A 429 that carries
+`Retry-After` says how long to wait.
 
 Where the shell is PowerShell, a skill pipes a here-string into the call:
 
@@ -206,15 +212,17 @@ this account's own recent search results, and only to an account that can fetch.
 | `max_chars` | 1000 to 50000: how many characters of each page to return. Absent, the router's default. |
 | `offset` | 0 or more: where in each page's text to start. Pass a page's `next_offset` to read on. |
 | `query` | Up to 500 characters, not blank: the router starts a long page's text near the part that matches. |
+| `as_of` | An RFC 3339 time with a zone: a [dated read](#dated-search-and-dated-reads), each page as it was saved at or before then. Absent, the read is live. |
 
 Every malformed value, and any other field, answers `fix_input` before the router is called. A
 field is spelled exactly as above: `Pages` or `VERSION` is `unknown_field`. On
 success, `result.pages` is the router's pages in its order: `source_id`, `url`, `title`, `status`,
 `content`, `offset`, `next_offset` (absent at the end of the text), `content_length`, `truncated`
 and `full_length` (present when the upstream cut the page), `reason` (on a failed page:
-`upstream_failed`, which a later try may fix, or `unrendered`, a page that needs a browser),
-`provider`, `cached` and `cost_micros`; `result.usage` has the call's `cost_micros` and
-`latency_ms`. A page's `status` is `ok`, `failed`, `invalid`, or `not_recent`: not among this
+`upstream_failed`, which a later try may fix, or `unrendered`, a page that needs a browser; on a
+dated read also `blocked`, a site whose saved copies cannot be read, or `not_saved_at_as_of`, no
+copy saved by the cutoff), `provider`, `cached` and `cost_micros`; `result.usage` has the call's
+`cost_micros` and `latency_ms`, and `result.as_of` a dated read's cutoff. A page's `status` is `ok`, `failed`, `invalid`, or `not_recent`: not among this
 account's recent results, so use the host's own fetch tool for it. A page that did not come back
 is not a failed call: `ok` stays `true`.
 
@@ -229,6 +237,39 @@ is not a failed call: `ok` stays `true`.
 | any other status | as for a search | | |
 
 A fetch is one request and is never retried by the client.
+
+### Dated search and dated reads
+
+`as_of` asks for the web as it was saved at or before an instant, for evaluating or backtesting
+against questions whose answers came later. It is an RFC 3339 time with a zone, at least a minute
+in the past and at most 365 days back, and goes to the router as written; the router normalizes it
+to UTC and echoes it as `result.as_of`. A search returns only pages saved by then, so fewer results
+than asked for, or none, is a valid answer. A dated read
+(`as_of` on `fetch`) reads each page as saved by then; send the cutoff of the search that found
+it. A page with no saved copy comes back `failed` with reason `not_saved_at_as_of`, and a site
+whose saved copies cannot be read `failed` with `blocked`: both are answers, not errors, and the
+call is `ok`. A repeat of the same dated search is served from the router's cache for the account
+that asked; `cache: "refresh"` asks again. The router serves dated searches only where it turns
+them on.
+
+Two refusals are this client's, before anything is sent: an `as_of` that is not a non-blank
+string or is named more than once (`as_of_invalid`) and one beside `recency`
+(`as_of_with_recency`), each exit 2,
+`usage_error`, `fix_input`. Everything else the router judges, and its code and `error.message`
+are passed on under the class of its HTTP status:
+
+| router answer | exit | `action` | `retryable` |
+|---|---|---|---|
+| 400 `as_of_not_enabled`: this router does not serve dated searches | 3 | `fix_input` | `false` |
+| 400 `as_of_invalid`: not RFC 3339 with a zone, or the field named twice | 3 | `fix_input` | `false` |
+| 400 `as_of_out_of_range`: within the last minute, in the future, or more than 365 days back | 3 | `fix_input` | `false` |
+| 400 `as_of_with_recency`: with `recency` | 3 | `fix_input` | `false` |
+| 400 `as_of_conflict`: with `search_queries` | 3 | `fix_input` | `false` |
+| 422 `as_of_unsupported_for_selection`: no index the tier or `providers` selected serves it; the message names one that does | 3 | `fix_input` | `false` |
+| 403 `as_of_requires_platform_key`: the account's own provider key would carry the call | 3 | `check_access` | `false` |
+| 429 `as_of_rate_limited`: dated calls are spaced at one a second across the whole service, shared by every account; wait `retry_after_ms` | 3 | `retry` | `true` |
+
+Nothing here sends a refused request again; on a 429 the caller waits and asks again.
 
 ### Asking a decision model
 
