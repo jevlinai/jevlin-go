@@ -111,6 +111,9 @@ func decodeMachineFetchRequest(r io.Reader) (machineFetchRequest, *inputError) {
 	if ierr != nil {
 		return machineFetchRequest{}, ierr
 	}
+	if ierr := refuseRepeatedAsOf(raw); ierr != nil {
+		return machineFetchRequest{}, ierr
+	}
 	var wire wireFetchRequest
 	if err := strictDecode(raw, &wire); err != nil {
 		return machineFetchRequest{}, inputErrorf(codeUnknownField,

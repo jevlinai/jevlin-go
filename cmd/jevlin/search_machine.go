@@ -151,6 +151,9 @@ func decodeMachineSearchRequest(r io.Reader) (machineSearchRequest, error) {
 	if ierr != nil {
 		return machineSearchRequest{}, ierr
 	}
+	if ierr := refuseRepeatedAsOf(raw); ierr != nil {
+		return machineSearchRequest{}, ierr
+	}
 
 	dec := json.NewDecoder(strings.NewReader(string(raw)))
 	dec.DisallowUnknownFields()
@@ -261,6 +264,39 @@ func decodeMachineSearchRequest(r io.Reader) (machineSearchRequest, error) {
 		}
 	}
 	return req, nil
+}
+
+// refuseRepeatedAsOf refuses a request that names as_of more than once at
+// its top level. encoding/json keeps the last of two keys, so without this
+// a request with two cutoffs would go out with one of them, chosen by
+// position: an ambiguous dated search answered as though it were not, which
+// the router refuses as as_of_invalid. The keys are read as JSON tokens, so
+// a spelling with an escape ("as\u005fof") is the same key, as it is to the
+// decoder; a spelling in another case is already unknown_field. raw is one
+// JSON object, as readExactMachineRequest has already checked.
+func refuseRepeatedAsOf(raw []byte) *inputError {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
+		return nil
+	}
+	seen := 0
+	for dec.More() {
+		t, err := dec.Token()
+		if err != nil {
+			return nil
+		}
+		if k, _ := t.(string); k == "as_of" {
+			seen++
+		}
+		var skip json.RawMessage
+		if err := dec.Decode(&skip); err != nil {
+			return nil
+		}
+	}
+	if seen > 1 {
+		return inputErrorf(codeAsOfInvalid, `"as_of" is named more than once; send one cutoff`)
+	}
+	return nil
 }
 
 // validateAsOf takes a dated search's or a dated read's cutoff. Only its

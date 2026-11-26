@@ -197,14 +197,14 @@ the --stdin request:
   leaves the candidates out. docs/reference.md describes every field.
 
 dated search (as_of, or -as-of):
-  Results are the web as it was saved at or before the cutoff, so fewer
-  than asked for, or none, is a valid answer. result.as_of echoes the
-  cutoff and result.filters_applied.as_of says how many results the router
-  dropped for a later publication date. as_of does not combine with recency
-  (refused here, as_of_with_recency) and an empty one is refused here
+  Results are the web as it was saved at or before the cutoff, so fewer than
+  asked for, or none, is a valid answer. result.as_of echoes the cutoff and
+  result.filters_applied.as_of says how many results the router dropped for a
+  later publication date. as_of does not combine with recency (refused here,
+  as_of_with_recency), and an empty or repeated one is refused here
   (as_of_invalid). The router refuses with its own code: as_of_not_enabled,
-  as_of_invalid, as_of_out_of_range, as_of_conflict (with search_queries)
-  and as_of_unsupported_for_selection (fix_input); as_of_requires_platform_key
+  as_of_invalid, as_of_out_of_range, as_of_conflict (with search_queries) and
+  as_of_unsupported_for_selection (fix_input); as_of_requires_platform_key
   (check_access); as_of_rate_limited (429, retry after retry_after_ms).
 
 exit status:
