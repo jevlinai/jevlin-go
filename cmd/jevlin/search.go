@@ -169,7 +169,26 @@ type searchCall struct {
 	// Cache is "" or "refresh" (--fresh, or "cache" in a --stdin request)
 	// and goes out only when set: the router's default is the field's absence.
 	Cache string
+	// AsOf is a dated search's cutoff (-as-of, or "as_of" in a --stdin
+	// request), as the caller wrote it, and goes out only when set: without
+	// it the body is exactly a live search's.
+	AsOf  *string
 	Trace *traceEnvelope
+}
+
+// givenString is a string flag that remembers whether it was given, so that
+// -as-of "" is refused as a dated search with no cutoff rather than taken
+// for the flag's absence, which is a live search.
+type givenString struct {
+	value string
+	given bool
+}
+
+func (f *givenString) String() string { return f.value }
+
+func (f *givenString) Set(s string) error {
+	f.value, f.given = s, true
+	return nil
 }
 
 // searchOutcome is the structured result of running a search. Both
@@ -233,6 +252,8 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	timeout := fs.Duration("timeout", defaultSearchTimeout, "whole-search deadline, covering connect, headers, body and the one trace-compatibility retry")
 	fs.Bool("stdin", false, "read one version-1 JSON search request from stdin and answer with the machine envelope")
 	fresh := fs.Bool("fresh", false, "run the search live instead of serving a result cached in the last 15 minutes; costs the same as any live search")
+	asOfFlag := &givenString{}
+	fs.Var(asOfFlag, "as-of", "a dated search: the web as it was saved at or before this RFC 3339 time with a zone, e.g. 2026-03-01T12:00:00Z")
 	if err := fs.Parse(args); err != nil {
 		if machine {
 			return failSearchInput(stdout, inputErrorf(codeInvalidFlags, "the flags could not be parsed"))
@@ -250,6 +271,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 	var searchQueries []string
 	var mergedLimit, maxChars, pageChars *int
 	var cache string
+	var asOf *string
 	if machine {
 		// No positional query in machine mode: two sources for the same
 		// value is how a caller ends up sending one and escaping the
@@ -281,14 +303,29 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		maxChars = req.maxChars
 		pageChars = req.pageChars
 		cache = req.cache
+		asOf = req.asOf
 		// Two sources for one value: a --stdin request says "cache" itself.
 		if *fresh {
 			return failSearchInput(stdout, inputErrorf(codeInvalidFlags,
 				"--fresh is for the command line; a --stdin request carries \"cache\": \"refresh\""))
 		}
+		if asOfFlag.given {
+			return failSearchInput(stdout, inputErrorf(codeInvalidFlags,
+				"--as-of is for the command line; a --stdin request carries \"as_of\""))
+		}
 	} else {
 		if *fresh {
 			cache = "refresh"
+		}
+		if asOfFlag.given {
+			// Given is a dated search asked for: an empty value is refused,
+			// never sent as a live search.
+			if strings.TrimSpace(asOfFlag.value) == "" {
+				fmt.Fprintln(stderr, `jevlin search: -as-of needs an RFC 3339 time with a zone, such as 2026-03-01T12:00:00Z; leave it out for a live search`)
+				return exitUsage
+			}
+			v := asOfFlag.value
+			asOf = &v
 		}
 		query = strings.TrimSpace(strings.Join(fs.Args(), " "))
 		if query == "" {
@@ -420,6 +457,7 @@ func searchMain(ops searchOps, args []string, stdin io.Reader, stdout, stderr io
 		MaxChars:      maxChars,
 		PageChars:     pageChars,
 		Cache:         cache,
+		AsOf:          asOf,
 		FastSet:       fastSetFor(ctx, *tier, cfgSource, strings.TrimRight(cfg.Search.RouterURL.String(), "/"), key, getenv),
 		Trace:         trace,
 	})
@@ -465,6 +503,11 @@ func renderSearchForHuman(out searchOutcome, format string, keySrc keySource, st
 			fmt.Fprint(stdout, renderForModel(out.Success.Response))
 		} else {
 			_, _ = stdout.Write(out.Success.Raw)
+			// stdout stays the router's bytes; the cutoff is said beside
+			// them, where a person reads it and a pipe does not.
+			if line := asOfLine(out.Success.Response); line != "" {
+				fmt.Fprintln(stderr, "\njevlin: "+line)
+			}
 		}
 		return exitOK
 	}
@@ -522,10 +565,25 @@ func renderSearchForHuman(out searchOutcome, format string, keySrc keySource, st
 			fmt.Fprintf(stderr, "\njevlin: HTTP %d\n", out.HTTPStatus)
 		}
 		return exitClientErr
+	case out.HTTPStatus == http.StatusTooManyRequests && out.HasRetryAfter:
+		// The router said when the same search may be sent again; nothing
+		// here sends it again on its own.
+		fmt.Fprintf(stderr, "\njevlin: HTTP %d — retry after %s\n", out.HTTPStatus, retryAfterWords(out.RetryAfterMS))
+		return exitClientErr
 	default:
 		fmt.Fprintf(stderr, "\njevlin: HTTP %d\n", out.HTTPStatus)
 		return exitClientErr
 	}
+}
+
+// retryAfterWords is a Retry-After wait for a person: whole seconds,
+// rounded up, so the wait said is never shorter than the one asked for.
+func retryAfterWords(ms int64) string {
+	secs := (ms + 999) / 1000
+	if secs == 1 {
+		return "1 second"
+	}
+	return fmt.Sprintf("%d seconds", secs)
 }
 
 // searchTierDefault is the band a request carries when the caller named
@@ -596,6 +654,9 @@ func performSearch(ctx context.Context, now func() time.Time, call searchCall) (
 	}
 	if call.Cache != "" {
 		body["cache"] = call.Cache
+	}
+	if call.AsOf != nil {
+		body["as_of"] = *call.AsOf
 	}
 	out = searchOutcome{Traced: call.Trace != nil}
 	if out.Traced {
@@ -1052,6 +1113,9 @@ type routerResponse struct {
 	// router before #68 sends none, and then nothing says the results were
 	// filtered.
 	FiltersApplied *routerFiltersApplied `json:"filters_applied,omitempty"`
+	// AsOf is the cutoff a dated search was served at, echoed by the router
+	// in UTC to the second; absent on a live search.
+	AsOf string `json:"as_of,omitempty"`
 }
 
 // routerFiltersApplied carries one key per filter the request carried, and
@@ -1059,6 +1123,14 @@ type routerResponse struct {
 type routerFiltersApplied struct {
 	Recency      *routerRecencyFilter `json:"recency,omitempty"`
 	DomainFilter *routerDomainFilter  `json:"domain_filter,omitempty"`
+	AsOf         *routerAsOfFilter    `json:"as_of,omitempty"`
+}
+
+// routerAsOfFilter is a dated search's account: the cutoff, and how many
+// results the router's own check removed for a publication day after it.
+type routerAsOfFilter struct {
+	Cutoff  string `json:"cutoff,omitempty"`
+	Dropped *int   `json:"dropped,omitempty"`
 }
 
 // routerRecencyFilter and routerDomainFilter keep the router's lists as

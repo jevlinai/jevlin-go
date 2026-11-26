@@ -20,10 +20,16 @@ against the router's own output, not responses typed for them.
   recorded on 2026-10-23 from the beta router (`router-api.nyks.dev`) running Jevlin-core #68:
   a balanced search for "python 3.14 free-threaded build changes" with `recency: "year"` and
   `domain_filter: ["python.org", "github.com"]`, 12 merged pages of 23, one arm (exa) with
-  `status: "error"`. It is the only file here with `filters_applied` and `decision.build`. It
-  was checked for keys, emails and account identifiers before it was committed and carries
-  none. No router fixture or recording carries a merged page's `source_id` yet, so that field
-  is tested with a response built in the test, never with a file here.
+  `status: "error"`. It was checked for keys, emails and account identifiers before it was
+  committed and carries none.
+- `dated-search-merged.json` is a dated search (`as_of`), as the router's own search handler
+  wrote it on its `feat/fetch-as-of` branch at `25263f2` (contract version 2026-11-26), run in
+  that repository with the setup of its own `TestAsOfResultsAreHeldToTheCutoff`: one index
+  that serves dated searches, five pages of which two were published after the cutoff's day, and
+  the request `{"query":"q","as_of":"2026-03-01T13:00:00+01:00","view":"merged"}`. It carries the
+  top-level `as_of` (the cutoff normalized to `2026-03-01T12:00:00Z`) and `filters_applied.as_of`
+  with `dropped: 2`, and is the first file here whose merged pages carry `source_id`. The pages
+  are the test's own `a.example` URLs.
 - `merged-view-two-forms.derived.json` is derived from the `feat/merge-v2` file, not
   captured. Its `_derived` field says how: one provider lists pages under a second query
   form, and the router's own code at that commit renumbered the citations and re-derived the

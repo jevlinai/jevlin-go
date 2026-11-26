@@ -56,6 +56,12 @@ const (
 	codeInvalidMaxChars      = "invalid_max_chars"
 	codeInvalidPageChars     = "invalid_page_chars"
 	codeInvalidCache         = "invalid_cache"
+	// codeAsOfInvalid and codeAsOfWithRecency are the router's own codes for
+	// the two as_of refusals this client makes before sending: an as_of that
+	// is not a non-blank string, and one beside recency. One vocabulary for
+	// one rule, whichever side refuses it; a local refusal still exits 2.
+	codeAsOfInvalid     = "as_of_invalid"
+	codeAsOfWithRecency = "as_of_with_recency"
 )
 
 // inputError is a local refusal with a stable machine code. It is a type
@@ -101,6 +107,10 @@ type machineSearchRequest struct {
 	// cache is "" (the router's default) or "refresh". A request that says
 	// "default" is the same as one that says nothing, and is sent as nothing.
 	cache string
+	// asOf is the cutoff of a dated search, as the caller wrote it: the web
+	// as it was saved at or before then. nil for a live search, which is
+	// every request that leaves the field out.
+	asOf *string
 }
 
 // wireSearchRequest is the decoded shape. Pointers distinguish an absent
@@ -125,6 +135,7 @@ type wireSearchRequest struct {
 	MaxChars      json.RawMessage `json:"max_chars"`
 	PageChars     json.RawMessage `json:"page_chars"`
 	Cache         json.RawMessage `json:"cache"`
+	AsOf          json.RawMessage `json:"as_of"`
 }
 
 // decodeMachineSearchRequest reads exactly one v1 request from r.
@@ -238,7 +249,42 @@ func decodeMachineSearchRequest(r io.Reader) (machineSearchRequest, error) {
 		}
 		req.cache = cache
 	}
+	if len(wire.AsOf) > 0 {
+		asOf, err := validateAsOf(wire.AsOf)
+		if err != nil {
+			return machineSearchRequest{}, err
+		}
+		req.asOf = &asOf
+		if req.recency != nil {
+			return machineSearchRequest{}, inputErrorf(codeAsOfWithRecency,
+				`"as_of" and "recency" do not combine: a dated search returns the web as it was then, with no date window; send one or the other`)
+		}
+	}
 	return req, nil
+}
+
+// validateAsOf takes a dated search's or a dated read's cutoff. Only its
+// shape is held here, a non-blank string: the router owns the rest (RFC 3339
+// with a zone, at least a minute old, at most 365 days back) and answers it
+// with its own as_of_* code and message, which this client passes on.
+// Present asks for a dated answer, so an empty, blank or null value is
+// refused, never read as a live one; leaving the field out is a live one.
+// The value goes on the wire as the caller wrote it.
+func validateAsOf(raw json.RawMessage) (string, *inputError) {
+	if isJSONNull(raw) {
+		return "", inputErrorf(codeAsOfInvalid,
+			`"as_of" must not be null: give an RFC 3339 time with a zone, such as "2026-03-01T12:00:00Z", or leave it out for a live answer`)
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return "", inputErrorf(codeAsOfInvalid,
+			`"as_of" must be a string: an RFC 3339 time with a zone, such as "2026-03-01T12:00:00Z"`)
+	}
+	if strings.TrimSpace(s) == "" {
+		return "", inputErrorf(codeAsOfInvalid,
+			`"as_of" must not be empty: give an RFC 3339 time with a zone, such as "2026-03-01T12:00:00Z", or leave it out for a live answer`)
+	}
+	return s, nil
 }
 
 // searchRequestFields and fetchRequestFields are every top-level key a v1
@@ -746,6 +792,10 @@ type machineResult struct {
 	// domain_filter; absent on a request that carried one, the router is
 	// older than that and the pages are unfiltered.
 	FiltersApplied *machineFiltersApplied `json:"filters_applied,omitempty"`
+	// AsOf is the cutoff a dated search was served at, as the router echoed
+	// it (in UTC, to the second), and absent on a live search: present, every
+	// page is the web as it was saved at or before then.
+	AsOf string `json:"as_of,omitempty"`
 	// Candidates is carried only for "view":"full". Every page in merged
 	// already holds the text the candidates' citations repeat, and the
 	// providers' own answer texts are what a caller asks "full" for. A
@@ -856,6 +906,15 @@ type machineBuild struct {
 type machineFiltersApplied struct {
 	Recency      *machineRecencyFilter `json:"recency,omitempty"`
 	DomainFilter *machineDomainFilter  `json:"domain_filter,omitempty"`
+	AsOf         *machineAsOfFilter    `json:"as_of,omitempty"`
+}
+
+// machineAsOfFilter is a dated search's account: the cutoff, and how many
+// results the router removed for a publication day after it. Every index a
+// dated search asks is sent the cutoff, so there is no sent_to or not_sent.
+type machineAsOfFilter struct {
+	Cutoff  string `json:"cutoff,omitempty"`
+	Dropped *int   `json:"dropped,omitempty"`
 }
 
 type machineRecencyFilter struct {
@@ -886,6 +945,10 @@ func filtersAppliedOf(f *routerFiltersApplied) *machineFiltersApplied {
 	if f.DomainFilter != nil {
 		d := machineDomainFilter(*f.DomainFilter)
 		out.DomainFilter = &d
+	}
+	if f.AsOf != nil {
+		a := machineAsOfFilter(*f.AsOf)
+		out.AsOf = &a
 	}
 	return out
 }
@@ -998,6 +1061,7 @@ func machineResultOf(s routerSuccess, view string) *machineResult {
 		}
 	}
 	out.FiltersApplied = filtersAppliedOf(r.FiltersApplied)
+	out.AsOf = r.AsOf
 	if !full {
 		return out
 	}

@@ -224,7 +224,7 @@ func TestTheRouterFetchFieldsAreDecided(t *testing.T) {
 			"CostMicros cost_micros,omitempty",
 		}},
 		{reflect.TypeFor[routerFetchUsage](), []string{"CostMicros cost_micros,omitempty", "LatencyMS latency_ms,omitempty"}},
-		{reflect.TypeFor[routerFetchResponse](), []string{"RequestID request_id", "Pages pages", "Usage usage,omitempty"}},
+		{reflect.TypeFor[routerFetchResponse](), []string{"RequestID request_id", "Pages pages", "Usage usage,omitempty", "AsOf as_of,omitempty"}},
 	} {
 		var got []string
 		for i := range tc.rt.NumField() {

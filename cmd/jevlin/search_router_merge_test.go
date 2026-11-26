@@ -377,8 +377,11 @@ func TestTheRouterCitationsFieldsAreDecided(t *testing.T) {
 			"Version version,omitempty", "ConfigHash config_hash,omitempty",
 		}, "machineBuild (machineResultOf)"},
 		{reflect.TypeFor[routerFiltersApplied](), []string{
-			"Recency recency,omitempty", "DomainFilter domain_filter,omitempty",
+			"Recency recency,omitempty", "DomainFilter domain_filter,omitempty", "AsOf as_of,omitempty",
 		}, "machineFiltersApplied (filtersAppliedOf)"},
+		{reflect.TypeFor[routerAsOfFilter](), []string{
+			"Cutoff cutoff,omitempty", "Dropped dropped,omitempty",
+		}, "machineAsOfFilter (filtersAppliedOf)"},
 		{reflect.TypeFor[routerRecencyFilter](), []string{
 			"Requested requested,omitempty", "PublishedAfter published_after,omitempty",
 			"SentTo sent_to,omitempty", "NotSent not_sent,omitempty", "Dropped dropped,omitempty",
@@ -422,6 +425,7 @@ var routerKeysDecided = map[string]map[string]string{
 		"decision":         "carried",
 		"usage":            "carried",
 		"filters_applied":  "carried, field for field",
+		"as_of":            "carried: a dated search's cutoff, as result.as_of",
 		"signals":          "not carried: the router's scoring inputs, which the merged order already reflects",
 		"no_usable_result": "not carried: result.indexes says which arms failed, and merged is empty",
 		"_derived":         "not the router's: the derived fixture's note on how it was made",
@@ -435,6 +439,7 @@ var routerKeysDecided = map[string]map[string]string{
 		"propensity":     "not carried: the router's learning record",
 		"router_version": "not carried: build is the router's account of what answered",
 		"ranker_version": "not carried: build is the router's account of what answered",
+		"rank":           "not carried: how the router ranked the pool, its own operation; the list's order is its order",
 	},
 	"decision.build": {
 		"version":     "carried",
@@ -443,6 +448,11 @@ var routerKeysDecided = map[string]map[string]string{
 	"filters_applied": {
 		"recency":       "carried",
 		"domain_filter": "carried",
+		"as_of":         "carried",
+	},
+	"filters_applied.as_of": {
+		"cutoff":  "carried",
+		"dropped": "carried",
 	},
 	"filters_applied.recency": {
 		"requested":       "carried",
@@ -460,6 +470,7 @@ var routerKeysDecided = map[string]map[string]string{
 	"merged[]": {
 		"url":           "carried",
 		"result_id":     "carried",
+		"source_id":     "carried: the page's name across searches, which fetch takes",
 		"title":         "carried",
 		"published":     "carried",
 		"excerpt":       "carried, as snippet",
@@ -488,12 +499,13 @@ var routerKeysDecided = map[string]map[string]string{
 		"reason":     "not carried: status is what a caller acts on; why an arm was skipped is the router's own operation",
 	},
 	"usage": {
-		"cost_micros":  "carried",
-		"latency_ms":   "carried",
-		"cache_hit":    "carried",
-		"pending":      "carried",
-		"deadline_hit": "carried",
-		"byok":         "not carried: whose key paid is the tenant's business, not the search's answer",
+		"cost_micros":      "carried",
+		"latency_ms":       "carried",
+		"cache_hit":        "carried",
+		"pending":          "carried",
+		"deadline_hit":     "carried",
+		"byok":             "not carried: whose key paid is the tenant's business, not the search's answer",
+		"rank_cost_micros": "not carried: what the router's own page ranker cost, reported beside cost_micros and not billed to the caller",
 	},
 }
 
@@ -536,6 +548,7 @@ func TestEveryKeyTheRouterSendsIsDecided(t *testing.T) {
 		note(filepath.Base(name), "filters_applied", fa)
 		note(filepath.Base(name), "filters_applied.recency", objOf(fa["recency"]))
 		note(filepath.Base(name), "filters_applied.domain_filter", objOf(fa["domain_filter"]))
+		note(filepath.Base(name), "filters_applied.as_of", objOf(fa["as_of"]))
 	}
 	// A decided key no fixture sends is a line about a router that may not
 	// exist; say so rather than keep it silently.

@@ -130,6 +130,8 @@ func searchInputSchema() map[string]any {
 			"page_chars":   intProp("A cap on each page's excerpt.", pageCharsMin, pageCharsMax),
 			"cache": map[string]any{"type": "string", "enum": []string{"default", "refresh"},
 				"description": `"refresh" runs the search live rather than from a recent cached result, for questions about what is happening now.`},
+			"as_of": stringProp("Optional. An RFC 3339 time with a zone: return the web as it was saved at or before then " +
+				"(up to 365 days back). For evaluating or backtesting on questions whose answers came later."),
 		},
 	}
 }
@@ -160,6 +162,8 @@ func fetchInputSchema() map[string]any {
 			"max_chars": intProp("Characters of each page to return.", fetchMaxCharsMin, fetchMaxCharsMax),
 			"offset":    intProp("Where to start reading: a page's next_offset from an earlier fetch.", 0, 0),
 			"query":     stringProp("The fact you need; each page's text starts at the part that matches it."),
+			"as_of": stringProp("Optional. An RFC 3339 time with a zone: read each page as it was saved at or before then " +
+				"(up to 365 days back), the same cutoff as the search that found it."),
 		},
 	}
 }
