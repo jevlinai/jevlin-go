@@ -153,6 +153,9 @@ func TestAnAsOfThatCannotBeSentIsRefusedHere(t *testing.T) {
 		{"an object", "search", `{"version":1,"query":"q","as_of":{}}`, codeAsOfInvalid},
 		{"with recency", "search", `{"version":1,"query":"q","recency":"week","as_of":"2026-03-01T12:00:00Z"}`, codeAsOfWithRecency},
 		{"misspelled", "search", `{"version":1,"query":"q","As_Of":"2026-03-01T12:00:00Z"}`, codeUnknownField},
+		{"named twice", "search", `{"version":1,"query":"q","as_of":"2026-03-01T12:00:00Z","as_of":"2026-03-02T12:00:00Z"}`, codeAsOfInvalid},
+		{"named twice, once escaped", "search", `{"version":1,"query":"q","as\u005fof":"2026-03-01T12:00:00Z","as_of":"2026-03-02T12:00:00Z"}`, codeAsOfInvalid},
+		{"fetch, named twice", "fetch", `{"version":1,"pages":[{"url":"https://a.test/"}],"as_of":"2026-03-01T12:00:00Z","as_of":"2026-03-02T12:00:00Z"}`, codeAsOfInvalid},
 		{"fetch, empty", "fetch", `{"version":1,"pages":[{"url":"https://a.test/"}],"as_of":""}`, codeAsOfInvalid},
 		{"fetch, null", "fetch", `{"version":1,"pages":[{"url":"https://a.test/"}],"as_of":null}`, codeAsOfInvalid},
 		{"fetch, a number", "fetch", `{"version":1,"pages":[{"url":"https://a.test/"}],"as_of":1}`, codeAsOfInvalid},
@@ -175,6 +178,21 @@ func TestAnAsOfThatCannotBeSentIsRefusedHere(t *testing.T) {
 			}
 		})
 	}
+	t.Run("named twice through MCP", func(t *testing.T) {
+		fr, cfg, _ := newFakeRouter(t, okHandler(routerBody))
+		_, msgs, _ := runMCP(t, asOfEnv, []string{mcpInitialize,
+			toolCall(2, "search", `{"query":"q","as_of":"2026-03-01T12:00:00Z","as_of":"2026-03-02T12:00:00Z"}`),
+			toolCall(3, "fetch", `{"pages":[{"url":"https://a.test/"}],"as_of":"2026-03-01T12:00:00Z","as_of":"2026-03-02T12:00:00Z"}`)},
+			"-config", cfg)
+		for _, m := range msgs[1:] {
+			if env, isError := toolEnvelope(t, m); !isError || env["code"] != codeAsOfInvalid || env["exit_code"] != float64(exitUsage) {
+				t.Errorf("isError %v envelope %v", isError, env)
+			}
+		}
+		if len(fr.reqs) != 0 {
+			t.Errorf("%d requests reached the router", len(fr.reqs))
+		}
+	})
 	t.Run("an empty -as-of", func(t *testing.T) {
 		fr, cfg, root := newFakeRouter(t, okHandler(routerBody))
 		code, _, errOut := runSearch(t, fixedSearchOps(root), asOfEnv, "-config", cfg, "-as-of", "", "q")

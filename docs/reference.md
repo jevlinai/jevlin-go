@@ -253,7 +253,8 @@ that asked; `cache: "refresh"` asks again. The router serves dated searches only
 them on.
 
 Two refusals are this client's, before anything is sent: an `as_of` that is not a non-blank
-string (`as_of_invalid`) and one beside `recency` (`as_of_with_recency`), each exit 2,
+string or is named more than once (`as_of_invalid`) and one beside `recency`
+(`as_of_with_recency`), each exit 2,
 `usage_error`, `fix_input`. Everything else the router judges, and its code and `error.message`
 are passed on under the class of its HTTP status:
 
