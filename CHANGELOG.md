@@ -10,7 +10,12 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
-## Unreleased
+## v0.9.0 — 2026-11-27
+
+This release reads every configuration 0.8.3 reads and changes none, and a search or fetch that
+does not ask for `as_of` sends exactly what it sent before. Under the default `[update] mode =
+"apply"` a native installation's daily check installs it on its own; after an npm update there is
+nothing to run.
 
 - **Dated search and dated reads (`as_of`).** A search can ask for the web as it was saved at or
   before an instant, up to 365 days back, for evaluating or backtesting against questions whose
@@ -28,6 +33,18 @@ rewritten to match newer behaviour; the newer entry says what changed.
 - The router now refuses a request body with anything after its one JSON value
   (`400 malformed_json`). This client sends exactly one value in every request, so nothing changes
   here.
+
+**What was checked.** No host adapter changed. `as_of` is tested against the answers the router's
+own search and fetch handlers write for a dated search and a dated read, and every refusal against
+the router's codes. On 27 November a build of this release ran against the live router from a
+throwaway installation, directly and through `jevlin mcp` over stdio: dated searches in both human
+forms and through `--stdin`, the cutoff echoed and normalized to UTC; dated reads with `ok`,
+`blocked` and `not_saved_at_as_of` pages; the refusals `as_of_invalid`, `as_of_out_of_range`,
+`as_of_conflict` and `as_of_unsupported_for_selection`, and this client's own; `as_of_rate_limited`
+with `retry_after_ms` under a burst of calls; and a repeated dated search served from the cache.
+`as_of_not_enabled` and `as_of_requires_platform_key` were not run live, since the live router
+serves dated searches and the account has no key of its own for them. The refusal of a repeated
+`as_of`, added after that run, is this client's and is held by its tests.
 
 ## v0.8.3 — 2026-11-25
 
