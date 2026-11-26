@@ -10,6 +10,25 @@ An entry describes the release it sits under, as that release behaved. A later r
 superseding something does not make the older entry wrong, and older entries are not
 rewritten to match newer behaviour; the newer entry says what changed.
 
+## Unreleased
+
+- **Dated search and dated reads (`as_of`).** A search can ask for the web as it was saved at or
+  before an instant, up to 365 days back, for evaluating or backtesting against questions whose
+  answers came later: `"as_of"` in a `search --stdin` request or the MCP `search` tool, or
+  `jevlin search --as-of 2026-03-01T12:00:00Z ...` at a terminal. The answer echoes the cutoff in
+  `result.as_of` and says in `result.filters_applied.as_of` how many results were dropped for a
+  later publication date; the human forms say both. Fewer results, or none, is a valid answer. The
+  same `as_of` on `fetch --stdin` and the MCP `fetch` tool reads each page as saved by then; a page
+  with no saved copy comes back `failed` with reason `not_saved_at_as_of`, and a site whose saved
+  copies cannot be read `failed` with `blocked`, neither an error. An empty `as_of`, or one beside
+  `recency`, is refused before anything is sent; every other refusal is the router's own
+  `as_of_*` code under its usual class, and a `429 as_of_rate_limited` carries `retry_after_ms`.
+  The router serves dated searches only where it turns them on, and answers `as_of_not_enabled`
+  elsewhere.
+- The router now refuses a request body with anything after its one JSON value
+  (`400 malformed_json`). This client sends exactly one value in every request, so nothing changes
+  here.
+
 ## v0.8.3 — 2026-11-25
 
 This release reads every configuration 0.8.2 reads and changes none, and it changes nothing a
